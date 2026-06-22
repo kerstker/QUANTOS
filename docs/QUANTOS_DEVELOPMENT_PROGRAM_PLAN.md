@@ -208,7 +208,26 @@ readiness levels. **G2: DONE.**
 - `metrics.py`: returns / Sharpe / Sortino / max-drawdown / Calmar / vol.
 - 7 tests incl. determinism, next-bar-fill, exact PnL reconciliation, accounting.
 
-Remaining for full Phase 4 (G4): fill-model variants, market-impact / capacity,
-date-aware annualization, multi-instrument portfolios, research-report wiring,
-and replacing the console's synthetic backtest path. Walk-forward / Deflated
-Sharpe / PBO are Phase 5 (Validation Gate).
+G4 increment 2: optional sqrt-law market impact (participation-scaled),
+`to_backtest_result` (BacktestResult contract, reproducible) + capacity estimate,
+and a test running the engine on bars served from the real PITStore as-of view
+(review P0-2). **G4 core met.** Deferred refinements: fill-model variants,
+date-aware annualization, multi-instrument portfolios, replacing the console's
+synthetic backtest path.
+
+## 12. Phase 5 — Validation Gate (DONE / G5) — closes Gap 2
+
+`services/research/validation/`:
+- `walk_forward.py`: sequential walk-forward + purged k-fold with embargo.
+- `deflated_sharpe.py`: Deflated Sharpe Ratio + expected-max-Sharpe(N trials) +
+  min track-record length + PBO (CSCV). DSR decreases with more trials.
+- `gate.py`: ValidationGate -> ValidationResult. Leaky / overfit (low DSR or
+  high PBO) / single-regime strategies CANNOT pass; high trial counts force
+  REQUIRES_HUMAN_REVIEW. Consumes trial_count (review P1-2).
+- 12 tests incl. adversarial: overfit FAILS, injected leakage FAILS,
+  single-regime FAILS, clean PASSES; DSR monotonic in trials; PBO discriminates
+  genuine vs overfit. **G5 met.**
+
+Note: the gate operates on supplied OOS/DSR/PBO inputs; wiring the backtest +
+feature-leakage pipeline to feed it end-to-end (and replacing console_api's
+modulo-hack validation snapshot) is the next integration step.
