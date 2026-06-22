@@ -1,62 +1,51 @@
-# QUANTOS 鈥?Autonomous AI Quantitative Research & Trading System
+# QUANTOS — AI Quantitative Trading Research Platform
 
-**Readiness Level**: L2_DRY_RUN_ONLY
-**Repository**: Standalone 鈥?separated from EXPY monorepo
+**Readiness:** `L2_DRY_RUN_ONLY` — research and dry-run simulation only.
+No live trading, no broker connectivity, no real credentials.
 
-## Quick Start
+> **Status honesty:** this repository is an **early-stage scaffold (~10% built)**.
+> The sections below describe what *actually exists today*; everything else in
+> the [master blueprint](QUANTOS_MASTER_BLUEPRINT.md) is **PLANNED**. See the
+> [development program plan](docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md) for the
+> phased roadmap and [`CLAUDE.md`](CLAUDE.md) for the agent operating guide.
+
+## What exists today
+
+| Area | Path | Status |
+|---|---|---|
+| Research console API | `services/research/console_api/` | Real FastAPI service, but serves **deterministic mock snapshots** (synthetic data), not real research |
+| Research-risk gate | `services/risk/research_risk/domain/` | Real, deterministic, fail-closed 9-engine gate (no tests yet; no kill-switch — Phase 8) |
+| Factor engine | `services/research/factor_engine/domain/` | Real IC/ICIR math (on synthetic data) |
+| Paper trading | `services/research/paper_trading/domain/` | Models real; PnL is a **placeholder** (`notional*0.001`) — real reconciliation is Phase 9 |
+| Dry-run adapters | `apps/research-console/services/trading/dry_run_adapters/` | Real, tested, fail-closed (no broker SDK) |
+| Research console (frontend) | `apps/research-console/src/` | React 18 + Vite 6 + TS (strict) + Tailwind; 25 pages, **mock-first** (not wired to a real backend) |
+
+**Quarantined:** `apps/research-console/services/trading/pre_trade_risk/main.py`
+is **non-functional** (missing modules + an undefined-name bug); preserved for
+the Phase 8 rebuild.
+
+**Empty scaffolding (PLANNED):** `services/{data,alpha,portfolio,execution,
+gateway,intelligence,learning,trading}`, `platform/`, `schemas/`, `proto/`,
+`config/`.
+
+## Quick start
 
 ```bash
-# Research Console (frontend 鈥?9 workspaces)
-cd apps/research-console
-npm install && npm run dev
-# 鈫?http://localhost:3100/research
+# Full fail-closed validation gate (governance scanner + all runnable tests)
+python scripts/validate.py
 
-# Governance Scanner
-python scripts/run_paper_to_live_governance_check.py
+# Frontend (mock-first) → http://localhost:3100/research
+cd apps/research-console && npm ci && npm run dev
 ```
 
-## Project Structure
+## Safety boundary (enforced in code + CI)
 
-```
-QUANTOS/
-鈹溾攢鈹€ services/          # Backend services (24 total)
-鈹?  鈹溾攢鈹€ data/          # Market data, ticks, quality, features
-鈹?  鈹溾攢鈹€ research/      # Datasets, factors, backtests, experiments, agents
-鈹?  鈹溾攢鈹€ alpha/         # Alpha discovery engine, validation gate
-鈹?  鈹溾攢鈹€ portfolio/     # Portfolio construction, optimization
-鈹?  鈹溾攢鈹€ risk/          # Research risk engine
-鈹?  鈹斺攢鈹€ trading/       # Pre-trade risk, Sim OMS, Sim EMS, Exchange Sim, Dry-run adapters
-鈹?鈹溾攢鈹€ apps/research-console/  # Vite + React + TypeScript + Tailwind
-鈹溾攢鈹€ platform/          # K8s, Kafka (70 topics), Vault, Istio, monitoring
-鈹溾攢鈹€ docs/              # Architecture & Governance (phase2a, phase2f, phase2h, phase3a)
-鈹溾攢鈹€ evidence/phase3a/  # Phase 3A evidence artifacts (10 items)
-鈹溾攢鈹€ scripts/           # Gate runners + governance scanner
-鈹溾攢鈹€ proto/             # gRPC service definitions
-鈹溾攢鈹€ schemas/           # Avro event schemas
-鈹斺攢鈹€ tests/integration/ # Integration tests (200+)
-```
+- `live_trading_allowed=False` on all trading dataclasses; the dry-run validator
+  rejects any attempt to enable it.
+- No broker / CTP / FIX SDK imports; no hardcoded credentials.
+- The governance scanner (`apps/research-console/scripts/run_paper_to_live_governance_check.py`)
+  and `tests/governance/` enforce these invariants on every run; CI runs
+  `scripts/validate.py` and is fail-closed.
 
-## Architecture
-
-DDD | CQRS | Event-Driven | Hexagonal | Fail-Closed | 150+ rejection reasons
-
-## Phase Status
-
-| Phase | Status |
-|-------|--------|
-| Phase 1 鈥?Research OS | FROZEN v1.0 鉁?|
-| Phase 2 鈥?Trading Simulation | FROZEN L2 v1.0 鉁?|
-| Phase 3A 鈥?Broker Test | BLOCKED 猬?(10/15 criteria) |
-
-## Safety Boundary
-
-- 鉂?Zero real CTP/FIX connectivity 鈥?AST verified
-- 鉂?Zero broker SDK imports (CTP SDK, QuickFIX) 鈥?AST verified
-- 鉂?Zero real credentials 鈥?all placeholder fields
-- 鉂?Zero live trading code 鈥?live_trading_allowed=false everywhere
-- 鉁?All trading is simulated or synthetic
-- 鉁?8 safety scanners, 0 violations
-
-## Handoff
-
-See `CONTEXT_HANDOFF_PHASE3A.md` for complete project context.
+Live trading must remain impossible without explicit, multi-step human approval
+(see blueprint §1, §5.2).
