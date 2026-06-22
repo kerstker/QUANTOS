@@ -171,7 +171,17 @@ Landed under `services/data/` (pure-Python, deterministic, no real feed):
 
 Tests: 16 (`tests/data/`) incl. adversarial survivorship + PIT split-leak guards.
 
-**G2 status:** bad data is detected; dataset versions tracked + reproducible;
-time alignment testable; PIT/survivorship/no-leak proven by tests. Still pending
-for full G2 sign-off: wiring `console_api`'s synthetic DataCatalog to this real
-data layer (so the frontend reads real PIT data) — next increment.
+Self-review fixes applied: PIT dividend accrual (`cash_dividend_total`),
+restatement test, `normalize_bar` guard, ISO-date validation.
+
+Console wiring (G2): the research console's Data Catalog now sources its
+content hashes and point_in_time_safe flags from the real data layer
+(`services/data/catalog.py`) and advertises `data_backend="PIT_DATA_LAYER_v1"`
+— no longer hardcoded. Response shape preserved; frontend untouched.
+
+**G2: DONE.** Acceptance met — bad data detected; dataset versions tracked +
+reproducible; time alignment testable; data quality report generated;
+PIT / survivorship-free / no-leak proven by tests; console catalog backed by the
+real layer. ~23 data tests + full suite green. Data remains synthetic at L2
+(no real feed); a real PIT data source is an external dependency for higher
+readiness levels. Ready for sign-off to authorize Phase 3 (Feature Layer).
