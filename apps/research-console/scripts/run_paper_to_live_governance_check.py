@@ -51,6 +51,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", 
 SCAN_SUBDIRS = [
     "quantos/contracts",
     "services/data",
+    "services/features",
     "services/risk",
     "services/research/paper_trading",
     "services/trading",
