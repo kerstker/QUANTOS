@@ -77,7 +77,7 @@ def run_backtest(
         if i > 0:
             delta = int(target_shares[i - 1]) - pos
             if delta != 0:
-                c = cost.trade_cost(abs(delta) * price)
+                c = cost.trade_cost(abs(delta) * price, trade_shares=delta, adv_shares=bar.volume)
                 cash -= delta * price        # buying (delta>0) reduces cash
                 cash -= c
                 pos += delta
