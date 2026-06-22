@@ -1,0 +1,48 @@
+# === QUANTOS .gitignore (per QUANTOS_MASTER_BLUEPRINT.md §3) ===
+
+# Dependencies
+node_modules/
+
+# Build / dist artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Python envs & caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+.coverage
+
+# Tooling caches / local state
+.vite/
+.benchmarks/
+.claude/worktrees/
+
+# Logs & temp
+logs/
+*.log
+*.tmp
+*.cache
+
+# Data artifacts (never commit raw data / generated research output)
+*.parquet
+*.csv
+*.db
+*.sqlite
+backtest_results/
+research_outputs/
+data/raw/
+data/cache/
+
+# Secrets / live config (must never be committed — see blueprint §1.1, §5.2, §14)
+.env
+.env.*
+config/live.yaml
+*.secret.yaml
+*.secret.yml
