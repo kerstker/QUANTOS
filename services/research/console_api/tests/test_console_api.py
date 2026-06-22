@@ -128,6 +128,9 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert any(edge["kind"] == "FEATURE_TO_EXPERIMENT" for edge in payload["lineage_edges"])
     assert payload["quality_policy"]["blocks_future_leakage"] is True
     assert payload["quality_policy"]["mutable_raw_inputs"] is False
+    # G2: catalog content hashes + PIT-safety now come from the real data layer.
+    assert payload["data_backend"] == "PIT_DATA_LAYER_v1"
+    assert all(dataset["point_in_time_safe"] for dataset in payload["datasets"])
 
 
 def test_backtest_explainability_snapshot_uses_backend_contract():

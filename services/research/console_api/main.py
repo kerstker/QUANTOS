@@ -966,6 +966,7 @@ def _experiments_payload() -> Dict:
 
 
 def _data_catalog_payload() -> Dict:
+    from services.data.catalog import DATA_BACKEND, dataset_content_hash, verify_point_in_time_safe
     datasets = [
         {
             "dataset_id": "ds-market-daily-bars",
@@ -1039,7 +1040,10 @@ def _data_catalog_payload() -> Dict:
         },
     ]
     for dataset in datasets:
-        dataset["content_hash"] = _short_hash(dataset["dataset_id"], dataset["version"], dataset["snapshot_id"], dataset["row_count"])
+        # content hash + PIT-safety now come from the real services/data layer (G2),
+        # not hardcoded values.
+        dataset["content_hash"] = dataset_content_hash(dataset["dataset_id"], dataset["version"])
+        dataset["point_in_time_safe"] = verify_point_in_time_safe(dataset["dataset_id"])
         dataset["checks"] = [
             {"check_id": f"{dataset['dataset_id']}-coverage", "name": "coverage", "status": "PASS" if dataset["coverage"] >= 0.94 else "WARN", "metric": dataset["coverage"], "threshold": 0.94},
             {"check_id": f"{dataset['dataset_id']}-freshness", "name": "freshness_hours", "status": "PASS" if dataset["freshness_hours"] <= 24 else "WARN", "metric": dataset["freshness_hours"], "threshold": 24},
@@ -1091,6 +1095,7 @@ def _data_catalog_payload() -> Dict:
     return {
         "catalog_mode": "READ_ONLY_DATA_CATALOG",
         "feature_store_mode": "OFFLINE_POINT_IN_TIME_RESEARCH",
+        "data_backend": DATA_BACKEND,
         "summary": {
             "datasets": len(datasets),
             "features": len(features),
