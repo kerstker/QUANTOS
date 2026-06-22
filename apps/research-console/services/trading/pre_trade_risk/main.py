@@ -1,4 +1,21 @@
-"""Pre-Trade Risk Gate 鈥?FastAPI (Phase 2B). Risk gating only. No OMS/EMS/broker."""
+# =============================================================================
+# QUARANTINED - NON-FUNCTIONAL MODULE  (Phase 0.5)
+# -----------------------------------------------------------------------------
+# This module does NOT import or run. Two defects (documented in the Phase 0
+# audit and docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md):
+#   1. Imports `.domain.models` / `.domain.validators`, which do not exist
+#      (the pre_trade_risk/domain/ directory is empty) -> ModuleNotFoundError.
+#   2. `background.add_task(_run)` references an undefined name; the coroutine
+#      is `_exec` (defined below) -> NameError on /evaluate.
+# Do NOT wire this into any runtime. It is preserved (not deleted) for the
+# real rebuild in Phase 8 (Risk Layer). It is excluded from test collection
+# via pyproject.toml [tool.pytest.ini_options] (norecursedirs / --ignore).
+# Marker (asserted by tests): QUANTOS_QUARANTINED_NON_FUNCTIONAL
+# =============================================================================
+"""Pre-Trade Risk Gate - FastAPI (Phase 2B). QUARANTINED / NON-FUNCTIONAL.
+
+Risk gating only. No OMS/EMS/broker. See quarantine banner above.
+"""
 import os, json, asyncio, logging, time, hashlib
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional

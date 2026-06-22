@@ -1,7 +1,9 @@
 """Dry-Run Adapters 鈥?Unit Tests (Phase 2G). Dry-run only. No CTP/FIX SDK."""
-import pytest, random, time, os, ast
-from ..domain.models import *
-from ..domain.engine import *
+import pytest, random, time, os, ast, sys
+# Robust, cwd/import-mode-independent import (matches tests/integration pattern).
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+from services.trading.dry_run_adapters.domain.models import *
+from services.trading.dry_run_adapters.domain.engine import *
 
 random.seed(42)
 
@@ -111,6 +113,8 @@ class TestNoExecution:
         FB = ["password","auth_code","investor_password","broker_password","front_address","real_broker","real_investor"]
         viols = []
         for rt,ds,fs in os.walk(pdir):
+            if 'tests' in rt.split(os.sep) or '__pycache__' in rt.split(os.sep):
+                continue  # don't scan this test file's own keyword list (self-match)
             for f in fs:
                 if not f.endswith('.py'): continue
                 with open(os.path.join(rt,f), encoding="utf-8") as fh:
