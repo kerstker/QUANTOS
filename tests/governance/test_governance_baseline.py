@@ -39,7 +39,7 @@ def test_scanner_covers_safety_critical_allowlist():
     required = [
         os.path.join(REPO, "services", "risk"),
         os.path.join(REPO, "services", "research", "paper_trading"),
-        os.path.join(REPO, "apps", "research-console", "services", "trading"),
+        os.path.join(REPO, "services", "trading"),
     ]
     for r in required:
         assert os.path.normcase(os.path.abspath(r)) in covered, f"not in scan scope: {r}"
@@ -106,9 +106,6 @@ def test_no_false_positive_on_field_names_and_placeholders(tmp_path):
 # --- quarantine of the broken pre-trade risk module --------------------------
 
 def test_pre_trade_risk_is_quarantined():
-    main = os.path.join(
-        REPO, "apps", "research-console", "services", "trading",
-        "pre_trade_risk", "main.py",
-    )
+    main = os.path.join(REPO, "services", "trading", "pre_trade_risk", "main.py")
     content = open(main, encoding="utf-8").read()
     assert "QUANTOS_QUARANTINED_NON_FUNCTIONAL" in content, "quarantine marker missing"

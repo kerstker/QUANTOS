@@ -23,6 +23,8 @@ APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
 
 # (name, argv, cwd)
+# Since Phase 1 unified the two service trees under the repo root, all Python
+# test suites resolve from a single rootdir and run in one pytest invocation.
 CHECKS = [
     (
         "governance-scanner",
@@ -30,24 +32,17 @@ CHECKS = [
         REPO,
     ),
     (
-        "pytest: research (console_api, factor_engine) + governance baseline",
+        "pytest: all suites (contracts, governance, research, trading)",
         [
             sys.executable, "-m", "pytest", "-q",
-            "services/research/console_api/tests/test_console_api.py",
-            "services/research/factor_engine/tests/test_model_compile.py",
             "tests/contracts",
             "tests/governance",
-        ],
-        REPO,
-    ),
-    (
-        "pytest: trading (dry-run adapters unit + integration)",
-        [
-            sys.executable, "-m", "pytest", "-q",
+            "services/research/console_api/tests/test_console_api.py",
+            "services/research/factor_engine/tests/test_model_compile.py",
             "services/trading/dry_run_adapters/tests/test_dry_run.py",
             "tests/integration/test_dry_run_all.py",
         ],
-        APPS,
+        REPO,
     ),
 ]
 

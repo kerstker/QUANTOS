@@ -56,7 +56,6 @@ SCAN_SUBDIRS = [
     "services/alpha",
     "services/portfolio",
     "services/execution",
-    "apps/research-console/services/trading",
 ]
 
 DEFAULT_SCAN_DIRS = [os.path.join(REPO_ROOT, d) for d in SCAN_SUBDIRS]

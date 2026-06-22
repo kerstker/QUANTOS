@@ -35,18 +35,21 @@ Real code:
   (on synthetic data).
 - `services/research/paper_trading/domain/` — models + **placeholder** PnL
   (`notional*0.001`; real reconciliation is Phase 9).
-- `apps/research-console/services/trading/dry_run_adapters/` — real, tested,
-  fail-closed dry-run adapters (no broker SDK).
+- `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
+  adapters (no broker SDK).
 - `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind;
   25 pages, mock-first (not wired to a real backend).
 
 Quarantined / broken:
-- `apps/research-console/services/trading/pre_trade_risk/main.py` —
-  **NON-FUNCTIONAL** (missing domain modules + undefined-name bug). Do not wire;
-  rebuild in Phase 8.
+- `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain
+  modules + undefined-name bug). Do not wire; rebuild in Phase 8.
+
+Shared contracts:
+- `quantos/contracts/` — canonical domain contracts (SafetyConfig §1.2,
+  RejectionReason §8, OrderState §7, RiskDecision). Single source of truth.
 
 Empty scaffolding (PLANNED): `services/{data,alpha,portfolio,execution,gateway,
-intelligence,learning,trading}`, `platform/`, `schemas/`, `proto/`, `config/`.
+intelligence,learning}`, `platform/`, `schemas/`, `proto/`, `config/`.
 
 ## Commands
 
@@ -61,7 +64,6 @@ python apps/research-console/scripts/run_paper_to_live_governance_check.py
 cd apps/research-console && npm ci && npm run typecheck && npm run build && npm test
 ```
 
-Note: there are currently two `services` package trees (repo-root and
-`apps/research-console/`). `scripts/validate.py` runs each test suite from its
-correct working directory — prefer it over a bare `pytest`. Unifying the trees
-is tracked for Phase 1.
+Note: all backend services now live under the repo-root `services/` tree
+(unified in Phase 1; `apps/research-console/` is frontend-only). `scripts/validate.py`
+runs the full suite from the repo root — prefer it over a bare `pytest`.

@@ -17,10 +17,11 @@ No live trading, no broker connectivity, no real credentials.
 | Research-risk gate | `services/risk/research_risk/domain/` | Real, deterministic, fail-closed 9-engine gate (no tests yet; no kill-switch — Phase 8) |
 | Factor engine | `services/research/factor_engine/domain/` | Real IC/ICIR math (on synthetic data) |
 | Paper trading | `services/research/paper_trading/domain/` | Models real; PnL is a **placeholder** (`notional*0.001`) — real reconciliation is Phase 9 |
-| Dry-run adapters | `apps/research-console/services/trading/dry_run_adapters/` | Real, tested, fail-closed (no broker SDK) |
+| Dry-run adapters | `services/trading/dry_run_adapters/` | Real, tested, fail-closed (no broker SDK) |
+| Domain contracts | `quantos/contracts/` | Canonical SafetyConfig (§1.2), RejectionReason (§8), OrderState (§7), RiskDecision |
 | Research console (frontend) | `apps/research-console/src/` | React 18 + Vite 6 + TS (strict) + Tailwind; 25 pages, **mock-first** (not wired to a real backend) |
 
-**Quarantined:** `apps/research-console/services/trading/pre_trade_risk/main.py`
+**Quarantined:** `services/trading/pre_trade_risk/main.py`
 is **non-functional** (missing modules + an undefined-name bug); preserved for
 the Phase 8 rebuild.
 
