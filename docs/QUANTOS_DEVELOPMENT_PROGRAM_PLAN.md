@@ -184,4 +184,31 @@ reproducible; time alignment testable; data quality report generated;
 PIT / survivorship-free / no-leak proven by tests; console catalog backed by the
 real layer. ~23 data tests + full suite green. Data remains synthetic at L2
 (no real feed); a real PIT data source is an external dependency for higher
-readiness levels. Ready for sign-off to authorize Phase 3 (Feature Layer).
+readiness levels. **G2: DONE.**
+
+## 10. Phase 3 — Feature Layer (DONE / G3)
+
+`services/features/` on top of the PIT data layer:
+- `calculation.py`: rolling features use only bars at-or-before each event_time;
+  a value's knowledge_time = max knowledge_time of its window (PIT). Deterministic.
+- `leakage.py`: dynamic detector (perturb all post-target bars; if the value
+  changes, it leaked → FAIL) + static lookback guard.
+- `registry.py` (versioned + status), `feature_set.py` (rejects unknown features),
+  `validation.py` (missing / non-finite / alignment + leakage → FeatureValidationResult).
+- 12 tests incl. the key guard: a future-peeking feature MUST fail detect_leakage;
+  a past-only feature passes. **G3 met.**
+
+## 11. Phase 4 — Backtest Engine (in progress; increment 1)
+
+`services/research/backtest_engine/`:
+- `engine.py`: deterministic, event-driven, single-instrument. Decisions at bar i
+  execute at bar i+1 close (next-bar fill, no lookahead). Mark-to-market equity
+  reconciles EXACTLY to (mtm_pnl − total_cost) — `reconciliation_residual()` ~0.
+- `costs.py`: CostModel (fee + slippage bps); PnL always net-of-cost.
+- `metrics.py`: returns / Sharpe / Sortino / max-drawdown / Calmar / vol.
+- 7 tests incl. determinism, next-bar-fill, exact PnL reconciliation, accounting.
+
+Remaining for full Phase 4 (G4): fill-model variants, market-impact / capacity,
+date-aware annualization, multi-instrument portfolios, research-report wiring,
+and replacing the console's synthetic backtest path. Walk-forward / Deflated
+Sharpe / PBO are Phase 5 (Validation Gate).
