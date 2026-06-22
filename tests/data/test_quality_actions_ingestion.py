@@ -8,7 +8,7 @@ from services.data import quality
 from services.data.normalization import (
     FutureDataError, align_to_calendar, normalize_bar, normalize_timestamp, reject_if_future,
 )
-from services.data.corporate_actions import adjusted_close, split_factor
+from services.data.corporate_actions import adjusted_close, cash_dividend_total, split_factor
 from services.data.ingestion import InMemoryMarketDataSource, MarketDataSource
 
 
@@ -50,6 +50,12 @@ def test_normalize_bar_rejects_bad_row():
                        "high": 8, "low": 9, "close": 10}, knowledge_time=1)
 
 
+def test_normalize_bar_rejects_raw_knowledge_time():
+    with pytest.raises(ValueError):
+        normalize_bar({"instrument_id": "X", "event_time": 1, "knowledge_time": 1,
+                       "open": 10, "high": 10, "low": 10, "close": 10}, knowledge_time=2)
+
+
 def test_reject_future_bar():
     with pytest.raises(FutureDataError):
         reject_if_future(_bar(200, 200), now=100)
@@ -72,6 +78,17 @@ def test_split_adjustment_is_point_in_time():
     assert split_factor([split], bar.event_time, as_of=150) == 1.0
     # Once knowable (as_of >= 190): adjusted.
     assert adjusted_close(bar, [split], as_of=300) == 50.0
+
+
+def test_cash_dividend_total_is_point_in_time():
+    div = CorporateAction(instrument_id="X", event_time=200, knowledge_time=190,
+                          action_type=CorporateActionType.DIVIDEND, ex_date="2026-03-01", amount=0.5)
+    # within window AND knowable -> accrued
+    assert cash_dividend_total([div], start_exclusive=100, end_inclusive=300, as_of=300) == 0.5
+    # not knowable yet (as_of before announcement) -> not accrued (PIT)
+    assert cash_dividend_total([div], start_exclusive=100, end_inclusive=300, as_of=150) == 0.0
+    # outside ex window -> not accrued
+    assert cash_dividend_total([div], start_exclusive=250, end_inclusive=300, as_of=300) == 0.0
 
 
 def test_split_only_affects_prior_bars():

@@ -32,6 +32,17 @@ def test_latest_as_of_and_event_cap():
     assert s.latest_as_of("X", as_of_time=50) is None
 
 
+def test_restatement_respects_point_in_time():
+    # Same event_time, a later-knowable correction (restatement).
+    s = PITStore()
+    s.add("X", _bar(100, 100, close=10.0))   # original, knowable at 100
+    s.add("X", _bar(100, 150, close=11.0))   # corrected value, only knowable at 150
+    # Before the correction is knowable -> original value.
+    assert s.latest_as_of("X", as_of_time=120).close == 10.0
+    # Once knowable -> corrected value wins (ordered by knowledge_time within event).
+    assert s.latest_as_of("X", as_of_time=200).close == 11.0
+
+
 def test_as_of_is_deterministically_ordered():
     s = PITStore()
     s.add("X", _bar(300, 300)); s.add("X", _bar(100, 100)); s.add("X", _bar(200, 200))
@@ -49,6 +60,16 @@ def test_delisted_name_still_present_as_of_historical_date():
     assert u.members_as_of("2019-05-01") == {"DEAD", "LIVE"}
     # Today, DEAD is gone.
     assert u.members_as_of("2026-01-01") == {"LIVE"}
+
+
+def test_universe_rejects_malformed_dates():
+    import pytest
+    u = PITUniverse()
+    with pytest.raises(ValueError):
+        u.add_membership("X", "2019-5-1")          # not zero-padded
+    u.add_membership("X", "2019-05-01")
+    with pytest.raises(ValueError):
+        u.members_as_of("not-a-date")
 
 
 def test_delisted_then_readded_ticker():

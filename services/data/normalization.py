@@ -22,8 +22,11 @@ class FutureDataError(ValueError):
 
 
 def normalize_bar(raw: dict, knowledge_time: int) -> Bar:
-    """Build a validated Bar from a raw mapping. Raises pydantic ValidationError
-    on inconsistent OHLC / non-positive prices / lookahead."""
+    """Build a validated Bar from a raw mapping. `knowledge_time` is supplied by
+    the caller (ingestion clock); the raw row must NOT carry its own. Raises
+    pydantic ValidationError on inconsistent OHLC / non-positive prices / lookahead."""
+    if "knowledge_time" in raw:
+        raise ValueError("raw row must not contain 'knowledge_time'; pass it explicitly")
     return Bar(knowledge_time=knowledge_time, **raw)
 
 
