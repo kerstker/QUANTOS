@@ -109,4 +109,33 @@ validation harness). Delivered:
 6. README/docs reconciled to verified reality.
 
 **G0.5 acceptance:** `python scripts/validate.py` green and fail-closed; zero
-domain-logic change; human sign-off authorizes **Phase 1**.
+domain-logic change; human sign-off authorizes **Phase 1**. — DONE.
+
+## 8. Phase 1 — Architecture Contracts & Domain Models (in progress)
+
+Decisions (human-approved):
+- **Modeling standard: pydantic v2** for data-bearing domain entities; enums and
+  the order state machine remain stdlib. All contracts live in the single
+  collision-free `quantos.contracts` namespace.
+- **Unify the two `services` trees**: DONE — all backend services now live under
+  the repo-root `services/`; `apps/research-console/` is frontend-only; the test
+  gate runs from one rootdir.
+- **`console_api/main.py` decomposition: deferred.** It is ~3,680 lines of mock
+  snapshot code that Phase 2+ will progressively replace with real backends;
+  it will be split into per-domain routers incrementally as real implementations
+  land, behind its existing contract tests. (Refactoring mock-only code now is
+  high-risk, low-ROI.)
+
+Landed so far:
+- `quantos/contracts/`: SafetyConfig (§1.2), RejectionReason (§8, 20 reasons) +
+  legacy crosswalk, OrderState machine (§7), RiskDecision, reproducibility hash.
+- Trading domain entities (§6.6): OrderIntent / Order / Fill / ExecutionReport
+  (pydantic, validated, intent-only / no live capability).
+- 25 contract tests; full suite (128+ tests) green from the unified rootdir.
+
+Remaining for Phase 1 (next increments): the other §6 domains — Data
+(MarketData, Bar, Tick, Instrument, TradingCalendar, CorporateAction,
+DatasetVersion, DataQualityReport), Feature, Research (Factor, Alpha, Strategy,
+Experiment, Backtest*, ValidationResult), Portfolio, Governance (AuditEvent,
+ApprovalRecord, *Version) — plus event/proto schemas under `schemas/` and
+`proto/`.

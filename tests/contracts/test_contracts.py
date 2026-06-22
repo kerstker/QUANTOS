@@ -1,9 +1,16 @@
 """Phase 1 — canonical contract tests (validation, state transitions, config,
 serialization round-trip)."""
 import pytest
+from pydantic import ValidationError
 
 from quantos.contracts import (
     RESEARCH_SAFE_DEFAULTS,
+    OrderIntent,
+    Order,
+    Fill,
+    ExecutionReport,
+    OrderSide,
+    OrderType,
     SafetyConfig,
     SafetyViolation,
     RejectionReason,
@@ -117,17 +124,17 @@ def test_illegal_transitions_rejected():
 # --- RiskDecision ------------------------------------------------------------
 
 def test_rejected_requires_reasons():
-    with pytest.raises(ValueError):
-        RiskDecision(RiskDecisionType.REJECTED, ())
+    with pytest.raises(ValidationError):
+        RiskDecision(decision=RiskDecisionType.REJECTED, reasons=())
 
 
 def test_approved_forbids_reasons():
-    with pytest.raises(ValueError):
-        RiskDecision(RiskDecisionType.APPROVED, (RejectionReason.INSUFFICIENT_CASH,))
+    with pytest.raises(ValidationError):
+        RiskDecision(decision=RiskDecisionType.APPROVED, reasons=(RejectionReason.INSUFFICIENT_CASH,))
 
 
 def test_risk_decision_roundtrip_and_hash():
-    d = RiskDecision(RiskDecisionType.REJECTED, (RejectionReason.KILL_SWITCH_ACTIVE,))
+    d = RiskDecision(decision=RiskDecisionType.REJECTED, reasons=(RejectionReason.KILL_SWITCH_ACTIVE,))
     assert d.approved is False
     rt = RiskDecision.from_dict(d.to_dict())
     assert rt == d
@@ -135,7 +142,49 @@ def test_risk_decision_roundtrip_and_hash():
 
 
 def test_approved_with_limits_is_approved():
-    assert RiskDecision(RiskDecisionType.APPROVED_WITH_LIMITS).approved is True
+    assert RiskDecision(decision=RiskDecisionType.APPROVED_WITH_LIMITS).approved is True
+
+
+# --- Trading domain entities (§6.6) ------------------------------------------
+
+def test_order_intent_rejects_non_positive_quantity():
+    with pytest.raises(ValidationError):
+        OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=0)
+
+
+def test_limit_order_requires_price():
+    with pytest.raises(ValidationError):
+        OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=1, order_type=OrderType.LIMIT)
+    ok = OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=1,
+                     order_type=OrderType.LIMIT, limit_price=10.5)
+    assert ok.limit_price == 10.5
+
+
+def test_market_order_forbids_limit_price():
+    with pytest.raises(ValidationError):
+        OrderIntent(instrument_id="X", side=OrderSide.SELL, quantity=1,
+                    order_type=OrderType.MARKET, limit_price=10.0)
+
+
+def test_order_filled_cannot_exceed_intent():
+    intent = OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=100)
+    Order(order_id="o1", intent=intent, filled_quantity=100)  # ok
+    with pytest.raises(ValidationError):
+        Order(order_id="o1", intent=intent, filled_quantity=101)
+
+
+def test_order_defaults_to_created_state():
+    intent = OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=1)
+    assert Order(order_id="o1", intent=intent).state == OrderState.CREATED
+
+
+def test_trading_entities_roundtrip():
+    intent = OrderIntent(instrument_id="X", side=OrderSide.BUY, quantity=5)
+    rep = ExecutionReport(report_id="r1", order_id="o1", state=OrderState.FILLED,
+                          filled_quantity=5)
+    assert ExecutionReport.model_validate(rep.model_dump()) == rep
+    assert OrderIntent.model_validate(intent.model_dump()) == intent
+    assert Fill(fill_id="f1", order_id="o1", quantity=5, price=10.0).quantity == 5
 
 
 # --- hashing (CT-3) ----------------------------------------------------------

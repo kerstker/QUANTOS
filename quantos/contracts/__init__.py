@@ -16,6 +16,7 @@ from .order import (
 )
 from .rejection import LEGACY_DRY_RUN_CROSSWALK, RejectionReason, from_legacy
 from .risk import RiskDecision, RiskDecisionType
+from .trading import ExecutionReport, Fill, Order, OrderIntent, OrderSide, OrderType
 
 __all__ = [
     "SafetyConfig", "SafetyViolation", "RESEARCH_SAFE_DEFAULTS",
@@ -23,5 +24,6 @@ __all__ = [
     "OrderState", "ALLOWED_TRANSITIONS", "TERMINAL_STATES",
     "can_transition", "assert_transition", "is_terminal", "InvalidOrderTransition",
     "RiskDecision", "RiskDecisionType",
+    "OrderIntent", "Order", "Fill", "ExecutionReport", "OrderSide", "OrderType",
     "stable_hash", "short_hash",
 ]
