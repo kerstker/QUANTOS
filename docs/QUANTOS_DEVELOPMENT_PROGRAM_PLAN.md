@@ -147,4 +147,31 @@ scaffolded.
 **G1 acceptance:** all core entities exist and are typed; invalid states are
 rejected at construction; serialization round-trips; 52 contract tests + full
 suite green; safety invariants hold (live impossible, AI cannot be live actor,
-no-lookahead by construction). Ready for human sign-off to authorize Phase 2.
+no-lookahead by construction). — DONE.
+
+## 9. Phase 2 — Data Layer (in progress; closes Gap 1 foundations)
+
+Landed under `services/data/` (pure-Python, deterministic, no real feed):
+- **PIT bitemporal store** (`pit_store.py`): `as_of()` returns only records
+  knowable at the query time — lookahead cannot be read out.
+- **Survivorship-free universe** (`universe.py`): point-in-time interval
+  membership; delisted and delisted-then-readded names handled.
+- **Dataset versioning** (`versioning.py`): reproducible, order-independent
+  content hash -> stable `DatasetVersion`.
+- **Quality** (`quality.py`): missing / duplicate / out-of-order / future
+  detection -> `DataQualityReport`.
+- **Normalization/alignment** (`normalization.py`): validated Bar construction,
+  timezone->UTC-epoch alignment, fail-closed future-data rejection, calendar
+  alignment.
+- **PIT-correct corporate actions** (`corporate_actions.py`): split adjustment
+  applied only if knowable by `as_of` (no retroactive leak). Contract fix:
+  `CorporateAction` is a forward announcement (knowledge may precede event).
+- **Ingestion interface** (`ingestion.py`): `MarketDataSource` Protocol +
+  synthetic in-memory source.
+
+Tests: 16 (`tests/data/`) incl. adversarial survivorship + PIT split-leak guards.
+
+**G2 status:** bad data is detected; dataset versions tracked + reproducible;
+time alignment testable; PIT/survivorship/no-leak proven by tests. Still pending
+for full G2 sign-off: wiring `console_api`'s synthetic DataCatalog to this real
+data layer (so the frontend reads real PIT data) — next increment.
