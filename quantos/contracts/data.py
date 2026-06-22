@@ -77,10 +77,19 @@ class Tick(BitemporalRecord):
     ask: float | None = Field(default=None, gt=0)
 
 
-class CorporateAction(BitemporalRecord):
+class CorporateAction(BaseModel):
+    """A forward-looking announcement (NOT a bitemporal observation): the
+    announcement (`knowledge_time`) typically PRECEDES the ex/effective moment
+    (`event_time`), so the knowledge>=event invariant deliberately does not
+    apply here. PIT-correctness is enforced at adjustment time by only applying
+    actions whose knowledge_time <= the query's as_of."""
+    model_config = ConfigDict(frozen=True)
+
     instrument_id: str = Field(min_length=1)
     action_type: CorporateActionType
-    ex_date: str  # ISO date the action takes effect
+    knowledge_time: int = Field(ge=0)   # when the action became knowable (announcement)
+    event_time: int = Field(ge=0)       # ex / effective moment
+    ex_date: str                        # ISO date the action takes effect
     ratio: float = Field(default=1.0, gt=0)   # e.g. split ratio
     amount: float = Field(default=0.0, ge=0)  # e.g. dividend per share
 
