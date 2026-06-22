@@ -50,6 +50,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", 
 # execution. Empty (scaffolding) trees are included to future-proof coverage.
 SCAN_SUBDIRS = [
     "quantos/contracts",
+    "services/data",
     "services/risk",
     "services/research/paper_trading",
     "services/trading",
