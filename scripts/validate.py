@@ -35,6 +35,7 @@ CHECKS = [
             sys.executable, "-m", "pytest", "-q",
             "services/research/console_api/tests/test_console_api.py",
             "services/research/factor_engine/tests/test_model_compile.py",
+            "tests/contracts",
             "tests/governance",
         ],
         REPO,
