@@ -53,6 +53,7 @@ SCAN_SUBDIRS = [
     "services/data",
     "services/features",
     "services/risk",
+    "services/research/backtest_engine",
     "services/research/paper_trading",
     "services/trading",
     "services/alpha",
