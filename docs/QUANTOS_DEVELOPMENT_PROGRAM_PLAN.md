@@ -133,9 +133,18 @@ Landed so far:
   (pydantic, validated, intent-only / no live capability).
 - 25 contract tests; full suite (128+ tests) green from the unified rootdir.
 
-Remaining for Phase 1 (next increments): the other §6 domains — Data
-(MarketData, Bar, Tick, Instrument, TradingCalendar, CorporateAction,
-DatasetVersion, DataQualityReport), Feature, Research (Factor, Alpha, Strategy,
-Experiment, Backtest*, ValidationResult), Portfolio, Governance (AuditEvent,
-ApprovalRecord, *Version) — plus event/proto schemas under `schemas/` and
-`proto/`.
+All §6 domains landed (pydantic): Data (`data.py` — Instrument, Bar, Tick,
+TradingCalendar, CorporateAction, DatasetVersion, DataQualityReport),
+Feature (`feature.py`), Research (`research.py` — Factor, Alpha+AlphaState,
+Strategy, Experiment, Backtest*, ValidationResult+verdict), Portfolio
+(`portfolio.py`), Governance (`governance.py` — AuditEvent hash-chain,
+ApprovalRecord, *Version, DeploymentRecord [LIVE requires approval],
+IncidentReport). Bitemporal `temporal.py` enforces the CT-1 no-lookahead
+invariant. Canonical `events.py` event envelope. JSON Schemas generated under
+`schemas/` via `scripts/gen_schemas.py` with a drift-guard test; `proto/`
+scaffolded.
+
+**G1 acceptance:** all core entities exist and are typed; invalid states are
+rejected at construction; serialization round-trips; 52 contract tests + full
+suite green; safety invariants hold (live impossible, AI cannot be live actor,
+no-lookahead by construction). Ready for human sign-off to authorize Phase 2.
