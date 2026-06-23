@@ -286,4 +286,28 @@ alpha sleeves; no live surface — import-boundary tested):
   cost-aware rebalance -> RebalancePlan of per-alpha budget weights + turnover) +
   risk_budget_report. PortfolioConfig holds the thresholds.
 - 18 tests. Deferred: explicit multi-factor risk model, attribution wiring,
-  console surfacing. Phase 8 (Risk Layer) is next.
+  console surfacing.
+
+## 15. Phase 8 — Risk Layer / Pre-Trade Gatekeeper (core done)
+
+Built from a 4-lens design workshop + adversarial critique (`docs/RISK_LAYER_SPEC.md`);
+all 4 critique P0s folded in. New `services/risk/pre_trade/` (one-directional dep:
+portfolio/alpha → risk; the quarantined `services/trading/pre_trade_risk` stays):
+- config.RiskLimits (frozen; no "unlimited" sentinel; empty allow-lists reject-all);
+  context.* with `allow_inf_nan=False` (NaN/inf rejected at construction);
+  exposures computed from positions.
+- kill_switch: latched, fail-closed `is_active` (corrupt state ⇒ active), any-actor
+  arm, HUMAN-only incident-bound reset via a matching ApprovalRecord.
+- checks: 23 pure check_* + CHECK_REGISTRY; two-stage (hard gates + post-trade SIGNED
+  limit checks); every reject → one of the 20 canonical §8 RejectionReason (all 20
+  reachable, capstone-tested).
+- gate.PreTradeRiskGate.evaluate: assert_research_safe at construction; binds one
+  safety config + authoritative kill-switch state; runs ALL checks collecting ALL
+  reasons (deduped, no masking); per-check + outer try/except ⇒ UNKNOWN_RISK_ERROR
+  (never approve on error); emits only APPROVED/REJECTED; audit-then-or-reject.
+  approval_ref() yields a usable ref ONLY for APPROVED, so the dry-run boundary fails
+  a rejected one closed (verified end-to-end). + hash-chained audit, order_bridge.
+- ~30 tests (fail-closed, collect-all, boundaries, sell-flip, post-trade aggregate,
+  kill-switch latch/human-only-reset/corrupt-fails-active, no-intent-mutation,
+  all-20-reachable, P0-1). New contract quantos/contracts/killswitch.py.
+Next: independent adversarial code review of the built gate, then Phase 9 (paper trading).
