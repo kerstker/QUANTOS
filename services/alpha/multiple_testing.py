@@ -24,19 +24,24 @@ def effective_trials(n_trials: int, mean_abs_corr: float) -> float:
     return n_trials / (1.0 + (n_trials - 1) * rho)
 
 
-def catalog_dsr(observed_sr: float, n_obs: int, catalog) -> float:
-    """Deflated Sharpe deflated for EVERY alpha ever tried."""
-    return deflated_sharpe_ratio(
-        observed_sr, n_obs,
-        catalog.global_trial_count(),
-        catalog.catalog_var_sr(),
-    )
+def catalog_dsr(observed_sr: float, n_obs: int, catalog) -> Optional[float]:
+    """Deflated Sharpe deflated for EVERY alpha ever tried. Returns None when the
+    catalog has no honest cross-trial variance estimate yet (< 2 populated
+    alphas) — the caller must route to human review, NOT deflate against a
+    fabricated floor (review P0)."""
+    var_sr = catalog.catalog_var_sr()
+    if var_sr is None:
+        return None
+    return deflated_sharpe_ratio(observed_sr, n_obs, catalog.global_trial_count(), var_sr)
 
 
-def noise_benchmark(catalog) -> float:
+def noise_benchmark(catalog) -> Optional[float]:
     """Expected max Sharpe under the catalog's trial budget — the bar an alpha's
-    Sharpe must clear to be more than the best of N coin flips."""
-    return expected_max_sharpe(catalog.global_trial_count(), catalog.catalog_var_sr())
+    Sharpe must clear to be more than the best of N coin flips. None if no var_sr."""
+    var_sr = catalog.catalog_var_sr()
+    if var_sr is None:
+        return None
+    return expected_max_sharpe(catalog.global_trial_count(), var_sr)
 
 
 def benjamini_hochberg(pvalues: Sequence[Optional[float]], q: float = 0.10) -> set[int]:

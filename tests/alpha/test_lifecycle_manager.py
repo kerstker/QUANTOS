@@ -115,3 +115,23 @@ def test_agent_may_de_risk_to_retired():
     _to_paper(mgr, cat)
     tr = mgr.advance("a1", S.RETIRED, AGENT, timestamp=20)   # de-risking allowed
     assert cat.state("a1") == S.RETIRED and tr.dst_state == S.RETIRED
+
+
+def test_human_cannot_spend_another_humans_token():
+    mgr, cat = _mgr()
+    _to_paper(mgr, cat)
+    alice_token = ApprovalRecord(approval_id="ap", subject_id="a1", approver="alice",
+                                 approved=True, timestamp=9)
+    bob = Actor(actor_id="bob", kind=ActorKind.HUMAN)        # different human
+    with pytest.raises(GuardRejected):                       # APPROVER_IDENTITY_MISMATCH
+        mgr.advance("a1", S.APPROVED, bob, timestamp=10, approval=alice_token, paper_evidence=GOOD_PAPER)
+
+
+def test_catalog_growth_after_paper_blocks_approval():
+    mgr, cat = _mgr()
+    _to_paper(mgr, cat)                                      # eval captured at trial_count=1
+    for k in range(5):
+        cat.register_trial(f"c{k}")                          # catalog grows -> DSR now understated
+    ok = ApprovalRecord(approval_id="z", subject_id="a1", approver="alice", approved=True, timestamp=13)
+    with pytest.raises(GuardRejected):                       # TRIAL_COUNT_UNDERSTATED_AT_APPROVAL
+        mgr.advance("a1", S.APPROVED, HUMAN, timestamp=13, approval=ok, paper_evidence=GOOD_PAPER)

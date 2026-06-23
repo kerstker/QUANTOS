@@ -55,3 +55,23 @@ class AlphaRetirementSystem:
             return decision, None
         tr = self.manager.advance(alpha_id, AlphaState.RETIRED, actor, timestamp=timestamp)
         return decision, tr
+
+    def sweep(
+        self,
+        evidence_by_alpha: dict[str, dict],
+        actor: Actor,
+        *,
+        timestamp: int,
+        states: tuple[AlphaState, ...] = (AlphaState.APPROVED, AlphaState.PAPER_TRADING),
+    ) -> dict[str, tuple]:
+        """The production DRIVER: scan live (APPROVED/PAPER_TRADING) alphas and
+        retire those that have decayed. Without a caller of this, decay/retirement
+        is dead code (review P0). A scheduler invokes sweep periodically; the
+        scheduling itself is out of scope at L2 (no live loop).
+        """
+        results: dict[str, tuple] = {}
+        for aid in self.manager.catalog.all_ids():
+            if self.manager.catalog.state(aid) in states:
+                results[aid] = self.retire_if_needed(
+                    aid, actor, timestamp=timestamp, **evidence_by_alpha.get(aid, {}))
+        return results

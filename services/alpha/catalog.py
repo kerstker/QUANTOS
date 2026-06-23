@@ -33,13 +33,16 @@ class AlphaCatalog:
 
     # --- registration & multiple-testing accounting --------------------------
 
-    def register(self, definition: AlphaDefinition, *, config_hash: Optional[str] = None) -> None:
+    def register(self, definition: AlphaDefinition) -> None:
+        # Always count by the definition's own hash — no caller-supplied override,
+        # which could collide distinct specs to one hash and undercount trials
+        # (review P0). definition_hash is derived from factor_ids/universe/params.
         aid = definition.alpha_id
         if aid in self._defs:
             raise ValueError(f"alpha already registered: {aid}")
         self._defs[aid] = definition
         self._state[aid] = AlphaState.DRAFT
-        self.register_trial(config_hash or definition.definition_hash)
+        self.register_trial(definition.definition_hash)
 
     def register_trial(self, config_hash: str) -> None:
         """Count a never-seen config exactly once; monotonic, never decremented."""
@@ -50,10 +53,18 @@ class AlphaCatalog:
     def global_trial_count(self) -> int:
         return self._trial_count
 
-    def catalog_var_sr(self) -> float:
+    def catalog_var_sr(self) -> Optional[float]:
+        """Population variance of per-observation Sharpe across the catalog.
+
+        Returns None when fewer than 2 alphas have returns: there is NO honest
+        cross-trial variance estimate yet, and silently flooring it to 1e-4 would
+        UN-deflate Deflated Sharpe and let a noise alpha pass (review P0). The
+        caller must route to human review instead of fabricating a tiny var_sr.
+        """
         vals = list(self._sharpes.values())
-        v = statistics.pstdev(vals) ** 2 if len(vals) > 1 else _VAR_SR_FLOOR
-        return max(v, _VAR_SR_FLOOR)
+        if len(vals) < 2:
+            return None
+        return max(statistics.pstdev(vals) ** 2, _VAR_SR_FLOOR)
 
     # --- per-alpha data ------------------------------------------------------
 

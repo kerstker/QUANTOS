@@ -31,11 +31,12 @@ def test_duplicate_alpha_id_rejected():
         cat.register(_def("a1", factors=("fx",)))
 
 
-def test_catalog_var_sr_uses_whole_population_and_is_floored():
+def test_catalog_var_sr_is_none_below_two_populated_then_real():
     cat = AlphaCatalog()
-    assert cat.catalog_var_sr() == pytest.approx(1e-4)   # floor when <2 series
+    assert cat.catalog_var_sr() is None                  # no honest estimate yet (review P0)
     cat.register(_def("a1")); cat.register(_def("a2")); cat.register(_def("a3"))
     cat.set_returns("a1", [0.01, 0.02, 0.0, 0.03])
+    assert cat.catalog_var_sr() is None                  # still only 1 populated
     cat.set_returns("a2", [-0.01, 0.04, 0.02, -0.02])
     cat.set_returns("a3", [0.05, -0.03, 0.01, 0.02])
     assert cat.catalog_var_sr() > 1e-4                   # reflects the population spread

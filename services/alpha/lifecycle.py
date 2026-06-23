@@ -38,6 +38,7 @@ class AlphaLifecycleManager:
         self.config = config or AlphaFactoryConfig()
         self.transitions: list[AlphaTransition] = []
         self.audit: list[AuditEvent] = []
+        self._eval_trial_count: dict[str, int] = {}   # last-seen eval trial count per alpha
 
     def advance(
         self,
@@ -62,6 +63,8 @@ class AlphaLifecycleManager:
             raise GuardRejected(reasons)
 
         # 3) commit + tamper-evident audit
+        if evaluation is not None:
+            self._eval_trial_count[alpha_id] = evaluation.catalog_trial_count
         self.catalog._set_state(alpha_id, dst)
         evidence_hash = stable_hash({
             "alpha_id": alpha_id, "src": src.value, "dst": dst.value,
@@ -95,7 +98,9 @@ class AlphaLifecycleManager:
         if dst == AlphaState.PAPER_TRADING:
             return guards.guard_to_paper(evaluation, self.config, cc)
         if dst == AlphaState.APPROVED:
-            return guards.guard_to_approved(alpha_id, approval, actor, paper_evidence, self.config)
+            return guards.guard_to_approved(
+                alpha_id, approval, actor, paper_evidence, self.config,
+                eval_trial_count=self._eval_trial_count.get(alpha_id), catalog_count=cc)
         if dst in (AlphaState.REJECTED, AlphaState.RETIRED):
             return True, ()      # rejection / de-risking is always permitted
         return False, ("UNKNOWN_TRANSITION",)

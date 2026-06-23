@@ -52,9 +52,12 @@ def guard_to_paper(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryCo
 
 
 def guard_to_approved(alpha_id: str, approval: Optional[ApprovalRecord], actor: Actor,
-                      paper_evidence: Optional[dict], config: AlphaFactoryConfig) -> tuple[bool, Reasons]:
+                      paper_evidence: Optional[dict], config: AlphaFactoryConfig,
+                      eval_trial_count: Optional[int] = None,
+                      catalog_count: Optional[int] = None) -> tuple[bool, Reasons]:
     """APPROVED is human-only AND evidence-gated. The actor.kind is the verifiable
-    human check the ApprovalRecord contract alone cannot provide (critique P0-3)."""
+    human check the ApprovalRecord contract alone cannot provide (critique P0-3);
+    the approver-identity check stops one human from spending another's token."""
     reasons = []
     if not actor.is_human:
         reasons.append("APPROVER_NOT_HUMAN")
@@ -65,6 +68,12 @@ def guard_to_approved(alpha_id: str, approval: Optional[ApprovalRecord], actor: 
             reasons.append("APPROVAL_NOT_GRANTED")
         if approval.subject_id != alpha_id:
             reasons.append("APPROVAL_SUBJECT_MISMATCH")
+        if approval.approver != actor.actor_id:          # the executor must own the token (review P0)
+            reasons.append("APPROVER_IDENTITY_MISMATCH")
+    # the catalog may have grown since this alpha was evaluated -> its DSR is now
+    # understated; refuse approval on a stale trial count (review P1)
+    if eval_trial_count is not None and catalog_count is not None and eval_trial_count < catalog_count:
+        reasons.append("TRIAL_COUNT_UNDERSTATED_AT_APPROVAL")
     if paper_evidence is None:
         reasons.append("NO_PAPER_EVIDENCE")
     else:

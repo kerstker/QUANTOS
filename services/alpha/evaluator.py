@@ -77,12 +77,17 @@ class AlphaEvaluator:
         self.catalog.set_returns(alpha_id, net)
         trial_count = max(1, self.catalog.global_trial_count())
 
-        # 3) catalog-wide Deflated Sharpe
-        dsr = _clamp01(catalog_dsr(observed_sr, max(len(net), 2), self.catalog)) if len(net) >= 2 else 0.0
+        # 3) catalog-wide Deflated Sharpe (None if the catalog lacks an honest
+        #    cross-trial variance estimate yet)
+        dsr_raw = catalog_dsr(observed_sr, max(len(net), 2), self.catalog) if len(net) >= 2 else None
+        dsr = _clamp01(dsr_raw) if dsr_raw is not None else 0.0
 
-        # 4) verdict — thin coverage fails closed to human review
+        # 4) verdict — fail closed to human review on thin coverage OR when DSR
+        #    cannot be honestly computed against the catalog yet (review P0)
         if not m["coverage_ok"]:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("THIN_COVERAGE",)
+        elif dsr_raw is None:
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("INSUFFICIENT_CATALOG_FOR_DSR",)
         else:
             vr = self.gate.evaluate(
                 alpha_id,

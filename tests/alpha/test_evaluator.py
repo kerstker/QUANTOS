@@ -54,11 +54,27 @@ def test_thin_coverage_routes_to_human_review():
     assert "THIN_COVERAGE" in r.reasons
 
 
+def _seeded_cat(extra_trials=0):
+    """Catalog with a1 + 2 populated seed alphas, so catalog_var_sr is a real
+    estimate (not the fail-closed None for a <2-population catalog)."""
+    c = _cat()
+    for i, rets in enumerate([(0.01, 0.02, -0.01, 0.03), (0.02, -0.01, 0.0, 0.01)]):
+        c.register(AlphaDefinition(alpha_id=f"seed{i}", name="S", factor_ids=(f"sf{i}",)))
+        c.set_returns(f"seed{i}", rets)
+    for k in range(extra_trials):
+        c.register_trial(f"x{k}")
+    return c
+
+
 def test_catalog_wide_trial_count_deflates_dsr():
-    r_small = AlphaEvaluator(_cat(), cost=CostModel(0, 0)).evaluate("a1", _panel())
-    big = _cat()
-    for k in range(400):
-        big.register_trial(f"c{k}")
-    r_big = AlphaEvaluator(big, cost=CostModel(0, 0)).evaluate("a1", _panel())
+    r_small = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel())
+    r_big = AlphaEvaluator(_seeded_cat(400), cost=CostModel(0, 0)).evaluate("a1", _panel())
     assert r_big.catalog_trial_count >= 400
     assert r_big.deflated_sharpe <= r_small.deflated_sharpe
+
+
+def test_single_alpha_catalog_routes_to_human_review():
+    # a <2-population catalog has no honest var_sr -> fail-closed (review P0)
+    r = AlphaEvaluator(_cat(), cost=CostModel(0, 0)).evaluate("a1", _panel())
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "INSUFFICIENT_CATALOG_FOR_DSR" in r.reasons

@@ -60,3 +60,24 @@ def test_no_retirement_no_transition():
                                         decay=DecayReport(alpha_id="a1", decayed=False))
     assert decision.retire is False and tr is None
     assert cat.state("a1") == AlphaState.APPROVED
+
+
+def test_sweep_drives_retirement_over_live_alphas():
+    # the production DRIVER: a decayed APPROVED alpha is retired; a healthy one isn't
+    cat = AlphaCatalog()
+    for a in ("decayed", "healthy", "draft"):
+        cat.register(AlphaDefinition(alpha_id=a, name=a, factor_ids=(f"f_{a}",)))
+    cat._set_state("decayed", AlphaState.APPROVED)
+    cat._set_state("healthy", AlphaState.APPROVED)
+    # "draft" stays DRAFT -> not in sweep scope
+    mgr = AlphaLifecycleManager(cat, CFG)
+    sys = AlphaRetirementSystem(mgr, CFG)
+    evidence = {
+        "decayed": {"decay": DecayReport(alpha_id="decayed", decayed=True)},
+        "healthy": {"decay": DecayReport(alpha_id="healthy", decayed=False)},
+    }
+    results = sys.sweep(evidence, AGENT, timestamp=7)
+    assert cat.state("decayed") == AlphaState.RETIRED
+    assert cat.state("healthy") == AlphaState.APPROVED
+    assert "draft" not in results                       # only live (APPROVED/PAPER) alphas swept
+    assert mgr.audit_chain_valid()
