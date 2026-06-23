@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Optional
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyConfig
+from quantos.contracts.hashing import short_hash
 from quantos.contracts.rejection import RejectionReason
 from quantos.contracts.risk import RiskDecision, RiskDecisionType
 
@@ -89,3 +90,27 @@ class PreTradeRiskGate:
             return decision
         except Exception:
             return _reject(_REJECT_UNKNOWN)        # the engine can NEVER approve on error
+
+    def issue_ref(self, decision: RiskDecision, intent, ctx) -> str:
+        """An INTENT-BOUND risk ref: a content hash tying an APPROVED decision to
+        THIS request + limits, so an approved ref cannot be reused for a different
+        intent and a random string will not verify. Empty for any non-APPROVED
+        decision (so the dry-run boundary fails it closed). NOTE: this is content
+        binding, NOT a cryptographic proof — an HMAC-signed token that the EXECUTION
+        boundary independently verifies is Phase 10 (boundary) / Phase 11 (governance);
+        an in-process caller that bypasses the gate is out of this layer's scope."""
+        if decision.decision != RiskDecisionType.APPROVED:
+            return ""
+        return short_hash({
+            "request_hash": ctx.request_hash(intent),
+            "limits_hash": self.limits.limits_hash(),
+            "v": "RISK_APPROVED_v1",
+        })
+
+    def verify_ref(self, ref: str, intent, ctx) -> bool:
+        """True only if `ref` is the intent-bound token this gate would issue for an
+        APPROVED decision on THIS request — rejects empty, mismatched-intent, or forged refs."""
+        if not ref:
+            return False
+        expected = self.issue_ref(RiskDecision(decision=RiskDecisionType.APPROVED), intent, ctx)
+        return ref == expected

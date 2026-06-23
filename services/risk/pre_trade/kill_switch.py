@@ -39,6 +39,8 @@ class KillSwitch:
     def arm(self, actor: Actor, reason: str, *, at: int,
             scope: KillSwitchScope = KillSwitchScope.GLOBAL, scope_value: str = "",
             incident_id: str = "") -> KillSwitchState:
+        if not isinstance(self._state, KillSwitchState):   # corrupt state -> still arm (fail-closed)
+            self._state = KillSwitchState()
         n = self._state.trip_count + 1
         self._state = KillSwitchState(
             tripped=True, scope=scope, scope_value=scope_value,

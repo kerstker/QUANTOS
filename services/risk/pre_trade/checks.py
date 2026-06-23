@@ -66,13 +66,17 @@ def check_quantity(intent, ctx, limits):
 def check_price_sanity(intent, ctx, limits):
     if intent.order_type == OrderType.LIMIT and intent.limit_price is None:
         return (R.INVALID_PRICE,)
-    p = ctx.effective_price(intent)
-    if not _finite_pos(p):                       # market order w/o usable ref price -> reject
-        return (R.INVALID_PRICE,)
     ref = ctx.market.reference_price
-    if intent.limit_price is not None and _finite_pos(ref):
-        if abs(intent.limit_price - ref) / ref > limits.max_price_deviation_pct:
-            return (R.INVALID_PRICE,)
+    # a reference price is REQUIRED to sanity-check ANY order (market OR limit);
+    # without it we cannot bound the price -> fail closed (review P0). This is the
+    # same "None = unknown -> reject" pattern used for liquidity/volatility.
+    if not _finite_pos(ref):
+        return (R.INVALID_PRICE,)
+    p = ctx.effective_price(intent)
+    if not _finite_pos(p):
+        return (R.INVALID_PRICE,)
+    if intent.limit_price is not None and abs(intent.limit_price - ref) / ref > limits.max_price_deviation_pct:
+        return (R.INVALID_PRICE,)
     return ()
 
 

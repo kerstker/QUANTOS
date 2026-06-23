@@ -56,3 +56,10 @@ def test_corrupt_state_fails_active():
     ks = KillSwitch()
     ks._state = None                                       # simulate unreadable state
     assert ks.is_active() is True
+
+
+def test_arm_recovers_from_corrupt_state():
+    ks = KillSwitch()
+    ks._state = None                                       # corrupt
+    ks.arm(AGENT, "halt despite corrupt state", at=5)      # must not raise; must trip
+    assert ks.is_active() is True and ks.state.trip_count == 1

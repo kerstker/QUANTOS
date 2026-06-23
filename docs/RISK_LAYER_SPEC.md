@@ -57,6 +57,23 @@ assert_research_safe at construction; post-trade SIGNED portfolio-state checks (
 isolation); no intent mutation; run-all collect-all deduped+ordered; only the 20 canonical reasons;
 audit-write failure→REJECT; dup/replay→DUPLICATE_ORDER; deterministic (request-supplied clock).
 
+## Post-build adversarial code review — outcome
+Independent red-team (4 reviewers). Dimensions "limit-check math" and "overall safety"
+found ZERO issues (gate core verified: fail-closed, all-20-reachable, no-mutation,
+audit, determinism, signed-int post-trade math). Fixed:
+- **P0 (confirmed)**: a LIMIT order with no reference_price was APPROVED without a
+  sanity bound → now a reference price is REQUIRED for ANY order (None → INVALID_PRICE).
+- kill_switch.arm() now recovers from a corrupt/None state (still trips; fail-closed).
+- ref hardened to be **intent-bound + verifiable** (issue_ref/verify_ref): an approved
+  ref cannot be reused for a different intent and a random string fails verification.
+
+DEFERRED (out of L2/Phase-8 scope, scheduled): the dry-run/EXECUTION boundary must
+independently VERIFY the ref's provenance (decision-store / signature lookup) — **Phase 10
+(execution boundary)**; HMAC-signed ApprovalRecords + approval TTL, and a boundary that
+queries the live kill-switch state rather than a command field — **Phase 11 (governance/AI
+guardrails)**. The in-process "caller bypasses the gate entirely" threat is an architecture/
+process control, not a defect in the gate's own logic.
+
 ## Build order (always-green commits)
 1 killswitch contract + tests. 2 config + context + kill_switch + tests. 3 checks + gate + audit +
 order_bridge + tests (the core). 4 P0-1 dry-run approval_ref + boundary test; wire tests/risk into

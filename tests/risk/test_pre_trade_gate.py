@@ -177,3 +177,23 @@ def test_gate_refuses_unsafe_construction():
     from quantos.contracts.config import SafetyConfig
     with pytest.raises(Exception):
         PreTradeRiskGate(_limits(), safety_config=SafetyConfig(live_trading_enabled=True))
+
+
+def test_limit_order_without_reference_price_is_rejected():
+    # review P0: a LIMIT order with no reference price cannot be sanity-checked -> reject
+    d = _gate().evaluate(
+        _intent(order_type=OrderType.LIMIT, limit_price=100.0),
+        _ctx(market=_market(reference_price=None)))
+    assert R.INVALID_PRICE in d.reasons and not d.approved
+
+
+def test_intent_bound_ref_is_verifiable_and_not_reusable():
+    g = _gate()
+    intent, ctx = _intent(), _ctx()
+    d = g.evaluate(intent, ctx)
+    ref = g.issue_ref(d, intent, ctx)
+    assert ref and g.verify_ref(ref, intent, ctx)               # genuine approved ref verifies
+    assert not g.verify_ref(ref, _intent(quantity=999), ctx)    # not reusable for another intent
+    assert not g.verify_ref("FORGED_NON_EMPTY", intent, ctx)    # random string fails
+    rej = g.evaluate(_intent(), _ctx(strategy=StrategyApproval(approved=False)))
+    assert g.issue_ref(rej, _intent(), _ctx()) == ""            # rejected -> empty ref
