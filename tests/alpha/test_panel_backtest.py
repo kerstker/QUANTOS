@@ -1,5 +1,7 @@
 """Phase 6 step 5a — dollar-neutral net-of-cost cross-sectional long/short
 panel backtest (critique P0-4)."""
+import pytest
+
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest, _dollar_neutral_weights
 from services.research.backtest_engine.costs import CostModel
 
@@ -58,3 +60,19 @@ def test_panel_backtest_is_deterministic():
     a = run_panel_backtest(periods, cost=CostModel(2, 3))
     b = run_panel_backtest(periods, cost=CostModel(2, 3))
     assert a.period_returns == b.period_returns
+
+
+def test_rejects_duplicate_instruments_and_nonfinite_signals():
+    dup = PanelPeriod(instruments=("A", "A"), signals=(1.0, 2.0), forward_returns=(0.0, 0.0))
+    with pytest.raises(ValueError):
+        run_panel_backtest([dup])
+    nan = PanelPeriod(instruments=("A", "B"), signals=(1.0, float("nan")), forward_returns=(0.0, 0.0))
+    with pytest.raises(ValueError):
+        run_panel_backtest([nan])
+
+
+def test_cost_magnitude_is_correct_not_tautological():
+    # full entry at period 0: turnover = gross notional 1.0; cost = 1.0 * 20bps
+    p = _period([1, 2, 3, 4, 5], [0.0] * 5)
+    res = run_panel_backtest([p], cost=CostModel(fee_bps=10, slippage_bps=10), quantile=0.2)
+    assert res.costs[0] == pytest.approx(0.002)

@@ -1,5 +1,7 @@
 """Phase 6 step 8 — robust, diversity-aware ranker: no single outlier metric
 dominates; redundant/crowded alphas sink; deterministic + explainable."""
+import math
+
 from quantos.contracts.alpha import AlphaEvaluation
 from quantos.contracts.research import ValidationVerdict
 from services.alpha.config import AlphaFactoryConfig
@@ -51,6 +53,13 @@ def test_ranker_accepts_alpha_evaluation_objects():
     ranks = rank_alphas(evals, config=CFG)               # Pydantic objects, not dicts
     assert {r.alpha_id for r in ranks} == {"a", "b"}
     assert ranks[0].alpha_id == "a"                      # stronger alpha leads
+
+
+def test_rank_stability_inf_or_nan_is_guarded():
+    evals = {"a": _ev(0.7, 2.0, 1.0, 0.6, 0.85, 0.8, 0.3),
+             "b": _ev(0.5, 1.0, 0.5, 0.5, 0.6, 0.3, 0.5)}
+    ranks = rank_alphas(evals, config=CFG, rank_stability={"a": float("inf"), "b": float("nan")})
+    assert all(math.isfinite(r.composite_score) for r in ranks)   # no inf/nan leak
 
 
 def test_ranking_is_deterministic_and_explainable():

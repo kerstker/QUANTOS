@@ -48,6 +48,21 @@ def test_single_window_noise_does_not_trigger():
     assert r.decayed is False
 
 
+def test_sustained_average_bleed_triggers_even_if_not_all_below():
+    # recent avg 0.0233 < 0.03 floor though 0.04 is above it — the old all()-below
+    # logic missed this sawtooth bleed; the mean-based debounce catches it (review P1)
+    rolling = [0.10, 0.11, 0.09, 0.10, 0.04, 0.01, 0.02]
+    r = detect_decay("a1", rolling, config=CFG, baseline=0.10)
+    assert r.decayed is True and "IC_RETENTION_BELOW_MIN" in r.reasons
+
+
+def test_anti_persistent_breakdown_triggers_decay():
+    # oscillatory breakdown: retention avg is above floor, but phi << 0 = fast decay
+    rolling = [0.10, -0.09, 0.10, -0.08, 0.09, -0.08, 0.09]
+    r = detect_decay("a1", rolling, config=CFG, baseline=0.10)
+    assert r.decayed is True and "ANTI_PERSISTENT_BREAKDOWN" in r.reasons
+
+
 def test_performance_gap_triggers_decay():
     rolling = [0.10, 0.11, 0.09, 0.10, 0.10, 0.11, 0.10]  # IC fine
     r = detect_decay("a1", rolling, config=CFG, baseline=0.10, perf_gap=0.8)  # paper << backtest

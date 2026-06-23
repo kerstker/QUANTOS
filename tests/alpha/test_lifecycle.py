@@ -47,6 +47,13 @@ def test_terminal_states_have_no_exit():
             assert_alpha_transition(s, S.TESTING, HUMAN)
 
 
+def test_system_actor_cannot_reach_approved():
+    system = Actor(actor_id="sys", kind=ActorKind.SYSTEM)
+    assert S.APPROVED not in AGENT_REACHABLE
+    with pytest.raises(UnauthorizedPromotion):
+        assert_alpha_transition(S.PAPER_TRADING, S.APPROVED, system)
+
+
 def test_agent_cannot_reach_approved():
     assert S.APPROVED not in AGENT_REACHABLE
     # legal edge, but an agent actor is barred from driving it

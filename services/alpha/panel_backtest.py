@@ -80,6 +80,11 @@ def run_panel_backtest(
     prev_w: dict[str, float] = {}
     period_returns, gross_returns, costs, turnovers = [], [], [], []
     for p in periods:
+        # fail-closed on malformed cross-sections (review P1/P2)
+        if len(set(p.instruments)) != len(p.instruments):
+            raise ValueError("PanelPeriod.instruments must be unique (duplicates corrupt weights)")
+        if not all(math.isfinite(s) for s in p.signals):
+            raise ValueError("PanelPeriod.signals must all be finite")
         long_idx, short_idx = _quantile_legs(p.signals, quantile)
         w = _dollar_neutral_weights(p.instruments, long_idx, short_idx, gross)
 

@@ -110,7 +110,11 @@ def rank_alphas(
         stab = rank_stability.get(aid, 1.0)
         raw[aid] = comp
         z_components[aid] = comps
-    base = {aid: raw[aid] * rank_stability.get(aid, 1.0) for aid in ids}
+    base = {}
+    for aid in ids:
+        stab = rank_stability.get(aid, 1.0)
+        stab = stab if (stab is not None and math.isfinite(stab)) else 1.0   # guard inf/nan (P1)
+        base[aid] = raw[aid] * stab
 
     rep_ids = None
     cluster_of: dict[str, str] = {}

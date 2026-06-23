@@ -83,18 +83,23 @@ def detect_decay(
 
     baseline_ic = baseline if baseline is not None else statistics.fmean(series[:-cw])
     recent = series[-cw:]
+    recent_mean = statistics.fmean(recent)
     ic_now = series[-1]
-    retention = (statistics.fmean(recent) / baseline_ic) if baseline_ic not in (0, 0.0) else None
+    retention = (recent_mean / baseline_ic) if baseline_ic not in (0, 0.0) else None
+    phi = ic_autocorr(series)
     half_life = ar1_half_life(series)
     half_life_h = horizon_half_life(ic_by_horizon) if ic_by_horizon else None
     slope = _trend_slope(series)
 
     reasons: list[str] = []
-    # debounced: EVERY one of the last cw windows below the retention floor
+    # debounced on the cw-window AVERAGE retention (a single noisy window can't
+    # trip it, but a sustained bleed can't hide behind a sawtooth either — review P1)
     threshold = config.min_ic_retention * baseline_ic
-    sustained_low = baseline_ic > 0 and len(recent) >= cw and all(v < threshold for v in recent)
-    if sustained_low:
+    if baseline_ic > 0 and len(recent) >= cw and recent_mean < threshold:
         reasons.append("IC_RETENTION_BELOW_MIN")
+    # strong anti-persistence (oscillatory breakdown) is fast decay, not "no decay"
+    if phi is not None and phi < -0.3:
+        reasons.append("ANTI_PERSISTENT_BREAKDOWN")
     if perf_gap is not None and perf_gap > config.max_perf_gap:
         reasons.append("PERF_GAP_EXCEEDS_MAX")
 

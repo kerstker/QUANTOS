@@ -21,6 +21,10 @@ class CostModel:
     impact_coef: float = 0.0   # bps per sqrt(participation); 0 disables impact
 
     def impact_bps(self, trade_shares: float, adv_shares: float) -> float:
+        """sqrt-law impact in bps. `trade_shares` and `adv_shares` may be in ANY
+        units (shares OR notional) as long as BOTH use the same one — participation
+        is the unitless ratio. (engine.py passes shares; panel_backtest passes
+        notional — both valid.)"""
         if self.impact_coef <= 0 or adv_shares <= 0 or trade_shares == 0:
             return 0.0
         participation = abs(trade_shares) / adv_shares
