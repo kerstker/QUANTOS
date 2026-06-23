@@ -82,6 +82,15 @@ class AlphaEvaluation(BaseModel):
     reproducibility_hash: str = ""
 
 
+class AlphaCluster(BaseModel):
+    """A group of mutually-correlated (redundant) alphas + one representative."""
+    model_config = ConfigDict(frozen=True)
+    cluster_id: str = Field(min_length=1)
+    member_ids: tuple[str, ...]
+    representative_id: str = Field(min_length=1)
+    intra_corr: Optional[float] = None   # worst (min) pairwise |corr| within the cluster
+
+
 # --- lifecycle state machine -------------------------------------------------
 
 ALPHA_ALLOWED_TRANSITIONS: dict[AlphaState, frozenset[AlphaState]] = {
