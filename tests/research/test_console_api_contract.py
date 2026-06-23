@@ -119,6 +119,10 @@ def test_every_endpoint_satisfies_the_frontend_contract():
                 failures.append(f"{path}: missing base marker '{marker}'")
         if body.get("read_only") is not True:
             failures.append(f"{path}: read_only is not True")
+        # honesty marker (audit P1): synthetic figures must be self-labelled, never
+        # presented as real research/PnL on the wire
+        if body.get("data_provenance") != "SYNTHETIC_DETERMINISTIC":
+            failures.append(f"{path}: data_provenance is not SYNTHETIC_DETERMINISTIC")
         for key in keys:
             if key not in body:
                 failures.append(f"{path}: missing contract key '{key}'")
