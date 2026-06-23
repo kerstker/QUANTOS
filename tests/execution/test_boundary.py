@@ -3,6 +3,7 @@ re-verified + non-duplicate intent (fail-closed; closes the Phase-8 deferred
 boundary-provenance gap)."""
 from quantos.contracts.trading import OrderIntent, OrderSide, OrderType
 from services.execution.boundary import ExecutionBoundary
+from services.execution.intent_builder import build_intents
 from services.risk.pre_trade import (
     AccountRiskState, MarketContext, PreTradeRiskGate, RiskContext, RiskLimits, StrategyApproval,
 )
@@ -42,6 +43,15 @@ def test_denies_rejected_decision():
     ref = gate.issue_ref(d, intent, ctx2)             # "" for a rejected decision
     res = ExecutionBoundary(gate).admit(intent, ctx2, d, ref)
     assert not res.admitted and "NOT_APPROVED" in res.reasons
+
+
+def test_end_to_end_target_book_to_admission():
+    # the full execution chain: target book -> build_intents -> risk gate -> boundary
+    gate, _i, ctx = _setup()
+    intent = build_intents({"AAA": 10}, {})[0]        # flat -> long 10 -> BUY 10 AAA
+    d = gate.evaluate(intent, ctx)
+    ref = gate.issue_ref(d, intent, ctx)
+    assert d.approved and ExecutionBoundary(gate).admit(intent, ctx, d, ref).admitted is True
 
 
 def test_idempotency_denies_duplicate():

@@ -326,3 +326,17 @@ boundary provenance verification → Phase 10; HMAC-signed approvals + TTL → P
 - 7 tests incl. the reconciliation identity + "attribution is real PnL not the old
   2.2 placeholder". Deferred: backtest-vs-paper consistency wiring (perf_gap →
   decay/lifecycle), consuming Phase-8 approved RebalancePlan/refs.
+
+## 17. Phase 10 — Execution Boundary (core done) — DRY-RUN ONLY
+
+`services/execution/` (no broker SDK, no submission; import-boundary tested):
+- intent_builder.build_intents: target vs current signed positions -> delta
+  OrderIntents (pure, deterministic; strategy/translation, not permission).
+- boundary.ExecutionBoundary.admit: fail-closed last gate — admits ONLY an
+  APPROVED RiskDecision whose ref it INDEPENDENTLY re-verifies via gate.verify_ref
+  (closes the Phase-8 deferred boundary-provenance gap; forged/empty/mismatched
+  ref denied) + idempotency (duplicate fingerprint denied).
+- 9 tests incl. an end-to-end capstone: target book -> build_intents -> risk gate
+  -> issue_ref -> boundary admission. The full portfolio→risk→execution chain composes.
+- Deferred: CTP/FIX protocol-mapping boundary (the existing dry_run_adapters already
+  covers a real, fail-closed dry-run path); HMAC-signed refs -> Phase 11.
