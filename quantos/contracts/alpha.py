@@ -91,6 +91,21 @@ class AlphaCluster(BaseModel):
     intra_corr: Optional[float] = None   # worst (min) pairwise |corr| within the cluster
 
 
+class DecayReport(BaseModel):
+    """Whether an alpha's predictive power has eroded (debounced over windows)."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    ic_now: Optional[float] = None
+    ic_baseline: Optional[float] = None
+    ic_retention_ratio: Optional[float] = None
+    half_life_time: Optional[float] = None
+    half_life_horizon: Optional[float] = None
+    ic_trend_slope: Optional[float] = None
+    decayed: bool = False
+    reasons: tuple[str, ...] = ()
+    as_of: int = Field(default=0, ge=0)
+
+
 class AlphaRanking(BaseModel):
     """One alpha's place in the robust, diversity-aware ranking. Fully
     explainable: the per-metric z-scores and the penalties are exposed."""
