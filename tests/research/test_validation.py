@@ -1,5 +1,7 @@
 """Phase 5 — validation gate: walk-forward/purged CV, Deflated Sharpe, PBO, and
 the promotion gate (incl. adversarial: overfit/leak/single-regime cannot pass)."""
+import pytest
+
 from quantos.contracts.research import ValidationVerdict
 from services.research.validation.deflated_sharpe import (
     deflated_sharpe_ratio, expected_max_sharpe, min_track_record_length, pbo_cscv,
@@ -42,8 +44,8 @@ def test_expected_max_sharpe_grows_with_trials():
 
 
 def test_min_track_record_length_infinite_when_no_edge():
-    assert min_track_record_length(observed_sr=0.1, target_sr=0.1, n_obs=100) == float("inf")
-    assert min_track_record_length(observed_sr=0.2, target_sr=0.1, n_obs=100) > 0
+    assert min_track_record_length(observed_sr=0.1, target_sr=0.1) == float("inf")
+    assert min_track_record_length(observed_sr=0.2, target_sr=0.1) > 0
 
 
 def test_pbo_high_for_overfit_low_for_genuine():
@@ -91,6 +93,32 @@ def test_high_trial_count_forces_human_review():
     assert res.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW and not res.promotable
 
 
-def test_single_soft_failure_is_warn():
+def test_single_soft_failure_is_warn_and_not_promotable():
     res = GATE.evaluate("alpha-warn", **{**CLEAN, "walk_forward_passed": False})
-    assert res.verdict == ValidationVerdict.WARN and res.promotable
+    assert res.verdict == ValidationVerdict.WARN and not res.promotable
+
+
+def test_gate_rejects_invalid_inputs():
+    res = GATE.evaluate("bad", **{**CLEAN, "deflated_sharpe": 1.5, "pbo": -0.1})
+    assert res.verdict == ValidationVerdict.FAIL
+    assert any("INVALID_INPUT" in r for r in res.reasons)
+
+
+def test_marginal_trials_force_human_review():
+    res = GATE.evaluate("marg", **{**CLEAN, "trial_count": 25, "deflated_sharpe": 0.65})
+    assert res.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW and not res.promotable
+
+
+def test_dsr_requires_positive_var_sr():
+    with pytest.raises(ValueError):
+        expected_max_sharpe(100, 0.0)
+
+
+def test_dsr_rejects_extreme_skew_kurt():
+    with pytest.raises(ValueError):
+        deflated_sharpe_ratio(0.5, 252, 10, var_sr=0.01, kurt=0.5)  # excess kurt < -2
+
+
+def test_pbo_rejects_ragged_matrix():
+    with pytest.raises(ValueError):
+        pbo_cscv([[1.0, 2.0, 3.0], [4.0, 5.0]])

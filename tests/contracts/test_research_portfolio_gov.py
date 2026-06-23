@@ -26,7 +26,7 @@ def test_experiment_trial_count_at_least_one():
 
 def test_validation_promotable_logic():
     assert ValidationResult(subject_id="a1", verdict=ValidationVerdict.PASS).promotable
-    assert ValidationResult(subject_id="a1", verdict=ValidationVerdict.WARN).promotable
+    assert not ValidationResult(subject_id="a1", verdict=ValidationVerdict.WARN).promotable
     assert not ValidationResult(subject_id="a1", verdict=ValidationVerdict.FAIL).promotable
     assert not ValidationResult(
         subject_id="a1", verdict=ValidationVerdict.REQUIRES_HUMAN_REVIEW).promotable

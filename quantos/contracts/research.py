@@ -95,7 +95,9 @@ class ValidationResult(BaseModel):
 
     @property
     def promotable(self) -> bool:
-        return self.verdict in (ValidationVerdict.PASS, ValidationVerdict.WARN)
+        # Only an unqualified PASS is auto-promotable. WARN (a soft failure
+        # exists) and REQUIRES_HUMAN_REVIEW need explicit human action.
+        return self.verdict == ValidationVerdict.PASS
 
 
 class ResearchReport(BaseModel):

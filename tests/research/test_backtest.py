@@ -4,7 +4,7 @@ from quantos.contracts.data import Bar
 from services.data.pit_store import PITStore
 from services.research.backtest_engine.costs import CostModel
 from services.research.backtest_engine.engine import run_backtest
-from services.research.backtest_engine.metrics import max_drawdown, metrics, sharpe
+from services.research.backtest_engine.metrics import max_drawdown, metrics, sharpe, sortino
 from services.research.backtest_engine.report import capacity_estimate, to_backtest_result
 
 
@@ -90,3 +90,17 @@ def test_to_backtest_result_contract_is_reproducible():
 
 def test_capacity_estimate():
     assert capacity_estimate(1_000_000.0, max_participation=0.1) == 100_000.0
+
+
+def test_max_drawdown_clamped_on_negative_equity():
+    # a >100% loss (equity goes negative) clamps to 1.0, never exceeds it
+    assert max_drawdown([100, 50, -10]) == 1.0
+
+
+def test_sortino_infinite_when_no_downside():
+    assert sortino([0.01, 0.02, 0.03]) == float("inf")
+
+
+def test_calmar_is_annualized_and_finite():
+    m = metrics([100, 90, 120], periods_per_year=252)  # has a drawdown
+    assert m["calmar"] > 0 and m["max_drawdown"] <= 1.0
