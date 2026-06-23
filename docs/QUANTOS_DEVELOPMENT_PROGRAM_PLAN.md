@@ -228,6 +228,15 @@ synthetic backtest path.
   single-regime FAILS, clean PASSES; DSR monotonic in trials; PBO discriminates
   genuine vs overfit. **G5 met.**
 
-Note: the gate operates on supplied OOS/DSR/PBO inputs; wiring the backtest +
-feature-leakage pipeline to feed it end-to-end (and replacing console_api's
-modulo-hack validation snapshot) is the next integration step.
+End-to-end wiring (DONE): `pipeline.py run_research_validation()` feeds REAL
+walk-forward OOS + DSR + PBO (over candidate trials) + leakage into the gate —
+a genuine buy-and-hold passes, a block-diagonal overfit set is not promotable, a
+leak fails. The console `/validation` snapshot's leakage gate is now the real
+detector (`validation_backend="REAL_LEAKAGE_DETECTOR_v1"`), replacing the
+`idx % 5 != 2` modulo hack.
+
+Independent adversarial review (research spine) was run and its confirmed P0/P1
+findings fixed: leakage-detector bypasses (perturb all fields incl. volume/
+knowledge_time, multi-instrument, PIT-dedup), gate input-validation + WARN
+not auto-promotable, DSR var_sr required + guards, metrics max-drawdown clamp /
+Sortino / Calmar.
