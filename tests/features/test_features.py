@@ -81,6 +81,67 @@ def test_leaky_feature_is_detected():
     assert "LEAKAGE" in res.detail
 
 
+def test_leakage_via_future_volume_is_detected():
+    bars = _bars([10, 12, 14, 16, 18])
+
+    def vol_leak(rows):
+        rows = sorted(rows, key=lambda b: (b.event_time, b.knowledge_time))
+        out = []
+        for i, b in enumerate(rows):
+            nxt = rows[i + 1].volume if i + 1 < len(rows) else b.volume
+            out.append(FeatureValue(feature_id="vl", instrument_id=b.instrument_id,
+                                    event_time=b.event_time, knowledge_time=b.knowledge_time, value=float(nxt)))
+        return out
+
+    assert detect_leakage("vl", vol_leak, bars, target_event_time=3).passed is False
+
+
+def test_leakage_via_future_knowledge_time_is_detected():
+    bars = _bars([10, 12, 14, 16, 18])
+
+    def kt_leak(rows):
+        rows = sorted(rows, key=lambda b: (b.event_time, b.knowledge_time))
+        out = []
+        for i, b in enumerate(rows):
+            nxt = rows[i + 1].knowledge_time if i + 1 < len(rows) else b.knowledge_time
+            out.append(FeatureValue(feature_id="kl", instrument_id=b.instrument_id,
+                                    event_time=b.event_time, knowledge_time=b.knowledge_time, value=float(nxt)))
+        return out
+
+    assert detect_leakage("kl", kt_leak, bars, target_event_time=3).passed is False
+
+
+def test_multi_instrument_leakage_in_non_first_instrument_is_detected():
+    bars = []
+    for inst, closes in (("A", [10, 11, 12]), ("B", [20, 21, 22])):
+        for i, c in enumerate(closes):
+            bars.append(Bar(instrument_id=inst, event_time=i + 1, knowledge_time=i + 1,
+                            open=c, high=c + 1, low=c - 1, close=c, volume=100))
+
+    def b_only_leak(rows):
+        out, by = [], {}
+        for b in rows:
+            by.setdefault(b.instrument_id, []).append(b)
+        for inst, bs in by.items():
+            bs = sorted(bs, key=lambda b: b.event_time)
+            for i, b in enumerate(bs):
+                val = bs[i + 1].close if (inst == "B" and i + 1 < len(bs)) else b.close
+                out.append(FeatureValue(feature_id="ml", instrument_id=inst,
+                                        event_time=b.event_time, knowledge_time=b.knowledge_time, value=val))
+        return out
+
+    assert detect_leakage("ml", b_only_leak, bars, target_event_time=1).passed is False
+
+
+def test_detect_leakage_requires_pit_deduplicated_input():
+    dup = [
+        Bar(instrument_id="X", event_time=1, knowledge_time=1, open=10, high=11, low=9, close=10),
+        Bar(instrument_id="X", event_time=1, knowledge_time=50, open=11, high=12, low=10, close=11),
+    ]
+    with pytest.raises(ValueError):
+        detect_leakage("x", lambda b: [], dup, target_event_time=1)
+
+
 # --- registry / versioning ---------------------------------------------------
 
 def test_registry_versioning_and_status():
