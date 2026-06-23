@@ -117,6 +117,30 @@
 
 ---
 
+## 6.5 整改记录(2026-06-23,本次已修)
+
+审查后立即按 tests-first 修复了三个在范围内的确认差距,全程闸门绿:
+
+- **M2 利润核心完整性**(commit f46a014): evaluator 的 leakage/pbo/regime 证据参数改为
+  `Optional=None`,缺失即失败关闭到 REQUIRES_HUMAN_REVIEW(不再静默放行);工厂用 CSCV 算
+  **真实批次级 PBO** 传入并接受逐候选 leakage/regime 证据,无证据则停在 TESTING 待人工;
+  IC p 值改 **Student-t**(df=T-1,正则化不完全 beta)取代正态近似。
+- **M1 构建期治理盲区**(commit 811fc48): 扫描根改为包根(quantos/ + services/,107 文件,
+  覆盖 console_api + factor_engine);FORBIDDEN_APIS 改**词边界**(`contains_live_orders`
+  不再误报、真实 `place_order` 仍捕获);新增**真实起爆标志**检测(live_trading_enabled 等
+  =True、require_human_approval=False);治理测试加**覆盖元测试**(services/ 下每个非测试
+  .py 必在扫描根内)+ 真实标志正控。
+- **M3 加固**(commits df42ed4, 65fcf98): 9 引擎研究风控网关空输入失败关闭 + 异常聚合 + **首套测试**;
+  部署门加**不可覆写的 PLATFORM_READINESS 钉死**(传 L4 也无法解锁 LIVE);console_api 全 payload
+  加 `data_provenance="SYNTHETIC_DETERMINISTIC"` + 前端常驻"合成演示数据"徽章;执行边界
+  `verify_ref` 的"独立校验"表述**诚实降级**为无密钥内容一致性检查(非进程内信任边界)。
+
+闸门: **451 Python 测试 + 5 前端测试全绿,治理扫描 107 文件 0 违规**。
+
+**仍未处理(更大工程,留作路线图)**: walk_forward_passed 仍为 `net_sharpe>0` 的占位(P2);
+以及第 6 节的战略差距(真实数据湖、持久化/实验登记、事件驱动回测、因子风险模型 + 约束优化器、
+Agent 研究环的真实智能)—— 这些是冲"顶级"的下一阶段建设项,非本次修复范围。
+
 ## 7. 一句话定论
 
 **就 L2 研究平台而言,QUANTOS 是个可靠、失败关闭的脚手架,核心安全不变量经实测确实成立,pre-trade 网关是我审过工程最佳的子系统,量化统计内核真实,威胁模型文档异常诚实 —— 但它还不是顶级。三个已确认、在范围内的差距挡在中间: 构建期治理扫描器(运行时模型所依赖的控制)有真实盲区;Alpha 工厂实际走的晋升路径骑着硬编码的 PBO=0.0 与默认通过的泄漏/regime 检查,使过拟合/泄漏守卫形同虚设。没有一个是实盘越界,L2 边界圈住了爆炸半径,但三者都必须先关闭,才配得上顶级标准。总评: B(76)。**
