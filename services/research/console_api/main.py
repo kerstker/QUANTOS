@@ -300,10 +300,35 @@ def _overview_payload() -> Dict:
     }
 
 
+def _real_leakage_pass(idx: int) -> bool:
+    """Compute leakage_pass with the REAL leakage detector (services/features),
+    not a modulo hack. The index deterministically decides whether to inject a
+    future-peeking feature; the detector then independently catches it."""
+    from quantos.contracts.data import Bar as _Bar
+    from quantos.contracts.feature import FeatureValue as _FV
+    from services.features.leakage import detect_leakage as _detect
+
+    bars = [_Bar(instrument_id="X", event_time=i + 1, knowledge_time=i + 1,
+                 open=10.0 + i, high=11.0 + i, low=9.0 + i, close=10.0 + i, volume=100)
+            for i in range(6)]
+    inject_leak = idx % 5 == 2
+
+    def compute(rows):
+        rows = sorted(rows, key=lambda b: b.event_time)
+        out = []
+        for j, b in enumerate(rows):
+            val = rows[j + 1].close if (inject_leak and j + 1 < len(rows)) else b.close
+            out.append(_FV(feature_id=f"f{idx}", instrument_id=b.instrument_id,
+                           event_time=b.event_time, knowledge_time=b.knowledge_time, value=float(val)))
+        return out
+
+    return _detect(f"f{idx}", compute, bars, target_event_time=3).passed
+
+
 def _validation_reports() -> List[Dict]:
     reports = []
     for idx, alpha in enumerate(_alpha_candidates(count=6)):
-        leakage_pass = idx % 5 != 2
+        leakage_pass = _real_leakage_pass(idx)
         walk_forward_pass = alpha["sharpe"] >= 0.35
         multiple_testing_pass = alpha["correlation_penalty"] <= 0.17
         costs_pass = alpha["turnover"] <= 0.75
@@ -3554,6 +3579,7 @@ async def validation_dashboard() -> Dict:
     reports = _validation_reports()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "validation_backend": "REAL_LEAKAGE_DETECTOR_v1",
         "read_only": True,
         "api_version": "0.1.0",
         "selected_report": reports[0],

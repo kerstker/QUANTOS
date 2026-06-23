@@ -411,6 +411,10 @@ def test_validation_snapshot_uses_backend_contract():
     assert payload["selected_report"]["alpha_id"] == "alpha-1"
     assert len(payload["reports"]) == 6
     assert payload["selected_report"]["gates_total"] == 6
+    # leakage_pass is now produced by the REAL leakage detector, not a modulo hack
+    assert payload["validation_backend"] == "REAL_LEAKAGE_DETECTOR_v1"
+    assert payload["reports"][2]["leakage_pass"] is False   # idx 2 injects a future-peeking feature
+    assert payload["reports"][0]["leakage_pass"] is True
 
 
 def test_paper_trading_snapshot_uses_backend_contract():
