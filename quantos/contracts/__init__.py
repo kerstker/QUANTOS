@@ -17,6 +17,19 @@ from .order import (
 from .rejection import LEGACY_DRY_RUN_CROSSWALK, RejectionReason, from_legacy
 from .risk import RiskDecision, RiskDecisionType
 from .trading import ExecutionReport, Fill, Order, OrderIntent, OrderSide, OrderType
+from .alpha import (
+    ALPHA_ALLOWED_TRANSITIONS,
+    AGENT_REACHABLE,
+    Actor,
+    ActorKind,
+    AlphaDefinition,
+    AlphaTransition,
+    InvalidAlphaTransition,
+    UnauthorizedPromotion,
+    assert_alpha_transition,
+    can_alpha_transition,
+    is_alpha_terminal,
+)
 
 __all__ = [
     "SafetyConfig", "SafetyViolation", "RESEARCH_SAFE_DEFAULTS",
@@ -25,5 +38,9 @@ __all__ = [
     "can_transition", "assert_transition", "is_terminal", "InvalidOrderTransition",
     "RiskDecision", "RiskDecisionType",
     "OrderIntent", "Order", "Fill", "ExecutionReport", "OrderSide", "OrderType",
+    "Actor", "ActorKind", "AlphaDefinition", "AlphaTransition",
+    "ALPHA_ALLOWED_TRANSITIONS", "AGENT_REACHABLE", "assert_alpha_transition",
+    "can_alpha_transition", "is_alpha_terminal", "InvalidAlphaTransition",
+    "UnauthorizedPromotion",
     "stable_hash", "short_hash",
 ]
