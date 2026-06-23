@@ -12,8 +12,10 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from typing import Optional
+
 from .hashing import stable_hash
-from .research import AlphaState
+from .research import AlphaState, ValidationVerdict
 
 
 class ActorKind(str, Enum):
@@ -52,6 +54,32 @@ class AlphaDefinition(BaseModel):
             "universe": self.universe,
             "params": self.params,
         })
+
+
+class AlphaEvaluation(BaseModel):
+    """Frozen, reproducible evaluation report for one alpha. Proposes a verdict;
+    promotion is the lifecycle manager's job, never this report's."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    ic_mean: Optional[float] = None
+    icir: Optional[float] = None
+    ic_tstat: Optional[float] = None
+    ic_pvalue: Optional[float] = None
+    hit_rate: Optional[float] = None
+    ic_autocorr: Optional[float] = None
+    mean_breadth: float = 0.0
+    n_periods: int = Field(default=0, ge=0)
+    coverage_ok: bool = False
+    net_sharpe: float = 0.0
+    observed_sr: float = 0.0
+    turnover: float = Field(default=0.0, ge=0)
+    deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
+    pbo: float = Field(default=0.0, ge=0, le=1)
+    catalog_trial_count: int = Field(default=1, ge=1)
+    verdict: ValidationVerdict
+    reasons: tuple[str, ...] = ()
+    as_of: int = Field(default=0, ge=0)
+    reproducibility_hash: str = ""
 
 
 # --- lifecycle state machine -------------------------------------------------

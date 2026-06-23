@@ -29,6 +29,7 @@ class PanelResult:
     period_returns: tuple[float, ...]     # net-of-cost long/short return each period
     gross_returns: tuple[float, ...]
     costs: tuple[float, ...]
+    turnovers: tuple[float, ...] = ()     # sum |Δweight| each period
 
     def total_net_return(self) -> float:
         return math.prod(1.0 + r for r in self.period_returns) - 1.0 if self.period_returns else 0.0
@@ -77,7 +78,7 @@ def run_panel_backtest(
     target_aum: float = 1e7,
 ) -> PanelResult:
     prev_w: dict[str, float] = {}
-    period_returns, gross_returns, costs = [], [], []
+    period_returns, gross_returns, costs, turnovers = [], [], [], []
     for p in periods:
         long_idx, short_idx = _quantile_legs(p.signals, quantile)
         w = _dollar_neutral_weights(p.instruments, long_idx, short_idx, gross)
@@ -87,8 +88,10 @@ def run_panel_backtest(
         names = set(w) | set(prev_w)
         base_bps = cost.fee_bps + cost.slippage_bps
         cst = 0.0
+        turnover = 0.0
         for n in names:
             dw = abs(w.get(n, 0.0) - prev_w.get(n, 0.0))   # fraction of AUM traded
+            turnover += dw
             cst += dw * base_bps / 10_000.0
         if cost.impact_coef > 0 and p.adv_notional:
             for i, inst in enumerate(p.instruments):
@@ -100,6 +103,7 @@ def run_panel_backtest(
         period_returns.append(gross_r - cst)
         gross_returns.append(gross_r)
         costs.append(cst)
+        turnovers.append(turnover)
         prev_w = w
 
-    return PanelResult(tuple(period_returns), tuple(gross_returns), tuple(costs))
+    return PanelResult(tuple(period_returns), tuple(gross_returns), tuple(costs), tuple(turnovers))
