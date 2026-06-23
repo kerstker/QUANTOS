@@ -31,6 +31,7 @@ from .alpha import (
     can_alpha_transition,
     is_alpha_terminal,
 )
+from .killswitch import KillSwitchScope, KillSwitchState
 
 __all__ = [
     "SafetyConfig", "SafetyViolation", "RESEARCH_SAFE_DEFAULTS",
@@ -43,5 +44,6 @@ __all__ = [
     "ALPHA_ALLOWED_TRANSITIONS", "AGENT_REACHABLE", "assert_alpha_transition",
     "can_alpha_transition", "is_alpha_terminal", "InvalidAlphaTransition",
     "UnauthorizedPromotion",
+    "KillSwitchScope", "KillSwitchState",
     "stable_hash", "short_hash",
 ]
