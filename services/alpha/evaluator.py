@@ -54,12 +54,19 @@ class AlphaEvaluator:
         alpha_id: str,
         periods: Sequence[PanelPeriod],
         *,
-        leakage_ok: bool = True,
-        regime_profitable_frac: float = 1.0,
-        pbo: float = 0.0,
+        leakage_ok: Optional[bool] = None,
+        regime_profitable_frac: Optional[float] = None,
+        pbo: Optional[float] = None,
         as_of: int = 0,
         dataset_version: str = "",
     ) -> AlphaEvaluation:
+        # Evidence is fail-CLOSED: leakage_ok / pbo / regime_profitable_frac default
+        # to None (= NOT ASSESSED), not to a passing value. An alpha that would
+        # otherwise PASS but whose overfitting / leakage / regime evidence was never
+        # computed routes to REQUIRES_HUMAN_REVIEW below, so the autonomous factory
+        # cannot advance an unscored alpha to PAPER_TRADING on a silent default
+        # (audit P0/P1: the previous leakage_ok=True / pbo=0.0 / regime=1.0 defaults
+        # made the leakage, overfitting and regime guards inert on the agent path).
         # 1) per-period cross-sectional IC series + breadth
         ic_series = [compute_ic(list(p.signals), list(p.forward_returns)).get("ic_mean") for p in periods]
         breadths = [len(p.instruments) for p in periods]
@@ -102,6 +109,13 @@ class AlphaEvaluator:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("THIN_COVERAGE",)
         elif dsr_raw is None:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("INSUFFICIENT_CATALOG_FOR_DSR",)
+        elif (unassessed := tuple(
+            name for name, val in (("LEAKAGE_NOT_ASSESSED", leakage_ok),
+                                   ("OVERFIT_NOT_ASSESSED", pbo),
+                                   ("REGIME_NOT_ASSESSED", regime_profitable_frac))
+            if val is None)):
+            # fail closed: never let an unscored alpha PASS on a silent default
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, unassessed
         else:
             vr = self.gate.evaluate(
                 alpha_id,
@@ -125,6 +139,7 @@ class AlphaEvaluator:
             n_periods=m["n_periods"], coverage_ok=m["coverage_ok"],
             net_sharpe=net_sharpe, capacity_adj_sharpe=cap_adj_sharpe,
             observed_sr=observed_sr, turnover=turnover, marginal_ir=marginal_ir,
-            deflated_sharpe=dsr, pbo=_clamp01(pbo), catalog_trial_count=trial_count,
+            deflated_sharpe=dsr, pbo=_clamp01(pbo) if pbo is not None else 0.0,
+            catalog_trial_count=trial_count,
             verdict=verdict, reasons=tuple(reasons), as_of=as_of, reproducibility_hash=repro,
         )

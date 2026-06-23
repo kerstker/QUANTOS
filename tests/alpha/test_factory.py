@@ -62,3 +62,53 @@ def test_factory_run_is_deterministic():
     out1 = {k: v["state"] for k, v in r1.run(_cands(3)).items()}
     out2 = {k: v["state"] for k, v in r2.run(_cands(3)).items()}
     assert out1 == out2 and all(s == AlphaState.PAPER_TRADING for s in out1.values())
+
+
+# --- real-evaluator integration: PBO wiring + fail-closed evidence (audit P0/P1) ---
+from services.alpha.panel_backtest import PanelPeriod
+from services.research.backtest_engine.costs import CostModel
+
+
+def _seeded_catalog():
+    cat = AlphaCatalog()
+    for i, rets in enumerate([(0.01, 0.02, -0.01, 0.03), (0.02, -0.01, 0.0, 0.01)]):
+        cat.register(AlphaDefinition(alpha_id=f"seed{i}", name="S", factor_ids=(f"sf{i}",)))
+        cat.set_returns(f"seed{i}", rets)
+    return cat
+
+
+def _real_cands(n=3, n_periods=15, n_inst=12):
+    out = []
+    for j in range(n):
+        insts = tuple(f"i{k}" for k in range(n_inst))
+        periods = []
+        for t in range(n_periods):
+            signals = tuple(float((k + j) % n_inst) for k in range(n_inst))
+            fwd = tuple(0.004 * (k - (n_inst - 1) / 2) + 0.002 * (((k * 5 + t * 3 + j) % 7) - 3)
+                        for k in range(n_inst))
+            periods.append(PanelPeriod(instruments=insts, signals=signals, forward_returns=fwd))
+        out.append((AlphaDefinition(alpha_id=f"rc{j}", name=f"R{j}", factor_ids=(f"rf{j}",)), periods))
+    return out
+
+
+def test_factory_parks_unassessed_candidates_for_human():
+    # the autonomous factory cannot assert no-leakage/regime from PanelPeriods alone,
+    # so without supplied evidence each candidate fails closed to human review.
+    fac = AlphaFactory(catalog=_seeded_catalog())   # real AlphaEvaluator
+    report = fac.run(_real_cands(3))
+    for aid in ("rc0", "rc1", "rc2"):
+        ev = report[aid]["evaluation"]
+        assert ev.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+        assert any("NOT_ASSESSED" in r for r in ev.reasons)
+        assert report[aid]["state"] == AlphaState.TESTING
+
+
+def test_factory_computes_and_stamps_a_real_batch_pbo():
+    fac = AlphaFactory(catalog=_seeded_catalog())
+    ev_map = {aid: {"leakage_ok": True, "regime_profitable_frac": 1.0} for aid in ("rc0", "rc1", "rc2")}
+    report = fac.run(_real_cands(3), evidence=ev_map)
+    pbos = [report[aid]["evaluation"].pbo for aid in ("rc0", "rc1", "rc2")]
+    assert all(0.0 <= p <= 1.0 for p in pbos)            # a real PBO, not the old 0.0 default-pass
+    assert len({round(p, 9) for p in pbos}) == 1          # one batch-level selection PBO, shared
+    for aid in ("rc0", "rc1", "rc2"):                     # evidence present -> not parked for that
+        assert all("NOT_ASSESSED" not in r for r in report[aid]["evaluation"].reasons)

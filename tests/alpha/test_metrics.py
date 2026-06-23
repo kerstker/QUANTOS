@@ -48,3 +48,25 @@ def test_degenerate_series_returns_none_not_inf():
     assert metrics.icir([0.02, 0.02, 0.02]) is None      # zero std -> undefined, not inf
     assert metrics.ic_tstat([0.02, 0.02]) is None
     assert metrics.icir([0.02]) is None
+
+
+def test_ic_pvalue_uses_student_t_not_normal_at_small_T():
+    # at small T the normal approximation overstates significance (review finding);
+    # the Student-t p-value must be strictly LARGER (heavier tails, more conservative)
+    from statistics import NormalDist
+    series = [0.05, 0.02, 0.06, 0.01, 0.07]   # T=5 -> df=4
+    t = metrics.ic_tstat(series)
+    normal_p = 2.0 * (1.0 - NormalDist().cdf(abs(t)))
+    p = metrics.ic_pvalue(series)
+    assert 0.0 < p <= 1.0
+    assert p > normal_p * 5      # df=4, |t|~4: t-p ~0.015 vs normal-p ~5e-5 (orders of magnitude)
+
+
+def test_ic_pvalue_matches_known_t_distribution_value():
+    # _betai-based two-sided t p-value, checked against a tabulated value:
+    # t = 2.776 at df = 4 is the 0.05 two-sided critical point
+    import math as _m
+    from services.alpha.metrics import _betai
+    df, t = 4, 2.776
+    p = _betai(df / 2.0, 0.5, df / (df + t * t))
+    assert abs(p - 0.05) < 1e-3
