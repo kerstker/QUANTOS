@@ -14,12 +14,31 @@ Survivorship-free: RETIRED/REJECTED alphas remain queryable.
 from __future__ import annotations
 
 import statistics
+from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState
 
 _VAR_SR_FLOOR = 1e-4
+
+
+@dataclass(frozen=True)
+class AlphaStateRow:
+    alpha_id: str
+    definition: AlphaDefinition
+    state: AlphaState
+    returns: tuple[float, ...]
+    pvalue: Optional[float]
+
+
+@dataclass(frozen=True)
+class CatalogSnapshot:
+    """A plain, serializable copy of AlphaCatalog state. `trials` is the FULL
+    distinct-config population (a superset of the alphas' own definition hashes),
+    so the trial count round-trips exactly."""
+    trials: tuple[str, ...]
+    alphas: tuple[AlphaStateRow, ...]
 
 
 class AlphaCatalog:
@@ -119,3 +138,37 @@ class AlphaCatalog:
     def approved_set(self) -> dict[str, tuple[float, ...]]:
         """Approved alphas' return series (the orthogonalization basis)."""
         return {aid: self._returns[aid] for aid in self.by_state(AlphaState.APPROVED) if aid in self._returns}
+
+    # --- persistence port (snapshot/restore; no I/O — see experiment_registry) -
+
+    def snapshot(self) -> CatalogSnapshot:
+        rows = tuple(
+            AlphaStateRow(
+                alpha_id=aid,
+                definition=self._defs[aid],
+                state=self._state[aid],
+                returns=self._returns.get(aid, ()),
+                pvalue=self._pvalues.get(aid),
+            )
+            for aid in self.all_ids()
+        )
+        return CatalogSnapshot(trials=tuple(sorted(self._seen_configs)), alphas=rows)
+
+    def restore(self, snap: CatalogSnapshot) -> None:
+        """Replace in-memory state from a snapshot. Sharpe is RECOMPUTED from
+        returns via set_returns (never trusted from outside), so catalog_var_sr is
+        consistent with the persisted returns."""
+        self._defs = {}
+        self._state = {}
+        self._returns = {}
+        self._sharpes = {}
+        self._pvalues = {}
+        self._seen_configs = set(snap.trials)
+        self._trial_count = len(self._seen_configs)
+        for row in snap.alphas:
+            self._defs[row.alpha_id] = row.definition
+            self._state[row.alpha_id] = row.state
+            if row.returns:
+                self.set_returns(row.alpha_id, row.returns)   # recomputes _sharpes
+            if row.pvalue is not None:
+                self._pvalues[row.alpha_id] = float(row.pvalue)

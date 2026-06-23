@@ -47,6 +47,14 @@ Real code:
   (on synthetic data).
 - `services/research/paper_trading/domain/` — models + **placeholder** PnL
   (`notional*0.001`; real reconciliation is Phase 9).
+- `services/research/experiment_registry/` — durable persistence (stdlib sqlite3):
+  `ExperimentRegistry.load_into(catalog)` at session start + `.save(catalog)` at
+  end make the catalog-wide Deflated-Sharpe trial count + var_sr survive across
+  processes (no longer reset on exit); `.record_evaluation(...)` writes an
+  immutable, reproducible artifact and optionally emits an `EXPERIMENT_RECORDED`
+  event into the global audit chain. **Opt-in**: `AlphaCatalog`/`AlphaFactory`
+  behave exactly as before when the registry is unused. **Fail-closed**: loading
+  an uninitialized/corrupt store raises (never silently resets multiple testing).
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
 - `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind;

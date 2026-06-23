@@ -1,0 +1,83 @@
+"""Experiment registry — durable catalog snapshot + immutable evaluation artifacts.
+
+Makes the catalog-wide Deflated-Sharpe trial count and per-alpha Sharpe population
+survive across processes (load_into at session start, save at end), and records
+every AlphaEvaluation as a reproducible, write-once artifact. Optionally emits an
+EXPERIMENT_RECORDED event into the global tamper-evident audit chain. Deterministic:
+all timestamps are caller-supplied; content hashing uses stable_hash."""
+from __future__ import annotations
+
+import json
+from typing import Optional
+
+from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import short_hash, stable_hash
+from quantos.contracts.research import AlphaState
+from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
+
+from .store import SqliteExperimentStore
+
+
+class ExperimentRegistry:
+    def __init__(self, store: SqliteExperimentStore) -> None:
+        self._store = store
+
+    # --- catalog snapshot persistence ---------------------------------------
+
+    def save(self, catalog: AlphaCatalog, *, now: int = 0) -> None:
+        snap = catalog.snapshot()
+        self._store.add_trials(snap.trials, first_seen_ts=now)
+        for row in snap.alphas:
+            sharpe = catalog._sharpes.get(row.alpha_id)   # denormalized for queries
+            self._store.upsert_alpha(
+                alpha_id=row.alpha_id,
+                definition_json=json.dumps(row.definition.model_dump(), sort_keys=True, default=str),
+                state=row.state.value,
+                returns_json=json.dumps(list(row.returns)),
+                sharpe=sharpe,
+                pvalue=row.pvalue,
+            )
+
+    def load_into(self, catalog: AlphaCatalog) -> None:
+        trials = tuple(self._store.all_trial_hashes())     # raises ExperimentStoreError if uninit
+        rows = []
+        for r in self._store.all_alphas():
+            rows.append(AlphaStateRow(
+                alpha_id=r["alpha_id"],
+                definition=AlphaDefinition.model_validate(json.loads(r["definition_json"])),
+                state=AlphaState(r["state"]),
+                returns=tuple(json.loads(r["returns_json"])),
+                pvalue=r["pvalue"],
+            ))
+        catalog.restore(CatalogSnapshot(trials=trials, alphas=tuple(rows)))
+
+    # --- immutable evaluation artifacts -------------------------------------
+
+    def record_evaluation(self, evaluation, *, dataset_version: str, recorded_ts: int,
+                          audit_log=None) -> str:
+        payload = evaluation.model_dump()
+        content_hash = stable_hash({"evaluation": payload, "dataset_version": dataset_version})
+        run_id = short_hash({"alpha_id": evaluation.alpha_id,
+                             "repro": evaluation.reproducibility_hash,
+                             "dataset_version": dataset_version})
+        self._store.insert_evaluation(
+            run_id=run_id, alpha_id=evaluation.alpha_id, dataset_version=dataset_version,
+            recorded_ts=recorded_ts, verdict=evaluation.verdict.value,
+            content_hash=content_hash,
+            evaluation_json=json.dumps(payload, sort_keys=True, default=str),
+        )
+        if audit_log is not None:
+            audit_log.append(
+                event_id=f"exp-{run_id}", actor="experiment-registry",
+                action="EXPERIMENT_RECORDED", timestamp=recorded_ts,
+                target=evaluation.alpha_id,
+                metadata={"run_id": run_id, "content_hash": content_hash,
+                          "verdict": evaluation.verdict.value},
+            )
+        return run_id
+
+    def get_evaluation(self, run_id: str) -> Optional[dict]:
+        return self._store.get_evaluation(run_id)
+
+    def list_evaluations(self, alpha_id: str) -> list[dict]:
+        return self._store.list_evaluations(alpha_id)
