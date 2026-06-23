@@ -35,24 +35,38 @@ class ResearchAgentLoop:
 
     def run(self, candidates: Sequence[tuple], *, timestamp: int = 0) -> dict:
         """candidates: (AlphaDefinition, periods). Returns a report + the human
-        review queue (PAPER_TRADING alphas awaiting a human approval token)."""
+        review queue (PAPER_TRADING alphas awaiting a human approval token).
+
+        Each candidate is isolated: an error (evaluation failure, guardrail) is
+        recorded and the loop continues — it never propagates uncaught nor orphans
+        the others, and an errored alpha is NOT advanced (fail-closed, review P1)."""
         report, review_queue = {}, []
         for defn, periods in candidates:
-            assert_action_allowed(self.actor, AgentAction.EVALUATE)
-            self.catalog.register(defn)
-            ev = self.evaluator.evaluate(defn.alpha_id, periods, as_of=timestamp)
-            assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
-            self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
-            if ev.verdict == ValidationVerdict.PASS:
-                assert_action_allowed(self.actor, AgentAction.ADVANCE_VALIDATED)
-                self.manager.advance(defn.alpha_id, AlphaState.VALIDATED, self.actor, timestamp=timestamp, evaluation=ev)
-                assert_action_allowed(self.actor, AgentAction.ADVANCE_PAPER)
-                self.manager.advance(defn.alpha_id, AlphaState.PAPER_TRADING, self.actor, timestamp=timestamp, evaluation=ev)
-                review_queue.append(defn.alpha_id)
-            elif ev.verdict == ValidationVerdict.FAIL:
-                self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
-            report[defn.alpha_id] = {"verdict": ev.verdict, "state": self.catalog.state(defn.alpha_id)}
+            try:
+                assert_action_allowed(self.actor, AgentAction.EVALUATE)
+                self.catalog.register(defn)
+                ev = self.evaluator.evaluate(defn.alpha_id, periods, as_of=timestamp)
+                assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
+                self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
+                if ev.verdict == ValidationVerdict.PASS:
+                    assert_action_allowed(self.actor, AgentAction.ADVANCE_VALIDATED)
+                    self.manager.advance(defn.alpha_id, AlphaState.VALIDATED, self.actor, timestamp=timestamp, evaluation=ev)
+                    assert_action_allowed(self.actor, AgentAction.ADVANCE_PAPER)
+                    self.manager.advance(defn.alpha_id, AlphaState.PAPER_TRADING, self.actor, timestamp=timestamp, evaluation=ev)
+                    review_queue.append(defn.alpha_id)
+                elif ev.verdict == ValidationVerdict.FAIL:
+                    assert_action_allowed(self.actor, AgentAction.REJECT)
+                    self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
+                report[defn.alpha_id] = {"verdict": ev.verdict.value, "state": self._state_of(defn.alpha_id)}
+            except Exception as e:                       # isolate: record, do NOT advance, continue
+                report[defn.alpha_id] = {"error": type(e).__name__, "state": self._state_of(defn.alpha_id)}
         return {"report": report, "human_review_queue": review_queue}
+
+    def _state_of(self, alpha_id: str):
+        try:
+            return self.catalog.state(alpha_id).value
+        except Exception:
+            return None
 
     def request_human_approval(self, alpha_id: str) -> str:
         """The agent may REQUEST approval — a handoff token a HUMAN later acts on.

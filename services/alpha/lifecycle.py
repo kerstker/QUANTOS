@@ -8,8 +8,15 @@ Every state change goes through advance():
      immutable AlphaTransition.
 
 The manager NEVER constructs an ApprovalRecord — it only verifies one supplied by
-the caller. This, plus the actor-kind check, makes self-approval impossible:
-an agent cannot drive ->APPROVED no matter what token it forges.
+the caller. Combined with the actor-kind check, a non-human ACTOR cannot drive
+->APPROVED (assert_alpha_transition raises UnauthorizedPromotion before any guard).
+
+THREAT MODEL (be precise — see CLAUDE.md): this is a RUNTIME control over the
+actor passed in. In a single process, trusted code that constructs a HUMAN Actor
+or calls catalog._set_state directly can bypass the chokepoint — that is a
+build-time concern governed by code review, the governance scanner, and (Phase 14)
+deployment isolation, NOT by this runtime check. The autonomous agent path
+(services/intelligence) only ever holds a non-human actor and cannot self-approve.
 """
 from __future__ import annotations
 

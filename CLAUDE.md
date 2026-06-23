@@ -24,6 +24,18 @@ trading, no broker connectivity, no real credentials.
 These invariants are machine-enforced by the governance scanner (below) and the
 tests in `tests/governance/`.
 
+**Threat model (two layers).** The agent guardrails (`services/intelligence`),
+the alpha lifecycle state machine, and the pre-trade risk gate are RUNTIME
+controls over the *actor* and *evidence* passed in: a non-human actor cannot reach
+APPROVED, reset the kill-switch, trade live, or touch credentials. They do NOT —
+and in a single process cannot — defend against TRUSTED CODE that constructs a
+`HUMAN` `Actor`, calls `AlphaLifecycleManager`/`KillSwitch`/`catalog._set_state`
+directly, or otherwise bypasses the chokepoint. That build-time surface is
+governed by code review, the governance scanner, and (Phase 14) deployment/process
+isolation. The autonomous agent path holds only a non-human actor and reaches the
+state machine/gate only through the hardened `ResearchAgentLoop`; direct manager/
+catalog access is for human-controlled workflows and is not an agent API.
+
 ## What actually exists (verified, ~10% built)
 
 Real code:

@@ -56,6 +56,28 @@ def test_agent_can_only_request_human_approval():
     assert loop.request_human_approval("a0") == "APPROVAL_REQUESTED:a0"
 
 
+def test_loop_isolates_a_failing_candidate():
+    cat = AlphaCatalog()
+
+    class _FlakyEval:
+        def __init__(self, catalog):
+            self.catalog = catalog
+
+        def evaluate(self, alpha_id, periods, **k):
+            if alpha_id == "a1":
+                raise RuntimeError("boom")
+            self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+            return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
+                                   pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(), marginal_ir=0.5)
+
+    loop = ResearchAgentLoop(catalog=cat, evaluator=_FlakyEval(cat))
+    out = loop.run(_cands(2))                              # a0 ok, a1's eval raises
+    assert "error" in out["report"]["a1"]                 # recorded, not propagated
+    assert cat.state("a0") == AlphaState.PAPER_TRADING     # a0 still fully processed (not orphaned)
+    assert "a0" in out["human_review_queue"]
+    assert cat.state("a1") != AlphaState.APPROVED          # failed alpha never advanced (fail-closed)
+
+
 def test_loop_must_run_as_non_human():
     with pytest.raises(ValueError):
         ResearchAgentLoop(actor=Actor(actor_id="alice", kind=ActorKind.HUMAN))

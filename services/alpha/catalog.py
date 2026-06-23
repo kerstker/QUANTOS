@@ -101,6 +101,13 @@ class AlphaCatalog:
         return self._state[alpha_id]
 
     def _set_state(self, alpha_id: str, state: AlphaState) -> None:
+        """INTERNAL — performs NO validation. The AlphaLifecycleManager (the
+        validated, audited chokepoint) is the ONLY component that should call this
+        during operation; test/seed setup may use it to construct fixtures. A
+        production state change MUST go through AlphaLifecycleManager.advance() —
+        calling this directly bypasses the state machine, guards, and audit trail
+        (see the threat-model note in CLAUDE.md: in-process trusted code is governed
+        by code review + the governance scanner, not by this runtime check)."""
         self._state[alpha_id] = state
 
     def all_ids(self) -> list[str]:
