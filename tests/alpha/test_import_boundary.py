@@ -10,7 +10,7 @@ import services.alpha
 ALPHA_DIR = os.path.dirname(services.alpha.__file__)
 
 FORBIDDEN_PREFIXES = (
-    "services.trading", "services.portfolio", "services.execution",
+    "services.trading", "services.portfolio", "services.execution", "services.risk",
 )
 FORBIDDEN_BROKER = ("ctp", "ctpapi", "vnpy", "ib_insync", "ibapi", "easytrader", "quickfix")
 

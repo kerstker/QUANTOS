@@ -6,7 +6,7 @@ import os
 import services.portfolio
 
 PORTFOLIO_DIR = os.path.dirname(services.portfolio.__file__)
-FORBIDDEN_PREFIXES = ("services.trading", "services.execution")
+FORBIDDEN_PREFIXES = ("services.trading", "services.execution", "services.risk")
 FORBIDDEN_BROKER = ("ctp", "ctpapi", "vnpy", "ib_insync", "ibapi", "easytrader", "quickfix")
 
 
