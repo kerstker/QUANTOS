@@ -310,4 +310,19 @@ portfolio/alpha → risk; the quarantined `services/trading/pre_trade_risk` stay
 - ~30 tests (fail-closed, collect-all, boundaries, sell-flip, post-trade aggregate,
   kill-switch latch/human-only-reset/corrupt-fails-active, no-intent-mutation,
   all-20-reachable, P0-1). New contract quantos/contracts/killswitch.py.
-Next: independent adversarial code review of the built gate, then Phase 9 (paper trading).
+Independent adversarial code review of the built gate was RUN; limit-math + overall-
+safety dimensions found zero issues; confirmed P0 (LIMIT order with no reference_price
+approved) fixed + arm-on-corrupt guard + intent-bound verifiable ref. Deferred:
+boundary provenance verification → Phase 10; HMAC-signed approvals + TTL → Phase 11.
+
+## 16. Phase 9 — Paper Trading PnL reconciliation (core done)
+
+`services/research/paper_trading/`:
+- reconciliation.py: real signed average-cost accounting over fills (longs/shorts/
+  partial closes/flips) + mark-to-market; PnL = realized + unrealized − costs per
+  instrument; aggregate reconciles EXACTLY (equity−initial == gross − costs).
+- pnl.PnLAttributor.attribute now reports REAL net PnL by alpha/sector — replaces
+  the placeholder notional*0.001 (closes Phase-0 defect P0-3).
+- 7 tests incl. the reconciliation identity + "attribution is real PnL not the old
+  2.2 placeholder". Deferred: backtest-vs-paper consistency wiring (perf_gap →
+  decay/lifecycle), consuming Phase-8 approved RebalancePlan/refs.
