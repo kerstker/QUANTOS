@@ -4,25 +4,29 @@ from typing import Dict, List, Optional, Tuple
 
 from .models import (PaperAccount, PaperFill, PaperRun, PaperAttribution,
                       PaperRiskSnapshot, FillMethod)
+from .reconciliation import reconcile
 
 
 class PnLAttributor:
-    """Attributes simulated PnL by alpha, sector, regime, and cost."""
+    """Attributes REAL reconciled PnL (realized + unrealized - costs) by alpha and
+    sector — no longer the placeholder notional*0.001 (Phase 9)."""
 
     @staticmethod
     def attribute(run: PaperRun, fills: List[PaperFill],
-                  equity_curve: List[Dict], sector_map: Dict[str, str] = None,
-                  regime_labels: List[str] = None) -> PaperAttribution:
+                  equity_curve: List[Dict] = None, sector_map: Dict[str, str] = None,
+                  regime_labels: List[str] = None,
+                  marks: Dict[str, float] = None) -> PaperAttribution:
         attr = PaperAttribution(run_id=run.run_id)
-        for f in fills:
-            notional = f.quantity * f.price
-            attr.total_commission += f.commission
-            attr.total_slippage += f.slippage
-            attr.turnover += notional
-            attr.pnl_by_alpha[run.alpha_id] = attr.pnl_by_alpha.get(run.alpha_id, 0) + notional * 0.001
-            if sector_map:
-                sec = sector_map.get(f.instrument_id, "UNKNOWN")
-                attr.pnl_by_sector[sec] = attr.pnl_by_sector.get(sec, 0) + notional * 0.0005
+        recon = reconcile(fills, marks=marks)
+        attr.total_commission = recon.total_commission
+        attr.total_slippage = recon.total_slippage
+        attr.turnover = recon.turnover
+        # this run is a single alpha: its real net PnL = sum of per-instrument net
+        attr.pnl_by_alpha[run.alpha_id] = round(recon.total_net_pnl, 6)
+        if sector_map:
+            for iid, ip in recon.by_instrument.items():
+                sec = sector_map.get(iid, "UNKNOWN")
+                attr.pnl_by_sector[sec] = round(attr.pnl_by_sector.get(sec, 0.0) + ip.net, 6)
         return attr
 
     @staticmethod
