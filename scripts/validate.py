@@ -45,6 +45,7 @@ CHECKS = [
             "tests/execution",
             "tests/intelligence",
             "tests/monitoring",
+            "tests/deployment",
             "tests/governance",
             "services/research/console_api/tests/test_console_api.py",
             "services/research/factor_engine/tests/test_model_compile.py",

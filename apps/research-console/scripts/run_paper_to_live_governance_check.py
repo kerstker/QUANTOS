@@ -62,6 +62,7 @@ SCAN_SUBDIRS = [
     "services/execution",
     "services/intelligence",
     "services/monitoring",
+    "services/deployment",
 ]
 
 DEFAULT_SCAN_DIRS = [os.path.join(REPO_ROOT, d) for d in SCAN_SUBDIRS]
