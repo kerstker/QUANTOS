@@ -340,3 +340,33 @@ boundary provenance verification → Phase 10; HMAC-signed approvals + TTL → P
   -> issue_ref -> boundary admission. The full portfolio→risk→execution chain composes.
 - Deferred: CTP/FIX protocol-mapping boundary (the existing dry_run_adapters already
   covers a real, fail-closed dry-run path); HMAC-signed refs -> Phase 11.
+
+## 18. Phase 11 — AI Agent Layer (done) — guardrailed research loop
+
+`services/intelligence/`: explicit machine-checked capability policy (a non-human
+actor may propose/evaluate/advance-to-PAPER/retire/request-approval and NOTHING
+else; APPROVE + RESET_KILL_SWITCH human-only; LIVE_TRADE + ACCESS_CREDENTIALS
+forbidden for everyone). ResearchAgentLoop runs as a non-human actor, hands
+PAPER_TRADING candidates to a human review queue, isolates per-candidate failures
+(fail-closed). Independently reviewed: runtime guardrails sound (no escape);
+fixed loop exception-isolation + transitive import-boundary test; threat model
+(runtime vs trusted-code) documented in CLAUDE.md.
+
+## 19. Phase 13 — Monitoring + Audit (done)
+
+`services/monitoring/`: GlobalAuditLog (single hash-chained aggregator of all
+components' audit events; ingest() preserves source provenance; tamper breaks the
+chain) + build_snapshot -> MonitoringSnapshot (audit-chain integrity = health;
+kill-switch status; alpha state counts; reject count; anomaly flags).
+
+## 20. Phase 14 — Deployment Governance (done)
+
+`services/deployment/`: evaluate_deployment chokepoint — DEV/TEST free; PAPER needs
+a verified human approval; STAGING/LIVE require L4 readiness AND live SafetyConfig
+flags (both OFF/below at L2), so live deployment is structurally impossible without
+a deliberate multi-step human-approved escalation. Fail-closed.
+
+**Backend phases 0.5–14 COMPLETE. 349 tests; governance scanner clean across 13
+packages; no live surface (transitively verified). Four independent adversarial
+reviews run + fixed (research spine, alpha factory, risk gate, agent layer).**
+Remaining: Phase 12 (wire the React console to the real backends — currently mock-first).
