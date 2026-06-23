@@ -32,6 +32,27 @@ export function isResearchConsoleApiEnabled() {
   return import.meta.env.VITE_MOCK_MODE === 'false' && RESEARCH_CONSOLE_API_BASE.length > 0;
 }
 
+/**
+ * Runtime contract guard. `response.json() as TPayload` is a compile-time cast
+ * only — a 200 with the wrong shape (an HTML error page, a proxy-injected body,
+ * a drifted backend) would otherwise be accepted and rendered as `undefined`
+ * while the page still claims it is "connected". Every console_api payload
+ * carries these read-only markers; if they are absent the body is not a trusted
+ * snapshot, so we throw and let the page fall back to mock with a visible error
+ * instead of silently showing broken data.
+ */
+export function assertConsoleSnapshot<TPayload>(body: unknown, path: string): TPayload {
+  const ok =
+    typeof body === 'object' &&
+    body !== null &&
+    (body as Record<string, unknown>).source === 'BACKEND_COMPUTED_SNAPSHOT' &&
+    (body as Record<string, unknown>).read_only === true;
+  if (!ok) {
+    throw new Error(`Console API ${path} returned a non-snapshot body (contract markers missing)`);
+  }
+  return body as TPayload;
+}
+
 export async function fetchComputationLabSnapshot({
   alphaId,
   costBps,
@@ -57,7 +78,7 @@ export async function fetchComputationLabSnapshot({
     throw new Error(`Computation API returned ${response.status}`);
   }
 
-  return response.json() as Promise<ComputationLabPayload>;
+  return assertConsoleSnapshot<ComputationLabPayload>(await response.json(), '/api/v1/console/computation-lab');
 }
 
 async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): Promise<TPayload> {
@@ -70,7 +91,7 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
     throw new Error(`Console API returned ${response.status}`);
   }
 
-  return response.json() as Promise<TPayload>;
+  return assertConsoleSnapshot<TPayload>(await response.json(), path);
 }
 
 export function fetchOverviewSnapshot(signal?: AbortSignal) {
