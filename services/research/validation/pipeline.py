@@ -62,7 +62,13 @@ def run_research_validation(
     leakage_ok: bool = True,
     regime_profitable_frac: float = 1.0,
     gate: Optional[ValidationGate] = None,
+    n_trials_override: Optional[int] = None,
+    var_sr_override: Optional[float] = None,
 ) -> ValidationResult:
+    """`n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
+    catalog) inject the CATALOG-WIDE trial count and Sharpe-variance estimate, so
+    Deflated Sharpe corrects for every alpha ever tried — not just the local
+    candidate batch. Both must come from the same (catalog) source."""
     gate = gate or ValidationGate()
     if not candidate_targets:
         raise ValueError("need at least one candidate strategy")
@@ -100,7 +106,13 @@ def run_research_validation(
     var_sr = statistics.pstdev(cand_sr) ** 2 if len(cand_sr) > 1 else _VAR_SR_FLOOR
     var_sr = max(var_sr, _VAR_SR_FLOOR)
 
-    dsr = deflated_sharpe_ratio(observed_sr, max(len(oos), 2), n_trials, var_sr) if len(oos) >= 2 else 0.0
+    # Catalog-wide multiple-testing: prefer the injected catalog counts so DSR
+    # deflates for every alpha ever tried, and ValidationResult.trial_count
+    # reflects the catalog (the lifecycle guard checks it equals the catalog).
+    eff_trials = n_trials_override if n_trials_override is not None else n_trials
+    eff_var_sr = max(var_sr_override, _VAR_SR_FLOOR) if var_sr_override is not None else var_sr
+
+    dsr = deflated_sharpe_ratio(observed_sr, max(len(oos), 2), eff_trials, eff_var_sr) if len(oos) >= 2 else 0.0
     walk_forward_passed = oos_sharpe > 0.0
 
     return gate.evaluate(
@@ -108,7 +120,7 @@ def run_research_validation(
         oos_sharpe=oos_sharpe,
         deflated_sharpe=dsr,
         pbo=pbo,
-        trial_count=n_trials,
+        trial_count=eff_trials,
         leakage_ok=leakage_ok,
         regime_profitable_frac=regime_profitable_frac,
         walk_forward_passed=walk_forward_passed,

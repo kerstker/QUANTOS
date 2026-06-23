@@ -38,6 +38,17 @@ def test_pipeline_flags_overfit_candidate_set():
     assert not res.promotable, res.reasons
 
 
+def test_catalog_wide_trial_override_deflates_and_sets_trial_count():
+    bars = _rising_bars(30)
+    hold = [100] * 30
+    base = run_research_validation("g", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0))
+    catalog = run_research_validation("g", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0),
+                                      n_trials_override=500, var_sr_override=0.05)
+    # catalog-wide multiple-testing reaches DSR and the reported trial_count
+    assert catalog.trial_count == 500
+    assert catalog.deflated_sharpe <= base.deflated_sharpe
+
+
 def test_pipeline_fails_on_detected_leakage():
     bars = _rising_bars(30)
     hold = [100] * 30
