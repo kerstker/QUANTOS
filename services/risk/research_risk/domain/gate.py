@@ -34,59 +34,44 @@ class RiskApprovalGate:
         config = run.config or self.config
         gate_results = {}
 
-        # Gate 1: Market
-        mr = self._engines["market"].evaluate(returns, config)
-        gate_results["market"] = mr.passed
-        if mr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Market risk: vol={mr.volatility:.3f}, VaR={mr.var_95:.4f}, CVaR={mr.cvar_95:.4f}")
-
-        # Gate 2: Liquidity
-        lr = self._engines["liquidity"].evaluate(weights, capacity_cny, daily_volume_cny, config)
-        gate_results["liquidity"] = lr.passed
-        if lr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Liquidity: usage={lr.avg_daily_volume_usage:.4f}, liq_days={lr.liquidation_days}")
-
-        # Gate 3: Concentration
-        cr = self._engines["concentration"].evaluate(weights, None, config)
-        gate_results["concentration"] = cr.passed
-        if cr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Concentration: HHI={cr.hhi:.4f}, max_single={cr.max_single_alpha:.3f}")
-
-        # Gate 4: Correlation
-        corr_r = self._engines["correlation"].evaluate(alpha_returns, config)
-        gate_results["correlation"] = corr_r.passed
-        if corr_r.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Correlation: avg={corr_r.avg_correlation:.3f}, max={corr_r.max_pairwise:.3f}")
-
-        # Gate 5: Drawdown
-        dr = self._engines["drawdown"].evaluate(equity_curve, config)
-        gate_results["drawdown"] = dr.passed
-        if dr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Drawdown: max={dr.max_drawdown:.3f}, dur={dr.max_duration}d")
-
-        # Gate 6: Regime
-        rr = self._engines["regime"].evaluate(returns, regime_labels or [], config)
-        gate_results["regime"] = rr.passed
-        if rr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Regime: worst={rr.worst_regime} loss={rr.worst_regime_loss:.3f}")
-
-        # Gate 7: Stress
-        sr = self._engines["stress"].evaluate(returns, config)
-        gate_results["stress"] = sr.passed
-        if sr.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Stress: {sr.scenarios_survived}/{sr.total_scenarios} survived")
-
-        # Gate 8: Capacity
-        cap_r = self._engines["capacity"].evaluate(weights, capacity_cny, total_aum, config)
-        gate_results["capacity"] = cap_r.passed
-        if cap_r.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Capacity: usage={cap_r.capacity_usage:.2f}")
-
-        # Gate 9: Model/Alpha
-        mar = self._engines["model_alpha"].evaluate(alpha_metadata or [], config)
-        gate_results["model_alpha"] = mar.passed
-        if mar.passed: run.gates_passed += 1
-        else: decision.reasons.append(f"Model/Alpha: decay={mar.alphas_with_decay}, overfit={mar.alphas_with_overfitting_flags}")
+        # Run ALL engines, collect ALL results. Any engine that RAISES is treated
+        # as a FAILED gate (never a silent pass and never an uncaught crash that
+        # leaves no decision) — the same fail-closed, run-all-collect-all discipline
+        # as the pre-trade gate (audit P1). Combined with the engines' empty-input
+        # fail-closed guards, missing/degenerate data can no longer inflate
+        # gates_passed or reach RISK_APPROVED.
+        specs = (
+            ("market", lambda: self._engines["market"].evaluate(returns, config),
+             lambda r: f"Market risk: vol={r.volatility:.3f}, VaR={r.var_95:.4f}, CVaR={r.cvar_95:.4f}"),
+            ("liquidity", lambda: self._engines["liquidity"].evaluate(weights, capacity_cny, daily_volume_cny, config),
+             lambda r: f"Liquidity: usage={r.avg_daily_volume_usage:.4f}, liq_days={r.liquidation_days}"),
+            ("concentration", lambda: self._engines["concentration"].evaluate(weights, None, config),
+             lambda r: f"Concentration: HHI={r.hhi:.4f}, max_single={r.max_single_alpha:.3f}"),
+            ("correlation", lambda: self._engines["correlation"].evaluate(alpha_returns, config),
+             lambda r: f"Correlation: avg={r.avg_correlation:.3f}, max={r.max_pairwise:.3f}"),
+            ("drawdown", lambda: self._engines["drawdown"].evaluate(equity_curve, config),
+             lambda r: f"Drawdown: max={r.max_drawdown:.3f}, dur={r.max_duration}d"),
+            ("regime", lambda: self._engines["regime"].evaluate(returns, regime_labels or [], config),
+             lambda r: f"Regime: worst={r.worst_regime} loss={r.worst_regime_loss:.3f}"),
+            ("stress", lambda: self._engines["stress"].evaluate(returns, config),
+             lambda r: f"Stress: {r.scenarios_survived}/{r.total_scenarios} survived"),
+            ("capacity", lambda: self._engines["capacity"].evaluate(weights, capacity_cny, total_aum, config),
+             lambda r: f"Capacity: usage={r.capacity_usage:.2f}"),
+            ("model_alpha", lambda: self._engines["model_alpha"].evaluate(alpha_metadata or [], config),
+             lambda r: f"Model/Alpha: decay={r.alphas_with_decay}, overfit={r.alphas_with_overfitting_flags}"),
+        )
+        for name, thunk, reason_fn in specs:
+            try:
+                report = thunk()
+                passed = bool(report.passed)
+            except Exception as exc:   # fail closed: an engine error is NOT a pass
+                report, passed = None, False
+                decision.reasons.append(f"{name}: engine error ({type(exc).__name__})")
+            gate_results[name] = passed
+            if passed:
+                run.gates_passed += 1
+            elif report is not None:
+                decision.reasons.append(reason_fn(report))
 
         run.gate_results = gate_results
         run.gates_passed = min(run.gates_passed, run.gates_total)

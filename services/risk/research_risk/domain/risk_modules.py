@@ -89,6 +89,8 @@ class LiquidityRiskEngine:
         daily_volume_cny: float,
         config: RiskConfig,
     ) -> LiquidityRiskReport:
+        if not weights:
+            return LiquidityRiskReport(passed=False)   # no book -> not evaluable, fail closed
         gross = sum(abs(value) for value in weights.values())
         min_capacity = min(capacity_cny.values()) if capacity_cny else 0.0
         avg_daily_volume_usage = gross / max(daily_volume_cny / 100_000_000, 1.0)
@@ -113,6 +115,8 @@ class LiquidityRiskEngine:
 
 class ConcentrationRiskEngine:
     def evaluate(self, weights: Dict[str, float], clusters, config: RiskConfig) -> ConcentrationRiskReport:
+        if not weights:
+            return ConcentrationRiskReport(passed=False)   # no book -> fail closed
         abs_weights = [abs(value) for value in weights.values()]
         hhi = sum(value * value for value in abs_weights)
         effective_n = 1 / hhi if hhi > 0 else 0.0
@@ -134,6 +138,8 @@ class ConcentrationRiskEngine:
 
 class CorrelationRiskEngine:
     def evaluate(self, alpha_returns: Dict[str, List[float]], config: RiskConfig) -> CorrelationRiskReport:
+        if len(alpha_returns) < 2:
+            return CorrelationRiskReport(passed=False)   # <2 alphas -> not evaluable, fail closed
         pairs = [_corr(left, right) for left, right in combinations(alpha_returns.values(), 2)]
         abs_pairs = [abs(value) for value in pairs]
         avg_correlation = statistics.fmean(abs_pairs) if abs_pairs else 0.0
@@ -212,6 +218,8 @@ class RegimeRiskEngine:
 class StressTestEngine:
     def evaluate(self, returns: List[float], config: RiskConfig) -> PortfolioStressReport:
         series = _clean(returns)
+        if not series:
+            return PortfolioStressReport(passed=False)   # no returns -> cannot stress, fail closed
         base_loss = abs(min(0.0, sum(value for value in series if value < 0)))
         scenarios = {
             "market_gap": base_loss * 1.2,
@@ -240,6 +248,8 @@ class CapacityRiskEngine:
         total_aum: float,
         config: RiskConfig,
     ) -> CapacityRiskReport:
+        if not weights:
+            return CapacityRiskReport(passed=False)   # no book -> fail closed
         usages = {
             key: abs(weight) * total_aum / max(capacity_cny.get(key, config.min_capacity), 1.0)
             for key, weight in weights.items()
