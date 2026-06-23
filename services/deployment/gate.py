@@ -38,6 +38,8 @@ class DeploymentDecision:
 def _verified_human_approval(approval: Optional[ApprovalRecord], actor: Optional[Actor],
                              subject: str) -> list[str]:
     reasons = []
+    if not subject:
+        reasons.append("SUBJECT_REQUIRED")          # an empty subject must not bypass binding (review)
     if approval is None or not approval.approved:
         reasons.append("NO_HUMAN_APPROVAL")
         return reasons
@@ -45,7 +47,7 @@ def _verified_human_approval(approval: Optional[ApprovalRecord], actor: Optional
         reasons.append("APPROVER_NOT_HUMAN")
     if approval.approver != (actor.actor_id if actor else None):
         reasons.append("APPROVER_IDENTITY_MISMATCH")
-    if subject and approval.subject_id != subject:
+    if not subject or approval.subject_id != subject:
         reasons.append("APPROVAL_SUBJECT_MISMATCH")
     return reasons
 

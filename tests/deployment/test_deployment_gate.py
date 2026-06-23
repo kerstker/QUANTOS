@@ -42,6 +42,22 @@ def test_staging_blocked_at_l2():
     assert not d.allowed and "READINESS_BELOW_LIVE" in d.reasons
 
 
+def test_empty_subject_does_not_bypass_approval_binding():
+    # an empty subject must NOT skip the binding check (review P1)
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(subject="other"), actor=HUMAN, subject="")
+    assert not d.allowed and "SUBJECT_REQUIRED" in d.reasons
+
+
+def test_gate_agrees_with_deployment_record_on_live():
+    # the gate blocks LIVE at L2; the contract refuses to even construct an
+    # unapproved LIVE record -> two independent layers agree
+    import pytest as _pytest
+    from quantos.contracts.governance import DeploymentRecord
+    assert not evaluate_deployment(Environment.LIVE, approval=_approval(), actor=HUMAN, subject="deploy").allowed
+    with _pytest.raises(Exception):
+        DeploymentRecord(deployment_id="d1", environment=Environment.LIVE, version="v1", approved=False)
+
+
 def test_live_requires_both_readiness_and_flags():
     # even at L4 readiness, research-safe flags keep LIVE blocked
     d = evaluate_deployment(Environment.LIVE, approval=_approval(), actor=HUMAN, subject="deploy",
