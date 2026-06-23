@@ -263,4 +263,27 @@ all 3 critique P0s folded in. `services/alpha/` + `quantos/contracts/alpha.py`:
   (P0-3). Inert proposal-only generator. AST import-boundary test: services/alpha
   imports nothing from trading/portfolio/execution or broker SDKs (P1-6).
 - 80 alpha tests; the automated factory can NEVER auto-approve. **Phase 6 done.**
-  Recommended: independent adversarial code review before Phase 7 (Portfolio).
+
+Independent adversarial review (12 agents) was RUN and all confirmed P0/P1 fixed
+(3 batches): var_sr fail-closed (<2 population -> review), config_hash collision
+removed, approver-identity + trial-count-at-approval checks, BH-FDR now ENFORCED
+in guard_to_validated, retirement sweep() driver; evaluator computes marginal_ir/
+capacity_adj_sharpe + records IC p-value, ranker accepts AlphaEvaluation objects,
+decay mean-retention debounce (closes sawtooth) + anti-persistent flag, panel
+dup/non-finite guards, rank_stability inf/nan guard. 96 alpha tests.
+
+## 14. Phase 7 — Portfolio Layer (core done)
+
+`services/portfolio/` (pure-Python, deterministic, over the small N of ranked
+alpha sleeves; no live surface — import-boundary tested):
+- risk_model.py: sample covariance over the common window (fail-closed below
+  min_overlap), shrinkage toward the diagonal, portfolio variance/vol, component
+  + percent risk contributions.
+- optimizer.py: risk_parity_weights (equal-risk-contribution, inversion-free) +
+  inverse_vol_weights; cap_weights (concentration limit); cost_aware_rebalance
+  (no-trade band).
+- construction.py: build_portfolio (covariance -> shrink -> risk-parity -> cap ->
+  cost-aware rebalance -> RebalancePlan of per-alpha budget weights + turnover) +
+  risk_budget_report. PortfolioConfig holds the thresholds.
+- 18 tests. Deferred: explicit multi-factor risk model, attribution wiring,
+  console surfacing. Phase 8 (Risk Layer) is next.
