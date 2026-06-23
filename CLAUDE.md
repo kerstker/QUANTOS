@@ -74,8 +74,22 @@ python apps/research-console/scripts/run_paper_to_live_governance_check.py
 
 # Frontend (mock-first; opens http://localhost:3100/research)
 cd apps/research-console && npm ci && npm run typecheck && npm run build && npm test
+
+# Frontend against the REAL read-only backend (Phase 12 wiring)
+#   1) start the console API (read-only computed snapshots, no broker/OMS):
+python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+#   2) point the console at it and disable mock mode (CORS allows :3100 only):
+cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
 ```
 
 Note: all backend services now live under the repo-root `services/` tree
 (unified in Phase 1; `apps/research-console/` is frontend-only). `scripts/validate.py`
 runs the full suite from the repo root — prefer it over a bare `pytest`.
+
+Phase 12 wiring is contract-guarded on BOTH sides: `tests/research/test_console_api_contract.py`
+(in the gate) asserts every endpoint returns the exact top-level keys the
+frontend `*Payload` types read, and the console API client validates the
+read-only snapshot markers at runtime (`assertConsoleSnapshot`) so a drifted /
+non-snapshot 200 surfaces as a visible error + honest mock fallback rather than
+silently rendering `undefined`. Change a payload shape → change both the TS type
+and the contract test in the same commit.

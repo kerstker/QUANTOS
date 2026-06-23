@@ -366,7 +366,27 @@ a verified human approval; STAGING/LIVE require L4 readiness AND live SafetyConf
 flags (both OFF/below at L2), so live deployment is structurally impossible without
 a deliberate multi-step human-approved escalation. Fail-closed.
 
-**Backend phases 0.5–14 COMPLETE. 349 tests; governance scanner clean across 13
-packages; no live surface (transitively verified). Four independent adversarial
-reviews run + fixed (research spine, alpha factory, risk gate, agent layer).**
-Remaining: Phase 12 (wire the React console to the real backends — currently mock-first).
+## 21. Phase 12 — Frontend ↔ backend wiring + contract guard (done)
+
+The 25-page React console already had a full API client (`research-console-api.ts`,
+25 fetchers) and per-page `apiEnabled` fetch + mock-fallback logic, and the
+read-only `console_api` already served all 25 endpoints from REAL implementations
+(factor_engine IC/Sharpe, paper_trading PnL, research-risk gate, leakage detector).
+The wiring existed; the gap was **drift safety**. Because the client cast responses
+with `as TPayload` (no runtime check) and pages fall back to mock on error, a 200
+with a drifted/forged shape would render as `undefined` while still claiming
+"connected". Closed on both sides:
+- **Gate-side:** `tests/research/test_console_api_contract.py` derives the required
+  top-level keys from the frontend `*Payload` types and asserts every endpoint
+  returns them + the read-only markers, plus a route↔contract bijection guard and
+  a query-echo (`selected_alpha_id`) check. Backend drift now turns the gate RED.
+- **Client-side:** `assertConsoleSnapshot` validates the `BACKEND_COMPUTED_SNAPSHOT`
+  / `read_only` markers at runtime so a non-snapshot 200 surfaces as a visible
+  error + honest mock fallback. First frontend tests added (vitest, 5) — the
+  previously configured-but-empty runner is now active.
+Run story documented in CLAUDE.md (uvicorn :8400 + `VITE_MOCK_MODE=false`).
+
+**Backend phases 0.5–14 COMPLETE and Phase 12 wiring contract-guarded. 433 Python
+tests + 5 frontend tests; governance scanner clean across 13 packages; no live
+surface (transitively verified). Five independent adversarial reviews run + fixed
+(research spine, alpha factory, risk gate, agent layer, monitoring/deployment).**

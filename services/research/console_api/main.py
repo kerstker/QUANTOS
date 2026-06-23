@@ -282,7 +282,7 @@ def _overview_payload() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         "stats": stats,
         "funnel": [
             {"id": "hypotheses", "label": "Hypotheses", "value": stats["total_hypotheses"]},
@@ -373,6 +373,11 @@ def _validation_reports() -> List[Dict]:
 def _paper_run(alpha_id: str) -> Dict:
     idx = _alpha_index(alpha_id)
     alpha = _computed_alpha(idx)
+    # echo the RESOLVED candidate id, not the raw query: an unknown id resolves to
+    # idx 0, so labelling the run with the raw id would mislabel alpha-1's data as
+    # the requested (non-existent) alpha. Stay consistent with risk-dashboard /
+    # computation-lab, which both echo the resolved id.
+    resolved_id = alpha["candidate_id"]
     returns = _forward_returns(_factor_values(idx), idx)
     equity_points = _equity_curve(returns)
     metrics = PnLAttributor.compute_metrics(
@@ -382,8 +387,8 @@ def _paper_run(alpha_id: str) -> Dict:
     )
     status = "PAPER_PASSED" if metrics.get("sharpe", 0) > 0.5 and metrics.get("max_drawdown", 100) < 30 else "PAPER_RUNNING"
     return {
-        "run_id": f"paper-{alpha_id}",
-        "alpha_id": alpha_id,
+        "run_id": f"paper-{resolved_id}",
+        "alpha_id": resolved_id,
         "status": status,
         "metrics": metrics,
         "equity_curve": [{"timestamp": point["x"], "equity": point["equity"]} for point in equity_points],
@@ -3354,7 +3359,7 @@ async def agents_dashboard() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3365,7 +3370,7 @@ async def events_dashboard() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3376,7 +3381,7 @@ async def phase3a_readiness() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3387,7 +3392,7 @@ async def architecture() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3398,7 +3403,7 @@ async def experiments() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3409,7 +3414,7 @@ async def data_catalog() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3420,7 +3425,7 @@ async def backtest_explainability(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3431,7 +3436,7 @@ async def scenario_stress(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3442,7 +3447,7 @@ async def model_risk_review() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3453,7 +3458,7 @@ async def evidence_ledger() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3464,7 +3469,7 @@ async def reviewer_workflow() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3475,7 +3480,7 @@ async def access_control() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3486,7 +3491,7 @@ async def monitoring_drift() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3497,7 +3502,7 @@ async def incident_response() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3508,7 +3513,7 @@ async def promotion_control() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3519,7 +3524,7 @@ async def release_committee() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3531,7 +3536,7 @@ async def alpha_factory() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         "summary": {
             "candidates": len(candidates),
             "avg_ic": round(statistics.mean(alpha["ic"] for alpha in candidates), 4),
@@ -3565,7 +3570,7 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         "selected_alpha_id": alpha["candidate_id"],
         "alpha": alpha,
         "primary_report": primary_report,
@@ -3581,7 +3586,7 @@ async def validation_dashboard() -> Dict:
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "validation_backend": "REAL_LEAKAGE_DETECTOR_v1",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         "selected_report": reports[0],
         "reports": reports,
         "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
@@ -3594,8 +3599,8 @@ async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
-        "selected_alpha_id": alpha_id,
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "selected_alpha_id": run["alpha_id"],   # resolved id — matches the rendered data
         "run": run,
         "lineage": [item for item in LINEAGE if item["layer"] == "Paper"],
     }
@@ -3607,7 +3612,7 @@ async def portfolio_dashboard() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
         "lineage": [item for item in LINEAGE if item["layer"] in {"Alpha", "Paper", "Risk"}],
     }
@@ -3619,7 +3624,7 @@ async def system_health() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3630,7 +3635,7 @@ async def system_completeness() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 
@@ -3684,7 +3689,7 @@ async def computation_lab(
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         "selected_alpha_id": alpha["candidate_id"],
         "alpha_candidates": ALPHAS,
         "alpha": alpha,

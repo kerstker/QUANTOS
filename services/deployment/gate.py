@@ -24,6 +24,16 @@ class ReadinessLevel(str, Enum):
     L4_LIVE_APPROVED = "L4_LIVE_APPROVED"
 
 
+_RANK = {ReadinessLevel.L2_DRY_RUN_ONLY: 2, ReadinessLevel.L4_LIVE_APPROVED: 4}
+
+# The platform's pinned readiness — a single, non-overridable source of truth.
+# It is NOT a caller-supplied argument: trusted code cannot pass a higher
+# readiness to unlock STAGING/LIVE (audit P2 — the previous L2 block depended on
+# argument DEFAULTS, so a caller passing readiness=L4 + live flags flipped it).
+# A requested readiness is capped at this pin, so LIVE stays structurally blocked
+# until the platform itself is re-pinned. Today the platform is L2_DRY_RUN_ONLY.
+PLATFORM_READINESS = ReadinessLevel.L2_DRY_RUN_ONLY
+
 _RESEARCH_ENVS = {Environment.DEV, Environment.TEST}
 _LIVE_ENVS = {Environment.STAGING, Environment.LIVE}
 
@@ -58,7 +68,7 @@ def evaluate_deployment(
     safety_config: SafetyConfig = RESEARCH_SAFE_DEFAULTS,
     approval: Optional[ApprovalRecord] = None,
     actor: Optional[Actor] = None,
-    readiness: ReadinessLevel = ReadinessLevel.L2_DRY_RUN_ONLY,
+    readiness: Optional[ReadinessLevel] = None,
     subject: str = "",
 ) -> DeploymentDecision:
     try:
@@ -67,8 +77,14 @@ def evaluate_deployment(
 
         reasons = _verified_human_approval(approval, actor, subject)   # PAPER and above need this
 
+        # A caller may REQUEST a readiness, but it is capped at the non-overridable
+        # platform pin — passing readiness=L4 cannot unlock LIVE while the platform
+        # is pinned at L2 (audit P2).
+        requested = readiness or PLATFORM_READINESS
+        effective = requested if _RANK[requested] <= _RANK[PLATFORM_READINESS] else PLATFORM_READINESS
+
         if environment in _LIVE_ENVS:
-            if readiness != ReadinessLevel.L4_LIVE_APPROVED:
+            if effective != ReadinessLevel.L4_LIVE_APPROVED:
                 reasons.append("READINESS_BELOW_LIVE")
             if not (safety_config.live_trading_enabled and safety_config.real_broker_enabled
                     and safety_config.allow_order_submission):

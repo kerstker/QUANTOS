@@ -1,0 +1,148 @@
+"""Phase 12 — frontend<->backend contract conformance.
+
+The research console frontend casts each response with `response.json() as
+TPayload` (compile-time only, NO runtime validation), and silently falls back
+to mock data on error. So a backend payload that drops a key the page reads
+would not crash the build — the page would just render `undefined` while still
+claiming it is "connected". That class of drift is invisible to TypeScript and
+to the frontend tests.
+
+This test is the guard: for every console_api endpoint it asserts the response
+carries the read-only base markers AND the exact top-level keys the matching
+TS `*Payload` type in `apps/research-console/src/lib/types/research.ts`
+destructures. Backend drift away from the frontend contract turns the gate RED.
+
+If you change a payload's top-level shape, change BOTH this contract and the TS
+type in the same commit — that is the point.
+"""
+from fastapi.testclient import TestClient
+
+from services.research.console_api.main import app
+
+client = TestClient(app)
+
+BASE_MARKERS = ("source", "read_only", "api_version")
+
+# endpoint -> (query string, required top-level keys per the frontend TS Payload type).
+# Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
+# exported *Payload interfaces). Base markers are checked separately for all.
+CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "/api/v1/console/overview": ("", ("stats", "funnel", "agents")),
+    "/api/v1/console/agents": ("", ("summary", "agents")),
+    "/api/v1/console/events": ("", ("events",)),
+    "/api/v1/console/phase-3a-readiness": ("", ("readiness",)),
+    "/api/v1/console/architecture": ("", (
+        "current_level", "target_level", "phase3a_decision", "implementation_authorized",
+        "architecture_score", "modules", "data_flows", "gaps", "safety_boundary")),
+    "/api/v1/console/experiments": ("", (
+        "registry_mode", "summary", "experiments", "stage_counts", "lineage_policy")),
+    "/api/v1/console/data-catalog": ("", (
+        "catalog_mode", "feature_store_mode", "summary", "datasets", "features",
+        "lineage_edges", "quality_policy")),
+    "/api/v1/console/backtest-explainability": ("?alpha_id=alpha-2", (
+        "explainability_mode", "selected_alpha_id", "run", "alpha", "summary",
+        "equity_curve", "drawdown_curve", "segments", "monthly_returns", "cost_breakdown",
+        "drawdown_periods", "trade_distribution", "regime_attribution", "decision_drivers",
+        "assumptions", "explainability_policy")),
+    "/api/v1/console/scenario-stress": ("?alpha_id=alpha-2", (
+        "stress_mode", "selected_alpha_id", "run", "alpha", "baseline", "summary",
+        "scenarios", "exposure_buckets", "risk_factor_contributions", "scenario_policy",
+        "assumptions")),
+    "/api/v1/console/model-risk-review": ("", (
+        "model_risk_mode", "review_standard", "summary", "models", "validation_dimensions",
+        "issue_register", "evidence_sources", "governance_policy")),
+    "/api/v1/console/evidence-ledger": ("", (
+        "ledger_mode", "chain_id", "root_hash", "summary", "entries", "blockers",
+        "ledger_policy")),
+    "/api/v1/console/reviewer-workflow": ("", (
+        "workflow_mode", "workflow_id", "summary", "reviewers", "tasks", "approval_gates",
+        "workload", "evidence_links", "workflow_policy")),
+    "/api/v1/console/access-control": ("", (
+        "access_mode", "summary", "roles", "permission_matrix", "export_packages",
+        "access_reviews", "forbidden_capabilities", "access_policy")),
+    "/api/v1/console/monitoring-drift": ("", (
+        "monitoring_mode", "summary", "status_counts", "category_counts", "monitors",
+        "top_breaches", "watchlist", "monitoring_policy")),
+    "/api/v1/console/incident-response": ("", (
+        "incident_mode", "summary", "severity_counts", "state_counts", "routing_counts",
+        "incidents", "routing_rules", "runbooks", "timeline", "incident_policy")),
+    "/api/v1/console/promotion-control": ("", (
+        "promotion_mode", "current_level", "target_stage", "phase3a_decision", "summary",
+        "decision_counts", "stage_counts", "promotions", "gates", "release_policy",
+        "safety_boundary")),
+    "/api/v1/console/release-committee": ("", (
+        "committee_mode", "meeting_id", "current_level", "phase3a_decision",
+        "committee_decision", "summary", "seats", "agenda", "votes",
+        "required_attestations", "blockers", "committee_policy")),
+    "/api/v1/console/alpha-factory": ("", (
+        "summary", "candidates", "screening", "correlation_matrix", "lineage")),
+    "/api/v1/console/risk-dashboard": ("?alpha_id=alpha-2", (
+        "selected_alpha_id", "alpha", "primary_report", "reports", "lineage")),
+    "/api/v1/console/validation": ("", ("selected_report", "reports", "lineage")),
+    "/api/v1/console/paper-trading": ("?alpha_id=alpha-2", (
+        "selected_alpha_id", "run", "lineage")),
+    "/api/v1/console/portfolio": ("", (
+        "simulation", "drawdown_curve", "weights", "risk_contributions",
+        "return_attribution", "analytics_method", "lineage")),
+    "/api/v1/console/system-completeness": ("", (
+        "audit_mode", "current_level", "institutional_target", "readiness_score", "summary",
+        "modules", "checks", "gaps", "roadmap", "safety_boundary")),
+    "/api/v1/console/system-health": ("", ("services", "gates", "safety_checks")),
+    "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
+        "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
+        "equity_curve", "drawdown_curve", "risk_report", "lineage")),
+}
+
+
+def test_every_frontend_payload_type_has_an_endpoint():
+    # if a *Payload type ever maps to a route not under contract, this fails loudly
+    routed = {r.path for r in app.routes if getattr(r, "methods", None) and "GET" in r.methods}
+    routed = {p for p in routed if p.startswith("/api/v1/console/")}
+    assert routed == set(CONTRACT), f"contract/route mismatch: {routed ^ set(CONTRACT)}"
+
+
+def test_health_endpoint_is_read_only():
+    body = client.get("/health").json()
+    assert body["status"] == "healthy" and body["mode"] == "READ_ONLY"
+
+
+def test_every_endpoint_satisfies_the_frontend_contract():
+    failures: list[str] = []
+    for path, (query, keys) in CONTRACT.items():
+        resp = client.get(path + query)
+        if resp.status_code != 200:
+            failures.append(f"{path}: HTTP {resp.status_code}")
+            continue
+        body = resp.json()
+        for marker in BASE_MARKERS:
+            if marker not in body:
+                failures.append(f"{path}: missing base marker '{marker}'")
+        if body.get("read_only") is not True:
+            failures.append(f"{path}: read_only is not True")
+        # honesty marker (audit P1): synthetic figures must be self-labelled, never
+        # presented as real research/PnL on the wire
+        if body.get("data_provenance") != "SYNTHETIC_DETERMINISTIC":
+            failures.append(f"{path}: data_provenance is not SYNTHETIC_DETERMINISTIC")
+        for key in keys:
+            if key not in body:
+                failures.append(f"{path}: missing contract key '{key}'")
+    assert not failures, "frontend contract drift:\n" + "\n".join(failures)
+
+
+def test_query_bound_endpoints_echo_the_requested_alpha():
+    # the page binds its selector to the echoed selected_alpha_id; if a VALID id
+    # were not echoed faithfully the page would render the wrong alpha's data
+    for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading",
+                 "/api/v1/console/computation-lab"):
+        body = client.get(path + "?alpha_id=alpha-3&cost_bps=20&stress=1.4").json()
+        assert body["selected_alpha_id"] == "alpha-3", f"{path} did not echo alpha-3"
+
+
+def test_unknown_alpha_id_falls_back_to_default_visibly():
+    # INTENTIONAL fail-soft: an unknown alpha_id (e.g. a stale/typo'd URL) resolves
+    # to the first candidate (_alpha_index returns 0 on miss) and ECHOES that id, so
+    # the UI shows which alpha it actually rendered rather than 500-ing or labelling
+    # default data as the requested id. Pinned so the fallback stays deliberate.
+    for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading"):
+        body = client.get(path + "?alpha_id=does-not-exist").json()
+        assert body["selected_alpha_id"] == "alpha-1", f"{path} did not fall back visibly"

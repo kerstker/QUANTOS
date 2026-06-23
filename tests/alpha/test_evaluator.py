@@ -96,3 +96,26 @@ def test_evaluation_populates_marginal_ir_and_capacity_adj_sharpe():
     r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel_with_adv())
     assert r.marginal_ir is not None                       # incremental edge computed
     assert abs(r.capacity_adj_sharpe) <= abs(r.net_sharpe)  # capacity haircut in [0,1]
+
+
+def test_unassessed_evidence_fails_closed_to_human_review():
+    # coverage ok + DSR computable (seeded catalog), but leakage/pbo/regime were
+    # NOT supplied -> must NOT auto-PASS; parks for a human (audit P0/P1).
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel())
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert set(r.reasons) >= {"LEAKAGE_NOT_ASSESSED", "OVERFIT_NOT_ASSESSED", "REGIME_NOT_ASSESSED"}
+
+
+def test_partial_evidence_still_fails_closed_on_the_missing_piece():
+    # supply leakage + regime but NOT pbo -> still parked, only on the missing one
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, regime_profitable_frac=1.0)
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert r.reasons == ("OVERFIT_NOT_ASSESSED",)
+
+
+def test_fully_assessed_evidence_reaches_the_real_gate():
+    # all three supplied -> gated on real thresholds, not parked for missing evidence
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert all("NOT_ASSESSED" not in reason for reason in r.reasons)

@@ -15,10 +15,56 @@ from __future__ import annotations
 
 import math
 import statistics
-from statistics import NormalDist
 from typing import Optional, Sequence
 
-_N = NormalDist()
+
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued-fraction expansion for the regularized incomplete beta (NR §6.4)."""
+    MAXIT, EPS, FPMIN = 300, 3.0e-14, 1.0e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < FPMIN:
+        d = FPMIN
+    d = 1.0 / d
+    h = d
+    for m in range(1, MAXIT + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < FPMIN:
+            d = FPMIN
+        c = 1.0 + aa / c
+        if abs(c) < FPMIN:
+            c = FPMIN
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < FPMIN:
+            d = FPMIN
+        c = 1.0 + aa / c
+        if abs(c) < FPMIN:
+            c = FPMIN
+        d = 1.0 / d
+        de = d * c
+        h *= de
+        if abs(de - 1.0) < EPS:
+            break
+    return h
+
+
+def _betai(a: float, b: float, x: float) -> float:
+    """Regularized incomplete beta I_x(a, b) in [0, 1] (deterministic)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    lbeta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    bt = math.exp(lbeta + a * math.log(x) + b * math.log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
 
 
 def clean(ic_series: Sequence[Optional[float]]) -> list[float]:
@@ -46,8 +92,18 @@ def ic_tstat(ic_series: Sequence[Optional[float]]) -> Optional[float]:
 
 
 def ic_pvalue(ic_series: Sequence[Optional[float]]) -> Optional[float]:
+    """Two-sided Student-t p-value with df = T-1. The normal approximation
+    overstates significance at the small T this system permits (review finding);
+    the t-distribution has the correct heavier tails. Identity used:
+    two-sided p = I_x(df/2, 1/2) with x = df / (df + t^2)."""
     t = ic_tstat(ic_series)
-    return None if t is None else 2.0 * (1.0 - _N.cdf(abs(t)))
+    if t is None:
+        return None
+    df = len(clean(ic_series)) - 1
+    if df < 1:
+        return None
+    x = df / (df + t * t)
+    return _betai(df / 2.0, 0.5, x)
 
 
 def hit_rate(ic_series: Sequence[Optional[float]]) -> Optional[float]:
