@@ -240,3 +240,27 @@ findings fixed: leakage-detector bypasses (perturb all fields incl. volume/
 knowledge_time, multi-instrument, PIT-dedup), gate input-validation + WARN
 not auto-promotable, DSR var_sr required + guards, metrics max-drawdown clamp /
 Sortino / Calmar.
+
+## 13. Phase 6 — Alpha Factory (DONE) — the profit center
+
+Built from a 4-lens design workshop + adversarial critique (`docs/ALPHA_FACTORY_SPEC.md`);
+all 3 critique P0s folded in. `services/alpha/` + `quantos/contracts/alpha.py`:
+- catalog-wide multiple testing: `run_research_validation` gains n_trials/var_sr
+  override; `AlphaCatalog` owns a monotonic dedup trial counter + population
+  var_sr, fed TOGETHER to Deflated Sharpe (P0-1/2). + Benjamini-Hochberg FDR.
+- series-correct ICIR (not factor_engine's broken single-cross-section figure) +
+  thin-coverage fail-closed gate (P1-2).
+- dollar-neutral net-of-cost panel backtest (fractional weights, per-name ADV
+  impact, reconciles) (P0-4).
+- evaluator: PIT cross-sections -> IC series -> panel backtest -> catalog DSR ->
+  AlphaEvaluation. correlation + complete-linkage clustering + Gram-Schmidt
+  orthogonalization (reward only incremental edge). crowding (fail-closed) +
+  capacity (impact-budget). robust diversity-aware ranker (MAD-z + z-clip +
+  greedy MMR). decay (AR(1) half-life, debounced) + retirement.
+- lifecycle state machine + manager: APPROVED is HUMAN-ONLY (Actor.kind verified;
+  agents raise UnauthorizedPromotion), human ApprovalRecord + paper-consistency
+  gated, every transition hash-chain audited; the manager never mints an approval
+  (P0-3). Inert proposal-only generator. AST import-boundary test: services/alpha
+  imports nothing from trading/portfolio/execution or broker SDKs (P1-6).
+- 80 alpha tests; the automated factory can NEVER auto-approve. **Phase 6 done.**
+  Recommended: independent adversarial code review before Phase 7 (Portfolio).
