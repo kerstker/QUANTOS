@@ -91,6 +91,23 @@ class AlphaCluster(BaseModel):
     intra_corr: Optional[float] = None   # worst (min) pairwise |corr| within the cluster
 
 
+class AlphaRanking(BaseModel):
+    """One alpha's place in the robust, diversity-aware ranking. Fully
+    explainable: the per-metric z-scores and the penalties are exposed."""
+    model_config = ConfigDict(frozen=True)
+    rank: int = Field(ge=1)
+    alpha_id: str = Field(min_length=1)
+    composite_score: float               # final: stability-weighted, penalized
+    raw_score: float                     # pre-penalty weighted robust-z composite
+    rank_stability: float = 1.0
+    redundancy_penalty: float = 0.0
+    crowding_penalty: float = 0.0
+    z_components: dict[str, float] = Field(default_factory=dict)
+    cluster_id: str = ""
+    is_representative: bool = True
+    reproducibility_hash: str = ""
+
+
 # --- lifecycle state machine -------------------------------------------------
 
 ALPHA_ALLOWED_TRANSITIONS: dict[AlphaState, frozenset[AlphaState]] = {
