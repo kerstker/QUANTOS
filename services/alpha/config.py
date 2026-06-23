@@ -16,6 +16,7 @@ class AlphaFactoryConfig:
     min_ic_retention: float = 0.30        # decay: recent IC / baseline IC floor
     max_perf_gap: float = 0.60            # decay: (backtest - paper) / backtest ceiling
     min_half_life_frac: float = 0.50      # decay: half-life vs baseline floor
+    min_profitable_regime_frac: float = 0.50  # retire if profitable in fewer regimes
     confirm_windows: int = 3              # decay debounce (consecutive breaches)
     fdr_q: float = 0.10                   # Benjamini-Hochberg catalog-wide FDR
     var_sr_floor: float = 1e-4

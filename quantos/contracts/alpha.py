@@ -108,6 +108,14 @@ class DecayReport(BaseModel):
     as_of: int = Field(default=0, ge=0)
 
 
+class RetirementDecision(BaseModel):
+    """Whether an alpha should be retired, with deterministically-ordered reasons."""
+    model_config = ConfigDict(frozen=True)
+    alpha_id: str = Field(min_length=1)
+    retire: bool = False
+    reasons: tuple[str, ...] = ()
+
+
 class AlphaRanking(BaseModel):
     """One alpha's place in the robust, diversity-aware ranking. Fully
     explainable: the per-metric z-scores and the penalties are exposed."""
