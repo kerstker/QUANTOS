@@ -37,32 +37,43 @@ FORBIDDEN_APIS = [
     "live_execution", "real_execution",
 ]
 
+# Legacy literal flag strings (kept as defense-in-depth). The PRIMARY flag check
+# is _LIVE_FLAG_RE below, which detects the REAL SafetyConfig arming flags — the
+# previous list watched for names (LIVE_MODE, ...) that do not exist anywhere in
+# this codebase while the genuine arming flags passed clean (audit P1).
 FORBIDDEN_FLAGS = [
     "live_trading_allowed = true", "live_trading_allowed=true",
     "LIVE_MODE", "REAL_TRADING", "PRODUCTION_TRADING",
 ]
 
+# The genuine SafetyConfig flags whose arming makes live_trading_armed True
+# (quantos/contracts/config.py). Matched on original-case content so True/False
+# are exact. Catches both `flag = True` and the keyword form `SafetyConfig(flag=True)`.
+_LIVE_FLAGS = [
+    "live_trading_enabled", "real_broker_enabled",
+    "allow_order_submission", "allow_ai_direct_trading",
+]
+_LIVE_FLAG_RE = [re.compile(r"\b" + f + r"\s*=\s*True\b") for f in _LIVE_FLAGS]
+_HUMAN_OFF_RE = re.compile(r"\brequire_human_approval\s*=\s*False\b")
+
+# Forbidden order/execution APIs matched on WORD BOUNDARIES (+ optional plural),
+# not bare substrings: this catches a real `place_order(` / renamed `live_order`
+# without false-positiving on a benign field like `contains_live_orders` (audit P1/P2).
+_API_RE = [re.compile(r"\b" + re.escape(fb) + r"s?\b") for fb in FORBIDDEN_APIS]
+
 # Repository root, resolved relative to this file so the scan is independent of
 # the current working directory (apps/research-console/scripts/ -> 3 levels up).
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-# Every package that can plausibly touch orders, risk, credentials, or
-# execution. Empty (scaffolding) trees are included to future-proof coverage.
+# Scan the ENTIRE Python order/risk/credential surface by package ROOT, not a
+# hand-maintained list of granular sub-paths. The previous list omitted the only
+# running service (services/research/console_api) and the real factor engine
+# (services/research/factor_engine) because it named research's children but not
+# the parent, so code added there passed the gate vacuously (audit P1). Rooting at
+# services/ + quantos/ makes coverage exhaustive and self-maintaining.
 SCAN_SUBDIRS = [
-    "quantos/contracts",
-    "services/data",
-    "services/features",
-    "services/risk",
-    "services/research/backtest_engine",
-    "services/research/validation",
-    "services/research/paper_trading",
-    "services/trading",
-    "services/alpha",
-    "services/portfolio",
-    "services/execution",
-    "services/intelligence",
-    "services/monitoring",
-    "services/deployment",
+    "quantos",
+    "services",
 ]
 
 DEFAULT_SCAN_DIRS = [os.path.join(REPO_ROOT, d) for d in SCAN_SUBDIRS]
@@ -143,12 +154,18 @@ def scan(scan_dirs=None):
                     pass
                 # Hardcoded credentials (assigned secret literals only)
                 violations["credentials"].extend(_credential_violations(fpath, content))
-                # Forbidden live-order APIs
+                # Forbidden live-order APIs (word-boundary, not bare substring)
                 low = content.lower()
-                for fb in FORBIDDEN_APIS:
-                    if fb in low:
+                for rx, fb in zip(_API_RE, FORBIDDEN_APIS):
+                    if rx.search(low):
                         violations["apis"].append(f"{fpath}: contains '{fb}'")
-                # Forbidden live-trading flags
+                # Forbidden live-trading flags: the REAL arming flags set True,
+                # require_human_approval set False, plus the legacy literals.
+                for rx, f in zip(_LIVE_FLAG_RE, _LIVE_FLAGS):
+                    if rx.search(content):
+                        violations["flags"].append(f"{fpath}: arms '{f}=True'")
+                if _HUMAN_OFF_RE.search(content):
+                    violations["flags"].append(f"{fpath}: sets 'require_human_approval=False'")
                 for fb in FORBIDDEN_FLAGS:
                     if fb.lower() in low:
                         violations["flags"].append(f"{fpath}: contains '{fb}'")
