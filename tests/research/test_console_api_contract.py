@@ -126,9 +126,19 @@ def test_every_endpoint_satisfies_the_frontend_contract():
 
 
 def test_query_bound_endpoints_echo_the_requested_alpha():
-    # the page binds the selector to selected_alpha_id; a mismatch silently shows
-    # the wrong alpha's data
+    # the page binds its selector to the echoed selected_alpha_id; if a VALID id
+    # were not echoed faithfully the page would render the wrong alpha's data
     for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading",
                  "/api/v1/console/computation-lab"):
         body = client.get(path + "?alpha_id=alpha-3&cost_bps=20&stress=1.4").json()
         assert body["selected_alpha_id"] == "alpha-3", f"{path} did not echo alpha-3"
+
+
+def test_unknown_alpha_id_falls_back_to_default_visibly():
+    # INTENTIONAL fail-soft: an unknown alpha_id (e.g. a stale/typo'd URL) resolves
+    # to the first candidate (_alpha_index returns 0 on miss) and ECHOES that id, so
+    # the UI shows which alpha it actually rendered rather than 500-ing or labelling
+    # default data as the requested id. Pinned so the fallback stays deliberate.
+    for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading"):
+        body = client.get(path + "?alpha_id=does-not-exist").json()
+        assert body["selected_alpha_id"] == "alpha-1", f"{path} did not fall back visibly"

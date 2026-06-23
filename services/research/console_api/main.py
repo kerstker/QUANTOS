@@ -373,6 +373,11 @@ def _validation_reports() -> List[Dict]:
 def _paper_run(alpha_id: str) -> Dict:
     idx = _alpha_index(alpha_id)
     alpha = _computed_alpha(idx)
+    # echo the RESOLVED candidate id, not the raw query: an unknown id resolves to
+    # idx 0, so labelling the run with the raw id would mislabel alpha-1's data as
+    # the requested (non-existent) alpha. Stay consistent with risk-dashboard /
+    # computation-lab, which both echo the resolved id.
+    resolved_id = alpha["candidate_id"]
     returns = _forward_returns(_factor_values(idx), idx)
     equity_points = _equity_curve(returns)
     metrics = PnLAttributor.compute_metrics(
@@ -382,8 +387,8 @@ def _paper_run(alpha_id: str) -> Dict:
     )
     status = "PAPER_PASSED" if metrics.get("sharpe", 0) > 0.5 and metrics.get("max_drawdown", 100) < 30 else "PAPER_RUNNING"
     return {
-        "run_id": f"paper-{alpha_id}",
-        "alpha_id": alpha_id,
+        "run_id": f"paper-{resolved_id}",
+        "alpha_id": resolved_id,
         "status": status,
         "metrics": metrics,
         "equity_curve": [{"timestamp": point["x"], "equity": point["equity"]} for point in equity_points],
@@ -3595,7 +3600,7 @@ async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
-        "selected_alpha_id": alpha_id,
+        "selected_alpha_id": run["alpha_id"],   # resolved id — matches the rendered data
         "run": run,
         "lineage": [item for item in LINEAGE if item["layer"] == "Paper"],
     }
