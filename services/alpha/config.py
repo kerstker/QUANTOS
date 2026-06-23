@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class AlphaFactoryConfig:
+    min_deflated_sharpe: float = 0.60     # promotion floor (mirrors ValidationConfig)
+    max_pbo: float = 0.50                  # promotion ceiling on overfitting probability
     rho_cut: float = 0.70                 # correlation cut for clustering / redundancy
     crowd_max: float = 0.60               # max public-factor R^2 before crowding penalty
     min_overlap: int = 60                 # min overlapping points for correlation/orthogonalization

@@ -73,6 +73,8 @@ class AlphaEvaluation(BaseModel):
     net_sharpe: float = 0.0
     observed_sr: float = 0.0
     turnover: float = Field(default=0.0, ge=0)
+    marginal_ir: Optional[float] = None      # incremental edge vs approved set (step 6/13)
+    crowding_score: Optional[float] = None    # public-factor R^2 (None = unknown)
     deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
     pbo: float = Field(default=0.0, ge=0, le=1)
     catalog_trial_count: int = Field(default=1, ge=1)
