@@ -17,9 +17,10 @@ S = AlphaState
 GOOD_PAPER = {"backtest_sharpe": 1.1, "paper_sharpe": 1.0}
 
 
-def _eval(alpha_id, trial_count, verdict=ValidationVerdict.PASS, dsr=0.8, pbo=0.1, mir=0.5):
+def _eval(alpha_id, trial_count, verdict=ValidationVerdict.PASS, dsr=0.8, pbo=0.1, mir=0.5,
+          ic_pvalue=None):
     return AlphaEvaluation(alpha_id=alpha_id, verdict=verdict, deflated_sharpe=dsr, pbo=pbo,
-                           catalog_trial_count=trial_count, marginal_ir=mir)
+                           catalog_trial_count=trial_count, marginal_ir=mir, ic_pvalue=ic_pvalue)
 
 
 def _mgr():
@@ -44,6 +45,22 @@ def test_only_pass_advances_to_validated():
         with pytest.raises(GuardRejected):
             mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, verdict=bad))
     mgr.advance("a1", S.VALIDATED, AGENT, timestamp=3, evaluation=_eval("a1", 1))
+    assert cat.state("a1") == S.VALIDATED
+
+
+def test_insignificant_ic_pvalue_blocks_validation():
+    mgr, cat = _mgr()
+    cat.set_pvalue("a1", 0.9)                       # fails catalog-wide BH-FDR
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    with pytest.raises(GuardRejected):              # FDR_NOT_SURVIVED
+        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, ic_pvalue=0.9))
+
+
+def test_significant_ic_pvalue_survives_fdr():
+    mgr, cat = _mgr()
+    cat.set_pvalue("a1", 0.001)
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, ic_pvalue=0.001))
     assert cat.state("a1") == S.VALIDATED
 
 

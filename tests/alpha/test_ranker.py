@@ -1,5 +1,7 @@
 """Phase 6 step 8 — robust, diversity-aware ranker: no single outlier metric
 dominates; redundant/crowded alphas sink; deterministic + explainable."""
+from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.research import ValidationVerdict
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.ranker import rank_alphas
 
@@ -38,6 +40,17 @@ def test_crowding_penalty_demotes_crowded_alpha():
     ranks = {r.alpha_id: r.rank for r in
              rank_alphas(evals, config=CFG, crowding={"clean": 0.0, "crowded": 0.9}, gamma=0.5)}
     assert ranks["clean"] < ranks["crowded"]
+
+
+def test_ranker_accepts_alpha_evaluation_objects():
+    def ev(aid, icir, tstat, cap, mir):
+        return AlphaEvaluation(alpha_id=aid, verdict=ValidationVerdict.PASS, icir=icir,
+                               ic_tstat=tstat, capacity_adj_sharpe=cap, hit_rate=0.6,
+                               deflated_sharpe=0.8, marginal_ir=mir, turnover=0.3)
+    evals = {"a": ev("a", 0.7, 2.0, 1.0, 0.5), "b": ev("b", 0.4, 1.0, 0.5, 0.2)}
+    ranks = rank_alphas(evals, config=CFG)               # Pydantic objects, not dicts
+    assert {r.alpha_id for r in ranks} == {"a", "b"}
+    assert ranks[0].alpha_id == "a"                      # stronger alpha leads
 
 
 def test_ranking_is_deterministic_and_explainable():

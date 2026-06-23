@@ -71,6 +71,7 @@ class AlphaEvaluation(BaseModel):
     n_periods: int = Field(default=0, ge=0)
     coverage_ok: bool = False
     net_sharpe: float = 0.0
+    capacity_adj_sharpe: float = 0.0          # net_sharpe haircut by capacity
     observed_sr: float = 0.0
     turnover: float = Field(default=0.0, ge=0)
     marginal_ir: Optional[float] = None      # incremental edge vs approved set (step 6/13)

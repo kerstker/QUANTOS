@@ -28,6 +28,7 @@ class AlphaCatalog:
         self._state: dict[str, AlphaState] = {}
         self._returns: dict[str, tuple[float, ...]] = {}
         self._sharpes: dict[str, float] = {}
+        self._pvalues: dict[str, float] = {}
         self._seen_configs: set[str] = set()
         self._trial_count: int = 0
 
@@ -78,6 +79,18 @@ class AlphaCatalog:
 
     def returns(self, alpha_id: str) -> tuple[float, ...]:
         return self._returns.get(alpha_id, ())
+
+    def set_pvalue(self, alpha_id: str, pvalue: Optional[float]) -> None:
+        if pvalue is not None:
+            self._pvalues[alpha_id] = float(pvalue)
+
+    def bh_fdr_survivors(self, q: float = 0.10) -> set[str]:
+        """Alpha ids whose IC p-value survives catalog-wide Benjamini-Hochberg FDR
+        at level q. The second, independent edge lens (alongside DSR)."""
+        from .multiple_testing import benjamini_hochberg
+        ids = sorted(self._pvalues)
+        survivors = benjamini_hochberg([self._pvalues[a] for a in ids], q=q)
+        return {ids[i] for i in survivors}
 
     # --- state (low-level; the lifecycle manager is the validated chokepoint) -
 

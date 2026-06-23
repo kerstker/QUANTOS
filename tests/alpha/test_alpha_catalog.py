@@ -42,6 +42,14 @@ def test_catalog_var_sr_is_none_below_two_populated_then_real():
     assert cat.catalog_var_sr() > 1e-4                   # reflects the population spread
 
 
+def test_bh_fdr_survivors():
+    cat = AlphaCatalog()
+    for a in "abcde":
+        cat.register(_def(a, factors=(a,)))
+        cat.set_pvalue(a, {"a": 0.001, "b": 0.009, "c": 0.04, "d": 0.5, "e": 0.8}[a])
+    assert cat.bh_fdr_survivors(0.10) == {"a", "b", "c"}   # significant tail survives FDR
+
+
 def test_survivorship_free_and_approved_set():
     cat = AlphaCatalog()
     for a in ("a1", "a2"):

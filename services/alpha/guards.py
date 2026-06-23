@@ -22,7 +22,7 @@ def guard_to_testing(evaluation, config, catalog_count) -> tuple[bool, Reasons]:
 
 
 def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryConfig,
-                       catalog_count: int) -> tuple[bool, Reasons]:
+                       catalog_count: int, bh_survived: bool = True) -> tuple[bool, Reasons]:
     if evaluation is None:
         return False, ("NO_EVALUATION",)
     reasons = []
@@ -36,6 +36,10 @@ def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFacto
     # has since grown, the correction is understated -> reject (critique test #3)
     if evaluation.catalog_trial_count < catalog_count:
         reasons.append("TRIAL_COUNT_UNDERSTATED")
+    # an edge must clear BOTH DSR and the catalog-wide BH-FDR (review P0): if the
+    # alpha has an IC p-value it must survive the catalog FDR
+    if evaluation.ic_pvalue is not None and not bh_survived:
+        reasons.append("FDR_NOT_SURVIVED")
     return (not reasons, tuple(reasons))
 
 

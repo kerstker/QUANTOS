@@ -83,6 +83,9 @@ def rank_alphas(
     crowding = crowding or {}
     rank_stability = rank_stability or {}
     weights = config.composite_weights
+    # accept either plain dicts or AlphaEvaluation (pydantic) objects
+    evaluations = {aid: (e if isinstance(e, dict) else e.model_dump())
+                   for aid, e in evaluations.items()}
     ids = sorted(evaluations)
     if not ids:
         return []

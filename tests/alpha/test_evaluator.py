@@ -78,3 +78,21 @@ def test_single_alpha_catalog_routes_to_human_review():
     r = AlphaEvaluator(_cat(), cost=CostModel(0, 0)).evaluate("a1", _panel())
     assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
     assert "INSUFFICIENT_CATALOG_FOR_DSR" in r.reasons
+
+
+def _panel_with_adv(n_periods=15, n_inst=12, adv=1e5):
+    insts = tuple(f"i{k}" for k in range(n_inst))
+    out = []
+    for t in range(n_periods):
+        signals = tuple(float(k) for k in range(n_inst))
+        fwd = tuple(0.004 * (k - (n_inst - 1) / 2) + 0.002 * (((k * 5 + t * 3) % 7) - 3)
+                    for k in range(n_inst))
+        out.append(PanelPeriod(instruments=insts, signals=signals, forward_returns=fwd,
+                               adv_notional=tuple(adv for _ in range(n_inst))))
+    return out
+
+
+def test_evaluation_populates_marginal_ir_and_capacity_adj_sharpe():
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel_with_adv())
+    assert r.marginal_ir is not None                       # incremental edge computed
+    assert abs(r.capacity_adj_sharpe) <= abs(r.net_sharpe)  # capacity haircut in [0,1]

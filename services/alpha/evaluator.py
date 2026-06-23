@@ -26,9 +26,11 @@ from services.research.backtest_engine.metrics import sharpe
 from services.research.factor_engine.domain.model import compute_ic
 from services.research.validation.gate import ValidationGate
 
+from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
 from .metrics import series_metrics
 from .multiple_testing import catalog_dsr
+from .orthogonalize import orthogonalize
 from .panel_backtest import PanelPeriod, run_panel_backtest
 
 
@@ -73,8 +75,20 @@ class AlphaEvaluator:
             if len(net) > 1 and statistics.pstdev(net) > 0 else 0.0
         turnover = statistics.fmean(res.turnovers) if res.turnovers else 0.0
 
-        # feed this alpha's OOS returns to the catalog (var_sr / approved_set / etc.)
+        # marginal edge vs the approved set (residual IR) and capacity haircut
+        ortho = orthogonalize(tuple(net), self.catalog.approved_set(), min_overlap=self.config.min_overlap)
+        marginal_ir = ortho.marginal_ir if ortho.ok else None
+        adv_per_period = [sum(p.adv_notional) for p in periods if p.adv_notional]
+        if adv_per_period:
+            cap = capacity_notional(statistics.fmean(adv_per_period), self.cost)
+            cap_adj_sharpe = capacity_adjusted_sharpe(net_sharpe, cap, self.target_aum)
+        else:
+            cap_adj_sharpe = net_sharpe   # capacity unknown -> no haircut
+
+        # feed this alpha's OOS returns + IC p-value to the catalog (var_sr /
+        # approved_set / catalog-wide BH-FDR)
         self.catalog.set_returns(alpha_id, net)
+        self.catalog.set_pvalue(alpha_id, m["ic_pvalue"])
         trial_count = max(1, self.catalog.global_trial_count())
 
         # 3) catalog-wide Deflated Sharpe (None if the catalog lacks an honest
@@ -109,7 +123,8 @@ class AlphaEvaluator:
             ic_mean=m["mean_ic"], icir=m["icir"], ic_tstat=m["ic_tstat"], ic_pvalue=m["ic_pvalue"],
             hit_rate=m["hit_rate"], ic_autocorr=m["ic_autocorr"], mean_breadth=m["mean_breadth"],
             n_periods=m["n_periods"], coverage_ok=m["coverage_ok"],
-            net_sharpe=net_sharpe, observed_sr=observed_sr, turnover=turnover,
+            net_sharpe=net_sharpe, capacity_adj_sharpe=cap_adj_sharpe,
+            observed_sr=observed_sr, turnover=turnover, marginal_ir=marginal_ir,
             deflated_sharpe=dsr, pbo=_clamp01(pbo), catalog_trial_count=trial_count,
             verdict=verdict, reasons=tuple(reasons), as_of=as_of, reproducibility_hash=repro,
         )
