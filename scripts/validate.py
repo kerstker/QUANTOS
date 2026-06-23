@@ -43,6 +43,7 @@ CHECKS = [
             "tests/portfolio",
             "tests/risk",
             "tests/execution",
+            "tests/intelligence",
             "tests/governance",
             "services/research/console_api/tests/test_console_api.py",
             "services/research/factor_engine/tests/test_model_compile.py",

@@ -1,0 +1,70 @@
+"""Guardrailed research agent loop (Phase 11).
+
+Drives the alpha pipeline as a NON-HUMAN actor: propose -> evaluate -> advance up
+to PAPER_TRADING, then hand candidates to a HUMAN review queue. Every step is
+checked against the guardrail policy AND the lifecycle state machine, so the agent
+cannot self-approve or reset the kill-switch (those raise). The loop physically has
+no path to APPROVE — it can only REQUEST human approval.
+"""
+from __future__ import annotations
+
+from typing import Optional, Sequence
+
+from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.research import AlphaState, ValidationVerdict
+
+from services.alpha.config import AlphaFactoryConfig
+from services.alpha.catalog import AlphaCatalog
+from services.alpha.evaluator import AlphaEvaluator
+from services.alpha.lifecycle import AlphaLifecycleManager
+
+from .guardrails import AgentAction, assert_action_allowed
+
+
+class ResearchAgentLoop:
+    def __init__(self, catalog: Optional[AlphaCatalog] = None,
+                 config: Optional[AlphaFactoryConfig] = None,
+                 evaluator=None, manager=None, actor: Optional[Actor] = None):
+        self.config = config or AlphaFactoryConfig()
+        self.catalog = catalog or AlphaCatalog()
+        self.evaluator = evaluator or AlphaEvaluator(self.catalog, self.config)
+        self.manager = manager or AlphaLifecycleManager(self.catalog, self.config)
+        self.actor = actor or Actor(actor_id="research-agent", kind=ActorKind.AGENT)
+        if self.actor.is_human:
+            raise ValueError("the autonomous research loop must run as a non-human actor")
+
+    def run(self, candidates: Sequence[tuple], *, timestamp: int = 0) -> dict:
+        """candidates: (AlphaDefinition, periods). Returns a report + the human
+        review queue (PAPER_TRADING alphas awaiting a human approval token)."""
+        report, review_queue = {}, []
+        for defn, periods in candidates:
+            assert_action_allowed(self.actor, AgentAction.EVALUATE)
+            self.catalog.register(defn)
+            ev = self.evaluator.evaluate(defn.alpha_id, periods, as_of=timestamp)
+            assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
+            self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
+            if ev.verdict == ValidationVerdict.PASS:
+                assert_action_allowed(self.actor, AgentAction.ADVANCE_VALIDATED)
+                self.manager.advance(defn.alpha_id, AlphaState.VALIDATED, self.actor, timestamp=timestamp, evaluation=ev)
+                assert_action_allowed(self.actor, AgentAction.ADVANCE_PAPER)
+                self.manager.advance(defn.alpha_id, AlphaState.PAPER_TRADING, self.actor, timestamp=timestamp, evaluation=ev)
+                review_queue.append(defn.alpha_id)
+            elif ev.verdict == ValidationVerdict.FAIL:
+                self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
+            report[defn.alpha_id] = {"verdict": ev.verdict, "state": self.catalog.state(defn.alpha_id)}
+        return {"report": report, "human_review_queue": review_queue}
+
+    def request_human_approval(self, alpha_id: str) -> str:
+        """The agent may REQUEST approval — a handoff token a HUMAN later acts on.
+        It cannot grant it."""
+        assert_action_allowed(self.actor, AgentAction.REQUEST_HUMAN_APPROVAL)
+        return f"APPROVAL_REQUESTED:{alpha_id}"
+
+    def try_approve(self, alpha_id: str) -> None:
+        """Exists to prove the guardrail: an agent calling this RAISES — there is
+        no agent path to APPROVE."""
+        assert_action_allowed(self.actor, AgentAction.APPROVE)   # raises ForbiddenAgentAction for agents
+
+    def try_reset_kill_switch(self, kill_switch) -> None:
+        """Likewise: an agent cannot reset the kill-switch."""
+        assert_action_allowed(self.actor, AgentAction.RESET_KILL_SWITCH)  # raises for agents
