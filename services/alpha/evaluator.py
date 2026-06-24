@@ -32,6 +32,7 @@ from .metrics import series_metrics
 from .multiple_testing import catalog_dsr
 from .orthogonalize import orthogonalize
 from .panel_backtest import PanelPeriod, run_panel_backtest
+from .walk_forward import walk_forward_oos
 
 
 def _clamp01(x: float) -> float:
@@ -117,11 +118,16 @@ class AlphaEvaluator:
             # fail closed: never let an unscored alpha PASS on a silent default
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, unassessed
         else:
+            # real out-of-sample walk-forward (audit P2): the edge must persist
+            # across sequential held-out folds, not just have a positive full-sample
+            # Sharpe (which one lucky sub-period could produce)
+            wf_passed = walk_forward_oos(net, n_folds=self.config.wf_folds,
+                                         min_positive_frac=self.config.wf_min_positive_frac)
             vr = self.gate.evaluate(
                 alpha_id,
                 oos_sharpe=net_sharpe, deflated_sharpe=dsr, pbo=_clamp01(pbo),
                 trial_count=trial_count, leakage_ok=leakage_ok,
-                regime_profitable_frac=regime_profitable_frac, walk_forward_passed=net_sharpe > 0.0,
+                regime_profitable_frac=regime_profitable_frac, walk_forward_passed=wf_passed,
             )
             verdict, reasons = vr.verdict, vr.reasons
 

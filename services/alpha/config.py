@@ -22,6 +22,8 @@ class AlphaFactoryConfig:
     var_sr_floor: float = 1e-4
     min_breadth: int = 10                 # min cross-section names per period (else IC undefined)
     min_periods: int = 12                 # min non-empty IC periods for a valid ICIR/t-stat
+    wf_folds: int = 4                     # real walk-forward: sequential out-of-sample folds
+    wf_min_positive_frac: float = 0.5     # fraction of OOS folds that must clear Sharpe>0
     composite_weights: dict[str, float] = field(default_factory=lambda: {
         # tilt toward the metrics hardest to overfit
         "icir": 0.22, "deflated_sharpe": 0.22, "capacity_adj_sharpe": 0.18,
