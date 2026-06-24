@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from .book import Book
+from .corporate_actions import apply_corporate_action
 from .costs import CostModel
 from .fill_model import NextOpenFill
 
@@ -30,20 +31,24 @@ class EventBacktestResult:
     final_unrealized: float
     turnover: float
     final_positions: dict
+    dividend_income: float = 0.0
 
     def final_equity(self) -> float:
         return self.equity_curve[-1] if self.equity_curve else self.initial_capital
 
     def reconciliation_residual(self) -> float:
         lhs = self.final_equity() - self.initial_capital
-        rhs = self.realized_pnl + self.final_unrealized - self.total_cost
+        rhs = self.realized_pnl + self.final_unrealized + self.dividend_income - self.total_cost
         return abs(lhs - rhs)
 
 
 def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital: float,
                        cost: CostModel = CostModel(), fill=None, lot_size: int = 1,
-                       financing=None) -> EventBacktestResult:
+                       financing=None, corporate_actions=None) -> EventBacktestResult:
     fill = fill or NextOpenFill()
+    ca_by_ts: dict = {}
+    for action in (corporate_actions or ()):
+        ca_by_ts.setdefault(action.event_time, []).append(action)
     if len(targets) != len(timeline):
         raise ValueError("targets and timeline must have equal length")
     if initial_capital <= 0:
@@ -66,6 +71,10 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
                 book.apply_fill(inst, filled, price, c)
                 turnover += abs(filled) * price
         pending = {}
+
+        # 1b) ex moment of bar i: apply any corporate actions effective at this ts
+        for action in ca_by_ts.get(ts, ()):
+            apply_corporate_action(book, action)
 
         # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity
         marks = {inst: bar.close for inst, bar in bars.items()}
@@ -96,4 +105,5 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
         total_cost=book.total_cost, realized_pnl=book.realized_pnl,
         final_unrealized=book.unrealized(final_marks), turnover=turnover,
         final_positions={inst: lot.qty for inst, lot in book.positions.items() if lot.qty != 0},
+        dividend_income=book.dividend_income,
     )

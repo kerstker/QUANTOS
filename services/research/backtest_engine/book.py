@@ -21,6 +21,7 @@ class Book:
     positions: dict = field(default_factory=dict)
     realized_pnl: float = 0.0
     total_cost: float = 0.0
+    dividend_income: float = 0.0   # signed cash dividends (longs receive, shorts pay)
 
     def apply_fill(self, instrument_id: str, qty: int, price: float, cost: float) -> None:
         if qty == 0:
@@ -46,6 +47,30 @@ class Book:
         """Charge a pure carrying cost (borrow/financing) — no position change."""
         self.cash -= amount
         self.total_cost += amount
+
+    def apply_split(self, instrument_id: str, ratio: float) -> None:
+        """Value-neutral share/cost adjustment for a split (qty*ratio, avg_cost/ratio).
+        Fails closed if the split would produce fractional shares (cash-in-lieu is a
+        later sub-project) — the integer-share book must stay exact."""
+        if ratio <= 0:
+            raise ValueError("split ratio must be > 0")
+        lot = self.positions.get(instrument_id)
+        if lot is None or lot.qty == 0:
+            return
+        scaled = lot.qty * ratio
+        new_qty = round(scaled)
+        if abs(scaled - new_qty) > 1e-9:
+            raise ValueError(f"split ratio {ratio} yields fractional shares for {instrument_id}")
+        self.positions[instrument_id] = Lot(int(new_qty), lot.avg_cost / ratio)
+
+    def pay_dividend(self, instrument_id: str, amount_per_share: float) -> None:
+        """Signed cash dividend: longs receive, shorts pay. No position change."""
+        lot = self.positions.get(instrument_id)
+        if lot is None or lot.qty == 0:
+            return
+        income = lot.qty * amount_per_share
+        self.cash += income
+        self.dividend_income += income
 
     def equity(self, marks: dict) -> float:
         return self.cash + sum(lot.qty * marks[inst] for inst, lot in self.positions.items())
