@@ -69,8 +69,19 @@ def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioCo
     else:
         raise OptimizerError("min_variance_weights did not converge")
 
-    # final feasibility verification (fail-closed)
-    if abs(sum(w) - constraints.budget) > 1e-4 or any(
-            w[i] < lb[i] - 1e-4 or w[i] > ub[i] + 1e-4 for i in range(n)):
-        raise InfeasibleConstraints("no feasible weight vector found")
+    # final feasibility verification (fail-closed) — budget + box AND the factor
+    # targets + gross-leverage cap (review P0: omitting the latter two let an
+    # infeasible vector be returned as the "optimum" when Dykstra had not fully
+    # driven those sets to tol).
+    tol_feas = 1e-3
+    if abs(sum(w) - constraints.budget) > tol_feas or any(
+            w[i] < lb[i] - tol_feas or w[i] > ub[i] + tol_feas for i in range(n)):
+        raise InfeasibleConstraints("no feasible weight vector found (budget/box)")
+    for fid, target in (constraints.factor_targets or {}).items():
+        col = list(factor_ids).index(fid)
+        exposure = sum(w[i] * loadings[i][col] for i in range(n))
+        if abs(exposure - target) > tol_feas:
+            raise InfeasibleConstraints(f"factor target '{fid}' unmet: {exposure} != {target}")
+    if constraints.max_gross is not None and sum(abs(x) for x in w) > constraints.max_gross + tol_feas:
+        raise InfeasibleConstraints("gross-leverage cap unmet")
     return w

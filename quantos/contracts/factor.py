@@ -13,6 +13,34 @@ from typing import Sequence
 from pydantic import BaseModel, ConfigDict, model_validator
 
 
+def _is_psd(mat, *, tol: float = 1e-9) -> bool:
+    """Pure-Python PSD check via LDL^T (Cholesky-style) with a small tolerance:
+    a symmetric matrix is PSD iff it admits an L*D*L^T factorization with all
+    pivots D[i] >= -tol. Deterministic, no numpy."""
+    n = len(mat)
+    a = [[float(mat[i][j]) for j in range(n)] for i in range(n)]
+    L = [[0.0] * n for _ in range(n)]
+    d = [0.0] * n
+    for j in range(n):
+        s = a[j][j] - sum(L[j][k] * L[j][k] * d[k] for k in range(j))
+        if s < -tol:
+            return False
+        d[j] = s
+        L[j][j] = 1.0
+        if abs(s) <= tol:
+            for i in range(j + 1, n):
+                # a (near-)zero pivot is OK for PSD only if the column is consistent;
+                # treat tiny pivot as 0 and require the off-diagonals to vanish
+                off = a[i][j] - sum(L[i][k] * L[j][k] * d[k] for k in range(j))
+                if abs(off) > 1e-6:
+                    return False
+                L[i][j] = 0.0
+        else:
+            for i in range(j + 1, n):
+                L[i][j] = (a[i][j] - sum(L[i][k] * L[j][k] * d[k] for k in range(j))) / s
+    return True
+
+
 class FactorRiskModel(BaseModel):
     model_config = ConfigDict(frozen=True)
     factor_ids: tuple[str, ...]
@@ -34,6 +62,8 @@ class FactorRiskModel(BaseModel):
                     raise ValueError("factor_cov has non-finite entry")
                 if abs(v - self.factor_cov[j][i]) > 1e-12:
                     raise ValueError("factor_cov must be symmetric")
+        if not _is_psd(self.factor_cov):                # a covariance MUST be PSD;
+            raise ValueError("factor_cov must be positive semi-definite")  # else negative portfolio variance
         for aid, row in self.loadings.items():
             if len(row) != k:
                 raise ValueError(f"loading row for {aid} must have length {k}")

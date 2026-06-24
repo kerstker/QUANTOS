@@ -34,6 +34,18 @@ def test_validates_factor_cov_is_square_symmetric():
                         factor_cov=((0.04, 0.01), (0.02, 0.02)), specific_var={"a": 0.01})
 
 
+def test_rejects_non_psd_factor_cov():
+    # symmetric but indefinite (eigenvalues 0.14, -0.06) -> would give negative variance
+    with pytest.raises(Exception):
+        FactorRiskModel(factor_ids=("a", "b"), loadings={"x": (1.0, 0.0)},
+                        factor_cov=((0.04, 0.1), (0.1, 0.04)), specific_var={"x": 0.01})
+
+
+def test_accepts_psd_correlated_factor_cov():
+    FactorRiskModel(factor_ids=("a", "b"), loadings={"x": (1.0, 0.0)},
+                    factor_cov=((0.04, 0.005), (0.005, 0.02)), specific_var={"x": 0.01})
+
+
 def test_rejects_negative_specific_var_and_nonfinite():
     with pytest.raises(Exception):
         FactorRiskModel(factor_ids=("mkt",), loadings={"a": (1.0,)},
