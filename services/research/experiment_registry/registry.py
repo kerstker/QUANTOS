@@ -55,18 +55,25 @@ class ExperimentRegistry:
 
     def record_evaluation(self, evaluation, *, dataset_version: str, recorded_ts: int,
                           audit_log=None) -> str:
+        # run_id identity is derived from reproducibility_hash; an empty one (the
+        # contract default) would collide DISTINCT evaluations of the same alpha+
+        # dataset to one id and silently drop the later artifact (review ER-2).
+        if not evaluation.reproducibility_hash:
+            raise ValueError("evaluation.reproducibility_hash is empty; cannot form a unique run_id")
         payload = evaluation.model_dump()
         content_hash = stable_hash({"evaluation": payload, "dataset_version": dataset_version})
         run_id = short_hash({"alpha_id": evaluation.alpha_id,
                              "repro": evaluation.reproducibility_hash,
                              "dataset_version": dataset_version})
-        self._store.insert_evaluation(
+        inserted = self._store.insert_evaluation(
             run_id=run_id, alpha_id=evaluation.alpha_id, dataset_version=dataset_version,
             recorded_ts=recorded_ts, verdict=evaluation.verdict.value,
             content_hash=content_hash,
             evaluation_json=json.dumps(payload, sort_keys=True, default=str),
         )
-        if audit_log is not None:
+        # only emit the audit event on a genuine insert — a no-op re-record must not
+        # re-append a duplicate event_id (review ER-1: that crashed the retry path)
+        if audit_log is not None and inserted:
             audit_log.append(
                 event_id=f"exp-{run_id}", actor="experiment-registry",
                 action="EXPERIMENT_RECORDED", timestamp=recorded_ts,

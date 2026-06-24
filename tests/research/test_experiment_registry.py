@@ -85,6 +85,25 @@ def test_record_evaluation_emits_audit_event():
     assert ev.action == "EXPERIMENT_RECORDED" and ev.metadata["run_id"] == rid
 
 
+def test_rerecord_with_audit_log_is_idempotent_noop():
+    # review ER-1: a no-op re-record with audit_log attached must NOT crash on a
+    # duplicate audit event_id
+    reg = _reg()
+    log = GlobalAuditLog()
+    rid1 = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10, audit_log=log)
+    rid2 = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10, audit_log=log)
+    assert rid1 == rid2
+    assert len(log.events) == 1 and log.chain_valid()       # only the first insert audited
+
+
+def test_empty_reproducibility_hash_rejected():
+    # review ER-2: empty repro -> run_id collision -> silent artifact loss; fail closed
+    reg = _reg()
+    ev = AlphaEvaluation(alpha_id="a1", verdict=ValidationVerdict.PASS, reproducibility_hash="")
+    with pytest.raises(ValueError):
+        reg.record_evaluation(ev, dataset_version="v1", recorded_ts=10)
+
+
 def test_content_hash_is_deterministic_across_registries():
     r1, r2 = _reg(), _reg()
     h1 = r1.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)

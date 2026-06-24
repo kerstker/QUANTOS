@@ -103,12 +103,14 @@ class SqliteExperimentStore:
 
     def insert_evaluation(self, *, run_id: str, alpha_id: str, dataset_version: str,
                           recorded_ts: int, verdict: str, content_hash: str,
-                          evaluation_json: str) -> None:
+                          evaluation_json: str) -> bool:
+        """Returns True if a new row was inserted, False on an idempotent no-op
+        re-record (same run_id + same content). Raises on a conflicting content."""
         self._require_schema()
         existing = self.get_evaluation(run_id)
         if existing is not None:
             if existing["content_hash"] == content_hash:
-                return                                   # idempotent re-record
+                return False                             # idempotent re-record (no-op)
             raise ImmutableArtifactError(
                 f"run_id {run_id} already recorded with a different content_hash")
         self._conn.execute(
@@ -117,6 +119,7 @@ class SqliteExperimentStore:
             (run_id, alpha_id, dataset_version, recorded_ts, verdict, content_hash, evaluation_json),
         )
         self._conn.commit()
+        return True
 
     def get_evaluation(self, run_id: str) -> Optional[dict]:
         self._require_schema()
