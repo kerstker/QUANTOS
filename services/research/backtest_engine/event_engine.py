@@ -62,19 +62,24 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
     pending: dict = {}            # orders decided at i-1, to fill at i open
 
     for i, (ts, bars) in enumerate(timeline):
-        # 1) OPEN of bar i: execute orders queued at i-1
+        # 1) ex moment of bar i: apply corporate actions to the CARRIED position
+        # (held going into the ex date) BEFORE this bar's fills — so a position
+        # opened at the ex-bar open does NOT collect the dividend (review: ex-bar
+        # free-lunch) and a fill happens at the already-adjusted (post-split) price.
+        for action in ca_by_ts.get(ts, ()):
+            apply_corporate_action(book, action)
+
+        # 2) OPEN of bar i: execute orders queued at i-1
         for inst, qty in pending.items():
             if inst not in bars:
                 raise ValueError(f"no bar for queued instrument {inst} at ts {ts}")
-            filled, price, c = fill.fill(qty, bars[inst], cost)   # filled may be partial
+            # pass the bar's volume as the ADV proxy so the fill model's market-impact
+            # term actually applies (review: impact was silently dropped — adv defaulted 0)
+            filled, price, c = fill.fill(qty, bars[inst], cost, adv_shares=bars[inst].volume)
             if filled != 0:
                 book.apply_fill(inst, filled, price, c)
                 turnover += abs(filled) * price
         pending = {}
-
-        # 1b) ex moment of bar i: apply any corporate actions effective at this ts
-        for action in ca_by_ts.get(ts, ()):
-            apply_corporate_action(book, action)
 
         # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity
         marks = {inst: bar.close for inst, bar in bars.items()}

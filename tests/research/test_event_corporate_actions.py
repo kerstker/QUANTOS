@@ -65,6 +65,18 @@ def test_engine_dividend_raises_equity_and_reconciles():
     assert div.reconciliation_residual() < 1e-6
 
 
+def test_position_opened_on_ex_bar_collects_no_dividend():
+    # decision at bar 0 -> fill at bar 1 OPEN; dividend ex at bar 1. Corporate actions
+    # now apply BEFORE the fill (to the carried, still-flat book), so the just-opened
+    # position does NOT collect the dividend (review: ex-bar free-lunch fixed).
+    tl = [(t, {"A": _bar("A", t, 10.0, 10.0)}) for t in range(3)]
+    targets = [{"A": 1.0}, {"A": 1.0}, {"A": 1.0}]
+    r = run_event_backtest(tl, targets, initial_capital=100_000.0, cost=CostModel(0, 0, 0),
+                           corporate_actions=[_ca("A", CorporateActionType.DIVIDEND, 1, amount=0.5)])
+    assert r.dividend_income == 0.0
+    assert r.reconciliation_residual() < 1e-6
+
+
 def test_engine_split_reconciles_and_doubles_position():
     # raw forward prices: price halves on the ex bar (ts=2) for a 2:1 split
     tl = [(0, {"A": _bar("A", 0, 10.0, 10.0)}), (1, {"A": _bar("A", 1, 10.0, 10.0)}),

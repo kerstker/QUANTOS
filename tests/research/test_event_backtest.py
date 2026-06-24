@@ -56,6 +56,18 @@ def test_lot_rounding_keeps_integer_multiples():
     assert r.reconciliation_residual() < 1e-6
 
 
+def test_market_impact_is_actually_charged_and_reconciles():
+    # review: the engine never passed adv -> impact silently dropped. Now bar.volume
+    # is the ADV proxy, so a positive impact_coef raises cost and still reconciles.
+    tl = _timeline([{"A": (10.0, 10.0)}, {"A": (10.0, 11.0)}, {"A": (10.0, 11.0)}])
+    targets = [{"A": 1.0}, {"A": 1.0}, {"A": 0.0}]
+    base = run_event_backtest(tl, targets, initial_capital=100_000.0, cost=CostModel(0, 0, 0))
+    impact = run_event_backtest(tl, targets, initial_capital=100_000.0,
+                                cost=CostModel(0, 0, impact_coef=50.0))
+    assert impact.total_cost > base.total_cost
+    assert impact.reconciliation_residual() < 1e-6
+
+
 def test_is_deterministic():
     tl = _timeline([{"A": (10.0, 10.0)}, {"A": (10.0, 11.0)}])
     targets = [{"A": 1.0}, {"A": 1.0}]
