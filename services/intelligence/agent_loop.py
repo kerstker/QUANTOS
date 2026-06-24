@@ -57,7 +57,8 @@ class ResearchAgentLoop:
                 elif ev.verdict == ValidationVerdict.FAIL:
                     assert_action_allowed(self.actor, AgentAction.REJECT)
                     self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
-                report[defn.alpha_id] = {"verdict": ev.verdict.value, "state": self._state_of(defn.alpha_id)}
+                report[defn.alpha_id] = {"verdict": ev.verdict.value, "state": self._state_of(defn.alpha_id),
+                                         "evaluation": ev}
             except Exception as e:                       # isolate: record, do NOT advance, continue
                 report[defn.alpha_id] = {"error": type(e).__name__, "state": self._state_of(defn.alpha_id)}
         return {"report": report, "human_review_queue": review_queue}
