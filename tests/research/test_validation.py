@@ -94,8 +94,15 @@ def test_high_trial_count_forces_human_review():
 
 
 def test_single_soft_failure_is_warn_and_not_promotable():
-    res = GATE.evaluate("alpha-warn", **{**CLEAN, "walk_forward_passed": False})
+    # a single SOFT failure (low OOS Sharpe) -> WARN, not promotable
+    res = GATE.evaluate("alpha-warn", **{**CLEAN, "oos_sharpe": -0.5})
     assert res.verdict == ValidationVerdict.WARN and not res.promotable
+
+
+def test_walk_forward_failure_is_a_hard_fail():
+    # a real out-of-sample walk-forward failure is serious -> FAIL (review)
+    res = GATE.evaluate("alpha-wf", **{**CLEAN, "walk_forward_passed": False})
+    assert res.verdict == ValidationVerdict.FAIL and not res.promotable
 
 
 def test_gate_rejects_invalid_inputs():

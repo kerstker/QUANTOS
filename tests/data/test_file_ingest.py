@@ -48,6 +48,16 @@ def test_reingest_is_idempotent_same_hash(tmp_path):
     assert len(store.as_of("X", as_of_time=60)) == 1
 
 
+def test_future_knowledge_time_rejected(tmp_path):
+    # event_time is in the past but the bar is "known" in the future -> not knowable yet
+    p = tmp_path / "bars.csv"
+    _write_csv(p, [["X", 10, 200, 100, 101, 99, 100, 1000]])
+    store = SqlitePITStore(":memory:", create=True)
+    rep = ingest_bars_csv(str(p), store, now=100)
+    assert rep.bars_ingested == 0 and len(rep.rejected) == 1
+    assert rep.rejected[0][1] == "FutureDataError"
+
+
 def test_missing_knowledge_time_without_default_raises(tmp_path):
     p = tmp_path / "bars.csv"
     with open(p, "w", newline="", encoding="utf-8") as fh:

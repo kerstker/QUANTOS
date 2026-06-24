@@ -45,6 +45,23 @@ def test_search_never_reaches_approved():
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
 
 
+def test_provider_error_is_isolated_and_search_continues():
+    # a periods_provider that raises for one hypothesis must NOT abort the whole
+    # multi-round search (review): that hypothesis is scored 0 and recorded, the rest run.
+    loop = GuidedSearchLoop(_space())
+
+    def flaky(defn):
+        if int(defn.params["window"]) == BAD_WINDOW:
+            raise RuntimeError("provider boom")
+        return _provider(defn)
+
+    out = loop.search(rounds=4, batch_size=2, periods_provider=flaky)
+    assert any(h.get("error") for h in out["history"])          # failures recorded, not raised
+    assert ("window", str(GOOD_WINDOW)) in out["arm_means"]     # good arm still learned
+    cat = loop.inner_loop.catalog
+    assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
+
+
 def test_search_is_deterministic():
     a = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider)
     b = GuidedSearchLoop(_space()).search(rounds=4, batch_size=2, periods_provider=_provider)

@@ -33,6 +33,10 @@ def normalize_bar(raw: dict, knowledge_time: int) -> Bar:
 def reject_if_future(bar: Bar, now: int) -> Bar:
     if bar.event_time > now:
         raise FutureDataError(f"bar event_time {bar.event_time} is after now {now}")
+    if bar.knowledge_time > now:
+        # a bar whose knowledge_time is in the future is not knowable yet; accepting
+        # it would admit a record before it could be observed (review)
+        raise FutureDataError(f"bar knowledge_time {bar.knowledge_time} is after now {now}")
     return bar
 
 

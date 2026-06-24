@@ -79,7 +79,9 @@ class ValidationGate:
         if oos_sharpe < c.min_oos_sharpe:
             soft.append(f"OOS_SHARPE_BELOW_MIN ({oos_sharpe:.2f}<{c.min_oos_sharpe})")
         if not walk_forward_passed:
-            soft.append("WALK_FORWARD_FAILED")
+            # a real out-of-sample walk-forward failure is a hard red flag, not a
+            # soft warning: the edge did not persist across held-out folds (review)
+            serious.append("WALK_FORWARD_FAILED")
 
         reasons = serious + soft
         needs_review = (

@@ -29,11 +29,26 @@ class GuidedSearchLoop:
             if not hyps:
                 break                                    # grid exhausted -> stop (fail-soft)
             defns = {h: self.space.to_definition(*h) for h in hyps}
-            candidates = [(defns[h], periods_provider(defns[h])) for h in hyps]
+            # isolate the periods_provider per hypothesis: one provider error must not
+            # abort the whole multi-round search — that hypothesis is recorded with
+            # reward 0 (its arms learn the failure) and the search continues (review).
+            candidates, failed = [], []
+            for h in hyps:
+                try:
+                    candidates.append((defns[h], periods_provider(defns[h])))
+                except Exception as exc:
+                    failed.append(h)
+                    self.strategy.update(h, 0.0)
+                    history.append({"hypothesis": h, "reward": 0.0,
+                                    "state": None, "error": type(exc).__name__})
+            if not candidates:
+                continue
             out = self.inner_loop.run(candidates, timestamp=timestamp)
             report.update(out["report"])
             review_queue.extend(out["human_review_queue"])
             for h in hyps:
+                if h in failed:
+                    continue                             # already scored 0 above
                 entry = out["report"].get(defns[h].alpha_id, {})
                 reward = evaluation_reward(entry.get("evaluation"))
                 self.strategy.update(h, reward)
