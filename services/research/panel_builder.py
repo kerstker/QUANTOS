@@ -16,6 +16,8 @@ from .signals import SIGNAL_OPS
 
 def build_panel_periods(store, instruments: Sequence[str], *, event_times: Sequence[int],
                         fwd_horizon: int, signal_fn: Callable) -> list:
+    if fwd_horizon < 1:
+        raise ValueError("fwd_horizon must be >= 1 (a forward return looks AHEAD)")
     insts = sorted(instruments)
     ets = sorted(event_times)
     periods = []
@@ -27,11 +29,20 @@ def build_panel_periods(store, instruments: Sequence[str], *, event_times: Seque
         sig_insts, sigs, fwds = [], [], []
         for inst in insts:
             hist = store.as_of(inst, t)              # PIT: bars knowable by t
-            closes = [b.close for b in hist]
+            # collapse restatements to ONE close per event_time (latest knowledge),
+            # so a revision does not duplicate an event_time and corrupt the window op
+            by_et = {}
+            for b in hist:                            # as_of is ordered (event, knowledge)
+                by_et[b.event_time] = b.close         # later (higher knowledge) wins
+            closes = [by_et[et] for et in sorted(by_et)]
             sig = signal_fn(closes) if closes else None
             now_bar = store.latest_as_of(inst, t)
             fwd_bar = store.latest_as_of(inst, t_fwd)
-            if sig is None or now_bar is None or fwd_bar is None or now_bar.close == 0:
+            # require a GENUINE later observation for the forward return — else the
+            # instrument is delisted/halted and latest_as_of returns a stale bar that
+            # would fabricate a 0% return (review: skip it instead)
+            if (sig is None or now_bar is None or fwd_bar is None or now_bar.close == 0
+                    or fwd_bar.event_time <= now_bar.event_time):
                 continue
             sig_insts.append(inst)
             sigs.append(float(sig))
