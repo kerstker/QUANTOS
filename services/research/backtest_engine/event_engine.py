@@ -40,7 +40,8 @@ class EventBacktestResult:
 
 
 def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital: float,
-                       cost: CostModel = CostModel(), fill=None, lot_size: int = 1) -> EventBacktestResult:
+                       cost: CostModel = CostModel(), fill=None, lot_size: int = 1,
+                       financing=None) -> EventBacktestResult:
     fill = fill or NextOpenFill()
     if len(targets) != len(timeline):
         raise ValueError("targets and timeline must have equal length")
@@ -64,8 +65,10 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
             turnover += abs(qty) * price
         pending = {}
 
-        # 2) CLOSE of bar i: mark, record equity, size next orders
+        # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity
         marks = {inst: bar.close for inst, bar in bars.items()}
+        if financing is not None:
+            book.charge_financing(financing.accrue(book, marks))
         equity_i = book.equity(marks)
         timestamps.append(ts)
         equity_curve.append(equity_i)

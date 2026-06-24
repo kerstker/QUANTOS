@@ -42,6 +42,11 @@ class Book:
         self.cash -= qty * price + cost
         self.total_cost += cost
 
+    def charge_financing(self, amount: float) -> None:
+        """Charge a pure carrying cost (borrow/financing) — no position change."""
+        self.cash -= amount
+        self.total_cost += amount
+
     def equity(self, marks: dict) -> float:
         return self.cash + sum(lot.qty * marks[inst] for inst, lot in self.positions.items())
 
