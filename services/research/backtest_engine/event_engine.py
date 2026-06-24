@@ -29,6 +29,7 @@ class EventBacktestResult:
     realized_pnl: float
     final_unrealized: float
     turnover: float
+    final_positions: dict
 
     def final_equity(self) -> float:
         return self.equity_curve[-1] if self.equity_curve else self.initial_capital
@@ -60,9 +61,10 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
         for inst, qty in pending.items():
             if inst not in bars:
                 raise ValueError(f"no bar for queued instrument {inst} at ts {ts}")
-            price, c = fill.fill(qty, bars[inst], cost)
-            book.apply_fill(inst, qty, price, c)
-            turnover += abs(qty) * price
+            filled, price, c = fill.fill(qty, bars[inst], cost)   # filled may be partial
+            if filled != 0:
+                book.apply_fill(inst, filled, price, c)
+                turnover += abs(filled) * price
         pending = {}
 
         # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity
@@ -93,4 +95,5 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
         equity_curve=equity_curve, cash_curve=cash_curve,
         total_cost=book.total_cost, realized_pnl=book.realized_pnl,
         final_unrealized=book.unrealized(final_marks), turnover=turnover,
+        final_positions={inst: lot.qty for inst, lot in book.positions.items() if lot.qty != 0},
     )
