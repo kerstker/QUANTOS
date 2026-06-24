@@ -60,3 +60,32 @@ def test_build_fails_closed_on_thin_overlap():
     short = {"a": tuple(range(5)), "b": tuple(range(5))}
     with pytest.raises(ValueError):
         build_portfolio("p1", "pf", short, config=PortfolioConfig(min_overlap=60))
+
+
+# --- factor portfolio (audit roadmap) ---
+from quantos.contracts.factor import FactorRiskModel
+from services.portfolio.constraints import PortfolioConstraints
+from services.portfolio.construction import build_factor_portfolio, factor_risk_report
+
+
+def _fmodel():
+    return FactorRiskModel(
+        factor_ids=("f",),
+        loadings={"a": (1.0,), "b": (1.0,), "c": (-1.0,)},
+        factor_cov=((0.04,),),
+        specific_var={"a": 0.02, "b": 0.03, "c": 0.05},
+    )
+
+
+def test_build_factor_portfolio_returns_factor_neutral_plan():
+    c = PortfolioConstraints(lower=-1.0, upper=1.0, budget=0.0, factor_targets={"f": 0.0})
+    plan = build_factor_portfolio("p1", "pf", _fmodel(), ["a", "b", "c"], c)
+    weights = {t.instrument_id: t.target_weight for t in plan.targets}
+    exposure = weights["a"] * 1.0 + weights["b"] * 1.0 + weights["c"] * -1.0
+    assert abs(exposure) < 1e-4                       # factor-neutral
+    assert abs(sum(weights.values())) < 1e-4          # dollar-neutral (budget 0)
+
+
+def test_factor_risk_report_sums_to_total():
+    rep = factor_risk_report(_fmodel(), ["a", "b", "c"], [0.5, -0.3, 0.2])
+    assert rep["factor_var"] + rep["specific_var"] == pytest.approx(rep["total_var"], abs=1e-12)
