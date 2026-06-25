@@ -93,6 +93,27 @@ def test_session_unified_price_and_fundamental_search():
     assert out["arm_means"] == b["arm_means"]          # deterministic
 
 
+def test_session_evolutionary_mode():
+    # evolutionary mode: machine-evolve alpha (price/value atoms + crossover interactions),
+    # contained, recorded to registry, multiple-testing accounted, deterministic
+    store, reg = _store(), _reg()
+    out = run_research_session(store, registry=reg, fund_store=_fund_store(), metrics=("eps",),
+                               evolutionary=True, evo_generations=2, evo_population=4, evo_elite=2, **_kw())
+    assert out["mode"] == "evolutionary"
+    assert out["best"] and out["best"] == sorted(out["best"], key=lambda gr: (-gr[1], gr[0]))  # 降序
+    ids = set(out["report"].keys())
+    assert any(a.startswith("h_") for a in ids)                       # 价格原子
+    assert any(a.startswith("hx_") or a.startswith("hf_") for a in ids)  # 交互 或 价值因子
+    assert out["recorded_run_ids"]                                    # 评估记入 registry
+    cat = AlphaCatalog()
+    reg.load_into(cat)
+    assert cat.global_trial_count() >= 1                              # 多重检验:每基因型计一次试验
+    assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())   # contained
+    b = run_research_session(_store(), registry=None, fund_store=_fund_store(), metrics=("eps",),
+                             evolutionary=True, evo_generations=2, evo_population=4, evo_elite=2, **_kw())
+    assert out["best"] == b["best"]                                   # 确定性
+
+
 def test_bandit_learning_persists_across_sessions():
     # the guided-search bandit's learned arm statistics survive into the next session
     store, reg = _store(), _reg()

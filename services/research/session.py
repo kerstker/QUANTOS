@@ -19,6 +19,7 @@ from services.data.versioning import content_hash_of
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guided_search import GuidedSearchLoop
 from services.intelligence.search_space import CombinedHypothesisSpace
+from services.intelligence.evolutionary_search import EvolutionarySearchLoop, make_evolution_provider
 
 from .panel_builder import make_data_periods_provider, universe_data_gaps
 from .fundamental_factors import make_combined_periods_provider
@@ -36,13 +37,23 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          fwd_horizon: int, space, rounds: int, batch_size: int,
                          timestamp: int = 0, registry=None,
                          dataset_version: Optional[str] = None, audit_log=None, universe=None,
-                         fund_store=None, metrics: tuple = (), modes: tuple = ("ratio_to_price",)) -> dict:
+                         fund_store=None, metrics: tuple = (), modes: tuple = ("ratio_to_price",),
+                         evolutionary: bool = False, evo_generations: int = 2,
+                         evo_population: int = 8, evo_elite: int = 3) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
     catalog = AlphaCatalog()
     if registry is not None:
         registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
+
+    if evolutionary:
+        return _run_evolutionary(
+            store, instruments, event_times=event_times, fwd_horizon=fwd_horizon, space=space,
+            metrics=metrics, modes=modes, fund_store=fund_store, universe=universe,
+            catalog=catalog, registry=registry, dataset_version=dataset_version,
+            timestamp=timestamp, audit_log=audit_log,
+            generations=evo_generations, population_size=evo_population, elite_k=evo_elite)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -79,6 +90,62 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "dataset_version": dataset_version,
         "arm_means": out["arm_means"],
         "human_review_queue": out["human_review_queue"],
+        "recorded_run_ids": recorded,
+        "n_evaluated": len(out["report"]),
+        "report": out["report"],
+        "data_gaps": data_gaps,
+    }
+
+
+def _record_report(registry, report, *, dataset_version, timestamp, audit_log) -> list:
+    """Record every report entry that carries an evaluation as an immutable registry
+    artifact. Deterministic order. Returns the recorded run ids."""
+    recorded = []
+    if registry is None:
+        return recorded
+    for _alpha_id, entry in sorted(report.items()):
+        ev = entry.get("evaluation")
+        if ev is not None:
+            recorded.append(registry.record_evaluation(
+                ev, dataset_version=dataset_version, recorded_ts=timestamp, audit_log=audit_log))
+    return recorded
+
+
+def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
+                      fund_store, universe, catalog, registry, dataset_version, timestamp,
+                      audit_log, generations, population_size, elite_k) -> dict:
+    """Evolutionary mode: machine-discover alpha (price/value atoms + crossover-into-
+    interaction genomes) through the UNCHANGED guardrailed ResearchAgentLoop. The
+    crossover operator subsumes feature interactions. No bandit (no UCBSearch), so no
+    save_bandit; the catalog still accrues cross-session multiple-testing state."""
+    provider = make_evolution_provider(store, fund_store, instruments,
+                                       event_times=event_times, fwd_horizon=fwd_horizon, universe=universe)
+    seed = [("P", op, str(w)) for op in space.operators for w in space.windows]
+    if fund_store is not None and metrics:
+        seed += [("F", m, mode) for m in metrics for mode in modes]
+    vocab = {
+        "operators": tuple(space.operators),
+        "windows": tuple(str(w) for w in space.windows),
+        "metrics": tuple(metrics) or ("eps",),
+        "modes": tuple(modes),
+        "combines": ("sum", "product"),
+    }
+    loop = EvolutionarySearchLoop(provider, inner_loop=ResearchAgentLoop(catalog=catalog), vocab=vocab)
+    out = loop.run(seed, generations=generations, population_size=population_size,
+                   elite_k=elite_k, timestamp=timestamp)
+
+    data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
+        else {"total_gaps": 0, "by_date": {}}
+    review_queue = [aid for aid, e in sorted(out["report"].items()) if e.get("state") == "PAPER_TRADING"]
+    recorded = _record_report(registry, out["report"], dataset_version=dataset_version,
+                              timestamp=timestamp, audit_log=audit_log)
+    if registry is not None:
+        registry.save(catalog, now=timestamp)        # no save_bandit: evolution has no UCB bandit
+    return {
+        "dataset_version": dataset_version,
+        "mode": "evolutionary",
+        "best": out["best"],
+        "human_review_queue": review_queue,
         "recorded_run_ids": recorded,
         "n_evaluated": len(out["report"]),
         "report": out["report"],
