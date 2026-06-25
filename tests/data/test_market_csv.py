@@ -103,6 +103,41 @@ def test_bad_column_map_raises():
                           column_map={"date": "Date"})           # 缺 OHLCV 键
 
 
+def test_ambiguous_date_format_rejected():
+    store = SqlitePITStore(":memory:", create=True)
+    with pytest.raises(ValueError):
+        ingest_market_csv("x.csv", store, instrument_id="X", date_format="%y-%m-%d")  # 两位年翻转
+    with pytest.raises(ValueError):
+        ingest_market_csv("x.csv", store, instrument_id="X", date_format="%Y-%m")     # 缺日
+
+
+def test_explicit_knowledge_time_retains_restatement(tmp_path):
+    # 同一交易日的厂商修正:用更晚的 knowledge_time 重接 → 两版 bitemporal 行都保留(审查 P1)
+    p1 = tmp_path / "AAA_v1.csv"
+    _write(p1, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.5, 1000]])
+    p2 = tmp_path / "AAA_v2.csv"
+    _write(p2, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.9, 1000]])  # 收盘被修正
+    store = SqlitePITStore(":memory:", create=True)
+    ingest_market_csv(str(p1), store, instrument_id="AAA", knowledge_time=20240315)
+    rep2 = ingest_market_csv(str(p2), store, instrument_id="AAA", knowledge_time=20240320)
+    assert rep2.bars_ingested == 1 and rep2.duplicates == 0            # 修正作为新行入库,非丢弃
+    assert store.latest_as_of("AAA", 20240315).close == 100.5          # 修正前:只见原值(PIT)
+    assert store.latest_as_of("AAA", 20240320).close == 100.9          # 修正后:见最新已知值
+
+
+def test_default_knowledge_time_drops_restatement_as_duplicate(tmp_path):
+    # 默认 kt=event_time:同日期修正 PK 相同 → 被去重丢弃(首见为准,文档化的 v1 行为)
+    p = tmp_path / "AAA.csv"
+    _write(p, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.5, 1000]])
+    store = SqlitePITStore(":memory:", create=True)
+    ingest_market_csv(str(p), store, instrument_id="AAA")
+    p2 = tmp_path / "AAA2.csv"
+    _write(p2, _STD_HEADER, [["2024-03-15", 100.0, 101.0, 99.0, 100.9, 1000]])
+    rep = ingest_market_csv(str(p2), store, instrument_id="AAA")
+    assert rep.bars_ingested == 0 and rep.duplicates == 1
+    assert store.latest_as_of("AAA", 20240315).close == 100.5         # 首见为准
+
+
 # ---------------- Task 3: 端到端方法论 ----------------
 
 def _ingest_universe(tmp_path):
