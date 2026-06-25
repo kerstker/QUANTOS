@@ -88,6 +88,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
 
     return {
         "dataset_version": dataset_version,
+        "mode": "guided",            # discriminator: guided has arm_means; evolutionary has best
         "arm_means": out["arm_means"],
         "human_review_queue": out["human_review_queue"],
         "recorded_run_ids": recorded,
