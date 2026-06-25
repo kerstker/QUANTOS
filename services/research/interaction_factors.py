@@ -62,7 +62,8 @@ def _zscore_xs(vals: Sequence[float]) -> Optional[list]:
     if len(vals) < 2:
         return None
     lo, hi = min(vals), max(vals)
-    if (hi - lo) <= 1e-9 * max(abs(lo), abs(hi), 1.0):
+    scale = max(abs(lo), abs(hi)) or 1.0     # genuinely relative; 1.0 only when all ~0
+    if (hi - lo) <= 1e-9 * scale:
         return None
     m = statistics.fmean(vals)
     sd = statistics.pstdev(vals)
@@ -115,6 +116,11 @@ def build_interaction_periods(price_store, fund_store, instruments: Sequence[str
 
 
 def _leg_id(leg) -> str:
+    # ":" is the leg-id delimiter; a component containing it would make the id->leg
+    # encoding non-injective, colliding distinct leg pairs to the same alpha_id and
+    # drifting multiple-testing counting (review P1). Fail closed.
+    if any(":" in str(x) for x in leg):
+        raise ValueError(f"leg components must not contain ':' (id delimiter): {leg!r}")
     return f"{leg[0]}:{leg[1]}:{leg[2]}"
 
 

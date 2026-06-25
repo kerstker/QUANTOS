@@ -112,6 +112,21 @@ def test_deterministic():
     assert [p.instruments for p in a] == [p.instruments for p in b]
 
 
+def test_zscore_relative_tolerance():
+    from services.research.interaction_factors import _zscore_xs
+    # 小量级但真实价差 → 不应被误杀(审查 P2)
+    assert _zscore_xs([0.001, 0.002, 0.003, 0.004]) is not None
+    # 常量带 FP 噪声 → 判退化
+    assert _zscore_xs([1.2247, 1.2247, 1.2247, 1.2247 + 1e-15]) is None
+    assert _zscore_xs([0.0, 0.0, 0.0]) is None
+
+
+def test_leg_id_rejects_colon():
+    # 含 ':' 的腿分量会破坏 id 编码单射性 → 失败关闭(审查 P1)
+    with pytest.raises(ValueError):
+        interaction_definition(("fund", "a:b", "raw"), _ZS, "sum")
+
+
 def test_definition_provider_roundtrip():
     insts = ["i0", "i1", "i2", "i3"]
     price = _price(insts)
