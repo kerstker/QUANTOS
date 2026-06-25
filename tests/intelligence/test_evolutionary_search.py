@@ -49,6 +49,14 @@ def test_genome_to_definition():
     assert x.params["family"] == "interaction"
     with pytest.raises(ValueError):
         genome_to_definition(("Z", "x"))
+    # ':' 保留为交互 leg-id 分隔符,禁止出现在 id 分量(审查 P1)
+    with pytest.raises(ValueError):
+        genome_to_definition(("P", "mom:o", "5"))
+    with pytest.raises(ValueError):
+        genome_to_definition(("F", "eps", "rat:io"))
+    # 合法的含 '_' 算子/模式名照常(默认 vocab 零碰撞)
+    assert genome_to_definition(("P", "ts_mean", "5")).alpha_id == "h_ts_mean_5"
+    assert genome_to_definition(("F", "eps", "ratio_to_price")).alpha_id == "hf_eps_ratio_to_price"
 
 
 def test_mutate_price_deterministic():

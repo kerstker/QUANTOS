@@ -31,16 +31,32 @@ DEFAULT_VOCAB = {
 }
 
 
+def _no_colon(*parts) -> None:
+    # ':' is reserved (the interaction leg-id delimiter); forbid it in any id component
+    # so atomic/interaction id namespaces can't be confused. NOTE: alpha_ids join
+    # components with '_', and legitimate components contain '_' (e.g. operator
+    # "ts_mean", mode "ratio_to_price"), so '_' is NOT forbidden. The DEFAULT vocab is
+    # verified collision-free; with a CUSTOM vocab whose names collide under the '_'
+    # join, the duplicate alpha_id is rejected by catalog.register and that genome is
+    # dropped fail-closed (reward 0) — never merged into another's state (definition_hash
+    # keys on params, which stay distinct).
+    for p in parts:
+        if ":" in str(p):
+            raise ValueError(f"genome id component must not contain ':' : {p!r}")
+
+
 def genome_to_definition(genome) -> AlphaDefinition:
     """Map a genome to an AlphaDefinition (distinct genome → distinct definition_hash
     → honest multiple-testing count)."""
     tag = genome[0]
     if tag == "P":
         _, op, window = genome
+        _no_colon(op, window)
         return AlphaDefinition(alpha_id=f"h_{op}_{window}", name=f"H({op}:{window})",
                                factor_ids=("close",), params={"operator": op, "window": str(window)})
     if tag == "F":
         _, metric, mode = genome
+        _no_colon(metric, mode)
         return AlphaDefinition(alpha_id=f"hf_{metric}_{mode}", name=f"HF({metric}:{mode})",
                                factor_ids=(metric,), params={"metric": metric, "mode": mode, "family": "fundamental"})
     if tag == "X":
