@@ -168,7 +168,8 @@ export default function CryptoLive() {
             </Panel>
 
             <div className="flex flex-col gap-4">
-              <Panel eyebrow={bi('数据', 'Universe')} title={bi('真实标的横截面', 'Real instrument cross-section')}>
+              <Panel eyebrow={bi('数据', 'Universe')} title={bi('真实标的横截面', 'Real instrument cross-section')}
+                right={(meta?.n_dropped ?? 0) > 0 ? <Chip label={bi(`${meta!.n_dropped} 跳过`, `${meta!.n_dropped} dropped`)} tone="warn" /> : undefined}>
                 {meta && <DataTable columns={coinCols} rows={meta.coins} getKey={c => c.instrument_id} dense />}
               </Panel>
 

@@ -24,18 +24,33 @@ import json
 import os
 import time
 
+import sys
+
 from services.data.persistent_store import SqlitePITStore
 from services.data.market_provider import ingest_provider_rows
 from services.intelligence.search_space import HypothesisSpace
 from services.research.session import run_research_session
 from tools.coingecko_fetch import fetch_ohlc, parse_ohlc, _INTERVAL_MS
 
-# (coingecko id, ticker) — a 12-name liquid cross-section to give the search real breadth.
+# (coingecko id, ticker) — a wide liquid cross-section. On the DEMO tier days=30 (4h)
+# is the richest bar count (~179); the only real statistical-power lever is BREADTH
+# (fundamental law IR≈IC·√breadth), so we widen the universe rather than the history.
+# Bad/illiquid ids are skipped per-coin at runtime (one failure never kills the run).
 COINS = [
     ("bitcoin", "BTC"), ("ethereum", "ETH"), ("binancecoin", "BNB"),
     ("solana", "SOL"), ("ripple", "XRP"), ("cardano", "ADA"),
     ("dogecoin", "DOGE"), ("avalanche-2", "AVAX"), ("chainlink", "LINK"),
     ("polkadot", "DOT"), ("litecoin", "LTC"), ("tron", "TRX"),
+    ("matic-network", "MATIC"), ("shiba-inu", "SHIB"), ("uniswap", "UNI"),
+    ("cosmos", "ATOM"), ("stellar", "XLM"), ("near", "NEAR"), ("aptos", "APT"),
+    ("arbitrum", "ARB"), ("optimism", "OP"), ("filecoin", "FIL"),
+    ("hedera-hashgraph", "HBAR"), ("vechain", "VET"), ("maker", "MKR"),
+    ("aave", "AAVE"), ("the-graph", "GRT"), ("algorand", "ALGO"),
+    ("injective-protocol", "INJ"), ("sui", "SUI"), ("render-token", "RNDR"),
+    ("immutable-x", "IMX"), ("tezos", "XTZ"), ("eos", "EOS"), ("flow", "FLOW"),
+    ("axie-infinity", "AXS"), ("chiliz", "CHZ"), ("quant-network", "QNT"),
+    ("gala", "GALA"), ("curve-dao-token", "CRV"), ("kava", "KAVA"),
+    ("pancakeswap-token", "CAKE"),
 ]
 DAYS = 30
 GRANULARITY = "4h"
@@ -84,18 +99,28 @@ def main() -> None:
     store = SqlitePITStore(os.path.join("data", "cache", "crypto.db"), create=True)
     interval_ms = _INTERVAL_MS.get(DAYS, 4 * 3600 * 1000)
 
-    coin_meta, all_event_times, instruments = [], set(), []
-    for coin_id, ticker in COINS:
-        payload = fetch_ohlc(coin_id, days=DAYS)
-        rows = parse_ohlc(payload, instrument_id=ticker, interval_ms=interval_ms, now_ms=now_ms)
-        rep = ingest_provider_rows(rows, store, dataset_id=f"coingecko-{ticker}",
-                                   now=now_ms, time_unit="ms")
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else len(COINS)
+    universe = COINS[:max(2, n)]
+    coin_meta, all_event_times, instruments, dropped = [], set(), [], []
+    for coin_id, ticker in universe:
+        try:
+            payload = fetch_ohlc(coin_id, days=DAYS)
+            rows = parse_ohlc(payload, instrument_id=ticker, interval_ms=interval_ms, now_ms=now_ms)
+            if not rows:
+                raise ValueError("no candles")
+            rep = ingest_provider_rows(rows, store, dataset_id=f"coingecko-{ticker}",
+                                       now=now_ms, time_unit="ms")
+        except Exception as exc:                          # bad id / gap / rate-limit -> skip, never crash
+            dropped.append({"instrument_id": ticker, "coin_id": coin_id, "reason": type(exc).__name__})
+            print(f"{ticker:5s} SKIPPED ({type(exc).__name__})")
+            time.sleep(2.5)
+            continue
         instruments.append(ticker)
         all_event_times.update(r["event_time"] for r in rows)
         coin_meta.append({"instrument_id": ticker, "coin_id": coin_id,
                           "bars": len(rows), "ingested": rep.bars_ingested, "rejected": len(rep.rejected)})
         print(f"{ticker:5s} fetched {len(rows):3d} ingested {rep.bars_ingested:3d} rejected {len(rep.rejected)}")
-        time.sleep(0.3)  # be gentle on the demo-tier rate limit
+        time.sleep(2.5)  # stay under the demo-tier ~30 calls/min rate limit
 
     event_times = sorted(all_event_times)
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
@@ -128,6 +153,8 @@ def main() -> None:
             "n_instruments": len(instruments),
             "n_periods": len(event_times),
             "coins": coin_meta,
+            "dropped": dropped,
+            "n_dropped": len(dropped),
             "search_mode": result["mode"],
             "evo_generations": EVO_GENERATIONS,
             "evo_population": EVO_POPULATION,

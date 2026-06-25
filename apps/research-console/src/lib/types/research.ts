@@ -1236,6 +1236,8 @@ export interface CryptoLiveMeta {
   n_instruments: number;
   n_periods: number;
   coins: CryptoCoinMeta[];
+  dropped?: Array<{ instrument_id: string; coin_id: string; reason: string }>;
+  n_dropped?: number;
   search_mode: string;
   evo_generations: number;
   evo_population: number;
