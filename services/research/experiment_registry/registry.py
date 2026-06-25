@@ -15,7 +15,7 @@ from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
 
-from .store import SqliteExperimentStore
+from .store import ExperimentStoreError, SqliteExperimentStore
 
 
 class ExperimentRegistry:
@@ -25,6 +25,11 @@ class ExperimentRegistry:
     # --- catalog snapshot persistence ---------------------------------------
 
     def save(self, catalog: AlphaCatalog, *, now: int = 0) -> None:
+        # NOTE (review ER-3): save() ACCUMULATES (add_trials + upsert_alpha); it does
+        # NOT mirror/delete. Follow the protocol load_into(catalog) at session START
+        # then save(catalog) at END — saving a catalog NOT initialized from this store
+        # leaves prior rows (incl. a stale APPROVED) in place. The monotonic-accumulate
+        # is the safe direction for multiple-testing counting (never un-deflates DSR).
         snap = catalog.snapshot()
         self._store.add_trials(snap.trials, first_seen_ts=now)
         for row in snap.alphas:
@@ -41,14 +46,17 @@ class ExperimentRegistry:
     def load_into(self, catalog: AlphaCatalog) -> None:
         trials = tuple(self._store.all_trial_hashes())     # raises ExperimentStoreError if uninit
         rows = []
-        for r in self._store.all_alphas():
-            rows.append(AlphaStateRow(
-                alpha_id=r["alpha_id"],
-                definition=AlphaDefinition.model_validate(json.loads(r["definition_json"])),
-                state=AlphaState(r["state"]),
-                returns=tuple(json.loads(r["returns_json"])),
-                pvalue=r["pvalue"],
-            ))
+        try:
+            for r in self._store.all_alphas():
+                rows.append(AlphaStateRow(
+                    alpha_id=r["alpha_id"],
+                    definition=AlphaDefinition.model_validate(json.loads(r["definition_json"])),
+                    state=AlphaState(r["state"]),
+                    returns=tuple(json.loads(r["returns_json"])),
+                    pvalue=r["pvalue"],
+                ))
+        except Exception as exc:   # intra-row corruption (bad JSON/state) -> fail closed,
+            raise ExperimentStoreError(f"corrupt alpha_state row: {exc}") from exc  # never a silent partial load
         catalog.restore(CatalogSnapshot(trials=trials, alphas=tuple(rows)))
 
     # --- immutable evaluation artifacts -------------------------------------

@@ -28,12 +28,15 @@ def test_min_variance_beats_equal_weight():
 
 
 def test_long_short_factor_neutrality():
+    # budget=1 forces a NON-trivial book (the zero vector is infeasible), so this
+    # genuinely exercises factor neutrality rather than passing via w=0 (review).
     loadings = [[1.0], [1.0], [-1.0]]
-    c = PortfolioConstraints(lower=-1.0, upper=1.0, budget=0.0, factor_targets={"f": 0.0})
+    c = PortfolioConstraints(lower=-1.0, upper=1.0, budget=1.0, factor_targets={"f": 0.0})
     w = min_variance_weights(COV, IDS, c, loadings=loadings, factor_ids=["f"])
     exposure = sum(w[i] * loadings[i][0] for i in range(3))
-    assert exposure == pytest.approx(0.0, abs=1e-5)
-    assert sum(w) == pytest.approx(0.0, abs=1e-5)
+    assert exposure == pytest.approx(0.0, abs=1e-5)        # factor-neutral
+    assert sum(w) == pytest.approx(1.0, abs=1e-5)          # budget binds
+    assert max(abs(x) for x in w) > 0.1                    # genuinely non-trivial (not zero vector)
 
 
 def test_gross_leverage_cap_enforced():

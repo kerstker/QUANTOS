@@ -45,7 +45,7 @@ def ingest_bars_csv(path: str, store, *, knowledge_time_default=None, now=None,
                 if now is not None:
                     reject_if_future(bar, now)
             except Exception as exc:
-                rejected.append((i, type(exc).__name__))
+                rejected.append((i, type(exc).__name__, str(exc)))   # index, class, detail
                 continue
             valid_bars.append(bar)
             if store.contains(bar.instrument_id, bar.event_time, bar.knowledge_time):

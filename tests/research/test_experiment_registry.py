@@ -60,6 +60,19 @@ def test_load_into_uninitialized_store_fails_closed():
         reg.load_into(AlphaCatalog())            # never silently empties the trial pop
 
 
+def test_load_into_corrupt_alpha_row_fails_closed():
+    # review ER-4: intra-row corruption (bad JSON) must raise ExperimentStoreError,
+    # not surface as a raw JSON error / partial load
+    store = SqliteExperimentStore(":memory:", create=True)
+    reg = ExperimentRegistry(store)
+    store._conn.execute(
+        "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, sharpe, pvalue) "
+        "VALUES (?,?,?,?,?,?)", ("a1", "{not valid json", "DRAFT", "[]", None, None))
+    store._conn.commit()
+    with pytest.raises(ExperimentStoreError):
+        reg.load_into(AlphaCatalog())
+
+
 def _evaluation():
     return AlphaEvaluation(alpha_id="a1", verdict=ValidationVerdict.PASS,
                            deflated_sharpe=0.8, pbo=0.1, catalog_trial_count=3,

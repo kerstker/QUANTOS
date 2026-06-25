@@ -17,6 +17,13 @@ def test_front_loaded_edge_fails_even_though_full_sample_is_positive():
     assert walk_forward_oos(returns, n_folds=4, min_positive_frac=0.5) is False   # real OOS FAILS
 
 
+def test_constant_positive_folds_count_as_edge():
+    # review: a zero-variance POSITIVE fold is a perfect edge, not "no edge" — it
+    # must not score as a false negative
+    assert walk_forward_oos([0.01] * 16, n_folds=4, min_positive_frac=0.5) is True
+    assert walk_forward_oos([-0.01] * 16, n_folds=4, min_positive_frac=0.5) is False
+
+
 def test_thin_series_fails_closed():
     assert walk_forward_oos([0.01, 0.02, 0.03], n_folds=4) is False   # < n_folds*2
 

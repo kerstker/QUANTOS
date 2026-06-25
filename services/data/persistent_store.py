@@ -85,6 +85,9 @@ class SqlitePITStore:
         return rows[-1] if rows else None
 
     def fetch_bars(self, instrument_id: str, start: int, end: int) -> list:
+        # MarketDataSource protocol: a RAW event_time window fetch — it does NOT
+        # apply a knowledge_time filter, so it is NOT lookahead-safe on its own. Use
+        # as_of(...) for point-in-time / no-lookahead reads (review).
         self._require_schema()
         rows = self._conn.execute(
             "SELECT payload_json FROM bars WHERE key=? AND event_time>=? AND event_time<=? "

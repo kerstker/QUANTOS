@@ -81,8 +81,14 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
                 turnover += abs(filled) * price
         pending = {}
 
-        # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity
+        # 2) CLOSE of bar i: accrue financing on the held book, mark, record equity.
+        # A still-held instrument absent from this bar cannot be marked -> fail with a
+        # clear error rather than a bare KeyError in equity() (review).
         marks = {inst: bar.close for inst, bar in bars.items()}
+        held_unmarked = [inst for inst, lot in book.positions.items()
+                         if lot.qty != 0 and inst not in marks]
+        if held_unmarked:
+            raise ValueError(f"held instruments missing from bar at ts {ts} (cannot mark): {held_unmarked}")
         if financing is not None:
             book.charge_financing(financing.accrue(book, marks))
         equity_i = book.equity(marks)

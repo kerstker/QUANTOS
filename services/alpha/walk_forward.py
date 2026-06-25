@@ -18,7 +18,12 @@ def _block_sharpe(block: Sequence[float]) -> float:
     if len(block) < 2:
         return 0.0
     sd = statistics.pstdev(block)
-    return statistics.fmean(block) / sd if sd > 0 else 0.0
+    if sd > 0:
+        return statistics.fmean(block) / sd
+    # zero-variance block: a constant POSITIVE block is a perfect (infinite-Sharpe)
+    # edge, not "no edge" — score by the sign of the mean (review: false-negative fix)
+    mean = statistics.fmean(block)
+    return math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
 
 
 def walk_forward_oos(returns: Sequence[Optional[float]], *, n_folds: int = 4,

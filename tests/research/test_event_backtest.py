@@ -76,6 +76,16 @@ def test_is_deterministic():
     assert a.equity_curve == b.equity_curve and a.total_cost == b.total_cost
 
 
+def test_held_instrument_missing_from_bar_raises_clear_error():
+    # A is held but disappears from the bar at ts=2 -> clear error, not a bare KeyError
+    tl = [(0, {"A": _bar("A", 0, 10.0, 10.0)}),
+          (1, {"A": _bar("A", 1, 10.0, 10.0)}),
+          (2, {"B": _bar("B", 2, 20.0, 20.0)})]
+    targets = [{"A": 1.0}, {"A": 1.0}, {"B": 0.0}]
+    with pytest.raises(ValueError, match="cannot mark"):
+        run_event_backtest(tl, targets, initial_capital=100_000.0, cost=CostModel(0, 0, 0))
+
+
 def test_fail_closed_inputs():
     tl = _timeline([{"A": (10.0, 10.0)}, {"A": (10.0, 11.0)}])
     with pytest.raises(ValueError):
