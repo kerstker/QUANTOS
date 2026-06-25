@@ -11,6 +11,7 @@ announcement = a distinct row). Offline; no network/broker. Fail-closed.
 from __future__ import annotations
 
 import csv
+import math
 import sqlite3
 from dataclasses import dataclass
 from typing import Optional
@@ -94,12 +95,15 @@ def ingest_fundamentals_csv(path: str, store: SqliteFundamentalStore) -> Fundame
         for i, raw in enumerate(csv.DictReader(fh)):
             rows_read += 1
             try:
+                v = float(raw["value"])
+                if not math.isfinite(v):                 # 拒 inf/nan(失败关闭,审查 P2)
+                    raise ValueError(f"non-finite value: {raw['value']!r}")
                 fv = FeatureValue(
                     feature_id=raw["metric"].strip(),
                     instrument_id=raw["instrument_id"].strip(),
                     event_time=int(raw["event_time"]),
                     knowledge_time=int(raw["knowledge_time"]),
-                    value=float(raw["value"]),
+                    value=v,
                 )
             except Exception as exc:
                 rejected.append((i, type(exc).__name__, str(exc)))

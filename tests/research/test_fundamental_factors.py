@@ -82,6 +82,22 @@ def test_provider_and_bad_mode():
                                   event_times=DATES, fwd_horizon=1, mode="bogus")
 
 
+def test_non_finite_signal_skipped():
+    # 程序化注入 inf 基本面(绕过 ingest)→ builder 必须跳过,产出无非有限信号(审查 P1)
+    import math
+    insts = ["i0", "i1", "i2"]
+    fund = _fund(insts, 20240101)
+    # 更晚公告日 → 不同 PK、成为 i2 最新可知值(且 DATES 均 >= 20240102)
+    fund.add(FeatureValue(feature_id="eps", instrument_id="i2", event_time=20231231,
+                          knowledge_time=20240102, value=float("inf")))
+    periods = build_fundamental_periods(fund, _price(insts), insts, "eps",
+                                        event_times=DATES, fwd_horizon=1, mode="ratio_to_price")
+    assert periods
+    for p in periods:
+        assert "i2" not in p.instruments                 # inf 信号被跳过
+        assert all(math.isfinite(s) for s in p.signals)
+
+
 def test_deterministic():
     insts = ["i0", "i1", "i2"]
     def run():

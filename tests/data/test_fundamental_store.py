@@ -41,7 +41,8 @@ def test_ingest_good_and_bad(tmp_path):
         w.writerow(["BBB", "eps", 20240331, 20240419, 2.0])
         w.writerow(["CCC", "eps", 20240331, 20240301, 1.0])      # kt<et 泄漏 → 拒
         w.writerow(["DDD", "eps", 20240331, 20240420, "bad"])    # value 非数 → 拒
+        w.writerow(["EEE", "eps", 20240331, 20240420, "inf"])    # 非有限 → 拒(审查 P2)
     s = SqliteFundamentalStore(":memory:", create=True)
     rep = ingest_fundamentals_csv(str(p), s)
-    assert rep.rows_read == 4 and rep.added == 2 and len(rep.rejected) == 2
+    assert rep.rows_read == 5 and rep.added == 2 and len(rep.rejected) == 3
     assert s.latest_as_of("eps", "AAA", 20240601).value == 1.5

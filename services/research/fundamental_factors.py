@@ -7,6 +7,7 @@ Reuses the survivorship-free universe gate and delisting guard. Deterministic.
 """
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional, Sequence
 
 from services.alpha.panel_backtest import PanelPeriod
@@ -48,6 +49,8 @@ def build_fundamental_periods(fund_store, price_store, instruments: Sequence[str
                 signal = fv.value / now_bar.close        # E/P, B/M, ...
             else:
                 signal = fv.value
+            if not math.isfinite(signal):                # 防御非有限信号(审查 P1,深度防御)
+                continue
             sig_insts.append(inst)
             sigs.append(float(signal))
             fwds.append(fwd_bar.close / now_bar.close - 1.0)
