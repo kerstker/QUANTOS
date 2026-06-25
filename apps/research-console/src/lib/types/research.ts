@@ -1274,6 +1274,41 @@ export interface CryptoFactor {
   reproducibility_hash: string;
 }
 
+export interface CryptoOosFold {
+  window: number;
+  train_range?: [number, number];
+  test_range?: [number, number];
+  selected?: string[];
+  is_sharpe: number;
+  oos_sharpe: number;
+}
+
+export interface CryptoOos {
+  method: string;
+  n_aligned_periods: number;
+  candidate_pool: string;
+  n_candidates: number;
+  selection: {
+    n_folds: number;
+    folds: CryptoOosFold[];
+    mean_is_sharpe: number | null;
+    mean_oos_sharpe: number | null;
+    oos_minus_is: number | null;
+    oos_positive_frac: number | null;
+    train_size: number;
+    test_size: number;
+    embargo: number;
+  };
+  naive_full_sample_best: { alpha_id: string; sharpe: number };
+  headline_factor: {
+    alpha_id: string;
+    full_sample_sharpe: number;
+    folds: CryptoOosFold[];
+    mean_oos_sharpe: number | null;
+    oos_positive_frac: number | null;
+  };
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;
@@ -1284,6 +1319,7 @@ export interface CryptoLivePayload extends ConsolePayloadBase {
   meta: CryptoLiveMeta;
   summary: CryptoLiveSummary;
   factors: CryptoFactor[];
+  oos: CryptoOos | null;
   safety: {
     network_in_services: boolean;
     fetch_path: string;

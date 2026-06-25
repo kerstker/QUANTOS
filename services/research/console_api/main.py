@@ -3398,6 +3398,9 @@ def _crypto_live_payload() -> Dict:
         "meta": snap.get("meta", _CRYPTO_EMPTY_META) if present else _CRYPTO_EMPTY_META,
         "summary": summary,
         "factors": snap.get("factors", []) if present else [],
+        # out-of-sample (no-peek walk-forward) validation block, merged by
+        # tools/crypto_oos_validation.py; None until that has been run.
+        "oos": snap.get("oos") if present else None,
         "safety": {
             "network_in_services": False,
             "fetch_path": "OUT_OF_GATE tools/coingecko_fetch.py",

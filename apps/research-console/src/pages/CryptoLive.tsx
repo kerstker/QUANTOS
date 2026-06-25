@@ -9,7 +9,7 @@ import {
   GateDot, type Column,
 } from '@/ui/primitives';
 import { BarSeries } from '@/ui/charts';
-import { num, fixed, stamp, shortHash } from '@/ui/format';
+import { num, fixed, pct, signed, stamp, shortHash } from '@/ui/format';
 import type { ConsoleApiState as ApiState } from '@/ui/useConsoleSnapshot';
 
 /* Short, stable display label for an alpha id (interaction ids are long). */
@@ -83,6 +83,8 @@ export default function CryptoLive() {
   const meta = payload?.meta;
   const summary = payload?.summary;
   const factors: CryptoFactor[] = present ? payload!.factors : [];
+  const oos = present ? payload!.oos : null;
+  const oosConfirmed = oos ? (oos.selection.mean_oos_sharpe ?? -1) > 0 && (oos.selection.oos_positive_frac ?? 0) >= 0.5 : false;
 
   /* Top factors by net Sharpe for the raw-vs-deflated comparison (already sorted desc). */
   const top = useMemo(() => factors.slice(0, 12), [factors]);
@@ -100,6 +102,13 @@ export default function CryptoLive() {
     { key: 'breadth', header: bi('横截面', 'Breadth'), align: 'right', mono: true, render: f => fixed(f.breadth, 1) },
     { key: 'verdict', header: bi('裁决', 'Verdict'), render: f => <StatusChip value={f.verdict} /> },
     { key: 'state', header: bi('状态', 'State'), render: f => <StatusChip value={f.state ?? '—'} /> },
+  ];
+
+  const foldCols: Column<NonNullable<typeof oos>['selection']['folds'][number]>[] = [
+    { key: 'w', header: bi('窗口', 'Window'), mono: true, render: f => `#${f.window}` },
+    { key: 'sel', header: bi('选中', 'Selected'), render: f => <span className="mono text-accent">{(f.selected ?? []).map(shortLabel).join(', ') || '—'}</span> },
+    { key: 'is', header: bi('样本内夏普', 'IS Sharpe'), align: 'right', mono: true, render: f => <span className="text-warn">{fixed(f.is_sharpe, 2)}</span> },
+    { key: 'oos', header: bi('样本外夏普', 'OOS Sharpe'), align: 'right', mono: true, render: f => <span className={f.oos_sharpe >= 0 ? 'text-pos' : 'text-neg'}>{fixed(f.oos_sharpe, 2)}</span> },
   ];
 
   const coinCols: Column<NonNullable<typeof meta>['coins'][number]>[] = [
@@ -140,6 +149,48 @@ export default function CryptoLive() {
             <StatTile label={bi('需人工复核', 'Human Review')} value={num(summary!.n_evaluated - summary!.auto_approved)} tone="info"
               sub={bi('全部', 'all of them')} />
           </KpiStrip>
+
+          {oos && (
+            <Panel eyebrow={bi('样本外验证 · 无窥视滚动选择', 'Out-of-sample · no-peek walk-forward selection')}
+              tone={oosConfirmed ? 'pos' : 'neg'}
+              title={bi('样本内 alpha 是真是假?', 'Is the in-sample edge real, or selection overfit?')}
+              right={<Chip label={oosConfirmed ? bi('OOS 通过', 'OOS CONFIRMED') : bi('OOS 未通过 · 选择性过拟合', 'OOS NOT CONFIRMED · selection overfit')}
+                tone={oosConfirmed ? 'pos' : 'neg'} />}>
+              <KpiStrip cols={5}>
+                <StatTile label={bi('样本内选择夏普', 'IS selected Sharpe')} value={signed(oos.selection.mean_is_sharpe, 2)} tone="warn"
+                  sub={bi('训练窗口上挑出的最优', 'best on train window')} />
+                <StatTile label={bi('样本外夏普', 'OOS Sharpe')} value={signed(oos.selection.mean_oos_sharpe, 2)} tone={(oos.selection.mean_oos_sharpe ?? 0) >= 0 ? 'pos' : 'neg'}
+                  sub={bi('同因子·未见窗口', 'same factor · unseen window')} />
+                <StatTile label={bi('过拟合落差', 'Overfit haircut')} value={signed(oos.selection.oos_minus_is, 2)} tone="neg"
+                  sub={bi('OOS − IS', 'OOS − IS')} />
+                <StatTile label={bi('OOS 为正占比', 'OOS-positive folds')} value={pct(oos.selection.oos_positive_frac, 0)} tone={(oos.selection.oos_positive_frac ?? 0) >= 0.5 ? 'pos' : 'neg'}
+                  sub={bi(`${oos.selection.n_folds} 折`, `${oos.selection.n_folds} folds`)} />
+                <StatTile label={bi('候选池', 'Candidate pool')} value={num(oos.n_candidates)} tone="info"
+                  sub={bi(`${oos.n_aligned_periods} 对齐周期`, `${oos.n_aligned_periods} aligned periods`)} />
+              </KpiStrip>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-2xs uppercase tracking-[0.12em] text-faint">{bi('逐窗口:样本内 vs 样本外', 'Per window: in-sample vs out-of-sample')}</div>
+                  <DataTable columns={foldCols} rows={oos.selection.folds} getKey={f => f.window} dense />
+                </div>
+                <div className="flex flex-col gap-2.5 text-[12.5px]">
+                  <div className="text-2xs uppercase tracking-[0.12em] text-faint">{bi('头部因子单独追踪(无选择)', 'Headline factor tracked (no selection)')}</div>
+                  <div className="mono truncate text-2xs text-special" title={oos.headline_factor.alpha_id}>{oos.headline_factor.alpha_id}</div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('全样本夏普(窥视)', 'Full-sample Sharpe (peeking)')}</span><span className="mono text-warn">{signed(oos.headline_factor.full_sample_sharpe, 2)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('样本外均值夏普', 'Mean OOS Sharpe')}</span><span className={`mono ${(oos.headline_factor.mean_oos_sharpe ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>{signed(oos.headline_factor.mean_oos_sharpe, 2)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('朴素全样本最优(窥视)', 'Naive full-sample best (peeking)')}</span><span className="mono text-faint">{shortLabel(oos.naive_full_sample_best.alpha_id)} {signed(oos.naive_full_sample_best.sharpe, 2)}</span></div>
+                  <p className="mt-1 border-t border-line/60 pt-2 text-2xs text-faint">
+                    {oosConfirmed
+                      ? bi('样本外仍为正:该 edge 在未见数据上站得住,可进入下一阶段人工尽调。',
+                        'Positive out-of-sample: the edge holds on unseen data — eligible for the next human due-diligence stage.')
+                      : bi('样本外转负:样本内的高夏普/Deflated 是「从多次搜索里挑最优」的选择性过拟合,真换手到未见窗口即反转 —— 系统未自动放行任何因子,正是对的。这不是失败,是诚实的回测在替你省钱。',
+                        'Negative out-of-sample: the high in-sample Sharpe/Deflated was selection overfit (best-of-many-trials); it inverts on unseen windows. The system auto-promoted nothing — exactly right. Not a failure: an honest backtest saving you money.')}
+                  </p>
+                </div>
+              </div>
+            </Panel>
+          )}
 
           <Panel eyebrow={bi('多重检验诚实', 'Multiple-testing honesty')}
             title={bi('原始净夏普 vs Deflated 夏普(净夏普 Top 12)', 'Raw Net Sharpe vs Deflated Sharpe (top 12 by net Sharpe)')}
