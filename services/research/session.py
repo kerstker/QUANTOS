@@ -19,7 +19,7 @@ from services.data.versioning import content_hash_of
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guided_search import GuidedSearchLoop
 
-from .panel_builder import make_data_periods_provider
+from .panel_builder import make_data_periods_provider, universe_data_gaps
 
 
 def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
@@ -33,7 +33,7 @@ def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequ
 def run_research_session(store, instruments: Sequence[str], *, event_times: Sequence[int],
                          fwd_horizon: int, space, rounds: int, batch_size: int,
                          timestamp: int = 0, registry=None,
-                         dataset_version: Optional[str] = None, audit_log=None) -> dict:
+                         dataset_version: Optional[str] = None, audit_log=None, universe=None) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -45,8 +45,12 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
     if registry is not None:
         registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
     provider = make_data_periods_provider(store, instruments, event_times=event_times,
-                                          fwd_horizon=fwd_horizon)
+                                          fwd_horizon=fwd_horizon, universe=universe)
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
+
+    # honesty signal: members with no bar on a trading day (survivorship-free run only)
+    data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
+        else {"total_gaps": 0, "by_date": {}}
 
     recorded = []
     if registry is not None:
@@ -65,4 +69,5 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "recorded_run_ids": recorded,
         "n_evaluated": len(out["report"]),
         "report": out["report"],
+        "data_gaps": data_gaps,
     }

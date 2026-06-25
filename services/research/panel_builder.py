@@ -14,8 +14,17 @@ from services.alpha.panel_backtest import PanelPeriod
 from .signals import SIGNAL_OPS
 
 
+def _iso(event_time: int) -> str:
+    """整数 YYYYMMDD -> ISO 'YYYY-MM-DD'(供 universe 字典序成员比较)。纯格式化、确定性。"""
+    et = int(event_time)
+    y, m, d = et // 10000, (et // 100) % 100, et % 100
+    if y < 1 or not (1 <= m <= 12) or not (1 <= d <= 31):
+        raise ValueError(f"event_time is not YYYYMMDD: {event_time}")
+    return f"{y:04d}-{m:02d}-{d:02d}"
+
+
 def build_panel_periods(store, instruments: Sequence[str], *, event_times: Sequence[int],
-                        fwd_horizon: int, signal_fn: Callable) -> list:
+                        fwd_horizon: int, signal_fn: Callable, universe=None) -> list:
     if fwd_horizon < 1:
         raise ValueError("fwd_horizon must be >= 1 (a forward return looks AHEAD)")
     insts = sorted(instruments)
@@ -26,8 +35,14 @@ def build_panel_periods(store, instruments: Sequence[str], *, event_times: Seque
         if j >= len(ets):
             break                                    # no realized forward return
         t_fwd = ets[j]
+        iso_t = _iso(t) if universe is not None else None
         sig_insts, sigs, fwds = [], [], []
         for inst in insts:
+            # survivorship-bias-free: only include names that WERE universe members
+            # as of the decision moment t (membership judged at t only; the forward
+            # return over [t, t+h] is still realized even if the name later leaves).
+            if universe is not None and not universe.is_member_as_of(inst, iso_t):
+                continue
             hist = store.as_of(inst, t)              # PIT: bars knowable by t
             # collapse restatements to ONE close per event_time (latest knowledge),
             # so a revision does not duplicate an event_time and corrupt the window op
@@ -54,14 +69,33 @@ def build_panel_periods(store, instruments: Sequence[str], *, event_times: Seque
 
 
 def make_data_periods_provider(store, instruments: Sequence[str], *,
-                               event_times: Sequence[int], fwd_horizon: int) -> Callable:
+                               event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
     """Adapt an AlphaDefinition (params operator/window) to a periods provider that
-    builds PanelPeriods from the persisted store — pass to GuidedSearchLoop.search."""
+    builds PanelPeriods from the persisted store — pass to GuidedSearchLoop.search.
+    With a PITUniverse, panel building is survivorship-bias-free."""
     def provider(defn):
         op = defn.params["operator"]
         window = int(defn.params["window"])
         fn = SIGNAL_OPS[op]
         return build_panel_periods(store, instruments, event_times=event_times,
                                    fwd_horizon=fwd_horizon,
-                                   signal_fn=lambda closes: fn(closes, window))
+                                   signal_fn=lambda closes: fn(closes, window), universe=universe)
     return provider
+
+
+def universe_data_gaps(store, universe, event_times: Sequence[int]) -> dict:
+    """诚实度信号:对每个交易日,统计"当日属 universe 成员但无 bar"的标的数。
+    返回 {"total_gaps": int, "by_date": {iso: count}}。成员当日缺数据 = 数据缺口。"""
+    by_date: dict = {}
+    total = 0
+    for t in sorted(event_times):
+        iso_t = _iso(t)
+        missing = 0
+        for inst in universe.members_as_of(iso_t):
+            bar = store.latest_as_of(inst, t)        # 截至 t 的最新可知 bar
+            if bar is None or bar.event_time != t:   # 当日(event_time==t)无 bar
+                missing += 1
+        if missing:
+            by_date[iso_t] = missing
+        total += missing
+    return {"total_gaps": total, "by_date": by_date}

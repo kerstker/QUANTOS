@@ -47,3 +47,12 @@ class PITUniverse:
     def members_as_of(self, date: str) -> set[str]:
         _check_iso(date)
         return {iid for iid in self._intervals if self.is_member_as_of(iid, date)}
+
+    def memberships(self) -> list[tuple[str, str, Optional[str]]]:
+        """All (instrument_id, start_date, end_date) intervals — for persistence.
+        Deterministic order (by id then start)."""
+        out: list[tuple[str, str, Optional[str]]] = []
+        for iid in sorted(self._intervals):
+            for start, end in sorted(self._intervals[iid], key=lambda iv: (iv[0], iv[1] or "")):
+                out.append((iid, start, end))
+        return out
