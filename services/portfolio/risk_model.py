@@ -63,10 +63,17 @@ def portfolio_vol(weights: Sequence[float], cov: Matrix) -> float:
     return math.sqrt(max(0.0, portfolio_variance(weights, cov)))
 
 
+def marginal_risk_contributions(weights: Sequence[float], cov: Matrix) -> list[float]:
+    """Marginal risk contribution per asset in variance space: MRC_i = (cov·w)_i.
+    Component RC_i = w_i · MRC_i, so sum_i w_i·MRC_i == portfolio_variance."""
+    n = len(weights)
+    return [sum(cov[i][j] * weights[j] for j in range(n)) for i in range(n)]
+
+
 def risk_contributions(weights: Sequence[float], cov: Matrix) -> list[float]:
     """Component risk contribution per asset (sum == portfolio variance)."""
-    n = len(weights)
-    return [weights[i] * sum(cov[i][j] * weights[j] for j in range(n)) for i in range(n)]
+    mrc = marginal_risk_contributions(weights, cov)
+    return [weights[i] * mrc[i] for i in range(len(weights))]
 
 
 def percent_risk_contributions(weights: Sequence[float], cov: Matrix) -> list[float]:

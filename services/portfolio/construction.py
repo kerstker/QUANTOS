@@ -12,7 +12,8 @@ from quantos.contracts.portfolio import RebalancePlan, TargetPosition
 
 from .config import PortfolioConfig
 from .optimizer import cap_weights, cost_aware_rebalance, risk_parity_weights
-from .risk_model import covariance_matrix, percent_risk_contributions, shrink_covariance
+from .risk_model import (covariance_matrix, percent_risk_contributions, shrink_covariance,
+                         marginal_risk_contributions)
 
 from quantos.contracts.factor import FactorRiskModel
 from .constrained_optimizer import min_variance_weights
@@ -57,6 +58,44 @@ def risk_budget_report(returns_by_alpha: dict[str, Sequence[float]],
     w = [weights.get(aid, 0.0) for aid in ids]
     prc = percent_risk_contributions(w, cov)
     return {ids[i]: prc[i] for i in range(len(ids))}
+
+
+def return_attribution(returns_by_alpha: dict[str, Sequence[float]],
+                       weights: dict[str, float], *, horizon: Optional[int] = None) -> dict:
+    """Realized return attribution: each alpha's contribution = w_i × R_i, where R_i is
+    the SIMPLE cumulative return (sum of period returns) over the trailing `horizon`.
+    Simple (not compound) is chosen so contributions are exactly additive: Σ w_i·R_i
+    equals the portfolio's cumulative simple return. Fail-closed: total==0 → pct all 0;
+    a weighted alpha with no return series contributes 0 (no crash)."""
+    contribution: dict[str, float] = {}
+    for aid, w in weights.items():
+        series = returns_by_alpha.get(aid, [])
+        r = sum(series[-horizon:] if horizon is not None else series)
+        contribution[aid] = w * r
+    total = sum(contribution.values())
+    pct = {aid: (c / total if total != 0 else 0.0) for aid, c in contribution.items()}
+    return {"contribution": contribution, "total": total, "pct": pct}
+
+
+def attribution_report(returns_by_alpha: dict[str, Sequence[float]],
+                       weights: dict[str, float],
+                       config: Optional[PortfolioConfig] = None) -> dict:
+    """Complete risk + return attribution for a weighting: per-alpha realized return
+    contribution (and %), percent risk contribution, and marginal risk. Risk side uses
+    the shrunk sample covariance (fail-closed below min_overlap)."""
+    config = config or PortfolioConfig()
+    ids, cov = covariance_matrix(returns_by_alpha, min_overlap=config.min_overlap)
+    cov = shrink_covariance(cov, intensity=config.shrink_intensity)
+    w = [weights.get(aid, 0.0) for aid in ids]
+    prc = percent_risk_contributions(w, cov)
+    mrc = marginal_risk_contributions(w, cov)
+    ret = return_attribution(returns_by_alpha, weights)
+    return {
+        "return_contribution": ret["contribution"],
+        "pct_return": ret["pct"],
+        "risk_contribution_pct": {ids[i]: prc[i] for i in range(len(ids))},
+        "marginal_risk": {ids[i]: mrc[i] for i in range(len(ids))},
+    }
 
 
 # --- factor risk model + constrained optimizer (audit roadmap) ---------------
