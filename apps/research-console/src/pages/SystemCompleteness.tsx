@@ -1,10 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchSystemCompletenessSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchSystemCompletenessSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { SystemCompletenessModule, SystemCompletenessPayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+} from '@/ui/primitives';
+import { RadialGauge, Donut, Histogram, DivergingBars } from '@/ui/charts';
+import { num, pct, statusTone, type Tone } from '@/ui/format';
 
+/* ---------------------------------------------------------------------------
+ * Mock fallback — preserved verbatim from the prior data wiring. Synthetic
+ * audit snapshot; not real research output (see ProvenanceRibbon).
+ * ------------------------------------------------------------------------- */
 const fallbackModuleSeeds: Array<[string, string, string, string, string, string, number, string]> = [
   ['overview', '研究总览', 'Research Overview', '/research', '/api/v1/console/overview', 'Console', 0.78, 'Persisted experiment history and role-aware drilldowns'],
   ['alpha-factory', '因子工厂', 'Alpha Factory', '/research/alpha-factory', '/api/v1/console/alpha-factory', 'Research Compute', 0.7, 'Persisted alpha DAG and feature store integration'],
@@ -95,216 +104,236 @@ const fallbackCompleteness: SystemCompletenessPayload = {
   },
 };
 
-function pct(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
+/* ---------------------------------------------------------------------------
+ * Presentation helpers (deterministic; no random / no Date.now).
+ * ------------------------------------------------------------------------- */
+const severityTone: Record<string, Tone> = {
+  CRITICAL: 'neg', HIGH: 'warn', MEDIUM: 'info', LOW: 'muted',
+};
 
-function statusClass(status: string) {
-  if (status === 'PASS' || status === 'BACKEND_BACKED' || status === 'ROUTED') {
-    return 'border-emerald-800 bg-emerald-950/20 text-emerald-300';
-  }
-  if (status === 'FAIL' || status === 'BLOCKED' || status === 'CRITICAL') {
-    return 'border-red-800 bg-red-950/20 text-red-300';
-  }
-  if (status === 'PARTIAL' || status === 'IN_PROGRESS' || status === 'OPEN') {
-    return 'border-amber-800 bg-amber-950/20 text-amber-300';
-  }
-  return 'border-slate-700 bg-slate-950/60 text-slate-300';
-}
-
-function severityClass(severity: string) {
-  if (severity === 'CRITICAL') {
-    return 'text-red-300';
-  }
-  if (severity === 'HIGH') {
-    return 'text-orange-300';
-  }
-  return 'text-slate-300';
-}
-
-function StatusPill({status}: {status: string}) {
-  return <span className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-bold ${statusClass(status)}`}>{status}</span>;
+function completionTone(score: number): Tone {
+  if (score >= 0.72) return 'pos';
+  if (score >= 0.6) return 'accent';
+  return 'warn';
 }
 
 export default function SystemCompleteness() {
-  const [payload, setPayload] = useState<SystemCompletenessPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<SystemCompletenessPayload>(
+    s => fetchSystemCompletenessSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const audit = usingBackend ? payload! : fallbackCompleteness;
+  const sb = audit.safety_boundary;
+  const sm = audit.summary;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchSystemCompletenessSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  /* Layer composition donut (module count by layer). */
+  const layerSegments = useMemo(() => {
+    const counts = audit.modules.reduce<Record<string, number>>((acc, m) => {
+      acc[m.layer] = (acc[m.layer] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value }));
+  }, [audit.modules]);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  /* Completion-score distribution histogram across coverage bands. */
+  const completionBins = useMemo(() => {
+    const bands: Array<{ label: string; lo: number; hi: number }> = [
+      { label: '<0.6', lo: -Infinity, hi: 0.6 },
+      { label: '0.6–0.7', lo: 0.6, hi: 0.7 },
+      { label: '0.7–0.75', lo: 0.7, hi: 0.75 },
+      { label: '≥0.75', lo: 0.75, hi: Infinity },
+    ];
+    return bands.map(b => ({
+      label: b.label,
+      count: audit.modules.filter(m => m.completion_score >= b.lo && m.completion_score < b.hi).length,
+    }));
+  }, [audit.modules]);
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const audit = usingBackend && payload ? payload : fallbackCompleteness;
-  const modulesByLayer = useMemo(() => audit.modules.reduce<Record<string, SystemCompletenessModule[]>>((acc, module) => {
-    acc[module.layer] = [...(acc[module.layer] ?? []), module];
-    return acc;
-  }, {}), [audit.modules]);
+  /* Open-gap attribution by severity weight (CRITICAL heavier than HIGH). */
+  const gapWeight: Record<string, number> = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0.5 };
+  const gapAttribution = useMemo(() =>
+    audit.gaps.map(g => ({ label: g.id, value: gapWeight[g.severity.toUpperCase()] ?? 1 })),
+    [audit.gaps]);
+
+  const moduleCols: Column<SystemCompletenessModule>[] = [
+    {
+      key: 'module', header: bi('模块', 'Module'),
+      render: m => (
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{m.name_zh} <span className="text-muted">/ {m.name}</span></div>
+          <div className="mono text-2xs text-faint">{m.id}</div>
+        </div>
+      ),
+    },
+    { key: 'layer', header: bi('分层', 'Layer'), render: m => <Chip label={m.layer} tone="info" /> },
+    { key: 'route', header: bi('前端路径', 'Route'), mono: true, render: m => <span className="text-muted">{m.route}</span> },
+    { key: 'endpoint', header: bi('后端接口', 'Endpoint'), mono: true, render: m => <span className="text-faint">{m.endpoint}</span> },
+    { key: 'backend', header: bi('后端', 'Backend'), render: m => <StatusChip value={m.status} /> },
+    { key: 'frontend', header: bi('前端', 'Frontend'), render: m => <StatusChip value={m.frontend_status} /> },
+    {
+      key: 'completion', header: bi('完成度', 'Completion'), width: '180px',
+      render: m => (
+        <div className="flex items-center gap-2">
+          <ProgressBar value={m.completion_score} tone={completionTone(m.completion_score)} />
+          <span className="tnum w-10 text-right text-muted">{pct(m.completion_score, 0)}</span>
+        </div>
+      ),
+    },
+    { key: 'gap', header: bi('剩余工程缺口', 'Remaining Gap'), render: m => <span className="text-2xs text-warn">{m.gap}</span> },
+  ];
+
+  const gapCols: Column<SystemCompletenessPayload['gaps'][number]>[] = [
+    { key: 'id', header: 'ID', mono: true, render: g => <span className="font-semibold text-accent">{g.id}</span> },
+    { key: 'area', header: bi('领域', 'Area'), render: g => <span className="font-medium text-ink">{g.area}</span> },
+    { key: 'severity', header: bi('严重度', 'Severity'), render: g => <Chip label={g.severity} tone={severityTone[g.severity.toUpperCase()] ?? 'muted'} /> },
+    { key: 'status', header: bi('状态', 'Status'), render: g => <StatusChip value={g.status} /> },
+    { key: 'impact', header: bi('影响', 'Impact'), render: g => <span className="text-2xs text-muted">{g.impact}</span> },
+    { key: 'next', header: bi('下一步', 'Next Action'), render: g => <span className="text-2xs text-faint">{g.next_action}</span> },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('系统完整度审查', 'System Completeness Audit')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision={audit.safety_boundary.authorized_level} />
-              <DecisionBadge decision={audit.safety_boundary.execution_boundary} />
+    <PageShell>
+      <PageHeader title="System Completeness Audit" titleZh="系统完整度审查"
+        subtitle={bi('从路由清单、OpenAPI 与 CI 证据自动提取的只读完整度审查 · 实盘交易始终禁止',
+          'Read-only completeness audit auto-extracted from route manifests, OpenAPI, and CI evidence · live trading always disallowed')}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
+            <Chip label={sb.authorized_level} tone="warn" />
+            <Chip label={sb.execution_boundary} tone="neg" />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={audit.source} error={error} />
+
+      <KpiStrip cols={8}>
+        <StatTile label={bi('前端路径', 'Routes')} value={num(sm.frontend_routes)} accent />
+        <StatTile label={bi('API 接口', 'API Endpoints')} value={num(sm.api_endpoints)} />
+        <StatTile label={bi('后端支撑', 'Backend Backed')} value={num(sm.backend_backed_modules)} tone="info" />
+        <StatTile label={bi('可运行模块', 'Operational')} value={num(sm.fully_operational_modules)} tone="pos" />
+        <StatTile label={bi('只读模块', 'Read-only')} value={num(sm.read_only_modules)} tone="info" />
+        <StatTile label={bi('高风险缺口', 'High Gaps')} value={num(sm.open_high_gaps)} tone="warn" />
+        <StatTile label={bi('实盘授权', 'Live Auth')} value={sm.live_trading_authorized ? bi('是', 'YES') : bi('否', 'NO')}
+          tone={sm.live_trading_authorized ? 'neg' : 'pos'} />
+        <StatTile label={bi('当前等级', 'Current Level')} value={audit.current_level} sub={audit.institutional_target} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('综合评分', 'Composite')} title={bi('系统就绪度', 'System Readiness')}>
+          <div className="flex flex-col items-center gap-3">
+            <RadialGauge value={audit.readiness_score} max={1} size={168}
+              label={bi('就绪度', 'readiness')}
+              tone={audit.readiness_score >= 0.7 ? 'pos' : audit.readiness_score >= 0.55 ? 'accent' : 'warn'} />
+            <div className="w-full">
+              <KeyValue cols={1} items={[
+                { k: bi('审查模式', 'Audit Mode'), v: audit.audit_mode },
+                { k: bi('目标等级', 'Target'), v: audit.institutional_target },
+                { k: bi('API 版本', 'API Version'), v: audit.api_version },
+              ]} />
             </div>
           </div>
-          <div className="text-xs text-slate-500 xl:text-right">
-            <div>{bi('当前等级', 'Current level')}: {audit.current_level}</div>
-            <div>{bi('目标等级', 'Target level')}: {audit.institutional_target}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={audit.source} error={apiError} />
-      </div>
+        </Panel>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('完整度', 'Readiness')} value={pct(audit.readiness_score)} />
-        <MetricCard label={bi('前端路径', 'Routes')} value={audit.summary.frontend_routes} />
-        <MetricCard label={bi('API 接口', 'API Endpoints')} value={audit.summary.api_endpoints} />
-        <MetricCard label={bi('后端支撑', 'Backend Backed')} value={audit.summary.backend_backed_modules} />
-        <MetricCard label={bi('只读模块', 'Read-only')} value={audit.summary.read_only_modules} />
-        <MetricCard label={bi('可运行模块', 'Operational')} value={audit.summary.fully_operational_modules} />
-        <MetricCard label={bi('高风险缺口', 'High Gaps')} value={audit.summary.open_high_gaps} />
-        <MetricCard label={bi('实盘授权', 'Live Auth')} value={audit.summary.live_trading_authorized ? 'YES' : 'NO'} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-            <h2 className="text-sm uppercase text-slate-400">{bi('分层覆盖图', 'Layer Coverage Map')}</h2>
-            <div className="text-xs text-slate-500">{bi('按模块展示前端路径、后端接口和剩余工程缺口。', 'Shows route, endpoint, and remaining engineering gap by module.')}</div>
-          </div>
-          <div className="space-y-4">
-            {Object.entries(modulesByLayer).map(([layer, modules]) => (
-              <div key={layer}>
-                <div className="mb-2 text-[10px] uppercase tracking-wider text-cyan-400">{layer}</div>
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {modules.map(module => (
-                    <div key={module.id} className="rounded border border-slate-800 bg-slate-950/50 p-3">
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-[10px] uppercase text-slate-500">{module.id}</div>
-                          <div className="mt-1 break-words text-sm font-bold text-slate-100">{module.name_zh} / {module.name}</div>
-                        </div>
-                        <StatusPill status={module.status} />
-                      </div>
-                      <div className="mb-2 h-2 overflow-hidden rounded bg-slate-800">
-                        <div className="h-full bg-cyan-700" style={{width: pct(module.completion_score)}} />
-                      </div>
-                      <div className="grid gap-1 text-xs">
-                        <div className="text-slate-400">{module.route}</div>
-                        <div className="text-slate-500">{module.endpoint}</div>
-                        <div className="text-slate-300">{pct(module.completion_score)} - {module.backend_contract}</div>
-                        <div className="text-amber-300">{module.gap}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-            <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('审查检查', 'Audit Checks')}</h2>
-            <div className="space-y-3">
-              {audit.checks.map(check => (
-                <div key={check.id} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-bold text-slate-100">{check.id}</div>
-                      <div className="mt-1 text-slate-300">{check.name}</div>
-                    </div>
-                    <StatusPill status={check.status} />
-                  </div>
-                  <div className="text-slate-500">{check.evidence}</div>
+        <Panel eyebrow={bi('分层构成', 'Layer Mix')} title={bi('模块分层分布', 'Modules by Layer')}>
+          <div className="flex items-center gap-5">
+            <Donut size={150} segments={layerSegments} />
+            <div className="flex max-h-44 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+              {layerSegments.map(s => (
+                <div key={s.label} className="flex items-center justify-between gap-2 text-2xs">
+                  <span className="truncate text-muted">{s.label}</span>
+                  <span className="tnum text-ink">{num(s.value)}</span>
                 </div>
               ))}
             </div>
           </div>
+        </Panel>
 
-          <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4">
-            <h2 className="mb-3 text-sm uppercase text-red-300">{bi('安全边界', 'Safety Boundary')}</h2>
-            <div className="space-y-2 text-xs text-red-200">
-              <div>{bi('控制台只读', 'Read-only console')}: {String(audit.safety_boundary.read_only_console)}</div>
-              <div>{bi('执行边界', 'Execution boundary')}: {audit.safety_boundary.execution_boundary}</div>
-              <div>{bi('授权等级', 'Authorized level')}: {audit.safety_boundary.authorized_level}</div>
-              <div>{bi('阻塞项', 'Blocked by')}: {audit.safety_boundary.blocked_until.join(', ')}</div>
-            </div>
+        <Panel eyebrow={bi('覆盖深度', 'Coverage Depth')} title={bi('完成度分布', 'Completion Distribution')}>
+          <Histogram bins={completionBins} height={172} tone="accent" />
+          <div className="mt-2 text-2xs text-faint">
+            {bi('按模块 completion_score 分箱;阈值 0.72 视为可运行。',
+              'Modules binned by completion_score; ≥0.72 counts as operational.')}
           </div>
-        </div>
+        </Panel>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[980px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">ID</th>
-              <th className="p-2 text-left">{bi('领域', 'Area')}</th>
-              <th className="p-2 text-left">{bi('严重度', 'Severity')}</th>
-              <th className="p-2 text-left">{bi('状态', 'Status')}</th>
-              <th className="p-2 text-left">{bi('影响', 'Impact')}</th>
-              <th className="p-2 text-left">{bi('下一步', 'Next Action')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {audit.gaps.map(gap => (
-              <tr key={gap.id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{gap.id}</td>
-                <td className="p-2 text-slate-200">{gap.area}</td>
-                <td className={`p-2 font-bold ${severityClass(gap.severity)}`}>{gap.severity}</td>
-                <td className="p-2"><StatusPill status={gap.status} /></td>
-                <td className="p-2 text-slate-400">{gap.impact}</td>
-                <td className="p-2 text-slate-500">{gap.next_action}</td>
-              </tr>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('门禁', 'Gates')} title={bi('审查检查', 'Audit Checks')}
+          right={<Chip label={bi(`${audit.checks.length} 项`, `${audit.checks.length} checks`)} tone="info" />}>
+          <div className="flex flex-col gap-2.5">
+            {audit.checks.map(c => {
+              const ok = statusTone(c.status) === 'pos';
+              return (
+                <div key={c.id} className="flex items-start gap-3 rounded-lg border border-line bg-inset/40 px-3 py-2.5">
+                  <div className="mt-0.5"><GateDot ok={ok} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-ink">{c.name}</span>
+                      <StatusChip value={c.status} />
+                    </div>
+                    <div className="mt-1 text-2xs text-faint">
+                      <span className="mono text-muted">{c.id}</span> · {c.evidence}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+
+        <Panel tone="neg" eyebrow={bi('不可逾越', 'Hard Boundary')} title={bi('执行安全边界', 'Execution Safety Boundary')}>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2.5 rounded-lg border border-neg/30 bg-neg/5 px-3 py-3">
+              <GateDot ok={sb.read_only_console} label={bi('控制台只读', 'Read-only console')} />
+              <GateDot ok={!sm.live_trading_authorized} label={bi('实盘交易禁止', 'Live trading disallowed')} />
+            </div>
+            <KeyValue cols={1} items={[
+              { k: bi('执行边界', 'Execution Boundary'), v: <span className="text-neg">{sb.execution_boundary}</span> },
+              { k: bi('授权等级', 'Authorized Level'), v: sb.authorized_level },
+            ]} />
+            <div>
+              <div className="mb-1.5 text-2xs uppercase tracking-wide text-faint">{bi('阻塞项', 'Blocked Until')}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {sb.blocked_until.map(b => <Chip key={b} label={b} tone="neg" />)}
+              </div>
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('风险敞口', 'Open Risk')} title={bi('未决缺口(按严重度权重)', 'Open Gaps by Severity Weight')}>
+          <DivergingBars items={gapAttribution} valueFormat={v => v.toFixed(1)}
+            height={Math.max(120, gapAttribution.length * 26 + 12)} />
+        </Panel>
+
+        <Panel eyebrow={bi('路线图', 'Roadmap')} title={bi('交付阶段', 'Delivery Phases')}>
+          <ol className="flex flex-col gap-3">
+            {audit.roadmap.map((r, i) => (
+              <li key={r.phase} className="relative pl-6">
+                <span className="absolute left-0 top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-line bg-inset text-[9px] text-muted">{i + 1}</span>
+                {i < audit.roadmap.length - 1 && <span className="absolute left-[7.5px] top-5 h-[calc(100%-0.5rem)] w-px bg-line" />}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-ink">{r.phase}</span>
+                  <StatusChip value={r.status} />
+                </div>
+                <div className="mt-0.5 text-2xs text-muted">{r.objective}</div>
+                <div className="mt-0.5 text-2xs text-faint">{r.exit_criteria}</div>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ol>
+        </Panel>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-5">
-        {audit.roadmap.map(item => (
-          <div key={item.phase} className="rounded border border-slate-800 bg-slate-900 p-3 text-xs">
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="font-bold text-cyan-300">{item.phase}</div>
-              <StatusPill status={item.status} />
-            </div>
-            <div className="font-bold text-slate-100">{item.objective}</div>
-            <div className="mt-2 text-slate-500">{item.exit_criteria}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+      <Panel eyebrow={bi('覆盖矩阵', 'Coverage Matrix')} title={bi('模块完整度清单', 'Module Completeness Inventory')}
+        right={<Chip label={bi(`${audit.modules.length} 个模块`, `${audit.modules.length} modules`)} tone="info" />}>
+        <DataTable columns={moduleCols} rows={audit.modules} dense getKey={m => m.id} />
+      </Panel>
+
+      <Panel eyebrow={bi('工程缺口', 'Engineering Gaps')} title={bi('未决工程缺口登记', 'Open Engineering Gap Register')}
+        right={<Chip label={bi(`${audit.gaps.length} 项`, `${audit.gaps.length} gaps`)} tone="warn" />}>
+        <DataTable columns={gapCols} rows={audit.gaps} getKey={g => g.id} />
+      </Panel>
+    </PageShell>
   );
 }

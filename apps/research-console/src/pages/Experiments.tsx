@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchExperimentsSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchExperimentsSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ExperimentsPayload, ResearchExperiment } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, type Column,
+} from '@/ui/primitives';
+import { Histogram, RadialGauge, Donut, BarSeries } from '@/ui/charts';
+import { num, pct, fixed, money, compact, shortHash, stamp, statusTone, type Tone } from '@/ui/format';
 
 const fallbackExperiments: ExperimentsPayload = {
   source: 'FRONTEND_EXPERIMENT_REGISTRY_FALLBACK',
@@ -86,11 +91,18 @@ const fallbackExperiments: ExperimentsPayload = {
   },
 };
 
-function formatTime(seconds: number) {
-  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
-}
+const stageZh: Record<string, string> = {
+  DISCOVERY: bi('发现', 'Discovery'), VALIDATION: bi('验证', 'Validation'),
+  PAPER_REPLAY: bi('纸面回放', 'Paper'), RISK_REVIEW: bi('风险评审', 'Risk'),
+  ARCHIVED: bi('归档', 'Archived'),
+};
 
-function artifactKinds(experiments: ResearchExperiment[]) {
+const stageTone: Record<string, Tone> = {
+  DISCOVERY: 'info', VALIDATION: 'accent', PAPER_REPLAY: 'warn',
+  RISK_REVIEW: 'special', ARCHIVED: 'muted',
+};
+
+function artifactKinds(experiments: ResearchExperiment[]): Record<string, number> {
   return experiments.reduce<Record<string, number>>((acc, experiment) => {
     for (const artifact of experiment.artifacts) {
       acc[artifact.kind] = (acc[artifact.kind] ?? 0) + 1;
@@ -99,209 +111,215 @@ function artifactKinds(experiments: ResearchExperiment[]) {
   }, {});
 }
 
-function StageBoard({stageCounts}: {stageCounts: Record<string, number>}) {
-  const max = Math.max(...Object.values(stageCounts), 1);
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('实验阶段', 'Experiment Stages')}</h2>
-      <div className="space-y-3 text-xs">
-        {Object.entries(stageCounts).map(([stage, count]) => (
-          <div key={stage} className="grid grid-cols-[7rem_1fr_2rem] items-center gap-2">
-            <span className="text-slate-400">{stage}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-cyan-700" style={{width: `${Math.max(4, count / max * 100)}%`}} />
-            </div>
-            <span className="text-right font-bold text-slate-200">{count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ArtifactBoard({experiments}: {experiments: ResearchExperiment[]}) {
-  const kinds = artifactKinds(experiments);
-  const max = Math.max(...Object.values(kinds), 1);
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('产物覆盖', 'Artifact Coverage')}</h2>
-      <div className="space-y-3 text-xs">
-        {Object.entries(kinds).map(([kind, count]) => (
-          <div key={kind} className="grid grid-cols-[6rem_1fr_2rem] items-center gap-2">
-            <span className="text-slate-400">{kind}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-emerald-700" style={{width: `${Math.max(4, count / max * 100)}%`}} />
-            </div>
-            <span className="text-right font-bold text-slate-200">{count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReproducibilityBoard({payload}: {payload: ExperimentsPayload}) {
-  const policies = [
-    ['CONFIG_HASH', payload.lineage_policy.requires_config_hash],
-    ['DATA_SNAPSHOT', payload.lineage_policy.requires_data_snapshot],
-    ['METRIC_ARTIFACT', payload.lineage_policy.requires_metric_artifact],
-    ['IMMUTABLE_RECORDS', !payload.lineage_policy.mutable_records],
-  ];
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('可复现策略', 'Reproducibility Policy')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{payload.registry_mode}</div>
-        </div>
-        <DecisionBadge decision="READ_ONLY" />
-      </div>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={String(label)} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Experiments() {
-  const [payload, setPayload] = useState<ExperimentsPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } =
+    useConsoleSnapshot<ExperimentsPayload>(s => fetchExperimentsSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const registry = usingBackend ? payload! : fallbackExperiments;
+  const experiments = registry.experiments;
+  const { summary, lineage_policy } = registry;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchExperimentsSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const reproRate = summary.reproducible / Math.max(summary.total_experiments, 1);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
-
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const registry = usingBackend && payload ? payload : fallbackExperiments;
-  const topExperiments = useMemo(
-    () => [...registry.experiments].sort((left, right) => right.metrics.composite_score - left.metrics.composite_score).slice(0, 4),
-    [registry.experiments],
+  const stageBins = useMemo(
+    () => Object.entries(registry.stage_counts).map(([stage, count]) => ({
+      label: stageZh[stage] ?? stage, count,
+    })),
+    [registry.stage_counts],
   );
 
+  const artifactBins = useMemo(() => {
+    const kinds = artifactKinds(experiments);
+    return Object.entries(kinds).map(([kind, count]) => ({ label: kind, count }));
+  }, [experiments]);
+
+  const topExperiments = useMemo(
+    () => [...experiments]
+      .sort((a, b) => b.metrics.composite_score - a.metrics.composite_score)
+      .slice(0, 4),
+    [experiments],
+  );
+
+  const decisionSegments = useMemo(() => [
+    { label: bi('通过', 'Approved'), value: summary.approved, tone: 'pos' as Tone },
+    { label: bi('待补数据', 'Needs Data'), value: summary.needs_more_data, tone: 'warn' as Tone },
+    { label: bi('拒绝', 'Rejected'), value: summary.rejected, tone: 'neg' as Tone },
+  ].filter(s => s.value > 0), [summary.approved, summary.needs_more_data, summary.rejected]);
+
+  const lineagePolicyRows: Array<{ label: React.ReactNode; ok: boolean }> = [
+    { label: bi('要求配置哈希', 'Requires config hash'), ok: lineage_policy.requires_config_hash },
+    { label: bi('要求数据快照', 'Requires data snapshot'), ok: lineage_policy.requires_data_snapshot },
+    { label: bi('要求指标产物', 'Requires metric artifact'), ok: lineage_policy.requires_metric_artifact },
+    { label: bi('记录不可变', 'Immutable records'), ok: !lineage_policy.mutable_records },
+  ];
+
+  const expCols: Column<ResearchExperiment>[] = [
+    {
+      key: 'exp', header: bi('实验 / 因子', 'Experiment / Alpha'), render: e => (
+        <div className="min-w-0">
+          <div className="mono truncate font-medium text-ink">{e.experiment_id}</div>
+          <div className="truncate text-2xs text-faint">{e.alpha_id} · {e.expression}</div>
+        </div>
+      ),
+    },
+    { key: 'owner', header: bi('负责人', 'Owner'), render: e => <span className="text-muted">{e.owner_agent}</span> },
+    {
+      key: 'stage', header: bi('阶段', 'Stage'),
+      render: e => <Chip label={stageZh[e.stage] ?? e.stage} tone={stageTone[e.stage] ?? 'muted'} />,
+    },
+    { key: 'decision', header: bi('决策', 'Decision'), render: e => <StatusChip value={String(e.decision)} /> },
+    { key: 'ic', header: 'IC', align: 'right', mono: true, render: e => fixed(e.metrics.ic, 4) },
+    { key: 'ricic', header: bi('秩 IC', 'Rank IC'), align: 'right', mono: true, render: e => fixed(e.metrics.rank_ic, 4) },
+    {
+      key: 'sharpe', header: bi('夏普', 'Sharpe'), align: 'right', mono: true,
+      render: e => <span className={e.metrics.sharpe >= 1 ? 'text-pos' : 'text-ink'}>{fixed(e.metrics.sharpe, 2)}</span>,
+    },
+    {
+      key: 'turnover', header: bi('换手', 'Turnover'), align: 'right', mono: true,
+      render: e => <span className={e.metrics.turnover > 0.6 ? 'text-warn' : 'text-ink'}>{pct(e.metrics.turnover, 0)}</span>,
+    },
+    { key: 'capacity', header: bi('容量', 'Capacity'), align: 'right', mono: true, render: e => money(e.metrics.capacity_estimate) },
+    {
+      key: 'score', header: bi('综合分', 'Score'), width: '140px', render: e => (
+        <div className="flex items-center gap-2">
+          <ProgressBar value={e.metrics.composite_score} tone={statusTone(String(e.decision))} />
+          <span className="tnum w-10 text-right text-muted">{fixed(e.metrics.composite_score, 2)}</span>
+        </div>
+      ),
+    },
+    { key: 'artifacts', header: bi('产物', 'Artifacts'), align: 'right', mono: true, render: e => num(e.artifacts.length) },
+    { key: 'snapshot', header: bi('数据快照', 'Snapshot'), mono: true, render: e => <span className="text-faint">{e.config.data_snapshot_id}</span> },
+    { key: 'repro', header: bi('复现哈希', 'Repro Hash'), mono: true, render: e => <span className="text-info">{shortHash(e.reproducibility_hash, 12)}</span> },
+    { key: 'created', header: bi('创建时间', 'Created'), mono: true, render: e => <span className="text-faint">{stamp(e.created_at)}</span> },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('实验注册表', 'Experiment Registry')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={registry.registry_mode} />
+    <PageShell>
+      <PageHeader title="Experiment Registry" titleZh="实验注册表"
+        subtitle={bi('不可变、可复现的研究试验账本 · 阶段、决策、产物谱系与多重检验治理',
+          'Immutable, reproducible research-trial ledger — stages, decisions, artifact lineage & multiple-testing governance')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Chip label="L2_DRY_RUN_ONLY" tone="info" />
+            <Chip label={registry.registry_mode} tone="accent" />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+
+      <KpiStrip cols={6}>
+        <StatTile label={bi('实验总数', 'Experiments')} value={num(summary.total_experiments)} accent />
+        <StatTile label={bi('通过', 'Approved')} value={num(summary.approved)} tone="pos" />
+        <StatTile label={bi('待补数据', 'Needs Data')} value={num(summary.needs_more_data)} tone="warn" />
+        <StatTile label={bi('拒绝', 'Rejected')} value={num(summary.rejected)} tone="neg" />
+        <StatTile label={bi('产物总数', 'Artifacts')} value={num(summary.artifact_count)} tone="info" />
+        <StatTile label={bi('可复现率', 'Repro Rate')} value={pct(reproRate, 0)}
+          sub={bi(`${summary.reproducible} / ${summary.total_experiments} 可复现`, `${summary.reproducible} / ${summary.total_experiments} reproducible`)}
+          tone={reproRate >= 1 ? 'pos' : 'warn'} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('生命周期', 'Lifecycle')}
+          title={bi('实验阶段分布', 'Experiment Stage Distribution')}>
+          <Histogram bins={stageBins} height={210} tone="accent" />
+        </Panel>
+
+        <Panel eyebrow={bi('决策构成', 'Decision Mix')} title={bi('决策结果分布', 'Decision Outcomes')}>
+          <div className="flex items-center gap-4">
+            <Donut segments={decisionSegments} size={150} />
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+              {decisionSegments.map(s => (
+                <div key={String(s.label)} className="flex items-center justify-between gap-2">
+                  <Chip label={s.label} tone={s.tone} />
+                  <span className="tnum text-sm font-semibold text-ink">{num(s.value)}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="text-xs text-slate-500 md:text-right">
-            <div>{bi('总实验', 'Total')}: {registry.summary.total_experiments}</div>
-            <div>{bi('可复现', 'Reproducible')}: {registry.summary.reproducible}</div>
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('产物覆盖', 'Artifact Coverage')} title={bi('产物类型分布', 'Artifact Kinds')}>
+          <Histogram bins={artifactBins} height={190} tone="info" />
+        </Panel>
+
+        <Panel eyebrow={bi('可复现治理', 'Reproducibility Governance')}
+          title={bi('谱系策略', 'Lineage Policy')}
+          right={<Chip label={bi('只读', 'READ_ONLY')} tone="info" />}>
+          <div className="flex flex-col gap-3">
+            {lineagePolicyRows.map((r, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/40 px-3 py-2">
+                <span className="text-xs text-muted">{r.label}</span>
+                <GateDot ok={r.ok} label={r.ok ? bi('强制', 'ENFORCED') : bi('未启用', 'OFF')} />
+              </div>
+            ))}
           </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={registry.source} error={apiError} />
+        </Panel>
+
+        <Panel eyebrow={bi('谱系', 'Lineage')} title={bi('可复现完整性', 'Reproducibility Integrity')}>
+          <div className="flex flex-col items-center gap-2">
+            <RadialGauge value={reproRate} max={1} size={148}
+              label={bi('可复现', 'reproducible')}
+              tone={reproRate >= 1 ? 'pos' : 'warn'} />
+            <div className="text-center text-2xs text-faint">
+              {bi(`${summary.reproducible} 个实验携带完整配置哈希 / 数据快照 / 指标产物`,
+                `${summary.reproducible} experiments carry full config-hash / data-snapshot / metric artifacts`)}
+            </div>
+          </div>
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        <MetricCard label={bi('实验数', 'Experiments')} value={registry.summary.total_experiments} />
-        <MetricCard label={bi('通过', 'Approved')} value={registry.summary.approved} />
-        <MetricCard label={bi('拒绝', 'Rejected')} value={registry.summary.rejected} />
-        <MetricCard label={bi('产物', 'Artifacts')} value={registry.summary.artifact_count} />
-        <MetricCard label={bi('可复现率', 'Repro Rate')} value={(registry.summary.reproducible / Math.max(registry.summary.total_experiments, 1) * 100).toFixed(0)} unit="%" />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <StageBoard stageCounts={registry.stage_counts} />
-        <ArtifactBoard experiments={registry.experiments} />
-        <ReproducibilityBoard payload={registry} />
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-        <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('Top 实验', 'Top Experiments')}</h2>
-        <div className="grid gap-3 xl:grid-cols-4">
-          {topExperiments.map(experiment => (
-            <div key={experiment.experiment_id} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-              <div className="mb-2 flex items-start justify-between gap-2">
+      <Panel eyebrow={bi('最佳候选', 'Top Candidates')} title={bi('综合分前列实验', 'Top Experiments by Composite Score')}
+        right={<Chip label={bi(`${experiments.length} 个实验`, `${experiments.length} experiments`)} tone="info" />}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {topExperiments.map(e => (
+            <div key={e.experiment_id} className="flex flex-col gap-2.5 rounded-xl border border-line bg-gradient-to-b from-elevated/40 to-panel p-3.5">
+              <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate font-bold text-cyan-300">{experiment.experiment_id}</div>
-                  <div className="mt-1 truncate text-slate-400">{experiment.owner_agent}</div>
+                  <div className="mono truncate text-xs font-semibold text-accent">{e.experiment_id}</div>
+                  <div className="truncate text-2xs text-faint">{e.owner_agent}</div>
                 </div>
-                <DecisionBadge decision={experiment.decision} />
+                <StatusChip value={String(e.decision)} />
               </div>
-              <div className="truncate text-slate-200">{experiment.expression}</div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-slate-500">
-                <div>IC <span className="text-slate-200">{experiment.metrics.ic.toFixed(4)}</span></div>
-                <div>Sharpe <span className="text-slate-200">{experiment.metrics.sharpe.toFixed(2)}</span></div>
-                <div>{bi('分数', 'Score')} <span className="text-slate-200">{experiment.metrics.composite_score.toFixed(2)}</span></div>
-                <div>{bi('产物', 'Artifacts')} <span className="text-slate-200">{experiment.artifacts.length}</span></div>
+              <div className="mono truncate text-2xs text-muted">{e.expression}</div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-2xs">
+                <KvLine k="IC" v={fixed(e.metrics.ic, 4)} />
+                <KvLine k={bi('夏普', 'Sharpe')} v={fixed(e.metrics.sharpe, 2)} />
+                <KvLine k={bi('换手', 'Turnover')} v={pct(e.metrics.turnover, 0)} />
+                <KvLine k={bi('容量', 'Capacity')} v={compact(e.metrics.capacity_estimate)} />
               </div>
-              <div className="mt-3 truncate text-[10px] text-slate-500">{experiment.reproducibility_hash}</div>
+              <div className="flex items-center gap-2">
+                <ProgressBar value={e.metrics.composite_score} tone={statusTone(String(e.decision))} />
+                <span className="tnum w-9 text-right text-2xs text-muted">{fixed(e.metrics.composite_score, 2)}</span>
+              </div>
+              <div className="mono truncate text-2xs text-info">{shortHash(e.reproducibility_hash, 16)}</div>
             </div>
           ))}
         </div>
-      </div>
+      </Panel>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[1120px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('实验', 'Experiment')}</th>
-              <th className="p-2 text-left">Alpha</th>
-              <th className="p-2 text-left">{bi('阶段', 'Stage')}</th>
-              <th className="p-2 text-left">{bi('决策', 'Decision')}</th>
-              <th className="p-2 text-right">IC</th>
-              <th className="p-2 text-right">{bi('夏普', 'Sharpe')}</th>
-              <th className="p-2 text-right">{bi('换手', 'Turnover')}</th>
-              <th className="p-2 text-left">{bi('数据快照', 'Data Snapshot')}</th>
-              <th className="p-2 text-left">{bi('配置哈希', 'Config Hash')}</th>
-              <th className="p-2 text-left">{bi('创建时间', 'Created')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {registry.experiments.map(experiment => (
-              <tr key={experiment.experiment_id} className="border-b border-slate-800/50 hover:bg-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{experiment.experiment_id}</td>
-                <td className="p-2 text-slate-300">{experiment.alpha_id}</td>
-                <td className="p-2 text-slate-400">{experiment.stage}</td>
-                <td className="p-2"><DecisionBadge decision={experiment.decision} /></td>
-                <td className="p-2 text-right text-emerald-300">{experiment.metrics.ic.toFixed(4)}</td>
-                <td className="p-2 text-right text-slate-200">{experiment.metrics.sharpe.toFixed(2)}</td>
-                <td className="p-2 text-right text-amber-300">{experiment.metrics.turnover.toFixed(2)}</td>
-                <td className="p-2 text-slate-500">{experiment.config.data_snapshot_id}</td>
-                <td className="p-2 text-slate-500">{experiment.config.config_hash}</td>
-                <td className="p-2 text-slate-500">{formatTime(experiment.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Panel eyebrow={bi('全部试验', 'All Trials')} title={bi('实验注册表', 'Experiment Registry')}>
+        <DataTable columns={expCols} rows={experiments} dense getKey={e => e.experiment_id} />
+      </Panel>
+
+      <Panel eyebrow={bi('阶段计数', 'Stage Counts')} title={bi('阶段流转条形图', 'Stage Throughput')}>
+        <BarSeries
+          data={stageBins.map(b => b.count)}
+          labels={stageBins.map(b => b.label)}
+          height={150}
+          posTone="accent"
+          valueFormat={v => num(v)}
+        />
+      </Panel>
+    </PageShell>
+  );
+}
+
+function KvLine({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-1">
+      <span className="text-faint">{k}</span>
+      <span className="tnum font-medium text-ink">{v}</span>
     </div>
   );
 }

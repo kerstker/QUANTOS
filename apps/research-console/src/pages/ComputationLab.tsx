@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DecisionBadge, MetricCard, RiskBadge } from '@/components/status-badges';
-import {
-  RESEARCH_CONSOLE_API_BASE,
-  fetchComputationLabSnapshot,
-  isResearchConsoleApiEnabled,
-} from '@/lib/api/research-console-api';
+import { fetchComputationLabSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import {
   mockAlphaCandidates,
   mockCalculationLineage,
@@ -22,7 +17,15 @@ import type {
   DrawdownPoint,
   RiskReport,
 } from '@/lib/types/research';
+import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+} from '@/ui/primitives';
+import { AreaChart, UnderwaterChart, DivergingBars, RadialGauge } from '@/ui/charts';
+import { num, pct, fixed, signed, money, shortHash, statusTone, type Tone } from '@/ui/format';
 
+/* ---------- deterministic mock-fallback math (no Math.random / Date.now) ---- */
 function dailyReturns(points: ChartPoint[]) {
   return points.slice(1).map((p, i) => (p.y - points[i].y) / points[i].y);
 }
@@ -63,15 +66,8 @@ function scenarioEquity(index: number, sharpeSeed: number, turnover: number): Ch
   return points;
 }
 
-function formatNumber(value: number | undefined, digits = 2) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : 'n/a';
-}
-
-function formatCapacity(value: number | undefined) {
-  return typeof value === 'number' ? `CNY ${(value / 1_000_000).toFixed(1)}M` : 'n/a';
-}
-
-function gateLabel(gate: string) {
+/* ---------- bilingual gate / connection helpers --------------------------- */
+function gateLabel(gate: string): string {
   const labels: Record<string, string> = {
     market: bi('市场', 'Market'),
     liquidity: bi('流动性', 'Liquidity'),
@@ -91,220 +87,12 @@ function compactModule(path: string) {
   return parts.length > 2 ? parts.slice(-3).join('/') : path;
 }
 
-function formulaFrom(lineage: CalculationLineageItem[], id: string, fallback: string) {
-  return lineage.find(item => item.id === id)?.formula ?? fallback;
-}
-
-function moduleFrom(lineage: CalculationLineageItem[], id: string, fallback: string) {
-  return compactModule(lineage.find(item => item.id === id)?.backend ?? fallback);
-}
-
-function LineChart({points, color = '#0891b2'}:{points: ChartPoint[]; color?: string}) {
-  const width = 720;
-  const height = 180;
-  const pad = 18;
-  if (points.length === 0) {
-    return <div className="flex h-44 items-center justify-center text-xs text-slate-500">{bi('暂无曲线数据', 'No curve data')}</div>;
-  }
-  const minY = Math.min(...points.map(p => p.y));
-  const maxY = Math.max(...points.map(p => p.y));
-  const spanY = Math.max(maxY - minY, 1);
-  const maxX = Math.max(...points.map(p => p.x), 1);
-  const path = points.map(p => {
-    const x = pad + (p.x / maxX) * (width - pad * 2);
-    const y = height - pad - ((p.y - minY) / spanY) * (height - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const lastPoint = points[points.length - 1];
-  const lastX = pad + (lastPoint.x / maxX) * (width - pad * 2);
-  const lastY = height - pad - ((lastPoint.y - minY) / spanY) * (height - pad * 2);
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
-      {[0, 1, 2, 3].map(i => <line key={i} x1={pad} x2={width-pad} y1={pad+i*44} y2={pad+i*44} stroke="#1e293b" />)}
-      <polyline points={path} fill="none" stroke={color} strokeWidth="3" />
-      <circle cx={lastX} cy={lastY} r="4" fill={color} />
-    </svg>
-  );
-}
-
-function MetricDecomposition({
-  grossSharpe,
-  netSharpe,
-  costBps,
-  stress,
-}: {
-  grossSharpe: number;
-  netSharpe: number;
-  costBps: number;
-  stress: number;
-}) {
-  const costDrag = costBps / 100;
-  const stressDrag = Math.max(0, stress - 1) * 0.18;
-  const explainedNet = grossSharpe - costDrag - stressDrag;
-  const denominator = Math.max(Math.abs(grossSharpe), costDrag + stressDrag + Math.abs(netSharpe), 1);
-  const rows = [
-    {
-      id: 'gross',
-      label: bi('原始夏普', 'Gross Sharpe'),
-      value: grossSharpe,
-      color: 'bg-emerald-500',
-      width: Math.min(100, Math.abs(grossSharpe) / denominator * 100),
-    },
-    {
-      id: 'cost',
-      label: bi('交易成本扣减', 'Cost Drag'),
-      value: -costDrag,
-      color: 'bg-amber-500',
-      width: Math.min(100, costDrag / denominator * 100),
-    },
-    {
-      id: 'stress',
-      label: bi('压力情景扣减', 'Stress Drag'),
-      value: -stressDrag,
-      color: 'bg-red-500',
-      width: Math.min(100, stressDrag / denominator * 100),
-    },
-    {
-      id: 'net',
-      label: bi('净夏普', 'Net Sharpe'),
-      value: netSharpe,
-      color: netSharpe >= 0 ? 'bg-cyan-500' : 'bg-red-500',
-      width: Math.min(100, Math.abs(netSharpe) / denominator * 100),
-    },
-  ];
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('指标分解', 'Metric Decomposition')}</h2>
-          <div className="mt-1 text-xs text-slate-500">
-            {bi('净夏普 = 原始夏普 - 成本扣减 - 压力扣减', 'Net Sharpe = Gross Sharpe - Cost Drag - Stress Drag')}
-          </div>
-        </div>
-        <div className="text-xs text-slate-500 md:text-right">
-          {bi('复算值', 'Recomputed')}: {explainedNet.toFixed(3)}
-        </div>
-      </div>
-      <div className="space-y-3">
-        {rows.map(row => (
-          <div key={row.id} className="grid grid-cols-[8rem_1fr_4rem] items-center gap-3 text-xs">
-            <div className="text-slate-400">{row.label}</div>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className={`h-full ${row.color}`} style={{width: `${Math.max(3, row.width)}%`}} />
-            </div>
-            <div className="text-right font-bold text-slate-200">{row.value.toFixed(3)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ComputationFlow({
-  lineage,
-  validation,
-  riskReport,
-}: {
-  lineage: CalculationLineageItem[];
-  validation: ComputationValidation | { decision: string };
-  riskReport: ComputationRiskReport | RiskReport;
-}) {
-  const gateEntries = Object.entries(riskReport.gate_results);
-  const passedGates = gateEntries.filter(([, passed]) => passed).length;
-  const nodes = [
-    {
-      id: 'DATA',
-      title: bi('研究输入', 'Research Inputs'),
-      formula: 'factor_values + forward_returns',
-      module: 'console_api/main.py',
-      decision: 'READ_ONLY',
-    },
-    {
-      id: 'IC',
-      title: bi('Alpha 相关性', 'Alpha Correlation'),
-      formula: formulaFrom(lineage, 'IC', 'corr(factor_values, forward_returns)'),
-      module: moduleFrom(lineage, 'IC', 'factor_engine/domain/model.py'),
-      decision: 'BACKEND_COMPUTED',
-    },
-    {
-      id: 'SHARPE',
-      title: bi('纸面收益', 'Paper PnL'),
-      formula: formulaFrom(lineage, 'SHARPE', 'mean(returns) / std(returns) * sqrt(252)'),
-      module: moduleFrom(lineage, 'SHARPE', 'paper_trading/domain/pnl.py'),
-      decision: validation.decision,
-    },
-    {
-      id: 'RISK',
-      title: bi('风险门禁', 'Risk Gate'),
-      formula: formulaFrom(lineage, 'RISK_GATE', 'all(required_gates.pass) && fail_closed_on_unknown'),
-      module: moduleFrom(lineage, 'RISK_GATE', 'research_risk/domain/gate.py'),
-      decision: riskReport.decision,
-    },
-    {
-      id: 'AUDIT',
-      title: bi('审计输出', 'Audit Output'),
-      formula: `${passedGates}/${gateEntries.length} ${bi('门禁通过', 'gates passed')}`,
-      module: 'read-only snapshot',
-      decision: 'READ_ONLY',
-    },
-  ];
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('后端计算链路', 'Backend Computation Flow')}</h2>
-          <div className="mt-1 text-xs text-slate-500">
-            {bi('从因子输入到审计输出，每个节点绑定后端公式或模块。', 'Each node maps inputs to backend formulas, gates, and audit output.')}
-          </div>
-        </div>
-        <DecisionBadge decision="BACKEND_COMPUTED" />
-      </div>
-      <div className="grid gap-3 lg:grid-cols-5">
-        {nodes.map((node, index) => (
-          <div key={node.id} className="relative min-w-0 rounded border border-slate-800 bg-slate-950/60 p-3">
-            {index < nodes.length - 1 && <div className="pointer-events-none absolute right-[-0.7rem] top-1/2 hidden h-px w-3 bg-cyan-800 lg:block" />}
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[10px] font-bold text-cyan-400">{node.id}</div>
-                <div className="mt-1 text-xs font-bold text-slate-100">{node.title}</div>
-              </div>
-              <DecisionBadge decision={node.decision} />
-            </div>
-            <div className="break-words text-xs text-emerald-300">{node.formula}</div>
-            <div className="mt-2 break-words text-[10px] text-slate-500">{node.module}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DrawdownChart({points, drawdowns}:{points: ChartPoint[]; drawdowns?: DrawdownPoint[]}) {
-  const curve = drawdowns && drawdowns.length > 0 ? drawdowns : maxDrawdown(points);
-  const maxY = Math.max(...curve.map(p => p.y), 0.001);
-  return (
-    <div className="flex h-32 items-end gap-px">
-      {curve.map(p => (
-        <div
-          key={p.x}
-          className="flex-1 bg-red-700/70"
-          style={{height:`${Math.max(2, (p.y / maxY) * 100)}%`}}
-          title={`${(p.y*100).toFixed(2)}%`}
-        />
-      ))}
-    </div>
-  );
-}
-
 export default function ComputationLab() {
   const [alphaIndex, setAlphaIndex] = useState(0);
   const [costBps, setCostBps] = useState(18);
   const [stress, setStress] = useState(1.2);
   const [snapshot, setSnapshot] = useState<ComputationLabPayload | null>(null);
-  const [apiState, setApiState] = useState<'disabled' | 'loading' | 'connected' | 'error'>('disabled');
+  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
   const [apiError, setApiError] = useState<string | null>(null);
 
   const mockCandidateList = useMemo<ComputationAlphaSummary[]>(
@@ -326,6 +114,7 @@ export default function ComputationLab() {
   const selectedAlphaId = fallbackAlpha.candidate_id;
   const apiEnabled = isResearchConsoleApiEnabled();
 
+  // Preserve the original abortable fetch with alphaId/costBps/stress query params.
   useEffect(() => {
     if (!apiEnabled) {
       setSnapshot(null);
@@ -333,30 +122,20 @@ export default function ComputationLab() {
       setApiError(null);
       return;
     }
-
     const controller = new AbortController();
     setApiState('loading');
     setApiError(null);
-
-    fetchComputationLabSnapshot({
-      alphaId: selectedAlphaId,
-      costBps,
-      stress,
-      signal: controller.signal,
-    })
+    fetchComputationLabSnapshot({ alphaId: selectedAlphaId, costBps, stress, signal: controller.signal })
       .then(payload => {
         setSnapshot(payload);
         setApiState('connected');
       })
       .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
+        if (controller.signal.aborted) return;
         setSnapshot(null);
         setApiState('error');
         setApiError(error instanceof Error ? error.message : String(error));
       });
-
     return () => controller.abort();
   }, [apiEnabled, selectedAlphaId, costBps, stress]);
 
@@ -403,161 +182,205 @@ export default function ComputationLab() {
       costBps,
       stress,
     };
+
   const gateEntries = Object.entries(riskReport.gate_results);
-  const connectionDecision = apiState === 'connected'
-    ? 'API_CONNECTED'
-    : apiState === 'loading'
-      ? 'API_LOADING'
-      : apiState === 'error'
-        ? 'API_ERROR'
-        : 'NOT_CONNECTED';
+  const gatesPassed = gateEntries.filter(([, ok]) => ok).length;
+  const gatesTotal = gateEntries.length;
   const sourceLabel = usingBackend ? snapshot.source : 'FRONTEND_MOCK_FALLBACK';
   const lastEquity = activePoints[activePoints.length - 1]?.y ?? 0;
 
+  // Net Sharpe attribution: gross → cost drag → stress drag → net (diverging).
+  const costDrag = metricValues.costBps / 100;
+  const stressDrag = Math.max(0, metricValues.stress - 1) * 0.18;
+  const attribution: { label: string; value: number }[] = [
+    { label: bi('原始夏普', 'Gross Sharpe'), value: metricValues.grossSharpe },
+    { label: bi('成本扣减', 'Cost Drag'), value: -costDrag },
+    { label: bi('压力扣减', 'Stress Drag'), value: -stressDrag },
+    { label: bi('净夏普', 'Net Sharpe'), value: metricValues.netSharpe },
+  ];
+
+  // Equity curve normalised to a simple index for the chart axis.
+  const equityData = activePoints.map(p => ({ x: p.x, y: p.y / 1_000_000 }));
+  const ddData = drawdownPoints.map(p => ({ x: p.x, y: -p.y }));
+
+  const netTone: Tone = metricValues.netSharpe >= 1 ? 'pos' : metricValues.netSharpe >= 0 ? 'warn' : 'neg';
+
+  const lineageCols: Column<CalculationLineageItem>[] = [
+    { key: 'id', header: 'ID', render: l => <span className="mono font-semibold text-accent">{l.id}</span> },
+    { key: 'layer', header: bi('层级', 'Layer'), render: l => <Chip label={l.layer} tone="info" /> },
+    { key: 'formula', header: bi('公式', 'Formula'), render: l => <span className="mono text-2xs text-pos">{l.formula}</span> },
+    { key: 'inputs', header: bi('输入', 'Inputs'), render: l => <span className="text-2xs text-muted">{l.inputs.join(', ')}</span> },
+    { key: 'output', header: bi('输出', 'Output'), render: l => <span className="text-2xs text-ink">{l.output}</span> },
+    { key: 'backend', header: bi('后端模块', 'Backend Module'), render: l => <span className="mono text-2xs text-faint">{compactModule(l.backend)}</span> },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-slate-100">{bi('计算实验室', 'Computation Lab')}</h1>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <DecisionBadge decision={usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} />
-            <DecisionBadge decision={connectionDecision} />
-            <DecisionBadge decision="READ_ONLY" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-2 text-xs text-slate-500 md:grid-cols-3 xl:text-right">
-          <div>{bi('数据源', 'Source')}: {sourceLabel}</div>
-          <div>API: {apiEnabled ? RESEARCH_CONSOLE_API_BASE : bi('未启用', 'disabled')}</div>
-          <div>{apiError ? apiError : `${bi('已选', 'Selected')}: ${selectedAlphaId}`}</div>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader title="Computation Lab" titleZh="计算实验室"
+        subtitle={bi('从因子输入到风险门禁的端到端复算链路;成本与压力情景可调,门禁与谱系可审计',
+          'End-to-end recompute chain, factor inputs → risk gate; tunable cost / stress scenarios, auditable gates + lineage')}
+        actions={<>
+          <Chip label={usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
+          <Chip label={shortHash(selectedAlphaId, 12)} tone="info" />
+        </>} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={sourceLabel} error={apiError} />
 
-      <div className="grid gap-2 md:grid-cols-4">
-        <MetricCard label={bi('总夏普', 'Gross Sharpe')} value={metricValues.grossSharpe.toFixed(2)} />
-        <MetricCard label={bi('净夏普', 'Net Sharpe')} value={metricValues.netSharpe.toFixed(2)} />
-        <MetricCard label={bi('最大回撤', 'Max Drawdown')} value={(metricValues.worstDrawdown*100).toFixed(1)} unit="%" />
-        <MetricCard label={bi('总收益', 'Total Return')} value={metricValues.totalReturn.toFixed(1)} unit="%" />
-      </div>
+      <KpiStrip cols={6}>
+        <StatTile label={bi('原始夏普', 'Gross Sharpe')} value={fixed(metricValues.grossSharpe)} tone="pos" />
+        <StatTile label={bi('净夏普', 'Net Sharpe')} value={fixed(metricValues.netSharpe)} tone={netTone}
+          sub={bi('扣成本与压力', 'after cost + stress')} />
+        <StatTile label={bi('最大回撤', 'Max Drawdown')} value={pct(metricValues.worstDrawdown)} tone="neg" />
+        <StatTile label={bi('总收益', 'Total Return')} value={`${signed(metricValues.totalReturn, 1)}%`}
+          tone={metricValues.totalReturn >= 0 ? 'pos' : 'neg'} />
+        <StatTile label={bi('成本拖累', 'Cost Drag')} value={`${num(metricValues.costBps)}`} unit="bps" tone="warn" />
+        <StatTile label={bi('压力倍数', 'Stress Mult.')} value={`${fixed(metricValues.stress, 1)}×`} accent />
+      </KpiStrip>
 
-      <div className="grid gap-4 xl:grid-cols-[0.75fr_1.25fr]">
-        <MetricDecomposition
-          grossSharpe={metricValues.grossSharpe}
-          netSharpe={metricValues.netSharpe}
-          costBps={metricValues.costBps}
-          stress={metricValues.stress}
-        />
-        <ComputationFlow lineage={lineage} validation={validation} riskReport={riskReport} />
-      </div>
+      {/* equity + scenario controls */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('纸面权益', 'Paper Equity')}
+          title={bi('权益曲线', 'Equity Curve')}
+          right={<StatusChip value={validation.decision} />}>
+          <div className="mb-2 mono text-2xs text-faint truncate">{alpha.expression}</div>
+          <AreaChart data={equityData} height={236} tone="accent" yFormat={v => `${v.toFixed(1)}M`} />
+        </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[0.75fr_1.25fr]">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('场景控制', 'Scenario Controls')}</h2>
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
+        <Panel eyebrow={bi('情景控制', 'Scenario Controls')} title={bi('候选 · 成本 · 压力', 'Candidate · Cost · Stress')}>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-1.5">
               {alphaCandidates.slice(0, 4).map((candidate, idx) => (
-                <button
-                  key={candidate.candidate_id}
-                  onClick={() => setAlphaIndex(idx)}
-                  className={`rounded px-3 py-2 text-xs ${idx === alphaIndex ? 'bg-cyan-800 text-cyan-100' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-                >
+                <button key={candidate.candidate_id} onClick={() => setAlphaIndex(idx)}
+                  className={`rounded-md border px-2.5 py-1.5 mono text-2xs transition-colors ${
+                    idx === alphaIndex
+                      ? 'border-accent/50 bg-accent/15 text-accent'
+                      : 'border-line bg-inset text-muted hover:bg-elevated/60'}`}>
                   {candidate.candidate_id}
                 </button>
               ))}
             </div>
-            <label className="block text-xs text-slate-400">
-              {bi('成本拖累', 'Cost Drag')}: <span className="font-bold text-slate-200">{costBps} bps</span>
-              <input className="mt-2 w-full" type="range" min="0" max="80" value={costBps} onChange={e => setCostBps(Number(e.target.value))} />
+            <label className="block">
+              <div className="flex items-center justify-between text-2xs uppercase tracking-wide text-faint">
+                <span>{bi('成本拖累', 'Cost Drag')}</span>
+                <span className="tnum font-semibold text-ink">{costBps} bps</span>
+              </div>
+              <input className="mt-2 w-full accent-[var(--accent)]" type="range" min={0} max={80}
+                value={costBps} onChange={e => setCostBps(Number(e.target.value))} />
             </label>
-            <label className="block text-xs text-slate-400">
-              {bi('压力倍数', 'Stress Multiplier')}: <span className="font-bold text-slate-200">{stress.toFixed(1)}x</span>
-              <input className="mt-2 w-full" type="range" min="1" max="2.5" step="0.1" value={stress} onChange={e => setStress(Number(e.target.value))} />
+            <label className="block">
+              <div className="flex items-center justify-between text-2xs uppercase tracking-wide text-faint">
+                <span>{bi('压力倍数', 'Stress Multiplier')}</span>
+                <span className="tnum font-semibold text-ink">{stress.toFixed(1)}×</span>
+              </div>
+              <input className="mt-2 w-full accent-[var(--accent)]" type="range" min={1} max={2.5} step={0.1}
+                value={stress} onChange={e => setStress(Number(e.target.value))} />
             </label>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs">
-              <div className="text-slate-500">IC</div>
-              <div className="text-right font-bold text-cyan-300">{formatNumber(alpha.ic, 4)}</div>
-              <div className="text-slate-500">{bi('换手率', 'Turnover')}</div>
-              <div className="text-right font-bold text-amber-300">{formatNumber(alpha.turnover, 2)}</div>
-              <div className="text-slate-500">{bi('容量', 'Capacity')}</div>
-              <div className="text-right font-bold text-emerald-300">{formatCapacity(alpha.capacity_estimate)}</div>
-              <div className="text-slate-500">{bi('生命周期', 'Lifecycle')}</div>
-              <div className="text-right font-bold text-slate-200">{statusLabel(alpha.lifecycle_state)}</div>
+            <div className="border-t border-line pt-3">
+              <KeyValue cols={2} items={[
+                { k: 'IC', v: <span className="text-accent">{fixed(alpha.ic, 4)}</span> },
+                { k: bi('换手率', 'Turnover'), v: <span className="text-warn">{fixed(alpha.turnover)}</span> },
+                { k: bi('容量', 'Capacity'), v: <span className="text-pos">{money(alpha.capacity_estimate)}</span> },
+                { k: bi('生命周期', 'Lifecycle'), v: statusLabel(alpha.lifecycle_state) },
+              ]} />
             </div>
           </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm uppercase text-slate-400">{bi('权益曲线', 'Equity Curve')}</h2>
-              <div className="mt-1 text-xs text-slate-500">{alpha.expression}</div>
-            </div>
-            <DecisionBadge decision={validation.decision} />
-          </div>
-          <LineChart points={activePoints} />
-        </div>
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('回撤路径', 'Drawdown Path')}</h2>
-          <DrawdownChart points={activePoints} drawdowns={drawdownPoints} />
-          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <div className="border-t border-slate-800 pt-2"><div className="text-slate-500">{bi('压力回撤', 'Stress DD')}</div><div className="font-bold text-red-300">{(metricValues.worstDrawdown*100).toFixed(2)}%</div></div>
-            <div className="border-t border-slate-800 pt-2"><div className="text-slate-500">{bi('成本拖累', 'Cost drag')}</div><div className="font-bold text-amber-300">{metricValues.costBps} bps</div></div>
-            <div className="border-t border-slate-800 pt-2"><div className="text-slate-500">{bi('最新权益', 'Last equity')}</div><div className="font-bold text-cyan-300">{formatCapacity(lastEquity)}</div></div>
+      {/* drawdown + sharpe attribution + risk gate gauge */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('回撤路径', 'Drawdown Path')} title={bi('水下曲线', 'Underwater Curve')}>
+          <UnderwaterChart data={ddData} height={150} yFormat={v => pct(v, 1)} />
+          <div className="mt-3 grid grid-cols-3 gap-3 border-t border-line pt-3">
+            <div>
+              <div className="text-2xs uppercase tracking-wide text-faint">{bi('压力回撤', 'Stress DD')}</div>
+              <div className="tnum text-sm font-semibold text-neg">{pct(metricValues.worstDrawdown)}</div>
+            </div>
+            <div>
+              <div className="text-2xs uppercase tracking-wide text-faint">{bi('成本拖累', 'Cost Drag')}</div>
+              <div className="tnum text-sm font-semibold text-warn">{num(metricValues.costBps)} bps</div>
+            </div>
+            <div>
+              <div className="text-2xs uppercase tracking-wide text-faint">{bi('最新权益', 'Last Equity')}</div>
+              <div className="tnum text-sm font-semibold text-accent">{money(lastEquity)}</div>
+            </div>
           </div>
-        </div>
+        </Panel>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm uppercase text-slate-400">{bi('风险门禁矩阵', 'Risk Gate Matrix')}</h2>
-            <DecisionBadge decision={riskReport.decision} />
+        <Panel eyebrow={bi('风险门禁', 'Risk Gate')} title={bi('门禁通过率', 'Gates Passed')}
+          right={<StatusChip value={riskReport.decision} />}>
+          <div className="flex flex-col items-center gap-2">
+            <RadialGauge value={gatesPassed} max={Math.max(gatesTotal, 1)} size={140}
+              label={`${gatesPassed}/${gatesTotal}`}
+              tone={gatesPassed === gatesTotal ? 'pos' : gatesPassed >= gatesTotal * 0.6 ? 'warn' : 'neg'} />
+            <div className="text-2xs text-faint">{bi('全部必需门禁须通过(fail-closed)', 'all required gates must pass (fail-closed)')}</div>
           </div>
-          <div className="grid gap-2 md:grid-cols-3">
+        </Panel>
+      </div>
+
+      {/* net sharpe attribution + gate matrix */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('指标分解', 'Metric Decomposition')}
+          title={bi('净夏普归因', 'Net Sharpe Attribution')}
+          right={<Chip label={bi('净 = 原始 − 成本 − 压力', 'net = gross − cost − stress')} tone="muted" />}>
+          <DivergingBars items={attribution} height={150} valueFormat={v => signed(v, 3)} />
+        </Panel>
+
+        <Panel eyebrow={bi('门禁矩阵', 'Gate Matrix')} title={bi('风险门禁明细', 'Risk Gate Detail')}>
+          <div className="flex flex-col gap-2">
             {gateEntries.map(([gate, passed]) => (
-              <div key={gate} className="flex items-center justify-between rounded bg-slate-800 px-3 py-2 text-xs">
-                <span className="capitalize text-slate-300">{gateLabel(gate)}</span>
-                <RiskBadge passed={passed} />
+              <div key={gate} className="flex items-center justify-between rounded-md bg-inset px-3 py-1.5">
+                <span className="text-2xs text-ink">{gateLabel(gate)}</span>
+                <GateDot ok={passed} label={passed ? bi('通过', 'PASS') : bi('未过', 'FAIL')} />
               </div>
             ))}
+            {riskReport.reasons.length > 0 && (
+              <div className="mt-1 flex flex-col gap-1 border-t border-line pt-2">
+                {riskReport.reasons.map(reason => (
+                  <div key={reason} className="text-2xs text-neg">• {reason}</div>
+                ))}
+              </div>
+            )}
+            {'reproducibility_hash' in riskReport && riskReport.reproducibility_hash && (
+              <div className="mt-1 truncate border-t border-line pt-2 mono text-2xs text-faint">
+                {bi('复现哈希', 'Repro Hash')}: {shortHash(riskReport.reproducibility_hash, 16)}
+              </div>
+            )}
           </div>
-          {riskReport.reasons.length > 0 && (
-            <div className="mt-3 space-y-1 text-xs text-red-300">
-              {riskReport.reasons.map(reason => <div key={reason}>{reason}</div>)}
-            </div>
-          )}
-          {'reproducibility_hash' in riskReport && riskReport.reproducibility_hash && (
-            <div className="mt-3 truncate text-xs text-slate-500">{bi('复现哈希', 'Hash')}: {riskReport.reproducibility_hash}</div>
-          )}
-        </div>
+        </Panel>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[900px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">ID</th>
-              <th className="p-2 text-left">{bi('层级', 'Layer')}</th>
-              <th className="p-2 text-left">{bi('公式', 'Formula')}</th>
-              <th className="p-2 text-left">{bi('输入', 'Inputs')}</th>
-              <th className="p-2 text-left">{bi('输出', 'Output')}</th>
-              <th className="p-2 text-left">{bi('后端模块', 'Backend Module')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lineage.map(item => (
-              <tr key={item.id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-400">{item.id}</td>
-                <td className="p-2 text-slate-300">{item.layer}</td>
-                <td className="p-2 text-emerald-300">{item.formula}</td>
-                <td className="p-2 text-slate-500">{item.inputs.join(', ')}</td>
-                <td className="p-2 text-slate-300">{item.output}</td>
-                <td className="p-2 text-slate-500">{item.backend}</td>
-              </tr>
+      {/* validation summary */}
+      <Panel eyebrow={bi('验证报告', 'Validation Report')} title={bi('样本外与净表现门禁', 'OOS & Net-Performance Gates')}
+        right={<StatusChip value={validation.decision} />}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+          <StatTile label={bi('门禁通过', 'Gates Passed')} value={`${num(validation.gates_passed)}/${num(validation.gates_total)}`}
+            tone={validation.gates_passed === validation.gates_total ? 'pos' : 'warn'} />
+          {validation.oos_sharpe !== undefined && (
+            <StatTile label={bi('样本外夏普', 'OOS Sharpe')} value={fixed(validation.oos_sharpe)} tone="info" />
+          )}
+          {validation.oos_ic !== undefined && (
+            <StatTile label={bi('样本外IC', 'OOS IC')} value={fixed(validation.oos_ic, 4)} accent />
+          )}
+          {validation.net_sharpe !== undefined && (
+            <StatTile label={bi('净夏普', 'Net Sharpe')} value={fixed(validation.net_sharpe)}
+              tone={validation.net_sharpe >= 1 ? 'pos' : 'warn'} />
+          )}
+          <StatTile label={bi('决策', 'Decision')} value={<StatusChip value={validation.decision} />} />
+        </div>
+        {validation.reasons.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-line pt-3">
+            {validation.reasons.map(reason => (
+              <Chip key={reason} label={reason} tone={statusTone(reason)} />
             ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </div>
+        )}
+      </Panel>
+
+      {/* calculation lineage */}
+      <Panel eyebrow={bi('计算谱系', 'Calculation Lineage')} title={bi('每个指标的后端公式与模块', 'Per-metric backend formula & module')}
+        right={<Chip label={bi(`${lineage.length} 步`, `${lineage.length} steps`)} tone="info" />}>
+        <DataTable columns={lineageCols} rows={lineage} dense getKey={l => l.id} />
+      </Panel>
+    </PageShell>
   );
 }

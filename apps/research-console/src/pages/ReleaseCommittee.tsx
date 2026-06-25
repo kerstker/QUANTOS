@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchReleaseCommitteeSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React from 'react';
+import { fetchReleaseCommitteeSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ReleaseCommitteePayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, Chip, GateDot, ProgressBar, KeyValue, type Column,
+} from '@/ui/primitives';
+import { Donut, RadialGauge } from '@/ui/charts';
+import { num, pct, shortHash, statusTone, type Tone } from '@/ui/format';
 
 const fallbackCommittee: ReleaseCommitteePayload = {
   source: 'FRONTEND_RELEASE_COMMITTEE_FALLBACK',
@@ -68,240 +73,244 @@ const fallbackCommittee: ReleaseCommitteePayload = {
   },
 };
 
-function pct(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
+const decisionTone = (v: string): Tone => statusTone(v);
 
-function decisionClass(value: string) {
-  if (value === 'NO_GO' || value === 'BLOCKED' || value === 'REJECT') {
-    return 'text-red-300';
-  }
-  if (value === 'ABSTAIN' || value === 'HOLD' || value === 'DRY_RUN_ONLY') {
-    return 'text-amber-300';
-  }
-  return 'text-emerald-300';
-}
+type Seat = ReleaseCommitteePayload['seats'][number];
+type Agenda = ReleaseCommitteePayload['agenda'][number];
+type Vote = ReleaseCommitteePayload['votes'][number];
 
-function PolicyBoard({committee}: {committee: ReleaseCommitteePayload}) {
-  const rows: Array<[string, boolean]> = [
-    ['READ_ONLY', committee.committee_policy.read_only],
-    ['QUORUM_REQUIRED', committee.committee_policy.requires_quorum],
-    ['SIGNATURES_REQUIRED', committee.committee_policy.requires_required_seat_signatures],
-    ['ATTESTATIONS_REQUIRED', committee.committee_policy.requires_signed_attestations],
-    ['PROMOTION_GO_REQUIRED', committee.committee_policy.requires_promotion_go],
-    ['PHASE3A_GO_REQUIRED', committee.committee_policy.requires_phase3a_go],
-    ['IMMUTABLE_VOTES', !committee.committee_policy.mutable_votes],
-    ['EXTERNAL_SIGNING_DISABLED', !committee.committee_policy.external_signing_enabled],
-    ['BROKER_TEST_DISABLED', !committee.committee_policy.broker_test_env_enabled],
-    ['LIVE_RELEASE_DISABLED', !committee.committee_policy.live_release_enabled],
-    ['NO_LIVE_AUTHORIZATION', !committee.committee_policy.authorizes_live_trading],
-  ];
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u59d4\u5458\u4f1a\u7b56\u7565', 'Committee Policy')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {rows.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SeatBoard({committee}: {committee: ReleaseCommitteePayload}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u5e2d\u4f4d\u4e0eQuorum', 'Seats & Quorum')}</h2>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {committee.seats.map(seat => (
-          <div key={seat.seat_id} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="font-bold text-cyan-300">{seat.seat_id}</div>
-                <div className="mt-1 text-slate-200">{seat.role}</div>
-              </div>
-              <span className={seat.required ? 'text-red-300' : 'text-slate-500'}>{seat.required ? 'REQUIRED' : 'OBSERVER'}</span>
-            </div>
-            <div className="mt-2 text-slate-400">{seat.member}</div>
-            <div className="mt-1 text-slate-500">{seat.domain} / weight {seat.vote_weight}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AgendaBoard({committee}: {committee: ReleaseCommitteePayload}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900">
-      <div className="border-b border-slate-800 p-4">
-        <h2 className="text-sm uppercase text-slate-400">{bi('\u4f1a\u8bae\u8bae\u7a0b', 'Committee Agenda')}</h2>
-      </div>
-      <div className="overflow-auto">
-        <table className="w-full min-w-[1080px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('\u8bae\u7a0b', 'Agenda')}</th>
-              <th className="p-2 text-left">Alpha</th>
-              <th className="p-2 text-left">{bi('\u5efa\u8bae', 'Recommendation')}</th>
-              <th className="p-2 text-left">{bi('\u51b3\u7b56', 'Decision')}</th>
-              <th className="p-2 text-right">{bi('\u51c6\u5907\u5ea6', 'Readiness')}</th>
-              <th className="p-2 text-right">{bi('\u5931\u8d25\u95e8', 'Gate Fail')}</th>
-              <th className="p-2 text-right">{bi('\u963b\u65ad\u8bc1\u660e', 'Attest')}</th>
-              <th className="p-2 text-left">{bi('\u8bc1\u636e\u5305', 'Evidence')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {committee.agenda.map(item => (
-              <tr key={item.agenda_id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{item.agenda_id}</td>
-                <td className="p-2 text-slate-300">{item.alpha_id}</td>
-                <td className={`p-2 font-bold ${decisionClass(item.recommendation)}`}>{item.recommendation}</td>
-                <td className={`p-2 font-bold ${decisionClass(item.release_decision)}`}>{item.release_decision}</td>
-                <td className="p-2 text-right text-slate-300">{pct(item.readiness_score)}</td>
-                <td className="p-2 text-right text-red-300">{item.gate_failures}</td>
-                <td className="p-2 text-right text-red-300">{item.blocking_attestations}</td>
-                <td className="p-2 text-slate-500">{item.evidence_package_hash}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function VotesBoard({committee}: {committee: ReleaseCommitteePayload}) {
-  const sampleVotes = committee.votes.slice(0, 18);
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900">
-      <div className="border-b border-slate-800 p-4">
-        <h2 className="text-sm uppercase text-slate-400">{bi('\u6295\u7968\u72b6\u6001', 'Vote State')}</h2>
-      </div>
-      <div className="overflow-auto">
-        <table className="w-full min-w-[900px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('\u6295\u7968', 'Vote')}</th>
-              <th className="p-2 text-left">{bi('\u8bae\u7a0b', 'Agenda')}</th>
-              <th className="p-2 text-left">{bi('\u5e2d\u4f4d', 'Seat')}</th>
-              <th className="p-2 text-left">{bi('\u7ed3\u679c', 'Result')}</th>
-              <th className="p-2 text-left">{bi('\u7b7e\u7f72', 'Signed')}</th>
-              <th className="p-2 text-left">{bi('\u7406\u7531', 'Rationale')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sampleVotes.map(vote => (
-              <tr key={vote.vote_id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{vote.vote_id}</td>
-                <td className="p-2 text-slate-300">{vote.agenda_id}</td>
-                <td className="p-2 text-slate-400">{vote.role}</td>
-                <td className={`p-2 font-bold ${decisionClass(vote.vote)}`}>{vote.vote}</td>
-                <td className={vote.signed ? 'p-2 text-emerald-300' : 'p-2 text-red-300'}>{vote.signed ? 'YES' : 'NO'}</td>
-                <td className="p-2 text-slate-500">{vote.rationale}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+const POLICY_KEYS: ReadonlyArray<{ k: keyof ReleaseCommitteePayload['committee_policy']; label: string; invert?: boolean }> = [
+  { k: 'read_only', label: bi('只读', 'READ_ONLY') },
+  { k: 'requires_quorum', label: bi('需法定人数', 'QUORUM_REQUIRED') },
+  { k: 'requires_required_seat_signatures', label: bi('需席位签名', 'SEAT_SIGNATURES') },
+  { k: 'requires_signed_attestations', label: bi('需签署证明', 'SIGNED_ATTEST') },
+  { k: 'requires_promotion_go', label: bi('需晋升GO', 'PROMOTION_GO') },
+  { k: 'requires_phase3a_go', label: bi('需Phase3A GO', 'PHASE3A_GO') },
+  { k: 'mutable_votes', label: bi('投票不可变', 'IMMUTABLE_VOTES'), invert: true },
+  { k: 'external_signing_enabled', label: bi('外部签名禁用', 'EXT_SIGN_OFF'), invert: true },
+  { k: 'broker_test_env_enabled', label: bi('券商测试禁用', 'BROKER_TEST_OFF'), invert: true },
+  { k: 'live_release_enabled', label: bi('实盘发布禁用', 'LIVE_RELEASE_OFF'), invert: true },
+  { k: 'authorizes_live_trading', label: bi('无实盘授权', 'NO_LIVE_AUTH'), invert: true },
+];
 
 export default function ReleaseCommittee() {
-  const [payload, setPayload] = useState<ReleaseCommitteePayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ReleaseCommitteePayload>(
+    s => fetchReleaseCommitteeSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const committee = usingBackend ? payload! : fallbackCommittee;
+  const s = committee.summary;
+  const decisionT = decisionTone(committee.committee_decision);
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchReleaseCommitteeSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const quorumFrac = s.quorum_required ? s.quorum_present / s.quorum_required : 0;
+  const signedFrac = s.votes ? s.signed_votes / s.votes : 0;
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  const seatCols: Column<Seat>[] = [
+    { key: 'seat', header: bi('席位', 'Seat'), render: x => <span className="mono font-medium text-accent">{x.seat_id}</span> },
+    { key: 'role', header: bi('角色', 'Role'), render: x => <span className="text-ink">{x.role}</span> },
+    { key: 'member', header: bi('成员', 'Member'), render: x => <span className="text-muted">{x.member}</span> },
+    { key: 'domain', header: bi('领域', 'Domain'), render: x => <span className="text-muted">{x.domain}</span> },
+    { key: 'req', header: bi('类别', 'Class'), render: x => <Chip label={x.required ? bi('必需', 'REQUIRED') : bi('观察', 'OBSERVER')} tone={x.required ? 'warn' : 'muted'} /> },
+    { key: 'w', header: bi('权重', 'Weight'), align: 'right', mono: true, render: x => num(x.vote_weight) },
+  ];
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const committee = usingBackend && payload ? payload : fallbackCommittee;
-  const topBlockers = useMemo(() => committee.blockers.slice(0, 8), [committee.blockers]);
+  const agendaCols: Column<Agenda>[] = [
+    { key: 'agenda', header: bi('议程', 'Agenda'), render: a => (
+      <div className="flex flex-col">
+        <span className="mono font-medium text-accent">{a.agenda_id}</span>
+        <span className="text-2xs text-faint">{a.alpha_id} · {a.requested_stage}</span>
+      </div>
+    ) },
+    { key: 'rec', header: bi('建议', 'Recommendation'), render: a => <StatusChip value={a.recommendation} /> },
+    { key: 'dec', header: bi('发布决策', 'Release'), render: a => <StatusChip value={a.release_decision} /> },
+    { key: 'ready', header: bi('准备度', 'Readiness'), width: '150px', render: a => (
+      <div className="flex items-center gap-2">
+        <ProgressBar value={a.readiness_score} tone={a.readiness_score >= 0.75 ? 'pos' : a.readiness_score >= 0.5 ? 'warn' : 'neg'} />
+        <span className="tnum w-10 text-right text-muted">{pct(a.readiness_score, 0)}</span>
+      </div>
+    ) },
+    { key: 'gates', header: bi('门 失败/观察', 'Gate F/W'), align: 'right', mono: true, render: a => (
+      <span><span className="text-neg">{num(a.gate_failures)}</span><span className="text-faint"> / </span><span className="text-warn">{num(a.watch_gates)}</span></span>
+    ) },
+    { key: 'att', header: bi('阻断证明', 'Block Attest'), align: 'right', mono: true, render: a => <span className={a.blocking_attestations > 0 ? 'text-neg' : 'text-pos'}>{num(a.blocking_attestations)}</span> },
+    { key: 'tasks', header: bi('阻断任务', 'Open Tasks'), align: 'right', mono: true, render: a => <span className={a.open_blocking_tasks > 0 ? 'text-neg' : 'text-pos'}>{num(a.open_blocking_tasks)}</span> },
+    { key: 'broker', header: bi('券商测试', 'Broker'), align: 'center', render: a => <GateDot ok={!a.broker_test_env_allowed} /> },
+    { key: 'live', header: bi('实盘', 'Live'), align: 'center', render: a => <GateDot ok={!a.live_release_allowed} /> },
+    { key: 'hash', header: bi('证据包', 'Evidence'), mono: true, render: a => <span className="text-faint">{shortHash(a.evidence_package_hash, 12)}</span> },
+  ];
+
+  const voteCols: Column<Vote>[] = [
+    { key: 'vote', header: bi('投票', 'Vote'), render: v => <span className="mono text-accent">{v.vote_id}</span> },
+    { key: 'agenda', header: bi('议程', 'Agenda'), mono: true, render: v => <span className="text-muted">{v.agenda_id}</span> },
+    { key: 'seat', header: bi('席位', 'Seat'), render: v => <span className="text-ink">{v.role}</span> },
+    { key: 'result', header: bi('结果', 'Result'), render: v => <StatusChip value={v.vote} /> },
+    { key: 'weight', header: bi('权重', 'Weight'), align: 'right', mono: true, render: v => num(v.vote_weight) },
+    { key: 'signed', header: bi('已签', 'Signed'), align: 'center', render: v => <GateDot ok={v.signed} /> },
+    { key: 'sig', header: bi('签名哈希', 'Signature'), mono: true, render: v => <span className="text-faint">{v.signature_hash ? shortHash(v.signature_hash, 12) : bi('未签', 'unsigned')}</span> },
+    { key: 'why', header: bi('理由', 'Rationale'), render: v => <span className="text-muted">{v.rationale}</span> },
+  ];
+
+  // Vote tally for the donut (deterministic counts off the votes array).
+  const reject = committee.votes.filter(v => decisionTone(v.vote) === 'neg').length;
+  const abstain = committee.votes.filter(v => /ABSTAIN|HOLD/i.test(v.vote)).length;
+  const approve = committee.votes.length - reject - abstain;
+  const tally: Array<{ label: string; value: number; tone: Tone }> = ([
+    { label: bi('批准', 'Approve'), value: approve, tone: 'pos' as Tone },
+    { label: bi('弃权', 'Abstain'), value: abstain, tone: 'warn' as Tone },
+    { label: bi('拒绝', 'Reject'), value: reject, tone: 'neg' as Tone },
+  ]).filter(t => t.value > 0);
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('\u53d1\u5e03\u59d4\u5458\u4f1a', 'Release Committee')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision={committee.current_level} />
-              <DecisionBadge decision={committee.committee_mode} />
-              <DecisionBadge decision={committee.committee_decision} />
+    <PageShell>
+      <PageHeader title="Release Committee" titleZh="发布委员会"
+        subtitle={bi('只读发布委员会快照 · 法定人数、席位投票、阻断证明与发布门 — 实盘发布永久受阻',
+          'Read-only release-committee snapshot · quorum, seat votes, blocking attestations & release gates — live release permanently blocked')}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={committee.meeting_id} tone="muted" />
+            <Chip label={committee.committee_mode} tone="info" />
+            <StatusChip value={committee.current_level} />
+            <Chip label={bi(`委员会决策 ${committee.committee_decision}`, `DECISION ${committee.committee_decision}`)} tone={decisionT} soft={false} />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={committee.source} error={error} />
+
+      <KpiStrip cols={8}>
+        <StatTile label={bi('议程项', 'Agenda Items')} value={num(s.agenda_items)} accent />
+        <StatTile label="NO_GO" value={num(s.no_go_items)} tone="neg" />
+        <StatTile label={bi('法定人数', 'Quorum')} value={`${num(s.quorum_present)}/${num(s.quorum_required)}`}
+          tone={s.quorum_met ? 'pos' : 'neg'} sub={s.quorum_met ? bi('已满足', 'met') : bi('未满足', 'not met')} />
+        <StatTile label={bi('签署票', 'Signed Votes')} value={`${num(s.signed_votes)}/${num(s.votes)}`} tone="warn" />
+        <StatTile label={bi('拒绝票', 'Reject Votes')} value={num(s.reject_votes)} tone="neg" />
+        <StatTile label={bi('阻断证明', 'Block Attest')} value={num(s.blocking_attestations)} tone="neg" />
+        <StatTile label={bi('券商测试', 'Broker Test')} value={num(s.broker_test_env_allowed)} tone={s.broker_test_env_allowed ? 'neg' : 'pos'} sub={bi('允许', 'allowed')} />
+        <StatTile label={bi('实盘发布', 'Live Release')} value={num(s.live_release_allowed)} tone={s.live_release_allowed ? 'neg' : 'pos'} sub={bi('允许', 'allowed')} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('裁决', 'Verdict')} title={bi('委员会决策', 'Committee Decision')}
+          tone={decisionT} className="flex flex-col">
+          <div className="flex flex-col items-center gap-3 py-2">
+            <div className="text-center">
+              <div className={`tnum text-3xl font-extrabold ${decisionT === 'neg' ? 'text-neg' : decisionT === 'pos' ? 'text-pos' : 'text-warn'}`}>
+                {committee.committee_decision}
+              </div>
+              <div className="mt-1 text-2xs uppercase tracking-wider text-faint">
+                {bi('Phase 3A', 'Phase 3A')} · {committee.phase3a_decision}
+              </div>
+            </div>
+            <div className="flex w-full items-center justify-around gap-2 border-t border-line pt-3">
+              <div className="flex flex-col items-center gap-1">
+                <RadialGauge value={quorumFrac} max={1} size={104} label={bi('法定', 'Quorum')} tone={s.quorum_met ? 'pos' : 'neg'} />
+                <GateDot ok={s.quorum_met} label={s.quorum_met ? bi('已达法定', 'QUORUM MET') : bi('未达法定', 'NO QUORUM')} />
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <RadialGauge value={signedFrac} max={1} size={104} label={bi('签署', 'Signed')} tone="warn" />
+                <span className="text-2xs text-faint">{num(s.signed_votes)} / {num(s.votes)} {bi('已签', 'signed')}</span>
+              </div>
             </div>
           </div>
-          <div className="text-xs text-slate-500 lg:text-right">
-            <div>{bi('\u4f1a\u8bae', 'Meeting')}: {committee.meeting_id}</div>
-            <div>{bi('Phase 3A', 'Phase 3A')}: {committee.phase3a_decision}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={committee.source} error={apiError} />
-      </div>
+        </Panel>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('\u8bae\u7a0b', 'Agenda')} value={committee.summary.agenda_items} />
-        <MetricCard label="NO_GO" value={committee.summary.no_go_items} />
-        <MetricCard label={bi('Quorum', 'Quorum')} value={`${committee.summary.quorum_present}/${committee.summary.quorum_required}`} />
-        <MetricCard label={bi('\u7b7e\u7f72\u7968', 'Signed Votes')} value={committee.summary.signed_votes} />
-        <MetricCard label={bi('\u62d2\u7edd\u7968', 'Reject Votes')} value={committee.summary.reject_votes} />
-        <MetricCard label={bi('\u963b\u65ad\u8bc1\u660e', 'Block Attest')} value={committee.summary.blocking_attestations} />
-        <MetricCard label={bi('\u5238\u5546\u6d4b\u8bd5', 'Broker Test')} value={committee.summary.broker_test_env_allowed} />
-        <MetricCard label={bi('\u5b9e\u76d8\u53d1\u5e03', 'Live Release')} value={committee.summary.live_release_allowed} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <SeatBoard committee={committee} />
-        <PolicyBoard committee={committee} />
-      </div>
-
-      <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-4">
-        <h2 className="mb-3 text-sm uppercase text-red-300">{bi('\u963b\u65ad\u9879', 'Release Blockers')}</h2>
-        <div className="grid gap-2 text-xs md:grid-cols-2 xl:grid-cols-4">
-          {topBlockers.map(blocker => (
-            <div key={blocker.blocker_id} className="rounded border border-red-900/40 bg-slate-950/60 p-3">
-              <div className="font-bold text-red-200">{blocker.blocker_id} / {blocker.source}</div>
-              <div className="mt-1 text-slate-300">{blocker.ref}</div>
-              <div className="mt-1 text-slate-500">{blocker.owner}</div>
-              <div className="mt-2 text-red-100">{blocker.reason}</div>
+        <Panel eyebrow={bi('投票分布', 'Vote Tally')} title={bi('议席投票结果', 'Seat Vote Outcome')}
+          className="flex flex-col">
+          <div className="flex items-center gap-5">
+            <Donut size={132} segments={tally} />
+            <div className="flex flex-col gap-2">
+              {tally.map(t => (
+                <div key={t.label} className="flex items-center justify-between gap-4 text-xs">
+                  <span className="flex items-center gap-2 text-muted">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: `var(--${t.tone})` }} />
+                    {t.label}
+                  </span>
+                  <span className="tnum font-semibold text-ink">{num(t.value)}</span>
+                </div>
+              ))}
+              <div className="mt-1 border-t border-line pt-2 text-2xs text-faint">
+                {bi('弃权', 'Abstain')}: <span className="tnum">{num(s.abstain_votes)}</span>
+              </div>
             </div>
-          ))}
-        </div>
+          </div>
+        </Panel>
+
+        <Panel eyebrow={bi('治理', 'Governance')} title={bi('委员会策略', 'Committee Policy')}
+          right={<GateDot ok={!committee.committee_policy.authorizes_live_trading} label={bi('无实盘授权', 'NO LIVE AUTH')} />}>
+          <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+            {POLICY_KEYS.map(p => {
+              const raw = committee.committee_policy[p.k];
+              const ok = p.invert ? !raw : raw;
+              return (
+                <div key={String(p.k)} className="flex items-center justify-between gap-2 rounded-md border border-line bg-inset/40 px-2.5 py-1.5">
+                  <span className="truncate text-2xs text-muted">{p.label}</span>
+                  <GateDot ok={ok} label={ok ? 'PASS' : 'FAIL'} />
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
       </div>
 
-      <AgendaBoard committee={committee} />
-      <VotesBoard committee={committee} />
-    </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('席位', 'Seats')} title={bi('委员会席位与法定人数', 'Committee Seats & Quorum')}
+          right={<Chip label={bi(`${committee.seats.length} 席`, `${committee.seats.length} seats`)} tone="info" />}>
+          <DataTable columns={seatCols} rows={committee.seats} getKey={x => x.seat_id} dense />
+        </Panel>
+
+        <Panel eyebrow={bi('门禁', 'Gating')} title={bi('必需证明', 'Required Attestations')}
+          right={<Chip label={bi(`${committee.required_attestations.filter(a => a.blocks_release).length} 阻断`, `${committee.required_attestations.filter(a => a.blocks_release).length} blocking`)} tone="neg" />}>
+          <div className="flex flex-col gap-2.5">
+            {committee.required_attestations.map(att => {
+              const ok = statusTone(att.status) === 'pos';
+              return (
+                <div key={att.attestation_id} className="rounded-md border border-line bg-inset/40 p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium text-ink">{att.name}</div>
+                      <div className="text-2xs text-faint">{att.owner_role} · <span className="mono">{att.evidence_ref}</span></div>
+                    </div>
+                    <GateDot ok={ok} />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <StatusChip value={att.status} />
+                    {att.blocks_release && <Chip label={bi('阻断发布', 'BLOCKS RELEASE')} tone="neg" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel eyebrow={bi('议程', 'Agenda')} title={bi('委员会议程 · 晋升请求', 'Committee Agenda · Promotion Requests')}
+        right={<Chip label={bi(`${committee.summary.no_go_items} 项 NO_GO`, `${committee.summary.no_go_items} NO_GO`)} tone="neg" />}>
+        <DataTable columns={agendaCols} rows={committee.agenda} getKey={a => a.agenda_id} dense />
+      </Panel>
+
+      {committee.blockers.length > 0 && (
+        <Panel eyebrow={bi('阻断', 'Blockers')} title={bi('发布阻断项', 'Release Blockers')} tone="neg"
+          right={<Chip label={bi(`${committee.summary.open_blocking_tasks} 个开放任务`, `${committee.summary.open_blocking_tasks} open tasks`)} tone="neg" />}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {committee.blockers.map(b => (
+              <div key={b.blocker_id} className="rounded-lg border border-neg/30 bg-neg/5 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="mono text-2xs font-semibold text-neg">{b.blocker_id}</span>
+                  <Chip label={b.source} tone="neg" />
+                </div>
+                <KeyValue cols={2} items={[
+                  { k: bi('引用', 'Ref'), v: b.ref },
+                  { k: bi('责任人', 'Owner'), v: b.owner },
+                ]} />
+                <p className="mt-2 text-xs text-ink">{b.reason}</p>
+                {b.blocks_release && <div className="mt-2"><GateDot ok={false} label={bi('阻断发布', 'BLOCKS RELEASE')} /></div>}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <Panel eyebrow={bi('投票', 'Votes')} title={bi('投票状态 · 不可变记录', 'Vote State · Immutable Record')}
+        right={<Chip label={bi(`签署 ${committee.summary.signed_votes}/${committee.summary.votes}`, `${committee.summary.signed_votes}/${committee.summary.votes} signed`)} tone="warn" />}>
+        <DataTable columns={voteCols} rows={committee.votes} getKey={v => v.vote_id} dense />
+      </Panel>
+    </PageShell>
   );
 }

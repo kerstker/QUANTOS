@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchEvidenceLedgerSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchEvidenceLedgerSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { EvidenceLedgerEntry, EvidenceLedgerPayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, Chip, KeyValue, type Column,
+} from '@/ui/primitives';
+import { Histogram, Donut } from '@/ui/charts';
+import { num, shortHash, stamp, type Tone } from '@/ui/format';
 
 const fallbackLedger: EvidenceLedgerPayload = {
   source: 'FRONTEND_EVIDENCE_LEDGER_FALLBACK',
@@ -93,211 +98,189 @@ const fallbackLedger: EvidenceLedgerPayload = {
   },
 };
 
-function formatTime(seconds: number) {
-  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
-}
-
-function shortHash(hash: string) {
-  if (hash.length <= 16) {
-    return hash;
-  }
-  return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
-}
-
-function ChainRail({entries}: {entries: EvidenceLedgerEntry[]}) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('哈希链', 'Hash Chain')}</h2>
-      <div className="space-y-3">
-        {entries.map(entry => (
-          <div key={entry.evidence_id} className="grid grid-cols-[2.5rem_1fr] gap-3 text-xs">
-            <div className="flex flex-col items-center">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full border border-cyan-700 bg-cyan-950/40 font-bold text-cyan-300">{entry.sequence}</div>
-              {entry.sequence < entries.length && <div className="h-10 w-px bg-slate-700" />}
-            </div>
-            <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-              <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="font-bold text-slate-100">{entry.source_module}</div>
-                  <div className="mt-1 text-slate-500">{entry.evidence_id} / {entry.artifact_type}</div>
-                </div>
-                <span className={entry.blocks_live_authorization ? 'text-red-300' : 'text-emerald-300'}>{entry.blocks_live_authorization ? 'BLOCKS_LIVE' : 'NON_BLOCKING'}</span>
-              </div>
-              <div className="mt-2 grid gap-1 text-[10px] text-slate-500 md:grid-cols-2">
-                <div>prev: {shortHash(entry.previous_hash)}</div>
-                <div>hash: {shortHash(entry.ledger_hash)}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PolicyBoard({ledger}: {ledger: EvidenceLedgerPayload}) {
-  const policies: Array<[string, boolean]> = [
-    ['APPEND_ONLY', ledger.ledger_policy.append_only],
-    ['PREVIOUS_HASH', ledger.ledger_policy.requires_previous_hash],
-    ['CONTENT_HASH', ledger.ledger_policy.requires_content_hash],
-    ['SOURCE_ENDPOINT', ledger.ledger_policy.requires_source_endpoint],
-    ['READ_ONLY_SOURCE', ledger.ledger_policy.requires_read_only_source],
-    ['IMMUTABLE_ENTRIES', !ledger.ledger_policy.mutable_entries],
-    ['NO_LIVE_AUTHORIZATION', !ledger.ledger_policy.authorizes_live_trading],
-  ];
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('证据策略', 'Ledger Policy')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BlockerBoard({ledger}: {ledger: EvidenceLedgerPayload}) {
-  return (
-    <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-red-300">{bi('授权阻断证据', 'Authorization Blockers')}</h2>
-      <div className="space-y-3 text-xs">
-        {ledger.blockers.map(blocker => (
-          <div key={blocker.evidence_id} className="rounded border border-red-900/50 bg-slate-950/50 p-3">
-            <div className="font-bold text-red-200">{blocker.evidence_id} / {blocker.source_module}</div>
-            <div className="mt-1 text-red-100">{blocker.reason}</div>
-            <div className="mt-2 font-mono text-red-300">{shortHash(blocker.ledger_hash)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+/** The four per-entry verification invariants — labelled bilingually. */
+const VERIFICATION_KEYS: Array<[keyof EvidenceLedgerEntry['verification'], string]> = [
+  ['hash_chain_valid', bi('链', 'CHAIN')],
+  ['content_hash_present', bi('内容', 'HASH')],
+  ['source_read_only', bi('只读', 'R/O')],
+  ['no_live_authorization', bi('无授权', 'NO-LIVE')],
+];
 
 export default function EvidenceLedger() {
-  const [payload, setPayload] = useState<EvidenceLedgerPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<EvidenceLedgerPayload>(
+    s => fetchEvidenceLedgerSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const ledger = usingBackend ? payload! : fallbackLedger;
+  const { summary, ledger_policy, entries, blockers } = ledger;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchEvidenceLedgerSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const artifactBins = useMemo(() => {
+    const counts = entries.reduce<Record<string, number>>((acc, e) => {
+      acc[e.artifact_type] = (acc[e.artifact_type] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label: label.replace(/_/g, ' ').slice(0, 14), count }));
+  }, [entries]);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  const blocking = entries.filter(e => e.blocks_live_authorization).length;
+  const nonBlocking = entries.length - blocking;
+  const composition = [
+    { label: bi('非阻断', 'Non-blocking'), value: nonBlocking, tone: 'pos' as Tone },
+    { label: bi('阻断', 'Blocking'), value: blocking, tone: 'neg' as Tone },
+  ];
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const ledger = usingBackend && payload ? payload : fallbackLedger;
-  const artifactCounts = useMemo(() => ledger.entries.reduce<Record<string, number>>((acc, entry) => {
-    acc[entry.artifact_type] = (acc[entry.artifact_type] ?? 0) + 1;
-    return acc;
-  }, {}), [ledger.entries]);
+  const policies: Array<[React.ReactNode, boolean]> = [
+    [bi('仅追加', 'APPEND_ONLY'), ledger_policy.append_only],
+    [bi('前序哈希', 'PREVIOUS_HASH'), ledger_policy.requires_previous_hash],
+    [bi('内容哈希', 'CONTENT_HASH'), ledger_policy.requires_content_hash],
+    [bi('来源端点', 'SOURCE_ENDPOINT'), ledger_policy.requires_source_endpoint],
+    [bi('只读来源', 'READ_ONLY_SOURCE'), ledger_policy.requires_read_only_source],
+    [bi('不可变条目', 'IMMUTABLE_ENTRIES'), !ledger_policy.mutable_entries],
+    [bi('禁止实盘授权', 'NO_LIVE_AUTHORIZATION'), !ledger_policy.authorizes_live_trading],
+  ];
+
+  const entryCols: Column<EvidenceLedgerEntry>[] = [
+    { key: 'seq', header: '#', align: 'right', mono: true, width: '40px',
+      render: e => <span className="text-accent font-semibold">{e.sequence}</span> },
+    { key: 'evidence', header: bi('证据', 'Evidence'), render: e => (
+      <div className="min-w-0">
+        <div className="font-medium text-ink">{e.evidence_id}</div>
+        <div className="text-2xs text-faint">{e.owner}</div>
+      </div>
+    ) },
+    { key: 'source', header: bi('来源模块', 'Source Module'), render: e => (
+      <div className="min-w-0">
+        <div className="text-ink">{e.source_module}</div>
+        <div className="mono text-2xs text-faint truncate">{e.source_endpoint}</div>
+      </div>
+    ) },
+    { key: 'artifact', header: bi('产物类型', 'Artifact'), render: e => <Chip label={e.artifact_type} tone="info" /> },
+    { key: 'records', header: bi('记录', 'Records'), align: 'right', mono: true, render: e => num(e.record_count) },
+    { key: 'status', header: bi('状态', 'Status'), render: e => <StatusChip value={e.status} /> },
+    { key: 'immut', header: bi('不可变性', 'Immutability'), render: e => (
+      <div className="flex items-center gap-1.5">
+        <GateDot ok={e.read_only} />
+        <span className="text-2xs text-muted">{e.immutability_status.replace(/_/g, ' ')}</span>
+      </div>
+    ) },
+    { key: 'chash', header: bi('内容哈希', 'Content Hash'), mono: true, render: e => (
+      <span className="text-muted">{shortHash(e.content_hash)}</span>
+    ) },
+    { key: 'lhash', header: bi('链哈希', 'Ledger Hash'), mono: true, render: e => (
+      <div className="text-2xs leading-tight">
+        <div className="text-faint">↑ {shortHash(e.previous_hash, 6)}</div>
+        <div className="text-ink">= {shortHash(e.ledger_hash, 6)}</div>
+      </div>
+    ) },
+    { key: 'sealed', header: bi('封存时间', 'Sealed'), mono: true, render: e => (
+      <span className="text-muted">{stamp(e.sealed_at)}</span>
+    ) },
+    { key: 'verify', header: bi('校验', 'Verification'), render: e => (
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        {VERIFICATION_KEYS.map(([k, label]) => (
+          <GateDot key={String(k)} ok={e.verification[k]} label={label} />
+        ))}
+      </div>
+    ) },
+    { key: 'blocks', header: bi('阻断实盘', 'Blocks Live'), align: 'center', render: e => (
+      e.blocks_live_authorization
+        ? <Chip label={bi('阻断', 'BLOCKS')} tone="neg" />
+        : <Chip label={bi('通过', 'CLEAR')} tone="pos" soft={false} />
+    ) },
+  ];
+
+  const blockerCols: Column<EvidenceLedgerPayload['blockers'][number]>[] = [
+    { key: 'id', header: bi('证据', 'Evidence'), render: b => (
+      <span className="font-medium text-ink">{b.evidence_id}</span>
+    ) },
+    { key: 'module', header: bi('来源模块', 'Source Module'), render: b => b.source_module },
+    { key: 'reason', header: bi('阻断原因', 'Reason'), render: b => (
+      <span className="text-muted">{b.reason}</span>
+    ) },
+    { key: 'hash', header: bi('链哈希', 'Ledger Hash'), mono: true, align: 'right',
+      render: b => <span className="text-muted">{shortHash(b.ledger_hash)}</span> },
+  ];
+
+  const chainTone: Tone = summary.hash_chain_valid ? 'pos' : 'neg';
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('不可变证据链', 'Immutable Evidence Ledger')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={ledger.ledger_mode} />
-              <DecisionBadge decision={ledger.summary.live_authorization_allowed ? 'APPROVED' : 'NO_GO'} />
+    <PageShell>
+      <PageHeader title="Evidence Ledger" titleZh="不可变证据链"
+        subtitle={bi('仅追加、哈希链校验的研究证据账本 — 任何条目均不授权实盘交易',
+          'Append-only, hash-chained research evidence — no entry authorizes live trading')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Chip label={ledger.ledger_mode} tone="info" />
+            <Chip label={bi('根哈希', 'root')} tone="muted" />
+            <span className="mono text-xs text-ink">{shortHash(ledger.root_hash, 14)}</span>
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+
+      <KpiStrip cols={7}>
+        <StatTile label={bi('哈希链', 'Hash Chain')}
+          value={summary.hash_chain_valid ? bi('有效', 'VALID') : bi('失效', 'BROKEN')}
+          tone={chainTone}
+          sub={<GateDot ok={summary.hash_chain_valid} label={bi('完整性校验', 'integrity check')} />} />
+        <StatTile label={bi('证据条目', 'Entries')} value={num(summary.entries)} accent />
+        <StatTile label={bi('已封存', 'Sealed')} value={num(summary.sealed_entries)} tone="pos"
+          sub={bi(`共 ${summary.entries} 条`, `of ${summary.entries}`)} />
+        <StatTile label={bi('阻断项', 'Blockers')} value={num(summary.blocking_entries)} tone="neg" />
+        <StatTile label={bi('只读条目', 'Read-only')}
+          value={`${num(summary.read_only_entries)}/${num(summary.entries)}`} tone="info" />
+        <StatTile label={bi('产物类型', 'Artifact Types')} value={num(artifactBins.length)} />
+        <StatTile label={bi('实盘授权', 'Live Auth')}
+          value={summary.live_authorization_allowed ? bi('允许', 'ALLOWED') : bi('禁止', 'DENIED')}
+          tone={summary.live_authorization_allowed ? 'neg' : 'pos'}
+          sub={<GateDot ok={!summary.live_authorization_allowed} label={bi('安全边界', 'safety boundary')} />} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('产物分布', 'Provenance')}
+          title={bi('证据产物类型分布', 'Evidence by Artifact Type')}
+          right={<Chip label={bi(`${entries.length} 条目`, `${entries.length} entries`)} tone="info" />}>
+          <Histogram bins={artifactBins} height={236} tone="info" />
+        </Panel>
+
+        <Panel eyebrow={bi('授权阻断', 'Authorization')} title={bi('阻断 vs 非阻断', 'Blocking Composition')}>
+          <div className="flex items-center gap-4">
+            <Donut segments={composition} size={140} />
+            <div className="flex flex-1 flex-col gap-2">
+              <KeyValue cols={1} items={[
+                { k: <span className="text-pos">{bi('非阻断', 'Non-blocking')}</span>, v: num(nonBlocking) },
+                { k: <span className="text-neg">{bi('阻断实盘', 'Blocking live')}</span>, v: num(blocking) },
+                { k: bi('哈希链', 'Hash chain'), v: <GateDot ok={summary.hash_chain_valid} label={summary.hash_chain_valid ? 'VALID' : 'BROKEN'} /> },
+              ]} />
             </div>
           </div>
-          <div className="text-xs text-slate-500 lg:text-right">
-            <div>{bi('链 ID', 'Chain ID')}: {ledger.chain_id}</div>
-            <div>root_hash: {shortHash(ledger.root_hash)}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={ledger.source} error={apiError} />
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('条目', 'Entries')} value={ledger.summary.entries} />
-        <MetricCard label={bi('已封存', 'Sealed')} value={ledger.summary.sealed_entries} />
-        <MetricCard label={bi('阻断项', 'Blockers')} value={ledger.summary.blocking_entries} />
-        <MetricCard label={bi('链有效', 'Chain Valid')} value={ledger.summary.hash_chain_valid ? 'YES' : 'NO'} />
-        <MetricCard label={bi('只读条目', 'Read-only')} value={`${ledger.summary.read_only_entries}/${ledger.summary.entries}`} />
-        <MetricCard label={bi('产物类型', 'Artifacts')} value={Object.keys(artifactCounts).length} />
-        <MetricCard label={bi('实盘授权', 'Live Auth')} value={ledger.summary.live_authorization_allowed ? 'YES' : 'NO'} />
-        <MetricCard label={bi('根哈希', 'Root Hash')} value={shortHash(ledger.root_hash)} />
-      </div>
+      <Panel eyebrow={bi('账本', 'Ledger')} title={bi('证据链条目', 'Evidence Chain Entries')}
+        bodyClass="overflow-x-auto">
+        <DataTable columns={entryCols} rows={entries} dense getKey={e => e.evidence_id} />
+      </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <ChainRail entries={ledger.entries} />
-        <div className="space-y-4">
-          <BlockerBoard ledger={ledger} />
-          <PolicyBoard ledger={ledger} />
-        </div>
-      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('安全边界', 'Safety Boundary')}
+          title={bi('授权阻断证据', 'Live-Authorization Blockers')} tone={blockers.length ? 'neg' : 'pos'}
+          right={<Chip label={num(blockers.length)} tone={blockers.length ? 'neg' : 'pos'} />}>
+          <DataTable columns={blockerCols} rows={blockers} getKey={b => b.evidence_id}
+            empty={bi('无阻断项', 'No blockers')} />
+        </Panel>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[1160px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">#</th>
-              <th className="p-2 text-left">{bi('证据', 'Evidence')}</th>
-              <th className="p-2 text-left">{bi('来源', 'Source')}</th>
-              <th className="p-2 text-left">{bi('类型', 'Type')}</th>
-              <th className="p-2 text-right">{bi('记录', 'Records')}</th>
-              <th className="p-2 text-left">{bi('状态', 'Status')}</th>
-              <th className="p-2 text-left">{bi('封存时间', 'Sealed')}</th>
-              <th className="p-2 text-left">Previous</th>
-              <th className="p-2 text-left">Ledger Hash</th>
-              <th className="p-2 text-left">{bi('阻断', 'Blocks')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ledger.entries.map(entry => (
-              <tr key={entry.evidence_id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{entry.sequence}</td>
-                <td className="p-2">
-                  <div className="font-bold text-slate-200">{entry.evidence_id}</div>
-                  <div className="text-slate-500">{entry.owner}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-slate-300">{entry.source_module}</div>
-                  <div className="text-slate-500">{entry.source_endpoint}</div>
-                </td>
-                <td className="p-2 text-cyan-300">{entry.artifact_type}</td>
-                <td className="p-2 text-right text-slate-300">{entry.record_count}</td>
-                <td className="p-2 text-emerald-300">{entry.status}</td>
-                <td className="p-2 text-slate-400">{formatTime(entry.sealed_at)}</td>
-                <td className="p-2 font-mono text-slate-500">{shortHash(entry.previous_hash)}</td>
-                <td className="p-2 font-mono text-slate-500">{shortHash(entry.ledger_hash)}</td>
-                <td className={entry.blocks_live_authorization ? 'p-2 text-red-300' : 'p-2 text-emerald-300'}>{entry.blocks_live_authorization ? 'YES' : 'NO'}</td>
-              </tr>
+        <Panel eyebrow={bi('治理策略', 'Governance')} title={bi('账本策略不变量', 'Ledger Policy Invariants')}>
+          <div className="flex flex-col gap-2">
+            {policies.map(([label, ok], i) => (
+              <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/40 px-3 py-2">
+                <span className="text-xs text-ink">{label}</span>
+                <GateDot ok={ok} label={ok ? bi('通过', 'PASS') : bi('未通过', 'FAIL')} />
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </Panel>
       </div>
-    </div>
+    </PageShell>
   );
 }

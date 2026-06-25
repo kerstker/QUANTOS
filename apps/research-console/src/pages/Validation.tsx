@@ -1,95 +1,160 @@
-import React, { useEffect, useState } from 'react';
-import { DecisionBadge, RiskBadge, MetricCard } from '@/components/status-badges';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { fetchValidationSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React from 'react';
+import { fetchValidationSnapshot } from '@/lib/api/research-console-api';
 import { mockValidationReports } from '@/lib/mock-data/research-mocks';
-import { bi, statusLabel } from '@/lib/i18n/bilingual';
-import type { ValidationDashboardPayload } from '@/lib/types/research';
+import { bi } from '@/lib/i18n/bilingual';
+import type { ValidationDashboardPayload, ValidationReport, CalculationLineageItem } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+} from '@/ui/primitives';
+import { RadialGauge, Histogram } from '@/ui/charts';
+import { fixed, signed, shortHash, statusTone, type Tone } from '@/ui/format';
+
+/** The six discriminating leakage/robustness gates surfaced per report. */
+const gateDefs: Array<{ key: string; zh: string; en: string; get: (r: ValidationReport) => boolean }> = [
+  { key: 'leakage', zh: '泄露检查', en: 'Leakage', get: r => r.leakage_pass },
+  { key: 'walk_forward', zh: '滚动样本外', en: 'Walk-Forward', get: r => r.walk_forward_pass },
+  { key: 'multiple_testing', zh: '多重检验', en: 'Multiple Testing', get: r => r.multiple_testing_pass },
+  { key: 'costs', zh: '成本检查', en: 'Costs', get: r => r.costs_pass },
+  { key: 'capacity', zh: '容量检查', en: 'Capacity', get: r => r.capacity_pass },
+  { key: 'decay', zh: '衰减检查', en: 'Decay', get: r => r.decay_pass },
+];
 
 export default function Validation() {
-  const [payload, setPayload] = useState<ValidationDashboardPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ValidationDashboardPayload>(
+    s => fetchValidationSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const reports: ValidationReport[] = usingBackend ? payload!.reports : mockValidationReports;
+  const r: ValidationReport = usingBackend ? payload!.selected_report : mockValidationReports[0];
+  const lineage: CalculationLineageItem[] = usingBackend ? (payload?.lineage ?? []) : [];
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchValidationSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const gates = gateDefs.map(g => ({ ...g, pass: g.get(r) }));
+  const decisionTone: Tone = statusTone(r.decision);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  // Cohort-level decision distribution → labelled histogram.
+  const decisionCounts = reports.reduce<Record<string, number>>((acc, rep) => {
+    acc[rep.decision] = (acc[rep.decision] ?? 0) + 1;
+    return acc;
+  }, {});
+  const decisionBins = Object.entries(decisionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({ label: label.replace(/^REJECTED_/, '✕ '), count }));
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const reports = usingBackend ? payload.reports : mockValidationReports;
-  const r = usingBackend ? payload.selected_report : mockValidationReports[0];
-  const gateLabels: Array<[string, string, boolean]> = [
-    [bi('泄露检查', 'Leakage'), 'leakage', r.leakage_pass],
-    [bi('滚动样本外', 'Walk-Forward'), 'walk-forward', r.walk_forward_pass],
-    [bi('多重检验', 'Multiple Testing'), 'multiple-testing', r.multiple_testing_pass],
-    [bi('成本检查', 'Costs'), 'costs', r.costs_pass],
-    [bi('容量检查', 'Capacity'), 'capacity', r.capacity_pass],
-    [bi('衰减检查', 'Decay'), 'decay', r.decay_pass],
+  const approvedCount = reports.filter(rep => statusTone(rep.decision) === 'pos').length;
+
+  const reportCols: Column<ValidationReport>[] = [
+    { key: 'alpha', header: bi('因子', 'Alpha'), render: rep => (
+      <div className="flex flex-col">
+        <span className="mono font-medium text-ink">{rep.alpha_id}</span>
+        <span className="mono text-2xs text-faint">{shortHash(rep.run_id)}</span>
+      </div>
+    ) },
+    { key: 'decision', header: bi('决策', 'Decision'), render: rep => <StatusChip value={rep.decision} /> },
+    { key: 'gates', header: bi('门禁', 'Gates'), width: '150px', render: rep => (
+      <div className="flex items-center gap-2">
+        <ProgressBar value={rep.gates_passed} max={rep.gates_total} tone={statusTone(rep.decision)} />
+        <span className="tnum w-10 text-right text-muted">{rep.gates_passed}/{rep.gates_total}</span>
+      </div>
+    ) },
+    { key: 'oos_sharpe', header: bi('样本外夏普', 'OOS Sharpe'), align: 'right', mono: true, render: rep => fixed(rep.oos_sharpe) },
+    { key: 'oos_ic', header: bi('样本外 IC', 'OOS IC'), align: 'right', mono: true, render: rep => signed(rep.oos_ic, 3) },
+    { key: 'net_sharpe', header: bi('净夏普', 'Net Sharpe'), align: 'right', mono: true, render: rep => (
+      <span className={rep.net_sharpe >= 0.5 ? 'text-pos' : rep.net_sharpe > 0 ? 'text-warn' : 'text-neg'}>{fixed(rep.net_sharpe)}</span>
+    ) },
+    { key: 'haircut', header: bi('净/毛差', 'Net − OOS'), align: 'right', mono: true, render: rep => (
+      <span className="text-muted">{signed(rep.net_sharpe - rep.oos_sharpe)}</span>
+    ) },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <h1 className="text-lg font-bold text-slate-100">{bi('Alpha 验证', 'Alpha Validation')}</h1>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
-      </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <MetricCard label={bi('决策', 'Decision')} value={statusLabel(r.decision)} />
-        <MetricCard label={bi('门禁', 'Gates')} value={`${r.gates_passed}/${r.gates_total}`} />
-        <MetricCard label={bi('样本外夏普', 'OOS Sharpe')} value={r.oos_sharpe.toFixed(2)} />
-        <MetricCard label={bi('净夏普', 'Net Sharpe')} value={r.net_sharpe.toFixed(2)} />
-      </div>
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-        <h2 className="mb-2 text-sm uppercase text-slate-400">{bi('门禁结果', 'Gate Results')}</h2>
-        <div className="grid gap-2 md:grid-cols-3">
-          {gateLabels.map(([label, key, passed]) => (
-            <div key={key} className="flex justify-between gap-2 rounded bg-slate-800 px-3 py-2 text-xs">
-              <span className="text-slate-300">{label}</span>
-              <RiskBadge passed={passed} />
+    <PageShell>
+      <PageHeader title="Alpha Validation" titleZh="Alpha 验证"
+        subtitle={bi('六道泄露/稳健性门禁的样本外验证快照 — 决策、门禁与衰减证据',
+          'Out-of-sample validation snapshot across six leakage / robustness gates — decision, gates, decay evidence')} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+
+      <KpiStrip cols={6}>
+        <StatTile label={bi('选中决策', 'Selected Decision')} value={<StatusChip value={r.decision} />} />
+        <StatTile label={bi('门禁通过', 'Gates Passed')} value={`${r.gates_passed}/${r.gates_total}`}
+          tone={r.gates_passed === r.gates_total ? 'pos' : 'warn'} />
+        <StatTile label={bi('样本外夏普', 'OOS Sharpe')} value={fixed(r.oos_sharpe)} accent />
+        <StatTile label={bi('样本外 IC', 'OOS IC')} value={signed(r.oos_ic, 3)} tone="info" />
+        <StatTile label={bi('净夏普', 'Net Sharpe')} value={fixed(r.net_sharpe)}
+          tone={r.net_sharpe >= 0.5 ? 'pos' : r.net_sharpe > 0 ? 'warn' : 'neg'} />
+        <StatTile label={bi('队列已批准', 'Cohort Approved')} value={`${approvedCount}/${reports.length}`}
+          sub={bi('队列内通过数', 'approved in cohort')} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('门禁评分', 'Gate Score')} title={bi('通过率', 'Pass Rate')}
+          right={<Chip label={r.alpha_id} tone="info" />}>
+          <div className="flex flex-col items-center gap-3">
+            <RadialGauge value={r.gates_passed} max={r.gates_total} size={156}
+              label={bi('门禁', 'gates')} tone={r.gates_passed === r.gates_total ? 'pos' : undefined} />
+            <Chip label={bi(`决策 · ${r.decision}`, `Decision · ${r.decision}`)} tone={decisionTone} />
+          </div>
+        </Panel>
+
+        <Panel className="xl:col-span-2" eyebrow={bi('稳健性门禁', 'Robustness Gates')}
+          title={bi('六道泄露与衰减检查', 'Six Leakage & Decay Gates')}
+          right={<Chip label={bi(`${gates.filter(g => g.pass).length}/${gates.length} 通过`, `${gates.filter(g => g.pass).length}/${gates.length} pass`)}
+            tone={gates.every(g => g.pass) ? 'pos' : 'warn'} />}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {gates.map(g => (
+              <div key={g.key}
+                className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/40 px-3 py-2.5">
+                <span className="text-xs text-ink">{bi(g.zh, g.en)}</span>
+                <GateDot ok={g.pass} label={g.pass ? bi('通过', 'PASS') : bi('未过', 'FAIL')} />
+              </div>
+            ))}
+          </div>
+          {r.reasons.length > 0 && (
+            <div className="mt-3 rounded-lg border border-neg/30 bg-neg/5 px-3 py-2">
+              <div className="text-2xs uppercase tracking-wide text-neg">{bi('拒绝原因', 'Rejection Reasons')}</div>
+              <ul className="mt-1 flex flex-col gap-1">
+                {r.reasons.map(reason => (
+                  <li key={reason} className="mono text-2xs text-neg/90">• {reason}</li>
+                ))}
+              </ul>
             </div>
-          ))}
-        </div>
-        {r.reasons.length > 0 && (
-          <div className="mt-3 space-y-1 text-xs text-red-300">
-            {r.reasons.map(reason => <div key={reason}>{reason}</div>)}
-          </div>
-        )}
+          )}
+        </Panel>
       </div>
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-        <h2 className="mb-2 text-sm uppercase text-slate-400">{bi('全部报告', 'All Reports')}</h2>
-        {reports.map(rpt => (
-          <div key={rpt.run_id} className="flex flex-wrap items-center gap-3 border-b border-slate-800 py-2 text-xs">
-            <span className="font-mono text-slate-300">{rpt.alpha_id}</span>
-            <DecisionBadge decision={rpt.decision} />
-            <span className="text-slate-500">{bi('夏普', 'Sharpe')}: {rpt.net_sharpe.toFixed(2)}</span>
-          </div>
-        ))}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('队列', 'Cohort')} title={bi('全部验证报告', 'All Validation Reports')}
+          right={<Chip label={bi(`${reports.length} 份`, `${reports.length} reports`)} tone="info" />}>
+          <DataTable columns={reportCols} rows={reports} getKey={rep => rep.run_id} />
+        </Panel>
+
+        <Panel eyebrow={bi('决策分布', 'Decision Mix')} title={bi('队列决策构成', 'Cohort Decision Breakdown')}>
+          <Histogram bins={decisionBins} height={200} tone="accent" />
+        </Panel>
       </div>
-    </div>
+
+      {lineage.length > 0 && (
+        <Panel eyebrow={bi('可复现性', 'Reproducibility')} title={bi('计算血缘', 'Calculation Lineage')}
+          right={<Chip label={bi(`${lineage.length} 步`, `${lineage.length} steps`)} tone="muted" />}>
+          <div className="flex flex-col gap-2.5">
+            {lineage.map(item => (
+              <div key={item.id} className="rounded-lg border border-line bg-inset/30 p-3">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Chip label={item.layer} tone="special" />
+                  <span className="mono text-2xs text-faint">{item.backend}</span>
+                  <span className="mono ml-auto text-2xs text-muted">→ {item.output}</span>
+                </div>
+                <KeyValue cols={1} items={[{ k: bi('公式', 'Formula'), v: item.formula }]} />
+                {item.inputs.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {item.inputs.map(inp => <Chip key={inp} label={inp} tone="muted" />)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+    </PageShell>
   );
 }

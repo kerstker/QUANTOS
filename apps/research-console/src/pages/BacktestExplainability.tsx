@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
+import React, { useEffect, useState } from 'react';
 import { fetchBacktestExplainabilitySnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { BacktestExplainabilityPayload, ChartPoint } from '@/lib/types/research';
+import type { BacktestExplainabilityPayload } from '@/lib/types/research';
+import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, Chip, type Column,
+} from '@/ui/primitives';
+import { AreaChart, UnderwaterChart, BarSeries, Histogram, DivergingBars } from '@/ui/charts';
+import { num, pct, fixed, money, deltaTone, statusTone } from '@/ui/format';
 
 const alphaOptions = ['alpha-1', 'alpha-2', 'alpha-3', 'alpha-4'];
 
@@ -94,135 +99,9 @@ const fallbackBacktest: BacktestExplainabilityPayload = {
   },
 };
 
-function pct(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function compactMoney(value: number) {
-  if (Math.abs(value) >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
-  }
-  return value.toLocaleString();
-}
-
-function linePath(points: ChartPoint[], width: number, height: number, invert = false) {
-  if (points.length === 0) {
-    return '';
-  }
-  const xs = points.map(point => point.x);
-  const ys = points.map(point => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const xRange = maxX - minX || 1;
-  const yRange = maxY - minY || 1;
-  return points.map((point, index) => {
-    const x = ((point.x - minX) / xRange) * width;
-    const normalizedY = (point.y - minY) / yRange;
-    const y = invert ? normalizedY * height : height - normalizedY * height;
-    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(' ');
-}
-
-function CurvePanel({payload}: {payload: BacktestExplainabilityPayload}) {
-  const width = 760;
-  const height = 190;
-  const equityPath = linePath(payload.equity_curve, width, height);
-  const drawdownPath = linePath(payload.drawdown_curve, width, 76, true);
-  const start = payload.equity_curve[0]?.y ?? 0;
-  const end = payload.equity_curve[payload.equity_curve.length - 1]?.y ?? 0;
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('权益 / 回撤曲线', 'Equity / Drawdown Curve')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{compactMoney(start)} -&gt; {compactMoney(end)}</div>
-        </div>
-        <DecisionBadge decision={payload.run.execution_mode} />
-      </div>
-      <div className="overflow-hidden rounded border border-slate-800 bg-slate-950/70 p-3">
-        <svg viewBox={`0 0 ${width} ${height + 86}`} className="h-64 w-full" role="img" aria-label="Backtest equity and drawdown curve">
-          <path d={equityPath} fill="none" stroke="#22d3ee" strokeWidth="3" vectorEffect="non-scaling-stroke" />
-          <line x1="0" y1={height + 10} x2={width} y2={height + 10} stroke="#334155" strokeWidth="1" />
-          <path d={drawdownPath} transform={`translate(0 ${height + 10})`} fill="none" stroke="#f97316" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-function CostBreakdown({payload}: {payload: BacktestExplainabilityPayload}) {
-  const max = Math.max(...payload.cost_breakdown.map(item => item.value), 0.0001);
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('成本拆解', 'Cost Breakdown')}</h2>
-      <div className="space-y-3 text-xs">
-        {payload.cost_breakdown.map(item => (
-          <div key={item.component}>
-            <div className="mb-1 flex justify-between gap-2">
-              <span className="text-slate-300">{item.component}</span>
-              <span className="font-bold text-orange-300">{pct(item.value)}</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-orange-700" style={{width: `${Math.max(5, item.value / max * 100)}%`}} />
-            </div>
-            <div className="mt-1 text-slate-500">{item.method}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DriverBoard({payload}: {payload: BacktestExplainabilityPayload}) {
-  const colors: Record<string, string> = {
-    POSITIVE: 'border-emerald-800 bg-emerald-950/20 text-emerald-300',
-    NEGATIVE: 'border-orange-800 bg-orange-950/20 text-orange-300',
-    NEUTRAL: 'border-slate-700 bg-slate-950/60 text-slate-300',
-  };
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('决策驱动', 'Decision Drivers')}</h2>
-      <div className="grid gap-3 md:grid-cols-2">
-        {payload.decision_drivers.map(driver => (
-          <div key={driver.driver} className={`rounded border p-3 text-xs ${colors[driver.impact] ?? colors.NEUTRAL}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="font-bold text-slate-100">{driver.driver}</div>
-              <span>{driver.impact}</span>
-            </div>
-            <div className="mt-2 text-slate-300">{driver.explanation}</div>
-            <div className="mt-2 text-slate-500">score: {driver.score}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MonthlyReturns({payload}: {payload: BacktestExplainabilityPayload}) {
-  const maxAbs = Math.max(...payload.monthly_returns.map(item => Math.abs(item.return)), 0.001);
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('月度收益', 'Monthly Returns')}</h2>
-      <div className="space-y-2 text-xs">
-        {payload.monthly_returns.map(item => (
-          <div key={item.month} className="grid grid-cols-[4.8rem_1fr_3.5rem] items-center gap-2">
-            <span className="text-slate-400">{item.month}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div
-                className={item.return >= 0 ? 'h-full bg-emerald-700' : 'h-full bg-red-700'}
-                style={{width: `${Math.max(5, Math.abs(item.return) / maxAbs * 100)}%`}}
-              />
-            </div>
-            <span className={item.return >= 0 ? 'text-right text-emerald-300' : 'text-right text-red-300'}>{pct(item.return)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+const driverImpactTone: Record<string, 'pos' | 'neg' | 'muted'> = {
+  POSITIVE: 'pos', NEGATIVE: 'neg', NEUTRAL: 'muted',
+};
 
 export default function BacktestExplainability() {
   const [selectedAlpha, setSelectedAlpha] = useState('alpha-1');
@@ -261,157 +140,202 @@ export default function BacktestExplainability() {
 
   const usingBackend = apiState === 'connected' && payload !== null;
   const report = usingBackend && payload ? payload : fallbackBacktest;
-  const segmentPassRate = report.summary.segments_passed / Math.max(report.summary.segments_total, 1);
-  const policyRows: Array<[string, boolean]> = useMemo(() => [
-    ['EQUITY_CURVE', report.explainability_policy.requires_equity_curve],
-    ['COST_MODEL', report.explainability_policy.requires_cost_model],
-    ['DRAWDOWN_PERIODS', report.explainability_policy.requires_drawdown_periods],
-    ['REGIME_ATTRIBUTION', report.explainability_policy.requires_regime_attribution],
-    ['IMMUTABLE_RESULTS', !report.explainability_policy.mutable_results],
-  ], [report.explainability_policy]);
+  const s = report.summary;
+  const segmentPassRate = s.segments_passed / Math.max(s.segments_total, 1);
+
+  const equityStart = report.equity_curve[0]?.y ?? 0;
+  const equityEnd = report.equity_curve[report.equity_curve.length - 1]?.y ?? 0;
+
+  const policyRows: Array<{ label: string; ok: boolean }> = [
+    { label: bi('权益曲线', 'EQUITY_CURVE'), ok: report.explainability_policy.requires_equity_curve },
+    { label: bi('成本模型', 'COST_MODEL'), ok: report.explainability_policy.requires_cost_model },
+    { label: bi('回撤周期', 'DRAWDOWN_PERIODS'), ok: report.explainability_policy.requires_drawdown_periods },
+    { label: bi('市场状态归因', 'REGIME_ATTRIBUTION'), ok: report.explainability_policy.requires_regime_attribution },
+    { label: bi('结果不可变', 'IMMUTABLE_RESULTS'), ok: !report.explainability_policy.mutable_results },
+  ];
+
+  const alphaSelector = (
+    <label className="flex items-center gap-2 text-2xs uppercase tracking-wide text-faint">
+      <span>{bi('因子', 'Alpha')}</span>
+      <select
+        className="rounded-md border border-line bg-inset px-2 py-1 text-xs text-ink mono"
+        value={selectedAlpha}
+        onChange={event => setSelectedAlpha(event.target.value)}
+      >
+        {alphaOptions.map(option => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+
+  const segmentCols: Column<typeof report.segments[number]>[] = [
+    { key: 'seg', header: bi('分段', 'Segment'), render: r => <span className="font-semibold text-accent mono">{r.segment_id}</span> },
+    { key: 'win', header: bi('区间', 'Window'), align: 'right', mono: true, render: r => `${r.start_day}–${r.end_day}` },
+    { key: 'ret', header: bi('收益', 'Return'), align: 'right', render: r => <span className={r.return >= 0 ? 'text-pos tnum' : 'text-neg tnum'}>{pct(r.return)}</span> },
+    { key: 'shp', header: bi('夏普', 'Sharpe'), align: 'right', mono: true, render: r => <span className={r.sharpe >= 0 ? 'text-ink' : 'text-neg'}>{fixed(r.sharpe)}</span> },
+    { key: 'wr', header: bi('胜率', 'Win Rate'), align: 'right', mono: true, render: r => pct(r.win_rate, 0) },
+    { key: 'vol', header: bi('波动', 'Vol'), align: 'right', mono: true, render: r => pct(r.volatility) },
+  ];
+
+  const drawdownCols: Column<typeof report.drawdown_periods[number]>[] = [
+    { key: 'rank', header: bi('排名', 'Rank'), render: r => <span className="font-semibold text-warn mono">#{r.rank}</span> },
+    { key: 'start', header: bi('开始', 'Start'), align: 'right', mono: true, render: r => num(r.start_day) },
+    { key: 'trough', header: bi('谷底', 'Trough'), align: 'right', mono: true, render: r => num(r.trough_day) },
+    { key: 'rec', header: bi('恢复', 'Recovery'), align: 'right', mono: true, render: r => num(r.recovery_day) },
+    { key: 'depth', header: bi('深度', 'Depth'), align: 'right', render: r => <span className="text-neg tnum">{pct(r.depth)}</span> },
+    { key: 'dur', header: bi('天数', 'Days'), align: 'right', mono: true, render: r => num(r.duration_days) },
+  ];
+
+  const regimeCols: Column<typeof report.regime_attribution[number]>[] = [
+    { key: 'reg', header: bi('市场状态', 'Regime'), render: r => <StatusChip value={r.regime} /> },
+    { key: 'days', header: bi('天数', 'Days'), align: 'right', mono: true, render: r => num(r.days) },
+    { key: 'contrib', header: bi('贡献', 'Contribution'), align: 'right', render: r => <span className={r.contribution >= 0 ? 'text-pos tnum' : 'text-neg tnum'}>{pct(r.contribution)}</span> },
+    { key: 'hit', header: bi('命中率', 'Hit Rate'), align: 'right', mono: true, render: r => pct(r.hit_rate, 0) },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('回测可解释性', 'Backtest Explainability')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={report.explainability_mode} />
-            </div>
+    <PageShell>
+      <PageHeader
+        title="Backtest Explainability" titleZh="回测可解释性"
+        subtitle={bi('确定性离线重放的权益、成本、回撤与决策驱动归因(只读)', 'Deterministic offline-replay equity, cost, drawdown and decision-driver attribution (read-only)')}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {alphaSelector}
+            <Chip label={report.explainability_mode} tone="info" />
+            <Chip label={report.run.execution_mode} tone={statusTone(report.run.execution_mode)} />
           </div>
-          <div className="flex flex-col gap-2 text-xs text-slate-500 lg:items-end">
-            <label className="flex items-center gap-2">
-              <span>{bi('Alpha', 'Alpha')}</span>
-              <select
-                className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200"
-                value={selectedAlpha}
-                onChange={event => setSelectedAlpha(event.target.value)}
-              >
-                {alphaOptions.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
-            <div>{bi('引擎', 'Engine')}: {report.run.engine}</div>
-            <div>{bi('快照', 'Snapshot')}: {report.run.data_snapshot_id}</div>
+        }
+      />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={report.source} error={apiError} />
+
+      <KpiStrip cols={8}>
+        <StatTile label={bi('总收益', 'Gross Return')} value={pct(s.gross_return)} tone={deltaTone(s.gross_return)} />
+        <StatTile label={bi('净收益', 'Net Return')} value={pct(s.net_return)} accent />
+        <StatTile label={bi('夏普', 'Sharpe')} value={fixed(s.gross_sharpe)} tone="pos" />
+        <StatTile label={bi('最大回撤', 'Max DD')} value={pct(s.max_drawdown)} tone="neg" />
+        <StatTile label={bi('胜率', 'Win Rate')} value={pct(s.win_rate, 0)} />
+        <StatTile label={bi('换手率', 'Turnover')} value={pct(s.turnover, 0)} tone="info" />
+        <StatTile label={bi('成本拖累', 'Cost Drag')} value={pct(s.cost_drag, 2)} tone="warn" />
+        <StatTile label={bi('分段通过', 'Segments')} value={`${num(s.segments_passed)}/${num(s.segments_total)}`} sub={pct(segmentPassRate, 0)} tone={segmentPassRate >= 0.8 ? 'pos' : 'warn'} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('权益', 'Equity')} title={bi('权益曲线', 'Equity Curve')}
+          right={<span className="text-2xs text-faint mono">{money(equityStart)} → {money(equityEnd)}</span>}>
+          <AreaChart data={report.equity_curve} height={236} tone="accent" yFormat={v => money(v)} />
+          <div className="mt-3 border-t border-line pt-3">
+            <div className="mb-1.5 text-2xs uppercase tracking-wider text-faint">{bi('回撤(水下)', 'Drawdown (underwater)')}</div>
+            <UnderwaterChart data={report.drawdown_curve.map(p => ({ x: p.x, y: -Math.abs(p.y) }))} height={108} yFormat={v => pct(v)} />
           </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={report.source} error={apiError} />
+        </Panel>
+
+        <Panel eyebrow={bi('因子', 'Alpha')} title={report.alpha.candidate_id}
+          right={<StatusChip value={report.alpha.lifecycle_state} />}>
+          <div className="mb-3 rounded-lg border border-line bg-inset px-3 py-2 text-2xs text-muted mono break-all">
+            {report.alpha.expression}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <StatTile label="IC" value={fixed(report.alpha.ic, 3)} tone={deltaTone(report.alpha.ic)} />
+            <StatTile label="Rank IC" value={fixed(report.alpha.rank_ic, 3)} />
+            <StatTile label="ICIR" value={fixed(report.alpha.icir)} tone="pos" />
+            <StatTile label={bi('衰减半衰期', 'Decay HL')} value={num(report.alpha.decay_half_life)} unit={bi('天', 'd')} />
+            <StatTile label={bi('容量', 'Capacity')} value={money(report.alpha.capacity_estimate)} />
+            <StatTile label={bi('综合分', 'Composite')} value={pct(report.alpha.composite_score, 0)} accent />
+          </div>
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('总收益', 'Gross Return')} value={pct(report.summary.gross_return)} />
-        <MetricCard label={bi('净收益', 'Net Return')} value={pct(report.summary.net_return)} />
-        <MetricCard label={bi('夏普', 'Sharpe')} value={report.summary.gross_sharpe} />
-        <MetricCard label={bi('最大回撤', 'Max DD')} value={pct(report.summary.max_drawdown)} />
-        <MetricCard label={bi('胜率', 'Win Rate')} value={pct(report.summary.win_rate)} />
-        <MetricCard label={bi('成本拖累', 'Cost Drag')} value={pct(report.summary.cost_drag)} />
-        <MetricCard label={bi('分段通过', 'Segments')} value={`${report.summary.segments_passed}/${report.summary.segments_total}`} />
-        <MetricCard label={bi('稳定性', 'Stability')} value={pct(segmentPassRate)} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('月度', 'Monthly')} title={bi('月度收益', 'Monthly Returns')}>
+          <BarSeries
+            data={report.monthly_returns.map(m => m.return)}
+            labels={report.monthly_returns.map(m => m.month)}
+            valueFormat={v => pct(v, 1)}
+            height={200}
+          />
+        </Panel>
+
+        <Panel eyebrow={bi('成本', 'Costs')} title={bi('成本拆解', 'Cost Breakdown')}
+          right={<Chip label={pct(s.cost_drag, 2)} tone="warn" />}>
+          <DivergingBars
+            items={report.cost_breakdown.map(c => ({ label: c.component, value: -c.value }))}
+            valueFormat={v => pct(Math.abs(v), 2)}
+          />
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <CurvePanel payload={report} />
-        <div className="space-y-4">
-          <CostBreakdown payload={report} />
-          <MonthlyReturns payload={report} />
-        </div>
-      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('分布', 'Distribution')} title={bi('交易收益分布', 'Trade Return Distribution')}>
+          <Histogram
+            bins={report.trade_distribution.map(t => ({ label: t.bucket, count: t.count }))}
+            tone="info" height={200}
+          />
+        </Panel>
 
-      <DriverBoard payload={report} />
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('解释策略', 'Explainability Policy')}</h2>
-          <div className="space-y-2 text-xs">
-            {policyRows.map(([label, passed]) => (
-              <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-                <span className="text-slate-300">{label}</span>
-                <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('市场状态归因', 'Regime Attribution')}</h2>
-          <div className="space-y-3 text-xs">
-            {report.regime_attribution.map(item => (
-              <div key={item.regime} className="rounded bg-slate-950/60 p-3">
-                <div className="mb-2 flex justify-between gap-2">
-                  <span className="font-bold text-slate-200">{item.regime}</span>
-                  <span className={item.contribution >= 0 ? 'text-emerald-300' : 'text-red-300'}>{pct(item.contribution)}</span>
+        <Panel className="xl:col-span-2" eyebrow={bi('归因', 'Attribution')} title={bi('决策驱动', 'Decision Drivers')}>
+          <DivergingBars
+            items={report.decision_drivers.map(d => ({
+              label: d.driver,
+              value: d.impact === 'NEGATIVE' ? -Math.abs(d.score) : Math.abs(d.score),
+            }))}
+            valueFormat={v => fixed(Math.abs(v), 4)}
+            height={Math.max(120, report.decision_drivers.length * 30 + 16)}
+          />
+          <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            {report.decision_drivers.map(d => (
+              <div key={d.driver} className="flex items-start justify-between gap-3 text-2xs">
+                <div className="min-w-0">
+                  <span className="font-semibold text-ink">{d.driver}</span>
+                  <p className="mt-0.5 text-faint">{d.explanation}</p>
                 </div>
-                <div className="text-slate-500">{item.days} days / hit rate {pct(item.hit_rate)}</div>
+                <Chip label={d.impact} tone={driverImpactTone[d.impact] ?? 'muted'} />
               </div>
             ))}
           </div>
-        </div>
+        </Panel>
+      </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('假设边界', 'Assumption Boundary')}</h2>
-          <div className="space-y-2 text-xs text-slate-400">
-            {report.assumptions.map(item => <div key={item} className="rounded bg-slate-950/60 px-3 py-2">{item}</div>)}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Panel eyebrow={bi('稳健性', 'Robustness')} title={bi('分段表现', 'Segment Performance')}>
+          <DataTable columns={segmentCols} rows={report.segments} getKey={r => r.segment_id} dense />
+        </Panel>
+        <Panel eyebrow={bi('风险', 'Risk')} title={bi('最大回撤周期', 'Worst Drawdown Periods')}>
+          <DataTable columns={drawdownCols} rows={report.drawdown_periods} getKey={r => `${r.rank}-${r.trough_day}`} dense />
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('市场状态', 'Regime')} title={bi('市场状态归因', 'Regime Attribution')}>
+          <DataTable columns={regimeCols} rows={report.regime_attribution} getKey={r => r.regime} dense />
+        </Panel>
+
+        <Panel eyebrow={bi('治理', 'Governance')} title={bi('解释策略门', 'Explainability Policy Gates')}>
+          <div className="flex flex-col gap-2.5">
+            {policyRows.map(row => (
+              <div key={row.label} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset px-3 py-2">
+                <span className="text-xs text-muted">{row.label}</span>
+                <GateDot ok={row.ok} label={row.ok ? bi('通过', 'PASS') : bi('未满足', 'FAIL')} />
+              </div>
+            ))}
           </div>
-        </div>
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-          <table className="w-full min-w-[760px] text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                <th className="p-2 text-left">{bi('分段', 'Segment')}</th>
-                <th className="p-2 text-right">{bi('区间', 'Window')}</th>
-                <th className="p-2 text-right">{bi('收益', 'Return')}</th>
-                <th className="p-2 text-right">{bi('夏普', 'Sharpe')}</th>
-                <th className="p-2 text-right">{bi('胜率', 'Win Rate')}</th>
-                <th className="p-2 text-right">{bi('波动', 'Vol')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.segments.map(segment => (
-                <tr key={segment.segment_id} className="border-b border-slate-800/50">
-                  <td className="p-2 font-bold text-cyan-300">{segment.segment_id}</td>
-                  <td className="p-2 text-right text-slate-400">{segment.start_day}-{segment.end_day}</td>
-                  <td className={segment.return >= 0 ? 'p-2 text-right text-emerald-300' : 'p-2 text-right text-red-300'}>{pct(segment.return)}</td>
-                  <td className="p-2 text-right text-slate-300">{segment.sharpe}</td>
-                  <td className="p-2 text-right text-slate-300">{pct(segment.win_rate)}</td>
-                  <td className="p-2 text-right text-slate-300">{pct(segment.volatility)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <Panel eyebrow={bi('边界', 'Boundary')} title={bi('回测假设边界', 'Backtest Assumption Boundary')}
+        right={
+          <div className="flex items-center gap-3">
+            <span className="text-2xs text-faint mono">{bi('引擎', 'Engine')}: {report.run.engine}</span>
+            <span className="text-2xs text-faint mono">{bi('快照', 'Snapshot')}: {report.run.data_snapshot_id}</span>
+          </div>
+        }>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          {report.assumptions.map(item => (
+            <div key={item} className="flex items-center gap-2 rounded-lg border border-line bg-inset px-3 py-2 text-2xs text-muted">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-info" />
+              {item}
+            </div>
+          ))}
         </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-          <table className="w-full min-w-[620px] text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                <th className="p-2 text-left">{bi('回撤', 'Drawdown')}</th>
-                <th className="p-2 text-right">{bi('开始', 'Start')}</th>
-                <th className="p-2 text-right">{bi('谷底', 'Trough')}</th>
-                <th className="p-2 text-right">{bi('恢复', 'Recovery')}</th>
-                <th className="p-2 text-right">{bi('深度', 'Depth')}</th>
-                <th className="p-2 text-right">{bi('天数', 'Days')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.drawdown_periods.map(period => (
-                <tr key={`${period.rank}-${period.trough_day}`} className="border-b border-slate-800/50">
-                  <td className="p-2 font-bold text-orange-300">#{period.rank}</td>
-                  <td className="p-2 text-right text-slate-400">{period.start_day}</td>
-                  <td className="p-2 text-right text-slate-400">{period.trough_day}</td>
-                  <td className="p-2 text-right text-slate-400">{period.recovery_day}</td>
-                  <td className="p-2 text-right text-red-300">{pct(period.depth)}</td>
-                  <td className="p-2 text-right text-slate-300">{period.duration_days}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      </Panel>
+    </PageShell>
   );
 }

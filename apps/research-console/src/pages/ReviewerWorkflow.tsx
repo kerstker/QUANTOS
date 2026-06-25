@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchReviewerWorkflowSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React from 'react';
+import { fetchReviewerWorkflowSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ReviewerWorkflowPayload, ReviewerWorkflowTask } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, Chip, GateDot, ProgressBar, KeyValue, type Column,
+} from '@/ui/primitives';
+import { Donut, Histogram } from '@/ui/charts';
+import { num, pct, signed, shortHash, stamp, statusTone, deltaTone, type Tone } from '@/ui/format';
 
 const fallbackWorkflow: ReviewerWorkflowPayload = {
   source: 'FRONTEND_REVIEWER_WORKFLOW_FALLBACK',
@@ -54,259 +59,242 @@ const fallbackWorkflow: ReviewerWorkflowPayload = {
   },
 };
 
-function formatTime(seconds: number) {
-  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
+const severityTone: Record<string, Tone> = {
+  CRITICAL: 'neg', HIGH: 'warn', MEDIUM: 'info', LOW: 'muted',
+};
+
+/** Due window: overdue (<0) is negative, tightening (<sla margin) warns. */
+function dueTone(hours: number): Tone {
+  if (hours < 0) return 'neg';
+  if (hours <= 24) return 'warn';
+  return 'pos';
 }
 
-function stateClass(state: string) {
-  if (state === 'OVERDUE' || state === 'BLOCKED') {
-    return 'text-red-300';
-  }
-  if (state === 'PENDING_REVIEW' || state === 'QUEUED' || state === 'PENDING') {
-    return 'text-amber-300';
-  }
-  return 'text-emerald-300';
-}
-
-function severityClass(severity: string) {
-  if (severity === 'CRITICAL') {
-    return 'border-red-800 bg-red-950/30 text-red-300';
-  }
-  if (severity === 'HIGH') {
-    return 'border-orange-800 bg-orange-950/30 text-orange-300';
-  }
-  return 'border-slate-700 bg-slate-950/60 text-slate-300';
-}
-
-function TaskCard({task}: {task: ReviewerWorkflowTask}) {
-  return (
-    <div className={`rounded border p-3 text-xs ${severityClass(task.severity)}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-bold text-slate-100">{task.task_id} / {task.title}</div>
-          <div className="mt-1 break-words text-slate-500">{task.evidence_ref}</div>
-        </div>
-        <span className={stateClass(task.state)}>{task.state}</span>
-      </div>
-      <div className="mt-3 grid gap-1 text-slate-400 md:grid-cols-2">
-        <div>{bi('复核人', 'Reviewer')}: {task.assigned_reviewer}</div>
-        <div>{bi('角色', 'Role')}: {task.role}</div>
-        <div>{bi('SLA', 'SLA')}: {task.age_hours}/{task.sla_hours}h</div>
-        <div>{bi('阻断', 'Blocking')}: {task.blocks_live_authorization ? 'YES' : 'NO'}</div>
-      </div>
-    </div>
-  );
-}
-
-function WorkloadBoard({workflow}: {workflow: ReviewerWorkflowPayload}) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('复核负载', 'Reviewer Workload')}</h2>
-      <div className="space-y-3 text-xs">
-        {workflow.workload.map(item => (
-          <div key={item.reviewer_id}>
-            <div className="mb-1 flex justify-between gap-2">
-              <span className="text-slate-300">{item.name} / {item.role}</span>
-              <span className="text-cyan-300">{Math.round(item.utilization * 100)}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-cyan-700" style={{width: `${Math.min(100, Math.round(item.utilization * 100))}%`}} />
-            </div>
-            <div className="mt-1 text-slate-500">{item.open_tasks}/{item.capacity} open / blocking {item.required_open_blocking}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function GateBoard({workflow}: {workflow: ReviewerWorkflowPayload}) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('审批门禁', 'Approval Gates')}</h2>
-      <div className="space-y-3 text-xs">
-        {workflow.approval_gates.map(gate => (
-          <div key={gate.gate_id} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="font-bold text-slate-200">{gate.name}</div>
-                <div className="mt-1 text-slate-500">{gate.gate_id}</div>
-              </div>
-              <span className={stateClass(gate.status)}>{gate.status}</span>
-            </div>
-            <div className="mt-2 text-slate-400">{bi('负责人角色', 'Owner role')}: {gate.owner_role}</div>
-            <div className="mt-1 break-words text-slate-500">{gate.required_tasks.join(', ')}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PolicyBoard({workflow}: {workflow: ReviewerWorkflowPayload}) {
-  const policies: Array<[string, boolean]> = [
-    ['READ_ONLY', workflow.workflow_policy.read_only],
-    ['INDEPENDENT_REVIEWER', workflow.workflow_policy.requires_independent_reviewer],
-    ['BLOCKING_TASK_CLOSURE', workflow.workflow_policy.requires_blocking_task_closure],
-    ['PHASE3A_GO_REQUIRED', workflow.workflow_policy.requires_phase3a_go],
-    ['SIGNED_ATTESTATION', workflow.workflow_policy.requires_signed_attestation],
-    ['IMMUTABLE_TASKS', !workflow.workflow_policy.mutable_tasks],
-    ['NO_LIVE_AUTHORIZATION', !workflow.workflow_policy.authorizes_live_trading],
-  ];
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('工作流策略', 'Workflow Policy')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function utilTone(u: number): Tone {
+  if (u >= 0.85) return 'neg';
+  if (u >= 0.6) return 'warn';
+  return 'accent';
 }
 
 export default function ReviewerWorkflow() {
-  const [payload, setPayload] = useState<ReviewerWorkflowPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ReviewerWorkflowPayload>(
+    s => fetchReviewerWorkflowSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const wf = usingBackend ? payload! : fallbackWorkflow;
+  const sum = wf.summary;
+  const liveOk = sum.live_authorization_allowed;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchReviewerWorkflowSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  // Severity distribution histogram (deterministic order, only present buckets).
+  const sevOrder = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+  const sevCounts = sevOrder
+    .map(s => ({ label: s, count: wf.tasks.filter(t => t.severity === s).length }))
+    .filter(b => b.count > 0);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  // Gate status composition donut.
+  const gateStatuses = Array.from(new Set(wf.approval_gates.map(g => g.status)));
+  const gateSegments = gateStatuses.map(st => ({
+    label: st,
+    value: wf.approval_gates.filter(g => g.status === st).length,
+    tone: statusTone(st),
+  }));
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const workflow = usingBackend && payload ? payload : fallbackWorkflow;
-  const blockingTasks = useMemo(() => workflow.tasks.filter(task => task.blocks_live_authorization), [workflow.tasks]);
+  const taskCols: Column<ReviewerWorkflowTask>[] = [
+    { key: 'task', header: bi('任务', 'Task'), render: t => (
+      <div className="min-w-0">
+        <div className="mono text-2xs text-faint">{t.task_id}</div>
+        <div className="truncate font-medium text-ink">{t.title}</div>
+      </div>
+    ) },
+    { key: 'source', header: bi('来源 / 证据', 'Source / Evidence'), render: t => (
+      <div className="min-w-0">
+        <Chip label={t.source_area} tone="info" />
+        <div className="mt-0.5 mono truncate text-2xs text-faint">{t.evidence_ref}</div>
+      </div>
+    ) },
+    { key: 'reviewer', header: bi('复核人', 'Reviewer'), render: t => (
+      <div className="min-w-0">
+        <div className="truncate text-ink">{t.assigned_reviewer}</div>
+        <div className="truncate text-2xs text-muted">{t.role}</div>
+      </div>
+    ) },
+    { key: 'sev', header: bi('严重度', 'Severity'), render: t => <Chip label={t.severity} tone={severityTone[t.severity] ?? 'muted'} /> },
+    { key: 'gate', header: bi('门类', 'Gate'), render: t => <StatusChip value={t.gate_type} /> },
+    { key: 'state', header: bi('状态', 'State'), render: t => <StatusChip value={t.state} /> },
+    { key: 'sla', header: bi('SLA', 'SLA'), align: 'right', width: '150px', render: t => (
+      <div className="flex items-center justify-end gap-2">
+        <span className="tnum text-2xs text-muted">{num(t.age_hours)}/{num(t.sla_hours)}h</span>
+        <ProgressBar value={t.age_hours} max={t.sla_hours} tone={t.age_hours >= t.sla_hours ? 'neg' : 'accent'} />
+      </div>
+    ) },
+    { key: 'due', header: bi('到期', 'Due'), align: 'right', render: t => (
+      <span className="tnum font-semibold" style={{ color: `var(--${dueTone(t.due_in_hours)})` }}>
+        {signed(t.due_in_hours, 0)}h
+      </span>
+    ) },
+    { key: 'signoff', header: bi('独立签核', 'Signoff'), align: 'center', render: t => <GateDot ok={t.requires_independent_signoff} /> },
+    { key: 'blocks', header: bi('阻断实盘', 'Blocks Live'), align: 'center', render: t => (
+      <div className="flex items-center justify-center gap-1.5">
+        <GateDot ok={!t.blocks_live_authorization} />
+        <span className="text-2xs text-muted">{t.blocks_live_authorization ? bi('阻断', 'BLOCK') : bi('放行', 'CLEAR')}</span>
+      </div>
+    ) },
+    { key: 'created', header: bi('创建', 'Created'), align: 'right', mono: true, render: t => stamp(t.created_at) },
+    { key: 'hash', header: 'Hash', mono: true, render: t => shortHash(t.task_hash) },
+  ];
+
+  const policyRows: Array<[string, boolean]> = [
+    ['READ_ONLY', wf.workflow_policy.read_only],
+    ['INDEPENDENT_REVIEWER', wf.workflow_policy.requires_independent_reviewer],
+    ['BLOCKING_TASK_CLOSURE', wf.workflow_policy.requires_blocking_task_closure],
+    ['PHASE3A_GO_REQUIRED', wf.workflow_policy.requires_phase3a_go],
+    ['SIGNED_ATTESTATION', wf.workflow_policy.requires_signed_attestation],
+    ['IMMUTABLE_TASKS', !wf.workflow_policy.mutable_tasks],
+    ['NO_LIVE_AUTHORIZATION', !wf.workflow_policy.authorizes_live_trading],
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('复核工作流', 'Reviewer Workflow')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={workflow.workflow_mode} />
-              <DecisionBadge decision={workflow.summary.live_authorization_allowed ? 'APPROVED' : 'NO_GO'} />
-            </div>
+    <PageShell>
+      <PageHeader title="Reviewer Workflow" titleZh="复核工作流"
+        subtitle={bi('独立复核任务、审批门禁与负载——只读;阻断任务未清零前实盘授权不可达',
+          'Independent reviewer tasks, approval gates & workload — read-only; live authorization unreachable until blocking tasks clear')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Chip label={`Phase 3A · ${sum.phase3a_decision}`} tone={statusTone(sum.phase3a_decision)} />
+            <Chip label={liveOk ? bi('实盘授权 可', 'LIVE AUTH OK') : bi('实盘授权 受阻', 'LIVE AUTH BLOCKED')}
+              tone={liveOk ? 'pos' : 'neg'} soft={false} />
           </div>
-          <div className="text-xs text-slate-500 lg:text-right">
-            <div>{bi('工作流', 'Workflow')}: {workflow.workflow_id}</div>
-            <div>{bi('Phase 3A', 'Phase 3A')}: {workflow.summary.phase3a_decision}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={workflow.source} error={apiError} />
-      </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={wf.source} error={error} />
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('任务', 'Tasks')} value={workflow.summary.tasks} />
-        <MetricCard label={bi('阻断任务', 'Blocking')} value={workflow.summary.blocking_tasks} />
-        <MetricCard label={bi('逾期', 'Overdue')} value={workflow.summary.overdue_tasks} />
-        <MetricCard label={bi('复核人', 'Reviewers')} value={workflow.summary.reviewers} />
-        <MetricCard label={bi('门禁', 'Gates')} value={workflow.summary.approval_gates} />
-        <MetricCard label={bi('阻断门禁', 'Blocked')} value={workflow.summary.blocked_gates} />
-        <MetricCard label={bi('独立验证', 'Validation')} value={workflow.summary.independent_validation_complete ? 'DONE' : 'OPEN'} />
-        <MetricCard label={bi('实盘授权', 'Live Auth')} value={workflow.summary.live_authorization_allowed ? 'YES' : 'NO'} />
-      </div>
+      <KpiStrip cols={8}>
+        <StatTile label={bi('任务', 'Tasks')} value={num(sum.tasks)} accent />
+        <StatTile label={bi('阻断任务', 'Blocking')} value={num(sum.blocking_tasks)} tone={sum.blocking_tasks > 0 ? 'neg' : 'pos'} />
+        <StatTile label={bi('逾期', 'Overdue')} value={num(sum.overdue_tasks)} tone={sum.overdue_tasks > 0 ? 'warn' : 'pos'} />
+        <StatTile label={bi('复核人', 'Reviewers')} value={num(sum.reviewers)} />
+        <StatTile label={bi('门禁', 'Gates')} value={num(sum.approval_gates)} tone="info" />
+        <StatTile label={bi('阻断门禁', 'Blocked Gates')} value={num(sum.blocked_gates)} tone={sum.blocked_gates > 0 ? 'neg' : 'pos'} />
+        <StatTile label={bi('独立验证', 'Indep. Valid.')} value={sum.independent_validation_complete ? bi('完成', 'DONE') : bi('未完成', 'OPEN')}
+          tone={sum.independent_validation_complete ? 'pos' : 'warn'} />
+        <StatTile label={bi('实盘授权', 'Live Auth')} value={liveOk ? bi('允许', 'YES') : bi('拒绝', 'NO')}
+          tone={liveOk ? 'pos' : 'neg'} />
+      </KpiStrip>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('阻断任务', 'Blocking Tasks')}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {blockingTasks.map(task => <TaskCard key={task.task_id} task={task} />)}
-          </div>
-        </div>
-        <div className="space-y-4">
-          <WorkloadBoard workflow={workflow} />
-          <GateBoard workflow={workflow} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <PolicyBoard workflow={workflow} />
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('证据链接', 'Evidence Links')}</h2>
-          <div className="grid gap-3 md:grid-cols-3">
-            {workflow.evidence_links.map(link => (
-              <div key={link.source} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-                <div className="font-bold text-slate-200">{link.source}</div>
-                <div className="mt-2 break-words text-slate-500">{link.ref}</div>
-                <div className="mt-2 text-cyan-300">{link.records} records / {link.blocking} blocking</div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('容量', 'Capacity')} title={bi('复核负载', 'Reviewer Workload')}
+          right={<Chip label={bi(`${wf.workload.length} 复核人`, `${wf.workload.length} reviewers`)} tone="info" />}>
+          <div className="flex flex-col gap-3.5">
+            {wf.workload.map(w => (
+              <div key={w.reviewer_id} className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-xs font-medium text-ink">{w.name}</span>
+                    <span className="truncate text-2xs text-muted">{w.role}</span>
+                    {w.required && <Chip label={bi('必需', 'REQUIRED')} tone="special" />}
+                  </div>
+                  <span className="tnum shrink-0 text-xs font-semibold" style={{ color: `var(--${utilTone(w.utilization)})` }}>
+                    {pct(w.utilization, 0)}
+                  </span>
+                </div>
+                <ProgressBar value={w.utilization} tone={utilTone(w.utilization)} height={8} />
+                <div className="flex items-center justify-between text-2xs text-faint">
+                  <span className="tnum">{num(w.open_tasks)}/{num(w.capacity)} {bi('开放', 'open')}</span>
+                  <span className="tnum">{bi('开放阻断', 'open blocking')}: <span className={w.required_open_blocking > 0 ? 'text-neg' : 'text-pos'}>{num(w.required_open_blocking)}</span></span>
+                </div>
               </div>
             ))}
           </div>
+        </Panel>
+
+        <div className="flex flex-col gap-4">
+          <Panel eyebrow={bi('门禁构成', 'Gates')} title={bi('门禁状态分布', 'Gate Status Mix')}>
+            <div className="flex items-center justify-center gap-6">
+              <Donut size={132} segments={gateSegments} />
+              <div className="flex flex-col gap-1.5 text-2xs">
+                {gateSegments.map(s => (
+                  <div key={s.label} className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: `var(--${s.tone})` }} />
+                    <span className="text-muted">{s.label}</span>
+                    <span className="tnum ml-auto text-ink">{s.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Panel>
+          <Panel eyebrow={bi('分布', 'Distribution')} title={bi('任务严重度', 'Task Severity')}>
+            <Histogram height={132} tone="warn" bins={sevCounts} />
+          </Panel>
         </div>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[1160px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('任务', 'Task')}</th>
-              <th className="p-2 text-left">{bi('来源', 'Source')}</th>
-              <th className="p-2 text-left">{bi('复核人', 'Reviewer')}</th>
-              <th className="p-2 text-left">{bi('严重度', 'Severity')}</th>
-              <th className="p-2 text-left">{bi('状态', 'State')}</th>
-              <th className="p-2 text-right">Age</th>
-              <th className="p-2 text-right">SLA</th>
-              <th className="p-2 text-left">{bi('创建', 'Created')}</th>
-              <th className="p-2 text-left">Hash</th>
-              <th className="p-2 text-left">{bi('阻断', 'Blocks')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {workflow.tasks.map(task => (
-              <tr key={task.task_id} className="border-b border-slate-800/50">
-                <td className="p-2">
-                  <div className="font-bold text-slate-200">{task.task_id}</div>
-                  <div className="text-slate-500">{task.title}</div>
-                </td>
-                <td className="p-2">
-                  <div className="text-cyan-300">{task.source_area}</div>
-                  <div className="break-words text-slate-500">{task.evidence_ref}</div>
-                </td>
-                <td className="p-2 text-slate-300">{task.assigned_reviewer}</td>
-                <td className="p-2 text-orange-300">{task.severity}</td>
-                <td className={`p-2 ${stateClass(task.state)}`}>{task.state}</td>
-                <td className="p-2 text-right text-slate-300">{task.age_hours}h</td>
-                <td className="p-2 text-right text-slate-300">{task.sla_hours}h</td>
-                <td className="p-2 text-slate-400">{formatTime(task.created_at)}</td>
-                <td className="p-2 font-mono text-slate-500">{task.task_hash}</td>
-                <td className={task.blocks_live_authorization ? 'p-2 text-red-300' : 'p-2 text-emerald-300'}>{task.blocks_live_authorization ? 'YES' : 'NO'}</td>
-              </tr>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('审批', 'Approval')} title={bi('审批门禁', 'Approval Gates')}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {wf.approval_gates.map(g => (
+              <div key={g.gate_id} className="flex flex-col gap-2 rounded-xl border border-line bg-inset/40 p-3"
+                style={{ borderColor: `color-mix(in srgb, var(--${statusTone(g.status)}) 35%, var(--line))` }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-semibold text-ink">{g.name}</div>
+                    <div className="mono mt-0.5 truncate text-2xs text-faint">{g.gate_id}</div>
+                  </div>
+                  <StatusChip value={g.status} />
+                </div>
+                <div className="flex items-center gap-2 text-2xs text-muted">
+                  <GateDot ok={statusTone(g.status) === 'pos'} />
+                  <span>{bi('负责角色', 'Owner')}: {g.owner_role}</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {g.required_tasks.map(rt => <Chip key={rt} label={rt} tone="muted" />)}
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </Panel>
+
+        <Panel eyebrow={bi('不可变约束', 'Invariants')} title={bi('工作流策略', 'Workflow Policy')}>
+          <div className="flex flex-col gap-2">
+            {policyRows.map(([label, ok]) => (
+              <div key={label} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/30 px-3 py-2">
+                <span className="text-2xs font-medium text-muted">{label}</span>
+                <div className="flex items-center gap-2">
+                  <GateDot ok={ok} />
+                  <span className="tnum text-2xs font-semibold" style={{ color: `var(--${ok ? 'pos' : 'neg'})` }}>
+                    {ok ? 'PASS' : 'FAIL'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
       </div>
-    </div>
+
+      <Panel eyebrow={bi('复核队列', 'Review Queue')} title={bi('复核任务', 'Reviewer Tasks')}
+        right={
+          <div className="flex items-center gap-2">
+            <Chip label={bi(`${sum.blocking_tasks} 阻断`, `${sum.blocking_tasks} blocking`)} tone={sum.blocking_tasks > 0 ? 'neg' : 'pos'} />
+            <Chip label={bi(`${sum.overdue_tasks} 逾期`, `${sum.overdue_tasks} overdue`)} tone={sum.overdue_tasks > 0 ? 'warn' : 'muted'} />
+          </div>
+        }>
+        <DataTable columns={taskCols} rows={wf.tasks} getKey={t => t.task_id} dense />
+      </Panel>
+
+      <Panel eyebrow={bi('证据来源', 'Evidence')} title={bi('证据链接', 'Evidence Links')}>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {wf.evidence_links.map(link => (
+            <div key={link.source} className="flex flex-col gap-2 rounded-xl border border-line bg-inset/40 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-ink">{link.source}</span>
+                <GateDot ok={link.blocking === 0} />
+              </div>
+              <div className="mono truncate text-2xs text-faint">{link.ref}</div>
+              <KeyValue cols={2} items={[
+                { k: bi('记录', 'Records'), v: num(link.records) },
+                { k: bi('阻断', 'Blocking'), v: <span style={{ color: `var(--${deltaTone(-link.blocking)})` }}>{num(link.blocking)}</span> },
+              ]} />
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </PageShell>
   );
 }

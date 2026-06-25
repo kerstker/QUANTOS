@@ -1,18 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { fetchPortfolioSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchPortfolioSnapshot } from '@/lib/api/research-console-api';
 import { mockCalculationLineage, mockPortfolioSims } from '@/lib/mock-data/research-mocks';
-import { bi, statusLabel } from '@/lib/i18n/bilingual';
+import { bi } from '@/lib/i18n/bilingual';
 import type { CalculationLineageItem, PortfolioDashboardPayload, PortfolioSimulation, PortfolioWeights } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, Chip, ProgressBar, KeyValue, type Column,
+} from '@/ui/primitives';
+import { AreaChart, UnderwaterChart, Donut, DivergingBars } from '@/ui/charts';
+import { num, pct, pctPoints, fixed, signed, money, shortHash, statusTone, type Tone } from '@/ui/format';
 
-const metricLabels: Record<string, string> = {
-  sharpe: bi('夏普', 'Sharpe'),
-  total_return: bi('总收益', 'Total return'),
-  max_drawdown: bi('最大回撤', 'Max drawdown'),
-  volatility: bi('波动率', 'Volatility'),
-};
-
+/* ---------- mock fallback (preserved from the original data wiring) -------- */
 const fallbackWeights: PortfolioWeights = {
   weights_id: 'weights-mock-001',
   weights: { 'alpha-1': 0.25, 'alpha-2': 0.25, 'alpha-3': 0.25, 'alpha-4': 0.25 },
@@ -21,7 +20,20 @@ const fallbackWeights: PortfolioWeights = {
   expected_ic: 0.035,
 };
 
-function equityReturns(simulation: PortfolioSimulation) {
+const metricLabels: Record<string, string> = {
+  sharpe: bi('夏普', 'Sharpe'),
+  total_return: bi('总收益', 'Total Return'),
+  max_drawdown: bi('最大回撤', 'Max Drawdown'),
+  volatility: bi('波动率', 'Volatility'),
+  sortino: bi('索提诺', 'Sortino'),
+  calmar: bi('卡玛', 'Calmar'),
+  turnover: bi('换手率', 'Turnover'),
+};
+
+const donutTones: Tone[] = ['accent', 'info', 'warn', 'special', 'pos', 'neg', 'muted'];
+
+/* ---------- derivations (deterministic; no Math.random / Date.now) --------- */
+function equityReturns(simulation: PortfolioSimulation): number[] {
   return simulation.equity_curve.slice(1).map((point, index) => {
     const previous = simulation.equity_curve[index].equity;
     return previous > 0 ? (point.equity - previous) / previous : 0;
@@ -35,353 +47,242 @@ function drawdownCurve(simulation: PortfolioSimulation) {
     peak = Math.max(peak, point.equity);
     const drawdown = peak > 0 ? (peak - point.equity) / peak : 0;
     worst = Math.max(worst, drawdown);
-    return {day: point.day, drawdown, worst};
+    return { day: point.day, drawdown, worst };
   });
 }
 
-function normalizedWeightEntries(weights: PortfolioWeights) {
-  const gross = Math.max(weights.gross_exposure, Object.values(weights.weights).reduce((sum, weight) => sum + Math.abs(weight), 0), 0.0001);
-  return Object.entries(weights.weights).map(([alphaId, weight], index) => ({
-    alphaId,
-    weight,
-    index,
-    grossShare: Math.abs(weight) / gross,
-  }));
-}
-
-function hashMultiplier(alphaId: string) {
+/** Hash-stable factor so the proxy fallbacks stay deterministic (no RNG). */
+function hashMultiplier(alphaId: string): number {
   const code = alphaId.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
   return 0.85 + (code % 9) * 0.045;
 }
 
-function riskContribution(weights: PortfolioWeights) {
+function normalizedWeightEntries(weights: PortfolioWeights) {
+  const gross = Math.max(
+    weights.gross_exposure,
+    Object.values(weights.weights).reduce((sum, weight) => sum + Math.abs(weight), 0),
+    0.0001,
+  );
+  return Object.entries(weights.weights).map(([alphaId, weight], index) => ({
+    alphaId, weight, index, grossShare: Math.abs(weight) / gross,
+  }));
+}
+
+function riskContributionProxy(weights: PortfolioWeights) {
   const raw = normalizedWeightEntries(weights).map(entry => ({
     ...entry,
     rawRisk: entry.grossShare * (0.9 + entry.index * 0.08) * hashMultiplier(entry.alphaId),
   }));
   const total = raw.reduce((sum, entry) => sum + entry.rawRisk, 0) || 1;
   return raw.map(entry => ({
-    ...entry,
+    alpha_id: entry.alphaId,
+    weight: entry.weight,
+    annualized_volatility: 0,
     contribution: entry.rawRisk / total,
   }));
 }
 
-function returnAttribution(weights: PortfolioWeights, totalReturn: number) {
+function returnAttributionProxy(weights: PortfolioWeights, totalReturn: number) {
   const raw = normalizedWeightEntries(weights).map(entry => ({
     ...entry,
     rawReturn: Math.max(0.01, entry.grossShare * hashMultiplier(entry.alphaId)),
   }));
   const total = raw.reduce((sum, entry) => sum + entry.rawReturn, 0) || 1;
   return raw.map(entry => ({
-    ...entry,
-    contributionReturn: totalReturn * (entry.rawReturn / total),
-  }));
-}
-
-function formatPct(value: number, digits = 1) {
-  return `${(value * 100).toFixed(digits)}%`;
-}
-
-function formatCny(value: number) {
-  return `CNY ${(value / 1_000_000).toFixed(1)}M`;
-}
-
-function EquityCurvePanel({simulation}: {simulation: PortfolioSimulation}) {
-  const width = 720;
-  const height = 180;
-  const pad = 20;
-  const minEquity = Math.min(...simulation.equity_curve.map(point => point.equity));
-  const maxEquity = Math.max(...simulation.equity_curve.map(point => point.equity));
-  const span = Math.max(maxEquity - minEquity, 1);
-  const maxDay = Math.max(...simulation.equity_curve.map(point => point.day), 1);
-  const path = simulation.equity_curve.map(point => {
-    const x = pad + (point.day / maxDay) * (width - pad * 2);
-    const y = height - pad - ((point.equity - minEquity) / span) * (height - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const latest = simulation.equity_curve[simulation.equity_curve.length - 1]?.equity ?? 0;
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('组合权益曲线', 'Portfolio Equity Curve')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{bi('来自后端组合模拟快照，非实盘账户权益。', 'From backend portfolio simulation snapshot, not live account equity.')}</div>
-        </div>
-        <div className="text-xs text-cyan-300">{formatCny(latest)}</div>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
-        {[0, 1, 2, 3].map(index => (
-          <line key={index} x1={pad} x2={width - pad} y1={pad + index * 44} y2={pad + index * 44} stroke="#1e293b" />
-        ))}
-        <polyline points={path} fill="none" stroke="#10b981" strokeWidth="3" />
-      </svg>
-    </div>
-  );
-}
-
-function DrawdownPanel({
-  simulation,
-  drawdownPayload,
-}: {
-  simulation: PortfolioSimulation;
-  drawdownPayload?: PortfolioDashboardPayload['drawdown_curve'];
-}) {
-  const curve = drawdownPayload ?? drawdownCurve(simulation);
-  const worst = Math.max(...curve.map(point => point.drawdown), 0.001);
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('回撤剖面', 'Drawdown Profile')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{bi('显示模拟期内从峰值回落的路径。', 'Shows peak-to-trough path during the simulation window.')}</div>
-        </div>
-        <div className="text-xs font-bold text-red-300">{formatPct(worst, 2)}</div>
-      </div>
-      <div className="flex h-32 items-end gap-px">
-        {curve.map(point => (
-          <div
-            key={point.day}
-            className="flex-1 bg-red-700/70"
-            style={{height: `${Math.max(2, (point.drawdown / worst) * 100)}%`}}
-            title={`${point.day}: ${formatPct(point.drawdown, 2)}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RiskContributionPanel({
-  weights,
-  contributions,
-}: {
-  weights: PortfolioWeights;
-  contributions?: PortfolioDashboardPayload['risk_contributions'];
-}) {
-  const contributionRows = contributions ?? riskContribution(weights).map(entry => ({
     alpha_id: entry.alphaId,
     weight: entry.weight,
-    annualized_volatility: 0,
-    contribution: entry.contribution,
+    alpha_total_return: totalReturn * (entry.rawReturn / total),
+    contribution_return: totalReturn * (entry.rawReturn / total),
   }));
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3">
-        <h2 className="text-sm uppercase text-slate-400">{bi('风险贡献代理', 'Risk Contribution Proxy')}</h2>
-        <div className="mt-1 text-xs text-slate-500">{bi('由组合权重与研究侧风险因子派生，用于排查集中风险。', 'Derived from weights and research-side risk factors to triage concentration risk.')}</div>
-      </div>
-      <div className="space-y-3 text-xs">
-        {contributionRows.map(entry => (
-          <div key={entry.alpha_id} className="grid grid-cols-[5rem_1fr_4rem] items-center gap-2">
-            <span className="text-cyan-300">{entry.alpha_id}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-red-700" style={{width: formatPct(entry.contribution, 1)}} />
-            </div>
-            <span className="text-right text-slate-300">{formatPct(entry.contribution, 1)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReturnAttributionPanel({
-  weights,
-  totalReturn,
-  attribution,
-}: {
-  weights: PortfolioWeights;
-  totalReturn: number;
-  attribution?: PortfolioDashboardPayload['return_attribution'];
-}) {
-  const attributionRows = attribution ?? returnAttribution(weights, totalReturn).map(entry => ({
-    alpha_id: entry.alphaId,
-    weight: entry.weight,
-    alpha_total_return: entry.contributionReturn,
-    contribution_return: entry.contributionReturn,
-  }));
-  const maxAbs = Math.max(...attributionRows.map(entry => Math.abs(entry.contribution_return)), 1);
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3">
-        <h2 className="text-sm uppercase text-slate-400">{bi('收益归因代理', 'Return Attribution Proxy')}</h2>
-        <div className="mt-1 text-xs text-slate-500">{bi('将模拟总收益按研究权重拆分，用来定位主要贡献来源。', 'Splits simulated total return by research weights to locate main contributors.')}</div>
-      </div>
-      <div className="space-y-3 text-xs">
-        {attributionRows.map(entry => (
-          <div key={entry.alpha_id} className="grid grid-cols-[5rem_1fr_4rem] items-center gap-2">
-            <span className="text-cyan-300">{entry.alpha_id}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-emerald-700" style={{width: `${Math.max(3, Math.abs(entry.contribution_return) / maxAbs * 100)}%`}} />
-            </div>
-            <span className="text-right text-slate-300">{entry.contribution_return.toFixed(2)}%</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WeightsPanel({weights}: {weights: PortfolioWeights}) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('组合权重', 'Portfolio Weights')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{weights.weights_id}</div>
-        </div>
-        <DecisionBadge decision="READ_ONLY" />
-      </div>
-      <div className="space-y-3 text-xs">
-        {Object.entries(weights.weights).map(([alphaId, weight]) => (
-          <div key={alphaId} className="grid grid-cols-[5rem_1fr_4rem] items-center gap-2">
-            <span className="text-cyan-300">{alphaId}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-emerald-700" style={{width: `${Math.max(2, Math.abs(weight) * 100)}%`}} />
-            </div>
-            <span className="text-right text-slate-300">{(weight * 100).toFixed(1)}%</span>
-          </div>
-        ))}
-        <div className="grid grid-cols-3 gap-2 border-t border-slate-800 pt-3 text-slate-500">
-          <div><span className="block">{bi('总敞口', 'Gross')}</span><span className="font-bold text-slate-200">{weights.gross_exposure.toFixed(2)}</span></div>
-          <div><span className="block">{bi('预期夏普', 'Exp Sharpe')}</span><span className="font-bold text-slate-200">{weights.expected_sharpe.toFixed(2)}</span></div>
-          <div><span className="block">{bi('预期 IC', 'Exp IC')}</span><span className="font-bold text-slate-200">{weights.expected_ic.toFixed(4)}</span></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MetricsPanel({simulation}: {simulation: PortfolioSimulation}) {
-  const returns = equityReturns(simulation);
-  const positiveDays = returns.filter(value => value > 0).length;
-  const hitRate = returns.length > 0 ? positiveDays / returns.length : 0;
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('模拟指标', 'Simulation Metrics')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {Object.entries(simulation.metrics).map(([key, value]) => (
-          <div key={key} className="flex justify-between gap-3 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-400">{metricLabels[key] ?? key.replace(/_/g, ' ')}</span>
-            <span className="text-slate-200">{typeof value === 'number' ? value.toFixed(2) : value}</span>
-          </div>
-        ))}
-        <div className="flex justify-between gap-3 rounded bg-slate-800 px-3 py-2">
-          <span className="text-slate-400">{bi('正收益天数', 'Hit rate')}</span>
-          <span className="text-slate-200">{formatPct(hitRate, 1)}</span>
-        </div>
-        <div className="flex justify-between gap-3 rounded bg-slate-800 px-3 py-2">
-          <span className="text-slate-400">{bi('样本天数', 'Sample days')}</span>
-          <span className="text-slate-200">{simulation.equity_curve.length}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LineagePanel({lineage}: {lineage: CalculationLineageItem[]}) {
-  const relevant = lineage.slice(0, 4);
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('研究链路', 'Research Lineage')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {relevant.map(item => (
-          <div key={item.id} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <div className="mb-1 font-bold text-cyan-300">{item.id} · {item.layer}</div>
-            <div className="break-words text-emerald-300">{item.formula}</div>
-            <div className="mt-2 break-words text-slate-500">{item.backend}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export default function Portfolio() {
-  const [payload, setPayload] = useState<PortfolioDashboardPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<PortfolioDashboardPayload>(
+    s => fetchPortfolioSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const simulation = usingBackend ? payload!.simulation : mockPortfolioSims[0];
+  const weights = usingBackend ? payload!.weights : fallbackWeights;
+  const lineage: CalculationLineageItem[] = usingBackend ? payload!.lineage : mockCalculationLineage;
+  const analyticsMethod = payload?.analytics_method;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchPortfolioSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  // Drawdown: prefer backend curve, else derive deterministically.
+  const ddRows = useMemo(
+    () => payload?.drawdown_curve ?? drawdownCurve(simulation),
+    [payload?.drawdown_curve, simulation],
+  );
+  const worstDrawdown = useMemo(() => Math.max(...ddRows.map(p => p.drawdown), 0), [ddRows]);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
-
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const simulation = usingBackend ? payload.simulation : mockPortfolioSims[0];
-  const weights = usingBackend ? payload.weights : fallbackWeights;
-  const lineage = usingBackend ? payload.lineage : mockCalculationLineage;
-  const drawdownPayload = usingBackend ? payload.drawdown_curve : undefined;
-  const riskContributions = usingBackend ? payload.risk_contributions : undefined;
-  const returnAttribution = usingBackend ? payload.return_attribution : undefined;
-  const latestEquity = simulation.equity_curve[simulation.equity_curve.length - 1]?.equity ?? 0;
-  const worstDrawdown = useMemo(
-    () => Math.max(...(drawdownPayload ?? drawdownCurve(simulation)).map(point => point.drawdown), 0),
-    [drawdownPayload, simulation],
+  // Risk / return attribution: backend rows or deterministic proxy.
+  const riskRows = useMemo(
+    () => payload?.risk_contributions ?? riskContributionProxy(weights),
+    [payload?.risk_contributions, weights],
+  );
+  const attribRows = useMemo(
+    () => payload?.return_attribution
+      ?? returnAttributionProxy(weights, simulation.metrics.total_return ?? 0),
+    [payload?.return_attribution, weights, simulation.metrics.total_return],
   );
 
+  // Equity series + KPIs.
+  const equitySeries = useMemo(
+    () => simulation.equity_curve.map(p => ({ x: p.day, y: p.equity })),
+    [simulation],
+  );
+  const underwaterSeries = useMemo(
+    () => ddRows.map(p => ({ x: p.day, y: -p.drawdown })),
+    [ddRows],
+  );
+  const latestEquity = simulation.equity_curve[simulation.equity_curve.length - 1]?.equity ?? 0;
+  const firstEquity = simulation.equity_curve[0]?.equity ?? 0;
+  const returns = useMemo(() => equityReturns(simulation), [simulation]);
+  const hitRate = returns.length > 0 ? returns.filter(v => v > 0).length / returns.length : 0;
+
+  const sharpe = simulation.metrics.sharpe ?? 0;
+  const totalReturn = simulation.metrics.total_return ?? 0; // expressed in percent points
+  const volatility = simulation.metrics.volatility;
+
+  // Composition donut from weights (absolute gross shares).
+  const weightSegments = useMemo(() => {
+    const entries = Object.entries(weights.weights);
+    const grossSum = entries.reduce((s, [, w]) => s + Math.abs(w), 0) || 1;
+    return entries.map(([alphaId, w], i) => ({
+      label: alphaId,
+      value: Math.abs(w) / grossSum,
+      tone: donutTones[i % donutTones.length],
+    }));
+  }, [weights]);
+
+  // Extra simulation metrics not surfaced as headline KPIs.
+  const extraMetrics = Object.entries(simulation.metrics).filter(
+    ([k]) => !['sharpe', 'total_return', 'max_drawdown', 'volatility'].includes(k),
+  );
+
+  /* ---------- table columns ---------------------------------------------- */
+  type RiskRow = typeof riskRows[number];
+  const maxRisk = Math.max(...riskRows.map(r => r.contribution), 1e-9);
+  const riskCols: Column<RiskRow>[] = [
+    { key: 'id', header: bi('因子', 'Alpha'), render: r => <span className="mono text-accent">{r.alpha_id}</span> },
+    { key: 'w', header: bi('权重', 'Weight'), align: 'right', mono: true, render: r => pct(r.weight, 1) },
+    { key: 'vol', header: bi('年化波动', 'Ann. Vol'), align: 'right', mono: true,
+      render: r => (r.annualized_volatility ? pct(r.annualized_volatility, 1) : '—') },
+    { key: 'rc', header: bi('风险贡献', 'Risk Contrib.'), width: '200px', render: r => (
+      <div className="flex items-center gap-2">
+        <ProgressBar value={r.contribution} max={maxRisk} tone="neg" />
+        <span className="tnum w-12 text-right text-muted">{pct(r.contribution, 1)}</span>
+      </div>
+    ) },
+  ];
+
+  type AttribRow = typeof attribRows[number];
+  const attribCols: Column<AttribRow>[] = [
+    { key: 'id', header: bi('因子', 'Alpha'), render: r => <span className="mono text-accent">{r.alpha_id}</span> },
+    { key: 'w', header: bi('权重', 'Weight'), align: 'right', mono: true, render: r => pct(r.weight, 1) },
+    { key: 'ar', header: bi('因子收益', 'Alpha Return'), align: 'right', mono: true,
+      render: r => pctPoints(r.alpha_total_return, 2) },
+    { key: 'cr', header: bi('收益贡献', 'Contribution'), align: 'right', mono: true,
+      render: r => <span className={r.contribution_return >= 0 ? 'text-pos' : 'text-neg'}>{signed(r.contribution_return, 2)}</span> },
+  ];
+
+  const lineageCols: Column<CalculationLineageItem>[] = [
+    { key: 'id', header: 'ID', render: it => <span className="mono text-accent">{it.id}</span> },
+    { key: 'layer', header: bi('层', 'Layer'), render: it => <Chip label={it.layer} tone="info" /> },
+    { key: 'formula', header: bi('公式', 'Formula'), render: it => <span className="mono text-special break-words">{it.formula}</span> },
+    { key: 'backend', header: bi('后端实现', 'Backend'), render: it => <span className="mono text-2xs text-muted break-words">{it.backend}</span> },
+  ];
+
+  const grossDirectional = Object.values(weights.weights).reduce((s, w) => s + w, 0);
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <h1 className="text-lg font-bold text-slate-100">{bi('组合研究', 'Portfolio Research')}</h1>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
-        {payload?.analytics_method && (
-          <div className="text-xs text-cyan-500">{bi('分析方法', 'Analytics Method')}: {payload.analytics_method}</div>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        <MetricCard label={bi('状态', 'Status')} value={statusLabel(simulation.status)} />
-        <MetricCard label={bi('夏普', 'Sharpe')} value={simulation.metrics.sharpe.toFixed(2)} />
-        <MetricCard label={bi('收益', 'Return')} value={`${simulation.metrics.total_return.toFixed(1)}%`} />
-        <MetricCard label={bi('最大回撤', 'Max DD')} value={formatPct(worstDrawdown, 1)} />
-        <MetricCard label={bi('最新权益', 'Last Equity')} value={formatCny(latestEquity)} />
+    <PageShell>
+      <PageHeader title="Portfolio Research" titleZh="组合研究"
+        subtitle={bi('组合模拟权益、回撤、权重构成与风险/收益归因(只读合成快照)。',
+          'Portfolio simulation equity, drawdown, weight composition and risk/return attribution (read-only synthetic snapshot).')}
+        actions={analyticsMethod ? <Chip label={analyticsMethod} tone="special" /> : undefined} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+
+      <KpiStrip cols={6}>
+        <StatTile label={bi('模拟状态', 'Status')} value={<StatusChip value={simulation.status} />} />
+        <StatTile label={bi('夏普', 'Sharpe')} value={fixed(sharpe, 2)} tone={statusTone(sharpe >= 1 ? 'OK' : 'WATCH')} accent={sharpe >= 1} />
+        <StatTile label={bi('总收益', 'Total Return')} value={pctPoints(totalReturn, 1)} tone={totalReturn >= 0 ? 'pos' : 'neg'} />
+        <StatTile label={bi('最大回撤', 'Max DD')} value={pct(worstDrawdown, 1)} tone="neg" />
+        <StatTile label={bi('胜率', 'Hit Rate')} value={pct(hitRate, 1)} tone="info" />
+        <StatTile label={bi('最新权益', 'Last Equity')} value={money(latestEquity)} sub={bi(`${num(simulation.equity_curve.length)} 个交易日`, `${num(simulation.equity_curve.length)} sessions`)} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('权益', 'Equity')} title={bi('组合权益曲线', 'Portfolio Equity Curve')}
+          right={<span className="tnum text-xs text-accent">{money(firstEquity)} → {money(latestEquity)}</span>}>
+          <AreaChart data={equitySeries} height={232} tone="accent" yFormat={v => money(v)} xCount={5} />
+        </Panel>
+
+        <Panel eyebrow={bi('构成', 'Composition')} title={bi('组合权重', 'Portfolio Weights')}
+          right={<Chip label={shortHash(weights.weights_id, 12)} tone="muted" />}>
+          <div className="flex flex-col items-center gap-4">
+            <Donut segments={weightSegments} size={150} />
+            <div className="w-full space-y-2">
+              {weightSegments.map(seg => (
+                <div key={seg.label} className="flex items-center justify-between gap-2 text-2xs">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: `var(--${seg.tone})` }} />
+                    <span className="mono truncate text-ink">{seg.label}</span>
+                  </span>
+                  <span className="tnum text-muted">{pct(weights.weights[seg.label], 1)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <EquityCurvePanel simulation={simulation} />
-        <DrawdownPanel simulation={simulation} drawdownPayload={drawdownPayload} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('风险', 'Risk')} title={bi('回撤剖面', 'Drawdown Profile')}
+          right={<span className="tnum text-xs text-neg">{bi('最深', 'Trough')} {pct(worstDrawdown, 2)}</span>}>
+          <UnderwaterChart data={underwaterSeries} height={150} yFormat={v => pct(v, 1)} />
+        </Panel>
+
+        <Panel eyebrow={bi('特征', 'Profile')} title={bi('权重特征', 'Weight Characteristics')}>
+          <KeyValue cols={2} items={[
+            { k: bi('总敞口', 'Gross Exposure'), v: fixed(weights.gross_exposure, 2) },
+            { k: bi('净敞口', 'Net Exposure'), v: signed(grossDirectional, 2) },
+            { k: bi('预期夏普', 'Exp. Sharpe'), v: fixed(weights.expected_sharpe, 2) },
+            { k: bi('预期 IC', 'Exp. IC'), v: fixed(weights.expected_ic, 4) },
+            { k: bi('持仓数', 'Holdings'), v: num(Object.keys(weights.weights).length) },
+            { k: bi('波动率', 'Volatility'), v: volatility !== undefined ? pctPoints(volatility, 1) : '—' },
+          ]} />
+          {extraMetrics.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-line pt-3">
+              {extraMetrics.map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between text-2xs">
+                  <span className="text-faint uppercase tracking-wide">{metricLabels[k] ?? k.replace(/_/g, ' ')}</span>
+                  <span className="tnum text-ink">{fixed(v, 3)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <WeightsPanel weights={weights} />
-        <RiskContributionPanel weights={weights} contributions={riskContributions} />
-        <ReturnAttributionPanel weights={weights} totalReturn={simulation.metrics.total_return} attribution={returnAttribution} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Panel eyebrow={bi('集中度', 'Concentration')} title={bi('风险贡献代理', 'Risk Contribution Proxy')}
+          right={<Chip label={payload?.risk_contributions ? bi('后端', 'BACKEND') : bi('派生', 'DERIVED')} tone={payload?.risk_contributions ? 'pos' : 'warn'} />}>
+          <DataTable columns={riskCols} rows={riskRows} dense getKey={r => r.alpha_id} />
+        </Panel>
+
+        <Panel eyebrow={bi('归因', 'Attribution')} title={bi('收益归因代理', 'Return Attribution Proxy')}
+          right={<Chip label={payload?.return_attribution ? bi('后端', 'BACKEND') : bi('派生', 'DERIVED')} tone={payload?.return_attribution ? 'pos' : 'warn'} />}>
+          <DivergingBars
+            items={attribRows.map(r => ({ label: r.alpha_id, value: r.contribution_return }))}
+            valueFormat={v => signed(v, 2)} />
+          <div className="mt-3 border-t border-line pt-3">
+            <DataTable columns={attribCols} rows={attribRows} dense getKey={r => r.alpha_id} />
+          </div>
+        </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-        <MetricsPanel simulation={simulation} />
-        <LineagePanel lineage={lineage} />
-      </div>
-    </div>
+      <Panel eyebrow={bi('可复现性', 'Reproducibility')} title={bi('研究链路', 'Research Lineage')}
+        right={<Chip label={bi(`${lineage.length} 条`, `${lineage.length} steps`)} tone="info" />}>
+        <DataTable columns={lineageCols} rows={lineage} dense getKey={it => it.id} />
+      </Panel>
+    </PageShell>
   );
 }

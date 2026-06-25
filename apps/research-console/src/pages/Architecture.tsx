@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchArchitectureSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React from 'react';
+import { fetchArchitectureSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { ArchitectureModule, ArchitecturePayload } from '@/lib/types/research';
+import type { ArchitectureModule, ArchitectureFlow, ArchitectureGap, ArchitecturePayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, Chip, GateDot, ProgressBar, type Column,
+} from '@/ui/primitives';
+import { RadialGauge, Histogram } from '@/ui/charts';
+import { num, pct, statusTone, type Tone } from '@/ui/format';
 
 const fallbackArchitecture: ArchitecturePayload = {
   source: 'FRONTEND_ARCHITECTURE_FALLBACK',
@@ -47,199 +52,155 @@ const fallbackArchitecture: ArchitecturePayload = {
   },
 };
 
-function statusClass(status: string) {
-  if (status === 'READY') {
-    return 'border-emerald-800 bg-emerald-950/20 text-emerald-300';
-  }
-  if (status === 'BLOCKED') {
-    return 'border-red-800 bg-red-950/20 text-red-300';
-  }
-  if (status === 'PARTIAL') {
-    return 'border-amber-800 bg-amber-950/20 text-amber-300';
-  }
-  return 'border-slate-700 bg-slate-950/60 text-slate-300';
-}
+const layerLabels: Record<string, string> = {
+  Frontend: bi('前端', 'Frontend'),
+  API: bi('API', 'API'),
+  'Research Compute': bi('研究计算', 'Research Compute'),
+  Simulation: bi('模拟', 'Simulation'),
+  Risk: bi('风险', 'Risk'),
+  Governance: bi('治理', 'Governance'),
+};
+const layerLabel = (layer: string) => layerLabels[layer] ?? layer;
 
-function severityClass(severity: string) {
-  if (severity === 'HIGH') {
-    return 'text-red-300';
-  }
-  if (severity === 'MEDIUM') {
-    return 'text-amber-300';
-  }
-  return 'text-slate-300';
-}
-
-function layerLabel(layer: string) {
-  const labels: Record<string, string> = {
-    Frontend: bi('前端', 'Frontend'),
-    API: bi('API', 'API'),
-    'Research Compute': bi('研究计算', 'Research Compute'),
-    Simulation: bi('模拟', 'Simulation'),
-    Risk: bi('风险', 'Risk'),
-    Governance: bi('治理', 'Governance'),
-  };
-  return labels[layer] ?? layer;
-}
-
-function ModuleCard({module}: {module: ArchitectureModule}) {
-  return (
-    <div className={`min-w-0 rounded border p-3 ${statusClass(module.status)}`}>
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">{module.id}</div>
-          <div className="mt-1 break-words text-sm font-bold text-slate-100">{module.name}</div>
-        </div>
-        <span className="rounded bg-slate-950/60 px-2 py-0.5 text-[10px]">{module.status}</span>
-      </div>
-      <div className="mb-2 h-2 overflow-hidden rounded bg-slate-800">
-        <div className="h-full bg-cyan-700" style={{width: `${Math.round(module.maturity * 100)}%`}} />
-      </div>
-      <div className="grid gap-2 text-xs">
-        <div className="text-slate-400">{bi('负责人', 'Owner')}: {module.owner}</div>
-        <div className="text-slate-300">{module.capability}</div>
-        <div className="text-slate-500">{bi('下一缺口', 'Next gap')}: {module.next_gap}</div>
-      </div>
-    </div>
-  );
-}
+const maturityTone = (m: number): Tone => (m >= 0.66 ? 'pos' : m >= 0.5 ? 'accent' : m >= 0.33 ? 'warn' : 'neg');
 
 export default function Architecture() {
-  const [payload, setPayload] = useState<ArchitecturePayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ArchitecturePayload>(
+    s => fetchArchitectureSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const data = usingBackend ? payload! : fallbackArchitecture;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchArchitectureSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const readyModules = data.modules.filter(m => m.status === 'READY').length;
+  const blockedModules = data.modules.filter(m => m.status === 'BLOCKED').length;
+  const highGaps = data.gaps.filter(g => g.severity === 'HIGH').length;
+  const avgMaturity = data.modules.length
+    ? data.modules.reduce((s, m) => s + m.maturity, 0) / data.modules.length
+    : 0;
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  // status distribution across modules -> Histogram
+  const statusOrder = ['READY', 'PARTIAL', 'BLOCKED'];
+  const statusBins = (() => {
+    const counts = new Map<string, number>();
+    for (const m of data.modules) counts.set(m.status, (counts.get(m.status) ?? 0) + 1);
+    const ordered = statusOrder.filter(s => counts.has(s)).map(s => ({ label: s, count: counts.get(s)! }));
+    const extra = [...counts.keys()].filter(s => !statusOrder.includes(s)).map(s => ({ label: s, count: counts.get(s)! }));
+    return [...ordered, ...extra];
+  })();
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const architecture = usingBackend && payload ? payload : fallbackArchitecture;
-  const modulesByLayer = useMemo(() => architecture.modules.reduce<Record<string, ArchitectureModule[]>>((acc, module) => {
-    acc[module.layer] = [...(acc[module.layer] ?? []), module];
-    return acc;
-  }, {}), [architecture.modules]);
-  const readyModules = architecture.modules.filter(module => module.status === 'READY').length;
-  const blockedModules = architecture.modules.filter(module => module.status === 'BLOCKED').length;
-  const highGaps = architecture.gaps.filter(gap => gap.severity === 'HIGH').length;
+  const moduleCols: Column<ArchitectureModule>[] = [
+    { key: 'id', header: 'ID', mono: true, render: m => <span className="text-accent">{m.id}</span> },
+    { key: 'name', header: bi('模块', 'Module'), render: m => <span className="font-medium text-ink">{m.name}</span> },
+    { key: 'layer', header: bi('层', 'Layer'), render: m => <Chip label={layerLabel(m.layer)} tone="info" /> },
+    { key: 'status', header: bi('状态', 'Status'), render: m => <StatusChip value={m.status} /> },
+    { key: 'maturity', header: bi('成熟度', 'Maturity'), width: '180px', render: m => (
+      <div className="flex items-center gap-2">
+        <ProgressBar value={m.maturity} tone={maturityTone(m.maturity)} />
+        <span className="tnum w-10 text-right text-muted">{pct(m.maturity, 0)}</span>
+      </div>
+    ) },
+    { key: 'owner', header: bi('负责人', 'Owner'), render: m => <span className="text-muted">{m.owner}</span> },
+    { key: 'capability', header: bi('能力', 'Capability'), render: m => <span className="text-ink">{m.capability}</span> },
+    { key: 'gap', header: bi('下一缺口', 'Next Gap'), render: m => <span className="text-faint">{m.next_gap}</span> },
+  ];
+
+  const gapCols: Column<ArchitectureGap>[] = [
+    { key: 'id', header: 'ID', mono: true, render: g => <span className="text-accent">{g.id}</span> },
+    { key: 'area', header: bi('领域', 'Area'), render: g => <span className="font-medium text-ink">{g.area}</span> },
+    { key: 'severity', header: bi('严重度', 'Severity'), render: g => <Chip label={g.severity} tone={statusTone(g.severity)} /> },
+    { key: 'status', header: bi('状态', 'Status'), render: g => <StatusChip value={g.status} /> },
+    { key: 'next', header: bi('下一步', 'Next Action'), render: g => <span className="text-muted">{g.next_action}</span> },
+  ];
+
+  const flowCols: Column<ArchitectureFlow>[] = [
+    { key: 'from', header: bi('来源', 'From'), mono: true, render: f => <span className="text-info">{f.from}</span> },
+    { key: 'arrow', header: '', align: 'center', width: '28px', render: () => <span className="text-faint">→</span> },
+    { key: 'to', header: bi('去向', 'To'), mono: true, render: f => <span className="text-accent">{f.to}</span> },
+    { key: 'label', header: bi('内容', 'Payload'), render: f => <span className="text-ink">{f.label}</span> },
+    { key: 'mode', header: bi('模式', 'Mode'), render: f => <Chip label={f.mode} tone={statusTone(f.mode)} /> },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('系统架构', 'System Architecture')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision={architecture.current_level} />
-              <DecisionBadge decision={architecture.phase3a_decision} />
-              <DecisionBadge decision={architecture.safety_boundary.execution_boundary} />
+    <PageShell>
+      <PageHeader title="System Architecture" titleZh="系统架构"
+        subtitle={bi('研究、模拟、风险与治理模块的只读边界图 · 成熟度、数据流与安全护栏',
+          'Read-only boundary map of research, simulation, risk and governance modules — maturity, data flow and safety guardrails')}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusChip value={data.current_level} />
+            <span className="text-faint">→</span>
+            <Chip label={data.target_level} tone="warn" />
+            <StatusChip value={data.phase3a_decision} />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error} />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('就绪度', 'Readiness')} title={bi('架构指标', 'Architecture Indicators')}>
+          <KpiStrip cols={6}>
+            <StatTile label={bi('当前等级', 'Current Level')} value={<span className="text-base">{data.current_level}</span>} tone="info" />
+            <StatTile label={bi('目标等级', 'Target Level')} value={<span className="text-base">{data.target_level}</span>} tone="warn" />
+            <StatTile label={bi('模块数量', 'Modules')} value={num(data.modules.length)} />
+            <StatTile label={bi('就绪模块', 'Ready')} value={num(readyModules)} tone="pos" />
+            <StatTile label={bi('受阻模块', 'Blocked')} value={num(blockedModules)} tone="neg" />
+            <StatTile label={bi('高优缺口', 'High Gaps')} value={num(highGaps)} tone="warn" />
+          </KpiStrip>
+          <div className="mt-4">
+            <div className="mb-2 text-2xs uppercase tracking-wider text-faint">{bi('模块状态分布', 'Module Status Distribution')}</div>
+            <Histogram bins={statusBins} height={150} tone="info" />
+          </div>
+        </Panel>
+
+        <Panel eyebrow={bi('综合评分', 'Composite')} title={bi('架构成熟度评分', 'Architecture Score')}>
+          <div className="flex flex-col items-center gap-3">
+            <RadialGauge value={data.architecture_score} max={1} size={172} label={bi('成熟度', 'maturity')} />
+            <div className="grid w-full grid-cols-2 gap-2 text-center">
+              <div className="rounded-lg border border-line bg-inset/40 px-2 py-2">
+                <div className="text-2xs uppercase tracking-wide text-faint">{bi('平均成熟度', 'Avg Maturity')}</div>
+                <div className="tnum mt-1 text-lg font-bold text-ink">{pct(avgMaturity, 0)}</div>
+              </div>
+              <div className="rounded-lg border border-line bg-inset/40 px-2 py-2">
+                <div className="text-2xs uppercase tracking-wide text-faint">{bi('实现授权', 'Authorized')}</div>
+                <div className="mt-1.5 flex items-center justify-center">
+                  <GateDot ok={data.implementation_authorized} label={data.implementation_authorized ? 'TRUE' : 'FALSE'} />
+                </div>
+              </div>
             </div>
           </div>
-          <div className="text-xs text-slate-500 xl:text-right">
-            <div>{bi('目标等级', 'Target')}: {architecture.target_level}</div>
-            <div>{bi('实现授权', 'Authorized')}: {architecture.implementation_authorized ? 'true' : 'false'}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={architecture.source} error={apiError} />
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <MetricCard label={bi('架构成熟度', 'Architecture Score')} value={Math.round(architecture.architecture_score * 100)} unit="%" />
-        <MetricCard label={bi('模块数量', 'Modules')} value={architecture.modules.length} />
-        <MetricCard label={bi('就绪模块', 'Ready')} value={readyModules} />
-        <MetricCard label={bi('高优缺口', 'High Gaps')} value={highGaps + blockedModules} />
-      </div>
+      <Panel eyebrow={bi('分层模块图', 'Layered Modules')} title={bi('模块成熟度矩阵', 'Module Maturity Matrix')}
+        right={<Chip label={bi(`${data.modules.length} 模块`, `${data.modules.length} modules`)} tone="info" />}>
+        <DataTable columns={moduleCols} rows={data.modules} getKey={m => m.id} />
+      </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="mb-4">
-            <h2 className="text-sm uppercase text-slate-400">{bi('分层模块图', 'Layered Module Map')}</h2>
-            <div className="mt-1 text-xs text-slate-500">{bi('当前系统的研究、模拟、风险与治理模块边界。', 'Current research, simulation, risk, and governance module boundaries.')}</div>
-          </div>
-          <div className="space-y-4">
-            {Object.entries(modulesByLayer).map(([layer, modules]) => (
-              <div key={layer}>
-                <div className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">{layerLabel(layer)}</div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {modules.map(module => <ModuleCard key={module.id} module={module} />)}
-                </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('管线', 'Pipeline')} title={bi('数据流(只读)', 'Data Flow (Read-Only)')}>
+          <DataTable columns={flowCols} rows={data.data_flows} getKey={f => `${f.from}-${f.to}`} dense />
+        </Panel>
+
+        <Panel tone="neg" eyebrow={bi('护栏', 'Guardrail')} title={bi('安全边界', 'Safety Boundary')}
+          right={<Chip label={data.safety_boundary.execution_boundary} tone="neg" />}>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/40 px-3 py-2">
+              <span className="text-xs text-muted">{bi('只读控制台', 'Read-only console')}</span>
+              <GateDot ok={data.safety_boundary.read_only_console} label={data.safety_boundary.read_only_console ? 'TRUE' : 'FALSE'} />
+            </div>
+            <div className="text-2xs uppercase tracking-wider text-faint">{bi('禁止能力', 'Forbidden Capabilities')}</div>
+            {data.safety_boundary.forbidden_capabilities.map(cap => (
+              <div key={cap} className="flex items-center gap-2 rounded-lg border border-neg/25 bg-neg/5 px-3 py-2">
+                <GateDot ok={false} />
+                <span className="text-xs text-neg">{cap}</span>
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-            <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('数据流', 'Data Flow')}</h2>
-            <div className="space-y-3 text-xs">
-              {architecture.data_flows.map(flow => (
-                <div key={`${flow.from}-${flow.to}`} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                  <div className="break-words text-cyan-300">{flow.from} → {flow.to}</div>
-                  <div className="mt-1 text-slate-300">{flow.label}</div>
-                  <div className="mt-2 inline-flex rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">{flow.mode}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4">
-            <h2 className="mb-3 text-sm uppercase text-red-300">{bi('安全边界', 'Safety Boundary')}</h2>
-            <div className="space-y-2 text-xs text-red-200">
-              {architecture.safety_boundary.forbidden_capabilities.map(item => <div key={item}>{item}</div>)}
-            </div>
-          </div>
-        </div>
+        </Panel>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[860px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">ID</th>
-              <th className="p-2 text-left">{bi('领域', 'Area')}</th>
-              <th className="p-2 text-left">{bi('严重度', 'Severity')}</th>
-              <th className="p-2 text-left">{bi('状态', 'Status')}</th>
-              <th className="p-2 text-left">{bi('下一步', 'Next Action')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {architecture.gaps.map(gap => (
-              <tr key={gap.id} className="border-b border-slate-800/50">
-                <td className="p-2 font-bold text-cyan-300">{gap.id}</td>
-                <td className="p-2 text-slate-200">{gap.area}</td>
-                <td className={`p-2 font-bold ${severityClass(gap.severity)}`}>{gap.severity}</td>
-                <td className="p-2 text-slate-400">{gap.status}</td>
-                <td className="p-2 text-slate-500">{gap.next_action}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <Panel eyebrow={bi('缺口', 'Gaps')} title={bi('架构缺口登记', 'Architecture Gap Register')}
+        right={<Chip label={bi(`${highGaps} 高优`, `${highGaps} HIGH`)} tone="warn" />}>
+        <DataTable columns={gapCols} rows={data.gaps} getKey={g => g.id} />
+      </Panel>
+    </PageShell>
   );
 }

@@ -1,9 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchDataCatalogSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchDataCatalogSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { DataCatalogDataset, DataCatalogFeature, DataCatalogPayload } from '@/lib/types/research';
+import type {
+  DataCatalogDataset, DataCatalogFeature, DataCatalogPayload,
+} from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+} from '@/ui/primitives';
+import { Donut, Histogram } from '@/ui/charts';
+import { num, pct, fixed, compact, shortHash, type Tone } from '@/ui/format';
 
 const fallbackCatalog: DataCatalogPayload = {
   source: 'FRONTEND_DATA_CATALOG_FALLBACK',
@@ -114,291 +121,246 @@ const fallbackCatalog: DataCatalogPayload = {
   },
 };
 
-function percent(value: number) {
-  return `${Math.round(value * 100)}%`;
+const familyTones: Tone[] = ['accent', 'info', 'warn', 'special', 'pos', 'muted', 'neg'];
+
+function qualityTone(v: number): Tone {
+  if (v >= 0.97) return 'pos';
+  if (v >= 0.94) return 'accent';
+  if (v >= 0.9) return 'warn';
+  return 'neg';
 }
 
-function qualityClass(value: number) {
-  if (value >= 0.97) {
-    return 'text-emerald-300';
-  }
-  if (value >= 0.94) {
-    return 'text-cyan-300';
-  }
-  return 'text-amber-300';
-}
-
-function DatasetHealth({datasets}: {datasets: DataCatalogDataset[]}) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('数据集健康度', 'Dataset Health')}</h2>
-      <div className="space-y-3 text-xs">
-        {datasets.map(dataset => (
-          <div key={dataset.dataset_id} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="break-words font-bold text-slate-200">{dataset.name}</div>
-                <div className="mt-1 break-words text-slate-500">{dataset.snapshot_id}</div>
-              </div>
-              <span className={`font-bold ${qualityClass(dataset.quality_score)}`}>{percent(dataset.quality_score)}</span>
-            </div>
-            <div className="grid gap-2 md:grid-cols-3">
-              <div className="rounded bg-slate-800/70 px-2 py-1">{bi('覆盖', 'Coverage')}: {percent(dataset.coverage)}</div>
-              <div className="rounded bg-slate-800/70 px-2 py-1">{bi('新鲜度', 'Freshness')}: {dataset.freshness_hours}h</div>
-              <div className="rounded bg-slate-800/70 px-2 py-1">{bi('检查', 'Checks')}: {dataset.checks.filter(check => check.status === 'PASS').length}/{dataset.checks.length}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function FeatureFamilies({features}: {features: DataCatalogFeature[]}) {
-  const families = features.reduce<Record<string, number>>((acc, feature) => {
-    acc[feature.family] = (acc[feature.family] ?? 0) + 1;
-    return acc;
-  }, {});
-  const max = Math.max(...Object.values(families), 1);
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('特征族覆盖', 'Feature Families')}</h2>
-      <div className="space-y-3 text-xs">
-        {Object.entries(families).map(([family, count]) => (
-          <div key={family} className="grid grid-cols-[8rem_1fr_2rem] items-center gap-2">
-            <span className="truncate text-slate-400">{family}</span>
-            <div className="h-2 overflow-hidden rounded bg-slate-800">
-              <div className="h-full bg-cyan-700" style={{width: `${Math.max(6, count / max * 100)}%`}} />
-            </div>
-            <span className="text-right font-bold text-slate-200">{count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PolicyBoard({catalog}: {catalog: DataCatalogPayload}) {
-  const policies: Array<[string, boolean]> = [
-    ['DATASET_HASH', catalog.quality_policy.requires_dataset_hash],
-    ['EVENT_TIMESTAMP', catalog.quality_policy.requires_event_timestamp],
-    ['ASOF_JOIN', catalog.quality_policy.requires_asof_join],
-    ['FUTURE_LEAKAGE_BLOCK', catalog.quality_policy.blocks_future_leakage],
-    ['IMMUTABLE_RAW_INPUTS', !catalog.quality_policy.mutable_raw_inputs],
-  ];
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm uppercase text-slate-400">{bi('Point-in-time 策略', 'Point-in-time Policy')}</h2>
-          <div className="mt-1 text-xs text-slate-500">{catalog.feature_store_mode}</div>
-        </div>
-        <DecisionBadge decision="READ_ONLY" />
-      </div>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LineagePreview({catalog}: {catalog: DataCatalogPayload}) {
-  const sampleFeatures = catalog.features.slice(0, 5);
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('血缘链路', 'Lineage Preview')}</h2>
-      <div className="space-y-2 text-xs">
-        {sampleFeatures.map(feature => (
-          <div key={feature.feature_id} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <div className="break-words text-slate-300">
-              <span className="text-cyan-300">{feature.source_dataset_id}</span>
-              <span className="mx-2 text-slate-600">-&gt;</span>
-              <span className="text-emerald-300">{feature.feature_id}</span>
-              <span className="mx-2 text-slate-600">-&gt;</span>
-              <span className="text-amber-300">{feature.used_by_experiments.join(', ')}</span>
-            </div>
-            <div className="mt-2 break-words text-slate-500">{feature.lineage_hash}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function checkStats(dataset: DataCatalogDataset): { passed: number; total: number } {
+  const total = dataset.checks.length;
+  const passed = dataset.checks.filter(c => c.status === 'PASS').length;
+  return { passed, total };
 }
 
 export default function DataCatalog() {
-  const [payload, setPayload] = useState<DataCatalogPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DataCatalogPayload>(
+    s => fetchDataCatalogSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const catalog = usingBackend ? payload! : fallbackCatalog;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchDataCatalogSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const familySegments = useMemo(() => {
+    const counts = catalog.features.reduce<Record<string, number>>((acc, f) => {
+      acc[f.family] = (acc[f.family] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([family, value], i) => ({ label: family, value, tone: familyTones[i % familyTones.length] }));
+  }, [catalog.features]);
 
-    return () => controller.abort();
-  }, [apiEnabled]);
+  const lineageBins = useMemo(() => {
+    const counts = catalog.lineage_edges.reduce<Record<string, number>>((acc, e) => {
+      acc[e.kind] = (acc[e.kind] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).map(([kind, count]) => ({
+      label: kind === 'DATASET_TO_FEATURE' ? bi('集→特', 'DS→FEAT')
+        : kind === 'FEATURE_TO_EXPERIMENT' ? bi('特→实验', 'FEAT→EXP')
+        : kind,
+      count,
+    }));
+  }, [catalog.lineage_edges]);
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const catalog = usingBackend && payload ? payload : fallbackCatalog;
-  const highestUseFeatures = useMemo(
-    () => [...catalog.features].sort((left, right) => right.used_by_experiments.length - left.used_by_experiments.length).slice(0, 4),
-    [catalog.features],
-  );
+  const policy = catalog.quality_policy;
+  const policyRows: Array<{ label: React.ReactNode; ok: boolean }> = [
+    { label: bi('要求数据集哈希', 'Requires dataset hash'), ok: policy.requires_dataset_hash },
+    { label: bi('要求事件时间戳', 'Requires event timestamp'), ok: policy.requires_event_timestamp },
+    { label: bi('要求 as-of join', 'Requires as-of join'), ok: policy.requires_asof_join },
+    { label: bi('阻断未来泄漏', 'Blocks future leakage'), ok: policy.blocks_future_leakage },
+    { label: bi('原始输入不可变', 'Immutable raw inputs'), ok: !policy.mutable_raw_inputs },
+  ];
+  const policyOk = policyRows.every(p => p.ok);
+
+  const datasetCols: Column<DataCatalogDataset>[] = [
+    {
+      key: 'name', header: bi('数据集', 'Dataset'),
+      render: d => (
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{d.name}</div>
+          <div className="mono truncate text-2xs text-faint">{d.dataset_id}</div>
+        </div>
+      ),
+    },
+    { key: 'domain', header: bi('域', 'Domain'), render: d => <Chip label={d.domain} tone="info" /> },
+    {
+      key: 'version', header: bi('版本/快照', 'Version'),
+      render: d => (
+        <div className="min-w-0">
+          <div className="text-ink">{d.version}</div>
+          <div className="mono truncate text-2xs text-faint">{d.snapshot_id}</div>
+        </div>
+      ),
+    },
+    { key: 'rows', header: bi('行数', 'Rows'), align: 'right', render: d => compact(d.row_count) },
+    { key: 'coverage', header: bi('覆盖', 'Coverage'), align: 'right', render: d => pct(d.coverage) },
+    { key: 'fresh', header: bi('新鲜度', 'Freshness'), align: 'right', render: d => `${fixed(d.freshness_hours, 1)}h` },
+    {
+      key: 'quality', header: bi('质量分', 'Quality'), width: '150px',
+      render: d => (
+        <div className="flex items-center gap-2">
+          <ProgressBar value={d.quality_score} tone={qualityTone(d.quality_score)} />
+          <span className="tnum w-10 text-right text-muted">{pct(d.quality_score, 0)}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'checks', header: bi('检查', 'Checks'), align: 'right',
+      render: d => {
+        const { passed, total } = checkStats(d);
+        return total ? <span className="tnum">{passed}/{total}</span> : <span className="text-faint">—</span>;
+      },
+    },
+    { key: 'pit', header: bi('PIT 安全', 'PIT Safe'), align: 'center', render: d => <GateDot ok={d.point_in_time_safe} /> },
+    { key: 'hash', header: 'Hash', mono: true, render: d => <span className="text-faint">{shortHash(d.content_hash, 10)}</span> },
+  ];
+
+  const featureCols: Column<DataCatalogFeature>[] = [
+    {
+      key: 'name', header: bi('特征', 'Feature'),
+      render: f => (
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{f.name}</div>
+          <div className="mono truncate text-2xs text-faint">{f.feature_id}</div>
+        </div>
+      ),
+    },
+    { key: 'family', header: bi('族', 'Family'), render: f => <Chip label={f.family} tone="accent" /> },
+    { key: 'expr', header: bi('表达式', 'Expression'), mono: true, render: f => <span className="text-info">{f.expression}</span> },
+    { key: 'src', header: bi('源数据', 'Source'), mono: true, render: f => <span className="text-muted">{f.source_dataset_id}</span> },
+    { key: 'lookback', header: bi('窗口', 'Lookback'), align: 'right', render: f => `${num(f.lookback_days)}d` },
+    {
+      key: 'pit', header: bi('PIT 策略', 'PIT Policy'),
+      render: f => (
+        <div className="flex items-center gap-2">
+          <GateDot ok={f.point_in_time_policy.as_of_join} />
+          <span className="truncate text-2xs text-muted">{f.point_in_time_policy.leakage_guard}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'quality', header: bi('质量分', 'Quality'), width: '140px',
+      render: f => (
+        <div className="flex items-center gap-2">
+          <ProgressBar value={f.quality_score} tone={qualityTone(f.quality_score)} />
+          <span className="tnum w-10 text-right text-muted">{pct(f.quality_score, 0)}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'exp', header: bi('实验', 'Experiments'), align: 'right',
+      render: f => <span className="tnum">{num(f.used_by_experiments.length)}</span>,
+    },
+  ];
+
+  const qPassRate = catalog.summary.quality_checks > 0
+    ? catalog.summary.quality_passed / catalog.summary.quality_checks : 0;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('数据目录 / 特征库', 'Data Catalog / Feature Store')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={catalog.catalog_mode} />
+    <PageShell>
+      <PageHeader title="Data Catalog / Feature Store" titleZh="数据目录 / 特征库"
+        subtitle={bi('只读数据集与特征快照 · point-in-time 安全 · 血缘可追溯',
+          'Read-only datasets & features snapshot · point-in-time safe · traceable lineage')}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={catalog.catalog_mode} tone="info" />
+            <Chip label={catalog.feature_store_mode} tone="special" />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={catalog.source} error={error} />
+
+      <KpiStrip cols={8}>
+        <StatTile label={bi('数据集', 'Datasets')} value={num(catalog.summary.datasets)} accent />
+        <StatTile label={bi('特征', 'Features')} value={num(catalog.summary.features)} />
+        <StatTile label={bi('质量检查', 'Quality Checks')} value={`${num(catalog.summary.quality_passed)}/${num(catalog.summary.quality_checks)}`}
+          tone={qPassRate >= 1 ? 'pos' : 'warn'} sub={pct(qPassRate, 0)} />
+        <StatTile label={bi('PIT 安全特征', 'PIT-Safe Feat.')} value={num(catalog.summary.point_in_time_safe_features)} tone="pos" />
+        <StatTile label={bi('数据集质量', 'Dataset Q')} value={pct(catalog.summary.avg_dataset_quality)} tone="info" />
+        <StatTile label={bi('特征质量', 'Feature Q')} value={pct(catalog.summary.avg_feature_quality)} tone="info" />
+        <StatTile label={bi('血缘边', 'Lineage Edges')} value={num(catalog.summary.lineage_edges)} />
+        <StatTile label={bi('只读', 'Read-only')} value={catalog.read_only ? bi('是', 'YES') : bi('否', 'NO')} tone="pos" />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('构成', 'Composition')} title={bi('特征族分布', 'Feature Families')}
+          right={<Chip label={bi(`${familySegments.length} 族`, `${familySegments.length} fam.`)} tone="muted" />}>
+          <div className="flex items-center gap-4">
+            <Donut size={140} segments={familySegments} />
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              {familySegments.map(s => (
+                <div key={s.label} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: `var(--${s.tone})` }} />
+                    <span className="truncate text-muted">{s.label}</span>
+                  </span>
+                  <span className="tnum text-ink">{num(s.value)}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="text-xs text-slate-500 md:text-right">
-            <div>{bi('特征模式', 'Feature mode')}: {catalog.feature_store_mode}</div>
-            <div>{bi('血缘边', 'Lineage edges')}: {catalog.summary.lineage_edges}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={catalog.source} error={apiError} />
-      </div>
+        </Panel>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('数据集', 'Datasets')} value={catalog.summary.datasets} />
-        <MetricCard label={bi('特征', 'Features')} value={catalog.summary.features} />
-        <MetricCard label={bi('检查', 'Checks')} value={`${catalog.summary.quality_passed}/${catalog.summary.quality_checks}`} />
-        <MetricCard label={bi('PIT 安全', 'PIT Safe')} value={catalog.summary.point_in_time_safe_features} />
-        <MetricCard label={bi('数据质量', 'Dataset Q')} value={Math.round(catalog.summary.avg_dataset_quality * 100)} unit="%" />
-        <MetricCard label={bi('特征质量', 'Feature Q')} value={Math.round(catalog.summary.avg_feature_quality * 100)} unit="%" />
-        <MetricCard label={bi('血缘', 'Lineage')} value={catalog.summary.lineage_edges} />
-        <MetricCard label={bi('只读', 'Read-only')} value={catalog.read_only ? 'YES' : 'NO'} />
-      </div>
+        <Panel eyebrow={bi('血缘', 'Lineage')} title={bi('血缘边类型', 'Lineage Edge Kinds')}
+          right={<Chip label={bi(`${catalog.lineage_edges.length} 边`, `${catalog.lineage_edges.length} edges`)} tone="info" />}>
+          <Histogram bins={lineageBins} height={180} tone="special" />
+        </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <DatasetHealth datasets={catalog.datasets} />
-        <div className="space-y-4">
-          <FeatureFamilies features={catalog.features} />
-          <PolicyBoard catalog={catalog} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <LineagePreview catalog={catalog} />
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('高复用特征', 'High-use Features')}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {highestUseFeatures.map(feature => (
-              <div key={feature.feature_id} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-                <div className="break-words font-bold text-slate-200">{feature.name}</div>
-                <div className="mt-1 break-words text-cyan-300">{feature.expression}</div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-slate-400">
-                  <div>{bi('族', 'Family')}: {feature.family}</div>
-                  <div>{bi('窗口', 'Lookback')}: {feature.lookback_days}d</div>
-                  <div>{bi('质量', 'Quality')}: {percent(feature.quality_score)}</div>
-                  <div>{bi('实验', 'Experiments')}: {feature.used_by_experiments.length}</div>
-                </div>
+        <Panel eyebrow={bi('防泄漏门', 'Anti-leakage Gate')} title={bi('质量策略', 'Quality Policy')}
+          right={<GateDot ok={policyOk} label={policyOk ? bi('全部强制', 'ENFORCED') : bi('有缺口', 'GAP')} />}
+          tone={policyOk ? 'pos' : 'warn'}>
+          <div className="flex flex-col gap-2.5">
+            {policyRows.map(p => (
+              <div key={String(p.label)} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-inset/40 px-3 py-2 text-xs">
+                <span className="text-muted">{p.label}</span>
+                <span className="flex items-center gap-2">
+                  <span className={p.ok ? 'text-pos' : 'text-neg'}>{p.ok ? 'PASS' : 'FAIL'}</span>
+                  <GateDot ok={p.ok} />
+                </span>
               </div>
             ))}
           </div>
+        </Panel>
+      </div>
+
+      <Panel eyebrow={bi('数据集', 'Datasets')} title={bi('数据集健康度', 'Dataset Health')}
+        right={<Chip label={bi(`${catalog.datasets.length} 个`, `${catalog.datasets.length} sets`)} tone="info" />}>
+        <DataTable columns={datasetCols} rows={catalog.datasets} getKey={d => d.dataset_id} dense />
+      </Panel>
+
+      <Panel eyebrow={bi('特征库', 'Feature Store')} title={bi('特征定义与 PIT 策略', 'Feature Definitions & PIT Policy')}
+        right={<Chip label={bi(`${catalog.features.length} 个`, `${catalog.features.length} feat.`)} tone="accent" />}>
+        <DataTable columns={featureCols} rows={catalog.features} getKey={f => f.feature_id} dense />
+      </Panel>
+
+      <Panel eyebrow={bi('血缘', 'Lineage')} title={bi('特征血缘链路', 'Feature Lineage Chain')}
+        right={<Chip label={bi('数据集 → 特征 → 实验', 'dataset → feature → experiment')} tone="muted" />}>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {catalog.features.map(f => (
+            <div key={f.feature_id} className="flex flex-col gap-2 rounded-lg border border-line bg-inset/40 p-3 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mono truncate text-info">{f.source_dataset_id}</span>
+                <span className="text-faint">→</span>
+                <span className="mono truncate text-accent">{f.name}</span>
+                <span className="text-faint">→</span>
+                <span className="mono truncate text-pos">{f.used_by_experiments.join(', ') || bi('无', 'none')}</span>
+              </div>
+              <KeyValue cols={2} items={[
+                { k: bi('族', 'Family'), v: f.family },
+                { k: bi('窗口', 'Lookback'), v: `${num(f.lookback_days)}d` },
+                { k: bi('源滞后上限', 'Max lag'), v: `${num(f.point_in_time_policy.max_source_lag_days)}d` },
+                { k: bi('质量', 'Quality'), v: pct(f.quality_score, 0) },
+              ]} />
+              <div className="flex items-center justify-between gap-2 border-t border-line pt-2">
+                <span className="mono truncate text-2xs text-faint">{shortHash(f.lineage_hash, 12)}</span>
+                <StatusChip value={f.point_in_time_policy.as_of_join ? 'PASS' : 'FAIL'} />
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[980px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('数据集', 'Dataset')}</th>
-              <th className="p-2 text-left">{bi('域', 'Domain')}</th>
-              <th className="p-2 text-left">{bi('版本', 'Version')}</th>
-              <th className="p-2 text-left">{bi('快照', 'Snapshot')}</th>
-              <th className="p-2 text-right">{bi('行数', 'Rows')}</th>
-              <th className="p-2 text-right">{bi('覆盖', 'Coverage')}</th>
-              <th className="p-2 text-right">{bi('新鲜度', 'Freshness')}</th>
-              <th className="p-2 text-left">Hash</th>
-            </tr>
-          </thead>
-          <tbody>
-            {catalog.datasets.map(dataset => (
-              <tr key={dataset.dataset_id} className="border-b border-slate-800/50">
-                <td className="p-2">
-                  <div className="font-bold text-slate-200">{dataset.name}</div>
-                  <div className="text-slate-500">{dataset.dataset_id}</div>
-                </td>
-                <td className="p-2 text-cyan-300">{dataset.domain}</td>
-                <td className="p-2 text-slate-400">{dataset.version}</td>
-                <td className="p-2 text-slate-400">{dataset.snapshot_id}</td>
-                <td className="p-2 text-right text-slate-300">{dataset.row_count.toLocaleString()}</td>
-                <td className="p-2 text-right text-slate-300">{percent(dataset.coverage)}</td>
-                <td className="p-2 text-right text-slate-300">{dataset.freshness_hours}h</td>
-                <td className="p-2 font-mono text-slate-500">{dataset.content_hash}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-auto">
-        <table className="w-full min-w-[1080px] text-xs">
-          <thead>
-            <tr className="border-b border-slate-800 text-slate-400 uppercase">
-              <th className="p-2 text-left">{bi('特征', 'Feature')}</th>
-              <th className="p-2 text-left">{bi('族', 'Family')}</th>
-              <th className="p-2 text-left">{bi('表达式', 'Expression')}</th>
-              <th className="p-2 text-left">{bi('源数据', 'Source')}</th>
-              <th className="p-2 text-right">{bi('窗口', 'Lookback')}</th>
-              <th className="p-2 text-right">{bi('质量', 'Quality')}</th>
-              <th className="p-2 text-left">{bi('PIT 策略', 'PIT Policy')}</th>
-              <th className="p-2 text-left">{bi('实验', 'Experiments')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {catalog.features.map(feature => (
-              <tr key={feature.feature_id} className="border-b border-slate-800/50">
-                <td className="p-2">
-                  <div className="font-bold text-slate-200">{feature.name}</div>
-                  <div className="text-slate-500">{feature.feature_id}</div>
-                </td>
-                <td className="p-2 text-cyan-300">{feature.family}</td>
-                <td className="p-2 font-mono text-slate-300">{feature.expression}</td>
-                <td className="p-2 text-slate-400">{feature.source_dataset_id}</td>
-                <td className="p-2 text-right text-slate-300">{feature.lookback_days}d</td>
-                <td className={`p-2 text-right font-bold ${qualityClass(feature.quality_score)}`}>{percent(feature.quality_score)}</td>
-                <td className="p-2 text-slate-400">{feature.point_in_time_policy.leakage_guard}</td>
-                <td className="p-2 text-slate-500">{feature.used_by_experiments.join(', ')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      </Panel>
+    </PageShell>
   );
 }

@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchIncidentResponseSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchIncidentResponseSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { IncidentResponseIncident, IncidentResponsePayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, Chip, GateDot, ProgressBar, KeyValue, type Column,
+} from '@/ui/primitives';
+import { Donut, Histogram } from '@/ui/charts';
+import { num, pct, pctPoints, stamp, shortHash, statusTone, type Tone } from '@/ui/format';
 
 const fallbackIncidentResponse: IncidentResponsePayload = {
   source: 'FRONTEND_INCIDENT_RESPONSE_FALLBACK',
@@ -57,326 +62,291 @@ const fallbackIncidentResponse: IncidentResponsePayload = {
   },
 };
 
-function formatTime(seconds: number) {
-  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
-}
+const SEVERITY_RANK: Record<string, number> = {CRITICAL: 3, HIGH: 2, MEDIUM: 1};
+const SEVERITY_TONE: Record<string, Tone> = {CRITICAL: 'neg', HIGH: 'warn', MEDIUM: 'info'};
 
-function pct(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
+const eventTypeZh: Record<string, string> = {
+  DETECTED: bi('检测', 'Detected'),
+  ROUTED: bi('已路由', 'Routed'),
+  SLA_EVALUATED: bi('SLA评估', 'SLA Eval'),
+  ESCALATED: bi('已升级', 'Escalated'),
+};
 
-function severityClass(severity: string) {
-  if (severity === 'CRITICAL') {
-    return 'border-red-800 bg-red-950/30 text-red-300';
-  }
-  if (severity === 'HIGH') {
-    return 'border-orange-800 bg-orange-950/30 text-orange-300';
-  }
-  return 'border-amber-800 bg-amber-950/30 text-amber-300';
-}
-
-function stateTextClass(state: string) {
-  if (state === 'ESCALATED' || state === 'SLA_BREACHED') {
-    return 'text-red-300';
-  }
-  if (state === 'TRIAGE' || state === 'WATCH_REVIEW') {
-    return 'text-amber-300';
-  }
-  return 'text-emerald-300';
-}
-
-function IncidentCard({incident}: {incident: IncidentResponseIncident}) {
-  const elapsedPct = Math.min(100, Math.max(3, Math.round((incident.age_minutes / Math.max(incident.sla_minutes, 1)) * 100)));
-  return (
-    <div className={`rounded border p-3 text-xs ${severityClass(incident.severity)}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-bold text-slate-100">{incident.incident_id} / {incident.category}</div>
-          <div className="mt-1 break-words text-slate-500">{incident.source_monitor_id} {'->'} {incident.subject_id}</div>
-        </div>
-        <div className="flex-shrink-0 text-right">
-          <div className="font-bold">{incident.severity}</div>
-          <div className={stateTextClass(incident.state)}>{incident.state}</div>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-1 text-slate-400 md:grid-cols-2">
-        <div>{bi('\u961f\u5217', 'Queue')}: {incident.queue}</div>
-        <div>{bi('\u8d1f\u8d23\u4eba', 'Owner')}: {incident.owner}</div>
-        <div>{bi('\u6307\u6325', 'Commander')}: {incident.incident_commander}</div>
-        <div>{bi('\u5347\u7ea7', 'Escalation')}: {incident.escalation_level}</div>
-      </div>
-      <div className="mt-3">
-        <div className="mb-1 flex justify-between gap-2 text-slate-400">
-          <span>SLA {incident.age_minutes}/{incident.sla_minutes}m</span>
-          <span className={incident.sla_breached ? 'text-red-300' : 'text-emerald-300'}>{incident.sla_breached ? 'BREACHED' : `${incident.due_in_minutes}m left`}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded bg-slate-900">
-          <div className={incident.sla_breached ? 'h-full bg-red-600' : 'h-full bg-cyan-600'} style={{width: `${elapsedPct}%`}} />
-        </div>
-      </div>
-      <div className="mt-3 break-words text-slate-300">{incident.next_action}</div>
-      <div className="mt-2 break-words text-slate-500">{bi('\u8bc1\u636e', 'Evidence')}: {incident.evidence_ref}</div>
-    </div>
-  );
-}
-
-function CountBoard({title, counts}: {title: string; counts: Record<string, number>}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{title}</h2>
-      <div className="grid gap-2 text-xs sm:grid-cols-2">
-        {Object.entries(counts).map(([key, value]) => (
-          <div key={key} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="break-words text-slate-300">{key}</span>
-            <span className="text-cyan-300">{value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PolicyBoard({incidentResponse}: {incidentResponse: IncidentResponsePayload}) {
-  const policies: Array<[string, boolean]> = [
-    ['READ_ONLY', incidentResponse.incident_policy.read_only],
-    ['EVIDENCE_REF_REQUIRED', incidentResponse.incident_policy.requires_evidence_ref],
-    ['SLA_REQUIRED', incidentResponse.incident_policy.requires_sla],
-    ['OWNER_REQUIRED', incidentResponse.incident_policy.requires_owner],
-    ['CRITICAL_POSTMORTEM_REQUIRED', incidentResponse.incident_policy.requires_postmortem_for_critical],
-    ['EXTERNAL_NOTIFICATIONS_DISABLED', !incidentResponse.incident_policy.external_notifications_enabled],
-    ['IMMUTABLE_INCIDENTS', !incidentResponse.incident_policy.mutable_incidents],
-    ['NO_LIVE_AUTHORIZATION', !incidentResponse.incident_policy.authorizes_live_trading],
-  ];
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u54cd\u5e94\u7b56\u7565', 'Response Policy')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RunbookBoard({incidentResponse}: {incidentResponse: IncidentResponsePayload}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u5904\u7f6e\u5267\u672c', 'Runbooks')}</h2>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {incidentResponse.runbooks.map(runbook => (
-          <div key={runbook.runbook_id} className="rounded border border-slate-800 bg-slate-950/60 p-3 text-xs">
-            <div className="font-bold text-cyan-300">{runbook.runbook_id}</div>
-            <div className="mt-1 text-slate-300">{runbook.category}</div>
-            <div className="mt-2 text-slate-500">{runbook.objective}</div>
-            <ol className="mt-3 list-decimal space-y-1 pl-4 text-slate-400">
-              {runbook.steps.slice(0, 4).map(step => <li key={step}>{step}</li>)}
-            </ol>
-            <div className="mt-3 text-slate-500">{bi('\u4e8b\u540e\u590d\u76d8', 'Postmortem')}: {runbook.requires_postmortem ? 'required' : 'not required'}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function severityTone(s: string): Tone {
+  return SEVERITY_TONE[s] ?? statusTone(s);
 }
 
 export default function IncidentResponse() {
-  const [payload, setPayload] = useState<IncidentResponsePayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } =
+    useConsoleSnapshot<IncidentResponsePayload>(s => fetchIncidentResponseSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const data = usingBackend ? payload! : fallbackIncidentResponse;
+  const { summary, incident_policy } = data;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchIncidentResponseSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
-
-    return () => controller.abort();
-  }, [apiEnabled]);
-
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const incidentResponse = usingBackend && payload ? payload : fallbackIncidentResponse;
   const priorityIncidents = useMemo(
-    () => [...incidentResponse.incidents].sort((a, b) => {
-      const severityRank: Record<string, number> = {CRITICAL: 3, HIGH: 2, MEDIUM: 1};
-      return (severityRank[b.severity] ?? 0) - (severityRank[a.severity] ?? 0) || Number(b.sla_breached) - Number(a.sla_breached);
-    }).slice(0, 6),
-    [incidentResponse.incidents],
+    () => [...data.incidents].sort((a, b) =>
+      (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0)
+      || Number(b.sla_breached) - Number(a.sla_breached)
+      || b.drift_score - a.drift_score),
+    [data.incidents],
   );
-  const slaBreachRate = incidentResponse.summary.incidents > 0 ? incidentResponse.summary.sla_breaches / incidentResponse.summary.incidents : 0;
+
+  const slaBreachRate = summary.incidents > 0 ? summary.sla_breaches / summary.incidents : 0;
+  const escalatedRate = summary.incidents > 0 ? summary.escalated / summary.incidents : 0;
+
+  const severityDonut = Object.entries(data.severity_counts)
+    .sort((a, b) => (SEVERITY_RANK[b[0]] ?? 0) - (SEVERITY_RANK[a[0]] ?? 0))
+    .map(([k, v]) => ({ label: k, value: v, tone: severityTone(k) }));
+
+  const stateDonut = Object.entries(data.state_counts)
+    .map(([k, v]) => ({ label: k, value: v, tone: statusTone(k) }));
+
+  const routingBins = Object.entries(data.routing_counts)
+    .map(([k, v]) => ({ label: k.replace(/_/g, ' ').slice(0, 12), count: v }));
+
+  const policies: Array<[React.ReactNode, boolean]> = [
+    [bi('只读', 'READ_ONLY'), incident_policy.read_only],
+    [bi('需证据引用', 'EVIDENCE_REF'), incident_policy.requires_evidence_ref],
+    [bi('需SLA', 'SLA_REQUIRED'), incident_policy.requires_sla],
+    [bi('需负责人', 'OWNER_REQUIRED'), incident_policy.requires_owner],
+    [bi('关键事件复盘', 'CRIT_POSTMORTEM'), incident_policy.requires_postmortem_for_critical],
+    [bi('禁外部通知', 'NO_EXTERNAL_NOTIFY'), !incident_policy.external_notifications_enabled],
+    [bi('不可变事件', 'IMMUTABLE'), !incident_policy.mutable_incidents],
+    [bi('禁实盘授权', 'NO_LIVE_AUTH'), !incident_policy.authorizes_live_trading],
+  ];
+
+  const incidentCols: Column<IncidentResponseIncident>[] = [
+    { key: 'id', header: bi('事件', 'Incident'), mono: true,
+      render: r => <span className="font-semibold text-accent">{r.incident_id}</span> },
+    { key: 'cat', header: bi('类别', 'Category'),
+      render: r => <span className="text-muted">{r.category}</span> },
+    { key: 'subj', header: bi('主体', 'Subject'), mono: true,
+      render: r => <span className="text-muted">{r.subject_id}</span> },
+    { key: 'sev', header: bi('严重度', 'Severity'),
+      render: r => <Chip label={r.severity} tone={severityTone(r.severity)} /> },
+    { key: 'state', header: bi('状态', 'State'),
+      render: r => <StatusChip value={r.state} /> },
+    { key: 'drift', header: bi('漂移', 'Drift'), align: 'right', mono: true,
+      render: r => <span className={r.drift_score >= 0.5 ? 'text-neg' : 'text-ink'}>{r.drift_score > 0 ? r.drift_score.toFixed(3) : '—'}</span> },
+    { key: 'sla', header: 'SLA', width: '160px',
+      render: r => {
+        const frac = Math.min(1, r.age_minutes / Math.max(r.sla_minutes, 1));
+        return (
+          <div className="flex items-center gap-2">
+            <ProgressBar value={frac} tone={r.sla_breached ? 'neg' : frac >= 0.8 ? 'warn' : 'accent'} />
+            <span className="tnum w-16 shrink-0 text-right text-2xs text-muted">{r.age_minutes}/{r.sla_minutes}m</span>
+          </div>
+        );
+      } },
+    { key: 'due', header: bi('剩余', 'Due In'), align: 'right', mono: true,
+      render: r => <span className={r.due_in_minutes < 0 ? 'text-neg' : 'text-muted'}>{r.due_in_minutes >= 0 ? `${r.due_in_minutes}m` : `${r.due_in_minutes}m`}</span> },
+    { key: 'breach', header: bi('破口', 'SLA'), align: 'center',
+      render: r => <GateDot ok={!r.sla_breached} /> },
+    { key: 'esc', header: bi('升级', 'Level'), align: 'center', mono: true,
+      render: r => <span className="text-muted">{r.escalation_level}</span> },
+    { key: 'blocks', header: bi('阻断实盘', 'Blocks Live'), align: 'center',
+      render: r => <GateDot ok={r.blocks_live_authorization} /> },
+    { key: 'evid', header: bi('证据', 'Evidence'), mono: true,
+      render: r => <span className="text-faint">{shortHash(r.evidence_packet_hash)}</span> },
+  ];
+
+  const routingCols: Column<typeof data.routing_rules[number]>[] = [
+    { key: 'cat', header: bi('类别', 'Category'),
+      render: r => <span className="font-semibold text-accent">{r.category}</span> },
+    { key: 'queue', header: bi('队列', 'Queue'), render: r => <span className="text-ink">{r.queue}</span> },
+    { key: 'owner', header: bi('负责人', 'Owner'), render: r => <span className="text-muted">{r.primary_owner}</span> },
+    { key: 'esc', header: bi('升级负责', 'Escalation'), render: r => <span className="text-muted">{r.escalation_owner}</span> },
+    { key: 'sla', header: 'SLA', align: 'right', mono: true, render: r => `${r.sla_minutes}m` },
+    { key: 'after', header: bi('升级阈值', 'Esc. After'), align: 'right', mono: true, render: r => `${r.escalation_after_minutes}m` },
+    { key: 'notify', header: bi('通知', 'Notify'),
+      render: r => <Chip label={r.notification_mode} tone="info" /> },
+  ];
+
+  const timelineCols: Column<typeof data.timeline[number]>[] = [
+    { key: 'time', header: bi('时间', 'Time'), mono: true,
+      render: e => <span className="text-muted">{stamp(e.timestamp)}</span> },
+    { key: 'inc', header: bi('事件', 'Incident'), mono: true,
+      render: e => <span className="font-semibold text-accent">{e.incident_id}</span> },
+    { key: 'type', header: bi('类型', 'Type'),
+      render: e => <Chip label={eventTypeZh[e.event_type] ?? e.event_type} tone={statusTone(e.event_type)} /> },
+    { key: 'actor', header: bi('执行者', 'Actor'), render: e => <span className="text-muted">{e.actor}</span> },
+    { key: 'detail', header: bi('说明', 'Detail'), render: e => <span className="text-faint">{e.detail}</span> },
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('\u544a\u8b66\u4e8b\u4ef6\u54cd\u5e94', 'Incident Response')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={incidentResponse.incident_mode} />
-              <DecisionBadge decision={incidentResponse.summary.live_authorization_allowed ? 'APPROVED' : 'NO_GO'} />
+    <PageShell>
+      <PageHeader title="Incident Response" titleZh="告警事件响应"
+        subtitle={bi('只读事件路由、SLA 监控与处置剧本快照 · 无外部通知 · 不授权实盘',
+          'Read-only incident routing, SLA tracking & runbook snapshot · no external send · never authorizes live')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Chip label={data.incident_mode} tone="info" />
+            <Chip label={summary.live_authorization_allowed ? 'LIVE_AUTH' : 'NO_LIVE_AUTH'}
+              tone={summary.live_authorization_allowed ? 'neg' : 'pos'} />
+          </div>
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error} />
+
+      <KpiStrip cols={8}>
+        <StatTile label={bi('事件总数', 'Incidents')} value={num(summary.incidents)} accent
+          sub={bi(`${num(summary.open_incidents)} 开放`, `${num(summary.open_incidents)} open`)} />
+        <StatTile label={bi('关键', 'Critical')} value={num(summary.critical)} tone="neg" />
+        <StatTile label={bi('高', 'High')} value={num(summary.high)} tone="warn" />
+        <StatTile label={bi('中', 'Medium')} value={num(summary.medium)} tone="info" />
+        <StatTile label={bi('SLA 破口', 'SLA Breaches')} value={num(summary.sla_breaches)} tone="neg"
+          sub={pct(slaBreachRate, 0)} />
+        <StatTile label={bi('已升级', 'Escalated')} value={num(summary.escalated)} tone="warn"
+          sub={pct(escalatedRate, 0)} />
+        <StatTile label={bi('平均年龄', 'Avg Age')} value={num(summary.avg_age_minutes)} unit="m" />
+        <StatTile label={bi('外部告警', 'External Alerts')} value={num(summary.external_alerts_sent)} tone="pos"
+          sub={bi('诚实只读', 'read-only')} />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('分布', 'Distribution')} title={bi('按严重度', 'By Severity')}
+          right={<Chip label={bi(`${data.incidents.length} 事件`, `${data.incidents.length} inc`)} tone="muted" />}>
+          <div className="flex items-center gap-4">
+            <Donut segments={severityDonut} size={132} />
+            <div className="flex flex-1 flex-col gap-2">
+              {severityDonut.map(s => (
+                <div key={s.label} className="flex items-center justify-between gap-2">
+                  <Chip label={s.label} tone={s.tone} />
+                  <span className="tnum text-xs text-muted">{num(s.value)}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="text-xs text-slate-500 lg:text-right">
-            <div>{bi('\u6a21\u5f0f', 'Mode')}: {incidentResponse.incident_mode}</div>
-            <div>{bi('\u5916\u90e8\u901a\u77e5', 'External alerts')}: {incidentResponse.incident_policy.external_notifications_enabled ? 'enabled' : 'disabled'}</div>
-          </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={incidentResponse.source} error={apiError} />
-      </div>
+        </Panel>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('\u4e8b\u4ef6', 'Incidents')} value={incidentResponse.summary.incidents} />
-        <MetricCard label="CRITICAL" value={incidentResponse.summary.critical} />
-        <MetricCard label="HIGH" value={incidentResponse.summary.high} />
-        <MetricCard label="MEDIUM" value={incidentResponse.summary.medium} />
-        <MetricCard label={bi('SLA\u7834\u53e3', 'SLA Breach')} value={incidentResponse.summary.sla_breaches} />
-        <MetricCard label={bi('\u5df2\u5347\u7ea7', 'Escalated')} value={incidentResponse.summary.escalated} />
-        <MetricCard label={bi('\u5e73\u5747\u5e74\u9f84', 'Avg Age')} value={incidentResponse.summary.avg_age_minutes} unit="m" />
-        <MetricCard label={bi('\u7834\u53e3\u7387', 'Breach Rate')} value={pct(slaBreachRate)} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u4f18\u5148\u4e8b\u4ef6', 'Priority Incidents')}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {priorityIncidents.map(incident => <IncidentCard key={incident.incident_id} incident={incident} />)}
-          </div>
-        </div>
-        <div className="space-y-4">
-          <CountBoard title={bi('\u4e25\u91cd\u5ea6', 'Severity')} counts={incidentResponse.severity_counts} />
-          <CountBoard title={bi('\u72b6\u6001', 'State')} counts={incidentResponse.state_counts} />
-          <PolicyBoard incidentResponse={incidentResponse} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-lg border border-slate-800 bg-slate-900">
-          <div className="border-b border-slate-800 p-4">
-            <h2 className="text-sm uppercase text-slate-400">{bi('\u8def\u7531\u89c4\u5219', 'Routing Rules')}</h2>
-          </div>
-          <div className="overflow-auto">
-            <table className="w-full min-w-[760px] text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                  <th className="p-2 text-left">{bi('\u7c7b\u522b', 'Category')}</th>
-                  <th className="p-2 text-left">{bi('\u961f\u5217', 'Queue')}</th>
-                  <th className="p-2 text-left">{bi('\u8d1f\u8d23\u4eba', 'Owner')}</th>
-                  <th className="p-2 text-right">SLA</th>
-                  <th className="p-2 text-left">{bi('\u901a\u77e5', 'Notify')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {incidentResponse.routing_rules.map(rule => (
-                  <tr key={rule.route_id} className="border-b border-slate-800/50">
-                    <td className="p-2 font-bold text-cyan-300">{rule.category}</td>
-                    <td className="p-2 text-slate-300">{rule.queue}</td>
-                    <td className="p-2 text-slate-400">{rule.primary_owner}</td>
-                    <td className="p-2 text-right text-slate-300">{rule.sla_minutes}m</td>
-                    <td className="p-2 text-slate-500">{rule.notification_mode}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-800 bg-slate-900">
-          <div className="border-b border-slate-800 p-4">
-            <h2 className="text-sm uppercase text-slate-400">{bi('\u65f6\u95f4\u7ebf', 'Timeline')}</h2>
-          </div>
-          <div className="max-h-[420px] overflow-auto">
-            <table className="w-full min-w-[820px] text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                  <th className="p-2 text-left">{bi('\u65f6\u95f4', 'Time')}</th>
-                  <th className="p-2 text-left">{bi('\u4e8b\u4ef6', 'Incident')}</th>
-                  <th className="p-2 text-left">{bi('\u7c7b\u578b', 'Type')}</th>
-                  <th className="p-2 text-left">{bi('\u6267\u884c\u8005', 'Actor')}</th>
-                  <th className="p-2 text-left">{bi('\u8bf4\u660e', 'Detail')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {incidentResponse.timeline.slice(0, 24).map(event => (
-                  <tr key={event.event_id} className="border-b border-slate-800/50">
-                    <td className="p-2 text-slate-400">{formatTime(event.timestamp)}</td>
-                    <td className="p-2 font-bold text-cyan-300">{event.incident_id}</td>
-                    <td className="p-2 text-slate-300">{event.event_type}</td>
-                    <td className="p-2 text-slate-400">{event.actor}</td>
-                    <td className="p-2 text-slate-500">{event.detail}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <RunbookBoard incidentResponse={incidentResponse} />
-
-      <div className="rounded-lg border border-slate-800 bg-slate-900">
-        <div className="border-b border-slate-800 p-4">
-          <h2 className="text-sm uppercase text-slate-400">{bi('\u5168\u91cf\u4e8b\u4ef6\u53f0\u8d26', 'Full Incident Ledger')}</h2>
-        </div>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[1180px] text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                <th className="p-2 text-left">{bi('\u4e8b\u4ef6ID', 'Incident')}</th>
-                <th className="p-2 text-left">{bi('\u76d1\u63a7', 'Monitor')}</th>
-                <th className="p-2 text-left">{bi('\u4e3b\u4f53', 'Subject')}</th>
-                <th className="p-2 text-left">{bi('\u4e25\u91cd\u5ea6', 'Severity')}</th>
-                <th className="p-2 text-left">{bi('\u72b6\u6001', 'State')}</th>
-                <th className="p-2 text-left">{bi('\u8def\u7531', 'Route')}</th>
-                <th className="p-2 text-right">Age</th>
-                <th className="p-2 text-right">SLA</th>
-                <th className="p-2 text-left">{bi('\u963b\u65ad', 'Blocks')}</th>
-                <th className="p-2 text-left">{bi('\u8bc1\u636e', 'Evidence')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {incidentResponse.incidents.map(incident => (
-                <tr key={incident.incident_id} className="border-b border-slate-800/50">
-                  <td className="p-2 font-bold text-cyan-300">{incident.incident_id}</td>
-                  <td className="p-2 text-slate-300">{incident.source_monitor_id}</td>
-                  <td className="p-2 text-slate-400">{incident.subject_id}</td>
-                  <td className="p-2 text-slate-300">{incident.severity}</td>
-                  <td className={`p-2 font-bold ${stateTextClass(incident.state)}`}>{incident.state}</td>
-                  <td className="p-2 text-slate-500">{incident.route_id}</td>
-                  <td className="p-2 text-right text-slate-300">{incident.age_minutes}m</td>
-                  <td className={incident.sla_breached ? 'p-2 text-right text-red-300' : 'p-2 text-right text-slate-300'}>{incident.sla_minutes}m</td>
-                  <td className={incident.blocks_live_authorization ? 'p-2 text-red-300' : 'p-2 text-emerald-300'}>{incident.blocks_live_authorization ? 'YES' : 'NO'}</td>
-                  <td className="p-2 text-slate-500">{incident.evidence_packet_hash}</td>
-                </tr>
+        <Panel eyebrow={bi('生命周期', 'Lifecycle')} title={bi('按状态', 'By State')}>
+          <div className="flex items-center gap-4">
+            <Donut segments={stateDonut} size={132} />
+            <div className="flex flex-1 flex-col gap-2">
+              {stateDonut.map(s => (
+                <div key={s.label} className="flex items-center justify-between gap-2">
+                  <StatusChip value={s.label} />
+                  <span className="tnum text-xs text-muted">{num(s.value)}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel eyebrow={bi('合规护栏', 'Guardrails')} title={bi('响应策略', 'Response Policy')}>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {policies.map(([label, passed], i) => (
+              <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-line/60 bg-inset/40 px-2.5 py-1.5">
+                <span className="text-2xs text-muted">{label}</span>
+                <GateDot ok={passed} label={passed ? 'PASS' : 'FAIL'} />
+              </div>
+            ))}
+          </div>
+        </Panel>
       </div>
-    </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2" eyebrow={bi('优先处置', 'Triage')} title={bi('优先事件队列', 'Priority Incident Queue')}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {priorityIncidents.slice(0, 4).map(inc => {
+              const frac = Math.min(1, inc.age_minutes / Math.max(inc.sla_minutes, 1));
+              return (
+                <div key={inc.incident_id} className="flex flex-col gap-2 rounded-lg border border-line bg-inset/30 p-3"
+                  style={{ borderColor: `color-mix(in srgb, var(--${severityTone(inc.severity)}) 35%, var(--line))` }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="mono text-xs font-semibold text-accent">{inc.incident_id}</div>
+                      <div className="truncate text-2xs text-faint">{inc.category} · {inc.subject_id}</div>
+                    </div>
+                    <Chip label={inc.severity} tone={severityTone(inc.severity)} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusChip value={inc.state} />
+                    <span className="text-2xs text-faint">{inc.escalation_level}</span>
+                  </div>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between text-2xs">
+                      <span className="text-faint">SLA {inc.age_minutes}/{inc.sla_minutes}m</span>
+                      <span className={inc.sla_breached ? 'text-neg' : 'text-muted'}>
+                        {inc.sla_breached ? bi('已破口', 'BREACHED') : bi(`剩 ${inc.due_in_minutes}m`, `${inc.due_in_minutes}m left`)}
+                      </span>
+                    </div>
+                    <ProgressBar value={frac} tone={inc.sla_breached ? 'neg' : frac >= 0.8 ? 'warn' : 'accent'} />
+                  </div>
+                  <div className="truncate text-2xs text-muted">{bi('下一步', 'Next')}: {inc.next_action}</div>
+                  <div className="flex items-center justify-between gap-2 text-2xs">
+                    <span className="text-faint">{bi('指挥', 'IC')}: {inc.incident_commander}</span>
+                    <GateDot ok={inc.blocks_live_authorization} label={bi('阻断实盘', 'blocks live')} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+
+        <Panel eyebrow={bi('路由命中', 'Routing')} title={bi('类别分布', 'Category Counts')}>
+          <Histogram bins={routingBins} height={200} tone="info" />
+        </Panel>
+      </div>
+
+      <Panel eyebrow={bi('全量台账', 'Ledger')} title={bi('事件台账', 'Incident Ledger')}
+        right={<Chip label={bi(`${data.incidents.length} 条`, `${data.incidents.length} rows`)} tone="muted" />}>
+        <DataTable columns={incidentCols} rows={data.incidents} getKey={r => r.incident_id} dense />
+      </Panel>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Panel eyebrow={bi('SLA 路由', 'Routing')} title={bi('路由规则', 'Routing Rules')}>
+          <DataTable columns={routingCols} rows={data.routing_rules} getKey={r => r.route_id} dense />
+        </Panel>
+
+        <Panel eyebrow={bi('审计', 'Audit')} title={bi('事件时间线', 'Incident Timeline')}>
+          <DataTable columns={timelineCols} rows={data.timeline} getKey={e => e.event_id} dense
+            empty={bi('暂无时间线事件', 'No timeline events')} />
+        </Panel>
+      </div>
+
+      <Panel eyebrow={bi('处置剧本', 'Playbooks')} title={bi('响应剧本', 'Response Runbooks')}
+        right={<Chip label={bi(`${data.runbooks.length} 剧本`, `${data.runbooks.length} runbooks`)} tone="info" />}>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {data.runbooks.map(rb => (
+            <div key={rb.runbook_id} className="flex flex-col gap-2 rounded-lg border border-line bg-inset/30 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="mono text-xs font-semibold text-accent">{rb.runbook_id}</div>
+                  <div className="truncate text-2xs text-faint">{rb.category}</div>
+                </div>
+                <Chip label={rb.mutable_runbook ? bi('可变', 'MUTABLE') : bi('封存', 'SEALED')}
+                  tone={rb.mutable_runbook ? 'neg' : 'pos'} />
+              </div>
+              <div className="text-2xs text-muted">{rb.objective}</div>
+              <ol className="flex flex-col gap-1.5 text-2xs text-muted">
+                {rb.steps.map((step, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="mono shrink-0 text-faint">{i + 1}.</span>
+                    <span className="min-w-0">{step}</span>
+                  </li>
+                ))}
+              </ol>
+              <div className="mt-auto flex items-center justify-between border-t border-line/60 pt-2 text-2xs">
+                <span className="text-faint">{bi('事后复盘', 'Postmortem')}</span>
+                <GateDot ok={rb.requires_postmortem} label={rb.requires_postmortem ? bi('要求', 'required') : bi('非必需', 'optional')} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel eyebrow={bi('快照元数据', 'Snapshot Meta')} title={bi('事件响应模式', 'Incident Response Mode')}>
+        <KeyValue cols={4} items={[
+          { k: bi('模式', 'Mode'), v: data.incident_mode },
+          { k: bi('API 版本', 'API Version'), v: data.api_version },
+          { k: bi('外部通知', 'External Notify'), v: incident_policy.external_notifications_enabled ? bi('启用', 'enabled') : bi('禁用', 'disabled') },
+          { k: bi('SLA 破口率', 'SLA Breach Rate'), v: pctPoints(slaBreachRate * 100, 1) },
+          { k: bi('实盘授权', 'Live Auth'), v: summary.live_authorization_allowed ? bi('允许', 'allowed') : bi('禁止', 'blocked') },
+          { k: bi('可变事件', 'Mutable'), v: incident_policy.mutable_incidents ? 'true' : 'false' },
+          { k: bi('只读', 'Read-only'), v: data.read_only ? 'true' : 'false' },
+          { k: bi('数据源', 'Source'), v: shortHash(data.source, 18) },
+        ]} />
+      </Panel>
+    </PageShell>
   );
 }

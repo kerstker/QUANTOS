@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DataSourceHeader, type ConsoleApiState } from '@/components/data-source';
-import { DecisionBadge, MetricCard } from '@/components/status-badges';
-import { fetchMonitoringDriftSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useMemo } from 'react';
+import { fetchMonitoringDriftSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { MonitoringDriftPayload, MonitoringDriftRecord } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import {
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
+  StatusChip, GateDot, ProgressBar, Chip, type Column,
+} from '@/ui/primitives';
+import { Donut, Histogram } from '@/ui/charts';
+import { num, pct, fixed, stamp, statusTone, type Tone } from '@/ui/format';
 
 const fallbackMonitoring: MonitoringDriftPayload = {
   source: 'FRONTEND_MONITORING_DRIFT_FALLBACK',
@@ -48,307 +53,201 @@ const fallbackMonitoring: MonitoringDriftPayload = {
   },
 };
 
-function formatTime(seconds: number) {
-  return new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ');
+/** Drift score relative to its own breach threshold — a normalized 0..1 pressure gauge. */
+function driftPressure(m: MonitoringDriftRecord): number {
+  return Math.min(1, m.drift_score / Math.max(m.breach_threshold, 0.01));
 }
 
-function numberText(value: number) {
-  if (Math.abs(value) >= 10) {
-    return value.toFixed(1);
-  }
-  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
-}
+const statusOrder: Record<string, number> = {BREACH: 0, WATCH: 1, OK: 2};
+const statusZh: Record<string, string> = {
+  OK: bi('正常', 'OK'), WATCH: bi('观察', 'WATCH'), BREACH: bi('破口', 'BREACH'),
+};
+const statusDonutTone: Record<string, Tone> = {OK: 'pos', WATCH: 'warn', BREACH: 'neg'};
 
-function pct(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
-
-function statusClass(status: string) {
-  if (status === 'BREACH') {
-    return 'border-red-800 bg-red-950/30 text-red-300';
-  }
-  if (status === 'WATCH') {
-    return 'border-amber-800 bg-amber-950/30 text-amber-300';
-  }
-  return 'border-emerald-800 bg-emerald-950/30 text-emerald-300';
-}
-
-function statusTextClass(status: string) {
-  if (status === 'BREACH') {
-    return 'text-red-300';
-  }
-  if (status === 'WATCH') {
-    return 'text-amber-300';
-  }
-  return 'text-emerald-300';
-}
-
-function driftBarClass(status: string) {
-  if (status === 'BREACH') {
-    return 'bg-red-600';
-  }
-  if (status === 'WATCH') {
-    return 'bg-amber-500';
-  }
-  return 'bg-emerald-600';
-}
-
-function MonitorCard({monitor}: {monitor: MonitoringDriftRecord}) {
-  const barWidth = Math.min(100, Math.max(3, Math.round((monitor.drift_score / Math.max(monitor.breach_threshold, 0.01)) * 100)));
-  return (
-    <div className={`rounded border p-3 text-xs ${statusClass(monitor.status)}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="font-bold text-slate-100">{monitor.monitor_id}</div>
-          <div className="mt-1 break-words text-slate-500">{monitor.subject_id}</div>
+function monitorColumns(): Column<MonitoringDriftRecord>[] {
+  return [
+    { key: 'monitor_id', header: bi('监控ID', 'Monitor'), mono: true,
+      render: m => <span className="font-medium text-accent">{m.monitor_id}</span> },
+    { key: 'category', header: bi('类别', 'Category'),
+      render: m => <span className="text-muted">{m.category}</span> },
+    { key: 'subject', header: bi('主体', 'Subject'), mono: true,
+      render: m => <span className="text-muted">{m.subject_id}</span> },
+    { key: 'metric', header: bi('指标', 'Metric'), mono: true,
+      render: m => <span className="text-muted">{m.metric}</span> },
+    { key: 'baseline', header: bi('基线', 'Baseline'), align: 'right', mono: true,
+      render: m => fixed(m.baseline, 3) },
+    { key: 'current', header: bi('当前', 'Current'), align: 'right', mono: true,
+      render: m => fixed(m.current, 3) },
+    { key: 'drift', header: bi('漂移压力', 'Drift Pressure'), width: '180px',
+      render: m => (
+        <div className="flex items-center gap-2">
+          <ProgressBar value={driftPressure(m)} tone={statusTone(m.status)} />
+          <span className="tnum w-10 text-right text-muted">{fixed(m.drift_score, 3)}</span>
         </div>
-        <span className="flex-shrink-0 font-bold">{monitor.status}</span>
-      </div>
-      <div className="mt-3 grid gap-1 text-slate-400 md:grid-cols-2">
-        <div>{bi('\u7c7b\u522b', 'Category')}: {monitor.category}</div>
-        <div>{bi('\u6307\u6807', 'Metric')}: {monitor.metric}</div>
-        <div>{bi('\u57fa\u7ebf', 'Baseline')}: {numberText(monitor.baseline)}</div>
-        <div>{bi('\u5f53\u524d', 'Current')}: {numberText(monitor.current)}</div>
-        <div>{bi('\u8d1f\u8d23\u4eba', 'Owner')}: {monitor.owner}</div>
-        <div>{bi('\u68c0\u67e5', 'Checked')}: {formatTime(monitor.last_checked)}</div>
-      </div>
-      <div className="mt-3">
-        <div className="mb-1 flex justify-between gap-2 text-slate-400">
-          <span>drift {numberText(monitor.drift_score)}</span>
-          <span>warn {numberText(monitor.warn_threshold)} / breach {numberText(monitor.breach_threshold)}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded bg-slate-900">
-          <div className={`h-full ${driftBarClass(monitor.status)}`} style={{width: `${barWidth}%`}} />
-        </div>
-      </div>
-      <div className="mt-3 break-words text-slate-300">{monitor.remediation}</div>
-      <div className="mt-2 break-words text-slate-500">{bi('\u8bc1\u636e', 'Evidence')}: {monitor.evidence_ref}</div>
-    </div>
-  );
-}
-
-function StatusBoard({monitoring}: {monitoring: MonitoringDriftPayload}) {
-  const statuses = ['OK', 'WATCH', 'BREACH'];
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u72b6\u6001\u5206\u5e03', 'Status Distribution')}</h2>
-      <div className="space-y-3 text-xs">
-        {statuses.map(status => {
-          const count = monitoring.status_counts[status] ?? 0;
-          const width = monitoring.summary.monitors > 0 ? Math.round((count / monitoring.summary.monitors) * 100) : 0;
-          return (
-            <div key={status}>
-              <div className="mb-1 flex justify-between gap-2">
-                <span className={statusTextClass(status)}>{status}</span>
-                <span className="text-slate-400">{count} / {width}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded bg-slate-800">
-                <div className={`h-full ${driftBarClass(status)}`} style={{width: `${Math.max(3, width)}%`}} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function CategoryBoard({monitoring}: {monitoring: MonitoringDriftPayload}) {
-  const categories = Object.entries(monitoring.category_counts).sort((a, b) => b[1] - a[1]);
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u76d1\u63a7\u7c7b\u522b', 'Monitor Categories')}</h2>
-      <div className="grid gap-2 text-xs sm:grid-cols-2">
-        {categories.map(([category, count]) => (
-          <div key={category} className="rounded bg-slate-800 px-3 py-2">
-            <div className="font-bold text-slate-200">{category}</div>
-            <div className="mt-1 text-cyan-300">{count} {bi('\u6761', 'records')}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PolicyBoard({monitoring}: {monitoring: MonitoringDriftPayload}) {
-  const policies: Array<[string, boolean]> = [
-    ['READ_ONLY', monitoring.monitoring_policy.read_only],
-    ['OWNER_REQUIRED', monitoring.monitoring_policy.requires_owner],
-    ['THRESHOLDS_REQUIRED', monitoring.monitoring_policy.requires_thresholds],
-    ['EVIDENCE_REF_REQUIRED', monitoring.monitoring_policy.requires_evidence_ref],
-    ['IMMUTABLE_ALERTS', !monitoring.monitoring_policy.mutable_alerts],
-    ['NO_LIVE_AUTHORIZATION', !monitoring.monitoring_policy.authorizes_live_trading],
+      ) },
+    { key: 'thresholds', header: bi('警戒 / 破口', 'Warn / Breach'), align: 'right', mono: true,
+      render: m => <span className="text-faint">{fixed(m.warn_threshold, 2)} / {fixed(m.breach_threshold, 2)}</span> },
+    { key: 'status', header: bi('状态', 'Status'),
+      render: m => <StatusChip value={m.status} /> },
+    { key: 'owner', header: bi('负责人', 'Owner'),
+      render: m => <span className="text-muted">{m.owner}</span> },
+    { key: 'checked', header: bi('检查时间', 'Checked'), align: 'right', mono: true,
+      render: m => <span className="text-faint">{stamp(m.last_checked)}</span> },
   ];
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u76d1\u63a7\u7b56\u7565', 'Monitoring Policy')}</h2>
-      <div className="grid gap-2 text-xs md:grid-cols-2">
-        {policies.map(([label, passed]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2">
-            <span className="text-slate-300">{label}</span>
-            <span className={passed ? 'text-emerald-300' : 'text-red-300'}>{passed ? 'PASS' : 'FAIL'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
-function CalculationLens() {
-  const rows = [
-    ['ALPHA_DECAY', 'abs(current_ic - baseline_ic) / max(abs(baseline_ic), 0.01)'],
-    ['FEATURE_DRIFT', 'max(0, baseline_quality - current_quality)'],
-    ['DATA_FRESHNESS', 'freshness_hours / 24'],
-    ['MODEL_RISK_AGING', 'issue_age_hours / 120'],
-    ['REVIEWER_SLA', 'overdue_hours / sla_hours'],
-  ];
+function PriorityRow({ m, tone }: { m: MonitoringDriftRecord; tone: Tone }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u8ba1\u7b97\u900f\u660e\u5ea6', 'Calculation Lens')}</h2>
-      <div className="space-y-2 text-xs">
-        {rows.map(([category, formula]) => (
-          <div key={category} className="rounded border border-slate-800 bg-slate-950/60 p-3">
-            <div className="font-bold text-cyan-300">{category}</div>
-            <div className="mt-1 break-words text-slate-400">{formula}</div>
-          </div>
-        ))}
+    <div className="flex flex-col gap-1.5 rounded-lg border border-line bg-elevated/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="mono truncate text-xs font-medium text-accent">{m.monitor_id}</span>
+        <StatusChip value={m.status} />
       </div>
+      <div className="flex items-center justify-between gap-2 text-2xs text-faint">
+        <span className="truncate">{m.category} · {m.metric}</span>
+        <span className="tnum shrink-0">{fixed(m.current, 3)} / {fixed(m.breach_threshold, 2)}</span>
+      </div>
+      <ProgressBar value={driftPressure(m)} tone={tone} />
+      <div className="truncate text-2xs text-muted">{m.owner} · {m.remediation}</div>
     </div>
   );
 }
 
 export default function MonitoringDrift() {
-  const [payload, setPayload] = useState<MonitoringDriftPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<MonitoringDriftPayload>(
+    s => fetchMonitoringDriftSnapshot(s));
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
+  const monitoring = usingBackend ? payload! : fallbackMonitoring;
+  const summary = monitoring.summary;
+  const policy = monitoring.monitoring_policy;
 
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchMonitoringDriftSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
+  const breachRatio = summary.monitors > 0 ? summary.breach / summary.monitors : 0;
 
-    return () => controller.abort();
-  }, [apiEnabled]);
-
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const monitoring = usingBackend && payload ? payload : fallbackMonitoring;
-  const priorityMonitors = useMemo(
-    () => [...monitoring.top_breaches, ...monitoring.watchlist].slice(0, 8),
-    [monitoring.top_breaches, monitoring.watchlist],
+  const statusSegments = useMemo(() =>
+    Object.entries(monitoring.status_counts)
+      .sort((a, b) => (statusOrder[a[0]] ?? 9) - (statusOrder[b[0]] ?? 9))
+      .map(([status, count]) => ({
+        label: `${statusZh[status] ?? status} ${count}`,
+        value: count,
+        tone: statusDonutTone[status] ?? statusTone(status),
+      })),
+    [monitoring.status_counts],
   );
-  const breachRatio = monitoring.summary.monitors > 0 ? monitoring.summary.breach / monitoring.summary.monitors : 0;
+
+  const categoryBins = useMemo(() =>
+    Object.entries(monitoring.category_counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => ({ label: category.replace(/_/g, ' '), count })),
+    [monitoring.category_counts],
+  );
+
+  const sortedMonitors = useMemo(() =>
+    [...monitoring.monitors].sort((a, b) =>
+      (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9) || b.drift_score - a.drift_score),
+    [monitoring.monitors],
+  );
+
+  const policyGates: Array<[string, boolean]> = [
+    [bi('只读', 'READ_ONLY'), policy.read_only],
+    [bi('需负责人', 'OWNER_REQUIRED'), policy.requires_owner],
+    [bi('需阈值', 'THRESHOLDS_REQUIRED'), policy.requires_thresholds],
+    [bi('需证据', 'EVIDENCE_REQUIRED'), policy.requires_evidence_ref],
+    [bi('告警不可变', 'IMMUTABLE_ALERTS'), !policy.mutable_alerts],
+    [bi('禁止实盘授权', 'NO_LIVE_AUTH'), !policy.authorizes_live_trading],
+  ];
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{bi('\u76d1\u63a7\u4e0e\u6f02\u79fb', 'Monitoring & Drift')}</h1>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <DecisionBadge decision="READ_ONLY" />
-              <DecisionBadge decision="L2_DRY_RUN_ONLY" />
-              <DecisionBadge decision={monitoring.monitoring_mode} />
-              <DecisionBadge decision={monitoring.summary.live_authorization_allowed ? 'APPROVED' : 'NO_GO'} />
+    <PageShell>
+      <PageHeader title="Monitoring & Drift" titleZh="监控与漂移"
+        subtitle={bi('只读漂移监控快照:告警不可变、不授权实盘;按破口/观察优先级排序',
+          'Read-only drift surveillance snapshot — immutable alerts, no live authorization; ranked by breach / watch priority')}
+        actions={
+          <Chip
+            label={summary.live_authorization_allowed ? bi('实盘授权:启用', 'LIVE AUTH: ON') : bi('实盘授权:禁用', 'LIVE AUTH: OFF')}
+            tone={summary.live_authorization_allowed ? 'neg' : 'pos'} soft={false} />
+        } />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={monitoring.source} error={error} />
+
+      <KpiStrip cols={7}>
+        <StatTile label={bi('监控项', 'Monitors')} value={num(summary.monitors)} accent />
+        <StatTile label={bi('正常', 'OK')} value={num(summary.ok)} tone="pos" />
+        <StatTile label={bi('观察', 'Watch')} value={num(summary.watch)} tone="warn" />
+        <StatTile label={bi('破口', 'Breach')} value={num(summary.breach)} tone="neg"
+          sub={bi(`破口率 ${pct(breachRatio, 0)}`, `${pct(breachRatio, 0)} breach rate`)} />
+        <StatTile label={bi('阻断监控', 'Blocking')} value={num(summary.blocking_monitors)} tone="neg" />
+        <StatTile label={bi('类别', 'Categories')} value={num(summary.categories)} tone="info" />
+        <StatTile label={bi('平均漂移', 'Avg Drift')} value={pct(summary.avg_drift_score)} tone="warn" />
+      </KpiStrip>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('健康分布', 'Health')} title={bi('监控状态分布', 'Monitor Status Distribution')}>
+          <div className="flex items-center gap-4">
+            <Donut segments={statusSegments} size={148} />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              {statusSegments.map(seg => (
+                <div key={seg.label} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-xs text-muted">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: `var(--${seg.tone})` }} />
+                    {seg.label.replace(/\s\d+$/, '')}
+                  </span>
+                  <span className="tnum text-xs font-semibold text-ink">{num(seg.value)}</span>
+                </div>
+              ))}
+              <div className="mt-1 border-t border-line pt-2">
+                <ProgressBar value={summary.breach} max={Math.max(summary.monitors, 1)} tone="neg" />
+                <div className="mt-1 text-2xs text-faint">{bi('破口占比', 'Breach share')} · {pct(breachRatio, 0)}</div>
+              </div>
             </div>
           </div>
-          <div className="text-xs text-slate-500 lg:text-right">
-            <div>{bi('\u6a21\u5f0f', 'Mode')}: {monitoring.monitoring_mode}</div>
-            <div>{bi('\u5b9e\u76d8\u6388\u6743', 'Live authorization')}: {monitoring.summary.live_authorization_allowed ? 'enabled' : 'disabled'}</div>
+        </Panel>
+
+        <Panel className="xl:col-span-2" eyebrow={bi('类别', 'Categories')}
+          title={bi('监控类别计数', 'Monitor Category Counts')}
+          right={<Chip label={bi(`${categoryBins.length} 类`, `${categoryBins.length} cats`)} tone="info" />}>
+          <Histogram bins={categoryBins} height={196} tone="info" />
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel eyebrow={bi('优先级', 'Priority')} title={bi('破口监控', 'Top Breaches')}
+          tone="neg"
+          right={<Chip label={num(monitoring.top_breaches.length)} tone="neg" />}>
+          {monitoring.top_breaches.length
+            ? <div className="flex flex-col gap-2.5">
+                {monitoring.top_breaches.map(m => <PriorityRow key={m.monitor_id} m={m} tone="neg" />)}
+              </div>
+            : <div className="py-6 text-center text-xs text-faint">{bi('无破口', 'No breaches')}</div>}
+        </Panel>
+
+        <Panel eyebrow={bi('优先级', 'Priority')} title={bi('观察清单', 'Watchlist')}
+          tone="warn"
+          right={<Chip label={num(monitoring.watchlist.length)} tone="warn" />}>
+          {monitoring.watchlist.length
+            ? <div className="flex flex-col gap-2.5">
+                {monitoring.watchlist.map(m => <PriorityRow key={m.monitor_id} m={m} tone="warn" />)}
+              </div>
+            : <div className="py-6 text-center text-xs text-faint">{bi('观察清单为空', 'Watchlist empty')}</div>}
+        </Panel>
+
+        <Panel eyebrow={bi('治理', 'Governance')} title={bi('监控策略门', 'Monitoring Policy Gates')}>
+          <div className="flex flex-col gap-2.5">
+            {policyGates.map(([label, ok]) => (
+              <div key={label} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-elevated/30 px-3 py-2">
+                <span className="text-xs text-muted">{label}</span>
+                <GateDot ok={ok} label={ok ? bi('通过', 'PASS') : bi('失败', 'FAIL')} />
+              </div>
+            ))}
+            <div className="mt-1 rounded-lg border border-info/30 bg-info/5 px-3 py-2 text-2xs text-muted">
+              {bi('模式', 'Mode')}: <span className="mono text-info">{monitoring.monitoring_mode}</span>
+            </div>
           </div>
-        </div>
-        <DataSourceHeader usingBackend={usingBackend} apiState={apiState} source={monitoring.source} error={apiError} />
+        </Panel>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-        <MetricCard label={bi('\u76d1\u63a7\u9879', 'Monitors')} value={monitoring.summary.monitors} />
-        <MetricCard label="OK" value={monitoring.summary.ok} />
-        <MetricCard label="WATCH" value={monitoring.summary.watch} />
-        <MetricCard label="BREACH" value={monitoring.summary.breach} />
-        <MetricCard label={bi('\u7c7b\u522b', 'Categories')} value={monitoring.summary.categories} />
-        <MetricCard label={bi('\u963b\u65ad', 'Blocking')} value={monitoring.summary.blocking_monitors} />
-        <MetricCard label={bi('\u5e73\u5747\u6f02\u79fb', 'Avg Drift')} value={pct(monitoring.summary.avg_drift_score)} />
-        <MetricCard label={bi('\u7834\u53e3\u7387', 'Breach Rate')} value={pct(breachRatio)} />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <h2 className="mb-3 text-sm uppercase text-slate-400">{bi('\u4f18\u5148\u5904\u7406', 'Priority Monitors')}</h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {priorityMonitors.map(monitor => <MonitorCard key={monitor.monitor_id} monitor={monitor} />)}
-          </div>
-        </div>
-        <div className="space-y-4">
-          <StatusBoard monitoring={monitoring} />
-          <CategoryBoard monitoring={monitoring} />
-          <PolicyBoard monitoring={monitoring} />
-          <CalculationLens />
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-slate-800 bg-slate-900">
-        <div className="border-b border-slate-800 p-4">
-          <h2 className="text-sm uppercase text-slate-400">{bi('\u5168\u91cf\u76d1\u63a7\u660e\u7ec6', 'Full Monitor Ledger')}</h2>
-        </div>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[1100px] text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase">
-                <th className="p-2 text-left">{bi('\u76d1\u63a7ID', 'Monitor ID')}</th>
-                <th className="p-2 text-left">{bi('\u7c7b\u522b', 'Category')}</th>
-                <th className="p-2 text-left">{bi('\u4e3b\u4f53', 'Subject')}</th>
-                <th className="p-2 text-left">{bi('\u6307\u6807', 'Metric')}</th>
-                <th className="p-2 text-right">{bi('\u57fa\u7ebf', 'Baseline')}</th>
-                <th className="p-2 text-right">{bi('\u5f53\u524d', 'Current')}</th>
-                <th className="p-2 text-right">Drift</th>
-                <th className="p-2 text-right">Warn</th>
-                <th className="p-2 text-right">Breach</th>
-                <th className="p-2 text-left">{bi('\u72b6\u6001', 'Status')}</th>
-                <th className="p-2 text-left">{bi('\u8d1f\u8d23\u4eba', 'Owner')}</th>
-                <th className="p-2 text-left">{bi('\u8bc1\u636e', 'Evidence')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monitoring.monitors.map(monitor => (
-                <tr key={monitor.monitor_id} className="border-b border-slate-800/50">
-                  <td className="p-2 font-bold text-cyan-300">{monitor.monitor_id}</td>
-                  <td className="p-2 text-slate-300">{monitor.category}</td>
-                  <td className="p-2 text-slate-400">{monitor.subject_id}</td>
-                  <td className="p-2 text-slate-400">{monitor.metric}</td>
-                  <td className="p-2 text-right text-slate-300">{numberText(monitor.baseline)}</td>
-                  <td className="p-2 text-right text-slate-300">{numberText(monitor.current)}</td>
-                  <td className="p-2 text-right text-slate-300">{numberText(monitor.drift_score)}</td>
-                  <td className="p-2 text-right text-slate-500">{numberText(monitor.warn_threshold)}</td>
-                  <td className="p-2 text-right text-slate-500">{numberText(monitor.breach_threshold)}</td>
-                  <td className={`p-2 font-bold ${statusTextClass(monitor.status)}`}>{monitor.status}</td>
-                  <td className="p-2 text-slate-400">{monitor.owner}</td>
-                  <td className="p-2 text-slate-500">{monitor.evidence_ref}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      <Panel eyebrow={bi('全量明细', 'Full Ledger')} title={bi('全量监控明细', 'Full Monitor Ledger')}
+        right={<Chip label={bi(`${sortedMonitors.length} 项`, `${sortedMonitors.length} monitors`)} tone="info" />}>
+        <DataTable columns={monitorColumns()} rows={sortedMonitors} dense getKey={m => m.monitor_id} />
+      </Panel>
+    </PageShell>
   );
 }
