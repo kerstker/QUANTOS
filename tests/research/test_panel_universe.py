@@ -38,6 +38,8 @@ def test_iso_conversion():
     assert _iso(20240102) == "2024-01-02"
     with pytest.raises(ValueError):
         _iso(2024)            # 非 YYYYMMDD
+    with pytest.raises(ValueError):
+        _iso(20240230)        # 不存在的日历日(2 月 30 日,审查 P2)
 
 
 def _appearances(periods):

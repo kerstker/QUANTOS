@@ -8,6 +8,7 @@ emitted (the long/short panel needs both legs). Deterministic. This is what lets
 GuidedSearchLoop / AlphaFactory run on the real persisted data substrate."""
 from __future__ import annotations
 
+from datetime import date as _date
 from typing import Callable, Optional, Sequence
 
 from services.alpha.panel_backtest import PanelPeriod
@@ -15,11 +16,14 @@ from .signals import SIGNAL_OPS
 
 
 def _iso(event_time: int) -> str:
-    """整数 YYYYMMDD -> ISO 'YYYY-MM-DD'(供 universe 字典序成员比较)。纯格式化、确定性。"""
+    """整数 YYYYMMDD -> ISO 'YYYY-MM-DD'(供 universe 字典序成员比较)。纯格式化、确定性。
+    用 datetime.date 校验真实日历日,失败关闭(拒 2024-02-30 这类不存在的日期,审查 P2)。"""
     et = int(event_time)
     y, m, d = et // 10000, (et // 100) % 100, et % 100
-    if y < 1 or not (1 <= m <= 12) or not (1 <= d <= 31):
-        raise ValueError(f"event_time is not YYYYMMDD: {event_time}")
+    try:
+        _date(y, m, d)
+    except ValueError as exc:
+        raise ValueError(f"event_time is not a valid YYYYMMDD date: {event_time}") from exc
     return f"{y:04d}-{m:02d}-{d:02d}"
 
 

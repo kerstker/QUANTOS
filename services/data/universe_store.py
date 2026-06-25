@@ -64,11 +64,24 @@ class SqliteUniverseStore:
                 raise ValueError(f"end_date must be ISO YYYY-MM-DD, got {end_date!r}")
             if end_date < start_date:
                 raise ValueError("end_date precedes start_date")
-        cur = self._conn.execute(
-            "INSERT OR IGNORE INTO membership(instrument_id, start_date, end_date) VALUES (?,?,?)",
+        # fail-closed on a corrected end_date for an existing (id,start): silently
+        # IGNORE-ing it would keep a stale interval and could re-introduce the very
+        # survivorship error this store exists to prevent (review P1). Identical
+        # re-adds are idempotent no-ops; a genuine conflict raises.
+        existing = self._conn.execute(
+            "SELECT end_date FROM membership WHERE instrument_id=? AND start_date=?",
+            (instrument_id, start_date)).fetchone()
+        if existing is not None:
+            if existing["end_date"] != end_date:
+                raise ValueError(
+                    f"conflicting end_date for ({instrument_id},{start_date}): "
+                    f"stored {existing['end_date']!r} != {end_date!r}")
+            return False
+        self._conn.execute(
+            "INSERT INTO membership(instrument_id, start_date, end_date) VALUES (?,?,?)",
             (instrument_id, start_date, end_date))
         self._conn.commit()
-        return cur.rowcount == 1
+        return True
 
     def save(self, universe: PITUniverse) -> int:
         """Persist every interval of an in-memory universe (PK-deduped). Returns new rows."""

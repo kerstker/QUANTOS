@@ -44,6 +44,27 @@ def test_add_membership_rejects_bad_dates():
         s.add_membership("AAA", "2024-06-30", "2024-01-01")   # end < start
 
 
+def test_conflicting_end_date_fails_closed():
+    # 同 (id,start) 但修正了 end_date → 失败关闭(不静默丢弃,审查 P1)
+    s = SqliteUniverseStore(":memory:", create=True)
+    assert s.add_membership("AAA", "2024-01-01", "2024-06-30")
+    assert s.add_membership("AAA", "2024-01-01", "2024-06-30") is False   # 完全相同 → 幂等
+    with pytest.raises(ValueError):
+        s.add_membership("AAA", "2024-01-01", "2024-09-30")               # end 改了 → 抛
+
+
+def test_ingest_conflicting_end_date_recorded_not_dropped(tmp_path):
+    s = SqliteUniverseStore(":memory:", create=True)
+    s.add_membership("AAA", "2024-01-01", "2024-06-30")
+    p = tmp_path / "u.csv"
+    with open(p, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["instrument_id", "start_date", "end_date"])
+        w.writerow(["AAA", "2024-01-01", "2024-09-30"])      # 冲突修正
+    rep = ingest_universe_csv(str(p), s)
+    assert rep.added == 0 and len(rep.rejected) == 1         # 进 rejected,不消失
+
+
 def test_ingest_csv_good_and_bad(tmp_path):
     p = tmp_path / "u.csv"
     with open(p, "w", newline="", encoding="utf-8") as fh:
