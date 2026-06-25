@@ -72,3 +72,23 @@ def make_fundamental_periods_provider(fund_store, price_store, instruments: Sequ
                                          event_times=event_times, fwd_horizon=fwd_horizon,
                                          mode=mode, universe=universe)
     return provider
+
+
+def make_combined_periods_provider(price_store, fund_store, instruments: Sequence[str], *,
+                                   event_times: Sequence[int], fwd_horizon: int,
+                                   universe=None) -> Callable:
+    """Dispatch a periods provider by AlphaDefinition family: a fundamental hypothesis
+    (params carry 'metric') builds a value-factor panel; a price hypothesis builds the
+    price panel. Lets ONE GuidedSearchLoop search both families (CombinedHypothesisSpace)."""
+    from .panel_builder import make_data_periods_provider
+    price_provider = make_data_periods_provider(price_store, instruments, event_times=event_times,
+                                                fwd_horizon=fwd_horizon, universe=universe)
+
+    def provider(defn):
+        if "metric" in defn.params:
+            return build_fundamental_periods(
+                fund_store, price_store, instruments, defn.params["metric"],
+                event_times=event_times, fwd_horizon=fwd_horizon,
+                mode=defn.params.get("mode", "ratio_to_price"), universe=universe)
+        return price_provider(defn)
+    return provider

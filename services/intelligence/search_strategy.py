@@ -27,7 +27,13 @@ class UCBSearch:
         return mean + self.c * math.sqrt(math.log(max(self.n_evaluated, 1)) / n)
 
     def _score(self, hypothesis) -> float:
-        return sum(self._ucb(a) for a in self.space.arms_of(hypothesis))
+        # MEAN of arm UCBs (not sum): for a homogeneous space (every hypothesis has the
+        # same arm count) this is sum/k → identical ranking (zero regression). For a
+        # CombinedHypothesisSpace mixing 3-arm price and 2-arm fundamental hypotheses,
+        # averaging removes the bias toward higher-arm-count families. An unpulled arm
+        # is +inf, so the mean stays +inf and forces first exploration of every arm.
+        arms = self.space.arms_of(hypothesis)
+        return sum(self._ucb(a) for a in arms) / len(arms) if arms else 0.0
 
     def propose(self, batch_size: int) -> list:
         pool = [h for h in self.space.hypotheses() if h not in self.proposed]

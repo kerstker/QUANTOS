@@ -69,6 +69,30 @@ def test_session_works_without_registry():
     assert out["dataset_version"] and out["recorded_run_ids"] == []   # ran, nothing persisted
 
 
+def _fund_store():
+    from services.data.fundamental_store import SqliteFundamentalStore
+    from quantos.contracts.feature import FeatureValue
+    fs = SqliteFundamentalStore(":memory:", create=True)
+    for k in range(6):
+        fs.add(FeatureValue(feature_id="eps", instrument_id=f"i{k}",
+                            event_time=0, knowledge_time=0, value=1.0 + k))
+    return fs
+
+
+def test_session_unified_price_and_fundamental_search():
+    # one bandit searches BOTH price factors (h_*) and fundamental value factors (hf_*)
+    store, reg = _store(), _reg()
+    out = run_research_session(store, registry=reg, fund_store=_fund_store(), metrics=("eps",), **_kw())
+    ids = set(out["report"].keys())
+    assert any(a.startswith("h_") for a in ids)        # price hypotheses evaluated
+    assert any(a.startswith("hf_") for a in ids)       # fundamental value factor evaluated
+    cat = AlphaCatalog()
+    reg.load_into(cat)
+    assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())   # contained
+    b = run_research_session(_store(), registry=None, fund_store=_fund_store(), metrics=("eps",), **_kw())
+    assert out["arm_means"] == b["arm_means"]          # deterministic
+
+
 def test_bandit_learning_persists_across_sessions():
     # the guided-search bandit's learned arm statistics survive into the next session
     store, reg = _store(), _reg()

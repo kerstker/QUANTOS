@@ -18,8 +18,10 @@ from services.alpha.catalog import AlphaCatalog
 from services.data.versioning import content_hash_of
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guided_search import GuidedSearchLoop
+from services.intelligence.search_space import CombinedHypothesisSpace
 
 from .panel_builder import make_data_periods_provider, universe_data_gaps
+from .fundamental_factors import make_combined_periods_provider
 
 
 def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
@@ -33,7 +35,8 @@ def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequ
 def run_research_session(store, instruments: Sequence[str], *, event_times: Sequence[int],
                          fwd_horizon: int, space, rounds: int, batch_size: int,
                          timestamp: int = 0, registry=None,
-                         dataset_version: Optional[str] = None, audit_log=None, universe=None) -> dict:
+                         dataset_version: Optional[str] = None, audit_log=None, universe=None,
+                         fund_store=None, metrics: tuple = (), modes: tuple = ("ratio_to_price",)) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -41,11 +44,21 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
     if registry is not None:
         registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
 
-    loop = GuidedSearchLoop(space, inner_loop=ResearchAgentLoop(catalog=catalog))
+    # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
+    # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
+    if fund_store is not None and metrics:
+        effective_space = CombinedHypothesisSpace(space, tuple(metrics), tuple(modes))
+        provider = make_combined_periods_provider(store, fund_store, instruments,
+                                                  event_times=event_times, fwd_horizon=fwd_horizon,
+                                                  universe=universe)
+    else:
+        effective_space = space
+        provider = make_data_periods_provider(store, instruments, event_times=event_times,
+                                              fwd_horizon=fwd_horizon, universe=universe)
+
+    loop = GuidedSearchLoop(effective_space, inner_loop=ResearchAgentLoop(catalog=catalog))
     if registry is not None:
         registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
-    provider = make_data_periods_provider(store, instruments, event_times=event_times,
-                                          fwd_horizon=fwd_horizon, universe=universe)
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
 
     # honesty signal: members with no bar on a trading day (survivorship-free run only)
