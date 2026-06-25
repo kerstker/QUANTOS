@@ -74,11 +74,13 @@ def validate_tree(tree, *, max_depth: int, max_nodes: int) -> None:
     """Fail-closed grammar check. Raises ValueError on unknown op/combinator/const, bad
     arity, non-int/<1 window, or depth/size past the bound. Called at the grammar boundary
     (tree_definition) and after every mutate/crossover candidate."""
+    # structural/arity check FIRST so a malformed node raises ValueError (caught fail-closed
+    # by the genome operators), never an IndexError from tree_depth/size indexing a missing child.
+    _validate_node(tree)
     if tree_depth(tree) > max_depth:
         raise ValueError(f"tree depth {tree_depth(tree)} > max_depth {max_depth}")
     if tree_size(tree) > max_nodes:
         raise ValueError(f"tree size {tree_size(tree)} > max_nodes {max_nodes}")
-    _validate_node(tree)
 
 
 def _validate_node(t) -> None:
@@ -190,7 +192,12 @@ def canonicalize(tree):
     binary node by their serialization. sub/pdiv preserve operand order. Idempotent.
     NO algebraic simplification (a missed equivalence merely over-counts trials — safe)."""
     tag = tree[0]
-    if tag in ("leaf", "const"):
+    if tag == "leaf":
+        # type-stable window AT THE CHOKEPOINT: int/str windows ('5' vs 5) collapse to one
+        # canonical tuple, so the catalog trial count cannot be under-counted by a type variant
+        # (trial-honesty no longer depends on every caller pre-stringifying the window).
+        return ("leaf", tree[1], str(int(tree[2])))
+    if tag == "const":
         return tree
     if tag in UNARY:
         return (tag, canonicalize(tree[1]))

@@ -128,6 +128,25 @@ def test_validate_rejects_unknown_and_oversized():
         deep = ("neg", deep)
     with pytest.raises(ValueError):
         validate_tree(deep, max_depth=4, max_nodes=12)                        # too deep
+    # size bound (shallow but wide) and bad arity must BOTH raise ValueError (not IndexError),
+    # so the genome operators' fail-closed drop catches them (review hardening).
+    wide = ("add", ("add", LEAF, LEAF), ("add", ("add", LEAF, LEAF), ("add", LEAF, LEAF)))
+    with pytest.raises(ValueError):
+        validate_tree(wide, max_depth=4, max_nodes=4)                         # size > max_nodes
+    with pytest.raises(ValueError):
+        validate_tree(("add", LEAF), max_depth=4, max_nodes=12)               # binary under-arity
+    with pytest.raises(ValueError):
+        validate_tree(("neg",), max_depth=4, max_nodes=12)                    # unary under-arity
+
+
+def test_canonicalize_window_type_is_stable():
+    # int vs str window must collapse to ONE canonical tuple (and one trial) at the chokepoint,
+    # so trial-honesty does not depend on every caller pre-stringifying the window (review P2).
+    assert canonicalize(("leaf", "momentum", 5)) == canonicalize(("leaf", "momentum", "5"))
+    d_int = tree_definition(("leaf", "momentum", 5))
+    d_str = tree_definition(("leaf", "momentum", "5"))
+    assert d_int.definition_hash == d_str.definition_hash
+    assert parse(serialize(canonicalize(("leaf", "momentum", 5)))) == canonicalize(("leaf", "momentum", "5"))
 
 
 def test_depth_and_size():

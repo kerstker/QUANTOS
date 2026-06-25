@@ -58,8 +58,8 @@ def _accept(candidate, base, out: set, *, max_depth: int, max_nodes: int) -> Non
     try:
         ct = canonicalize(candidate)
         validate_tree(ct, max_depth=max_depth, max_nodes=max_nodes)
-    except ValueError:
-        return                                    # fail-closed: drop invalid/oversized
+    except (ValueError, IndexError, TypeError):
+        return                                    # fail-closed: drop any malformed/oversized candidate
     if ct != base:
         out.add(ct)
 
