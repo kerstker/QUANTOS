@@ -93,6 +93,27 @@ def test_match_larger_queue_fraction_fills_no_more():
     assert f_big <= f_small                      # 排队越靠后,成交不增(保守单调)
 
 
+def test_match_intrabar_touch_is_partial_not_full():
+    # open 在限价上方、low 下探到限价 → 盘中触及 → 部分成交(受 participation 限制),非全成。
+    # 这是真实数据上排队分支被触发的典型形态(open>L>=low),非精确相等的死分支。
+    lf = LimitFill(participation=0.05, queue_fraction=0.0)
+    order = RestingOrder("x", 1, 100000, limit_price=99.8, queue_ahead=0.0, bars_alive=0)
+    bar = _bar(100, 101, 99.5, 100, v=10000)        # open=100>99.8=L, low=99.5<=L → 触及
+    filled, price, c, q = lf.match(order, bar, _NOCOST)
+    assert filled == 500                             # 0.05*10000=500,远小于 qty → 部分
+    assert price == pytest.approx(99.8)              # 成交在限价
+
+
+def test_match_gap_open_through_is_full():
+    # 开盘已在限价下方(跳空)→ marketable → 全成于开盘价(不受 participation 限制)。
+    lf = LimitFill(participation=0.01)
+    order = RestingOrder("x", 1, 100000, limit_price=99.8, queue_ahead=1e9, bars_alive=0)
+    bar = _bar(99.0, 100, 98.0, 99.5, v=10000)       # open=99<99.8=L → 跳空
+    filled, price, c, q = lf.match(order, bar, _NOCOST)
+    assert filled == 100000                          # 全成,排队/participation 无关
+    assert price == pytest.approx(99.0)              # 开盘价(优于限价)
+
+
 def test_match_sell_mirror_through():
     lf = LimitFill()
     order = RestingOrder("x", -1, -100, limit_price=101.0, queue_ahead=1e9, bars_alive=0)
@@ -168,6 +189,21 @@ def test_no_overshoot_under_constant_target():
                              limit_fill=LimitFill(participation=0.05, queue_fraction=0.0))
     desired = round(0.5 * 1_000_000 / 100)            # 5000 股上限
     assert 0 <= res.final_positions.get("AAA", 0) <= desired
+    assert res.reconciliation_residual() < 1e-6
+
+
+def test_limit_touched_partial_fills_through_engine():
+    # open>L(offset>0)且 low<=L → 盘中触及 → 经引擎走部分成交+排队,非跳空全成。
+    # 证明排队 fidelity 在真实型 bar(非精确相等)上确实被触发(审查 F7 端到端补强)。
+    timeline = [(t, {"AAA": _aaa(100, 101, 99.5, 100, v=10000)}) for t in range(12)]
+    targets = [{"AAA": 0.5}] * 12
+    res = run_event_backtest(timeline, targets, initial_capital=1_000_000,
+                             limit_fill=LimitFill(limit_offset_bps=20.0,    # L=99.8 < open=100
+                                                  participation=0.05, queue_fraction=0.1,
+                                                  expire_bars=20))
+    pos = res.final_positions.get("AAA", 0)
+    desired = round(0.5 * 1_000_000 / 100)
+    assert 0 < pos < desired           # 部分成交(touched 分支触发),未一次性全成
     assert res.reconciliation_residual() < 1e-6
 
 
