@@ -5,6 +5,7 @@ import type {
   ArchitecturePayload,
   BacktestExplainabilityPayload,
   ComputationLabPayload,
+  CryptoLivePayload,
   DataCatalogPayload,
   EvidenceLedgerPayload,
   EventsPayload,
@@ -192,4 +193,8 @@ export function fetchSystemHealthSnapshot(signal?: AbortSignal) {
 
 export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SystemCompletenessPayload>('/api/v1/console/system-completeness', signal);
+}
+
+export function fetchCryptoLiveSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<CryptoLivePayload>('/api/v1/console/crypto-live', signal);
 }

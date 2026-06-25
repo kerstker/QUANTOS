@@ -91,6 +91,15 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
         "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
         "equity_curve", "drawdown_curve", "risk_report", "lineage")),
+    "/api/v1/console/crypto-live": ("", (
+        "crypto_mode", "snapshot_present", "generated_at", "dataset_version",
+        "meta", "summary", "factors", "safety")),
+}
+
+# Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
+# marker. They still must be read-only snapshots; only the honesty label differs.
+REAL_DATA_PROVENANCE = {
+    "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
 }
 
 
@@ -120,9 +129,11 @@ def test_every_endpoint_satisfies_the_frontend_contract():
         if body.get("read_only") is not True:
             failures.append(f"{path}: read_only is not True")
         # honesty marker (audit P1): synthetic figures must be self-labelled, never
-        # presented as real research/PnL on the wire
-        if body.get("data_provenance") != "SYNTHETIC_DETERMINISTIC":
-            failures.append(f"{path}: data_provenance is not SYNTHETIC_DETERMINISTIC")
+        # presented as real research/PnL on the wire. Real-data endpoints carry a
+        # distinct provenance marker (still read-only) — never the synthetic label.
+        expected_prov = REAL_DATA_PROVENANCE.get(path, "SYNTHETIC_DETERMINISTIC")
+        if body.get("data_provenance") != expected_prov:
+            failures.append(f"{path}: data_provenance is not {expected_prov}")
         for key in keys:
             if key not in body:
                 failures.append(f"{path}: missing contract key '{key}'")

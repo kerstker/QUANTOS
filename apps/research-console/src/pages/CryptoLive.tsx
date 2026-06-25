@@ -1,0 +1,199 @@
+import React, { useMemo } from 'react';
+import { fetchCryptoLiveSnapshot } from '@/lib/api/research-console-api';
+import { bi } from '@/lib/i18n/bilingual';
+import type { CryptoFactor, CryptoLivePayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import { RESEARCH_CONSOLE_API_BASE } from '@/lib/api/research-console-api';
+import {
+  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip,
+  GateDot, type Column,
+} from '@/ui/primitives';
+import { BarSeries } from '@/ui/charts';
+import { num, fixed, stamp, shortHash } from '@/ui/format';
+import type { ConsoleApiState as ApiState } from '@/ui/useConsoleSnapshot';
+
+/* Short, stable display label for an alpha id (interaction ids are long). */
+function shortLabel(id: string): string {
+  const s = id.replace(/^hx_/, '').replace(/^h_/, '').replace(/price-/g, '');
+  return s.length > 16 ? `${s.slice(0, 15)}…` : s;
+}
+
+/**
+ * Honesty + connection ribbon — REAL read-only crypto data (NOT the synthetic demo
+ * snapshots the other pages serve). States the source, the containment, and that
+ * the research core never touches the network.
+ */
+function RealDataRibbon({ apiState, usingBackend, present, provenance, error }:
+  { apiState: ApiState; usingBackend: boolean; present: boolean; provenance?: string; error?: string | null }) {
+  const tone = !usingBackend ? 'var(--warn)' : present ? 'var(--pos)' : 'var(--info)';
+  const headline = !usingBackend
+    ? bi('未连接只读后端 · 真实加密研究仅在连接后端时渲染', 'Not connected · real crypto research renders only against the read-only backend')
+    : present
+      ? bi('真实只读行情(CoinGecko)· 链下抓取、研究核心离线 · 非实盘盈亏', 'Real read-only market data (CoinGecko) · off-gate fetch, offline research core · not live PnL')
+      : bi('已连接后端 · 尚未生成真实快照', 'Backend connected · no live snapshot generated yet');
+  const apiLabel = apiState === 'connected' ? bi('已连接', 'CONNECTED') : apiState === 'error' ? bi('错误', 'ERROR')
+    : apiState === 'loading' ? bi('加载中', 'LOADING') : bi('未连接', 'NOT_CONNECTED');
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
+      style={{ background: `color-mix(in srgb, ${tone} 8%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tone} 30%, transparent)` }}>
+      <span className="text-2xs font-medium" style={{ color: tone }}>
+        {present ? '◆' : '○'} {headline}
+      </span>
+      <span className="mx-1 h-3 w-px bg-line-strong" />
+      <Chip label={present ? 'REAL_DATA' : usingBackend ? 'AWAITING_SNAPSHOT' : 'MOCK_MODE'} tone={present ? 'pos' : usingBackend ? 'info' : 'warn'} />
+      <Chip label={apiLabel} tone={apiState === 'connected' ? 'pos' : apiState === 'error' ? 'neg' : 'muted'} />
+      <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
+      <Chip label={bi('实盘禁用', 'LIVE_DISALLOWED')} tone="neg" />
+      <span className="ml-auto text-2xs text-faint">
+        {error ? <span className="text-neg">{bi('错误', 'Error')}: {error}</span>
+          : <>{bi('数据源', 'Source')}: <span className="mono">{provenance ?? 'COINGECKO_OFFLINE'}</span>
+            {'  ·  API: '}<span className="mono">{RESEARCH_CONSOLE_API_BASE || bi('未启用', 'disabled')}</span></>}
+      </span>
+    </div>
+  );
+}
+
+function Instructions({ connected }: { connected: boolean }) {
+  return (
+    <Panel eyebrow={bi('使用说明', 'How to populate')} title={bi('生成真实加密研究快照', 'Generate the real crypto snapshot')}>
+      <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted">
+        <p>
+          {bi('本页只渲染由只读链下流程生成的真实加密研究结论(非合成演示)。研究核心与门禁完全离线 —— 网络只存在于门禁外的抓取器中。',
+            'This page renders only real crypto research produced by the read-only off-gate pipeline (not synthetic demo). The research core and gate are fully offline — the network lives only in the out-of-gate fetcher.')}
+        </p>
+        <ol className="flex list-decimal flex-col gap-2 pl-5 text-[12.5px] text-ink">
+          <li><span className="text-muted">{bi('抓取并跑研究(链下、只读):', 'Fetch + run research (off-gate, read-only):')}</span>
+            <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">python tools/crypto_research_run.py</div></li>
+          <li><span className="text-muted">{bi('启动只读 Console API:', 'Start the read-only Console API:')}</span>
+            <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">python -m uvicorn services.research.console_api.main:app --port 8400</div></li>
+          <li><span className="text-muted">{bi('连接前端(关闭 mock):', 'Point the console at it (mock off):')}</span>
+            <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev</div></li>
+        </ol>
+        {connected && <p className="text-2xs text-info">{bi('后端已连接,但尚未发现快照文件 —— 先执行第 1 步。', 'Backend connected, but no snapshot file found yet — run step 1.')}</p>}
+      </div>
+    </Panel>
+  );
+}
+
+export default function CryptoLive() {
+  const { payload, apiState, error, usingBackend } =
+    useConsoleSnapshot<CryptoLivePayload>(s => fetchCryptoLiveSnapshot(s));
+
+  const present = usingBackend && payload?.snapshot_present === true;
+  const meta = payload?.meta;
+  const summary = payload?.summary;
+  const factors: CryptoFactor[] = present ? payload!.factors : [];
+
+  /* Top factors by net Sharpe for the raw-vs-deflated comparison (already sorted desc). */
+  const top = useMemo(() => factors.slice(0, 12), [factors]);
+  const topLabels = useMemo(() => top.map(f => shortLabel(f.alpha_id)), [top]);
+  const netSharpeSeries = useMemo(() => top.map(f => f.net_sharpe ?? 0), [top]);
+  const deflatedSeries = useMemo(() => top.map(f => f.deflated_sharpe ?? 0), [top]);
+
+  const factorCols: Column<CryptoFactor>[] = [
+    { key: 'id', header: bi('因子', 'Factor'), render: f => <span className="mono text-accent" title={f.alpha_id}>{shortLabel(f.alpha_id)}</span> },
+    { key: 'family', header: bi('族', 'Family'), render: f => <Chip label={f.family === 'interaction' ? bi('交互', 'interaction') : bi('原子', 'price')} tone={f.family === 'interaction' ? 'special' : 'info'} /> },
+    { key: 'ic', header: 'IC', align: 'right', mono: true, render: f => <span className={(f.ic ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fixed(f.ic, 4)}</span> },
+    { key: 'net', header: bi('净夏普', 'Net Sharpe'), align: 'right', mono: true, render: f => <span className={(f.net_sharpe ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fixed(f.net_sharpe, 3)}</span> },
+    { key: 'dsr', header: bi('Deflated 夏普', 'Deflated SR'), align: 'right', mono: true, render: f => <span className="text-warn">{fixed(f.deflated_sharpe, 4)}</span> },
+    { key: 'turn', header: bi('换手', 'Turnover'), align: 'right', mono: true, render: f => fixed(f.turnover, 3) },
+    { key: 'breadth', header: bi('横截面', 'Breadth'), align: 'right', mono: true, render: f => fixed(f.breadth, 1) },
+    { key: 'verdict', header: bi('裁决', 'Verdict'), render: f => <StatusChip value={f.verdict} /> },
+    { key: 'state', header: bi('状态', 'State'), render: f => <StatusChip value={f.state ?? '—'} /> },
+  ];
+
+  const coinCols: Column<NonNullable<typeof meta>['coins'][number]>[] = [
+    { key: 'inst', header: bi('标的', 'Symbol'), render: c => <span className="mono font-semibold text-ink">{c.instrument_id}</span> },
+    { key: 'coin', header: 'CoinGecko ID', render: c => <span className="mono text-faint">{c.coin_id}</span> },
+    { key: 'bars', header: bi('K线数', 'Bars'), align: 'right', mono: true, render: c => num(c.bars) },
+    { key: 'rej', header: bi('拒绝', 'Rejected'), align: 'right', mono: true, render: c => <span className={c.rejected ? 'text-neg' : 'text-pos'}>{num(c.rejected)}</span> },
+  ];
+
+  return (
+    <PageShell>
+      <PageHeader title="Crypto Live" titleZh="加密实盘研究"
+        subtitle={bi('真实只读加密行情(CoinGecko)上的机器因子发现 + 多重检验诚实裁决 —— 离线研究核心,实盘禁用',
+          'Machine factor discovery on real read-only crypto (CoinGecko) with multiple-testing-honest verdicts — offline research core, live trading disallowed')}
+        actions={present
+          ? <Chip label={bi(`${meta!.n_instruments} 标的 · ${meta!.n_periods} 周期`, `${meta!.n_instruments} coins · ${meta!.n_periods} periods`)} tone="pos" />
+          : <Chip label={bi('等待快照', 'awaiting snapshot')} tone="warn" />} />
+
+      <RealDataRibbon apiState={apiState} usingBackend={usingBackend} present={!!present}
+        provenance={payload?.data_provenance} error={error} />
+
+      {!present ? (
+        <Instructions connected={usingBackend} />
+      ) : (
+        <>
+          <KpiStrip cols={7}>
+            <StatTile label={bi('标的数', 'Instruments')} value={num(meta!.n_instruments)} accent
+              sub={bi(`${meta!.days}天 · ${meta!.granularity}`, `${meta!.days}d · ${meta!.granularity}`)} />
+            <StatTile label={bi('横截面周期', 'Periods')} value={num(meta!.n_periods)} tone="info" />
+            <StatTile label={bi('评估因子', 'Factors Evaluated')} value={num(summary!.n_evaluated)}
+              sub={bi('= 多重检验试验数', '= multiple-testing trials')} />
+            <StatTile label={bi('自动放行', 'Auto-Approved')} value={num(summary!.auto_approved)} tone={summary!.auto_approved === 0 ? 'pos' : 'neg'}
+              sub={bi('容器化:恒为 0', 'contained: always 0')} />
+            <StatTile label={bi('最高净夏普', 'Max Net Sharpe')} value={fixed(summary!.max_net_sharpe, 2)} tone="warn"
+              sub={bi('原始(未校正)', 'raw, uncorrected')} />
+            <StatTile label={bi('最高 Deflated', 'Max Deflated SR')} value={fixed(summary!.max_deflated_sharpe, 3)} tone="special"
+              sub={bi('多重检验校正后', 'after MT penalty')} />
+            <StatTile label={bi('需人工复核', 'Human Review')} value={num(summary!.n_evaluated - summary!.auto_approved)} tone="info"
+              sub={bi('全部', 'all of them')} />
+          </KpiStrip>
+
+          <Panel eyebrow={bi('多重检验诚实', 'Multiple-testing honesty')}
+            title={bi('原始净夏普 vs Deflated 夏普(净夏普 Top 12)', 'Raw Net Sharpe vs Deflated Sharpe (top 12 by net Sharpe)')}
+            right={<Chip label={bi('搜索越多 · 校正越狠', 'more search → harsher haircut')} tone="warn" />}>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div>
+                <div className="mb-1.5 text-2xs uppercase tracking-[0.12em] text-faint">{bi('净夏普(原始,易被噪声抬高)', 'Net Sharpe (raw — inflated by noise)')}</div>
+                <BarSeries data={netSharpeSeries} labels={topLabels} height={188} valueFormat={v => v.toFixed(1)} />
+              </div>
+              <div>
+                <div className="mb-1.5 text-2xs uppercase tracking-[0.12em] text-faint">{bi('Deflated 夏普(扣除搜索次数后)', 'Deflated Sharpe (after trial-count penalty)')}</div>
+                <BarSeries data={deflatedSeries} labels={topLabels} height={188} posTone="special" valueFormat={v => v.toFixed(3)} />
+              </div>
+            </div>
+            <p className="mt-2 text-2xs text-faint">
+              {bi('同一批因子:原始净夏普可达 ~0.9,但 Deflated 夏普扣除"机器一共搜了 60 次"后趋近 0 —— 因此没有任何因子被自动放行,全部进入人工复核。这是系统的统计良知,而非缺陷。',
+                'Same factors: raw net Sharpe reaches ~0.9, but Deflated Sharpe — after penalizing "the machine searched 60 times" — collapses toward 0. Hence nothing is auto-promoted; all go to human review. This is the system\'s statistical conscience, not a bug.')}
+            </p>
+          </Panel>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Panel className="xl:col-span-2" eyebrow={bi('机器发现', 'Machine-discovered')}
+              title={bi('因子清单(进化搜索:原子 + 交叉交互)', 'Factor catalog (evolutionary: atoms + crossover interactions)')}
+              right={<GateDot ok label={bi('只读', 'read-only')} />}>
+              <DataTable columns={factorCols} rows={factors} getKey={f => f.alpha_id} dense />
+            </Panel>
+
+            <div className="flex flex-col gap-4">
+              <Panel eyebrow={bi('数据', 'Universe')} title={bi('真实标的横截面', 'Real instrument cross-section')}>
+                {meta && <DataTable columns={coinCols} rows={meta.coins} getKey={c => c.instrument_id} dense />}
+              </Panel>
+
+              <Panel eyebrow={bi('安全边界', 'Safety')} title={bi('容器化 · 实盘禁用', 'Containment · live disallowed')}>
+                <div className="flex flex-col gap-2.5 text-[12.5px]">
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('自动放行 (agent)', 'Auto-approved (agent)')}</span><Chip label={`${payload!.safety.auto_approved} ✓`} tone="pos" /></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('agent 可达 APPROVED', 'Agent can reach APPROVED')}</span><Chip label={payload!.safety.agent_can_reach_approved ? 'YES' : 'NO ✓'} tone={payload!.safety.agent_can_reach_approved ? 'neg' : 'pos'} /></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('services/ 含网络', 'Network in services/')}</span><Chip label={payload!.safety.network_in_services ? 'YES' : 'NO ✓'} tone={payload!.safety.network_in_services ? 'neg' : 'pos'} /></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('实盘交易', 'Live trading')}</span><Chip label={payload!.safety.live_trading} tone="neg" /></div>
+                  <div className="mono mt-1 border-t border-line/60 pt-2 text-2xs text-faint">{bi('抓取路径', 'fetch path')}: {payload!.safety.fetch_path}</div>
+                </div>
+              </Panel>
+
+              <Panel eyebrow={bi('可复现', 'Reproducible')} title={bi('数据集版本', 'Dataset version')}>
+                <div className="flex flex-col gap-2 text-[12.5px]">
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('内容哈希', 'content hash')}</span><span className="mono text-accent" title={payload!.dataset_version}>{shortHash(payload!.dataset_version, 12)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('生成时间(UTC)', 'generated (UTC)')}</span><span className="mono text-ink">{stamp(payload!.generated_at)}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('搜索模式', 'search mode')}</span><span className="mono text-ink">{meta!.search_mode}</span></div>
+                  <div className="flex items-center justify-between"><span className="text-muted">{bi('进化(代/群/精英)', 'evo (gen/pop/elite)')}</span><span className="mono text-ink">{meta!.evo_generations}/{meta!.evo_population}/{meta!.evo_elite}</span></div>
+                </div>
+              </Panel>
+            </div>
+          </div>
+        </>
+      )}
+    </PageShell>
+  );
+}

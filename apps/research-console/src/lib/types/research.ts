@@ -1216,3 +1216,77 @@ export interface Phase3AReadiness {
 export interface Phase3AReadinessPayload extends ConsolePayloadBase {
   readiness: Phase3AReadiness;
 }
+
+/* ---- Crypto Live: REAL read-only CoinGecko research snapshot (not synthetic) ---- */
+export interface CryptoCoinMeta {
+  instrument_id: string;
+  coin_id: string;
+  bars: number;
+  ingested: number;
+  rejected: number;
+}
+
+export interface CryptoLiveMeta {
+  provider: string;
+  asset_class: string;
+  vs_currency: string;
+  days: number;
+  granularity: string;
+  fwd_horizon: number;
+  n_instruments: number;
+  n_periods: number;
+  coins: CryptoCoinMeta[];
+  search_mode: string;
+  evo_generations: number;
+  evo_population: number;
+  evo_elite: number;
+  operators: string[];
+  windows: number[];
+}
+
+export interface CryptoLiveSummary {
+  n_evaluated: number;
+  trial_count: number;
+  auto_approved: number;
+  requires_human_review: number;
+  rejected: number;
+  max_net_sharpe: number | null;
+  max_deflated_sharpe: number | null;
+  top_alpha_id: string | null;
+}
+
+export interface CryptoFactor {
+  alpha_id: string;
+  name: string;
+  family: "price" | "interaction" | string;
+  ic: number | null;
+  rank_ic: number | null;
+  net_sharpe: number | null;
+  capacity_adj_sharpe: number | null;
+  deflated_sharpe: number | null;
+  pbo: number | null;
+  turnover: number | null;
+  breadth: number | null;
+  verdict: string;
+  state: string | null;
+  reproducibility_hash: string;
+}
+
+export interface CryptoLivePayload extends ConsolePayloadBase {
+  data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
+  crypto_mode: string;
+  snapshot_present: boolean;
+  generated_at: number | null;
+  generated_at_iso: string;
+  dataset_version: string;
+  meta: CryptoLiveMeta;
+  summary: CryptoLiveSummary;
+  factors: CryptoFactor[];
+  safety: {
+    network_in_services: boolean;
+    fetch_path: string;
+    auto_approved: number;
+    agent_can_reach_approved: boolean;
+    live_trading: string;
+  };
+}

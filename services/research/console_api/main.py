@@ -6,7 +6,9 @@ connect to brokers, place orders, store credentials, or mutate trading state.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
+import os
 import statistics
 from typing import Dict, List
 
@@ -3343,6 +3345,69 @@ def _system_completeness_payload() -> Dict:
     }
 
 
+# repo-root-relative path to the REAL-crypto research snapshot (gitignored data/cache).
+# services/research/console_api/main.py -> up 4 -> repo root.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
+
+_CRYPTO_EMPTY_META = {
+    "provider": "", "asset_class": "CRYPTO", "vs_currency": "", "days": 0, "granularity": "",
+    "fwd_horizon": 0, "n_instruments": 0, "n_periods": 0, "coins": [], "search_mode": "",
+    "evo_generations": 0, "evo_population": 0, "evo_elite": 0, "operators": [], "windows": [],
+}
+_CRYPTO_EMPTY_SUMMARY = {
+    "n_evaluated": 0, "trial_count": 0, "auto_approved": 0, "requires_human_review": 0,
+    "rejected": 0, "max_net_sharpe": None, "max_deflated_sharpe": None, "top_alpha_id": None,
+}
+
+
+def _crypto_live_payload() -> Dict:
+    """Serve the persisted REAL-crypto research snapshot (generated OUT OF GATE by
+    tools/crypto_research_run.py from read-only CoinGecko public OHLC). This endpoint
+    NEVER fetches: the no-network-import ban inside services/ is machine-enforced
+    (tests/governance/test_crypto_data_boundary.py); it only reads the local artifact.
+
+    Fail-closed: when the snapshot is absent (the gate / CI never commits raw research
+    output — data/cache is gitignored) or corrupt, it returns a well-formed EMPTY
+    payload so the frontend contract still holds and the page shows an honest
+    'no live snapshot yet' state instead of 500-ing or rendering undefined.
+
+    Provenance is labelled REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT — distinct from the
+    SYNTHETIC_DETERMINISTIC demo endpoints — so the honesty marker stays truthful."""
+    snap = None
+    if os.path.exists(_CRYPTO_SNAPSHOT_PATH):
+        try:
+            with open(_CRYPTO_SNAPSHOT_PATH, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if isinstance(loaded, dict) and isinstance(loaded.get("factors"), list):
+                snap = loaded
+        except (ValueError, OSError):
+            snap = None        # corrupt artifact -> honest empty, never crash the read-only API
+    present = snap is not None
+    summary = snap.get("summary", _CRYPTO_EMPTY_SUMMARY) if present else _CRYPTO_EMPTY_SUMMARY
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
+        "crypto_mode": "READ_ONLY_OFFLINE_SNAPSHOT",
+        "snapshot_present": present,
+        "generated_at": snap.get("generated_at") if present else None,
+        "generated_at_iso": snap.get("generated_at_iso", "") if present else "",
+        "dataset_version": snap.get("dataset_version", "") if present else "",
+        "meta": snap.get("meta", _CRYPTO_EMPTY_META) if present else _CRYPTO_EMPTY_META,
+        "summary": summary,
+        "factors": snap.get("factors", []) if present else [],
+        "safety": {
+            "network_in_services": False,
+            "fetch_path": "OUT_OF_GATE tools/coingecko_fetch.py",
+            "auto_approved": summary.get("auto_approved", 0),   # containment: must stay 0
+            "agent_can_reach_approved": False,
+            "live_trading": "DISALLOWED",
+        },
+    }
+
+
 @app.get("/health")
 async def health() -> Dict[str, str]:
     return {"status": "healthy", "service": "research-console-api", "mode": "READ_ONLY"}
@@ -3708,6 +3773,11 @@ async def computation_lab(
         "risk_report": _risk_decision(alpha["candidate_id"], returns, equity_points, alpha["capacity_estimate"]),
         "lineage": LINEAGE,
     }
+
+
+@app.get("/api/v1/console/crypto-live")
+async def crypto_live() -> Dict:
+    return _crypto_live_payload()
 
 
 if __name__ == "__main__":

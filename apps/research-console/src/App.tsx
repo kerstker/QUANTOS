@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell, type NavGroup } from '@/ui/AppShell';
 
 import Overview from './pages/Overview';
+import CryptoLive from './pages/CryptoLive';
 import AlphaFactory from './pages/AlphaFactory';
 import Experiments from './pages/Experiments';
 import DataCatalog from './pages/DataCatalog';
@@ -31,6 +32,7 @@ import SystemCompleteness from './pages/SystemCompleteness';
 const nav: NavGroup[] = [
   { zh: '研究', en: 'RESEARCH', items: [
     { to: '/research', zh: '总览', en: 'Overview', icon: 'OV', end: true },
+    { to: '/research/crypto-live', zh: '加密实盘研究', en: 'Crypto Live', icon: '₿' },
     { to: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF' },
     { to: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX' },
     { to: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC' },
@@ -72,6 +74,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/research" replace />} />
         <Route path="/research" element={<Overview />} />
+        <Route path="/research/crypto-live" element={<CryptoLive />} />
         <Route path="/research/alpha-factory" element={<AlphaFactory />} />
         <Route path="/research/experiments" element={<Experiments />} />
         <Route path="/research/data-catalog" element={<DataCatalog />} />
