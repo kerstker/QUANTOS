@@ -42,6 +42,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
 
     loop = GuidedSearchLoop(space, inner_loop=ResearchAgentLoop(catalog=catalog))
+    if registry is not None:
+        registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
     provider = make_data_periods_provider(store, instruments, event_times=event_times,
                                           fwd_horizon=fwd_horizon)
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
@@ -54,6 +56,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                 recorded.append(registry.record_evaluation(
                     ev, dataset_version=dataset_version, recorded_ts=timestamp, audit_log=audit_log))
         registry.save(catalog, now=timestamp)
+        registry.save_bandit(loop.strategy)         # persist the learned arm statistics
 
     return {
         "dataset_version": dataset_version,

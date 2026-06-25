@@ -91,6 +91,18 @@ class ExperimentRegistry:
             )
         return run_id
 
+    # --- bandit (guided-search) state persistence ----------------------------
+
+    def save_bandit(self, strategy) -> None:
+        """Persist the guided-search bandit's learned arm statistics so the agent's
+        learning accumulates across sessions (mirrors catalog persistence)."""
+        self._store.save_bandit(json.dumps(strategy.snapshot(), sort_keys=True))
+
+    def load_bandit_into(self, strategy) -> None:
+        raw = self._store.load_bandit()
+        if raw is not None:
+            strategy.restore(json.loads(raw))
+
     def get_evaluation(self, run_id: str) -> Optional[dict]:
         return self._store.get_evaluation(run_id)
 

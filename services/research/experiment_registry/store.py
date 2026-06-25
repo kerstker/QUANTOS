@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS evaluations (
     content_hash TEXT NOT NULL,
     evaluation_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bandit_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    snapshot_json TEXT NOT NULL
+);
 """
 
 _TABLES = ("trials", "alpha_state", "evaluations")
@@ -100,6 +104,21 @@ class SqliteExperimentStore:
         return [dict(r) for r in self._conn.execute(
             "SELECT alpha_id, definition_json, state, returns_json, sharpe, pvalue "
             "FROM alpha_state ORDER BY alpha_id")]
+
+    def save_bandit(self, snapshot_json: str) -> None:
+        self._require_schema()
+        self._conn.execute("CREATE TABLE IF NOT EXISTS bandit_state "
+                           "(id INTEGER PRIMARY KEY CHECK (id = 1), snapshot_json TEXT NOT NULL)")
+        self._conn.execute("INSERT OR REPLACE INTO bandit_state(id, snapshot_json) VALUES (1, ?)",
+                           (snapshot_json,))
+        self._conn.commit()
+
+    def load_bandit(self):
+        self._require_schema()
+        self._conn.execute("CREATE TABLE IF NOT EXISTS bandit_state "
+                           "(id INTEGER PRIMARY KEY CHECK (id = 1), snapshot_json TEXT NOT NULL)")
+        row = self._conn.execute("SELECT snapshot_json FROM bandit_state WHERE id = 1").fetchone()
+        return row["snapshot_json"] if row is not None else None
 
     def insert_evaluation(self, *, run_id: str, alpha_id: str, dataset_version: str,
                           recorded_ts: int, verdict: str, content_hash: str,

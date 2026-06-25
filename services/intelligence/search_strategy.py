@@ -44,3 +44,19 @@ class UCBSearch:
 
     def arm_means(self) -> dict:
         return {a: self.reward_sum[a] / self.pulls[a] for a in self.pulls}
+
+    # --- persistence port (pure in-memory; serialized by the experiment registry) -
+
+    def snapshot(self) -> dict:
+        return {
+            "pulls": [[list(arm), n] for arm, n in sorted(self.pulls.items())],
+            "reward_sum": [[list(arm), r] for arm, r in sorted(self.reward_sum.items())],
+            "n_evaluated": self.n_evaluated,
+            "proposed": [list(h) for h in sorted(self.proposed)],
+        }
+
+    def restore(self, snap: dict) -> None:
+        self.pulls = {tuple(arm): n for arm, n in snap["pulls"]}
+        self.reward_sum = {tuple(arm): r for arm, r in snap["reward_sum"]}
+        self.n_evaluated = int(snap["n_evaluated"])
+        self.proposed = {tuple(h) for h in snap["proposed"]}

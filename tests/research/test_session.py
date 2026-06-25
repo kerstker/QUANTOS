@@ -67,3 +67,14 @@ def test_session_persists_trial_count_across_sessions():
 def test_session_works_without_registry():
     out = run_research_session(_store(), registry=None, **_kw())
     assert out["dataset_version"] and out["recorded_run_ids"] == []   # ran, nothing persisted
+
+
+def test_bandit_learning_persists_across_sessions():
+    # the guided-search bandit's learned arm statistics survive into the next session
+    store, reg = _store(), _reg()
+    run_research_session(store, registry=reg, **_kw())
+    from services.intelligence.search_strategy import UCBSearch
+    s = UCBSearch(_kw()["space"])
+    reg.load_bandit_into(s)
+    assert s.n_evaluated >= 1 and s.arm_means()       # prior session's learning restored
+    assert s.proposed                                 # and what was already tried is remembered
