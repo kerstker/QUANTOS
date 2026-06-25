@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "research-console",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/research-console", "run", "dev"],
+      "port": 3100
+    }
+  ]
+}
