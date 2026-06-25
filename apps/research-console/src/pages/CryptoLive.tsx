@@ -84,6 +84,7 @@ export default function CryptoLive() {
   const summary = payload?.summary;
   const factors: CryptoFactor[] = present ? payload!.factors : [];
   const oos = present ? payload!.oos : null;
+  const synSet = present ? payload!.synergistic_set : null;
   const isGp = meta?.search_mode === 'gp_tree';
   const oosConfirmed = oos ? (oos.selection.mean_oos_sharpe ?? -1) > 0 && (oos.selection.oos_positive_frac ?? 0) >= 0.5 : false;
 
@@ -219,6 +220,27 @@ export default function CryptoLive() {
                 'Same factors: raw net Sharpe reaches ~0.9, but Deflated Sharpe — after penalizing "the machine searched 60 times" — collapses toward 0. Hence nothing is auto-promoted; all go to human review. This is the system\'s statistical conscience, not a bug.')}
             </p>
           </Panel>
+
+          {synSet && synSet.selected.length > 0 && (
+            <Panel eyebrow={bi('去冗余 · 增量 IC 前向选择', 'De-redundancy · incremental-IR forward selection')}
+              title={bi('协同因子集(最优"组合"而非最强"单体")', 'Synergistic factor set (best SET, not greedy top-N)')}
+              right={<Chip label={bi(`${synSet.n_candidates} → ${synSet.selected.length} 个独立`, `${synSet.n_candidates} → ${synSet.selected.length} independent`)} tone="pos" />}>
+              <p className="mb-3 text-2xs text-faint">
+                {bi(`从 ${synSet.n_candidates} 个机器发现因子中,按"对已选集合的增量信息(正交化残差 IR × 新颖方差占比)"前向选择;其余 ${synSet.dropped_redundant.length} 个是冗余克隆(信息已被覆盖)被剔除 —— 这正是 GP 顶树全是低波动克隆问题的解。`,
+                  `From ${synSet.n_candidates} machine-discovered factors, forward-selected by INCREMENTAL information vs the chosen set (orthogonalized residual IR × novel-variance share); the other ${synSet.dropped_redundant.length} are redundant clones (information already covered) and were dropped — the fix for the GP top trees all being low-vol clones.`)}
+              </p>
+              <div className="flex flex-col gap-2">
+                {synSet.selected.map((s, i) => (
+                  <div key={s.id} className="flex items-center gap-3 border-b border-line/50 pb-2 last:border-0 last:pb-0">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-2xs font-bold text-ink" style={{ background: 'var(--inset)', boxShadow: 'inset 0 0 0 1px var(--line)' }}>{i + 1}</span>
+                    <span className="mono min-w-0 flex-1 truncate text-xs text-accent" title={s.expr ?? s.id}>{s.expr ?? s.id}</span>
+                    <span className="shrink-0 text-2xs text-faint">{bi('增量 IR', 'incr. IR')}</span>
+                    <span className="tnum shrink-0 text-xs text-special">{fixed(s.incremental_ir, 3)}</span>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <Panel className="xl:col-span-2" eyebrow={bi('机器发现', 'Machine-discovered')}

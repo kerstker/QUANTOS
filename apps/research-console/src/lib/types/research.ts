@@ -1311,6 +1311,16 @@ export interface CryptoOos {
   };
 }
 
+export interface CryptoSynergisticSet {
+  method: string;
+  n_candidates: number;
+  max_k: number;
+  min_incremental_ir: number;
+  selected: Array<{ id: string; incremental_ir: number; expr?: string | null }>;
+  selected_ids: string[];
+  dropped_redundant: string[];
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;
@@ -1322,6 +1332,7 @@ export interface CryptoLivePayload extends ConsolePayloadBase {
   summary: CryptoLiveSummary;
   factors: CryptoFactor[];
   oos: CryptoOos | null;
+  synergistic_set: CryptoSynergisticSet | null;
   safety: {
     network_in_services: boolean;
     fetch_path: string;

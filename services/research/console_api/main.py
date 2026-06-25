@@ -3401,6 +3401,9 @@ def _crypto_live_payload() -> Dict:
         # out-of-sample (no-peek walk-forward) validation block, merged by
         # tools/crypto_oos_validation.py; None until that has been run.
         "oos": snap.get("oos") if present else None,
+        # de-redundant best set (incremental-IR forward selection); None until a GP/evo run
+        # that emits it has been written.
+        "synergistic_set": snap.get("synergistic_set") if present else None,
         "safety": {
             "network_in_services": False,
             "fetch_path": "OUT_OF_GATE tools/coingecko_fetch.py",

@@ -23,6 +23,15 @@ from services.intelligence.evolutionary_search import EvolutionarySearchLoop, ma
 
 from .panel_builder import make_data_periods_provider, universe_data_gaps
 from .fundamental_factors import make_combined_periods_provider
+from .factor_set import select_synergistic_set
+
+
+def _synergistic_set(catalog, k: int) -> dict:
+    """De-redundant best SET from every evaluated factor's stored returns (incremental IR).
+    Post-search and read-only over the catalog, so it never touches the contained loop."""
+    returns_by_id = {aid: catalog.returns(aid) for aid in catalog.all_ids()
+                     if len(catalog.returns(aid)) >= 2}
+    return select_synergistic_set(returns_by_id, max_k=max(1, k), min_incremental_ir=0.0)
 
 
 def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
@@ -41,7 +50,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          evolutionary: bool = False, evo_generations: int = 2,
                          evo_population: int = 8, evo_elite: int = 3,
                          gp: bool = False, parsimony_lambda: float = 0.0,
-                         parsimony_mu: float = 0.0) -> dict:
+                         parsimony_mu: float = 0.0, synergistic_k: int = 8) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -56,7 +65,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             catalog=catalog, registry=registry, dataset_version=dataset_version,
             timestamp=timestamp, audit_log=audit_log,
             generations=evo_generations, population_size=evo_population, elite_k=evo_elite,
-            gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu)
+            gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu,
+            synergistic_k=synergistic_k)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -98,6 +108,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "n_evaluated": len(out["report"]),
         "report": out["report"],
         "data_gaps": data_gaps,
+        "synergistic_set": _synergistic_set(catalog, synergistic_k),
     }
 
 
@@ -118,7 +129,7 @@ def _record_report(registry, report, *, dataset_version, timestamp, audit_log) -
 def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
                       fund_store, universe, catalog, registry, dataset_version, timestamp,
                       audit_log, generations, population_size, elite_k,
-                      gp=False, parsimony_lambda=0.0, parsimony_mu=0.0) -> dict:
+                      gp=False, parsimony_lambda=0.0, parsimony_mu=0.0, synergistic_k=8) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
       - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
@@ -170,4 +181,5 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "n_evaluated": len(out["report"]),
         "report": out["report"],
         "data_gaps": data_gaps,
+        "synergistic_set": _synergistic_set(catalog, synergistic_k),
     }

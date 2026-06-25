@@ -109,6 +109,12 @@ def main() -> None:
         "top_alpha_id": factors[0]["alpha_id"] if factors else None,
     }
     snap["factors"] = factors
+    # de-redundant best SET (incremental-IR forward selection over ALL discovered factors):
+    # the GP top trees are near-clones, so this collapses ~96 factors to a few independent ones.
+    syn = dict(res.get("synergistic_set", {}))
+    for s in syn.get("selected", []):
+        s["expr"] = expr.get(s["id"])
+    snap["synergistic_set"] = syn
     snap.pop("oos", None)        # method-independent; recompute via crypto_oos_validation.py
     with open(_SNAP, "w", encoding="utf-8") as fh:
         json.dump(snap, fh, indent=2)
