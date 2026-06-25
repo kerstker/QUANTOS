@@ -21,6 +21,7 @@ from .reward import evaluation_reward
 from services.research.interaction_factors import interaction_definition, make_interaction_provider
 from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
+from services.research import gp_tree, gp_genome
 
 DEFAULT_VOCAB = {
     "operators": ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",
@@ -29,6 +30,14 @@ DEFAULT_VOCAB = {
     "metrics": ("eps",),
     "modes": ("ratio_to_price", "raw"),
     "combines": ("sum", "product"),
+    # GP expression-tree ("T") channel — additive; defaults keep flat P/F/X runs unchanged.
+    "unary": gp_tree.UNARY,
+    "binary": gp_tree.BINARY,
+    "consts": gp_tree.CONST_VOCAB,
+    "max_depth": gp_tree.MAX_DEPTH_DEFAULT,
+    "max_nodes": gp_tree.MAX_NODES_DEFAULT,
+    "parsimony_lambda": 0.0,   # bloat penalty on SEARCH reward only (0 -> off, honest eval unchanged)
+    "parsimony_mu": 0.0,
 }
 
 
@@ -63,6 +72,9 @@ def genome_to_definition(genome) -> AlphaDefinition:
     if tag == "X":
         _, leg_a, leg_b, combine = genome
         return interaction_definition(leg_a, leg_b, combine)
+    if tag == "T":
+        _, tree = genome
+        return gp_tree.tree_definition(tree)        # canonicalize + ':' guard + bound inside
     raise ValueError(f"unknown genome tag: {tag!r}")
 
 
@@ -76,9 +88,13 @@ def make_evolution_provider(price_store, fund_store, instruments: Sequence[str],
     fund = (make_fundamental_periods_provider(fund_store, price_store, instruments, event_times=event_times,
                                               fwd_horizon=fwd_horizon, universe=universe)
             if fund_store is not None else None)
+    tree = gp_tree.make_tree_provider(price_store, instruments, event_times=event_times,
+                                      fwd_horizon=fwd_horizon, universe=universe)
 
     def provider(defn):
         params = defn.params
+        if params.get("family") == "gp_tree":
+            return tree(defn)
         if params.get("family") == "interaction":
             return inter(defn)
         if "metric" in params:
@@ -128,14 +144,35 @@ def mutate(genome, vocab=DEFAULT_VOCAB) -> list:
         out += [("X", leg_a, leg_b, c2) for c2 in vocab["combines"] if c2 != combine]
         out += [("X", la2, leg_b, combine) for la2 in _mutate_leg(leg_a, vocab)]
         out += [("X", leg_a, lb2, combine) for lb2 in _mutate_leg(leg_b, vocab)]
+    elif tag == "T":
+        md, mn = vocab.get("max_depth", gp_tree.MAX_DEPTH_DEFAULT), vocab.get("max_nodes", gp_tree.MAX_NODES_DEFAULT)
+        out += [("T", t) for t in gp_genome.point_and_subtree_mutate(genome[1], vocab, max_depth=md, max_nodes=mn)]
     else:
         raise ValueError(f"unknown genome tag: {tag!r}")
     return sorted(set(out))
 
 
+def _tree_of(genome):
+    """A genome as a GP tree: 'T' yields its tree; an atomic 'P' lifts to a depth-0 leaf
+    (so the atomic population can SEED trees); anything else -> None (does not cross as a tree)."""
+    if genome[0] == "T":
+        return genome[1]
+    if genome[0] == "P":
+        return ("leaf", genome[1], genome[2])
+    return None
+
+
 def crossover(g1, g2, vocab=DEFAULT_VOCAB) -> list:
-    """Compose two ATOMIC parents into 2-leg interaction genomes (one per combine op).
-    Non-atomic parents do not cross (returns [])."""
+    """When at least one parent is a GP tree ('T'), breed tree offspring by subtree splice
+    (the other parent may be a 'T' or a liftable atomic 'P'). When NEITHER parent is a tree,
+    preserve the original behavior: compose two ATOMIC parents into 2-leg 'X' interactions
+    (so existing flat P/F/X search is byte-identical)."""
+    if g1[0] == "T" or g2[0] == "T":
+        t1, t2 = _tree_of(g1), _tree_of(g2)
+        if t1 is None or t2 is None:
+            return []
+        md, mn = vocab.get("max_depth", gp_tree.MAX_DEPTH_DEFAULT), vocab.get("max_nodes", gp_tree.MAX_NODES_DEFAULT)
+        return sorted({("T", t) for t in gp_genome.crossover(t1, t2, vocab, max_depth=md, max_nodes=mn)})
     a, b = _atom_leg(g1), _atom_leg(g2)
     if a is None or b is None:
         return []
@@ -168,6 +205,12 @@ class EvolutionarySearchLoop:
         for g, defn in ok:
             entry = out["report"].get(defn.alpha_id, {})
             r = evaluation_reward(entry.get("evaluation"))
+            if g[0] == "T":
+                # parsimony pressure on the SEARCH-selection reward ONLY (never the recorded
+                # AlphaEvaluation): bias the population toward smaller trees, opt-in via vocab.
+                lam, mu = self.vocab.get("parsimony_lambda", 0.0), self.vocab.get("parsimony_mu", 0.0)
+                if lam or mu:
+                    r = max(0.0, r - gp_genome.parsimony_penalty(g[1], lam, mu))
             evaluated[g] = r
             history.append({"genome": g, "reward": r, "state": entry.get("state")})
 

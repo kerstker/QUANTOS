@@ -122,3 +122,73 @@ def test_provider_error_isolated():
     assert rewards[("F", "eps", "raw")] == 0.0
     assert ("P", "momentum", "5") in rewards
     assert any(h["genome"] == ("F", "eps", "raw") and h.get("error") for h in out["history"])
+
+
+# ---------- GP expression-tree ("T") genome integration ---------------------
+_LEAF_T = ("T", ("leaf", "momentum", "5"))
+_BIN_T = ("T", ("add", ("leaf", "momentum", "5"), ("leaf", "zscore", "3")))
+
+
+def test_gp_genome_to_definition():
+    d = genome_to_definition(_BIN_T)
+    assert d.alpha_id.startswith("hgp_") and ":" not in d.alpha_id
+    assert d.params["family"] == "gp_tree" and d.factor_ids == ("close",)
+    assert "tree" in d.params and ":" not in d.params["tree"]
+
+
+def test_gp_provider_dispatch_builds_periods():
+    prov = _provider()
+    assert isinstance(prov(genome_to_definition(_LEAF_T)), list)
+    assert isinstance(prov(genome_to_definition(_BIN_T)), list)
+
+
+def test_gp_mutate_and_crossover_emit_trees():
+    muts = mutate(_BIN_T)
+    assert muts and all(g[0] == "T" for g in muts) and _BIN_T not in muts
+    assert muts == sorted(set(muts))                       # deterministic, deduped
+    # a tree parent crosses with a liftable atom -> tree offspring
+    kids = crossover(_BIN_T, ("P", "volatility", "5"))
+    assert kids and all(g[0] == "T" for g in kids)
+    # two pure atoms still produce the original 'X' interaction (flat path untouched)
+    flat = crossover(("P", "momentum", "5"), ("P", "zscore", "3"))
+    assert flat and all(g[0] == "X" for g in flat)
+
+
+def test_gp_run_deterministic_and_contained():
+    seed = [_LEAF_T, ("T", ("leaf", "zscore", "3")), _BIN_T]
+    def run():
+        loop = ResearchAgentLoop()
+        out = EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+        return out, loop
+    a, la = run()
+    b, _lb = run()
+    assert a["best"] == b["best"] and a["n_evaluated"] == b["n_evaluated"]   # deterministic
+    assert a["n_evaluated"] > len(seed)                                      # bred new trees
+    for aid in la.catalog.all_ids():
+        assert la.catalog.state(aid) != AlphaState.APPROVED                  # containment
+
+
+def test_gp_aliased_trees_count_one_trial():
+    a, b = ("leaf", "momentum", "5"), ("leaf", "zscore", "3")
+    g1 = ("T", ("add", a, b))
+    g2 = ("T", ("add", b, a))                               # canonicalizes identically
+    assert genome_to_definition(g1).definition_hash == genome_to_definition(g2).definition_hash
+    loop = ResearchAgentLoop()
+    before = loop.catalog.global_trial_count()
+    EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
+        [g1, g2], generations=0, population_size=4, elite_k=2, timestamp=10)
+    assert loop.catalog.global_trial_count() - before == 1   # aliased trees = ONE trial (honest)
+
+
+def test_gp_session_mode_smoke():
+    from services.research.session import run_research_session
+    from services.intelligence.search_space import HypothesisSpace
+    space = HypothesisSpace(factors=("close",), operators=("momentum", "zscore", "volatility"),
+                            windows=(3, 5))
+    out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
+                               rounds=1, batch_size=1, timestamp=10, gp=True,
+                               evo_generations=2, evo_population=8, evo_elite=3)
+    assert out["mode"] == "gp" and out["n_evaluated"] > 0
+    # every machine-discovered tree id is a GP id; nothing auto-approved
+    assert all(aid.startswith("hgp_") for aid in out["report"])

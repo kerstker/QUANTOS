@@ -39,7 +39,9 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          dataset_version: Optional[str] = None, audit_log=None, universe=None,
                          fund_store=None, metrics: tuple = (), modes: tuple = ("ratio_to_price",),
                          evolutionary: bool = False, evo_generations: int = 2,
-                         evo_population: int = 8, evo_elite: int = 3) -> dict:
+                         evo_population: int = 8, evo_elite: int = 3,
+                         gp: bool = False, parsimony_lambda: float = 0.0,
+                         parsimony_mu: float = 0.0) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -47,13 +49,14 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
     if registry is not None:
         registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
 
-    if evolutionary:
+    if evolutionary or gp:
         return _run_evolutionary(
             store, instruments, event_times=event_times, fwd_horizon=fwd_horizon, space=space,
             metrics=metrics, modes=modes, fund_store=fund_store, universe=universe,
             catalog=catalog, registry=registry, dataset_version=dataset_version,
             timestamp=timestamp, audit_log=audit_log,
-            generations=evo_generations, population_size=evo_population, elite_k=evo_elite)
+            generations=evo_generations, population_size=evo_population, elite_k=evo_elite,
+            gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -114,23 +117,39 @@ def _record_report(registry, report, *, dataset_version, timestamp, audit_log) -
 
 def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
                       fund_store, universe, catalog, registry, dataset_version, timestamp,
-                      audit_log, generations, population_size, elite_k) -> dict:
-    """Evolutionary mode: machine-discover alpha (price/value atoms + crossover-into-
-    interaction genomes) through the UNCHANGED guardrailed ResearchAgentLoop. The
-    crossover operator subsumes feature interactions. No bandit (no UCBSearch), so no
-    save_bandit; the catalog still accrues cross-session multiple-testing state."""
+                      audit_log, generations, population_size, elite_k,
+                      gp=False, parsimony_lambda=0.0, parsimony_mu=0.0) -> dict:
+    """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
+    ResearchAgentLoop. Two genome families share the loop:
+      - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
+      - gp=True: GP EXPRESSION TREES ("T") — arbitrary-depth scalar trees over atom leaves,
+        seeded with leaves AND depth-1 binary trees so crossover (subtree splice) can grow
+        depth; an opt-in parsimony penalty biases the SEARCH reward toward smaller trees
+        (the recorded evaluation stays honest). Containment + multiple-testing honesty are
+        identical (each distinct canonical tree = one catalog trial). No bandit -> no save_bandit."""
     provider = make_evolution_provider(store, fund_store, instruments,
                                        event_times=event_times, fwd_horizon=fwd_horizon, universe=universe)
-    seed = [("P", op, str(w)) for op in space.operators for w in space.windows]
-    if fund_store is not None and metrics:
-        seed += [("F", m, mode) for m in metrics for mode in modes]
-    vocab = {
-        "operators": tuple(space.operators),
-        "windows": tuple(str(w) for w in space.windows),
-        "metrics": tuple(metrics) or ("eps",),
-        "modes": tuple(modes),
-        "combines": ("sum", "product"),
-    }
+    if gp:
+        ops = tuple(space.operators)
+        windows = tuple(str(w) for w in space.windows)
+        seed = [("T", ("leaf", op, w)) for op in ops for w in windows]
+        # depth-1 binary seeds give crossover multi-node subtrees to graft (growth engine)
+        for binop in ("add", "sub", "mul", "pdiv"):
+            for o1, o2 in zip(ops, ops[1:]):
+                seed.append(("T", (binop, ("leaf", o1, "5"), ("leaf", o2, "5"))))
+        vocab = {"operators": ops, "windows": windows,
+                 "parsimony_lambda": parsimony_lambda, "parsimony_mu": parsimony_mu}
+    else:
+        seed = [("P", op, str(w)) for op in space.operators for w in space.windows]
+        if fund_store is not None and metrics:
+            seed += [("F", m, mode) for m in metrics for mode in modes]
+        vocab = {
+            "operators": tuple(space.operators),
+            "windows": tuple(str(w) for w in space.windows),
+            "metrics": tuple(metrics) or ("eps",),
+            "modes": tuple(modes),
+            "combines": ("sum", "product"),
+        }
     loop = EvolutionarySearchLoop(provider, inner_loop=ResearchAgentLoop(catalog=catalog), vocab=vocab)
     out = loop.run(seed, generations=generations, population_size=population_size,
                    elite_k=elite_k, timestamp=timestamp)
@@ -144,7 +163,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         registry.save(catalog, now=timestamp)        # no save_bandit: evolution has no UCB bandit
     return {
         "dataset_version": dataset_version,
-        "mode": "evolutionary",
+        "mode": "gp" if gp else "evolutionary",
         "best": out["best"],
         "human_review_queue": review_queue,
         "recorded_run_ids": recorded,
