@@ -67,7 +67,9 @@ def run_event_backtest(timeline: Sequence, targets: Sequence, *, initial_capital
         # opened at the ex-bar open does NOT collect the dividend (review: ex-bar
         # free-lunch) and a fill happens at the already-adjusted (post-split) price.
         for action in ca_by_ts.get(ts, ()):
-            apply_corporate_action(book, action)
+            # the bar's open is the post-split market price for cash-in-lieu settlement
+            px = bars[action.instrument_id].open if action.instrument_id in bars else None
+            apply_corporate_action(book, action, price=px)
 
         # 2) OPEN of bar i: execute orders queued at i-1
         for inst, qty in pending.items():

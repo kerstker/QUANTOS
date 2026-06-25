@@ -11,9 +11,11 @@ from __future__ import annotations
 from quantos.contracts.data import CorporateAction, CorporateActionType
 
 
-def apply_corporate_action(book, action: CorporateAction) -> None:
+def apply_corporate_action(book, action: CorporateAction, *, price=None) -> None:
     if action.action_type == CorporateActionType.SPLIT:
-        book.apply_split(action.instrument_id, action.ratio)
+        # `price` (the post-split market price) settles any fractional remainder as
+        # cash-in-lieu; without it a fractional split fails closed.
+        book.apply_split(action.instrument_id, action.ratio, cash_in_lieu_price=price)
     elif action.action_type == CorporateActionType.DIVIDEND:
         book.pay_dividend(action.instrument_id, action.amount)
     else:

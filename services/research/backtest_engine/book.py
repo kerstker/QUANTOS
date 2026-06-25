@@ -48,20 +48,28 @@ class Book:
         self.cash -= amount
         self.total_cost += amount
 
-    def apply_split(self, instrument_id: str, ratio: float) -> None:
+    def apply_split(self, instrument_id: str, ratio: float, *, cash_in_lieu_price=None) -> None:
         """Value-neutral share/cost adjustment for a split (qty*ratio, avg_cost/ratio).
-        Fails closed if the split would produce fractional shares (cash-in-lieu is a
-        later sub-project) — the integer-share book must stay exact."""
+        A fractional remainder is settled as CASH-IN-LIEU at `cash_in_lieu_price` (the
+        fractional shares are sold at that price, booking realized PnL like a partial
+        sale); without a price it fails closed (the integer-share book stays exact)."""
         if ratio <= 0:
             raise ValueError("split ratio must be > 0")
         lot = self.positions.get(instrument_id)
         if lot is None or lot.qty == 0:
             return
         scaled = lot.qty * ratio
-        new_qty = round(scaled)
-        if abs(scaled - new_qty) > 1e-9:
-            raise ValueError(f"split ratio {ratio} yields fractional shares for {instrument_id}")
-        self.positions[instrument_id] = Lot(int(new_qty), lot.avg_cost / ratio)
+        new_qty = int(scaled) if scaled >= 0 else -int(-scaled)   # truncate toward zero
+        frac = scaled - new_qty                                    # signed fractional remainder
+        new_avg = lot.avg_cost / ratio
+        if abs(frac) > 1e-9:
+            if cash_in_lieu_price is None:
+                raise ValueError(f"split ratio {ratio} yields fractional shares for {instrument_id}"
+                                 " and no cash_in_lieu_price was supplied")
+            # settle the fractional shares at market: realized PnL + cash, like a partial sale
+            self.realized_pnl += frac * (cash_in_lieu_price - new_avg)
+            self.cash += frac * cash_in_lieu_price
+        self.positions[instrument_id] = Lot(new_qty, new_avg if new_qty != 0 else 0.0)
 
     def pay_dividend(self, instrument_id: str, amount_per_share: float) -> None:
         """Signed cash dividend: longs receive, shorts pay. No position change."""
