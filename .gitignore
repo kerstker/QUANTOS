@@ -46,3 +46,7 @@ data/cache/
 config/live.yaml
 *.secret.yaml
 *.secret.yml
+# API keys (read-only data keys live here; NEVER commit — read at runtime from env or this dir)
+key/
+*.key
+coinkey*
