@@ -84,6 +84,7 @@ export default function CryptoLive() {
   const summary = payload?.summary;
   const factors: CryptoFactor[] = present ? payload!.factors : [];
   const oos = present ? payload!.oos : null;
+  const isGp = meta?.search_mode === 'gp_tree';
   const oosConfirmed = oos ? (oos.selection.mean_oos_sharpe ?? -1) > 0 && (oos.selection.oos_positive_frac ?? 0) >= 0.5 : false;
 
   /* Top factors by net Sharpe for the raw-vs-deflated comparison (already sorted desc). */
@@ -93,8 +94,16 @@ export default function CryptoLive() {
   const deflatedSeries = useMemo(() => top.map(f => f.deflated_sharpe ?? 0), [top]);
 
   const factorCols: Column<CryptoFactor>[] = [
-    { key: 'id', header: bi('因子', 'Factor'), render: f => <span className="mono text-accent" title={f.alpha_id}>{shortLabel(f.alpha_id)}</span> },
-    { key: 'family', header: bi('族', 'Family'), render: f => <Chip label={f.family === 'interaction' ? bi('交互', 'interaction') : bi('原子', 'price')} tone={f.family === 'interaction' ? 'special' : 'info'} /> },
+    { key: 'id', header: bi('因子', 'Factor'), render: f => {
+      const disp = f.family === 'gp_tree' && f.expr ? f.expr : shortLabel(f.alpha_id);
+      return <span className="mono text-accent" title={f.expr ?? f.alpha_id}>{disp.length > 44 ? `${disp.slice(0, 43)}…` : disp}</span>;
+    } },
+    { key: 'family', header: bi('族', 'Family'), render: f => {
+      const fam = f.family === 'gp_tree' ? { l: bi('树/GP', 'GP tree'), t: 'accent' as const }
+        : f.family === 'interaction' ? { l: bi('交互', 'interaction'), t: 'special' as const }
+        : { l: bi('原子', 'price'), t: 'info' as const };
+      return <Chip label={fam.l} tone={fam.t} />;
+    } },
     { key: 'ic', header: 'IC', align: 'right', mono: true, render: f => <span className={(f.ic ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fixed(f.ic, 4)}</span> },
     { key: 'net', header: bi('净夏普', 'Net Sharpe'), align: 'right', mono: true, render: f => <span className={(f.net_sharpe ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fixed(f.net_sharpe, 3)}</span> },
     { key: 'dsr', header: bi('Deflated 夏普', 'Deflated SR'), align: 'right', mono: true, render: f => <span className="text-warn">{fixed(f.deflated_sharpe, 4)}</span> },
@@ -176,7 +185,7 @@ export default function CryptoLive() {
                 </div>
                 <div className="flex flex-col gap-2.5 text-[12.5px]">
                   <div className="text-2xs uppercase tracking-[0.12em] text-faint">{bi('头部因子单独追踪(无选择)', 'Headline factor tracked (no selection)')}</div>
-                  <div className="mono truncate text-2xs text-special" title={oos.headline_factor.alpha_id}>{oos.headline_factor.alpha_id}</div>
+                  <div className="mono truncate text-2xs text-special" title={oos.headline_factor.expr ?? oos.headline_factor.alpha_id}>{oos.headline_factor.expr ?? oos.headline_factor.alpha_id}</div>
                   <div className="flex items-center justify-between"><span className="text-muted">{bi('全样本夏普(窥视)', 'Full-sample Sharpe (peeking)')}</span><span className="mono text-warn">{signed(oos.headline_factor.full_sample_sharpe, 2)}</span></div>
                   <div className="flex items-center justify-between"><span className="text-muted">{bi('样本外均值夏普', 'Mean OOS Sharpe')}</span><span className={`mono ${(oos.headline_factor.mean_oos_sharpe ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>{signed(oos.headline_factor.mean_oos_sharpe, 2)}</span></div>
                   <div className="flex items-center justify-between"><span className="text-muted">{bi('朴素全样本最优(窥视)', 'Naive full-sample best (peeking)')}</span><span className="mono text-faint">{shortLabel(oos.naive_full_sample_best.alpha_id)} {signed(oos.naive_full_sample_best.sharpe, 2)}</span></div>
@@ -213,7 +222,9 @@ export default function CryptoLive() {
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <Panel className="xl:col-span-2" eyebrow={bi('机器发现', 'Machine-discovered')}
-              title={bi('因子清单(进化搜索:原子 + 交叉交互)', 'Factor catalog (evolutionary: atoms + crossover interactions)')}
+              title={isGp
+                ? bi('因子清单(GP 表达式树:机器发现结构本身)', 'Factor catalog (GP expression trees: machine-discovered structure)')
+                : bi('因子清单(进化搜索:原子 + 交叉交互)', 'Factor catalog (evolutionary: atoms + crossover interactions)')}
               right={<GateDot ok label={bi('只读', 'read-only')} />}>
               <DataTable columns={factorCols} rows={factors} getKey={f => f.alpha_id} dense />
             </Panel>

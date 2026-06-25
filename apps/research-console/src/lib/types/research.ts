@@ -1260,7 +1260,8 @@ export interface CryptoLiveSummary {
 export interface CryptoFactor {
   alpha_id: string;
   name: string;
-  family: "price" | "interaction" | string;
+  family: "price" | "interaction" | "gp_tree" | string;
+  expr?: string | null;
   ic: number | null;
   rank_ic: number | null;
   net_sharpe: number | null;
@@ -1302,6 +1303,7 @@ export interface CryptoOos {
   naive_full_sample_best: { alpha_id: string; sharpe: number };
   headline_factor: {
     alpha_id: string;
+    expr?: string | null;
     full_sample_sharpe: number;
     folds: CryptoOosFold[];
     mean_oos_sharpe: number | null;

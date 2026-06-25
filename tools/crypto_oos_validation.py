@@ -68,7 +68,17 @@ def main() -> None:
             r = _returns_for(price_provider, ("P", op, str(w)))
             if len(r) >= 2:
                 pool[f"h_{op}_{w}"] = r
-    headline_returns = _returns_for(evo_provider, HEADLINE)
+    # headline = whatever the current run discovered as the top factor (GP tree or interaction);
+    # fall back to the fixed interaction headline if the snapshot has no factors.
+    top = (snap.get("factors") or [{}])[0]
+    if top.get("expr"):
+        from services.research.gp_tree import parse as _parse_tree
+        headline_genome = ("T", _parse_tree(top["expr"]))
+        headline_label = top.get("alpha_id") or top["expr"]
+    else:
+        headline_genome = HEADLINE
+        headline_label = "hx_product_price-accel-10_price-ema_ratio-5"
+    headline_returns = _returns_for(evo_provider, headline_genome)
 
     # align on common trailing periods (series share the same final period; only the
     # leading warm-up differs by window)
@@ -98,7 +108,8 @@ def main() -> None:
         })
     h_oos = [f["oos_sharpe"] for f in headline_folds]
     headline = {
-        "alpha_id": "hx_product_price-accel-10_price-ema_ratio-5",
+        "alpha_id": headline_label,
+        "expr": top.get("expr"),
         "full_sample_sharpe": round(sharpe(headline_aligned), 4),
         "folds": headline_folds,
         "mean_oos_sharpe": round(sum(h_oos) / len(h_oos), 4) if h_oos else None,
