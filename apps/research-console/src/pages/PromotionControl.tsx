@@ -110,18 +110,18 @@ export default function PromotionControl() {
   }, [promotion.stage_counts]);
 
   const policyRows: Array<[string, boolean]> = [
-    ['READ_ONLY', policy.read_only],
-    ['VALIDATION_APPROVAL', policy.requires_validation_approval],
-    ['PAPER_REPLAY', policy.requires_paper_replay],
-    ['RISK_APPROVAL', policy.requires_risk_approval],
-    ['MODEL_RISK_REVIEW', policy.requires_model_risk_review],
-    ['NO_BLOCKING_INCIDENTS', policy.requires_no_blocking_incidents],
-    ['EVIDENCE_ROOT_HASH', policy.requires_evidence_root_hash],
-    ['ACCESS_CONTROL', policy.requires_access_control],
-    ['IMMUTABLE_PROMOTIONS', !policy.mutable_promotions],
-    ['BROKER_TEST_DISABLED', !policy.broker_test_env_enabled],
-    ['LIVE_RELEASE_DISABLED', !policy.live_release_enabled],
-    ['NO_LIVE_AUTHORIZATION', !policy.authorizes_live_trading],
+    [bi('只读', 'READ_ONLY'), policy.read_only],
+    [bi('验证批准', 'VALIDATION_APPROVAL'), policy.requires_validation_approval],
+    [bi('纸面重放', 'PAPER_REPLAY'), policy.requires_paper_replay],
+    [bi('风险批准', 'RISK_APPROVAL'), policy.requires_risk_approval],
+    [bi('模型风险评审', 'MODEL_RISK_REVIEW'), policy.requires_model_risk_review],
+    [bi('无阻断事件', 'NO_BLOCKING_INCIDENTS'), policy.requires_no_blocking_incidents],
+    [bi('证据根哈希', 'EVIDENCE_ROOT_HASH'), policy.requires_evidence_root_hash],
+    [bi('访问控制', 'ACCESS_CONTROL'), policy.requires_access_control],
+    [bi('晋级不可变', 'IMMUTABLE_PROMOTIONS'), !policy.mutable_promotions],
+    [bi('券商测试禁用', 'BROKER_TEST_DISABLED'), !policy.broker_test_env_enabled],
+    [bi('实盘发布禁用', 'LIVE_RELEASE_DISABLED'), !policy.live_release_enabled],
+    [bi('无实盘授权', 'NO_LIVE_AUTHORIZATION'), !policy.authorizes_live_trading],
   ];
 
   const promoCols: Column<PromotionRecord>[] = [

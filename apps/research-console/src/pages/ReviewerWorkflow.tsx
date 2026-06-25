@@ -143,13 +143,13 @@ export default function ReviewerWorkflow() {
   ];
 
   const policyRows: Array<[string, boolean]> = [
-    ['READ_ONLY', wf.workflow_policy.read_only],
-    ['INDEPENDENT_REVIEWER', wf.workflow_policy.requires_independent_reviewer],
-    ['BLOCKING_TASK_CLOSURE', wf.workflow_policy.requires_blocking_task_closure],
-    ['PHASE3A_GO_REQUIRED', wf.workflow_policy.requires_phase3a_go],
-    ['SIGNED_ATTESTATION', wf.workflow_policy.requires_signed_attestation],
-    ['IMMUTABLE_TASKS', !wf.workflow_policy.mutable_tasks],
-    ['NO_LIVE_AUTHORIZATION', !wf.workflow_policy.authorizes_live_trading],
+    [bi('只读', 'READ_ONLY'), wf.workflow_policy.read_only],
+    [bi('独立复核人', 'INDEPENDENT_REVIEWER'), wf.workflow_policy.requires_independent_reviewer],
+    [bi('阻断任务清零', 'BLOCKING_TASK_CLOSURE'), wf.workflow_policy.requires_blocking_task_closure],
+    [bi('需 3A 放行', 'PHASE3A_GO_REQUIRED'), wf.workflow_policy.requires_phase3a_go],
+    [bi('签名背书', 'SIGNED_ATTESTATION'), wf.workflow_policy.requires_signed_attestation],
+    [bi('任务不可变', 'IMMUTABLE_TASKS'), !wf.workflow_policy.mutable_tasks],
+    [bi('无实盘授权', 'NO_LIVE_AUTHORIZATION'), !wf.workflow_policy.authorizes_live_trading],
   ];
 
   return (
