@@ -30,10 +30,17 @@ def _objective(w, cov):
 
 def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioConstraints,
                          *, loadings: Optional[list] = None, factor_ids: Optional[Sequence[str]] = None,
+                         expected_returns: Optional[Sequence[float]] = None, risk_aversion: float = 1.0,
+                         prev_weights: Optional[Sequence[float]] = None,
                          iterations: int = 2000, tol: float = 1e-10) -> list[float]:
+    """Constrained MEAN-VARIANCE: minimize 1/2 w'Σw − λ·μ'w. With expected_returns=None
+    (default) it is pure minimum-variance. A max_turnover constraint (with prev_weights)
+    caps Σ|w − prev| via an L1 ball centered at prev."""
     n = len(alpha_ids)
     if any(not math.isfinite(cov[i][j]) for i in range(n) for j in range(n)):
         raise ValueError("cov has non-finite entries")
+    if expected_returns is not None and any(not math.isfinite(m) for m in expected_returns):
+        raise ValueError("expected_returns has non-finite entries")
     lb, ub = constraints.resolve_bounds(alpha_ids)        # raises InfeasibleConstraints
 
     projections = [
@@ -49,18 +56,32 @@ def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioCo
             projections.append(lambda x, a=a, t=target: project_hyperplane(x, a, t))
     if constraints.max_gross is not None:
         projections.append(lambda x, g=constraints.max_gross: project_l1_ball(x, g))
+    if constraints.max_turnover is not None:
+        if prev_weights is None:
+            raise ValueError("max_turnover requires prev_weights")
+        pw = [float(p) for p in prev_weights]
+        # |w - pw|_1 <= tau  <=>  project the displacement onto an L1 ball, re-center
+        projections.append(lambda x, pw=pw, tau=constraints.max_turnover:
+                           [pw[i] + d for i, d in enumerate(project_l1_ball([x[i] - pw[i] for i in range(n)], tau))])
 
     # Gershgorin spectral-radius bound -> safe constant step
     radius = max((sum(abs(cov[i][j]) for j in range(n)) for i in range(n)), default=0.0)
     step = 1.0 / radius if radius > 0 else 1.0
 
+    def _full_obj(v):   # 1/2 v'Σv − λμ'v (the actual minimization target)
+        base = _objective(v, cov)
+        return base - risk_aversion * sum(expected_returns[i] * v[i] for i in range(n)) \
+            if expected_returns is not None else base
+
     w = dykstra_project([constraints.budget / n] * n, projections, iterations=500, tol=tol)
-    prev_obj = _objective(w, cov)
+    prev_obj = _full_obj(w)
     for _ in range(iterations):
         grad = [sum(cov[i][j] * w[j] for j in range(n)) for i in range(n)]
+        if expected_returns is not None:               # mean-variance: -λμ in the gradient
+            grad = [grad[i] - risk_aversion * expected_returns[i] for i in range(n)]
         nxt = dykstra_project([w[i] - step * grad[i] for i in range(n)],
                               projections, iterations=500, tol=tol)
-        obj = _objective(nxt, cov)
+        obj = _full_obj(nxt)
         moved = max((abs(nxt[i] - w[i]) for i in range(n)), default=0.0)
         w = nxt
         if abs(prev_obj - obj) < tol and moved < math.sqrt(tol):
@@ -84,4 +105,8 @@ def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioCo
             raise InfeasibleConstraints(f"factor target '{fid}' unmet: {exposure} != {target}")
     if constraints.max_gross is not None and sum(abs(x) for x in w) > constraints.max_gross + tol_feas:
         raise InfeasibleConstraints("gross-leverage cap unmet")
+    if constraints.max_turnover is not None:
+        turnover = sum(abs(w[i] - float(prev_weights[i])) for i in range(n))
+        if turnover > constraints.max_turnover + tol_feas:
+            raise InfeasibleConstraints("turnover cap unmet")
     return w

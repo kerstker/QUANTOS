@@ -67,6 +67,7 @@ class PortfolioConstraints:
     budget: float = 1.0
     max_gross: Optional[float] = None
     factor_targets: dict = field(default_factory=dict)
+    max_turnover: Optional[float] = None     # cap on sum|w - prev_weights| (needs prev_weights)
 
     def _bound(self, spec: Union[float, dict], aid: str) -> float:
         return float(spec[aid]) if isinstance(spec, dict) else float(spec)

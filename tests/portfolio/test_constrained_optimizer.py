@@ -60,3 +60,27 @@ def test_non_finite_cov_raises():
 def test_is_deterministic():
     c = PortfolioConstraints(lower=0.0, upper=1.0, budget=1.0)
     assert min_variance_weights(COV, IDS, c) == min_variance_weights(COV, IDS, c)
+
+
+def test_mean_variance_tilts_toward_expected_returns():
+    c = PortfolioConstraints(lower=0.0, upper=1.0, budget=1.0)
+    base = min_variance_weights(COV, IDS, c)
+    # a strong expected return on 'c' (index 2) should raise its weight vs pure min-var
+    mv = min_variance_weights(COV, IDS, c, expected_returns=[0.0, 0.0, 1.0], risk_aversion=5.0)
+    assert mv[2] > base[2]
+    assert sum(mv) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_turnover_cap_limits_distance_from_prev():
+    prev = [1.0, 0.0, 0.0]
+    c = PortfolioConstraints(lower=0.0, upper=1.0, budget=1.0, max_turnover=0.2)
+    w = min_variance_weights(COV, IDS, c, prev_weights=prev)
+    turnover = sum(abs(w[i] - prev[i]) for i in range(3))
+    assert turnover <= 0.2 + 1e-5
+    assert sum(w) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_turnover_without_prev_weights_raises():
+    c = PortfolioConstraints(lower=0.0, upper=1.0, budget=1.0, max_turnover=0.2)
+    with pytest.raises(ValueError):
+        min_variance_weights(COV, IDS, c)
