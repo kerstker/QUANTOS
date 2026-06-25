@@ -8,14 +8,25 @@ gate; this seam is pure/offline and reused identically for crypto, equities, etc
 Canonical row: {instrument_id, event_time, knowledge_time, open, high, low, close, volume}.
 event_time/knowledge_time are integers on a single monotonic scale per store/run
 (crypto: epoch-ms; daily equities: YYYYMMDD). Bitemporal knowledge_time >= event_time is
-enforced by the Bar contract; here knowledge_time is supplied per row (a bar is knowable
-at its CLOSE, so providers set knowledge_time = bar_open_ts + interval).
+enforced by the Bar contract. **Each provider supplies knowledge_time in ITS OWN scale**
+— a bar is knowable at its CLOSE, so crypto sets kt = open_ts + interval, while a daily
+equity sets kt = its session-close timestamp. The seam does NOT bake any kt rule in.
+
+Time-scale isolation: pass `time_unit` to fail-closed-reject event_times of the wrong
+magnitude (e.g. a YYYYMMDD value fed into an ms store), so crypto-ms and equity-YYYYMMDD
+data cannot silently co-mingle in one store/run (review: enforce, don't just document).
 """
 from __future__ import annotations
 
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Optional, Protocol, Sequence, runtime_checkable
 
 from .file_ingest import IngestionReport, _ingest_records
+
+# plausible integer ranges per time unit — used to fail-closed on a scale mismatch
+_SCALE_RANGES = {
+    "ms": (10 ** 11, 10 ** 14),          # epoch milliseconds (~2001..5138)
+    "yyyymmdd": (10 ** 6, 10 ** 8),      # YYYYMMDD daily ints
+}
 
 
 @runtime_checkable
@@ -30,15 +41,28 @@ class MarketDataProvider(Protocol):
 
 
 def ingest_provider_rows(rows: Sequence[dict], store, *, now=None,
-                         dataset_id: str = "market", version: str = "") -> IngestionReport:
+                         dataset_id: str = "market", version: str = "",
+                         time_unit: Optional[str] = None) -> IngestionReport:
     """Ingest canonical provider rows into the PIT store via the shared fail-closed core
     (normalize/validate OHLC + bitemporal, dedup, content_hash, quality). Bad rows are
-    recorded in `rejected`, never crashed. Asset-class agnostic."""
+    recorded in `rejected`, never crashed. Asset-class agnostic.
+
+    `now` arms the future-data guard (reject any bar whose knowledge_time > now) — pass the
+    fetch wall-clock for live data so a not-yet-closed bar is rejected. `time_unit`
+    ('ms'|'yyyymmdd') fail-closed-rejects event_times of the wrong magnitude, preventing a
+    cross-scale mix in one store."""
+    rng = _SCALE_RANGES.get(time_unit) if time_unit else None
+    if time_unit and rng is None:
+        raise ValueError(f"unknown time_unit {time_unit!r} (expected one of {sorted(_SCALE_RANGES)})")
+
     def parse(raw):
         kt = int(raw["knowledge_time"])
+        et = int(raw["event_time"])
+        if rng is not None and not (rng[0] <= et <= rng[1]):
+            raise ValueError(f"event_time {et} out of range for time_unit {time_unit!r}")
         canonical = {
             "instrument_id": raw["instrument_id"],
-            "event_time": int(raw["event_time"]),
+            "event_time": et,
             "open": float(raw["open"]),
             "high": float(raw["high"]),
             "low": float(raw["low"]),

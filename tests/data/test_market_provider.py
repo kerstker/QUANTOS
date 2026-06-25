@@ -79,6 +79,41 @@ def test_read_key_env_and_missing(monkeypatch, tmp_path):
         _read_key()
 
 
+def test_parse_ohlc_non_list_payload_fails_closed():
+    # CoinGecko returns an error OBJECT (dict) on rate-limit/auth even with HTTP 200
+    with pytest.raises(ValueError):
+        parse_ohlc({"status": {"error_code": 429, "error_message": "rate limit"}},
+                   instrument_id="BTC", interval_ms=1800000)
+
+
+def test_parse_ohlc_skips_malformed_candles():
+    payload = [[1700000000000, 100.0, 101.0, 99.0, 100.5],
+               [1700001800000, 100.5, 102.0],            # 短数组 → 跳过
+               None,                                      # null → 跳过
+               [1700003600000, "x", 1, 1, 1],            # 非数 → 跳过
+               [1700005400000, 101.0, 102.0, 100.0, 101.5]]
+    rows = parse_ohlc(payload, instrument_id="BTC", interval_ms=1800000)
+    assert [r["event_time"] for r in rows] == [1700000000000, 1700005400000]   # 仅 2 根合法
+
+
+def test_parse_ohlc_drops_in_progress_trailing_candle():
+    payload = [[1700000000000, 100.0, 101.0, 99.0, 100.5],   # 已收盘
+               [1700001800000, 100.5, 102.0, 100.0, 101.0]]   # 未收盘(kt > now)
+    now_ms = 1700001800000 + 60000   # 在第二根开盘后 1 分钟(其 30 分钟收盘尚未到)
+    rows = parse_ohlc(payload, instrument_id="BTC", interval_ms=1800000, now_ms=now_ms)
+    assert [r["event_time"] for r in rows] == [1700000000000]   # 进行中尾根被丢弃(防前瞻+可复现)
+
+
+def test_ingest_time_unit_guard():
+    store = SqlitePITStore(":memory:", create=True)
+    # 用 YYYYMMDD 量级的 event_time 喂入声明为 ms 的摄取 → 失败关闭拒绝
+    bad = [_row("BTC", 20240102, 100, 101, 99, 100.5, kt=20240103)]
+    rep = ingest_provider_rows(bad, store, time_unit="ms")
+    assert rep.bars_ingested == 0 and len(rep.rejected) == 1
+    with pytest.raises(ValueError):
+        ingest_provider_rows([], store, time_unit="bogus")     # 未知 time_unit
+
+
 def test_provider_protocol_is_runtime_checkable():
     class _Dummy:
         asset_class = "CRYPTO"

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
 
 DEMO_BASE = "https://api.coingecko.com/api/v3"
@@ -54,23 +55,44 @@ def fetch_ohlc(coin_id: str = "bitcoin", *, vs_currency: str = "usd", days: int 
     return http_get(url, {"x-cg-demo-api-key": key, "accept": "application/json"})
 
 
-def parse_ohlc(payload, *, instrument_id: str, interval_ms: int) -> list:
+def parse_ohlc(payload, *, instrument_id: str, interval_ms: int, now_ms=None) -> list:
     """Pure: CoinGecko [[ts_ms, open, high, low, close], ...] -> canonical bar rows.
     event_time = ts (bar open); knowledge_time = ts + interval_ms (knowable at CLOSE,
-    PIT-correct). volume = 0.0 (the OHLC endpoint omits it; Bar.volume default 0 is valid)."""
+    PIT-correct). volume = 0.0 (the OHLC endpoint omits it; Bar.volume default 0 is valid).
+
+    Fail-closed / no-lookahead:
+      * a NON-list payload (CoinGecko returns an error object on rate-limit/auth even with
+        HTTP 200) raises a clear error instead of crashing on int('s') (review P1);
+      * malformed candles (short/None/non-numeric) are skipped defensively (review P1);
+      * if now_ms is given, any candle whose CLOSE (kt) is after now is DROPPED — the
+        trailing in-progress candle is provisional and not yet knowable, so admitting it
+        would be lookahead and non-reproducible (its close changes on re-fetch) (review P1)."""
+    if not isinstance(payload, list):
+        raise ValueError(f"CoinGecko returned a non-list payload (likely an API error): {str(payload)[:200]}")
     rows = []
     for item in payload:
-        ts, o, h, low, c = int(item[0]), float(item[1]), float(item[2]), float(item[3]), float(item[4])
+        if not (isinstance(item, (list, tuple)) and len(item) >= 5):
+            continue                                       # skip malformed candle
+        try:
+            ts, o, h, low, c = int(item[0]), float(item[1]), float(item[2]), float(item[3]), float(item[4])
+        except (TypeError, ValueError):
+            continue
+        kt = ts + int(interval_ms)
+        if now_ms is not None and kt > now_ms:
+            continue                                       # in-progress candle (close not yet realized)
         rows.append({
-            "instrument_id": instrument_id, "event_time": ts, "knowledge_time": ts + int(interval_ms),
+            "instrument_id": instrument_id, "event_time": ts, "knowledge_time": kt,
             "open": o, "high": h, "low": low, "close": c, "volume": 0.0,
         })
     return rows
 
 
-def fetch_btc_rows(*, days: int = 1, vs_currency: str = "usd", http_get=_http_get_json) -> list:
+def fetch_btc_rows(*, days: int = 1, vs_currency: str = "usd", http_get=_http_get_json, now_ms=None) -> list:
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)                   # wall clock (out-of-gate; non-deterministic by design)
     payload = fetch_ohlc("bitcoin", vs_currency=vs_currency, days=days, http_get=http_get)
-    return parse_ohlc(payload, instrument_id="BTC", interval_ms=_INTERVAL_MS.get(days, _DEFAULT_INTERVAL_MS))
+    return parse_ohlc(payload, instrument_id="BTC",
+                      interval_ms=_INTERVAL_MS.get(days, _DEFAULT_INTERVAL_MS), now_ms=now_ms)
 
 
 def main() -> None:
@@ -82,8 +104,10 @@ def main() -> None:
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     os.makedirs("data/cache", exist_ok=True)
     store = SqlitePITStore("data/cache/crypto.db", create=True)
-    rows = fetch_btc_rows(days=days)
-    rep = ingest_provider_rows(rows, store, dataset_id="coingecko-btc")
+    now_ms = int(time.time() * 1000)
+    rows = fetch_btc_rows(days=days, now_ms=now_ms)         # drops the in-progress trailing candle
+    # `now=now_ms` arms reject_if_future as a second guard against any not-yet-knowable bar
+    rep = ingest_provider_rows(rows, store, dataset_id="coingecko-btc", now=now_ms, time_unit="ms")
     print(f"BTC days={days}: fetched {len(rows)} candles, ingested {rep.bars_ingested}, "
           f"duplicates {rep.duplicates}, rejected {len(rep.rejected)}")
 
