@@ -53,8 +53,17 @@ class UCBSearch:
 
     # --- persistence port (pure in-memory; serialized by the experiment registry) -
 
+    SNAPSHOT_VERSION = 1
+
     def snapshot(self) -> dict:
+        # NOTE: arm stats (pulls/reward_sum) are keyed by (dim,value) tuples and survive
+        # a space change as long as arm shapes are unchanged. The `proposed` dedup set is
+        # keyed by the FULL hypothesis tuple — if the hypothesis encoding changes (e.g.
+        # adding a family tag for CombinedHypothesisSpace), restored `proposed` entries
+        # won't match new hypotheses, so a previously-tried hypothesis may be re-proposed
+        # (harmless: contained, and multiple-testing honesty lives in the catalog, not here).
         return {
+            "version": self.SNAPSHOT_VERSION,
             "pulls": [[list(arm), n] for arm, n in sorted(self.pulls.items())],
             "reward_sum": [[list(arm), r] for arm, r in sorted(self.reward_sum.items())],
             "n_evaluated": self.n_evaluated,
@@ -62,6 +71,11 @@ class UCBSearch:
         }
 
     def restore(self, snap: dict) -> None:
+        # fail-closed on an incompatible future schema; a missing version = legacy v1.
+        version = int(snap.get("version", 1))
+        if version != self.SNAPSHOT_VERSION:
+            raise ValueError(f"unsupported bandit snapshot version {version} "
+                             f"(expected {self.SNAPSHOT_VERSION})")
         self.pulls = {tuple(arm): n for arm, n in snap["pulls"]}
         self.reward_sum = {tuple(arm): r for arm, r in snap["reward_sum"]}
         self.n_evaluated = int(snap["n_evaluated"])

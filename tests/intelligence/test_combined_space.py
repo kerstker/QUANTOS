@@ -62,6 +62,20 @@ def test_score_is_mean_and_unpulled_is_inf():
     assert math.isfinite(s._score(h))
 
 
+def test_snapshot_version_guard():
+    cs = CombinedHypothesisSpace(_price(), metrics=("eps",), modes=("ratio_to_price",))
+    s = UCBSearch(cs)
+    s.propose(2)
+    snap = s.snapshot()
+    assert snap["version"] == UCBSearch.SNAPSHOT_VERSION
+    s2 = UCBSearch(cs)
+    s2.restore({**snap, "version": 1})       # 当前版本 OK
+    legacy = {k: v for k, v in snap.items() if k != "version"}
+    s2.restore(legacy)                       # 缺 version 视为 v1(向后兼容)
+    with pytest.raises(ValueError):
+        s2.restore({**snap, "version": 999})  # 不兼容未来版本 → 失败关闭
+
+
 def test_mean_score_preserves_homogeneous_ranking():
     # 纯价格(同构 3 臂)空间:均值与求和排序一致 → 现有行为零回归
     sp = _price()
