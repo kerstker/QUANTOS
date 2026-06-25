@@ -23,7 +23,8 @@ from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
 
 DEFAULT_VOCAB = {
-    "operators": ("momentum", "ts_mean", "zscore"),
+    "operators": ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",
+                  "ema_ratio", "dist_from_high", "accel"),
     "windows": ("3", "5", "10"),
     "metrics": ("eps",),
     "modes": ("ratio_to_price", "raw"),

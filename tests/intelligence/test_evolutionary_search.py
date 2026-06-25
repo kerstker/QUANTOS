@@ -77,9 +77,10 @@ def test_crossover_atomic_to_interaction():
 
 def test_provider_dispatch():
     prov = _provider()
-    for g in [("P", "momentum", "5"), ("F", "eps", "ratio_to_price"),
-              ("X", ("price", "momentum", "5"), ("fund", "eps", "ratio_to_price"), "product")]:
-        assert isinstance(prov(genome_to_definition(g)), list)
+    for g in [("P", "momentum", "5"), ("P", "volatility", "5"), ("P", "accel", "3"),
+              ("F", "eps", "ratio_to_price"),
+              ("X", ("price", "ts_rank", "5"), ("fund", "eps", "ratio_to_price"), "product")]:
+        assert isinstance(prov(genome_to_definition(g)), list)   # 新算子也能构建周期
 
 
 def test_run_evolves_and_is_deterministic():
