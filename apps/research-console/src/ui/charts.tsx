@@ -54,26 +54,40 @@ export function AreaChart({ data, height = 200, tone = 'accent', baselineAtZero 
   const sy = (y: number) => padT + (1 - (y - minY) / (maxY - minY || 1)) * (height - padT - padB);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(' ');
   const area = `${line} L${sx(b.maxX).toFixed(1)} ${height - padB} L${sx(b.minX).toFixed(1)} ${height - padB} Z`;
-  const gid = `g-${tone}-${Math.round(minY)}-${Math.round(maxY)}`;
+  const uid = `${tone}-${Math.round(minY)}-${Math.round(maxY)}-${pts.length}`;
+  const useGrad = tone === 'accent';
+  const stroke = useGrad ? `url(#stroke-${uid})` : TONE_VAR[tone];
   const ticks = Array.from({ length: 3 }, (_, i) => minY + (i / 2) * (maxY - minY));
+  const last = pts[pts.length - 1];
   return (
     <svg viewBox={`0 0 ${W} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img">
       <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={TONE_VAR[tone]} stopOpacity={0.28} />
-          <stop offset="100%" stopColor={TONE_VAR[tone]} stopOpacity={0.01} />
+        <linearGradient id={`fill-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={TONE_VAR[tone]} stopOpacity={0.32} />
+          <stop offset="100%" stopColor={TONE_VAR[tone]} stopOpacity={0.0} />
         </linearGradient>
+        <linearGradient id={`stroke-${uid}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#5eead4" />
+          <stop offset="55%" stopColor="#818cf8" />
+          <stop offset="100%" stopColor="#c084fc" />
+        </linearGradient>
+        <filter id={`glow-${uid}`} x="-10%" y="-40%" width="120%" height="180%">
+          <feGaussianBlur stdDeviation="3.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
       </defs>
       {ticks.map((t, i) => (
         <g key={i}>
           <line x1={padL} x2={W - padR} y1={sy(t)} y2={sy(t)} stroke="var(--grid)" strokeWidth={1} />
-          <text x={padL - 6} y={sy(t) + 3} textAnchor="end" fontSize={11} fill="var(--faint)" className="tnum">
+          <text x={padL - 8} y={sy(t) + 3} textAnchor="end" fontSize={11} fill="var(--faint)" className="tnum">
             {yFormat ? yFormat(t) : t.toFixed(0)}
           </text>
         </g>
       ))}
-      <path d={area} fill={`url(#${gid})`} />
-      <path d={line} fill="none" stroke={TONE_VAR[tone]} strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
+      <path d={area} fill={`url(#fill-${uid})`} />
+      <path d={line} fill="none" stroke={stroke} strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke" filter={`url(#glow-${uid})`} />
+      <circle cx={sx(last.x)} cy={sy(last.y)} r={3.2} fill={useGrad ? '#c084fc' : TONE_VAR[tone]}
+        stroke="var(--panel)" strokeWidth={1.5} />
       {Array.from({ length: xCount }, (_, i) => {
         const idx = Math.round((i / (xCount - 1)) * (pts.length - 1));
         return <text key={i} x={sx(pts[idx].x)} y={height - 6} textAnchor="middle" fontSize={10} fill="var(--faint)" className="tnum">{pts[idx].x}</text>;

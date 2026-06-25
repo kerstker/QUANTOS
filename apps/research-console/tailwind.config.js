@@ -7,6 +7,7 @@ export default {
         bg: 'var(--bg)',
         surface: 'var(--surface)',
         panel: 'var(--panel)',
+        'panel-2': 'var(--panel-2)',
         elevated: 'var(--elevated)',
         inset: 'var(--inset)',
         line: 'var(--line)',
@@ -15,6 +16,7 @@ export default {
         muted: 'var(--muted)',
         faint: 'var(--faint)',
         accent: 'var(--accent)',
+        'accent-2': 'var(--accent-2)',
         'accent-dim': 'var(--accent-dim)',
         'accent-ink': 'var(--accent-ink)',
         info: 'var(--info)',
@@ -22,6 +24,7 @@ export default {
         warn: 'var(--warn)',
         neg: 'var(--neg)',
         special: 'var(--special)',
+        cyan: 'var(--cyan)',
         grid: 'var(--grid)',
       },
       fontFamily: {
@@ -29,13 +32,20 @@ export default {
         mono: ['var(--font-mono)'],
       },
       borderRadius: {
-        panel: '14px',
+        panel: '18px',
+        tile: '14px',
       },
       boxShadow: {
-        glow: 'var(--glow)',
+        panel: 'var(--shadow-panel)',
+        lift: 'var(--shadow-lift)',
+        glow: 'var(--glow-accent)',
       },
       fontSize: {
-        '2xs': ['10px', '14px'],
+        '2xs': ['10.5px', '14px'],
+      },
+      backgroundImage: {
+        grad: 'var(--grad)',
+        'grad-cyan': 'var(--grad-cyan)',
       },
     },
   },
