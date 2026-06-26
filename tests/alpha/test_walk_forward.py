@@ -39,3 +39,27 @@ def test_majority_threshold_boundary():
     returns = pos + pos + neg + neg                   # folds: +,+,-,- => 2/4
     assert walk_forward_oos(returns, n_folds=4, min_positive_frac=0.5) is True
     assert walk_forward_oos(returns, n_folds=4, min_positive_frac=0.75) is False
+
+
+def test_embargo_zero_is_unchanged():
+    # default embargo=0 must be byte-identical to the original behavior
+    returns = [0.02, 0.03, 0.01, 0.025] * 4
+    assert walk_forward_oos(returns, n_folds=4, embargo=0) \
+        == walk_forward_oos(returns, n_folds=4)
+
+
+def test_embargo_purges_overlap_boundary_points():
+    # fold 1's opening spike is a label-overlap artifact; embargo removes it and the
+    # fold flips negative, so the stricter purged CV fails where the naive check passed
+    fold0 = [0.01, 0.01, 0.01, 0.01]                  # genuinely positive
+    fold1 = [0.5, -0.02, -0.02, -0.02]                # only the (contaminated) opening point is +
+    returns = fold0 + fold1                            # 8 obs, 2 folds
+    assert walk_forward_oos(returns, n_folds=2, min_positive_frac=0.75, embargo=0) is True
+    assert walk_forward_oos(returns, n_folds=2, min_positive_frac=0.75, embargo=1) is False
+
+
+def test_embargo_thinning_a_fold_fails_closed():
+    # a huge embargo leaves a fold with < 2 points -> not counted -> conservative
+    returns = [0.01] * 16
+    assert walk_forward_oos(returns, n_folds=4, min_positive_frac=0.75, embargo=10) is False
+    assert walk_forward_oos(returns, n_folds=4, embargo=-1) is False           # negative embargo fail-closed

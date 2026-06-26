@@ -27,15 +27,23 @@ def _block_sharpe(block: Sequence[float]) -> float:
 
 
 def walk_forward_oos(returns: Sequence[Optional[float]], *, n_folds: int = 4,
-                     min_positive_frac: float = 0.5) -> bool:
+                     min_positive_frac: float = 0.5, embargo: int = 0) -> bool:
+    """Sequential out-of-sample fold consistency. With `embargo` > 0, the first `embargo`
+    points of every fold AFTER the first are dropped before scoring (purged/embargoed CV):
+    when forward-return labels of horizon h overlap, a fold's opening points share their
+    label window with the prior fold, so they are not independent — set embargo = h-1 to
+    remove that contamination so the per-fold Sharpe reflects genuinely held-out periods.
+    embargo=0 is the original behavior. Deterministic, fail-closed (a fold thinned below 2
+    points by the embargo cannot be assessed and does not count as positive)."""
     s = [float(r) for r in returns if r is not None and math.isfinite(r)]
-    if n_folds < 2 or len(s) < n_folds * 2:
+    if n_folds < 2 or len(s) < n_folds * 2 or embargo < 0:
         return False                                  # too thin / degenerate -> fail closed
     fold = len(s) // n_folds
     positives = 0
     for k in range(n_folds):
-        lo = k * fold
+        lo = k * fold + (embargo if k > 0 else 0)     # purge overlap with the prior fold
         hi = (k + 1) * fold if k < n_folds - 1 else len(s)
-        if _block_sharpe(s[lo:hi]) > 0.0:
+        block = s[lo:hi]
+        if len(block) >= 2 and _block_sharpe(block) > 0.0:
             positives += 1
     return positives / n_folds >= min_positive_frac

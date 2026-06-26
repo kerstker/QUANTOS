@@ -122,7 +122,8 @@ class AlphaEvaluator:
             # across sequential held-out folds, not just have a positive full-sample
             # Sharpe (which one lucky sub-period could produce)
             wf_passed = walk_forward_oos(net, n_folds=self.config.wf_folds,
-                                         min_positive_frac=self.config.wf_min_positive_frac)
+                                         min_positive_frac=self.config.wf_min_positive_frac,
+                                         embargo=self.config.wf_embargo)
             vr = self.gate.evaluate(
                 alpha_id,
                 oos_sharpe=net_sharpe, deflated_sharpe=dsr, pbo=_clamp01(pbo),
