@@ -238,6 +238,27 @@ def test_gp_session_mode_smoke():
     assert all(aid.startswith("hgp_") for aid in out["report"])
 
 
+def test_oos_validate_closes_the_factory_loop():
+    # the pipeline validates its OWN discovered factors via no-peek OOS (no external script)
+    from services.research.session import run_research_session
+    from services.intelligence.search_space import HypothesisSpace
+    st = SqlitePITStore(":memory:", create=True)
+    dates = list(range(60))
+    for k, inst in enumerate(INSTS):
+        base = 10.0 + k
+        for t in dates:
+            px = base * (1.0 + 0.01 * ((t * (k + 1)) % 7 - 3))
+            st.add(inst, _bar(inst, t, px))
+    space = HypothesisSpace(factors=("close",), operators=("momentum", "zscore", "volatility"),
+                            windows=(3, 5))
+    out = run_research_session(st, INSTS, event_times=dates, fwd_horizon=1, space=space,
+                               rounds=1, batch_size=1, timestamp=10, evolutionary=True,
+                               evo_generations=2, evo_population=6, evo_elite=3, oos_validate=True)
+    assert "oos" in out and out["oos"] is not None
+    assert "folds" in out["oos"] and out["oos"]["n_folds"] >= 1                    # real OOS folds
+    assert out["oos"]["mean_oos_sharpe"] is not None                              # IS-vs-OOS computed
+
+
 def test_mcts_session_mode_smoke():
     from services.research.session import run_research_session
     from services.intelligence.search_space import HypothesisSpace

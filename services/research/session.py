@@ -42,6 +42,28 @@ def _synergistic_set(catalog, k: int) -> dict:
     return select_synergistic_set(returns_by_id, max_k=max(1, k), min_incremental_ir=0.0)
 
 
+def _oos_validate(catalog, *, embargo: int = 1):
+    """Close the factory loop: no-peek walk-forward SELECTION OOS over the run's OWN discovered
+    factors (their stored net returns), so the pipeline validates itself instead of relying on
+    an external script. Read-only over the catalog; aligns factors on their common trailing
+    length. None when too few factors / too short to split honestly (fail-closed)."""
+    from services.research.oos_validation import walk_forward_selection_oos
+    rbi = {aid: catalog.returns(aid) for aid in catalog.all_ids() if len(catalog.returns(aid)) >= 2}
+    if len(rbi) < 2:
+        return None
+    length = min(len(r) for r in rbi.values())
+    if length < 24:                                        # too short for a meaningful train/test split
+        return None
+    aligned = {aid: tuple(r[-length:]) for aid, r in rbi.items()}
+    test_size = max(8, length // 8)
+    train_size = max(20, length // 2)
+    try:
+        return walk_forward_selection_oos(aligned, train_size=train_size, test_size=test_size,
+                                          step=test_size, embargo=embargo)
+    except ValueError:
+        return None
+
+
 def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
     if not event_times:
         return ""
@@ -61,7 +83,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          parsimony_mu: float = 0.0, synergistic_k: int = 8,
                          redundancy_lambda: float = 0.0, regime_evidence: bool = False,
                          mcts: bool = False, mcts_iterations: int = 60,
-                         diversity_lambda: float = 0.0) -> dict:
+                         diversity_lambda: float = 0.0,
+                         oos_validate: bool = False, oos_embargo: int = 1) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -75,7 +98,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             metrics=metrics, modes=modes, fund_store=fund_store, universe=universe,
             catalog=catalog, registry=registry, dataset_version=dataset_version,
             timestamp=timestamp, audit_log=audit_log, iterations=mcts_iterations, gp=gp,
-            synergistic_k=synergistic_k, regime_evidence=regime_evidence)
+            synergistic_k=synergistic_k, regime_evidence=regime_evidence,
+            oos_validate=oos_validate, oos_embargo=oos_embargo)
 
     if evolutionary or gp:
         return _run_evolutionary(
@@ -86,7 +110,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             generations=evo_generations, population_size=evo_population, elite_k=evo_elite,
             gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu,
             synergistic_k=synergistic_k, redundancy_lambda=redundancy_lambda,
-            regime_evidence=regime_evidence, diversity_lambda=diversity_lambda)
+            regime_evidence=regime_evidence, diversity_lambda=diversity_lambda,
+            oos_validate=oos_validate, oos_embargo=oos_embargo)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -129,6 +154,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
 
 
@@ -150,7 +176,8 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                       fund_store, universe, catalog, registry, dataset_version, timestamp,
                       audit_log, generations, population_size, elite_k,
                       gp=False, parsimony_lambda=0.0, parsimony_mu=0.0, synergistic_k=8,
-                      redundancy_lambda=0.0, regime_evidence=False, diversity_lambda=0.0) -> dict:
+                      redundancy_lambda=0.0, regime_evidence=False, diversity_lambda=0.0,
+                      oos_validate=False, oos_embargo=1) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
       - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
@@ -205,12 +232,14 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
 
 
 def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
               fund_store, universe, catalog, registry, dataset_version, timestamp, audit_log,
-              iterations, gp=False, synergistic_k=8, regime_evidence=False) -> dict:
+              iterations, gp=False, synergistic_k=8, regime_evidence=False,
+              oos_validate=False, oos_embargo=1) -> dict:
     """MCTS/UCT mode: navigate the formula-tree space with UCT instead of generational GP.
     Same contained ResearchAgentLoop + multiple-testing honesty; seeds match the evolutionary
     mode (GP-tree leaves + depth-1 binaries when gp, else price/value atoms)."""
@@ -250,4 +279,5 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
