@@ -12,6 +12,7 @@ import json
 import os
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from tools.crypto_daily_research import _top_factor_diagnostics
 
 _SNAP = os.path.join("data", "cache", "crypto_research_snapshot.json")
@@ -25,7 +26,7 @@ def main() -> None:
     instruments = sorted(c["instrument_id"] for c in snap.get("meta", {}).get("coins", []))
     if len(instruments) < 2:
         raise SystemExit("snapshot has < 2 instruments")
-    store = SqlitePITStore(_DB, create=False)
+    store = CachingPITStore(SqlitePITStore(_DB, create=False))
     cost, regime = _top_factor_diagnostics(store, instruments, snap.get("factors", []))
     snap["cost_stress"] = cost
     snap["regime"] = regime

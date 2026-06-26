@@ -22,6 +22,7 @@ import time
 from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
 from services.research.signals import SIGNAL_OPS
 from services.research.backtest_engine.metrics import sharpe
@@ -134,6 +135,7 @@ def main() -> None:
         time.sleep(1.0)
 
     event_times = sorted(all_ets)
+    store = CachingPITStore(store)        # ingestion done -> serve the O(P^2) panel builds from memory
     if len(instruments) < 2 or len(event_times) < 60:
         raise SystemExit("too little multi-year data — check the CryptoCompare key / coverage")
     print(f"\nMULTI-YEAR: {len(instruments)} coins x {len(event_times)} daily periods", flush=True)

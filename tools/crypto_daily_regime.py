@@ -20,6 +20,7 @@ import json
 import os
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from services.research.panel_builder import build_panel_periods
 from services.research.signals import SIGNAL_OPS
 from services.research.regime import label_regimes_by_vol, regime_conditional_stats
@@ -68,7 +69,7 @@ def _fmt(stats, names) -> str:
 
 
 def main() -> None:
-    store = SqlitePITStore(_DAILY_DB, create=False)
+    store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     snap_path = os.path.join("data", "cache", "crypto_research_snapshot.json")
     instruments = sorted(c["instrument_id"] for c in
                          json.load(open(snap_path, encoding="utf-8")).get("meta", {}).get("coins", []))

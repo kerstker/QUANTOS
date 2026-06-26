@@ -21,6 +21,7 @@ import json
 import os
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from services.research.backtest_engine.costs import CostModel
 from services.research.backtest_engine.metrics import sharpe
 from services.research.panel_builder import build_panel_periods
@@ -49,7 +50,7 @@ def _net_returns(periods, one_way_bps):
 
 
 def main() -> None:
-    store = SqlitePITStore(_DAILY_DB, create=False)
+    store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     # instrument list comes from the daily snapshot's coin metadata (the store has no list-API)
     snap_path = os.path.join("data", "cache", "crypto_research_snapshot.json")
     instruments = []

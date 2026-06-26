@@ -23,6 +23,7 @@ import os
 import statistics
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from services.research.signals import SIGNAL_OPS
 from services.research.backtest_engine.costs import CostModel
 from services.research.backtest_engine.metrics import sharpe
@@ -159,7 +160,7 @@ def _trend_labels(mkt, window):
 
 
 def main() -> None:
-    store = SqlitePITStore(_DAILY_DB, create=False)
+    store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     instruments = _instruments()
     event_times = sorted({b.event_time for inst in instruments
                           for b in store.fetch_bars(inst, 0, 10 ** 14)})

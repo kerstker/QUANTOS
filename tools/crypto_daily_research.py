@@ -32,6 +32,7 @@ import sys
 import time
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.evolutionary_search import make_evolution_provider, genome_to_definition
@@ -267,6 +268,7 @@ def main() -> None:
         time.sleep(2.5)  # stay under the demo-tier ~30 calls/min rate limit
 
     event_times = sorted(all_event_times)
+    store = CachingPITStore(store)        # ingestion done -> serve panel builds from memory (~30-40x)
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
     print(f"\nDAILY periods={len(event_times)} instruments={len(instruments)} "
           f"-> evolutionary search + no-peek OOS ...", flush=True)
