@@ -83,7 +83,12 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 应在 `4855e01`(端到端 alpha 工厂自验证 OOS 闭环)附近;`main==master`;`validate.py` 全绿。
-本轮主要新增:Crypto Live 前端 + 宽截面 + 无窥视 OOS + GP 树(+对抗评审硬化)+ 去冗余(协同集/增量奖励)+
+HEAD 在 `3bb6002`(机构级开发流程落地)附近;`main==master`;`validate.py` 全绿。
+**远端已就绪**:`https://github.com/kerstker/QUANTOS`(Private),`origin/main` 与 `origin/master` 已同步;
+CI(`.github/workflows/validate.yml`)在 push/PR 自动跑后端门禁 + 前端。搭建/分支保护手册见 `docs/REMOTE_SETUP.md`。
+待用户手动开启:`main` 分支保护(要求 CI 两个检查 + 1 人评审);本地钩子 `make hooks`(可选)。
+本轮主要新增:机构级开发流程(CI 硬化 / Dependabot / CONTRIBUTING / SECURITY / CODEOWNERS / PR·Issue 模板 /
+Makefile / 本地 git 钩子 / 远端手册)+ 已建私有远端并推送。
+前序新增:Crypto Live 前端 + 宽截面 + 无窥视 OOS + GP 树(+对抗评审硬化)+ 去冗余(协同集/增量奖励)+
 Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + 唯一性/择时/分数阶 +
 数据适配器 + 真实成交量 + 量能因子 + MCTS(+接主线)+ 频繁子树规避 + 工厂自验证闭环。

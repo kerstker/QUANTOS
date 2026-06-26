@@ -1,17 +1,16 @@
 # 代码负责人(CODEOWNERS)
 # 被列为 owner 的人会在相关文件改动时被自动请求评审。
-# ⚠️ 把下面的 @OWNER 替换成你的 GitHub 用户名(例如 @yourname),否则不会生效。
 
 # 默认:全仓库归所有者
-*                                   @OWNER
+*                                   @kerstker
 
 # 安全关键区域 —— 任何改动都必须经所有者评审
-/quantos/contracts/                 @OWNER
-/services/risk/                     @OWNER
-/services/intelligence/             @OWNER
-/services/alpha/                    @OWNER
-/tests/governance/                  @OWNER
-/scripts/validate.py                @OWNER
-/.github/                           @OWNER
-/CLAUDE.md                          @OWNER
-/SECURITY.md                        @OWNER
+/quantos/contracts/                 @kerstker
+/services/risk/                     @kerstker
+/services/intelligence/             @kerstker
+/services/alpha/                    @kerstker
+/tests/governance/                  @kerstker
+/scripts/validate.py                @kerstker
+/.github/                           @kerstker
+/CLAUDE.md                          @kerstker
+/SECURITY.md                        @kerstker
