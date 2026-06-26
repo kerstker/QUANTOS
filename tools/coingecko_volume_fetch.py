@@ -39,10 +39,16 @@ def fetch_market_chart(coin_id: str = "bitcoin", *, vs_currency: str = "usd", da
     return http_get(url, {"x-cg-demo-api-key": key, "accept": "application/json"})
 
 
-def parse_market_chart(payload, *, instrument_id: str, now_ms=None) -> list:
+_HOUR_MS = 3_600_000
+
+
+def parse_market_chart(payload, *, instrument_id: str, now_ms=None, bucket_ms: int = _HOUR_MS) -> list:
     """Pure: market_chart {prices:[[ts,px]], total_volumes:[[ts,vol]]} -> canonical bar rows
-    (via the SourceSpec). Fail-closed on a non-dict / error payload. Drops any future point
-    and the trailing LIVE observation (its 24h volume is provisional / non-reproducible)."""
+    (via the SourceSpec). event_time is SNAPPED to a common grid (`bucket_ms`, default 1h) so
+    different coins' points land on the SAME period keys — otherwise each coin's slightly-offset
+    hourly stamps never align and every cross-section collapses to one name (breadth 0). Volume
+    is looked up by the original stamp. Fail-closed on a non-dict/error payload; drops any future
+    point and the trailing LIVE bucket (its 24h volume is provisional / non-reproducible)."""
     if not (isinstance(payload, dict) and isinstance(payload.get("prices"), list)
             and isinstance(payload.get("total_volumes"), list)):
         raise ValueError(f"market_chart returned an unexpected payload: {str(payload)[:200]}")
@@ -53,7 +59,7 @@ def parse_market_chart(payload, *, instrument_id: str, now_ms=None) -> list:
                 vol_by_ts[int(item[0])] = float(item[1])
             except (TypeError, ValueError):
                 continue
-    raw = []
+    by_bucket = {}                                   # bucket -> row (last point in the bucket wins)
     for item in payload["prices"]:
         if not (isinstance(item, (list, tuple)) and len(item) >= 2):
             continue
@@ -63,10 +69,11 @@ def parse_market_chart(payload, *, instrument_id: str, now_ms=None) -> list:
             continue
         if now_ms is not None and ts > now_ms:
             continue
-        raw.append({"sym": instrument_id, "ts": ts, "px": px, "vol": vol_by_ts.get(ts, 0.0)})
-    raw.sort(key=lambda r: r["ts"])
+        bucket = (ts // bucket_ms) * bucket_ms if bucket_ms > 0 else ts
+        by_bucket[bucket] = {"sym": instrument_id, "ts": bucket, "px": px, "vol": vol_by_ts.get(ts, 0.0)}
+    raw = [by_bucket[b] for b in sorted(by_bucket)]
     if raw and now_ms is not None:
-        raw = raw[:-1]                              # drop the trailing LIVE point (provisional)
+        raw = raw[:-1]                              # drop the trailing LIVE bucket (provisional)
     return normalize_records(raw, MC_SPEC)
 
 
