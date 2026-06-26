@@ -8,7 +8,7 @@ trees were all low-volatility clones).
 """
 import pytest
 
-from services.research.factor_set import incremental_ir, select_synergistic_set
+from services.research.factor_set import incremental_ir, select_synergistic_set, novelty_vs_basis
 
 N = 80
 A = [0.01 * ((i % 5) - 2) + 0.002 for i in range(N)]          # oscillating, +mean
@@ -52,3 +52,11 @@ def test_select_fail_closed_on_thin_or_empty():
 def test_max_k_caps_selection():
     out = select_synergistic_set(RET, max_k=1, min_incremental_ir=0.0, min_overlap=20)
     assert len(out["selected"]) == 1
+
+
+def test_novelty_vs_basis():
+    assert novelty_vs_basis(C, {}, min_overlap=20) == 1.0          # empty basis -> fully novel
+    nov_clone = novelty_vs_basis(B, {"A": tuple(A)}, min_overlap=20)  # B ~= A -> ~0 novelty
+    nov_orth = novelty_vs_basis(C, {"A": tuple(A)}, min_overlap=20)   # C orthogonal-ish -> high
+    assert nov_clone is not None and nov_orth is not None
+    assert nov_clone < 0.2 and nov_orth > nov_clone

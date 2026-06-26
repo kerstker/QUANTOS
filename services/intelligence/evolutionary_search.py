@@ -22,6 +22,7 @@ from services.research.interaction_factors import interaction_definition, make_i
 from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
 from services.research import gp_tree, gp_genome
+from services.research.factor_set import novelty_vs_basis
 
 DEFAULT_VOCAB = {
     "operators": ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",
@@ -38,6 +39,9 @@ DEFAULT_VOCAB = {
     "max_nodes": gp_tree.MAX_NODES_DEFAULT,
     "parsimony_lambda": 0.0,   # bloat penalty on SEARCH reward only (0 -> off, honest eval unchanged)
     "parsimony_mu": 0.0,
+    # incremental-discovery: scale a candidate's SEARCH reward by how much NEW information it
+    # adds vs the already-discovered elite basis (0 -> off, recorded evaluation never touched).
+    "redundancy_lambda": 0.0,
 }
 
 
@@ -185,7 +189,8 @@ class EvolutionarySearchLoop:
         self.inner_loop = inner_loop or ResearchAgentLoop()
         self.vocab = vocab
 
-    def _evaluate(self, genomes, evaluated: dict, history: list, report: dict, timestamp: int) -> None:
+    def _evaluate(self, genomes, evaluated: dict, history: list, report: dict, timestamp: int,
+                  basis: Optional[dict] = None) -> None:
         candidates, ok = [], []
         for g in genomes:
             if g in evaluated:
@@ -202,6 +207,7 @@ class EvolutionarySearchLoop:
             return
         out = self.inner_loop.run(candidates, timestamp=timestamp)
         report.update(out["report"])
+        red_lambda = self.vocab.get("redundancy_lambda", 0.0)
         for g, defn in ok:
             entry = out["report"].get(defn.alpha_id, {})
             r = evaluation_reward(entry.get("evaluation"))
@@ -211,8 +217,34 @@ class EvolutionarySearchLoop:
                 lam, mu = self.vocab.get("parsimony_lambda", 0.0), self.vocab.get("parsimony_mu", 0.0)
                 if lam or mu:
                     r = max(0.0, r - gp_genome.parsimony_penalty(g[1], lam, mu))
+            if red_lambda > 0 and basis:
+                # incremental discovery: down-weight the SEARCH reward of a candidate that is
+                # redundant with the already-discovered elite basis, so the search seeks NEW
+                # information instead of re-finding the same alpha. Recorded eval untouched.
+                cand_returns = self.inner_loop.catalog.returns(defn.alpha_id)
+                if len(cand_returns) >= 2:
+                    nov = novelty_vs_basis(cand_returns, basis)
+                    if nov is not None:
+                        r = r * (1.0 - red_lambda * (1.0 - nov))
             evaluated[g] = r
             history.append({"genome": g, "reward": r, "state": entry.get("state")})
+
+    def _elite_basis(self, elites) -> dict:
+        """Return series of the current elites (the already-discovered good factors) — the
+        basis a new candidate's novelty is measured against. Empty unless redundancy is on."""
+        if self.vocab.get("redundancy_lambda", 0.0) <= 0:
+            return {}
+        cat = self.inner_loop.catalog
+        basis = {}
+        for g in elites:
+            try:
+                aid = genome_to_definition(g).alpha_id
+            except Exception:
+                continue
+            rs = cat.returns(aid)
+            if len(rs) >= 2:
+                basis[aid] = rs
+        return basis
 
     def run(self, seed_genomes: Sequence, *, generations: int, population_size: int,
             elite_k: int, timestamp: int = 0) -> dict:
@@ -237,7 +269,7 @@ class EvolutionarySearchLoop:
                 for j in range(i + 1, len(elites)):
                     offspring.update(crossover(elites[i], elites[j], self.vocab))
             fresh = [g for g in sorted(offspring) if g not in evaluated][:population_size]
-            self._evaluate(fresh, evaluated, history, report, timestamp)
+            self._evaluate(fresh, evaluated, history, report, timestamp, basis=self._elite_basis(elites))
             pool = set(elites) | set(fresh) | set(population)
             population = [g for g, _r in sorted(((g, evaluated.get(g, 0.0)) for g in pool),
                                                 key=lambda gr: (-gr[1], gr[0]))[:population_size]]

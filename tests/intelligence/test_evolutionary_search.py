@@ -7,7 +7,8 @@ from services.data.persistent_store import SqlitePITStore
 from services.data.fundamental_store import SqliteFundamentalStore
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.evolutionary_search import (
-    genome_to_definition, mutate, crossover, make_evolution_provider, EvolutionarySearchLoop)
+    genome_to_definition, mutate, crossover, make_evolution_provider, EvolutionarySearchLoop,
+    DEFAULT_VOCAB)
 
 DATES = list(range(24))
 INSTS = [f"i{k}" for k in range(6)]
@@ -179,6 +180,33 @@ def test_gp_aliased_trees_count_one_trial():
     EvolutionarySearchLoop(_provider(), inner_loop=loop).run(
         [g1, g2], generations=0, population_size=4, elite_k=2, timestamp=10)
     assert loop.catalog.global_trial_count() - before == 1   # aliased trees = ONE trial (honest)
+
+
+def test_redundancy_reward_deterministic_and_contained():
+    # incremental-discovery reward ON: search still deterministic + containment intact
+    seed = [_LEAF_T, ("T", ("leaf", "zscore", "3")), _BIN_T]
+    vocab = {**DEFAULT_VOCAB, "redundancy_lambda": 0.5}
+    def run():
+        loop = ResearchAgentLoop()
+        out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+        return out, loop
+    a, la = run()
+    b, _lb = run()
+    assert a["best"] == b["best"] and a["n_evaluated"] == b["n_evaluated"]   # deterministic
+    for aid in la.catalog.all_ids():
+        assert la.catalog.state(aid) != AlphaState.APPROVED                  # containment held
+
+
+def test_redundancy_default_off_matches_plain_run():
+    # redundancy_lambda defaults to 0 -> identical to a run without the feature (regression)
+    seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
+    plain = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop()).run(
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+    explicit0 = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop(),
+                                       vocab={**DEFAULT_VOCAB, "redundancy_lambda": 0.0}).run(
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+    assert plain["best"] == explicit0["best"]
 
 
 def test_gp_session_mode_smoke():

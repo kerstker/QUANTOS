@@ -34,6 +34,20 @@ def incremental_ir(candidate_returns: Sequence[float],
     return res.marginal_ir * novelty
 
 
+def novelty_vs_basis(candidate_returns: Sequence[float],
+                     basis: Mapping[str, tuple], *, min_overlap: int = 20) -> Optional[float]:
+    """Fraction of the candidate's variance NOT already spanned by the basis (1 - explained_r2),
+    clamped to [0,1]: 1 = fully novel/orthogonal, 0 = a redundant clone. An empty basis -> 1.0.
+    None when it cannot be honestly assessed (too-thin overlap). This is the per-candidate
+    redundancy signal an incremental-discovery reward multiplies in."""
+    res = orthogonalize(tuple(candidate_returns), dict(basis), min_overlap=min_overlap)
+    if not res.ok:
+        return None
+    if res.explained_r2 is None:
+        return 1.0
+    return max(0.0, min(1.0, 1.0 - res.explained_r2))
+
+
 def select_synergistic_set(returns_by_id: Mapping[str, Sequence[float]], *, max_k: int,
                            min_incremental_ir: float = 0.0, min_overlap: int = 20) -> dict:
     """Greedy forward selection by incremental IR vs the running selected set.
