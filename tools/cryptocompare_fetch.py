@@ -20,7 +20,8 @@ import time
 from services.data.adapters import SourceSpec, normalize_records
 from tools.coingecko_fetch import _http_get_json
 
-CC_BASE = "https://min-api.cryptocompare.com/data/v2"
+_CC_HOST = "https://min-api.cryptocompare.com"
+CC_BASE = _CC_HOST + "/data/v2"
 _DAY_MS = 86_400_000
 
 # histoday -> canonical daily bars: real OHLC + volumeto (quote-ccy / USD volume).
@@ -91,6 +92,28 @@ def parse_histoday(payload, *, instrument_id: str, now_ms=None) -> list:
         if raw[-1]["ts"] >= today:                         # drop the still-forming current day
             raw = raw[:-1]
     return normalize_records(raw, CC_SPEC)
+
+
+def fetch_top_symbols(n: int = 200, *, tsym: str = "USD", http_get=_http_get_json) -> list:
+    """READ-ONLY: the top `n` coins by market cap (CryptoCompare /data/top/mktcapfull), as ticker
+    symbols ordered by mktcap. Used to widen the cross-section into the small/mid-cap tail where
+    cross-sectional inefficiency lives. Pure market-data; no order/account/credential beyond the key."""
+    headers = {"accept": "application/json"}
+    key = _read_key()
+    if key:
+        headers["authorization"] = f"Apikey {key}"
+    out, page = [], 0
+    while len(out) < n and page < 25:
+        payload = http_get(f"{_CC_HOST}/data/top/mktcapfull?limit=100&page={page}&tsym={tsym}", headers)
+        data = payload.get("Data") if isinstance(payload, dict) else None
+        if not data:
+            break
+        for d in data:
+            name = (d.get("CoinInfo") or {}).get("Name") if isinstance(d, dict) else None
+            if name and name not in out:
+                out.append(name)
+        page += 1
+    return out[:n]
 
 
 def fetch_daily_rows(fsym: str = "BTC", ticker: str = "", *, limit: int = 2000,
