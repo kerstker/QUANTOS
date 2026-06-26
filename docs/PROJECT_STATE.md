@@ -33,14 +33,15 @@ brainstorm(大改才需) → 先写测试(tests-first)→ 实现 → `validate.p
 聊天用**简单中文、少术语、术语用大白话解释**(见记忆 `reply-plain-chinese`);文档/注释也中文。
 
 ## 3. 已建成(本仓真实代码,按能力)
-**数据**:`services/data/` —— PIT 存储 `persistent_store`、survivorship-free `universe_store`、
-`versioning`、质量/归一、`market_csv`(BYO 日线)、`market_provider`(多资产离线接缝 + ingest)、
-**`adapters.py`(声明式 SourceSpec + 数据源注册表)**、`calendar_store`、`fundamental_store`。
-**加密数据(门外只读)**:`tools/coingecko_fetch`(OHLC 4h/30min,无量)、
-**`tools/coingecko_volume_fetch`(market_chart 真实 24h 成交量,时间戳对齐到整点网格)**;
-治理边界 `tests/governance/test_crypto_data_boundary.py` 钉死两抓取器只含 stdlib+services/tools、
-无 SDK/无下单。
-**信号/特征**:`signals.py`(8 价格算子)、**`volume_signals.py`(4 量能/流动性算子)**、leakage 检测。
+**数据**:`services/data/` —— PIT 存储 `persistent_store`、**`caching_store.py`(内存读缓存:回测从
+小时级降到秒级,与 SQLite 逐位一致,接进所有驱动)**、survivorship-free `universe_store`、`versioning`、
+质量/归一、`market_csv`、`market_provider`(多资产离线接缝 + ingest)、`adapters.py`(声明式 SourceSpec +
+数据源注册表)、`calendar_store`、`fundamental_store`。
+**加密数据(门外只读)**:`tools/coingecko_fetch`(OHLC 4h)、`tools/coingecko_volume_fetch`(真实成交量)、
+**`tools/cryptocompare_fetch`(中立聚合商 histoday,多年日线·含 2022 熊市,免费 key 读自 key/cryptocompare*.txt)**;
+治理边界 `tests/governance/test_crypto_data_boundary.py` 钉死**三**抓取器只含 stdlib+services/tools、无 SDK/无下单。
+**信号/特征**:`signals.py`(8 价格算子)、`volume_signals.py`(4 量能算子)、**`alpha_expression.py`(截面 alpha 引擎:
+PIT 面板上组合时序算子 + 截面算子 rank/scale/demean/zscore + 逐元,解锁 Alpha101 那类真因子;无前视测试钉死)**、leakage 检测。
 **因子/评估**:`factor_engine`(IC/ICIR)、`alpha/evaluator`(DSR/PBO/regime 门、失败关闭、
 **opt-in `compute_regime_evidence`**)、`catalog`(试验计数/var_sr)、`config`、`multiple_testing`、
 `orthogonalize`、`panel_backtest`、`capacity`、`walk_forward`(**带 embargo 禁运**)。
@@ -98,9 +99,15 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
     长样本无窥视 OOS 仅 +0.42(选了 momentum_14),噪声级,非 edge。
   - 容器化全程 auto_approved=0:系统**从未放行**它。**这是平台在正常工作** —— 更长更全的数据 + 诚实机制,
     戳穿了一个"一年牛市幻觉"。量化第一课就这么活生生上了一遍。
-- 定性:之前"最好最简信号"的结论**作废**。当前**没有任何**经得起跨 regime 检验的加密因子;现有 ~8 个价格因子
-  全样本上都≈0 或负。这把战略方向钉死:不是"挖更多花哨因子",而是**(a)扩因子语法(截面算子+Alpha101)做出
-  能表达真信号的因子,(b)在全多年数据上快速搜索(需内存提速根治 O(天数²)的慢)**。详见记忆 `crypto-research-findings`。
+- **截面 alpha 引擎 + Alpha101 实测(2026-06-27,`alpha_expression.py` + `tools/crypto_alpha_research.py`)——
+  更丰富的因子,同样没信号:** 建好了因子语法扩展(时序×截面算子,解锁 Alpha101 那类真因子),在同一份
+  5.5 年/23 币面板上跑 15 个精选截面 alpha:**仍无跨 regime edge**。最好 accel_cs 全样本 SR 0.60 但被 2021 一年
+  带飞(负 3/6 年);所有 |IC|<0.03;**幸存者 0**。**这把"瓶颈是数据不是因子生成"从论断变成了实证**:可表达空间
+  放大几个量级、照样挖不到东西,因为价+量在大盘币日线上被高效定价了——alpha 不在这份数据里。引擎是永久基础设施
+  (将来有更好数据时即用)。
+- 定性(钉死):**"挖更多花哨因子"是错的杠杆,已实证。** 当前没有任何经得起跨 regime 的加密因子(简单的、丰富的
+  都≈0)。真正的杠杆 = **数据护城河(口子)**:把广度铺到**小盘币**(低效定价处)、另类数据、其它资产类别、或更高频/
+  微结构。下一步要么用户拍板开数据口子,要么把 `dist_from_high_14` 这类候选挂纸面跟踪。详见记忆 `crypto-research-findings`。
 
 ## 5. 待决"口子"(需用户拍板,不是代码能变出来的)——按杠杆排序
 1. **数据**(最大,~80% 边际):更长历史/逐根成交量/资金费/链上/另类。**适配器接口已就绪**,
@@ -117,7 +124,16 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `3bb6002`(机构级开发流程落地)附近;`main==master`;`validate.py` 全绿。
+HEAD 在 `e0f7c57`(截面 alpha 引擎 Batch 1)附近,后接 `tools/crypto_alpha_research.py`(未提交则补提);
+`main==master`;`validate.py` 813 测试全绿。**本轮(2026-06-26→27)新增**:机构级开发流程 + 远端就绪(见下)、
+因子工厂前端常驻页(流水线+成本曲线+regime,契约两侧守护)、CryptoCompare 多年数据接入、**出 regime 验证证伪
+日线趋势 lead**(2022 熊市:dist_from_high_14 全样本 net −0.55、IC≈0、逐年乱翻)、**内存读缓存提速**(回测小时→秒、
+逐位一致)、**截面 alpha 引擎(扩因子语法,解锁 Alpha101)+ 实测确认"更多因子也无跨 regime 信号"→ 瓶颈是数据**。
+当前结论:**没有任何经得起跨 regime 的加密因子;真杠杆=数据护城河(口子,见 §5)**。下一步候选:开数据口子(小盘币广度/
+另类/其它资产)或挂纸面跟踪。远端 = `https://github.com/kerstker/QUANTOS`(Private);本地两服务可能仍开着(uvicorn :8400 +
+Vite :3100)。
+—— 历史锚点 ——
+HEAD 曾在 `3bb6002`(机构级开发流程落地)附近;`main==master`;`validate.py` 全绿。
 **远端已就绪**:`https://github.com/kerstker/QUANTOS`(Private),`origin/main` 与 `origin/master` 已同步;
 CI(`.github/workflows/validate.yml`)在 push/PR 自动跑后端门禁 + 前端。搭建/分支保护手册见 `docs/REMOTE_SETUP.md`。
 待用户手动开启:`main` 分支保护(要求 CI 两个检查 + 1 人评审);本地钩子 `make hooks`(可选)。
