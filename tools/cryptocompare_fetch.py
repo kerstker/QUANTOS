@@ -34,17 +34,18 @@ CC_SPEC = SourceSpec(
 
 
 def _read_key() -> str:
-    """Read-only DATA key from env or gitignored key/cryptocompare.txt; '' if absent (keyless
-    public calls still work, just rate-limited). Never logged."""
+    """Read-only DATA key from env or a gitignored key file under key/; '' if absent. Accepts a few
+    common filenames so it does not matter which the user created. Never logged."""
     k = os.environ.get("CRYPTOCOMPARE_API_KEY")
     if k and k.strip():
         return k.strip()
-    path = os.path.join(os.getcwd(), "key", "cryptocompare.txt")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as fh:
-            v = fh.read().strip()
-            if v:
-                return v
+    for name in ("cryptocompare.txt", "cryptocomparekey.txt", "cryptocompare_key.txt", "cckey.txt"):
+        path = os.path.join(os.getcwd(), "key", name)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                v = fh.read().strip()
+                if v:
+                    return v
     return ""
 
 
