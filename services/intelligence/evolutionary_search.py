@@ -23,6 +23,7 @@ from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
 from services.research import gp_tree, gp_genome
 from services.research.factor_set import novelty_vs_basis
+from services.research.subtree_stats import structural_commonness, update_corpus
 
 DEFAULT_VOCAB = {
     "operators": ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",
@@ -42,6 +43,9 @@ DEFAULT_VOCAB = {
     # incremental-discovery: scale a candidate's SEARCH reward by how much NEW information it
     # adds vs the already-discovered elite basis (0 -> off, recorded evaluation never touched).
     "redundancy_lambda": 0.0,
+    # frequent-subtree avoidance: down-weight the SEARCH reward of a structurally COMMON tree
+    # (its sub-expressions already recur) to force formula-shape diversity (0 -> off).
+    "diversity_lambda": 0.0,
 }
 
 
@@ -190,7 +194,7 @@ class EvolutionarySearchLoop:
         self.vocab = vocab
 
     def _evaluate(self, genomes, evaluated: dict, history: list, report: dict, timestamp: int,
-                  basis: Optional[dict] = None) -> None:
+                  basis: Optional[dict] = None, corpus: Optional[dict] = None) -> None:
         candidates, ok = [], []
         for g in genomes:
             if g in evaluated:
@@ -208,6 +212,7 @@ class EvolutionarySearchLoop:
         out = self.inner_loop.run(candidates, timestamp=timestamp)
         report.update(out["report"])
         red_lambda = self.vocab.get("redundancy_lambda", 0.0)
+        div_lambda = self.vocab.get("diversity_lambda", 0.0)
         for g, defn in ok:
             entry = out["report"].get(defn.alpha_id, {})
             r = evaluation_reward(entry.get("evaluation"))
@@ -226,6 +231,11 @@ class EvolutionarySearchLoop:
                     nov = novelty_vs_basis(cand_returns, basis)
                     if nov is not None:
                         r = r * (1.0 - red_lambda * (1.0 - nov))
+            if div_lambda > 0 and corpus is not None and g[0] == "T":
+                # frequent-subtree avoidance: penalize a structurally COMMON tree, then record
+                # its sub-shapes so later identical shapes are penalized more. Search reward only.
+                r = r * (1.0 - div_lambda * structural_commonness(g[1], corpus))
+                update_corpus(corpus, g[1])
             evaluated[g] = r
             history.append({"genome": g, "reward": r, "state": entry.get("state")})
 
@@ -255,8 +265,9 @@ class EvolutionarySearchLoop:
         evaluated: dict = {}
         history: list = []
         report: dict = {}
+        corpus: Optional[dict] = {} if self.vocab.get("diversity_lambda", 0.0) > 0 else None
         population = sorted(set(seed_genomes))[:population_size]
-        self._evaluate(population, evaluated, history, report, timestamp)
+        self._evaluate(population, evaluated, history, report, timestamp, corpus=corpus)
 
         for _ in range(generations):
             assert_action_allowed(self.inner_loop.actor, AgentAction.PROPOSE)   # contained
@@ -269,7 +280,8 @@ class EvolutionarySearchLoop:
                 for j in range(i + 1, len(elites)):
                     offspring.update(crossover(elites[i], elites[j], self.vocab))
             fresh = [g for g in sorted(offspring) if g not in evaluated][:population_size]
-            self._evaluate(fresh, evaluated, history, report, timestamp, basis=self._elite_basis(elites))
+            self._evaluate(fresh, evaluated, history, report, timestamp,
+                           basis=self._elite_basis(elites), corpus=corpus)
             pool = set(elites) | set(fresh) | set(population)
             population = [g for g, _r in sorted(((g, evaluated.get(g, 0.0)) for g in pool),
                                                 key=lambda gr: (-gr[1], gr[0]))[:population_size]]

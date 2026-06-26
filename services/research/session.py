@@ -60,7 +60,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          gp: bool = False, parsimony_lambda: float = 0.0,
                          parsimony_mu: float = 0.0, synergistic_k: int = 8,
                          redundancy_lambda: float = 0.0, regime_evidence: bool = False,
-                         mcts: bool = False, mcts_iterations: int = 60) -> dict:
+                         mcts: bool = False, mcts_iterations: int = 60,
+                         diversity_lambda: float = 0.0) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -85,7 +86,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             generations=evo_generations, population_size=evo_population, elite_k=evo_elite,
             gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu,
             synergistic_k=synergistic_k, redundancy_lambda=redundancy_lambda,
-            regime_evidence=regime_evidence)
+            regime_evidence=regime_evidence, diversity_lambda=diversity_lambda)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -149,7 +150,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                       fund_store, universe, catalog, registry, dataset_version, timestamp,
                       audit_log, generations, population_size, elite_k,
                       gp=False, parsimony_lambda=0.0, parsimony_mu=0.0, synergistic_k=8,
-                      redundancy_lambda=0.0, regime_evidence=False) -> dict:
+                      redundancy_lambda=0.0, regime_evidence=False, diversity_lambda=0.0) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
       - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
@@ -170,7 +171,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                 seed.append(("T", (binop, ("leaf", o1, "5"), ("leaf", o2, "5"))))
         vocab = {"operators": ops, "windows": windows,
                  "parsimony_lambda": parsimony_lambda, "parsimony_mu": parsimony_mu,
-                 "redundancy_lambda": redundancy_lambda}
+                 "redundancy_lambda": redundancy_lambda, "diversity_lambda": diversity_lambda}
     else:
         seed = [("P", op, str(w)) for op in space.operators for w in space.windows]
         if fund_store is not None and metrics:

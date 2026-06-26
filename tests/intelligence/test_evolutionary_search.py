@@ -198,6 +198,22 @@ def test_redundancy_reward_deterministic_and_contained():
         assert la.catalog.state(aid) != AlphaState.APPROVED                  # containment held
 
 
+def test_diversity_reward_deterministic_and_contained():
+    # frequent-subtree avoidance ON: search still deterministic + containment intact
+    seed = [_LEAF_T, ("T", ("leaf", "zscore", "3")), _BIN_T]
+    vocab = {**DEFAULT_VOCAB, "diversity_lambda": 0.5}
+    def run():
+        loop = ResearchAgentLoop()
+        out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+        return out, loop
+    a, la = run()
+    b, _lb = run()
+    assert a["best"] == b["best"] and a["n_evaluated"] == b["n_evaluated"]
+    for aid in la.catalog.all_ids():
+        assert la.catalog.state(aid) != AlphaState.APPROVED
+
+
 def test_redundancy_default_off_matches_plain_run():
     # redundancy_lambda defaults to 0 -> identical to a run without the feature (regression)
     seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
