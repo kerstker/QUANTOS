@@ -119,3 +119,21 @@ def test_fully_assessed_evidence_reaches_the_real_gate():
     r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
         "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
     assert all("NOT_ASSESSED" not in reason for reason in r.reasons)
+
+
+def test_compute_regime_evidence_flag_assesses_regime_from_panel():
+    # opt-in flag: the evaluator derives regime evidence from the panel itself, so the regime
+    # gate participates with REAL evidence; leakage/pbo still unassessed -> still human review
+    # (the flag never weakens the gate, it only removes the REGIME 'not assessed' fail-closed).
+    from services.alpha.config import AlphaFactoryConfig
+    cfg = AlphaFactoryConfig(compute_regime_evidence=True, regime_vol_window=5)
+    r = AlphaEvaluator(_seeded_cat(0), cfg, cost=CostModel(0, 0)).evaluate("a1", _panel())
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "REGIME_NOT_ASSESSED" not in r.reasons
+    assert set(r.reasons) >= {"LEAKAGE_NOT_ASSESSED", "OVERFIT_NOT_ASSESSED"}
+
+
+def test_compute_regime_evidence_default_off_unchanged():
+    # default config -> regime still NOT assessed (byte-identical fail-closed behavior)
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel())
+    assert "REGIME_NOT_ASSESSED" in r.reasons

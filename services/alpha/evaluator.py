@@ -39,6 +39,18 @@ def _clamp01(x: float) -> float:
     return min(max(x, 0.0), 1.0)
 
 
+def _panel_market_prices(periods) -> list:
+    """Equal-weight market price proxy from the panel: cumulative product of the per-period
+    mean forward return. Used only to label volatility regimes for regime evidence."""
+    prices, acc = [], 1.0
+    for p in periods:
+        if not p.forward_returns:
+            return []
+        acc *= (1.0 + statistics.fmean(p.forward_returns))
+        prices.append(acc)
+    return prices
+
+
 class AlphaEvaluator:
     def __init__(self, catalog, config: Optional[AlphaFactoryConfig] = None,
                  gate: Optional[ValidationGate] = None, cost: Optional[CostModel] = None,
@@ -49,6 +61,18 @@ class AlphaEvaluator:
         self.cost = cost or CostModel()
         self.quantile = quantile
         self.target_aum = target_aum
+
+    def _panel_regime_profitable_frac(self, periods, net) -> Optional[float]:
+        """Fraction of volatility regimes in which the factor's net returns are profitable,
+        using a market proxy built from the panel itself. None (fail-closed) if it cannot be
+        honestly labelled/assessed."""
+        from services.research.regime import label_regimes_by_vol, regime_profitable_frac
+        prices = _panel_market_prices(periods)
+        if len(prices) != len(net):
+            return None
+        labels = label_regimes_by_vol(prices, vol_window=getattr(self.config, "regime_vol_window", 20),
+                                      n_regimes=2)
+        return regime_profitable_frac(net, labels)
 
     def evaluate(
         self,
@@ -103,6 +127,13 @@ class AlphaEvaluator:
         #    cross-trial variance estimate yet)
         dsr_raw = catalog_dsr(observed_sr, max(len(net), 2), self.catalog) if len(net) >= 2 else None
         dsr = _clamp01(dsr_raw) if dsr_raw is not None else 0.0
+
+        # opt-in: derive regime_profitable_frac from the panel's OWN market state so the regime
+        # gate participates with real evidence instead of the fail-closed None. Default off ->
+        # unchanged. NEVER weakens: a too-thin / uncomputable regime stays None -> human review.
+        if regime_profitable_frac is None and getattr(self.config, "compute_regime_evidence", False) \
+                and len(net) >= 4:
+            regime_profitable_frac = self._panel_regime_profitable_frac(periods, net)
 
         # 4) verdict — fail closed to human review on thin coverage OR when DSR
         #    cannot be honestly computed against the catalog yet (review P0)

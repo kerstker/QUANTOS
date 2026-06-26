@@ -26,6 +26,9 @@ class AlphaFactoryConfig:
     wf_min_positive_frac: float = 0.5     # fraction of OOS folds that must clear Sharpe>0
     wf_embargo: int = 0                   # purged/embargoed CV: drop this many overlapping
                                           # label points at each fold boundary (set = horizon-1)
+    compute_regime_evidence: bool = False  # opt-in: evaluator derives regime_profitable_frac
+                                           # from the panel's own market state (else None=fail-closed)
+    regime_vol_window: int = 20            # trailing window for the volatility-regime split
     composite_weights: dict[str, float] = field(default_factory=lambda: {
         # tilt toward the metrics hardest to overfit
         "icir": 0.22, "deflated_sharpe": 0.22, "capacity_adj_sharpe": 0.18,

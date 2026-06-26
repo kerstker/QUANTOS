@@ -15,8 +15,15 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.config import AlphaFactoryConfig
 from services.data.versioning import content_hash_of
 from services.intelligence.agent_loop import ResearchAgentLoop
+
+
+def _inner_loop(catalog, regime_evidence: bool):
+    """The contained ResearchAgentLoop; opt-in regime-evidence config flows to its evaluator."""
+    cfg = AlphaFactoryConfig(compute_regime_evidence=True) if regime_evidence else None
+    return ResearchAgentLoop(catalog=catalog, config=cfg)
 from services.intelligence.guided_search import GuidedSearchLoop
 from services.intelligence.search_space import CombinedHypothesisSpace
 from services.intelligence.evolutionary_search import EvolutionarySearchLoop, make_evolution_provider
@@ -51,7 +58,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          evo_population: int = 8, evo_elite: int = 3,
                          gp: bool = False, parsimony_lambda: float = 0.0,
                          parsimony_mu: float = 0.0, synergistic_k: int = 8,
-                         redundancy_lambda: float = 0.0) -> dict:
+                         redundancy_lambda: float = 0.0, regime_evidence: bool = False) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
@@ -67,7 +74,8 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             timestamp=timestamp, audit_log=audit_log,
             generations=evo_generations, population_size=evo_population, elite_k=evo_elite,
             gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu,
-            synergistic_k=synergistic_k, redundancy_lambda=redundancy_lambda)
+            synergistic_k=synergistic_k, redundancy_lambda=redundancy_lambda,
+            regime_evidence=regime_evidence)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
@@ -81,7 +89,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         provider = make_data_periods_provider(store, instruments, event_times=event_times,
                                               fwd_horizon=fwd_horizon, universe=universe)
 
-    loop = GuidedSearchLoop(effective_space, inner_loop=ResearchAgentLoop(catalog=catalog))
+    loop = GuidedSearchLoop(effective_space, inner_loop=_inner_loop(catalog, regime_evidence))
     if registry is not None:
         registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
@@ -131,7 +139,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                       fund_store, universe, catalog, registry, dataset_version, timestamp,
                       audit_log, generations, population_size, elite_k,
                       gp=False, parsimony_lambda=0.0, parsimony_mu=0.0, synergistic_k=8,
-                      redundancy_lambda=0.0) -> dict:
+                      redundancy_lambda=0.0, regime_evidence=False) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
       - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
@@ -165,7 +173,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
             "combines": ("sum", "product"),
             "redundancy_lambda": redundancy_lambda,
         }
-    loop = EvolutionarySearchLoop(provider, inner_loop=ResearchAgentLoop(catalog=catalog), vocab=vocab)
+    loop = EvolutionarySearchLoop(provider, inner_loop=_inner_loop(catalog, regime_evidence), vocab=vocab)
     out = loop.run(seed, generations=generations, population_size=population_size,
                    elite_k=elite_k, timestamp=timestamp)
 
