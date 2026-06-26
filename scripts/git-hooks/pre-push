@@ -1,0 +1,7 @@
+#!/bin/sh
+# QUANTOS pre-push:推送前跑完整失败关闭门禁(治理扫描 + 全部 pytest)。
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+echo "推送前运行完整门禁(python scripts/validate.py)…"
+python "$ROOT/scripts/validate.py"
+echo "✓ pre-push:完整门禁全绿"
