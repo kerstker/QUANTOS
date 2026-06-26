@@ -8,7 +8,9 @@ import ast
 import os
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_FETCHER = os.path.join(_ROOT, "tools", "coingecko_fetch.py")
+# every network-bearing out-of-gate fetcher (add new ones here so the boundary covers them)
+_FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
+             os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
@@ -24,8 +26,8 @@ def _import_roots(path: str) -> set:
     return roots
 
 
-# stdlib + internal allowed in the (network-bearing) fetcher; nothing else.
-_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "services", "__future__"}
+# stdlib + internal (services/tools) allowed in the network-bearing fetchers; nothing else.
+_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "services", "tools", "__future__"}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
@@ -37,15 +39,17 @@ _NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket
 
 
 def test_tools_fetcher_only_stdlib_and_services_imports():
-    roots = _import_roots(_FETCHER)
-    assert roots <= _ALLOWED_FETCHER, f"unexpected imports in fetcher: {sorted(roots - _ALLOWED_FETCHER)}"
-    assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange/broker SDK in fetcher: {sorted(roots & _FORBIDDEN_SDK)}"
+    for fetcher in _FETCHERS:
+        roots = _import_roots(fetcher)
+        assert roots <= _ALLOWED_FETCHER, f"unexpected imports in {fetcher}: {sorted(roots - _ALLOWED_FETCHER)}"
+        assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange/broker SDK in {fetcher}: {sorted(roots & _FORBIDDEN_SDK)}"
 
 
 def test_tools_fetcher_has_no_trade_or_transfer_calls():
-    src = open(_FETCHER, encoding="utf-8").read()
-    hits = [w for w in _FORBIDDEN_TRADE_CALLS if w in src]
-    assert not hits, f"FORBIDDEN trade/transfer calls in fetcher (read-only DATA only!): {hits}"
+    for fetcher in _FETCHERS:
+        src = open(fetcher, encoding="utf-8").read()
+        hits = [w for w in _FORBIDDEN_TRADE_CALLS if w in src]
+        assert not hits, f"FORBIDDEN trade/transfer calls in {fetcher} (read-only DATA only!): {hits}"
 
 
 def test_services_tree_has_no_network_imports():
