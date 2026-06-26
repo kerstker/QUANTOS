@@ -27,6 +27,7 @@ WINDOWS = (3, 5, 10)
 FWD_HORIZON = 1
 GENERATIONS, POPULATION, ELITE = 5, 16, 6
 PARSIMONY_LAMBDA, PARSIMONY_MU = 0.02, 0.01
+REDUNDANCY_LAMBDA = 0.6                    # incremental-discovery: down-weight redundant clones in search
 _SNAP = os.path.join("data", "cache", "crypto_research_snapshot.json")
 
 
@@ -52,7 +53,8 @@ def main() -> None:
         store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON, space=space,
         rounds=1, batch_size=1, timestamp=now_ms, gp=True,
         evo_generations=GENERATIONS, evo_population=POPULATION, evo_elite=ELITE,
-        parsimony_lambda=PARSIMONY_LAMBDA, parsimony_mu=PARSIMONY_MU)
+        parsimony_lambda=PARSIMONY_LAMBDA, parsimony_mu=PARSIMONY_MU,
+        redundancy_lambda=REDUNDANCY_LAMBDA)
 
     # readable canonical expression per discovered tree (from the evaluated genomes)
     expr = {}
