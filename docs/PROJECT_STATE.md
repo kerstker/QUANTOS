@@ -124,8 +124,16 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `e0f7c57`(截面 alpha 引擎 Batch 1)附近,后接 `tools/crypto_alpha_research.py`(未提交则补提);
-`main==master`;`validate.py` 813 测试全绿。**本轮(2026-06-26→27)新增**:机构级开发流程 + 远端就绪(见下)、
+HEAD 在 `45a6eea`(小盘币截面研究驱动)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 813 全绿。
+**最新进展(2026-06-27 收尾)——小盘长尾出现第一个像样候选**:大盘币啥都不行,但在 **27 个中盘币**上,
+截面 alpha 有了生命。成本压力是决定性筛子:amihud_illiq(6/6 年正、看着最好)是**成本陷阱**(~17bps 就死);
+高换手的 vol_mom/pv_div ~10bps 死。**唯一幸存者 `argmax_cs20`**(=cs_rank(ts_argmax(close,20)),低换手动量):
+换手 0.44、盈亏平衡 ~35bps、现实中盘成本 ~15-20bps 下净 SR~0.5、**含 2022 在内 6 年全正**。**是 lead 不是结论**——
+三条硬保留:① 仅 27 币(太薄);② 幸存者偏差(只抓了活到今天的市值榜币);③ 池选 OOS 弱(0.28)。要坐实需
+更多币 + 抗幸存者偏差数据 + 真实逐币成本。慢的真因=CryptoCompare 免费档**限速**(抓取慢,非回测慢;缓存已治好计算)。
+下一步候选:① 免费但慢——稳节奏后台抓 100–150 币重测 argmax_cs20;③ 付费/退市币/成本数据(口子)。详见记忆 `crypto-research-findings`。
+—— 历史锚点 ——
+HEAD 曾在 `e0f7c57`(截面 alpha 引擎 Batch 1);`validate.py` 813 测试全绿。**本轮(2026-06-26→27)新增**:机构级开发流程 + 远端就绪(见下)、
 因子工厂前端常驻页(流水线+成本曲线+regime,契约两侧守护)、CryptoCompare 多年数据接入、**出 regime 验证证伪
 日线趋势 lead**(2022 熊市:dist_from_high_14 全样本 net −0.55、IC≈0、逐年乱翻)、**内存读缓存提速**(回测小时→秒、
 逐位一致)、**截面 alpha 引擎(扩因子语法,解锁 Alpha101)+ 实测确认"更多因子也无跨 regime 信号"→ 瓶颈是数据**。
