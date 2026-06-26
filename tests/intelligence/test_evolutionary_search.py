@@ -220,3 +220,14 @@ def test_gp_session_mode_smoke():
     assert out["mode"] == "gp" and out["n_evaluated"] > 0
     # every machine-discovered tree id is a GP id; nothing auto-approved
     assert all(aid.startswith("hgp_") for aid in out["report"])
+
+
+def test_mcts_session_mode_smoke():
+    from services.research.session import run_research_session
+    from services.intelligence.search_space import HypothesisSpace
+    space = HypothesisSpace(factors=("close",), operators=("momentum", "zscore", "volatility"),
+                            windows=(3, 5))
+    out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
+                               rounds=1, batch_size=1, timestamp=10, mcts=True, mcts_iterations=12)
+    assert out["mode"] == "mcts" and out["n_evaluated"] > 0
+    assert "synergistic_set" in out and all(aid.startswith("h_") for aid in out["report"])

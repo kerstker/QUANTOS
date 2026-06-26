@@ -27,6 +27,7 @@ def _inner_loop(catalog, regime_evidence: bool):
 from services.intelligence.guided_search import GuidedSearchLoop
 from services.intelligence.search_space import CombinedHypothesisSpace
 from services.intelligence.evolutionary_search import EvolutionarySearchLoop, make_evolution_provider
+from services.intelligence.mcts_search import MCTSAlphaSearch
 
 from .panel_builder import make_data_periods_provider, universe_data_gaps
 from .fundamental_factors import make_combined_periods_provider
@@ -58,13 +59,22 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          evo_population: int = 8, evo_elite: int = 3,
                          gp: bool = False, parsimony_lambda: float = 0.0,
                          parsimony_mu: float = 0.0, synergistic_k: int = 8,
-                         redundancy_lambda: float = 0.0, regime_evidence: bool = False) -> dict:
+                         redundancy_lambda: float = 0.0, regime_evidence: bool = False,
+                         mcts: bool = False, mcts_iterations: int = 60) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
 
     catalog = AlphaCatalog()
     if registry is not None:
         registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
+
+    if mcts:
+        return _run_mcts(
+            store, instruments, event_times=event_times, fwd_horizon=fwd_horizon, space=space,
+            metrics=metrics, modes=modes, fund_store=fund_store, universe=universe,
+            catalog=catalog, registry=registry, dataset_version=dataset_version,
+            timestamp=timestamp, audit_log=audit_log, iterations=mcts_iterations, gp=gp,
+            synergistic_k=synergistic_k, regime_evidence=regime_evidence)
 
     if evolutionary or gp:
         return _run_evolutionary(
@@ -187,6 +197,51 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
     return {
         "dataset_version": dataset_version,
         "mode": "gp" if gp else "evolutionary",
+        "best": out["best"],
+        "human_review_queue": review_queue,
+        "recorded_run_ids": recorded,
+        "n_evaluated": len(out["report"]),
+        "report": out["report"],
+        "data_gaps": data_gaps,
+        "synergistic_set": _synergistic_set(catalog, synergistic_k),
+    }
+
+
+def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
+              fund_store, universe, catalog, registry, dataset_version, timestamp, audit_log,
+              iterations, gp=False, synergistic_k=8, regime_evidence=False) -> dict:
+    """MCTS/UCT mode: navigate the formula-tree space with UCT instead of generational GP.
+    Same contained ResearchAgentLoop + multiple-testing honesty; seeds match the evolutionary
+    mode (GP-tree leaves + depth-1 binaries when gp, else price/value atoms)."""
+    provider = make_evolution_provider(store, fund_store, instruments,
+                                       event_times=event_times, fwd_horizon=fwd_horizon, universe=universe)
+    if gp:
+        ops = tuple(space.operators)
+        windows = tuple(str(w) for w in space.windows)
+        seed = [("T", ("leaf", op, w)) for op in ops for w in windows]
+        for binop in ("add", "sub", "mul", "pdiv"):
+            for o1, o2 in zip(ops, ops[1:]):
+                seed.append(("T", (binop, ("leaf", o1, "5"), ("leaf", o2, "5"))))
+        vocab = {"operators": ops, "windows": windows}
+    else:
+        seed = [("P", op, str(w)) for op in space.operators for w in space.windows]
+        if fund_store is not None and metrics:
+            seed += [("F", m, mode) for m in metrics for mode in modes]
+        vocab = {"operators": tuple(space.operators), "windows": tuple(str(w) for w in space.windows),
+                 "metrics": tuple(metrics) or ("eps",), "modes": tuple(modes), "combines": ("sum", "product")}
+    search = MCTSAlphaSearch(provider, inner_loop=_inner_loop(catalog, regime_evidence), vocab=vocab)
+    out = search.run(seed, iterations=iterations, timestamp=timestamp)
+
+    data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
+        else {"total_gaps": 0, "by_date": {}}
+    review_queue = [aid for aid, e in sorted(out["report"].items()) if e.get("state") == "PAPER_TRADING"]
+    recorded = _record_report(registry, out["report"], dataset_version=dataset_version,
+                              timestamp=timestamp, audit_log=audit_log)
+    if registry is not None:
+        registry.save(catalog, now=timestamp)
+    return {
+        "dataset_version": dataset_version,
+        "mode": "mcts",
         "best": out["best"],
         "human_review_queue": review_queue,
         "recorded_run_ids": recorded,
