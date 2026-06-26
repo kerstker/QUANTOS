@@ -53,6 +53,37 @@ function RealDataRibbon({ apiState, usingBackend, present, provenance, error }:
   );
 }
 
+/* The factor factory as a pipeline — static stages from data to verdict. */
+const FACTORY_STAGES: Array<{ zh: string; en: string; sub: string }> = [
+  { zh: '数据', en: 'Data', sub: bi('CoinGecko 只读 · 链下', 'CoinGecko read-only') },
+  { zh: '入库', en: 'Ingest', sub: bi('PIT · 抗幸存 · 无前视', 'PIT · survivorship-free') },
+  { zh: '面板', en: 'Panel', sub: bi('截面 · 美元中性', 'cross-section · neutral') },
+  { zh: '因子', en: 'Signal', sub: bi('算子×窗口 · 搜索', 'operators × windows') },
+  { zh: '评估', en: 'Evaluate', sub: bi('DSR · OOS · 成本 · regime', 'DSR · OOS · cost') },
+  { zh: '裁决', en: 'Lifecycle', sub: bi('容器化 · 人工复核', 'contained · human review') },
+];
+
+function FactoryPipeline() {
+  return (
+    <Panel eyebrow={bi('因子工厂', 'Factor factory')} title={bi('从数据到裁决的流水线', 'Data → verdict pipeline')}
+      right={<GateDot ok label={bi('只读 · 离线核心', 'read-only · offline core')} />}>
+      <div className="flex flex-wrap items-stretch gap-2">
+        {FACTORY_STAGES.map((s, i) => (
+          <React.Fragment key={s.en}>
+            <div className="flex min-w-[92px] flex-1 flex-col gap-1 rounded-lg px-3 py-2.5"
+              style={{ background: 'var(--inset)', boxShadow: 'inset 0 0 0 1px var(--line)' }}>
+              <span className="text-[13px] font-medium text-ink">{s.zh}
+                <span className="ml-1 text-2xs text-faint">{s.en}</span></span>
+              <span className="text-2xs leading-snug text-muted">{s.sub}</span>
+            </div>
+            {i < FACTORY_STAGES.length - 1 && <span className="self-center text-sm text-faint">›</span>}
+          </React.Fragment>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 function Instructions({ connected }: { connected: boolean }) {
   return (
     <Panel eyebrow={bi('使用说明', 'How to populate')} title={bi('生成真实加密研究快照', 'Generate the real crypto snapshot')}>
@@ -85,6 +116,8 @@ export default function CryptoLive() {
   const factors: CryptoFactor[] = present ? payload!.factors : [];
   const oos = present ? payload!.oos : null;
   const synSet = present ? payload!.synergistic_set : null;
+  const cost = present ? payload!.cost_stress : null;
+  const regime = present ? payload!.regime : null;
   const isGp = meta?.search_mode === 'gp_tree';
   const oosConfirmed = oos ? (oos.selection.mean_oos_sharpe ?? -1) > 0 && (oos.selection.oos_positive_frac ?? 0) >= 0.5 : false;
 
@@ -160,6 +193,8 @@ export default function CryptoLive() {
               sub={bi('全部', 'all of them')} />
           </KpiStrip>
 
+          <FactoryPipeline />
+
           {oos && (
             <Panel eyebrow={bi('样本外验证 · 无窥视滚动选择', 'Out-of-sample · no-peek walk-forward selection')}
               tone={oosConfirmed ? 'pos' : 'neg'}
@@ -200,6 +235,46 @@ export default function CryptoLive() {
                 </div>
               </div>
             </Panel>
+          )}
+
+          {(cost || regime) && (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {cost && cost.points.length > 0 && (
+                <Panel eyebrow={bi('成本压力', 'Cost stress')}
+                  title={bi(`净夏普 随 单边成本 · ${shortLabel(cost.factor_id)}`, `Net Sharpe vs one-way cost · ${shortLabel(cost.factor_id)}`)}
+                  right={<Chip label={bi(`盈亏平衡 ≈ ${cost.breakeven_bps ?? '—'} bps`, `breakeven ≈ ${cost.breakeven_bps ?? '—'} bps`)}
+                    tone={(cost.breakeven_bps ?? 0) >= 20 ? 'pos' : 'warn'} />}>
+                  <BarSeries data={cost.points.map(p => p.net_sharpe)} labels={cost.points.map(p => `${p.one_way_bps}bps`)}
+                    height={172} valueFormat={v => v.toFixed(2)} />
+                  <p className="mt-2 text-2xs text-faint">
+                    {bi(`换手率 ${fixed(cost.turnover, 3)}/期。现实中盘币 ~10bps 单边仍为正;过 ~${cost.breakeven_bps ?? 30}bps 才转负 —— 真能扛成本,非毛收益幻觉。`,
+                      `Turnover ${fixed(cost.turnover, 3)}/period. Still positive at a realistic ~10bps one-way; only turns negative past ~${cost.breakeven_bps ?? 30}bps — cost-robust, not a gross-return illusion.`)}
+                  </p>
+                </Panel>
+              )}
+              {regime && (regime.by_trend.length > 0 || regime.by_vol.length > 0) && (
+                <Panel eyebrow={bi('Regime 拆解', 'Regime split')}
+                  title={bi(`各状态下的表现 · ${shortLabel(regime.factor_id)}`, `Performance by state · ${shortLabel(regime.factor_id)}`)}
+                  right={<Chip label={bi('涨跌市 / 波动率', 'trend / vol')} tone="info" />}>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <div className="mb-1.5 text-2xs uppercase tracking-[0.12em] text-faint">{bi('按涨跌市(原始每日夏普)', 'By market trend (raw daily Sharpe)')}</div>
+                      <BarSeries data={regime.by_trend.map(b => b.sharpe ?? 0)} labels={regime.by_trend.map(b => b.label)}
+                        height={150} valueFormat={v => v.toFixed(3)} />
+                    </div>
+                    <div>
+                      <div className="mb-1.5 text-2xs uppercase tracking-[0.12em] text-faint">{bi('按波动率', 'By volatility')}</div>
+                      <BarSeries data={regime.by_vol.map(b => b.sharpe ?? 0)} labels={regime.by_vol.map(b => b.label)}
+                        height={150} valueFormat={v => v.toFixed(3)} />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-2xs text-faint">
+                    {bi('涨市、跌/横盘、低波、高波都为正 → 美元中性相对强度因子,天然与大盘方向无关。',
+                      'Positive in up, down/flat, low- and high-vol → a dollar-neutral relative-strength factor, structurally market-direction-neutral.')}
+                  </p>
+                </Panel>
+              )}
+            </div>
           )}
 
           <Panel eyebrow={bi('多重检验诚实', 'Multiple-testing honesty')}

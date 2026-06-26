@@ -3404,6 +3404,10 @@ def _crypto_live_payload() -> Dict:
         # de-redundant best set (incremental-IR forward selection); None until a GP/evo run
         # that emits it has been written.
         "synergistic_set": snap.get("synergistic_set") if present else None,
+        # top-factor diagnostics for the factor-factory dashboard: cost-stress curve +
+        # regime split (merged by tools/crypto_daily_research.py); None until a daily run.
+        "cost_stress": snap.get("cost_stress") if present else None,
+        "regime": snap.get("regime") if present else None,
         "safety": {
             "network_in_services": False,
             "fetch_path": "OUT_OF_GATE tools/coingecko_fetch.py",

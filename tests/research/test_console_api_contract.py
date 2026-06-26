@@ -93,7 +93,8 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         "equity_curve", "drawdown_curve", "risk_report", "lineage")),
     "/api/v1/console/crypto-live": ("", (
         "crypto_mode", "snapshot_present", "generated_at", "dataset_version",
-        "meta", "summary", "factors", "oos", "synergistic_set", "safety")),
+        "meta", "summary", "factors", "oos", "synergistic_set",
+        "cost_stress", "regime", "safety")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance

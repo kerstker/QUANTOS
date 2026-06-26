@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import statistics
 import sys
 import time
 
@@ -35,8 +36,11 @@ from services.data.market_provider import ingest_provider_rows
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.evolutionary_search import make_evolution_provider, genome_to_definition
 from services.research.session import run_research_session
-from services.research.panel_builder import make_data_periods_provider
+from services.research.panel_builder import make_data_periods_provider, build_panel_periods
+from services.research.signals import SIGNAL_OPS
+from services.research.regime import label_regimes_by_vol, regime_conditional_stats
 from services.research.backtest_engine.metrics import sharpe
+from services.research.backtest_engine.costs import CostModel
 from services.research.validation.walk_forward import walk_forward_splits
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import run_panel_backtest
@@ -166,6 +170,72 @@ def _no_peek_oos(store, instruments) -> dict:
     }
 
 
+_COST_LEVELS = (3, 10, 20, 30, 40, 50)
+_VOL_NAMES = {0: "calm", 1: "normal", 2: "storm"}
+_TREND_NAMES = {0: "down/flat", 1: "up"}
+
+
+def _top_factor_diagnostics(store, instruments, factors):
+    """Cost-stress curve + regime split for the top SINGLE (h_) factor, persisted into the
+    snapshot so the console can render the factor-factory dashboard (read-only, offline). The
+    panel periods are built ONCE; only the cheap backtest re-runs per cost. Returns
+    (cost_stress, regime) or (None, None) when there is no single-factor top / too little data."""
+    top = next((f for f in factors if f["alpha_id"].startswith("h_") and "_" in f["alpha_id"][2:]), None)
+    if top is None:
+        return None, None
+    op, _, w = top["alpha_id"][2:].rpartition("_")    # "h_dist_from_high_14" -> ("dist_from_high","14")
+    if op not in SIGNAL_OPS:
+        return None, None
+    try:
+        window = int(w)
+    except ValueError:
+        return None, None
+    ets = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, 0, 10 ** 14)})
+    fn = SIGNAL_OPS[op]
+    periods = build_panel_periods(store, instruments, event_times=ets, fwd_horizon=FWD_HORIZON,
+                                  signal_fn=lambda c: fn(c, window))
+    if len(periods) < 24:
+        return None, None
+
+    points, breakeven, prev = [], None, None
+    for bps in _COST_LEVELS:
+        r = list(run_panel_backtest(periods, CostModel(fee_bps=0.0, slippage_bps=float(bps))).period_returns)
+        ns = round(sharpe(r), 3)
+        points.append({"one_way_bps": bps, "net_sharpe": ns})
+        if breakeven is None and prev is not None and prev[1] >= 0 > ns:
+            (b0, s0), (b1, s1) = prev, (bps, ns)      # linear zero-crossing between the two levels
+            breakeven = round(b0 + (b1 - b0) * s0 / (s0 - s1), 1)
+        prev = (bps, ns)
+
+    res = run_panel_backtest(periods)                 # net @ default 3bps (fee 1 + slip 2)
+    ret = list(res.period_returns)
+    turnover = round(statistics.fmean(res.turnovers), 3) if res.turnovers else 0.0
+    mkt = [sum(p.forward_returns) / len(p.forward_returns) if p.forward_returns else 0.0 for p in periods]
+    eq, v = [1.0], 1.0
+    for x in mkt:
+        v *= (1.0 + x)
+        eq.append(v)
+    vol_labels = label_regimes_by_vol(eq[1:], vol_window=20, n_regimes=3)
+    dir_labels = [None] * len(mkt)
+    for i in range(len(mkt)):
+        if i >= 14:
+            comp = 1.0
+            for j in range(i - 14, i):                # strictly-past trailing market return -> up/down
+                comp *= (1.0 + mkt[j])
+            dir_labels[i] = 1 if comp > 1.0 else 0
+
+    def _buckets(stats, names):
+        return [{"label": names.get(k, str(k)), "n": s["n"], "sharpe": s["sharpe"],
+                 "positive_frac": s["positive_frac"]} for k, s in sorted(stats.items())]
+
+    cost_stress = {"factor_id": top["alpha_id"], "turnover": turnover,
+                   "breakeven_bps": breakeven, "points": points}
+    regime = {"factor_id": top["alpha_id"],
+              "by_vol": _buckets(regime_conditional_stats(ret, vol_labels), _VOL_NAMES),
+              "by_trend": _buckets(regime_conditional_stats(ret, dir_labels), _TREND_NAMES)}
+    return cost_stress, regime
+
+
 def main() -> None:
     # argv: [n_coins] [days]
     n = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_N
@@ -208,6 +278,8 @@ def main() -> None:
 
     factors = _build_factors(result["report"])
     oos = _no_peek_oos(store, instruments) if len(instruments) >= 2 else None
+    cost_stress, regime = _top_factor_diagnostics(store, instruments, factors) \
+        if len(instruments) >= 2 else (None, None)
     review_queue = set(result.get("human_review_queue", []))
     n_eval = result["n_evaluated"]
     auto_approved = sum(1 for f in factors if f["state"] == "APPROVED")  # must be 0 (containment)
@@ -251,6 +323,8 @@ def main() -> None:
         "factors": factors,
         "oos": oos,
         "synergistic_set": result.get("synergistic_set"),
+        "cost_stress": cost_stress,
+        "regime": regime,
     }
     with open(_SNAPSHOT_PATH, "w", encoding="utf-8") as fh:
         json.dump(snapshot, fh, indent=2)

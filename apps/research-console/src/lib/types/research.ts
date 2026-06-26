@@ -1321,6 +1321,31 @@ export interface CryptoSynergisticSet {
   dropped_redundant: string[];
 }
 
+export interface CryptoCostPoint {
+  one_way_bps: number;
+  net_sharpe: number;
+}
+
+export interface CryptoCostStress {
+  factor_id: string;
+  turnover: number;
+  breakeven_bps: number | null;
+  points: CryptoCostPoint[];
+}
+
+export interface CryptoRegimeBucket {
+  label: string;
+  n: number;
+  sharpe: number | null;
+  positive_frac: number | null;
+}
+
+export interface CryptoRegime {
+  factor_id: string;
+  by_vol: CryptoRegimeBucket[];
+  by_trend: CryptoRegimeBucket[];
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;
@@ -1333,6 +1358,8 @@ export interface CryptoLivePayload extends ConsolePayloadBase {
   factors: CryptoFactor[];
   oos: CryptoOos | null;
   synergistic_set: CryptoSynergisticSet | null;
+  cost_stress: CryptoCostStress | null;
+  regime: CryptoRegime | null;
   safety: {
     network_in_services: boolean;
     fetch_path: string;
