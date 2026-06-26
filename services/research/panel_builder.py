@@ -28,9 +28,12 @@ def _iso(event_time: int) -> str:
 
 
 def build_panel_periods(store, instruments: Sequence[str], *, event_times: Sequence[int],
-                        fwd_horizon: int, signal_fn: Callable, universe=None) -> list:
+                        fwd_horizon: int, signal_fn: Callable = None, universe=None,
+                        volume_signal_fn: Callable = None) -> list:
     if fwd_horizon < 1:
         raise ValueError("fwd_horizon must be >= 1 (a forward return looks AHEAD)")
+    if (signal_fn is None) == (volume_signal_fn is None):
+        raise ValueError("pass exactly one of signal_fn (price) or volume_signal_fn (volume)")
     insts = sorted(instruments)
     ets = sorted(event_times)
     periods = []
@@ -48,13 +51,19 @@ def build_panel_periods(store, instruments: Sequence[str], *, event_times: Seque
             if universe is not None and not universe.is_member_as_of(inst, iso_t):
                 continue
             hist = store.as_of(inst, t)              # PIT: bars knowable by t
-            # collapse restatements to ONE close per event_time (latest knowledge),
-            # so a revision does not duplicate an event_time and corrupt the window op
-            by_et = {}
+            # collapse restatements to ONE bar per event_time (latest knowledge), so a
+            # revision does not duplicate an event_time and corrupt the window op
+            by_close, by_vol = {}, {}
             for b in hist:                            # as_of is ordered (event, knowledge)
-                by_et[b.event_time] = b.close         # later (higher knowledge) wins
-            closes = [by_et[et] for et in sorted(by_et)]
-            sig = signal_fn(closes) if closes else None
+                by_close[b.event_time] = b.close      # later (higher knowledge) wins
+                by_vol[b.event_time] = b.volume
+            ordered = sorted(by_close)
+            closes = [by_close[et] for et in ordered]
+            if volume_signal_fn is not None:
+                volumes = [by_vol[et] for et in ordered]
+                sig = volume_signal_fn(closes, volumes) if closes else None
+            else:
+                sig = signal_fn(closes) if closes else None
             now_bar = store.latest_as_of(inst, t)
             fwd_bar = store.latest_as_of(inst, t_fwd)
             # require a GENUINE later observation for the forward return — else the
@@ -84,6 +93,22 @@ def make_data_periods_provider(store, instruments: Sequence[str], *,
         return build_panel_periods(store, instruments, event_times=event_times,
                                    fwd_horizon=fwd_horizon,
                                    signal_fn=lambda closes: fn(closes, window), universe=universe)
+    return provider
+
+
+def make_volume_periods_provider(store, instruments: Sequence[str], *,
+                                 event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
+    """Volume/liquidity factor provider: an AlphaDefinition (params operator/window, family
+    'volume') -> PanelPeriods whose signal is a VOLUME_OPS operator over the per-instrument
+    price+volume history. Same PIT / survivorship-free guarantees as the price provider."""
+    from .volume_signals import VOLUME_OPS
+
+    def provider(defn):
+        op = defn.params["operator"]
+        window = int(defn.params["window"])
+        fn = VOLUME_OPS[op]
+        return build_panel_periods(store, instruments, event_times=event_times, fwd_horizon=fwd_horizon,
+                                   volume_signal_fn=lambda c, v: fn(c, v, window), universe=universe)
     return provider
 
 
