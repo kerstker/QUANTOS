@@ -63,10 +63,19 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 **门外驱动(tools/)**:`crypto_research_run`、`crypto_gp_run`、`crypto_oos_validation`、`crypto_volume_research`。
 
 ## 4. 当前实证结论(诚实)
-- **短周期加密(4h/小时线、小样本)价格/GP/量能因子都无稳健 OOS edge。** 加宽截面(12→40 币)曾把
-  样本内 Deflated 夏普抬到 0.586,但**无窥视 OOS 把它证伪**(选择性过拟合,样本外 −2.01);量能因子
-  净夏普全负、Deflated≈0。诚实机制(auto_approved=0、全 REQUIRES_HUMAN_REVIEW)如实拒绝。
-- 这是**正确**结论,不是 bug:它证明系统"不会自欺"。详见记忆 `crypto-research-findings`。
+- **短周期(4h/小时线、小样本)= null。** 价格/GP/量能因子都无稳健 OOS edge;加宽截面把样本内
+  Deflated 夏普抬到 0.586,但**无窥视 OOS 证伪**(选择性过拟合,样本外 −2.01);量能因子净夏普全负。
+- **日线周期 = 第一个正信号(2026-06-26,`tools/crypto_daily_research.py`,commit 1564bb6)。** 同一
+  CoinGecko demo,`market_chart days=365`→日线(~364 根/币),24 币×364 期,日级窗口进化搜索。结果与
+  4h **截然不同**:最优因子全是同一族 `dist_from_high`(距 N 日高点=趋势代理,7/14/30),IC≈0.065、
+  **扣成本后** net Sharpe≈2.4、Deflated 0.95;**无窥视选择 OOS 这次没被证伪**(mean OOS 年化 +3.95 vs
+  IS +2.90,3/4 fold 为正)。
+- **但要克制(不是"找到 alpha"):** `sharpe()` 按 √252 年化(3.95≈日 Sharpe 0.25),OOS 池是**毛收益**;
+  逐 fold 极噪(+7.43/−0.80/+6.26/+2.93,被两个暴涨 fold 拉高、一个为负);**整段样本=2024-25 单边牛市**,
+  而"距高点"正是牛市机械获利、反转即崩的因子,**未经熊市/震荡验证**;可信的数字是 IC≈0.065(温和但真实)。
+- 容器化始终守住:auto_approved=0、全 REQUIRES_HUMAN_REVIEW——系统**没有**自动放行它(正确)。
+- 定性:**第一个扛过成本 + 扛过 OOS 选择的日线趋势候选**,但**regime 依赖、未出样本外确认**。当 lead,不当结论。
+  缺的决定性测试是**出 regime**(熊/震荡样本——数据口子:demo 日线封顶 365 天≈一年牛)。详见记忆 `crypto-research-findings`。
 
 ## 5. 待决"口子"(需用户拍板,不是代码能变出来的)——按杠杆排序
 1. **数据**(最大,~80% 边际):更长历史/逐根成交量/资金费/链上/另类。**适配器接口已就绪**,
