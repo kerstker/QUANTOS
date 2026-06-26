@@ -10,7 +10,8 @@ import os
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # every network-bearing out-of-gate fetcher (add new ones here so the boundary covers them)
 _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
-             os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py")]
+             os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
+             os.path.join(_ROOT, "tools", "cryptocompare_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
