@@ -115,6 +115,22 @@ def find_start_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -
     return None
 
 
+def find_end_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -> int | None:
+    """Coarse backward month-scan for the LAST available metrics day — bounds DELISTED coins so we
+    do not fetch thousands of post-delisting 404 days. For a live coin this returns ~today."""
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    day = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
+    floor = (_PROBE_FLOOR_MS // _DAY_MS) * _DAY_MS
+    while day > floor:
+        try:
+            http_get_bytes(metrics_url(ticker, day))
+            return day
+        except Exception:
+            day -= 30 * _DAY_MS
+    return None
+
+
 def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
                       http_get_bytes=_http_get_bytes, sleep: float = 0.0, max_workers: int = 12) -> dict:
     """Fetch every UTC day in [start_ms, end_ms) not already in `present`. Skips missing (404) days.
@@ -157,13 +173,15 @@ def _load_cache() -> dict:
     return {"_meta": {}, "data": {}}
 
 
-def main(tickers=None, *, sleep: float = 0.08) -> None:
+def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False) -> None:
+    """`bounded=True` probes each ticker's LAST available day (find_end_ms) and stops there — use it
+    for DELISTED coins so we don't fetch thousands of post-delisting 404 days. Live coins are unaffected."""
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
     tickers = tickers or DEFAULT_TICKERS
     cache = _load_cache()
     meta, data = cache.setdefault("_meta", {}), cache.setdefault("data", {})
     now_ms = int(time.time() * 1000)
-    end_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
+    today_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
 
     for ti, ticker in enumerate(tickers):
         sym_days = data.setdefault(ticker, {})
@@ -175,6 +193,11 @@ def main(tickers=None, *, sleep: float = 0.08) -> None:
                 print(f"[{ti+1}/{len(tickers)}] {ticker}: no metrics archive found")
                 meta[ticker] = {"start": None, "through": None}
                 continue
+        end_ms = today_ms
+        if bounded:  # delisted coin: bound the fetch to its last available day + a small buffer
+            last = find_end_ms(ticker, now_ms=now_ms)
+            if last is not None:
+                end_ms = min(today_ms, last + 35 * _DAY_MS)
         fresh = fetch_ticker_days(ticker, start, end_ms, present, sleep=sleep)
         for k, v in fresh.items():
             sym_days[str(k)] = v

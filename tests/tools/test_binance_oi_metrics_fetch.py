@@ -75,3 +75,20 @@ def test_find_start_returns_first_available():
     got = f.find_start_ms("BTC", http_get_bytes=stub, now_ms=first + 400 * _DAY)
     # month-step scan lands within the same month window as `first`
     assert got is not None and 0 <= (got - base) <= 120 * _DAY
+
+
+def test_find_end_bounds_delisted_coin():
+    base = f._PROBE_FLOOR_MS // _DAY * _DAY
+    death = base + 200 * _DAY  # archive available only up to `death` (a delisted coin)
+
+    def stub(url: str) -> bytes:
+        for off in range(0, 201):
+            dm = base + off * _DAY
+            if f._day_str(dm) in url:
+                return _zip_for(dm)
+        raise RuntimeError("404")  # nothing after death
+
+    now = death + 600 * _DAY  # "today" is long after the coin died
+    got = f.find_end_ms("DEAD", http_get_bytes=stub, now_ms=now)
+    # backward month-step scan lands within ~a month of the true last day, never past it materially
+    assert got is not None and abs(got - death) <= 31 * _DAY and got < now
