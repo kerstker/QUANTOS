@@ -119,9 +119,14 @@ def _rank_ic(sig, px):
     return round(statistics.fmean(ics), 4) if ics else None
 
 
-def build_panel(only=None):
+_SPOT_DB = os.path.join("data", "cache", "crypto_binance.db")
+
+
+def build_panel(only=None, add_basis=False):
     """Build the price+volume+funding+OI-metrics FieldPanel on the liquid-major universe (PIT-safe).
-    `only` optionally restricts the instrument set (used by the refutation harness for subset tests)."""
+    `only` optionally restricts the instrument set (used by the refutation harness for subset tests).
+    `add_basis=True` adds a `basis` field = perp_close / spot_close - 1 (a carry signal distinct from
+    funding — the realized premium), loaded from the Binance spot store and PIT-aligned by event_time."""
     oi_cache = json.load(open(_OI, encoding="utf-8"))
     oi_data = oi_cache.get("data", oi_cache)
     tickers = sorted(tk for tk, d in oi_data.items() if not tk.startswith("_") and len(d) >= MIN_DAYS)
@@ -146,6 +151,25 @@ def build_panel(only=None):
     for fld in OI_FIELDS:
         panel.matrices[fld] = [[_oi_cell(inst, t, fld) for inst in panel.instruments]
                                for t in panel.event_times]
+
+    if add_basis and os.path.exists(_SPOT_DB):
+        # basis = perp_mark / spot - 1, the realized perp premium. The `close` in our perp DB is actually
+        # the SPOT klines source; the true PERP mark is oi_value/oi (USD notional / base units) from the
+        # metrics archive. So basis = (oi_value/oi) / spot_close - 1.
+        spot_store = CachingPITStore(SqlitePITStore(_SPOT_DB, create=False))
+        spot = {inst: {b.event_time: b.close for b in spot_store.fetch_bars(inst, -10**18, 10**18)}
+                for inst in panel.instruments}
+        oi_m, oiv_m = panel.matrices["oi"], panel.matrices["oi_value"]
+        basis = []
+        for ti, t in enumerate(panel.event_times):
+            row = []
+            for ii, inst in enumerate(panel.instruments):
+                sp = spot.get(inst, {}).get(t)
+                o, ov = oi_m[ti][ii], oiv_m[ti][ii]
+                perp = (ov / o) if (o and ov is not None) else None
+                row.append((perp / sp - 1.0) if (sp and perp and sp > 0) else None)
+            basis.append(row)
+        panel.matrices["basis"] = basis
     return panel, instruments
 
 
