@@ -127,14 +127,15 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `6198385`(Phase1 对抗审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` **855 全绿**;远端 kerstker/QUANTOS 已同步。
+HEAD 在 `ff8ba01`(Phase2 对抗审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` **871 全绿**;远端 kerstker/QUANTOS 已同步。
 **★★★ 机构级 Alpha 因子工厂补全升级 进行中(2026-06-27,用户大指令:把"因子发现器"升级为"Alpha 资产生命周期系统")。**
 计划全文 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`(Phase 0 审计:67 能力→22 有/35 部分/10 缺;按规则 #9 适配现有架构:元组 DSL 不重写成类、纯 stdlib 不上 numpy、7态+研究态不碰 live)。**已完成**:
 - **P0 安全地基**(`f682325`):①`services/research/expression_leakage.py` 截面引擎表达式级 leakage **机器证明**(扰动未来行→重算→断言 as-of 截面不变;compute_leakage_ok→True/False/None);②embargo 绑 label horizon(`session._inner_loop` 把 fwd_horizon→wf_embargo=h-1,h=1 时字节不变)。
 - **Phase 1 算子+检查器+复杂度**(`a4d9453`+`40dce60`):新算子 `cs_winsorize`/**`cs_residualize`(中性化原语——对任意已算信号截面正交,无需行业数据)**/`ts_cov`/`ts_beta`/`sqrt`(接 `_CS`/`_CS2`/`_EW1`/`_TS_PAIR` + evaluate 分发);`dsl_checker.py`(Type+Dimension 静态检查,签名表从引擎注册表自动派生,可选 `fields=` 字段存在性);`complexity.py`(算子加权复杂度+node_count+depth,fail-closed)。
 - **Phase 1 对抗审查修复**(`6198385`):14 智能体多维审查(9 确认/5 为正面确认),修 4 真问题(cs_genome._node_ok 改 `_TS_PAIR`、evaluate 拒 bool、checker 可选字段存在、complexity 未知算子 raise)。
 - **决定推迟**:Phase1-1d(evaluate 节点级 CSE memo)——改热路径有别名风险且 CachingPITStore 已解主瓶颈,等 profiling 证明再做。
-**待做(下一 Phase)**:**Phase 2 科学验证门**——CPCV(组合 purged CV→OOS 路径分布)、多重检验补 Bonferroni+Harvey-Liu-Zhu、把 leakage 检测真正接进 gate/evaluator(用 expression_leakage 计算 leakage_ok)、validation report 加逐 fold 分布。然后 Phase 3(富 Alpha Asset+血缘+图)→4(种群优化器)→5(Signal→Portfolio)→6(生命周期监控)→7(Research Memory)→8(前端补页)。每 Phase tests-first+门禁绿+对抗审查+验收报告。
+- **Phase 2 科学验证门**(`4a65c70`+`2ff0ba5`+`ff8ba01`):①`validation/cpcv.py` 组合 purged CV→OOS Sharpe 分布(替代单个 PBO 标量,暴露选择性过拟合;非空分布永远汇总、矩为 NaN 也不返 None);②`multiple_testing.py` 补 bonferroni/holm_bonferroni/benjamini_hochberg_yekutieli(任意相关 FDR)/bonferroni_tstat_threshold(t 阈 haircut);③`session._cpcv_validate` 把 CPCV 接进三模式输出("cpcv" 键);④`pipeline.run_research_validation` 的 leakage_ok 改【必传】(堵唯一非 fail-closed 漏洞)。对抗审查 4 智能体仅 1 发现 1 修复。
+**待做(下一 Phase)**:**Phase 3 富 Alpha Asset + 注册表 + 相关图 + 血缘 + 相似度**(最大一块,10 个缺失能力多在此)——`quantos/contracts/alpha_asset.py`(~50 字段 frozen)、`services/alpha/{registry,zoo,similarity,alpha_graph}.py`、搜索写 lineage(parent/child/mutation/perf-delta)。逐 fold OOS 分布字段也并入这里(资产承载完整验证报告)。然后 Phase 4(种群优化器)→5(Signal→Portfolio)→6(生命周期监控)→7(Research Memory)→8(前端补页)。每 Phase tests-first+门禁绿+对抗审查+验收报告。
 **★★★ 顶级化文档已补齐(2026-06-27,ultracode 多智能体工作流)**:`README.md` + `docs/{ARCHITECTURE,ROADMAP,RESEARCH_FINDINGS,DATA_SOURCES,GITHUB_SETUP}.md`,每条声明对真实仓库核查过(评审顺手发现 `CLAUDE.md` 的"~10%/空脚手架"已过时——实清 139 个 services .py、741 测试函数,待与用户一起校 CLAUDE.md)。
 **★★ ALPHA 引擎开发中(从"一个"到"量产+动态",用户愿景)**:增量1 已成 = `services/research/cs_genome.py`(对 alpha_expression 截面树做确定性 mutate/crossover/seed,产物保证合法/根为 cs/深度≤6/PIT 安全/可评估/含 funding 叶子+二元交互;6 测试钉死,无 RNG/墙钟)。**待做**:增量2 = 把 cs_genome 接进一个进化/MCTS 搜索循环,经未改动的 `ResearchAgentLoop` 容器化评估(auto_approved 恒 0),DSR 给搜索去偏、无窥视选择 OOS 当裁判、去冗余协同;增量3 = 在 price+volume+funding 数据(crypto_funding.db + 资金费缓存)上跑,看机器能否量产出 ≥carry 的稳健 cs-alpha。参考现成:`tools/crypto_alpha_search.py`(固定网格版,可升级为生成式)。
 **★ 资金费 carry = 第一个过关的真信号(2026-06-27,实测,`tools/binance_funding_fetch.py` + `crypto_funding_research.py`
