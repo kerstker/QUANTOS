@@ -8,6 +8,7 @@ import AlphaFactory from './pages/AlphaFactory';
 import Experiments from './pages/Experiments';
 import DataCatalog from './pages/DataCatalog';
 import Validation from './pages/Validation';
+import LifecycleMonitor from './pages/LifecycleMonitor';
 import BacktestExplainability from './pages/BacktestExplainability';
 import ScenarioStress from './pages/ScenarioStress';
 import ModelRiskReview from './pages/ModelRiskReview';
@@ -41,6 +42,7 @@ const nav: NavGroup[] = [
   ]},
   { zh: '验证', en: 'VALIDATION', items: [
     { to: '/research/validation', zh: '验证门', en: 'Validation', icon: 'VA' },
+    { to: '/research/lifecycle-monitor', zh: '生命周期监控', en: 'Lifecycle', icon: 'LC' },
     { to: '/research/backtest-explainability', zh: '回测解释', en: 'Backtest', icon: 'BT' },
     { to: '/research/scenario-stress', zh: '情景压力', en: 'Stress', icon: 'ST' },
     { to: '/research/model-risk-review', zh: '模型风险', en: 'Model Risk', icon: 'MR' },
@@ -79,6 +81,7 @@ export default function App() {
         <Route path="/research/experiments" element={<Experiments />} />
         <Route path="/research/data-catalog" element={<DataCatalog />} />
         <Route path="/research/validation" element={<Validation />} />
+        <Route path="/research/lifecycle-monitor" element={<LifecycleMonitor />} />
         <Route path="/research/backtest-explainability" element={<BacktestExplainability />} />
         <Route path="/research/scenario-stress" element={<ScenarioStress />} />
         <Route path="/research/model-risk-review" element={<ModelRiskReview />} />
