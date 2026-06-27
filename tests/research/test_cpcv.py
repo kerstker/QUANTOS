@@ -57,6 +57,17 @@ def test_embargo_purges_train_neighbours():
     assert a == cpcv.cpcv_summary(cands, n_groups=6, k_test=2, embargo=0)   # deterministic
 
 
+def test_constant_returns_summarized_with_nan_moments():
+    # review fix: a zero-variance positive series scores +inf on every test block. The distribution is
+    # degenerate but REAL (15 scorable splits) — it must be summarized (countable fields + NaN moments),
+    # not collapsed to None, which would hide it (docstring: inf excluded from the moments ONLY).
+    s = cpcv.cpcv_summary({"const": [0.01] * 60}, n_groups=6, k_test=2)
+    assert s is not None
+    assert s["n_splits"] == 15 and s["frac_positive"] == 1.0
+    assert s["selected_counts"] == {"const": 15}
+    assert math.isnan(s["mean_oos_sharpe"]) and math.isnan(s["min_oos_sharpe"])
+
+
 def test_fail_closed_when_too_short():
     assert cpcv.cpcv_summary({"a": [0.1, 0.2, 0.3]}, n_groups=6, k_test=2) is None
 

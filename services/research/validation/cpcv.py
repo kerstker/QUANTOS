@@ -115,27 +115,35 @@ def cpcv_oos_distribution(returns_by_candidate, *, n_groups: int = 6, k_test: in
 
 def cpcv_summary(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
                  embargo: int = 0) -> Optional[dict]:
-    """Summary statistics of the CPCV OOS-Sharpe distribution. None (fail-closed) when not assessable.
-    `frac_positive` and `selected_counts` count every split; mean/median/std/quantiles use the finite
-    Sharpes (a zero-variance positive test block scores +inf and is excluded from the moments only)."""
+    """Summary statistics of the CPCV OOS-Sharpe distribution. None (fail-closed) ONLY when the
+    distribution is not assessable (too short / nothing scorable). `n_splits`, `frac_positive` and
+    `selected_counts` count EVERY split; the moment fields (mean/median/std/p05/p95/min) use the finite
+    Sharpes — a zero-variance positive test block scores +inf and is excluded from the moments only, so
+    a fully-degenerate all-+inf distribution still returns a summary (with NaN moments), never None."""
     res = cpcv_oos_distribution(returns_by_candidate, n_groups=n_groups, k_test=k_test, embargo=embargo)
     if res is None:
         return None
     sharpes, selected = res
     finite = sorted(x for x in sharpes if math.isfinite(x))
-    if not finite:
-        return None
     counts: dict = {}
     for nm in selected:
         counts[nm] = counts.get(nm, 0) + 1
+    if finite:
+        moments = {
+            "mean_oos_sharpe": round(statistics.fmean(finite), 6),
+            "median_oos_sharpe": round(statistics.median(finite), 6),
+            "std_oos_sharpe": round(statistics.pstdev(finite), 6) if len(finite) > 1 else 0.0,
+            "p05_oos_sharpe": round(_quantile(finite, 0.05), 6),
+            "p95_oos_sharpe": round(_quantile(finite, 0.95), 6),
+            "min_oos_sharpe": round(finite[0], 6),
+        }
+    else:
+        nan = float("nan")
+        moments = {k: nan for k in ("mean_oos_sharpe", "median_oos_sharpe", "std_oos_sharpe",
+                                    "p05_oos_sharpe", "p95_oos_sharpe", "min_oos_sharpe")}
     return {
         "n_splits": len(sharpes),
-        "mean_oos_sharpe": round(statistics.fmean(finite), 6),
-        "median_oos_sharpe": round(statistics.median(finite), 6),
-        "std_oos_sharpe": round(statistics.pstdev(finite), 6) if len(finite) > 1 else 0.0,
         "frac_positive": round(sum(1 for x in sharpes if x > 0) / len(sharpes), 6),
-        "p05_oos_sharpe": round(_quantile(finite, 0.05), 6),
-        "p95_oos_sharpe": round(_quantile(finite, 0.95), 6),
-        "min_oos_sharpe": round(finite[0], 6),
         "selected_counts": counts,
+        **moments,
     }
