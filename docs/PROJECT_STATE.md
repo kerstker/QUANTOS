@@ -109,13 +109,16 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
   都≈0)。真正的杠杆 = **数据护城河(口子)**:把广度铺到**小盘币**(低效定价处)、另类数据、其它资产类别、或更高频/
   微结构。下一步要么用户拍板开数据口子,要么把 `dist_from_high_14` 这类候选挂纸面跟踪。详见记忆 `crypto-research-findings`。
 
-## 5. 待决"口子"(需用户拍板,不是代码能变出来的)——按杠杆排序
-1. **数据**(最大,~80% 边际):更长历史/逐根成交量/资金费/链上/另类。**适配器接口已就绪**,
-   等数据档/密钥即可"填 SourceSpec"接入。
-2. **ML 马力 / LLM 点子生成器**:破"纯确定性"的口子。LLM 已设计安全接法 = **门外生成 + 门内当裁判**
-   (LLM 提议公式,我们确定性引擎 + DSR/OOS/容器化裁决)。参考论文 arXiv 2505.11122(LLM+MCTS 挖 alpha;
-   我们已借其 MCTS/频繁子树规避等约束内机制)。
-3. **执行/微观结构 + 规模**:超出 L2,是往 L3→实盘的工程。
+## 5. "口子"(2026-06-27 用户已授权放开 —— 目标=可盈利机构级系统,见记忆 `goal-profit-open-kouzi`)
+用户原话:「放开口子,不再局限于研究——研究是底层,赚钱是目的」。以下口子**我可主动用**(推进 Phase 时):
+1. **数据**(最大,~80% 边际):更长历史/逐根成交量/资金费/链上/另类/**行业·板块分类映射**(用于中性化)。
+   `tools/` 只读拉取,**适配器接口已就绪**,填 SourceSpec 即接入。
+2. **LLM 点子生成器**:**门外生成 + 门内当裁判**(LLM 提议假设/DSL,确定性引擎 + DSR/OOS/容器化裁决);
+   不进 services/ 确定性核心、不破容器化(LLM=非人类 actor,永不 APPROVED)。参考 arXiv 2505.11122。
+3. **numpy 提速**:可在评估层引入向量化,但须隔离评估、量化对确定性/可复现的影响。
+4. ⛔ **硬红线(我绝不自己跨,必须用户多步人工审批)**:真实实盘下单 / 接券商·CTP·FIX SDK /
+   翻 LIVE_TRADING_ENABLED·REAL_BROKER_ENABLED·ALLOW_ORDER_SUBMISSION / 提升 readiness(L2→L3+)。
+   我把系统一路造到这条线前(research→paper→shadow→容量→成本→生命周期就绪),go-live 留作用户人工动作。
 
 ## 6. 定位(对"做到最好"的诚实回答)
 **在"纯-stdlib、确定性、安全可复现的研究系统"这一类别里,过程已接近顶级**:发现(GP+MCTS)→去冗余→
@@ -124,7 +127,14 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `f810830`(cs_genome 增量1)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 819 全绿;远端 kerstker/QUANTOS 已同步。
+HEAD 在 `6198385`(Phase1 对抗审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` **855 全绿**;远端 kerstker/QUANTOS 已同步。
+**★★★ 机构级 Alpha 因子工厂补全升级 进行中(2026-06-27,用户大指令:把"因子发现器"升级为"Alpha 资产生命周期系统")。**
+计划全文 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`(Phase 0 审计:67 能力→22 有/35 部分/10 缺;按规则 #9 适配现有架构:元组 DSL 不重写成类、纯 stdlib 不上 numpy、7态+研究态不碰 live)。**已完成**:
+- **P0 安全地基**(`f682325`):①`services/research/expression_leakage.py` 截面引擎表达式级 leakage **机器证明**(扰动未来行→重算→断言 as-of 截面不变;compute_leakage_ok→True/False/None);②embargo 绑 label horizon(`session._inner_loop` 把 fwd_horizon→wf_embargo=h-1,h=1 时字节不变)。
+- **Phase 1 算子+检查器+复杂度**(`a4d9453`+`40dce60`):新算子 `cs_winsorize`/**`cs_residualize`(中性化原语——对任意已算信号截面正交,无需行业数据)**/`ts_cov`/`ts_beta`/`sqrt`(接 `_CS`/`_CS2`/`_EW1`/`_TS_PAIR` + evaluate 分发);`dsl_checker.py`(Type+Dimension 静态检查,签名表从引擎注册表自动派生,可选 `fields=` 字段存在性);`complexity.py`(算子加权复杂度+node_count+depth,fail-closed)。
+- **Phase 1 对抗审查修复**(`6198385`):14 智能体多维审查(9 确认/5 为正面确认),修 4 真问题(cs_genome._node_ok 改 `_TS_PAIR`、evaluate 拒 bool、checker 可选字段存在、complexity 未知算子 raise)。
+- **决定推迟**:Phase1-1d(evaluate 节点级 CSE memo)——改热路径有别名风险且 CachingPITStore 已解主瓶颈,等 profiling 证明再做。
+**待做(下一 Phase)**:**Phase 2 科学验证门**——CPCV(组合 purged CV→OOS 路径分布)、多重检验补 Bonferroni+Harvey-Liu-Zhu、把 leakage 检测真正接进 gate/evaluator(用 expression_leakage 计算 leakage_ok)、validation report 加逐 fold 分布。然后 Phase 3(富 Alpha Asset+血缘+图)→4(种群优化器)→5(Signal→Portfolio)→6(生命周期监控)→7(Research Memory)→8(前端补页)。每 Phase tests-first+门禁绿+对抗审查+验收报告。
 **★★★ 顶级化文档已补齐(2026-06-27,ultracode 多智能体工作流)**:`README.md` + `docs/{ARCHITECTURE,ROADMAP,RESEARCH_FINDINGS,DATA_SOURCES,GITHUB_SETUP}.md`,每条声明对真实仓库核查过(评审顺手发现 `CLAUDE.md` 的"~10%/空脚手架"已过时——实清 139 个 services .py、741 测试函数,待与用户一起校 CLAUDE.md)。
 **★★ ALPHA 引擎开发中(从"一个"到"量产+动态",用户愿景)**:增量1 已成 = `services/research/cs_genome.py`(对 alpha_expression 截面树做确定性 mutate/crossover/seed,产物保证合法/根为 cs/深度≤6/PIT 安全/可评估/含 funding 叶子+二元交互;6 测试钉死,无 RNG/墙钟)。**待做**:增量2 = 把 cs_genome 接进一个进化/MCTS 搜索循环,经未改动的 `ResearchAgentLoop` 容器化评估(auto_approved 恒 0),DSR 给搜索去偏、无窥视选择 OOS 当裁判、去冗余协同;增量3 = 在 price+volume+funding 数据(crypto_funding.db + 资金费缓存)上跑,看机器能否量产出 ≥carry 的稳健 cs-alpha。参考现成:`tools/crypto_alpha_search.py`(固定网格版,可升级为生成式)。
 **★ 资金费 carry = 第一个过关的真信号(2026-06-27,实测,`tools/binance_funding_fetch.py` + `crypto_funding_research.py`
