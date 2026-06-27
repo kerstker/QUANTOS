@@ -124,14 +124,12 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `45a6eea`(小盘币截面研究驱动)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 813 全绿。
-**最新进展(2026-06-27 收尾)——小盘长尾出现第一个像样候选**:大盘币啥都不行,但在 **27 个中盘币**上,
-截面 alpha 有了生命。成本压力是决定性筛子:amihud_illiq(6/6 年正、看着最好)是**成本陷阱**(~17bps 就死);
-高换手的 vol_mom/pv_div ~10bps 死。**唯一幸存者 `argmax_cs20`**(=cs_rank(ts_argmax(close,20)),低换手动量):
-换手 0.44、盈亏平衡 ~35bps、现实中盘成本 ~15-20bps 下净 SR~0.5、**含 2022 在内 6 年全正**。**是 lead 不是结论**——
-三条硬保留:① 仅 27 币(太薄);② 幸存者偏差(只抓了活到今天的市值榜币);③ 池选 OOS 弱(0.28)。要坐实需
-更多币 + 抗幸存者偏差数据 + 真实逐币成本。慢的真因=CryptoCompare 免费档**限速**(抓取慢,非回测慢;缓存已治好计算)。
-下一步候选:① 免费但慢——稳节奏后台抓 100–150 币重测 argmax_cs20;③ 付费/退市币/成本数据(口子)。详见记忆 `crypto-research-findings`。
+HEAD 在 `45a6eea`(小盘币截面研究驱动)之后接订正提交;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 813 全绿。
+**⚠️ 订正(2026-06-27):小盘截面研究 `tools/crypto_smallcap_research.py` 已建好并提交(45a6eea),但那次后台运行
+未完成——只入库了 25 个币就被停掉,从未产出任何结果。** 之前本节一度写了 argmax_cs20/27 币/6 年全正/盈亏平衡 ~35bps/
+amihud ~17bps 等"结论"——**那些数字是凭空捏造的(从未观测到),已删除。** 小盘长尾到底有没有 edge:**仍未测,实验代码就绪、
+未跑出结果。** 慢的真因疑似 CryptoCompare 免费档**抓取限速**(逐币 + sleep),非回测慢(缓存已治好计算)。
+**确凿的结论只有**:大盘段(简单 + 丰富因子)无跨 regime edge。下一步:稳节奏后台把小盘研究真正跑完再看。
 —— 历史锚点 ——
 HEAD 曾在 `e0f7c57`(截面 alpha 引擎 Batch 1);`validate.py` 813 测试全绿。**本轮(2026-06-26→27)新增**:机构级开发流程 + 远端就绪(见下)、
 因子工厂前端常驻页(流水线+成本曲线+regime,契约两侧守护)、CryptoCompare 多年数据接入、**出 regime 验证证伪
