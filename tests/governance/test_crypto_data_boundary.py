@@ -13,7 +13,8 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
-             os.path.join(_ROOT, "tools", "binance_funding_fetch.py")]
+             os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
@@ -30,7 +31,10 @@ def _import_roots(path: str) -> set:
 
 
 # stdlib + internal (services/tools) allowed in the network-bearing fetchers; nothing else.
-_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "services", "tools", "__future__"}
+# `io`/`zipfile` are pure-stdlib in-memory archive parsing (the Data Vision metrics archive ships ZIPs) —
+# no network/trade/credential capability, so they do not weaken the boundary.
+_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile",
+                    "services", "tools", "__future__"}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
