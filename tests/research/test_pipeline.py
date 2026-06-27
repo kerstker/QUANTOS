@@ -1,5 +1,8 @@
 """Phase 5 wiring — the end-to-end research validation pipeline feeds REAL
-walk-forward OOS + DSR + PBO + leakage into the gate."""
+walk-forward OOS + DSR + PBO + leakage into the gate.
+
+leakage_ok is REQUIRED (no passing default) — these tests pass it explicitly (audit fix: the gate
+trusts leakage_ok, so a caller must COMPUTE it; a silent True is no longer allowed)."""
 from quantos.contracts.data import Bar
 from quantos.contracts.research import ValidationVerdict
 from services.research.backtest_engine.costs import CostModel
@@ -20,7 +23,8 @@ def _rising_bars(n, rate=0.02, start=100.0):
 def test_pipeline_passes_genuine_strategy():
     bars = _rising_bars(30)
     hold = [100] * 30  # buy-and-hold a steadily rising market
-    res = run_research_validation("good", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0))
+    res = run_research_validation("good", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0),
+                                  leakage_ok=True)
     assert res.promotable, res.reasons
 
 
@@ -34,16 +38,18 @@ def test_pipeline_flags_overfit_candidate_set():
         for i in range(c * seg, (c + 1) * seg):
             t[i] = 100
         candidates.append(t)
-    res = run_research_validation("overfit", bars, candidates, train_size=6, test_size=3, cost=CostModel(0, 0))
+    res = run_research_validation("overfit", bars, candidates, train_size=6, test_size=3,
+                                  cost=CostModel(0, 0), leakage_ok=True)
     assert not res.promotable, res.reasons
 
 
 def test_catalog_wide_trial_override_deflates_and_sets_trial_count():
     bars = _rising_bars(30)
     hold = [100] * 30
-    base = run_research_validation("g", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0))
+    base = run_research_validation("g", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0),
+                                   leakage_ok=True)
     catalog = run_research_validation("g", bars, [hold], train_size=6, test_size=3, cost=CostModel(0, 0),
-                                      n_trials_override=500, var_sr_override=0.05)
+                                      leakage_ok=True, n_trials_override=500, var_sr_override=0.05)
     # catalog-wide multiple-testing reaches DSR and the reported trial_count
     assert catalog.trial_count == 500
     assert catalog.deflated_sharpe <= base.deflated_sharpe

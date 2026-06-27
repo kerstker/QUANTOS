@@ -59,13 +59,18 @@ def run_research_validation(
     train_size: int,
     test_size: int,
     cost: CostModel = CostModel(),
-    leakage_ok: bool = True,
+    leakage_ok: bool,
     regime_profitable_frac: float = 1.0,
     gate: Optional[ValidationGate] = None,
     n_trials_override: Optional[int] = None,
     var_sr_override: Optional[float] = None,
 ) -> ValidationResult:
-    """`n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
+    """`leakage_ok` is REQUIRED (no passing default): the gate trusts it, so the caller must COMPUTE
+    it — via the Bar-level `services.features.leakage.detect_leakage` or the cross-sectional
+    `services.research.expression_leakage.compute_leakage_ok` — rather than letting a silent True wave
+    a leaking strategy through (audit fix: this was the one non-fail-closed leakage input).
+
+    `n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
     catalog) inject the CATALOG-WIDE trial count and Sharpe-variance estimate, so
     Deflated Sharpe corrects for every alpha ever tried — not just the local
     candidate batch. Both must come from the same (catalog) source."""

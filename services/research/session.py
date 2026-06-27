@@ -69,6 +69,22 @@ def _oos_validate(catalog, *, embargo: int = 1):
         return None
 
 
+def _cpcv_validate(catalog, *, embargo: int = 1, n_groups: int = 6, k_test: int = 2):
+    """Combinatorial purged-CV OOS DISTRIBUTION over the run's OWN discovered factors (their stored net
+    returns, aligned on common trailing length) — a richer companion to _oos_validate's single no-peek
+    path: it exposes selection-overfit as a distribution of OOS Sharpes across all C(n_groups, k_test)
+    splits. Read-only over the catalog; None when < 2 factors or too short (fail-closed)."""
+    from services.research.validation.cpcv import cpcv_summary
+    rbi = {aid: catalog.returns(aid) for aid in catalog.all_ids() if len(catalog.returns(aid)) >= 2}
+    if len(rbi) < 2:
+        return None
+    length = min(len(r) for r in rbi.values())
+    if length < n_groups * 2:
+        return None
+    aligned = {aid: tuple(r[-length:]) for aid, r in rbi.items()}
+    return cpcv_summary(aligned, n_groups=n_groups, k_test=k_test, embargo=embargo)
+
+
 def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
     if not event_times:
         return ""
@@ -160,6 +176,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
 
 
@@ -238,6 +255,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
 
 
@@ -285,4 +303,5 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
