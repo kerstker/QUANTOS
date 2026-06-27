@@ -27,7 +27,15 @@ class AlphaAssetRegistry:
     # --- write ---
     def add(self, asset: AlphaAsset, *, ts: int = 0) -> AlphaAsset:
         """Store an asset snapshot. A new alpha_id registers at its version; an existing alpha_id may
-        only ADD a strictly higher version (immutable, monotonic — no overwrite, no downgrade)."""
+        only ADD a strictly higher version (immutable, monotonic — no overwrite, no downgrade).
+
+        CONTAINMENT: APPROVED is the sacred live state. It may only enter the registry as the snapshot
+        of a COMPLETED lifecycle transition — proven by a non-empty `lifecycle_event_ids`, which only
+        AlphaLifecycleManager.advance() populates. A directly-constructed APPROVED asset (no transition
+        proof) is rejected, so the registry can never be a backdoor around the human-only promotion."""
+        if asset.status == AlphaState.APPROVED and not asset.lifecycle_event_ids:
+            raise ValueError(f"alpha {asset.alpha_id}: APPROVED requires lifecycle_event_ids (promotion "
+                             "goes through AlphaLifecycleManager, not direct registry.add)")
         vmap = self._versions.get(asset.alpha_id)
         if vmap is None:
             self._versions[asset.alpha_id] = {asset.version: asset}
@@ -38,7 +46,9 @@ class AlphaAssetRegistry:
                 raise ValueError(f"alpha {asset.alpha_id} version must exceed {max(vmap)}, got {asset.version}")
             vmap[asset.version] = asset
         self._audit.append({"event": "add", "alpha_id": asset.alpha_id, "version": asset.version,
-                            "status": asset.status.value, "generator": asset.generator, "ts": int(ts)})
+                            "status": asset.status.value, "generator": asset.generator,
+                            "owner": asset.owner, "lifecycle_event_ids": list(asset.lifecycle_event_ids),
+                            "ts": int(ts)})
         return asset
 
     # --- read ---
@@ -72,7 +82,12 @@ class AlphaAssetRegistry:
         return tuple(a for a in self.all_latest() if a.status == status)
 
     def children_of(self, parent_id: str) -> tuple[AlphaAsset, ...]:
-        return tuple(a for a in self.all_latest() if parent_id in a.lineage.parent_ids)
+        """Descendants of `parent_id`: any alpha that named it as a parent in ANY version (lineage is
+        historical fact, so a later version dropping the link does not erase the genealogy). Returns the
+        latest version of each such child, sorted by id."""
+        ids = {aid for aid, vmap in self._versions.items()
+               if any(parent_id in a.lineage.parent_ids for a in vmap.values())}
+        return tuple(self.latest(aid) for aid in sorted(ids))
 
     # --- audit ---
     def audit_log(self) -> tuple[dict, ...]:

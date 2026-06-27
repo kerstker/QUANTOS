@@ -64,6 +64,30 @@ def test_audit_log_records_every_add_in_order():
     r.add(_asset("a", 2), ts=9)
     log = r.audit_log()
     assert [(e["alpha_id"], e["version"], e["ts"]) for e in log] == [("a", 1, 5), ("a", 2, 9)]
+    assert "owner" in log[0] and "lifecycle_event_ids" in log[0]   # caller/lifecycle context recorded
+
+
+def test_registry_rejects_forged_approved_status():
+    # CONTAINMENT (review P0): a directly-constructed APPROVED asset with no lifecycle proof must be
+    # rejected, so the registry can never be a backdoor around the human-only promotion chokepoint.
+    r = AlphaAssetRegistry()
+    forged = AlphaAsset(alpha_id="rogue", status=AlphaState.APPROVED)   # no lifecycle_event_ids
+    with pytest.raises(ValueError):
+        r.add(forged, ts=1)
+    # an APPROVED asset that carries lifecycle-transition proof IS allowed (rebuild from persisted state)
+    legit = AlphaAsset(alpha_id="ok", status=AlphaState.APPROVED, lifecycle_event_ids=("t1", "t2"))
+    r.add(legit, ts=2)
+    assert r.latest("ok").status == AlphaState.APPROVED
+
+
+def test_children_of_spans_all_versions():
+    # lineage is historical fact: a child that named a parent in ANY version is its descendant even if
+    # a later version drops the link (review P1).
+    r = AlphaAssetRegistry()
+    r.add(_asset("p", 1), ts=1)
+    r.add(_asset("c", 1, parents=("p",)), ts=2)
+    r.add(AlphaAsset(alpha_id="c", version=2, lineage=AlphaLineage(parent_ids=())), ts=3)  # drops parent
+    assert {a.alpha_id for a in r.children_of("p")} == {"c"}
 
 
 def test_get_missing_is_none_not_raise():

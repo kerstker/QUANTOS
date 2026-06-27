@@ -99,23 +99,26 @@ class AlphaAsset(BaseModel):
 
     @property
     def asset_hash(self) -> str:
-        """Content hash over identity + intent + the evaluation's own reproducibility hash. Stable for
-        audit; changes when the version, expression, or underlying evaluation changes."""
-        return stable_hash({
-            "alpha_id": self.alpha_id,
-            "version": self.version,
-            "expression": self.expression,
-            "generator": self.generator,
-            "dataset_version": self.dataset_version,
-            "evaluation": self.evaluation.reproducibility_hash if self.evaluation is not None else "",
-            "lineage": list(self.lineage.parent_ids) + [self.lineage.mutation_op],
-        })
+        """Content hash over the ENTIRE asset (every field, including the embedded evaluation). Any
+        change — version, expression, owner, status, name, tags, metrics — yields a different hash, so
+        it is a sound audit commitment / non-repudiation handle (review fix: it covered only 7 fields,
+        letting assets that differed in owner/status/tags collide)."""
+        return stable_hash(self.model_dump(mode="json"))
 
     @classmethod
     def from_definition(cls, definition: AlphaDefinition, *, evaluation: Optional[AlphaEvaluation] = None,
                         **meta) -> "AlphaAsset":
         """Build an asset from an existing AlphaDefinition (copying alpha_id/name/universe and using its
-        factor_ids as the default data dependencies) plus optional evaluation and any asset metadata."""
+        factor_ids as the default data dependencies) plus optional evaluation and any asset metadata.
+
+        CONTAINMENT: a derived alpha is always a DRAFT — this convenience factory REFUSES to set the
+        privileged lifecycle fields (status / lifecycle_event_ids / rejection_reasons). Promotion is the
+        lifecycle manager's job (human-only for APPROVED); it can never be forged here."""
+        forbidden = _FORBIDDEN_FROM_DEFINITION & set(meta)
+        if forbidden:
+            raise ValueError(f"from_definition cannot set privileged lifecycle field(s) "
+                             f"{sorted(forbidden)}; a derived alpha is a DRAFT — promote via "
+                             "AlphaLifecycleManager")
         base = {
             "alpha_id": definition.alpha_id,
             "name": definition.name,
@@ -124,3 +127,6 @@ class AlphaAsset(BaseModel):
         }
         base.update(meta)                 # caller-supplied metadata overrides the definition-derived defaults
         return cls(evaluation=evaluation, **base)
+
+
+_FORBIDDEN_FROM_DEFINITION = frozenset({"status", "lifecycle_event_ids", "rejection_reasons"})

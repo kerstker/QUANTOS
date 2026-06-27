@@ -74,6 +74,25 @@ def test_asset_hash_is_deterministic_and_version_sensitive():
     assert a4.asset_hash != a1.asset_hash                       # expression changes the hash
 
 
+def test_asset_hash_covers_all_identity_fields():
+    # review P1: the hash must change on owner / status / name / tags too, so it is a sound audit
+    # commitment (two assets differing in those must not collide).
+    base = AlphaAsset(alpha_id="a1", owner="alice", name="x", tags=("t",), status=AlphaState.DRAFT)
+    for upd in ({"owner": "bob"}, {"status": AlphaState.VALIDATED}, {"name": "y"}, {"tags": ("u",)}):
+        assert base.model_copy(update=upd).asset_hash != base.asset_hash, upd
+
+
+def test_from_definition_rejects_privileged_lifecycle_fields():
+    # review P0: from_definition is a candidate-derivation convenience -> a derived alpha is always a
+    # DRAFT; it must NOT let a caller forge status / lifecycle refs (that is the lifecycle manager's job).
+    d = AlphaDefinition(alpha_id="a1", name="x")
+    assert AlphaAsset.from_definition(d).status == AlphaState.DRAFT
+    for bad in ({"status": AlphaState.APPROVED}, {"lifecycle_event_ids": ("t1",)},
+                {"rejection_reasons": ("x",)}):
+        with pytest.raises(ValueError):
+            AlphaAsset.from_definition(d, **bad)
+
+
 def test_derived_props_fail_safe_without_evaluation():
     a = AlphaAsset(alpha_id="a1")
     assert a.verdict is None and a.deflated_sharpe is None and a.net_sharpe is None
