@@ -7,6 +7,8 @@ import LifecycleMonitor from '@/pages/LifecycleMonitor';
 import AlphaZoo from '@/pages/AlphaZoo';
 import PopulationOptimizer from '@/pages/PopulationOptimizer';
 import SignalToPortfolio from '@/pages/SignalToPortfolio';
+import DslExplorer from '@/pages/DslExplorer';
+import AlphaGraph from '@/pages/AlphaGraph';
 
 // First real component/render tests (the audit's "UI tests effectively zero" gap). In the test env the
 // console API is disabled (VITE_MOCK_MODE), so every page renders its mock fixtures without any network.
@@ -20,6 +22,8 @@ describe('console pages render in mock mode', () => {
     ['AlphaZoo', AlphaZoo],
     ['PopulationOptimizer', PopulationOptimizer],
     ['SignalToPortfolio', SignalToPortfolio],
+    ['DslExplorer', DslExplorer],
+    ['AlphaGraph', AlphaGraph],
   ] as const) {
     it(`${name} mounts and produces non-empty DOM`, () => {
       const { container } = render(<Page />);

@@ -6,6 +6,8 @@ import Overview from './pages/Overview';
 import CryptoLive from './pages/CryptoLive';
 import AlphaFactory from './pages/AlphaFactory';
 import AlphaZoo from './pages/AlphaZoo';
+import DslExplorer from './pages/DslExplorer';
+import AlphaGraph from './pages/AlphaGraph';
 import PopulationOptimizer from './pages/PopulationOptimizer';
 import SignalToPortfolio from './pages/SignalToPortfolio';
 import Experiments from './pages/Experiments';
@@ -39,6 +41,8 @@ const nav: NavGroup[] = [
     { to: '/research/crypto-live', zh: '加密实盘研究', en: 'Crypto Live', icon: '₿' },
     { to: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF' },
     { to: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ' },
+    { to: '/research/dsl-explorer', zh: '因子 DSL', en: 'DSL Explorer', icon: 'DSL' },
+    { to: '/research/alpha-graph', zh: 'Alpha 相关图', en: 'Alpha Graph', icon: 'GR' },
     { to: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX' },
     { to: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC' },
     { to: '/research/computation-lab', zh: '计算实验室', en: 'Computation', icon: 'CL' },
@@ -85,6 +89,8 @@ export default function App() {
         <Route path="/research/crypto-live" element={<CryptoLive />} />
         <Route path="/research/alpha-factory" element={<AlphaFactory />} />
         <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
+        <Route path="/research/dsl-explorer" element={<DslExplorer />} />
+        <Route path="/research/alpha-graph" element={<AlphaGraph />} />
         <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
         <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />
         <Route path="/research/experiments" element={<Experiments />} />
