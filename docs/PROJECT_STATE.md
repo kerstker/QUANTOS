@@ -127,7 +127,7 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `a7a6ea0`(Phase4 对抗审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` **926 全绿**;远端 kerstker/QUANTOS 已同步。
+HEAD 在 `607012e`(Phase5 对抗审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` **940 全绿**;远端 kerstker/QUANTOS 已同步。
 **★★★ 机构级 Alpha 因子工厂补全升级 进行中(2026-06-27,用户大指令:把"因子发现器"升级为"Alpha 资产生命周期系统")。**
 计划全文 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`(Phase 0 审计:67 能力→22 有/35 部分/10 缺;按规则 #9 适配现有架构:元组 DSL 不重写成类、纯 stdlib 不上 numpy、7态+研究态不碰 live)。**已完成**:
 - **P0 安全地基**(`f682325`):①`services/research/expression_leakage.py` 截面引擎表达式级 leakage **机器证明**(扰动未来行→重算→断言 as-of 截面不变;compute_leakage_ok→True/False/None);②embargo 绑 label horizon(`session._inner_loop` 把 fwd_horizon→wf_embargo=h-1,h=1 时字节不变)。
@@ -141,8 +141,10 @@ HEAD 在 `a7a6ea0`(Phase4 对抗审查修复)附近;`main==master`(rtk 下 `git 
   ③ `similarity.py`(AST 子树 Jaccard/收益 |corr|/holdings 余弦/exposure 余弦)、`alpha_graph.py`(显式 nodes/edges/clusters/near-dup,复用 AlphaCluster)、`zoo.py`(name/expr/universe/generator/status/cluster/tag/指标 检索)、`lineage.py`(make_child_asset perf_delta=子−最优父)。
   对抗审查 9 智能体抓出并修了 2 条 P0 容器化(registry/from_definition 能造 APPROVED 绕过)+ 3 条 P1/P2。
 - **Phase 4 种群优化器**(`0418cfa`+`a7a6ea0`):`services/alpha/population_optimizer.py`——集合级联合优化。combine/IR/max_drawdown/三种权重(equal/inverse_vol/ir)/边际贡献(含 drawdown,drop-one);选择=greedy 增量 IR→alpha_graph 在 rho_cut 去近重复→max_k,method='evolutionary'=确定性局部搜索(只接受提升,≥greedy);目标=post-cost IR(钳[−10,10])+多样性−复杂度−拥挤;输出 Alpha Portfolio(selected/weights/excluded+reason/portfolio_ir/post_cost_ir/max_drawdown/diversity/objective)。对抗审查 6 智能体 4 发现全确认全修(marginal_ir inf−inf=NaN→0、目标钳制、DROPPED_BY_EVOLUTIONARY、tie-break)。成本/容量为代理(真 backtest 归 Phase5)。
-**待做(下一 Phase)**:**Phase 5 Signal→Portfolio Adapter**——`services/portfolio/signal_adapter.py`:rank/zscore/**winsorize**/missing/stale 归一 → neutralize(market/size,industry 留口子)→ blend(static/dynamic/regime/recent-perf)→ 风险模型 → 成本(拆 spread)→ 容量 → 构建(约束)→ 报告。复用现有 portfolio/{construction,risk_model,costs}、capacity。然后 6(生命周期监控:加 shadow/degraded/paused 研究态,live 类不建)→7(Research Memory)→8(前端补页)。每 Phase tests-first+门禁绿+对抗审查+验收报告。
-**审计 10 缺失 → Phase2-4 已补 8 个**;剩 2:生命周期监控(Phase6)、LLM Agent+Brief(Phase7)。
+- **Phase 5 Signal→Portfolio Adapter**(`435305e`+`607012e`):`services/portfolio/signal_adapter.py`——单期截面信号→可下单目标 book。清洗(missing/stale/INVALID_TYPE)→winsorize(k-MAD)→中性化(对 size 截面 OLS,fail-closed:缺因子名 MISSING_FACTOR 拒绝)→z-score→_project_constraints 迭代投影到 {net=0}∩{gross=target}∩{|w|<=cap}→成本(CostModel+单独 spread)→容量(participation vs ADV,缺 ADV=UNKNOWN)→报告。退化(单名/常数)=显式空 book。**研究/dry-run only,绝不下单**(安全审查零发现确认)。对抗审查 7 智能体 5 发现全确认全修。
+**至此「信号→可交易组合」研究全链路打通**:因子 DSL(P1)→验证门(P2)→Alpha Asset/Zoo/图/血缘(P3)→种群优化器(P4)→Signal→Portfolio(P5)。只差人工 go-live 红线(不碰)。
+**待做(下一 Phase)**:**Phase 6 生命周期监控**——`services/alpha/`:扩状态机加 SHADOW/DEGRADED/PAUSED(研究/dry-run 安全态;**live/small_live/production 不建=L3 口子**)、`degradation_monitor.py`(live-vs-backtest IC/return/slippage/turnover 比对 + drawdown/capacity 告警 + 变异/退役建议)、对接 paper_trading 遥测。然后 7(Research Memory:hypothesis/code-version/lineage/Brief,不依赖 LLM 先建)→8(前端补页:DSL Explorer/Alpha Graph/Optimizer/Signal→Portfolio + vitest)。每 Phase tests-first+门禁绿+对抗审查+验收报告。
+**审计 10 缺失 → Phase2-5 已补 8 个**;剩 2:生命周期监控(Phase6)、LLM Agent+Brief(Phase7)。
 **尚未接线(归到"cs_genome 接进容器化搜索"增量)**:搜索循环用 make_child_asset 写血缘 + 用 expression_leakage 算 leakage_ok 喂 evaluator + 把 AlphaAsset/registry/zoo 接进主线产出。
 **★★★ 顶级化文档已补齐(2026-06-27,ultracode 多智能体工作流)**:`README.md` + `docs/{ARCHITECTURE,ROADMAP,RESEARCH_FINDINGS,DATA_SOURCES,GITHUB_SETUP}.md`,每条声明对真实仓库核查过(评审顺手发现 `CLAUDE.md` 的"~10%/空脚手架"已过时——实清 139 个 services .py、741 测试函数,待与用户一起校 CLAUDE.md)。
 **★★ ALPHA 引擎开发中(从"一个"到"量产+动态",用户愿景)**:增量1 已成 = `services/research/cs_genome.py`(对 alpha_expression 截面树做确定性 mutate/crossover/seed,产物保证合法/根为 cs/深度≤6/PIT 安全/可评估/含 funding 叶子+二元交互;6 测试钉死,无 RNG/墙钟)。**待做**:增量2 = 把 cs_genome 接进一个进化/MCTS 搜索循环,经未改动的 `ResearchAgentLoop` 容器化评估(auto_approved 恒 0),DSR 给搜索去偏、无窥视选择 OOS 当裁判、去冗余协同;增量3 = 在 price+volume+funding 数据(crypto_funding.db + 资金费缓存)上跑,看机器能否量产出 ≥carry 的稳健 cs-alpha。参考现成:`tools/crypto_alpha_search.py`(固定网格版,可升级为生成式)。
