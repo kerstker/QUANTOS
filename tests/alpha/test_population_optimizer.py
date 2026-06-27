@@ -85,6 +85,32 @@ def test_evolutionary_method_is_deterministic_and_no_worse_than_greedy():
     assert e1["objective"] >= g["objective"] - 1e-9        # local search never regresses below greedy
 
 
+def test_marginal_ir_constant_portfolio_is_finite():
+    # review P1: two constant-return alphas -> full & drop-one IR are both +inf; inf-inf must not leak
+    # NaN into the output (equal infinite edge = 0 incremental contribution).
+    mc = po.marginal_contributions({"a": [0.01] * 40, "b": [0.01] * 40}, {"a": 0.5, "b": 0.5})
+    assert mc["a"]["marginal_ir"] == 0.0 and not math.isnan(mc["a"]["marginal_ir"])
+
+
+def test_objective_clamps_infinite_ir():
+    # review P2: a set whose combined return is constant-positive has +inf post-cost IR; the objective
+    # must CLAMP it to a bounded value (was substituted by 1e6, which dominated diversity/penalty terms).
+    res = po._objective({"x": [0.01] * 40}, ["x"], scheme="equal", cost_bps=0.0, w_diversity=0.5,
+                        w_complexity=0.05, w_crowding=0.5, complexity_by_id=None, crowding_by_id=None)
+    assert math.isfinite(res["objective"]) and res["objective"] <= 11.0   # base clamped to 10 (+ diversity)
+
+
+def test_evolutionary_drop_gets_correct_reason():
+    # review P1: an alpha removed by the evolutionary refinement must be labelled DROPPED_BY_EVOLUTIONARY,
+    # not conflated with BEYOND_MAX_K. A strong crowding penalty makes dropping 'c' improve the objective.
+    rbi = {"a": _series(60, 0.01, 0.03, freq=0.7), "b": _series(60, 0.01, 0.03, freq=1.9),
+           "c": _series(60, 0.01, 0.03, freq=3.1)}
+    out = po.optimize_population(rbi, max_k=3, method="evolutionary",
+                                crowding_by_id={"c": 1.0}, w_crowding=3.0)
+    assert "c" not in out["selected_ids"]
+    assert any(e["id"] == "c" and e["reason"] == "DROPPED_BY_EVOLUTIONARY" for e in out["excluded"])
+
+
 def test_empty_and_single():
     assert po.optimize_population({}, max_k=3)["selected_ids"] == []
     one = po.optimize_population({"a": _series(40, 0.01, 0.02)}, max_k=3)

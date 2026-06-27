@@ -111,7 +111,10 @@ def marginal_contributions(returns_by_id: Mapping[str, Sequence[float]],
             wo_ir, wo_dd = information_ratio(wo), max_drawdown(wo)
         else:
             wo_ir, wo_dd = 0.0, 0.0
-        mir = full_ir - wo_ir
+        if math.isinf(full_ir) and math.isinf(wo_ir) and (full_ir > 0) == (wo_ir > 0):
+            mir = 0.0          # inf - inf (same sign) is undefined; equal infinite edge => 0 incremental
+        else:
+            mir = full_ir - wo_ir
         out[k] = {"marginal_ir": round(mir, 6) if math.isfinite(mir) else mir,
                   "marginal_dd": round(full_dd - wo_dd, 6)}
     return out
@@ -147,7 +150,7 @@ def _objective(returns_by_id, ids, *, scheme, cost_bps, w_diversity, w_complexit
     div = diversity(sub)
     mean_cplx = statistics.fmean(complexity_by_id.get(k, 0.0) for k in ids) if complexity_by_id else 0.0
     mean_crowd = statistics.fmean(crowding_by_id.get(k, 0.0) for k in ids) if crowding_by_id else 0.0
-    base = post if math.isfinite(post) else (1e6 if post > 0 else -1e6)   # keep the objective finite
+    base = min(10.0, max(-10.0, post))    # clamp (inf -> 10) so a degenerate set can't dominate via 1e6
     obj = base + w_diversity * div - w_complexity * mean_cplx - w_crowding * mean_crowd
     return {"objective": obj, "weights": weights, "portfolio_ir": p_ir, "post_cost_ir": post,
             "max_drawdown": max_drawdown(port), "diversity": div}
@@ -190,18 +193,28 @@ def optimize_population(returns_by_id: Mapping[str, Sequence[float]], *, max_k: 
     kept, dropped_corr = _dedupe_by_correlation(returns_by_id, greedy["selected_ids"], rho_cut)
     selected = kept[:max_k]
 
+    dropped_evo: set = set()
     if method == "evolutionary":
+        before = set(selected)
         selected = _local_search(returns_by_id, selected, max_k=max_k, obj_kw=obj_kw)
+        dropped_evo = before - set(selected)
     elif method != "greedy":
         raise ValueError(f"unknown method: {method!r}")
 
     excluded = []
     chosen = set(selected)
+    dropped_corr_set = set(dropped_corr)
     for aid in sorted(returns_by_id):
         if aid in chosen:
             continue
-        reason = "REDUNDANT_CORRELATED" if aid in set(dropped_corr) else \
-            ("DROPPED_LOW_INCREMENTAL_IR" if aid not in greedy["selected_ids"] else "BEYOND_MAX_K")
+        if aid in dropped_corr_set:
+            reason = "REDUNDANT_CORRELATED"
+        elif aid in dropped_evo:
+            reason = "DROPPED_BY_EVOLUTIONARY"
+        elif aid not in greedy["selected_ids"]:
+            reason = "DROPPED_LOW_INCREMENTAL_IR"
+        else:
+            reason = "BEYOND_MAX_K"
         excluded.append({"id": aid, "reason": reason})
 
     scored = _objective(returns_by_id, selected, **obj_kw)
@@ -250,8 +263,8 @@ def _local_search(returns_by_id, seed, *, max_k, obj_kw, max_iter: int = 50) -> 
             if not cand:
                 continue
             o = _objective(returns_by_id, cand, **obj_kw)["objective"]
-            if o > best_obj + 1e-12 or (abs(o - best_obj) <= 1e-12 and best_move is not None
-                                        and cand < best_move):
+            if o > best_obj + 1e-12 or (abs(o - best_obj) <= 1e-12
+                                        and (best_move is None or cand < best_move)):
                 best_move, best_obj = cand, o
         if best_move is None or best_obj <= best + 1e-12:
             break
