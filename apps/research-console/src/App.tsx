@@ -5,6 +5,9 @@ import { AppShell, type NavGroup } from '@/ui/AppShell';
 import Overview from './pages/Overview';
 import CryptoLive from './pages/CryptoLive';
 import AlphaFactory from './pages/AlphaFactory';
+import AlphaZoo from './pages/AlphaZoo';
+import PopulationOptimizer from './pages/PopulationOptimizer';
+import SignalToPortfolio from './pages/SignalToPortfolio';
 import Experiments from './pages/Experiments';
 import DataCatalog from './pages/DataCatalog';
 import Validation from './pages/Validation';
@@ -35,6 +38,7 @@ const nav: NavGroup[] = [
     { to: '/research', zh: '总览', en: 'Overview', icon: 'OV', end: true },
     { to: '/research/crypto-live', zh: '加密实盘研究', en: 'Crypto Live', icon: '₿' },
     { to: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF' },
+    { to: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ' },
     { to: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX' },
     { to: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC' },
     { to: '/research/computation-lab', zh: '计算实验室', en: 'Computation', icon: 'CL' },
@@ -50,6 +54,8 @@ const nav: NavGroup[] = [
   ]},
   { zh: '组合·风险', en: 'PORTFOLIO & RISK', items: [
     { to: '/research/portfolio', zh: '组合研究', en: 'Portfolio', icon: 'PF' },
+    { to: '/research/population-optimizer', zh: '种群优化器', en: 'Optimizer', icon: 'PO' },
+    { to: '/research/signal-to-portfolio', zh: '信号→组合', en: 'Signal→Book', icon: 'SP' },
     { to: '/research/risk', zh: '风险仪表', en: 'Risk', icon: 'RK' },
     { to: '/research/events', zh: '事件流', en: 'Events', icon: 'EV' },
   ]},
@@ -78,6 +84,9 @@ export default function App() {
         <Route path="/research" element={<Overview />} />
         <Route path="/research/crypto-live" element={<CryptoLive />} />
         <Route path="/research/alpha-factory" element={<AlphaFactory />} />
+        <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
+        <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
+        <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />
         <Route path="/research/experiments" element={<Experiments />} />
         <Route path="/research/data-catalog" element={<DataCatalog />} />
         <Route path="/research/validation" element={<Validation />} />
