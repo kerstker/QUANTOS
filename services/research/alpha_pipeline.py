@@ -30,7 +30,10 @@ from services.alpha.population_optimizer import optimize_population
 from services.alpha.registry import AlphaAssetRegistry
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 
+from services.research.backtest_engine.metrics import sharpe
+
 from . import alpha_expression as ax
+from .carry_pnl import economic_return_series
 from .expression_leakage import compute_leakage_ok
 from .research_brief import compose_brief
 from .research_memory import ResearchMemory, ResearchNote
@@ -63,8 +66,10 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
     memory = ResearchMemory()
     cfg = adapter_config or SignalAdapterConfig(max_position=0.5)
 
+    has_funding = "funding" in panel.matrices
     expr_by_id: dict = {}
     asset_rows: list = []
+    eco_returns_by_id: dict = {}
     proven = leaked = unassessed = 0
 
     for expr in exprs:
@@ -88,6 +93,12 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
             ev = evaluator.evaluate(aid, periods, leakage_ok=leak_ok, as_of=timestamp,
                                     dataset_version=dataset_version)
 
+        # ECONOMIC (carry-aware) return: price_LS + funding_collected when the panel carries funding.
+        # This is the "money" series — the perp book's real yield, not just the price-prediction Sharpe.
+        eco = economic_return_series(matrix, panel, fwd_horizon=fwd_horizon) if has_funding else []
+        if len(eco) >= 2:
+            eco_returns_by_id[aid] = eco
+
         asset = AlphaAsset.from_definition(
             defn, evaluation=ev, generator=generator, expression=ax.serialize(expr),
             data_dependencies=deps, dataset_version=dataset_version)
@@ -96,13 +107,16 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         expr_by_id[aid] = expr
         asset_rows.append({"alpha_id": aid, "leakage_ok": leak_ok,
                            "verdict": ev.verdict.value if ev is not None else "",
-                           "net_sharpe": ev.net_sharpe if ev is not None else None})
+                           "net_sharpe": ev.net_sharpe if ev is not None else None,
+                           "economic_sharpe": round(sharpe(eco), 4) if len(eco) >= 2 else None})
 
-    # P4 — de-redundant set + weights over the evaluated alphas' net returns
+    # P4 — de-redundant set + weights. Optimize over the ECONOMIC returns when funding is present
+    # (so the portfolio is built on real carry yield), else the evaluator's price-only net returns.
     returns_by_id = {aid: catalog.returns(aid) for aid in expr_by_id
                      if len(catalog.returns(aid)) >= 2}
-    portfolio = (optimize_population(returns_by_id, max_k=max_k)
-                 if returns_by_id else {"selected_ids": [], "weights": {}})
+    opt_returns = eco_returns_by_id or returns_by_id
+    portfolio = (optimize_population(opt_returns, max_k=max_k)
+                 if opt_returns else {"selected_ids": [], "weights": {}})
 
     # P5 — blend the selected alphas' latest cross-section into one signal -> target book
     target_book = _selected_signal_to_book(panel, expr_by_id, portfolio.get("weights", {}), cfg)
@@ -115,7 +129,8 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         "assets": asset_rows,
         "registry": registry,
         "memory": memory,
-        "returns_by_id": returns_by_id,     # per-alpha net returns (for an honest no-peek OOS downstream)
+        "returns_by_id": returns_by_id,             # per-alpha PRICE-only net returns (evaluator)
+        "economic_returns_by_id": eco_returns_by_id,  # per-alpha price + funding-collected (real carry)
         "portfolio": portfolio,
         "target_book": target_book,
         "brief": brief,

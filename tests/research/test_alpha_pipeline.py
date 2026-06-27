@@ -49,6 +49,9 @@ def test_pipeline_runs_end_to_end_and_computes_leakage():
     assert out["brief"]["n_tested"] == 3
     # per-alpha net returns are exposed for a downstream honest no-peek OOS / CPCV
     assert set(out["returns_by_id"]) <= {a["alpha_id"] for a in out["assets"]}
+    # economic (carry-aware: price + funding collected) returns are computed when funding is present
+    assert set(out["economic_returns_by_id"]) <= {a["alpha_id"] for a in out["assets"]}
+    assert any(a["economic_sharpe"] is not None for a in out["assets"])
 
 
 def test_pipeline_is_deterministic():

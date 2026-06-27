@@ -63,25 +63,25 @@ def main() -> None:
                                    timestamp=0, max_k=6)
     label_by_id = {ax.alpha_id(e): _label(e) for e in EXPRS}
 
-    print(f"\n--- per-alpha (leakage COMPUTED, in-sample net Sharpe, honest verdict) ---")
-    print(f"{'expression':48s} {'leak_ok':>8} {'net_SR':>8}  verdict")
+    print(f"\n--- per-alpha (leakage COMPUTED; price-only net SR vs ECONOMIC SR = price + funding) ---")
+    print(f"{'expression':48s} {'leak_ok':>8} {'price_SR':>9} {'eco_SR':>8}  verdict")
     for a in out["assets"]:
-        sr = a["net_sharpe"]
+        sr, eco = a["net_sharpe"], a.get("economic_sharpe")
         print(f"{label_by_id.get(a['alpha_id'], a['alpha_id']):48s} {str(a['leakage_ok']):>8} "
-              f"{('' if sr is None else f'{sr:7.3f}'):>8}  {a['verdict']}")
+              f"{('' if sr is None else f'{sr:8.3f}'):>9} {('' if eco is None else f'{eco:7.3f}'):>8}  {a['verdict']}")
     print(f"leakage summary: {out['leakage_summary']}")
 
     print(f"\n--- population optimizer (P4): de-redundant set + weights ---")
     for k in out["portfolio"]["selected_ids"]:
         print(f"  {label_by_id.get(k, k):48s} w={out['portfolio']['weights'].get(k, 0):.3f}")
 
-    # HONEST no-peek CPCV OOS over the discovered alphas (align on common trailing length)
-    rbi = out["returns_by_id"]
+    # HONEST no-peek CPCV OOS over the discovered alphas — on the ECONOMIC (carry-aware) returns
+    rbi = out["economic_returns_by_id"] or out["returns_by_id"]
     if len(rbi) >= 2:
         length = min(len(r) for r in rbi.values())
         aligned = {k: tuple(v[-length:]) for k, v in rbi.items()}
         cp = cpcv_summary(aligned, n_groups=6, k_test=2, embargo=1)
-        print(f"\n--- CPCV no-peek OOS over the {len(rbi)} alphas (combinatorial purged CV) ---")
+        print(f"\n--- CPCV no-peek OOS over the {len(rbi)} alphas (ECONOMIC returns, combinatorial purged CV) ---")
         if cp:
             print(f"  splits={cp['n_splits']} mean_oos_SR={cp['mean_oos_sharpe']} "
                   f"frac_positive={cp['frac_positive']} p05={cp['p05_oos_sharpe']} "
