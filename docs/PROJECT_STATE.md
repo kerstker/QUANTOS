@@ -133,6 +133,11 @@ mean +0.40、3/5 折正**(池子那个 −0.24 是被烂因子拖累);成本盈�
 OOS 噪声大(2 折负、被 +2.57 一折拉高)、**近年衰减**(2020-21 大、2023-26 弱,carry 拥挤)、IC≈0(尾部)、幸存者偏差。
 容器化 auto_approved=0、REQUIRES_HUMAN_REVIEW。**这是第一个正当的纸面跟踪候选**(区别于已证伪的 dist_from_high_14)。
 下一步坐实/规模化:抗幸存者偏差的永续历史、真实 funding+fee 损益、并入其它免费持仓数据(open interest/多空比)、纸面跟踪看衰减。
+**综合搜索印证(`tools/crypto_alpha_search.py`,261 个 cs-alpha):** raw 前 15 名 **15/15 全是资金费 carry 变体**
+(decay/mean 各窗口,价/量一个没进),DSR ~0.98-1.0、6-7/7 年正;最稳 `rank_neg_decay14_funding` **7/7 年正**。
+**但对全 261 的选择 OOS 是负的(−0.45)** —— 盲目"best-of-N"过拟合,机器诚实地拦了。结论:carry 真实且跨~10 种平滑稳健,
+但要靠**经济先验 + 稳健平滑**用,**不能靠盲搜**(选择 OOS 已证盲搜过拟合)。这是"先验+诚实机器 > 蛮力"的教科书案例。
+资金费已缓存 data/cache/crypto_funding_rates.json。免费 OI/多空比仅 30 天 → 更多多年 alt-data 要付费/链上。
 —— 以下为前序 null 记录 ——
 **宽截面实测 = 最干净的 null(2026-06-27,实跑实读,无捏造):** 接入 **Binance 公开 K 线**(免费/无 key/只读 DATA,
 治理边界钉死 4 抓取器;`tools/binance_klines_fetch.py`)→ 437 个 USDT 对,过滤后 **336 币 × 2309 日线、2020–2026 含 2022 熊市**
