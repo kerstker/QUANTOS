@@ -26,6 +26,7 @@ def compose_brief(notes: Sequence, *, top_n: int = 5) -> dict:
     ids = sorted(n.alpha_id for n in notes)
     worked = sorted((n for n in notes if n.verdict == "PASS"), key=lambda n: n.alpha_id)
     failed = sorted((n for n in notes if n.verdict in _FAILED), key=lambda n: n.alpha_id)
+    warned = sorted((n for n in notes if n.verdict == "WARN"), key=lambda n: n.alpha_id)
     review = sorted((n for n in notes if n.verdict == "REQUIRES_HUMAN_REVIEW"), key=lambda n: n.alpha_id)
 
     failure_reasons: dict = {}
@@ -63,8 +64,15 @@ def compose_brief(notes: Sequence, *, top_n: int = 5) -> dict:
     if gen_hist:
         top_gen = sorted(gen_hist.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         actions.append(f"scale the '{top_gen}' generator (produced the survivors)")
+    # dedup on a quote-normalized key (an action differing only in ' vs " is the same action), keeping
+    # the first original; preserves determinism and avoids near-duplicate guidance
     seen: set = set()
-    next_actions = [a for a in actions if not (a in seen or seen.add(a))]
+    next_actions = []
+    for a in actions:
+        key = a.replace('"', "'")
+        if key not in seen:
+            seen.add(key)
+            next_actions.append(a)
 
     mutation_suggestions = [
         f"mutate {n.alpha_id} ({n.generator or 'unknown'}, DSR {n.deflated_sharpe:.2f})" for n in top
@@ -73,10 +81,11 @@ def compose_brief(notes: Sequence, *, top_n: int = 5) -> dict:
     return {
         "n_tested": len(notes),
         "summary": (f"{len(worked)}/{len(notes)} alphas passed; {len(failed)} failed, "
-                    f"{len(review)} need review"),
+                    f"{len(warned)} warned, {len(review)} need review"),
         "tested": ids,
         "worked": [n.alpha_id for n in worked],
         "failed": [n.alpha_id for n in failed],
+        "warned": [n.alpha_id for n in warned],
         "needs_review": [n.alpha_id for n in review],
         "failure_reasons": failure_reasons,
         "top_performers": [n.alpha_id for n in top],

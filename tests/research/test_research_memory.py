@@ -88,6 +88,25 @@ def test_brief_explicit_next_actions_surface_and_deterministic():
     assert "try weekly rebalance" in b1["next_actions"]        # explicit note action surfaced, deduped
 
 
+def test_brief_surfaces_warn_verdict_partition_complete():
+    # review P1: WARN is a real gate verdict (one soft failure) — it must not be silently dropped.
+    notes = [_note("p", "PASS"), _note("w", "WARN"), _note("f", "FAIL"), _note("r", "REQUIRES_HUMAN_REVIEW")]
+    b = compose_brief(notes)
+    assert b["warned"] == ["w"]
+    buckets = set(b["worked"]) | set(b["failed"]) | set(b["needs_review"]) | set(b["warned"])
+    assert buckets == set(b["tested"])           # every tested alpha lands in exactly one bucket
+
+
+def test_next_actions_dedup_across_quote_styles():
+    # review P2: an explicit action differing from the heuristic only in quote style is merged
+    n = ResearchNote(alpha_id="a", verdict="PASS", deflated_sharpe=0.9, generator="g1",
+                     data_dependencies=("dep1",),
+                     next_action='expand factors using the "dep1" data dependency (dominates the survivors)')
+    acts = compose_brief([n])["next_actions"]
+    norm = [a.replace('"', "'") for a in acts]
+    assert len(norm) == len(set(norm))           # no quote-only duplicates remain
+
+
 def test_empty_memory_and_no_rng():
     assert compose_brief([])["n_tested"] == 0
     import inspect
