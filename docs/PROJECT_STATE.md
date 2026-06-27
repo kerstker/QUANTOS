@@ -127,7 +127,12 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `66740a1`(前端补全 5 页 + 监控接真引擎 + 对抗复核修复)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **981 全绿**;前端 `npm test` **19 passed** + typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN)。
+HEAD 在 `1ccc0c3`(第二条 edge 实证:crowd_contra)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **981 全绿**;前端 `npm test` **19 passed** + typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN,已推 `origin/master`)。
+**★★★ 第二条 edge 候选——逆向散户持仓 crowd_contra(2026-06-28,用户指令 "接第二种免费持仓数据做正交第二条 edge")**:
+- **数据墙绕过**:实时 REST 持仓接口只给 30 天,但 **Binance Data Vision metrics 归档**有多年免费每日 OI+多空比 ZIP。抓取器 `tools/binance_oi_metrics_fetch.py`(PIT 安全/并发13×提速/过治理边界,`4fb9d84`+`b8fa063`);研究 `crypto_oi_research.py` + 8 项证伪 `crypto_oi_verify.py`(`1ccc0c3`)。14 流动主流币 × ~2199 日。
+- **发现**:`crowd_contra = cs_rank(neg(global_ls))`("散户太多头时做空")——价 SR **1.18**、与 carry **R² 仅 0.53%(几近完全正交)**、增量 IR **+1.13**、逐年 22-26 全正、**晚一天进场仍 1.03**(非时序假象)、净收 +0.52bps/天资金费、成本/子集/embargo OOS 全过。项目至今最强信号。
+- **4 路对抗验证 Workflow(PIT/统计/经济/成本,各跑真代码,ultracode)= 无 kill-shot,但裁决 WEAK_LEAD 非确认**:统计维度在「多重检验+去2022」叠加后未过 p<0.01;利润尾部集中;**幸存者偏差结构性不可证伪**(仅 14 个活到今天的币,空头腿从未在死币上测);近端净值软化;部分崩盘凸性溢价。**= 第一个真·carry-正交的第二条 edge 候选,可挂纸面跟踪,非已确认。** 容器化不变(auto_approved=0)。全文 `docs/research/2026-06-28-crowd-contra-second-edge.md`、记忆 [[crypto-research-findings]]。
+- **下一步**(#1 当前被同一幸存者问题卡住):在含死币的幸存者完整 universe 上重测空头腿;或前向纸面跟踪;或把 crowd_contra 接进主线与 carry 组双因子。
 **★★★ 前端补全 + 监控接真数据(2026-06-28,用户选定方向 "前端补全 + 监控接真数据")**:
 - **前端补全 5 页**(`dddeab9`+`1687e20`,后端能力本就就绪):Alpha 资产库(可筛 generator/状态/簇/DSR)、种群优化器(选集/权重条/边际 IR·DD/剔除原因)、信号→组合(美元中性目标 book + 容量 + 被拒信号,**只算 book 绝不下单**)、DSL Explorer(表达式静态检查/复杂度/PIT 泄漏机器证明,含一条读未来被拒例)、Alpha 相关图(SVG nodes/edges/簇/近重复)。均 mock-first/只读,注册 nav+route,smoke 测覆盖(19 测试)。
 - **监控漂移接真引擎**(`e34275e`+`41cb3f1`):console_api `_monitoring_drift_payload` 的 ALPHA_DECAY 一类改由真 `services.alpha.degradation_monitor.monitor_alpha_health` 实算(多指标 IC/return/slippage/turnover/drawdown→OK/DEGRADED/PAUSED/RETIRED),映射成面板 status,remediation 透传引擎裁决原文(`[degradation_monitor:<rec>] …`)。**只 RECOMMEND 不驱动状态,live 授权恒 False**(containment 不变)。`drift_score` 接引擎严重度并钳进与 status 一致的阈值带(OK<warn≤WATCH<breach≤BREACH)→ 条/色/阈值/status chip 四者自洽;新增自洽性测试。
