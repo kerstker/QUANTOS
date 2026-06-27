@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, GateDot, Chip,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, GateDot, Chip,
 } from '@/ui/primitives';
 import { fixed } from '@/ui/format';
 
@@ -37,6 +37,7 @@ export default function DslExplorer() {
       <PageHeader title="DSL Explorer" titleZh="因子 DSL 浏览器"
         subtitle={bi('截面因子表达式 + 静态检查器 + 算子加权复杂度 + PIT 泄漏机器证明(只读)',
           'Cross-sectional alpha expressions + static checker + operator-weighted complexity + PIT leakage machine-proof (read-only)')} />
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('表达式', 'Expressions')} value={String(exprs.length)} />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
-import { PageShell, PageHeader, Panel, KpiStrip, StatTile, Chip } from '@/ui/primitives';
+import { PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, Chip } from '@/ui/primitives';
 
 /**
  * Alpha Correlation Graph (Phase 3 surface). Renders the explicit nodes/edges graph the backend
@@ -36,6 +36,7 @@ export default function AlphaGraph() {
       <PageHeader title="Alpha Correlation Graph" titleZh="Alpha 相关图"
         subtitle={bi('显式 nodes/edges 图 — 节点=因子,边=|相关|,簇=冗余组;粗边=近重复(优化器去冗余),只读',
           'Explicit nodes/edges graph — nodes = alphas, edges = |corr|, colour = redundancy cluster; thick edges = near-duplicates (read-only)')} />
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('节点', 'Nodes')} value={String(nodes.length)} />

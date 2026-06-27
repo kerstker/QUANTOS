@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, type Column,
 } from '@/ui/primitives';
 import { fixed, signed } from '@/ui/format';
 
@@ -52,6 +52,7 @@ export default function PopulationOptimizer() {
       <PageHeader title="Population Optimizer" titleZh="种群优化器"
         subtitle={bi('集合级联合优化 — 去冗余选集合 + 定权 + 边际贡献(含回撤);只读',
           'Set-level optimization — de-redundant selection + weights + marginal contribution incl. drawdown (read-only)')} />
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('已选', 'Selected')} value={String(selected.length)} tone="pos" />
@@ -61,7 +62,7 @@ export default function PopulationOptimizer() {
       </KpiStrip>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" eyebrow={bi('Alpha Portfolio', 'Alpha Portfolio')}
+        <Panel className="xl:col-span-2" eyebrow={bi('因子组合', 'Alpha Portfolio')}
           title={bi('已选集合与权重', 'Selected Set & Weights')}
           right={<Chip label={bi('inverse-vol 权重', 'inverse-vol')} tone="muted" />}>
           <DataTable columns={cols} rows={selected} getKey={r => r.alpha_id} />

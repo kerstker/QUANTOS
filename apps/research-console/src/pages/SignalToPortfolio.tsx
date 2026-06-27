@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
 import { fixed, signed, pct } from '@/ui/format';
 
@@ -47,6 +47,7 @@ export default function SignalToPortfolio() {
       <PageHeader title="Signal → Portfolio" titleZh="信号 → 组合"
         subtitle={bi('截面信号 → 美元中性目标 book(归一/中性化/约束/成本/容量);研究·只算 book,绝不下单',
           'Cross-sectional signal → dollar-neutral target book (normalize / neutralize / constrain / cost / capacity). Research only — a target book, never an order')} />
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
         {bi('只读 · 研究/干跑(L2)· 仅产出目标权重,无任何下单/券商/执行路径',

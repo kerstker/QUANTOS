@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
-import { fixed, signed } from '@/ui/format';
+import { fixed } from '@/ui/format';
 
 /**
  * Alpha Zoo (Phase 3 surface). The searchable / filterable catalog of rich Alpha Assets — filter by
@@ -61,6 +61,7 @@ export default function AlphaZoo() {
       <PageHeader title="Alpha Zoo" titleZh="Alpha 资产库"
         subtitle={bi('按生成器 / 状态 / 簇 / 指标筛选的富 Alpha 资产目录(只读)',
           'Filterable catalog of rich Alpha Assets — by generator / status / cluster / metric (read-only)')} />
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('资产总数', 'Total')} value={String(mockRows.length)} />

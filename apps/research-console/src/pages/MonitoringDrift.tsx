@@ -28,7 +28,7 @@ const fallbackMonitoring: MonitoringDriftPayload = {
   status_counts: {OK: 2, WATCH: 2, BREACH: 2},
   category_counts: {ALPHA_DECAY: 1, FEATURE_DRIFT: 1, DATA_FRESHNESS: 1, MODEL_RISK_AGING: 1, REVIEWER_SLA: 2},
   monitors: [
-    {monitor_id: 'MON-ALPHA-FB-001', category: 'ALPHA_DECAY', subject_id: 'alpha-fallback-1', metric: 'ic_drift', baseline: 0.052, current: 0.039, drift_score: 0.25, warn_threshold: 0.18, breach_threshold: 0.32, status: 'WATCH', owner: 'Alpha Research', evidence_ref: 'fallback-exp-alpha', last_checked: 1_781_222_400, remediation: 'Review alpha decay, retrain window, or retire candidate'},
+    {monitor_id: 'MON-ALPHA-FB-001', category: 'ALPHA_DECAY', subject_id: 'alpha-fallback-1', metric: 'health_drift', baseline: 0.052, current: 0.039, drift_score: 0.25, warn_threshold: 0.18, breach_threshold: 0.32, status: 'WATCH', owner: 'Alpha Research', evidence_ref: 'fallback-exp-alpha', last_checked: 1_781_222_400, remediation: 'Review alpha decay, retrain window, or retire candidate'},
     {monitor_id: 'MON-FEATURE-FB-001', category: 'FEATURE_DRIFT', subject_id: 'feature-fallback-1', metric: 'quality_score_delta', baseline: 0.982, current: 0.941, drift_score: 0.041, warn_threshold: 0.02, breach_threshold: 0.04, status: 'BREACH', owner: 'Research Platform', evidence_ref: 'fallback-feature-hash', last_checked: 1_781_222_640, remediation: 'Run feature distribution audit and point-in-time sample check'},
     {monitor_id: 'MON-DATA-FB-001', category: 'DATA_FRESHNESS', subject_id: 'dataset-fallback-1', metric: 'freshness_hours', baseline: 6, current: 18, drift_score: 0.75, warn_threshold: 12, breach_threshold: 24, status: 'WATCH', owner: 'Data Platform', evidence_ref: 'fallback-data-hash', last_checked: 1_781_222_880, remediation: 'Refresh source snapshot and rerun data quality checks'},
     {monitor_id: 'MON-MRM-FB-001', category: 'MODEL_RISK_AGING', subject_id: 'MRM-FB-001', metric: 'issue_age_hours', baseline: 0, current: 84, drift_score: 0.7, warn_threshold: 48, breach_threshold: 72, status: 'BREACH', owner: 'Model Governance', evidence_ref: 'fallback-model-risk', last_checked: 1_781_223_120, remediation: 'Escalate model risk issue owner and update reviewer workflow'},
@@ -41,7 +41,7 @@ const fallbackMonitoring: MonitoringDriftPayload = {
   ],
   watchlist: [
     {monitor_id: 'MON-DATA-FB-001', category: 'DATA_FRESHNESS', subject_id: 'dataset-fallback-1', metric: 'freshness_hours', baseline: 6, current: 18, drift_score: 0.75, warn_threshold: 12, breach_threshold: 24, status: 'WATCH', owner: 'Data Platform', evidence_ref: 'fallback-data-hash', last_checked: 1_781_222_880, remediation: 'Refresh source snapshot and rerun data quality checks'},
-    {monitor_id: 'MON-ALPHA-FB-001', category: 'ALPHA_DECAY', subject_id: 'alpha-fallback-1', metric: 'ic_drift', baseline: 0.052, current: 0.039, drift_score: 0.25, warn_threshold: 0.18, breach_threshold: 0.32, status: 'WATCH', owner: 'Alpha Research', evidence_ref: 'fallback-exp-alpha', last_checked: 1_781_222_400, remediation: 'Review alpha decay, retrain window, or retire candidate'},
+    {monitor_id: 'MON-ALPHA-FB-001', category: 'ALPHA_DECAY', subject_id: 'alpha-fallback-1', metric: 'health_drift', baseline: 0.052, current: 0.039, drift_score: 0.25, warn_threshold: 0.18, breach_threshold: 0.32, status: 'WATCH', owner: 'Alpha Research', evidence_ref: 'fallback-exp-alpha', last_checked: 1_781_222_400, remediation: 'Review alpha decay, retrain window, or retire candidate'},
   ],
   monitoring_policy: {
     read_only: true,
