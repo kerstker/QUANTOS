@@ -2073,18 +2073,38 @@ def _monitoring_drift_payload() -> Dict:
             return "WATCH"
         return "OK"
 
+    # ALPHA_DECAY monitors are ENGINE-COMPUTED by the real Phase-6 degradation monitor
+    # (services.alpha.degradation_monitor) — it diffs live-vs-backtest IC/return/slippage/turnover/
+    # drawdown and recommends OK/DEGRADED/PAUSED/RETIRED. Inputs here are deterministic (no live feed
+    # in L2), but the verdict comes from the actual engine, not a hand-coded formula. It only
+    # RECOMMENDS — no state is driven; live authorization stays disallowed.
+    from services.alpha.degradation_monitor import monitor_alpha_health
+    _REC_TO_STATUS = {"OK": "OK", "DEGRADED": "WATCH", "PAUSED": "BREACH", "RETIRED": "BREACH"}
     for idx, alpha in enumerate(candidates[:8]):
-        baseline = alpha["ic"]
-        current = round(baseline - 0.006 * (idx % 4) + (0.003 if idx % 5 == 0 else 0.0), 4)
-        drift_score = round(abs(current - baseline) / max(abs(baseline), 0.01), 3)
-        status = status_from_score(drift_score, 0.18, 0.32)
+        baseline = round(alpha["ic"], 4)
+        bt_return = round(baseline * 2.0, 4)
+        live_ic = round(baseline - 0.006 * (idx % 4) + (0.003 if idx % 5 == 0 else 0.0), 4)
+        backtest = {"ic": baseline, "return": bt_return, "slippage_bps": 5.0, "turnover": 0.3}
+        live = {
+            "ic": live_ic,
+            "return": round(bt_return * (0.4 if idx % 4 == 3 else 0.9), 4),
+            "slippage_bps": round(5.0 * (2.2 if idx % 6 == 2 else 1.1), 2),
+            "turnover": round(0.3 * (1.0 + 0.2 * (idx % 3)), 3),
+            "drawdown": round(0.1 + 0.06 * (idx % 5), 3),
+        }
+        health = monitor_alpha_health(backtest, live)          # REAL degradation-monitor engine
+        rec = health["recommendation"]
+        status = _REC_TO_STATUS.get(rec, "OK")
+        drift_score = round(abs(live_ic - baseline) / max(abs(baseline), 0.01), 3)
+        remediation = (f"[degradation_monitor:{rec}] {health['alerts'][0]['detail']}"
+                       if health["alerts"] else "Continue monitoring")
         monitors.append({
             "monitor_id": f"MON-ALPHA-{idx + 1:03d}",
             "category": "ALPHA_DECAY",
             "subject_id": alpha["candidate_id"],
             "metric": "ic_drift",
-            "baseline": round(baseline, 4),
-            "current": current,
+            "baseline": baseline,
+            "current": live_ic,
             "drift_score": drift_score,
             "warn_threshold": 0.18,
             "breach_threshold": 0.32,
@@ -2092,7 +2112,7 @@ def _monitoring_drift_payload() -> Dict:
             "owner": "Alpha Research",
             "evidence_ref": f"exp-{alpha['candidate_id']}-v{idx % 3 + 1:03d}",
             "last_checked": base_time + idx * 240,
-            "remediation": "Review alpha decay, retrain window, or retire candidate" if status != "OK" else "Continue monitoring",
+            "remediation": remediation,
         })
 
     for idx, feature in enumerate(data_catalog["features"][:8]):
@@ -2200,6 +2220,7 @@ def _monitoring_drift_payload() -> Dict:
             "blocking_monitors": len(breach_monitors),
             "avg_drift_score": round(statistics.mean(monitor["drift_score"] for monitor in monitors), 3),
             "live_authorization_allowed": False,
+            "alpha_decay_engine": "degradation_monitor",
         },
         "status_counts": status_counts,
         "category_counts": category_counts,

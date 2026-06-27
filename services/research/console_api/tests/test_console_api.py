@@ -294,6 +294,32 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["monitoring_policy"]["authorizes_live_trading"] is False
 
 
+def test_alpha_decay_monitors_are_engine_computed():
+    """ALPHA_DECAY rows must come from the REAL Phase-6 degradation-monitor engine, not a
+    hand-coded formula. Proven two ways: (1) the summary advertises the engine, and (2) every
+    engine verdict surfaced in remediation maps to the row's status via the documented
+    recommendation->status table — so the status is engine-derived, never invented here."""
+    payload = client.get("/api/v1/console/monitoring-drift").json()
+    assert payload["summary"]["alpha_decay_engine"] == "degradation_monitor"
+
+    rec_to_status = {"OK": "OK", "DEGRADED": "WATCH", "PAUSED": "BREACH", "RETIRED": "BREACH"}
+    decay = [m for m in payload["monitors"] if m["category"] == "ALPHA_DECAY"]
+    assert decay, "expected ALPHA_DECAY monitors"
+
+    engine_voiced = 0
+    for m in decay:
+        assert m["status"] in {"OK", "WATCH", "BREACH"}
+        rem = m["remediation"]
+        if rem.startswith("[degradation_monitor:"):
+            engine_voiced += 1
+            rec = rem[len("[degradation_monitor:"):].split("]", 1)[0]
+            assert rec in rec_to_status, rec
+            assert rec_to_status[rec] == m["status"]
+    # The deterministic L2 inputs intentionally trip at least one alert (return/slippage drift),
+    # so the engine MUST have voiced a non-trivial verdict on at least one row.
+    assert engine_voiced >= 1
+
+
 def test_incident_response_snapshot_uses_backend_contract():
     response = client.get("/api/v1/console/incident-response")
     assert response.status_code == 200
