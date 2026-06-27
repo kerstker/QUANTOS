@@ -111,6 +111,10 @@ class AlphaLifecycleManager:
                 eval_trial_count=self._eval_trial_count.get(alpha_id), catalog_count=cc)
         if dst in (AlphaState.REJECTED, AlphaState.RETIRED):
             return True, ()      # rejection / de-risking is always permitted
+        if dst in (AlphaState.SHADOW, AlphaState.DEGRADED, AlphaState.PAUSED):
+            # dry-run observation (SHADOW) and de-risking (DEGRADED / PAUSED) grant NO live authority —
+            # the only live gate is APPROVED (human-only, handled above) — so these are always permitted
+            return True, ()
         return False, ("UNKNOWN_TRANSITION",)
 
     def audit_chain_valid(self) -> bool:

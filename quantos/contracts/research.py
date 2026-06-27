@@ -17,9 +17,14 @@ class AlphaState(str, Enum):
     TESTING = "TESTING"
     VALIDATED = "VALIDATED"
     PAPER_TRADING = "PAPER_TRADING"
-    APPROVED = "APPROVED"
+    SHADOW = "SHADOW"            # dry-run deeper observation (post-paper, pre-approval); NO live authority
+    APPROVED = "APPROVED"        # the only state that authorizes live — HUMAN-ONLY to reach
+    DEGRADED = "DEGRADED"        # performance decayed, under watch (reversible)
+    PAUSED = "PAUSED"            # reversible halt
     RETIRED = "RETIRED"
     REJECTED = "REJECTED"
+    # NOTE: small_live / production / live are deliberately ABSENT — promoting capital into live is the
+    # L3 boundary (human-only, multi-step), not modelled in this L2_DRY_RUN_ONLY state machine.
 
 
 class ValidationVerdict(str, Enum):

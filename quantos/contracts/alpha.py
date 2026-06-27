@@ -140,19 +140,30 @@ ALPHA_ALLOWED_TRANSITIONS: dict[AlphaState, frozenset[AlphaState]] = {
     AlphaState.DRAFT: frozenset({AlphaState.TESTING, AlphaState.REJECTED}),
     AlphaState.TESTING: frozenset({AlphaState.VALIDATED, AlphaState.REJECTED}),
     AlphaState.VALIDATED: frozenset({AlphaState.PAPER_TRADING, AlphaState.REJECTED}),
-    AlphaState.PAPER_TRADING: frozenset({AlphaState.APPROVED, AlphaState.REJECTED, AlphaState.RETIRED}),
-    AlphaState.APPROVED: frozenset({AlphaState.RETIRED}),
+    # paper may deepen into SHADOW (dry-run), be approved (human), de-risk, or be flagged
+    AlphaState.PAPER_TRADING: frozenset({AlphaState.SHADOW, AlphaState.APPROVED, AlphaState.REJECTED,
+                                         AlphaState.RETIRED, AlphaState.PAUSED, AlphaState.DEGRADED}),
+    AlphaState.SHADOW: frozenset({AlphaState.APPROVED, AlphaState.DEGRADED, AlphaState.PAUSED,
+                                  AlphaState.RETIRED, AlphaState.REJECTED}),
+    AlphaState.APPROVED: frozenset({AlphaState.DEGRADED, AlphaState.PAUSED, AlphaState.RETIRED}),
+    # a degraded alpha that recovers re-enters dry-run OBSERVATION (re-approval is a fresh human gate),
+    # or is paused / retired — it can never jump straight back to live
+    AlphaState.DEGRADED: frozenset({AlphaState.SHADOW, AlphaState.PAUSED, AlphaState.RETIRED}),
+    # a paused alpha resumes to observation or retires; a human may resume it to APPROVED
+    AlphaState.PAUSED: frozenset({AlphaState.SHADOW, AlphaState.APPROVED, AlphaState.RETIRED}),
     AlphaState.RETIRED: frozenset(),
     AlphaState.REJECTED: frozenset(),
 }
 
 ALPHA_TERMINAL_STATES: frozenset[AlphaState] = frozenset({AlphaState.RETIRED, AlphaState.REJECTED})
 
-# States a non-human actor may drive INTO. APPROVED is deliberately excluded:
-# promotion to APPROVED is human-only.
+# States a non-human actor may drive INTO. APPROVED is deliberately excluded: promotion to APPROVED is
+# human-only. SHADOW / DEGRADED / PAUSED ARE agent-reachable — they are dry-run observation / de-risking
+# states that grant NO live authority (the live gate is APPROVED), so an agent moving an alpha into them
+# can never grant it live capability.
 AGENT_REACHABLE: frozenset[AlphaState] = frozenset({
-    AlphaState.TESTING, AlphaState.VALIDATED, AlphaState.PAPER_TRADING,
-    AlphaState.REJECTED, AlphaState.RETIRED,
+    AlphaState.TESTING, AlphaState.VALIDATED, AlphaState.PAPER_TRADING, AlphaState.SHADOW,
+    AlphaState.DEGRADED, AlphaState.PAUSED, AlphaState.REJECTED, AlphaState.RETIRED,
 })
 
 
