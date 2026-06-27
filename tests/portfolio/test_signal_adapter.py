@@ -23,9 +23,9 @@ def test_dollar_neutral_weights_sum_to_gross_and_net_zero():
 
 
 def test_missing_and_stale_are_rejected_with_reason():
-    sig = {"a": 1.0, "b": None, "c": float("nan"), "d": -1.0}
-    out = signal_to_portfolio(sig, config=_cfg(), stale_ids=("a",))
-    assert set(out["weights"]) == {"d"} or "d" in out["weights"]    # only finite, non-stale survive
+    sig = {"a": 1.0, "b": None, "c": float("nan"), "d": -1.0, "e": 0.5}
+    out = signal_to_portfolio(sig, config=_cfg(max_position=1.0), stale_ids=("a",))
+    assert set(out["weights"]) == {"d", "e"}                        # only finite, non-stale survive cleaning
     reasons = {r["id"]: r["reason"] for r in out["rejected"]}
     assert reasons["b"] == "MISSING" and reasons["c"] == "MISSING" and reasons["a"] == "STALE"
 
@@ -75,6 +75,49 @@ def test_capacity_flags_thin_liquidity():
                               adv_notional=adv)
     cap = {c["id"]: c for c in out["capacity"]}
     assert cap["b"]["capacity_ok"] is False and cap["a"]["capacity_ok"] is True
+
+
+def test_cap_restores_dollar_neutral_and_gross():
+    # review P1: an asymmetric binding cap used to leave net != 0 and gross < target; the iterative
+    # projection restores both as feasibly as possible, and the binding name is reported as a violation.
+    sig = {"a": 100.0, "b": 1.0, "c": -1.0, "d": -1.0}
+    out = signal_to_portfolio(sig, config=_cfg(gross_target=1.0, max_position=0.4))
+    assert abs(out["net"]) < 1e-6                                   # dollar-neutral restored
+    assert abs(out["gross"] - 1.0) < 1e-6                          # gross target restored
+    assert all(abs(v) <= 0.4 + 1e-9 for v in out["weights"].values())
+    assert any(viol["id"] == "a" for viol in out["constraint_violations"])
+
+
+def test_degenerate_single_or_constant_is_empty():
+    # review P2: a single surviving name (can't be dollar-neutral) or a constant cross-section (no
+    # differentiation) yields NO positions — reported as an explicit empty book, not silent zero weights.
+    assert signal_to_portfolio({"a": 1.0}, config=_cfg())["weights"] == {}
+    out = signal_to_portfolio({"a": 1.0, "b": 1.0, "c": 1.0}, config=_cfg())
+    assert out["weights"] == {} and out["n_positions"] == 0
+
+
+def test_bool_signal_rejected_as_invalid_type():
+    # review P2: bool is a likely generator bug, not missing data -> distinct reason
+    out = signal_to_portfolio({"a": True, "b": 1.0, "c": -1.0}, config=_cfg())
+    assert {r["id"]: r["reason"] for r in out["rejected"]}["a"] == "INVALID_TYPE"
+
+
+def test_partial_neutralize_factor_is_fail_closed():
+    # review P2: if a neutralization factor is missing for a name, that name is rejected (not silently
+    # un-neutralized) and the rest are neutralized.
+    sig = {"a": 1.0, "b": 2.0, "c": 3.0}
+    out = signal_to_portfolio(sig, config=_cfg(max_position=1.0), neutralize_by={"a": 1.0, "b": 2.0})
+    assert {r["id"]: r["reason"] for r in out["rejected"]}["c"] == "MISSING_FACTOR"
+    assert out["neutralized"] is True and "c" not in out["weights"]
+
+
+def test_missing_adv_is_unknown_not_unsafe():
+    # review P2: a name absent from adv_notional is UNKNOWN capacity (None), not a silent inf/not-ok
+    sig = {"a": 1.0, "b": -1.0}
+    out = signal_to_portfolio(sig, config=_cfg(), adv_notional={"a": 1e9})   # b missing
+    cap = {c["id"]: c for c in out["capacity"]}
+    assert cap["a"]["capacity_ok"] is True
+    assert cap["b"]["capacity_ok"] is None and cap["b"]["participation"] is None
 
 
 def test_empty_and_deterministic():
