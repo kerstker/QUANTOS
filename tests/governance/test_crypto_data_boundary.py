@@ -12,7 +12,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
-             os.path.join(_ROOT, "tools", "binance_klines_fetch.py")]
+             os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_funding_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
