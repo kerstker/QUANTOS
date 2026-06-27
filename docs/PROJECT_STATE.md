@@ -127,7 +127,7 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `e453c97`(Phase8 前端收官)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **967 全绿**;前端 `npm test` 14 passed + typecheck + build 绿;远端 kerstker/QUANTOS 已同步。
+HEAD 在 `ba75774`(主线接线管线)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **971 全绿**;前端 `npm test` 14 passed + typecheck + build 绿;远端 kerstker/QUANTOS 已同步。
 **★★★ 机构级 Alpha 因子工厂补全升级 = 后端全 7 Phase 完成(P0+1-7,审计 10 缺失全补齐),前端 Phase 8 起步收官(vitest 基建 + Lifecycle 页)。** 每 Phase tests-first+门禁绿+多智能体对抗审查+验收;新模块共 +148 后端测试。计划全文见 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`。
 **★★★ 机构级 Alpha 因子工厂补全升级 进行中(2026-06-27,用户大指令:把"因子发现器"升级为"Alpha 资产生命周期系统")。**
 计划全文 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`(Phase 0 审计:67 能力→22 有/35 部分/10 缺;按规则 #9 适配现有架构:元组 DSL 不重写成类、纯 stdlib 不上 numpy、7态+研究态不碰 live)。**已完成**:
@@ -149,7 +149,8 @@ HEAD 在 `e453c97`(Phase8 前端收官)附近;`main==master`(rtk 下 `git branch
 **🎉 审计 10 缺失全部补齐(Phase 2-7)**:CPCV、富 Alpha Asset、Alpha 血缘、AST 相似度、holdings/exposure 相似度、显式相关图、Zoo 检索、种群优化器、生命周期监控、Research Memory+Brief。
 - **Phase 8 前端 console 收官(起步)**(`4e3db73`+`e453c97`):①**vitest 组件测试基建**——vite.config 加 test 块(jsdom)+ src/test/setup.ts + format.test.ts + pages.smoke.test.tsx(闭合审计"前端 UI 测试近零":既有 0 真组件测试→现 14 passed)。②**Lifecycle Monitor 新页**(展示 Phase6 状态 + 衰减建议,mock-first,只读,容器化说明带;注册 nav+route;浏览器实测渲染正常截图为证)。
 **前端剩余页(Phase 8 续,机械重复 CryptoLive/Lifecycle 模式,后端能力已全就绪)**:DSL Explorer / Validation Gate 详情 / Alpha Zoo 可筛 / Alpha Graph(DAG)/ Population Optimizer / Signal→Portfolio。各需 mock + 类型 + 页 + nav/route(+ 可选 console_api 只读端点 + 契约键)。
-**尚未接线(独立增量,各模块已就绪+独立测试)**:把 P1-7 新模块接进容器化主线——搜索循环用 make_child_asset 写血缘 + expression_leakage 算 leakage_ok + AlphaAsset/registry/zoo/research_memory 接进主线产出 + population_optimizer/signal_adapter 串成端到端"信号→组合"演示。这是"接线"工作(模块都已造好),不是新造。
+- **主线接线管线**(`ba75774`):`services/research/alpha_pipeline.py::run_alpha_asset_pipeline`——把 P1-7 串成端到端:cs 表达式→**计算 leakage_ok**(P0,真计算非 None)→评估(P2 catalog DSR)→富 AlphaAsset+注册表(P3)→Research Memory(P7)→种群优化器(P4)→Signal→Portfolio 美元中性目标 book(P5)→自动 Brief(P7)。**不驱动 lifecycle(无 APPROVED 接口),容器安全**(对抗审查 0 发现)。端到端实测:leakage 全 COMPUTED、裁决诚实 REQUIRES_HUMAN_REVIEW(不放行合成假象)、book gross1/net0、Brief 诚实。
+**真正尚未做的**:① 把这条管线接进 cs_genome 进化/MCTS 搜索循环(用 make_child_asset 写血缘、跑大规模量产);② 前端剩余 5 页(DSL Explorer/Zoo 可筛/Alpha Graph DAG/Optimizer/Signal→Portfolio,机械重复 CryptoLive/Lifecycle 模式);③ 真实数据上跑这条管线(price+volume+funding,验证能否量产 ≥carry 的稳健 alpha)。这些是"用起来/铺开",核心能力已全造好+接通。
 **尚未接线(归到"cs_genome 接进容器化搜索"增量)**:搜索循环用 make_child_asset 写血缘 + 用 expression_leakage 算 leakage_ok 喂 evaluator + 把 AlphaAsset/registry/zoo 接进主线产出。
 **★★★ 顶级化文档已补齐(2026-06-27,ultracode 多智能体工作流)**:`README.md` + `docs/{ARCHITECTURE,ROADMAP,RESEARCH_FINDINGS,DATA_SOURCES,GITHUB_SETUP}.md`,每条声明对真实仓库核查过(评审顺手发现 `CLAUDE.md` 的"~10%/空脚手架"已过时——实清 139 个 services .py、741 测试函数,待与用户一起校 CLAUDE.md)。
 **★★ ALPHA 引擎开发中(从"一个"到"量产+动态",用户愿景)**:增量1 已成 = `services/research/cs_genome.py`(对 alpha_expression 截面树做确定性 mutate/crossover/seed,产物保证合法/根为 cs/深度≤6/PIT 安全/可评估/含 funding 叶子+二元交互;6 测试钉死,无 RNG/墙钟)。**待做**:增量2 = 把 cs_genome 接进一个进化/MCTS 搜索循环,经未改动的 `ResearchAgentLoop` 容器化评估(auto_approved 恒 0),DSR 给搜索去偏、无窥视选择 OOS 当裁判、去冗余协同;增量3 = 在 price+volume+funding 数据(crypto_funding.db + 资金费缓存)上跑,看机器能否量产出 ≥carry 的稳健 cs-alpha。参考现成:`tools/crypto_alpha_search.py`(固定网格版,可升级为生成式)。
