@@ -103,6 +103,11 @@ function PriorityRow({ m, tone }: { m: MonitoringDriftRecord; tone: Tone }) {
         <span className="mono truncate text-xs font-medium text-accent">{m.monitor_id}</span>
         <StatusChip value={m.status} />
       </div>
+      {/* Compact card shows the category's raw `current` metric vs its breach threshold (coherent for
+          time-based categories where both share units; the full ledger separates drift_score, current
+          and thresholds into their own columns). The remediation line below names the real breach cause
+          — for ALPHA_DECAY that is the degradation_monitor verdict (e.g. slippage / drawdown), which is
+          why a row can read e.g. "live IC fine" yet still be BREACH. */}
       <div className="flex items-center justify-between gap-2 text-2xs text-faint">
         <span className="truncate">{m.category} · {m.metric}</span>
         <span className="tnum shrink-0">{fixed(m.current, 3)} / {fixed(m.breach_threshold, 2)}</span>
