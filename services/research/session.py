@@ -20,9 +20,14 @@ from services.data.versioning import content_hash_of
 from services.intelligence.agent_loop import ResearchAgentLoop
 
 
-def _inner_loop(catalog, regime_evidence: bool):
-    """The contained ResearchAgentLoop; opt-in regime-evidence config flows to its evaluator."""
-    cfg = AlphaFactoryConfig(compute_regime_evidence=True) if regime_evidence else None
+def _inner_loop(catalog, regime_evidence: bool, fwd_horizon: int = 1):
+    """The contained ResearchAgentLoop. The forward-label horizon sets the walk-forward EMBARGO
+    (overlapping-label purge = horizon-1, Lopez de Prado): when labels look ahead h periods, a
+    fold's opening points share their label window with the prior fold, so they are purged before
+    scoring. horizon=1 -> embargo 0 (the previous behaviour, nothing moves). Opt-in regime-evidence
+    flows to the evaluator the same way."""
+    cfg = AlphaFactoryConfig(compute_regime_evidence=regime_evidence,
+                             wf_embargo=max(0, int(fwd_horizon) - 1))
     return ResearchAgentLoop(catalog=catalog, config=cfg)
 from services.intelligence.guided_search import GuidedSearchLoop
 from services.intelligence.search_space import CombinedHypothesisSpace
@@ -125,7 +130,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         provider = make_data_periods_provider(store, instruments, event_times=event_times,
                                               fwd_horizon=fwd_horizon, universe=universe)
 
-    loop = GuidedSearchLoop(effective_space, inner_loop=_inner_loop(catalog, regime_evidence))
+    loop = GuidedSearchLoop(effective_space, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon))
     if registry is not None:
         registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
@@ -211,7 +216,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
             "combines": ("sum", "product"),
             "redundancy_lambda": redundancy_lambda,
         }
-    loop = EvolutionarySearchLoop(provider, inner_loop=_inner_loop(catalog, regime_evidence), vocab=vocab)
+    loop = EvolutionarySearchLoop(provider, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon), vocab=vocab)
     out = loop.run(seed, generations=generations, population_size=population_size,
                    elite_k=elite_k, timestamp=timestamp)
 
@@ -259,7 +264,7 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
             seed += [("F", m, mode) for m in metrics for mode in modes]
         vocab = {"operators": tuple(space.operators), "windows": tuple(str(w) for w in space.windows),
                  "metrics": tuple(metrics) or ("eps",), "modes": tuple(modes), "combines": ("sum", "product")}
-    search = MCTSAlphaSearch(provider, inner_loop=_inner_loop(catalog, regime_evidence), vocab=vocab)
+    search = MCTSAlphaSearch(provider, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon), vocab=vocab)
     out = search.run(seed, iterations=iterations, timestamp=timestamp)
 
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
