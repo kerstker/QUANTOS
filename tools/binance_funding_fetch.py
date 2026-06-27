@@ -41,9 +41,11 @@ def fetch_daily_funding(ticker: str = "BTC", *, days: int = 2200, http_get=_http
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     symbol = ticker.upper() + "USDT"
-    by_day, end = {}, now_ms
-    for _ in range(12):
-        batch = _get(f"/fapi/v1/fundingRate?symbol={symbol}&limit=1000&endTime={int(end)}", http_get)
+    by_day = {}
+    # Binance fundingRate returns earliest-first from startTime -> page FORWARD from (now - `days`).
+    start = max(0, now_ms - days * _DAY_MS)
+    for _ in range(20):
+        batch = _get(f"/fapi/v1/fundingRate?symbol={symbol}&limit=1000&startTime={int(start)}", http_get)
         if not isinstance(batch, list) or not batch:
             break
         for it in batch:
@@ -53,9 +55,10 @@ def fetch_daily_funding(ticker: str = "BTC", *, days: int = 2200, http_get=_http
                 continue
             bucket = (ts // _DAY_MS) * _DAY_MS
             by_day[bucket] = by_day.get(bucket, 0.0) + rate     # sum the day's 8h fundings
-        if len(batch) < 1000 or len(by_day) >= days:
+        last = int(batch[-1]["fundingTime"])
+        if len(batch) < 1000 or last >= now_ms:
             break
-        end = int(batch[0]["fundingTime"]) - 1                  # next page ends before this batch's oldest
+        start = last + 1                                        # next page starts after this batch's newest
         time.sleep(0.2)
     today = (now_ms // _DAY_MS) * _DAY_MS
     return {b: v for b, v in by_day.items() if b < today}       # drop the live (today) day
