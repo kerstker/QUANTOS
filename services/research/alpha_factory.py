@@ -13,7 +13,7 @@ economic score is a SELECTION signal — the caller must still confirm the best 
 """
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from services.research.backtest_engine.metrics import sharpe
 
@@ -22,6 +22,7 @@ from . import cs_genome
 from .alpha_pipeline import run_alpha_asset_pipeline
 from .carry_pnl import economic_return_series
 from .expression_leakage import compute_leakage_ok
+from .factor_set import incremental_ir
 
 _NEG_INF = float("-inf")
 
@@ -29,13 +30,22 @@ _NEG_INF = float("-inf")
 def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequence[int], *,
                       generations: int = 3, population_size: int = 20, elite_k: int = 8,
                       fwd_horizon: int = 1, quantile: float = 0.2, use_funding: Optional[bool] = None,
-                      dataset_version: str = "", timestamp: int = 0) -> dict:
+                      basis_returns: Optional[Mapping[str, Sequence[float]]] = None,
+                      basis_min_overlap: int = 60, dataset_version: str = "", timestamp: int = 0) -> dict:
     """Evolve cs-alphas scored by economic L/S Sharpe, then run the full pipeline over the elite set.
     `use_funding` defaults to True when the panel carries a 'funding' matrix (score = carry economic
-    return); else the price-only L/S Sharpe. Deterministic; returns the best set + the pipeline output."""
+    return); else the price-only L/S Sharpe.
+
+    AUTONOMOUS ORTHOGONAL DISCOVERY: when `basis_returns` (the KNOWN edges' aligned return streams) is
+    given, the search reward switches to the INCREMENTAL IR ORTHOGONAL to that basis (novelty-weighted
+    residual IR). A candidate that merely re-derives a basis edge scores ~0 (fully explained), so the
+    genome is pushed toward genuinely NEW orthogonal return sources across the field dimensions — rather
+    than re-converging on what is already known. `economic_return_series` is full-length per period, so
+    candidate and basis streams stay index-aligned. Deterministic; returns the best set + pipeline output."""
     if generations < 1 or population_size < 1 or elite_k < 1:
         raise ValueError("generations / population_size / elite_k must be >= 1")
     with_funding = ("funding" in panel.matrices) if use_funding is None else use_funding
+    basis = dict(basis_returns) if basis_returns else None
 
     scored: dict = {}                                   # alpha_id -> (score, expr)
 
@@ -46,9 +56,13 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
         matrix = ax.evaluate(expr, panel)
         r = economic_return_series(matrix, panel, fwd_horizon=fwd_horizon, quantile=quantile,
                                    with_funding=with_funding)
-        s = sharpe(r) if len(r) >= 2 else _NEG_INF
-        if s != s:                                      # NaN guard
-            s = _NEG_INF
+        if basis is not None:                           # orthogonal-novelty reward: incremental IR vs basis
+            inc = incremental_ir(r, basis, min_overlap=basis_min_overlap) if len(r) >= 2 else None
+            s = inc if (inc is not None and inc == inc) else _NEG_INF
+        else:
+            s = sharpe(r) if len(r) >= 2 else _NEG_INF
+            if s != s:                                  # NaN guard
+                s = _NEG_INF
         scored[aid] = (s, expr)
         return s
 
@@ -94,7 +108,8 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
         "population_size": population_size,
         "n_seeds": n_seeds,                             # seed_alphas count (truncation to pop is not silent)
         "n_evaluated": len(scored),
-        "scored_by": "economic" if with_funding else "price",
+        "scored_by": ("orthogonal_incremental_ir" if basis is not None
+                      else "economic" if with_funding else "price"),
         "best": [{"alpha_id": ax.alpha_id(e), "expr": ax.serialize(e), "score": round(s, 4),
                   "leakage_ok": compute_leakage_ok(e, panel)} for s, e in best],
         "pipeline": pipeline_out,

@@ -367,6 +367,49 @@ def serialize(expr) -> str:
     return "(" + " ".join(parts) + ")"
 
 
+def _tokenize(s: str):
+    return s.replace("(", " ( ").replace(")", " ) ").split()
+
+
+def _atom(tok: str):
+    """A non-list token: int (window), float (const/exponent), or a bare string (op / field name)."""
+    if tok.lstrip("+-").isdigit():
+        return int(tok)
+    try:
+        return float(tok)
+    except ValueError:
+        return tok
+
+
+def deserialize(s: str):
+    """Inverse of `serialize`: parse the S-expression string back into the nested-tuple alpha.
+    Round-trips: serialize(deserialize(x)) == x. Fail-closed: malformed input raises ValueError."""
+    toks = _tokenize(s)
+    pos = 0
+
+    def _read():
+        nonlocal pos
+        if pos >= len(toks):
+            raise ValueError(f"unexpected end: {s!r}")
+        tok = toks[pos]; pos += 1
+        if tok == "(":
+            items = []
+            while pos < len(toks) and toks[pos] != ")":
+                items.append(_read())
+            if pos >= len(toks):
+                raise ValueError(f"unbalanced parens: {s!r}")
+            pos += 1                                       # consume ")"
+            return tuple(items)
+        if tok == ")":
+            raise ValueError(f"unexpected ')': {s!r}")
+        return _atom(tok)
+
+    expr = _read()
+    if pos != len(toks) or not isinstance(expr, tuple):
+        raise ValueError(f"malformed alpha expression: {s!r}")
+    return expr
+
+
 def canonicalize(expr):
     """Sort children of commutative ops so equivalent alphas share one id (dedup the search)."""
     if expr[0] in ("field", "const"):

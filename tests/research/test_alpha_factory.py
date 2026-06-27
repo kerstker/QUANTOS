@@ -56,6 +56,32 @@ def test_factory_best_are_valid_cross_sectional_trees():
         assert b["score"] == b["score"]                  # finite (not NaN)
 
 
+def test_factory_orthogonal_novelty_reward_downweights_basis_clone():
+    """With a `basis_returns` (the known-edge return streams), the search reward switches to the
+    INCREMENTAL IR ORTHOGONAL to the basis — so a candidate that merely re-derives a basis edge scores
+    ~0 (fully explained) and the genome is pushed toward NOVEL orthogonal sources. This is the autonomous
+    multi-dimensional discovery capability, hardened into the engine."""
+    from services.research.carry_pnl import economic_return_series
+    panel = _panel()
+    a_expr = ("cs_rank", ("neg", ("field", "funding")))                # a known carry edge
+    basis = {"carry": economic_return_series(ax.evaluate(a_expr, panel), panel, quantile=0.2)}
+
+    out = run_alpha_factory(panel, FIELDS, WINDOWS, generations=3, population_size=14, elite_k=6,
+                            basis_returns=basis, dataset_version="dv", timestamp=1)
+    assert out["scored_by"] == "orthogonal_incremental_ir"            # reward switched to novelty
+    # the basis clone is fully explained by the basis -> incremental IR ~0 -> never the top discovery
+    assert out["best"][0]["alpha_id"] != ax.alpha_id(a_expr)
+    assert out["best"][0]["score"] == out["best"][0]["score"]         # finite, not NaN
+    # deterministic under the orthogonal reward too
+    out2 = run_alpha_factory(panel, FIELDS, WINDOWS, generations=3, population_size=14, elite_k=6,
+                             basis_returns=basis, dataset_version="dv", timestamp=1)
+    assert [b["alpha_id"] for b in out2["best"]] == [b["alpha_id"] for b in out["best"]]
+    # default (no basis) is unchanged: scored by raw economic Sharpe
+    base_out = run_alpha_factory(panel, FIELDS, WINDOWS, generations=2, population_size=12, elite_k=5,
+                                 dataset_version="dv", timestamp=1)
+    assert base_out["scored_by"] == "economic"
+
+
 def test_no_rng_or_wallclock_import():
     import inspect
     import services.research.alpha_factory as m

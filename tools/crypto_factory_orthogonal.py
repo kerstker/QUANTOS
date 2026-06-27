@@ -1,15 +1,12 @@
-"""Out-of-gate: AUTONOMOUS multi-dimensional orthogonal-edge DISCOVERY.
+"""Out-of-gate: AUTONOMOUS multi-dimensional orthogonal-edge DISCOVERY (drives the HARDENED engine).
 
 The vision: let the MACHINE find edges across many data dimensions — including ones we did not hand-write —
-and reward it for NOVELTY, not for rediscovering what we already know. The deterministic cs_genome generator
-(seed / mutate / crossover over the cross-sectional DSL — no RNG) breeds expressions over the FULL field set
-(price, volume, funding, AND positioning: open interest + long/short + taker), so it can compose cross-
-DIMENSION interactions a human did not specify (e.g. cs_rank(ts_cov(funding, global_ls, 7))).
-
-The key change vs run_alpha_factory: the search reward is the INCREMENTAL IR ORTHOGONAL to the known edges
-(carry + crowd_contra). A candidate that merely re-derives carry scores ~0 (fully explained by the basis);
-the genome is pushed toward genuinely NEW orthogonal return sources. Survivors then pass the honesty
-gauntlet: machine-proven PIT-safety + a no-peek walk-forward selection OOS against the basis.
+and reward NOVELTY, not rediscovery. This is now a first-class engine capability: `run_alpha_factory(...,
+basis_returns=KNOWN_EDGES)` switches the cs_genome search reward to the INCREMENTAL IR ORTHOGONAL to the
+known edges, so the machine is pushed toward genuinely NEW orthogonal return sources. This driver is a thin
+orchestrator: build the 8-dimension panel, hand the engine the known-edge basis (carry + crowd_contra), let
+it breed across price/volume/funding/OI/long-short/taker, then run the honesty gauntlet (PIT-leakage proof +
+no-peek selection OOS + lag/cost reality-check) over what it discovers.
 
 Deterministic, pure-stdlib via services. Containment unchanged: research output, drives no lifecycle, no
 APPROVED surface, auto_approved stays 0. Observed numbers only — whatever the machine finds, reported as-is.
@@ -22,115 +19,106 @@ import statistics
 import time
 
 from services.research import alpha_expression as ax
-from services.research import cs_genome
+from services.research.alpha_factory import run_alpha_factory
+from services.research.carry_pnl import economic_return_series
 from services.research.backtest_engine.metrics import sharpe
-from services.research.expression_leakage import compute_leakage_ok
-from services.research.factor_set import incremental_ir
 from services.research.oos_validation import walk_forward_selection_oos
 from services.alpha.orthogonalize import orthogonalize
 
 from tools.crypto_oi_research import build_panel, CARRY
-from tools.crypto_oi_verify import _streams
+from tools.crypto_oi_verify import _streams, _per_year
 
 CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
 FIELDS = ("close", "volume", "funding", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 WINDOWS = (3, 7, 14, 30)
+QUANTILE = 0.3
 _OUT = os.path.join("data", "cache", "crypto_factory_orthogonal.json")
 
-GENERATIONS = 6
-POP = 48
-ELITE = 14
+# scaled search
+GENERATIONS = 8
+POP = 64
+ELITE = 16
 
 
 def main() -> None:
     panel, instruments = build_panel()
     px = panel.matrices["close"]; fm = panel.matrices["funding"]
-    # KNOWN-edge basis (full-length aligned economic streams)
-    basis = {"carry": tuple(_streams(ax.evaluate(CARRY, panel), px, fm, q=0.3)[1]),
-             "crowd_contra": tuple(_streams(ax.evaluate(CROWD_CONTRA, panel), px, fm, q=0.3)[1])}
-    print(f"=== autonomous ORTHOGONAL discovery ({len(instruments)} coins, {len(FIELDS)} dims) ===")
-    print(f"basis (known edges): carry SR {sharpe(list(basis['carry'])):.2f}, "
-          f"crowd_contra SR {sharpe(list(basis['crowd_contra'])):.2f}")
+    # KNOWN-edge basis as aligned ECONOMIC streams (same construction the engine scores with)
+    basis = {"carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
+             "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
+    print(f"=== autonomous ORTHOGONAL discovery via hardened engine ({len(instruments)} coins, {len(FIELDS)} dims) ===")
+    print(f"basis: carry SR {sharpe(basis['carry']):.2f}, crowd_contra SR {sharpe(basis['crowd_contra']):.2f}")
+    print(f"search: {GENERATIONS} gen x pop {POP}, reward = incremental IR orthogonal to basis")
 
-    scored: dict = {}  # alpha_id -> (incIR, expr, econ_stream)
+    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=GENERATIONS,
+                            population_size=POP, elite_k=ELITE, quantile=QUANTILE,
+                            basis_returns=basis, basis_min_overlap=200, dataset_version="oi8d", timestamp=0)
+    assert out["scored_by"] == "orthogonal_incremental_ir"
+    print(f"engine evaluated {out['n_evaluated']} cross-dimensional alphas; elite {len(out['best'])}")
 
-    def score(expr):
-        aid = ax.alpha_id(expr)
-        if aid in scored:
-            return scored[aid][0]
-        try:
-            r = _streams(ax.evaluate(expr, panel), px, fm, q=0.3)[1]
-        except Exception:
-            scored[aid] = (float("-inf"), expr, ()); return float("-inf")
-        inc = incremental_ir(r, basis, min_overlap=200)  # reward = novelty-weighted orthogonal IR
-        s = inc if (inc is not None and inc == inc) else float("-inf")
-        scored[aid] = (s, expr, tuple(r))
-        return s
-
-    # seed over ALL dimensions, then evolve
-    seeds = cs_genome.seed_alphas(list(FIELDS), list(WINDOWS))
-    n_seeds = len(seeds)
-    pop = ([seeds[(i * n_seeds) // POP] for i in range(POP)] if n_seeds > POP else list(seeds))
-    for gen in range(GENERATIONS):
-        for e in pop:
-            score(e)
-        elite = [e for _s, e, _r in sorted(scored.values(), key=lambda sv: (-sv[0], ax.serialize(sv[1])))[:ELITE]]
-        nxt = list(elite)
-        for i, e in enumerate(elite):
-            nxt.append(cs_genome.mutate(e, list(FIELDS), list(WINDOWS), gen * 1000 + i))
-            nxt.append(cs_genome.crossover(e, elite[(i + 1) % len(elite)], list(FIELDS), list(WINDOWS), gen * 1000 + i))
-        seen, pop = set(), []
-        for e in nxt:
-            a = ax.alpha_id(e)
-            if a not in seen:
-                seen.add(a); pop.append(e)
-            if len(pop) >= POP:
-                break
-    print(f"evaluated {len(scored)} unique cross-dimensional alphas over {GENERATIONS} generations")
-
-    # rank discoveries by orthogonal incremental IR; report the top novel ones with the honesty gauntlet
-    ranked = sorted(scored.values(), key=lambda sv: (-sv[0], ax.serialize(sv[1])))
-    top = [(s, e, r) for s, e, r in ranked if s > float("-inf")][:12]
-    rows = []
-    print(f"\n{'incIR':>6} {'rawSR':>6} {'R2|known':>8} {'leak':5} expr")
-    for s, e, r in top:
+    # honesty gauntlet over the elite discoveries
+    rows, disc_streams = [], {}
+    print(f"\n{'incIR':>6} {'rawSR':>6} {'R2|known':>8} {'leak':5} fields | expr")
+    for b in out["best"]:
+        # recompute the economic stream for orthogonality/Sharpe reporting
+        e = ax.deserialize(b["expr"])
+        r = economic_return_series(ax.evaluate(e, panel), panel, quantile=QUANTILE)
         orth = orthogonalize(tuple(r), basis, min_overlap=200)
-        leak = compute_leakage_ok(e, panel, rows=list(range(100, len(r), max(1, len(r)//30))))
+        flds = sorted({n[1] for _p, n in _nodes(e) if isinstance(n, tuple) and n and n[0] == "field"})
         r2 = None if orth.explained_r2 is None else round(orth.explained_r2, 3)
-        rows.append({"expr": ax.serialize(e), "incremental_ir": round(s, 3), "raw_econ_sharpe": round(sharpe(list(r)), 3),
-                     "r2_explained_by_known": r2, "leakage_ok": leak,
-                     "fields_used": sorted({n[1] for _p, n in cs_genome._nodes(e) if isinstance(n, tuple) and n and n[0] == "field"})})
-        print(f"{s:6.2f} {sharpe(list(r)):6.2f} {str(r2):>8} {str(leak):5} {ax.serialize(e)[:80]}")
+        rows.append({"expr": b["expr"], "incremental_ir": b["score"], "raw_econ_sharpe": round(sharpe(r), 3),
+                     "r2_explained_by_known": r2, "leakage_ok": b["leakage_ok"], "fields_used": flds})
+        disc_streams[b["alpha_id"][:10]] = tuple(r)
+        print(f"{b['score']:6.2f} {sharpe(r):6.2f} {str(r2):>8} {str(b['leakage_ok']):5} {','.join(flds):<22} {b['expr'][:70]}")
 
-    # honesty gauntlet: no-peek selection OOS of the top discoveries AGAINST the known basis
-    streams = dict(basis)
-    for s, e, r in top[:8]:
-        streams[ax.alpha_id(e)[:10]] = tuple(r)
+    # no-peek selection OOS: basis + discoveries
+    streams = dict(basis); streams.update(dict(list(disc_streams.items())[:8]))
     T = len(basis["carry"])
     oos = walk_forward_selection_oos(streams, train_size=max(252, T // 4), test_size=max(120, T // 8),
                                      embargo=2, top_k=1)
-    picks = [(f["window"], f["selected"], round(f["oos_sharpe"], 2)) for f in oos.get("folds", [])]
-    print(f"\nno-peek OOS (known basis + top discoveries): folds={oos['n_folds']} "
-          f"mean_OOS={oos.get('mean_oos_sharpe')} picks={[p[1] for p in picks]}")
+    picks = [f["selected"] for f in oos.get("folds", [])]
+    print(f"\nno-peek OOS (basis + discoveries): folds={oos['n_folds']} mean_OOS={oos.get('mean_oos_sharpe')} "
+          f"picks={picks}")
 
-    # verdict: did the machine find a NOVEL orthogonal edge (high incIR, low R2|known, PIT-safe, picked OOS)?
-    novel = [r for r in rows if (r["incremental_ir"] or 0) > 0.5 and (r["r2_explained_by_known"] or 1) < 0.2
-             and r["leakage_ok"] is True and abs(r["raw_econ_sharpe"]) > 0.5]
-    picked_novel = any(sel and sel[0] not in basis for _w, sel, _o in picks)
-    if novel and picked_novel:
-        verdict = f"MACHINE FOUND {len(novel)} novel orthogonal candidate(s) that ALSO survive no-peek OOS — investigate"
-    elif novel:
-        verdict = f"{len(novel)} novel orthogonal in-sample candidate(s) but NONE survived no-peek OOS selection (likely overfit)"
+    # reality-check the single best NOVEL discovery (orthogonal, PIT-safe, real Sharpe)
+    novel = [r for r in rows if (r["r2_explained_by_known"] or 1) < 0.2 and r["leakage_ok"] is True
+             and abs(r["raw_econ_sharpe"]) > 0.5]
+    rc = None
+    if novel:
+        top = novel[0]; e = ax.deserialize(top["expr"]); sig = ax.evaluate(e, panel)
+        pr, _ec, tr = _streams(sig, px, fm, q=QUANTILE)
+        lags = {L: round(sharpe(_streams(sig, px, fm, q=QUANTILE, lag=L)[0]), 3) for L in (0, 1, 2)}
+        net = {f: round(sharpe([p - t * f / 1e4 for p, t in zip(pr, tr)]), 3) for f in (5, 10, 20)}
+        rc = {"expr": top["expr"], "per_year": _per_year(pr, panel.event_times),
+              "exec_lag_sharpe": lags, "net_sharpe_by_fee": net, "turnover": round(statistics.fmean(tr), 3)}
+        survives = lags.get(1, 0) > 0.5 and net.get(10, 0) > 0.4
+        print(f"\nreality-check top novel {top['expr'][:60]}")
+        print(f"  per-year {rc['per_year']}")
+        print(f"  exec-lag {lags}  net-by-fee {net}  turnover {rc['turnover']}  -> {'SURVIVES lag+cost' if survives else 'FAILS lag/cost'}")
     else:
-        verdict = "no novel orthogonal edge beyond carry+crowd_contra — the known edges span the discoverable space here"
-    print(f"\nVERDICT: {verdict}")
+        survives = False
 
-    json.dump({"universe": instruments, "fields": list(FIELDS), "n_evaluated": len(scored),
-               "basis": {k: round(sharpe(list(v)), 3) for k, v in basis.items()},
-               "discoveries": rows, "oos_picks": picks, "oos_mean": oos.get("mean_oos_sharpe"),
+    verdict = ("MACHINE found a NOVEL orthogonal lead surviving lag+cost (autonomous discovery works) — verify fully"
+               if novel and survives else
+               "novel in-sample orthogonal candidates but none survive lag+cost reality-check (honest filter caught them)"
+               if novel else
+               "no novel orthogonal edge beyond carry+crowd_contra in this search")
+    print(f"\nVERDICT: {verdict}")
+    json.dump({"universe": instruments, "fields": list(FIELDS), "engine": "run_alpha_factory(basis_returns=...)",
+               "generations": GENERATIONS, "population": POP, "n_evaluated": out["n_evaluated"],
+               "basis": {k: round(sharpe(v), 3) for k, v in basis.items()}, "discoveries": rows,
+               "oos_picks": picks, "oos_mean": oos.get("mean_oos_sharpe"), "reality_check": rc,
                "verdict": verdict, "containment": "research; auto_approved=0; drives no lifecycle; no live/flags",
                "generated_at": int(time.time())}, open(_OUT, "w", encoding="utf-8"), indent=2)
     print(f"-> wrote {_OUT}")
+
+
+def _nodes(t, path=()):
+    yield path, t
+    if isinstance(t, tuple):
+        for i, a in enumerate(t[1:], start=1):
+            if isinstance(a, tuple):
+                yield from _nodes(a, path + (i,))
 
 
 if __name__ == "__main__":

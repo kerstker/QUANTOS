@@ -79,6 +79,30 @@ def test_none_propagates():
 
 
 # ---- canonical id ---------------------------------------------------------------------------
+def test_deserialize_round_trips_serialize():
+    """deserialize is the exact inverse of serialize across fields / consts / windows / nesting."""
+    exprs = [
+        ("field", "close"),
+        ("cs_rank", ("neg", ("field", "global_ls"))),
+        ("cs_zscore", ("ts_delta", ("field", "volume"), 7)),
+        ("cs_rank", ("ts_argmin", ("field", "global_ls"), 30)),
+        ("div", ("add", ("cs_zscore", ("field", "funding")), ("const", 4.0)), ("const", 2.0)),
+        ("cs_zscore", ("ts_cov", ("field", "close"), ("field", "volume"), 14)),
+    ]
+    for e in exprs:
+        s = ax.serialize(e)
+        assert ax.deserialize(s) == e            # structural round-trip
+        assert ax.serialize(ax.deserialize(s)) == s
+        assert ax.alpha_id(ax.deserialize(s)) == ax.alpha_id(e)
+
+
+def test_deserialize_fail_closed_on_garbage():
+    import pytest
+    for bad in ["(field close", "field close)", "(cs_rank (neg", ""]:
+        with pytest.raises(ValueError):
+            ax.deserialize(bad)
+
+
 def test_commutative_canonical_id_is_order_independent():
     e1 = ("add", ("field", "close"), ("field", "volume"))
     e2 = ("add", ("field", "volume"), ("field", "close"))
