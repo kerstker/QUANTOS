@@ -1,0 +1,79 @@
+"""Alpha Asset Registry (Alpha Factory upgrade Phase 3) — versioned, lineage-aware entity store.
+
+Dumb, deterministic storage for `AlphaAsset` snapshots:
+  * immutable versions — re-deriving / re-fitting an alpha is a NEW version, never an overwrite;
+  * lineage queries    — find an alpha's children (assets whose lineage names it as a parent);
+  * provenance filters — by generator / status (over each alpha's latest version);
+  * append-only audit   — every add is logged with the caller-supplied timestamp.
+
+Containment: the registry drives NO lifecycle transitions and exposes NO privileged status mutator. An
+asset's `status` reflects what the lifecycle manager already decided; storing a snapshot cannot promote
+an alpha, so this is not an agent path to APPROVED. Pure-Python stdlib, deterministic (no RNG, no
+wall-clock — the caller supplies `ts`).
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from quantos.contracts.alpha_asset import AlphaAsset
+from quantos.contracts.research import AlphaState
+
+
+class AlphaAssetRegistry:
+    def __init__(self) -> None:
+        self._versions: dict[str, dict[int, AlphaAsset]] = {}
+        self._audit: list[dict] = []
+
+    # --- write ---
+    def add(self, asset: AlphaAsset, *, ts: int = 0) -> AlphaAsset:
+        """Store an asset snapshot. A new alpha_id registers at its version; an existing alpha_id may
+        only ADD a strictly higher version (immutable, monotonic — no overwrite, no downgrade)."""
+        vmap = self._versions.get(asset.alpha_id)
+        if vmap is None:
+            self._versions[asset.alpha_id] = {asset.version: asset}
+        else:
+            if asset.version in vmap:
+                raise ValueError(f"alpha {asset.alpha_id} version {asset.version} already registered (immutable)")
+            if asset.version <= max(vmap):
+                raise ValueError(f"alpha {asset.alpha_id} version must exceed {max(vmap)}, got {asset.version}")
+            vmap[asset.version] = asset
+        self._audit.append({"event": "add", "alpha_id": asset.alpha_id, "version": asset.version,
+                            "status": asset.status.value, "generator": asset.generator, "ts": int(ts)})
+        return asset
+
+    # --- read ---
+    def get(self, alpha_id: str, version: Optional[int] = None) -> Optional[AlphaAsset]:
+        vmap = self._versions.get(alpha_id)
+        if not vmap:
+            return None
+        return vmap.get(version if version is not None else max(vmap))
+
+    def latest(self, alpha_id: str) -> Optional[AlphaAsset]:
+        return self.get(alpha_id)
+
+    def versions(self, alpha_id: str) -> tuple[int, ...]:
+        return tuple(sorted(self._versions.get(alpha_id, {})))
+
+    def history(self, alpha_id: str) -> tuple[AlphaAsset, ...]:
+        vmap = self._versions.get(alpha_id, {})
+        return tuple(vmap[v] for v in sorted(vmap))
+
+    def all_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._versions))
+
+    def all_latest(self) -> tuple[AlphaAsset, ...]:
+        return tuple(self.latest(aid) for aid in self.all_ids())
+
+    # --- filters (over each alpha's latest version) ---
+    def by_generator(self, generator: str) -> tuple[AlphaAsset, ...]:
+        return tuple(a for a in self.all_latest() if a.generator == generator)
+
+    def by_status(self, status: AlphaState) -> tuple[AlphaAsset, ...]:
+        return tuple(a for a in self.all_latest() if a.status == status)
+
+    def children_of(self, parent_id: str) -> tuple[AlphaAsset, ...]:
+        return tuple(a for a in self.all_latest() if parent_id in a.lineage.parent_ids)
+
+    # --- audit ---
+    def audit_log(self) -> tuple[dict, ...]:
+        return tuple(self._audit)
