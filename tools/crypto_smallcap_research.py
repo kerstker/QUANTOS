@@ -60,12 +60,12 @@ def _ret_vol(rows) -> float:
     return statistics.pstdev(rets)
 
 
-def _fetch_retry(tk, now_ms, tries=3):
+def _fetch_retry(tk, now_ms, tries=4):
     for k in range(tries):
         try:
             return fetch_daily_rows(tk, tk, limit=2000, now_ms=now_ms)
         except Exception:
-            time.sleep(1.5 * (k + 1))
+            time.sleep(2.0 * (2 ** k))      # exponential backoff: 2,4,8,16s — rides out rate limits
     return None
 
 
@@ -88,14 +88,14 @@ def main() -> None:
         rows = _fetch_retry(tk, now_ms)
         if not rows or len(rows) < _MIN_BARS or _ret_vol(rows) < _MIN_VOL:
             dropped += 1            # missing / too short / stablecoin-flat -> no cross-sectional signal
-            time.sleep(1.2)
+            time.sleep(2.0)
             continue
         ingest_provider_rows(rows, store, dataset_id=f"cc-sc-{tk}", now=now_ms, time_unit="ms")
         instruments.append(tk)
         all_ets.update(r["event_time"] for r in rows)
-        if len(instruments) % 25 == 0:
-            print(f"  ingested {len(instruments)} coins...", flush=True)
-        time.sleep(1.2)
+        if len(instruments) % 10 == 0:
+            print(f"  ingested {len(instruments)} coins (dropped {dropped})...", flush=True)
+        time.sleep(2.0)
 
     event_times = sorted(all_ets)
     if len(instruments) < 10:
