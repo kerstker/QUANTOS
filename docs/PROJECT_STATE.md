@@ -124,7 +124,16 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `63cb7db`(Binance 全宽研究驱动)之后接结果记录;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 813 全绿。
+HEAD 在 funding 验证提交附近;`main==master`(rtk 下 `git branch -f main master`);`validate.py` 813 全绿。
+**★ 资金费 carry = 第一个过关的真信号(2026-06-27,实测,`tools/binance_funding_fetch.py` + `crypto_funding_research.py`
++ `crypto_funding_verify.py`):** 引入**资金费率**(perp carry=杠杆/情绪,和价量正交;Binance 公开 fapi,只读,边界钉死)。
+`fund_avg7`=cs_rank(neg(ts_mean(funding,7))),115 永续×2661 天:净 SR 1.18@3bps、换手仅 0.26;**单因子无窥视 OOS
+mean +0.40、3/5 折正**(池子那个 −0.24 是被烂因子拖累);成本盈亏平衡 ~30bps(现实 ~10bps 下净 ~0.9);6/7 年正含 2022;
+反向控 fund_lvl_rank 最差(方向对)。**是第一个同时过 OOS+成本+跨 regime 的因子。但仍是 lead 非已证实可规模化的 alpha**:
+OOS 噪声大(2 折负、被 +2.57 一折拉高)、**近年衰减**(2020-21 大、2023-26 弱,carry 拥挤)、IC≈0(尾部)、幸存者偏差。
+容器化 auto_approved=0、REQUIRES_HUMAN_REVIEW。**这是第一个正当的纸面跟踪候选**(区别于已证伪的 dist_from_high_14)。
+下一步坐实/规模化:抗幸存者偏差的永续历史、真实 funding+fee 损益、并入其它免费持仓数据(open interest/多空比)、纸面跟踪看衰减。
+—— 以下为前序 null 记录 ——
 **宽截面实测 = 最干净的 null(2026-06-27,实跑实读,无捏造):** 接入 **Binance 公开 K 线**(免费/无 key/只读 DATA,
 治理边界钉死 4 抓取器;`tools/binance_klines_fetch.py`)→ 437 个 USDT 对,过滤后 **336 币 × 2309 日线、2020–2026 含 2022 熊市**
 (比之前宽一个数量级)。跑 15 个截面 alpha:**最好全样本 SR 0.15(≈0)、|IC|<0.02、无窥视 OOS 均值 −0.67(1/5 fold 正)、
