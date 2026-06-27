@@ -105,6 +105,19 @@ def test_new_operators_registered_and_evaluable():
         assert ax.alpha_id(e).startswith("ax_")
 
 
+def test_evaluate_rejects_bool_literals():
+    # review fix: a bool in a const/exponent slot is a likely generator bug; evaluate must NOT silently
+    # coerce True->1.0 (it now fails closed, matching dsl_checker which already rejects bool).
+    panel = _panel()
+    for bad in (("const", True), ("cs_rank", ("const", False)),
+                ("signed_power", ("field", "close"), True)):
+        try:
+            ax.evaluate(bad, panel)
+            assert False, f"expected ValueError for {bad}"
+        except ValueError:
+            pass
+
+
 def test_new_operators_are_pit_safe():
     panel = _panel()
     for e in [

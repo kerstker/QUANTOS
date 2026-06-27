@@ -332,6 +332,8 @@ def evaluate(expr, panel: FieldPanel) -> Matrix:
     if head == "field":
         return panel.matrices[expr[1]]
     if head == "const":
+        if isinstance(expr[1], bool):                    # fail closed: a bool literal is a generator bug,
+            raise ValueError(f"const value must be a number, not bool: {expr[1]!r}")  # don't coerce True->1.0
         t, n = panel.shape
         return [[float(expr[1])] * n for _ in range(t)]
     if head in _TS_WINDOW:
@@ -347,6 +349,8 @@ def evaluate(expr, panel: FieldPanel) -> Matrix:
     if head in _TS_PAIR:
         return _TS_PAIR[head](evaluate(expr[1], panel), evaluate(expr[2], panel), int(expr[3]))
     if head == "signed_power":
+        if isinstance(expr[2], bool):
+            raise ValueError(f"signed_power exponent must be a number, not bool: {expr[2]!r}")
         return signed_power(evaluate(expr[1], panel), float(expr[2]))
     raise ValueError(f"unknown alpha operator: {head!r}")
 

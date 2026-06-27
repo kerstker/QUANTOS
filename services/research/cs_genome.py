@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import hashlib
 
-from .alpha_expression import _TS_WINDOW, _CS, _EW1, _EW2, serialize, canonicalize, alpha_id  # noqa: F401
+from .alpha_expression import _TS_WINDOW, _CS, _EW1, _EW2, _TS_PAIR, serialize, canonicalize, alpha_id  # noqa: F401
 
 _TS = tuple(_TS_WINDOW)          # windowed unary ops (op, child, window)
 _CSO = tuple(_CS)                # cross-sectional unary ops (op, child)
 _E1 = tuple(_EW1)                # elementwise unary (op, child)
 _E2 = tuple(_EW2)                # elementwise binary (op, a, b)
+_TSP = tuple(_TS_PAIR)           # windowed pairwise ops (op, a, b, window): ts_corr/ts_cov/ts_beta
 _MAX_DEPTH = 6
 
 
@@ -70,7 +71,7 @@ def _node_ok(t, fields) -> bool:
         return len(t) == 2 and _node_ok(t[1], fields)
     if h in _E2:
         return len(t) == 3 and _node_ok(t[1], fields) and _node_ok(t[2], fields)
-    if h == "ts_corr":
+    if h in _TSP:                # ts_corr/ts_cov/ts_beta share (op, a, b, window)
         return len(t) == 4 and isinstance(t[3], int) and t[3] >= 1 and _node_ok(t[1], fields) and _node_ok(t[2], fields)
     if h == "signed_power":
         return len(t) == 3 and isinstance(t[2], (int, float)) and _node_ok(t[1], fields)

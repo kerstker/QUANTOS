@@ -26,7 +26,7 @@ def _op_cost(head: str) -> float:
         return 3.0                       # cross-sectional regression (residualize)
     if head in _TS_PAIR:
         return 3.0                       # two-series windowed corr/cov/beta
-    return 2.0                           # unknown -> conservative
+    raise ValueError(f"unknown alpha operator: {head!r}")   # fail closed (cost table drifted from engine)
 
 
 def complexity(expr) -> float:

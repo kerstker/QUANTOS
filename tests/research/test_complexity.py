@@ -40,3 +40,14 @@ def test_node_count_and_depth():
 def test_deterministic():
     e = ("cs_zscore", ("ts_beta", ("field", "close"), ("field", "volume"), 7))
     assert [cx.complexity(e) for _ in range(5)] == [cx.complexity(e)] * 5
+
+
+def test_unknown_operator_fails_closed():
+    # review fix: an unknown head means the cost table drifted from the engine -> raise, don't silently
+    # return a fallback cost (fail-closed, matching evaluate() and dsl_checker()).
+    raised = False
+    try:
+        cx.complexity(("ts_lead", ("field", "close"), 1))
+    except ValueError:
+        raised = True
+    assert raised

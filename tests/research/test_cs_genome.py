@@ -70,6 +70,17 @@ def test_iterated_evolution_stays_valid():
         cur = nxt
 
 
+def test_node_ok_validates_all_ts_pair_ops():
+    # review fix: _node_ok must accept ts_cov/ts_beta (not only ts_corr) — all _TS_PAIR ops share the
+    # (op, a, b, window) shape and are evaluable+PIT-safe, so valid() must not wrongly reject them.
+    fields = ["close", "volume", "funding"]
+    for op in ("ts_corr", "ts_cov", "ts_beta"):
+        good = ("cs_rank", (op, ("field", "close"), ("field", "volume"), 5))
+        assert g.valid(good, fields), op
+        bad = ("cs_rank", (op, ("field", "close"), ("field", "volume")))   # missing window
+        assert not g.valid(bad, fields), op
+
+
 def test_no_rng_or_wallclock_import():
     import inspect
     src = inspect.getsource(g)

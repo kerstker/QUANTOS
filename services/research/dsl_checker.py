@@ -49,7 +49,7 @@ def _is_number(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def _check(expr, path: str, errs: list) -> None:
+def _check(expr, path: str, errs: list, fields) -> None:
     if not _is_expr(expr):
         errs.append(f"{path}: not an expression node: {expr!r}")
         return
@@ -60,6 +60,8 @@ def _check(expr, path: str, errs: list) -> None:
             errs.append(f"{path}: 'field' takes 1 operand (name), got {len(args)}")
         elif not isinstance(args[0], str):
             errs.append(f"{path}: field name must be a str, got {args[0]!r}")
+        elif fields is not None and args[0] not in fields:
+            errs.append(f"{path}: unknown field {args[0]!r} (not in panel: {sorted(fields)})")
         return
     if head == "const":
         if len(args) != 1:
@@ -84,7 +86,7 @@ def _check(expr, path: str, errs: list) -> None:
             if not _is_expr(v):
                 errs.append(f"{loc}: '{head}' operand {i + 1} must be an expression, got {v!r}")
             else:
-                _check(v, loc, errs)
+                _check(v, loc, errs, fields)
         elif kind == _W:
             if isinstance(v, bool) or not isinstance(v, int):
                 errs.append(f"{loc}: '{head}' window must be an int, got {v!r}")
@@ -95,16 +97,21 @@ def _check(expr, path: str, errs: list) -> None:
                 errs.append(f"{loc}: '{head}' exponent must be a number, got {v!r}")
 
 
-def check_expression(expr) -> CheckResult:
+def check_expression(expr, *, fields=None) -> CheckResult:
     """Validate a DSL expression tree. Returns ok + a tuple of human-readable errors (each prefixed
-    with a dotted path to the offending node, e.g. 'root.1.2')."""
+    with a dotted path to the offending node, e.g. 'root.1.2').
+
+    `fields` (optional set/iterable of field names knowable from the FieldPanel) enables an existence
+    check: a ('field', name) whose name is not in `fields` is rejected up front instead of crashing
+    evaluate() with a KeyError. Without `fields` the field check is structural only (name must be a
+    str) — the checker cannot know which fields exist without a panel."""
     errs: list = []
-    _check(expr, "root", errs)
+    _check(expr, "root", errs, set(fields) if fields is not None else None)
     return CheckResult(ok=not errs, errors=tuple(errs))
 
 
-def validate_expression(expr) -> None:
+def validate_expression(expr, *, fields=None) -> None:
     """Fail-fast variant: raise ValueError listing every problem, or return None if the tree is valid."""
-    r = check_expression(expr)
+    r = check_expression(expr, fields=fields)
     if not r.ok:
         raise ValueError("invalid alpha expression: " + "; ".join(r.errors))

@@ -79,6 +79,16 @@ def test_genome_products_all_typecheck():
             assert dc.check_expression(g.mutate(s, fields, windows, step)).ok
 
 
+def test_optional_field_existence_check():
+    # review fix: without `fields`, existence is NOT checked (a name is only required to be a str);
+    # with `fields`, an unknown field is rejected up front instead of crashing evaluate() with KeyError.
+    e = ("cs_rank", ("add", ("field", "close"), ("field", "nonexistent")))
+    assert dc.check_expression(e).ok                                   # no fields -> structural only
+    r = dc.check_expression(e, fields={"close", "volume"})
+    assert not r.ok and any("nonexistent" in m and "unknown field" in m for m in r.errors)
+    assert dc.check_expression(e, fields={"close", "nonexistent"}).ok  # both known -> ok
+
+
 def test_no_rng_or_wallclock_import():
     import inspect
     src = inspect.getsource(dc)
