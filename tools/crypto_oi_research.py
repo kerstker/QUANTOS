@@ -119,13 +119,14 @@ def _rank_ic(sig, px):
     return round(statistics.fmean(ics), 4) if ics else None
 
 
-def main() -> None:
+def build_panel(only=None):
+    """Build the price+volume+funding+OI-metrics FieldPanel on the liquid-major universe (PIT-safe).
+    `only` optionally restricts the instrument set (used by the refutation harness for subset tests)."""
     oi_cache = json.load(open(_OI, encoding="utf-8"))
     oi_data = oi_cache.get("data", oi_cache)
     tickers = sorted(tk for tk, d in oi_data.items() if not tk.startswith("_") and len(d) >= MIN_DAYS)
     snap_insts = set(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
-    instruments = sorted(tk for tk in tickers if tk in snap_insts)
-    print(f"OI universe: {len(instruments)} liquid majors with >= {MIN_DAYS} days: {instruments}")
+    instruments = sorted(tk for tk in tickers if tk in snap_insts and (only is None or tk in only))
 
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     event_times = sorted({b.event_time for inst in instruments
@@ -136,7 +137,6 @@ def main() -> None:
     panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
     panel.matrices["funding"] = [[funding.get(inst, {}).get(t) for inst in panel.instruments]
                                  for t in panel.event_times]
-    # add OI metric matrices, PIT-aligned by event_time (eod value knowable at t)
     oi_by_inst = {tk: {int(k): v for k, v in d.items()} for tk, d in oi_data.items() if not tk.startswith("_")}
 
     def _oi_cell(inst, t, fld):
@@ -146,6 +146,12 @@ def main() -> None:
     for fld in OI_FIELDS:
         panel.matrices[fld] = [[_oi_cell(inst, t, fld) for inst in panel.instruments]
                                for t in panel.event_times]
+    return panel, instruments
+
+
+def main() -> None:
+    panel, instruments = build_panel()
+    print(f"OI universe: {len(instruments)} liquid majors with >= {MIN_DAYS} days: {instruments}")
     px = panel.matrices["close"]; fund_mat = panel.matrices["funding"]
 
     # baseline: carry on THIS universe
