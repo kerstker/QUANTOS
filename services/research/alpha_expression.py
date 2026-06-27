@@ -159,6 +159,39 @@ def ts_corr(a: Matrix, b: Matrix, w: int) -> Matrix:
     return out
 
 
+def ts_cov(a: Matrix, b: Matrix, w: int) -> Matrix:
+    """Per-instrument windowed covariance of a and b (reads each column's own past -> no lookahead)."""
+    t, n = _dims(a)
+    out = _empty(t, n)
+    for r in range(t):
+        for i in range(n):
+            wa, wb = _col_window(a, r, i, w), _col_window(b, r, i, w)
+            if wa is None or wb is None:
+                continue
+            ma, mb = statistics.fmean(wa), statistics.fmean(wb)
+            out[r][i] = sum((x - ma) * (y - mb) for x, y in zip(wa, wb)) / len(wa)
+    return out
+
+
+def ts_beta(a: Matrix, b: Matrix, w: int) -> Matrix:
+    """Per-instrument windowed OLS slope of a regressed on b (cov(a,b)/var(b)). Zero-variance b ->
+    undefined (None). Reads each column's own past only -> no lookahead."""
+    t, n = _dims(a)
+    out = _empty(t, n)
+    for r in range(t):
+        for i in range(n):
+            wa, wb = _col_window(a, r, i, w), _col_window(b, r, i, w)
+            if wa is None or wb is None:
+                continue
+            mb = statistics.fmean(wb)
+            var_b = sum((y - mb) ** 2 for y in wb)
+            if var_b <= _EPS:
+                continue
+            ma = statistics.fmean(wa)
+            out[r][i] = sum((x - ma) * (y - mb) for x, y in zip(wa, wb)) / var_b
+    return out
+
+
 # ---- cross-sectional operators (read all instruments at the SAME period) --------------------
 def _cs(m: Matrix, f) -> Matrix:
     t, n = _dims(m)
@@ -203,6 +236,46 @@ def cs_scale(m):
     return _cs(m, f)
 
 
+def cs_winsorize(m, k: float = 3.0):
+    """Robust k-MAD outlier clipping per cross-section: clip to median +/- k*1.4826*MAD so a single
+    extreme name cannot dominate a downstream zscore/scale. Zero MAD -> unchanged (no fabricated band)."""
+    def f(vals):
+        med = statistics.median(vals)
+        mad = statistics.median([abs(v - med) for v in vals])
+        if mad <= _EPS:
+            return list(vals)
+        lo, hi = med - k * 1.4826 * mad, med + k * 1.4826 * mad
+        return [min(max(v, lo), hi) for v in vals]
+    return _cs(m, f)
+
+
+def cs_residualize(mx: Matrix, my: Matrix) -> Matrix:
+    """Cross-sectional OLS residual of x on y at each period (the NEUTRALIZATION primitive): regress x
+    on y across the names knowable at t and return x - (a + b*y). Neutralizes x against ANY computed
+    signal (size = log(volume), a market proxy, another factor) with NO industry/membership data. A
+    zero-variance regressor degenerates to demeaning x (residual against a constant). PIT-safe (same
+    period only). Names lacking either input are dropped; < 2 survivors -> skipped."""
+    t, n = _dims(mx)
+    out = _empty(t, n)
+    for r in range(t):
+        idx = [i for i in range(n) if mx[r][i] is not None and my[r][i] is not None]
+        if len(idx) < 2:
+            continue
+        xs = [mx[r][i] for i in idx]
+        ys = [my[r][i] for i in idx]
+        mxr, myr = statistics.fmean(xs), statistics.fmean(ys)
+        var_y = sum((y - myr) ** 2 for y in ys)
+        if var_y <= _EPS:
+            for i, x in zip(idx, xs):
+                out[r][i] = x - mxr                       # residual against a constant == demean
+            continue
+        beta = sum((x - mxr) * (y - myr) for x, y in zip(xs, ys)) / var_y
+        a = mxr - beta * myr
+        for i, x, y in zip(idx, xs, ys):
+            out[r][i] = x - (a + beta * y)
+    return out
+
+
 # ---- elementwise operators ------------------------------------------------------------------
 def _ew2(a: Matrix, b: Matrix, f) -> Matrix:
     t, n = _dims(a)
@@ -233,6 +306,7 @@ def ew_neg(a): return _ew1(a, lambda x: -x)
 def ew_abs(a): return _ew1(a, abs)
 def ew_sign(a): return _ew1(a, lambda x: (x > 0) - (x < 0) * 1.0)
 def ew_log(a): return _ew1(a, lambda x: math.log(x) if x > _EPS else None)
+def ew_sqrt(a): return _ew1(a, lambda x: (1.0 if x >= 0 else -1.0) * math.sqrt(abs(x)))
 
 
 def signed_power(a, exp):
@@ -243,9 +317,12 @@ def signed_power(a, exp):
 _TS_WINDOW = {"ts_delay": ts_delay, "ts_delta": ts_delta, "ts_mean": ts_mean, "ts_sum": ts_sum,
               "ts_std": ts_std, "ts_min": ts_min, "ts_max": ts_max, "ts_rank": ts_rank,
               "decay_linear": decay_linear, "ts_argmax": ts_argmax, "ts_argmin": ts_argmin}
-_CS = {"cs_rank": cs_rank, "cs_demean": cs_demean, "cs_zscore": cs_zscore, "cs_scale": cs_scale}
-_EW1 = {"neg": ew_neg, "abs": ew_abs, "sign": ew_sign, "log": ew_log}
+_CS = {"cs_rank": cs_rank, "cs_demean": cs_demean, "cs_zscore": cs_zscore, "cs_scale": cs_scale,
+       "cs_winsorize": cs_winsorize}
+_CS2 = {"cs_residualize": cs_residualize}                 # binary cross-sectional (neutralization)
+_EW1 = {"neg": ew_neg, "abs": ew_abs, "sign": ew_sign, "log": ew_log, "sqrt": ew_sqrt}
 _EW2 = {"add": ew_add, "sub": ew_sub, "mul": ew_mul, "div": ew_div}
+_TS_PAIR = {"ts_corr": ts_corr, "ts_cov": ts_cov, "ts_beta": ts_beta}   # windowed pairwise (a, b, w)
 _COMMUTATIVE = {"add", "mul"}
 
 
@@ -261,12 +338,14 @@ def evaluate(expr, panel: FieldPanel) -> Matrix:
         return _TS_WINDOW[head](evaluate(expr[1], panel), int(expr[2]))
     if head in _CS:
         return _CS[head](evaluate(expr[1], panel))
+    if head in _CS2:
+        return _CS2[head](evaluate(expr[1], panel), evaluate(expr[2], panel))
     if head in _EW1:
         return _EW1[head](evaluate(expr[1], panel))
     if head in _EW2:
         return _EW2[head](evaluate(expr[1], panel), evaluate(expr[2], panel))
-    if head == "ts_corr":
-        return ts_corr(evaluate(expr[1], panel), evaluate(expr[2], panel), int(expr[3]))
+    if head in _TS_PAIR:
+        return _TS_PAIR[head](evaluate(expr[1], panel), evaluate(expr[2], panel), int(expr[3]))
     if head == "signed_power":
         return signed_power(evaluate(expr[1], panel), float(expr[2]))
     raise ValueError(f"unknown alpha operator: {head!r}")
