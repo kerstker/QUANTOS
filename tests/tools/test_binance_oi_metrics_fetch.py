@@ -52,11 +52,11 @@ def test_fetch_skips_present_and_missing_days():
                 return _zip_for(dm)
         raise RuntimeError("404")  # d0 (already cached) never requested; d3 missing -> skipped
 
-    out = f.fetch_ticker_days("BTC", d0, d3 + _DAY, present={d0}, http_get_bytes=stub, sleep=0.0)
+    out = f.fetch_ticker_days("BTC", d0, d3 + _DAY, present={d0}, http_get_bytes=stub, max_workers=1)
     assert set(out) == {d1, d2}                       # d0 skipped (cached), d3 skipped (404)
     assert out[d1]["oi"] == 113512.884
-    # deterministic
-    out2 = f.fetch_ticker_days("BTC", d0, d3 + _DAY, present={d0}, http_get_bytes=stub, sleep=0.0)
+    # deterministic, and the concurrent path yields the same result as the serial one
+    out2 = f.fetch_ticker_days("BTC", d0, d3 + _DAY, present={d0}, http_get_bytes=stub, max_workers=8)
     assert out2 == out
 
 

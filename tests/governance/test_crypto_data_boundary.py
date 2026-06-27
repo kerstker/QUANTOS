@@ -31,9 +31,10 @@ def _import_roots(path: str) -> set:
 
 
 # stdlib + internal (services/tools) allowed in the network-bearing fetchers; nothing else.
-# `io`/`zipfile` are pure-stdlib in-memory archive parsing (the Data Vision metrics archive ships ZIPs) —
-# no network/trade/credential capability, so they do not weaken the boundary.
-_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile",
+# `io`/`zipfile` are pure-stdlib in-memory archive parsing (the Data Vision metrics archive ships ZIPs);
+# `concurrent` is the stdlib thread pool that only OVERLAPS the high-latency archive GETs — none of these
+# add network/trade/credential capability, so they do not weaken the boundary.
+_ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "concurrent",
                     "services", "tools", "__future__"}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",

@@ -116,26 +116,38 @@ def find_start_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -
 
 
 def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
-                      http_get_bytes=_http_get_bytes, sleep: float = 0.08) -> dict:
+                      http_get_bytes=_http_get_bytes, sleep: float = 0.0, max_workers: int = 12) -> dict:
     """Fetch every UTC day in [start_ms, end_ms) not already in `present`. Skips missing (404) days.
-    Returns {day_ms: {fields}}. PIT-safe: each day collapses to its eod snapshot."""
-    out = {}
-    day = (start_ms // _DAY_MS) * _DAY_MS
-    end = (end_ms // _DAY_MS) * _DAY_MS
-    while day < end:
-        if day in present:
-            day += _DAY_MS
-            continue
+    Returns {day_ms: {fields}}. PIT-safe: each day collapses to its eod snapshot.
+
+    The Data Vision archive has high per-request (TLS-handshake) latency, so days are fetched
+    CONCURRENTLY via a stdlib thread pool — `concurrent.futures` adds no network/trade/credential
+    surface, it only overlaps the wait. Result is a dict, so worker ordering is irrelevant and the
+    output is deterministic for fixed inputs. max_workers<=1 runs the serial path (used by tests)."""
+    days = [d for d in range(((start_ms // _DAY_MS) * _DAY_MS), ((end_ms // _DAY_MS) * _DAY_MS), _DAY_MS)
+            if d not in present]
+
+    def _one(day):
         try:
-            raw = http_get_bytes(metrics_url(ticker, day))
-            rec = parse_metrics_zip(raw)
-            if rec:
-                out[day] = rec
+            rec = parse_metrics_zip(http_get_bytes(metrics_url(ticker, day)))
+            return (day, rec or None)
         except Exception:
-            pass  # missing day or transient; leave a gap (panel handles None)
-        day += _DAY_MS
-        if sleep:
-            time.sleep(sleep)
+            return (day, None)  # missing day or transient; leave a gap (panel handles None)
+
+    out = {}
+    if max_workers <= 1:
+        for day in days:
+            d, rec = _one(day)
+            if rec:
+                out[d] = rec
+            if sleep:
+                time.sleep(sleep)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for d, rec in ex.map(_one, days):
+                if rec:
+                    out[d] = rec
     return out
 
 
