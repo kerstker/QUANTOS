@@ -309,6 +309,16 @@ def test_alpha_decay_monitors_are_engine_computed():
     engine_voiced = 0
     for m in decay:
         assert m["status"] in {"OK", "WATCH", "BREACH"}
+        assert m["metric"] == "health_drift"  # holistic, not pure ic_drift
+        # Internal coherence: drift_score must sit in the band that matches the status relative to the
+        # warn/breach thresholds — so the bar length, its colour and the status chip can never disagree.
+        warn, breach, score = m["warn_threshold"], m["breach_threshold"], m["drift_score"]
+        if m["status"] == "OK":
+            assert score < warn, (m["monitor_id"], score, warn)
+        elif m["status"] == "WATCH":
+            assert warn <= score < breach, (m["monitor_id"], score, warn, breach)
+        else:  # BREACH
+            assert score >= breach, (m["monitor_id"], score, breach)
         rem = m["remediation"]
         if rem.startswith("[degradation_monitor:"):
             engine_voiced += 1

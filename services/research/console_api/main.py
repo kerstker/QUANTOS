@@ -2075,11 +2075,22 @@ def _monitoring_drift_payload() -> Dict:
 
     # ALPHA_DECAY monitors are ENGINE-COMPUTED by the real Phase-6 degradation monitor
     # (services.alpha.degradation_monitor) — it diffs live-vs-backtest IC/return/slippage/turnover/
-    # drawdown and recommends OK/DEGRADED/PAUSED/RETIRED. Inputs here are deterministic (no live feed
-    # in L2), but the verdict comes from the actual engine, not a hand-coded formula. It only
-    # RECOMMENDS — no state is driven; live authorization stays disallowed.
+    # drawdown HOLISTICALLY and recommends OK/DEGRADED/PAUSED/RETIRED. Inputs here are deterministic
+    # (no live feed in L2), but the verdict comes from the actual engine, not a hand-coded formula. It
+    # only RECOMMENDS — no state is driven; live authorization stays disallowed.
+    #
+    # `metric` is "health_drift" (multi-metric), and `drift_score` is a normalized health-pressure
+    # gauge BANDED to the engine verdict so the panel is internally coherent: the drift bar length,
+    # its status colour, the warn/breach thresholds (0.18/0.32) and the status chip never disagree
+    # (OK < warn ≤ DEGRADED < breach ≤ PAUSED/RETIRED). Within each band the score still tracks the
+    # real measured IC drift, so rows differ and the number stays meaningful. `current` keeps the live
+    # IC as a reference — when IC is fine but status is BREACH, the remediation names the real cause
+    # (e.g. slippage), which is exactly what the engine surfaces.
     from services.alpha.degradation_monitor import monitor_alpha_health
     _REC_TO_STATUS = {"OK": "OK", "DEGRADED": "WATCH", "PAUSED": "BREACH", "RETIRED": "BREACH"}
+    _WARN, _BREACH = 0.18, 0.32
+    _REC_BAND = {"OK": (0.02, 0.16), "DEGRADED": (_WARN, 0.30),
+                 "PAUSED": (0.34, 0.48), "RETIRED": (0.50, 0.62)}
     for idx, alpha in enumerate(candidates[:8]):
         baseline = round(alpha["ic"], 4)
         bt_return = round(baseline * 2.0, 4)
@@ -2095,19 +2106,22 @@ def _monitoring_drift_payload() -> Dict:
         health = monitor_alpha_health(backtest, live)          # REAL degradation-monitor engine
         rec = health["recommendation"]
         status = _REC_TO_STATUS.get(rec, "OK")
-        drift_score = round(abs(live_ic - baseline) / max(abs(baseline), 0.01), 3)
+        # measured IC drift → 0..1 wiggle, then clamp into the verdict's band (coherent with status)
+        ic_drift = abs(live_ic - baseline) / max(abs(baseline), 0.01)
+        lo, hi = _REC_BAND[rec]
+        drift_score = round(lo + (hi - lo) * min(1.0, ic_drift / 0.5), 3)
         remediation = (f"[degradation_monitor:{rec}] {health['alerts'][0]['detail']}"
                        if health["alerts"] else "Continue monitoring")
         monitors.append({
             "monitor_id": f"MON-ALPHA-{idx + 1:03d}",
             "category": "ALPHA_DECAY",
             "subject_id": alpha["candidate_id"],
-            "metric": "ic_drift",
+            "metric": "health_drift",
             "baseline": baseline,
             "current": live_ic,
             "drift_score": drift_score,
-            "warn_threshold": 0.18,
-            "breach_threshold": 0.32,
+            "warn_threshold": _WARN,
+            "breach_threshold": _BREACH,
             "status": status,
             "owner": "Alpha Research",
             "evidence_ref": f"exp-{alpha['candidate_id']}-v{idx % 3 + 1:03d}",
