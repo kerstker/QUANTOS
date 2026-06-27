@@ -33,6 +33,8 @@ def test_factory_evolves_and_runs_full_pipeline():
     # the full pipeline ran over the elite set (registry / portfolio / brief all present)
     assert out["pipeline"]["n_evaluated"] == 6
     assert "selected_ids" in out["pipeline"]["portfolio"]
+    # review fix: the seed count is surfaced (truncation to population_size is no longer silent)
+    assert out["n_seeds"] >= out["population_size"]
 
 
 def test_factory_is_deterministic():

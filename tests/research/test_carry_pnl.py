@@ -51,6 +51,19 @@ def test_deterministic_and_handles_no_funding_field():
     assert a == b and len(a) == T - 1                    # deterministic, no crash without funding
 
 
+def test_invalid_quantile_fails_closed():
+    # review P1: quantile outside (0,1] silently produced degenerate all-zero books -> now fail-closed
+    panel, base = _panel()
+    sig = _signal(base)
+    for bad in (0.0, -0.1, 1.5, 2.0):
+        raised = False
+        try:
+            economic_return_series(sig, panel, quantile=bad)
+        except ValueError:
+            raised = True
+        assert raised, bad
+
+
 def test_no_rng_or_wallclock_import():
     import inspect
     import services.research.carry_pnl as m

@@ -55,8 +55,15 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
     def _elite(k):
         return [e for _s, e in sorted(scored.values(), key=lambda sv: (-sv[0], ax.serialize(sv[1])))[:k]]
 
+    # seed population. When fewer slots than seeds, take an EVENLY-SPACED subset (not the first N, which
+    # would bias toward the first field/operator family and silently drop the rest) — preserves the
+    # seed diversity deterministically. n_seeds is surfaced so the truncation is never silent.
     seeds = cs_genome.seed_alphas(fields, windows)
-    pop = seeds[:population_size]
+    n_seeds = len(seeds)
+    if n_seeds > population_size:
+        pop = [seeds[(i * n_seeds) // population_size] for i in range(population_size)]
+    else:
+        pop = list(seeds)
 
     for gen in range(generations):
         for expr in pop:
@@ -85,6 +92,7 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
     return {
         "generations": generations,
         "population_size": population_size,
+        "n_seeds": n_seeds,                             # seed_alphas count (truncation to pop is not silent)
         "n_evaluated": len(scored),
         "scored_by": "economic" if with_funding else "price",
         "best": [{"alpha_id": ax.alpha_id(e), "expr": ax.serialize(e), "score": round(s, 4),

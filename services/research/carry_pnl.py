@@ -42,6 +42,8 @@ def economic_return_series(signal, panel, *, fwd_horizon: int = 1, quantile: flo
     px = panel.matrices[price_field]
     fund = panel.matrices.get("funding") if with_funding else None
     t, n = _dims(signal)
+    if not (0.0 < quantile <= 1.0):                       # fail-closed: an out-of-range quantile silently
+        raise ValueError(f"quantile must be in (0, 1], got {quantile}")  # collapsed the book to all-zero
     out: list = []
     for r in range(t - fwd_horizon):
         rf = r + fwd_horizon
