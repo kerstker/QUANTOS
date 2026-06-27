@@ -127,7 +127,8 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
-HEAD 在 `ba75774`(主线接线管线)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **971 全绿**;前端 `npm test` 14 passed + typecheck + build 绿;远端 kerstker/QUANTOS 已同步。
+HEAD 在 `7bb513b`(carry P&L + cs_genome 量产 + 审查修复)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **980 全绿**;前端 `npm test` 14 passed + typecheck + build 绿;远端 kerstker/QUANTOS 已同步。
+**★★★ 量产 + 见钱(2026-06-27,观察值)**:① `carry_pnl.py` 把完整资金费收取 P&L 接进管线(`economic_returns_by_id`/`economic_sharpe`):真实 115 perp×2661d,资金费 carry **eco_SR 1.8–2.18**(复现既有 ~2.0),CPCV 经济 OOS **100% 折正、p05 也正**。② `alpha_factory.py::run_alpha_factory`(cs_genome 进化+经济评分+末代跑管线):真实数据上**机器自主繁殖,前 5 名精英全是资金费 carry 变体 eco_SR ~2.0**(`cs_rank(neg(funding))` 等),OOS 100% 折正。全程容器化守住、leakage 全证明 PIT-safe、裁决诚实 REQUIRES_HUMAN_REVIEW(不自动放行)。tools: `crypto_pipeline_run.py`、`crypto_factory_run.py`。对抗审查各 0-2 发现已修。
 **★★★ 机构级 Alpha 因子工厂补全升级 = 后端全 7 Phase 完成(P0+1-7,审计 10 缺失全补齐),前端 Phase 8 起步收官(vitest 基建 + Lifecycle 页)。** 每 Phase tests-first+门禁绿+多智能体对抗审查+验收;新模块共 +148 后端测试。计划全文见 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`。
 **★★★ 机构级 Alpha 因子工厂补全升级 进行中(2026-06-27,用户大指令:把"因子发现器"升级为"Alpha 资产生命周期系统")。**
 计划全文 `docs/ALPHA_FACTORY_UPGRADE_PLAN.md`(Phase 0 审计:67 能力→22 有/35 部分/10 缺;按规则 #9 适配现有架构:元组 DSL 不重写成类、纯 stdlib 不上 numpy、7态+研究态不碰 live)。**已完成**:
