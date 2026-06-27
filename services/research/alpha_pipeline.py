@@ -115,6 +115,7 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         "assets": asset_rows,
         "registry": registry,
         "memory": memory,
+        "returns_by_id": returns_by_id,     # per-alpha net returns (for an honest no-peek OOS downstream)
         "portfolio": portfolio,
         "target_book": target_book,
         "brief": brief,

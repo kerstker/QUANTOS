@@ -47,6 +47,8 @@ def test_pipeline_runs_end_to_end_and_computes_leakage():
     assert "weights" in tb and abs(tb["net"]) < 1e-6
     # P7 wired: an auto research brief was composed over the run's notes
     assert out["brief"]["n_tested"] == 3
+    # per-alpha net returns are exposed for a downstream honest no-peek OOS / CPCV
+    assert set(out["returns_by_id"]) <= {a["alpha_id"] for a in out["assets"]}
 
 
 def test_pipeline_is_deterministic():
