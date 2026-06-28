@@ -351,6 +351,28 @@ def test_lifecycle_monitor_is_read_only_and_honest_about_live():
     assert payload["thresholds"]["min_ic_retention"] > 0
 
 
+def test_backtest_results_aggregates_real_runs_or_fails_closed():
+    response = client.get("/api/v1/console/backtest-results")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
+    assert payload["read_only"] is True
+    assert payload["results_mode"] == "READ_ONLY_BACKTEST_RESULTS"
+    # Real path aggregates done run_registry runs by role; synthetic fallback is all-None blocks (CI).
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"}
+    for role in ("carry", "combo", "oi_research", "survivorship"):
+        assert role in payload
+        block = payload[role]
+        if block is not None:
+            assert set(block) >= {"run_id", "kind", "verdict", "metrics", "series"}
+            assert block["status"] == "done"
+    assert "factory" in payload and set(payload["factory"]) == {"loop", "orthogonal"}
+    # When the registry is present (real), carry is the deployable funding-carry edge with its real metric.
+    if payload["data_provenance"] == "RESEARCH_RUN_REGISTRY":
+        assert payload["carry"] is not None
+        assert "net_sharpe_5bps" in payload["carry"]["metrics"]
+
+
 def test_alpha_decay_monitors_are_engine_computed():
     """ALPHA_DECAY rows must come from the REAL Phase-6 degradation-monitor engine, not a
     hand-coded formula. Proven two ways: (1) the summary advertises the engine, and (2) every

@@ -27,6 +27,7 @@ import type {
   DslExplorerPayload,
   SafetyPrimitivesPayload,
   LifecycleMonitorPayload,
+  BacktestResultsPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -219,6 +220,10 @@ export function fetchSafetyPrimitivesSnapshot(signal?: AbortSignal) {
 
 export function fetchLifecycleMonitorSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<LifecycleMonitorPayload>('/api/v1/console/lifecycle-monitor', signal);
+}
+
+export function fetchBacktestResultsSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<BacktestResultsPayload>('/api/v1/console/backtest-results', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {

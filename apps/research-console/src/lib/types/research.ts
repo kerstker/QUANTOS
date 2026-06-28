@@ -1404,6 +1404,20 @@ export interface PopulationOptimizerPayload {
   diversity: number; gross: number; method: string; n_candidates: number;
 }
 export interface SafetyCheck { name: string; stage: string; }
+export interface BacktestRunBlock {
+  run_id: string; kind: string; verdict: string; status: string;
+  metrics: Record<string, number | string | null>;
+  series: Record<string, { label: string; value: number }[]>;
+}
+export interface BacktestResultsPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  results_mode: string;
+  carry: BacktestRunBlock | null;
+  combo: BacktestRunBlock | null;
+  oi_research: BacktestRunBlock | null;
+  survivorship: BacktestRunBlock | null;
+  factory: { loop: BacktestRunBlock | null; orthogonal: BacktestRunBlock | null };
+}
 export interface SafetyPrimitivesPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   safety_mode: string;

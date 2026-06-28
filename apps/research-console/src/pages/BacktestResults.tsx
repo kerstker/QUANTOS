@@ -1,19 +1,24 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, GateDot, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
 import { BarSeries, DivergingBars } from '@/ui/charts';
-import { fixed, pct } from '@/ui/format';
+import { fixed } from '@/ui/format';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import { fetchBacktestResultsSnapshot } from '@/lib/api/research-console-api';
+import type { BacktestResultsPayload, BacktestRunBlock } from '@/lib/types/research';
 
 /**
- * Backtest Results — the HONEST, observed research findings from the real crypto backtests
- * (funding carry + the machine-discovered second edge). These are REAL numbers observed in tool
- * output, NOT synthetic mock fixtures and NOT a promise of future returns. Every figure carries its
- * discount (survivorship, capacity, modeled slippage). Past backtest != future performance.
+ * Backtest Results — the HONEST results of the real crypto backtests. When the console API is connected
+ * these figures stream LIVE from the run_registry (one done run per role: carry / combo / oi_research /
+ * survivorship); offline they fall back to the OBSERVED constants below (the same numbers transcribed from
+ * tool output). A handful of figures have no single run field (Carry per-year, R² vs carry, the 2.09
+ * headline) and stay OBSERVED in both modes — we never fabricate a run field for them. Every figure carries
+ * its discount (survivorship, capacity, modeled slippage). Past backtest != future performance.
  */
 
-// ---- observed numbers (all from tool output over 2026-06-27/28) -------------------------------
+// ---- OBSERVED fallback constants (also the source for figures with no run field) --------------------
 const CARRY_YEARS = [
   { label: '20', value: 4.4 }, { label: '21', value: 2.8 }, { label: '22', value: 1.5 },
   { label: '23', value: 0.5 }, { label: '24', value: 1.4 }, { label: '25', value: 3.0 }, { label: '26', value: 2.0 },
@@ -26,6 +31,7 @@ const COMBO_YEARS = [
   { label: '21', value: 1.62 }, { label: '22', value: 2.2 }, { label: '23', value: 2.07 },
   { label: '24', value: 1.09 }, { label: '25', value: 1.48 }, { label: '26', value: 2.02 },
 ];
+const EXEC_LAG = [{ label: 'lag0', value: 1.18 }, { label: 'lag1', value: 1.03 }, { label: 'lag2', value: 0.89 }];
 
 interface Edge { name: string; what: string; sharpe: string; status: string; note: string; }
 const EDGES: Edge[] = [
@@ -41,6 +47,17 @@ const EDGES: Edge[] = [
     note: bi('深压测降级 / 0 幸存·非稳健边', 'downgraded / 0 survivors — not robust') },
 ];
 
+// ---- real-run accessors (fall back to the OBSERVED constant when a block / field is absent) ----------
+function metric(block: BacktestRunBlock | null | undefined, key: string, fallback: number): number {
+  const v = block?.metrics?.[key];
+  return typeof v === 'number' ? v : fallback;
+}
+function series(block: BacktestRunBlock | null | undefined, key: string,
+                fallback: { label: string; value: number }[]) {
+  const arr = block?.series?.[key];
+  return Array.isArray(arr) && arr.length ? arr : fallback;
+}
+
 function edgeColumns(): Column<Edge>[] {
   return [
     { key: 'name', header: bi('因子', 'Edge'), mono: true, render: e => <span className="text-accent">{e.name}</span> },
@@ -52,16 +69,20 @@ function edgeColumns(): Column<Edge>[] {
   ];
 }
 
-function HonestBanner() {
+function HonestBanner({ usingBackend }: { usingBackend: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
       style={{ background: 'color-mix(in srgb, var(--pos) 7%, transparent)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--pos) 28%, transparent)' }}>
       <span className="text-2xs font-medium text-pos">
-        ✓ {bi('真实回测观察值(工具实测)· 历史回测,非未来收益承诺',
-          'Real observed backtest figures (from tool output) · historical backtest, NOT a promise of future returns')}
+        ✓ {usingBackend
+          ? bi('真实回测结果(实时取自 run_registry)· 历史回测,非未来收益承诺',
+            'Real backtest results (live from run_registry) · historical backtest, NOT a promise of future returns')
+          : bi('真实回测观察值(工具实测,离线)· 历史回测,非未来收益承诺',
+            'Real observed backtest figures (offline, from tool output) · historical backtest, NOT a promise of future returns')}
       </span>
       <span className="mx-1 h-3 w-px bg-line-strong" />
-      <Chip label="REAL_BACKTEST" tone="pos" />
+      <Chip label={usingBackend ? 'REAL_BACKTEST · RESEARCH_RUN_REGISTRY' : 'OBSERVED_SNAPSHOT'}
+        tone={usingBackend ? 'pos' : 'info'} />
       <Chip label="L2_RESEARCH_ONLY" tone="info" />
       <Chip label={bi('非投资建议', 'NOT ADVICE')} tone="warn" />
     </div>
@@ -69,12 +90,26 @@ function HonestBanner() {
 }
 
 export default function BacktestResults() {
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<BacktestResultsPayload>(
+    sig => fetchBacktestResultsSnapshot(sig));
+  const carry = payload?.carry, combo = payload?.combo, oi = payload?.oi_research, surv = payload?.survivorship;
+
+  // figures WITH a real run field bind live; figures WITHOUT stay OBSERVED (constants) in both modes.
+  const comboYears = series(combo, 'per_year', COMBO_YEARS);
+  const crowdYears = series(surv, 'per_year', CROWD_YEARS);   // honest correction: real survivorship per-year
+  const execLag = series(oi, 'exec_lag', EXEC_LAG);
+  const comboSharpe = metric(combo, 'combo_sharpe', 1.50);
+  const priceSharpe = execLag[0]?.value ?? 1.18;
+  const afterLag = execLag[1]?.value ?? 1.03;
+
   return (
     <PageShell>
       <PageHeader title="Backtest Results" titleZh="回测战果"
         subtitle={bi('真实加密回测的诚实战果:1 条可部署边 + 1 条机器发现的第二条边;每个数字都带折扣',
           'Honest results of the real crypto backtests — 1 deployable edge + 1 machine-found second edge; every figure carries its discount')} />
-      <HonestBanner />
+      <HonestBanner usingBackend={usingBackend} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        source={usingBackend ? 'RESEARCH_RUN_REGISTRY' : 'FRONTEND_OBSERVED_SNAPSHOT'} error={error} />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('稳健正交边', 'Robust edges')} value="2" accent
@@ -83,8 +118,8 @@ export default function BacktestResults() {
           sub={bi('流动半区·年化 47%', 'liquid half · 47% ann')} />
         <StatTile label={bi('第二条边 与 carry 相关', '2nd edge R² vs carry')} value="0.5%" tone="info"
           sub={bi('几乎完全正交', 'near-orthogonal')} />
-        <StatTile label={bi('双因子组合夏普', 'Combo Sharpe')} value="1.50" tone="pos"
-          sub={bi('maxDD 0.12', 'maxDD 0.12')} />
+        <StatTile label={bi('双因子组合夏普', 'Combo Sharpe')} value={fixed(comboSharpe, 2)} tone="pos"
+          sub={bi(`maxDD ${fixed(metric(combo, 'max_drawdown', 0.12), 2)}`, `maxDD ${fixed(metric(combo, 'max_drawdown', 0.12), 2)}`)} />
       </KpiStrip>
 
       <Panel eyebrow={bi('诚实地图', 'Honest Map')} title={bi('我们到底有什么', 'What We Actually Have')}
@@ -100,15 +135,15 @@ export default function BacktestResults() {
         <Panel eyebrow={bi('第一条边', 'Edge #1')} title={bi('资金费 Carry(可部署)', 'Funding Carry (deployable)')}
           tone="pos">
           <KpiStrip cols={3}>
-            <StatTile label={bi('净夏普@5bps', 'Net Sharpe @5bps')} value="2.03" tone="pos" />
-            <StatTile label={bi('日均收资金费', 'Funding/day')} value="5.43 bps" tone="pos" />
-            <StatTile label={bi('换手', 'Turnover')} value="0.28" tone="info" />
+            <StatTile label={bi('净夏普@5bps', 'Net Sharpe @5bps')} value={fixed(metric(carry, 'net_sharpe_5bps', 2.03), 2)} tone="pos" />
+            <StatTile label={bi('日均收资金费', 'Funding/day')} value={`${fixed(metric(carry, 'funding_bps_day', 5.43), 2)} bps`} tone="pos" />
+            <StatTile label={bi('换手', 'Turnover')} value={fixed(metric(carry, 'turnover', 0.28), 2)} tone="info" />
             <StatTile label={bi('流动半区年化', 'Liquid ann')} value="47%" tone="pos" />
             <StatTile label={bi('最大回撤', 'Max DD')} value="26%" tone="warn" />
             <StatTile label={bi('最差单日', 'Worst day')} value="−6.8%" tone="neg" />
           </KpiStrip>
-          <div className="mt-3 text-2xs text-muted">{bi('逐年净夏普(流动半区,@5bps)— 7/7 年全正含 2022 熊市',
-            'Per-year net Sharpe (liquid half, @5bps) — 7/7 years positive incl. 2022 bear')}</div>
+          <div className="mt-3 text-2xs text-muted">{bi('逐年净夏普(流动半区,@5bps)— 7/7 年全正含 2022 熊市 · 观察值',
+            'Per-year net Sharpe (liquid half, @5bps) — 7/7 years positive incl. 2022 bear · observed')}</div>
           <BarSeries data={CARRY_YEARS.map(y => y.value)} labels={CARRY_YEARS.map(y => `'${y.label}`)}
             valueFormat={v => fixed(v, 1)} />
           <div className="mt-2 text-2xs text-secondary">
@@ -120,16 +155,16 @@ export default function BacktestResults() {
         <Panel eyebrow={bi('第二条边', 'Edge #2')} title={bi('逆向散户持仓 crowd_contra', 'Fade Crowded Retail')}
           tone="info" right={<StatusChip value="WATCH" />}>
           <KpiStrip cols={3}>
-            <StatTile label={bi('价夏普', 'Price Sharpe')} value="1.18" tone="pos" />
+            <StatTile label={bi('价夏普', 'Price Sharpe')} value={fixed(priceSharpe, 2)} tone="pos" />
             <StatTile label={bi('与 carry 相关 R²', 'R² vs carry')} value="0.5%" tone="info" />
-            <StatTile label={bi('增量 IR', 'Incremental IR')} value="+1.13" tone="pos" />
-            <StatTile label={bi('滞后 1 天后', 'After 1-day lag')} value="1.03" tone="pos" />
-            <StatTile label={bi('幸存者检验后', 'Post-survivorship')} value="0.93" tone="warn" />
+            <StatTile label={bi('增量 IR', 'Incremental IR')} value={`+${fixed(metric(oi, 'incremental_ir', 1.13), 2)}`} tone="pos" />
+            <StatTile label={bi('滞后 1 天后', 'After 1-day lag')} value={fixed(afterLag, 2)} tone="pos" />
+            <StatTile label={bi('幸存者检验后', 'Post-survivorship')} value={fixed(metric(surv, 'complete_sharpe_raw', 0.93), 2)} tone="warn" />
             <StatTile label={bi('换手', 'Turnover')} value="0.26" tone="info" />
           </KpiStrip>
-          <div className="mt-3 text-2xs text-muted">{bi('逐年价夏普(2022–26)— 全正,含 2022 熊市',
-            'Per-year price Sharpe (2022–26) — all positive incl. 2022 bear')}</div>
-          <BarSeries data={CROWD_YEARS.map(y => y.value)} labels={CROWD_YEARS.map(y => `'${y.label}`)}
+          <div className="mt-3 text-2xs text-muted">{bi('逐年价夏普(幸存者完整口径)— 含 2022 熊市',
+            'Per-year Sharpe (complete survivorship basis) — incl. 2022 bear')}</div>
+          <BarSeries data={crowdYears.map(y => y.value)} labels={crowdYears.map(y => `'${y.label}`)}
             posTone="info" valueFormat={v => fixed(v, 2)} />
           <div className="mt-2 text-2xs text-secondary">
             {bi('散户多空比太偏多头就做空,与资金费 carry 几乎完全正交。4 路对抗验证无致命缺陷但裁决 WEAK_LEAD(多重检验+近端软化+幸存者打 ~0.3 折)。是候选,非确认。',
@@ -142,14 +177,14 @@ export default function BacktestResults() {
         <Panel className="xl:col-span-2" eyebrow={bi('组合', 'Portfolio')}
           title={bi('双因子组合(carry × crowd_contra)', 'Two-Factor Book')} tone="pos">
           <KpiStrip cols={4}>
-            <StatTile label={bi('组合夏普', 'Combo Sharpe')} value="1.50" tone="pos" />
-            <StatTile label={bi('最大回撤', 'Max DD')} value="0.12" tone="pos" sub={bi('低于任一单因子', 'below either alone')} />
-            <StatTile label={bi('净@10bps', 'Net @10bps')} value="1.02" tone="pos" />
-            <StatTile label={bi('比最佳单因子', 'vs best alone')} value="+0.23" tone="pos" />
+            <StatTile label={bi('组合夏普', 'Combo Sharpe')} value={fixed(comboSharpe, 2)} tone="pos" />
+            <StatTile label={bi('最大回撤', 'Max DD')} value={fixed(metric(combo, 'max_drawdown', 0.12), 2)} tone="pos" sub={bi('低于任一单因子', 'below either alone')} />
+            <StatTile label={bi('净@10bps', 'Net @10bps')} value={fixed(metric(combo, 'net_10bps', 1.02), 2)} tone="pos" />
+            <StatTile label={bi('比最佳单因子', 'vs best alone')} value={`+${fixed(metric(combo, 'lift_vs_best', 0.23), 2)}`} tone="pos" />
           </KpiStrip>
-          <div className="mt-3 text-2xs text-muted">{bi('逐年组合经济夏普(2021–26)— 全正',
-            'Per-year combo economic Sharpe (2021–26) — all positive')}</div>
-          <BarSeries data={COMBO_YEARS.map(y => y.value)} labels={COMBO_YEARS.map(y => `'${y.label}`)}
+          <div className="mt-3 text-2xs text-muted">{bi('逐年组合经济夏普(2020–26)— 全正',
+            'Per-year combo economic Sharpe (2020–26) — all positive')}</div>
+          <BarSeries data={comboYears.map(y => y.value)} labels={comboYears.map(y => `'${y.label}`)}
             valueFormat={v => fixed(v, 2)} />
           <div className="mt-2 text-2xs text-secondary">
             {bi('真优化器把两条正交边去冗余组合 → 更高夏普 + 更低回撤(正交边组合的教科书效果)。组合数字继承 crowd_contra 部分未重测的幸存者折扣。',

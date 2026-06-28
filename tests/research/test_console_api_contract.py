@@ -103,6 +103,8 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # research-ops console: dynamic registry-backed run list + generic detail (real research results)
     "/api/v1/console/research-runs": ("", ("runs",)),
     "/api/v1/console/research-run": ("?run_id=__contract__", ("run",)),
+    # backtest results: aggregate of the done run_registry runs by role (carry/combo/oi/survivorship + factory)
+    "/api/v1/console/backtest-results": ("", ("carry", "combo", "oi_research", "survivorship", "factory")),
     # alpha lifecycle monitor: real experiment_registry backtest-side artifacts (live side honestly null)
     "/api/v1/console/lifecycle-monitor": ("", ("summary", "rows", "thresholds", "lifecycle_policy")),
 }
@@ -115,6 +117,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/safety-primitives": "REAL_SAFETY_PRIMITIVES",   # reads the real KillSwitch/gate/config
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
     "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
+    # BacktestResults aggregates done runs by role; synthetic (all-None blocks) when the registry is empty.
+    "/api/v1/console/backtest-results": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.
