@@ -3536,6 +3536,49 @@ def _population_optimizer_payload() -> Dict:
             "gross": round(sum(abs(s["weight"]) for s in selected), 2),
             "method": "FORWARD_SELECTION_INCREMENTAL_IR", "n_candidates": len(cands)}
 
+
+def _short_factor_label(aid: str) -> str:
+    s = aid
+    for p in ("hx_product_", "hx_sum_", "hx_", "h_"):
+        if s.startswith(p):
+            s = s[len(p):]
+            break
+    s = s.replace("_price-", "·").replace("price-", "").replace("_", "·")
+    return s[:18]
+
+
+def _alpha_graph_payload() -> Dict:
+    """Real correlation network: nodes = factors, edges = |return correlation|, clusters = connected
+    components above RHO_CUT (redundancy groups). Uses the real services/alpha correlation_graph engine on
+    the REAL per-factor return series when present, else on the synthetic candidate streams (same engine)."""
+    from services.alpha.alpha_graph import correlation_graph
+    rho_cut, edge_min = 0.7, 0.3
+    rf = _load_real_factors()
+    if rf:
+        rbi = {f["alpha_id"]: tuple(f["returns"]) for f in rf}
+    else:
+        rbi = {f"alpha-{i + 1}": tuple(_forward_returns(_factor_values(i), i)) for i in range(7)}
+    g = correlation_graph(rbi)
+    comps = sorted(g.clusters(rho_cut), key=lambda c: sorted(c)[0])
+    cluster_of = {n: ci for ci, comp in enumerate(comps) for n in comp}
+    n_cl = max(1, len(comps))
+    nodes = []
+    for ci, comp in enumerate(comps):
+        cx = 300 + 200 * math.cos(2 * math.pi * ci / n_cl)
+        cy = 180 + 130 * math.sin(2 * math.pi * ci / n_cl)
+        members = sorted(comp)
+        for mi, mid in enumerate(members):
+            ang = 2 * math.pi * mi / max(1, len(members))
+            r = 0.0 if len(members) == 1 else 44.0
+            nodes.append({"id": mid, "label": _short_factor_label(mid),
+                          "x": round(cx + r * math.cos(ang), 1), "y": round(cy + r * math.sin(ang), 1),
+                          "cluster": f"cl_{cluster_of[mid]}"})
+    edges = [{"a": a, "b": b, "corr": round(w, 3)} for a, b, w in g.near_duplicate_pairs(edge_min)]
+    n_near = sum(1 for e in edges if e["corr"] >= rho_cut)
+    return {"nodes": nodes, "edges": edges,
+            "clusters": [{"name": f"cl_{i}", "count": len(c)} for i, c in enumerate(comps)],
+            "rho_cut": rho_cut, "n_near_dup": n_near}
+
 _CRYPTO_EMPTY_META = {
     "provider": "", "asset_class": "CRYPTO", "vs_currency": "", "days": 0, "granularity": "",
     "fwd_horizon": 0, "n_instruments": 0, "n_periods": 0, "coins": [], "search_mode": "",
@@ -3929,6 +3972,18 @@ async def portfolio_dashboard() -> Dict:
 @app.get("/api/v1/console/population-optimizer")
 async def population_optimizer() -> Dict:
     payload = _population_optimizer_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
+        **payload,
+        "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
+    }
+
+
+@app.get("/api/v1/console/alpha-graph")
+async def alpha_graph() -> Dict:
+    payload = _alpha_graph_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,

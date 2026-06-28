@@ -22,6 +22,7 @@ import type {
   Phase3AReadinessPayload,
   PortfolioDashboardPayload,
   PopulationOptimizerPayload,
+  AlphaGraphPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -194,6 +195,10 @@ export function fetchPortfolioSnapshot(signal?: AbortSignal) {
 
 export function fetchPopulationOptimizerSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<PopulationOptimizerPayload>('/api/v1/console/population-optimizer', signal);
+}
+
+export function fetchAlphaGraphSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<AlphaGraphPayload>('/api/v1/console/alpha-graph', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {

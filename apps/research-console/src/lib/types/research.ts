@@ -1403,3 +1403,11 @@ export interface PopulationOptimizerPayload {
   selected: PopOptSelected[]; excluded: PopOptExcluded[];
   diversity: number; gross: number; method: string; n_candidates: number;
 }
+export interface AlphaGraphNode { id: string; label: string; x: number; y: number; cluster: string; }
+export interface AlphaGraphEdge { a: string; b: string; corr: number; }
+export interface AlphaGraphCluster { name: string; count: number; }
+export interface AlphaGraphPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  nodes: AlphaGraphNode[]; edges: AlphaGraphEdge[]; clusters: AlphaGraphCluster[];
+  rho_cut: number; n_near_dup: number;
+}
