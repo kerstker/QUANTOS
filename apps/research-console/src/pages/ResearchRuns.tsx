@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
+import { triggerRun, runnerEnabled, RUNNABLE_KINDS } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -38,10 +39,31 @@ function fmtHeadline(h: ResearchRunSummary['headline']): string {
 }
 
 export default function ResearchRuns() {
+  const [reloadKey, setReloadKey] = useState(0);
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ResearchRunsPayload>(
-    s => fetchResearchRuns(s));
+    s => fetchResearchRuns(s), [reloadKey]);
   const data = usingBackend ? payload! : fallbackRuns;
   const [kind, setKind] = useState('全部');
+  const [trigMsg, setTrigMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
+
+  // live polling: while any run is queued/running, re-fetch the list so status updates without a manual reload
+  const active = data.runs.some(r => r.status === 'queued' || r.status === 'running');
+  useEffect(() => {
+    if (!usingBackend || !active) return;
+    const t = setInterval(() => setReloadKey(k => k + 1), 3000);
+    return () => clearInterval(t);
+  }, [usingBackend, active]);
+
+  async function onRun(k: string) {
+    setTrigMsg({ tone: 'info', text: bi(`已提交 ${k} …`, `submitting ${k} …`) });
+    try {
+      const res = await triggerRun(k);
+      setTrigMsg({ tone: 'pos', text: bi(`已排队:${res.kind}`, `queued: ${res.kind}`) });
+      setReloadKey(x => x + 1);            // surface the queued run immediately; polling then tracks it
+    } catch (e) {
+      setTrigMsg({ tone: 'neg', text: (e instanceof Error ? e.message : String(e)) });
+    }
+  }
 
   const runs = useMemo(() => data.runs.filter(r => kind === '全部' || r.kind === kind), [data.runs, kind]);
   const counts = useMemo(() => {
@@ -76,6 +98,27 @@ export default function ResearchRuns() {
         <StatTile label={bi('运行中', 'Running')} value={String((counts['running'] ?? 0) + (counts['queued'] ?? 0))} tone="info" />
         <StatTile label={bi('出错', 'Error')} value={String(counts['error'] ?? 0)} tone={counts['error'] ? 'neg' : 'muted'} />
       </KpiStrip>
+
+      <Panel eyebrow={bi('从前端运行', 'Operate')} title={bi('触发研究运行', 'Trigger a Research Run')}
+        right={<Chip label={runnerEnabled() ? bi('runner 已连接', 'runner online') : bi('runner 未启动', 'runner offline')}
+          tone={runnerEnabled() ? 'pos' : 'muted'} />}>
+        <div className="mb-2 rounded-lg border border-info/30 bg-info/5 px-3 py-1.5 text-2xs text-muted">
+          {bi('研究运行 · 只跑回测/搜索/取数 · 不下单 / 不碰实盘 / 不碰凭证(L2)',
+            'Research only — backtests / searches / data refresh · no orders / no live / no credentials (L2)')}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {RUNNABLE_KINDS.map(rk => (
+            <button key={rk.kind} onClick={() => onRun(rk.kind)} disabled={!runnerEnabled()}
+              title={runnerEnabled() ? rk.kind : bi('启动 research_runner(端口 8420)后可用', 'start research_runner (port 8420) to enable')}
+              className={`rounded-md border px-2.5 py-1.5 text-xs transition ${runnerEnabled()
+                ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+              ▷ {rk.label}
+            </button>
+          ))}
+        </div>
+        {trigMsg && <div className={`mt-2 text-2xs ${({ pos: 'text-pos', neg: 'text-neg', info: 'text-info' } as const)[trigMsg.tone]}`}>{trigMsg.text}</div>}
+        {active && <div className="mt-1 text-2xs text-info">{bi('● 有运行进行中,自动刷新状态…', '● a run is in progress — auto-refreshing…')}</div>}
+      </Panel>
 
       <Panel eyebrow={bi('全部运行', 'All Runs')} title={bi('研究运行登记表', 'Research Run Registry')}
         right={<Chip label={bi(`${runs.length} 项`, `${runs.length} shown`)} tone="info" />}>

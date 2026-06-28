@@ -14,7 +14,8 @@
       "port": 3100,
       "env": {
         "VITE_API_URL": "http://127.0.0.1:8400",
-        "VITE_MOCK_MODE": "false"
+        "VITE_MOCK_MODE": "false",
+        "VITE_RUNNER_URL": "http://127.0.0.1:8420"
       }
     }
   ]
