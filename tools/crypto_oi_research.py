@@ -120,13 +120,17 @@ def _rank_ic(sig, px):
 
 
 _SPOT_DB = os.path.join("data", "cache", "crypto_binance.db")
+_OI_INTRADAY = os.path.join("data", "cache", "crypto_oi_intraday.json")
+INTRADAY_FIELDS = ("oi_range", "oi_trend", "gls_trend", "gls_range", "taker_mean", "oi_surge")
 
 
-def build_panel(only=None, add_basis=False):
+def build_panel(only=None, add_basis=False, add_intraday=False):
     """Build the price+volume+funding+OI-metrics FieldPanel on the liquid-major universe (PIT-safe).
     `only` optionally restricts the instrument set (used by the refutation harness for subset tests).
     `add_basis=True` adds a `basis` field = perp_close / spot_close - 1 (a carry signal distinct from
-    funding — the realized premium), loaded from the Binance spot store and PIT-aligned by event_time."""
+    funding — the realized premium), loaded from the Binance spot store and PIT-aligned by event_time.
+    `add_intraday=True` adds 6 INTRADAY-derived daily fields (oi_range/oi_trend/gls_trend/gls_range/
+    taker_mean/oi_surge) from crypto_oi_intraday.json — positioning DYNAMICS the eod snapshot discards."""
     oi_cache = json.load(open(_OI, encoding="utf-8"))
     oi_data = oi_cache.get("data", oi_cache)
     tickers = sorted(tk for tk, d in oi_data.items() if not tk.startswith("_") and len(d) >= MIN_DAYS)
@@ -170,6 +174,19 @@ def build_panel(only=None, add_basis=False):
                 row.append((perp / sp - 1.0) if (sp and perp and sp > 0) else None)
             basis.append(row)
         panel.matrices["basis"] = basis
+
+    if add_intraday and os.path.exists(_OI_INTRADAY):
+        intr = {tk: {int(k): v for k, v in d.items()}
+                for tk, d in json.load(open(_OI_INTRADAY, encoding="utf-8")).get("data", {}).items()
+                if not tk.startswith("_")}
+
+        def _intr_cell(inst, t, fld):
+            rec = intr.get(inst, {}).get(t)
+            return rec.get(fld) if isinstance(rec, dict) else None
+
+        for fld in INTRADAY_FIELDS:
+            panel.matrices[fld] = [[_intr_cell(inst, t, fld) for inst in panel.instruments]
+                                   for t in panel.event_times]
     return panel, instruments
 
 
