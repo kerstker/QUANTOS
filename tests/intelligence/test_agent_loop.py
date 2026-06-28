@@ -81,3 +81,42 @@ def test_loop_isolates_a_failing_candidate():
 def test_loop_must_run_as_non_human():
     with pytest.raises(ValueError):
         ResearchAgentLoop(actor=Actor(actor_id="alice", kind=ActorKind.HUMAN))
+
+
+class _EvidenceEval:
+    """Evaluator that PASSes only when real gauntlet evidence (leakage_ok=True) is supplied — exactly the
+    evaluator's fail-closed contract: un-supplied leakage stays REQUIRES_HUMAN_REVIEW. Records the kwargs it
+    received so the test can assert the loop threads evidence (leakage/regime/pbo) into evaluate()."""
+    def __init__(self, catalog):
+        self.catalog, self.seen = catalog, {}
+
+    def evaluate(self, alpha_id, periods, *, leakage_ok=None, regime_profitable_frac=None, pbo=None, **k):
+        self.seen[alpha_id] = {"leakage_ok": leakage_ok, "regime": regime_profitable_frac, "pbo": pbo}
+        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+        verdict = (ValidationVerdict.PASS if leakage_ok is True
+                   else ValidationVerdict.REQUIRES_HUMAN_REVIEW)
+        return AlphaEvaluation(alpha_id=alpha_id, verdict=verdict, deflated_sharpe=0.8, pbo=0.1,
+                               catalog_trial_count=self.catalog.global_trial_count(), marginal_ir=0.5)
+
+
+def test_loop_advances_when_real_evidence_is_supplied():
+    # the fix: supplying real gauntlet evidence (leakage_ok=True + regime) lets a genuinely-passing alpha
+    # advance TESTING -> VALIDATED -> PAPER_TRADING through the agent loop (the previously-frozen chain).
+    cat = AlphaCatalog()
+    ev = _EvidenceEval(cat)
+    loop = ResearchAgentLoop(catalog=cat, evaluator=ev)
+    out = loop.run(_cands(1), evidence={"a0": {"leakage_ok": True, "regime_profitable_frac": 0.8}})
+    assert cat.state("a0") == AlphaState.PAPER_TRADING
+    assert "a0" in out["human_review_queue"]
+    assert ev.seen["a0"]["leakage_ok"] is True and ev.seen["a0"]["regime"] == 0.8  # evidence threaded
+    assert cat.state("a0") != AlphaState.APPROVED                                  # containment intact
+
+
+def test_loop_stays_fail_closed_without_evidence():
+    # no evidence supplied -> leakage_ok None -> REQUIRES_HUMAN_REVIEW -> parked in TESTING (unchanged).
+    cat = AlphaCatalog()
+    loop = ResearchAgentLoop(catalog=cat, evaluator=_EvidenceEval(cat))
+    out = loop.run(_cands(1))
+    assert cat.state("a0") == AlphaState.TESTING
+    assert out["human_review_queue"] == []
+    assert cat.state("a0") != AlphaState.APPROVED

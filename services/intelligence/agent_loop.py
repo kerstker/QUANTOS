@@ -16,7 +16,9 @@ from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.evaluator import AlphaEvaluator
+from services.alpha.factory import batch_pbo
 from services.alpha.lifecycle import AlphaLifecycleManager
+from services.research.backtest_engine.costs import CostModel
 
 from .guardrails import AgentAction, assert_action_allowed
 
@@ -33,19 +35,39 @@ class ResearchAgentLoop:
         if self.actor.is_human:
             raise ValueError("the autonomous research loop must run as a non-human actor")
 
-    def run(self, candidates: Sequence[tuple], *, timestamp: int = 0) -> dict:
+    def run(self, candidates: Sequence[tuple], *, timestamp: int = 0,
+            evidence: Optional[dict] = None) -> dict:
         """candidates: (AlphaDefinition, periods). Returns a report + the human
         review queue (PAPER_TRADING alphas awaiting a human approval token).
+
+        Evidence parity with AlphaFactory (the gauntlet ↔ evaluator wiring): the
+        selection-level PBO is self-computed here for the whole batch via CSCV, and
+        `evidence` maps alpha_id -> {"leakage_ok": bool, "regime_profitable_frac": float}
+        for the two pieces that cannot be derived from pre-computed PanelPeriods alone
+        (leakage needs the expression+panel; regime can also be self-computed by the
+        evaluator under its opt-in flag). All default to None = NOT ASSESSED, so an
+        alpha with un-supplied evidence stays in TESTING (fail-closed) — never an
+        advance on a silent default. Containment is unchanged: the loop has no path
+        to APPROVED regardless of evidence.
 
         Each candidate is isolated: an error (evaluation failure, guardrail) is
         recorded and the loop continues — it never propagates uncaught nor orphans
         the others, and an errored alpha is NOT advanced (fail-closed, review P1)."""
         report, review_queue = {}, []
+        evidence = evidence or {}
+        pbo_batch = batch_pbo(
+            candidates, cost=getattr(self.evaluator, "cost", CostModel()),
+            quantile=getattr(self.evaluator, "quantile", 0.2),
+            target_aum=getattr(self.evaluator, "target_aum", 1e7))
         for defn, periods in candidates:
             try:
                 assert_action_allowed(self.actor, AgentAction.EVALUATE)
                 self.catalog.register(defn)
-                ev = self.evaluator.evaluate(defn.alpha_id, periods, as_of=timestamp)
+                ev_in = evidence.get(defn.alpha_id, {})
+                ev = self.evaluator.evaluate(
+                    defn.alpha_id, periods, as_of=timestamp, pbo=pbo_batch,
+                    leakage_ok=ev_in.get("leakage_ok"),
+                    regime_profitable_frac=ev_in.get("regime_profitable_frac"))
                 assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
                 self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
                 if ev.verdict == ValidationVerdict.PASS:

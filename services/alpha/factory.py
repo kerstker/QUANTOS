@@ -25,7 +25,7 @@ from .panel_backtest import run_panel_backtest
 _MAX_CSCV_BLOCKS = 8   # keep C(blocks, blocks/2) small + deterministic
 
 
-def _batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float) -> Optional[float]:
+def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float) -> Optional[float]:
     """Real Probability of Backtest Overfitting for SELECTING the best of this
     candidate batch, via CSCV over the candidates' net panel returns. Returns None
     (NOT a passing 0.0) when it cannot be honestly computed — a single candidate,
@@ -75,7 +75,7 @@ class AlphaFactory:
         The overfitting (PBO) input is computed here for the whole batch via CSCV."""
         evidence = evidence or {}
         # one selection-level PBO for the batch (None when not honestly computable)
-        batch_pbo = _batch_pbo(
+        pbo_batch = batch_pbo(
             candidates, cost=getattr(self.evaluator, "cost", CostModel()),
             quantile=getattr(self.evaluator, "quantile", 0.2),
             target_aum=getattr(self.evaluator, "target_aum", 1e7))
@@ -84,7 +84,7 @@ class AlphaFactory:
             self.catalog.register(defn)
             ev_in = evidence.get(defn.alpha_id, {})
             ev = self.evaluator.evaluate(
-                defn.alpha_id, periods, as_of=timestamp, pbo=batch_pbo,
+                defn.alpha_id, periods, as_of=timestamp, pbo=pbo_batch,
                 leakage_ok=ev_in.get("leakage_ok"),
                 regime_profitable_frac=ev_in.get("regime_profitable_frac"))
             self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor,
