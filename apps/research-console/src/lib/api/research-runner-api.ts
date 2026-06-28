@@ -27,6 +27,17 @@ export async function triggerRun(kind: string, params: Record<string, unknown> =
   return res.json();
 }
 
+export async function cancelRun(runId: string): Promise<{ run_id: string; cancelled: boolean }> {
+  if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
+  const res = await fetch(new URL('/cancel', RESEARCH_RUNNER_BASE), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ run_id: runId }),
+  });
+  if (!res.ok) throw new Error(`runner returned ${res.status}`);
+  return res.json();
+}
+
 // The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo.
 export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string }> = [
   { kind: 'combo_book', label: '双因子组合' },

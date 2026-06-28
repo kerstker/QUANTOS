@@ -85,3 +85,68 @@ def test_submit_unknown_kind_raises(tmp_path):
     q = JobQueue(reg, max_workers=1)
     with pytest.raises(KeyError):
         q.submit("place_order", {}, now=1)
+
+
+def test_live_log_captured_from_stdout_and_git_sha(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
+
+    def _printer(_p):
+        print("[seed] hello")
+        print("[gen 1] best 0.42")
+        return 7
+
+    _register_stub("_log", RunSpec(entrypoint="services.research._x:p", param_schema={},
+        adapter=lambda out: {"title": "t", "params": {}, "metrics": {"v": out}, "series": {},
+                             "verdict": "D", "caveats": [], "provenance": "s"},
+        title="t", runner=_printer))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        rid = q.submit("_log", {}, now=1)
+        q.join()
+        got = reg.get(rid)
+        assert got.status == "done"
+        assert any("[gen 1] best 0.42" in line for line in got.log) and "[done]" in got.log
+        assert got.code_version is not None            # git sha captured (auditable)
+    finally:
+        _unregister_stub("_log")
+
+
+def test_soft_cancel_drops_result(tmp_path):
+    import threading
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
+    started, release = threading.Event(), threading.Event()
+
+    def _slow(_p):
+        started.set()
+        release.wait(3)
+        return 1
+
+    _register_stub("_slow", RunSpec(entrypoint="services.research._x:s", param_schema={},
+        adapter=lambda out: {"title": "t", "params": {}, "metrics": {"v": out}, "series": {},
+                             "verdict": "D", "caveats": [], "provenance": "s"},
+        title="t", runner=_slow))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        rid = q.submit("_slow", {}, now=1)
+        assert started.wait(3)                          # the job is running
+        assert q.cancel(rid) is True
+        release.set()
+        q.join()
+        assert reg.get(rid).status == "cancelled"       # result dropped, stays cancelled
+    finally:
+        _unregister_stub("_slow")
+
+
+def test_cancel_terminal_run_returns_false(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
+    q = JobQueue(reg, max_workers=1)
+    _register_stub("_done", RunSpec(entrypoint="services.research._x:d", param_schema={},
+        adapter=lambda out: {"title": "t", "params": {}, "metrics": {}, "series": {},
+                             "verdict": "D", "caveats": [], "provenance": "s"},
+        title="t", runner=lambda _p: 1))
+    try:
+        rid = q.submit("_done", {}, now=1)
+        q.join()
+        assert q.cancel(rid) is False                   # already done -> cannot cancel
+    finally:
+        _unregister_stub("_done")

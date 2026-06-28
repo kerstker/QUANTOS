@@ -1385,6 +1385,7 @@ export interface ResearchRunDetail {
   metrics: Record<string, number | string | null>;
   series: Record<string, Array<{ label: string; value: number }>>;
   verdict: string; caveats: string[]; provenance: string; error: string | null;
+  log: string[]; code_version: string | null;
 }
 export interface ResearchRunPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;

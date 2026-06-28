@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
-VALID_STATUS = {"queued", "running", "done", "error"}
+VALID_STATUS = {"queued", "running", "done", "error", "cancelled"}
 ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
                  "factory_orthogonal", "factory_loop", "data_refresh"}
 
@@ -37,6 +37,8 @@ class ResearchRun:
     caveats: list           # mandatory honesty discounts
     provenance: str
     error: Optional[str] = None
+    log: list = field(default_factory=list)     # live progress / log lines (observability)
+    code_version: Optional[str] = None          # git sha at run time (auditable history)
 
     def to_dict(self) -> dict:
         return asdict(self)

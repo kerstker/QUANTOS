@@ -69,4 +69,26 @@ def test_registry_rejects_unknown_kind(tmp_path):
 
 
 def test_valid_status_set():
-    assert VALID_STATUS == {"queued", "running", "done", "error"}
+    assert VALID_STATUS == {"queued", "running", "done", "error", "cancelled"}
+
+
+def test_log_and_code_version_round_trip(tmp_path):
+    s = ResearchRunStore(str(tmp_path / "runs.db"))
+    s.upsert(_run(run_id="L1", log=["[seed] start", "[gen 1] best 0.5"], code_version="abc1234"))
+    got = s.get("L1")
+    assert got.log == ["[seed] start", "[gen 1] best 0.5"] and got.code_version == "abc1234"
+
+
+def test_append_log_is_live(tmp_path):
+    s = ResearchRunStore(str(tmp_path / "runs.db"))
+    s.upsert(_run(run_id="P1", status="running", log=[]))
+    s.append_log("P1", "[gen 1] done")
+    s.append_log("P1", "[gen 2] done")
+    assert s.get("P1").log == ["[gen 1] done", "[gen 2] done"]
+
+
+def test_cancelled_status_is_valid(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
+    reg.upsert(_run(run_id="C1", status="queued"))
+    reg.set_status("C1", "cancelled")
+    assert reg.get("C1").status == "cancelled"

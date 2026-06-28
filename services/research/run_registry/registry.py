@@ -33,3 +33,6 @@ class RunRegistry:
         if status not in VALID_STATUS:
             raise ValueError(f"invalid status {status!r}")
         self._s.set_status(run_id, status, error)
+
+    def append_log(self, run_id: str, line: str) -> None:
+        self._s.append_log(run_id, line)

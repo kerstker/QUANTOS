@@ -53,3 +53,13 @@ async def run(req: RunRequest) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"run_id": run_id, "status": "queued", "kind": req.kind}
+
+
+class CancelRequest(BaseModel):
+    run_id: str
+
+
+@app.post("/cancel")
+async def cancel(req: CancelRequest) -> dict:
+    # soft cancel: mark the run cancelled and drop its result (a running tool is not force-killed)
+    return {"run_id": req.run_id, "cancelled": _queue.cancel(req.run_id)}
