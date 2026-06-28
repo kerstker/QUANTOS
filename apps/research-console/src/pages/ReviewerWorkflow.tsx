@@ -165,6 +165,10 @@ export default function ReviewerWorkflow() {
           </div>
         } />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={wf.source} error={error} />
+      {/* Honesty: this subsystem is NOT built — needs the Phase 14 identity/RBAC layer. */}
+      <div className="rounded-lg border border-warn/30 bg-warn/5 px-3 py-1.5 text-2xs text-warn">
+        蓝图 / BLUEPRINT:本页为合成演示,对应的「复核工作流引擎」子系统尚未实现(需 Phase 14 身份/RBAC 层);L2 下维持诚实展示,不伪造审批/权限。 · synthetic demo — the reviewer-workflow engine is not built yet.
+      </div>
 
       <KpiStrip cols={8}>
         <StatTile label={bi('任务', 'Tasks')} value={num(sum.tasks)} accent />
