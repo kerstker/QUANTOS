@@ -47,6 +47,15 @@ def _synergistic_set(catalog, k: int) -> dict:
     return select_synergistic_set(returns_by_id, max_k=max(1, k), min_incremental_ir=0.0)
 
 
+def _factor_returns(catalog) -> dict:
+    """Every evaluated factor's REAL per-period net return series (read-only over the catalog). These are
+    the dollar-neutral net-of-cost panel returns the evaluator computed and stored via set_returns — the
+    only honest source of a per-factor return stream for downstream consumers (e.g. the console snapshot
+    enrichment that lets the read-only API run the real risk/PnL engines on real data instead of synthetic)."""
+    return {aid: list(catalog.returns(aid)) for aid in catalog.all_ids()
+            if len(catalog.returns(aid)) >= 2}
+
+
 def _oos_validate(catalog, *, embargo: int = 1):
     """Close the factory loop: no-peek walk-forward SELECTION OOS over the run's OWN discovered
     factors (their stored net returns), so the pipeline validates itself instead of relying on
@@ -175,6 +184,7 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "factor_returns": _factor_returns(catalog),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
         "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
@@ -254,6 +264,7 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "factor_returns": _factor_returns(catalog),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
         "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }
@@ -302,6 +313,7 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         "report": out["report"],
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
+        "factor_returns": _factor_returns(catalog),
         "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
         "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
     }

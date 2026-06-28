@@ -12,6 +12,29 @@ def test_health_read_only():
     assert response.json()["mode"] == "READ_ONLY"
 
 
+def test_phase1b_real_series_back_engines(monkeypatch):
+    # Phase 1B: when the offline snapshot's real per-factor return series are loaded, the engines run on
+    # REAL data and provenance flips to REAL_CRYPTO_SERIES; absent, everything fails closed to synthetic.
+    # The snapshot is gitignored (CI-absent), so we force both states via the module cache.
+    from services.research.console_api import main as capi
+    real = [{"alpha_id": "h_real", "name": "h_real_zscore_3",
+             "returns": [0.01, -0.006, 0.008, -0.003, 0.012, -0.009] * 20,   # 120 real-ish periods
+             "ic": 0.05, "rank_ic": 0.04, "net_sharpe": 1.7, "turnover": 0.32,
+             "deflated_sharpe": 0.6, "capacity_adj_sharpe": 1.3, "pbo": 0.12,
+             "breadth": 12, "state": "ACTIVE", "verdict": "PASS"}]
+    monkeypatch.setattr(capi, "_REAL_FACTORS_CACHE", real)
+    af = client.get("/api/v1/console/alpha-factory").json()
+    assert af["data_provenance"] == "REAL_CRYPTO_SERIES"
+    assert any(c["expression"] == "h_real_zscore_3" for c in af["candidates"])   # real factor surfaced
+    assert any(round(c["ic"], 4) == 0.05 for c in af["candidates"])              # real IC, not synthetic
+    risk = client.get("/api/v1/console/risk-dashboard?alpha_id=alpha-1").json()
+    assert risk["data_provenance"] == "REAL_CRYPTO_SERIES"
+    assert risk["primary_report"]["gates_total"] == 9                           # the real 9-engine gate ran
+
+    monkeypatch.setattr(capi, "_REAL_FACTORS_CACHE", [])                          # fail-closed -> synthetic
+    assert client.get("/api/v1/console/alpha-factory").json()["data_provenance"] == "SYNTHETIC_DETERMINISTIC"
+
+
 def test_computation_lab_snapshot_uses_backend_contract():
     response = client.get("/api/v1/console/computation-lab?alpha_id=alpha-1&cost_bps=18&stress=1.2")
     assert response.status_code == 200

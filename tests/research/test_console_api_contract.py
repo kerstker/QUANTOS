@@ -102,10 +102,20 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
 # marker. They still must be read-only snapshots; only the honesty label differs.
+_REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
     "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
     "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
+    # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
+    # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
+    # Both are honest — accept either marker.
+    "/api/v1/console/alpha-factory": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/risk-dashboard": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/validation": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/paper-trading": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/portfolio": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/computation-lab": _REAL_OR_SYNTHETIC,
 }
 
 
@@ -138,8 +148,10 @@ def test_every_endpoint_satisfies_the_frontend_contract():
         # presented as real research/PnL on the wire. Real-data endpoints carry a
         # distinct provenance marker (still read-only) — never the synthetic label.
         expected_prov = REAL_DATA_PROVENANCE.get(path, "SYNTHETIC_DETERMINISTIC")
-        if body.get("data_provenance") != expected_prov:
-            failures.append(f"{path}: data_provenance is not {expected_prov}")
+        actual_prov = body.get("data_provenance")
+        prov_ok = actual_prov in expected_prov if isinstance(expected_prov, set) else actual_prov == expected_prov
+        if not prov_ok:
+            failures.append(f"{path}: data_provenance {actual_prov!r} not in {expected_prov!r}")
         for key in keys:
             if key not in body:
                 failures.append(f"{path}: missing contract key '{key}'")

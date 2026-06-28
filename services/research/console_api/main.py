@@ -90,6 +90,9 @@ def _factor_values(idx: int, n: int = 160) -> List[float]:
 
 
 def _forward_returns(factors: List[float], idx: int) -> List[float]:
+    real = _real_factor(idx)
+    if real is not None:
+        return list(real["returns"])                          # REAL per-period net returns (Phase 1B)
     returns: List[float] = []
     for i, value in enumerate(factors):
         signal = 0.0015 * value
@@ -152,6 +155,33 @@ def _risk_decision(alpha_id: str, returns: List[float], equity_points: List[Dict
 
 
 def _computed_alpha(idx: int) -> Dict:
+    real = _real_factor(idx)
+    if real is not None:
+        # REAL factor: real cross-sectional IC / rank-IC / turnover / state from the snapshot, realised Sharpe
+        # & maxDD from the REAL net-return equity, info-ratio via the fundamental law (IR ≈ IC·√breadth).
+        returns = list(real["returns"])
+        equity_points = _equity_curve(returns)
+        raw = [(equity_points[i]["equity"] - equity_points[i - 1]["equity"]) / equity_points[i - 1]["equity"]
+               for i in range(1, len(equity_points))] if len(equity_points) > 1 else [0.0]
+        sharpe = compute_sharpe(raw) or (real["net_sharpe"] or 0.0)
+        ic_mean = real["ic"] if real["ic"] is not None else 0.0
+        breadth = real.get("breadth") or 1.0
+        turnover = round(real["turnover"] or 0.0, 3)
+        composite = max(0.0, min(1.0, (sharpe / 3.0) * 0.35 + ic_mean * 3.0 - turnover * 0.08))
+        return {
+            "candidate_id": f"alpha-{idx + 1}",
+            "expression": real["name"],
+            "ic": round(ic_mean, 4),
+            "rank_ic": round(real["rank_ic"] or 0.0, 4),
+            "icir": round(ic_mean * math.sqrt(max(1.0, breadth)), 4),   # IR ≈ IC·√breadth (fundamental law)
+            "sharpe": round(sharpe, 3),
+            "turnover": turnover,
+            "decay_half_life": max(1, int(20 * (1.0 - min(1.0, turnover)))),   # turnover-derived half-life proxy
+            "capacity_estimate": int(max(1.0, breadth) * 12_000_000),          # breadth-scaled capacity proxy
+            "correlation_penalty": round(real.get("pbo") or 0.0, 3),           # PBO ~ overfit/redundancy proxy
+            "composite_score": round(composite, 3),
+            "lifecycle_state": real.get("state") or "ACTIVE",
+        }
     factors = _factor_values(idx, n=160)
     returns = _forward_returns(factors, idx)
     ic = compute_ic(factors, returns)
@@ -421,9 +451,11 @@ def _portfolio_simulation() -> Dict:
     return_matrix = []
     for idx, _alpha in enumerate(candidates):
         return_matrix.append(_forward_returns(_factor_values(idx), idx)[:120])
+    n_days = min((len(r) for r in return_matrix), default=0)   # real series can be shorter than 120
+    w = list(weights.values())
     portfolio_returns = [
-        sum(return_matrix[col][day] * list(weights.values())[col] for col in range(len(candidates)))
-        for day in range(120)
+        sum(return_matrix[col][day] * w[col] for col in range(len(candidates)))
+        for day in range(n_days)
     ]
     equity = 100_000_000.0
     equity_curve = []
@@ -3385,6 +3417,54 @@ def _system_completeness_payload() -> Dict:
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 _CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
 
+
+# --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
+# tools/crypto_research_offline.py persists, for the top real factors, their REAL per-period net return
+# series under `factor_series`. When present, the read-only research/risk/PnL engines run on REAL data
+# instead of the synthetic sin/cos roots (_factor_values/_forward_returns); absent (CI / fresh checkout)
+# everything fails closed to synthetic. Names resolve at call time so the earlier root functions may use
+# these even though they are defined here. Cached once per process (the snapshot is static per process).
+_REAL_FACTORS_CACHE = None
+
+
+def _load_real_factors() -> List[Dict]:
+    global _REAL_FACTORS_CACHE
+    if _REAL_FACTORS_CACHE is not None:
+        return _REAL_FACTORS_CACHE
+    out: List[Dict] = []
+    try:
+        with open(_CRYPTO_SNAPSHOT_PATH, encoding="utf-8") as fh:
+            snap = json.load(fh)
+        by_id = {f.get("alpha_id"): f for f in snap.get("factors", [])}
+        for aid, s in (snap.get("factor_series") or {}).items():
+            rs = [float(x) for x in (s.get("returns") or [])]
+            if len(rs) < 120:                                  # need a full window; keep series rectangular
+                continue
+            rs = rs[-120:]                                     # most-recent 120 periods (matches synthetic length)
+            f = by_id.get(aid, {})
+            out.append({
+                "alpha_id": aid, "name": s.get("name", aid), "returns": rs,
+                "ic": f.get("ic"), "rank_ic": f.get("rank_ic"), "net_sharpe": f.get("net_sharpe"),
+                "turnover": f.get("turnover"), "deflated_sharpe": f.get("deflated_sharpe"),
+                "capacity_adj_sharpe": f.get("capacity_adj_sharpe"), "pbo": f.get("pbo"),
+                "breadth": f.get("breadth"), "state": f.get("state"), "verdict": f.get("verdict"),
+            })
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        out = []
+    _REAL_FACTORS_CACHE = out
+    return out
+
+
+def _real_factor(idx: int):
+    rf = _load_real_factors()
+    return rf[idx % len(rf)] if rf else None
+
+
+def _input_provenance() -> str:
+    """REAL_CRYPTO_SERIES when the snapshot's real per-factor return series back the engines, else the
+    deterministic synthetic fallback. Surfaced per endpoint so the UI can honestly badge real-vs-synthetic."""
+    return "REAL_CRYPTO_SERIES" if _load_real_factors() else "SYNTHETIC_DETERMINISTIC"
+
 _CRYPTO_EMPTY_META = {
     "provider": "", "asset_class": "CRYPTO", "vs_currency": "", "days": 0, "granularity": "",
     "fwd_horizon": 0, "n_instruments": 0, "n_periods": 0, "coins": [], "search_mode": "",
@@ -3693,7 +3773,7 @@ async def alpha_factory() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "summary": {
             "candidates": len(candidates),
             "avg_ic": round(statistics.mean(alpha["ic"] for alpha in candidates), 4),
@@ -3727,7 +3807,7 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "selected_alpha_id": alpha["candidate_id"],
         "alpha": alpha,
         "primary_report": primary_report,
@@ -3743,7 +3823,7 @@ async def validation_dashboard() -> Dict:
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "validation_backend": "REAL_LEAKAGE_DETECTOR_v1",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "selected_report": reports[0],
         "reports": reports,
         "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
@@ -3756,7 +3836,7 @@ async def paper_trading(alpha_id: str = Query("alpha-1")) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "selected_alpha_id": run["alpha_id"],   # resolved id — matches the rendered data
         "run": run,
         "lineage": [item for item in LINEAGE if item["layer"] == "Paper"],
@@ -3769,7 +3849,7 @@ async def portfolio_dashboard() -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in LINEAGE if item["layer"] in {"Alpha", "Paper", "Risk"}],
     }
@@ -3846,7 +3926,7 @@ async def computation_lab(
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "selected_alpha_id": alpha["candidate_id"],
         "alpha_candidates": ALPHAS,
         "alpha": alpha,

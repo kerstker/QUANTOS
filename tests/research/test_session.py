@@ -48,6 +48,17 @@ def test_session_runs_persists_and_is_contained():
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())   # contained
 
 
+def test_session_exposes_real_factor_returns():
+    # the session must expose each evaluated factor's REAL per-period net return series so the console
+    # snapshot can run the real risk/PnL engines on real data (Phase 1B), not synthetic sin/cos.
+    out = run_research_session(_store(), registry=_reg(), **_kw())
+    fr = out["factor_returns"]
+    assert isinstance(fr, dict) and fr, "factor_returns must be a non-empty {alpha_id: [returns]} map"
+    for aid, series in fr.items():
+        assert isinstance(series, list) and len(series) >= 2
+        assert all(isinstance(x, float) for x in series)
+
+
 def test_session_is_deterministic():
     a = run_research_session(_store(), registry=_reg(), **_kw())
     b = run_research_session(_store(), registry=_reg(), **_kw())
