@@ -72,7 +72,7 @@ export default function Validation() {
       <PageHeader title="Alpha Validation" titleZh="Alpha 验证"
         subtitle={bi('六道泄露/稳健性门禁的样本外验证快照 — 决策、门禁与衰减证据',
           'Out-of-sample validation snapshot across six leakage / robustness gates — decision, gates, decay evidence')} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 
       <KpiStrip cols={6}>
         <StatTile label={bi('选中决策', 'Selected Decision')} value={<StatusChip value={r.decision} />} />

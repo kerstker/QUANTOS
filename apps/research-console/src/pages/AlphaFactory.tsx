@@ -196,7 +196,7 @@ export default function AlphaFactory() {
       <PageHeader title="Alpha Factory" titleZh="Alpha 因子工厂"
         subtitle={bi('候选因子搜索、初筛与生命周期 — 只读合成快照', 'Candidate alpha search, screening and lifecycle — read-only synthetic snapshot')}
         actions={<Chip label={bi(`${candidates.length} 候选`, `${candidates.length} candidates`)} tone="info" />} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 
       <KpiStrip cols={7}>
         <StatTile label={bi('候选因子', 'Candidates')} value={num(summary.candidates)} accent />

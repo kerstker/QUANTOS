@@ -198,7 +198,7 @@ export default function Portfolio() {
         subtitle={bi('组合模拟权益、回撤、权重构成与风险/收益归因(只读合成快照)。',
           'Portfolio simulation equity, drawdown, weight composition and risk/return attribution (read-only synthetic snapshot).')}
         actions={analyticsMethod ? <Chip label={analyticsMethod} tone="special" /> : undefined} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 
       <KpiStrip cols={6}>
         <StatTile label={bi('模拟状态', 'Status')} value={<StatusChip value={simulation.status} />} />

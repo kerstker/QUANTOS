@@ -120,7 +120,7 @@ export default function Risk() {
             ))}
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError} />
 
       <KpiStrip cols={5}>
         <StatTile label={bi('已选 Alpha', 'Selected Alpha')} value={selectedAlphaId} accent />

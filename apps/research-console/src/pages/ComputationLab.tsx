@@ -223,7 +223,7 @@ export default function ComputationLab() {
           <Chip label={usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
           <Chip label={shortHash(selectedAlphaId, 12)} tone="info" />
         </>} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={sourceLabel} error={apiError} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(snapshot as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={sourceLabel} error={apiError} />
 
       <KpiStrip cols={6}>
         <StatTile label={bi('原始夏普', 'Gross Sharpe')} value={fixed(metricValues.grossSharpe)} tone="pos" />

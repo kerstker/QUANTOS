@@ -125,7 +125,7 @@ export default function PaperTrading() {
           </div>
         } />
 
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError} />
 
       <KpiStrip cols={7}>
         <StatTile label={bi('运行状态', 'Run Status')} value={<StatusChip value={r.status} />} tone={statusTone(r.status)} />
