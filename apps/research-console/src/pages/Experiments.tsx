@@ -204,7 +204,8 @@ export default function Experiments() {
             <Chip label={registry.registry_mode} tone="accent" />
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error}
+        realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'EXPERIMENT_REGISTRY'} />
 
       <KpiStrip cols={6}>
         <StatTile label={bi('实验总数', 'Experiments')} value={num(summary.total_experiments)} accent />

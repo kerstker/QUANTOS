@@ -124,9 +124,11 @@ def test_experiments_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
     assert payload["registry_mode"] == "READ_ONLY_RESEARCH_REGISTRY"
-    assert payload["summary"]["total_experiments"] == 10
-    assert payload["summary"]["artifact_count"] >= 30
-    assert len(payload["experiments"]) == 10
+    # Real path reads the experiment_registry (EXPERIMENT_REGISTRY); synthetic fallback is 10. Assert shape.
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"}
+    assert payload["summary"]["total_experiments"] >= 1
+    assert payload["summary"]["artifact_count"] >= payload["summary"]["total_experiments"]
+    assert len(payload["experiments"]) == payload["summary"]["total_experiments"]
     first = payload["experiments"][0]
     assert first["execution_mode"] == "L2_DRY_RUN_ONLY"
     assert first["config"]["config_hash"]
