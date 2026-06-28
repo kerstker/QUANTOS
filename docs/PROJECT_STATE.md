@@ -159,6 +159,13 @@ REAL 7 / PARTIAL 6 / MOCK 17 / NONE 6 / BROKEN 1。`l2_ok=true`(全绿,仅 1 个
   **Phase 3 余下页(Experiments/EvidenceLedger/Agents/LifecycleMonitor/Overview)的真持久层多为空**
   (experiment_registry/audit_log/agent 运行记录未被离线再生器填充)——需先"填数据"(如让离线再生器写
   experiment_registry 记录)再接端点,不是纯接线。
+**★★★ 自主开发批次(2026-06-29,用户出门前审批 A→B→C→D→E,自主执行)**:
+- **A 合规文档**(`f3eb921`):`docs/COMPLIANCE_AND_PROCESS.md`(机构 SDLC/职责分离 + QUANTOS 对照 + 单人落地 + PR DoD 清单)。
+- **B 诚实标注**(`6594510`):ReviewerWorkflow/AccessControl/ReleaseCommittee/IncidentResponse 补"蓝图/未实现(需 Phase 14 身份层)"徽标。
+- **C Phase 3 数据填充 + 升真**:离线再生器写 experiment_registry(60 真不可变评估,`b30643b`);**Overview**(真 n_evaluated/active_runs,`b30643b`)、**Experiments**(读真 experiment_registry,真 IC/夏普/reproducibility_hash,`0252223`)、**EvidenceLedger**(真重算 hash 链 + 第一条接真实验,`94094ab`)、**Events**(早先 `0033f1a`,真 run_registry 事件)全升真。
+- **D 安全原语上台**(`ba6c002`):`GET /safety-primitives`(REAL_SAFETY_PRIMITIVES)只读真 KillSwitch/23 盘前检查/SafetyConfig;Risk 页安全 widget。只读不下单,治理扫描器仍 PASS。
+- **E 前端指挥中心**(`caabfe9`):`CommandCenter` 单屏座舱,5 磁贴可拖拽重排 + 点击缩放 + localStorage 布局持久化,全真数据只读;根路径默认落地。实测 live 通(5 拖拽磁贴、缩放改 span、无控制台报错)。HEAD=`caabfe9`。
+**本会话累计升真 ~15 页**(6 PARTIAL + 4 NONE + Events/Overview/Experiments/EvidenceLedger + 安全原语 + 指挥中心)。门禁全程双路绿。
 **关键资产**:`tools/crypto_research_offline.py` 离线再生器(不联网,从 crypto.db 重跑 session 写 factor_series,
 18 币×120 期);`crypto_research_snapshot.json` 是 gitignored 真数据源(CI 缺→合成回退)。重生真数据:
 `python -m tools.crypto_research_offline`(后台跑~2-3min)。
