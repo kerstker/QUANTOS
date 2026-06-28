@@ -173,6 +173,14 @@ export default function MonitoringDrift() {
         } />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={monitoring.source} error={error} />
 
+      {/* Honest partial-real disclosure: the ALPHA_DECAY category's baseline + decay verdict are computed by
+          the REAL degradation_monitor on real factor backtests; the live-drift side has no live/paper feed
+          under L2_DRY_RUN_ONLY and is a placeholder. The other categories are synthetic baselines. */}
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-amber-200/90">
+        {bi('诚实标注:ALPHA_DECAY 的回测基线与衰退裁决来自真引擎(degradation_monitor,快照在场时);实时漂移在 L2_DRY_RUN_ONLY 下无实盘/纸面数据源,显示为占位。FEATURE_DRIFT / DATA_FRESHNESS / MODEL_RISK / REVIEWER_SLA 为合成基线,待相应持久层建成后升真。',
+            'Honest note: ALPHA_DECAY baseline + decay verdict come from the real degradation_monitor (when the snapshot is present); live drift has no live/paper source under L2_DRY_RUN_ONLY and is shown as a placeholder. FEATURE_DRIFT / DATA_FRESHNESS / MODEL_RISK / REVIEWER_SLA are synthetic baselines pending their data layers.')}
+      </div>
+
       <KpiStrip cols={7}>
         <StatTile label={bi('监控项', 'Monitors')} value={num(summary.monitors)} accent />
         <StatTile label={bi('正常', 'OK')} value={num(summary.ok)} tone="pos" />

@@ -131,6 +131,10 @@ REAL_DATA_PROVENANCE = {
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
     "/api/v1/console/experiments": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     "/api/v1/console/evidence-ledger": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
+    # MonitoringDrift is honestly PARTIAL: ALPHA_DECAY's baseline + degradation verdict run on the REAL
+    # factor backtests when the snapshot is present, but the live-drift side stays synthetic (L2 has no
+    # live/paper feed). The partial marker says exactly that — never claim fully real.
+    "/api/v1/console/monitoring-drift": {"SYNTHETIC_DETERMINISTIC", "PARTIAL_ALPHA_DECAY_REAL"},
 }
 
 

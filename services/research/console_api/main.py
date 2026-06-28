@@ -4078,10 +4078,14 @@ async def access_control() -> Dict:
 @app.get("/api/v1/console/monitoring-drift")
 async def monitoring_drift() -> Dict:
     payload = _monitoring_drift_payload()
+    # ALPHA_DECAY's baseline + degradation verdict come from the REAL degradation_monitor on real factor
+    # backtests when the snapshot is present; the live-drift side stays synthetic (L2 has no live/paper feed).
+    # Honest partial marker — never claim fully real.
+    prov = "PARTIAL_ALPHA_DECAY_REAL" if _load_real_factors() else "SYNTHETIC_DETERMINISTIC"
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": prov,
         **payload,
     }
 
