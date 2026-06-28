@@ -127,6 +127,26 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 要"整体最好"必须开第 5 节的口子。
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
+**★★★ 系统排查审计 + 完善路线图(2026-06-29,用户指令 "先排查整个系统→再完善功能→最后做前端")**:
+9 智能体全量取证审计(`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`)。
+**核心结论:后端比文档真实得多,缺口是"接线"不是"造引擎"**(~1014 测试过,`services/{alpha,data,
+portfolio,intelligence,validation,...}` 全真且测过;CLAUDE.md "~10% built" 已陈旧并纠正)。36 界面真实度:
+REAL 7 / PARTIAL 6 / MOCK 17 / NONE 6 / BROKEN 1。`l2_ok=true`(全绿,仅 1 个 P2 已修)。
+已批准:仅加密数据、真缺子系统页诚实标注。
+- **Phase 0 排查收口**(`839c1bb`):删 3 死文件+空目录;App.tsx 36 页 React.lazy 拆 546KB 首屏→
+  28KB+vendor166KB(警告消失);LifecycleMonitor/SystemHealth 补诚实徽标;修治理测试 P2;纠正 CLAUDE.md。
+- **Phase 1B 真序列升真**(`d2aa6fb`+`86d2c34`):审计的"一行换源"前提不成立(快照只存真指标无真序列),
+  故 ① session 暴露 `factor_returns`(真逐期净回报)② `tools/crypto_research_offline.py` 离线再生器
+  (不联网,从缓存 PIT 库 crypto.db 重跑确定性 session,18 币×120 期,写 `factor_series`)③ console_api
+  `_load_real_factors/_real_factor/_input_provenance`,`_forward_returns`+`_computed_alpha` 有真序列时跑真
+  (真 ic/turnover/state+真权益/夏普/回撤,IR≈IC·√breadth),无快照 fail-closed 回退合成。6 端点
+  provenance→`_input_provenance()`(真=REAL_CRYPTO_SERIES);契约接受 real-or-synthetic;前端 6 页 realData 徽标。
+  **实测**:alpha-factory REAL_CRYPTO_SERIES+真因子名;risk 真 9 引擎门跑真回报→REJECTED_CORRELATION_RISK(诚实)。
+  门禁双路全绿(真路径本地+合成路径 CI),containment auto_approved=0。HEAD=`86d2c34`。
+**后续**:Phase 2(接 services/alpha 真引擎给 PopulationOptimizer/AlphaGraph/DslExplorer/AlphaZoo 建端点)→
+Phase 3(持久化/审计链)→ Phase 4(kill-switch/pre-trade 上台 + 治理页诚实标注)→ Phase 5(前端指挥中心)。
+
+
 HEAD 在研究操作台 Task 1-7(`run_registry`/`research_runner`/前端研究中心)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **全绿**(含新治理测试 test_research_runner_boundary);前端 `npm test` **23 passed**(含 CompareRuns smoke)+ typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN)。
 **★★★ 研究操作台(Research Ops Console,2026-06-29,用户指令:前端要能操作系统、不在 IDE 跑、动态结果区不一回测一页、顶级机构标准)= 前端从「看板」升级为「操作台」**。brainstorm→spec(`docs/superpowers/specs/2026-06-29-research-ops-console-design.md`)→plan(`docs/superpowers/plans/2026-06-29-research-ops-console.md`)→7 任务 TDD 全绿。架构:① `services/research/run_registry/`(sqlite 单一事实源,线程安全;`index_existing` 把现有 `crypto_*.json` 结果灌入→历史第一天全可见);② 查看只读=console_api GET `/research-runs[?kind=]`+`/research-run?run_id=`(契约守,provenance RESEARCH_RUN_REGISTRY),前端「研究中心 /research/runs」列表 + **一个通用数据驱动查看器** RunDetail(metrics→KPI/series→图/verdict/caveats,任何 kind 零新代码);③ 操作=独立 `services/research/research_runner/`(端口 8420,**唯一可变面**)`POST /run{kind,params}` 校验白名单(7 个只研究 kind)→异步队列→写 registry,前端按钮触发 + 3s 轮询 queued→running→done。**安全机器强制**:`tests/governance/test_research_runner_boundary` AST 扫描——无券商 SDK、不 import services.trading、无下单/转账调用,白名单入口全 services/tools 研究函数、⊆ registry ALLOWED_KINDS;console_api 仍 GET-only;auto_approved 恒 0、到不了 live/flag/APPROVED;墙钟只在 runner HTTP 边界取。**端到端实测**:前端点「双因子组合」→ 真算 combo(SR 1.503)→ registry done → 列表 7→9。启动见 CLAUDE.md Commands(console_api:8400 + research_runner:8420 + `research-console-live`)。记忆 [[research-ops-console]]。
 **★★★ 操作台四能力补完(2026-06-29,用户指令 "都做,最终都要做到的";顺序 观测→参数化→对比→历史,每个 TDD+门绿+实测)**:
