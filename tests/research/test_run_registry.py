@@ -25,6 +25,24 @@ def test_run_id_is_deterministic():
     assert a.startswith("run_")
 
 
+def test_store_creates_missing_parent_dir(tmp_path):
+    # CI / fresh-checkout: the db lives under a gitignored dir (data/cache) that does NOT exist yet.
+    # The store must create its parent dir, not crash with "unable to open database file".
+    nested = tmp_path / "data" / "cache" / "research_runs.db"
+    assert not nested.parent.exists()
+    s = ResearchRunStore(str(nested))                 # must not raise
+    assert nested.parent.is_dir()
+    s.upsert(_run())
+    assert s.get("r1") is not None
+
+
+def test_store_in_memory_ok():
+    # an in-memory db has no parent path; the dir-creation guard must skip it cleanly
+    s = ResearchRunStore(":memory:")
+    s.upsert(_run())
+    assert s.get("r1") is not None
+
+
 def test_store_round_trip(tmp_path):
     s = ResearchRunStore(str(tmp_path / "runs.db"))
     s.upsert(_run())

@@ -6,6 +6,7 @@ experiment_registry persistence pattern. Deterministic (no wall-clock here)."""
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from typing import Optional
@@ -21,6 +22,13 @@ class ResearchRunStore:
     thread, so the connection allows cross-thread use and a lock serialises access (sqlite single-writer)."""
 
     def __init__(self, db_path: str, create: bool = True):
+        # The db often lives under a gitignored dir (e.g. data/cache) that is absent on a fresh
+        # checkout / in CI. sqlite cannot create the file if its parent dir is missing, so ensure it
+        # exists first. Skip for :memory: (and bare filenames, where dirname is empty).
+        if create and db_path != ":memory:":
+            parent = os.path.dirname(db_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self._c = sqlite3.connect(db_path, check_same_thread=False)
         self._lock = threading.Lock()
         if create:
