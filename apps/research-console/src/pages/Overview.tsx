@@ -54,7 +54,8 @@ export default function Overview() {
     <PageShell>
       <PageHeader title="Research Overview" titleZh="研究总览"
         subtitle={bi('从假设到风险通过的端到端研究流水线快照', 'End-to-end research pipeline snapshot, hypothesis → risk-approved')} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error}
+        realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} />
 
       <KpiStrip cols={7}>
         <StatTile label={bi('假设总数', 'Hypotheses')} value={num(stats.total_hypotheses)} />

@@ -303,19 +303,19 @@ def _overview_payload() -> Dict:
         "NEEDS_MORE_DATA": sum(1 for alpha in candidates if _validation_decision(alpha) == "NEEDS_MORE_DATA"),
     }
     stats = {
-        "total_hypotheses": 142,
+        "total_hypotheses": _snapshot_summary().get("n_evaluated") or 142,   # real evaluated count when present
         "alpha_candidates": len(candidates),
         "validation_pass_rate": round(len(approved) / max(len(candidates), 1), 3),
         "paper_pass_rate": round(len(paper_passed) / max(len(approved), 1), 3),
         "portfolio_candidates": len(portfolio_candidates),
         "risk_approved": len(risk_approved),
-        "active_runs": 3,
+        "active_runs": _overview_active_runs(),                              # real queued/running from registry
         "rejection_reasons": rejection_reasons,
     }
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
         "stats": stats,
         "funnel": [
             {"id": "hypotheses", "label": "Hypotheses", "value": stats["total_hypotheses"]},
@@ -3467,6 +3467,23 @@ def _input_provenance() -> str:
     """REAL_CRYPTO_SERIES when the snapshot's real per-factor return series back the engines, else the
     deterministic synthetic fallback. Surfaced per endpoint so the UI can honestly badge real-vs-synthetic."""
     return "REAL_CRYPTO_SERIES" if _load_real_factors() else "SYNTHETIC_DETERMINISTIC"
+
+
+def _snapshot_summary() -> Dict:
+    """The research snapshot's summary block (n_evaluated / trial_count / …), or {} when absent."""
+    try:
+        with open(_CRYPTO_SNAPSHOT_PATH, encoding="utf-8") as fh:
+            return json.load(fh).get("summary", {}) or {}
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+
+
+def _overview_active_runs() -> int:
+    """Count of currently non-terminal research runs (queued/running) from the registry; 0 fail-closed."""
+    try:
+        return sum(1 for r in _runs_registry().list(limit=200) if r.status in ("queued", "running"))
+    except Exception:
+        return 0
 
 
 def _corr(a: List[float], b: List[float]) -> float:

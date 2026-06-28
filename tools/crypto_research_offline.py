@@ -68,10 +68,20 @@ def regenerate(now_ms: int) -> dict:
     instruments = instruments[:MAX_INSTRUMENTS]
     event_times = event_times[-RECENT_PERIODS:]
 
+    # Phase 3: persist real immutable evaluation artifacts (+ DSR trial count) into the experiment_registry
+    # so the Experiments / EvidenceLedger console pages read REAL recorded evidence, not synthetic. Fresh
+    # each regen for a deterministic snapshot (drop any prior db first).
+    from services.research.experiment_registry.store import SqliteExperimentStore
+    from services.research.experiment_registry.registry import ExperimentRegistry
+    exp_db = os.path.join("data", "cache", "experiment_registry.db")
+    if os.path.exists(exp_db):
+        os.remove(exp_db)
+    registry = ExperimentRegistry(SqliteExperimentStore(exp_db, create=True))
+
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
     result = run_research_session(
         store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON,
-        space=space, rounds=1, batch_size=1, timestamp=now_ms,
+        space=space, rounds=1, batch_size=1, timestamp=now_ms, registry=registry,
         evolutionary=True, evo_generations=EVO_GENERATIONS,
         evo_population=EVO_POPULATION, evo_elite=EVO_ELITE)
 
