@@ -1403,6 +1403,14 @@ export interface PopulationOptimizerPayload {
   selected: PopOptSelected[]; excluded: PopOptExcluded[];
   diversity: number; gross: number; method: string; n_candidates: number;
 }
+export interface DslExprRow {
+  expr: string; valid: boolean; complexity: number;
+  leakage_ok: boolean | null; deps: string[]; note: string; errors: string[];
+}
+export interface DslExplorerPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  exprs: DslExprRow[]; analysis_backend: string;
+}
 export interface AlphaZooRow {
   alpha_id: string; name: string; generator: string; status: string;
   cluster_id: string; deflated_sharpe: number; net_sharpe: number; tags: string[];

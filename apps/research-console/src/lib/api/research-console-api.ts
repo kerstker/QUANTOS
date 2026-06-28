@@ -24,6 +24,7 @@ import type {
   PopulationOptimizerPayload,
   AlphaGraphPayload,
   AlphaZooPayload,
+  DslExplorerPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -204,6 +205,10 @@ export function fetchAlphaGraphSnapshot(signal?: AbortSignal) {
 
 export function fetchAlphaZooSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<AlphaZooPayload>('/api/v1/console/alpha-zoo', signal);
+}
+
+export function fetchDslExplorerSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<DslExplorerPayload>('/api/v1/console/dsl-explorer', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {

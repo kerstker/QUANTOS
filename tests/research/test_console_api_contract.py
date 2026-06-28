@@ -87,6 +87,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/population-optimizer": ("", ("selected", "excluded", "diversity", "gross")),
     "/api/v1/console/alpha-graph": ("", ("nodes", "edges", "clusters", "rho_cut", "n_near_dup")),
     "/api/v1/console/alpha-zoo": ("", ("rows",)),
+    "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
     "/api/v1/console/system-completeness": ("", (
         "audit_mode", "current_level", "institutional_target", "readiness_score", "summary",
         "modules", "checks", "gaps", "roadmap", "safety_boundary")),

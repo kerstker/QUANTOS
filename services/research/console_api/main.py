@@ -3547,6 +3547,58 @@ def _short_factor_label(aid: str) -> str:
     return s[:18]
 
 
+def _expr_fields(expr) -> List[str]:
+    out: set = set()
+
+    def walk(t):
+        if isinstance(t, tuple) and t:
+            if t[0] == "field" and len(t) > 1:
+                out.add(t[1])
+            for a in t[1:]:
+                walk(a)
+    walk(expr)
+    return sorted(out)
+
+
+def _dsl_explorer_payload() -> Dict:
+    """Cross-sectional alpha expressions with their REAL static analysis: the dsl_checker type/dimension
+    verdict, the operator-weighted complexity, and the machine-proof PIT-leakage result (the real
+    expression_leakage detector perturbs strictly-future rows). Verdicts are COMPUTED by the real engines,
+    not hand-authored — the deterministic panel is only the substrate the leakage detector perturbs."""
+    import services.research.alpha_expression as ax
+    from services.research.dsl_checker import check_expression
+    from services.research.complexity import complexity as _cx
+    from services.research import expression_leakage as el
+    insts, T = ["A", "B", "C", "D"], 16
+
+    def _mat(base):
+        return [[base + 0.5 * t + 0.1 * j for j in range(len(insts))] for t in range(T)]
+    panel = ax.FieldPanel(insts, list(range(T)),
+                          {"close": _mat(100.0), "volume": _mat(10.0), "funding": _mat(0.01)})
+    EXPRS = [
+        (("cs_zscore", ("neg", ("decay_linear", ("field", "funding"), 7))), "资金费 carry 原语 / funding carry"),
+        (("cs_rank", ("ts_delta", ("field", "close"), 5)), "价格动量 / price momentum"),
+        (("cs_residualize", ("field", "close"), ("field", "volume")), "对量能中性化 / size-neutralized"),
+        (("cs_zscore", ("ts_mean", ("field", "close"), 5)), "均值回复 / mean-reversion"),
+        (("cs_rank", ("ts_lead", ("field", "close"), 1)), "读未来 → 检查器拒绝 / future-reading: rejected"),
+    ]
+    rows = []
+    for expr, note in EXPRS:
+        chk = check_expression(expr)
+        try:
+            cx_val = round(_cx(expr), 2)
+        except Exception:
+            cx_val = 0.0
+        try:
+            leak = el.compute_leakage_ok(expr, panel)
+        except Exception:
+            leak = None
+        rows.append({"expr": ax.serialize(expr), "valid": bool(chk.ok), "complexity": cx_val,
+                     "leakage_ok": leak, "deps": _expr_fields(expr), "note": note,
+                     "errors": list(chk.errors)[:3]})
+    return {"exprs": rows, "analysis_backend": "REAL_DSL_CHECKER+LEAKAGE+COMPLEXITY"}
+
+
 def _alpha_zoo_payload() -> Dict:
     """The searchable Alpha catalog. Real path = every factor in the offline research snapshot (real
     generator/state/DSR/net-Sharpe from the contained evolutionary search); synthetic fallback otherwise."""
@@ -4006,6 +4058,18 @@ async def population_optimizer() -> Dict:
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0", "data_provenance": _input_provenance(),
+        **payload,
+        "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
+    }
+
+
+@app.get("/api/v1/console/dsl-explorer")
+async def dsl_explorer() -> Dict:
+    payload = _dsl_explorer_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
         "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
     }
