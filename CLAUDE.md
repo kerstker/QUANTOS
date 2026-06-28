@@ -36,40 +36,73 @@ isolation. The autonomous agent path holds only a non-human actor and reaches th
 state machine/gate only through the hardened `ResearchAgentLoop`; direct manager/
 catalog access is for human-controlled workflows and is not an agent API.
 
-## What actually exists (verified, ~10% built)
+## What actually exists (verified 2026-06-29 by full-system audit)
 
-Real code:
-- `services/research/console_api/main.py` — FastAPI **read-only mock snapshot**
-  generator for the frontend (deterministic synthetic data; not real research).
-- `services/risk/research_risk/domain/` — 9-engine research-risk gate
-  (deterministic, fail-closed). No tests yet; no kill-switch (Phase 8).
-- `services/research/factor_engine/domain/model.py` — real IC/ICIR math
-  (on synthetic data).
-- `services/research/paper_trading/domain/` — models + **placeholder** PnL
-  (`notional*0.001`; real reconciliation is Phase 9).
-- `services/research/experiment_registry/` — durable persistence (stdlib sqlite3):
-  `ExperimentRegistry.load_into(catalog)` at session start + `.save(catalog)` at
-  end make the catalog-wide Deflated-Sharpe trial count + var_sr survive across
-  processes (no longer reset on exit); `.record_evaluation(...)` writes an
-  immutable, reproducible artifact and optionally emits an `EXPERIMENT_RECORDED`
-  event into the global audit chain. **Opt-in**: `AlphaCatalog`/`AlphaFactory`
-  behave exactly as before when the registry is unused. **Fail-closed**: loading
-  an uninitialized/corrupt store raises (never silently resets multiple testing).
+Authoritative reality map + completion roadmap:
+[`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md).
+**The backend is substantially built and tested (~1014 tests pass); the real gap
+is WIRING the engines into `console_api`, not missing engines.**
+
+Real, tested backend engines (`*_TESTED` in the audit):
+- `services/research/factor_engine/` — real IC/ICIR/Sharpe math + hardened AST
+  factor-expression compiler. `services/research/backtest_engine/` — single +
+  event-driven backtests with exact PnL-reconciliation identity.
+- `services/research/validation/` — Deflated-Sharpe, combinatorial purged CV,
+  purged/embargoed walk-forward gate. `services/research/oos_validation.py` —
+  no-peek selection OOS.
+- `services/research/{alpha_factory,alpha_expression,cs_genome,gp_tree,factor_set,
+  session}.py` — real evolutionary/GP search, cross-sectional DSL, synergistic
+  de-redundant set selection, reproducible orchestrator.
+- `services/research/paper_trading/domain/pnl.py` — **real reconciled PnL
+  attribution** (realized+unrealized−costs, `reconciliation.py`/`consistency.py`).
+  No longer the `notional*0.001` placeholder this file used to claim.
+- `services/research/{run_registry,research_runner,experiment_registry}/` —
+  durable sqlite run store + the guarded mutating runner + immutable experiment
+  artifacts/DSR trial-count persistence.
+- `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
+  (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
+  fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
+  quarantined `trading/pre_trade_risk`); tested but **not yet surfaced** in any
+  endpoint/page.
+- `services/alpha/` (26 modules / 185 tests) — catalog, lifecycle SM, evaluator,
+  BH-FDR ranker, population_optimizer, decay, crowding/capacity, correlation/
+  cluster, orthogonalize, zoo, alpha_graph, lineage, degradation_monitor.
+- `services/data/` (89 tests) — PIT store, survivorship-free universe, versioning,
+  quality, normalization, PIT corporate actions, catalog.
+- `services/portfolio/` (57 tests) — constrained optimizer (feasibility-checked),
+  PSD-checked factor risk model, construction, attribution, signal_adapter.
+- `services/intelligence/` (59 tests) — guardrailed non-human `ResearchAgentLoop`
+  + guided/evolutionary/GP/MCTS search strategies + bandit persistence.
+- `services/{features,execution,monitoring,deployment}/` — leakage detector +
+  feature registry; execution boundary + intent builder; hash-chained audit log +
+  health; fail-closed deployment/version-pin gate. All tested.
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
-- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind;
-  25 pages, mock-first (not wired to a real backend).
+- `services/research/console_api/main.py` — FastAPI **read-only** API (~29 GET
+  endpoints). **Mostly `SYNTHETIC_DETERMINISTIC`** snapshot generators, but several
+  endpoints already touch real engines (risk-dashboard → `RiskApprovalGate`,
+  validation → real leakage detector, data-catalog → real `services/data`) and
+  **`research-runs`/`research-run`/`crypto-live` are REAL** (run_registry sqlite /
+  real CoinGecko offline snapshot). The single synthetic data root that fakes most
+  PARTIAL pages is `_factor_values`/`_forward_returns` (`math.sin/cos`, ~line 85).
+- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **36
+  pages, route-lazy code-split**. Reality split: 7 REAL, 6 PARTIAL (real engine,
+  synthetic input), 17 MOCK, 6 NONE (front-end-hardcoded). See the audit doc.
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain
-  modules + undefined-name bug). Do not wire; rebuild in Phase 8.
+  modules + undefined-name bug). Superseded by `services/risk/pre_trade`. Do not
+  wire; delete or rebuild in Phase 8.
 
 Shared contracts:
 - `quantos/contracts/` — canonical domain contracts (SafetyConfig §1.2,
   RejectionReason §8, OrderState §7, RiskDecision). Single source of truth.
 
-Empty scaffolding (PLANNED): `services/{data,alpha,portfolio,execution,gateway,
-intelligence,learning}`, `platform/`, `schemas/`, `proto/`, `config/`.
+Genuinely empty (PLANNED, no code): `services/{gateway,learning}` (no auth/online-
+learning layer), the nested DDD sub-trees under `services/{alpha,data,research}/*`
+(`alpha_discovery_engine`, `*_service`, `model_registry`, `experiment_tracker`,
+`dataset_builder`, …), `platform/`, `schemas/`, `proto/`, `config/`. The real code
+lives in the FLAT `services/<domain>/*.py` modules, not these shells.
 
 ## Commands
 

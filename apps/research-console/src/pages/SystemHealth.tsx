@@ -151,6 +151,12 @@ export default function SystemHealth() {
           'Read-only operational snapshot of research-platform services, integration gates and the safety boundary')}
         actions={<Chip label={overallLabel} tone={overallTone} soft={false} />} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
+      {/* Honesty: latency/uptime are deterministic synthetic figures, NOT real health probes — an unrun
+          service still shows "healthy" here. Real liveness checks are a future (Phase 4+) capability. */}
+      <div className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-1.5 text-2xs text-warn">
+        {bi('注:延迟/在线率为合成确定性数字,非真实健康探针 — 未运行的服务也会显示"健康"。真实探活待后续接入。',
+          'Note: latency/uptime are synthetic deterministic figures, not real probes — an unrun service still shows “healthy”. Real liveness checks are a later capability.')}
+      </div>
 
       <KpiStrip cols={6}>
         <StatTile label={bi('服务总数', 'Services')} value={num(total)} />

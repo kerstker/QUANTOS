@@ -5,8 +5,13 @@ AST 扫描 research_runner 包:无券商/交易所 SDK、不 import services.tra
 镜像 tests/governance/test_crypto_data_boundary.py 的写法。"""
 import ast
 import os
+import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Make `services` importable from ANY cwd/rootdir so the whitelist tests below truly run their boundary
+# assertions instead of silently failing/skipping with ModuleNotFoundError (was a portability P2).
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 _PKG = os.path.join(_ROOT, "services", "research", "research_runner")
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}

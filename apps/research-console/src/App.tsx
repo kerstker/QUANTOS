@@ -1,43 +1,46 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell, type NavGroup } from '@/ui/AppShell';
 
-import Overview from './pages/Overview';
-import BacktestResults from './pages/BacktestResults';
-import ResearchRuns from './pages/ResearchRuns';
-import RunDetail from './pages/RunDetail';
-import CompareRuns from './pages/CompareRuns';
-import CryptoLive from './pages/CryptoLive';
-import AlphaFactory from './pages/AlphaFactory';
-import AlphaZoo from './pages/AlphaZoo';
-import DslExplorer from './pages/DslExplorer';
-import AlphaGraph from './pages/AlphaGraph';
-import PopulationOptimizer from './pages/PopulationOptimizer';
-import SignalToPortfolio from './pages/SignalToPortfolio';
-import Experiments from './pages/Experiments';
-import DataCatalog from './pages/DataCatalog';
-import Validation from './pages/Validation';
-import LifecycleMonitor from './pages/LifecycleMonitor';
-import BacktestExplainability from './pages/BacktestExplainability';
-import ScenarioStress from './pages/ScenarioStress';
-import ModelRiskReview from './pages/ModelRiskReview';
-import EvidenceLedger from './pages/EvidenceLedger';
-import ReviewerWorkflow from './pages/ReviewerWorkflow';
-import AccessControl from './pages/AccessControl';
-import MonitoringDrift from './pages/MonitoringDrift';
-import IncidentResponse from './pages/IncidentResponse';
-import PromotionControl from './pages/PromotionControl';
-import ReleaseCommittee from './pages/ReleaseCommittee';
-import Agents from './pages/Agents';
-import PaperTrading from './pages/PaperTrading';
-import Portfolio from './pages/Portfolio';
-import Risk from './pages/Risk';
-import Events from './pages/Events';
-import ComputationLab from './pages/ComputationLab';
-import Phase3AReadiness from './pages/Phase3AReadiness';
-import SystemHealth from './pages/SystemHealth';
-import Architecture from './pages/Architecture';
-import SystemCompleteness from './pages/SystemCompleteness';
+// Route-level code splitting: every page is lazy-loaded so the initial chunk stays small and heavy pages
+// (CryptoLive / SystemCompleteness / IncidentResponse / charts) load on demand. Previously all 36 pages were
+// eager-imported into one 546 KB first-paint chunk (over Vite's 500 KB warning).
+const Overview = lazy(() => import('./pages/Overview'));
+const BacktestResults = lazy(() => import('./pages/BacktestResults'));
+const ResearchRuns = lazy(() => import('./pages/ResearchRuns'));
+const RunDetail = lazy(() => import('./pages/RunDetail'));
+const CompareRuns = lazy(() => import('./pages/CompareRuns'));
+const CryptoLive = lazy(() => import('./pages/CryptoLive'));
+const AlphaFactory = lazy(() => import('./pages/AlphaFactory'));
+const AlphaZoo = lazy(() => import('./pages/AlphaZoo'));
+const DslExplorer = lazy(() => import('./pages/DslExplorer'));
+const AlphaGraph = lazy(() => import('./pages/AlphaGraph'));
+const PopulationOptimizer = lazy(() => import('./pages/PopulationOptimizer'));
+const SignalToPortfolio = lazy(() => import('./pages/SignalToPortfolio'));
+const Experiments = lazy(() => import('./pages/Experiments'));
+const DataCatalog = lazy(() => import('./pages/DataCatalog'));
+const Validation = lazy(() => import('./pages/Validation'));
+const LifecycleMonitor = lazy(() => import('./pages/LifecycleMonitor'));
+const BacktestExplainability = lazy(() => import('./pages/BacktestExplainability'));
+const ScenarioStress = lazy(() => import('./pages/ScenarioStress'));
+const ModelRiskReview = lazy(() => import('./pages/ModelRiskReview'));
+const EvidenceLedger = lazy(() => import('./pages/EvidenceLedger'));
+const ReviewerWorkflow = lazy(() => import('./pages/ReviewerWorkflow'));
+const AccessControl = lazy(() => import('./pages/AccessControl'));
+const MonitoringDrift = lazy(() => import('./pages/MonitoringDrift'));
+const IncidentResponse = lazy(() => import('./pages/IncidentResponse'));
+const PromotionControl = lazy(() => import('./pages/PromotionControl'));
+const ReleaseCommittee = lazy(() => import('./pages/ReleaseCommittee'));
+const Agents = lazy(() => import('./pages/Agents'));
+const PaperTrading = lazy(() => import('./pages/PaperTrading'));
+const Portfolio = lazy(() => import('./pages/Portfolio'));
+const Risk = lazy(() => import('./pages/Risk'));
+const Events = lazy(() => import('./pages/Events'));
+const ComputationLab = lazy(() => import('./pages/ComputationLab'));
+const Phase3AReadiness = lazy(() => import('./pages/Phase3AReadiness'));
+const SystemHealth = lazy(() => import('./pages/SystemHealth'));
+const Architecture = lazy(() => import('./pages/Architecture'));
+const SystemCompleteness = lazy(() => import('./pages/SystemCompleteness'));
 
 const nav: NavGroup[] = [
   { zh: '研究', en: 'RESEARCH', items: [
@@ -86,48 +89,58 @@ const nav: NavGroup[] = [
   ]},
 ];
 
+function RouteFallback() {
+  return (
+    <div className="flex h-64 items-center justify-center text-xs text-faint">
+      <span className="animate-pulse">载入中 / loading…</span>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AppShell nav={nav}>
-      <Routes>
-        <Route path="/" element={<Navigate to="/research" replace />} />
-        <Route path="/research" element={<Overview />} />
-        <Route path="/research/backtest-results" element={<BacktestResults />} />
-        <Route path="/research/runs" element={<ResearchRuns />} />
-        <Route path="/research/compare" element={<CompareRuns />} />
-        <Route path="/research/runs/:id" element={<RunDetail />} />
-        <Route path="/research/crypto-live" element={<CryptoLive />} />
-        <Route path="/research/alpha-factory" element={<AlphaFactory />} />
-        <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
-        <Route path="/research/dsl-explorer" element={<DslExplorer />} />
-        <Route path="/research/alpha-graph" element={<AlphaGraph />} />
-        <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
-        <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />
-        <Route path="/research/experiments" element={<Experiments />} />
-        <Route path="/research/data-catalog" element={<DataCatalog />} />
-        <Route path="/research/validation" element={<Validation />} />
-        <Route path="/research/lifecycle-monitor" element={<LifecycleMonitor />} />
-        <Route path="/research/backtest-explainability" element={<BacktestExplainability />} />
-        <Route path="/research/scenario-stress" element={<ScenarioStress />} />
-        <Route path="/research/model-risk-review" element={<ModelRiskReview />} />
-        <Route path="/research/evidence-ledger" element={<EvidenceLedger />} />
-        <Route path="/research/reviewer-workflow" element={<ReviewerWorkflow />} />
-        <Route path="/research/access-control" element={<AccessControl />} />
-        <Route path="/research/monitoring-drift" element={<MonitoringDrift />} />
-        <Route path="/research/incident-response" element={<IncidentResponse />} />
-        <Route path="/research/promotion-control" element={<PromotionControl />} />
-        <Route path="/research/release-committee" element={<ReleaseCommittee />} />
-        <Route path="/research/agents" element={<Agents />} />
-        <Route path="/research/paper-trading" element={<PaperTrading />} />
-        <Route path="/research/portfolio" element={<Portfolio />} />
-        <Route path="/research/risk" element={<Risk />} />
-        <Route path="/research/events" element={<Events />} />
-        <Route path="/research/computation-lab" element={<ComputationLab />} />
-        <Route path="/research/architecture" element={<Architecture />} />
-        <Route path="/research/system-completeness" element={<SystemCompleteness />} />
-        <Route path="/research/phase-3a" element={<Phase3AReadiness />} />
-        <Route path="/research/system-health" element={<SystemHealth />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/research" replace />} />
+          <Route path="/research" element={<Overview />} />
+          <Route path="/research/backtest-results" element={<BacktestResults />} />
+          <Route path="/research/runs" element={<ResearchRuns />} />
+          <Route path="/research/compare" element={<CompareRuns />} />
+          <Route path="/research/runs/:id" element={<RunDetail />} />
+          <Route path="/research/crypto-live" element={<CryptoLive />} />
+          <Route path="/research/alpha-factory" element={<AlphaFactory />} />
+          <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
+          <Route path="/research/dsl-explorer" element={<DslExplorer />} />
+          <Route path="/research/alpha-graph" element={<AlphaGraph />} />
+          <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
+          <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />
+          <Route path="/research/experiments" element={<Experiments />} />
+          <Route path="/research/data-catalog" element={<DataCatalog />} />
+          <Route path="/research/validation" element={<Validation />} />
+          <Route path="/research/lifecycle-monitor" element={<LifecycleMonitor />} />
+          <Route path="/research/backtest-explainability" element={<BacktestExplainability />} />
+          <Route path="/research/scenario-stress" element={<ScenarioStress />} />
+          <Route path="/research/model-risk-review" element={<ModelRiskReview />} />
+          <Route path="/research/evidence-ledger" element={<EvidenceLedger />} />
+          <Route path="/research/reviewer-workflow" element={<ReviewerWorkflow />} />
+          <Route path="/research/access-control" element={<AccessControl />} />
+          <Route path="/research/monitoring-drift" element={<MonitoringDrift />} />
+          <Route path="/research/incident-response" element={<IncidentResponse />} />
+          <Route path="/research/promotion-control" element={<PromotionControl />} />
+          <Route path="/research/release-committee" element={<ReleaseCommittee />} />
+          <Route path="/research/agents" element={<Agents />} />
+          <Route path="/research/paper-trading" element={<PaperTrading />} />
+          <Route path="/research/portfolio" element={<Portfolio />} />
+          <Route path="/research/risk" element={<Risk />} />
+          <Route path="/research/events" element={<Events />} />
+          <Route path="/research/computation-lab" element={<ComputationLab />} />
+          <Route path="/research/architecture" element={<Architecture />} />
+          <Route path="/research/system-completeness" element={<SystemCompleteness />} />
+          <Route path="/research/phase-3a" element={<Phase3AReadiness />} />
+          <Route path="/research/system-health" element={<SystemHealth />} />
+        </Routes>
+      </Suspense>
     </AppShell>
   );
 }

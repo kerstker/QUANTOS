@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
 import { signed, fixed } from '@/ui/format';
 
@@ -69,6 +69,9 @@ export default function LifecycleMonitor() {
       <PageHeader title="Alpha Lifecycle Monitor" titleZh="Alpha 生命周期监控"
         subtitle={bi('每个 Alpha 的生命周期态(含 SHADOW/DEGRADED/PAUSED)与实时-vs-回测衰减建议',
           'Each alpha’s lifecycle state (incl. SHADOW / DEGRADED / PAUSED) and the live-vs-backtest degradation recommendation')} />
+      {/* Honesty: this page is front-end mock data (no backend endpoint yet — see audit). The real engine is
+          services/alpha lifecycle SM + degradation_monitor; wiring is roadmap Phase 3. */}
+      <ProvenanceRibbon usingBackend={false} apiState="disabled" source="FRONTEND_LIFECYCLE_MOCK" />
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
         {bi('只读 · 研究/干跑(L2)· 监控只给建议不驱动状态 · 晋级到 APPROVED 人工专属 · 实盘未构建',
