@@ -88,6 +88,15 @@ cd apps/research-console && npm ci && npm run typecheck && npm run build && npm 
 python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
 #   2) point the console at it and disable mock mode (CORS allows :3100 only):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
+
+# Research-ops console (operate research FROM the frontend): also start the GUARDED runner.
+#   research_runner is the ONLY mutating surface — POST /run triggers a WHITELISTED research kind
+#   (backtest/search/data refresh) async into the run_registry; it touches NO order/broker/credential
+#   path (machine-enforced by tests/governance/test_research_runner_boundary.py). console_api stays GET-only.
+python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --port 8420
+#   then run the frontend with both URLs (the `research-console-live` launch.json config sets these):
+cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_RUNNER_URL=http://127.0.0.1:8420 \
+  VITE_MOCK_MODE=false npm run dev   # → /research/runs lists every run; buttons trigger new ones
 ```
 
 Note: all backend services now live under the repo-root `services/` tree
