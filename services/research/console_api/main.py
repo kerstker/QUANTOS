@@ -3474,9 +3474,9 @@ def _load_real_factors() -> List[Dict]:
         by_id = {f.get("alpha_id"): f for f in snap.get("factors", [])}
         for aid, s in (snap.get("factor_series") or {}).items():
             rs = [float(x) for x in (s.get("returns") or [])]
-            if len(rs) < 120:                                  # need a full window; keep series rectangular
+            if len(rs) < 60:                                   # need enough periods to run the engines honestly
                 continue
-            rs = rs[-120:]                                     # most-recent 120 periods (matches synthetic length)
+            rs = rs[-120:]                                     # cap at the most-recent 120 (shorter series kept as-is)
             f = by_id.get(aid, {})
             out.append({
                 "alpha_id": aid, "name": s.get("name", aid), "returns": rs,

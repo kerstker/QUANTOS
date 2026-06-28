@@ -42,8 +42,8 @@ def test_computation_lab_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
     assert payload["metrics"]["gross_sharpe"] != 0
-    assert len(payload["equity_curve"]) == 120
-    assert len(payload["drawdown_curve"]) == 120
+    assert 0 < len(payload["equity_curve"]) <= 120   # real per-factor series may be shorter than synthetic 120
+    assert 0 < len(payload["drawdown_curve"]) <= 120
     assert payload["risk_report"]["gates_total"] == 9
     assert any(item["id"] == "IC" for item in payload["lineage"])
 
@@ -171,9 +171,9 @@ def test_backtest_explainability_snapshot_uses_backend_contract():
     assert payload["run"]["execution_mode"] == "L2_DRY_RUN_ONLY"
     assert payload["run"]["config_hash"]
     assert payload["run"]["reproducibility_hash"]
-    assert len(payload["equity_curve"]) == 120
-    assert len(payload["drawdown_curve"]) == 120
-    assert len(payload["segments"]) >= 5
+    assert 0 < len(payload["equity_curve"]) <= 120   # real per-factor series may be shorter than synthetic 120
+    assert 0 < len(payload["drawdown_curve"]) <= 120
+    assert len(payload["segments"]) >= 1   # segment count scales with the (real) series length
     assert len(payload["cost_breakdown"]) == 4
     assert len(payload["drawdown_periods"]) == 5
     assert any(driver["driver"] == "Transaction cost drag" for driver in payload["decision_drivers"])
@@ -523,7 +523,7 @@ def test_paper_trading_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["selected_alpha_id"] == "alpha-2"
     assert payload["run"]["metrics"]["sharpe"] != 0
-    assert len(payload["run"]["equity_curve"]) == 120
+    assert 0 < len(payload["run"]["equity_curve"]) <= 120
 
 
 def test_portfolio_snapshot_uses_backend_contract():
@@ -532,8 +532,8 @@ def test_portfolio_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["simulation"]["status"] == "COMPLETED"
-    assert len(payload["simulation"]["equity_curve"]) == 120
-    assert len(payload["drawdown_curve"]) == 120
+    assert 0 < len(payload["simulation"]["equity_curve"]) <= 120
+    assert 0 < len(payload["drawdown_curve"]) <= 120
     assert payload["weights"]["gross_exposure"] == 1.0
     assert len(payload["risk_contributions"]) == len(payload["weights"]["weights"])
     assert len(payload["return_attribution"]) == len(payload["weights"]["weights"])
