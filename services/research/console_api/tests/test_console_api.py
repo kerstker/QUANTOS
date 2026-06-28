@@ -145,11 +145,13 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert payload["read_only"] is True
     assert payload["catalog_mode"] == "READ_ONLY_DATA_CATALOG"
     assert payload["feature_store_mode"] == "OFFLINE_POINT_IN_TIME_RESEARCH"
-    assert payload["summary"]["datasets"] == 5
+    # DATASETS upgrade to REAL: real path enumerates the on-disk PIT store (42 crypto_daily instruments),
+    # synthetic fallback is 5. Assert the shape/relationships, not a fixed count.
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"}
+    assert payload["summary"]["datasets"] == len(payload["datasets"]) >= 5
     assert payload["summary"]["features"] == 8
-    assert payload["summary"]["quality_checks"] == 15
+    assert payload["summary"]["quality_checks"] == 3 * len(payload["datasets"])
     assert payload["summary"]["point_in_time_safe_features"] == 8
-    assert len(payload["datasets"]) == 5
     assert len(payload["features"]) == 8
     assert all(dataset["content_hash"] for dataset in payload["datasets"])
     assert all(feature["lineage_hash"] for feature in payload["features"])

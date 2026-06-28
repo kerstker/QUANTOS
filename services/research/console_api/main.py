@@ -1191,9 +1191,80 @@ def _experiments_payload() -> Dict:
     }
 
 
-def _data_catalog_payload() -> Dict:
-    from services.data.catalog import DATA_BACKEND, dataset_content_hash, verify_point_in_time_safe
-    datasets = [
+_CRYPTO_DAILY_DB = os.path.join("data", "cache", "crypto_daily.db")
+_REAL_DATASETS_CACHE: Optional[List[Dict]] = None
+
+
+def _enumerate_real_datasets() -> List[Dict]:
+    """Enumerate the REAL on-disk PIT store (crypto_daily.db) as catalog datasets — one row per instrument
+    with a real content hash (build_dataset_version over the actual bars), real row_count, coverage derived
+    from the event-time span, relative-snapshot freshness, and PIT-safety derived from the bars
+    (knowledge_time >= event_time, i.e. no future knowledge). Module-cached (hashing every instrument is not
+    free). Returns [] when the db is absent (CI / fresh checkout — data/cache/*.db is gitignored) so the
+    catalog fail-closes to the synthetic fallback. We default to crypto_daily.db only (42 instruments); the
+    heavier stores (binance.db = 336) are intentionally not enumerated to keep the hash pass fast."""
+    global _REAL_DATASETS_CACHE
+    if _REAL_DATASETS_CACHE is not None:
+        return _REAL_DATASETS_CACHE
+    if not os.path.exists(_CRYPTO_DAILY_DB):
+        _REAL_DATASETS_CACHE = []
+        return _REAL_DATASETS_CACHE
+    rows: List[Dict] = []
+    try:
+        from services.data.persistent_store import SqlitePITStore
+        from services.data.versioning import build_dataset_version
+        st = SqlitePITStore(_CRYPTO_DAILY_DB, create=False)
+        collected = []
+        global_max_kt = 0
+        for key in st.keys():
+            try:
+                bars = st.fetch_bars(key, 0, 9_999_999_999_999)
+            except Exception:
+                continue
+            if not bars:
+                continue
+            global_max_kt = max(global_max_kt, max(b.knowledge_time for b in bars))
+            collected.append((key, bars))
+        for key, bars in collected:
+            ets = [b.event_time for b in bars]
+            kts = [b.knowledge_time for b in bars]
+            span_days = (max(ets) - min(ets)) / 86_400_000.0
+            coverage = min(1.0, len(bars) / (span_days + 1.0)) if span_days > 0 else 1.0
+            pit_safe = all(k >= e for e, k in zip(ets, kts))
+            freshness_hours = round(max(0.0, (global_max_kt - max(kts)) / 3_600_000.0), 1)
+            quality = round(coverage if pit_safe else coverage * 0.5, 3)
+            dv = build_dataset_version(f"crypto_daily.{key}", "crypto_daily", bars, created_at=0)
+            rows.append({
+                "dataset_id": f"crypto_daily.{key}",
+                "name": key,
+                "domain": "CRYPTO_MARKET_DATA",
+                "version": "crypto_daily",
+                "snapshot_id": "crypto_daily-snapshot",
+                "row_count": int(getattr(dv, "row_count", len(bars))),
+                "coverage": round(coverage, 3),
+                "freshness_hours": freshness_hours,   # RELATIVE to the snapshot's newest knowledge_time
+                "quality_score": quality,
+                "point_in_time_safe": pit_safe,
+                "owner": "Crypto Research",
+                "storage_uri": f"sqlite://data/cache/crypto_daily.db#{key}",
+                "content_hash": dv.content_hash,
+            })
+        rows.sort(key=lambda d: d["dataset_id"])
+    except Exception:
+        rows = []
+    _REAL_DATASETS_CACHE = rows
+    return rows
+
+
+def _dataset_checks(dataset: Dict) -> List[Dict]:
+    return [
+        {"check_id": f"{dataset['dataset_id']}-coverage", "name": "coverage", "status": "PASS" if dataset["coverage"] >= 0.94 else "WARN", "metric": dataset["coverage"], "threshold": 0.94},
+        {"check_id": f"{dataset['dataset_id']}-freshness", "name": "freshness_hours", "status": "PASS" if dataset["freshness_hours"] <= 24 else "WARN", "metric": dataset["freshness_hours"], "threshold": 24},
+        {"check_id": f"{dataset['dataset_id']}-pit", "name": "point_in_time_safe", "status": "PASS" if dataset["point_in_time_safe"] else "FAIL", "metric": 1 if dataset["point_in_time_safe"] else 0, "threshold": 1},
+    ]
+
+
+_SYNTHETIC_CATALOG_DATASETS = [
         {
             "dataset_id": "ds-market-daily-bars",
             "name": "CN A-share daily bars",
@@ -1265,16 +1336,26 @@ def _data_catalog_payload() -> Dict:
             "storage_uri": "artifact://data-lake/liquidity/profile/2026w20",
         },
     ]
-    for dataset in datasets:
-        # content hash + PIT-safety now come from the real services/data layer (G2),
-        # not hardcoded values.
-        dataset["content_hash"] = dataset_content_hash(dataset["dataset_id"], dataset["version"])
-        dataset["point_in_time_safe"] = verify_point_in_time_safe(dataset["dataset_id"])
-        dataset["checks"] = [
-            {"check_id": f"{dataset['dataset_id']}-coverage", "name": "coverage", "status": "PASS" if dataset["coverage"] >= 0.94 else "WARN", "metric": dataset["coverage"], "threshold": 0.94},
-            {"check_id": f"{dataset['dataset_id']}-freshness", "name": "freshness_hours", "status": "PASS" if dataset["freshness_hours"] <= 24 else "WARN", "metric": dataset["freshness_hours"], "threshold": 24},
-            {"check_id": f"{dataset['dataset_id']}-pit", "name": "point_in_time_safe", "status": "PASS" if dataset["point_in_time_safe"] else "FAIL", "metric": 1 if dataset["point_in_time_safe"] else 0, "threshold": 1},
-        ]
+
+
+def _data_catalog_payload() -> Dict:
+    from services.data.catalog import DATA_BACKEND, dataset_content_hash, verify_point_in_time_safe
+    # DATASETS upgrade to REAL: enumerate the on-disk PIT store (crypto_daily.db) — real content hash,
+    # row_count, coverage, PIT-safety. FEATURES / lineage stay SYNTHETIC (no persisted FeatureRegistry yet)
+    # and are honestly marked. Fail-closed to the synthetic dataset fallback when no db is present (CI).
+    real_datasets = _enumerate_real_datasets()
+    if real_datasets:
+        datasets = [dict(d) for d in real_datasets]
+        datasets_provenance = "REAL_PIT_DATASETS"
+        for dataset in datasets:
+            dataset["checks"] = _dataset_checks(dataset)   # content_hash + PIT already real from the bars
+    else:
+        datasets = [dict(d) for d in _SYNTHETIC_CATALOG_DATASETS]
+        datasets_provenance = "SYNTHETIC_DETERMINISTIC"
+        for dataset in datasets:
+            dataset["content_hash"] = dataset_content_hash(dataset["dataset_id"], dataset["version"])
+            dataset["point_in_time_safe"] = verify_point_in_time_safe(dataset["dataset_id"])
+            dataset["checks"] = _dataset_checks(dataset)
 
     feature_specs = [
         ("feat-ts-mean-close-5", "ts_mean_close_5", "PRICE_MOMENTUM", "(ts_mean :close 5)", "ds-market-daily-bars", 5, ["exp-alpha-1-v001", "exp-alpha-7-v001"]),
@@ -1287,8 +1368,14 @@ def _data_catalog_payload() -> Dict:
         ("feat-fundamental-yield-ttm", "fundamental_yield_ttm", "FUNDAMENTAL", "(point_in_time :earnings_yield_ttm)", "ds-fundamentals-ttm", 120, ["exp-alpha-9-v003"]),
     ]
     dataset_quality = {dataset["dataset_id"]: dataset["quality_score"] for dataset in datasets}
+    real_dataset_ids = [d["dataset_id"] for d in datasets]
     features = []
     for idx, (feature_id, name, family, expression, dataset_id, lookback_days, experiments) in enumerate(feature_specs):
+        # Features are illustrative/synthetic (no persisted FeatureRegistry yet); when datasets are REAL their
+        # hardcoded source ids don't exist, so attach each feature to a real dataset node (round-robin) to keep
+        # the lineage graph connected. The feature values themselves remain synthetic and are marked as such.
+        if dataset_id not in dataset_quality:
+            dataset_id = real_dataset_ids[idx % len(real_dataset_ids)]
         quality_score = max(0.0, min(1.0, dataset_quality[dataset_id] - (idx % 3) * 0.006))
         features.append({
             "feature_id": feature_id,
@@ -1322,6 +1409,11 @@ def _data_catalog_payload() -> Dict:
         "catalog_mode": "READ_ONLY_DATA_CATALOG",
         "feature_store_mode": "OFFLINE_POINT_IN_TIME_RESEARCH",
         "data_backend": DATA_BACKEND,
+        # REAL_PIT_DATASETS when datasets came from the on-disk PIT store; the feature/lineage block is still
+        # synthetic regardless — honest partial. SYNTHETIC_DETERMINISTIC when no db (CI / fresh checkout).
+        "data_provenance": datasets_provenance,
+        "datasets_real": bool(real_datasets),
+        "features_synthetic": True,
         "summary": {
             "datasets": len(datasets),
             "features": len(features),
@@ -2358,7 +2450,10 @@ def _monitoring_drift_payload() -> Dict:
             "remediation": "Run feature distribution audit and point-in-time sample check" if status != "OK" else "Continue monitoring",
         })
 
-    for idx, dataset in enumerate(data_catalog["datasets"]):
+    # Cap DATA_FRESHNESS to the staleest few so the page stays readable when the catalog enumerates many
+    # real datasets (crypto_daily = 42); rank by freshness so any actually-stale dataset still surfaces.
+    for idx, dataset in enumerate(sorted(data_catalog["datasets"],
+                                         key=lambda d: d["freshness_hours"], reverse=True)[:8]):
         current = dataset["freshness_hours"]
         drift_score = round(current / 24.0, 3)
         status = "BREACH" if current > 24 else "WATCH" if current > 12 else "OK"
