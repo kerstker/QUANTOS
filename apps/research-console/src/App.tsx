@@ -5,6 +5,7 @@ import { AppShell, type NavGroup } from '@/ui/AppShell';
 // Route-level code splitting: every page is lazy-loaded so the initial chunk stays small and heavy pages
 // (CryptoLive / SystemCompleteness / IncidentResponse / charts) load on demand. Previously all 36 pages were
 // eager-imported into one 546 KB first-paint chunk (over Vite's 500 KB warning).
+const CommandCenter = lazy(() => import('./pages/CommandCenter'));
 const Overview = lazy(() => import('./pages/Overview'));
 const BacktestResults = lazy(() => import('./pages/BacktestResults'));
 const ResearchRuns = lazy(() => import('./pages/ResearchRuns'));
@@ -44,6 +45,7 @@ const SystemCompleteness = lazy(() => import('./pages/SystemCompleteness'));
 
 const nav: NavGroup[] = [
   { zh: '研究', en: 'RESEARCH', items: [
+    { to: '/research/command', zh: '指挥中心', en: 'Command Center', icon: 'CC', end: true },
     { to: '/research', zh: '总览', en: 'Overview', icon: 'OV', end: true },
     { to: '/research/backtest-results', zh: '回测战果', en: 'Results', icon: 'BR' },
     { to: '/research/runs', zh: '研究中心', en: 'Research Runs', icon: 'RR' },
@@ -102,7 +104,8 @@ export default function App() {
     <AppShell nav={nav}>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/research" replace />} />
+          <Route path="/" element={<Navigate to="/research/command" replace />} />
+          <Route path="/research/command" element={<CommandCenter />} />
           <Route path="/research" element={<Overview />} />
           <Route path="/research/backtest-results" element={<BacktestResults />} />
           <Route path="/research/runs" element={<ResearchRuns />} />

@@ -14,6 +14,7 @@ import BacktestResults from '@/pages/BacktestResults';
 import ResearchRuns from '@/pages/ResearchRuns';
 import RunDetail from '@/pages/RunDetail';
 import CompareRuns from '@/pages/CompareRuns';
+import CommandCenter from '@/pages/CommandCenter';
 
 // First real component/render tests (the audit's "UI tests effectively zero" gap). In the test env the
 // console API is disabled (VITE_MOCK_MODE), so every page renders its mock fixtures without any network.
@@ -33,6 +34,7 @@ describe('console pages render in mock mode', () => {
     ['ResearchRuns', ResearchRuns],
     ['RunDetail', RunDetail],
     ['CompareRuns', CompareRuns],
+    ['CommandCenter', CommandCenter],
   ] as const) {
     it(`${name} mounts and produces non-empty DOM`, () => {
       const { container } = render(<MemoryRouter><Page /></MemoryRouter>);
