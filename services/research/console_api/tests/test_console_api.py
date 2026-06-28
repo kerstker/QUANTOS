@@ -322,6 +322,33 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["monitoring_policy"]["authorizes_live_trading"] is False
 
 
+def test_lifecycle_monitor_is_read_only_and_honest_about_live():
+    response = client.get("/api/v1/console/lifecycle-monitor")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
+    assert payload["read_only"] is True
+    assert payload["monitoring_mode"] == "READ_ONLY_LIFECYCLE_MONITOR"
+    # Real path reads the experiment_registry; synthetic fallback is the deterministic candidate set.
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"}
+    assert payload["summary"]["total"] == len(payload["rows"]) >= 1
+    # HONESTY: L2 has no live/paper IC source — every row's live side stays null and the degradation
+    # recommendation is NO_LIVE_DATA (never a fabricated DEGRADED). live_tracked must therefore be 0.
+    assert payload["summary"]["live_tracked"] == 0
+    for row in payload["rows"]:
+        assert row["live_ic"] is None
+        assert row["recommendation"] == "NO_LIVE_DATA"
+        assert row["days_in_state"] is None  # single-batch as_of, no honest per-alpha tenure
+    # Lifecycle policy must declare the L2 safety posture: recommend-only, human-only promotion, no live.
+    policy = payload["lifecycle_policy"]
+    assert policy["recommends_only"] is True
+    assert policy["promotion_human_only"] is True
+    assert policy["live_trading_built"] is False
+    assert policy["live_ic_available"] is False
+    # Real degradation thresholds are surfaced read-only.
+    assert payload["thresholds"]["min_ic_retention"] > 0
+
+
 def test_alpha_decay_monitors_are_engine_computed():
     """ALPHA_DECAY rows must come from the REAL Phase-6 degradation-monitor engine, not a
     hand-coded formula. Proven two ways: (1) the summary advertises the engine, and (2) every

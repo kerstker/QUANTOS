@@ -1412,6 +1412,40 @@ export interface SafetyPrimitivesPayload {
   safety_config: { live_trading_enabled: boolean; real_broker_enabled: boolean; allow_order_submission: boolean; allow_ai_direct_trading: boolean; require_human_approval: boolean };
   live_authorization_allowed: boolean;
 }
+export interface LifecycleRow {
+  alpha_id: string;
+  state: string;
+  generator: string;
+  days_in_state: number | null;     // null: as_of is a single batch ts, not a real per-alpha tenure
+  backtest_ic: number | null;
+  sharpe: number | null;
+  pvalue: number | null;
+  net_sharpe: number | null;
+  deflated_sharpe: number | null;
+  turnover: number | null;
+  verdict: string;
+  live_ic: number | null;           // honestly null in L2 — no live/paper IC source exists
+  recommendation: string;           // NO_LIVE_DATA in L2 (degradation needs a live feed)
+  alerts: string[];
+}
+export interface LifecycleMonitorPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  monitoring_mode: string;
+  summary: {
+    total: number; state_counts: Record<string, number>; live_tracked: number;
+    awaiting_review: number; needs_action: number; positive_sharpe: number; avg_backtest_ic: number;
+  };
+  rows: LifecycleRow[];
+  thresholds: {
+    min_ic_retention: number; max_return_gap: number; retire_return_gap: number;
+    max_slippage_mult: number; max_turnover_mult: number; max_drawdown: number;
+    max_capacity_breach_frac: number;
+  };
+  lifecycle_policy: {
+    recommends_only: boolean; promotion_human_only: boolean;
+    live_trading_built: boolean; live_ic_available: boolean;
+  };
+}
 export interface DslExprRow {
   expr: string; valid: boolean; complexity: number;
   leakage_ok: boolean | null; deps: string[]; note: string; errors: string[];

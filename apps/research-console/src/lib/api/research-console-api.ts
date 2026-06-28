@@ -26,6 +26,7 @@ import type {
   AlphaZooPayload,
   DslExplorerPayload,
   SafetyPrimitivesPayload,
+  LifecycleMonitorPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -214,6 +215,10 @@ export function fetchDslExplorerSnapshot(signal?: AbortSignal) {
 
 export function fetchSafetyPrimitivesSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SafetyPrimitivesPayload>('/api/v1/console/safety-primitives', signal);
+}
+
+export function fetchLifecycleMonitorSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<LifecycleMonitorPayload>('/api/v1/console/lifecycle-monitor', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {

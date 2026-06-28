@@ -103,6 +103,8 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # research-ops console: dynamic registry-backed run list + generic detail (real research results)
     "/api/v1/console/research-runs": ("", ("runs",)),
     "/api/v1/console/research-run": ("?run_id=__contract__", ("run",)),
+    # alpha lifecycle monitor: real experiment_registry backtest-side artifacts (live side honestly null)
+    "/api/v1/console/lifecycle-monitor": ("", ("summary", "rows", "thresholds", "lifecycle_policy")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -131,6 +133,9 @@ REAL_DATA_PROVENANCE = {
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
     "/api/v1/console/experiments": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     "/api/v1/console/evidence-ledger": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
+    # LifecycleMonitor reads the real experiment_registry alpha states + backtest IC/sharpe/verdict; the
+    # live side is honestly null (no live/paper feed in L2), so it's real-or-synthetic on the backtest side.
+    "/api/v1/console/lifecycle-monitor": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     # MonitoringDrift is honestly PARTIAL: ALPHA_DECAY's baseline + degradation verdict run on the REAL
     # factor backtests when the snapshot is present, but the live-drift side stays synthetic (L2 has no
     # live/paper feed). The partial marker says exactly that — never claim fully real.

@@ -933,6 +933,145 @@ def _short_hash(*parts: object) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _degradation_thresholds_snapshot() -> Dict:
+    """Read-only snapshot of the REAL DegradationThresholds the live-vs-backtest monitor would apply."""
+    try:
+        from services.alpha.degradation_monitor import DegradationThresholds
+        th = DegradationThresholds()
+        return {
+            "min_ic_retention": th.min_ic_retention, "max_return_gap": th.max_return_gap,
+            "retire_return_gap": th.retire_return_gap, "max_slippage_mult": th.max_slippage_mult,
+            "max_turnover_mult": th.max_turnover_mult, "max_drawdown": th.max_drawdown,
+            "max_capacity_breach_frac": th.max_capacity_breach_frac,
+        }
+    except Exception:
+        return {"min_ic_retention": 0.3, "max_return_gap": 0.6, "retire_return_gap": 1.0,
+                "max_slippage_mult": 2.0, "max_turnover_mult": 2.0, "max_drawdown": 0.3,
+                "max_capacity_breach_frac": 0.5}
+
+
+def _lifecycle_rows_real(st) -> List[Dict]:
+    """One lifecycle row per recorded alpha, from the REAL experiment_registry. backtest_ic / sharpe /
+    pvalue / net_sharpe / deflated_sharpe / verdict are real immutable evaluation artifacts. live_ic is
+    honestly None: L2_DRY_RUN_ONLY has no live / paper feed that persists a realized IC, so the
+    degradation engine cannot compute a real live-vs-backtest verdict — recommendation is NO_LIVE_DATA
+    (not a fabricated DEGRADED). days_in_state is None because evaluation as_of is a single batch
+    timestamp, not a per-alpha tenure. generator is derived from the heuristic operator (no real lineage)."""
+    def _r(v, n):
+        return round(v, n) if isinstance(v, (int, float)) else None
+    try:
+        alphas = st.all_alphas()
+    except Exception:
+        return []
+    rows: List[Dict] = []
+    for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9),
+                    reverse=True):
+        aid = a.get("alpha_id")
+        try:
+            evs = st.list_evaluations(aid)
+        except Exception:
+            evs = []
+        ej: Dict = {}
+        if evs:
+            try:
+                ej = json.loads(evs[-1].get("evaluation_json") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                ej = {}
+        try:
+            dj = json.loads(a.get("definition_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            dj = {}
+        operator = (dj.get("params") or {}).get("operator")
+        rows.append({
+            "alpha_id": aid,
+            "state": str(a.get("state") or "UNKNOWN"),
+            "generator": f"heuristic:{operator}" if operator else "heuristic_sweep",
+            "days_in_state": None,
+            "backtest_ic": _r(ej.get("ic_mean"), 5),
+            "sharpe": _r(a.get("sharpe"), 4),
+            "pvalue": _r(a.get("pvalue"), 4),
+            "net_sharpe": _r(ej.get("net_sharpe"), 4),
+            "deflated_sharpe": _r(ej.get("deflated_sharpe"), 4),
+            "turnover": _r(ej.get("turnover"), 4),
+            "verdict": str(ej.get("verdict") or "—"),
+            "live_ic": None,
+            "recommendation": "NO_LIVE_DATA",
+            "alerts": [],
+        })
+    return rows
+
+
+def _lifecycle_rows_synthetic() -> List[Dict]:
+    """Deterministic fallback (CI / fresh checkout with no experiment_registry). Rotates lifecycle states so
+    the page shape stays exercised; live_ic stays None (no live feed is ever real)."""
+    states = ["TESTING", "VALIDATION", "TESTING", "VALIDATION"]
+    rows: List[Dict] = []
+    for idx, c in enumerate(_alpha_candidates()):
+        rows.append({
+            "alpha_id": c["candidate_id"],
+            "state": states[idx % len(states)],
+            "generator": "heuristic_sweep",
+            "days_in_state": None,
+            "backtest_ic": round(c.get("ic", 0.0), 5),
+            "sharpe": round(c.get("sharpe", 0.0), 4) if isinstance(c.get("sharpe"), (int, float)) else None,
+            "pvalue": None,
+            "net_sharpe": round(c.get("sharpe", 0.0), 4) if isinstance(c.get("sharpe"), (int, float)) else None,
+            "deflated_sharpe": None,
+            "turnover": round(c.get("turnover", 0.0), 4) if isinstance(c.get("turnover"), (int, float)) else None,
+            "verdict": "REQUIRES_HUMAN_REVIEW",
+            "live_ic": None,
+            "recommendation": "NO_LIVE_DATA",
+            "alerts": [],
+        })
+    return rows
+
+
+def _lifecycle_summary(rows: List[Dict]) -> Dict:
+    state_counts: Dict[str, int] = {}
+    for r in rows:
+        state_counts[r["state"]] = state_counts.get(r["state"], 0) + 1
+    ics = [r["backtest_ic"] for r in rows if isinstance(r["backtest_ic"], (int, float))]
+    sharpes = [r["sharpe"] for r in rows if isinstance(r["sharpe"], (int, float))]
+    awaiting = sum(1 for r in rows if any(t in str(r["verdict"]).upper() for t in ("REVIEW", "REQUIRE")))
+    return {
+        "total": len(rows),
+        "state_counts": state_counts,
+        "live_tracked": sum(1 for r in rows if r["live_ic"] is not None),
+        "awaiting_review": awaiting,
+        "needs_action": awaiting,
+        "positive_sharpe": sum(1 for s in sharpes if s > 0),
+        "avg_backtest_ic": round(sum(ics) / len(ics), 5) if ics else 0.0,
+    }
+
+
+def _lifecycle_monitor_payload() -> Dict:
+    """Alpha lifecycle monitor: REAL backtest-side artifacts from experiment_registry; honest NO_LIVE_DATA
+    on the live side (L2 has no live/paper IC). Fail-closed to synthetic when the registry is absent."""
+    st = _load_experiment_store()
+    rows: List[Dict] = []
+    provenance = "SYNTHETIC_DETERMINISTIC"
+    if st is not None:
+        rows = _lifecycle_rows_real(st)
+        if rows:
+            provenance = "EXPERIMENT_REGISTRY"
+    if not rows:
+        rows = _lifecycle_rows_synthetic()
+        provenance = "SYNTHETIC_DETERMINISTIC"
+    return {
+        "monitoring_mode": "READ_ONLY_LIFECYCLE_MONITOR",
+        "data_provenance": provenance,
+        "summary": _lifecycle_summary(rows),
+        "rows": rows,
+        "thresholds": _degradation_thresholds_snapshot(),
+        "lifecycle_policy": {
+            "recommends_only": True,
+            "promotion_human_only": True,
+            "live_trading_built": False,
+            "live_ic_available": False,
+        },
+    }
+
+
 def _experiments_payload() -> Dict:
     st = _load_experiment_store()
     if st is not None:
@@ -4067,6 +4206,17 @@ async def reviewer_workflow() -> Dict:
 @app.get("/api/v1/console/access-control")
 async def access_control() -> Dict:
     payload = _access_control_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        **payload,
+    }
+
+
+@app.get("/api/v1/console/lifecycle-monitor")
+async def lifecycle_monitor() -> Dict:
+    payload = _lifecycle_monitor_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
