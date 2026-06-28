@@ -74,6 +74,7 @@ export default function LifecycleMonitor() {
         subtitle={bi('每个 Alpha 的真实生命周期态与回测评估制品(IC/夏普/p值/裁决);实时衰减建议需实盘数据',
           'Each alpha’s real lifecycle state + backtest evaluation artifacts (IC/Sharpe/p-value/verdict); the live-decay recommendation needs a live feed')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        realData={usingBackend && payload?.data_provenance === 'EXPERIMENT_REGISTRY'}
         source={usingBackend ? 'EXPERIMENT_REGISTRY' : 'FRONTEND_LIFECYCLE_MOCK'} error={error} />
 
       {/* Honesty: backtest-side fields are REAL (immutable experiment_registry artifacts). The live side is

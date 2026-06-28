@@ -270,7 +270,9 @@ export default function DataCatalog() {
             <Chip label={catalog.feature_store_mode} tone="special" />
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={catalog.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        realData={usingBackend && catalog.data_provenance === 'REAL_PIT_DATASETS'}
+        source={catalog.source} error={error} />
 
       <KpiStrip cols={8}>
         <StatTile label={bi('数据集', 'Datasets')} value={num(catalog.summary.datasets)} accent />

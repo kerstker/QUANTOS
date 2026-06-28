@@ -136,6 +136,9 @@ export interface ConsolePayloadBase {
   source: "BACKEND_COMPUTED_SNAPSHOT" | string;
   read_only: true;
   api_version: string;
+  // every console_api snapshot carries an honesty marker; pages read it to label the ProvenanceRibbon
+  // accurately (REAL_* markers => real data, else synthetic). Optional so mock fixtures need not set it.
+  data_provenance?: string;
 }
 
 export interface ResearchStats {

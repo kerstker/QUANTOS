@@ -109,6 +109,7 @@ export default function BacktestResults() {
           'Honest results of the real crypto backtests — 1 deployable edge + 1 machine-found second edge; every figure carries its discount')} />
       <HonestBanner usingBackend={usingBackend} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        realData={usingBackend && payload?.data_provenance === 'RESEARCH_RUN_REGISTRY'}
         source={usingBackend ? 'RESEARCH_RUN_REGISTRY' : 'FRONTEND_OBSERVED_SNAPSHOT'} error={error} />
 
       <KpiStrip cols={4}>
