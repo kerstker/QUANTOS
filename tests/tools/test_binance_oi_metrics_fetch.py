@@ -77,6 +77,30 @@ def test_find_start_returns_first_available():
     assert got is not None and 0 <= (got - base) <= 120 * _DAY
 
 
+def test_parse_intraday_features_from_full_day():
+    """Intraday-derived daily features come from ALL 5-min rows (dynamics the eod value discards)."""
+    rows = [_HEADER]
+    for i in range(12):                                  # oi 100..122 (+2/step), gls 1.0..1.55, taker 1.0
+        oi = 100 + 2 * i
+        gls = 1.0 + 0.05 * i
+        rows.append(f"2023-06-01 {i:02d}:00:00,BTCUSDT,{oi}.0,3.0e9,2.0,1.10,{gls},1.0")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("BTCUSDT-metrics-2023-06-01.csv", "\n".join(rows))
+    feat = f.parse_metrics_zip_intraday(buf.getvalue())
+    assert abs(feat["oi_trend"] - 0.22) < 1e-6           # (122-100)/100
+    assert abs(feat["gls_trend"] - 0.55) < 1e-9          # 1.55 - 1.0
+    assert abs(feat["gls_range"] - 0.55) < 1e-9
+    assert abs(feat["taker_mean"] - 1.0) < 1e-9
+    assert abs(feat["oi_surge"] - 0.02) < 1e-6           # max |Δoi|/oi = 2/100
+    assert feat["oi_range"] > 0
+    # too few rows -> {} (fail-closed)
+    short = io.BytesIO()
+    with zipfile.ZipFile(short, "w") as zf:
+        zf.writestr("x.csv", "\n".join(rows[:4]))
+    assert f.parse_metrics_zip_intraday(short.getvalue()) == {}
+
+
 def test_find_end_bounds_delisted_coin():
     base = f._PROBE_FLOOR_MS // _DAY * _DAY
     death = base + 200 * _DAY  # archive available only up to `death` (a delisted coin)

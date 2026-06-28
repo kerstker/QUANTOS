@@ -39,6 +39,8 @@ _DAY_MS = 86_400_000
 _HOSTS = ["https://data.binance.vision"]
 _CACHE = os.path.join("data", "cache", "crypto_oi_metrics.json")
 _SNAP = os.path.join("data", "cache", "crypto_oi_metrics_snapshot.json")
+_CACHE_INTRADAY = os.path.join("data", "cache", "crypto_oi_intraday.json")
+_SNAP_INTRADAY = os.path.join("data", "cache", "crypto_oi_intraday_snapshot.json")
 
 # the liquid majors that (a) exist in our funding universe and (b) have a metrics archive — positioning
 # data is only meaningful/reliable for liquid names, so we deliberately do NOT chase the small-cap tail.
@@ -100,6 +102,53 @@ def parse_metrics_zip(raw: bytes) -> dict:
     return out
 
 
+def _csv_floats(text: str, idx: int) -> list:
+    """All finite floats in column `idx` of the metrics CSV (skips header + bad cells)."""
+    out = []
+    for ln in text.splitlines()[1:]:
+        parts = ln.split(",")
+        if len(parts) > idx:
+            try:
+                out.append(float(parts[idx]))
+            except ValueError:
+                pass
+    return out
+
+
+def parse_metrics_zip_intraday(raw: bytes) -> dict:
+    """Parse one daily metrics ZIP -> INTRADAY-DERIVED daily features from all 288 5-min snapshots
+    (dynamics the end-of-day value discards). All computed from within-day-t data only -> PIT-safe as a
+    daily feature (knowable at the close of day t, used to predict t->t+1). Hand-rolled stats (no
+    `statistics` import). {} if too few rows."""
+    zf = zipfile.ZipFile(io.BytesIO(raw))
+    names = [n for n in zf.namelist() if n.endswith(".csv")]
+    if not names:
+        return {}
+    text = zf.open(names[0]).read().decode("utf-8")
+    oi = _csv_floats(text, _COLS["oi"])
+    gls = _csv_floats(text, _COLS["global_ls"])
+    tak = _csv_floats(text, _COLS["taker_ls"])
+    if len(oi) < 12 or len(gls) < 12:
+        return {}
+
+    def _mean(xs):
+        return sum(xs) / len(xs) if xs else None
+
+    oi_mean = _mean(oi) or 1.0
+    surge = 0.0
+    for a, b in zip(oi, oi[1:]):
+        if a > 0:
+            surge = max(surge, abs(b - a) / a)
+    return {
+        "oi_range": (max(oi) - min(oi)) / oi_mean,                 # intraday OI swing (vol of positioning size)
+        "oi_trend": (oi[-1] - oi[0]) / oi[0] if oi[0] else 0.0,    # net intraday OI build (+) / unwind (-)
+        "gls_trend": gls[-1] - gls[0],                             # net intraday shift in retail positioning
+        "gls_range": max(gls) - min(gls),                          # intraday positioning swing
+        "taker_mean": _mean(tak),                                  # mean intraday aggressor flow (vs eod print)
+        "oi_surge": surge,                                         # largest single 5-min OI jump (flow shock)
+    }
+
+
 def find_start_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -> int | None:
     """Coarse forward month-scan for the earliest available metrics day (one-time per ticker)."""
     if now_ms is None:
@@ -132,7 +181,8 @@ def find_end_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -> 
 
 
 def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
-                      http_get_bytes=_http_get_bytes, sleep: float = 0.0, max_workers: int = 12) -> dict:
+                      http_get_bytes=_http_get_bytes, sleep: float = 0.0, max_workers: int = 12,
+                      parse_fn=parse_metrics_zip) -> dict:
     """Fetch every UTC day in [start_ms, end_ms) not already in `present`. Skips missing (404) days.
     Returns {day_ms: {fields}}. PIT-safe: each day collapses to its eod snapshot.
 
@@ -145,7 +195,7 @@ def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
 
     def _one(day):
         try:
-            rec = parse_metrics_zip(http_get_bytes(metrics_url(ticker, day)))
+            rec = parse_fn(http_get_bytes(metrics_url(ticker, day)))
             return (day, rec or None)
         except Exception:
             return (day, None)  # missing day or transient; leave a gap (panel handles None)
@@ -167,18 +217,21 @@ def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
     return out
 
 
-def _load_cache() -> dict:
-    if os.path.exists(_CACHE):
-        return json.load(open(_CACHE, encoding="utf-8"))
+def _load_cache(path) -> dict:
+    if os.path.exists(path):
+        return json.load(open(path, encoding="utf-8"))
     return {"_meta": {}, "data": {}}
 
 
-def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False) -> None:
+def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
+         parse_fn=parse_metrics_zip, cache_path=_CACHE, snap_path=_SNAP) -> None:
     """`bounded=True` probes each ticker's LAST available day (find_end_ms) and stops there — use it
-    for DELISTED coins so we don't fetch thousands of post-delisting 404 days. Live coins are unaffected."""
+    for DELISTED coins so we don't fetch thousands of post-delisting 404 days. Live coins are unaffected.
+    `parse_fn`/`cache_path` select what to extract per day (eod fields vs intraday-derived features) and
+    where to cache — so the intraday feature pull reuses the same fetch infrastructure."""
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
     tickers = tickers or DEFAULT_TICKERS
-    cache = _load_cache()
+    cache = _load_cache(cache_path)
     meta, data = cache.setdefault("_meta", {}), cache.setdefault("data", {})
     now_ms = int(time.time() * 1000)
     today_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
@@ -198,22 +251,26 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False) -> None:
             last = find_end_ms(ticker, now_ms=now_ms)
             if last is not None:
                 end_ms = min(today_ms, last + 35 * _DAY_MS)
-        fresh = fetch_ticker_days(ticker, start, end_ms, present, sleep=sleep)
+        fresh = fetch_ticker_days(ticker, start, end_ms, present, sleep=sleep, parse_fn=parse_fn)
         for k, v in fresh.items():
             sym_days[str(k)] = v
         all_days = sorted(int(k) for k in sym_days)
         meta[ticker] = {"start": start, "through": all_days[-1] if all_days else None}
-        json.dump(cache, open(_CACHE, "w", encoding="utf-8"))  # checkpoint each ticker (resumable)
+        json.dump(cache, open(cache_path, "w", encoding="utf-8"))  # checkpoint each ticker (resumable)
         print(f"[{ti+1}/{len(tickers)}] {ticker}: +{len(fresh)} new, {len(sym_days)} total days"
               f" ({_day_str(all_days[0])}..{_day_str(all_days[-1])})" if all_days else "")
 
     covered = {tk: len(d) for tk, d in data.items() if d}
     json.dump({"generated_at": int(time.time()), "provider": "Binance Data Vision futures metrics (perp)",
-               "fields": list(_COLS), "n_tickers": len(covered),
-               "days_per_ticker": covered}, open(_SNAP, "w", encoding="utf-8"), indent=2)
-    print(f"-> wrote {_CACHE} ({len(covered)} tickers) and {_SNAP}")
+               "n_tickers": len(covered),
+               "days_per_ticker": covered}, open(snap_path, "w", encoding="utf-8"), indent=2)
+    print(f"-> wrote {cache_path} ({len(covered)} tickers) and {snap_path}")
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    main(args or None)
+    if args and args[0] == "--intraday":   # pull INTRADAY-derived daily features instead of eod fields
+        main(args[1:] or None, parse_fn=parse_metrics_zip_intraday,
+             cache_path=_CACHE_INTRADAY, snap_path=_SNAP_INTRADAY)
+    else:
+        main(args or None)
