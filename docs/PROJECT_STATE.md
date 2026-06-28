@@ -152,7 +152,13 @@ REAL 7 / PARTIAL 6 / MOCK 17 / NONE 6 / BROKEN 1。`l2_ok=true`(全绿,仅 1 个
   ts_lead 读未来被真拒绝(确定性面板仅作泄漏扰动基底)。每个新端点 fail-closed 回退合成(CI 无快照安全)、
   契约 real-or-synthetic、前端 useConsoleSnapshot + realData 徽标。门禁全程双路绿。
   **真实度更新**:Phase 1B+2 后 6 PARTIAL + 4 NONE 已升 REAL(Risk/Validation/ComputationLab/Portfolio/
-  PaperTrading/AlphaFactory + PopulationOptimizer/AlphaGraph/AlphaZoo/DslExplorer)。HEAD=`ee63604`。
+  PaperTrading/AlphaFactory + PopulationOptimizer/AlphaGraph/AlphaZoo/DslExplorer)。
+- **Phase 3 起步**(`0033f1a`):**事件流**(`/events`)从真实 run_registry 派生事件(每个研究运行=一条只读审计事件
+  research.run.{status},真标题/裁决/头条;前端已通用渲染,后端单文件改);registry 空→合成回退,
+  provenance 条件化 RESEARCH_RUN_REGISTRY/SYNTHETIC。本会话共升真 **11 页**(6 PARTIAL+4 NONE+Events)。HEAD=`0033f1a`。
+  **Phase 3 余下页(Experiments/EvidenceLedger/Agents/LifecycleMonitor/Overview)的真持久层多为空**
+  (experiment_registry/audit_log/agent 运行记录未被离线再生器填充)——需先"填数据"(如让离线再生器写
+  experiment_registry 记录)再接端点,不是纯接线。
 **关键资产**:`tools/crypto_research_offline.py` 离线再生器(不联网,从 crypto.db 重跑 session 写 factor_series,
 18 币×120 期);`crypto_research_snapshot.json` 是 gitignored 真数据源(CI 缺→合成回退)。重生真数据:
 `python -m tools.crypto_research_offline`(后台跑~2-3min)。
