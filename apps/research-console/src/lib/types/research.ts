@@ -47,7 +47,7 @@ export interface PaperRun {
   total_trades: number; final_equity: number;
 }
 
-export interface PortfolioWeights { weights_id: string; weights: Record<string,number>; gross_exposure: number; expected_sharpe: number; expected_ic: number; }
+export interface PortfolioWeights { weights_id: string; weights: Record<string,number>; gross_exposure: number; expected_sharpe: number; expected_ic: number; method?: string; optimizer_real?: boolean; }
 export interface PortfolioSimulation { run_id: string; status: string; metrics: Record<string,number>; equity_curve: {day:number;equity:number}[]; }
 export interface RiskReport { run_id: string; portfolio_id: string; decision: RiskDecision; gates_passed: number; gates_total: number; reasons: string[]; gate_results: Record<string,boolean>; }
 export interface EventRecord { event_id: string; event_type: string; timestamp: number; source: string; correlation_id?: string; payload: Record<string,unknown>; }

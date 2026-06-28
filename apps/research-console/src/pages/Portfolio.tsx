@@ -216,7 +216,15 @@ export default function Portfolio() {
         </Panel>
 
         <Panel eyebrow={bi('构成', 'Composition')} title={bi('组合权重', 'Portfolio Weights')}
-          right={<Chip label={shortHash(weights.weights_id, 12)} tone="muted" />}>
+          right={<div className="flex items-center gap-1.5">
+            {weights.method && (
+              <Chip label={weights.optimizer_real
+                ? bi('风险平价优化器', 'RISK PARITY')
+                : bi('等权回退', 'EQUAL-WEIGHT')}
+                tone={weights.optimizer_real ? 'pos' : 'muted'} />
+            )}
+            <Chip label={shortHash(weights.weights_id, 12)} tone="muted" />
+          </div>}>
           <div className="flex flex-col items-center gap-4">
             <Donut segments={weightSegments} size={150} />
             <div className="w-full space-y-2">

@@ -585,7 +585,10 @@ def test_portfolio_snapshot_uses_backend_contract():
     assert payload["simulation"]["status"] == "COMPLETED"
     assert 0 < len(payload["simulation"]["equity_curve"]) <= 120
     assert 0 < len(payload["drawdown_curve"]) <= 120
-    assert payload["weights"]["gross_exposure"] == 1.0
+    # weights now come from the REAL risk-parity optimizer (was hardcoded equal-weight); they sum to ~1
+    # (rounding to 4dp can make the gross 1.0001). method/optimizer_real expose whether they're real.
+    assert abs(payload["weights"]["gross_exposure"] - 1.0) < 0.01
+    assert payload["weights"]["method"] in {"RISK_PARITY", "EQUAL_WEIGHT_FALLBACK"}
     assert len(payload["risk_contributions"]) == len(payload["weights"]["weights"])
     assert len(payload["return_attribution"]) == len(payload["weights"]["weights"])
     assert payload["analytics_method"] == "BACKEND_RESEARCH_SIMULATION_ATTRIBUTION"

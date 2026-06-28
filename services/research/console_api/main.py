@@ -446,14 +446,51 @@ def _portfolio_drawdown_curve(equity_curve: List[Dict[str, float]]) -> List[Dict
     return drawdowns
 
 
+def _return_cov_matrix(rows: List[List[float]], n: int) -> Optional[List[List[float]]]:
+    """Sample covariance across the alpha return streams over their common length n (pure stdlib).
+    None when too short or any stream is degenerate (zero variance) -> caller fails closed."""
+    if n < 2 or len(rows) < 2:
+        return None
+    means = [statistics.fmean(r[:n]) for r in rows]
+    k = len(rows)
+    cov = [[0.0] * k for _ in range(k)]
+    for i in range(k):
+        for j in range(i, k):
+            c = sum((rows[i][t] - means[i]) * (rows[j][t] - means[j]) for t in range(n)) / (n - 1)
+            cov[i][j] = cov[j][i] = c
+    if any(cov[i][i] <= 0 for i in range(k)):
+        return None
+    return cov
+
+
+def _optimizer_weights(candidates, return_matrix, n_days):
+    """REAL portfolio construction: risk-parity weights from the real return covariance (services/portfolio
+    optimizer). Fail-closed to equal-weight when the covariance is degenerate / the optimizer is unavailable
+    (CI / synthetic) so the page never breaks — returns (weights_dict, weights_are_real)."""
+    eq = {c["candidate_id"]: round(1.0 / len(candidates), 4) for c in candidates}
+    cov = _return_cov_matrix(return_matrix, n_days)
+    if cov is None:
+        return eq, False
+    try:
+        from services.portfolio.optimizer import risk_parity_weights
+        wl = risk_parity_weights(cov)
+        if not wl or len(wl) != len(candidates) or abs(sum(wl)) < 1e-9:
+            return eq, False
+        return {c["candidate_id"]: round(wl[i], 4) for i, c in enumerate(candidates)}, True
+    except Exception:
+        return eq, False
+
+
 def _portfolio_simulation() -> Dict:
     candidates = sorted(_alpha_candidates(), key=lambda alpha: alpha["composite_score"], reverse=True)[:4]
-    weights = {alpha["candidate_id"]: round(1.0 / len(candidates), 4) for alpha in candidates}
     return_matrix = []
     for idx, _alpha in enumerate(candidates):
         return_matrix.append(_forward_returns(_factor_values(idx), idx)[:120])
     n_days = min((len(r) for r in return_matrix), default=0)   # real series can be shorter than 120
-    w = list(weights.values())
+    # REAL portfolio construction: risk-parity weights on the real return covariance (was hardcoded
+    # equal-weight, which bypassed the optimizer). Fail-closed to equal-weight when degenerate / synthetic.
+    weights, weights_real = _optimizer_weights(candidates, return_matrix, n_days)
+    w = [weights[alpha["candidate_id"]] for alpha in candidates]
     portfolio_returns = [
         sum(return_matrix[col][day] * w[col] for col in range(len(candidates)))
         for day in range(n_days)
@@ -514,6 +551,8 @@ def _portfolio_simulation() -> Dict:
             "gross_exposure": round(sum(abs(value) for value in weights.values()), 4),
             "expected_sharpe": round(sharpe, 3),
             "expected_ic": round(statistics.mean(alpha["ic"] for alpha in candidates), 4),
+            "method": "RISK_PARITY" if weights_real else "EQUAL_WEIGHT_FALLBACK",
+            "optimizer_real": weights_real,
         },
         "risk_contributions": [
             {
