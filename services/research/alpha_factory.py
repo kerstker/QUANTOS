@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Mapping, Optional, Sequence
 
-from services.research.backtest_engine.metrics import sharpe
+from services.research.backtest_engine.metrics import sharpe, generalization_gap
 
 from . import alpha_expression as ax
 from . import cs_genome
@@ -31,7 +31,8 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
                       generations: int = 3, population_size: int = 20, elite_k: int = 8,
                       fwd_horizon: int = 1, quantile: float = 0.2, use_funding: Optional[bool] = None,
                       basis_returns: Optional[Mapping[str, Sequence[float]]] = None,
-                      basis_min_overlap: int = 60, dataset_version: str = "", timestamp: int = 0) -> dict:
+                      basis_min_overlap: int = 60, overfit_lambda: float = 0.0,
+                      dataset_version: str = "", timestamp: int = 0) -> dict:
     """Evolve cs-alphas scored by economic L/S Sharpe, then run the full pipeline over the elite set.
     `use_funding` defaults to True when the panel carries a 'funding' matrix (score = carry economic
     return); else the price-only L/S Sharpe.
@@ -63,6 +64,14 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
             s = sharpe(r) if len(r) >= 2 else _NEG_INF
             if s != s:                                  # NaN guard
                 s = _NEG_INF
+        if overfit_lambda > 0.0 and s != _NEG_INF:
+            # generalisation pressure (opt-in): SUBTRACT a penalty for an in-sample-vs-out-of-sample Sharpe
+            # collapse on the candidate's own stream, so the search is pushed AWAY from selection-overfit
+            # candidates. Subtractive (not multiplicative) because this score is an unbounded Sharpe / IR,
+            # possibly negative. None gap (too short / degenerate) -> no penalty. Recorded eval untouched.
+            gap = generalization_gap(r)
+            if gap is not None:
+                s = s - overfit_lambda * gap
         scored[aid] = (s, expr)
         return s
 

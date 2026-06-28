@@ -35,6 +35,34 @@ def sortino(returns: Sequence[float], periods_per_year: int = 252) -> float:
     return math.inf if mean > 0 else 0.0   # no downside + positive return = infinite Sortino
 
 
+def generalization_gap(returns: Sequence[float], *, embargo: int = 1,
+                       min_len: int = 40, gap_scale: float = 2.0):
+    """Normalised in-sample-minus-out-of-sample Sharpe gap of a return stream, in [0,1] (or None).
+
+    Split `returns` into a train half (first) and a test half (second, after an `embargo` gap to avoid
+    boundary overlap). The gap = max(0, IS_Sharpe - OOS_Sharpe): only the OVERFIT direction (strong
+    in-sample, weak out-of-sample) is penalised; a factor that holds up out-of-sample scores ~0. Returns
+    None (-> NO penalty, the conservative default) when the stream is too short to split honestly or when
+    either half is degenerate (non-finite Sharpe). Pure, deterministic, stdlib.
+
+    Used as a SEARCH-REWARD-ONLY signal by both search engines (intelligence/reward + research/alpha_factory)
+    to bias AWAY from selection-overfit candidates, complementing (not replacing) the post-hoc CPCV/OOS gate.
+    Single mid-split: cheap and scales with overfit severity, but a back-loaded factor can escape it."""
+    n = len(returns)
+    if n < min_len:
+        return None
+    mid = n // 2
+    train = list(returns[:mid])
+    test = list(returns[mid + embargo:])
+    if len(train) < min_len // 2 or len(test) < min_len // 2:
+        return None
+    is_sr, oos_sr = sharpe(train), sharpe(test)
+    if not (math.isfinite(is_sr) and math.isfinite(oos_sr)):
+        return None
+    gap = max(0.0, is_sr - oos_sr) / gap_scale
+    return min(max(gap, 0.0), 1.0)
+
+
 def max_drawdown(equity: Sequence[float]) -> float:
     """Max peak-to-trough loss, clamped to [0, 1] (a 100% loss is total)."""
     peak = -math.inf

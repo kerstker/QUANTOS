@@ -82,6 +82,32 @@ def test_factory_orthogonal_novelty_reward_downweights_basis_clone():
     assert base_out["scored_by"] == "economic"
 
 
+def test_factory_overfit_lambda_default_off_matches_plain():
+    # overfit_lambda defaults to 0 -> identical to a run without the feature (opt-in regression guard)
+    plain = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=5,
+                              dataset_version="dv", timestamp=1)
+    explicit0 = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=5,
+                                  overfit_lambda=0.0, dataset_version="dv", timestamp=1)
+    assert [b["alpha_id"] for b in plain["best"]] == [b["alpha_id"] for b in explicit0["best"]]
+    assert [b["score"] for b in plain["best"]] == [b["score"] for b in explicit0["best"]]
+
+
+def test_factory_overfit_lambda_deterministic_and_penalises():
+    # generalisation-gap penalty ON: deterministic, and a penalised score is never ABOVE the unpenalised
+    # one for the same alpha (the penalty only subtracts; default eval untouched).
+    plain = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=6,
+                              dataset_version="dv", timestamp=1)
+    pen = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=6,
+                            overfit_lambda=1.0, dataset_version="dv", timestamp=1)
+    pen2 = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=6,
+                             overfit_lambda=1.0, dataset_version="dv", timestamp=1)
+    assert [b["alpha_id"] for b in pen["best"]] == [b["alpha_id"] for b in pen2["best"]]   # deterministic
+    plain_scores = {b["alpha_id"]: b["score"] for b in plain["best"]}
+    for b in pen["best"]:
+        if b["alpha_id"] in plain_scores:
+            assert b["score"] <= plain_scores[b["alpha_id"]] + 1e-9   # penalty never raises a score
+
+
 def test_no_rng_or_wallclock_import():
     import inspect
     import services.research.alpha_factory as m
