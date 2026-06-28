@@ -84,6 +84,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/portfolio": ("", (
         "simulation", "drawdown_curve", "weights", "risk_contributions",
         "return_attribution", "analytics_method", "lineage")),
+    "/api/v1/console/population-optimizer": ("", ("selected", "excluded", "diversity", "gross")),
     "/api/v1/console/system-completeness": ("", (
         "audit_mode", "current_level", "institutional_target", "readiness_score", "summary",
         "modules", "checks", "gaps", "roadmap", "safety_boundary")),
@@ -116,6 +117,7 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/paper-trading": _REAL_OR_SYNTHETIC,
     "/api/v1/console/portfolio": _REAL_OR_SYNTHETIC,
     "/api/v1/console/computation-lab": _REAL_OR_SYNTHETIC,
+    "/api/v1/console/population-optimizer": _REAL_OR_SYNTHETIC,
 }
 
 

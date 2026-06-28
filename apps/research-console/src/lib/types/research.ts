@@ -1396,3 +1396,10 @@ export interface ResearchRunsComparePayload {
   source: string; read_only: boolean; data_provenance: string;
   runs: ResearchRunDetail[];
 }
+export interface PopOptSelected { alpha_id: string; weight: number; marginal_ir: number; marginal_dd: number; }
+export interface PopOptExcluded { alpha_id: string; reason: string; }
+export interface PopulationOptimizerPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  selected: PopOptSelected[]; excluded: PopOptExcluded[];
+  diversity: number; gross: number; method: string; n_candidates: number;
+}

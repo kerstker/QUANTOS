@@ -21,6 +21,7 @@ import type {
   PaperTradingPayload,
   Phase3AReadinessPayload,
   PortfolioDashboardPayload,
+  PopulationOptimizerPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -189,6 +190,10 @@ export function fetchPaperTradingSnapshot(alphaId: string, signal?: AbortSignal)
 
 export function fetchPortfolioSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<PortfolioDashboardPayload>('/api/v1/console/portfolio', signal);
+}
+
+export function fetchPopulationOptimizerSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<PopulationOptimizerPayload>('/api/v1/console/population-optimizer', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {

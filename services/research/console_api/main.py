@@ -16,6 +16,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.research.factor_engine.domain.model import compute_ic, compute_max_drawdown, compute_sharpe
+from services.research.factor_set import select_synergistic_set
 from services.research.paper_trading.domain.pnl import PnLAttributor
 from services.risk.research_risk.domain.gate import RiskApprovalGate
 from services.risk.research_risk.domain.models import RiskConfig, RiskRun
@@ -3465,6 +3466,76 @@ def _input_provenance() -> str:
     deterministic synthetic fallback. Surfaced per endpoint so the UI can honestly badge real-vs-synthetic."""
     return "REAL_CRYPTO_SERIES" if _load_real_factors() else "SYNTHETIC_DETERMINISTIC"
 
+
+def _corr(a: List[float], b: List[float]) -> float:
+    n = min(len(a), len(b))
+    if n < 3:
+        return 0.0
+    a, b = a[:n], b[:n]
+    ma, mb = statistics.fmean(a), statistics.fmean(b)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    va = sum((x - ma) ** 2 for x in a)
+    vb = sum((y - mb) ** 2 for y in b)
+    return cov / (va ** 0.5 * vb ** 0.5) if va > 0 and vb > 0 else 0.0
+
+
+def _inverse_vol_weights(ids: List[str], rbi: Dict[str, List[float]]) -> Dict[str, float]:
+    inv = {a: 1.0 / (statistics.pstdev(rbi[a]) or 1e-9) for a in ids}
+    tot = sum(inv.values()) or 1.0
+    return {a: inv[a] / tot for a in ids}
+
+
+def _weighted_max_dd(ids: List[str], rbi: Dict[str, List[float]]) -> float:
+    """Max drawdown of the inverse-vol-weighted portfolio of `ids` (real per-factor net returns)."""
+    if not ids:
+        return 0.0
+    w = _inverse_vol_weights(ids, rbi)
+    n = min(len(rbi[a]) for a in ids)
+    equity, curve = 1.0, []
+    for d in range(n):
+        equity *= 1.0 + sum(w[a] * rbi[a][d] for a in ids)
+        curve.append(equity)
+    return compute_max_drawdown(curve) or 0.0
+
+
+def _population_optimizer_payload() -> Dict:
+    """De-redundant SET selection (synergistic forward-selection by incremental IR) + inverse-vol weights +
+    marginal IR / marginal drawdown + excluded-with-reasons + diversity (1−mean|corr|). Runs on the REAL
+    per-factor return series when present; fail-closed to a deterministic synthetic set otherwise."""
+    rf = _load_real_factors()
+    if rf:
+        rbi = {f["alpha_id"]: f["returns"] for f in rf}
+        sel = select_synergistic_set(rbi, max_k=6, min_incremental_ir=0.0)
+        ids = sel["selected_ids"]
+        weights = _inverse_vol_weights(ids, rbi) if ids else {}
+        selected, prev_dd, acc = [], 0.0, []
+        for s in sel["selected"]:
+            acc.append(s["id"])
+            dd = _weighted_max_dd(acc, rbi)
+            selected.append({"alpha_id": s["id"], "weight": round(weights.get(s["id"], 0.0), 4),
+                             "marginal_ir": round(s["incremental_ir"], 4),
+                             "marginal_dd": round(dd - prev_dd, 4)})   # Δ set max-DD as this factor is added
+            prev_dd = dd
+        pairs = [(ids[i], ids[j]) for i in range(len(ids)) for j in range(i + 1, len(ids))]
+        diversity = 1.0 - (statistics.fmean([abs(_corr(rbi[a], rbi[b])) for a, b in pairs]) if pairs else 0.0)
+        excluded = [{"alpha_id": aid, "reason": "REDUNDANT_CORRELATED"} for aid in sel["dropped_redundant"]]
+        return {"selected": selected, "excluded": excluded, "diversity": round(diversity, 3),
+                "gross": round(sum(abs(s["weight"]) for s in selected), 2),
+                "method": sel["method"], "n_candidates": sel["n_candidates"]}
+    # fail-closed synthetic (CI / no snapshot): deterministic from the synthetic candidate pool
+    cands = sorted(_alpha_candidates(), key=lambda a: a["composite_score"], reverse=True)
+    sel_c, exc_c = cands[:4], cands[4:7]
+    tot = sum(c["composite_score"] for c in sel_c) or 1.0
+    selected = [{"alpha_id": c["candidate_id"], "weight": round(c["composite_score"] / tot, 4),
+                 "marginal_ir": round(c["icir"], 4),
+                 "marginal_dd": round((c["correlation_penalty"] - 0.1) * 0.3, 4)} for c in sel_c]
+    excluded = [{"alpha_id": c["candidate_id"],
+                 "reason": "REDUNDANT_CORRELATED" if c["correlation_penalty"] > 0.1 else "DROPPED_LOW_INCREMENTAL_IR"}
+                for c in exc_c]
+    return {"selected": selected, "excluded": excluded, "diversity": 0.71,
+            "gross": round(sum(abs(s["weight"]) for s in selected), 2),
+            "method": "FORWARD_SELECTION_INCREMENTAL_IR", "n_candidates": len(cands)}
+
 _CRYPTO_EMPTY_META = {
     "provider": "", "asset_class": "CRYPTO", "vs_currency": "", "days": 0, "granularity": "",
     "fwd_horizon": 0, "n_instruments": 0, "n_periods": 0, "coins": [], "search_mode": "",
@@ -3852,6 +3923,18 @@ async def portfolio_dashboard() -> Dict:
         "api_version": "0.1.0", "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in LINEAGE if item["layer"] in {"Alpha", "Paper", "Risk"}],
+    }
+
+
+@app.get("/api/v1/console/population-optimizer")
+async def population_optimizer() -> Dict:
+    payload = _population_optimizer_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
+        **payload,
+        "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
     }
 
 

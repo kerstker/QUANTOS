@@ -1,30 +1,39 @@
 import React from 'react';
+import { fetchPopulationOptimizerSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
+import type { PopulationOptimizerPayload, PopOptSelected, PopOptExcluded } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, type Column,
 } from '@/ui/primitives';
 import { fixed, signed } from '@/ui/format';
 
 /**
- * Population Optimizer (Phase 4 surface). Shows the de-redundant SET the optimizer chose, each alpha's
- * weight and marginal contribution (incl. drawdown), and the alphas it excluded with reasons. Mock-first,
- * read-only.
+ * Population Optimizer. Real de-redundant SET selection (synergistic forward-selection by incremental IR
+ * over the real per-factor return series) + inverse-vol weights + marginal IR / marginal drawdown +
+ * excluded-with-reasons + diversity (1−mean|corr|). Backed by services/research/factor_set.select_synergistic_set;
+ * falls back to a deterministic synthetic set when the offline snapshot is absent. Read-only.
  */
 
-interface Selected { alpha_id: string; weight: number; marginal_ir: number; marginal_dd: number; }
-interface Excluded { alpha_id: string; reason: string; }
+type Selected = PopOptSelected;
+type Excluded = PopOptExcluded;
 
-const selected: Selected[] = [
-  { alpha_id: 'ax_funding_decay7', weight: 0.34, marginal_ir: 0.41, marginal_dd: 0.02 },
-  { alpha_id: 'ax_oi_skew', weight: 0.28, marginal_ir: 0.19, marginal_dd: -0.03 },
-  { alpha_id: 'ax_vol_thrust', weight: 0.22, marginal_ir: 0.11, marginal_dd: 0.01 },
-  { alpha_id: 'ax_basis_mom', weight: 0.16, marginal_ir: 0.07, marginal_dd: 0.04 },
-];
-const excluded: Excluded[] = [
-  { alpha_id: 'ax_funding_mean3', reason: 'REDUNDANT_CORRELATED' },
-  { alpha_id: 'ax_funding_decay14', reason: 'REDUNDANT_CORRELATED' },
-  { alpha_id: 'ax_px_reversal', reason: 'DROPPED_LOW_INCREMENTAL_IR' },
-];
+const fallback: PopulationOptimizerPayload = {
+  source: 'FRONTEND_POPOPT_FALLBACK', read_only: true, api_version: '0.1.0',
+  data_provenance: 'SYNTHETIC_DETERMINISTIC', method: 'FORWARD_SELECTION_INCREMENTAL_IR', n_candidates: 7,
+  diversity: 0.71, gross: 1.0,
+  selected: [
+    { alpha_id: 'ax_funding_decay7', weight: 0.34, marginal_ir: 0.41, marginal_dd: 0.02 },
+    { alpha_id: 'ax_oi_skew', weight: 0.28, marginal_ir: 0.19, marginal_dd: -0.03 },
+    { alpha_id: 'ax_vol_thrust', weight: 0.22, marginal_ir: 0.11, marginal_dd: 0.01 },
+    { alpha_id: 'ax_basis_mom', weight: 0.16, marginal_ir: 0.07, marginal_dd: 0.04 },
+  ],
+  excluded: [
+    { alpha_id: 'ax_funding_mean3', reason: 'REDUNDANT_CORRELATED' },
+    { alpha_id: 'ax_funding_decay14', reason: 'REDUNDANT_CORRELATED' },
+    { alpha_id: 'ax_px_reversal', reason: 'DROPPED_LOW_INCREMENTAL_IR' },
+  ],
+};
 
 const reasonZh: Record<string, string> = {
   REDUNDANT_CORRELATED: '与已选高相关(冗余)',
@@ -34,7 +43,12 @@ const reasonZh: Record<string, string> = {
 };
 
 export default function PopulationOptimizer() {
-  const gross = selected.reduce((s, x) => s + Math.abs(x.weight), 0);
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<PopulationOptimizerPayload>(
+    s => fetchPopulationOptimizerSnapshot(s));
+  const data = usingBackend ? payload! : fallback;
+  const selected = data.selected;
+  const excluded = data.excluded;
+  const gross = data.gross;
 
   const cols: Column<Selected>[] = [
     { key: 'alpha', header: bi('因子', 'Alpha'), render: r => <span className="mono text-ink">{r.alpha_id}</span> },
@@ -52,13 +66,14 @@ export default function PopulationOptimizer() {
       <PageHeader title="Population Optimizer" titleZh="种群优化器"
         subtitle={bi('集合级联合优化 — 去冗余选集合 + 定权 + 边际贡献(含回撤);只读',
           'Set-level optimization — de-redundant selection + weights + marginal contribution incl. drawdown (read-only)')} />
-      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error}
+        realData={data.data_provenance === 'REAL_CRYPTO_SERIES'} />
 
       <KpiStrip cols={4}>
         <StatTile label={bi('已选', 'Selected')} value={String(selected.length)} tone="pos" />
         <StatTile label={bi('剔除', 'Excluded')} value={String(excluded.length)} tone="warn" />
         <StatTile label={bi('组合毛敞口', 'Gross')} value={fixed(gross, 2)} accent />
-        <StatTile label={bi('多样性', 'Diversity')} value="0.71" sub={bi('1 − 均|corr|', '1 − mean |corr|')} tone="info" />
+        <StatTile label={bi('多样性', 'Diversity')} value={fixed(data.diversity, 2)} sub={bi('1 − 均|corr|', '1 − mean |corr|')} tone="info" />
       </KpiStrip>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
