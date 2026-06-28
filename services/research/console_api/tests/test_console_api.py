@@ -77,7 +77,10 @@ def test_events_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
-    assert len(payload["events"]) == 12
+    # Events derive from the real run_registry when it has runs (RESEARCH_RUN_REGISTRY), else synthetic
+    # (12, SYNTHETIC_DETERMINISTIC). Both honest — assert shape, not a fixed count.
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"}
+    assert len(payload["events"]) >= 1
     assert payload["events"][0]["event_type"].startswith("research.")
     assert payload["events"][0]["payload"]["read_only"] is True
 

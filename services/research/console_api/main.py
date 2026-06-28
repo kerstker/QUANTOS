@@ -609,41 +609,43 @@ def _agents_payload() -> Dict:
 
 
 def _events_payload() -> Dict:
-    event_types = [
-        "agent.created",
-        "loop.completed",
-        "alpha.approved",
-        "paper.passed",
-        "risk.approved",
-        "portfolio.simulated",
-        "phase3a.blocked",
-    ]
-    sources = [
-        "research-agent-loop",
-        "alpha-factory",
-        "alpha-validation",
-        "paper-trading",
-        "research-risk",
-        "portfolio-research",
-        "phase3a-governance",
-    ]
+    """Read-only audit/event stream. Real path = the run_registry's research runs (each run IS a real
+    audit event: a triggered/finished research backtest/search/refresh); deterministic synthetic fallback
+    when the registry is empty (CI / fresh checkout). No order/broker/credential event ever appears."""
+    try:
+        runs = _runs_registry().list(limit=50)
+    except Exception:
+        runs = []
+    if runs:
+        events = []
+        for r in runs:
+            metrics = r.metrics or {}
+            hk = next(iter(metrics), None)
+            events.append({
+                "event_id": f"evt-{r.run_id[4:16]}",
+                "event_type": f"research.run.{r.status}",
+                "timestamp": r.finished_ts or r.created_ts,
+                "source": r.kind,
+                "correlation_id": r.run_id,
+                "payload": {"read_only": True, "title": r.title, "verdict": (r.verdict or "")[:80],
+                            "headline_metric": hk, "headline_value": metrics.get(hk) if hk else None},
+            })
+        events.sort(key=lambda e: e["timestamp"], reverse=True)
+        return {"events": events, "data_provenance": "RESEARCH_RUN_REGISTRY"}
+    event_types = ["agent.created", "loop.completed", "alpha.approved", "paper.passed", "risk.approved",
+                   "portfolio.simulated", "phase3a.blocked"]
+    sources = ["research-agent-loop", "alpha-factory", "alpha-validation", "paper-trading", "research-risk",
+               "portfolio-research", "phase3a-governance"]
     base_timestamp = 1_781_222_400
     return {
         "events": [
-            {
-                "event_id": f"evt-{1000 + idx}",
-                "event_type": f"research.{event_types[idx % len(event_types)]}",
-                "timestamp": base_timestamp - idx * 300,
-                "source": sources[idx % len(sources)],
-                "correlation_id": f"corr-{2000 + idx}",
-                "payload": {
-                    "read_only": True,
-                    "sequence": idx,
-                    "lineage": "BACKEND_COMPUTED_SNAPSHOT",
-                },
-            }
+            {"event_id": f"evt-{1000 + idx}", "event_type": f"research.{event_types[idx % len(event_types)]}",
+             "timestamp": base_timestamp - idx * 300, "source": sources[idx % len(sources)],
+             "correlation_id": f"corr-{2000 + idx}",
+             "payload": {"read_only": True, "sequence": idx, "lineage": "BACKEND_COMPUTED_SNAPSHOT"}}
             for idx in range(12)
-        ]
+        ],
+        "data_provenance": "SYNTHETIC_DETERMINISTIC",
     }
 
 

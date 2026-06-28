@@ -123,6 +123,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/population-optimizer": _REAL_OR_SYNTHETIC,
     "/api/v1/console/alpha-graph": _REAL_OR_SYNTHETIC,
     "/api/v1/console/alpha-zoo": _REAL_OR_SYNTHETIC,
+    # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
+    "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
 }
 
 
