@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { fetchRiskDashboardSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import { fetchRiskDashboardSnapshot, fetchSafetyPrimitivesSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import { mockRiskReports } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
-import type { ComputationRiskReport, RiskDashboardPayload, RiskReport } from '@/lib/types/research';
-import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
+import type { ComputationRiskReport, RiskDashboardPayload, RiskReport, SafetyPrimitivesPayload } from '@/lib/types/research';
+import { useConsoleSnapshot, type ConsoleApiState } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
   StatusChip, GateDot, ProgressBar, KeyValue, Chip, type Column,
@@ -64,6 +64,10 @@ export default function Risk() {
     return () => controller.abort();
   }, [apiEnabled, selectedAlpha]);
 
+  // The REAL kill-switch / pre-trade gate / SafetyConfig status (read-only — never armed/reset here).
+  const sp = useConsoleSnapshot<SafetyPrimitivesPayload>(s => fetchSafetyPrimitivesSnapshot(s));
+  const safety = sp.payload;
+
   const usingBackend = apiState === 'connected' && payload !== null;
   const primaryReport: AnyRiskReport = usingBackend ? payload.primary_report : mockRiskReports[0];
   const reports: AnyRiskReport[] = usingBackend ? payload.reports : mockRiskReports;
@@ -121,6 +125,38 @@ export default function Risk() {
           </div>
         } />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError} />
+
+      {safety && (
+        <Panel eyebrow={bi('安全原语(只读)', 'Safety Primitives (read-only)')}
+          title={bi('熔断 / 盘前门 / 安全配置', 'Kill-Switch / Pre-Trade Gate / Safety Config')}
+          right={<Chip label={bi('真实安全原语', 'REAL_SAFETY_PRIMITIVES')} tone="pos" />}>
+          <KpiStrip cols={4}>
+            <StatTile label={bi('熔断器', 'Kill-Switch')} value={safety.kill_switch.is_active ? bi('已触发', 'TRIPPED') : bi('未触发', 'CLEAR')}
+              tone={safety.kill_switch.is_active ? 'neg' : 'pos'} sub={bi(`触发次数 ${safety.kill_switch.trip_count} · 失效即停`, `trips ${safety.kill_switch.trip_count} · fail-closed`)} />
+            <StatTile label={bi('盘前检查', 'Pre-Trade Checks')} value={String(safety.pre_trade_gate.checks_registered)}
+              tone="info" sub={bi('未知即拒', 'fail-closed on unknown')} />
+            <StatTile label={bi('实盘授权', 'Live Auth')} value={bi('禁用', 'DENIED')} tone="neg" sub="L2_DRY_RUN_ONLY" />
+            <StatTile label={bi('人工审批', 'Human Approval')} value={safety.safety_config.require_human_approval ? bi('必需', 'REQUIRED') : 'OFF'}
+              tone={safety.safety_config.require_human_approval ? 'pos' : 'neg'} />
+          </KpiStrip>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {([
+              ['live_trading_enabled', 'LIVE_TRADING'], ['real_broker_enabled', 'REAL_BROKER'],
+              ['allow_order_submission', 'ORDER_SUBMIT'], ['allow_ai_direct_trading', 'AI_DIRECT_TRADE'],
+            ] as const).map(([k, label]) => (
+              <span key={k} className="flex items-center gap-1.5 rounded-md border border-line bg-inset/40 px-2.5 py-1 text-2xs">
+                <GateDot ok={!safety.safety_config[k]} label="" />
+                <span className="mono text-faint">{label}</span>
+                <span className={safety.safety_config[k] ? 'text-neg' : 'text-pos'}>{safety.safety_config[k] ? 'ON' : 'OFF'}</span>
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 text-2xs text-faint">
+            {bi('只读:此处从不武装/复位熔断,从不下单 — 复位仅人工、事件绑定。真实 services/risk/pre_trade。',
+              'Read-only: never arms/resets the switch, never places an order — reset is human-only, incident-bound. Real services/risk/pre_trade.')}
+          </div>
+        </Panel>
+      )}
 
       <KpiStrip cols={5}>
         <StatTile label={bi('已选 Alpha', 'Selected Alpha')} value={selectedAlphaId} accent />

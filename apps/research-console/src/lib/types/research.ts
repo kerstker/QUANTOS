@@ -1403,6 +1403,15 @@ export interface PopulationOptimizerPayload {
   selected: PopOptSelected[]; excluded: PopOptExcluded[];
   diversity: number; gross: number; method: string; n_candidates: number;
 }
+export interface SafetyCheck { name: string; stage: string; }
+export interface SafetyPrimitivesPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  safety_mode: string;
+  kill_switch: { is_active: boolean; trip_count: number; fail_closed: boolean; human_only_reset: boolean; auto_reset: boolean };
+  pre_trade_gate: { checks_registered: number; checks: SafetyCheck[]; fail_closed_on_unknown: boolean; refuses_unsafe_build: boolean };
+  safety_config: { live_trading_enabled: boolean; real_broker_enabled: boolean; allow_order_submission: boolean; allow_ai_direct_trading: boolean; require_human_approval: boolean };
+  live_authorization_allowed: boolean;
+}
 export interface DslExprRow {
   expr: string; valid: boolean; complexity: number;
   leakage_ok: boolean | null; deps: string[]; note: string; errors: string[];

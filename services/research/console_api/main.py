@@ -3600,6 +3600,30 @@ def _real_experiment_rows(st) -> List[Dict]:
     return rows
 
 
+def _safety_primitives_payload() -> Dict:
+    """READ-ONLY status of the REAL safety primitives: the latched KillSwitch + the pre-trade gate's
+    CHECK_REGISTRY + the authoritative SafetyConfig flags. No order intent is built, nothing is armed or
+    reset (those are human-only); this surfaces the live/disallowed posture so it is visible, not hidden."""
+    from services.risk.pre_trade.kill_switch import KillSwitch
+    from services.risk.pre_trade.checks import CHECK_REGISTRY
+    from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS as _cfg
+    ks = KillSwitch()
+    checks = [{"name": n, "stage": s} for n, s, _fn in CHECK_REGISTRY]
+    return {
+        "safety_mode": "L2_DRY_RUN_ONLY",
+        "kill_switch": {"is_active": ks.is_active(), "trip_count": ks.state.trip_count,
+                        "fail_closed": True, "human_only_reset": True, "auto_reset": False},
+        "pre_trade_gate": {"checks_registered": len(checks), "checks": checks,
+                           "fail_closed_on_unknown": True, "refuses_unsafe_build": True},
+        "safety_config": {"live_trading_enabled": _cfg.live_trading_enabled,
+                          "real_broker_enabled": _cfg.real_broker_enabled,
+                          "allow_order_submission": _cfg.allow_order_submission,
+                          "allow_ai_direct_trading": _cfg.allow_ai_direct_trading,
+                          "require_human_approval": _cfg.require_human_approval},
+        "live_authorization_allowed": False,
+    }
+
+
 def _corr(a: List[float], b: List[float]) -> float:
     n = min(len(a), len(b))
     if n < 3:
@@ -4181,6 +4205,17 @@ async def portfolio_dashboard() -> Dict:
         "api_version": "0.1.0", "data_provenance": _input_provenance(),
         **payload,
         "lineage": [item for item in LINEAGE if item["layer"] in {"Alpha", "Paper", "Risk"}],
+    }
+
+
+@app.get("/api/v1/console/safety-primitives")
+async def safety_primitives() -> Dict:
+    payload = _safety_primitives_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": "REAL_SAFETY_PRIMITIVES",
+        **payload,
     }
 
 

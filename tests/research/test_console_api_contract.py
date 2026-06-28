@@ -85,6 +85,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         "simulation", "drawdown_curve", "weights", "risk_contributions",
         "return_attribution", "analytics_method", "lineage")),
     "/api/v1/console/population-optimizer": ("", ("selected", "excluded", "diversity", "gross")),
+    "/api/v1/console/safety-primitives": ("", ("safety_mode", "kill_switch", "pre_trade_gate", "safety_config")),
     "/api/v1/console/alpha-graph": ("", ("nodes", "edges", "clusters", "rho_cut", "n_near_dup")),
     "/api/v1/console/alpha-zoo": ("", ("rows",)),
     "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
@@ -109,6 +110,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
     "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
+    "/api/v1/console/safety-primitives": "REAL_SAFETY_PRIMITIVES",   # reads the real KillSwitch/gate/config
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
     "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
