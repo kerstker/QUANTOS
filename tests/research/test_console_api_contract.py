@@ -95,12 +95,17 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
         "crypto_mode", "snapshot_present", "generated_at", "dataset_version",
         "meta", "summary", "factors", "oos", "synergistic_set",
         "cost_stress", "regime", "safety")),
+    # research-ops console: dynamic registry-backed run list + generic detail (real research results)
+    "/api/v1/console/research-runs": ("", ("runs",)),
+    "/api/v1/console/research-run": ("?run_id=__contract__", ("run",)),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
 # marker. They still must be read-only snapshots; only the honesty label differs.
 REAL_DATA_PROVENANCE = {
     "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
+    "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
+    "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
 }
 
 

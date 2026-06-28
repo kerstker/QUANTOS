@@ -330,6 +330,39 @@ def test_alpha_decay_monitors_are_engine_computed():
     assert engine_voiced >= 1
 
 
+def test_research_runs_list_and_detail_round_trip(tmp_path, monkeypatch):
+    """The research-ops console reads runs from the registry: list summaries + a generic detail.
+    Isolated against a seeded temp db (the real cached result JSONs are gitignored / CI-absent)."""
+    from services.research.console_api import main as capi
+    from services.research.run_registry.store import ResearchRunStore
+    from services.research.run_registry.registry import RunRegistry
+    from services.research.run_registry.contract import ResearchRun
+    from fastapi.testclient import TestClient
+
+    db = str(tmp_path / "runs.db")
+    monkeypatch.setattr(capi, "_RUNS_DB", db)
+    reg = RunRegistry(ResearchRunStore(db))
+    reg.upsert(ResearchRun(run_id="rX", kind="combo_book", title="组合", params={"n": 14}, status="done",
+                           created_ts=5, finished_ts=6, metrics={"combo_sharpe": 1.5},
+                           series={"per_year": [{"label": "22", "value": 2.2}]},
+                           verdict="ok", caveats=["c"], provenance="p"))
+    c = TestClient(capi.app)
+
+    body = c.get("/api/v1/console/research-runs").json()
+    assert body["read_only"] is True and body["data_provenance"] == "RESEARCH_RUN_REGISTRY"
+    summ = next(r for r in body["runs"] if r["run_id"] == "rX")
+    assert summ["headline"] == {"label": "combo_sharpe", "value": 1.5} and summ["verdict"] == "ok"
+
+    detail = c.get("/api/v1/console/research-run?run_id=rX").json()["run"]
+    assert detail["run_id"] == "rX" and detail["metrics"]["combo_sharpe"] == 1.5
+    assert detail["series"]["per_year"][0]["value"] == 2.2 and detail["caveats"] == ["c"]
+
+    # unknown id -> visible null (fail-soft), not a 500
+    assert c.get("/api/v1/console/research-run?run_id=nope").json()["run"] is None
+    # kind filter
+    assert all(r["kind"] == "combo_book" for r in c.get("/api/v1/console/research-runs?kind=combo_book").json()["runs"])
+
+
 def test_incident_response_snapshot_uses_backend_contract():
     response = client.get("/api/v1/console/incident-response")
     assert response.status_code == 200

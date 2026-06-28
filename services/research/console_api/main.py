@@ -3485,6 +3485,51 @@ async def events_dashboard() -> Dict:
     }
 
 
+# ---- research-ops console: dynamic, registry-backed run list + generic detail (read-only) -----------
+# These serve REAL research-run results from the run_registry (the same records the research_runner
+# writes). Read-only like every other endpoint; the registry is seeded from existing cached result
+# JSONs on first read using a FIXED timestamp (deterministic — no wall-clock in this read path).
+_RUNS_DB = os.path.join("data", "cache", "research_runs.db")
+_RUNS_INDEX_TS = 1_782_700_000
+
+
+def _runs_registry():
+    from services.research.run_registry.store import ResearchRunStore
+    from services.research.run_registry.registry import RunRegistry
+    from services.research.run_registry.indexer import index_existing
+    store = ResearchRunStore(_RUNS_DB)
+    reg = RunRegistry(store)
+    if not store.list(limit=1):                                  # empty -> seed from existing results
+        index_existing(os.path.join("data", "cache"), reg, now=_RUNS_INDEX_TS)
+    return reg
+
+
+def _run_summary(r) -> Dict:
+    metrics = r.metrics or {}
+    hk = next(iter(metrics), None)                               # first metric = headline (set by adapters)
+    return {"run_id": r.run_id, "kind": r.kind, "title": r.title, "status": r.status,
+            "created_ts": r.created_ts,
+            "headline": {"label": hk, "value": metrics.get(hk)},
+            "verdict": r.verdict}
+
+
+@app.get("/api/v1/console/research-runs")
+async def research_runs(kind: str = Query(None)) -> Dict:
+    reg = _runs_registry()
+    return {"source": "BACKEND_COMPUTED_SNAPSHOT", "read_only": True, "api_version": "0.1.0",
+            "data_provenance": "RESEARCH_RUN_REGISTRY",
+            "runs": [_run_summary(r) for r in reg.list(kind=kind)]}
+
+
+@app.get("/api/v1/console/research-run")
+async def research_run_detail(run_id: str = Query(...)) -> Dict:
+    reg = _runs_registry()
+    r = reg.get(run_id)
+    return {"source": "BACKEND_COMPUTED_SNAPSHOT", "read_only": True, "api_version": "0.1.0",
+            "data_provenance": "RESEARCH_RUN_REGISTRY",
+            "run": r.to_dict() if r else None}
+
+
 @app.get("/api/v1/console/phase-3a-readiness")
 async def phase3a_readiness() -> Dict:
     payload = _phase3a_readiness_payload()
