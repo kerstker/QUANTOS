@@ -175,6 +175,27 @@ Agents+LifecycleMonitor 接 services/{intelligence,alpha} 真运行态——这�
 **Phase 4**(kill-switch/pre-trade 门上台 + 真缺子系统页 RBAC/模型注册表诚实标注)→
 **Phase 5**(前端 Grafana 自由网格指挥中心 react-grid-layout,默认磁贴指向已升真页 + 导航重组)。
 
+**★★★ Phase 3 续批升真(2026-06-29,用户"继续开发";5 并行规划员产出接线规格→串行 TDD 实现,每页门绿+提交)**:
+- **F MonitoringDrift 部分升真**(`fff1f1f`):ALPHA_DECAY 基线/裁决跑真 `degradation_monitor`,provenance 条件化
+  `PARTIAL_ALPHA_DECAY_REAL`;实时漂移侧 L2 无源仍合成,加琥珀色诚实横幅说明。不伪造 live 漂移。
+- **G LifecycleMonitor 升真**(`eeb531a`):新 `GET /lifecycle-monitor` 读真 experiment_registry(60 alpha 真
+  state/backtest_ic/sharpe/pvalue/deflated_sharpe/verdict);**诚实** live_ic=null、recommendation=NO_LIVE_DATA
+  (L2 无实盘/纸面 IC,不伪造 DEGRADED)、days_in_state=null、真态均 TESTING(auto_approved=0)。
+- **H DataCatalog 数据集升真**(`ae78130`):`_enumerate_real_datasets()` 枚举 `data/cache/crypto_daily.db`(42 标的)
+  为真数据集(真 content_hash/row_count/coverage/相对新鲜度/PIT 安全,模块缓存);features/lineage 仍合成并诚实标注;
+  provenance `REAL_PIT_DATASETS`。MonitoringDrift 复用 catalog→DATA_FRESHNESS 限 top-8 防刷屏。
+- **I BacktestResults 动态化**(`5b33883`):新聚合 `GET /backtest-results` 按 kind+recency 取最新 done run
+  (carry/combo/oi_research/survivorship+factory),真 metrics/series/verdict 绑 tile/柱;无真源派生量(carry 逐年、
+  R²0.5%、2.09 头条)保留 OBSERVED;crowd 逐年柱改用真幸存者 per_year(诚实修正)。
+- **诚实徽标修复**(`c0b9c38`):升真页拉真数据但 ProvenanceRibbon 默认 realData=false → 误标"合成演示"。
+  ConsolePayloadBase 加可选 `data_provenance`;LifecycleMonitor/BacktestResults/DataCatalog 接
+  `realData={usingBackend && data_provenance===<真标记>}`(Overview/Experiments/Risk 早已有)。**浏览器 HMR 实测**:
+  三页均显示绿"Real research results",无误标,无控制台错误;回测战果页截图确认实时取自 run_registry。
+- **Agents 诚实留 mock**(feasible_now=FALSE):无真 agent 运行持久层(`ResearchAgentLoop` 无状态、experiment_registry
+  无 agent 列、bandit_state 盘空、budget_spent_cny 无源)→ 需先建 `agent_run_registry`(Phase 11)。**勿硬造**。
+- 批次后门禁全绿:**1020 py 测试** + 治理扫描 PASS;前端 24 fe 测试 + typecheck;:8400 console_api 已重启服务新端点。
+  提交均在本地 `master`(无 upstream push——本仓既有模式)。HEAD=`c0b9c38`。
+
 
 HEAD 在研究操作台 Task 1-7(`run_registry`/`research_runner`/前端研究中心)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **全绿**(含新治理测试 test_research_runner_boundary);前端 `npm test` **23 passed**(含 CompareRuns smoke)+ typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN)。
 **★★★ 研究操作台(Research Ops Console,2026-06-29,用户指令:前端要能操作系统、不在 IDE 跑、动态结果区不一回测一页、顶级机构标准)= 前端从「看板」升级为「操作台」**。brainstorm→spec(`docs/superpowers/specs/2026-06-29-research-ops-console-design.md`)→plan(`docs/superpowers/plans/2026-06-29-research-ops-console.md`)→7 任务 TDD 全绿。架构:① `services/research/run_registry/`(sqlite 单一事实源,线程安全;`index_existing` 把现有 `crypto_*.json` 结果灌入→历史第一天全可见);② 查看只读=console_api GET `/research-runs[?kind=]`+`/research-run?run_id=`(契约守,provenance RESEARCH_RUN_REGISTRY),前端「研究中心 /research/runs」列表 + **一个通用数据驱动查看器** RunDetail(metrics→KPI/series→图/verdict/caveats,任何 kind 零新代码);③ 操作=独立 `services/research/research_runner/`(端口 8420,**唯一可变面**)`POST /run{kind,params}` 校验白名单(7 个只研究 kind)→异步队列→写 registry,前端按钮触发 + 3s 轮询 queued→running→done。**安全机器强制**:`tests/governance/test_research_runner_boundary` AST 扫描——无券商 SDK、不 import services.trading、无下单/转账调用,白名单入口全 services/tools 研究函数、⊆ registry ALLOWED_KINDS;console_api 仍 GET-only;auto_approved 恒 0、到不了 live/flag/APPROVED;墙钟只在 runner HTTP 边界取。**端到端实测**:前端点「双因子组合」→ 真算 combo(SR 1.503)→ registry done → 列表 7→9。启动见 CLAUDE.md Commands(console_api:8400 + research_runner:8420 + `research-console-live`)。记忆 [[research-ops-console]]。
