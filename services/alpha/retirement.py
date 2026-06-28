@@ -65,9 +65,10 @@ class AlphaRetirementSystem:
         states: tuple[AlphaState, ...] = (AlphaState.APPROVED, AlphaState.PAPER_TRADING),
     ) -> dict[str, tuple]:
         """The production DRIVER: scan live (APPROVED/PAPER_TRADING) alphas and
-        retire those that have decayed. Without a caller of this, decay/retirement
-        is dead code (review P0). A scheduler invokes sweep periodically; the
-        scheduling itself is out of scope at L2 (no live loop).
+        retire those that have decayed. The CALLER is services/alpha/maintenance.py
+        ::run_maintenance (the periodic maintenance pass — 断点4); at L2 it is invoked
+        on-demand (no wall-clock loop) and a Phase-14 scheduler will call it
+        periodically once live alphas + a forward-metrics feed exist.
         """
         results: dict[str, tuple] = {}
         for aid in self.manager.catalog.all_ids():
