@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
-import { triggerRun, runnerEnabled, RUNNABLE_KINDS } from '@/lib/api/research-runner-api';
+import { triggerRun, runnerEnabled, RUNNABLE_KINDS, type RunParamSpec } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -45,6 +45,18 @@ export default function ResearchRuns() {
   const data = usingBackend ? payload! : fallbackRuns;
   const [kind, setKind] = useState('全部');
   const [trigMsg, setTrigMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
+  // per-kind param values for kinds that expose a typed schema (e.g. factory search depth)
+  const [paramVals, setParamVals] = useState<Record<string, Record<string, number | boolean>>>(() => {
+    const init: Record<string, Record<string, number | boolean>> = {};
+    for (const rk of RUNNABLE_KINDS) if (rk.params) {
+      init[rk.kind] = {};
+      for (const p of rk.params) init[rk.kind][p.name] = p.default;
+    }
+    return init;
+  });
+  function setParam(k: string, name: string, value: number | boolean) {
+    setParamVals(prev => ({ ...prev, [k]: { ...prev[k], [name]: value } }));
+  }
 
   // live polling: while any run is queued/running, re-fetch the list so status updates without a manual reload
   const active = data.runs.some(r => r.status === 'queued' || r.status === 'running');
@@ -55,9 +67,10 @@ export default function ResearchRuns() {
   }, [usingBackend, active]);
 
   async function onRun(k: string) {
+    const params = paramVals[k] ?? {};
     setTrigMsg({ tone: 'info', text: bi(`已提交 ${k} …`, `submitting ${k} …`) });
     try {
-      const res = await triggerRun(k);
+      const res = await triggerRun(k, params);
       setTrigMsg({ tone: 'pos', text: bi(`已排队:${res.kind}`, `queued: ${res.kind}`) });
       setReloadKey(x => x + 1);            // surface the queued run immediately; polling then tracks it
     } catch (e) {
@@ -106,14 +119,36 @@ export default function ResearchRuns() {
           {bi('研究运行 · 只跑回测/搜索/取数 · 不下单 / 不碰实盘 / 不碰凭证(L2)',
             'Research only — backtests / searches / data refresh · no orders / no live / no credentials (L2)')}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-start gap-2">
           {RUNNABLE_KINDS.map(rk => (
-            <button key={rk.kind} onClick={() => onRun(rk.kind)} disabled={!runnerEnabled()}
-              title={runnerEnabled() ? rk.kind : bi('启动 research_runner(端口 8420)后可用', 'start research_runner (port 8420) to enable')}
-              className={`rounded-md border px-2.5 py-1.5 text-xs transition ${runnerEnabled()
-                ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
-              ▷ {rk.label}
-            </button>
+            <div key={rk.kind} className={`rounded-md border px-2 py-1.5 ${rk.params ? 'border-line/70' : 'border-transparent'}`}>
+              <button onClick={() => onRun(rk.kind)} disabled={!runnerEnabled()}
+                title={runnerEnabled() ? rk.kind : bi('启动 research_runner(端口 8420)后可用', 'start research_runner (port 8420) to enable')}
+                className={`rounded-md border px-2.5 py-1.5 text-xs transition ${runnerEnabled()
+                  ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                ▷ {rk.label}
+              </button>
+              {rk.params && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  {rk.params.map((p: RunParamSpec) => (
+                    <label key={p.name} className="flex items-center gap-1 text-2xs text-faint">
+                      <span>{p.label}</span>
+                      {p.type === 'bool' ? (
+                        <input type="checkbox" checked={Boolean(paramVals[rk.kind]?.[p.name])}
+                          disabled={!runnerEnabled()}
+                          onChange={e => setParam(rk.kind, p.name, e.target.checked)} />
+                      ) : (
+                        <input type="number" min={p.min} max={p.max}
+                          value={Number(paramVals[rk.kind]?.[p.name] ?? p.default)}
+                          disabled={!runnerEnabled()}
+                          onChange={e => { const n = parseInt(e.target.value, 10); setParam(rk.kind, p.name, Number.isNaN(n) ? 0 : n); }}
+                          className="w-14 rounded border border-line bg-inset/40 px-1 py-0.5 text-2xs text-ink disabled:opacity-50" />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
         {trigMsg && <div className={`mt-2 text-2xs ${({ pos: 'text-pos', neg: 'text-neg', info: 'text-info' } as const)[trigMsg.tone]}`}>{trigMsg.text}</div>}

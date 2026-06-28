@@ -35,9 +35,10 @@ class RunSpec:
 
 
 def _tool_then_json(module: str, out_json: str) -> Callable:
-    """Run a tool's main() (it writes its own cache JSON), then load + return that JSON for the adapter."""
-    def run(_params):
-        importlib.import_module(module).main()
+    """Run a tool's main(**params) (it writes its own cache JSON), then load + return that JSON. Params are
+    the kind's typed, validated keys (empty for most kinds) — passed as kwargs to the tool's main."""
+    def run(params):
+        importlib.import_module(module).main(**params)
         with open(os.path.join(_CACHE, out_json), encoding="utf-8") as f:
             return json.load(f)
     return run
@@ -71,7 +72,8 @@ RUN_KINDS: dict = {
                           runner=_tool_then_json("tools.crypto_combo_book", "crypto_combo_book.json")),
     "survivorship": RunSpec("tools.crypto_oi_survivorship:main", {}, adapt_survivorship, "幸存者重测",
                             runner=_tool_then_json("tools.crypto_oi_survivorship", "crypto_oi_survivorship.json")),
-    "factory_orthogonal": RunSpec("tools.crypto_factory_orthogonal:main", {},
+    "factory_orthogonal": RunSpec("tools.crypto_factory_orthogonal:main",
+                                  {"generations": int, "population": int},
                                   lambda j: adapt_factory("factory_orthogonal", j), "自主正交发现(放大)",
                                   runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json")),
     "factory_loop": RunSpec("tools.crypto_factory_loop:main", {},

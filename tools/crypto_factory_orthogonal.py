@@ -40,7 +40,8 @@ POP = 64
 ELITE = 16
 
 
-def main() -> None:
+def main(generations: int = GENERATIONS, population: int = POP) -> None:
+    elite = max(4, min(ELITE, population // 4))     # keep elite sane relative to a tuned population
     panel, instruments = build_panel()
     px = panel.matrices["close"]; fm = panel.matrices["funding"]
     # KNOWN-edge basis as aligned ECONOMIC streams (same construction the engine scores with)
@@ -48,10 +49,10 @@ def main() -> None:
              "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
     print(f"=== autonomous ORTHOGONAL discovery via hardened engine ({len(instruments)} coins, {len(FIELDS)} dims) ===")
     print(f"basis: carry SR {sharpe(basis['carry']):.2f}, crowd_contra SR {sharpe(basis['crowd_contra']):.2f}")
-    print(f"search: {GENERATIONS} gen x pop {POP}, reward = incremental IR orthogonal to basis")
+    print(f"search: {generations} gen x pop {population}, reward = incremental IR orthogonal to basis")
 
-    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=GENERATIONS,
-                            population_size=POP, elite_k=ELITE, quantile=QUANTILE,
+    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=generations,
+                            population_size=population, elite_k=elite, quantile=QUANTILE,
                             basis_returns=basis, basis_min_overlap=200, dataset_version="oi8d", timestamp=0)
     assert out["scored_by"] == "orthogonal_incremental_ir"
     print(f"engine evaluated {out['n_evaluated']} cross-dimensional alphas; elite {len(out['best'])}")

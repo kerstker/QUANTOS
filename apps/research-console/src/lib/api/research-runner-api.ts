@@ -38,12 +38,27 @@ export async function cancelRun(runId: string): Promise<{ run_id: string; cancel
   return res.json();
 }
 
-// The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo.
-export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string }> = [
+// A typed, bounded param the UI may collect for a run (mirrors the backend's small param_schema). The
+// runner re-validates every value fail-closed, so these are convenience defaults/bounds, not trust.
+export interface RunParamSpec {
+  name: string;
+  type: 'int' | 'bool';
+  label: string;
+  default: number | boolean;
+  min?: number;
+  max?: number;
+}
+
+// The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo. A kind with a
+// non-empty `params` renders typed inputs in the trigger panel; the values are passed to POST /run.
+export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string; params?: RunParamSpec[] }> = [
   { kind: 'combo_book', label: '双因子组合' },
   { kind: 'oi_research', label: '持仓因子研究' },
   { kind: 'survivorship', label: '幸存者重测' },
   { kind: 'carry_strategy', label: '资金费 Carry' },
-  { kind: 'factory_orthogonal', label: '自主正交发现' },
+  { kind: 'factory_orthogonal', label: '自主正交发现', params: [
+    { name: 'generations', type: 'int', label: '代数', default: 8, min: 1, max: 40 },
+    { name: 'population', type: 'int', label: '种群', default: 64, min: 8, max: 256 },
+  ] },
   { kind: 'factory_loop', label: 'loop-until-dry' },
 ];

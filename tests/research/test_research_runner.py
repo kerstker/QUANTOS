@@ -45,6 +45,15 @@ def test_unknown_kind_rejected():
         validate_params("place_order", {})
 
 
+def test_factory_params_validate_typed():
+    # factory search depth is tunable from the UI; typed + key-checked
+    assert validate_params("factory_orthogonal", {"generations": 4, "population": 32}) == {"generations": 4, "population": 32}
+    with pytest.raises(ValueError):
+        validate_params("factory_orthogonal", {"generations": "deep"})   # wrong type
+    with pytest.raises(ValueError):
+        validate_params("factory_orthogonal", {"rounds": 3})             # unknown key
+
+
 def test_job_runs_and_writes_registry(tmp_path):
     reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
     _register_stub("_stub", RunSpec(
