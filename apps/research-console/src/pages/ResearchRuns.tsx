@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
 import { triggerRun, runnerEnabled, RUNNABLE_KINDS, type RunParamSpec } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';
@@ -39,7 +39,9 @@ function fmtHeadline(h: ResearchRunSummary['headline']): string {
 }
 
 export default function ResearchRuns() {
+  const navigate = useNavigate();
   const [reloadKey, setReloadKey] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ResearchRunsPayload>(
     s => fetchResearchRuns(s), [reloadKey]);
   const data = usingBackend ? payload! : fallbackRuns;
@@ -56,6 +58,17 @@ export default function ResearchRuns() {
   });
   function setParam(k: string, name: string, value: number | boolean) {
     setParamVals(prev => ({ ...prev, [k]: { ...prev[k], [name]: value } }));
+  }
+  function toggleSelect(runId: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId); else next.add(runId);
+      return next;
+    });
+  }
+  function compareSelected() {
+    if (selected.size < 2) return;
+    navigate(`/research/compare?ids=${Array.from(selected).join(',')}`);
   }
 
   // live polling: while any run is queued/running, re-fetch the list so status updates without a manual reload
@@ -86,6 +99,9 @@ export default function ResearchRuns() {
   }, [data.runs]);
 
   const cols: Column<ResearchRunSummary>[] = [
+    { key: 'sel', header: '', render: r => (
+      <input type="checkbox" checked={selected.has(r.run_id)} onChange={() => toggleSelect(r.run_id)}
+        aria-label={bi('选择对比', 'select to compare')} />) },
     { key: 'kind', header: bi('类型', 'Kind'), render: r => <Chip label={r.kind} tone="muted" /> },
     { key: 'title', header: bi('运行', 'Run'), render: r => (
       <Link to={`/research/runs/${r.run_id}`} className="font-medium text-accent hover:underline">{r.title}</Link>) },
@@ -156,7 +172,15 @@ export default function ResearchRuns() {
       </Panel>
 
       <Panel eyebrow={bi('全部运行', 'All Runs')} title={bi('研究运行登记表', 'Research Run Registry')}
-        right={<Chip label={bi(`${runs.length} 项`, `${runs.length} shown`)} tone="info" />}>
+        right={<div className="flex items-center gap-2">
+          <button onClick={compareSelected} disabled={selected.size < 2}
+            title={selected.size < 2 ? bi('勾选 2 个以上运行', 'select 2+ runs') : bi('对比所选', 'compare selected')}
+            className={`rounded-md border px-2.5 py-1 text-2xs transition ${selected.size >= 2
+              ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+            {bi(`对比所选 (${selected.size})`, `Compare (${selected.size})`)}
+          </button>
+          <Chip label={bi(`${runs.length} 项`, `${runs.length} shown`)} tone="info" />
+        </div>}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {KINDS.map(k => (
             <button key={k} onClick={() => setKind(k)}

@@ -8,6 +8,8 @@ import type {
   CryptoLivePayload,
   ResearchRunsPayload,
   ResearchRunPayload,
+  ResearchRunsComparePayload,
+  ResearchRunDetail,
   DataCatalogPayload,
   EvidenceLedgerPayload,
   EventsPayload,
@@ -208,4 +210,16 @@ export function fetchResearchRuns(signal?: AbortSignal) {
 export function fetchResearchRun(runId: string, signal?: AbortSignal) {
   return fetchConsoleJson<ResearchRunPayload>(
     '/api/v1/console/research-run?run_id=' + encodeURIComponent(runId), signal);
+}
+
+/**
+ * Fetch several runs at once for side-by-side comparison. Each run is fetched through the same contract-
+ * guarded read-only endpoint (so every body is snapshot-validated); a missing run (null) is dropped.
+ * Pure aggregation over the read-only API — adds no new mutating surface.
+ */
+export async function fetchResearchRunsCompare(
+  runIds: string[], signal?: AbortSignal): Promise<ResearchRunsComparePayload> {
+  const payloads = await Promise.all(runIds.map(id => fetchResearchRun(id, signal)));
+  const runs = payloads.map(p => p.run).filter((r): r is ResearchRunDetail => r != null);
+  return { source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, data_provenance: 'RESEARCH_RUN_REGISTRY', runs };
 }

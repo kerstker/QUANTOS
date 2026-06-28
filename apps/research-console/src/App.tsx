@@ -6,6 +6,7 @@ import Overview from './pages/Overview';
 import BacktestResults from './pages/BacktestResults';
 import ResearchRuns from './pages/ResearchRuns';
 import RunDetail from './pages/RunDetail';
+import CompareRuns from './pages/CompareRuns';
 import CryptoLive from './pages/CryptoLive';
 import AlphaFactory from './pages/AlphaFactory';
 import AlphaZoo from './pages/AlphaZoo';
@@ -93,6 +94,7 @@ export default function App() {
         <Route path="/research" element={<Overview />} />
         <Route path="/research/backtest-results" element={<BacktestResults />} />
         <Route path="/research/runs" element={<ResearchRuns />} />
+        <Route path="/research/compare" element={<CompareRuns />} />
         <Route path="/research/runs/:id" element={<RunDetail />} />
         <Route path="/research/crypto-live" element={<CryptoLive />} />
         <Route path="/research/alpha-factory" element={<AlphaFactory />} />

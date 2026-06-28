@@ -1391,3 +1391,7 @@ export interface ResearchRunPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   run: ResearchRunDetail | null;
 }
+export interface ResearchRunsComparePayload {
+  source: string; read_only: boolean; data_provenance: string;
+  runs: ResearchRunDetail[];
+}
