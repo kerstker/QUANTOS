@@ -143,8 +143,20 @@ REAL 7 / PARTIAL 6 / MOCK 17 / NONE 6 / BROKEN 1。`l2_ok=true`(全绿,仅 1 个
   provenance→`_input_provenance()`(真=REAL_CRYPTO_SERIES);契约接受 real-or-synthetic;前端 6 页 realData 徽标。
   **实测**:alpha-factory REAL_CRYPTO_SERIES+真因子名;risk 真 9 引擎门跑真回报→REJECTED_CORRELATION_RISK(诚实)。
   门禁双路全绿(真路径本地+合成路径 CI),containment auto_approved=0。HEAD=`86d2c34`。
-**后续**:Phase 2(接 services/alpha 真引擎给 PopulationOptimizer/AlphaGraph/DslExplorer/AlphaZoo 建端点)→
-Phase 3(持久化/审计链)→ Phase 4(kill-switch/pre-trade 上台 + 治理页诚实标注)→ Phase 5(前端指挥中心)。
+- **Phase 2 接真引擎升真 NONE 页**(`2db98ce`/`0774fe0`/`b3e8767`,复用 Phase 1B 真因子序列 + services/{research,alpha} 真引擎):
+  ① **种群优化器**(`/population-optimizer`)factor_set.select_synergistic_set 协同前向选集去冗余 + inverse-vol 权重 +
+  真边际 IR + 真边际回撤(组合 maxDD 增量,可负=分散) + diversity(1−均|corr|);② **Alpha 相关图**(`/alpha-graph`)
+  services/alpha/alpha_graph.correlation_graph 真相关网络(节点/边/连通分量冗余簇 + 后端确定性布局);
+  ③ **Alpha 资产库**(`/alpha-zoo`)研究快照全部真因子目录(真 state/DSR/净夏普)。每个新端点 fail-closed 回退合成
+  (CI 无快照安全)、契约 real-or-synthetic、前端 useConsoleSnapshot + realData 徽标。门禁全程双路绿。
+  **真实度更新**:Phase 1B+2 后 6 个 PARTIAL + 3 个 NONE 已升 REAL(Risk/Validation/ComputationLab/Portfolio/
+  PaperTrading/AlphaFactory + PopulationOptimizer/AlphaGraph/AlphaZoo)。HEAD=`b3e8767`。
+**关键资产**:`tools/crypto_research_offline.py` 离线再生器(不联网,从 crypto.db 重跑 session 写 factor_series,
+18 币×120 期);`crypto_research_snapshot.json` 是 gitignored 真数据源(CI 缺→合成回退)。重生真数据:
+`python -m tools.crypto_research_offline`(后台跑~2-3min)。
+**后续**:Phase 2 收尾(DslExplorer 需真面板跑表达式+泄漏检测;BacktestResults 改 run_registry 动态)→
+Phase 3(Experiments/EvidenceLedger/Events/Agents/Lifecycle 接真持久层/审计链)→ Phase 4(kill-switch/pre-trade
+上台 + 真缺子系统页诚实标注)→ Phase 5(前端 Grafana 自由网格指挥中心,默认磁贴指向已升真页)。
 
 
 HEAD 在研究操作台 Task 1-7(`run_registry`/`research_runner`/前端研究中心)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **全绿**(含新治理测试 test_research_runner_boundary);前端 `npm test` **23 passed**(含 CompareRuns smoke)+ typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN)。
