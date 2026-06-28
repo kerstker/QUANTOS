@@ -4,6 +4,8 @@ import { AppShell, type NavGroup } from '@/ui/AppShell';
 
 import Overview from './pages/Overview';
 import BacktestResults from './pages/BacktestResults';
+import ResearchRuns from './pages/ResearchRuns';
+import RunDetail from './pages/RunDetail';
 import CryptoLive from './pages/CryptoLive';
 import AlphaFactory from './pages/AlphaFactory';
 import AlphaZoo from './pages/AlphaZoo';
@@ -40,6 +42,7 @@ const nav: NavGroup[] = [
   { zh: '研究', en: 'RESEARCH', items: [
     { to: '/research', zh: '总览', en: 'Overview', icon: 'OV', end: true },
     { to: '/research/backtest-results', zh: '回测战果', en: 'Results', icon: 'BR' },
+    { to: '/research/runs', zh: '研究中心', en: 'Research Runs', icon: 'RR' },
     { to: '/research/crypto-live', zh: '加密实盘研究', en: 'Crypto Live', icon: '₿' },
     { to: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF' },
     { to: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ' },
@@ -89,6 +92,8 @@ export default function App() {
         <Route path="/" element={<Navigate to="/research" replace />} />
         <Route path="/research" element={<Overview />} />
         <Route path="/research/backtest-results" element={<BacktestResults />} />
+        <Route path="/research/runs" element={<ResearchRuns />} />
+        <Route path="/research/runs/:id" element={<RunDetail />} />
         <Route path="/research/crypto-live" element={<CryptoLive />} />
         <Route path="/research/alpha-factory" element={<AlphaFactory />} />
         <Route path="/research/alpha-zoo" element={<AlphaZoo />} />

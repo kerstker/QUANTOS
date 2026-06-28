@@ -185,20 +185,32 @@ export function PageHeader({ title, titleZh, subtitle, actions }:
  * SYNTHETIC snapshots. Labelled explicitly so a synthetic Sharpe / PnL / quality
  * figure is never mistaken for measured alpha (audit P1). Read-only always.
  */
-export function ProvenanceRibbon({ usingBackend, apiState, source, error }:
-  { usingBackend: boolean; apiState: ConsoleApiState; source?: string; error?: string | null }) {
+export function ProvenanceRibbon({ usingBackend, apiState, source, error, realData = false }:
+  { usingBackend: boolean; apiState: ConsoleApiState; source?: string; error?: string | null;
+    realData?: boolean }) {
   const apiTone: Tone = apiState === 'connected' ? 'pos' : apiState === 'error' ? 'neg' : apiState === 'loading' ? 'info' : 'muted';
   const apiLabel = apiState === 'connected' ? bi('已连接', 'CONNECTED') : apiState === 'error' ? bi('错误', 'ERROR')
     : apiState === 'loading' ? bi('加载中', 'LOADING') : bi('未连接', 'NOT_CONNECTED');
+  // realData=true: these are REAL observed research results (the run_registry), not synthetic fixtures —
+  // honesty demands an accurate label (still read-only; historical backtest != future returns).
+  const real = realData && usingBackend;
+  const tint = real ? 'var(--pos)' : 'var(--warn)';
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
-      style={{ background: 'color-mix(in srgb, var(--warn) 7%, transparent)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--warn) 28%, transparent)' }}>
-      <span className="text-2xs font-medium text-warn">
-        ⚠ {bi('合成演示数据 · 非真实研究结果或盈亏', 'Synthetic demo data · not real research results or PnL')}
-        {usingBackend ? bi('（后端确定性合成快照）', ' (backend synthetic snapshot)') : bi('（前端 mock）', ' (frontend mock)')}
-      </span>
+      style={{ background: `color-mix(in srgb, ${tint} 7%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tint} 28%, transparent)` }}>
+      {real ? (
+        <span className="text-2xs font-medium text-pos">
+          ✓ {bi('真实研究结果(登记表观察值) · 历史回测,非未来收益承诺',
+            'Real research results (observed, from the registry) · historical backtest, NOT a promise of future returns')}
+        </span>
+      ) : (
+        <span className="text-2xs font-medium text-warn">
+          ⚠ {bi('合成演示数据 · 非真实研究结果或盈亏', 'Synthetic demo data · not real research results or PnL')}
+          {usingBackend ? bi('（后端确定性合成快照）', ' (backend synthetic snapshot)') : bi('（前端 mock）', ' (frontend mock)')}
+        </span>
+      )}
       <span className="mx-1 h-3 w-px bg-line-strong" />
-      <Chip label={usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
+      <Chip label={real ? 'REAL_RESULTS' : usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
       <Chip label={apiLabel} tone={apiTone} />
       <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
       <span className="ml-auto text-2xs text-faint">

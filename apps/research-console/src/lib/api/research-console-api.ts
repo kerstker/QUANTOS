@@ -6,6 +6,8 @@ import type {
   BacktestExplainabilityPayload,
   ComputationLabPayload,
   CryptoLivePayload,
+  ResearchRunsPayload,
+  ResearchRunPayload,
   DataCatalogPayload,
   EvidenceLedgerPayload,
   EventsPayload,
@@ -197,4 +199,13 @@ export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {
 
 export function fetchCryptoLiveSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<CryptoLivePayload>('/api/v1/console/crypto-live', signal);
+}
+
+export function fetchResearchRuns(signal?: AbortSignal) {
+  return fetchConsoleJson<ResearchRunsPayload>('/api/v1/console/research-runs', signal);
+}
+
+export function fetchResearchRun(runId: string, signal?: AbortSignal) {
+  return fetchConsoleJson<ResearchRunPayload>(
+    '/api/v1/console/research-run?run_id=' + encodeURIComponent(runId), signal);
 }

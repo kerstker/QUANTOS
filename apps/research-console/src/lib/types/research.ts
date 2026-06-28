@@ -1368,3 +1368,25 @@ export interface CryptoLivePayload extends ConsolePayloadBase {
     live_trading: string;
   };
 }
+
+// ---- research-ops console: dynamic registry-backed runs (mirror backend run_registry contract) ----
+export interface ResearchRunHeadline { label: string | null; value: number | string | null; }
+export interface ResearchRunSummary {
+  run_id: string; kind: string; title: string; status: string; created_ts: number;
+  headline: ResearchRunHeadline; verdict: string;
+}
+export interface ResearchRunsPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  runs: ResearchRunSummary[];
+}
+export interface ResearchRunDetail {
+  run_id: string; kind: string; title: string; params: Record<string, unknown>; status: string;
+  created_ts: number; finished_ts: number | null;
+  metrics: Record<string, number | string | null>;
+  series: Record<string, Array<{ label: string; value: number }>>;
+  verdict: string; caveats: string[]; provenance: string; error: string | null;
+}
+export interface ResearchRunPayload {
+  source: string; read_only: boolean; api_version: string; data_provenance: string;
+  run: ResearchRunDetail | null;
+}
