@@ -17,7 +17,7 @@ from quantos.contracts.alpha import AlphaDefinition
 
 from .agent_loop import ResearchAgentLoop
 from .guardrails import AgentAction, assert_action_allowed
-from .reward import evaluation_reward
+from .reward import evaluation_reward, generalization_gap
 from services.research.interaction_factors import interaction_definition, make_interaction_provider
 from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
@@ -236,6 +236,15 @@ class EvolutionarySearchLoop:
                 # its sub-shapes so later identical shapes are penalized more. Search reward only.
                 r = r * (1.0 - div_lambda * structural_commonness(g[1], corpus))
                 update_corpus(corpus, g[1])
+            ovf_lambda = self.vocab.get("overfit_lambda", 0.0)
+            if ovf_lambda > 0:
+                # generalisation pressure: down-weight the SEARCH reward of a candidate whose in-sample
+                # Sharpe collapses out-of-sample (the overfit signature, on a held-out split of its own
+                # return stream). Bakes anti-selection-overfit INTO the search objective instead of leaning
+                # only on the post-hoc CPCV/no-peek-OOS gate. Recorded AlphaEvaluation untouched; opt-in.
+                gap = generalization_gap(self.inner_loop.catalog.returns(defn.alpha_id))
+                if gap is not None:
+                    r = r * (1.0 - ovf_lambda * gap)
             evaluated[g] = r
             history.append({"genome": g, "reward": r, "state": entry.get("state")})
 

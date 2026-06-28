@@ -225,6 +225,33 @@ def test_redundancy_default_off_matches_plain_run():
     assert plain["best"] == explicit0["best"]
 
 
+def test_overfit_reward_deterministic_and_contained():
+    # generalisation-gap penalty ON: search still deterministic + containment intact (auto_approved=0)
+    seed = [_LEAF_T, ("T", ("leaf", "zscore", "3")), _BIN_T]
+    vocab = {**DEFAULT_VOCAB, "overfit_lambda": 0.5}
+    def run():
+        loop = ResearchAgentLoop()
+        out = EvolutionarySearchLoop(_provider(), inner_loop=loop, vocab=vocab).run(
+            seed, generations=2, population_size=5, elite_k=2, timestamp=10)
+        return out, loop
+    a, la = run()
+    b, _lb = run()
+    assert a["best"] == b["best"] and a["n_evaluated"] == b["n_evaluated"]   # deterministic
+    for aid in la.catalog.all_ids():
+        assert la.catalog.state(aid) != AlphaState.APPROVED                  # containment held
+
+
+def test_overfit_default_off_matches_plain_run():
+    # overfit_lambda defaults to 0 -> identical to a run without the feature (opt-in regression guard)
+    seed = [("P", "momentum", "5"), ("P", "zscore", "3")]
+    plain = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop()).run(
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+    explicit0 = EvolutionarySearchLoop(_provider(), inner_loop=ResearchAgentLoop(),
+                                       vocab={**DEFAULT_VOCAB, "overfit_lambda": 0.0}).run(
+        seed, generations=2, population_size=4, elite_k=2, timestamp=7)
+    assert plain["best"] == explicit0["best"]
+
+
 def test_gp_session_mode_smoke():
     from services.research.session import run_research_session
     from services.intelligence.search_space import HypothesisSpace
