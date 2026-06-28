@@ -126,8 +126,9 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/alpha-zoo": _REAL_OR_SYNTHETIC,
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
-    # Experiments read the real experiment_registry (immutable evaluation artifacts) when present.
+    # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
     "/api/v1/console/experiments": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
+    "/api/v1/console/evidence-ledger": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
 }
 
 

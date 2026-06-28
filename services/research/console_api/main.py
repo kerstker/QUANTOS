@@ -1809,9 +1809,22 @@ def _evidence_ledger_payload() -> Dict:
         })
         previous_hash = ledger_hash
 
+    # REAL integrity: recompute the whole hash chain from GENESIS and compare to the stored ledger hashes
+    # (was a hardcoded True). A tampered entry/content/order now flips this to False.
+    chain_valid, _prev = True, "GENESIS"
+    for entry in entries:
+        expect = _short_hash(entry["evidence_id"], entry["source_module"], entry["artifact_type"],
+                             entry["content_hash"], _prev, entry["record_count"])
+        if expect != entry["ledger_hash"]:
+            chain_valid = False
+        _prev = entry["ledger_hash"]
+    for entry in entries:
+        entry["verification"]["hash_chain_valid"] = chain_valid
+
     blockers = [entry for entry in entries if entry["blocks_live_authorization"]]
     return {
         "ledger_mode": "READ_ONLY_IMMUTABLE_EVIDENCE_LEDGER",
+        "data_provenance": "EXPERIMENT_REGISTRY" if _load_experiment_store() else "SYNTHETIC_DETERMINISTIC",
         "chain_id": "quantos-research-ledger-2026w24",
         "root_hash": entries[-1]["ledger_hash"] if entries else "GENESIS",
         "summary": {

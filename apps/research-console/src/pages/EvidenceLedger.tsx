@@ -216,7 +216,8 @@ export default function EvidenceLedger() {
             <span className="mono text-xs text-ink">{shortHash(ledger.root_hash, 14)}</span>
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error}
+        realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'EXPERIMENT_REGISTRY'} />
 
       <KpiStrip cols={7}>
         <StatTile label={bi('哈希链', 'Hash Chain')}
