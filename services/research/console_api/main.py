@@ -3510,7 +3510,9 @@ def _run_summary(r) -> Dict:
     return {"run_id": r.run_id, "kind": r.kind, "title": r.title, "status": r.status,
             "created_ts": r.created_ts,
             "headline": {"label": hk, "value": metrics.get(hk)},
-            "verdict": r.verdict}
+            "verdict": r.verdict,
+            # history retention at a glance: which params produced this run + the code (git sha) it ran on
+            "params": r.params or {}, "code_version": r.code_version}
 
 
 @app.get("/api/v1/console/research-runs")

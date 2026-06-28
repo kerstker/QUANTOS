@@ -345,13 +345,15 @@ def test_research_runs_list_and_detail_round_trip(tmp_path, monkeypatch):
     reg.upsert(ResearchRun(run_id="rX", kind="combo_book", title="组合", params={"n": 14}, status="done",
                            created_ts=5, finished_ts=6, metrics={"combo_sharpe": 1.5},
                            series={"per_year": [{"label": "22", "value": 2.2}]},
-                           verdict="ok", caveats=["c"], provenance="p"))
+                           verdict="ok", caveats=["c"], provenance="p", code_version="abc123def456"))
     c = TestClient(capi.app)
 
     body = c.get("/api/v1/console/research-runs").json()
     assert body["read_only"] is True and body["data_provenance"] == "RESEARCH_RUN_REGISTRY"
     summ = next(r for r in body["runs"] if r["run_id"] == "rX")
     assert summ["headline"] == {"label": "combo_sharpe", "value": 1.5} and summ["verdict"] == "ok"
+    # history retention: the list surfaces params + git sha at a glance (not only the detail view)
+    assert summ["params"] == {"n": 14} and summ["code_version"] == "abc123def456"
 
     detail = c.get("/api/v1/console/research-run?run_id=rX").json()["run"]
     assert detail["run_id"] == "rX" and detail["metrics"]["combo_sharpe"] == 1.5

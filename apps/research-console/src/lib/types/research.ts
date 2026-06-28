@@ -1374,6 +1374,7 @@ export interface ResearchRunHeadline { label: string | null; value: number | str
 export interface ResearchRunSummary {
   run_id: string; kind: string; title: string; status: string; created_ts: number;
   headline: ResearchRunHeadline; verdict: string;
+  params: Record<string, unknown>; code_version: string | null;
 }
 export interface ResearchRunsPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;

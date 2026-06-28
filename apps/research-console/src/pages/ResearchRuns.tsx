@@ -23,11 +23,14 @@ const fallbackRuns: ResearchRunsPayload = {
   data_provenance: 'RESEARCH_RUN_REGISTRY',
   runs: [
     { run_id: 'fb_carry', kind: 'carry_strategy', title: '资金费 Carry 策略', status: 'done',
-      created_ts: 1782700000, headline: { label: 'net_sharpe_5bps', value: 2.03 }, verdict: 'DEPLOYABLE' },
+      created_ts: 1782700000, headline: { label: 'net_sharpe_5bps', value: 2.03 }, verdict: 'DEPLOYABLE',
+      params: {}, code_version: 'abc1234def0' },
     { run_id: 'fb_combo', kind: 'combo_book', title: 'carry × crowd 双因子组合', status: 'done',
-      created_ts: 1782700000, headline: { label: 'combo_sharpe', value: 1.5 }, verdict: 'diversification helps' },
+      created_ts: 1782700000, headline: { label: 'combo_sharpe', value: 1.5 }, verdict: 'diversification helps',
+      params: {}, code_version: 'abc1234def0' },
     { run_id: 'fb_surv', kind: 'survivorship', title: 'crowd_contra 幸存者重测', status: 'done',
-      created_ts: 1782700000, headline: { label: 'complete_sharpe_raw', value: 0.933 }, verdict: 'WEAKENS but survives' },
+      created_ts: 1782700000, headline: { label: 'complete_sharpe_raw', value: 0.933 }, verdict: 'WEAKENS but survives',
+      params: { generations: 8, population: 64 }, code_version: 'abc1234def0' },
   ],
 };
 
@@ -36,6 +39,12 @@ const KINDS = ['全部', 'carry_strategy', 'oi_research', 'combo_book', 'survivo
 function fmtHeadline(h: ResearchRunSummary['headline']): string {
   if (h.value == null) return '—';
   return `${h.label}: ${typeof h.value === 'number' ? h.value : h.value}`;
+}
+
+function fmtParams(p: Record<string, unknown>): string {
+  const keys = Object.keys(p ?? {});
+  if (!keys.length) return '—';
+  return keys.map(k => `${k}=${p[k]}`).join(' ');
 }
 
 export default function ResearchRuns() {
@@ -110,6 +119,10 @@ export default function ResearchRuns() {
       render: r => <span className="text-ink">{fmtHeadline(r.headline)}</span> },
     { key: 'verdict', header: bi('裁决', 'Verdict'), render: r => (
       <span className="text-2xs text-muted line-clamp-1">{r.verdict}</span>) },
+    { key: 'params', header: bi('参数', 'Params'), mono: true,
+      render: r => <span className="text-faint text-2xs">{fmtParams(r.params)}</span> },
+    { key: 'git', header: 'git', mono: true, align: 'right',
+      render: r => <span className="text-faint text-2xs" title={r.code_version ?? ''}>{r.code_version ? r.code_version.slice(0, 7) : '—'}</span> },
     { key: 'created', header: bi('时间', 'When'), align: 'right', mono: true,
       render: r => <span className="text-faint text-2xs">{stamp(r.created_ts)}</span> },
   ];
