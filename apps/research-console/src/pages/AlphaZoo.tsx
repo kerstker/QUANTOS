@@ -1,26 +1,20 @@
 import React, { useState, useMemo } from 'react';
+import { fetchAlphaZooSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
+import type { AlphaZooPayload, AlphaZooRow } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
 import { fixed } from '@/ui/format';
 
 /**
- * Alpha Zoo (Phase 3 surface). The searchable / filterable catalog of rich Alpha Assets — filter by
- * generator, status, cluster, and metric floors, the way the backend AlphaZoo does. Mock-first,
- * read-only; no write/run actions (L2_DRY_RUN_ONLY).
+ * Alpha Zoo. The searchable / filterable catalog of rich Alpha Assets — filter by generator, status,
+ * cluster, and metric floors. Backed by the real research snapshot's factor catalog (real generator /
+ * state / DSR / net-Sharpe); falls back to a synthetic catalog when no snapshot. Read-only (L2_DRY_RUN_ONLY).
  */
 
-interface AlphaRow {
-  alpha_id: string;
-  name: string;
-  generator: string;
-  status: string;
-  cluster_id: string;
-  deflated_sharpe: number;
-  net_sharpe: number;
-  tags: string[];
-}
+type AlphaRow = AlphaZooRow;
 
 const mockRows: AlphaRow[] = [
   { alpha_id: 'ax_funding_decay7', name: 'funding carry · decay7', generator: 'cs_genome', status: 'APPROVED', cluster_id: 'cl_carry', deflated_sharpe: 0.92, net_sharpe: 2.18, tags: ['carry', 'funding'] },
@@ -31,15 +25,23 @@ const mockRows: AlphaRow[] = [
   { alpha_id: 'ax_px_reversal', name: 'price reversal', generator: 'evolutionary', status: 'REJECTED', cluster_id: 'cl_px', deflated_sharpe: 0.12, net_sharpe: -0.37, tags: ['price'] },
 ];
 
-const GENERATORS = ['全部', 'cs_genome', 'gp', 'mcts', 'evolutionary'];
+const fallback: AlphaZooPayload = {
+  source: 'FRONTEND_ALPHAZOO_FALLBACK', read_only: true, api_version: '0.1.0',
+  data_provenance: 'SYNTHETIC_DETERMINISTIC', rows: mockRows,
+};
 
 export default function AlphaZoo() {
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<AlphaZooPayload>(
+    s => fetchAlphaZooSnapshot(s));
+  const data = usingBackend ? payload! : fallback;
+  const allRows = data.rows;
   const [gen, setGen] = useState('全部');
   const [promotableOnly, setPromotableOnly] = useState(false);
 
-  const rows = useMemo(() => mockRows.filter(r =>
+  const GENERATORS = useMemo(() => ['全部', ...Array.from(new Set(allRows.map(r => r.generator)))], [allRows]);
+  const rows = useMemo(() => allRows.filter(r =>
     (gen === '全部' || r.generator === gen) &&
-    (!promotableOnly || r.deflated_sharpe >= 0.6)), [gen, promotableOnly]);
+    (!promotableOnly || r.deflated_sharpe >= 0.6)), [allRows, gen, promotableOnly]);
 
   const cols: Column<AlphaRow>[] = [
     { key: 'alpha', header: bi('因子', 'Alpha'), render: r => (
@@ -61,12 +63,13 @@ export default function AlphaZoo() {
       <PageHeader title="Alpha Zoo" titleZh="Alpha 资产库"
         subtitle={bi('按生成器 / 状态 / 簇 / 指标筛选的富 Alpha 资产目录(只读)',
           'Filterable catalog of rich Alpha Assets — by generator / status / cluster / metric (read-only)')} />
-      <ProvenanceRibbon usingBackend={false} apiState="disabled" />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error}
+        realData={data.data_provenance === 'REAL_CRYPTO_SERIES'} />
 
       <KpiStrip cols={4}>
-        <StatTile label={bi('资产总数', 'Total')} value={String(mockRows.length)} />
-        <StatTile label={bi('可晋级(DSR≥0.6)', 'Promotable')} value={String(mockRows.filter(r => r.deflated_sharpe >= 0.6).length)} tone="pos" />
-        <StatTile label={bi('簇数', 'Clusters')} value={String(new Set(mockRows.map(r => r.cluster_id)).size)} tone="info" />
+        <StatTile label={bi('资产总数', 'Total')} value={String(allRows.length)} />
+        <StatTile label={bi('可晋级(DSR≥0.6)', 'Promotable')} value={String(allRows.filter(r => r.deflated_sharpe >= 0.6).length)} tone="pos" />
+        <StatTile label={bi('簇数', 'Clusters')} value={String(new Set(allRows.map(r => r.cluster_id)).size)} tone="info" />
         <StatTile label={bi('当前筛出', 'Filtered')} value={String(rows.length)} accent />
       </KpiStrip>
 

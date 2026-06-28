@@ -3547,6 +3547,36 @@ def _short_factor_label(aid: str) -> str:
     return s[:18]
 
 
+def _alpha_zoo_payload() -> Dict:
+    """The searchable Alpha catalog. Real path = every factor in the offline research snapshot (real
+    generator/state/DSR/net-Sharpe from the contained evolutionary search); synthetic fallback otherwise."""
+    factors: List[Dict] = []
+    try:
+        with open(_CRYPTO_SNAPSHOT_PATH, encoding="utf-8") as fh:
+            factors = json.load(fh).get("factors", [])
+    except (OSError, json.JSONDecodeError, TypeError):
+        factors = []
+    if factors and _load_real_factors():
+        rows = [{
+            "alpha_id": f.get("alpha_id"), "name": _short_factor_label(f.get("alpha_id", "")),
+            "generator": "evolutionary", "status": f.get("state") or "TESTING",
+            "cluster_id": "cl_interaction" if str(f.get("alpha_id", "")).startswith("hx_") else "cl_base",
+            "deflated_sharpe": round(f.get("deflated_sharpe") or 0.0, 3),
+            "net_sharpe": round(f.get("net_sharpe") or 0.0, 3),
+            "tags": [f.get("family") or "price"],
+        } for f in factors]
+        return {"rows": rows}
+    cands = _alpha_candidates()
+    gens = ["cs_genome", "gp", "mcts", "evolutionary"]
+    rows = [{
+        "alpha_id": c["candidate_id"], "name": c["expression"], "generator": gens[i % len(gens)],
+        "status": c["lifecycle_state"], "cluster_id": f"cl_{i % 3}",
+        "deflated_sharpe": round(min(1.0, c["composite_score"]), 3), "net_sharpe": c["sharpe"],
+        "tags": ["synthetic"],
+    } for i, c in enumerate(cands)]
+    return {"rows": rows}
+
+
 def _alpha_graph_payload() -> Dict:
     """Real correlation network: nodes = factors, edges = |return correlation|, clusters = connected
     components above RHO_CUT (redundancy groups). Uses the real services/alpha correlation_graph engine on
@@ -3972,6 +4002,18 @@ async def portfolio_dashboard() -> Dict:
 @app.get("/api/v1/console/population-optimizer")
 async def population_optimizer() -> Dict:
     payload = _population_optimizer_payload()
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0", "data_provenance": _input_provenance(),
+        **payload,
+        "lineage": [item for item in LINEAGE if item["layer"] == "Alpha"],
+    }
+
+
+@app.get("/api/v1/console/alpha-zoo")
+async def alpha_zoo() -> Dict:
+    payload = _alpha_zoo_payload()
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,

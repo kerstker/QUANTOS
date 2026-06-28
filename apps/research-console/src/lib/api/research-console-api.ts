@@ -23,6 +23,7 @@ import type {
   PortfolioDashboardPayload,
   PopulationOptimizerPayload,
   AlphaGraphPayload,
+  AlphaZooPayload,
   PromotionControlPayload,
   ReleaseCommitteePayload,
   RiskDashboardPayload,
@@ -199,6 +200,10 @@ export function fetchPopulationOptimizerSnapshot(signal?: AbortSignal) {
 
 export function fetchAlphaGraphSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<AlphaGraphPayload>('/api/v1/console/alpha-graph', signal);
+}
+
+export function fetchAlphaZooSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<AlphaZooPayload>('/api/v1/console/alpha-zoo', signal);
 }
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {
