@@ -6,6 +6,7 @@ import type {
   BacktestExplainabilityPayload,
   ComputationLabPayload,
   CryptoLivePayload,
+  FxResearchPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   ResearchRunsComparePayload,
@@ -236,6 +237,10 @@ export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {
 
 export function fetchCryptoLiveSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<CryptoLivePayload>('/api/v1/console/crypto-live', signal);
+}
+
+export function fetchFxResearchSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<FxResearchPayload>('/api/v1/console/fx-research', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

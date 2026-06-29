@@ -1349,6 +1349,31 @@ export interface CryptoRegime {
   by_trend: CryptoRegimeBucket[];
 }
 
+export interface FxYearRow { year: number; n: number; net_sharpe: number | null; }
+export interface FxCostSweepRow {
+  cost_bps: number; is_best: string; is_sharpe: number; oos_mean_sharpe: number | null; n_folds: number;
+}
+export interface FxFullUniverse {
+  n_currencies?: number; n_periods?: number; fwd_horizon?: number; pool?: string[];
+  leakage_verified?: string; verdicts?: Record<string, string>;
+  in_sample_best?: { name: string; sharpe: number };
+  oos?: { mean_oos_sharpe?: number | null; mean_is_sharpe?: number | null; n_folds?: number;
+          oos_positive_frac?: number | null };
+  headline?: string; per_year?: FxYearRow[];
+}
+export interface FxGauntlet {
+  universe?: string[]; n_currencies?: number; fwd_horizon?: number;
+  cost_sweep?: FxCostSweepRow[]; headline?: string; per_year_5bps?: FxYearRow[];
+}
+export interface FxResearchPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_FX_ECB_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;                 // NO_SNAPSHOT | REFUTED_NO_TRADABLE_EDGE | SURVIVES_TRADABLE_GAUNTLET | LEAD_UNGATED
+  full_universe: FxFullUniverse;
+  tradable_gauntlet: FxGauntlet;
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

@@ -12,6 +12,7 @@ const ResearchRuns = lazy(() => import('./pages/ResearchRuns'));
 const RunDetail = lazy(() => import('./pages/RunDetail'));
 const CompareRuns = lazy(() => import('./pages/CompareRuns'));
 const CryptoLive = lazy(() => import('./pages/CryptoLive'));
+const FxResearch = lazy(() => import('./pages/FxResearch'));
 const AlphaFactory = lazy(() => import('./pages/AlphaFactory'));
 const AlphaZoo = lazy(() => import('./pages/AlphaZoo'));
 const DslExplorer = lazy(() => import('./pages/DslExplorer'));
@@ -50,6 +51,7 @@ const nav: NavGroup[] = [
     { to: '/research/backtest-results', zh: '回测战果', en: 'Results', icon: 'BR' },
     { to: '/research/runs', zh: '研究中心', en: 'Research Runs', icon: 'RR' },
     { to: '/research/crypto-live', zh: '加密实盘研究', en: 'Crypto Live', icon: '₿' },
+    { to: '/research/fx-research', zh: 'FX 研究', en: 'FX Research', icon: 'FX' },
     { to: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF' },
     { to: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ' },
     { to: '/research/dsl-explorer', zh: '因子 DSL', en: 'DSL Explorer', icon: 'DSL' },
@@ -112,6 +114,7 @@ export default function App() {
           <Route path="/research/compare" element={<CompareRuns />} />
           <Route path="/research/runs/:id" element={<RunDetail />} />
           <Route path="/research/crypto-live" element={<CryptoLive />} />
+          <Route path="/research/fx-research" element={<FxResearch />} />
           <Route path="/research/alpha-factory" element={<AlphaFactory />} />
           <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
           <Route path="/research/dsl-explorer" element={<DslExplorer />} />

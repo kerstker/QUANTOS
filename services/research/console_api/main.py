@@ -3757,6 +3757,8 @@ def _system_completeness_payload() -> Dict:
 # services/research/console_api/main.py -> up 4 -> repo root.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 _CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
+_FX_RESEARCH_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_research_snapshot.json")
+_FX_GAUNTLET_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_gauntlet_snapshot.json")
 
 
 # --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
@@ -4855,6 +4857,59 @@ async def computation_lab(
 @app.get("/api/v1/console/crypto-live")
 async def crypto_live() -> Dict:
     return _crypto_live_payload()
+
+
+def _fx_research_payload() -> Dict:
+    """Serve the persisted REAL FX research + tradable-gauntlet snapshots (generated OUT OF GATE by
+    tools/fx_research.py + tools/fx_gauntlet.py from KEYLESS ECB reference rates via Frankfurter). Read-only;
+    NEVER fetches (the no-network-import ban inside services/ is machine-enforced). Fail-closed: when a
+    snapshot is absent (data/cache is gitignored — CI / fresh checkout) or corrupt it returns a well-formed
+    EMPTY payload + SYNTHETIC provenance, so the page shows an honest 'no FX snapshot yet' state.
+
+    HONESTY: the full-universe OOS can be inflated by pegged / pre-Euro-legacy / non-executable currencies;
+    the TRADABLE-universe + cost gauntlet is the arbiter. verdict reflects the gauntlet, not the raw +OOS."""
+    def _load(path):
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    d = json.load(fh)
+                return d if isinstance(d, dict) else None
+            except (ValueError, OSError):
+                return None
+        return None
+
+    full = _load(_FX_RESEARCH_SNAPSHOT)
+    gaunt = _load(_FX_GAUNTLET_SNAPSHOT)
+    present = full is not None or gaunt is not None
+    sweep = (gaunt or {}).get("cost_sweep") or []
+    # tradable gauntlet verdict: refuted iff every assessed cost level has non-positive OOS Sharpe.
+    oos_vals = [c.get("oos_mean_sharpe") for c in sweep if isinstance(c.get("oos_mean_sharpe"), (int, float))]
+    if not present:
+        verdict = "NO_SNAPSHOT"
+    elif oos_vals and all(v <= 0 for v in oos_vals):
+        verdict = "REFUTED_NO_TRADABLE_EDGE"
+    elif oos_vals:
+        verdict = "SURVIVES_TRADABLE_GAUNTLET"
+    else:
+        verdict = "LEAD_UNGATED"
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_FX_ECB_OFFLINE_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": verdict,
+        "full_universe": full or {},
+        "tradable_gauntlet": gaunt or {},
+        "honesty_note": ("ECB daily reference fixings (NOT executable quotes). The full-universe OOS can be "
+                         "inflated by pegged / pre-Euro-legacy / capital-controlled currencies; the tradable "
+                         "universe + cost sweep is the arbiter. Research-only, no broker/order path."),
+    }
+
+
+@app.get("/api/v1/console/fx-research")
+async def fx_research() -> Dict:
+    return _fx_research_payload()
 
 
 if __name__ == "__main__":

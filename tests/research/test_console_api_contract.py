@@ -107,6 +107,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/backtest-results": ("", ("carry", "combo", "oi_research", "survivorship", "factory")),
     # alpha lifecycle monitor: real experiment_registry backtest-side artifacts (live side honestly null)
     "/api/v1/console/lifecycle-monitor": ("", ("summary", "rows", "thresholds", "lifecycle_policy")),
+    # FX research: real ECB/Frankfurter full-universe + tradable-gauntlet snapshots (synthetic-empty in CI)
+    "/api/v1/console/fx-research": ("", ("snapshot_present", "verdict", "full_universe",
+                                         "tradable_gauntlet", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -119,6 +122,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/research-run": "RESEARCH_RUN_REGISTRY",
     # BacktestResults aggregates done runs by role; synthetic (all-None blocks) when the registry is empty.
     "/api/v1/console/backtest-results": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
+    # FX research: REAL ECB snapshot when present, SYNTHETIC-empty in CI / fresh checkout. Both honest.
+    "/api/v1/console/fx-research": {"SYNTHETIC_DETERMINISTIC", "REAL_FX_ECB_OFFLINE_SNAPSHOT"},
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.
