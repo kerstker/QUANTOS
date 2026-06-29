@@ -294,7 +294,18 @@ HEAD 曾在 `e0f7c57`(截面 alpha 引擎 Batch 1);`validate.py` 813 测试全�
 当前结论:**没有任何经得起跨 regime 的加密因子;真杠杆=数据护城河(口子,见 §5)**。下一步候选:开数据口子(小盘币广度/
 另类/其它资产)或挂纸面跟踪。远端 = `https://github.com/kerstker/QUANTOS`(Private);本地两服务可能仍开着(uvicorn :8400 +
 Vite :3100)。
-—— 最新一轮(2026-06-29,断点1 关卡证据回喂——晋级链解冻)——
+—— 最新一轮(2026-06-30,补「脑」第一刀:学习型信号组合 ML stacker)——
+对标差距报告头号杠杆(零 ML/DL→CRITICAL)。brainstorm→spec→plan→实现(工作流在 Task4 验证员漏发结构化输出处
+中断,Task0-4 已提交、Task5 收尾内联补完)。新 `services/research/ml/{feature_panel,stacker,walk_forward_stack}.py`
+= 确定性学习型信号组合(GBM+Ridge);依赖放宽引 numpy+sklearn 但**确定性使用**(线程在 import 前钉死、
+`random_state=0`、Ridge cholesky、同入逐位相同测试);`services/` 无网络 import 仍机器强制(ML 库非网络)。训练
+purged+embargo、裁决 no-peek OOS,关卡不弱化。驱动器 `tools/ml_stack_research.py` 真数据三方 OOS。**诚实结论:
+学习型组合无可交易 edge**——crypto:GBM −0.31 / Ridge +0.12 / 单因子 +1.88(组合反而稀释那条好因子、GBM 过拟合);
+fx 全 universe:GBM +0.21(但**毛收益+受污染 universe,误导,非真 edge**)/ Ridge −0.06 / 单因子 −0.045。
+**瓶颈是数据/信号类别,不是建模层**(同薄数据上加更花的模型只会更快过拟合)。门绿(~1050 py)。
+诚实记忆 [[ml-stacker-findings]];差距报告 `docs/QUANTOS_GAP_ANALYSIS_vs_TOP_QUANT.md`。
+
+—— 上一轮(2026-06-29,断点1 关卡证据回喂——晋级链解冻)——
 HEAD 在 `2507a67`。四道断点全收口(断点2/3/4 + 现在断点1)。**断点1 方案A**:leakage 证据的"真源"
 原先缺失(没人给 `loop.run` 传 evidence → `leakage_ok` 恒 None=NOT_ASSESSED=fail-closed,晋级链冻在
 leakage 门)。本轮在"有原始 bars+计算函数"的搜索/驱动层算真 `detect_leakage`:`services/research/

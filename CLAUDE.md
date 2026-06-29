@@ -70,6 +70,12 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `detect_leakage` ComputeFn; providers expose `leakage_ok(defn)`; the search loops feed it as
   `evidence=` to the evaluator gate). `services/alpha/maintenance.py` — 断点4 non-human
   degradation/retirement sweep (the missing caller for `degradation_monitor`). All tested.
+- `services/research/ml/{feature_panel,stacker,walk_forward_stack}.py` — the first ML layer: a DETERMINISTIC
+  learned signal-combination (stacking) over the factor zoo (numpy + scikit-learn, PINNED + used deterministically:
+  threads=1, `random_state=0`, Ridge cholesky; same-input→bit-identical test). GBM + Ridge, trained purged+embargo,
+  judged no-peek OOS. Driver `tools/ml_stack_research.py`. Honest finding: NO tradable edge (crypto combination
+  hurts/GBM overfits; FX +0.21 is gross + contaminated-universe) — bottleneck is data/signal-class, not modeling.
+  numpy/sklearn are non-network so `services/` no-network-import is still machine-enforced.
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
