@@ -1374,6 +1374,31 @@ export interface FxResearchPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface CarrySpec {
+  net_sharpe?: number; max_drawdown?: number; worst_day?: number;
+  per_year?: Record<string, number>; blocks?: number[]; n_days?: number;
+}
+export interface CarryCapacityRow { aum: number; net_sharpe: number; ann_return: number; ann_pnl_usd: number; }
+export interface CarryCapacityBand {
+  rows?: CarryCapacityRow[]; capacity_half_sharpe_usd?: number; pnl_peak_aum_usd?: number; pnl_peak_usd?: number;
+}
+export interface CarryReadinessPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_CARRY_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;        // VALIDATED_NOT_LIVE_READY | PARTIAL_OVERFIT_RISK | REFUTED | INCOMPLETE | NO_SNAPSHOT
+  strategy: {
+    sharpe_price_only?: number; sharpe_price_plus_funding?: number; sharpe_net_5bps?: number;
+    avg_turnover?: number; avg_funding_bps_day?: number; n_instruments?: number; n_days?: number; signal_expr?: string;
+  };
+  robustness: { verdict?: string; n_liquid?: number; specs?: Record<string, CarrySpec> };
+  capacity: {
+    base_sharpe?: number; funding_bps_per_year?: Record<string, number>; pnl_top5_share?: number;
+    capacity_curve?: Record<string, CarryCapacityBand>;
+  };
+  deployment_gaps: string[];
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

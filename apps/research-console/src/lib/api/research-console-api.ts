@@ -7,6 +7,7 @@ import type {
   ComputationLabPayload,
   CryptoLivePayload,
   FxResearchPayload,
+  CarryReadinessPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   ResearchRunsComparePayload,
@@ -241,6 +242,10 @@ export function fetchCryptoLiveSnapshot(signal?: AbortSignal) {
 
 export function fetchFxResearchSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<FxResearchPayload>('/api/v1/console/fx-research', signal);
+}
+
+export function fetchCarryReadinessSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<CarryReadinessPayload>('/api/v1/console/carry-readiness', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

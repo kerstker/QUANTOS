@@ -110,6 +110,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # FX research: real ECB/Frankfurter full-universe + tradable-gauntlet snapshots (synthetic-empty in CI)
     "/api/v1/console/fx-research": ("", ("snapshot_present", "verdict", "full_universe",
                                          "tradable_gauntlet", "honesty_note")),
+    # carry readiness: funder-facing summary of the one validated signal (3 carry snapshots; synthetic-empty in CI)
+    "/api/v1/console/carry-readiness": ("", ("snapshot_present", "verdict", "strategy", "robustness",
+                                             "capacity", "deployment_gaps", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -124,6 +127,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/backtest-results": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # FX research: REAL ECB snapshot when present, SYNTHETIC-empty in CI / fresh checkout. Both honest.
     "/api/v1/console/fx-research": {"SYNTHETIC_DETERMINISTIC", "REAL_FX_ECB_OFFLINE_SNAPSHOT"},
+    # carry readiness: REAL carry snapshots when present, SYNTHETIC-empty in CI / fresh checkout.
+    "/api/v1/console/carry-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_CARRY_OFFLINE_SNAPSHOT"},
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.

@@ -3759,6 +3759,9 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.
 _CRYPTO_SNAPSHOT_PATH = os.path.join(_REPO_ROOT, "data", "cache", "crypto_research_snapshot.json")
 _FX_RESEARCH_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_research_snapshot.json")
 _FX_GAUNTLET_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_gauntlet_snapshot.json")
+_CARRY_STRATEGY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_strategy.json")
+_CARRY_WALKFWD_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_walkforward.json")
+_CARRY_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_capacity.json")
 
 
 # --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
@@ -4910,6 +4913,65 @@ def _fx_research_payload() -> Dict:
 @app.get("/api/v1/console/fx-research")
 async def fx_research() -> Dict:
     return _fx_research_payload()
+
+
+def _carry_readiness_payload() -> Dict:
+    """Funder-facing carry-readiness summary: the ONE signal that survived the full gauntlet (funding carry),
+    packaged across the dimensions a capital allocator asks about — economic basis, design-robustness (simplicity
+    ladder), regime-robustness, realistic-cost survival, capacity, crowding decay — PLUS the honest remaining
+    deployment gaps. Reads three OUT-OF-GATE snapshots (crypto_carry_strategy / _walkforward / _capacity), all
+    generated offline from the local funding store. Read-only, never trades. Fail-closed: missing snapshots ->
+    well-formed empty + SYNTHETIC provenance + verdict NO_SNAPSHOT (CI / fresh checkout). HONESTY: surfaces the
+    crowding decay (funding premium compressed ~5x since 2020) so the headline Sharpe is never sold as forward."""
+    def _load(path):
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    d = json.load(fh)
+                return d if isinstance(d, dict) else None
+            except (ValueError, OSError):
+                return None
+        return None
+
+    strat = _load(_CARRY_STRATEGY_SNAPSHOT)
+    robust = _load(_CARRY_WALKFWD_SNAPSHOT)
+    cap = _load(_CARRY_CAPACITY_SNAPSHOT)
+    present = any(x is not None for x in (strat, robust, cap))
+    rob_verdict = (robust or {}).get("verdict")
+    if not present:
+        verdict = "NO_SNAPSHOT"
+    elif rob_verdict == "DESIGN_ROBUST":
+        verdict = "VALIDATED_NOT_LIVE_READY"          # passed every research gate; deployment gaps remain
+    elif rob_verdict in ("COMPOSITE_DEPENDENT", "ROBUST_BUT_RAW_WEAKER"):
+        verdict = "PARTIAL_OVERFIT_RISK"
+    else:
+        verdict = "REFUTED" if rob_verdict else "INCOMPLETE"
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_CARRY_OFFLINE_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": verdict,
+        "strategy": strat or {},
+        "robustness": robust or {},
+        "capacity": cap or {},
+        "deployment_gaps": [
+            "实盘执行机制未建模:永续空腿强平、对手方/交易所风险、真实资金费结算时点",
+            "回撤尾巴未控:最大回撤 25–30%、最差单日约 −8%(需 vol-target 压尾)",
+            "溢价衰减:资金费 5 年压缩约 5×,前向预期 < 全历史头条夏普",
+            "容量有上限:约 $25M–$250M(取决于冲击假设),超峰值后边际收益转负",
+            "拥挤风险:funding carry 是公开拥挤交易,需持续监控溢价",
+        ],
+        "honesty_note": ("唯一过了全套关卡的真信号(资金费 carry,经济学溢价、非过拟合、扛过 2022 熊市、真实滑点下存活)。"
+                         "但头条夏普被肥沃的 2020–21 抬高——溢价已显著衰减,前向预期更低;且未上实盘、回撤尾巴未控。"
+                         "研究只读、零下单/券商/凭证路径;L2_DRY_RUN_ONLY,实盘人工专属。"),
+    }
+
+
+@app.get("/api/v1/console/carry-readiness")
+async def carry_readiness() -> Dict:
+    return _carry_readiness_payload()
 
 
 if __name__ == "__main__":
