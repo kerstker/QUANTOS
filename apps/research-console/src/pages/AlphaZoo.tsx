@@ -64,6 +64,18 @@ function verdictColor(v: string | undefined): string {
     : v === 'WARN' ? 'var(--warn)' : 'var(--text-muted)';
 }
 
+const numOf = (v: unknown): number => (typeof v === 'number' ? v : NaN);
+
+// Honest one-click multi-dimensional screens (factor screener). Each is a predicate over a real dimension;
+// a missing value (NaN) fails the comparison -> the factor is screened OUT (fail-closed, not assumed-good).
+const SCREENS: { key: string; zh: string; en: string; test: (r: AlphaZooRow) => boolean }[] = [
+  { key: 'promotable', zh: '可晋级 DSR≥0.6', en: 'DSR≥0.6', test: r => numOf(r.deflated_sharpe) >= 0.6 },
+  { key: 'lowturn', zh: '低换手 <0.5', en: 'turnover<0.5', test: r => numOf(r.turnover) < 0.5 },
+  { key: 'robust', zh: '抗过拟合 PBO<0.3', en: 'PBO<0.3', test: r => numOf(r.pbo) <= 0.3 },
+  { key: 'orthogonal', zh: '正交 增量IR>0.3', en: 'mIR>0.3', test: r => numOf(r.marginal_ir) > 0.3 },
+  { key: 'positiveIC', zh: '正 IC', en: 'IC>0', test: r => numOf(r.ic) > 0 },
+];
+
 // Multi-dimensional scatter: each factor a point at (xDim, yDim), coloured by verdict, with median
 // quadrant guides. Click a point to drill into that factor (shared openId with the table). Points whose
 // chosen dimension is null are skipped (honest — not plotted at a fake 0).
@@ -116,7 +128,7 @@ export default function AlphaZoo() {
   const dimByKey = useMemo(() => Object.fromEntries(dims.map(d => [d.key, d])), [dims]);
 
   const [gen, setGen] = useState('全部');
-  const [promotableOnly, setPromotableOnly] = useState(false);
+  const [screens, setScreens] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<string>('deflated_sharpe');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -126,9 +138,9 @@ export default function AlphaZoo() {
   const GENERATORS = useMemo(() => ['全部', ...Array.from(new Set(allRows.map(r => r.generator)))], [allRows]);
 
   const rows = useMemo(() => {
+    const active = SCREENS.filter(s => screens.has(s.key));
     const filtered = allRows.filter(r =>
-      (gen === '全部' || r.generator === gen) &&
-      (!promotableOnly || (typeof r.deflated_sharpe === 'number' && r.deflated_sharpe >= 0.6)));
+      (gen === '全部' || r.generator === gen) && active.every(s => s.test(r)));
     const sign = sortDir === 'desc' ? -1 : 1;
     const miss = sortDir === 'desc' ? -Infinity : Infinity;   // nulls sort last
     return [...filtered].sort((a, b) => {
@@ -136,7 +148,7 @@ export default function AlphaZoo() {
       const bv = typeof b[sortKey] === 'number' ? (b[sortKey] as number) : miss;
       return sign * (bv - av);
     });
-  }, [allRows, gen, promotableOnly, sortKey, sortDir]);
+  }, [allRows, gen, screens, sortKey, sortDir]);
 
   function sortOn(key: string) {
     if (sortKey === key) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
@@ -199,9 +211,13 @@ export default function AlphaZoo() {
             <button key={g} onClick={() => setGen(g)}
               className={`rounded-md border px-2.5 py-1 text-xs transition ${gen === g ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-ink'}`}>{g}</button>
           ))}
-          <button onClick={() => setPromotableOnly(v => !v)}
-            className={`rounded-md border px-2.5 py-1 text-xs transition ${promotableOnly ? 'border-pos bg-pos/10 text-pos' : 'border-line text-muted hover:text-ink'}`}>
-            {bi('仅可晋级', 'promotable only')}</button>
+          <span className="mx-0.5 h-4 w-px self-center bg-line" />
+          {SCREENS.map(s => (
+            <button key={s.key}
+              onClick={() => setScreens(prev => { const n = new Set(prev); n.has(s.key) ? n.delete(s.key) : n.add(s.key); return n; })}
+              className={`rounded-md border px-2.5 py-1 text-xs transition ${screens.has(s.key) ? 'border-pos bg-pos/10 text-pos' : 'border-line text-muted hover:text-ink'}`}>
+              {bi(s.zh, s.en)}</button>
+          ))}
         </div>
 
         <div className="overflow-x-auto">
