@@ -25,6 +25,7 @@ from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
 from services.research.signals import SIGNAL_OPS
+from services.research.leakage_evidence import signal_leakage_ok
 from services.research.backtest_engine.metrics import sharpe
 from services.research.backtest_engine.costs import CostModel
 from services.research.regime import label_regimes_by_vol, regime_conditional_stats
@@ -151,7 +152,20 @@ def main() -> None:
                                params={"operator": op, "window": str(w), "family": "price"})
         candidates.append((defn, per))
         print(f"  built h_{op}_{w}: {len(per)} periods", flush=True)
-    report = loop.run(candidates, timestamp=now_ms)["report"]
+
+    # 断点1 (方案A): compute the REAL leakage_ok evidence HERE — the driver has the raw PIT bars + the
+    # factor's compute, which the agent loop (PanelPeriods only) does not. Run detect_leakage on a bounded
+    # recent slice (leakage is a structural property; a representative slice suffices and stays cheap), then
+    # feed it as evidence so the evaluator's leakage gate participates with a real verdict instead of None.
+    # regime is self-computed by the evaluator (compute_regime_evidence=True above); PBO by the loop.
+    lk_ets = event_times[-80:] if len(event_times) > 80 else event_times
+    lk_bars = [b for inst in sorted(instruments)
+               for b in store.as_of(inst, lk_ets[-1]) if b.event_time >= lk_ets[0]]
+    lk_times = lk_ets[len(lk_ets) // 2: len(lk_ets) // 2 + 3]
+    evidence = {f"h_{op}_{w}": {"leakage_ok": signal_leakage_ok(op, w, lk_bars, lk_times)} for op, w in POOL}
+    lk_ok = sum(1 for e in evidence.values() if e["leakage_ok"] is True)
+    print(f"  leakage evidence: {lk_ok}/{len(evidence)} factors PIT-verified leak-free", flush=True)
+    report = loop.run(candidates, timestamp=now_ms, evidence=evidence)["report"]
 
     # headline: per-CALENDAR-YEAR net Sharpe (the 2022-bear test)
     hp = pool_periods[HEADLINE]
