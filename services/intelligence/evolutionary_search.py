@@ -16,6 +16,7 @@ from typing import Callable, Optional, Sequence
 from quantos.contracts.alpha import AlphaDefinition
 
 from .agent_loop import ResearchAgentLoop
+from .evidence import provider_leakage_evidence
 from .guardrails import AgentAction, assert_action_allowed
 from .reward import evaluation_reward, generalization_gap
 from services.research.interaction_factors import interaction_definition, make_interaction_provider
@@ -209,7 +210,9 @@ class EvolutionarySearchLoop:
                 history.append({"genome": g, "reward": 0.0, "error": type(exc).__name__})
         if not candidates:
             return
-        out = self.inner_loop.run(candidates, timestamp=timestamp)
+        # 断点1 (方案A): provider-supplied real leakage_ok evidence -> evaluator gate (else {} = fail-closed).
+        evidence = provider_leakage_evidence(self.provider, candidates)
+        out = self.inner_loop.run(candidates, timestamp=timestamp, evidence=evidence)
         report.update(out["report"])
         red_lambda = self.vocab.get("redundancy_lambda", 0.0)
         div_lambda = self.vocab.get("diversity_lambda", 0.0)

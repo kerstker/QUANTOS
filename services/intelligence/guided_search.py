@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from .agent_loop import ResearchAgentLoop
+from .evidence import provider_leakage_evidence
 from .guardrails import AgentAction, assert_action_allowed
 from .reward import evaluation_reward
 from .search_space import HypothesisSpace
@@ -43,7 +44,10 @@ class GuidedSearchLoop:
                                     "state": None, "error": type(exc).__name__})
             if not candidates:
                 continue
-            out = self.inner_loop.run(candidates, timestamp=timestamp)
+            # 断点1 (方案A): if the provider can self-assess leakage, feed it as evidence so the
+            # evaluator's leakage gate participates with a real verdict (else {} -> fail-closed None).
+            evidence = provider_leakage_evidence(periods_provider, candidates)
+            out = self.inner_loop.run(candidates, timestamp=timestamp, evidence=evidence)
             report.update(out["report"])
             review_queue.extend(out["human_review_queue"])
             for h in hyps:

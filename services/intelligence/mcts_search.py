@@ -21,6 +21,7 @@ import math
 from typing import Callable, Optional, Sequence
 
 from .agent_loop import ResearchAgentLoop
+from .evidence import provider_leakage_evidence
 from .guardrails import AgentAction, assert_action_allowed
 from .reward import evaluation_reward
 from .evolutionary_search import genome_to_definition, mutate, DEFAULT_VOCAB
@@ -56,7 +57,10 @@ class MCTSAlphaSearch:
         except Exception:
             evaluated[genome] = 0.0                  # isolate: a bad genome scores 0
             return 0.0
-        out = self.inner_loop.run([(defn, periods)], timestamp=timestamp)
+        cands = [(defn, periods)]
+        # 断点1 (方案A): provider-supplied real leakage_ok evidence -> evaluator gate (else {} = fail-closed).
+        evidence = provider_leakage_evidence(self.provider, cands)
+        out = self.inner_loop.run(cands, timestamp=timestamp, evidence=evidence)
         report.update(out["report"])
         entry = out["report"].get(defn.alpha_id, {})
         r = evaluation_reward(entry.get("evaluation"))

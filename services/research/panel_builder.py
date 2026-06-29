@@ -12,6 +12,7 @@ from datetime import date as _date
 from typing import Callable, Optional, Sequence
 
 from services.alpha.panel_backtest import PanelPeriod
+from .leakage_evidence import signal_leakage_ok
 from .signals import SIGNAL_OPS
 
 
@@ -93,6 +94,21 @@ def make_data_periods_provider(store, instruments: Sequence[str], *,
         return build_panel_periods(store, instruments, event_times=event_times,
                                    fwd_horizon=fwd_horizon,
                                    signal_fn=lambda closes: fn(closes, window), universe=universe)
+
+    def _leakage_ok(defn):
+        # 断点1 (方案A): this provider DOES hold the raw PIT bars + the op, so it can run the real leakage
+        # detector and hand the verdict to the search loop. Bounded recent slice (leakage is structural;
+        # a representative window suffices and stays cheap). None when no decision time is assessable.
+        ets = list(event_times)
+        lk_ets = ets[-80:] if len(ets) > 80 else ets
+        if len(lk_ets) < 4:
+            return None
+        bars = [b for inst in sorted(instruments)
+                for b in store.as_of(inst, lk_ets[-1]) if b.event_time >= lk_ets[0]]
+        times = lk_ets[len(lk_ets) // 2: len(lk_ets) // 2 + 3]
+        return signal_leakage_ok(defn.params["operator"], int(defn.params["window"]), bars, times)
+
+    provider.leakage_ok = _leakage_ok
     return provider
 
 
