@@ -4029,34 +4029,122 @@ def _dsl_explorer_payload() -> Dict:
     return {"exprs": rows, "analysis_backend": "REAL_DSL_CHECKER+LEAKAGE+COMPLEXITY"}
 
 
-def _alpha_zoo_payload() -> Dict:
-    """The searchable Alpha catalog. Real path = every factor in the offline research snapshot (real
-    generator/state/DSR/net-Sharpe from the contained evolutionary search); synthetic fallback otherwise."""
-    factors: List[Dict] = []
+# The full multi-dimensional factor-analysis schema surfaced by the Alpha Zoo. Each entry is one real
+# dimension of an alpha's immutable evaluation artifact (experiment_registry), grouped for the UI. `fmt`
+# tells the frontend how to render it; `good` is the direction that is better (for conditional colouring).
+_ZOO_DIMENSIONS = [
+    {"key": "ic", "zh": "IC", "en": "IC", "group": "预测力", "fmt": "signed3", "good": "high"},
+    {"key": "icir", "zh": "ICIR", "en": "ICIR", "group": "预测力", "fmt": "signed2", "good": "high"},
+    {"key": "ic_tstat", "zh": "IC t值", "en": "IC t-stat", "group": "预测力", "fmt": "signed2", "good": "high"},
+    {"key": "hit_rate", "zh": "命中率", "en": "Hit rate", "group": "预测力", "fmt": "pct", "good": "high"},
+    {"key": "net_sharpe", "zh": "净夏普", "en": "Net Sharpe", "group": "业绩", "fmt": "signed2", "good": "high"},
+    {"key": "deflated_sharpe", "zh": "紧缩夏普", "en": "Deflated SR", "group": "过拟合", "fmt": "signed2", "good": "high"},
+    {"key": "pbo", "zh": "PBO", "en": "PBO", "group": "过拟合", "fmt": "pct", "good": "low"},
+    {"key": "turnover", "zh": "换手", "en": "Turnover", "group": "成本", "fmt": "signed2", "good": "low"},
+    {"key": "marginal_ir", "zh": "增量IR", "en": "Marginal IR", "group": "正交", "fmt": "signed2", "good": "high"},
+    {"key": "crowding_score", "zh": "拥挤度", "en": "Crowding", "group": "拥挤/容量", "fmt": "signed2", "good": "low"},
+    {"key": "capacity_adj_sharpe", "zh": "容量调整夏普", "en": "Cap-adj SR", "group": "拥挤/容量", "fmt": "signed2", "good": "high"},
+    {"key": "mean_breadth", "zh": "广度", "en": "Breadth", "group": "广度", "fmt": "num1", "good": "high"},
+]
+_ZOO_DIM_KEYS = tuple(d["key"] for d in _ZOO_DIMENSIONS)
+
+
+def _zoo_tags(operator: str, ev: Dict) -> List[str]:
+    """Honest, dimension-derived descriptors (not decoration): the operator family + factual flags."""
+    tags = [operator] if operator else []
+    tn = ev.get("turnover")
+    if isinstance(tn, (int, float)) and tn < 0.3:
+        tags.append("low-turnover")
+    pb = ev.get("pbo")
+    if isinstance(pb, (int, float)) and pb > 0.5:
+        tags.append("overfit-risk")
+    mir = ev.get("marginal_ir")
+    if isinstance(mir, (int, float)) and mir > 0.3:
+        tags.append("orthogonal")
+    if (ev.get("mean_breadth") or 0) < 5:
+        tags.append("thin")
+    return tags
+
+
+def _alpha_zoo_rows_real(st) -> List[Dict]:
+    """One Zoo row per recorded alpha, carrying its FULL multi-dimensional evaluation (IC/ICIR/t-stat/
+    hit-rate/turnover/PBO/deflated-SR/marginal-IR/crowding/capacity/breadth/verdict) from the immutable
+    experiment_registry artifacts — the same source LifecycleMonitor reads. Generator + cluster + tags are
+    derived from the (real) heuristic operator. Every numeric dimension is the real persisted value or None."""
+    def _r(v, n):
+        return round(v, n) if isinstance(v, (int, float)) else None
     try:
-        with open(_CRYPTO_SNAPSHOT_PATH, encoding="utf-8") as fh:
-            factors = json.load(fh).get("factors", [])
-    except (OSError, json.JSONDecodeError, TypeError):
-        factors = []
-    if factors and _load_real_factors():
-        rows = [{
-            "alpha_id": f.get("alpha_id"), "name": _short_factor_label(f.get("alpha_id", "")),
-            "generator": "evolutionary", "status": f.get("state") or "TESTING",
-            "cluster_id": "cl_interaction" if str(f.get("alpha_id", "")).startswith("hx_") else "cl_base",
-            "deflated_sharpe": round(f.get("deflated_sharpe") or 0.0, 3),
-            "net_sharpe": round(f.get("net_sharpe") or 0.0, 3),
-            "tags": [f.get("family") or "price"],
-        } for f in factors]
-        return {"rows": rows}
-    cands = _alpha_candidates()
+        alphas = st.all_alphas()
+    except Exception:
+        return []
+    rows: List[Dict] = []
+    for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9),
+                    reverse=True):
+        aid = a.get("alpha_id")
+        try:
+            evs = st.list_evaluations(aid)
+            ej = json.loads(evs[-1].get("evaluation_json") or "{}") if evs else {}
+        except (json.JSONDecodeError, TypeError, Exception):
+            ej = {}
+        try:
+            dj = json.loads(a.get("definition_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            dj = {}
+        operator = (dj.get("params") or {}).get("operator") or ""
+        row = {
+            "alpha_id": aid, "name": dj.get("name") or _short_factor_label(aid or ""),
+            "generator": f"heuristic:{operator}" if operator else "heuristic_sweep",
+            "status": str(a.get("state") or "TESTING"),
+            "cluster_id": f"cl:{operator}" if operator else "cl:base",
+            "verdict": str(ej.get("verdict") or "—"),
+            "tags": _zoo_tags(operator, ej),
+            # full multi-dimensional evaluation (real persisted values)
+            "ic": _r(ej.get("ic_mean"), 4), "icir": _r(ej.get("icir"), 3),
+            "ic_tstat": _r(ej.get("ic_tstat"), 2), "hit_rate": _r(ej.get("hit_rate"), 3),
+            "net_sharpe": _r(ej.get("net_sharpe"), 3), "deflated_sharpe": _r(ej.get("deflated_sharpe"), 3),
+            "pbo": _r(ej.get("pbo"), 3), "turnover": _r(ej.get("turnover"), 3),
+            "marginal_ir": _r(ej.get("marginal_ir"), 3), "crowding_score": _r(ej.get("crowding_score"), 3),
+            "capacity_adj_sharpe": _r(ej.get("capacity_adj_sharpe"), 3), "mean_breadth": _r(ej.get("mean_breadth"), 1),
+        }
+        rows.append(row)
+    return rows
+
+
+def _alpha_zoo_rows_synthetic() -> List[Dict]:
+    """Deterministic fallback (CI / no registry): the candidate set with plausible per-dimension values so
+    the multi-dimensional page shape stays exercised. Marked SYNTHETIC at the endpoint."""
     gens = ["cs_genome", "gp", "mcts", "evolutionary"]
-    rows = [{
-        "alpha_id": c["candidate_id"], "name": c["expression"], "generator": gens[i % len(gens)],
-        "status": c["lifecycle_state"], "cluster_id": f"cl_{i % 3}",
-        "deflated_sharpe": round(min(1.0, c["composite_score"]), 3), "net_sharpe": c["sharpe"],
-        "tags": ["synthetic"],
-    } for i, c in enumerate(cands)]
-    return {"rows": rows}
+    rows: List[Dict] = []
+    for i, c in enumerate(_alpha_candidates()):
+        ic = round(c.get("ic", 0.0), 4)
+        rows.append({
+            "alpha_id": c["candidate_id"], "name": c["expression"], "generator": gens[i % len(gens)],
+            "status": c["lifecycle_state"], "cluster_id": f"cl_{i % 3}", "verdict": "REQUIRES_HUMAN_REVIEW",
+            "tags": ["synthetic"],
+            "ic": ic, "icir": round(c.get("icir", 0.0), 3), "ic_tstat": round(ic * 30, 2),
+            "hit_rate": round(0.5 + ic, 3), "net_sharpe": round(c.get("sharpe", 0.0), 3),
+            "deflated_sharpe": round(min(1.0, c.get("composite_score", 0.0)), 3),
+            "pbo": round((i % 5) * 0.1, 3), "turnover": round(c.get("turnover", 0.3), 3),
+            "marginal_ir": round(c.get("rank_ic", 0.0), 3), "crowding_score": round((i % 4) * 0.15, 3),
+            "capacity_adj_sharpe": round(c.get("sharpe", 0.0) * 0.9, 3),
+            "mean_breadth": float(10 + i % 8),
+        })
+    return rows
+
+
+def _alpha_zoo_payload() -> Dict:
+    """The searchable, multi-dimensional Alpha catalog. Real path reads the immutable experiment_registry
+    (full per-alpha evaluation across ~12 dimensions); fail-closed to a deterministic synthetic set."""
+    st = _load_experiment_store()
+    rows, provenance = [], "SYNTHETIC_DETERMINISTIC"
+    if st is not None:
+        rows = _alpha_zoo_rows_real(st)
+        if rows:
+            provenance = "EXPERIMENT_REGISTRY"
+    if not rows:
+        rows = _alpha_zoo_rows_synthetic()
+        provenance = "SYNTHETIC_DETERMINISTIC"
+    return {"rows": rows, "dimensions": _ZOO_DIMENSIONS, "data_provenance": provenance}
 
 
 def _alpha_graph_payload() -> Dict:

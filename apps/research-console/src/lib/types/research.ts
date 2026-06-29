@@ -1471,13 +1471,25 @@ export interface DslExplorerPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   exprs: DslExprRow[]; analysis_backend: string;
 }
+export interface ZooDimension {
+  key: string; zh: string; en: string; group: string;
+  fmt: 'signed3' | 'signed2' | 'pct' | 'num1' | string;
+  good: 'high' | 'low' | string;
+}
 export interface AlphaZooRow {
   alpha_id: string; name: string; generator: string; status: string;
-  cluster_id: string; deflated_sharpe: number; net_sharpe: number; tags: string[];
+  cluster_id: string; tags: string[]; verdict?: string;
+  // full multi-dimensional evaluation (real persisted value or null when unassessed)
+  ic?: number | null; icir?: number | null; ic_tstat?: number | null; hit_rate?: number | null;
+  net_sharpe: number | null; deflated_sharpe: number | null; pbo?: number | null;
+  turnover?: number | null; marginal_ir?: number | null; crowding_score?: number | null;
+  capacity_adj_sharpe?: number | null; mean_breadth?: number | null;
+  [key: string]: number | string | string[] | null | undefined;
 }
 export interface AlphaZooPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   rows: AlphaZooRow[];
+  dimensions: ZooDimension[];
 }
 export interface AlphaGraphNode { id: string; label: string; x: number; y: number; cluster: string; }
 export interface AlphaGraphEdge { a: string; b: string; corr: number; }

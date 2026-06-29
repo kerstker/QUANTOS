@@ -351,6 +351,25 @@ def test_lifecycle_monitor_is_read_only_and_honest_about_live():
     assert payload["thresholds"]["min_ic_retention"] > 0
 
 
+def test_alpha_zoo_is_multidimensional():
+    response = client.get("/api/v1/console/alpha-zoo")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
+    assert payload["read_only"] is True
+    assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"}
+    # the catalog now carries the FULL factor-analysis dimension set, not just DSR + net Sharpe
+    dims = {d["key"] for d in payload["dimensions"]}
+    assert {"ic", "icir", "ic_tstat", "hit_rate", "pbo", "turnover", "marginal_ir",
+            "crowding_score", "capacity_adj_sharpe", "mean_breadth", "deflated_sharpe", "net_sharpe"} <= dims
+    assert payload["rows"] and len(payload["rows"]) >= 1
+    row = payload["rows"][0]
+    # every declared dimension is present on each row (real value or honest None)
+    for key in dims:
+        assert key in row
+    assert "generator" in row and "verdict" in row and isinstance(row["tags"], list)
+
+
 def test_backtest_results_aggregates_real_runs_or_fails_closed():
     response = client.get("/api/v1/console/backtest-results")
     assert response.status_code == 200

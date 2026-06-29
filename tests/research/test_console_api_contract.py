@@ -87,7 +87,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/population-optimizer": ("", ("selected", "excluded", "diversity", "gross")),
     "/api/v1/console/safety-primitives": ("", ("safety_mode", "kill_switch", "pre_trade_gate", "safety_config")),
     "/api/v1/console/alpha-graph": ("", ("nodes", "edges", "clusters", "rho_cut", "n_near_dup")),
-    "/api/v1/console/alpha-zoo": ("", ("rows",)),
+    "/api/v1/console/alpha-zoo": ("", ("rows", "dimensions")),
     "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
     "/api/v1/console/system-completeness": ("", (
         "audit_mode", "current_level", "institutional_target", "readiness_score", "summary",
@@ -131,7 +131,9 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/population-optimizer": _REAL_OR_SYNTHETIC,
     "/api/v1/console/overview": _REAL_OR_SYNTHETIC,
     "/api/v1/console/alpha-graph": _REAL_OR_SYNTHETIC,
-    "/api/v1/console/alpha-zoo": _REAL_OR_SYNTHETIC,
+    # Alpha Zoo now reads the full multi-dimensional evaluation from the experiment_registry (real) or
+    # fails closed to synthetic — accept either marker.
+    "/api/v1/console/alpha-zoo": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     # DataCatalog enumerates the real on-disk PIT store (crypto_daily.db) for its DATASETS when present;
     # the feature/lineage block stays synthetic regardless (honest partial). Synthetic when no db (CI).
     "/api/v1/console/data-catalog": {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"},
