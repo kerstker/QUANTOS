@@ -59,6 +59,54 @@ function toneCls(v: unknown, good: string): string {
   return v > 0.5 ? 'text-pos' : v > 0 ? 'text-warn' : 'text-neg';
 }
 
+function verdictColor(v: string | undefined): string {
+  return v === 'PASS' ? 'var(--pos)' : v === 'FAIL' ? 'var(--neg)'
+    : v === 'WARN' ? 'var(--warn)' : 'var(--text-muted)';
+}
+
+// Multi-dimensional scatter: each factor a point at (xDim, yDim), coloured by verdict, with median
+// quadrant guides. Click a point to drill into that factor (shared openId with the table). Points whose
+// chosen dimension is null are skipped (honest — not plotted at a fake 0).
+function DimScatter({ rows, dimByKey, x, y, openId, onPick }: {
+  rows: AlphaZooRow[]; dimByKey: Record<string, ZooDimension>; x: string; y: string;
+  openId: string | null; onPick: (id: string | null) => void;
+}) {
+  const W = 680, H = 300, padL = 50, padR = 18, padT = 14, padB = 40;
+  const dx = dimByKey[x], dy = dimByKey[y];
+  const pts = rows
+    .filter(r => typeof r[x] === 'number' && typeof r[y] === 'number')
+    .map(r => ({ id: r.alpha_id, name: r.name, x: r[x] as number, y: r[y] as number, verdict: r.verdict }));
+  if (!pts.length) return <div className="py-8 text-center text-2xs text-faint">{bi('选中维度无可绘点(值为空)', 'no plottable points (selected dims are null)')}</div>;
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const xlo = Math.min(...xs), xhi = Math.max(...xs), ylo = Math.min(...ys), yhi = Math.max(...ys);
+  const sx = (v: number) => padL + (xhi === xlo ? 0.5 : (v - xlo) / (xhi - xlo)) * (W - padL - padR);
+  const sy = (v: number) => (H - padB) - (yhi === ylo ? 0.5 : (v - ylo) / (yhi - ylo)) * (H - padT - padB);
+  const med = (a: number[]) => { const s = [...a].sort((m, n) => m - n); return s[Math.floor(s.length / 2)]; };
+  const mx = sx(med(xs)), my = sy(med(ys));
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="multi-dimensional factor scatter">
+      <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="var(--border)" />
+      <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="var(--border)" />
+      <line x1={mx} y1={padT} x2={mx} y2={H - padB} stroke="var(--border)" strokeDasharray="3 3" opacity="0.5" />
+      <line x1={padL} y1={my} x2={W - padR} y2={my} stroke="var(--border)" strokeDasharray="3 3" opacity="0.5" />
+      {pts.map(p => (
+        <circle key={p.id} cx={sx(p.x)} cy={sy(p.y)} r={openId === p.id ? 6 : 4}
+          fill={verdictColor(p.verdict)} fillOpacity={openId === p.id ? 1 : 0.7}
+          stroke={openId === p.id ? 'var(--text-primary)' : 'none'} strokeWidth="1.5"
+          style={{ cursor: 'pointer' }} onClick={() => onPick(openId === p.id ? null : p.id)}>
+          <title>{p.name} — {dx?.zh} {fmtDim(p.x, dx?.fmt ?? '')}, {dy?.zh} {fmtDim(p.y, dy?.fmt ?? '')}</title>
+        </circle>
+      ))}
+      <text x={(padL + W - padR) / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{dx?.zh} / {dx?.en}</text>
+      <text x={16} y={(padT + H - padB) / 2} textAnchor="middle" fontSize="11" fill="var(--text-secondary)" transform={`rotate(-90 16 ${(padT + H - padB) / 2})`}>{dy?.zh} / {dy?.en}</text>
+      <text x={padL} y={H - padB + 14} fontSize="10" fill="var(--text-muted)">{fmtDim(xlo, dx?.fmt ?? '')}</text>
+      <text x={W - padR} y={H - padB + 14} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(xhi, dx?.fmt ?? '')}</text>
+      <text x={padL - 5} y={H - padB} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(ylo, dy?.fmt ?? '')}</text>
+      <text x={padL - 5} y={padT + 8} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(yhi, dy?.fmt ?? '')}</text>
+    </svg>
+  );
+}
+
 export default function AlphaZoo() {
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<AlphaZooPayload>(
     s => fetchAlphaZooSnapshot(s));
@@ -72,6 +120,8 @@ export default function AlphaZoo() {
   const [sortKey, setSortKey] = useState<string>('deflated_sharpe');
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [xDim, setXDim] = useState('turnover');
+  const [yDim, setYDim] = useState('deflated_sharpe');
 
   const GENERATORS = useMemo(() => ['全部', ...Array.from(new Set(allRows.map(r => r.generator)))], [allRows]);
 
@@ -116,6 +166,31 @@ export default function AlphaZoo() {
         <StatTile label={bi('分析维度', 'Dimensions')} value={String(dims.length)} tone="info" />
         <StatTile label={bi('当前筛出', 'Filtered')} value={String(rows.length)} accent />
       </KpiStrip>
+
+      <Panel eyebrow={bi('多维散点', 'Multi-dim scatter')} title={bi('因子分布(任选两维)', 'Factor map (pick any two dims)')}
+        right={
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-faint">X</span>
+            <select value={xDim} onChange={e => setXDim(e.target.value)}
+              className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
+              {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
+            </select>
+            <span className="text-faint">Y</span>
+            <select value={yDim} onChange={e => setYDim(e.target.value)}
+              className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
+              {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
+            </select>
+          </div>
+        }>
+        <DimScatter rows={rows} dimByKey={dimByKey} x={xDim} y={yDim} openId={openId} onPick={setOpenId} />
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-faint">
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--pos)' }} />PASS</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--warn)' }} />WARN</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--neg)' }} />FAIL</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--text-muted)' }} />{bi('待人工复核', 'review')}</span>
+          <span>· {bi('虚线 = 中位数,把因子分到四象限;点一个点钻取', 'dashed = medians (quadrants); click a point to drill in')}</span>
+        </div>
+      </Panel>
 
       <Panel eyebrow={bi('多维检索', 'Multi-dim search')} title={bi('Alpha 资产', 'Alpha Assets')}
         right={<Chip label={bi(`按 ${dimByKey[sortKey]?.zh ?? sortKey} 排序`, `sorted by ${dimByKey[sortKey]?.en ?? sortKey}`)} tone="info" />}>
