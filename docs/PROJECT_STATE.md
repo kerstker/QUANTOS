@@ -57,7 +57,9 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 `factor_set.py`(协同集 + novelty)、`subtree_stats.py`、`sample_weights.py`、`factor_timing.py`、`frac_diff.py`。
 **容器化/生命周期**:`agent_loop`(ResearchAgentLoop)、`lifecycle` 状态机、`guardrails`、Actor。
 **组合/风险**:`portfolio`(risk_model/construction/attribution)、`research_risk` 门。
-**持久化**:`experiment_registry`(stdlib sqlite)。
+**持久化**:`experiment_registry`(stdlib sqlite)、**`paper_trading/{store,advance,health}.py` 前向 paper 追踪库
+(append-only `data/cache/paper_track.db`,真 train/paper 切分,驱动器 `tools/crypto_paper_track.py`;喂 LifecycleMonitor
+建议 / 衰退维护 / Alpha Zoo 时间维。`live_ic` 仍 null——离线源无截面 IC 面板;纸面夏普在 ~24 期尾巴是噪声非 edge)**。
 **前端**:`apps/research-console`(React18+Vite6+TS+Tailwind,premium fintech;26 页;**Crypto Live 页**
 显真实加密因子 + OOS 裁决 + 协同集面板)。**Console API**:`research/console_api/main.py`(只读快照 +
 `/api/v1/console/crypto-live` 真实数据端点,provenance=REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT)。
@@ -292,6 +294,14 @@ HEAD 曾在 `e0f7c57`(截面 alpha 引擎 Batch 1);`validate.py` 813 测试全�
 当前结论:**没有任何经得起跨 regime 的加密因子;真杠杆=数据护城河(口子,见 §5)**。下一步候选:开数据口子(小盘币广度/
 另类/其它资产)或挂纸面跟踪。远端 = `https://github.com/kerstker/QUANTOS`(Private);本地两服务可能仍开着(uvicorn :8400 +
 Vite :3100)。
+—— 最新一轮(2026-06-29,断点2 前向 paper 追踪持久层)——
+HEAD 在 `0eca544`。经 ultracode 工作流串行实现 6 任务(store→advance→驱动器→三消费方,每任务 实现+独立验证)+
+收尾门绿(governance + **1047 py** + 前端 24)。**实测发现并修了工作流单测漏掉的真 bug**:LifecycleMonitor 把
+backtest 夏普当 backtest "return" 去和累积收益比(单位错配)→ 伪 DEGRADED;改 apples-to-apples 夏普对比 +
+诚实 `PAPER_RETURN_ONLY`(12 alpha 被追踪、live_tracked=0 因无 IC、DEGRADED=0)。浏览器实测确认(真后端 :8400)。
+**诚实第一**:纸面夏普 +4.8..+6.4 是 ~24 期尾巴的噪声,非已证实 edge——和"无跨 regime edge"结论一致。
+容器化不变(auto_approved=0、非人不晋级、无库 fail-closed)。本地提交,未推远端。
+
 —— 历史锚点 ——
 HEAD 曾在 `3bb6002`(机构级开发流程落地)附近;`main==master`;`validate.py` 全绿。
 **远端已就绪**:`https://github.com/kerstker/QUANTOS`(Private),`origin/main` 与 `origin/master` 已同步;
