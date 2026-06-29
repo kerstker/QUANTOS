@@ -40,8 +40,12 @@ catalog access is for human-controlled workflows and is not an agent API.
 
 Authoritative reality map + completion roadmap:
 [`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md).
-**The backend is substantially built and tested (~1014 tests pass); the real gap
-is WIRING the engines into `console_api`, not missing engines.**
+**The backend is substantially built and tested (~1047 tests pass). The console-wiring
+gap is now largely closed: the four ALPHA-pipeline breaks are all wired + tested — 断点1
+关卡证据回喂 evaluator (real `detect_leakage`/regime/PBO evidence through every search loop),
+断点2 前向 paper 追踪持久层, 断点3 console 真组合 (optimizer + real returns), 断点4 衰退/退役调度器.
+Most console pages now serve real data; remaining synthetic surfaces are genuinely-missing
+subsystems (kept honest), not unwired engines.**
 
 Real, tested backend engines (`*_TESTED` in the audit):
 - `services/research/factor_engine/` — real IC/ICIR/Sharpe math + hardened AST
@@ -59,6 +63,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/research/{run_registry,research_runner,experiment_registry}/` —
   durable sqlite run store + the guarded mutating runner + immutable experiment
   artifacts/DSR trial-count persistence.
+- `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
+  persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
+  train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/
+  evidence.py` — 断点1 leakage evidence SOURCE (wrap a SIGNAL/VOLUME op or GP tree as a real
+  `detect_leakage` ComputeFn; providers expose `leakage_ok(defn)`; the search loops feed it as
+  `evidence=` to the evaluator gate). `services/alpha/maintenance.py` — 断点4 non-human
+  degradation/retirement sweep (the missing caller for `degradation_monitor`). All tested.
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
@@ -78,16 +89,22 @@ Real, tested backend engines (`*_TESTED` in the audit):
   health; fail-closed deployment/version-pin gate. All tested.
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
-- `services/research/console_api/main.py` — FastAPI **read-only** API (~29 GET
-  endpoints). **Mostly `SYNTHETIC_DETERMINISTIC`** snapshot generators, but several
-  endpoints already touch real engines (risk-dashboard → `RiskApprovalGate`,
-  validation → real leakage detector, data-catalog → real `services/data`) and
-  **`research-runs`/`research-run`/`crypto-live` are REAL** (run_registry sqlite /
-  real CoinGecko offline snapshot). The single synthetic data root that fakes most
-  PARTIAL pages is `_factor_values`/`_forward_returns` (`math.sin/cos`, ~line 85).
-- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **36
-  pages, route-lazy code-split**. Reality split: 7 REAL, 6 PARTIAL (real engine,
-  synthetic input), 17 MOCK, 6 NONE (front-end-hardcoded). See the audit doc.
+- `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
+  endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
+  `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
+  `research-run` (run_registry sqlite), `crypto-live` (CoinGecko offline snapshot),
+  `fx-research` (ECB/Frankfurter snapshots + tradable gauntlet), `lifecycle-monitor`
+  (experiment_registry artifacts + real paper-track `live_ic`/recommendation), `alpha-zoo`
+  (12-dim real eval + time/活体征 dims), `backtest-results` (run_registry by role),
+  `data-catalog` (real PIT datasets), `safety-primitives` (real KillSwitch/gate), `portfolio`
+  (real optimizer/risk-parity), risk-dashboard/validation (real engines). The residual
+  synthetic root for the few remaining PARTIAL pages is `_factor_values`/`_forward_returns`
+  (`math.sin/cos`); contract-guarded by `tests/research/test_console_api_contract.py`.
+- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **37
+  pages, route-lazy code-split** (+ FX Research). The audit doc's original split
+  (7 REAL / 6 PARTIAL / 17 MOCK / 6 NONE) predates this session — REAL has grown
+  substantially after the 4-break + paper-track + FX wiring (CryptoLive, FxResearch,
+  ResearchRuns, LifecycleMonitor, BacktestResults, DataCatalog, Portfolio, AlphaZoo, …).
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain
