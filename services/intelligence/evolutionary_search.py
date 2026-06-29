@@ -111,6 +111,20 @@ def make_evolution_provider(price_store, fund_store, instruments: Sequence[str],
                 raise ValueError("fundamental genome requires a fund_store")
             return fund(defn)
         return price(defn)
+
+    def _leakage_ok(defn):
+        # 断点1 (方案A): dispatch leakage assessment by family to the sub-provider that can run the REAL
+        # bar-based detector. gp_tree + price are trailing-closes signals -> verifiable. interaction (2-leg,
+        # possibly fundamental + cross-sectional combine) and fundamental (separate PIT store) are NOT
+        # bar-assessable here -> honest None (evaluator stays fail-closed; never faked).
+        fam = defn.params.get("family")
+        if fam == "gp_tree":
+            return tree.leakage_ok(defn)
+        if fam == "interaction" or "metric" in defn.params:
+            return None
+        return price.leakage_ok(defn)
+
+    provider.leakage_ok = _leakage_ok
     return provider
 
 

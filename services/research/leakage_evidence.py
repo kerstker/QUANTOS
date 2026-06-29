@@ -22,12 +22,12 @@ from services.research.signals import SIGNAL_OPS
 ComputeFn = Callable[[Sequence[Bar]], list]
 
 
-def signal_compute_fn(op: str, window: int, *, feature_id: str = "f") -> ComputeFn:
-    """Adapt a trailing-window SIGNAL_OP into a leakage ComputeFn. For every instrument it computes the signal
-    at each bar's event_time from the closes AT-OR-BEFORE that time (PIT). Because a correct trailing op reads
-    no future bar, perturbing future bars cannot change a past value -> detect_leakage reports it leak-free;
-    an op that peeks ahead is caught. `op` must be a key of SIGNAL_OPS."""
-    fn = SIGNAL_OPS[op]
+def compute_fn_from_signal(signal_fn, *, feature_id: str = "f") -> ComputeFn:
+    """Build a leakage ComputeFn from ANY trailing-closes signal `signal_fn: Sequence[float] -> Optional[float]`.
+    For every instrument it computes the signal at each bar's event_time from the closes AT-OR-BEFORE that time.
+    A signal that reads no future bar (true for a SIGNAL_OP at fixed window, a GP expression tree, any trailing
+    op) is reported leak-free by detect_leakage; one that peeks ahead is caught. Generalises signal_compute_fn
+    so the GP/tree path reuses the SAME detector instead of asserting PIT-safety."""
 
     def compute(bars: Sequence[Bar]) -> list:
         by_inst: dict = {}
@@ -39,7 +39,7 @@ def signal_compute_fn(op: str, window: int, *, feature_id: str = "f") -> Compute
             closes: list = []
             for b in bs:
                 closes.append(b.close)
-                s = fn(closes, window)
+                s = signal_fn(closes)
                 if s is not None and math.isfinite(s):
                     out.append(FeatureValue(feature_id=feature_id, instrument_id=inst,
                                             event_time=b.event_time, knowledge_time=b.knowledge_time,
@@ -47,6 +47,18 @@ def signal_compute_fn(op: str, window: int, *, feature_id: str = "f") -> Compute
         return out
 
     return compute
+
+
+def signal_compute_fn(op: str, window: int, *, feature_id: str = "f") -> ComputeFn:
+    """Adapt a trailing-window SIGNAL_OP into a leakage ComputeFn. `op` must be a key of SIGNAL_OPS."""
+    fn = SIGNAL_OPS[op]
+    return compute_fn_from_signal(lambda closes: fn(closes, window), feature_id=feature_id)
+
+
+def leakage_ok_for_signal(signal_fn, bars: Sequence[Bar], target_times: Sequence[int], *,
+                          feature_id: str = "f") -> Optional[bool]:
+    """Convenience: assess leakage of an arbitrary trailing-closes signal over the sampled decision times."""
+    return leakage_ok_over_times(compute_fn_from_signal(signal_fn, feature_id=feature_id), bars, target_times)
 
 
 def leakage_ok_over_times(compute: ComputeFn, bars: Sequence[Bar], target_times: Sequence[int], *,

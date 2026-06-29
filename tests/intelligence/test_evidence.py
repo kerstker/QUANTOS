@@ -96,6 +96,32 @@ def test_combined_provider_delegates_price_and_is_none_for_fundamental():
     assert prov.leakage_ok(fund_d) is None                           # fundamental: honest NOT-ASSESSED
 
 
+def test_gp_tree_provider_exposes_real_leakage_ok():
+    from services.research.gp_tree import make_tree_provider, tree_definition
+    st, insts, ets = _store()
+    prov = make_tree_provider(st, insts, event_times=ets, fwd_horizon=1)
+    assert hasattr(prov, "leakage_ok")
+    d = tree_definition(("leaf", "momentum", "3"))               # a GP expression tree
+    assert d.params.get("family") == "gp_tree"
+    assert prov.leakage_ok(d) is True                            # tree eval is trailing-closes -> VERIFIED safe
+
+
+def test_evolution_provider_dispatches_leakage_by_family():
+    from services.intelligence.evolutionary_search import make_evolution_provider
+    from services.research.gp_tree import tree_definition
+    st, insts, ets = _store()
+    prov = make_evolution_provider(st, None, insts, event_times=ets, fwd_horizon=1)
+    assert hasattr(prov, "leakage_ok")
+    assert prov.leakage_ok(tree_definition(("leaf", "momentum", "3"))) is True   # gp_tree -> real True
+    assert prov.leakage_ok(_defn("p", op="momentum", w=3)) is True               # price -> real True
+    fund_d = AlphaDefinition(alpha_id="f", name="f", factor_ids=("close",),
+                             params={"operator": "momentum", "window": "3", "metric": "ep"})
+    assert prov.leakage_ok(fund_d) is None                                       # fundamental -> honest None
+    inter_d = AlphaDefinition(alpha_id="i", name="i", factor_ids=("close",),
+                              params={"family": "interaction", "combine": "product"})
+    assert prov.leakage_ok(inter_d) is None                                      # interaction -> honest None
+
+
 class _SpyEvaluator(AlphaEvaluator):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)

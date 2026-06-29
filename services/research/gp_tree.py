@@ -278,4 +278,19 @@ def make_tree_provider(price_store, instruments, *, event_times, fwd_horizon,
         return build_panel_periods(price_store, instruments, event_times=event_times,
                                    fwd_horizon=fwd_horizon, signal_fn=tree_signal_fn(tree),
                                    universe=universe)
+
+    def _leakage_ok(defn):
+        # 断点1 (方案A): the GP tree's signal is a trailing-closes function (eval_tree), so the REAL
+        # detect_leakage applies — we VERIFY PIT-safety per discovered expression rather than asserting it.
+        from services.research.leakage_evidence import leakage_ok_for_signal
+        ets = list(event_times)
+        lk_ets = ets[-80:] if len(ets) > 80 else ets
+        if len(lk_ets) < 4:
+            return None
+        bars = [b for inst in sorted(instruments)
+                for b in price_store.as_of(inst, lk_ets[-1]) if b.event_time >= lk_ets[0]]
+        times = lk_ets[len(lk_ets) // 2: len(lk_ets) // 2 + 3]
+        return leakage_ok_for_signal(tree_signal_fn(tree_from_params(defn.params)), bars, times)
+
+    provider.leakage_ok = _leakage_ok
     return provider
