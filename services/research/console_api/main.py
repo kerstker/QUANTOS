@@ -4074,6 +4074,10 @@ _ZOO_DIMENSIONS = [
     {"key": "crowding_score", "zh": "拥挤度", "en": "Crowding", "group": "拥挤/容量", "fmt": "signed2", "good": "low"},
     {"key": "capacity_adj_sharpe", "zh": "容量调整夏普", "en": "Cap-adj SR", "group": "拥挤/容量", "fmt": "signed2", "good": "high"},
     {"key": "mean_breadth", "zh": "广度", "en": "Breadth", "group": "广度", "fmt": "num1", "good": "high"},
+    {"key": "paper_ic", "zh": "纸面IC", "en": "Paper IC", "group": "时间/活体征", "fmt": "signed3", "good": "high"},
+    {"key": "paper_sharpe", "zh": "纸面夏普", "en": "Paper SR", "group": "时间/活体征", "fmt": "signed2", "good": "high"},
+    {"key": "perf_gap", "zh": "回测-纸面差", "en": "BT-paper gap", "group": "时间/活体征", "fmt": "signed2", "good": "low"},
+    {"key": "n_paper_periods", "zh": "纸面期数", "en": "Paper periods", "group": "时间/活体征", "fmt": "num1", "good": "high"},
 ]
 _ZOO_DIM_KEYS = tuple(d["key"] for d in _ZOO_DIMENSIONS)
 
@@ -4106,6 +4110,7 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
         alphas = st.all_alphas()
     except Exception:
         return []
+    pts = _load_paper_track_store()
     rows: List[Dict] = []
     for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9),
                     reverse=True):
@@ -4135,6 +4140,14 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
             "marginal_ir": _r(ej.get("marginal_ir"), 3), "crowding_score": _r(ej.get("crowding_score"), 3),
             "capacity_adj_sharpe": _r(ej.get("capacity_adj_sharpe"), 3), "mean_breadth": _r(ej.get("mean_breadth"), 1),
         }
+        # 时间/活体征 dimensions from the REAL forward paper-track store (out-of-sample paper P&L / IC);
+        # None when this alpha has no paper track (fail-closed). These are a research-only record and
+        # NEVER unlock any automatic promotion (auto_approved stays 0; non-human never APPROVED).
+        t = pts.track(aid) if pts is not None else None
+        row["paper_ic"] = t.get("paper_ic") if t else None
+        row["paper_sharpe"] = t.get("paper_sharpe") if t else None
+        row["perf_gap"] = t.get("perf_gap") if t else None
+        row["n_paper_periods"] = (t.get("n_periods") if t else None)
         rows.append(row)
     return rows
 
@@ -4157,6 +4170,8 @@ def _alpha_zoo_rows_synthetic() -> List[Dict]:
             "marginal_ir": round(c.get("rank_ic", 0.0), 3), "crowding_score": round((i % 4) * 0.15, 3),
             "capacity_adj_sharpe": round(c.get("sharpe", 0.0) * 0.9, 3),
             "mean_breadth": float(10 + i % 8),
+            # 时间/活体征: synthetic fallback has no real forward paper track -> honest None
+            "paper_ic": None, "paper_sharpe": None, "perf_gap": None, "n_paper_periods": None,
         })
     return rows
 

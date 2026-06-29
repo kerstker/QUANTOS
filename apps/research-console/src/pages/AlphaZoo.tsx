@@ -31,6 +31,10 @@ const FALLBACK_DIMS: ZooDimension[] = [
   { key: 'crowding_score', zh: '拥挤度', en: 'Crowding', group: '拥挤/容量', fmt: 'signed2', good: 'low' },
   { key: 'capacity_adj_sharpe', zh: '容量调整夏普', en: 'Cap-adj SR', group: '拥挤/容量', fmt: 'signed2', good: 'high' },
   { key: 'mean_breadth', zh: '广度', en: 'Breadth', group: '广度', fmt: 'num1', good: 'high' },
+  { key: 'paper_ic', zh: '纸面IC', en: 'Paper IC', group: '时间/活体征', fmt: 'signed3', good: 'high' },
+  { key: 'paper_sharpe', zh: '纸面夏普', en: 'Paper SR', group: '时间/活体征', fmt: 'signed2', good: 'high' },
+  { key: 'perf_gap', zh: '回测-纸面差', en: 'BT-paper gap', group: '时间/活体征', fmt: 'signed2', good: 'low' },
+  { key: 'n_paper_periods', zh: '纸面期数', en: 'Paper periods', group: '时间/活体征', fmt: 'num1', good: 'high' },
 ];
 
 const mockRows: AlphaZooRow[] = [

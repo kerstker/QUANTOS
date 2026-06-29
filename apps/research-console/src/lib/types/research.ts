@@ -1484,6 +1484,8 @@ export interface AlphaZooRow {
   net_sharpe: number | null; deflated_sharpe: number | null; pbo?: number | null;
   turnover?: number | null; marginal_ir?: number | null; crowding_score?: number | null;
   capacity_adj_sharpe?: number | null; mean_breadth?: number | null;
+  // 时间/活体征: real forward paper-track summary (out-of-sample paper P&L / IC), or null when no track
+  paper_ic?: number | null; paper_sharpe?: number | null; perf_gap?: number | null; n_paper_periods?: number | null;
   [key: string]: number | string | string[] | null | undefined;
 }
 export interface AlphaZooPayload {

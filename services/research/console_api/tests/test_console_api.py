@@ -405,6 +405,16 @@ def test_alpha_zoo_is_multidimensional():
     assert "generator" in row and "verdict" in row and isinstance(row["tags"], list)
 
 
+def test_alpha_zoo_has_paper_track_time_dimensions():
+    payload = client.get("/api/v1/console/alpha-zoo").json()
+    dims = {d["key"] for d in payload["dimensions"]}
+    assert {"paper_ic", "paper_sharpe", "perf_gap", "n_paper_periods"} <= dims
+    row = payload["rows"][0]
+    for k in ("paper_ic", "paper_sharpe", "perf_gap", "n_paper_periods"):
+        assert k in row                          # present (real value or null)
+    assert any(d["group"] == "时间/活体征" for d in payload["dimensions"])
+
+
 def test_backtest_results_aggregates_real_runs_or_fails_closed():
     response = client.get("/api/v1/console/backtest-results")
     assert response.status_code == 200
