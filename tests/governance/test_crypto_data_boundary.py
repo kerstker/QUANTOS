@@ -15,7 +15,8 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
-             os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py")]
+             os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
+             os.path.join(_ROOT, "tools", "frankfurter_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
