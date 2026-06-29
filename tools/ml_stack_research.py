@@ -40,6 +40,9 @@ def main(asset: str = "crypto") -> None:
     if not os.path.exists(db):
         print(f"no {db} — fetch first"); return
     insts, ets = _instruments_and_times(db)
+    if asset == "fx":                                          # 只留可交易浮动货币(剔 pegged/legacy/管制),
+        from tools.fx_gauntlet import TRADABLE                  # 与 FX 关卡同口径,避免污染 universe 误导
+        insts = [c for c in insts if c in set(TRADABLE)]
     store = CachingPITStore(SqlitePITStore(db, create=False))
     provider = make_data_periods_provider(store, insts, event_times=ets, fwd_horizon=fwd)
     factor_periods, factor_ret = {}, {}
@@ -54,9 +57,9 @@ def main(asset: str = "crypto") -> None:
     if fp.X.shape[0] < 500:
         print("too few aligned rows"); return
 
-    ts, te = 1000, 250
-    gbm = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="gbm")
-    ridge = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="ridge")
+    ts, te, cost = 1000, 250, 5.0                              # 5bps 换手成本:stacker 与单因子同口径(apples-to-apples)
+    gbm = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="gbm", cost_bps=cost)
+    ridge = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="ridge", cost_bps=cost)
 
     def _sr(rs):
         return round(sharpe(rs), 4) if len(rs) > 1 else None
@@ -64,8 +67,8 @@ def main(asset: str = "crypto") -> None:
     # single-factor-best OOS baseline (reuse the existing no-peek selector on per-factor net L/S returns)
     from services.research.backtest_engine.costs import CostModel
     from services.alpha.panel_backtest import run_panel_backtest
-    fr = {n: list(run_panel_backtest(p, CostModel(fee_bps=0.0, slippage_bps=2.0)).period_returns)
-          for n, p in factor_periods.items()}
+    fr = {n: list(run_panel_backtest(p, CostModel(fee_bps=0.0, slippage_bps=cost)).period_returns)
+          for n, p in factor_periods.items()}        # 与 stacker 同 cost,apples-to-apples
     common = min((len(v) for v in fr.values()), default=0)
     fr = {n: v[-common:] for n, v in fr.items() if len(v) >= 1500}
     single = walk_forward_selection_oos(fr, train_size=ts, test_size=te, embargo=fwd, top_k=1) if fr else {}
@@ -85,7 +88,7 @@ def main(asset: str = "crypto") -> None:
         "stack_gbm_oos_sharpe": _sr(gbm["oos_returns"]), "stack_gbm_folds": gbm["n_folds"],
         "stack_ridge_oos_sharpe": _sr(ridge["oos_returns"]), "stack_ridge_folds": ridge["n_folds"],
         "single_best_oos_sharpe": single.get("mean_oos_sharpe"), "single_best_name": _most_selected(single),
-        "trials": len(factor_periods) + 2,
+        "cost_bps": cost, "universe_size": len(insts), "trials": len(factor_periods) + 2,
     }
     g, r, s = result["stack_gbm_oos_sharpe"], result["stack_ridge_oos_sharpe"], result["single_best_oos_sharpe"]
     if g is not None and r is not None and g > max(r, (s or -9)) and g > 0:

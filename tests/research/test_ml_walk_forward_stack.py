@@ -28,3 +28,12 @@ def test_embargo_excludes_recent_train_rows():
     # tiny panel where without embargo there would be a fold but with a huge embargo there is none
     out = walk_forward_stack(_panel(n_periods=12), train_size=6, test_size=3, embargo=100, model="ridge")
     assert out["n_folds"] == 0 and out["oos_returns"] == []    # embargo starves every fold of train data
+
+
+def test_cost_bps_reduces_return_and_zero_is_gross():
+    p = _panel(predictive=True)
+    gross = walk_forward_stack(p, train_size=8, test_size=4, embargo=1, model="ridge", cost_bps=0.0)
+    net = walk_forward_stack(p, train_size=8, test_size=4, embargo=1, model="ridge", cost_bps=50.0)
+    assert gross["n_test_periods"] == net["n_test_periods"]
+    # cost_bps=0 -> unchanged (net==gross); cost_bps>0 -> turnover cost strictly lowers the total
+    assert sum(net["oos_returns"]) < sum(gross["oos_returns"])

@@ -21,13 +21,17 @@ def _ls_weights(scores: np.ndarray) -> np.ndarray:
 
 
 def walk_forward_stack(panel: FeaturePanel, *, train_size: int, test_size: int, embargo: int = 1,
-                       model: str = "gbm", seed: int = 0) -> dict:
+                       model: str = "gbm", seed: int = 0, cost_bps: float = 0.0) -> dict:
+    """oos_returns 为 NET:每期组合收益减换手成本 = (cost_bps/1e4) * sum|w_p - w_{p-1}|(逐标的对齐,缺失记
+    0 权重)。cost_bps=0(默认)-> net==gross,与既有调用/测试一致。"""
     rows = panel.rows
     if not rows:
         return {"oos_returns": [], "n_folds": 0, "n_test_periods": 0}
     periods = sorted({i for i, _ in rows})
     by_period = {p: np.array([k for k, (i, _) in enumerate(rows) if i == p]) for p in periods}
+    cost_frac = cost_bps / 1e4
     oos, n_folds, test_start = [], 0, train_size
+    prev_w: dict = {}                                          # instrument -> weight,跨连续测试期对齐算换手
     while test_start < len(periods):
         test_ps = periods[test_start: test_start + test_size]
         if not test_ps:
@@ -41,6 +45,11 @@ def walk_forward_stack(panel: FeaturePanel, *, train_size: int, test_size: int, 
             for p in test_ps:
                 idx = by_period[p]
                 w = _ls_weights(st.predict(panel.X[idx]))
-                oos.append(float(np.dot(w, panel.y[idx])))
+                curr_w = {panel.rows[k][1]: float(wi) for k, wi in zip(idx, w)}
+                turnover = sum(abs(curr_w.get(i, 0.0) - prev_w.get(i, 0.0))
+                               for i in set(curr_w) | set(prev_w))
+                gross = float(np.dot(w, panel.y[idx]))
+                oos.append(gross - cost_frac * turnover)       # NET of turnover cost
+                prev_w = curr_w
         test_start += test_size
     return {"oos_returns": oos, "n_folds": n_folds, "n_test_periods": len(oos)}
