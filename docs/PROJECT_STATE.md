@@ -294,8 +294,20 @@ HEAD 曾在 `e0f7c57`(截面 alpha 引擎 Batch 1);`validate.py` 813 测试全�
 当前结论:**没有任何经得起跨 regime 的加密因子;真杠杆=数据护城河(口子,见 §5)**。下一步候选:开数据口子(小盘币广度/
 另类/其它资产)或挂纸面跟踪。远端 = `https://github.com/kerstker/QUANTOS`(Private);本地两服务可能仍开着(uvicorn :8400 +
 Vite :3100)。
-—— 最新一轮(2026-06-29,断点2 前向 paper 追踪持久层)——
-HEAD 在 `0eca544`。经 ultracode 工作流串行实现 6 任务(store→advance→驱动器→三消费方,每任务 实现+独立验证)+
+—— 最新一轮(2026-06-29,断点1 关卡证据回喂——晋级链解冻)——
+HEAD 在 `2507a67`。四道断点全收口(断点2/3/4 + 现在断点1)。**断点1 方案A**:leakage 证据的"真源"
+原先缺失(没人给 `loop.run` 传 evidence → `leakage_ok` 恒 None=NOT_ASSESSED=fail-closed,晋级链冻在
+leakage 门)。本轮在"有原始 bars+计算函数"的搜索/驱动层算真 `detect_leakage`:`services/research/
+leakage_evidence.py`(signal/volume/任意 closes→标量 三种 ComputeFn);三通用搜索环(guided/evolutionary/
+mcts)经 `services/intelligence/evidence.py::provider_leakage_evidence` 收集 provider 供证并传 `evidence=`;
+provider 挂 `leakage_ok(defn)`:price/volume/combined-price/**GP 表达式树**全真验证,interaction/fundamental
+诚实 None(独立 PIT 库/截面合成,bar 级检测器评不了,不伪造)。`crypto_history_research` 驱动器亦接齐
+(regime 早开+PBO loop 自算→证据齐全)。容器化不变:证据永不授予晋级(auto_approved=0)。门绿(1047+ py)。
+**价值边界**:门"修真"(leakage 不再因 None 形同虚设),不让垃圾因子晋级——加密因子照样过不了 OOS。
+剩余(可选):其余单候选 crypto 驱动器的同款 1 行接线。
+
+—— 上一轮(2026-06-29,断点2 前向 paper 追踪持久层)——
+HEAD 曾在 `0eca544`。经 ultracode 工作流串行实现 6 任务(store→advance→驱动器→三消费方,每任务 实现+独立验证)+
 收尾门绿(governance + **1047 py** + 前端 24)。**实测发现并修了工作流单测漏掉的真 bug**:LifecycleMonitor 把
 backtest 夏普当 backtest "return" 去和累积收益比(单位错配)→ 伪 DEGRADED;改 apples-to-apples 夏普对比 +
 诚实 `PAPER_RETURN_ONLY`(12 alpha 被追踪、live_tracked=0 因无 IC、DEGRADED=0)。浏览器实测确认(真后端 :8400)。
