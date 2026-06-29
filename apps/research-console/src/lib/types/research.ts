@@ -1449,7 +1449,7 @@ export interface LifecycleMonitorPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   monitoring_mode: string;
   summary: {
-    total: number; state_counts: Record<string, number>; live_tracked: number;
+    total: number; state_counts: Record<string, number>; live_tracked: number; paper_tracked?: number;
     awaiting_review: number; needs_action: number; positive_sharpe: number; avg_backtest_ic: number;
   };
   rows: LifecycleRow[];

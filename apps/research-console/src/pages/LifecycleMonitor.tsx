@@ -12,8 +12,11 @@ import type { LifecycleMonitorPayload, LifecycleRow } from '@/lib/types/research
  * Alpha Lifecycle Monitor (Phase 6 surface). Reads the REAL experiment_registry: each alpha's lifecycle
  * STATE, real backtest IC / Sharpe / p-value / deflated-Sharpe and the immutable evaluation verdict.
  * Read-only. NO action control — promotion to APPROVED is human-only and live trading is not built
- * (L2_DRY_RUN_ONLY). HONESTY: there is no live / paper IC feed in L2, so `live_ic` is null and the
- * degradation recommendation is NO_LIVE_DATA — we never fabricate a live-vs-backtest decay verdict.
+ * (L2_DRY_RUN_ONLY). HONESTY: the forward paper-track store now feeds a REAL held-out paper Sharpe per
+ * alpha, so the recommendation can be a genuine PAPER_RETURN_ONLY (paper return holds up, no decay) or
+ * DEGRADED/RETIRED (real out-of-sample Sharpe drop). `live_ic` stays null because the offline source has
+ * per-period portfolio returns but no cross-sectional IC panel — we never fabricate an IC we cannot
+ * compute, and the paper track NEVER unlocks any automatic promotion (auto_approved=0).
  */
 
 const mockRows: LifecycleRow[] = [
@@ -29,7 +32,7 @@ const mockRows: LifecycleRow[] = [
 ];
 
 const mockPayload: LifecycleMonitorPayload['summary'] = {
-  total: 3, state_counts: { TESTING: 2, VALIDATION: 1 }, live_tracked: 0,
+  total: 3, state_counts: { TESTING: 2, VALIDATION: 1 }, live_tracked: 0, paper_tracked: 0,
   awaiting_review: 3, needs_action: 3, positive_sharpe: 2, avg_backtest_ic: 0.018,
 };
 
@@ -77,13 +80,16 @@ export default function LifecycleMonitor() {
         realData={usingBackend && payload?.data_provenance === 'EXPERIMENT_REGISTRY'}
         source={usingBackend ? 'EXPERIMENT_REGISTRY' : 'FRONTEND_LIFECYCLE_MOCK'} error={error} />
 
-      {/* Honesty: backtest-side fields are REAL (immutable experiment_registry artifacts). The live side is
-          null because L2_DRY_RUN_ONLY persists no live / paper realized IC — so the degradation engine has
-          no live input and the recommendation is NO_LIVE_DATA, not a fabricated DEGRADED. State today is
-          uniformly TESTING in the real registry — nothing has been promoted (auto_approved = 0). */}
+      {/* Honesty: backtest-side fields are REAL (immutable experiment_registry artifacts). The forward
+          paper-track store feeds a REAL held-out paper Sharpe per tracked alpha, compared APPLES-TO-APPLES
+          to the train Sharpe — PAPER_RETURN_ONLY means paper return holds up (no IC to certify further),
+          DEGRADED/RETIRED means a real out-of-sample Sharpe drop, NO_LIVE_DATA means no paper track yet.
+          `live_ic` stays null: the offline source has no cross-sectional IC panel. CAVEAT: held-out tails
+          are short (~24 periods) so the paper Sharpe is noise-dominated — read it as plumbing/coverage, not
+          proven edge. State is uniformly TESTING in the real registry — nothing promoted (auto_approved=0). */}
       <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-amber-200/90">
-        {bi('诚实标注:回测侧字段(IC/夏普/p值/紧缩夏普/裁决)来自真实 experiment_registry 不可变制品。实时 IC 在 L2_DRY_RUN_ONLY 下无实盘/纸面源,置空;衰减建议为 NO_LIVE_DATA(不伪造 DEGRADED)。真库当前状态均为 TESTING——尚无晋级(auto_approved=0)。在态天数无逐 Alpha 真实时长,省略。',
-            'Honest note: backtest-side fields (IC/Sharpe/p-value/deflated-SR/verdict) come from the real immutable experiment_registry. Live IC has no live/paper source under L2_DRY_RUN_ONLY and is null; the decay recommendation is NO_LIVE_DATA (no fabricated DEGRADED). The real registry is uniformly TESTING — nothing promoted (auto_approved=0). Per-alpha tenure is unavailable and omitted.')}
+        {bi('诚实标注:回测侧字段(IC/夏普/p值/紧缩夏普/裁决)来自真实 experiment_registry 不可变制品。前向 paper 追踪库现按真实「留出尾部」给每个被追踪 Alpha 算真样本外纸面夏普,与训练段夏普同口径对比——PAPER_RETURN_ONLY=纸面收益未衰退(但无 IC 故不下完全健康结论),DEGRADED/RETIRED=真样本外夏普下滑,NO_LIVE_DATA=尚无纸面追踪。实时 IC 仍置空:离线源无截面 IC 面板,不伪造算不出的 IC。注意:留出尾部很短(约 24 期),纸面夏普被噪声主导——当作管路/覆盖度看,不是已证实的 edge。真库状态均为 TESTING——尚无晋级(auto_approved=0)。',
+            'Honest note: backtest-side fields (IC/Sharpe/p-value/deflated-SR/verdict) come from the real immutable experiment_registry. The forward paper-track store now feeds a REAL held-out paper Sharpe per tracked alpha, compared apples-to-apples to the train Sharpe — PAPER_RETURN_ONLY = paper return holds up (no IC to certify full health), DEGRADED/RETIRED = a real out-of-sample Sharpe drop, NO_LIVE_DATA = no paper track yet. Live IC stays null: the offline source has no cross-sectional IC panel and we never fabricate an IC. CAVEAT: held-out tails are short (~24 periods) so the paper Sharpe is noise-dominated — read it as plumbing/coverage, not proven edge. The real registry is uniformly TESTING — nothing promoted (auto_approved=0).')}
       </div>
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
@@ -91,12 +97,15 @@ export default function LifecycleMonitor() {
           'Read-only · research / dry-run (L2) · the monitor only RECOMMENDS, it drives no state · promotion to APPROVED is human-only · live trading is not built')}
       </div>
 
-      <KpiStrip cols={6}>
+      <KpiStrip cols={7}>
         <StatTile label={bi('总数', 'Total')} value={String(summary.total)} accent />
         <StatTile label={bi('在测', 'Testing')} value={String(summary.state_counts['TESTING'] ?? 0)} tone="info"
           sub={bi(`${stateEntries.length} 个状态`, `${stateEntries.length} states`)} />
-        <StatTile label={bi('实盘追踪', 'Live-tracked')} value={String(summary.live_tracked)} tone="muted"
-          sub={bi('L2 无实盘', 'no live in L2')} />
+        <StatTile label={bi('纸面追踪', 'Paper-tracked')} value={String(summary.paper_tracked ?? 0)}
+          tone={(summary.paper_tracked ?? 0) > 0 ? 'info' : 'muted'}
+          sub={bi('真留出尾部', 'held-out tail')} />
+        <StatTile label={bi('实时 IC 追踪', 'Live-IC tracked')} value={String(summary.live_tracked)} tone="muted"
+          sub={bi('离线源无 IC', 'no IC in source')} />
         <StatTile label={bi('正夏普', 'Positive Sharpe')} value={String(summary.positive_sharpe)}
           tone={summary.positive_sharpe > 0 ? 'pos' : 'muted'}
           sub={bi(pctOf(summary.positive_sharpe, summary.total), pctOf(summary.positive_sharpe, summary.total))} />

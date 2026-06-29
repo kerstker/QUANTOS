@@ -993,11 +993,15 @@ def _lifecycle_rows_real(st) -> List[Dict]:
     """One lifecycle row per recorded alpha, from the REAL experiment_registry. backtest_ic / sharpe /
     pvalue / net_sharpe / deflated_sharpe / verdict are real immutable evaluation artifacts. live_ic is
     the REAL accumulated out-of-sample paper IC from the forward paper-track store when a track exists
-    for this alpha, else honestly None (no paper feed -> recommendation stays NO_LIVE_DATA, never a
-    fabricated DEGRADED). The paper track is a research-only record: it feeds the degradation engine's
-    recommendation but NEVER unlocks any automatic promotion (auto_approved stays 0; non-human never
-    APPROVED). days_in_state is None because evaluation as_of is a single batch timestamp, not a
-    per-alpha tenure. generator is derived from the heuristic operator (no real lineage)."""
+    AND has per-period IC; the current offline source has per-period portfolio returns but no
+    cross-sectional IC panel, so live_ic is honestly None even for paper-tracked alphas. The recommendation
+    is driven by the REAL held-out paper Sharpe vs the train-head Sharpe (apples-to-apples), with the
+    monitor's "missing IC" data-alert stripped (a metric we never compute must not masquerade as decay):
+    PAPER_RETURN_ONLY = paper return shows no degradation but IC isn't tracked; DEGRADED/RETIRED = a real
+    Sharpe drop; NO_LIVE_DATA = no paper track at all. The paper track is a research-only record: it feeds
+    the degradation engine's recommendation but NEVER unlocks any automatic promotion (auto_approved stays
+    0; non-human never APPROVED). days_in_state is None because evaluation as_of is a single batch
+    timestamp, not a per-alpha tenure. generator is derived from the heuristic operator (no real lineage)."""
     def _r(v, n):
         return round(v, n) if isinstance(v, (int, float)) else None
     try:
@@ -1025,16 +1029,27 @@ def _lifecycle_rows_real(st) -> List[Dict]:
             dj = {}
         operator = (dj.get("params") or {}).get("operator")
         # Live side from the REAL forward paper-track store: live_ic is the accumulated out-of-sample
-        # paper IC (None when this alpha has no paper track). When a paper track exists, the degradation
-        # engine computes a real live-vs-backtest recommendation; otherwise it stays NO_LIVE_DATA.
+        # paper IC (None when this alpha has no paper track, or — as with the current offline source —
+        # when no per-period cross-sectional IC was recorded). When a paper track exists, the degradation
+        # engine compares the held-out paper Sharpe to the train-head Sharpe (like-for-like, never a
+        # Sharpe-vs-cumulative-return mismatch); otherwise the recommendation stays NO_LIVE_DATA.
         t = pts.track(aid) if pts is not None else None
         live_ic = t["paper_ic"] if (t and t.get("paper_ic") is not None) else None
         if t and isinstance(t.get("paper_sharpe"), (int, float)):
             from services.alpha.degradation_monitor import monitor_alpha_health
             health = monitor_alpha_health(
-                {"return": (t.get("backtest_sharpe") or 0.0)},
-                {"ic": live_ic, "return": t.get("cum_return")})
-            recommendation = health["recommendation"]
+                {"return": t.get("backtest_sharpe")},
+                {"ic": live_ic, "return": t.get("paper_sharpe")})
+            # Judge only on signals we actually have: strip the monitor's "missing input" data-alert so a
+            # metric we never compute (per-period IC) cannot masquerade as a degradation. A real return/
+            # Sharpe drop still surfaces as DEGRADED/RETIRED; otherwise PAPER_RETURN_ONLY (paper return
+            # holds up, but IC is not tracked so we do not certify full health).
+            real_alerts = [al for al in health["alerts"] if al.get("metric") != "data"]
+            if real_alerts:
+                _ORD = {"OK": 0, "DEGRADED": 1, "PAUSED": 2, "RETIRED": 3}
+                recommendation = max((al["severity"] for al in real_alerts), key=lambda s: _ORD[s])
+            else:
+                recommendation = "PAPER_RETURN_ONLY"
         else:
             recommendation = "NO_LIVE_DATA"
         rows.append({
@@ -1092,6 +1107,7 @@ def _lifecycle_summary(rows: List[Dict]) -> Dict:
         "total": len(rows),
         "state_counts": state_counts,
         "live_tracked": sum(1 for r in rows if r["live_ic"] is not None),
+        "paper_tracked": sum(1 for r in rows if r.get("recommendation") not in (None, "NO_LIVE_DATA")),
         "awaiting_review": awaiting,
         "needs_action": awaiting,
         "positive_sharpe": sum(1 for s in sharpes if s > 0),

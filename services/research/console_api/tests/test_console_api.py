@@ -386,6 +386,46 @@ def test_lifecycle_live_ic_fails_closed_to_null_without_paper_track(tmp_path, mo
     assert payload["lifecycle_policy"]["live_ic_available"] is False
 
 
+def test_lifecycle_no_spurious_degraded_when_paper_beats_train(tmp_path, monkeypatch):
+    # UNITS + MISSING-IC honesty: the held-out paper Sharpe is compared to the TRAIN Sharpe (apples-to-
+    # apples), NOT to a cumulative return. When paper beats train and there is no per-period IC (the real
+    # offline source has none), the verdict must be the honest PAPER_RETURN_ONLY — never a spurious
+    # DEGRADED from a Sharpe-vs-cumret unit mismatch nor from a "missing IC" data-alert.
+    import services.research.console_api.main as m
+    from services.research.paper_trading.store import PaperTrackStore
+    db = tmp_path / "paper_track.db"
+    s = PaperTrackStore(str(db), create=True)
+    aid = m._lifecycle_monitor_payload()["rows"][0]["alpha_id"]
+    s.append_periods(aid, [(1000, 0.01, None, "OOS_TAIL"), (2000, 0.02, None, "OOS_TAIL"),
+                           (3000, 0.015, None, "OOS_TAIL")])   # ic=None, like the real driver
+    s.recompute_summary(aid, backtest_sharpe=0.3)              # train Sharpe LOWER than held-out paper Sharpe
+    monkeypatch.setattr(m, "_PAPER_TRACK_DB", str(db))
+    payload = m._lifecycle_monitor_payload()
+    row = next(r for r in payload["rows"] if r["alpha_id"] == aid)
+    assert row["live_ic"] is None                              # no per-period IC -> honestly null
+    assert row["recommendation"] == "PAPER_RETURN_ONLY"        # not a fabricated DEGRADED
+    assert payload["summary"]["paper_tracked"] >= 1            # honest coverage signal
+    assert payload["summary"]["live_tracked"] == 0             # IC still not tracked
+
+
+def test_lifecycle_real_sharpe_drop_is_degraded(tmp_path, monkeypatch):
+    # A genuine out-of-sample Sharpe collapse (train Sharpe >> paper Sharpe) MUST surface as DEGRADED/RETIRED,
+    # proving the stripped data-alert never masks a real degradation.
+    import services.research.console_api.main as m
+    from services.research.paper_trading.store import PaperTrackStore
+    from services.research.backtest_engine.metrics import sharpe
+    db = tmp_path / "paper_track.db"
+    s = PaperTrackStore(str(db), create=True)
+    aid = m._lifecycle_monitor_payload()["rows"][0]["alpha_id"]
+    rets = [0.05, -0.04, 0.045, -0.038, 0.03, -0.05]           # high-vol, near-zero mean -> low paper Sharpe
+    s.append_periods(aid, [(1000 * (i + 1), r, None, "OOS_TAIL") for i, r in enumerate(rets)])
+    bt = max(2.0, abs(sharpe(rets)) / 0.3 + 1.0)               # train Sharpe high enough that the gap >= 0.6
+    s.recompute_summary(aid, backtest_sharpe=round(bt, 4))
+    monkeypatch.setattr(m, "_PAPER_TRACK_DB", str(db))
+    row = next(r for r in m._lifecycle_monitor_payload()["rows"] if r["alpha_id"] == aid)
+    assert row["recommendation"] in ("DEGRADED", "RETIRED")    # real degradation, not PAPER_RETURN_ONLY
+
+
 def test_alpha_zoo_is_multidimensional():
     response = client.get("/api/v1/console/alpha-zoo")
     assert response.status_code == 200
