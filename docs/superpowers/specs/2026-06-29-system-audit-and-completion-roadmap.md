@@ -2,6 +2,9 @@
 
 > 2026-06-29。9 智能体全量取证审计(每条结论带 `file:line`)。用户指令顺序:**① 先排查整个系统 → ② 再完善功能 → ③ 最后做前端指挥中心**。本文是 ① 的结论与 ②③ 的路线。
 
+> **2026-06-29 PM 增补(本文下方为上午审计原文,部分已被执行而过时——以本增补 + `docs/PROJECT_STATE.md` 为准):**
+> 路线图的接线工作已大体完成。**四道 ALPHA 流水线断点全闭合**:断点1 关卡证据回喂 evaluator(真 `detect_leakage`/regime/PBO 证据经全部搜索环喂门)、断点2 前向 paper 追踪持久层(`paper_track.db`)、断点3 console 真组合(优化器+真收益)、断点4 衰退/退役调度器(`services/alpha/maintenance.py`)。新模块:`services/research/paper_trading/{store,advance,health}`、`services/research/leakage_evidence`、`services/intelligence/evidence`。**§2 真实度分布已过时**——REAL 显著增多(NONE 那批 AlphaZoo/LifecycleMonitor 等已升真),console_api 现 mostly REAL,前端 36→37 页(+FX Research)。**换资产类**:`tools/frankfurter_fetch`(ECB/FX 免 key 声明式 adapter)+ `fx_research`/`fx_gauntlet` 驱动器 + `/api/v1/console/fx-research` + FX 研究页。门禁 ~1014→~1047 测试。**研究结论(诚实)**:加密日线、可交易 FX 截面趋势均**无 OOS edge**(见记忆 `crypto-research-findings`/`fx-research-findings`);瓶颈是数据/信号类别,关卡能抓海市蜃楼。`§5 之后的"待完善"清单大多已做`。
+
 ## 1. 一句话结论
 
 **后端比文档说的真实得多——真正的缺口是"接线"(把已存在且已测的真引擎接进 `console_api`),不是"造引擎"。** 全门禁 ~1014 测试通过;`l2_ok = true`。
