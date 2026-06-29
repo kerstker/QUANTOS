@@ -68,3 +68,38 @@ def leakage_ok_over_times(compute: ComputeFn, bars: Sequence[Bar], target_times:
 def signal_leakage_ok(op: str, window: int, bars: Sequence[Bar], target_times: Sequence[int]) -> Optional[bool]:
     """Convenience: build the SIGNAL_OP ComputeFn and assess leakage over the sampled decision times."""
     return leakage_ok_over_times(signal_compute_fn(op, window), bars, target_times)
+
+
+def volume_compute_fn(op: str, window: int, *, feature_id: str = "f") -> ComputeFn:
+    """Like signal_compute_fn but for a VOLUME_OP, which reads the trailing (closes, volumes) history. Same
+    PIT property: a correct trailing volume op reads no future bar, so perturbing future price OR volume
+    cannot change a past value -> detected leak-free; one that peeks at future volume is caught. `op` must be
+    a key of VOLUME_OPS."""
+    from services.research.volume_signals import VOLUME_OPS
+    fn = VOLUME_OPS[op]
+
+    def compute(bars: Sequence[Bar]) -> list:
+        by_inst: dict = {}
+        for b in bars:
+            by_inst.setdefault(b.instrument_id, []).append(b)
+        out: list = []
+        for inst, bs in by_inst.items():
+            bs = sorted(bs, key=lambda b: b.event_time)
+            closes: list = []
+            vols: list = []
+            for b in bs:
+                closes.append(b.close)
+                vols.append(b.volume)
+                s = fn(closes, vols, window)
+                if s is not None and math.isfinite(s):
+                    out.append(FeatureValue(feature_id=feature_id, instrument_id=inst,
+                                            event_time=b.event_time, knowledge_time=b.knowledge_time,
+                                            value=float(s)))
+        return out
+
+    return compute
+
+
+def volume_leakage_ok(op: str, window: int, bars: Sequence[Bar], target_times: Sequence[int]) -> Optional[bool]:
+    """Convenience: build the VOLUME_OP ComputeFn and assess leakage over the sampled decision times."""
+    return leakage_ok_over_times(volume_compute_fn(op, window), bars, target_times)

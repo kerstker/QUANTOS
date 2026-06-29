@@ -12,7 +12,7 @@ from datetime import date as _date
 from typing import Callable, Optional, Sequence
 
 from services.alpha.panel_backtest import PanelPeriod
-from .leakage_evidence import signal_leakage_ok
+from .leakage_evidence import signal_leakage_ok, volume_leakage_ok
 from .signals import SIGNAL_OPS
 
 
@@ -125,6 +125,19 @@ def make_volume_periods_provider(store, instruments: Sequence[str], *,
         fn = VOLUME_OPS[op]
         return build_panel_periods(store, instruments, event_times=event_times, fwd_horizon=fwd_horizon,
                                    volume_signal_fn=lambda c, v: fn(c, v, window), universe=universe)
+
+    def _leakage_ok(defn):
+        # 断点1 (方案A): real leakage detection for a VOLUME factor over the bounded recent bar slice.
+        ets = list(event_times)
+        lk_ets = ets[-80:] if len(ets) > 80 else ets
+        if len(lk_ets) < 4:
+            return None
+        bars = [b for inst in sorted(instruments)
+                for b in store.as_of(inst, lk_ets[-1]) if b.event_time >= lk_ets[0]]
+        times = lk_ets[len(lk_ets) // 2: len(lk_ets) // 2 + 3]
+        return volume_leakage_ok(defn.params["operator"], int(defn.params["window"]), bars, times)
+
+    provider.leakage_ok = _leakage_ok
     return provider
 
 

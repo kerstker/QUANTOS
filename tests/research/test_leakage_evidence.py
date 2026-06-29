@@ -3,7 +3,7 @@ a peeking compute is caught (False), and an unassessable window is honestly None
 from quantos.contracts.data import Bar
 from quantos.contracts.feature import FeatureValue
 from services.research.leakage_evidence import (
-    leakage_ok_over_times, signal_compute_fn, signal_leakage_ok,
+    leakage_ok_over_times, signal_compute_fn, signal_leakage_ok, volume_leakage_ok,
 )
 
 
@@ -42,3 +42,13 @@ def test_no_assessable_time_is_none_fail_closed():
     bars = _bars([10, 11, 12, 13, 14])
     cf = signal_compute_fn("momentum", 3)
     assert leakage_ok_over_times(cf, bars, target_times=[]) is None    # nothing assessed -> honest None
+
+
+def test_trailing_volume_op_is_leakage_ok():
+    closes = [10, 11, 12, 11, 13, 14, 13, 15, 16, 15]
+    vols = [5, 6, 4, 7, 5, 8, 6, 9, 7, 10]
+    bars = [Bar(instrument_id="BTC", event_time=i, knowledge_time=i,
+                open=float(c), high=float(c) + 1.0, low=max(0.1, float(c) - 1.0), close=float(c), volume=float(v))
+            for i, (c, v) in enumerate(zip(closes, vols))]
+    # a VOLUME_OP reads only trailing (closes, volumes) -> PIT-safe at every sampled decision time.
+    assert volume_leakage_ok("vol_momentum", 3, bars, target_times=[5, 6, 7]) is True

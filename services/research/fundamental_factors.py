@@ -91,4 +91,15 @@ def make_combined_periods_provider(price_store, fund_store, instruments: Sequenc
                 event_times=event_times, fwd_horizon=fwd_horizon,
                 mode=defn.params.get("mode", "ratio_to_price"), universe=universe)
         return price_provider(defn)
+
+    def _leakage_ok(defn):
+        # 断点1 (方案A): price-family hypotheses delegate to the price provider's REAL bar-based detector.
+        # Fundamental-family ("metric") factors read a SEPARATE fundamental PIT store; the bar-based leakage
+        # detector cannot assess that path, so we return None (honest NOT-ASSESSED -> evaluator fail-closed) —
+        # the fundamental side's PIT-safety is enforced by fund_store.as_of, not faked here.
+        if "metric" in defn.params:
+            return None
+        return price_provider.leakage_ok(defn)
+
+    provider.leakage_ok = _leakage_ok
     return provider

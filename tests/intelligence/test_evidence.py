@@ -62,6 +62,40 @@ def test_data_provider_exposes_working_leakage_ok():
     assert prov.leakage_ok(_defn(op="momentum", w=3)) is True        # trailing op is PIT-safe -> a REAL True
 
 
+def _vol_store():
+    st = SqlitePITStore(":memory:", create=True)
+    insts = ["A", "B", "C"]
+    for k, inst in enumerate(insts):
+        for i in range(14):
+            px = 100.0 + i + k
+            vol = 100.0 + 10 * i + 5 * k + (3 if i % 2 else 0)       # varying volume so vol ops are finite
+            st.add(inst, Bar(instrument_id=inst, event_time=i + 1, knowledge_time=i + 1,
+                             open=px, high=px + 1, low=px - 1, close=px, volume=vol))
+    return st, insts, list(range(1, 15))
+
+
+def test_volume_provider_exposes_working_leakage_ok():
+    from services.research.panel_builder import make_volume_periods_provider
+    st, insts, ets = _vol_store()
+    prov = make_volume_periods_provider(st, insts, event_times=ets, fwd_horizon=1)
+    assert hasattr(prov, "leakage_ok")
+    d = AlphaDefinition(alpha_id="v", name="v", factor_ids=("close",),
+                        params={"operator": "vol_momentum", "window": "3"})
+    assert prov.leakage_ok(d) is True                                # trailing volume op -> real True
+
+
+def test_combined_provider_delegates_price_and_is_none_for_fundamental():
+    from services.research.fundamental_factors import make_combined_periods_provider
+    st, insts, ets = _store()
+    prov = make_combined_periods_provider(st, None, insts, event_times=ets, fwd_horizon=1)
+    assert hasattr(prov, "leakage_ok")
+    price_d = _defn("p", op="momentum", w=3)
+    fund_d = AlphaDefinition(alpha_id="f", name="f", factor_ids=("close",),
+                             params={"operator": "momentum", "window": "3", "metric": "ep"})
+    assert prov.leakage_ok(price_d) is True                          # delegated to the price detector
+    assert prov.leakage_ok(fund_d) is None                           # fundamental: honest NOT-ASSESSED
+
+
 class _SpyEvaluator(AlphaEvaluator):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
