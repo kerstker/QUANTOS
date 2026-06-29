@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from services.research.console_api.main import app
@@ -324,7 +325,11 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["monitoring_policy"]["authorizes_live_trading"] is False
 
 
-def test_lifecycle_monitor_is_read_only_and_honest_about_live():
+def test_lifecycle_monitor_is_read_only_and_honest_about_live(tmp_path, monkeypatch):
+    # Pin the paper-track source to an absent path so this test exercises the no-live-feed honesty
+    # contract (the real paper_track.db, when present, is covered by the dedicated tests below).
+    import services.research.console_api.main as m
+    monkeypatch.setattr(m, "_PAPER_TRACK_DB", str(tmp_path / "absent-paper-track.db"))
     response = client.get("/api/v1/console/lifecycle-monitor")
     assert response.status_code == 200
     payload = response.json()
@@ -334,7 +339,7 @@ def test_lifecycle_monitor_is_read_only_and_honest_about_live():
     # Real path reads the experiment_registry; synthetic fallback is the deterministic candidate set.
     assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"}
     assert payload["summary"]["total"] == len(payload["rows"]) >= 1
-    # HONESTY: L2 has no live/paper IC source — every row's live side stays null and the degradation
+    # HONESTY: with no paper-track feed, every row's live side stays null and the degradation
     # recommendation is NO_LIVE_DATA (never a fabricated DEGRADED). live_tracked must therefore be 0.
     assert payload["summary"]["live_tracked"] == 0
     for row in payload["rows"]:
@@ -349,6 +354,36 @@ def test_lifecycle_monitor_is_read_only_and_honest_about_live():
     assert policy["live_ic_available"] is False
     # Real degradation thresholds are surfaced read-only.
     assert payload["thresholds"]["min_ic_retention"] > 0
+
+
+def test_lifecycle_live_ic_reads_paper_track_when_present(tmp_path, monkeypatch):
+    import services.research.console_api.main as m
+    from services.research.paper_trading.store import PaperTrackStore
+    db = tmp_path / "paper_track.db"
+    s = PaperTrackStore(str(db), create=True)
+    # need a real alpha_id from the registry-backed lifecycle rows; pick the first
+    payload0 = m._lifecycle_monitor_payload()
+    aid = payload0["rows"][0]["alpha_id"]
+    s.append_periods(aid, [(1000, 0.01, 0.05, "OOS_TAIL"), (2000, 0.02, 0.07, "OOS_TAIL")])
+    s.recompute_summary(aid, backtest_sharpe=1.5)
+    monkeypatch.setattr(m, "_PAPER_TRACK_DB", str(db))
+    payload = m._lifecycle_monitor_payload()
+    row = next(r for r in payload["rows"] if r["alpha_id"] == aid)
+    assert row["live_ic"] == pytest.approx(0.06, abs=1e-6)    # real paper IC, no longer null
+    assert payload["summary"]["live_tracked"] >= 1
+
+
+def test_lifecycle_live_ic_fails_closed_to_null_without_paper_track(tmp_path, monkeypatch):
+    # HONESTY (no paper_track.db -> CI / fresh checkout): every row's live side stays null and the
+    # degradation recommendation is NO_LIVE_DATA (never a fabricated DEGRADED); live_tracked == 0.
+    import services.research.console_api.main as m
+    monkeypatch.setattr(m, "_PAPER_TRACK_DB", str(tmp_path / "absent-paper-track.db"))
+    payload = m._lifecycle_monitor_payload()
+    assert payload["summary"]["live_tracked"] == 0
+    for row in payload["rows"]:
+        assert row["live_ic"] is None
+        assert row["recommendation"] == "NO_LIVE_DATA"
+    assert payload["lifecycle_policy"]["live_ic_available"] is False
 
 
 def test_alpha_zoo_is_multidimensional():

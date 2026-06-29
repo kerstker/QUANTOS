@@ -992,16 +992,19 @@ def _degradation_thresholds_snapshot() -> Dict:
 def _lifecycle_rows_real(st) -> List[Dict]:
     """One lifecycle row per recorded alpha, from the REAL experiment_registry. backtest_ic / sharpe /
     pvalue / net_sharpe / deflated_sharpe / verdict are real immutable evaluation artifacts. live_ic is
-    honestly None: L2_DRY_RUN_ONLY has no live / paper feed that persists a realized IC, so the
-    degradation engine cannot compute a real live-vs-backtest verdict — recommendation is NO_LIVE_DATA
-    (not a fabricated DEGRADED). days_in_state is None because evaluation as_of is a single batch
-    timestamp, not a per-alpha tenure. generator is derived from the heuristic operator (no real lineage)."""
+    the REAL accumulated out-of-sample paper IC from the forward paper-track store when a track exists
+    for this alpha, else honestly None (no paper feed -> recommendation stays NO_LIVE_DATA, never a
+    fabricated DEGRADED). The paper track is a research-only record: it feeds the degradation engine's
+    recommendation but NEVER unlocks any automatic promotion (auto_approved stays 0; non-human never
+    APPROVED). days_in_state is None because evaluation as_of is a single batch timestamp, not a
+    per-alpha tenure. generator is derived from the heuristic operator (no real lineage)."""
     def _r(v, n):
         return round(v, n) if isinstance(v, (int, float)) else None
     try:
         alphas = st.all_alphas()
     except Exception:
         return []
+    pts = _load_paper_track_store()
     rows: List[Dict] = []
     for a in sorted(alphas, key=lambda x: (x.get("sharpe") if x.get("sharpe") is not None else -1e9),
                     reverse=True):
@@ -1021,6 +1024,19 @@ def _lifecycle_rows_real(st) -> List[Dict]:
         except (json.JSONDecodeError, TypeError):
             dj = {}
         operator = (dj.get("params") or {}).get("operator")
+        # Live side from the REAL forward paper-track store: live_ic is the accumulated out-of-sample
+        # paper IC (None when this alpha has no paper track). When a paper track exists, the degradation
+        # engine computes a real live-vs-backtest recommendation; otherwise it stays NO_LIVE_DATA.
+        t = pts.track(aid) if pts is not None else None
+        live_ic = t["paper_ic"] if (t and t.get("paper_ic") is not None) else None
+        if t and isinstance(t.get("paper_sharpe"), (int, float)):
+            from services.alpha.degradation_monitor import monitor_alpha_health
+            health = monitor_alpha_health(
+                {"return": (t.get("backtest_sharpe") or 0.0)},
+                {"ic": live_ic, "return": t.get("cum_return")})
+            recommendation = health["recommendation"]
+        else:
+            recommendation = "NO_LIVE_DATA"
         rows.append({
             "alpha_id": aid,
             "state": str(a.get("state") or "UNKNOWN"),
@@ -1033,8 +1049,8 @@ def _lifecycle_rows_real(st) -> List[Dict]:
             "deflated_sharpe": _r(ej.get("deflated_sharpe"), 4),
             "turnover": _r(ej.get("turnover"), 4),
             "verdict": str(ej.get("verdict") or "—"),
-            "live_ic": None,
-            "recommendation": "NO_LIVE_DATA",
+            "live_ic": live_ic,
+            "recommendation": recommendation,
             "alerts": [],
         })
     return rows
@@ -3805,6 +3821,19 @@ def _load_experiment_store():
     try:
         from services.research.experiment_registry.store import SqliteExperimentStore
         return SqliteExperimentStore(_EXP_DB, create=False) if os.path.exists(_EXP_DB) else None
+    except Exception:
+        return None
+
+
+_PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
+
+
+def _load_paper_track_store():
+    """Read-only handle on the offline forward paper-track store (real out-of-sample paper P&L / IC), or
+    None when absent (CI / fresh checkout) -> the live side fails closed to null / NO_LIVE_DATA."""
+    try:
+        from services.research.paper_trading.store import PaperTrackStore
+        return PaperTrackStore(_PAPER_TRACK_DB, create=False) if os.path.exists(_PAPER_TRACK_DB) else None
     except Exception:
         return None
 
