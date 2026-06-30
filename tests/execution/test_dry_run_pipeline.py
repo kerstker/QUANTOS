@@ -203,3 +203,11 @@ def test_vol_target_returns_passthrough_then_scales():
 def test_multi_period_vol_target_curve_present():
     r = _mp(vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
     assert len(r.detail["equity_curve_vt"]) == len(r.detail["equity_curve"]) == 3
+
+
+def test_multi_period_records_net_exposure():
+    r = _mp()
+    assert all("net" in p and "gross" in p for p in r.detail["equity_curve"])
+    # period 1: BTC +5000@100 / ETH -10000@50 = +500k -500k = 0 (dollar-neutral at clean-lot entry)
+    assert abs(r.detail["equity_curve"][0]["net"]) < 1.0
+    assert "avg_net_exposure_pct" in r.pnl and r.pnl["avg_net_exposure_pct"] >= 0.0

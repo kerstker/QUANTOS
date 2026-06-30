@@ -235,9 +235,14 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
         equity_t = reconcile(all_fills, marks=prices_t, initial_capital=aum).equity + cum_cash
         ret = (equity_t / prev_equity - 1.0) if prev_equity else 0.0
         prev_equity = equity_t
+        # post-rebalance dollar exposure at this period's prices: net≈0 proves dollar-neutrality
+        # (integer-lot rounding leaks net exposure; smaller |net| = cleaner neutrality).
+        net_notional = sum(q * prices_t.get(i, 0.0) for i, q in held.items())
+        gross_notional = sum(abs(q * prices_t.get(i, 0.0)) for i, q in held.items())
         curve.append({"t": int(t), "equity": round(equity_t, 6), "ret": round(ret, 8),
                       "approved": len(screened["approved"]), "rejected": len(screened["rejected"]),
-                      "fills": len(filled["fills"])})
+                      "fills": len(filled["fills"]), "net": round(net_notional, 2),
+                      "gross": round(gross_notional, 2)})
         audit.append(event_id=_det_id("per", run_id, t), actor=f"dry_run:{strategy_id}", action="PERIOD",
                      timestamp=int(t), target=str(t),
                      metadata={"equity": str(round(equity_t, 2)), "ret": str(round(ret, 6)),
@@ -258,7 +263,9 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     pnl = {"total_return": round(final_equity / aum - 1.0, 6), "sharpe": _ann_sharpe(returns),
            "max_drawdown": _max_drawdown_from_returns(returns), "final_equity": round(final_equity, 6),
            "total_funding": round(cum_cash, 6), "n_periods": len(periods), "total_rejected": tot_rej,
-           "residual": round(residual, 9)}
+           "residual": round(residual, 9),
+           "avg_net_exposure_pct": round(statistics.fmean([abs(p["net"]) / aum for p in curve]), 6)
+           if curve else 0.0}
     return DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
