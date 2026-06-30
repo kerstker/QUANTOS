@@ -57,6 +57,13 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 `factor_set.py`(协同集 + novelty)、`subtree_stats.py`、`sample_weights.py`、`factor_timing.py`、`frac_diff.py`。
 **容器化/生命周期**:`agent_loop`(ResearchAgentLoop)、`lifecycle` 状态机、`guardrails`、Actor。
 **组合/风险**:`portfolio`(risk_model/construction/attribution)、`research_risk` 门。
+**执行/干跑(端到端能跑的系统,2026-06-30)**:`risk/pre_trade`(23 检查电池 + latched `KillSwitch`,
+**运行时 chokepoint**)、`execution/{intent_builder,dry_run_pipeline,dry_run_store}` —— `run_dry_run_pipeline`
+把权重→目标手数→意图→**逐意图过门(fail-closed,latched→全拒)**→干跑适配器纸面成交(**绝不真发**)→
+平均成本对账(恒等式残差≈0)→哈希链审计→可复现 `DryRunRun` 落 `data/cache/dry_run.db`。驱动器
+`tools/dry_run_carry.py`(carry 最新腿 × vol-target 杠杆端到端;首跑流动 58 币→23 名组合,门批准 23/拒 0、
+纸面成交 23、成本 9.9bps×换手=约 −$956、残差 0.0)。`trading/dry_run_adapters` 无券商 SDK。把预交易门从
+"已测死代码"变成"运行时可证强制"。**实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。**
 **持久化**:`experiment_registry`(stdlib sqlite)、**`paper_trading/{store,advance,health}.py` 前向 paper 追踪库
 (append-only `data/cache/paper_track.db`,真 train/paper 切分,驱动器 `tools/crypto_paper_track.py`;喂 LifecycleMonitor
 建议 / 衰退维护 / Alpha Zoo 时间维。`live_ic` 仍 null——离线源无截面 IC 面板;纸面夏普在 ~24 期尾巴是噪声非 edge)**。
@@ -325,6 +332,13 @@ backtest 夏普当 backtest "return" 去和累积收益比(单位错配)→ 伪 
 诚实 `PAPER_RETURN_ONLY`(12 alpha 被追踪、live_tracked=0 因无 IC、DEGRADED=0)。浏览器实测确认(真后端 :8400)。
 **诚实第一**:纸面夏普 +4.8..+6.4 是 ~24 期尾巴的噪声,非已证实 edge——和"无跨 regime edge"结论一致。
 容器化不变(auto_approved=0、非人不晋级、无库 fail-closed)。本地提交,未推远端。
+
+**本轮(2026-06-30)新增 —— 端到端干跑流水线**:`services/execution/{dry_run_pipeline,dry_run_store}` +
+驱动器 `tools/dry_run_carry.py`(见 §3「执行/干跑」)。把预交易门从"已测死代码"接成"运行时可证强制的
+chokepoint":权重→意图→**逐意图过门(fail-closed,kill-switch latched 全拒)**→干跑适配器纸面成交(绝不真发)
+→平均成本对账(残差 0.0)→哈希链审计→可复现 `DryRunRun`。spec/plan:`docs/superpowers/{specs,plans}/
+2026-06-30-dry-run-pipeline*`。11 新测试 + 全门绿(1093 passed)。这是用户"系统要能用、最终通往实盘"
+战略判断的落地;实盘永远 = 同接口换真券商适配器 + 人工批准(非目标)。
 
 —— 历史锚点 ——
 HEAD 曾在 `3bb6002`(机构级开发流程落地)附近;`main==master`;`validate.py` 全绿。

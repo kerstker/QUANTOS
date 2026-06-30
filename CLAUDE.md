@@ -95,6 +95,16 @@ Real, tested backend engines (`*_TESTED` in the audit):
   health; fail-closed deployment/version-pin gate. All tested.
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
+- `services/execution/dry_run_pipeline.py` + `dry_run_store.py` — **端到端干跑流水线**
+  (the successor that turns the pre-trade gate from "tested dead code" into a RUNTIME
+  chokepoint). `run_dry_run_pipeline`: 权重→目标手数→`build_intents`→逐意图过
+  `PreTradeRiskGate.evaluate` + kill-switch (**fail-closed**, latched→全拒)→干跑适配器
+  受理(纸面、**绝不真发**)→`PaperFill`→`reconcile` 平均成本 PnL(恒等式残差≈0)→
+  `GlobalAuditLog` 哈希链→可复现 `DryRunRun` 落 `data/cache/dry_run.db`. Deterministic core
+  (墙钟/seed only at the driver boundary). Driver `tools/dry_run_carry.py` runs the carry
+  book end-to-end (latest COMPOSITE legs × vol-target leverage). 11 tests + governance
+  (no broker/network import; orchestrator NOT in research_runner). 实盘 = 同接口换真券商
+  适配器 + 人工批准 = 显式非目标.
 - `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
