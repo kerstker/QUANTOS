@@ -1402,6 +1402,9 @@ export interface CarryReadinessPayload extends ConsolePayloadBase {
 export interface DryRunPnl {
   total_pnl?: number; net_pnl?: number; gross_pnl?: number; costs?: number;
   equity?: number; turnover?: number; residual?: number; positions?: Record<string, number>;
+  // multi-period summary (run_multi_period_dry_run)
+  total_return?: number; sharpe?: number; max_drawdown?: number; final_equity?: number;
+  total_funding?: number; n_periods?: number; total_rejected?: number;
 }
 
 export interface DryRunRunRow {
@@ -1414,7 +1417,12 @@ export interface DryRunRunRow {
   rejected_reasons: string[];
   pnl: DryRunPnl;
   audit_root: string;
-  detail: { n_fills?: number; n_adapter_rejected?: number; targets?: Record<string, number> };
+  detail: {
+    n_fills?: number; n_adapter_rejected?: number; targets?: Record<string, number>;
+    mode?: string; n_periods?: number; cadence?: string;
+    equity_curve?: { t: number; equity: number; ret: number; approved?: number; rejected?: number; fills?: number }[];
+    equity_curve_vt?: { t: number; equity: number; ret: number }[];
+  };
 }
 
 export interface DryRunPipelinePayload extends ConsolePayloadBase {

@@ -30,6 +30,25 @@ const VERDICT_ZH: Record<string, string> = {
 const fmtUsd = (v?: number) => (v == null ? '—' : `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
 const fmtResidual = (v?: number) => (v == null ? '—' : Math.abs(v) < 1e-6 ? '≈0' : v.toExponential(1));
 
+// Pure SVG two-line equity curve (raw=accent solid, vol-target=info dashed). Deterministic; no Date/random.
+function EquityCurve({ raw, vt }: { raw: { equity: number }[]; vt: { equity: number }[] }) {
+  const W = 640, H = 160, pad = 6;
+  const all = [...raw.map(p => p.equity), ...vt.map(p => p.equity)];
+  if (!raw.length || !all.length) return null;
+  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+  const path = (pts: { equity: number }[]) => pts.map((p, i) => {
+    const x = pad + (i / Math.max(pts.length - 1, 1)) * (W - 2 * pad);
+    const y = H - pad - ((p.equity - lo) / span) * (H - 2 * pad);
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="equity curve">
+      <path d={path(raw)} fill="none" stroke="var(--accent, #6ea8fe)" strokeWidth={1.5} />
+      {vt.length > 0 && <path d={path(vt)} fill="none" stroke="var(--info, #4fd1c5)" strokeWidth={1.2} strokeDasharray="3 2" />}
+    </svg>
+  );
+}
+
 export default function DryRunPipeline() {
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DryRunPipelinePayload>(
     s => fetchDryRunSnapshot(s));
@@ -38,6 +57,7 @@ export default function DryRunPipeline() {
   const latest = (has ? (p.latest as DryRunRunRow) : null);
   const pnl = latest?.pnl ?? {};
   const nFills = latest?.detail?.n_fills ?? 0;
+  const mp = latest?.detail?.mode === 'multi_period' ? latest.detail : null;  // multi-period rolling run
 
   // pipeline stages (with the latest run's live numbers) — the chokepoint story, left to right
   const stages = [
@@ -107,6 +127,29 @@ export default function DryRunPipeline() {
         <StatTile label={bi('对账残差', 'Residual')} value={fmtResidual(pnl.residual)}
           tone={pnl.residual != null && Math.abs(pnl.residual) < 1e-6 ? 'pos' : 'warn'} sub={bi('恒等式', 'identity')} />
       </KpiStrip>
+
+      {mp && (
+        <>
+          <KpiStrip cols={5}>
+            <StatTile label={bi('总收益', 'Total return')} value={pnl.total_return == null ? '—' : `${(pnl.total_return * 100).toFixed(1)}%`}
+              tone={(pnl.total_return ?? 0) >= 0 ? 'pos' : 'neg'} accent />
+            <StatTile label={bi('夏普(周→年)', 'Sharpe (wk→yr)')} value={pnl.sharpe == null ? '—' : signed(pnl.sharpe, 2)} tone="info" />
+            <StatTile label={bi('最大回撤', 'Max drawdown')} value={pnl.max_drawdown == null ? '—' : `${(pnl.max_drawdown * 100).toFixed(0)}%`} tone="warn" />
+            <StatTile label={bi('周期数', 'Periods')} value={String(mp.n_periods ?? mp.equity_curve?.length ?? 0)} tone="muted" sub={bi('周度', 'weekly')} />
+            <StatTile label={bi('累计被门拒', 'Total gate-rejected')} value={String(latest?.n_rejected ?? 0)}
+              tone={(latest?.n_rejected ?? 0) > 0 ? 'neg' : 'muted'} />
+          </KpiStrip>
+          <Panel eyebrow={bi('净值曲线', 'EQUITY CURVE')}
+            title={bi('门强制下的滚动净值(蓝实线=raw,虚线=vol-target 压尾)· 含资金费现金流',
+              'Gate-enforced rolling equity (solid=raw, dashed=vol-target) · funding cash-flow included')}>
+            <EquityCurve raw={mp.equity_curve ?? []} vt={mp.equity_curve_vt ?? []} />
+            <div className="mt-1 text-2xs text-muted">
+              {bi(`累计资金费 $${(pnl.total_funding ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · 对账残差 ${fmtResidual(pnl.residual)}(价格腿恒等式)· 多数收益来自 L/S 价差、回撤大,funding 是较小稳定项(诚实)`,
+                `funding $${(pnl.total_funding ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · reconciliation residual ${fmtResidual(pnl.residual)} · most P&L is L/S price spread (volatile), funding is the smaller steady term (honest)`)}
+            </div>
+          </Panel>
+        </>
+      )}
 
       <Panel eyebrow={bi('流水线', 'PIPELINE')} title={bi('一条连续的链(最新一次干跑)', 'One continuous flow (latest dry-run)')}>
         <div className="flex flex-wrap items-stretch gap-1.5">
