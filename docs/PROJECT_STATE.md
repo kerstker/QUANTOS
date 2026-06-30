@@ -68,7 +68,10 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 两条净值曲线→多期 `DryRunRun.detail.equity_curve`(首跑:流动 58 币×313 周,门批准 15908/拒 67,总收益 126.7%、
 夏普 0.45、回撤 77%、累计资金费 $166k、残差 1e-9)。**已上 console**:`/api/v1/console/dry-run` + 干跑页
 `DryRunPipeline.tsx`(单期 + 多期 SVG 净值曲线,nav「干跑流水线」,浏览器验证过)。诚实:周度滚动 carry 多数收益是
-L/S 价差(非 beta 中性、回撤大),funding 较小稳定项——执行现实把理想化 carry 的尾巴暴露出来。**实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。**
+L/S 价差(非 beta 中性、回撤大),funding 较小稳定项——执行现实把理想化 carry 的尾巴暴露出来。**美元中性实验**(每期记
+`net`/`avg_net_exposure_pct`,console 出 KPI):证伪"回撤=舍入净敞口"假设——$1M 时净敞口已仅 ~1.8% 且 77% 回撤
+$1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场敞口/舍入;funding(~16.6% 累计)是骑在波动价差上的
+稳定边、无法干净隔离。**实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。**
 **持久化**:`experiment_registry`(stdlib sqlite)、**`paper_trading/{store,advance,health}.py` 前向 paper 追踪库
 (append-only `data/cache/paper_track.db`,真 train/paper 切分,驱动器 `tools/crypto_paper_track.py`;喂 LifecycleMonitor
 建议 / 衰退维护 / Alpha Zoo 时间维。`live_ic` 仍 null——离线源无截面 IC 面板;纸面夏普在 ~24 期尾巴是噪声非 edge)**。
