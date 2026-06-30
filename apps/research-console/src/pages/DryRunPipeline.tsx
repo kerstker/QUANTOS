@@ -89,8 +89,14 @@ export default function DryRunPipeline() {
     { key: 'rej', header: bi('门拒绝', 'Rejected'), align: 'right', mono: true,
       render: r => <span className={r.n_rejected ? 'text-neg' : 'text-faint'}>{r.n_rejected}</span> },
     { key: 'fills', header: bi('成交', 'Fills'), align: 'right', mono: true, render: r => r.detail?.n_fills ?? 0 },
-    { key: 'pnl', header: bi('净 PnL', 'Net PnL'), align: 'right', mono: true,
-      render: r => <span className={(r.pnl?.total_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.pnl?.total_pnl)}</span> },
+    { key: 'pnl', header: bi('收益', 'Return'), align: 'right', mono: true,
+      render: r => {
+        // multi-period rows carry total_return (%), single-snapshot rows carry total_pnl ($)
+        const mpRet = r.pnl?.total_return, usd = r.pnl?.total_pnl;
+        const v = mpRet != null ? mpRet : usd;
+        return <span className={(v ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>
+          {mpRet != null ? `${(mpRet * 100).toFixed(1)}%` : fmtUsd(usd)}</span>;
+      } },
     { key: 'resid', header: bi('对账残差', 'Residual'), align: 'right', mono: true, render: r => fmtResidual(r.pnl?.residual) },
     { key: 'audit', header: bi('审计根', 'Audit'), mono: true, render: r => <span className="text-2xs text-faint">{r.audit_root.slice(0, 10)}</span> },
   ];
