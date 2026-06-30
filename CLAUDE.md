@@ -108,9 +108,12 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `DryRunRun.detail.equity_curve`. **Surfaced read-only** on `/api/v1/console/dry-run` + page
   `DryRunPipeline.tsx` (nav 「干跑流水线」; single-snapshot + multi-period SVG 净值曲线, browser-verified).
   Honest finding: 周度滚动 carry 多数收益是 L/S 价差(非 beta 中性、回撤大 ~77%),funding 是较小稳定项——
-  执行现实把理想化 carry 的尾巴暴露出来. 17 tests + contract + governance (no broker/network import;
-  `services/execution` 不 import `tools/`; orchestrator NOT in research_runner). 实盘 = 同接口换真券商
-  适配器 + 人工批准 = 显式非目标.
+  执行现实把理想化 carry 的尾巴暴露出来(美元中性实验:净敞口已 ~1.8%、回撤 $1M↔$100M 规模不变 → 截面价差本身,
+  非舍入). 17 tests + contract + governance (no broker/network import; `services/execution` 不 import `tools/`;
+  orchestrator NOT in research_runner). 策略无关已验证:第二驱动器 `tools/dry_run_trend_multi.py`(日线
+  dist_from_high+momentum 趋势,`cash_flow_fn=None`)走同一条 `run_multi_period_dry_run`(18 币×47 周,
+  +7.5%/回撤 37%),与 carry 共存 dry_run.db(console 历史表两条并列)——流水线是策略无关的执行骨架,非 carry 专用.
+  实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
 - `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
