@@ -1,7 +1,9 @@
 from quantos.contracts.alpha import Actor, ActorKind
 
-from services.execution.dry_run_pipeline import plan_target_quantities, screen_intents
+from services.execution.dry_run_pipeline import (plan_target_quantities, reconcile_run,
+                                                 screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
+from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
@@ -55,6 +57,32 @@ def test_fat_finger_rejected_fail_closed():
     intents = build_intents({"BTC": 1000}, {}, strategy_id="carry")  # qty 1000 >> fat_finger 5
     out = screen_intents(intents, gate=_gate(fat_finger=5), ctx_factory=_ctx_factory({"BTC": 100.0}))
     assert not out["approved"] and out["rejected"]
+
+
+def test_simulate_fills_produces_paper_fills_no_live():
+    intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
+    out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunAdapterEngine(),
+                         run_id="r1", timestamp=1000)
+    assert len(out["fills"]) == 1
+    f = out["fills"][0]
+    assert f.instrument_id == "BTC" and f.quantity == 10 and f.price == 100.0
+    assert all(r.live_trading_allowed is False and r.dry_run is True for r in out["reports"])  # never live
+
+
+def test_simulate_fills_with_cost_charges_commission():
+    intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
+    out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunAdapterEngine(),
+                         run_id="r1", timestamp=1000, cost_bps=5.0)
+    assert round(out["fills"][0].commission, 6) == 0.5  # notional 1000 * 5bps = 0.5
+
+
+def test_reconcile_run_returns_pnl_summary():
+    intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
+    out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunAdapterEngine(),
+                         run_id="r1", timestamp=1000)
+    pnl = reconcile_run(out["fills"], {"BTC": 101.0}, initial_capital=1e7)
+    # bought 10 @100, marked 101 -> unrealized +10 ; reconciliation identity holds (residual ~0)
+    assert pnl["total_pnl"] == 10.0 and pnl["residual"] < 1e-6 and pnl["positions"] == {"BTC": 10}
 
 
 def test_target_quantities_round_and_skip_bad_price():
