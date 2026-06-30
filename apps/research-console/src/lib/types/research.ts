@@ -1399,6 +1399,34 @@ export interface CarryReadinessPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface DryRunPnl {
+  total_pnl?: number; net_pnl?: number; gross_pnl?: number; costs?: number;
+  equity?: number; turnover?: number; residual?: number; positions?: Record<string, number>;
+}
+
+export interface DryRunRunRow {
+  run_id: string;
+  strategy_id: string;
+  timestamp: number;
+  n_intents: number;
+  n_approved: number;
+  n_rejected: number;
+  rejected_reasons: string[];
+  pnl: DryRunPnl;
+  audit_root: string;
+  detail: { n_fills?: number; n_adapter_rejected?: number; targets?: Record<string, number> };
+}
+
+export interface DryRunPipelinePayload extends ConsolePayloadBase {
+  data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;            // DRY_RUN_OK | NO_RUN
+  n_runs: number;
+  latest: DryRunRunRow | Record<string, never>;
+  runs: DryRunRunRow[];
+  safety_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

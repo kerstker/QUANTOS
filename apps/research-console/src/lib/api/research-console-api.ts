@@ -8,6 +8,7 @@ import type {
   CryptoLivePayload,
   FxResearchPayload,
   CarryReadinessPayload,
+  DryRunPipelinePayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   ResearchRunsComparePayload,
@@ -246,6 +247,10 @@ export function fetchFxResearchSnapshot(signal?: AbortSignal) {
 
 export function fetchCarryReadinessSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<CarryReadinessPayload>('/api/v1/console/carry-readiness', signal);
+}
+
+export function fetchDryRunSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<DryRunPipelinePayload>('/api/v1/console/dry-run', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

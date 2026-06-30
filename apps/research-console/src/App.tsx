@@ -14,6 +14,7 @@ const CompareRuns = lazy(() => import('./pages/CompareRuns'));
 const CryptoLive = lazy(() => import('./pages/CryptoLive'));
 const FxResearch = lazy(() => import('./pages/FxResearch'));
 const CarryReadiness = lazy(() => import('./pages/CarryReadiness'));
+const DryRunPipeline = lazy(() => import('./pages/DryRunPipeline'));
 const AlphaFactory = lazy(() => import('./pages/AlphaFactory'));
 const AlphaZoo = lazy(() => import('./pages/AlphaZoo'));
 const DslExplorer = lazy(() => import('./pages/DslExplorer'));
@@ -75,6 +76,7 @@ const nav: NavGroup[] = [
     { to: '/research/portfolio', zh: '组合研究', en: 'Portfolio', icon: 'PF' },
     { to: '/research/population-optimizer', zh: '种群优化器', en: 'Optimizer', icon: 'PO' },
     { to: '/research/signal-to-portfolio', zh: '信号→组合', en: 'Signal→Book', icon: 'SP' },
+    { to: '/research/dry-run', zh: '干跑流水线', en: 'Dry-Run', icon: 'DR' },
     { to: '/research/risk', zh: '风险仪表', en: 'Risk', icon: 'RK' },
     { to: '/research/events', zh: '事件流', en: 'Events', icon: 'EV' },
   ]},
@@ -124,6 +126,7 @@ export default function App() {
           <Route path="/research/alpha-graph" element={<AlphaGraph />} />
           <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
           <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />
+          <Route path="/research/dry-run" element={<DryRunPipeline />} />
           <Route path="/research/experiments" element={<Experiments />} />
           <Route path="/research/data-catalog" element={<DataCatalog />} />
           <Route path="/research/validation" element={<Validation />} />

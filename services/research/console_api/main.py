@@ -15,6 +15,7 @@ from typing import Dict, List
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from services.execution.dry_run_store import DryRunStore
 from services.research.factor_engine.domain.model import compute_ic, compute_max_drawdown, compute_sharpe
 from services.research.factor_set import select_synergistic_set
 from services.research.paper_trading.domain.pnl import PnLAttributor
@@ -3762,6 +3763,7 @@ _FX_GAUNTLET_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_gauntlet_s
 _CARRY_STRATEGY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_strategy.json")
 _CARRY_WALKFWD_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_walkforward.json")
 _CARRY_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_capacity.json")
+_DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
 
 
 # --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
@@ -4972,6 +4974,44 @@ def _carry_readiness_payload() -> Dict:
 @app.get("/api/v1/console/carry-readiness")
 async def carry_readiness() -> Dict:
     return _carry_readiness_payload()
+
+
+def _dry_run_payload() -> Dict:
+    """End-to-end DRY-RUN pipeline runs, surfaced read-only: the pre-trade gate as a RUNTIME chokepoint.
+
+    Each DryRunRun is one continuous flow — 信号/权重 → 意图 → 逐意图过门(fail-closed,kill-switch latched→全拒)
+    → 干跑适配器纸面成交(绝不真发)→ 平均成本对账 → 哈希链审计. Reads the append-only DryRunStore
+    (`data/cache/dry_run.db`, written OUT-OF-GATE by `tools/dry_run_carry.py`). Read-only, never trades.
+    Fail-closed: no db / unreadable -> well-formed empty + SYNTHETIC provenance + verdict NO_RUN (CI / fresh
+    checkout). This is the proof the gate is wired into a runtime path, not tested dead code."""
+    runs = []
+    present = os.path.exists(_DRY_RUN_DB)
+    if present:
+        try:
+            runs = DryRunStore(_DRY_RUN_DB, create=False).all_runs()
+        except Exception:
+            present, runs = False, []
+    has = bool(present and runs)
+    latest = runs[-1] if runs else {}
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_DRY_RUN_OFFLINE_SNAPSHOT" if has else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": has,
+        "verdict": "DRY_RUN_OK" if has else "NO_RUN",
+        "n_runs": len(runs),
+        "latest": latest,
+        "runs": runs,
+        "safety_note": ("端到端干跑:预交易风控门是运行时 chokepoint(fail-closed,kill-switch latched 全拒),"
+                        "干跑适配器纸面成交、绝不真发,平均成本对账恒等式残差≈0,哈希链审计。只读、零下单/券商/凭证;"
+                        "L2_DRY_RUN_ONLY。实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。"),
+    }
+
+
+@app.get("/api/v1/console/dry-run")
+async def dry_run() -> Dict:
+    return _dry_run_payload()
 
 
 if __name__ == "__main__":
