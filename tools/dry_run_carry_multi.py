@@ -27,6 +27,12 @@ _DB = os.path.join("data", "cache", "crypto_funding.db")
 _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _OUT = os.path.join("data", "cache", "dry_run.db")
+# $1M keeps the 8.5bps tiered slippage cost-realistic (at $100M real market impact rises — that's the
+# separate capacity analysis, not modelled here). Dollar-neutrality finding (verified scale-invariant
+# $1M↔$100M): the book is already ~dollar-neutral (avg net exposure ~1.8%); the 77% drawdown is NOT
+# rounding/net-market exposure — it is the inherent cross-sectional crypto-spread vol. Funding (~16.6%
+# cumulative) is the steady edge riding on that volatile spread; it cannot be cleanly isolated because
+# the carry trade inherently holds the spread.
 _AUM = 1_000_000.0
 _WEEK_MS = 7 * 24 * 3600 * 1000
 
