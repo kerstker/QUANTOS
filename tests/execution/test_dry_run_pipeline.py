@@ -1,7 +1,8 @@
 from quantos.contracts.alpha import Actor, ActorKind
 
-from services.execution.dry_run_pipeline import (plan_target_quantities, reconcile_run,
-                                                 run_dry_run_pipeline, screen_intents, simulate_fills)
+from services.execution.dry_run_pipeline import (_vol_target_returns, plan_target_quantities, reconcile_run,
+                                                 run_dry_run_pipeline, run_multi_period_dry_run,
+                                                 screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
@@ -135,3 +136,70 @@ def test_target_quantities_drops_zero_and_missing_price():
     px = {"BTC": 100.0, "ETH": 50.0}  # XRP price missing
     q = plan_target_quantities(w, px, aum=1000.0)
     assert q == {"ETH": 10}  # BTC rounds to 0 -> dropped ; XRP missing -> dropped
+
+
+# --- Multi-period rolling dry-run --------------------------------------------
+
+def _mp_ctx(intent, prices, period):
+    return RiskContext(
+        account=AccountRiskState(account_id="paper", cash=1e9, equity=1e9, day_pnl=0.0, peak_equity=1e9,
+                                 positions=()),
+        market=MarketContext(instrument_id=intent.instrument_id, known=True,
+                             reference_price=prices.get(intent.instrument_id, 1.0), market_open=True,
+                             price_as_of=period, est_daily_volume=1e12, instrument_vol=0.3),
+        strategy=StrategyApproval(strategy_id="carry", approved=True, approval_id="ok"),
+        now=period, max_staleness=10 ** 15)
+
+
+_PERIODS = [1, 2, 3]
+_W = {1: {"BTC": 0.5, "ETH": -0.5}, 2: {"BTC": 0.5, "ETH": -0.5}, 3: {"BTC": 0.4, "ETH": -0.6}}
+_PX = {1: {"BTC": 100.0, "ETH": 50.0}, 2: {"BTC": 110.0, "ETH": 48.0}, 3: {"BTC": 105.0, "ETH": 52.0}}
+
+
+def _mp(gate=None, cash_flow_fn=None, vol_target=None):
+    return run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=gate or _gate(),
+        ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target)
+
+
+def test_multi_period_benign_curve():
+    r = _mp()
+    assert r.detail["mode"] == "multi_period" and r.detail["n_periods"] == 3
+    assert len(r.detail["equity_curve"]) == 3
+    assert r.pnl["residual"] < 1e-6                       # price-leg reconciliation identity holds
+    assert r.pnl["final_equity"] == r.detail["equity_curve"][-1]["equity"]
+    assert r.n_approved > 0 and r.audit_root
+
+
+def test_multi_period_kill_switch_latched_zero_fills():
+    ks = KillSwitch()
+    gate = _gate(kill_switch=ks)
+    ks.arm(Actor(actor_id="ops", kind=ActorKind.SYSTEM), "halt", at=1)  # latched (permanent) before the run
+    r = _mp(gate=gate)
+    assert r.n_approved == 0 and all(p["fills"] == 0 for p in r.detail["equity_curve"])
+    assert all(abs(p["equity"] - 1e6) < 1e-6 for p in r.detail["equity_curve"])  # flat at aum, no fills/funding
+
+
+def test_multi_period_funding_flows_into_equity():
+    flat = _mp(cash_flow_fn=None).pnl["final_equity"]
+    with_fund = _mp(cash_flow_fn=lambda held, prices, period: 1000.0 if held else 0.0).pnl["final_equity"]
+    assert with_fund > flat
+
+
+def test_multi_period_deterministic():
+    a, b = _mp(), _mp()
+    assert (a.audit_root, a.pnl, a.detail["equity_curve"]) == (b.audit_root, b.pnl, b.detail["equity_curve"])
+
+
+def test_vol_target_returns_passthrough_then_scales():
+    rets = [0.01, -0.01, 0.02, -0.02, 0.03]
+    out = _vol_target_returns(rets, target_ann=0.10, lookback=2, lev_cap=3.0, ppy=52)
+    assert out[:2] == rets[:2]                     # warmup passthrough
+    assert len(out) == len(rets)
+    assert out[2] != rets[2]                       # scaled once trailing vol is available
+
+
+def test_multi_period_vol_target_curve_present():
+    r = _mp(vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
+    assert len(r.detail["equity_curve_vt"]) == len(r.detail["equity_curve"]) == 3

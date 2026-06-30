@@ -11,6 +11,8 @@ RiskContext 由注入的 ctx_factory 装配(核心不硬编码账户/安全装�
 from __future__ import annotations
 
 import hashlib
+import math
+import statistics
 from typing import Callable, Dict, Sequence
 
 from quantos.contracts.risk import RiskDecisionType
@@ -159,3 +161,107 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         audit_root=str(audit_root),
         detail={"n_fills": len(filled["fills"]), "targets": targets,
                 "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"])})
+
+
+# --- Multi-period rolling dry-run (P&L curve) --------------------------------
+
+def _ann_sharpe(returns, ppy: int = 52) -> float:
+    """年化夏普(周度→√52)。样本不足/零波动 → 0。"""
+    if len(returns) < 2:
+        return 0.0
+    sd = statistics.pstdev(returns)
+    return round(statistics.fmean(returns) / sd * math.sqrt(ppy), 4) if sd else 0.0
+
+
+def _max_drawdown_from_returns(returns) -> float:
+    eq, peak, mdd = 1.0, 1.0, 0.0
+    for r in returns:
+        eq *= (1.0 + r)
+        peak = max(peak, eq)
+        if peak > 0:
+            mdd = max(mdd, (peak - eq) / peak)
+    return round(mdd, 4)
+
+
+def _vol_target_returns(returns, *, target_ann: float = 0.10, lookback: int = 8, lev_cap: float = 3.0,
+                        ppy: int = 52):
+    """PIT 尾随实现波动杠杆标量(同 carry vol-target):lev_t = min(cap, 目标每期波动 / 尾随实现波动),
+    用 t 之前的收益估计(前 lookback 期原样穿过)。重塑风险、不造 edge。"""
+    target_per = target_ann / math.sqrt(ppy)
+    out = []
+    for i in range(len(returns)):
+        if i < lookback:
+            out.append(returns[i])
+            continue
+        sd = statistics.pstdev(returns[i - lookback:i]) or 1e-9
+        out.append(min(lev_cap, target_per / sd) * returns[i])
+    return out
+
+
+def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
+                             strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
+                             vol_target: dict = None) -> DryRunRun:
+    """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
+    价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
+    ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。"""
+    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]))
+    audit = GlobalAuditLog()
+    audit.append(event_id=_det_id("mstart", run_id), actor=f"dry_run:{strategy_id}", action="MULTI_START",
+                 timestamp=int(periods[0]) if periods else 0, target=run_id,
+                 metadata={"n_periods": str(len(periods)), "aum": str(aum)})
+
+    held: dict = {}                       # instrument -> signed qty
+    all_fills: list = []
+    cum_cash = 0.0
+    curve: list = []
+    tot_appr = tot_rej = 0
+    prev_equity = aum
+    for t in periods:
+        prices_t = prices_by_period[t]
+        targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum)
+        intents = build_intents(targets, held, strategy_id=strategy_id)
+        screened = screen_intents(intents, gate=gate,
+                                  ctx_factory=lambda i, _p=prices_t, _t=t: ctx_factory(i, _p, _t))
+        tot_appr += len(screened["approved"])
+        tot_rej += len(screened["rejected"])
+        filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
+                                run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps)
+        for f in filled["fills"]:
+            all_fills.append(f)
+            held[f.instrument_id] = held.get(f.instrument_id, 0) + (
+                f.quantity if f.side == PaperSide.BUY else -f.quantity)
+        if cash_flow_fn is not None:
+            cum_cash += float(cash_flow_fn(held, prices_t, t))
+        equity_t = reconcile(all_fills, marks=prices_t, initial_capital=aum).equity + cum_cash
+        ret = (equity_t / prev_equity - 1.0) if prev_equity else 0.0
+        prev_equity = equity_t
+        curve.append({"t": int(t), "equity": round(equity_t, 6), "ret": round(ret, 8),
+                      "approved": len(screened["approved"]), "rejected": len(screened["rejected"]),
+                      "fills": len(filled["fills"])})
+        audit.append(event_id=_det_id("per", run_id, t), actor=f"dry_run:{strategy_id}", action="PERIOD",
+                     timestamp=int(t), target=str(t),
+                     metadata={"equity": str(round(equity_t, 2)), "ret": str(round(ret, 6)),
+                               "approved": str(len(screened["approved"])),
+                               "rejected": str(len(screened["rejected"]))})
+
+    returns = [p["ret"] for p in curve]
+    vt_curve: list = []
+    if vol_target is not None and curve:
+        e = aum
+        for p, r in zip(curve, _vol_target_returns(returns, **vol_target)):
+            e *= (1.0 + r)
+            vt_curve.append({"t": p["t"], "equity": round(e, 6), "ret": round(r, 8)})
+
+    final_equity = curve[-1]["equity"] if curve else aum
+    residual = (reconcile(all_fills, marks=prices_by_period[periods[-1]], initial_capital=aum)
+                .reconciliation_residual()) if periods else 0.0
+    pnl = {"total_return": round(final_equity / aum - 1.0, 6), "sharpe": _ann_sharpe(returns),
+           "max_drawdown": _max_drawdown_from_returns(returns), "final_equity": round(final_equity, 6),
+           "total_funding": round(cum_cash, 6), "n_periods": len(periods), "total_rejected": tot_rej,
+           "residual": round(residual, 9)}
+    return DryRunRun(
+        run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
+        n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
+        pnl=pnl, audit_root=str(audit.seal().head_hash),
+        detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
+                "equity_curve": curve, "equity_curve_vt": vt_curve})
