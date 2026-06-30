@@ -1,7 +1,7 @@
 from quantos.contracts.alpha import Actor, ActorKind
 
 from services.execution.dry_run_pipeline import (plan_target_quantities, reconcile_run,
-                                                 screen_intents, simulate_fills)
+                                                 run_dry_run_pipeline, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
@@ -21,6 +21,14 @@ def _gate(kill_switch=None, fat_finger=10 ** 9):
         max_turnover=1e9, max_participation_rate=1e9, max_instrument_vol=10.0, daily_loss_limit=1e15,
         max_drawdown=1.0)
     return PreTradeRiskGate(limits, kill_switch=kill_switch)
+
+
+def _armed_gate():
+    """A gate whose kill-switch is already latched (GLOBAL) — the gate binds THIS switch's state."""
+    ks = KillSwitch()
+    gate = _gate(kill_switch=ks)
+    ks.arm(Actor(actor_id="ops", kind=ActorKind.SYSTEM), "halt", at=1000)
+    return gate
 
 
 def _ctx_factory(prices):
@@ -83,6 +91,36 @@ def test_reconcile_run_returns_pnl_summary():
     pnl = reconcile_run(out["fills"], {"BTC": 101.0}, initial_capital=1e7)
     # bought 10 @100, marked 101 -> unrealized +10 ; reconciliation identity holds (residual ~0)
     assert pnl["total_pnl"] == 10.0 and pnl["residual"] < 1e-6 and pnl["positions"] == {"BTC": 10}
+
+
+def _pipeline(ks=None):
+    return run_dry_run_pipeline(
+        weights={"BTC": 0.5, "ETH": -0.5}, prices={"BTC": 100.0, "ETH": 50.0}, current_positions={},
+        aum=1e6, gate=_gate(kill_switch=ks), ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0})
+
+
+def test_end_to_end_benign_produces_run():
+    r = _pipeline()
+    assert r.strategy_id == "carry" and r.n_intents == 2 and r.n_approved == 2 and r.n_rejected == 0
+    assert r.detail["n_fills"] == 2 and r.audit_root and isinstance(r.pnl, dict)
+    assert r.pnl["residual"] < 1e-6  # reconciliation identity holds end-to-end
+
+
+def test_kill_switch_latched_zero_fills():
+    # gate holds a latched kill-switch -> every intent rejected at the chokepoint -> zero fills
+    r = run_dry_run_pipeline(
+        weights={"BTC": 0.5}, prices={"BTC": 100.0}, current_positions={}, aum=1e6,
+        gate=_armed_gate(), ctx_factory=_ctx_factory({"BTC": 100.0}), adapter=DryRunAdapterEngine(),
+        strategy_id="carry", timestamp=1000)
+    assert r.n_approved == 0 and r.detail["n_fills"] == 0 and r.n_rejected >= 1
+
+
+def test_deterministic_same_input_same_run():
+    a, b = _pipeline(), _pipeline()
+    assert (a.run_id, a.n_intents, a.n_approved, a.n_rejected, a.audit_root, a.pnl, a.detail) == \
+           (b.run_id, b.n_intents, b.n_approved, b.n_rejected, b.audit_root, b.pnl, b.detail)
 
 
 def test_target_quantities_round_and_skip_bad_price():

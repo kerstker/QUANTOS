@@ -14,6 +14,9 @@ import hashlib
 from typing import Callable, Dict, Sequence
 
 from quantos.contracts.risk import RiskDecisionType
+from services.execution.dry_run_store import DryRunRun
+from services.execution.intent_builder import build_intents
+from services.monitoring.audit_log import GlobalAuditLog
 from services.research.paper_trading.domain.models import FillMethod, OrderSide as PaperSide, PaperFill
 from services.research.paper_trading.domain.reconciliation import reconcile
 from services.trading.dry_run_adapters.domain.models import DryRunCommand
@@ -116,3 +119,43 @@ def reconcile_run(fills, marks: Dict[str, float], initial_capital: float) -> dic
         "residual": round(res.reconciliation_residual(), 9),
         "positions": {k: int(v) for k, v in res.positions.items()},
     }
+
+
+def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
+                         current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
+                         adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
+                         initial_capital: float = 1e7, cost_bps: float = 0.0) -> DryRunRun:
+    """端到端干跑编排器(薄、确定性):权重→目标手数→意图→门 chokepoint(fail-closed)→干跑受理(不真发)
+    →纸面成交→对账→哈希链审计→DryRunRun。墙钟/seed 在调用方边界(timestamp/adapter)注入;此函数无 RNG/墙钟。
+    kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。"""
+    run_id = _det_id(strategy_id, timestamp, tuple(sorted(weights.items())))
+    audit = GlobalAuditLog()
+    # AuditEvent.metadata is dict[str,str] — every value MUST be a string.
+    audit.append(event_id=_det_id("start", run_id), actor=f"dry_run:{strategy_id}", action="PIPELINE_START",
+                 timestamp=timestamp, target=run_id,
+                 metadata={"aum": str(aum), "n_weights": str(len(weights))})
+
+    targets = plan_target_quantities(weights, prices, aum)
+    intents = build_intents(targets, current_positions, strategy_id=strategy_id)
+    screened = screen_intents(intents, gate=gate, ctx_factory=ctx_factory)
+    for intent, reasons in screened["rejected"]:
+        audit.append(event_id=_det_id("rej", run_id, intent.instrument_id), actor=f"dry_run:{strategy_id}",
+                     action="INTENT_REJECTED", timestamp=timestamp, target=intent.instrument_id,
+                     metadata={"reasons": ",".join(str(r) for r in reasons)})
+
+    filled = simulate_fills(screened["approved"], prices, adapter=adapter, run_id=run_id,
+                            timestamp=timestamp, cost_bps=cost_bps)
+    for f in filled["fills"]:
+        audit.append(event_id=_det_id("fill", run_id, f.instrument_id), actor=f"dry_run:{strategy_id}",
+                     action="DRY_RUN_FILL", timestamp=timestamp, target=f.instrument_id,
+                     metadata={"qty": str(f.quantity), "price": str(f.price), "side": f.side.value})
+    pnl = reconcile_run(filled["fills"], marks or prices, initial_capital)
+    audit_root = audit.seal().head_hash
+
+    return DryRunRun(
+        run_id=run_id, strategy_id=strategy_id, timestamp=timestamp, n_intents=len(intents),
+        n_approved=len(screened["approved"]), n_rejected=len(screened["rejected"]),
+        rejected_reasons=[rr for _, rs in screened["rejected"] for rr in rs], pnl=pnl,
+        audit_root=str(audit_root),
+        detail={"n_fills": len(filled["fills"]), "targets": targets,
+                "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"])})
