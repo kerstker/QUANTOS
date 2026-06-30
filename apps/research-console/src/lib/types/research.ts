@@ -1404,7 +1404,7 @@ export interface DryRunPnl {
   equity?: number; turnover?: number; residual?: number; positions?: Record<string, number>;
   // multi-period summary (run_multi_period_dry_run)
   total_return?: number; sharpe?: number; max_drawdown?: number; final_equity?: number;
-  total_funding?: number; n_periods?: number; total_rejected?: number;
+  total_funding?: number; n_periods?: number; total_rejected?: number; avg_net_exposure_pct?: number;
 }
 
 export interface DryRunRunRow {
