@@ -33,7 +33,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/phase-3a-readiness": ("", ("readiness",)),
     "/api/v1/console/architecture": ("", (
         "current_level", "target_level", "phase3a_decision", "implementation_authorized",
-        "architecture_score", "modules", "data_flows", "gaps", "safety_boundary")),
+        "architecture_score", "inventory", "modules", "data_flows", "gaps", "safety_boundary")),
     "/api/v1/console/experiments": ("", (
         "registry_mode", "summary", "experiments", "stage_counts", "lineage_policy")),
     "/api/v1/console/data-catalog": ("", (
@@ -133,6 +133,9 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/carry-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_CARRY_OFFLINE_SNAPSHOT"},
     # dry-run pipeline: REAL DryRunStore runs when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
+    # architecture: curated module/maturity roadmap + REAL repo introspection (`inventory`). REAL marker
+    # when the live FS walk populated the inventory (always, outside FS errors), else honest synthetic.
+    "/api/v1/console/architecture": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.

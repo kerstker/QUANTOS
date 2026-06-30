@@ -205,11 +205,18 @@ export interface ArchitectureGap {
 }
 
 export interface ArchitecturePayload extends ConsolePayloadBase {
+  data_provenance?: "REAL_REPO_INVENTORY" | string;
   current_level: "L2_DRY_RUN_ONLY";
   target_level: "L3_BROKER_TEST_ENV_READY";
   phase3a_decision: "NO_GO" | string;
   implementation_authorized: false;
   architecture_score: number;
+  inventory?: {
+    domains: { domain: string; n_modules: number; loc: number }[];
+    total_services_modules: number; total_services_loc: number;
+    n_test_files: number; n_test_functions: number;
+    n_console_pages: number; n_console_endpoints: number;
+  };
   modules: ArchitectureModule[];
   data_flows: ArchitectureFlow[];
   gaps: ArchitectureGap[];

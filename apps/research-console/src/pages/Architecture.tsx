@@ -132,7 +132,29 @@ export default function Architecture() {
             <StatusChip value={data.phase3a_decision} />
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        realData={usingBackend && data.data_provenance === 'REAL_REPO_INVENTORY'}
+        source={usingBackend && data.data_provenance === 'REAL_REPO_INVENTORY' ? 'REAL_REPO_INVENTORY' : data.source}
+        error={error} />
+
+      {data.inventory && data.inventory.domains.length > 0 && (
+        <Panel eyebrow={bi('真实代码盘点', 'REAL REPO INVENTORY')}
+          title={bi('对仓库的只读内省 · 硬计数(非策划成熟度)', 'Read-only introspection of the checked-out repo · hard counts (not curated maturity)')}>
+          <KpiStrip cols={6}>
+            <StatTile label={bi('后端模块', 'Backend modules')} value={num(data.inventory.total_services_modules)} tone="info" />
+            <StatTile label={bi('后端代码行', 'Backend LOC')} value={num(data.inventory.total_services_loc)} />
+            <StatTile label={bi('测试文件', 'Test files')} value={num(data.inventory.n_test_files)} tone="pos" />
+            <StatTile label={bi('测试函数', 'Test fns')} value={num(data.inventory.n_test_functions)} tone="pos" />
+            <StatTile label={bi('前端页', 'Console pages')} value={num(data.inventory.n_console_pages)} />
+            <StatTile label={bi('只读端点', 'GET endpoints')} value={num(data.inventory.n_console_endpoints)} />
+          </KpiStrip>
+          <div className="mt-3">
+            <div className="mb-2 text-2xs uppercase tracking-wider text-faint">{bi('各域模块数(真实)', 'Modules per domain (real)')}</div>
+            <Histogram bins={[...data.inventory.domains].sort((a, b) => b.n_modules - a.n_modules)
+              .map(d => ({ label: d.domain, count: d.n_modules }))} height={170} tone="accent" />
+          </div>
+        </Panel>
+      )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2" eyebrow={bi('就绪度', 'Readiness')} title={bi('架构指标', 'Architecture Indicators')}>
