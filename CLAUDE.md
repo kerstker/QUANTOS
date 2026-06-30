@@ -102,8 +102,14 @@ Real, tested backend engines (`*_TESTED` in the audit):
   受理(纸面、**绝不真发**)→`PaperFill`→`reconcile` 平均成本 PnL(恒等式残差≈0)→
   `GlobalAuditLog` 哈希链→可复现 `DryRunRun` 落 `data/cache/dry_run.db`. Deterministic core
   (墙钟/seed only at the driver boundary). Driver `tools/dry_run_carry.py` runs the carry
-  book end-to-end (latest COMPOSITE legs × vol-target leverage). 11 tests + governance
-  (no broker/network import; orchestrator NOT in research_runner). 实盘 = 同接口换真券商
+  book end-to-end (latest COMPOSITE legs × vol-target leverage). `run_multi_period_dry_run` +
+  `tools/dry_run_carry_multi.py` 把它升级为 **周度滚动**:逐周增量调仓单都过门(fail-closed)→
+  纸面成交→`reconcile` 价格 MTM + 资金费现金流(carry 的真边)→raw/vol-target 两条净值曲线→多期
+  `DryRunRun.detail.equity_curve`. **Surfaced read-only** on `/api/v1/console/dry-run` + page
+  `DryRunPipeline.tsx` (nav 「干跑流水线」; single-snapshot + multi-period SVG 净值曲线, browser-verified).
+  Honest finding: 周度滚动 carry 多数收益是 L/S 价差(非 beta 中性、回撤大 ~77%),funding 是较小稳定项——
+  执行现实把理想化 carry 的尾巴暴露出来. 17 tests + contract + governance (no broker/network import;
+  `services/execution` 不 import `tools/`; orchestrator NOT in research_runner). 实盘 = 同接口换真券商
   适配器 + 人工批准 = 显式非目标.
 - `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to

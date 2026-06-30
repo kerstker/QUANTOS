@@ -63,7 +63,12 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 平均成本对账(恒等式残差≈0)→哈希链审计→可复现 `DryRunRun` 落 `data/cache/dry_run.db`。驱动器
 `tools/dry_run_carry.py`(carry 最新腿 × vol-target 杠杆端到端;首跑流动 58 币→23 名组合,门批准 23/拒 0、
 纸面成交 23、成本 9.9bps×换手=约 −$956、残差 0.0)。`trading/dry_run_adapters` 无券商 SDK。把预交易门从
-"已测死代码"变成"运行时可证强制"。**实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。**
+"已测死代码"变成"运行时可证强制"。**`run_multi_period_dry_run` + `tools/dry_run_carry_multi.py` 升级为周度滚动**:
+逐周增量调仓单过门(fail-closed)→纸面成交→`reconcile` 价格 MTM + 资金费现金流(carry 真边)→raw/vol-target
+两条净值曲线→多期 `DryRunRun.detail.equity_curve`(首跑:流动 58 币×313 周,门批准 15908/拒 67,总收益 126.7%、
+夏普 0.45、回撤 77%、累计资金费 $166k、残差 1e-9)。**已上 console**:`/api/v1/console/dry-run` + 干跑页
+`DryRunPipeline.tsx`(单期 + 多期 SVG 净值曲线,nav「干跑流水线」,浏览器验证过)。诚实:周度滚动 carry 多数收益是
+L/S 价差(非 beta 中性、回撤大),funding 较小稳定项——执行现实把理想化 carry 的尾巴暴露出来。**实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。**
 **持久化**:`experiment_registry`(stdlib sqlite)、**`paper_trading/{store,advance,health}.py` 前向 paper 追踪库
 (append-only `data/cache/paper_track.db`,真 train/paper 切分,驱动器 `tools/crypto_paper_track.py`;喂 LifecycleMonitor
 建议 / 衰退维护 / Alpha Zoo 时间维。`live_ic` 仍 null——离线源无截面 IC 面板;纸面夏普在 ~24 期尾巴是噪声非 edge)**。
