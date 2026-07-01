@@ -9,6 +9,7 @@ import type {
   FxResearchPayload,
   CarryReadinessPayload,
   DryRunPipelinePayload,
+  IcPanelPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   ResearchRunsComparePayload,
@@ -251,6 +252,10 @@ export function fetchCarryReadinessSnapshot(signal?: AbortSignal) {
 
 export function fetchDryRunSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<DryRunPipelinePayload>('/api/v1/console/dry-run', signal);
+}
+
+export function fetchIcPanelSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<IcPanelPayload>('/api/v1/console/ic-panel', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

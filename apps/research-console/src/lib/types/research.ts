@@ -1451,6 +1451,29 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   safety_note: string;
 }
 
+export interface IcPanelRow {
+  name: string;
+  universe: string;
+  thesis: string;
+  n_instruments: number;
+  n_periods: number;
+  mean_ic: number | null;
+  ic_std: number | null;
+  icir: number | null;
+  hit_rate: number | null;
+  t_stat: number | null;
+  per_year: Record<string, number | null>;
+}
+
+export interface IcPanelPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_IC_PANEL_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;               // IC_PANEL_OK | NO_SNAPSHOT
+  rows: IcPanelRow[];
+  universes: Record<string, { n_instruments: number; date_start: string; date_end: string }>;
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;
