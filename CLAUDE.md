@@ -57,6 +57,18 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/research/{alpha_factory,alpha_expression,cs_genome,gp_tree,factor_set,
   session}.py` — real evolutionary/GP search, cross-sectional DSL, synergistic
   de-redundant set selection, reproducible orchestrator.
+- `services/research/ic_panel.py` — **截面 IC 诊断面板**核心(泛化自 `tools/crypto_oi_research.py::
+  _rank_ic`):`compute_period_ic_series`(逐期截面 Spearman rank IC 序列)+ `aggregate_ic_series`
+  (mean/ICIR/hit-rate/t-stat/逐年,n<10 全 None)+ `signal_from_window_op`/`signal_composite`(窗口算子
+  + 截面 z-score 组合,复刻 daily composite 逻辑)。纯函数、无 IO/RNG/墙钟。命名宇宙/因子注册表
+  `tools/ic_panel_registry.py`(4 宇宙 × 5 因子:carry_composite/crowd_contra/trend_composite + 2 基线,
+  新候选加一行即可)+ 驱动器 `tools/ic_panel_research.py` 落 `ic_panel_snapshot.json`。**Surfaced
+  read-only** 于 `/api/v1/console/ic-panel` + 页 `ICPanel.tsx`(nav「IC 面板」)。诚实边界:**初筛诊断,
+  非晋级门禁**——不碰 evaluator/AlphaCatalog,不驱动任何自动晋级。首跑发现:**`crowd_contra`(反着做
+  拥挤的散户多空仓位)mean_ic=0.035、t-stat=4.32(统计显著)**——此前过 4/5 项证伪检验但从未送入
+  paper-track 的候选第二边,现在有了横向对比证据;`carry_composite` 对价格 IC≈0(诚实——carry 的边在
+  资金费现金流、非价格方向预测);`momentum_7_wide`(336 币宽宇宙)IC 明显为负(-0.063,与既有"宽宇宙
+  动量类因子多数年份负夏普"结论一致)。是否把 crowd_contra 送入 paper-track/干跑,是另一个独立决策。
 - `services/research/paper_trading/domain/pnl.py` — **real reconciled PnL
   attribution** (realized+unrealized−costs, `reconciliation.py`/`consistency.py`).
   No longer the `notional*0.001` placeholder this file used to claim.
