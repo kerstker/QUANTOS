@@ -57,6 +57,11 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 `factor_set.py`(协同集 + novelty)、`subtree_stats.py`、`sample_weights.py`、`factor_timing.py`、`frac_diff.py`。
 **容器化/生命周期**:`agent_loop`(ResearchAgentLoop)、`lifecycle` 状态机、`guardrails`、Actor。
 **组合/风险**:`portfolio`(risk_model/construction/attribution)、`research_risk` 门。
+**通往实盘的安全脚手架(轨道3,2026-07-01)**:`services/trading/broker_adapter.py` —— 把「换适配器」形式化成
+`BrokerAdapter` Protocol + `DryRunBrokerAdapter`(透明超集包装现有引擎、零改动、流水线 drop-in)+ `LiveBrokerAdapter`
+(结构性拒绝:L2 下 `live_trading_armed` 恒 False → 构造即 raise,绝不 import 券商 SDK)+ `assert_dry_run_adapter`
+fail-closed 守卫接进 `simulate_fills` 首行。治理 `test_broker_adapter_boundary.py` 钉死无 SDK/网络 + L2 下 live 不可
+实例化。**轨道3 = 3 子项目:接缝(✓)、多步人工批准状态机(待)、Phase 14 进程隔离(待)。** 全程 L2 一寸不让。
 **执行/干跑(端到端能跑的系统,2026-06-30)**:`risk/pre_trade`(23 检查电池 + latched `KillSwitch`,
 **运行时 chokepoint**)、`execution/{intent_builder,dry_run_pipeline,dry_run_store}` —— `run_dry_run_pipeline`
 把权重→目标手数→意图→**逐意图过门(fail-closed,latched→全拒)**→干跑适配器纸面成交(**绝不真发**)→

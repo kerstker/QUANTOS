@@ -107,6 +107,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   health; fail-closed deployment/version-pin gate. All tested.
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
+- `services/trading/broker_adapter.py` — **broker adapter 接缝(轨道3 子项目1)**:把"实盘=换适配器+
+  人工批准"里的「换适配器」形式化成 `BrokerAdapter` Protocol(`submit_order`/`fetch_fill`/`is_dry_run`)。
+  `DryRunBrokerAdapter` 是透明超集(薄包装 `DryRunAdapterEngine`,零改动它;既暴露接缝方法又透传
+  `process`/`simulate_fill` 故在现有流水线 drop-in)。`LiveBrokerAdapter` 是接缝的 live 槽位但**结构性拒绝**:
+  L2 下 `SafetyConfig.live_trading_armed` 恒 False → 构造即 `raise SafetyViolation`,即便强凑 armed 也因
+  无真实现再 raise,方法也 raise,**绝不 import 券商/网络 SDK**。`assert_dry_run_adapter` fail-closed 守卫
+  接进 `dry_run_pipeline.simulate_fills` 首行(接缝载荷承重,只放行证明为干跑的适配器)。治理
+  `tests/governance/test_broker_adapter_boundary.py` 机器钉死"无 SDK/网络 import + L2 下 live 不可实例化"。
+  诚实边界:守卫是运行时防误用 chokepoint,**非**受信内进程代码信任边界(那是轨道3 子项目3 进程隔离)。
+  真券商适配器实现 = post-L2、人工门控 = 显式非目标。**轨道3 剩余:子项目2 多步人工批准状态机、子项目3
+  Phase 14 进程隔离设计。**
 - `services/execution/dry_run_pipeline.py` + `dry_run_store.py` — **端到端干跑流水线**
   (the successor that turns the pre-trade gate from "tested dead code" into a RUNTIME
   chokepoint). `run_dry_run_pipeline`: 权重→目标手数→`build_intents`→逐意图过
