@@ -97,9 +97,12 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
 - **候选第二边 `crowd_contra`(持仓反向,2026-07-01 用截面 IC 面板重新确认)**:反着做拥挤的散户多空
   仓位(14 大币 OI 数据),mean_ic=0.035、**t-stat=4.32(统计显著)**、过 4/5 项证伪检验(滞后1天/10bps
   成本/子集/对 carry 增量存活,唯一没过的是"跨年广泛性"——2020-21 接近零、2022 年后才显著)。此前研究
-  自己的结论就是"proceed to paper-track",但从未真正执行——不在 `paper_track.db` 里、没进干跑流水线、
-  没上 console。IC 面板(`services/research/ic_panel.py` + `/api/v1/console/ic-panel`)现在能横向对比
-  它和 carry/trend;**是否把它送入 paper-track/干跑仍是独立的、有待决定的下一步**,面板本身不驱动晋级。
+  自己的结论就是"proceed to paper-track"。**2026-07-01 已把它送进干跑流水线**(`tools/dry_run_crowd_contra_multi.py`,
+  第三条策略过策略无关的 `run_multi_period_dry_run`):14 大币 × 232 周 × 10bps × 含资金费——**总收益 +185.6% ·
+  夏普(周→年)1.21 · 最大回撤仅 12% · 门批准 3066/拒绝 0 · 对账残差 7e-09**,三条里执行现实表现最好(夏普远高于
+  carry 0.45/trend 0.40,回撤远低于 carry 77%/trend 37%)。**诚实边界:这是对已知历史的执行现实回测(整手+门+
+  成本+换手,恒等式成立),非前向/实盘;宇宙仅 14 大币;证伪已过≠前向必赚。** 走干跑而非前向 paper-track——缓存上
+  "前向 paper-track"只是留尾回放(已被 no-peek OOS 折叠覆盖);是否送前向 paper-track/加仓位仍是独立的下一步。
 - **短周期(4h/小时线、小样本)= null。** 价格/GP/量能因子都无稳健 OOS edge;加宽截面把样本内
   Deflated 夏普抬到 0.586,但**无窥视 OOS 证伪**(选择性过拟合,样本外 −2.01);量能因子净夏普全负。
 - **日线周期 = 第一个正信号(2026-06-26,`tools/crypto_daily_research.py`,commit 1564bb6)。** 同一

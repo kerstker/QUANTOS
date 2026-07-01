@@ -155,6 +155,12 @@ Real, tested backend engines (`*_TESTED` in the audit):
   orchestrator NOT in research_runner). 策略无关已验证:第二驱动器 `tools/dry_run_trend_multi.py`(日线
   dist_from_high+momentum 趋势,`cash_flow_fn=None`)走同一条 `run_multi_period_dry_run`(18 币×47 周,
   +7.5%/回撤 37%),与 carry 共存 dry_run.db(console 历史表两条并列)——流水线是策略无关的执行骨架,非 carry 专用.
+  第三驱动器 `tools/dry_run_crowd_contra_multi.py`(`crowd_contra=cs_rank(neg(global_ls))` 截面拥挤反向 OI 因子,
+  含资金费现金流)走同一条 `run_multi_period_dry_run`(14 大币×232 周×10bps),三条策略并列于 dry_run.db.
+  **诚实结论(crowd_contra 执行现实检验):总收益 +185.6% · 夏普(周→年)1.21 · 最大回撤仅 12% · 门批准 3066/拒绝 0 ·
+  对账残差 7e-09** —— 三条里执行现实表现最好的一条(夏普远高于 carry 0.45/trend 0.40,回撤远低于 carry 77%/trend 37%),
+  与它 IC t-stat 4.32、过 4/5 证伪一致。诚实边界:这是对**已知历史**的执行现实回测(整手+门+成本+换手,残差≈0 恒等式成立),
+  **非前向/实盘**;宇宙仅 14 大币;证伪已过≠前向必赚——是否送前向 paper-track/加仓位是另一独立决策。
   实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
 - `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
