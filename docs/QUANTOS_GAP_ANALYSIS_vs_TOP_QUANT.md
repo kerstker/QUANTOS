@@ -7,8 +7,11 @@
 > 参与率上限把真容量绑在 carry ~$2M / crowd_contra ~$7M,冲击-only 会误报 $B(~300× 高估)。** **RE-2(情景重演 + 尾部)
 > 也已建**:carry/crowd 崩盘 beta 极低(下尾依赖 0.13/0.0)、crowd 在 LUNA/FTX 崩盘里反赚——尾部是截面价差击穿非市场 beta;
 > 真尾部内生(carry 最差 19% 在 2020-11 牛市);尾偏肥(Hill ~2.4–2.7);且逮到 `crypto_daily.db` volume 单位跨币不一致 bug
-> (诚实标 UNRELIABLE)。**「现实主义」缺口从"未做"推进到"冲击/容量/情景/尾部四件已建、诚实见效"**。仍敞着的最大真前沿:
-> **新资产类别(股票+基本面)**;realism 剩 Copula 全拟合 + trend 容量(待 daily 库 volume 单位修复)。
+> (诚实标 UNRELIABLE)。**「现实主义」缺口从"未做"推进到"冲击/容量/情景/尾部四件已建、诚实见效"**。
+> **数据缺口:宏观已接**——股票免费源本环境被墙(不绕过 bot-wall),转 **FRED 宏观**:`tools/fred_fetch.py` 抓 6 条市场型序列
+> (39271 行)填进 `fundamental_store`,`macro_regime.py` 把 carry/crowd 边按宏观 regime 分桶。**关键发现:两条边 regime 画像相反
+> 互补——carry 爱 risk-on,crowd_contra 爱 risk-off(高VIX/倒挂曲线),crowd 在 carry 走弱处走强 = 强分散**。仍敞着:**股票 +
+> 基本面**(免费源被墙 → BYO-CSV 或 ALFRED)、经济发布类(需 ALFRED vintage);realism 剩 Copula 全拟合 + trend 容量。
 >
 > 生成:2026-06-29,多代理审查(8 维并行只读测绘 → 每维对标顶级 AI 量化算差距 → 综合)。
 > 对标对象:顶级 AI 量化(文艺复兴 / Two Sigma / Citadel / Jane Street + 现代 ML 量化基金)。

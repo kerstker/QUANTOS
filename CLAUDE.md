@@ -106,6 +106,15 @@ Real, tested backend engines (`*_TESTED` in the audit):
   两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ trend 容量把 `crypto_daily.db` 的 volume 单位跨币
   不一致 bug 逮出来(EOS ~$20k vs BTC ~$3.7Q,~17 数量级不可能真实)——诚实标 `UNRELIABLE_VOLUME_UNITS` 不报假数,已
   spawn 独立修复任务。** 诊断非门禁。crowd 2021-05 窗口无数据(早期 OI global_ls 稀疏,诚实标注)。
+- `services/research/macro_regime.py` + `tools/{fred_fetch,macro_regime_research}.py` — **FRED 宏观数据方向(第一增量)**:
+  股票免费源本环境被墙(Stooq bot-wall / Yahoo 429,不绕过),**FRED `fredgraph.csv` 可达**。`fred_fetch.py`(网络在 tools/
+  出 gate)抓 6 条**市场型日频序列**(VIX/DGS10/T10Y2Y/HY-OAS/DXY/DFII10,39271 行)填进**已建但从未填的** `fundamental_store`
+  (`macro_fred.db`,`knowledge_time=event_time` EOD 可知无前视)。`macro_regime.py`(纯核:三分位/符号 regime/收益分桶)。
+  驱动器把 carry/crowd_contra 逐周 gross 收益按宏观 regime 分桶(PIT `latest_as_of`)。**关键发现:两条边宏观 regime 画像
+  相反、互补——carry 爱平静/risk-on(低VIX SR+2.36 vs 高VIX+0.65;正常曲线+2.08 vs 倒挂+0.67),crowd_contra 爱压力/risk-off
+  (高VIX+1.96 vs 低+1.25;倒挂+1.76 vs 正常+0.88)——crowd 正好在 carry 走弱处走强 = 强分散故事**,系统化了 RE-2 的 LUNA/FTX
+  危机发现。诚实边界:regime 标签=全样本分位(回顾性描述,非 PIT 可交易择时);gross 无成本(RELATIVE 模式才是结论);经济发布类
+  (CPI/GDP,需 ALFRED vintage)+ 股票(BYO-CSV/ALFRED)= 显式待办;HY-OAS 仅 2023-07+(FRED 限)信用维覆盖 155/期。诊断非门禁。
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the

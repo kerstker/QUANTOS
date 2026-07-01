@@ -114,6 +114,12 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   ② 真尾部内生(carry 最差 19% 在 2020-11 牛市,非崩盘;干跑 77% 是 vol-target 加杠杆口径);③ 尾偏肥 Hill ~2.4–2.7;
   ④ 逮到 `crypto_daily.db` volume 单位跨币不一致 bug(EOS $20k vs BTC $3.7Q,诚实标 UNRELIABLE、已 spawn 修复)。** RE-2
   剩 Copula 全拟合 + trend 容量(待 daily volume 修复)。
+- **FRED 宏观数据方向第一增量(2026-07-01,`tools/fred_fetch.py` + `services/research/macro_regime.py`)**:股票免费源本环境被墙
+  (Stooq bot-wall / Yahoo 429,不绕过)→ 转 FRED(可达)。抓 6 条市场型日频序列(VIX/DGS10/T10Y2Y/HY-OAS/DXY/DFII10,39271 行)
+  填进已建但从未填的 `fundamental_store`(PIT kt=et)。**关键发现:carry 与 crowd_contra 宏观 regime 画像相反、互补**——carry
+  爱平静/risk-on(低VIX SR+2.36 vs 高VIX+0.65,正常曲线+2.08 vs 倒挂+0.67),crowd_contra 爱压力/risk-off(高VIX+1.96,倒挂+1.76)。
+  crowd 正好在 carry 走弱处走强 = 强分散故事,系统化了 RE-2 的 LUNA/FTX 危机发现。诚实:regime=全样本分位(回顾性非PIT择时)、
+  gross 无成本、HY-OAS 覆盖 155/期;股票 + 基本面 + 经济发布类(需 BYO-CSV/ALFRED)= 待办。
 - **短周期(4h/小时线、小样本)= null。** 价格/GP/量能因子都无稳健 OOS edge;加宽截面把样本内
   Deflated 夏普抬到 0.586,但**无窥视 OOS 证伪**(选择性过拟合,样本外 −2.01);量能因子净夏普全负。
 - **日线周期 = 第一个正信号(2026-06-26,`tools/crypto_daily_research.py`,commit 1564bb6)。** 同一
