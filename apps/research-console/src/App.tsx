@@ -19,6 +19,7 @@ const AlphaFactory = lazy(() => import('./pages/AlphaFactory'));
 const AlphaZoo = lazy(() => import('./pages/AlphaZoo'));
 const DslExplorer = lazy(() => import('./pages/DslExplorer'));
 const ICPanel = lazy(() => import('./pages/ICPanel'));
+const ResearchFindings = lazy(() => import('./pages/ResearchFindings'));
 const AlphaGraph = lazy(() => import('./pages/AlphaGraph'));
 const PopulationOptimizer = lazy(() => import('./pages/PopulationOptimizer'));
 const SignalToPortfolio = lazy(() => import('./pages/SignalToPortfolio'));
@@ -60,6 +61,7 @@ const nav: NavGroup[] = [
     { to: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ' },
     { to: '/research/dsl-explorer', zh: '因子 DSL', en: 'DSL Explorer', icon: 'DSL' },
     { to: '/research/ic-panel', zh: 'IC 面板', en: 'IC Panel', icon: 'IC' },
+    { to: '/research/findings', zh: '研究成果', en: 'Findings', icon: 'RF' },
     { to: '/research/alpha-graph', zh: 'Alpha 相关图', en: 'Alpha Graph', icon: 'GR' },
     { to: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX' },
     { to: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC' },
@@ -126,6 +128,7 @@ export default function App() {
           <Route path="/research/alpha-zoo" element={<AlphaZoo />} />
           <Route path="/research/dsl-explorer" element={<DslExplorer />} />
           <Route path="/research/ic-panel" element={<ICPanel />} />
+          <Route path="/research/findings" element={<ResearchFindings />} />
           <Route path="/research/alpha-graph" element={<AlphaGraph />} />
           <Route path="/research/population-optimizer" element={<PopulationOptimizer />} />
           <Route path="/research/signal-to-portfolio" element={<SignalToPortfolio />} />

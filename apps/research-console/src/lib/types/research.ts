@@ -1474,6 +1474,36 @@ export interface IcPanelPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface ResearchFindingsCapacityBook {
+  aum_low: number | null;
+  aum_high: number | null;
+  binding?: string;
+  gross_sharpe?: number;
+  calibrated_range?: { low: number | null; high: number | null };
+}
+export interface ResearchFindingsMetric {
+  ann_sharpe: number;
+  max_drawdown: number;
+  total_return: number;
+}
+export interface ResearchFindingsPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_RESEARCH_FINDINGS" | string;
+  snapshot_present: boolean;
+  verdict: string;               // FINDINGS_OK | NO_SNAPSHOT
+  capacity: { books?: Record<string, ResearchFindingsCapacityBook>; provenance?: string };
+  macro_regime: {
+    books?: Record<string, { dims?: Record<string, { buckets?: Record<string, { n: number; ann_sharpe: number }> }> }>;
+    note?: string;
+  };
+  combo: {
+    corr_carry_crowd?: number | null;
+    standalone?: Record<string, ResearchFindingsMetric>;
+    combo?: Record<string, ResearchFindingsMetric>;
+    note?: string;
+  };
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

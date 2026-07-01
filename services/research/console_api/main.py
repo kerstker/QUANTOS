@@ -3826,6 +3826,9 @@ _CARRY_WALKFWD_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carr
 _CARRY_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_capacity.json")
 _IC_PANEL_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "ic_panel_snapshot.json")
 _DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
+_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "capacity_snapshot.json")
+_MACRO_REGIME_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "macro_regime_snapshot.json")
+_COMBO_BOOK_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "combo_book_snapshot.json")
 
 
 # --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
@@ -5111,6 +5114,44 @@ def _ic_panel_payload() -> Dict:
 @app.get("/api/v1/console/ic-panel")
 async def ic_panel() -> Dict:
     return _ic_panel_payload()
+
+
+def _load_json_snapshot(path: str):
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+    return None
+
+
+def _research_findings_payload() -> Dict:
+    """现实主义/宏观/组合三件研究成果聚合(只读):容量带(RE-1)、宏观 regime 条件化(FRED)、组合分散(carry+crowd)。
+    读 tools 写的离线快照,fail-closed 到 SYNTHETIC。诚实标注:诊断非门禁,gross/regime 口径按各快照自带 note。"""
+    capacity = _load_json_snapshot(_CAPACITY_SNAPSHOT)
+    macro = _load_json_snapshot(_MACRO_REGIME_SNAPSHOT)
+    combo = _load_json_snapshot(_COMBO_BOOK_SNAPSHOT)
+    present = bool(capacity or macro or combo)
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_RESEARCH_FINDINGS" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": "FINDINGS_OK" if present else "NO_SNAPSHOT",
+        "capacity": capacity or {},
+        "macro_regime": macro or {},
+        "combo": combo or {},
+        "honesty_note": ("研究诊断聚合,非晋级门禁:容量为 UNCALIBRATED_PRINCIPLED 区间(冲击系数未校准)、"
+                         "regime 标签为全样本分位(回顾性非 PIT 择时)、组合为 gross 收益流层面(RELATIVE 比较)。"
+                         "数字为准,均不驱动自动晋级/下单。"),
+    }
+
+
+@app.get("/api/v1/console/research-findings")
+async def research_findings() -> Dict:
+    return _research_findings_payload()
 
 
 if __name__ == "__main__":
