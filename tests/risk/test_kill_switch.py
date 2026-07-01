@@ -63,3 +63,42 @@ def test_arm_recovers_from_corrupt_state():
     ks._state = None                                       # corrupt
     ks.arm(AGENT, "halt despite corrupt state", at=5)      # must not raise; must trip
     assert ks.is_active() is True and ks.state.trip_count == 1
+
+
+# --- 多方 grant 复位路径(轨道3 子项目2,加法入口;旧 reset 不回归) ---
+
+from quantos.contracts.killswitch import KillSwitchScope
+from services.governance.approval import approve, consume, open_request, review
+
+_A = Actor(actor_id="alice", kind=ActorKind.HUMAN)
+_B = Actor(actor_id="bob", kind=ActorKind.HUMAN)
+_C = Actor(actor_id="carol", kind=ActorKind.HUMAN)
+
+
+def _grant_for(incident_id: str):
+    r = open_request("req-1", incident_id, _A, at=1)
+    r = review(r, _B, at=2)
+    r = approve(r, _C, at=3)
+    return consume(r, incident_id, _A, at=4)
+
+
+def test_reset_with_grant_clears_with_valid_three_party_grant():
+    ks = KillSwitch()
+    ks.arm(_A, "halt", at=0, scope=KillSwitchScope.GLOBAL, incident_id="inc-9")
+    ks.reset_with_grant(_A, _grant_for("inc-9"), at=5)
+    assert ks.is_active() is False
+
+
+def test_reset_with_grant_rejects_grant_for_other_incident():
+    ks = KillSwitch()
+    ks.arm(_A, "halt", at=0, incident_id="inc-9")
+    with pytest.raises(UnauthorizedReset):
+        ks.reset_with_grant(_A, _grant_for("DIFFERENT"), at=5)
+    assert ks.is_active() is True                       # 仍锁死(fail-closed)
+
+
+def test_reset_with_grant_requires_human_actor():
+    ks = KillSwitch()
+    ks.arm(_A, "halt", at=0, incident_id="inc-9")
+    with pytest.raises(UnauthorizedReset):
+        ks.reset_with_grant(Actor(actor_id="bot2", kind=ActorKind.AGENT), _grant_for("inc-9"), at=5)

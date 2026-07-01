@@ -12,6 +12,7 @@ from typing import Optional
 from quantos.contracts.alpha import Actor
 from quantos.contracts.governance import ApprovalRecord
 from quantos.contracts.killswitch import KillSwitchScope, KillSwitchState
+from services.governance.approval import ApprovalRequest, verify_multi_party_grant
 
 
 class UnauthorizedReset(PermissionError):
@@ -61,5 +62,18 @@ class KillSwitch:
             raise UnauthorizedReset("approval is not bound to this kill-switch incident")
         if approval.approver != actor.actor_id:
             raise UnauthorizedReset("the granted approval must name the resetting human")
+        self._state = s.model_copy(update={"tripped": False, "reset_by": actor, "reset_at": at})
+        return self._state
+
+    def reset_with_grant(self, actor: Optional[Actor], grant: ApprovalRequest, *, at: int) -> KillSwitchState:
+        """复位(多方路径):要 HUMAN actor + 绑定到本事件的、已 CONSUMED 的三方 grant。fail-closed。
+        旧 reset(单 ApprovalRecord)不变;这是更严的加法入口。"""
+        s = self._state
+        if not s.tripped:
+            return s
+        if actor is None or not actor.is_human:
+            raise UnauthorizedReset("kill-switch reset requires a HUMAN actor")
+        if not verify_multi_party_grant(grant, s.incident_id):
+            raise UnauthorizedReset("reset requires a consumed multi-party approval grant bound to this incident")
         self._state = s.model_copy(update={"tripped": False, "reset_by": actor, "reset_at": at})
         return self._state

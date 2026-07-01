@@ -17,6 +17,7 @@ from typing import Optional
 from quantos.contracts.alpha import Actor
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyConfig
 from quantos.contracts.governance import ApprovalRecord, Environment
+from services.governance.approval import ApprovalRequest, verify_multi_party_grant
 
 
 class ReadinessLevel(str, Enum):
@@ -70,12 +71,19 @@ def evaluate_deployment(
     actor: Optional[Actor] = None,
     readiness: Optional[ReadinessLevel] = None,
     subject: str = "",
+    grant: Optional[ApprovalRequest] = None,
 ) -> DeploymentDecision:
     try:
         if environment in _RESEARCH_ENVS:
             return DeploymentDecision(True, environment, ())
 
-        reasons = _verified_human_approval(approval, actor, subject)   # PAPER and above need this
+        # PAPER and above need human approval. Multi-party path (grant=) raises the
+        # bar to 3 distinct humans + hash-chain audit; the single-record path is kept
+        # unchanged for backward compatibility (additive, no weakening).
+        if grant is not None:
+            reasons = [] if verify_multi_party_grant(grant, subject) else ["NO_MULTI_PARTY_APPROVAL"]
+        else:
+            reasons = _verified_human_approval(approval, actor, subject)
 
         # A caller may REQUEST a readiness, but it is capped at the non-overridable
         # platform pin — passing readiness=L4 cannot unlock LIVE while the platform

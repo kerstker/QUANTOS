@@ -82,3 +82,33 @@ def test_gate_logic_allows_live_only_when_the_platform_itself_is_repinned(monkey
     d2 = gate_mod.evaluate_deployment(Environment.LIVE, approval=_approval(), actor=HUMAN, subject="deploy",
                                       readiness=ReadinessLevel.L4_LIVE_APPROVED)
     assert not d2.allowed and "LIVE_FLAGS_DISABLED" in d2.reasons and "READINESS_BELOW_LIVE" not in d2.reasons
+
+
+# --- 多方 grant 部署路径(轨道3 子项目2,加法参数;旧单记录路径不回归) ---
+
+from services.governance.approval import approve, consume, open_request, review
+
+_B = Actor(actor_id="bob", kind=ActorKind.HUMAN)
+_C = Actor(actor_id="carol", kind=ActorKind.HUMAN)
+
+
+def _grant(subject: str):
+    r = review(open_request("req-1", subject, HUMAN, at=1), _B, at=2)
+    return consume(approve(r, _C, at=3), subject, HUMAN, at=4)
+
+
+def test_paper_allowed_with_valid_multi_party_grant():
+    d = evaluate_deployment(Environment.PAPER, subject="deploy-42", grant=_grant("deploy-42"))
+    assert d.allowed is True
+
+
+def test_paper_blocked_with_incomplete_multi_party_grant():
+    two = review(open_request("req-1", "deploy-42", HUMAN, at=1), _B, at=2)   # only 2 parties, not CONSUMED
+    d = evaluate_deployment(Environment.PAPER, subject="deploy-42", grant=two)
+    assert d.allowed is False and "NO_MULTI_PARTY_APPROVAL" in d.reasons
+
+
+def test_live_still_blocked_even_with_valid_grant():
+    d = evaluate_deployment(Environment.LIVE, subject="deploy-42", grant=_grant("deploy-42"))
+    assert d.allowed is False       # readiness pin + LIVE flags 仍挡死
+    assert "READINESS_BELOW_LIVE" in d.reasons and "LIVE_FLAGS_DISABLED" in d.reasons
