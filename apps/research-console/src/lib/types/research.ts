@@ -1156,14 +1156,23 @@ export interface SystemCompletenessCheck {
 }
 
 export interface SystemCompletenessPayload extends ConsolePayloadBase {
+  data_provenance?: "REAL_REPO_INVENTORY" | string;
   audit_mode: string;
   current_level: string;
   institutional_target: string;
   readiness_score: number;
+  inventory?: {
+    domains: { domain: string; n_modules: number; loc: number }[];
+    total_services_modules: number; total_services_loc: number;
+    n_test_files: number; n_test_functions: number;
+    n_console_pages: number; n_console_endpoints: number;
+  };
   summary: {
     frontend_routes: number;
     api_endpoints: number;
     backend_backed_modules: number;
+    backend_modules?: number;
+    test_functions?: number;
     fully_operational_modules: number;
     read_only_modules: number;
     open_high_gaps: number;

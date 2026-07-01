@@ -3753,14 +3753,18 @@ def _system_completeness_payload() -> Dict:
     backend_backed = sum(1 for module in modules if module["status"] in {"BACKEND_BACKED", "BLOCKED"})
     read_only = len(modules)
     readiness_score = round(statistics.mean(module["completion_score"] for module in modules), 3)
+    inv = _repo_inventory()  # REAL repo introspection — grounds the curated completeness map in hard counts
     return {
         "audit_mode": "READ_ONLY_SYSTEM_COMPLETENESS_AUDIT",
         "current_level": "L2_5_RESEARCH_CONTROL_PLANE",
         "institutional_target": "TOP_TIER_AI_QUANT_TRADING_SYSTEM",
         "readiness_score": readiness_score,
+        "inventory": inv,
         "summary": {
-            "frontend_routes": len(modules),
-            "api_endpoints": len(modules),
+            "frontend_routes": inv.get("n_console_pages", len(modules)),
+            "api_endpoints": inv.get("n_console_endpoints", len(modules)),
+            "backend_modules": inv.get("total_services_modules", 0),
+            "test_functions": inv.get("n_test_functions", 0),
             "backend_backed_modules": backend_backed,
             "fully_operational_modules": sum(1 for module in modules if module["completion_score"] >= 0.72),
             "read_only_modules": read_only,
@@ -4842,10 +4846,12 @@ async def system_health() -> Dict:
 @app.get("/api/v1/console/system-completeness")
 async def system_completeness() -> Dict:
     payload = _system_completeness_payload()
+    real_inv = bool(payload.get("inventory", {}).get("domains"))  # curated map + REAL repo introspection
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0", "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_REPO_INVENTORY" if real_inv else "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
 

@@ -717,8 +717,12 @@ def test_system_completeness_snapshot_uses_backend_contract():
     assert payload["audit_mode"] == "READ_ONLY_SYSTEM_COMPLETENESS_AUDIT"
     assert payload["current_level"] == "L2_5_RESEARCH_CONTROL_PLANE"
     assert payload["institutional_target"] == "TOP_TIER_AI_QUANT_TRADING_SYSTEM"
-    assert payload["summary"]["frontend_routes"] == 25
-    assert payload["summary"]["api_endpoints"] == 25
+    # frontend_routes / api_endpoints are now REAL repo introspection (not the curated len(modules)).
+    inv = payload["inventory"]
+    assert inv["domains"] and inv["total_services_modules"] > 0
+    assert payload["data_provenance"] == "REAL_REPO_INVENTORY"
+    assert payload["summary"]["frontend_routes"] == inv["n_console_pages"]
+    assert payload["summary"]["api_endpoints"] == inv["n_console_endpoints"]
     assert payload["summary"]["backend_backed_modules"] == 25
     assert payload["summary"]["live_trading_authorized"] is False
     assert len(payload["modules"]) == 25

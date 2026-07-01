@@ -204,7 +204,24 @@ export default function SystemCompleteness() {
             <Chip label={sb.execution_boundary} tone="neg" />
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={audit.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
+        realData={usingBackend && audit.data_provenance === 'REAL_REPO_INVENTORY'}
+        source={usingBackend && audit.data_provenance === 'REAL_REPO_INVENTORY' ? 'REAL_REPO_INVENTORY' : audit.source}
+        error={error} />
+
+      {audit.inventory && audit.inventory.domains.length > 0 && (
+        <Panel eyebrow={bi('真实代码盘点', 'REAL REPO INVENTORY')}
+          title={bi('对仓库的只读内省 · 硬计数(接地下面的策划完整度图)', 'Read-only introspection of the repo · hard counts (grounds the curated completeness map below)')}>
+          <KpiStrip cols={6}>
+            <StatTile label={bi('后端模块', 'Backend modules')} value={num(audit.inventory.total_services_modules)} tone="info" />
+            <StatTile label={bi('后端代码行', 'Backend LOC')} value={num(audit.inventory.total_services_loc)} />
+            <StatTile label={bi('测试文件', 'Test files')} value={num(audit.inventory.n_test_files)} tone="pos" />
+            <StatTile label={bi('测试函数', 'Test fns')} value={num(audit.inventory.n_test_functions)} tone="pos" />
+            <StatTile label={bi('前端页', 'Console pages')} value={num(audit.inventory.n_console_pages)} />
+            <StatTile label={bi('只读端点', 'GET endpoints')} value={num(audit.inventory.n_console_endpoints)} />
+          </KpiStrip>
+        </Panel>
+      )}
 
       <KpiStrip cols={8}>
         <StatTile label={bi('前端路径', 'Routes')} value={num(sm.frontend_routes)} accent />
