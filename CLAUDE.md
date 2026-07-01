@@ -121,6 +121,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
   保住;VIX regime 依赖被抹平(high+2.44/low+1.65/mid+1.82)。** = 两条正交 crypto 边(资金费 carry + OI 持仓反向)合成
   Sharpe~2/回撤 8% 的强分散。诚实:收益流层面(不同宇宙 58币/14币、不同规模、231 共同周),gross 无成本 → RELATIVE 比较;
   同一执行 book(统一宇宙 + 干跑流水线)= 后续。诊断非门禁。
+- `tools/dry_run_combo_multi.py` — **统一执行 book(把组合从收益流相加升级成真的一个 book 过干跑流水线)**:carry 面板
+  加 OI `global_ls` 矩阵,每周权重 = 0.5·carry_legs + 0.5·crowd_legs,过门 + 净-成本 + 资金费 + vol-target,第 4 条策略
+  `carry_crowd_combo` 落 dry_run.db。**诚实结论(4 条对比,RAW 无杠杆 / VT vol-target 可部署两条曲线都存):carry
+  0.45/77% → 0.65/22%;crowd_contra 1.21/12% → 1.38/11%;combo 0.58/56% → 1.20/15%;trend 0.40/37% → …。** 注:`pnl.sharpe`
+  报 RAW 曲线;VT(vol-target 高波动降杠杆)是可部署口径。**关键教训:统一 book 的 naive 权重 blend 是 carry-dominated
+  (carry 58 币 vs crowd 14 大币半权)→ combo VT 1.20 虽 improved carry 但仍 < crowd_contra alone 1.38;equal-risk 分散
+  (收益流组合 1.95/8%)≠ naive 权重 blend——要在执行里兑现分散需 risk-balance 两个 sleeve(下一步)。** 实盘=非目标。
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
