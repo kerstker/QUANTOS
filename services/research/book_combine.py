@@ -47,6 +47,20 @@ def inverse_vol_weights(series_list: Sequence[Sequence[float]]) -> list:
     return [x / tot for x in inv]
 
 
+def rolling_inverse_vol_weights(sleeve_returns: Sequence[Sequence[float]], end_idx: int,
+                                lookback: int, min_history: int = 4) -> list:
+    """PIT 风险平衡:在时点 end_idx 用**仅过去**的 trailing 窗口 `[end_idx-lookback, end_idx)` 给各 sleeve
+    逆波动权重(归一到和=1)。可用历史 < min_history → 等权回退。end_idx 处**不含未来**(切片到 end_idx)。"""
+    n = len(sleeve_returns)
+    if n == 0:
+        return []
+    lo = max(0, end_idx - lookback)
+    windows = [list(s[lo:end_idx]) for s in sleeve_returns]
+    if min(len(w) for w in windows) < min_history:
+        return [1.0 / n] * n
+    return inverse_vol_weights(windows)
+
+
 def combine_returns(series_list: Sequence[Sequence[float]], weights: Sequence[float]) -> list:
     """逐期加权和 Σ w_i·r_i(所有序列等长;长度不齐 → ValueError)。"""
     if not series_list:
