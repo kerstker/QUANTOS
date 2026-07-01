@@ -1,6 +1,7 @@
 from services.research.realism.impact import AlmgrenChrissImpact
 from services.research.realism.capacity_curve import (capacity_band, capacity_curve,
-                                                      critical_aum, net_return_series_at_aum)
+                                                      critical_aum, net_return_series_at_aum,
+                                                      participation_cap_aum)
 
 # 4 期毛收益,每期一名换手 frac=0.5,ADV=$1e6
 _GROSS = [0.01, 0.02, -0.005, 0.015]
@@ -31,3 +32,16 @@ def test_capacity_band_lo_le_hi():
     lo, hi = band["aum_low"], band["aum_high"]
     if lo is not None and hi is not None:
         assert lo <= hi                               # 激进系数 → 容量更小 = 下界
+
+
+def test_participation_cap_binds_capacity():
+    # frac=0.5, adv=$1e6, 10% 参与率上限 → 单名可交易 $1e5 = 0.5*AUM ⟹ AUM 上限 = $2e5
+    assert participation_cap_aum(_TURN, max_participation=0.10) == 0.10 * (1e6 / 0.5)
+    # 参与率上限极紧 → band 的 binding 容量应被它压到参与率上限,而非冲击容量
+    band = capacity_band(_GROSS, _TURN, [1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11],
+                         impact_coef_lo_hi=(5.0, 20.0), max_participation=0.10)
+    assert band["aum_high"] == band["participation_cap_aum"]   # 参与率是更紧的绑定
+
+
+def test_participation_cap_none_when_no_turnover():
+    assert participation_cap_aum([[], []], max_participation=0.10) is None
