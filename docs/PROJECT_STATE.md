@@ -65,7 +65,11 @@ fail-closed 守卫接进 `simulate_fills` 首行。治理 `test_broker_adapter_b
 (`open_request/review/approve/reject/consume`,每步哈希链),硬不变量 `REQUESTED→REVIEWED→APPROVED→CONSUMED` +
 提出/复核/批准三个两两不同真人 + 一次性绑 subject;`verify_multi_party_grant` fail-closed;接进 `KillSwitch.
 reset_with_grant` 与 `evaluate_deployment(grant=)`(只做加法、旧路径零回归、LIVE 仍挡死)。治理钉死无 SDK/网络 +
-非人到不了 APPROVED。**轨道3 = 3 子项目:接缝(✓)、多步人工批准状态机(✓)、Phase 14 进程隔离(待)。** 全程 L2 一寸不让。
+非人到不了 APPROVED。子项目3 `services/governance/signing.py` + `docs/PHASE_14_PROCESS_ISOLATION.md` —— 出进程签名
+权威接缝(收口):`SignedDecisionRef` + `NullSigningAuthority`(进程内无密钥、`sign()` 即拒)+ `verify_signed_ref`
+fail-closed(无出进程权威恒 False,伪造权威也 False);威胁面文档列清所有「受信代码可绕过」面 × 出进程签名怎么堵 +
+post-L2 迁移路径。诚实决定:**不接进 L2 执行路径**(强接要么死代码要么堵死干跑)。治理钉死无密钥材料 + 无 SDK/HSM
+import。**轨道3 = 3 子项目全 landed:接缝(✓)、多步人工批准状态机(✓)、Phase 14 进程隔离设计(✓)。** 全程 L2 一寸不让。
 **执行/干跑(端到端能跑的系统,2026-06-30)**:`risk/pre_trade`(23 检查电池 + latched `KillSwitch`,
 **运行时 chokepoint**)、`execution/{intent_builder,dry_run_pipeline,dry_run_store}` —— `run_dry_run_pipeline`
 把权重→目标手数→意图→**逐意图过门(fail-closed,latched→全拒)**→干跑适配器纸面成交(**绝不真发**)→

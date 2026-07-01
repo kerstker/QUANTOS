@@ -126,8 +126,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `KillSwitch.reset_with_grant(actor, grant, *, at)` 与 `evaluate_deployment(..., grant=)` 新入口走多方校验,旧单
   `ApprovalRecord` 路径一字不动;LIVE 仍被 readiness pin + LIVE flags 结构性挡死(grant 合法也不解锁 LIVE)。治理
   `tests/governance/test_multi_party_approval_boundary.py` 钉死"无 SDK/网络 import + 非人到不了 APPROVED"。诚实边界:
-  强化的是*批准的构造路径*,单进程内挡不住受信代码凑三个 HUMAN Actor 绕过(那是子项目3)。**轨道3 剩余:子项目3
-  Phase 14 进程隔离设计。**
+  强化的是*批准的构造路径*,单进程内挡不住受信代码凑三个 HUMAN Actor 绕过(那是子项目3)。
+- `services/governance/signing.py` + `docs/PHASE_14_PROCESS_ISOLATION.md` — **出进程签名权威接缝(轨道3 子项目3,
+  收口)**:全代码库反复出现的同一句诚实注脚——「单进程内挡不住受信代码」(`verify_ref` 无密钥哈希、直接凑三个
+  `HUMAN` Actor、直接调 manager/catalog、重算 broker 守卫)——本子项目一次性回答它:真防御只能在进程外。
+  `SignedDecisionRef`(纯值:payload_hash/signature/key_id/issued_by)+ `SigningAuthority` Protocol +
+  `NullSigningAuthority`(L2 默认:进程内**无密钥**、`sign()` 即 `raise SigningUnavailable`)+ `verify_signed_ref`
+  fail-closed(无出进程权威 → 恒 False;**即便受信代码伪造 is_out_of_process=True 的权威也 False**)。治理
+  `tests/governance/test_signing_boundary.py` 钉死"无密钥材料(无 PEM 头/`*_KEY=` 字面量)+ 无券商/网络/HSM/密钥
+  SDK import + L2 签不出验不过"。**关键诚实决定:不接进 L2 执行路径**(L2 无真权威,强接要么死代码要么堵死干跑,
+  都不诚实)——独立的拒绝式制品 + 文档,与 `LiveBrokerAdapter` 对称;真出进程签名器/真进程隔离部署 = post-L2 = 显式
+  非目标(迁移路径见文档 §5)。**轨道3 三子项目全 landed:券商接缝 ✓ / 多方人工批准 ✓ / Phase 14 进程隔离设计 ✓。**
 - `services/execution/dry_run_pipeline.py` + `dry_run_store.py` — **端到端干跑流水线**
   (the successor that turns the pre-trade gate from "tested dead code" into a RUNTIME
   chokepoint). `run_dry_run_pipeline`: 权重→目标手数→`build_intents`→逐意图过
