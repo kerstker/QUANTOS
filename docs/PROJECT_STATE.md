@@ -61,7 +61,11 @@ gate/pipeline)、`labeling.py`(三重门+元标签)、`regime.py`(波动率状�
 `BrokerAdapter` Protocol + `DryRunBrokerAdapter`(透明超集包装现有引擎、零改动、流水线 drop-in)+ `LiveBrokerAdapter`
 (结构性拒绝:L2 下 `live_trading_armed` 恒 False → 构造即 raise,绝不 import 券商 SDK)+ `assert_dry_run_adapter`
 fail-closed 守卫接进 `simulate_fills` 首行。治理 `test_broker_adapter_boundary.py` 钉死无 SDK/网络 + L2 下 live 不可
-实例化。**轨道3 = 3 子项目:接缝(✓)、多步人工批准状态机(待)、Phase 14 进程隔离(待)。** 全程 L2 一寸不让。
+实例化。子项目2 `services/governance/approval.py` —— 多方人工批准状态机:不可变 `ApprovalRequest` + 纯转换
+(`open_request/review/approve/reject/consume`,每步哈希链),硬不变量 `REQUESTED→REVIEWED→APPROVED→CONSUMED` +
+提出/复核/批准三个两两不同真人 + 一次性绑 subject;`verify_multi_party_grant` fail-closed;接进 `KillSwitch.
+reset_with_grant` 与 `evaluate_deployment(grant=)`(只做加法、旧路径零回归、LIVE 仍挡死)。治理钉死无 SDK/网络 +
+非人到不了 APPROVED。**轨道3 = 3 子项目:接缝(✓)、多步人工批准状态机(✓)、Phase 14 进程隔离(待)。** 全程 L2 一寸不让。
 **执行/干跑(端到端能跑的系统,2026-06-30)**:`risk/pre_trade`(23 检查电池 + latched `KillSwitch`,
 **运行时 chokepoint**)、`execution/{intent_builder,dry_run_pipeline,dry_run_store}` —— `run_dry_run_pipeline`
 把权重→目标手数→意图→**逐意图过门(fail-closed,latched→全拒)**→干跑适配器纸面成交(**绝不真发**)→

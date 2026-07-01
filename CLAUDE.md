@@ -116,7 +116,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   接进 `dry_run_pipeline.simulate_fills` 首行(接缝载荷承重,只放行证明为干跑的适配器)。治理
   `tests/governance/test_broker_adapter_boundary.py` 机器钉死"无 SDK/网络 import + L2 下 live 不可实例化"。
   诚实边界:守卫是运行时防误用 chokepoint,**非**受信内进程代码信任边界(那是轨道3 子项目3 进程隔离)。
-  真券商适配器实现 = post-L2、人工门控 = 显式非目标。**轨道3 剩余:子项目2 多步人工批准状态机、子项目3
+  真券商适配器实现 = post-L2、人工门控 = 显式非目标。
+- `services/governance/approval.py` — **多方人工批准状态机(轨道3 子项目2)**:把「人工批准」从单人一张条子抬到
+  **多个不同真人 + 全程哈希链审计**。不可变 `ApprovalRequest` 聚合 + 纯转换 `open_request/review/approve/reject/
+  consume`(每步追加自带哈希链的 `ApprovalStep`,与 `AuditEvent` 同法防篡改)。硬不变量:`REQUESTED→REVIEWED→
+  APPROVED→CONSUMED`,**提出/复核/批准三个两两不同的真人**,批准一次性、绑定 subject,非人/单人到不了 APPROVED。
+  核心无墙钟/无随机(`at:int`、id 由调用方传)。`verify_multi_party_grant(req, subject)` fail-closed(唯一放行:
+  CONSUMED ∧ subject 绑定 ∧ ≥3 不同真人 ∧ 哈希链自洽,否则/任何异常 False)。**接进现有两门(只做加法、零回归)**:
+  `KillSwitch.reset_with_grant(actor, grant, *, at)` 与 `evaluate_deployment(..., grant=)` 新入口走多方校验,旧单
+  `ApprovalRecord` 路径一字不动;LIVE 仍被 readiness pin + LIVE flags 结构性挡死(grant 合法也不解锁 LIVE)。治理
+  `tests/governance/test_multi_party_approval_boundary.py` 钉死"无 SDK/网络 import + 非人到不了 APPROVED"。诚实边界:
+  强化的是*批准的构造路径*,单进程内挡不住受信代码凑三个 HUMAN Actor 绕过(那是子项目3)。**轨道3 剩余:子项目3
   Phase 14 进程隔离设计。**
 - `services/execution/dry_run_pipeline.py` + `dry_run_store.py` — **端到端干跑流水线**
   (the successor that turns the pre-trade gate from "tested dead code" into a RUNTIME
