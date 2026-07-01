@@ -93,7 +93,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   + **容量衰减带**(扫 AUM → 净冲击后夏普 → `critical_aum`;冲击系数无法校准 → 扫 5–20bps 给**区间带**、标
   `UNCALIBRATED_PRINCIPLED`,不报假单点)。**诚实容量 = min(冲击-夏普容量, 参与率上限10%)**——两约束里更紧那个。
   驱动器 `tools/capacity_research.py` 应用到 carry+crowd_contra,落 `capacity_snapshot.json`。**关键发现:参与率是绑定
-  约束——carry ~$2M / crowd_contra ~$7M**;冲击-only 会误报 $B(~300× 高估),正是「松现实主义抬高可部署性」的自欺,
+  约束**;校准敏感性(参与率 5–20% × 执行铺开 1–5 天)给诚实区间——**carry $1–20M / crowd_contra $3.6–72M**(最保守角
+  10%×单日 = carry $2M / crowd $7M,现实执行铺开 5 天约 $10–20M / $35–70M)。冲击-only 会误报 $B(~300× 高估),正是「松现实主义抬高可部署性」的自欺,
   引擎首跑即抓到(可部署性受限于*构造*——最小 ADV 名满权重——而非仅信号)。诊断非门禁:不改 CostModel 默认、不驱动晋级/下单。
   trend(PIT as_of 无 volume 矩阵)本轮未算,留 RE-1 后续. `services/research/realism/` 纯离线、无网络(治理钉死)。
 - `services/research/realism/{scenario,tail_risk}.py` + `tools/scenario_tail_research.py` — **现实主义 RE-2(历史情景重演 +
