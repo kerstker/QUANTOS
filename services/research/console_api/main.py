@@ -3824,6 +3824,7 @@ _FX_GAUNTLET_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "fx_gauntlet_s
 _CARRY_STRATEGY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_strategy.json")
 _CARRY_WALKFWD_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_walkforward.json")
 _CARRY_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "crypto_carry_capacity.json")
+_IC_PANEL_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "ic_panel_snapshot.json")
 _DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
 
 
@@ -5079,6 +5080,37 @@ def _dry_run_payload() -> Dict:
 @app.get("/api/v1/console/dry-run")
 async def dry_run() -> Dict:
     return _dry_run_payload()
+
+
+def _ic_panel_payload() -> Dict:
+    """截面 IC 诊断面板:读 tools/ic_panel_research.py 写的快照。只读、fail-closed。
+    诚实标注:这是初筛诊断,不是晋级门禁——真正的门禁是 evaluator 的 DSR/PBO/walk-forward。"""
+    present, rows, universes = False, [], {}
+    if os.path.exists(_IC_PANEL_SNAPSHOT):
+        try:
+            with open(_IC_PANEL_SNAPSHOT, encoding="utf-8") as fh:
+                snap = json.load(fh)
+            rows, universes = snap.get("rows", []), snap.get("universes", {})
+            present = bool(rows)
+        except Exception:
+            present, rows, universes = False, [], {}
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_IC_PANEL_OFFLINE_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": "IC_PANEL_OK" if present else "NO_SNAPSHOT",
+        "rows": rows,
+        "universes": universes,
+        "honesty_note": ("截面 IC 面板是初筛诊断工具,不是晋级门禁——真正的门禁是 services/alpha/evaluator "
+                         "的 DSR/PBO/walk-forward。面板结果不驱动任何自动晋级。"),
+    }
+
+
+@app.get("/api/v1/console/ic-panel")
+async def ic_panel() -> Dict:
+    return _ic_panel_payload()
 
 
 if __name__ == "__main__":
