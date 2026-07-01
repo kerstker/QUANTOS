@@ -97,9 +97,21 @@ def _carry_panel():
     return panel
 
 
+_PARTICIP_GRID = [0.05, 0.10, 0.20]      # 单日参与率上限
+_HORIZON_GRID = [1, 5]                    # 周度调仓铺开执行天数
+
+
 def _band_for(name, gross, turnover):
     band = capacity_band(gross, turnover, _AUM_GRID, _COEF_LO_HI, ppy=52, sharpe_floor=0.3,
                          max_participation=0.10)
+    # 校准:参与率 × 执行铺开天数 敏感性网格 → honest binding 容量随假设怎么动
+    sens = {}
+    for p in _PARTICIP_GRID:
+        for h in _HORIZON_GRID:
+            b = capacity_band(gross, turnover, _AUM_GRID, _COEF_LO_HI, ppy=52, sharpe_floor=0.3,
+                              max_participation=p, execution_horizon=h)
+            sens[f"p{int(p*100)}_h{h}"] = b["aum_low"]
+    vals = [v for v in sens.values() if v is not None]
     return {"aum_low": band["aum_low"], "aum_high": band["aum_high"],          # honest binding (含参与率上限)
             "impact_aum_low": band["impact_aum_low"], "impact_aum_high": band["impact_aum_high"],
             "participation_cap_aum": band["participation_cap_aum"], "n_periods": len(gross),
@@ -107,6 +119,8 @@ def _band_for(name, gross, turnover):
             "binding": ("participation" if band["participation_cap_aum"] is not None and
                         (band["impact_aum_high"] is None or band["participation_cap_aum"] < band["impact_aum_high"])
                         else "impact"),
+            "sensitivity_particip_horizon": sens,
+            "calibrated_range": {"low": min(vals) if vals else None, "high": max(vals) if vals else None},
             "curve_conservative": band["curves"]["conservative"]}
 
 
@@ -134,11 +148,12 @@ def main() -> None:
     snap["books"]["crowd_contra"] = _band_for("crowd_contra", og, ot)
 
     json.dump(snap, open(_OUT, "w", encoding="utf-8"), indent=2, default=str)
-    print("=== 容量带(honest binding = min(冲击-夏普, 参与率上限10%);系数 5–20bps;UNCALIBRATED_PRINCIPLED)===", flush=True)
+    print("=== 容量带(honest binding = min(冲击-夏普, 参与率上限);系数 5–20bps;UNCALIBRATED_PRINCIPLED)===", flush=True)
     for name, b in snap["books"].items():
-        print(f"  {name:14s} 容量带 {_fmt(b['aum_low'])} – {_fmt(b['aum_high'])} · 绑定={b['binding']} "
-              f"(参与率上限 {_fmt(b['participation_cap_aum'])} · 冲击 {_fmt(b['impact_aum_low'])}–{_fmt(b['impact_aum_high'])} "
-              f"· 毛夏普 {b['gross_sharpe']} · {b['n_periods']} 周)", flush=True)
+        cr = b["calibrated_range"]
+        print(f"  {name:14s} 校准区间 {_fmt(cr['low'])} – {_fmt(cr['high'])}(参与率 5–20% × 执行铺开 1–5 天)· "
+              f"绑定={b['binding']} · 毛夏普 {b['gross_sharpe']} · {b['n_periods']} 周", flush=True)
+        print(f"    {'':14s} 敏感性: " + " ".join(f"{k}={_fmt(v)}" for k, v in b["sensitivity_particip_horizon"].items()), flush=True)
     print(f"  trend: 本轮未算(PIT as_of 无 volume 矩阵,边最弱)——RE-1 后续。", flush=True)
     print(f"-> wrote {_OUT}", flush=True)
 

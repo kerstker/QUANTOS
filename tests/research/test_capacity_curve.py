@@ -45,3 +45,12 @@ def test_participation_cap_binds_capacity():
 
 def test_participation_cap_none_when_no_turnover():
     assert participation_cap_aum([[], []], max_participation=0.10) is None
+
+
+def test_execution_horizon_scales_capacity_linearly():
+    # 铺开 5 天执行 → 单日参与率摊薄 → 参与率容量 ×5
+    c1 = participation_cap_aum(_TURN, max_participation=0.10, execution_horizon=1)
+    c5 = participation_cap_aum(_TURN, max_participation=0.10, execution_horizon=5)
+    assert c5 == c1 * 5
+    # 参与率翻倍也线性
+    assert participation_cap_aum(_TURN, max_participation=0.20, execution_horizon=1) == c1 * 2

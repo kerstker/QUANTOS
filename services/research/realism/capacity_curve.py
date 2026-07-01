@@ -77,21 +77,26 @@ def critical_aum(curve: list, sharpe_floor: float = 0.3) -> Optional[float]:
     return None
 
 
-def participation_cap_aum(turnover_by_period: Turnover, max_participation: float = 0.10) -> Optional[float]:
-    """参与率上限对应的 AUM:任何一名单期成交额都不得超过 max_participation×ADV。
-    frac_i·AUM <= p·adv_i ∀i,k ⟹ AUM <= p·min_{i,k}(adv_i/frac_i)。无有效换手 → None(不绑定)。"""
+def participation_cap_aum(turnover_by_period: Turnover, max_participation: float = 0.10,
+                          execution_horizon: int = 1) -> Optional[float]:
+    """参与率上限对应的 AUM:任何一名**单日**成交额都不得超过 max_participation×ADV。周度调仓可铺开
+    `execution_horizon` 天执行,单日 frac 摊薄为 frac/H,容量随之 ×H。
+    frac_i/H·AUM <= p·adv_i ∀i,k ⟹ AUM <= p·H·min_{i,k}(adv_i/frac_i)。无有效换手 → None(不绑定)。"""
     if not (0.0 < max_participation <= 1.0):
         raise ValueError("max_participation must be in (0, 1]")
+    if execution_horizon < 1:
+        raise ValueError("execution_horizon must be >= 1")
     ratios = [adv / frac for legs in turnover_by_period for frac, adv in legs
               if frac > 0 and adv > 0]
-    return None if not ratios else max_participation * min(ratios)
+    return None if not ratios else max_participation * execution_horizon * min(ratios)
 
 
 def capacity_band(gross_returns, turnover_by_period, aum_grid, impact_coef_lo_hi,
                   ppy: int = 52, sharpe_floor: float = 0.3, max_participation: float = 0.10,
-                  base_impact: Optional[AlmgrenChrissImpact] = None) -> dict:
+                  execution_horizon: int = 1, base_impact: Optional[AlmgrenChrissImpact] = None) -> dict:
     """扫冲击系数 [lo, hi](保守→激进)→ critical_aum 的区间带,并与参与率上限取 min 得 honest binding 容量。
-    激进系数容量更小 = 下界。诚实:真容量 = min(冲击-夏普容量, 参与率可行容量)——两个约束里更紧的那个。"""
+    激进系数容量更小 = 下界。诚实:真容量 = min(冲击-夏普容量, 参与率可行容量)——两个约束里更紧的那个。
+    execution_horizon = 周度调仓铺开执行的天数(单日参与率约束放宽 → 参与率容量 ×H)。"""
     base = base_impact or AlmgrenChrissImpact()
     lo_coef, hi_coef = impact_coef_lo_hi
     curves = {}
@@ -101,7 +106,7 @@ def capacity_band(gross_returns, turnover_by_period, aum_grid, impact_coef_lo_hi
         c = capacity_curve(gross_returns, turnover_by_period, aum_grid, imp, ppy)
         curves[tag] = c
         crit[tag] = critical_aum(c, sharpe_floor)
-    part_cap = participation_cap_aum(turnover_by_period, max_participation)
+    part_cap = participation_cap_aum(turnover_by_period, max_participation, execution_horizon)
 
     def _bind(impact_cap):
         vals = [v for v in (impact_cap, part_cap) if v is not None]
@@ -111,4 +116,5 @@ def capacity_band(gross_returns, turnover_by_period, aum_grid, impact_coef_lo_hi
     return {"aum_low": _bind(crit["aggressive"]), "aum_high": _bind(crit["conservative"]),
             "impact_aum_low": crit["aggressive"], "impact_aum_high": crit["conservative"],
             "participation_cap_aum": part_cap, "max_participation": max_participation,
+            "execution_horizon": execution_horizon,
             "curves": curves, "provenance": "UNCALIBRATED_PRINCIPLED"}
