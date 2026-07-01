@@ -122,9 +122,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (experiment_registry artifacts + real paper-track `live_ic`/recommendation), `alpha-zoo`
   (12-dim real eval + time/活体征 dims), `backtest-results` (run_registry by role),
   `data-catalog` (real PIT datasets), `safety-primitives` (real KillSwitch/gate), `portfolio`
-  (real optimizer/risk-parity), risk-dashboard/validation (real engines). The residual
-  synthetic root for the few remaining PARTIAL pages is `_factor_values`/`_forward_returns`
-  (`math.sin/cos`); contract-guarded by `tests/research/test_console_api_contract.py`.
+  (real optimizer/risk-parity), risk-dashboard/validation (real engines), `dry-run` (DryRunStore
+  runs), `architecture`+`system-completeness` (**REAL_REPO_INVENTORY** — live read-only repo
+  introspection via `_repo_inventory()`: per-domain module/LOC + test/page/endpoint counts, grounding
+  the curated maturity map in hard counts). The residual synthetic surfaces are the genuinely-missing
+  governance/process subsystems (incident/committee/RBAC/…), kept HONESTLY LABELED (not faked — faking
+  would break the honesty posture); synthetic root `_factor_values`/`_forward_returns` (`math.sin/cos`);
+  contract-guarded by `tests/research/test_console_api_contract.py`.
 - `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **37
   pages, route-lazy code-split** (+ FX Research). The audit doc's original split
   (7 REAL / 6 PARTIAL / 17 MOCK / 6 NONE) predates this session — REAL has grown
