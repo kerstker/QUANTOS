@@ -120,6 +120,10 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   爱平静/risk-on(低VIX SR+2.36 vs 高VIX+0.65,正常曲线+2.08 vs 倒挂+0.67),crowd_contra 爱压力/risk-off(高VIX+1.96,倒挂+1.76)。
   crowd 正好在 carry 走弱处走强 = 强分散故事,系统化了 RE-2 的 LUNA/FTX 危机发现。诚实:regime=全样本分位(回顾性非PIT择时)、
   gross 无成本、HY-OAS 覆盖 155/期;股票 + 基本面 + 经济发布类(需 BYO-CSV/ALFRED)= 待办。
+- **组合分散验证兑现(2026-07-01,`services/research/book_combine.py`)**:regime 互补 → 组合 carry+crowd 收益流。
+  **corr=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条一半,总收益~187% 保住,VIX regime 被抹平。**
+  两条正交 crypto 边合成 Sharpe~2/回撤 8% 的强分散。诚实:收益流层面(不同宇宙/规模、231 共同周、gross 无成本 RELATIVE 比较);
+  同一执行 book(统一宇宙 + 干跑流水线)= 自然下一步。
 - **短周期(4h/小时线、小样本)= null。** 价格/GP/量能因子都无稳健 OOS edge;加宽截面把样本内
   Deflated 夏普抬到 0.586,但**无窥视 OOS 证伪**(选择性过拟合,样本外 −2.01);量能因子净夏普全负。
 - **日线周期 = 第一个正信号(2026-06-26,`tools/crypto_daily_research.py`,commit 1564bb6)。** 同一
