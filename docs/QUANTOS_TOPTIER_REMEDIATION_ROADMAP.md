@@ -29,7 +29,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 
 | Rank | 项 | 维 | 优先/工作量 | 依赖(全已存在) | 为什么 |
 |:--:|------|:--:|:--:|------|------|
-| **1** | **风险平衡多策略统一执行 book**(carry+crowd risk-parity 过干跑流水线) | 4 | P0 / M | `book_combine.py`、`portfolio/optimizer` risk-parity、`dry_run_pipeline`、carry+crowd 回测 | **最高确定性 ROI**:corr −0.04、组合 Sharpe 1.95 vs naive VT 1.20(carry-dominated);把已验证的分散**在净-成本执行里兑现**。零新模型风险,全复用。**← 立刻开发** |
+| **1 ✓** | **风险平衡多策略统一执行 book**(已做,`f...` risk-parity + rolling 逆波动核) | 4 | P0 / M | `book_combine.py`、`dry_run_pipeline`、carry+crowd 回测 | **已完成——诚实结论:分散不敌执行现实。** 三种方式(naive-merge VT 1.20 / risk-parity-merge VT 1.14 / portfolio-of-books 配置 VT 1.21)**均不敌 crowd_contra 单条 VT 1.38**。根因:1.95/8% 是 gross 理想化(carry gross~1.44),净-成本+整手+vol-target 下 carry 仅~0.58、拉不动 crowd;净曲线相关 +0.04(非 gross −0.04)。执行流水线抓到理想-vs-真的差。**deployable 结论:crowd_contra 单条。** 后续排序据此调整:carry 作为独立可部署边价值下调,重心转数据广度(Rank 11)+ 结构化因子库(Rank 2)。 |
 | 2 | Barra-lite 结构化因子库(crypto 板块+风格+宏观) | 4 | P1 / M | `fundamental_store`(已填 FRED)、聚类 | 现在组合风险只有样本协方差,不透明;因子载荷解锁归因+压力测试+拥挤 |
 | 3 | 拥挤门接进组合构建(fail-closed 超阈值) | 4 | P1 / S | `services/alpha/crowding.py`、预交易门 | 便宜、防尾部同步清算风险 |
 | 4 | 多 book 资本配置(Kelly/bandit 跨策略 AUM 再分配) | 4/8 | P1 / M | `run_registry`(每策略 Sharpe/var_sr)、优化器 | #1 之上,把「哪条边分多少钱」系统化 |

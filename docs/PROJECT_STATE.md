@@ -124,6 +124,10 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   **corr=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条一半,总收益~187% 保住,VIX regime 被抹平。**
   两条正交 crypto 边合成 Sharpe~2/回撤 8% 的强分散。诚实:收益流层面(不同宇宙/规模、231 共同周、gross 无成本 RELATIVE 比较);
   同一执行 book(统一宇宙 + 干跑流水线)= 自然下一步。
+- **对标顶级路线图 Rank #1 已做 + 诚实更正(2026-07-01,`tools/dry_run_combo_riskparity_multi.py`)**:风险平衡统一执行
+  book(rolling 逆波动 sleeve,PIT)+ portfolio-of-books 配置——**carry+crowd 分散不敌执行现实**:三种方式 VT 1.20/1.14/1.21
+  均 < crowd_contra 单条 VT 1.38。1.95/8% 是 gross 理想化(carry gross~1.44),净-成本下 carry 仅~0.58 拉不动 crowd,
+  净曲线相关 +0.04。执行流水线抓到理想-vs-真的差。**deployable = crowd_contra 单条。** 见 `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md`。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved
