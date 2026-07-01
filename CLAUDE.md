@@ -95,8 +95,16 @@ Real, tested backend engines (`*_TESTED` in the audit):
   驱动器 `tools/capacity_research.py` 应用到 carry+crowd_contra,落 `capacity_snapshot.json`。**关键发现:参与率是绑定
   约束——carry ~$2M / crowd_contra ~$7M**;冲击-only 会误报 $B(~300× 高估),正是「松现实主义抬高可部署性」的自欺,
   引擎首跑即抓到(可部署性受限于*构造*——最小 ADV 名满权重——而非仅信号)。诊断非门禁:不改 CostModel 默认、不驱动晋级/下单。
-  trend(PIT as_of 无 volume 矩阵)本轮未算,留 RE-1 后续;历史情景重演/copula 尾部 = RE-2. `services/research/realism/`
-  纯离线、无网络(治理钉死)。
+  trend(PIT as_of 无 volume 矩阵)本轮未算,留 RE-1 后续. `services/research/realism/` 纯离线、无网络(治理钉死)。
+- `services/research/realism/{scenario,tail_risk}.py` + `tools/scenario_tail_research.py` — **现实主义 RE-2(历史情景重演 +
+  尾部风险)**:`scenario.py`(命名危机窗口 `window_stats` + `max_drawdown_window`,危机=数据覆盖到的 2021-05/2022-05 LUNA/
+  2022-11 FTX/2023-03 银行)+ `tail_risk.py`(历史 VaR/CVaR + Hill 尾指数 + 与 BTC 下尾依赖=崩盘 beta)。应用到 carry+crowd
+  (`REAL_HISTORICAL_REPLAY`)。**诚实发现:① 美元中性预判证实——carry/crowd 崩盘 beta 极低(下尾依赖 0.13/0.0),
+  crowd_contra 在 LUNA(+10.6%)/FTX(+6.5%)崩盘里反而赚——这些边的尾部风险是*截面价差击穿*,不是市场 beta;② 真尾部
+  内生——carry 最差回撤 19%(gross 无杠杆)发生在 2020-11 牛市而非任何崩盘;注:干跑报 77% 是 vol-target 加杠杆后的口径,
+  两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ trend 容量把 `crypto_daily.db` 的 volume 单位跨币
+  不一致 bug 逮出来(EOS ~$20k vs BTC ~$3.7Q,~17 数量级不可能真实)——诚实标 `UNRELIABLE_VOLUME_UNITS` 不报假数,已
+  spawn 独立修复任务。** 诊断非门禁。crowd 2021-05 窗口无数据(早期 OI global_ls 稀疏,诚实标注)。
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the

@@ -107,7 +107,13 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   应用到 carry/crowd_contra。**关键发现:参与率上限(10% ADV/期)是绑定约束——真容量 carry ~$2M / crowd_contra ~$7M**;
   只看冲击会误报 $743M–$4.1B / $1.69B–$9.1B(**~300× 高估**)。这正是差距报告警告的「松现实主义 × 关卡抓海市蜃楼 =
   无 edge 信号在组合层看起来可部署」——引擎首跑即抓到,且指出**可部署性受限于*构造*(最小 ADV 名满权重),非仅信号**。
-  诚实标 `UNCALIBRATED_PRINCIPLED`(冲击系数未校准 → 区间带);trend 留 RE-1 后续;情景重演/尾部 = RE-2。
+  诚实标 `UNCALIBRATED_PRINCIPLED`(冲击系数未校准 → 区间带)。
+- **现实主义引擎 RE-2 情景重演 + 尾部(2026-07-01,`services/research/realism/{scenario,tail_risk}.py`)**:把 carry/crowd
+  拉过真实危机(2021-05/LUNA/FTX/2023-03 银行)+ 尾部量化。**诚实发现:① 美元中性预判证实——崩盘 beta 极低(下尾依赖
+  carry 0.13 / crowd 0.0),crowd_contra 在 LUNA(+10.6%)/FTX(+6.5%)崩盘里反赚——尾部风险是*截面价差击穿*非市场 beta;
+  ② 真尾部内生(carry 最差 19% 在 2020-11 牛市,非崩盘;干跑 77% 是 vol-target 加杠杆口径);③ 尾偏肥 Hill ~2.4–2.7;
+  ④ 逮到 `crypto_daily.db` volume 单位跨币不一致 bug(EOS $20k vs BTC $3.7Q,诚实标 UNRELIABLE、已 spawn 修复)。** RE-2
+  剩 Copula 全拟合 + trend 容量(待 daily volume 修复)。
 - **短周期(4h/小时线、小样本)= null。** 价格/GP/量能因子都无稳健 OOS edge;加宽截面把样本内
   Deflated 夏普抬到 0.586,但**无窥视 OOS 证伪**(选择性过拟合,样本外 −2.01);量能因子净夏普全负。
 - **日线周期 = 第一个正信号(2026-06-26,`tools/crypto_daily_research.py`,commit 1564bb6)。** 同一

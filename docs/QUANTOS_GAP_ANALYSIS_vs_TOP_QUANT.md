@@ -4,8 +4,11 @@
 > P0-1(ML 层)**部分闭合**(`services/research/ml` sklearn stacking,诚实结论无 edge、瓶颈=数据/信号类);维度 8(治理/资本
 > 路径)**大幅推进**(轨道3:券商接缝 + 多方人工批准 + Phase 14 进程隔离设计)。**「现实主义」缺口(下 §5 第 4 条)部分闭合**:
 > `services/research/realism/`(Almgren-Chriss 冲击 + 容量衰减带,应用到 carry/crowd_contra)已建——**首跑即抓到自欺:
-> 参与率上限把真容量绑在 carry ~$2M / crowd_contra ~$7M,冲击-only 会误报 $B(~300× 高估)。** 历史情景重演 + copula 尾部
-> = RE-2 待做。仍敞着的最大真前沿:**新资产类别(股票+基本面)** 与 **RE-2 情景/尾部**。
+> 参与率上限把真容量绑在 carry ~$2M / crowd_contra ~$7M,冲击-only 会误报 $B(~300× 高估)。** **RE-2(情景重演 + 尾部)
+> 也已建**:carry/crowd 崩盘 beta 极低(下尾依赖 0.13/0.0)、crowd 在 LUNA/FTX 崩盘里反赚——尾部是截面价差击穿非市场 beta;
+> 真尾部内生(carry 最差 19% 在 2020-11 牛市);尾偏肥(Hill ~2.4–2.7);且逮到 `crypto_daily.db` volume 单位跨币不一致 bug
+> (诚实标 UNRELIABLE)。**「现实主义」缺口从"未做"推进到"冲击/容量/情景/尾部四件已建、诚实见效"**。仍敞着的最大真前沿:
+> **新资产类别(股票+基本面)**;realism 剩 Copula 全拟合 + trend 容量(待 daily 库 volume 单位修复)。
 >
 > 生成:2026-06-29,多代理审查(8 维并行只读测绘 → 每维对标顶级 AI 量化算差距 → 综合)。
 > 对标对象:顶级 AI 量化(文艺复兴 / Two Sigma / Citadel / Jane Street + 现代 ML 量化基金)。
