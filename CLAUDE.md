@@ -88,6 +88,15 @@ Real, tested backend engines (`*_TESTED` in the audit):
   judged no-peek OOS. Driver `tools/ml_stack_research.py`. Honest finding: NO tradable edge (crypto combination
   hurts/GBM overfits; FX +0.21 is gross + contaminated-universe) — bottleneck is data/signal-class, not modeling.
   numpy/sklearn are non-network so `services/` no-network-import is still machine-enforced.
+- `services/research/realism/{impact,capacity_curve}.py` — **现实主义引擎 RE-1(市场冲击 + 容量)**:把回测/干跑的
+  成本现实从「未校准、默认关闭的 sqrt stub」升到 **Almgren-Chriss 冲击**(临时平方根 + 永久线性,参与率驱动,纯函数)
+  + **容量衰减带**(扫 AUM → 净冲击后夏普 → `critical_aum`;冲击系数无法校准 → 扫 5–20bps 给**区间带**、标
+  `UNCALIBRATED_PRINCIPLED`,不报假单点)。**诚实容量 = min(冲击-夏普容量, 参与率上限10%)**——两约束里更紧那个。
+  驱动器 `tools/capacity_research.py` 应用到 carry+crowd_contra,落 `capacity_snapshot.json`。**关键发现:参与率是绑定
+  约束——carry ~$2M / crowd_contra ~$7M**;冲击-only 会误报 $B(~300× 高估),正是「松现实主义抬高可部署性」的自欺,
+  引擎首跑即抓到(可部署性受限于*构造*——最小 ADV 名满权重——而非仅信号)。诊断非门禁:不改 CostModel 默认、不驱动晋级/下单。
+  trend(PIT as_of 无 volume 矩阵)本轮未算,留 RE-1 后续;历史情景重演/copula 尾部 = RE-2. `services/research/realism/`
+  纯离线、无网络(治理钉死)。
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
