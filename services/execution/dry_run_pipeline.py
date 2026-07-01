@@ -21,6 +21,7 @@ from services.execution.intent_builder import build_intents
 from services.monitoring.audit_log import GlobalAuditLog
 from services.research.paper_trading.domain.models import FillMethod, OrderSide as PaperSide, PaperFill
 from services.research.paper_trading.domain.reconciliation import reconcile
+from services.trading.broker_adapter import assert_dry_run_adapter
 from services.trading.dry_run_adapters.domain.models import DryRunCommand
 
 
@@ -86,6 +87,7 @@ def simulate_fills(approved: Sequence, prices: Dict[str, float], *, adapter, run
     """已批准意图 → 干跑适配器受理(process→simulate_fill,绝不真发)→ 纸面成交 PaperFill。
     适配器是第二道闸:若它拒绝(rejection_reasons 非空)则不成交。成本以 cost_bps 计入 commission(默认 0)。
     确定性 id;不捕获适配器内部 uuid/event_time(保 DryRunRun 可复现)。"""
+    assert_dry_run_adapter(adapter)  # fail-closed 接缝守卫:运行时只放行证明为干跑的适配器
     fills, reports = [], []
     for i, (intent, ref) in enumerate(approved):
         px = prices.get(intent.instrument_id)

@@ -31,16 +31,28 @@ class BrokerAdapter(Protocol):
 
 
 class DryRunBrokerAdapter:
-    """薄包装现有 DryRunAdapterEngine(零改动它),满足 BrokerAdapter。绝不真发。"""
+    """薄包装现有 DryRunAdapterEngine(零改动它),满足 BrokerAdapter。绝不真发。
+
+    是个**透明超集**:既暴露 BrokerAdapter 接缝方法(submit_order/fetch_fill),也透传引擎原生方法
+    (process/simulate_fill),所以它在现有干跑流水线里是即插即用的 drop-in(流水线当前调 process/
+    simulate_fill),同时满足新接缝契约——不必迁移流水线就能用。"""
     is_dry_run = True
 
     def __init__(self, engine: Optional[DryRunAdapterEngine] = None) -> None:
         self._engine = engine if engine is not None else DryRunAdapterEngine()
 
+    # --- BrokerAdapter 接缝契约 ---
     def submit_order(self, cmd: DryRunCommand) -> DryRunAdapterRun:
         return self._engine.process(cmd)
 
     def fetch_fill(self, run_id: str) -> Optional[NormalizedReport]:
+        return self._engine.simulate_fill(run_id)
+
+    # --- 引擎原生方法透传(让它在现有流水线里 drop-in) ---
+    def process(self, cmd: DryRunCommand, existing_ids=None) -> DryRunAdapterRun:
+        return self._engine.process(cmd, existing_ids)
+
+    def simulate_fill(self, run_id: str) -> Optional[NormalizedReport]:
         return self._engine.simulate_fill(run_id)
 
 

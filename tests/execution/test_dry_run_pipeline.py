@@ -211,3 +211,23 @@ def test_multi_period_records_net_exposure():
     # period 1: BTC +5000@100 / ETH -10000@50 = +500k -500k = 0 (dollar-neutral at clean-lot entry)
     assert abs(r.detail["equity_curve"][0]["net"]) < 1.0
     assert "avg_net_exposure_pct" in r.pnl and r.pnl["avg_net_exposure_pct"] >= 0.0
+
+
+# --- broker adapter seam guard (轨道3 子项目1) ---------------------------------
+import pytest as _pytest  # noqa: E402
+from quantos.contracts.config import SafetyViolation  # noqa: E402
+from services.trading.broker_adapter import DryRunBrokerAdapter  # noqa: E402
+
+
+def test_simulate_fills_rejects_unknown_adapter_fail_closed():
+    intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
+    with _pytest.raises(SafetyViolation):
+        simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=object(),
+                       run_id="r1", timestamp=1000)
+
+
+def test_simulate_fills_accepts_dry_run_broker_adapter():
+    intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
+    out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunBrokerAdapter(),
+                         run_id="r1", timestamp=1000)
+    assert len(out["fills"]) == 1 and out["fills"][0].instrument_id == "BTC"
