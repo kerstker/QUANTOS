@@ -360,10 +360,10 @@ rtk proxy python -m pytest tests/portfolio/test_crowding_gate.py -q
 Expected:
 
 ```text
-15 passed
+20 passed
 ```
 
-If `test_absolute_weight_drives_score_for_long_short_books` fails at the threshold boundary, keep the implementation's `score >= threshold` block rule. This is deliberate because Rank #3 is a conservative fail-closed gate.
+The exact test count may be higher if reviewers add boundary cases. Preserve the spec rule: `score > threshold` blocks, `score == threshold` warns, and `score == warn_threshold` passes.
 
 ---
 
@@ -559,7 +559,7 @@ rtk proxy python -m pytest tests/portfolio/test_crowding_gate.py tests/governanc
 Expected:
 
 ```text
-18 passed
+23 passed
 ```
 
 - [ ] **Step 2: Run governance scanner**

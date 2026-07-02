@@ -134,6 +134,10 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   5 因子(`carry/crowding/liquidity/market_beta/volatility`)并输出 gitignored 的 `data/cache/barra_lite_snapshot.json`。
   首跑:58 symbols / 5 factors;carry total_var 0.6544、crowd_contra 1.3969、carry_crowd_equal 0.5733。
   诚实边界:诊断-only,不等同完整机构级 Barra 因子库,不改权重/晋级/闸门/干跑/券商路径;治理测试钉死无网络/券商/订单/凭证 surface。
+- **对标顶级路线图 Rank #3 已做(2026-07-02,拥挤门 primitive)**:`services/portfolio/crowding_gate.py`
+  新增纯函数 fail-closed crowding gate,输入候选权重 + caller-supplied crowding evidence,输出 `PASS/WARN/BLOCK`。
+  score=按绝对权重的拥挤暴露均值;缺失覆盖不足、显式 None/NaN/inf、空 book、非有限权重均 `BLOCK`。
+  诚实边界:primitive only,未自动接入 `build_portfolio`/干跑/预交易门/券商/生命周期;后续若要改变组合构建行为需单独 spec。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved
