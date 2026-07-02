@@ -138,6 +138,12 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   新增纯函数 fail-closed crowding gate,输入候选权重 + caller-supplied crowding evidence,输出 `PASS/WARN/BLOCK`。
   score=按绝对权重的拥挤暴露均值;缺失覆盖不足、显式 None/NaN/inf、空 book、非有限权重均 `BLOCK`。
   诚实边界:primitive only,未自动接入 `build_portfolio`/干跑/预交易门/券商/生命周期;后续若要改变组合构建行为需单独 spec。
+- **对标顶级路线图 Rank #4 已做(2026-07-02,协方差感知多 book 资本配置 primitive)**:`services/portfolio/capital_allocator.py`
+  新增纯函数 fail-closed covariance-aware capital allocator,输入多策略收益流 + 可选容量/质量/前次权重,输出 `ALLOCATED/BLOCKED`
+  研究 AUM 权重建议、turnover 与诊断(`book_stats`/capacity/effective caps/risk contribution)。默认使用 lower-confidence expected return
+  (`mean - mean_shrink_z * vol/sqrt(n)`) + shrunk covariance + 现有 constrained mean-variance optimizer,并叠加 per-book cap、capacity cap 与 no-trade band。
+  诚实边界:研究 allocation primitive only,不读 `DryRunStore`/`run_registry`,不写 DB,不自动调仓,不接 dry-run/pre-trade/broker/lifecycle/readiness/console;
+  治理测试钉死无网络/券商/订单/凭证 surface。`quality_multiplier` 来源和容量衰减曲线仍是后续独立 primitive。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved
