@@ -4,19 +4,34 @@
 
 **Goal:** Build a pure fail-closed book-level capital allocator that recommends research AUM weights across strategy books.
 
-**Architecture:** Add `services/portfolio/capital_allocator.py` as a deterministic stdlib-only portfolio primitive. It consumes caller-supplied return streams plus optional capacity, quality, and previous-weight inputs; it returns a dataclass allocation plan and diagnostics, without reading stores or touching execution, trading, risk, readiness, broker, or console paths.
+**Architecture:** Add `services/portfolio/capital_allocator.py` as a deterministic stdlib-only portfolio primitive. It consumes caller-supplied return streams plus optional capacity, quality, and previous-weight inputs; computes shrunk expected returns and a shrunk covariance matrix; then reuses the existing constrained mean-variance optimizer. It returns a dataclass allocation plan and diagnostics, without reading stores or touching execution, trading, risk, readiness, broker, or console paths.
 
-**Tech Stack:** Python stdlib dataclasses/math/typing, existing `services.portfolio.optimizer.cost_aware_rebalance`, existing `services.portfolio.risk_model` diagnostics, pytest, AST governance tests.
+**Tech Stack:** Python stdlib dataclasses/math/typing, existing `services.portfolio.constrained_optimizer.min_variance_weights`, existing `services.portfolio.constraints.PortfolioConstraints`, existing `services.portfolio.optimizer.cost_aware_rebalance`, existing `services.portfolio.risk_model` diagnostics, pytest, AST governance tests.
 
 ---
 
 ## File Structure
 
-- Create `tests/portfolio/test_capital_allocator.py`: behavior-first tests for allocation, caps, quality multipliers, previous weights, diagnostics, determinism, and fail-closed evidence handling.
+- Create `tests/portfolio/test_capital_allocator.py`: behavior-first tests for covariance-aware allocation, shrunk expected returns, caps, quality multipliers, previous weights, diagnostics, determinism, and fail-closed evidence handling.
 - Create `tests/governance/test_capital_allocator_boundary.py`: AST and source scan for portfolio boundary invariants.
 - Create `services/portfolio/capital_allocator.py`: pure allocation dataclasses and `allocate_capital`.
 - Modify `docs/PROJECT_STATE.md`: add Rank #4 landed primitive note after the Rank #3 note.
 - Modify `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md`: mark Rank #4 as landed as a primitive.
+
+## Review Adjustment
+
+The original plan used independent fractional-Kelly-style scores normalized to 1.
+External review correctly flagged that as missing cross-book covariance in the
+sizing step. Implementation must follow the revised spec instead:
+
+- compute lower-confidence expected returns with `mean_shrink_z`;
+- compute a shrunk covariance matrix from aligned book returns;
+- call `min_variance_weights(..., expected_returns=..., risk_aversion=...)`
+  with `PortfolioConstraints(lower=0.0, upper=effective_caps, budget=1.0)`;
+- keep `quality_multiplier_by_book` as an optional deterministic input, while
+  leaving its systematic generation to a future quality-scoring primitive;
+- keep capacity as a hard-cap simplification and document that capacity-decay
+  curves are future work.
 
 ## Task 1: Behavior Tests
 
@@ -96,7 +111,7 @@ def test_all_negative_evidence_blocks():
 
     assert plan.status == "BLOCKED"
     assert plan.allocations == ()
-    assert plan.reasons == ("no_positive_kelly_score",)
+    assert plan.reasons == ("no_positive_expected_return",)
 
 
 def test_capacity_caps_are_respected_and_excess_is_redistributed():
@@ -231,7 +246,7 @@ def test_valid_plan_includes_research_diagnostics():
     )
 
     assert plan.status == "ALLOCATED"
-    assert plan.diagnostics["method"] == "fractional_kelly"
+    assert plan.diagnostics["method"] == "covariance_mean_variance"
     assert set(plan.diagnostics["book_stats"]) == {"a", "b"}
     assert set(plan.diagnostics["risk_contribution_pct"]) == {"a", "b"}
     for stats in plan.diagnostics["book_stats"].values():
@@ -418,11 +433,12 @@ _EPS = 1e-12
 
 @dataclass(frozen=True)
 class CapitalAllocatorConfig:
-    method: str = "fractional_kelly"
+    method: str = "covariance_mean_variance"
     min_observations: int = 20
     max_weight: float = 0.70
     no_trade_band: float = 0.02
-    kelly_fraction: float = 0.25
+    risk_aversion: float = 1.0
+    mean_shrink_z: float = 1.0
     min_positive_mean: float = 0.0
 
 
@@ -463,7 +479,7 @@ def _blocked(reason: str, diagnostics: dict | None = None) -> CapitalAllocationP
 
 
 def _validate_config(config: CapitalAllocatorConfig) -> str | None:
-    if config.method != "fractional_kelly":
+    if config.method != "covariance_mean_variance":
         return f"invalid_method:{config.method}"
     if not isinstance(config.min_observations, int) or config.min_observations < 2:
         return "invalid_min_observations"
@@ -471,8 +487,10 @@ def _validate_config(config: CapitalAllocatorConfig) -> str | None:
         return "invalid_max_weight"
     if not _is_finite_number(config.no_trade_band) or float(config.no_trade_band) < 0.0:
         return "invalid_no_trade_band"
-    if not _is_finite_number(config.kelly_fraction) or float(config.kelly_fraction) <= 0.0:
-        return "invalid_kelly_fraction"
+    if not _is_finite_number(config.risk_aversion) or float(config.risk_aversion) <= 0.0:
+        return "invalid_risk_aversion"
+    if not _is_finite_number(config.mean_shrink_z) or float(config.mean_shrink_z) < 0.0:
+        return "invalid_mean_shrink_z"
     if not _is_finite_number(config.min_positive_mean):
         return "invalid_min_positive_mean"
     return None
@@ -562,7 +580,7 @@ def _apply_caps(
 
     total = sum(result.values())
     if total <= _EPS:
-        return {}, "no_positive_kelly_score"
+        return {}, "no_positive_expected_return"
     normalized = {book_id: weight / total for book_id, weight in result.items()}
     for book_id in eligible:
         if normalized[book_id] > caps[book_id] + 1e-10:
@@ -649,8 +667,10 @@ def allocate_capital(
         mean, variance, volatility = _stats(values)
         if not math.isfinite(variance) or variance <= _EPS:
             return _blocked(f"zero_variance:{book_id}")
-        raw_score = max(mean - float(config.min_positive_mean), 0.0) / variance
-        adjusted_score = raw_score * float(config.kelly_fraction) * quality[book_id]
+        standard_error = volatility / math.sqrt(len(values))
+        shrunk_mean = mean - float(config.mean_shrink_z) * standard_error
+        expected_return = max(shrunk_mean - float(config.min_positive_mean), 0.0)
+        adjusted_score = expected_return * quality[book_id]
         clean_returns[book_id] = tuple(values)
         scores[book_id] = adjusted_score
         book_stats[book_id] = {
@@ -665,7 +685,7 @@ def allocate_capital(
 
     eligible = tuple(book_id for book_id in book_ids if scores[book_id] > _EPS)
     if not eligible:
-        return _blocked("no_positive_kelly_score", {"book_stats": book_stats})
+        return _blocked("no_positive_expected_return", {"book_stats": book_stats})
 
     caps, capacity_caps, cap_reason = _effective_caps(
         book_ids,

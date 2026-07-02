@@ -40,7 +40,7 @@ not a live-trading instruction.
   pre-trade gates, lifecycle promotion, readiness flags, broker adapters, or the
   console.
 - Do not claim full institutional Kelly sizing. This is a conservative
-  Kelly-style budget primitive for research allocation.
+  covariance-aware mean-variance budget primitive for research allocation.
 
 ## API
 
@@ -49,11 +49,12 @@ Create `services/portfolio/capital_allocator.py` with:
 ```python
 @dataclass(frozen=True)
 class CapitalAllocatorConfig:
-    method: str = "fractional_kelly"
+    method: str = "covariance_mean_variance"
     min_observations: int = 20
     max_weight: float = 0.70
     no_trade_band: float = 0.02
-    kelly_fraction: float = 0.25
+    risk_aversion: float = 1.0
+    mean_shrink_z: float = 1.0
     min_positive_mean: float = 0.0
 
 
@@ -97,27 +98,48 @@ def allocate_capital(
 
 ## Allocation Method
 
-The first implementation uses conservative fractional-Kelly-style scores:
+The first implementation uses a conservative covariance-aware mean-variance
+allocator, reusing the existing pure `services.portfolio.constrained_optimizer`
+instead of implementing a matrix inverse.
 
 1. Validate every book id and return value.
 2. Require at least `min_observations` finite returns per book.
-3. Compute per-book arithmetic mean and population variance.
-4. Compute raw score:
+3. Compute per-book arithmetic mean, population variance, volatility, and mean
+   standard error using a numerically stable two-pass calculation.
+4. Compute a lower-confidence expected return:
 
    ```text
-   raw_score = max(mean - min_positive_mean, 0) / variance
+   shrunk_mean = mean - mean_shrink_z * volatility / sqrt(observations)
+   expected_return = max(shrunk_mean - min_positive_mean, 0)
    ```
 
-5. Apply `kelly_fraction`.
-6. Apply optional `quality_multiplier_by_book`, where each multiplier must be
+5. Apply optional `quality_multiplier_by_book`, where each multiplier must be
    finite and in `[0, 1]`.
-7. Normalize positive scores to sum to 1.
-8. If no book has positive score after quality multipliers, return `BLOCKED`
-   with `no_positive_kelly_score`.
+6. Build a shrunk covariance matrix from the aligned return streams via the
+   existing portfolio risk helpers.
+7. Solve a constrained mean-variance problem with:
 
-This intentionally under-allocates weak or negative books. It should therefore
-select `crowd_contra` over carry when supplied with the dry-run evidence that
-Rank #1 documented, but it must not hard-code any strategy name or conclusion.
+   ```text
+   minimize 1/2 * w' Sigma w - risk_aversion * expected_return' w
+   subject to sum(w) = 1, 0 <= w_i <= effective_cap_i
+   ```
+
+8. If no book has positive expected return after shrinkage and quality
+   multipliers, return `BLOCKED` with `no_positive_expected_return`.
+
+This intentionally under-allocates weak, negative, and statistically thin books.
+It should therefore select `crowd_contra` over carry when supplied with the
+dry-run evidence that Rank #1 documented, but it must not hard-code any strategy
+name or conclusion.
+
+This first increment is still not a full institutional Kelly engine:
+
+- It does not invert an unconstrained Kelly system directly.
+- It uses sample covariance with existing shrinkage, not a vendor-grade
+  multi-layer covariance estimator.
+- It treats capacity as a hard cap, not a continuous capacity-decay curve.
+- It leaves systematic generation of `quality_multiplier_by_book` to a future
+  signal-quality primitive.
 
 ## Capacity Caps
 
@@ -134,7 +156,10 @@ Rules:
 - `total_aum <= 0` blocks the plan when capacities are supplied.
 - If the sum of all effective caps across allocatable books is less than 1, the
   plan blocks with `infeasible_capacity_caps`.
-- Otherwise, weights are capped and excess is redistributed to uncapped room.
+- Otherwise, caps are supplied directly as optimizer upper bounds. If fallback
+  cap redistribution is needed, use iterative waterfilling: clamp over-cap books,
+  redistribute remaining weight across the still-free books, and repeat until no
+  book violates its cap or infeasibility is proven.
 
 The cap logic is deterministic and pure. It never changes the underlying book
 weights or dry-run configuration.
@@ -152,9 +177,10 @@ Invalid previous weights block the plan instead of being silently ignored.
 `diagnostics` should include:
 
 - `method`
-- `book_stats`: per book mean, variance, volatility, raw score, adjusted score,
-  quality multiplier, and observation count
+- `book_stats`: per book mean, variance, volatility, standard error,
+  shrunk mean, expected return, quality multiplier, and observation count
 - `capacity_caps`: per book effective cap weight when available
+- `effective_caps`: per book optimizer upper bound
 - `risk_contribution_pct`: computed from existing portfolio covariance/risk
   helpers for the final weights when possible
 
@@ -169,6 +195,7 @@ Return `BLOCKED` with empty allocations when:
 - Any return value is non-numeric, NaN, or infinite.
 - Any book has fewer than `min_observations` returns.
 - Any variance is zero or non-finite.
+- Any covariance calculation or optimizer solve fails.
 - Any quality multiplier is non-finite or outside `[0, 1]`.
 - Capacity caps are invalid or infeasible.
 - Previous weights are invalid.
@@ -177,8 +204,14 @@ Return `BLOCKED` with empty allocations when:
 Use explicit reason strings such as `empty_returns_by_book`,
 `insufficient_observations:<book>`, `invalid_return:<book>`,
 `zero_variance:<book>`, `invalid_quality_multiplier:<book>`,
-`invalid_capacity:<book>`, `infeasible_capacity_caps`, and
-`no_positive_kelly_score`.
+`invalid_capacity:<book>`, `infeasible_capacity_caps`,
+`optimizer_failed`, and `no_positive_expected_return`.
+
+Numerical tolerance:
+
+- Final weight sum tolerance is `1e-8`.
+- Cap feasibility tolerance is `1e-10`.
+- Zero variance threshold is `1e-12`.
 
 ## File Boundaries
 
@@ -197,6 +230,8 @@ The implementation file must remain pure portfolio code. It may import existing
 helpers from:
 
 - `services.portfolio.optimizer`
+- `services.portfolio.constrained_optimizer`
+- `services.portfolio.constraints`
 - `services.portfolio.risk_model`
 
 It must not import outside `services.portfolio` except stdlib typing/dataclasses
@@ -207,11 +242,15 @@ and math.
 Behavior tests should cover:
 
 - A strong positive-return, lower-risk book receives more weight than a weaker
-  book.
+  book under the covariance-aware optimizer.
+- Two highly correlated positive books do not both receive full independent
+  Kelly-style allocations; covariance participates in sizing.
 - Negative or zero-edge books receive no capital when other books have positive
-  scores.
-- All-negative evidence blocks with `no_positive_kelly_score`.
+  expected returns.
+- All-negative or statistically thin evidence blocks with
+  `no_positive_expected_return`.
 - Capacity caps are respected and excess is redistributed.
+- Capacity caps that require multiple cap cascades are handled deterministically.
 - Infeasible capacity caps block.
 - Quality multipliers reduce allocation and invalid multipliers block.
 - Previous weights inside the no-trade band suppress turnover.
@@ -256,7 +295,8 @@ Governance tests should scan `services/portfolio/capital_allocator.py` and asser
 - Completeness scan: no unresolved blanks.
 - Internal consistency: the API, fail-closed rules, and tests all describe the
   same first increment.
-- Scope check: this is a single pure portfolio primitive; dry-run-store readers
-  and console snapshots are intentionally separate future work.
+- Scope check: this is a single pure portfolio primitive; dry-run-store readers,
+  signal-quality scoring, capacity-decay curves, and console snapshots are
+  intentionally separate future work.
 - Ambiguity check: capacity and quality inputs are optional, but invalid supplied
   values block rather than being ignored.
