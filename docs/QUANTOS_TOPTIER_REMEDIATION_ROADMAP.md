@@ -18,7 +18,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 2 | Alpha/信号生成 | **6.5** | 基线+本会话 | 截面 DSL+GP+de Prado+IC 面板真;两条可部署边(carry/crowd);ML 层诚实=当前数据无 edge。缺学习型信号/LLM。 |
 | 3 | 回测与验证 | **7.5** | 基线 | **最强维**:CPCV/DSR/PBO/no-peek OOS/泄漏检测接近顶配,已用来证伪自己。扣分在 tick 保真、算力、多重检验预算账本。 |
 | 4 | 组合构建与风险 | **7.1** | 工作流 | 约束优化器/因子风险模型/9 引擎门/tail 引擎全真;已补风险平衡执行 book + Barra-lite read-only 诊断第一版 + Brinson-Fachler 归因 primitive;**缺**:完整板块/风格/宏观因子库、拥挤诊断接入。 |
-| 5 | 执行与微结构 | **4.2** | 工作流 | bar 级 next-open 高估可成交性;现实主义引擎(冲击+容量+尾部)已把 300× 高估抓出、给诚实区间;缺 tick/LOB/最优执行(L2 故意不做)。 |
+| 5 | 执行与微结构 | **4.3** | 工作流 | bar 级 next-open 高估可成交性;现实主义引擎(冲击+容量+尾部)已把 300× 高估抓出、给诚实区间,且已形式化文献默认校准 primitive;缺 tick/LOB/最优执行(L2 故意不做)。 |
 | 6 | 基建/MLOps/规模 | **5.5** | 基线 | 单机工程纪律意外扎实(确定性/不可变实验存储/CI 门);缺分布式/GPU、种子钉死、环境锁定、特征商店/模型注册形式化。 |
 | 7 | AI/智能体 | **5.2** | 工作流 | 护栏化非人 ResearchAgentLoop + 进化/GP/MCTS/bandit + 诚实多重检验;缺 LLM 假设生成/Transformer/RL/在线学习。信号发现瓶颈=智能+数据。 |
 | 8 | 治理/安全/资本路径 | **6.2** | 工作流 | 多方哈希链批准/kill-switch/审计链/RBAC 骨架/签名接缝全真;缺 intra-day 实时风控、事件响应自动化、监管报送脚手架(多为 post-L2)。 |
@@ -34,7 +34,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | **3 ✓** | **拥挤门 primitive**(已做,fail-closed 超阈值) | 4 | P1 / S | `services/portfolio/crowding_gate.py`、`services/alpha/crowding.py` | 已落地纯函数 gate:caller-supplied crowding evidence + candidate weights → `PASS/WARN/BLOCK`;unknown/invalid/coverage不足 fail-closed 到 `BLOCK`。诚实边界:primitive only,尚未自动改写组合构建行为;后续可单独把它接入指定 research/portfolio caller。 |
 | **4 ✓** | **协方差感知多 book 资本配置 primitive**(已做,fail-closed mean-variance AUM budget) | 4/8 | P1 / M | `services/portfolio/capital_allocator.py`、`constrained_optimizer`、风险模型 | 已落地纯函数 allocator:多策略收益流 + 可选容量/质量/前次权重 → `ALLOCATED/BLOCKED` 研究 AUM 权重建议; lower-confidence expected return + shrunk covariance + constrained mean-variance optimizer,容量/质量/历史证据异常 fail-closed。诚实边界:primitive only,不读 dry-run/run_registry,不自动调仓/干跑/晋级/下单;`quality_multiplier` 来源与容量衰减曲线留后续独立 primitive。 |
 | **5 ✓** | **Brinson-Fachler 归因 primitive**(已做,allocation/selection/interaction) | 4 | P2 / M | `services/portfolio/brinson.py`、`construction.py` 既有归因 | 已落地纯函数 benchmark-relative attribution: caller-supplied portfolio/benchmark weights + asset returns + group map → `ATTRIBUTED/BLOCKED`;输出 allocation/selection/interaction/active return 恒等式诊断。诚实边界:primitive only,不读写 DB、不接 dry-run/console/预交易/券商/生命周期;多层 sector/style/macro 适配器留后续。 |
-| 6 | 冲击模型校准(文献默认 + 敏感性,RE-1 收尾) | 5 | P1 / M | `realism/impact.py`、`dry_run_pipeline` PaperFill | 收紧容量估计(本会话已做参与率×执行铺开敏感性,再补文献系数校准) |
+| **6 ✓** | **冲击模型校准 primitive**(已做,文献默认 + 敏感性参数包) | 5 | P1 / M | `services/research/realism/impact_calibration.py`、`impact.py`、`capacity_curve.py` | 已落地纯函数 calibration set: aggressive/base/conservative 三情景 + `UNCALIBRATED_PRINCIPLED` provenance + 可直接传给 `capacity_band` 的系数带。诚实边界:不是 venue/tick 实测校准,不改 dry-run 成本/成交/组合/下单;真实成交校准仍需 tick/LOB/执行数据。 |
 | 7 | 尾部感知组合构建(CVaR 优化) | 4 | P2 / M | `tail_risk.py`、约束优化器 | min-variance 忽略尾部;CVaR 最小化标准且代码量小 |
 | 8 | 动态相关漂移检测(滚动相关+regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | 静态收缩协方差错过 regime 切换(常态 0.3→压力 0.9) |
 | 9 | 全局多重检验预算账本(跨会话 trial 计数) | 3 | P2 / M | `experiment_registry`、DSR n_trials | 把「一共试了多少次」变成全局账,防跨会话选择偏差 |

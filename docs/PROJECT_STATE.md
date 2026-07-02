@@ -150,6 +150,13 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   零主动收益、long-short 权重加性、缺 return/group、非有限值、权重和异常、确定性均测试钉死。
   诚实边界:研究解释 primitive only,不读写 DB,不接 `DryRunStore`/`run_registry`,不自动调仓,不接 dry-run/pre-trade/broker/lifecycle/readiness/console;
   多层 sector/style/macro 适配器仍是后续独立接线,当前只对 caller-supplied 单层 group map 做严谨恒等式归因。
+- **对标顶级路线图 Rank #6 已做(2026-07-03,冲击模型校准 primitive)**:`services/research/realism/impact_calibration.py`
+  新增纯函数 calibration set,把 RE-1 的文献默认/敏感性假设形式化为 aggressive/base/conservative 三情景
+  (`temp_coef` 5/10/20bps,`perm_coef` 2.5/5/10bps,平方根 exponent=0.5),provenance=`UNCALIBRATED_PRINCIPLED`,
+  并提供 `impact_band_from_calibration()` 可直接喂给 `capacity_band`。测试钉死情景排序、`AlmgrenChrissImpact`
+  转换、capacity band 契约、非法参数 fail-closed 与治理边界。
+  诚实边界:这不是 venue/tick 实测校准,不改 dry-run 成本/成交、不改 `CostModel`/组合构建/预交易门/券商/生命周期/readiness/console;
+  真实成交校准仍需 tick/LOB/执行数据。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved
