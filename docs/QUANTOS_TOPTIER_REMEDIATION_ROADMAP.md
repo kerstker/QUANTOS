@@ -17,7 +17,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 1 | 数据护城河 | **4.5** | 基线+本会话 | 架构正确(bitemporal PIT/survivorship-free/版本化),数据实质=免费小样本;FRED 宏观刚接。范式对,缺料。 |
 | 2 | Alpha/信号生成 | **6.5** | 基线+本会话 | 截面 DSL+GP+de Prado+IC 面板真;两条可部署边(carry/crowd);ML 层诚实=当前数据无 edge。缺学习型信号/LLM。 |
 | 3 | 回测与验证 | **7.5** | 基线 | **最强维**:CPCV/DSR/PBO/no-peek OOS/泄漏检测接近顶配,已用来证伪自己。扣分在 tick 保真、算力、多重检验预算账本。 |
-| 4 | 组合构建与风险 | **7.0** | 工作流 | 约束优化器/因子风险模型/9 引擎门/tail 引擎全真;**缺**:结构化 Barra 因子库、多层归因、拥挤诊断落地、**风险平衡多策略执行 book**。 |
+| 4 | 组合构建与风险 | **7.0** | 工作流 | 约束优化器/因子风险模型/9 引擎门/tail 引擎全真;已补风险平衡执行 book + Barra-lite read-only 诊断第一版;**缺**:完整板块/风格/宏观因子库、多层归因、拥挤诊断落地。 |
 | 5 | 执行与微结构 | **4.2** | 工作流 | bar 级 next-open 高估可成交性;现实主义引擎(冲击+容量+尾部)已把 300× 高估抓出、给诚实区间;缺 tick/LOB/最优执行(L2 故意不做)。 |
 | 6 | 基建/MLOps/规模 | **5.5** | 基线 | 单机工程纪律意外扎实(确定性/不可变实验存储/CI 门);缺分布式/GPU、种子钉死、环境锁定、特征商店/模型注册形式化。 |
 | 7 | AI/智能体 | **5.2** | 工作流 | 护栏化非人 ResearchAgentLoop + 进化/GP/MCTS/bandit + 诚实多重检验;缺 LLM 假设生成/Transformer/RL/在线学习。信号发现瓶颈=智能+数据。 |
@@ -30,7 +30,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | Rank | 项 | 维 | 优先/工作量 | 依赖(全已存在) | 为什么 |
 |:--:|------|:--:|:--:|------|------|
 | **1 ✓** | **风险平衡多策略统一执行 book**(已做,`f...` risk-parity + rolling 逆波动核) | 4 | P0 / M | `book_combine.py`、`dry_run_pipeline`、carry+crowd 回测 | **已完成——诚实结论:分散不敌执行现实。** 三种方式(naive-merge VT 1.20 / risk-parity-merge VT 1.14 / portfolio-of-books 配置 VT 1.21)**均不敌 crowd_contra 单条 VT 1.38**。根因:1.95/8% 是 gross 理想化(carry gross~1.44),净-成本+整手+vol-target 下 carry 仅~0.58、拉不动 crowd;净曲线相关 +0.04(非 gross −0.04)。执行流水线抓到理想-vs-真的差。**deployable 结论:crowd_contra 单条。** 后续排序据此调整:carry 作为独立可部署边价值下调,重心转数据广度(Rank 11)+ 结构化因子库(Rank 2)。 |
-| 2 | Barra-lite 结构化因子库(crypto 板块+风格+宏观) | 4 | P1 / M | `fundamental_store`(已填 FRED)、聚类 | 现在组合风险只有样本协方差,不透明;因子载荷解锁归因+压力测试+拥挤 |
+| **2 ✓** | **Barra-lite read-only 诊断第一版**(已做,`services/portfolio/barra_lite.py` + `tools/barra_lite_diagnostics.py`) | 4 | P1 / M | `fundamental_store`(已填 FRED)、carry/crowd 本地缓存、`FactorRiskModel` | **已完成第一版 read-only 结构化风险诊断层。** 5 个结构化因子(`carry/crowding/liquidity/market_beta/volatility`)把现有 carry、crowd_contra、carry_crowd_equal 三本书映射到同一 `FactorRiskModel`,输出 `data/cache/barra_lite_snapshot.json`(gitignored,可复现)。首跑:58 symbols / 5 factors;carry total_var 0.6544、crowd_contra 1.3969、carry_crowd_equal 0.5733。诚实边界:诊断-only,不等同完整机构级 Barra 因子库,不改权重/闸门/晋级/干跑/券商路径。下一步可在 Rank #5 做 Brinson-Fachler 多层归因。 |
 | 3 | 拥挤门接进组合构建(fail-closed 超阈值) | 4 | P1 / S | `services/alpha/crowding.py`、预交易门 | 便宜、防尾部同步清算风险 |
 | 4 | 多 book 资本配置(Kelly/bandit 跨策略 AUM 再分配) | 4/8 | P1 / M | `run_registry`(每策略 Sharpe/var_sr)、优化器 | #1 之上,把「哪条边分多少钱」系统化 |
 | 5 | Brinson-Fachler 多层归因(板块/因子/残差) | 4 | P2 / M | #2 因子库、`construction.py` 归因 | 让组合决策可解释(哪层驱动收益/风险) |

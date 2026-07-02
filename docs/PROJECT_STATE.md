@@ -128,6 +128,12 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   book(rolling 逆波动 sleeve,PIT)+ portfolio-of-books 配置——**carry+crowd 分散不敌执行现实**:三种方式 VT 1.20/1.14/1.21
   均 < crowd_contra 单条 VT 1.38。1.95/8% 是 gross 理想化(carry gross~1.44),净-成本下 carry 仅~0.58 拉不动 crowd,
   净曲线相关 +0.04。执行流水线抓到理想-vs-真的差。**deployable = crowd_contra 单条。** 见 `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md`。
+- **对标顶级路线图 Rank #2 已做(2026-07-01,Barra-lite read-only 诊断第一版)**:`services/portfolio/barra_lite.py`
+  新增纯函数 read-only 因子风险诊断核(`winsorize/zscore/corr_exposure/build_barra_lite_model/barra_lite_report`),
+  复用现有 `FactorRiskModel` + `risk_decomposition`;`tools/barra_lite_diagnostics.py` 从本地缓存构建
+  5 因子(`carry/crowding/liquidity/market_beta/volatility`)并输出 gitignored 的 `data/cache/barra_lite_snapshot.json`。
+  首跑:58 symbols / 5 factors;carry total_var 0.6544、crowd_contra 1.3969、carry_crowd_equal 0.5733。
+  诚实边界:诊断-only,不等同完整机构级 Barra 因子库,不改权重/晋级/闸门/干跑/券商路径;治理测试钉死无网络/券商/订单/凭证 surface。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved
