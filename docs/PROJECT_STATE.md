@@ -165,6 +165,22 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S1「守卫与留痕」sprint 全做完(2026-07-03,活路线 `docs/2026-07-03-institutional-completion-plan.md`)**:
+  4 项 P1/S 全落地、每项 tests-first + `validate.py` 绿。**Rank #8**(6ca7d92)PIT 裸读机器守卫:
+  `tests/governance/test_pit_read_boundary.py` AST 钉死 services/ 白名单外 0 裸 `fetch_bars` + tools/ 计数棘轮
+  (35,只减不增),正负控制 + 实地探针证明守卫会红。**Rank #20**(0630f0c)治理决策留痕:新
+  `services/monitoring/audit_store.py::DurableAuditLog`(append-only sqlite 哈希链,存 entry_hash 读时重算抓字段篡改、
+  prev 链抓重排、seal/verify_against 抓截断/替换/擦除,镜像 run_registry 模式、无墙钟);`KillSwitch.arm/reset/
+  reset_with_grant` 与 `evaluate_deployment` 加**可选** `audit_sink=`(默认 None 零回归,失败安全排序:arm 先停机后审计、
+  reset 先审计后恢复、部署门审计在 try 内失败即关)。**Rank #18**(4e41851)runner 调用方身份:POST /run 强制
+  `X-Operator`(缺→400),operator 落 run 行(走 payload_json 免迁移、不进 run_id)+ 审计链 `research.run.triggered`;
+  **活系统端到端验证过**(无 header 400 / 有 header 200 回显 / 非白名单 kind 仍 400 / 审计链记实);前端 `triggerRun`
+  带 localStorage operator 标签 + ResearchRuns 页输入框。诚实钉死:operator=自述式、未鉴权(非 RBAC)。**Rank #21**
+  (5e2a64b)fetcher 治理收编:`yahoo_equity_fetch` 改走规范 `ingest_provider_rows` 接缝(只 stdlib+services、进
+  `_FETCHERS`→全 10 网络 fetcher 入 AST 边界)+ 存 **RAW 未调价**(去掉 adjclose 回溯比例烘价的非-PIT-vintage 前视,
+  完整分红调整留读取时 Rank #23),provenance=`YAHOO_V8_QUOTE_RAW`。**系统已启动并在跑**:console API :8400(真数据)、
+  runner :8420(已重启加载 #18)、前端 :3100(连真后端、新 7 组导航)。**S1 剩清理批**:CLAUDE.md 计数刷新、
+  跟踪 AGENTS.md。**下一 sprint S2「承重」**:#10 组合原语接线 → #11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
 - **前端信息架构重构已做(2026-07-03,用户指令「按顶级 AI 量化系统彻底重构前端」)**:42 页 → 30 页,
   7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→治理与系统);砍 12 个纯合成蓝图/
   重复/演示页(旧路由语义就近重定向,蓝图页→SystemCompleteness 诚实完整度页——删页不删诚实);路由/导航/

@@ -55,10 +55,10 @@
 |:--:|---|:--:|:--:|:--:|---|
 | 7 ✓ | 压力门接真实历史情景重演 | Ⅲ | P1/S | — | 已落地(cf1b869) |
 | 9 ✓ | 部署门强制 version content-hash 钉死 | Ⅴ | P1/S | — | 已落地(eebe019) |
-| **8** | PIT 裸读机器守卫(AST 治理测试 + 白名单) | Ⅰ | P1/S | — | 研究路径 0 裸 `fetch_bars`,治理测试常绿 |
-| **20** | 治理决策留痕:审计链落盘 + kill-switch/部署门决策接入 | Ⅴ | P1/S | — | 两类治理决策 100% 落哈希链 sqlite,可跨会话验证 |
-| **18** | research_runner 调用方身份 + 审计(自述式 operator) | Ⅴ | P1/S | #20 | POST /run 无 operator 即 400;run 行/审计链有痕 |
-| **21** | 数据抓取器治理收编 + yahoo 原始价列(PIT-vintage) | Ⅰ | P1/S | — | 新 fetcher 进 `_FETCHERS`;股票库存原始未调 close |
+| **8 ✓** | PIT 裸读机器守卫(AST 治理测试 + 白名单) | Ⅰ | P1/S | — | 已落地(6ca7d92):services/ 白名单外 0 裸读 + tools/ 计数棘轮 35;正负控制 + 实地探针验证守卫会红 |
+| **20 ✓** | 治理决策留痕:审计链落盘 + kill-switch/部署门决策接入 | Ⅴ | P1/S | — | 已落地(0630f0c):DurableAuditLog(append-only sqlite,防篡改/防重排/seal),kill-switch+部署门可选 audit_sink,28 测 |
+| **18 ✓** | research_runner 调用方身份 + 审计(自述式 operator) | Ⅴ | P1/S | #20 | 已落地(4e41851):X-Operator 强制(缺→400)、落 run 行 + 审计链;活系统端到端验证;前端带 operator 标签 |
+| **21 ✓** | 数据抓取器治理收编 + yahoo 原始价列(PIT-vintage) | Ⅰ | P1/S | — | 已落地(5e2a64b):yahoo 进 `_FETCHERS`(全 10 fetcher 入网)+ 走规范摄入存 RAW 未调价,8 测 |
 | **10** | 组合原语承重(a 拥挤门修复+接线 / b 资本配置换逆波动 / c 优化器 CVaR 选项) | Ⅲ | P1/M | #8 | 干跑权重 100% 过拥挤门;riskparity 驱动用 allocate_capital;优化器有尾部感知选项 |
 | **11** | 冲击成本进干跑 + 参与率门同源 ADV + TCA-lite 区间对比 | Ⅳ | P1/M | — | 干跑成本 100% 带 provenance(AC 带 / 平 bps 回退);参与率门用真 ADV |
 | **13** | 9 引擎风控门承重(诚实分级:4 真引擎 fail-closed 断言) | Ⅲ | P1/M | #7 | 干跑 book 未过 4 真引擎即拒;无真输入引擎 fail-closed 不伪造 |
