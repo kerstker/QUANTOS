@@ -60,8 +60,8 @@
 | **18 ✓** | research_runner 调用方身份 + 审计(自述式 operator) | Ⅴ | P1/S | #20 | 已落地(4e41851):X-Operator 强制(缺→400)、落 run 行 + 审计链;活系统端到端验证;前端带 operator 标签 |
 | **21 ✓** | 数据抓取器治理收编 + yahoo 原始价列(PIT-vintage) | Ⅰ | P1/S | — | 已落地(5e2a64b):yahoo 进 `_FETCHERS`(全 10 fetcher 入网)+ 走规范摄入存 RAW 未调价,8 测 |
 | **10 ✓** | 组合原语承重(a 拥挤门修复+接线 / b 资本配置换逆波动 / c 优化器 CVaR 选项) | Ⅲ | P1/M | #8 | 已落地:10a(a287e95)拥挤门加固+crowd_contra 接线;10b(55d7e17)allocator 驱动 riskparity sleeve;10c(0d14bb7/32d7755)CVaR 选项经 allocator 接进 riskparity。三子项全 load-bearing。carry/combo 拥挤接线待 crowding 证据覆盖(#22/#17) |
-| **11** | 冲击成本进干跑 + 参与率门同源 ADV + TCA-lite 区间对比 | Ⅳ | P1/M | — | 干跑成本 100% 带 provenance(AC 带 / 平 bps 回退);参与率门用真 ADV |
-| **13** | 9 引擎风控门承重(诚实分级:4 真引擎 fail-closed 断言) | Ⅲ | P1/M | #7 | 干跑 book 未过 4 真引擎即拒;无真输入引擎 fail-closed 不伪造 |
+| **11 ✓** | 冲击成本进干跑 + 参与率门同源 ADV + TCA-lite 区间对比 | Ⅳ | P1/M | — | 已落地(cbf8609):pipeline 可选 AC 冲击成本(逐笔参与率驱动,缺 ADV 回退平 bps,恒等式残差不破)+ cost_model/cost_provenance/TCA-lite 落 detail;carry 驱动用 close*volume 同源喂冲击+参与率门(拒 95 笔真容量约束,曾 0)。活跑 IMPACT_AC/6365 笔/TCA in-band/残差 4e-9。crowd/combo(OI 无 spot volume)+ trend(volume 不可靠,#22)暂平 bps |
+| **13 ✓** | 9 引擎风控门承重(诚实分级:4 真引擎 fail-closed 断言) | Ⅲ | P1/M | #7 | 已落地(93fd065):`dry_run_guard.evaluate_dry_run_risk` 只跑 4 真引擎(market/drawdown/concentration/stress,各 fail-closed;stress 用 timestamps→REAL_HISTORICAL_REPLAY),5 引擎 SKIPPED_NO_HONEST_INPUT 绝不伪造;接进 crowd_contra 干跑落 detail(VT 序列 3/4,market-VaR 仅默认阈值日频紧未过,诚实标注)。晋级门 guard_to_paper 接线 + 5 引擎喂真输入 = 后续 |
 | **22** | 数据质量强制 + volume 量纲修复回填 | Ⅰ | P1/M | — | 承重数据集 quality gate fail-closed;跨币量纲断言过;trend 容量解锁 |
 | **12** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | 晋级 100% 带 catalog 铸造证据;篡改哈希被机器抓;BHY 上守卫 |
 | **15** | 特征注册表持久化 + PIT 特征物化存储 | Ⅱ | P1/M | — | 特征页升真;物化值带 `leakage_passed`+`code_version` |

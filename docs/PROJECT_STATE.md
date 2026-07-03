@@ -165,6 +165,17 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S2「承重」Rank #11 + #13 做完(2026-07-03,执行现实主义 + 风控门承重)**:
+  **#11**(cbf8609)冲击成本进干跑:`simulate_fills`/`run_multi_period_dry_run` 加可选 `impact`(Almgren-Chriss)+
+  `adv_by_period`——commission 变参与率驱动的冲击成本(缺 ADV 逐笔回退平 bps,恒等式残差不破);cost_model/
+  cost_provenance/TCA-lite 区间落 detail(透传 console)。carry 驱动用面板 close*volume 同源喂**冲击成本**(名义)
+  + **参与率门** est_daily_volume(单位)+ 真实 max_participation_rate=0.10。**活跑:IMPACT_AC/6365 笔/TCA 计入 $8.8k
+  区间[$4.4k,$17.6k] in-band/残差 4e-9,参与率门拒 95 笔(真容量约束,曾 0)**。诚实边界:crowd/combo(OI 无 spot
+  volume)+ trend(volume 不可靠,#22)暂平 bps。**#13**(93fd065)研究风控门承重:新 `dry_run_guard.evaluate_dry_run_risk`
+  只跑干跑接缝**有真输入的 4 引擎**(market/drawdown/concentration/stress,各 fail-closed;stress 用 timestamps →
+  REAL_HISTORICAL_REPLAY),**其余 5 引擎 SKIPPED_NO_HONEST_INPUT——绝不喂编造数据伪造风控放行**(这正是平台不能做的);
+  接进 crowd_contra 干跑落 detail(VT 序列 3/4 过,market-VaR 仅在 RiskConfig 默认阈值日频紧下未过,诚实标注 config_provenance)。
+  晋级门 guard_to_paper 接线 + 5 引擎喂真输入 = 后续。**S2 剩 #22**(数据质量强制 + volume 量纲修复,含网络回填)。
 - **机构级路线图 S2「承重」sprint Rank #10 做完(2026-07-03,组合原语从诊断变 load-bearing——全盘最大杠杆)**:
   三子项全落地、每项 tests-first + `validate.py` 绿 + 活驱动器端到端跑过。**10a**(a287e95)拥挤门加固:
   `crowding_gate` 加最大单名并行判据(外部评审 P0 稀释修复——集中且拥挤的单名独立触发,不被加权平均稀释)+
