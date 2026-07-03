@@ -165,6 +165,17 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S2「承重」sprint Rank #10 做完(2026-07-03,组合原语从诊断变 load-bearing——全盘最大杠杆)**:
+  三子项全落地、每项 tests-first + `validate.py` 绿 + 活驱动器端到端跑过。**10a**(a287e95)拥挤门加固:
+  `crowding_gate` 加最大单名并行判据(外部评审 P0 稀释修复——集中且拥挤的单名独立触发,不被加权平均稀释)+
+  可选 ADV/流动性维;接进 crowd_contra 干跑(逐周从真 global_ls cs-rank 评估、落 `DryRunRun.detail`、真 BLOCK
+  跳调仓)——诊断非否决(crowd_contra 按构造持拥挤名 → 232 周全 WARN 记录不否决;集中判据在扩散 book 不触发,
+  但集中 book 会 BLOCK);非-block 周字节等价(回归安全)。**10b**(55d7e17)资本配置器驱动 riskparity sleeve 权重
+  (PIT 仅过去收益,BLOCKED/观测不足回退 rolling 逆波动;231/313 周用 allocator)+ `_clean_weights` 改有界迭代注水
+  (显式收敛+fail-closed)。**10c**(0d14bb7/32d7755)优化器加 Rockafellar-Uryasev CVaR 尾部惩罚选项(尾部次梯度,
+  非光滑路径取最优可行迭代;光滑路径字节等价)+ 经 allocator `cvar_penalty` 接进 riskparity(尾部感知 sleeve 定权,
+  carry 0.47/crowd 0.53)。**52 新测试;三条既有 book(carry/crowd/trend/combo)未动,riskparity 按设计变(allocator 驱动)。**
+  诚实边界:拥挤阈值未校准(R-1);carry/combo 拥挤接线待 crowding 证据覆盖其宇宙(#22/#17)。**下一步 S2**:#11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
 - **机构级路线图 S1「守卫与留痕」sprint 全做完(2026-07-03,活路线 `docs/2026-07-03-institutional-completion-plan.md`)**:
   4 项 P1/S 全落地、每项 tests-first + `validate.py` 绿。**Rank #8**(6ca7d92)PIT 裸读机器守卫:
   `tests/governance/test_pit_read_boundary.py` AST 钉死 services/ 白名单外 0 裸 `fetch_bars` + tools/ 计数棘轮
