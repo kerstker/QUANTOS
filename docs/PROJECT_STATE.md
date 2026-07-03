@@ -9,6 +9,8 @@
 QUANTOS = 安全关键的 **AI 量化研究平台**,就绪等级 **L2_DRY_RUN_ONLY**(只研究 + 干跑模拟,
 **无实盘、无券商、无真凭证**)。权威规格:`QUANTOS_MASTER_BLUEPRINT.md`;开发计划:
 `docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md`;因子方法论地图:`docs/factor-methodology-implementation-map.md`。
+**当前活路线(2026-07-03 起,机构级补全):`docs/2026-07-03-institutional-completion-plan.md`**
+(7 路专项复核 + Rank #8–28 详细开发计划,承接同日核实版审计 Rank #7–19;#7/#9 已落地)。
 
 **机器强制的不变量**(改动绝不能破):
 - `LIVE_TRADING_ENABLED=false / REAL_BROKER_ENABLED=false / ALLOW_ORDER_SUBMISSION=false /
