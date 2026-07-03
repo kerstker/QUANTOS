@@ -32,6 +32,8 @@ class CapitalAllocatorConfig:
     risk_aversion: float = 1.0
     mean_shrink_z: float = 1.0
     min_positive_mean: float = 0.0
+    cvar_penalty: float = 0.0        # Rank #10c: >0 adds a tail-aware CVaR penalty to the optimizer
+    cvar_alpha: float = 0.95         # CVaR confidence level (tail = worst 1-alpha of scenarios)
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,10 @@ def _validate_config(config: CapitalAllocatorConfig) -> str | None:
         return "invalid_risk_aversion"
     if not _is_finite_number(config.mean_shrink_z) or float(config.mean_shrink_z) < 0.0:
         return "invalid_mean_shrink_z"
+    if not _is_finite_number(config.cvar_penalty) or float(config.cvar_penalty) < 0.0:
+        return "invalid_cvar_penalty"
+    if not _is_finite_number(config.cvar_alpha) or not (0.0 < float(config.cvar_alpha) < 1.0):
+        return "invalid_cvar_alpha"
     if not _is_finite_number(config.min_positive_mean):
         return "invalid_min_positive_mean"
     return None
@@ -329,12 +335,21 @@ def allocate_capital(
         expected = [expected_by_book[book_id] for book_id in ids]
         optimizer_expected = _optimizer_expected_returns(expected, cov)
         constraints = PortfolioConstraints(lower=0.0, upper={book_id: caps[book_id] for book_id in ids}, budget=1.0)
+        # Rank #10c: when cvar_penalty>0, feed the tail-aligned cross-book return scenarios to the
+        # optimizer so it sizes for the fat left tail (Hill 2.4-2.7), not variance alone.
+        cvar_scenarios = None
+        if float(config.cvar_penalty) > 0.0:
+            span = min(len(clean_returns[b]) for b in ids)
+            cvar_scenarios = [[clean_returns[b][-span + t] for b in ids] for t in range(span)]
         raw_weights = min_variance_weights(
             cov,
             ids,
             constraints,
             expected_returns=optimizer_expected,
             risk_aversion=float(config.risk_aversion),
+            cvar_scenarios=cvar_scenarios,
+            cvar_penalty=float(config.cvar_penalty),
+            cvar_alpha=float(config.cvar_alpha),
         )
     except (ValueError, InfeasibleConstraints, OptimizerError, IndexError) as exc:
         return _blocked(

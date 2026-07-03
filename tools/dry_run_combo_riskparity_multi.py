@@ -81,8 +81,11 @@ def main() -> None:
         # book never stalls. Both emit non-negative sleeve weights summing to 1 (drop-in shape).
         sc = sq = None
         if k >= _MIN_OBS:
+            # Rank #10c: cvar_penalty makes the sleeve sizing tail-aware (the optimizer sees each
+            # sleeve's fat left tail via its past-return scenarios), not variance-only.
             plan = allocate_capital({"carry": tuple(carry_sret[:k]), "crowd": tuple(crowd_sret[:k])},
-                                    config=CapitalAllocatorConfig(max_weight=1.0, mean_shrink_z=1.0))
+                                    config=CapitalAllocatorConfig(max_weight=1.0, mean_shrink_z=1.0,
+                                                                  cvar_penalty=1.0, cvar_alpha=0.90))
             if plan.status == "ALLOCATED":
                 aw = {a.book_id: a.target_weight for a in plan.allocations}
                 sc, sq = aw.get("carry", 0.0), aw.get("crowd", 0.0)
