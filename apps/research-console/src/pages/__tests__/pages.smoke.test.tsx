@@ -1,45 +1,55 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import AlphaFactory from '@/pages/AlphaFactory';
-import Validation from '@/pages/Validation';
-import CryptoLive from '@/pages/CryptoLive';
-import LifecycleMonitor from '@/pages/LifecycleMonitor';
-import AlphaZoo from '@/pages/AlphaZoo';
-import PopulationOptimizer from '@/pages/PopulationOptimizer';
-import SignalToPortfolio from '@/pages/SignalToPortfolio';
-import DslExplorer from '@/pages/DslExplorer';
-import AlphaGraph from '@/pages/AlphaGraph';
-import BacktestResults from '@/pages/BacktestResults';
-import ResearchRuns from '@/pages/ResearchRuns';
-import RunDetail from '@/pages/RunDetail';
-import CompareRuns from '@/pages/CompareRuns';
-import CommandCenter from '@/pages/CommandCenter';
+import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
 
-// First real component/render tests (the audit's "UI tests effectively zero" gap). In the test env the
-// console API is disabled (VITE_MOCK_MODE), so every page renders its mock fixtures without any network.
-// A smoke render proves the page mounts, produces DOM, and does not throw.
-describe('console pages render in mock mode', () => {
-  for (const [name, Page] of [
-    ['AlphaFactory', AlphaFactory],
-    ['Validation', Validation],
-    ['CryptoLive', CryptoLive],
-    ['LifecycleMonitor', LifecycleMonitor],
-    ['AlphaZoo', AlphaZoo],
-    ['PopulationOptimizer', PopulationOptimizer],
-    ['SignalToPortfolio', SignalToPortfolio],
-    ['DslExplorer', DslExplorer],
-    ['AlphaGraph', AlphaGraph],
-    ['BacktestResults', BacktestResults],
-    ['ResearchRuns', ResearchRuns],
-    ['RunDetail', RunDetail],
-    ['CompareRuns', CompareRuns],
-    ['CommandCenter', CommandCenter],
-  ] as const) {
-    it(`${name} mounts and produces non-empty DOM`, () => {
+// 注册表驱动的全量冒烟:遍历 src/app/routes.tsx 的 PAGES(路由/导航的唯一真源),
+// 每一页异步加载并渲染——新增页面自动被覆盖,永远不会再出现「只冒烟 14/42」的地板缺口。
+// 测试环境 VITE_MOCK_MODE 生效,页面渲染 mock fixtures,零网络;冒烟证明:页面能挂载、
+// 产出非空 DOM、不抛异常。
+describe('every registered console page renders in mock mode', () => {
+  for (const page of PAGES) {
+    it(`${page.en} (${page.path}) mounts and produces non-empty DOM`, async () => {
+      const mod = await page.load();
+      const Page = mod.default;
       const { container } = render(<MemoryRouter><Page /></MemoryRouter>);
       expect(container.firstChild).not.toBeNull();
       expect((container.textContent ?? '').trim().length).toBeGreaterThan(0);
     });
   }
+});
+
+// 注册表自洽:路径唯一、导航组引用存在、重定向目标可解析。
+// 这些是以前 App.tsx 里 nav[] 与 <Routes> 两份手工清单会静默漂移的地方,现在机器钉死。
+describe('route registry consistency', () => {
+  it('page paths are unique', () => {
+    const paths = PAGES.map(p => p.path);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it('every nav page references a declared group and carries labels', () => {
+    const groupIds = new Set(GROUPS.map(g => g.id));
+    for (const page of PAGES) {
+      if (page.group !== null) expect(groupIds.has(page.group), page.path).toBe(true);
+      expect(page.zh.length, page.path).toBeGreaterThan(0);
+      expect(page.en.length, page.path).toBeGreaterThan(0);
+      expect(page.icon.length, page.path).toBeGreaterThan(0);
+    }
+  });
+
+  it('every group has at least one page', () => {
+    for (const group of GROUPS) {
+      expect(PAGES.some(p => p.group === group.id), group.id).toBe(true);
+    }
+  });
+
+  it('every redirect points at a registered page (and never at another redirect)', () => {
+    const paths = new Set(PAGES.map(p => p.path));
+    const froms = new Set(REDIRECTS.map(r => r.from));
+    for (const r of REDIRECTS) {
+      expect(paths.has(r.to), `${r.from} -> ${r.to}`).toBe(true);
+      expect(froms.has(r.to), `${r.from} -> ${r.to} chains into a redirect`).toBe(false);
+      expect(paths.has(r.from), `${r.from} shadows a live page`).toBe(false);
+    }
+  });
 });

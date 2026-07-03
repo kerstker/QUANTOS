@@ -224,11 +224,14 @@ Real, tested backend engines (`*_TESTED` in the audit):
   governance/process subsystems (incident/committee/RBAC/…), kept HONESTLY LABELED (not faked — faking
   would break the honesty posture); synthetic root `_factor_values`/`_forward_returns` (`math.sin/cos`);
   contract-guarded by `tests/research/test_console_api_contract.py`.
-- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **37
-  pages, route-lazy code-split** (+ FX Research). The audit doc's original split
-  (7 REAL / 6 PARTIAL / 17 MOCK / 6 NONE) predates this session — REAL has grown
-  substantially after the 4-break + paper-track + FX wiring (CryptoLive, FxResearch,
-  ResearchRuns, LifecycleMonitor, BacktestResults, DataCatalog, Portfolio, AlphaZoo, …).
+- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind. **2026-07-03
+  信息架构重构:42 页 → 30 页 · 7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→
+  治理与系统)**。路由/导航/冒烟测试的唯一真源 = `src/app/routes.tsx` 页面注册表(新页加一行,
+  自动进导航 + 自动被冒烟覆盖);删掉的 12 页 = 纯合成蓝图(incident/reviewer/access/committee/
+  promotion/model-risk)+ 合成或重复(Agents/Phase3A/ScenarioStress/BacktestExplainability/
+  SignalToPortfolio/Overview),旧路由语义就近重定向(蓝图页 → SystemCompleteness,那里
+  REAL_REPO_INVENTORY 诚实列出缺失子系统——删页不删诚实);后端 console_api 端点零改动
+  (契约测试锁定)。测试地板:**30/30 页全冒烟 + 注册表一致性测试**(44 fe tests)。
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain

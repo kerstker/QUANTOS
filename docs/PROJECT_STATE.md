@@ -165,6 +165,12 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **前端信息架构重构已做(2026-07-03,用户指令「按顶级 AI 量化系统彻底重构前端」)**:42 页 → 30 页,
+  7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→治理与系统);砍 12 个纯合成蓝图/
+  重复/演示页(旧路由语义就近重定向,蓝图页→SystemCompleteness 诚实完整度页——删页不删诚实);路由/导航/
+  冒烟测试收敛到单一页面注册表 `src/app/routes.tsx`(新页一行自动进导航+测试);测试地板 14/42 → **30/30
+  全冒烟 + 注册表一致性**(44 fe tests);后端端点零改动(契约锁定)。typecheck/build/test/validate 全绿。
+  Rank #24 前端半边(全页冒烟)提前落地;console_api 后端拆分 + provenance 徽标断言仍待做。
 - **新前向路线图 Rank #9 已做(2026-07-03,部署门强制 version content-hash 钉死)**:版本契约(ConfigVersion/StrategyVersion/
   ModelVersion)一直存在但 `evaluate_deployment` 从不校验——「version-pin gate」原是 overclaim。现在 PAPER+ 必须声明部署内容
   且逐版本与批准钉死表(id→content_hash)比对,fail-closed(`VERSION_PIN_REQUIRED/_NOT_PINNED/_MISMATCH/HASH_MISSING/
