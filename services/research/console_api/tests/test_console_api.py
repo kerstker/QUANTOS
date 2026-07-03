@@ -356,9 +356,20 @@ def test_lifecycle_monitor_is_read_only_and_honest_about_live(tmp_path, monkeypa
     assert payload["thresholds"]["min_ic_retention"] > 0
 
 
+def _require_real_registry(m):
+    """These tests exercise the REAL experiment_registry paper-track integration; the synthetic
+    fallback (CI / fresh checkout, no experiment_registry.db) never reads the paper track, so skip
+    honestly there rather than assert a value the synthetic path cannot produce."""
+    import pytest as _pytest
+    st = m._load_experiment_store()
+    if st is None or not m._lifecycle_rows_real(st):
+        _pytest.skip("no real experiment_registry (CI/fresh checkout) — real paper-track path unexercisable")
+
+
 def test_lifecycle_live_ic_reads_paper_track_when_present(tmp_path, monkeypatch):
     import services.research.console_api.main as m
     from services.research.paper_trading.store import PaperTrackStore
+    _require_real_registry(m)
     db = tmp_path / "paper_track.db"
     s = PaperTrackStore(str(db), create=True)
     # need a real alpha_id from the registry-backed lifecycle rows; pick the first
@@ -393,6 +404,7 @@ def test_lifecycle_no_spurious_degraded_when_paper_beats_train(tmp_path, monkeyp
     # DEGRADED from a Sharpe-vs-cumret unit mismatch nor from a "missing IC" data-alert.
     import services.research.console_api.main as m
     from services.research.paper_trading.store import PaperTrackStore
+    _require_real_registry(m)
     db = tmp_path / "paper_track.db"
     s = PaperTrackStore(str(db), create=True)
     aid = m._lifecycle_monitor_payload()["rows"][0]["alpha_id"]
@@ -413,6 +425,7 @@ def test_lifecycle_real_sharpe_drop_is_degraded(tmp_path, monkeypatch):
     # proving the stripped data-alert never masks a real degradation.
     import services.research.console_api.main as m
     from services.research.paper_trading.store import PaperTrackStore
+    _require_real_registry(m)
     from services.research.backtest_engine.metrics import sharpe
     db = tmp_path / "paper_track.db"
     s = PaperTrackStore(str(db), create=True)
