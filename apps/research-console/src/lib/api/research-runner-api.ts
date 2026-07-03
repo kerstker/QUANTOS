@@ -10,13 +10,24 @@ export function runnerEnabled(): boolean {
   return RESEARCH_RUNNER_BASE.length > 0;
 }
 
-export interface TriggerResult { run_id: string; status: string; kind: string; }
+export interface TriggerResult { run_id: string; status: string; kind: string; operator?: string; }
+
+// Rank #18: the runner requires an X-Operator tag on every trigger — a SELF-ASSERTED, UNAUTHENTICATED
+// accountability label (not RBAC/authn). Persisted in localStorage so the operator keeps their tag.
+const OPERATOR_KEY = 'quantos.operator';
+export function getOperator(): string {
+  try { return (localStorage.getItem(OPERATOR_KEY) || '').trim() || 'console-operator'; }
+  catch { return 'console-operator'; }
+}
+export function setOperator(name: string): void {
+  try { localStorage.setItem(OPERATOR_KEY, name.trim()); } catch { /* ignore */ }
+}
 
 export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   const res = await fetch(new URL('/run', RESEARCH_RUNNER_BASE), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator() },
     body: JSON.stringify({ kind, params }),
   });
   if (!res.ok) {

@@ -11,16 +11,18 @@ from __future__ import annotations
 import os
 import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from services.monitoring.audit_store import DurableAuditLog
 from services.research.run_registry.registry import RunRegistry
 from services.research.run_registry.store import ResearchRunStore
 from .run_kinds import RUN_KINDS
 from .runner import JobQueue
 
 _RUNS_DB = os.path.join("data", "cache", "research_runs.db")
+_AUDIT_DB = os.path.join("data", "cache", "governance_audit.db")
 
 app = FastAPI(title="QUANTOS Research Runner", version="0.1.0")
 app.add_middleware(
@@ -32,6 +34,7 @@ app.add_middleware(
 )
 
 _queue = JobQueue(RunRegistry(ResearchRunStore(_RUNS_DB)), max_workers=2)
+_audit = DurableAuditLog(_AUDIT_DB)
 
 
 class RunRequest(BaseModel):
@@ -45,14 +48,30 @@ async def health() -> dict:
 
 
 @app.post("/run")
-async def run(req: RunRequest) -> dict:
+async def run(req: RunRequest, x_operator: str = Header(default=None)) -> dict:
+    # Rank #18: the only mutating surface must record WHO triggered each run. X-Operator is a
+    # SELF-ASSERTED, UNAUTHENTICATED accountability tag (NOT RBAC/authn — that needs a Phase-14
+    # identity layer). Required so no run is anonymous; persisted on the run row + the governance
+    # audit chain.
+    operator = (x_operator or "").strip()
+    if not operator:
+        raise HTTPException(status_code=400, detail="X-Operator header required (self-asserted operator tag)")
+    now = int(time.time())
     try:
-        run_id = _queue.submit(req.kind, req.params, now=int(time.time()))
+        run_id = _queue.submit(req.kind, req.params, now=now, operator=operator)
     except KeyError:
         raise HTTPException(status_code=400, detail=f"unknown research kind: {req.kind!r}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"run_id": run_id, "status": "queued", "kind": req.kind}
+    # Best-effort trigger record on the durable governance chain. The authoritative accountability is
+    # the operator persisted on the run row (above); this is a cross-referencing audit entry, so a dup
+    # (idempotent re-submit -> same run_id) or an audit-db hiccup must not fail the research run.
+    try:
+        _audit.append(event_id=f"run.{run_id}", actor=operator, action="research.run.triggered",
+                      timestamp=now, target=run_id, metadata={"kind": req.kind})
+    except Exception:
+        pass
+    return {"run_id": run_id, "status": "queued", "kind": req.kind, "operator": operator}
 
 
 class CancelRequest(BaseModel):

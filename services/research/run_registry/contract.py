@@ -39,6 +39,9 @@ class ResearchRun:
     error: Optional[str] = None
     log: list = field(default_factory=list)     # live progress / log lines (observability)
     code_version: Optional[str] = None          # git sha at run time (auditable history)
+    operator: Optional[str] = None              # WHO triggered it (Rank #18): self-asserted, UNAUTHENTICATED
+                                                # X-Operator tag — accountability, NOT RBAC/authn. Not part of
+                                                # run_id (identity stays kind+params+ts; operator is metadata).
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -53,15 +53,16 @@ class JobQueue:
         self._futures: list = []
         self._cancelled: set = set()
 
-    def submit(self, kind: str, params: dict, now: int) -> str:
+    def submit(self, kind: str, params: dict, now: int, operator: str = None) -> str:
         spec = RUN_KINDS[kind]                          # KeyError on unknown kind (fail-closed)
         clean = validate_params(kind, params)
-        run_id = make_run_id(kind, clean, now)
+        run_id = make_run_id(kind, clean, now)          # operator is NOT part of identity (kind+params+ts)
         self._reg.upsert(ResearchRun(run_id=run_id, kind=kind, title=spec.title, params=clean,
                                      status="queued", created_ts=now, finished_ts=None,
                                      metrics={}, series={}, verdict="", caveats=[],
-                                     provenance=spec.entrypoint, log=["[queued]"], code_version=_git_sha()))
-        self._futures.append(self._ex.submit(self._run, kind, clean, run_id, now))
+                                     provenance=spec.entrypoint, log=["[queued]"], code_version=_git_sha(),
+                                     operator=operator))
+        self._futures.append(self._ex.submit(self._run, kind, clean, run_id, now, operator))
         return run_id
 
     def cancel(self, run_id: str) -> bool:
@@ -75,7 +76,7 @@ class JobQueue:
         self._reg.set_status(run_id, "cancelled")
         return True
 
-    def _run(self, kind: str, params: dict, run_id: str, now: int) -> None:
+    def _run(self, kind: str, params: dict, run_id: str, now: int, operator: str = None) -> None:
         spec = RUN_KINDS[kind]
         try:
             self._reg.set_status(run_id, "running")
@@ -94,7 +95,7 @@ class JobQueue:
                 metrics=a.get("metrics", {}), series=a.get("series", {}),
                 verdict=a.get("verdict", ""), caveats=a.get("caveats", []),
                 provenance=a.get("provenance", spec.entrypoint),
-                log=(prev.log if prev else []) + ["[done]"], code_version=_git_sha()))
+                log=(prev.log if prev else []) + ["[done]"], code_version=_git_sha(), operator=operator))
         except Exception as e:                          # any failure -> visible error status, never a crash
             self._reg.append_log(run_id, f"[error] {e}")
             self._reg.set_status(run_id, "error", error=str(e))
