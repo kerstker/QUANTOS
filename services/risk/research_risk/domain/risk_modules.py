@@ -8,7 +8,14 @@ from __future__ import annotations
 import math
 import statistics
 from itertools import combinations
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional, Sequence
+
+# Real historical crisis replay (realism engine RE-2) — pure stdlib functions, no IO/RNG/
+# wall-clock, no reverse dependency on services.risk. Roadmap Rank #7 wires it here so the
+# stress gate replays NAMED crises instead of fabricating fixed multipliers.
+from services.research.realism.scenario import (
+    CRYPTO_CRISES, iso_to_ms, max_drawdown_window, window_stats,
+)
 
 from .models import (
     CapacityRiskReport,
@@ -216,10 +223,21 @@ class RegimeRiskEngine:
 
 
 class StressTestEngine:
-    def evaluate(self, returns: List[float], config: RiskConfig) -> PortfolioStressReport:
+    """Stress = REAL historical replay when the caller supplies per-period timestamps
+    (named crisis windows + the endogenous worst-drawdown window, scenario.py); the
+    legacy fixed-multiplier math survives ONLY as an honestly-labeled fallback for
+    timestamp-less callers. Every report carries a provenance marker."""
+
+    def evaluate(self, returns: List[float], config: RiskConfig,
+                 timestamps: Optional[Sequence[int]] = None) -> PortfolioStressReport:
+        if timestamps is not None:
+            return self._evaluate_replay(returns, config, timestamps)
         series = _clean(returns)
         if not series:
-            return PortfolioStressReport(passed=False)   # no returns -> cannot stress, fail closed
+            return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
+        # Legacy fallback: fixed multipliers over summed losses — NOT calibrated, NOT
+        # historical. Kept for callers without timestamps, labeled so no surface can
+        # present it as a real scenario replay.
         base_loss = abs(min(0.0, sum(value for value in series if value < 0)))
         scenarios = {
             "market_gap": base_loss * 1.2,
@@ -227,16 +245,47 @@ class StressTestEngine:
             "vol_spike": base_loss * 1.1,
             "correlation_break": base_loss * 1.3,
         }
+        return self._report(scenarios, config, provenance="SYNTHETIC_MULTIPLIER_UNCALIBRATED")
+
+    def _evaluate_replay(self, returns: List[float], config: RiskConfig,
+                         timestamps: Sequence[int]) -> PortfolioStressReport:
+        if len(returns) != len(timestamps):
+            return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
+        pairs = [(float(r), int(t)) for r, t in zip(returns, timestamps)
+                 if r is not None and t is not None
+                 and math.isfinite(float(r)) and math.isfinite(float(t))]
+        if not pairs:
+            return PortfolioStressReport(passed=False, provenance="INVALID_INPUT")
+        rs = [r for r, _t in pairs]
+        ts = [t for _r, t in pairs]
+        scenarios: Dict[str, float] = {}
+        skipped = 0
+        for name, start_iso, end_iso in CRYPTO_CRISES:
+            stats = window_stats(rs, ts, iso_to_ms(start_iso), iso_to_ms(end_iso))
+            if stats["n_periods"] == 0:
+                skipped += 1                      # history does not cover this crisis — honest skip
+            else:
+                scenarios[name] = stats["max_drawdown"]
+        # endogenous worst peak->trough window: always computable from the book's own history
+        scenarios["worst_realized_window"] = max_drawdown_window(rs, ts)["drawdown"]
+        return self._report(scenarios, config, provenance="REAL_HISTORICAL_REPLAY",
+                            scenarios_skipped=skipped)
+
+    @staticmethod
+    def _report(scenarios: Dict[str, float], config: RiskConfig, *, provenance: str,
+                scenarios_skipped: int = 0) -> PortfolioStressReport:
         worst_scenario = max(scenarios, key=scenarios.get)
-        worst_loss = scenarios[worst_scenario] if scenarios else 0.0
         survived = sum(1 for value in scenarios.values() if value <= config.max_stress_loss)
         total = len(scenarios)
         return PortfolioStressReport(
             passed=survived == total,
             worst_scenario=worst_scenario,
-            worst_stress_loss=worst_loss,
+            worst_stress_loss=scenarios[worst_scenario],
             scenarios_survived=survived,
             total_scenarios=total,
+            provenance=provenance,
+            scenarios_skipped=scenarios_skipped,
+            scenario_losses=dict(scenarios),
         )
 
 

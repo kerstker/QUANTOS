@@ -29,7 +29,11 @@ class RiskApprovalGate:
                  equity_curve: List[float], capacity_cny: Dict[str, float],
                  alpha_returns: Dict[str, List[float]], regime_labels: List[str] = None,
                  alpha_metadata: List[Dict] = None, daily_volume_cny: float = 1e9,
-                 total_aum: float = 100_000_000) -> ResearchRiskDecision:
+                 total_aum: float = 100_000_000,
+                 timestamps: List[int] = None) -> ResearchRiskDecision:
+        # timestamps (per-period, ms, aligned to `returns`) unlock the stress engine's REAL
+        # historical crisis replay; without them stress falls back to the labeled synthetic
+        # multipliers (provenance on the report either way — Rank #7).
         decision = ResearchRiskDecision(run_id=run.run_id, portfolio_id=run.portfolio_id)
         config = run.config or self.config
         gate_results = {}
@@ -53,7 +57,7 @@ class RiskApprovalGate:
              lambda r: f"Drawdown: max={r.max_drawdown:.3f}, dur={r.max_duration}d"),
             ("regime", lambda: self._engines["regime"].evaluate(returns, regime_labels or [], config),
              lambda r: f"Regime: worst={r.worst_regime} loss={r.worst_regime_loss:.3f}"),
-            ("stress", lambda: self._engines["stress"].evaluate(returns, config),
+            ("stress", lambda: self._engines["stress"].evaluate(returns, config, timestamps),
              lambda r: f"Stress: {r.scenarios_survived}/{r.total_scenarios} survived"),
             ("capacity", lambda: self._engines["capacity"].evaluate(weights, capacity_cny, total_aum, config),
              lambda r: f"Capacity: usage={r.capacity_usage:.2f}"),
@@ -68,6 +72,7 @@ class RiskApprovalGate:
                 report, passed = None, False
                 decision.reasons.append(f"{name}: engine error ({type(exc).__name__})")
             gate_results[name] = passed
+            run.gate_reports[name] = report   # full report object (None on error) for read-only surfaces
             if passed:
                 run.gates_passed += 1
             elif report is not None:

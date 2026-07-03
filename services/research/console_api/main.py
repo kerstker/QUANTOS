@@ -5,6 +5,7 @@ connect to brokers, place orders, store credentials, or mutate trading state.
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import math
@@ -144,6 +145,11 @@ def _risk_decision(alpha_id: str, returns: List[float], equity_points: List[Dict
         daily_volume_cny=1_000_000_000,
         total_aum=100_000_000,
     )
+    # Rank #7: surface the stress engine's FULL report (provenance + per-scenario losses).
+    # This console path has no per-period timestamps yet, so the engine's labeled
+    # SYNTHETIC_MULTIPLIER_UNCALIBRATED fallback is what honestly shows here; callers with
+    # timestamps (e.g. dry-run books) get REAL_HISTORICAL_REPLAY through the same field.
+    stress_report = run.gate_reports.get("stress")
     return {
         "run_id": run.run_id,
         "portfolio_id": run.portfolio_id,
@@ -153,6 +159,7 @@ def _risk_decision(alpha_id: str, returns: List[float], equity_points: List[Dict
         "gate_results": run.gate_results,
         "reasons": decision.reasons,
         "reproducibility_hash": run.reproducibility_hash,
+        "stress": dataclasses.asdict(stress_report) if stress_report is not None else None,
     }
 
 

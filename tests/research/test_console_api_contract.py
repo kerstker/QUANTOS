@@ -232,3 +232,17 @@ def test_unknown_alpha_id_falls_back_to_default_visibly():
     for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading"):
         body = client.get(path + "?alpha_id=does-not-exist").json()
         assert body["selected_alpha_id"] == "alpha-1", f"{path} did not fall back visibly"
+
+
+def test_risk_dashboard_stress_block_carries_provenance_and_scenarios():
+    # Rank #7: the stress-gate result surfaced to the console must carry its honesty
+    # provenance (REAL_HISTORICAL_REPLAY when timestamps reached the engine, else the
+    # labeled SYNTHETIC_MULTIPLIER_UNCALIBRATED fallback) plus per-scenario losses —
+    # a stress number without provenance must never reach the wire (Rank #7 contract).
+    body = client.get("/api/v1/console/risk-dashboard?alpha_id=alpha-1").json()
+    stress = body["primary_report"]["stress"]
+    for key in ("passed", "provenance", "worst_scenario", "worst_stress_loss",
+                "scenarios_survived", "total_scenarios", "scenarios_skipped", "scenario_losses"):
+        assert key in stress, f"stress block missing '{key}'"
+    assert stress["provenance"] in ("REAL_HISTORICAL_REPLAY", "SYNTHETIC_MULTIPLIER_UNCALIBRATED")
+    assert isinstance(stress["scenario_losses"], dict) and stress["scenario_losses"]
