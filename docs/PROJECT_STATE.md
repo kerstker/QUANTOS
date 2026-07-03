@@ -165,6 +165,16 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S3「溯源与持久」sprint 推进(2026-07-03,#12/#15/#19/#24 各一切片)**:
+  **#12**(c7d0e5e)`ExperimentRegistry.verify_evaluation` 篡改检测(重算 content_hash 比对,改指标/改哈希/未知 id
+  全 fail-closed,4 测)——补上「只算不验」缺的验证半边。剩 CatalogEvidence 封套 + BHY 接守卫 = 待做。**#15**(c5ae7a2)
+  特征层持久化:`SqliteFeatureRegistryStore`(镜像 run_registry,含 leakage_passed+code_version 审计)+ `SqliteFeatureValueStore`
+  (克隆 fundamental_store 双时点 + feature_version,PIT/截断不变/版本隔离/fail-closed,10 测)——特征层脱离「重启即失」。
+  剩 rolling_feature 写通道 + 离线填充 + console 读 = 采纳待做。**#19**(9cc4c25)复现底座:`evidence/dry_run_books.json`
+  指纹(5 book 承重数 + 残差界 + code_version)+ `tools/build_evidence_digests.py` 生成器 + `tests/reproducibility/` 门测试
+  (缓存在场重算断言、缺席诚实 skip;drift 实测会红、rebuild 恢复绿)——repo 现能自证其引用的干跑结论。剩扩到其余快照 +
+  完整 rebuild harness = 待做。**#24**(前端地板已在 a4e4350 IA 重构落地:30/30 冒烟 + 集成 + payload 守卫,47 测);
+  console_api 5167 行拆路由组 = 大重构宜专注新会话做。**远端已推 origin/codex/impact-calibration。**
 - **机构级路线图 S2「承重」Rank #22 强制机制做完(2026-07-03,数据质量从「算而不 gate」变机器强制)**:
   (e241c00)① `_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 opt-in `strict=`:单标的数据集质量报告不过
   (重复/乱序/缺失/未来时间戳)→ raise `FatalIngestionError`(fail-closed,默认 False 零回归);yahoo fetcher 接 strict=True。
