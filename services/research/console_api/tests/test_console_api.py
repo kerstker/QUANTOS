@@ -719,6 +719,13 @@ def test_system_health_snapshot_uses_backend_contract():
     assert payload["read_only"] is True
     assert any(service["service"] == "research-console-api" for service in payload["services"])
     assert len(payload["safety_checks"]) == 5
+    # Rank #26: the REAL integrity block (build_snapshot over the durable audit chain) is present,
+    # and the illustrative latencies are honestly labelled (not presented as measured).
+    assert payload["latency_provenance"] == "ILLUSTRATIVE_NOT_MEASURED"
+    mon = payload["monitoring"]
+    assert mon["provenance"] in ("REAL_MONITORING_SNAPSHOT", "NO_DURABLE_AUDIT_CHAIN", "MONITORING_ERROR")
+    if mon["provenance"] == "REAL_MONITORING_SNAPSHOT":
+        assert mon["audit_chain_valid"] is True and mon["kill_switch_active"] is False   # L2: clear chain, no halt
 
 
 def test_system_completeness_snapshot_uses_backend_contract():

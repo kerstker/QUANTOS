@@ -584,8 +584,33 @@ def _portfolio_simulation() -> Dict:
     }
 
 
+def _real_monitoring_snapshot() -> Dict:
+    """Rank #26: the REAL integrity snapshot via monitoring.build_snapshot — it verifies the durable
+    governance audit chain (Rank #20) and reports the kill-switch state, replacing a purely hardcoded
+    health view. The service latencies below stay ILLUSTRATIVE (there is no real service mesh at L2);
+    this block is the verifiable health signal. Fail-closed to an honest marker if the chain is absent."""
+    try:
+        from services.monitoring.health import build_snapshot
+        from services.monitoring.audit_store import DurableAuditLog
+        from services.risk.pre_trade.kill_switch import KillSwitch
+        audit_db = os.path.join("data", "cache", "governance_audit.db")
+        if not os.path.exists(audit_db):
+            return {"provenance": "NO_DURABLE_AUDIT_CHAIN", "audit_chain_valid": None,
+                    "kill_switch_active": False, "healthy": None, "anomalies": [], "audit_events": 0}
+        audit = DurableAuditLog(audit_db)
+        snap = build_snapshot(timestamp=0, audit_log=audit, kill_switch=KillSwitch())
+        return {"provenance": "REAL_MONITORING_SNAPSHOT", "audit_chain_valid": snap.audit_chain_valid,
+                "kill_switch_active": snap.kill_switch_active, "healthy": snap.healthy,
+                "anomalies": list(snap.anomalies), "audit_events": len(audit.events)}
+    except Exception:
+        return {"provenance": "MONITORING_ERROR", "audit_chain_valid": False, "healthy": False,
+                "kill_switch_active": True, "anomalies": ["MONITORING_ERROR"], "audit_events": 0}
+
+
 def _system_health_payload() -> Dict:
     return {
+        "monitoring": _real_monitoring_snapshot(),
+        "latency_provenance": "ILLUSTRATIVE_NOT_MEASURED",
         "services": [
             {"service": "research-console-api", "status": "healthy", "latency_ms": 3.4, "error_rate": 0.0},
             {"service": "market-data-ingestor", "status": "healthy", "latency_ms": 4.8, "error_rate": 0.001},
