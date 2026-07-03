@@ -165,6 +165,13 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S2「承重」Rank #22 强制机制做完(2026-07-03,数据质量从「算而不 gate」变机器强制)**:
+  (e241c00)① `_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 opt-in `strict=`:单标的数据集质量报告不过
+  (重复/乱序/缺失/未来时间戳)→ raise `FatalIngestionError`(fail-closed,默认 False 零回归);yahoo fetcher 接 strict=True。
+  ② `services/data/quality.py::check_volume_units` 跨币量纲一致性守卫(max/min > ratio → 非单一量纲,formalize
+  crypto_daily.db bug 的 EOS $20k vs BTC $3.7Q ~17 数量级启发式);scenario_tail_research 改用它作单一真源。9 新测试。
+  **诚实边界:volume 回填 + trend 容量重算需 coingecko 网络(本环境被墙)= 待网络;抓 bug 的强制机制已就位并测过。**
+  **S2「承重」四项(#10/#11/#13/#22)全推进**(#22 强制机制 done、回填待网络)。远端已推:`origin/codex/impact-calibration`。
 - **机构级路线图 S2「承重」Rank #11 + #13 做完(2026-07-03,执行现实主义 + 风控门承重)**:
   **#11**(cbf8609)冲击成本进干跑:`simulate_fills`/`run_multi_period_dry_run` 加可选 `impact`(Almgren-Chriss)+
   `adv_by_period`——commission 变参与率驱动的冲击成本(缺 ADV 逐笔回退平 bps,恒等式残差不破);cost_model/
