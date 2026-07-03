@@ -181,29 +181,55 @@ def _clean_weights(weights: Mapping[str, float], caps: Mapping[str, float]) -> d
         if value < -_CAP_TOL or value > cap + _CAP_TOL:
             return None
         cleaned[book_id] = min(max(value, 0.0), cap)
+    return _waterfill_to_budget(cleaned, {book_id: float(caps[book_id]) for book_id in cleaned})
 
-    total = sum(cleaned.values())
-    deficit = 1.0 - total
-    if deficit > 0.0:
-        room = {book_id: caps[book_id] - cleaned[book_id] for book_id in cleaned}
-        room_total = sum(value for value in room.values() if value > 0.0)
-        if room_total <= _EPS:
-            return cleaned if abs(deficit) <= _WEIGHT_SUM_TOL else None
-        for book_id, available in room.items():
-            if available > 0.0:
-                cleaned[book_id] += deficit * available / room_total
-    elif deficit < 0.0:
-        positive_total = sum(value for value in cleaned.values() if value > 0.0)
-        if positive_total <= _EPS:
-            return cleaned if abs(deficit) <= _WEIGHT_SUM_TOL else None
-        excess = -deficit
-        for book_id, value in list(cleaned.items()):
-            if value > 0.0:
-                cleaned[book_id] = max(0.0, value - excess * value / positive_total)
 
-    if abs(sum(cleaned.values()) - 1.0) > _WEIGHT_SUM_TOL:
+def _waterfill_to_budget(cleaned: dict[str, float], caps: Mapping[str, float],
+                         budget: float = 1.0) -> dict[str, float] | None:
+    """Rank #10b — bounded ITERATIVE waterfill to the budget, clipping each round so a cap can
+    never be breached (auditable termination + fail-closed, replacing the implicit single pass).
+    Deficit is filled proportional to remaining room; excess is drawn proportional to weight; a
+    book that hits its cap (fill) or 0 (draw) freezes, so each round resolves the residual or
+    freezes ≥1 book — convergence in ≤ len(books)+1 rounds. Returns None (BLOCKED) if the caps
+    cannot absorb the budget (infeasible) or it does not settle."""
+    ids = list(cleaned)
+    for _ in range(len(ids) + 1):
+        residual = budget - sum(cleaned.values())
+        if abs(residual) <= _WEIGHT_SUM_TOL:
+            break
+        if residual > 0.0:                                   # fill: distribute to books with room
+            room = {b: caps[b] - cleaned[b] for b in ids}
+            room_total = sum(v for v in room.values() if v > _EPS)
+            if room_total <= _EPS:
+                return None                                  # no room to absorb the deficit -> infeasible
+            for b in ids:
+                if room[b] > _EPS:
+                    cleaned[b] = min(caps[b], cleaned[b] + residual * room[b] / room_total)
+        else:                                                # draw: remove proportional to weight
+            excess = -residual
+            positive_total = sum(v for v in cleaned.values() if v > _EPS)
+            if positive_total <= _EPS:
+                return None
+            for b in ids:
+                if cleaned[b] > _EPS:
+                    cleaned[b] = max(0.0, cleaned[b] - excess * cleaned[b] / positive_total)
+
+    # snap the sub-tolerance convergence residual (FP drift from the rounds) exactly onto the
+    # slackest book, so the budget is met to FP precision without breaching any cap
+    residual = budget - sum(cleaned.values())
+    if 0.0 < abs(residual) <= _WEIGHT_SUM_TOL and ids:
+        if residual > 0.0:
+            b = max(ids, key=lambda x: caps[x] - cleaned[x])
+            if caps[b] - cleaned[b] + _CAP_TOL >= residual:
+                cleaned[b] += residual
+        else:
+            b = max(ids, key=lambda x: cleaned[x])
+            if cleaned[b] + _CAP_TOL >= -residual:
+                cleaned[b] += residual
+
+    if abs(sum(cleaned.values()) - budget) > _WEIGHT_SUM_TOL:
         return None
-    if any(cleaned[book_id] < -_CAP_TOL or cleaned[book_id] > caps[book_id] + _CAP_TOL for book_id in cleaned):
+    if any(cleaned[b] < -_CAP_TOL or cleaned[b] > caps[b] + _CAP_TOL for b in ids):
         return None
     return cleaned
 

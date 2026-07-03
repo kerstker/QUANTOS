@@ -13,6 +13,12 @@ from typing import Literal
 
 GateStatus = Literal["PASS", "WARN", "BLOCK"]
 _EPS = 1e-12
+_SEVERITY = {"PASS": 0, "WARN": 1, "BLOCK": 2}
+
+
+def _worst(a: GateStatus, b: GateStatus) -> GateStatus:
+    """The more severe of two statuses (PASS < WARN < BLOCK) — escalation never de-escalates."""
+    return a if _SEVERITY[a] >= _SEVERITY[b] else b
 
 
 @dataclass(frozen=True)
@@ -68,13 +74,33 @@ def evaluate_crowding_gate(
     threshold: float = 0.60,
     warn_threshold: float = 0.45,
     min_coverage: float = 0.80,
+    max_name_weight: float = 0.25,
+    concentrated_crowding_block: float | None = None,
+    adv_by_symbol: Mapping[str, float] | None = None,
+    book_notional: float | None = None,
+    max_exit_days: float = 5.0,
 ) -> CrowdingGateDecision:
-    """Evaluate a long-short book against supplied crowding evidence."""
+    """Evaluate a long-short book against supplied crowding evidence.
+
+    Beyond the gross-weighted average crowding score, two Rank #10a criteria (UNCALIBRATED
+    thresholds, calibration is R-1) evaluate independently so a few extreme names cannot hide
+    behind the average:
+    - concentration: a name that is BOTH concentrated (abs_weight/gross > max_name_weight) AND
+      crowded (> concentrated_crowding_block, default = threshold) trips BLOCK on its own;
+    - liquidity (optional, needs adv_by_symbol + book_notional): exit_days = position_notional/ADV
+      over max_exit_days -> WARN; a non-finite/non-positive ADV for a covered name fails closed.
+    """
     _validate_config(
         threshold=threshold,
         warn_threshold=warn_threshold,
         min_coverage=min_coverage,
     )
+    if not _is_finite_number(max_name_weight) or not 0.0 < float(max_name_weight) <= 1.0:
+        raise ValueError("max_name_weight must satisfy 0 < max_name_weight <= 1")
+    if concentrated_crowding_block is not None and not _is_finite_number(concentrated_crowding_block):
+        raise ValueError("concentrated_crowding_block must be a finite number or None")
+    if not _is_finite_number(max_exit_days) or float(max_exit_days) <= 0.0:
+        raise ValueError("max_exit_days must be a positive finite number")
 
     gross = 0.0
     abs_weights: dict[str, float] = {}
@@ -117,28 +143,53 @@ def evaluate_crowding_gate(
         return _block(None, threshold, ("no_covered_crowding_evidence",), exposures)
 
     score = weighted_score / covered_gross
+
+    # base verdict from the gross-weighted average
+    status: GateStatus = "PASS"
+    reasons: list[str] = []
     if score > float(threshold):
-        return _block(
-            score,
-            threshold,
-            (f"crowding_score:{score:.6f}>threshold:{float(threshold):.6f}",),
-            exposures,
-        )
-    if score > float(warn_threshold):
-        return CrowdingGateDecision(
-            status="WARN",
-            score=score,
-            threshold=float(threshold),
-            reasons=(
-                f"crowding_score:{score:.6f}>warn_threshold:{float(warn_threshold):.6f}",
-            ),
-            exposures=exposures,
-        )
+        status = "BLOCK"
+        reasons.append(f"crowding_score:{score:.6f}>threshold:{float(threshold):.6f}")
+    elif score > float(warn_threshold):
+        status = "WARN"
+        reasons.append(f"crowding_score:{score:.6f}>warn_threshold:{float(warn_threshold):.6f}")
+
+    # Rank #10a — max-single-name concentration criterion (dilution fix): a concentrated AND
+    # crowded name trips independently of the (dilutable) average.
+    block_hi = float(concentrated_crowding_block) if concentrated_crowding_block is not None else float(threshold)
+    for symbol in sorted(exposures):
+        conc = abs_weights[symbol] / gross
+        if conc <= float(max_name_weight):
+            continue
+        crowding = exposures[symbol]
+        if crowding > block_hi:
+            status = _worst(status, "BLOCK")
+            reasons.append(f"concentrated_crowded_block:{symbol}:w={conc:.4f},c={crowding:.4f}>{block_hi:.4f}")
+        elif crowding > float(warn_threshold):
+            status = _worst(status, "WARN")
+            reasons.append(f"concentrated_crowded_warn:{symbol}:w={conc:.4f},c={crowding:.4f}")
+
+    # Rank #10a — optional ADV / liquidity dimension: exit_days = position_notional / ADV.
+    if adv_by_symbol is not None and book_notional is not None:
+        bn = float(book_notional)
+        for symbol in sorted(abs_weights):
+            if symbol not in adv_by_symbol:
+                continue
+            adv = adv_by_symbol[symbol]
+            if not _is_finite_number(adv) or float(adv) <= 0.0:
+                return _block(score, threshold, (f"invalid_adv:{symbol}",), exposures)   # fail-closed
+            exit_days = (abs_weights[symbol] * bn) / float(adv)
+            if exit_days > float(max_exit_days):
+                status = _worst(status, "WARN")
+                reasons.append(f"exit_days:{symbol}:{exit_days:.2f}>{float(max_exit_days):.2f}")
+
+    if status == "PASS" and not reasons:
+        reasons = ["crowding_score_ok"]
     return CrowdingGateDecision(
-        status="PASS",
+        status=status,
         score=score,
         threshold=float(threshold),
-        reasons=("crowding_score_ok",),
+        reasons=tuple(reasons),
         exposures=exposures,
     )
 
