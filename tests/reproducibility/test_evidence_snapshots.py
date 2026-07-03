@@ -33,8 +33,24 @@ def test_digest_matches_live_artifact_or_skips(digest_path):
 
     if digest["kind"] == "dry_run_db":
         _verify_dry_run(digest, artifact)
+    elif digest["kind"] == "json_numbers":
+        _verify_json_numbers(digest, artifact)
     else:
         pytest.skip(f"no verifier for digest kind {digest['kind']!r}")
+
+
+def _verify_json_numbers(digest, artifact):
+    import json as _json
+    from tools.build_evidence_digests import EXTRACTORS
+    snap = _json.load(open(artifact, encoding="utf-8"))
+    live = EXTRACTORS[digest["extractor"]](snap)          # re-extract the SAME way the digest was built
+    for key, spec in digest["numbers"].items():
+        assert key in live, f"digested number {key!r} missing from the live artifact (drift)"
+        want, got = float(spec["value"]), float(live[key])
+        tol = max(float(spec["abs_tol"]), float(spec["rel_tol"]) * abs(want))
+        assert abs(got - want) <= tol + 1e-9, (
+            f"{key} drifted: live {got} vs digest {want} (tol {tol}) — "
+            f"regenerate evidence via tools.build_evidence_digests if the change is intended")
 
 
 def _verify_dry_run(digest, artifact):

@@ -12,6 +12,34 @@ import os
 
 _EVIDENCE = "evidence"
 _DRY_RUN_DB = os.path.join("data", "cache", "dry_run.db")
+_CACHE = os.path.join("data", "cache")
+
+
+# --- shared numeric extractors (the gate test imports these to re-verify the live artifact the
+#     SAME way the digest was built — one source of extraction logic, no drift between build/verify) ---
+
+def extract_ic_panel(snap: dict) -> dict:
+    """The crowd_contra cross-sectional IC finding (the famous t-stat 4.32)."""
+    row = next(r for r in snap["rows"]
+               if r.get("name") == "crowd_contra" and r.get("universe") == "crypto_oi_majors")
+    return {"crowd_contra.t_stat": float(row["t_stat"]),
+            "crowd_contra.mean_ic": float(row["mean_ic"]),
+            "crowd_contra.icir": float(row["icir"])}
+
+
+def extract_capacity(snap: dict) -> dict:
+    """Honest capacity = participation-bound (carry ~$2M / crowd ~$7M); impact-only overstates it
+    to ~$B (the ~300x finding). Digest the binding caps + the overstatement ratio."""
+    b = snap["books"]
+    out = {}
+    for name in ("carry", "crowd_contra"):
+        cap = float(b[name]["participation_cap_aum"])
+        out[f"{name}.participation_cap_aum"] = cap
+        out[f"{name}.impact_over_participation_ratio"] = float(b[name]["impact_aum_high"]) / cap
+    return out
+
+
+EXTRACTORS = {"ic_panel": extract_ic_panel, "capacity": extract_capacity}
 
 
 def _git_sha() -> str:
@@ -47,14 +75,32 @@ def build_dry_run_digest() -> dict:
     }
 
 
+def build_json_digest(artifact_name: str, extractor: str, rel_tol: float, abs_tol: float) -> dict:
+    """Digest numeric findings from an offline snapshot JSON via a named shared extractor. Each
+    number passes if within max(abs_tol, rel_tol*|value|) — relative tol suits large AUM numbers."""
+    artifact = os.path.join(_CACHE, artifact_name)
+    snap = json.load(open(artifact, encoding="utf-8"))
+    numbers = {}
+    for key, value in EXTRACTORS[extractor](snap).items():
+        numbers[key] = {"value": round(float(value), 6), "rel_tol": rel_tol, "abs_tol": abs_tol}
+    return {"artifact": os.path.join(_CACHE, artifact_name).replace("\\", "/"),
+            "kind": "json_numbers", "extractor": extractor, "code_version": _git_sha(),
+            "numbers": numbers}
+
+
 def main() -> None:
     os.makedirs(_EVIDENCE, exist_ok=True)
-    digests = {"dry_run_books.json": build_dry_run_digest()}
+    digests = {
+        "dry_run_books.json": build_dry_run_digest(),
+        "ic_panel.json": build_json_digest("ic_panel_snapshot.json", "ic_panel", rel_tol=0.005, abs_tol=0.001),
+        "capacity.json": build_json_digest("capacity_snapshot.json", "capacity", rel_tol=0.01, abs_tol=1.0),
+    }
     for name, digest in digests.items():
         path = os.path.join(_EVIDENCE, name)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(digest, fh, indent=2, sort_keys=True)
-        print(f"wrote {path}: {len(digest.get('books', {}))} books · code {digest['code_version']}", flush=True)
+        n = len(digest.get("books", digest.get("numbers", {})))
+        print(f"wrote {path}: {n} numbers · code {digest['code_version']}", flush=True)
 
 
 if __name__ == "__main__":
