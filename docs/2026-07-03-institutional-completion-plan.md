@@ -65,10 +65,10 @@
 | **22 ◑** | 数据质量强制 + volume 量纲修复回填 | Ⅰ | P1/M | — | 强制机制已落地(e241c00):`_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 `strict=`(质量不过 fail-closed,yahoo fetcher 接 strict=True)+ `quality.check_volume_units` 跨币量纲守卫(scenario_tail 用它作单一真源)。**volume 回填 + trend 容量重算需网络(coingecko,本环境被墙)= 待网络** |
 | **12 ◑** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | verify 半边已落地(c7d0e5e):`ExperimentRegistry.verify_evaluation` 重算 content_hash 抓篡改(改指标/改哈希/未知 id 全 fail-closed,4 测)。**剩:CatalogEvidence 封套绑 pbo/trial_count + BHY/有效试验数接 guard_to_validated + console 透出——较大设计改动,待做** |
 | **15 ◑** | 特征注册表持久化 + PIT 特征物化存储 | Ⅱ | P1/M | — | 持久层已落地(c5ae7a2):`SqliteFeatureRegistryStore`(镜像 run_registry,含 leakage_passed+code_version)+ `SqliteFeatureValueStore`(克隆 fundamental_store 双时点 + feature_version,PIT/截断不变/fail-closed,10 测)。**剩:rolling_feature 写通道 + 离线填充 + console 读(升真)= 采纳待做** |
-| **19 ◑** | 复现底座:evidence 数字指纹 + 离线重算 harness + 门测试 | Ⅵ | P1/M | — | 核心已落地(9cc4c25):`evidence/dry_run_books.json` 指纹(5 book return/sharpe/maxdd + 残差界 + code_version)+ `tools/build_evidence_digests.py` + 门测试(缓存在场重算断言/缺席诚实 skip,drift 实测会红)。**剩:扩到其余快照 + 完整 rebuild_snapshots.py = 待做** |
+| **19 ◑** | 复现底座:evidence 数字指纹 + 离线重算 harness + 门测试 | Ⅵ | P1/M | — | 已落地(9cc4c25/478b5bb):`evidence/{dry_run_books,ic_panel,capacity}.json` 指纹(5 book 结论 + crowd_contra t-stat 4.32 + 容量 ~300× 发现,共享 extractor 保 build/verify 同源)+ `tools/build_evidence_digests.py` + 门测试(缓存在场重算断言/缺席诚实 skip,drift 实测会红)。**剩:扩到 scenario_tail/macro_regime + 完整 rebuild_snapshots.py = 待做** |
 | **24 ◑** | console_api 拆分(8 路由组)+ 前端测试地板(42/42) | Ⅵ | P1/M | — | 前端测试地板已落地(a4e4350,IA 重构):30/30 页注册表驱动冒烟 + App 集成 + `assertConsoleSnapshot` payload/provenance 守卫 + format(47 测);28/30 页带 ProvenanceRibbon。**剩:console_api 5167 行单体拆路由组=大重构,宜专注新会话做(契约测试作安全网)** |
 | **14** | PIT regime 分类器(扩展窗分位 + 免估计规则优先) | Ⅱ/Ⅲ | P1/M | — | 截断不变性测试过;信用维诚实标 `NON_PIT_INSUFFICIENT` |
-| **23** | 企业行动总收益序列(backtest 侧组装) | Ⅰ | P2/S | — | `total_return_close` 有测试;价值/低波因子可用总收益价 |
+| **23 ✓** | 企业行动总收益序列(backtest 侧组装) | Ⅰ | P2/S | — | 已落地(bdd2a79):`corporate_actions.total_return_series` 把拆股调整价 + PIT 分红再投资组装成总收益序列(分红收益率对前价 scale-free,无需 ex-date 参考价——补上 adjusted_close 推迟的 Phase-4 缺口);只用可知行动(无前视),5 测。价值/低波/股息因子可用总收益价 |
 | **25** | 跨 book 公司级汇总(read-only 诊断) | Ⅲ | P2/S | #10 | 5 本书总 gross/net/因子暴露一页可见 |
 | **17** | 股票+基本面数据拓宽(治理收编后的 yahoo + 历史成分 + ALFRED) | Ⅰ | P1/L | #21 #22 | 股票宇宙 survivorship-free;经济数据 vintage-correct |
 | **16** | ML 引导候选提议器(spec 先行,同一验证门) | Ⅱ | P1/L | #12 | 提议器产物过同一 fail-closed 门;诚实 null 预期 |
