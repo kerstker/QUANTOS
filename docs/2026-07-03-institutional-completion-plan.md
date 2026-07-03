@@ -63,7 +63,7 @@
 | **11 ✓** | 冲击成本进干跑 + 参与率门同源 ADV + TCA-lite 区间对比 | Ⅳ | P1/M | — | 已落地(cbf8609):pipeline 可选 AC 冲击成本(逐笔参与率驱动,缺 ADV 回退平 bps,恒等式残差不破)+ cost_model/cost_provenance/TCA-lite 落 detail;carry 驱动用 close*volume 同源喂冲击+参与率门(拒 95 笔真容量约束,曾 0)。活跑 IMPACT_AC/6365 笔/TCA in-band/残差 4e-9。crowd/combo(OI 无 spot volume)+ trend(volume 不可靠,#22)暂平 bps |
 | **13 ✓** | 9 引擎风控门承重(诚实分级:4 真引擎 fail-closed 断言) | Ⅲ | P1/M | #7 | 已落地(93fd065):`dry_run_guard.evaluate_dry_run_risk` 只跑 4 真引擎(market/drawdown/concentration/stress,各 fail-closed;stress 用 timestamps→REAL_HISTORICAL_REPLAY),5 引擎 SKIPPED_NO_HONEST_INPUT 绝不伪造;接进 crowd_contra 干跑落 detail(VT 序列 3/4,market-VaR 仅默认阈值日频紧未过,诚实标注)。晋级门 guard_to_paper 接线 + 5 引擎喂真输入 = 后续 |
 | **22 ◑** | 数据质量强制 + volume 量纲修复回填 | Ⅰ | P1/M | — | 强制机制已落地(e241c00):`_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 `strict=`(质量不过 fail-closed,yahoo fetcher 接 strict=True)+ `quality.check_volume_units` 跨币量纲守卫(scenario_tail 用它作单一真源)。**volume 回填 + trend 容量重算需网络(coingecko,本环境被墙)= 待网络** |
-| **12** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | 晋级 100% 带 catalog 铸造证据;篡改哈希被机器抓;BHY 上守卫 |
+| **12 ◑** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | verify 半边已落地(c7d0e5e):`ExperimentRegistry.verify_evaluation` 重算 content_hash 抓篡改(改指标/改哈希/未知 id 全 fail-closed,4 测)。**剩:CatalogEvidence 封套绑 pbo/trial_count + BHY/有效试验数接 guard_to_validated + console 透出——较大设计改动,待做** |
 | **15** | 特征注册表持久化 + PIT 特征物化存储 | Ⅱ | P1/M | — | 特征页升真;物化值带 `leakage_passed`+`code_version` |
 | **19** | 复现底座:evidence 数字指纹 + 离线重算 harness + 门测试 | Ⅵ | P1/M | — | 承重数字 100% 有指纹;`rebuild_snapshots.py` 全链离线重算一致 |
 | **24** | console_api 拆分(8 路由组)+ 前端测试地板(42/42) | Ⅵ | P1/M | — | 契约测试不动全绿;42 页冒烟 + provenance 徽标断言 |
