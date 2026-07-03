@@ -10,6 +10,7 @@ import os
 
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.research import alpha_expression as ax
+from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
@@ -125,10 +126,25 @@ def main() -> None:
     # Rank #10a: surface the crowding-gate profile read-only in the run detail (-> console dry-run page)
     crowding = summarize_gate_decisions(gate_decisions)
     run.detail["crowding_gate"] = crowding
+    # Rank #13: run the honest 4-engine research-risk gate over the DEPLOYABLE (vol-targeted) series —
+    # that is the risk-managed form that would actually be deployed; the 5 engines the seam can't
+    # honestly feed are SKIPPED, not faked. Decision recorded read-only in run detail.
+    vt = run.detail.get("equity_curve_vt") or run.detail["equity_curve"]
+    risk = evaluate_dry_run_risk([c["ret"] for c in vt], weights_by_period.get(periods[-1], {}),
+                                 [c["equity"] for c in vt], timestamps=periods)
+    risk["series"] = "vol_target"
+    # honest caveat: RiskConfig defaults (max_var_95=0.05 / max_cvar_95=0.08) are daily-tight, not
+    # calibrated for weekly returns — this is a diagnostic record, NOT a promotion veto. Threshold
+    # calibration by frequency is a research task (cf. R-1). The gate is load-bearing (runs + records
+    # honestly, 5 engines SKIPPED not faked); promotion enforcement (guard_to_paper) is a follow-up.
+    risk["config_provenance"] = "RISK_CONFIG_DEFAULTS_UNCALIBRATED_FOR_WEEKLY"
+    run.detail["research_risk"] = risk
     DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # append alongside carry + trend
     p = run.pnl
     print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"
           f"/BLOCK {crowding['n_block']} · 最差分 {crowding['worst_score']}", flush=True)
+    print(f"  研究风控门(4真引擎/5诚实跳过): {risk['decision']} · 过 {risk['gates_passed']}/{risk['gates_run']} "
+          f"· {[k for k,v in risk['engines_run'].items() if not v] or '全过'}", flush=True)
     print(f"=== CROWD_CONTRA 周度滚动干跑 · OI 大币 {len(instruments)} · {p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)
     print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)
     print(f"  总收益 {p['total_return']*100:.1f}% · 夏普(周→年) {p['sharpe']} · 最大回撤 {p['max_drawdown']*100:.0f}% "
