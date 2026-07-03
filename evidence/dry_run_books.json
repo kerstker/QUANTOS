@@ -27,7 +27,7 @@
       "total_return": 0.074929
     }
   },
-  "code_version": "c5ae7a243a04",
+  "code_version": "e1979f411351",
   "description": "Deployable dry-run book conclusions; reconciliation residual must stay ~0.",
   "kind": "dry_run_db",
   "residual_max": 1e-06,
