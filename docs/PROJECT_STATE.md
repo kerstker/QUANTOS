@@ -157,6 +157,17 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   转换、capacity band 契约、非法参数 fail-closed 与治理边界。
   诚实边界:这不是 venue/tick 实测校准,不改 dry-run 成本/成交、不改 `CostModel`/组合构建/预交易门/券商/生命周期/readiness/console;
   真实成交校准仍需 tick/LOB/执行数据。
+- **新前向路线图 Rank #7 已做(2026-07-03,压力门接真实历史情景重演)**:审计发现 `StressTestEngine` 用 4 个臆造固定倍数
+  「编造」情景,而真危机重演 `realism/scenario.py` 就在隔壁闲置。现在调用方给逐期 timestamps → 真危机窗口(2021-05/LUNA/
+  FTX/2023-03 银行)重演 + 内生最差回撤窗;无 timestamps → 旧倍数仅作诚实标注回退(`SYNTHETIC_MULTIPLIER_UNCALIBRATED`)。
+  每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
+  console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
+  诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **新前向路线图 Rank #9 已做(2026-07-03,部署门强制 version content-hash 钉死)**:版本契约(ConfigVersion/StrategyVersion/
+  ModelVersion)一直存在但 `evaluate_deployment` 从不校验——「version-pin gate」原是 overclaim。现在 PAPER+ 必须声明部署内容
+  且逐版本与批准钉死表(id→content_hash)比对,fail-closed(`VERSION_PIN_REQUIRED/_NOT_PINNED/_MISMATCH/HASH_MISSING/
+  STRATEGY_VERSION_NOT_APPROVED`);多方 grant 强路径不绕过(批准=谁可部署,钉死=部署什么);DEV/TEST 不受限;LIVE 仍被
+  readiness pin + LIVE flags 结构性挡死。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved

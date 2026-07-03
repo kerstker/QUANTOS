@@ -127,9 +127,9 @@
 
 | Rank | 项 | 维 | 分类 | I/E | 为什么 |
 |:--:|---|:--:|:--:|:--:|---|
-| **7** | **把真实历史情景重演 `realism/scenario.py`(LUNA/FTX/SVB 窗口)接进研究风控 `StressTestEngine`**,替掉它现在臆造的 4 个固定倍数 | 4/8 | `L2_SAFE_NOW` | P1/S | 两块都已建已测,压力引擎在**编造**情景而真危机重演就在隔壁**闲置**。纯接线、可信度回报高、diff 极小——**全盘最佳 impact/effort**。 |
+| **7 ✓** | **把真实历史情景重演 `realism/scenario.py`(LUNA/FTX/SVB 窗口)接进研究风控 `StressTestEngine`**(已做):调用方带逐期 timestamps → 真危机窗口重演 + 内生最差回撤窗;无 timestamps → 旧固定倍数仅作诚实标注的回退(`SYNTHETIC_MULTIPLIER_UNCALIBRATED`)。每份报告带 provenance + 逐情景损失,console risk-dashboard 透出(契约测试钉死「无 provenance 的压力数不上线」)。 | 4/8 | `L2_SAFE_NOW` | P1/S | 两块都已建已测,压力引擎在**编造**情景而真危机重演就在隔壁**闲置**。纯接线、可信度回报高、diff 极小——**全盘最佳 impact/effort**。 |
 | **8** | **加结构守卫/lint 禁止 `persistent_store.fetch_bars`(原始非 PIT)出现在任何回测/研究路径**,把注释级防护变机器强制 | 1/3 | `L2_SAFE_NOW` | P1/S | 这正是整个数据层要防的**前视脚印**,现在只有注释挡着,一次误用就静默重引入前视。治理式 AST/import 守卫便宜且安全关键。 |
-| **9** | **在 `evaluate_deployment()` 内强制 version/content-hash 钉死**:PAPER/STAGING 部署前比对请求的 ConfigVersion/StrategyVersion/ModelVersion.content_hash 与批准的钉死哈希 | 8 | `L2_SAFE_NOW` | P1/S | 版本契约已存在但**闸门从不校验**——「version-pin gate」措辞现在 overclaim。补上契约→闸门这一环让资本路径诚实,改动小自洽。 |
+| **9 ✓** | **在 `evaluate_deployment()` 内强制 version/content-hash 钉死**(已做):PAPER+ 必须声明部署内容(ConfigVersion/StrategyVersion/ModelVersion)且逐个与批准钉死表比对,fail-closed(`VERSION_PIN_REQUIRED/_NOT_PINNED/_MISMATCH/HASH_MISSING/STRATEGY_VERSION_NOT_APPROVED`);多方 grant 强路径不绕过;DEV/TEST 研究环境不受限。 | 8 | `L2_SAFE_NOW` | P1/S | 版本契约已存在但**闸门从不校验**——「version-pin gate」措辞现在 overclaim。补上契约→闸门这一环让资本路径诚实,改动小自洽。 |
 
 ### 第二批 —— 本迭代(让原语承重,P1/M,主线)
 
