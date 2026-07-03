@@ -1,10 +1,12 @@
-"""Phase 14 — deployment governance: research free, PAPER needs a verified human,
-STAGING/LIVE structurally blocked at L2."""
+"""Phase 14 — deployment governance: research free, PAPER needs a verified human
+AND content-hash-pinned versions (Rank #9), STAGING/LIVE structurally blocked at L2."""
 import pytest
 
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.config import SafetyConfig
-from quantos.contracts.governance import ApprovalRecord, Environment
+from quantos.contracts.governance import (
+    ApprovalRecord, ConfigVersion, Environment, ModelVersion, StrategyVersion,
+)
 from services.deployment.gate import ReadinessLevel, evaluate_deployment
 
 HUMAN = Actor(actor_id="alice", kind=ActorKind.HUMAN)
@@ -13,6 +15,16 @@ AGENT = Actor(actor_id="bot", kind=ActorKind.AGENT)
 
 def _approval(subject="deploy", approver="alice", approved=True):
     return ApprovalRecord(approval_id="ap", subject_id=subject, approver=approver, approved=approved, timestamp=1)
+
+
+def _pinned_versions():
+    """A deploy payload whose content hashes MATCH the approved pin registry."""
+    versions = [
+        ConfigVersion(config_id="cfg", version="1", content_hash="a" * 16),
+        StrategyVersion(strategy_id="strat", version="1", content_hash="b" * 16, approved=True),
+    ]
+    pins = {"cfg": "a" * 16, "strat": "b" * 16}
+    return versions, pins
 
 
 def test_research_envs_are_free():
@@ -26,9 +38,57 @@ def test_paper_requires_verified_human_approval():
     # agent cannot approve a deployment
     d_agent = evaluate_deployment(Environment.PAPER, approval=_approval(approver="bot"), actor=AGENT, subject="deploy")
     assert not d_agent.allowed and "APPROVER_NOT_HUMAN" in d_agent.reasons
-    # verified human approval -> allowed
-    d_ok = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy")
+    # verified human approval + pinned versions -> allowed
+    versions, pins = _pinned_versions()
+    d_ok = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy",
+                               versions=versions, approved_pins=pins)
     assert d_ok.allowed is True
+
+
+# --- Rank #9: version/content-hash pinning is ENFORCED at PAPER and above ---
+# The ConfigVersion/StrategyVersion/ModelVersion contracts existed but the gate never
+# checked them — "version-pin gate" was an overclaim. A PAPER+ deploy must now state
+# WHAT it deploys and each stated version must match the approved pin registry.
+
+
+def test_paper_without_version_pins_is_blocked():
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy")
+    assert d.allowed is False and "VERSION_PIN_REQUIRED" in d.reasons
+
+
+def test_paper_blocked_on_pin_mismatch():
+    versions, pins = _pinned_versions()
+    pins = dict(pins, strat="c" * 16)                       # approved pin differs from payload hash
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy",
+                            versions=versions, approved_pins=pins)
+    assert d.allowed is False and "VERSION_PIN_MISMATCH" in d.reasons
+
+
+def test_paper_blocked_on_missing_content_hash():
+    versions = [ConfigVersion(config_id="cfg", version="1", content_hash="")]
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy",
+                            versions=versions, approved_pins={"cfg": "a" * 16})
+    assert d.allowed is False and "VERSION_HASH_MISSING" in d.reasons
+
+
+def test_paper_blocked_on_unpinned_version():
+    versions = [ModelVersion(model_id="mdl", version="1", content_hash="d" * 16)]
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy",
+                            versions=versions, approved_pins={"cfg": "a" * 16})   # mdl not pinned
+    assert d.allowed is False and "VERSION_NOT_PINNED" in d.reasons
+
+
+def test_paper_blocked_on_unapproved_strategy_version():
+    versions = [StrategyVersion(strategy_id="strat", version="1", content_hash="b" * 16, approved=False)]
+    d = evaluate_deployment(Environment.PAPER, approval=_approval(), actor=HUMAN, subject="deploy",
+                            versions=versions, approved_pins={"strat": "b" * 16})
+    assert d.allowed is False and "STRATEGY_VERSION_NOT_APPROVED" in d.reasons
+
+
+def test_research_envs_need_no_version_pins():
+    # DEV/TEST stay free — pin enforcement begins where deployment governance begins (PAPER)
+    for env in (Environment.DEV, Environment.TEST):
+        assert evaluate_deployment(env).allowed is True
 
 
 def test_live_blocked_at_l2_even_with_human_approval():
@@ -75,12 +135,15 @@ def test_gate_logic_allows_live_only_when_the_platform_itself_is_repinned(monkey
     import services.deployment.gate as gate_mod
     monkeypatch.setattr(gate_mod, "PLATFORM_READINESS", ReadinessLevel.L4_LIVE_APPROVED)
     live_cfg = SafetyConfig(live_trading_enabled=True, real_broker_enabled=True, allow_order_submission=True)
+    versions, pins = _pinned_versions()
     d = gate_mod.evaluate_deployment(Environment.LIVE, safety_config=live_cfg, approval=_approval(),
-                                     actor=HUMAN, subject="deploy", readiness=ReadinessLevel.L4_LIVE_APPROVED)
+                                     actor=HUMAN, subject="deploy", readiness=ReadinessLevel.L4_LIVE_APPROVED,
+                                     versions=versions, approved_pins=pins)
     assert d.allowed is True
     # and with the platform re-pinned high, research-safe flags still block live
     d2 = gate_mod.evaluate_deployment(Environment.LIVE, approval=_approval(), actor=HUMAN, subject="deploy",
-                                      readiness=ReadinessLevel.L4_LIVE_APPROVED)
+                                      readiness=ReadinessLevel.L4_LIVE_APPROVED,
+                                      versions=versions, approved_pins=pins)
     assert not d2.allowed and "LIVE_FLAGS_DISABLED" in d2.reasons and "READINESS_BELOW_LIVE" not in d2.reasons
 
 
@@ -98,8 +161,16 @@ def _grant(subject: str):
 
 
 def test_paper_allowed_with_valid_multi_party_grant():
-    d = evaluate_deployment(Environment.PAPER, subject="deploy-42", grant=_grant("deploy-42"))
+    versions, pins = _pinned_versions()
+    d = evaluate_deployment(Environment.PAPER, subject="deploy-42", grant=_grant("deploy-42"),
+                            versions=versions, approved_pins=pins)
     assert d.allowed is True
+
+
+def test_multi_party_grant_does_not_bypass_version_pins():
+    # the STRONGER approval path must not weaken the version-pin requirement
+    d = evaluate_deployment(Environment.PAPER, subject="deploy-42", grant=_grant("deploy-42"))
+    assert d.allowed is False and "VERSION_PIN_REQUIRED" in d.reasons
 
 
 def test_paper_blocked_with_incomplete_multi_party_grant():
