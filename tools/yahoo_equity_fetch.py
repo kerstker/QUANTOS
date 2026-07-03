@@ -84,7 +84,7 @@ def main() -> None:
                 failed.append((sym, f"only {len(rows)} rows"))
                 continue
             rep = ingest_provider_rows(rows, store, dataset_id=f"yahoo-{sym}",
-                                       now=now_yyyymmdd, time_unit="yyyymmdd")
+                                       now=now_yyyymmdd, time_unit="yyyymmdd", strict=True)
             ok.append(sym)
             total_bars += rep.bars_ingested
             print(f"  {sym:6s} {rep.bars_ingested} bars · {rows[0]['event_time']}-{rows[-1]['event_time']}"

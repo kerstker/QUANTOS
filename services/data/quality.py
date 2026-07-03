@@ -6,9 +6,23 @@ a DataQualityReport (contract) whose `passed` aggregates the checks.
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, Mapping, Optional, Sequence
 
 from quantos.contracts.data import DataQualityCheck, DataQualityReport
+
+
+def check_volume_units(volume_by_instrument: Mapping[str, float], max_ratio: float = 1e6) -> DataQualityCheck:
+    """Rank #22 — cross-instrument volume-unit consistency. A dataset whose per-instrument (typically
+    median) volume spans more than `max_ratio` cannot be on one honest unit — the crypto_daily.db bug
+    (EOS ~$20k vs BTC ~$3.7Q, ~17 orders of magnitude) would make every ADV/capacity number meaningless.
+    Formalizes the scenario-research heuristic into a reusable guard. Non-positive values and a <2-name
+    cross-section are ignored (nothing to compare)."""
+    vals = [float(v) for v in volume_by_instrument.values() if isinstance(v, (int, float)) and float(v) > 0.0]
+    if len(vals) < 2:
+        return DataQualityCheck(name="volume_units", passed=True, detail="insufficient cross-section")
+    ratio = max(vals) / min(vals)
+    return DataQualityCheck(name="volume_units", passed=ratio <= max_ratio,
+                            detail=f"max/min volume ratio {ratio:.3e} vs max {max_ratio:.0e}")
 
 
 def count_duplicate_event_times(times: Sequence[int]) -> int:

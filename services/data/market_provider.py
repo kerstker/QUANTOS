@@ -42,7 +42,7 @@ class MarketDataProvider(Protocol):
 
 def ingest_provider_rows(rows: Sequence[dict], store, *, now=None,
                          dataset_id: str = "market", version: str = "",
-                         time_unit: Optional[str] = None) -> IngestionReport:
+                         time_unit: Optional[str] = None, strict: bool = False) -> IngestionReport:
     """Ingest canonical provider rows into the PIT store via the shared fail-closed core
     (normalize/validate OHLC + bitemporal, dedup, content_hash, quality). Bad rows are
     recorded in `rejected`, never crashed. Asset-class agnostic.
@@ -72,4 +72,4 @@ def ingest_provider_rows(rows: Sequence[dict], store, *, now=None,
         return canonical, kt
 
     return _ingest_records(list(enumerate(rows)), parse, store, now=now,
-                           dataset_id=dataset_id, version=version)
+                           dataset_id=dataset_id, version=version, strict=strict)
