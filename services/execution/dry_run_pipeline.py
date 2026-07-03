@@ -83,12 +83,16 @@ def _to_command(intent, ref: str, price: float, *, idx: int, run_id: str) -> Dry
 
 
 def simulate_fills(approved: Sequence, prices: Dict[str, float], *, adapter, run_id: str,
-                   timestamp: int, cost_bps: float = 0.0) -> dict:
+                   timestamp: int, cost_bps: float = 0.0, impact=None, adv: Dict[str, float] = None) -> dict:
     """已批准意图 → 干跑适配器受理(process→simulate_fill,绝不真发)→ 纸面成交 PaperFill。
-    适配器是第二道闸:若它拒绝(rejection_reasons 非空)则不成交。成本以 cost_bps 计入 commission(默认 0)。
-    确定性 id;不捕获适配器内部 uuid/event_time(保 DryRunRun 可复现)。"""
+    适配器是第二道闸:若它拒绝(rejection_reasons 非空)则不成交。
+
+    成本(Rank #11):默认平 `cost_bps`。若传入 `impact`(AlmgrenChrissImpact)+ `adv`(instrument→ADV 名义),
+    则该笔 commission = 参与率驱动的 Almgren-Chriss 冲击成本(临时平方根 + 永久线性);某标的缺 ADV 时**逐笔
+    回退**平 bps。commission 在 reconcile 两侧同进同出,恒等式残差不受影响。确定性 id;不捕获适配器内部 uuid。"""
     assert_dry_run_adapter(adapter)  # fail-closed 接缝守卫:运行时只放行证明为干跑的适配器
-    fills, reports = [], []
+    fills, reports, impact_trades = [], [], []
+    n_impact = n_flat = 0
     for i, (intent, ref) in enumerate(approved):
         px = prices.get(intent.instrument_id)
         if px is None or px <= 0:
@@ -105,12 +109,21 @@ def simulate_fills(approved: Sequence, prices: Dict[str, float], *, adapter, run
         qty = abs(int(intent.quantity))
         fp = float(rep.fill_price or px)
         notional = fp * qty
+        adv_i = adv.get(intent.instrument_id) if (impact is not None and adv is not None) else None
+        if adv_i is not None and adv_i > 0:
+            commission = impact.total_cost_notional(notional, adv_i)   # participation-driven impact
+            impact_trades.append((notional, float(adv_i)))
+            n_impact += 1
+        else:
+            commission = notional * cost_bps / 1e4                     # flat-bps (default / per-name fallback)
+            n_flat += 1
         fills.append(PaperFill(
             fill_id=_det_id("f", run_id, i), order_id=_det_id("o", run_id, i), run_id=run_id,
             instrument_id=intent.instrument_id, side=PaperSide(intent.side.value), quantity=qty,
             price=fp, fill_method=FillMethod.NEXT_OPEN, timestamp=timestamp,
-            commission=notional * cost_bps / 1e4, slippage=0.0))
-    return {"fills": fills, "reports": reports}
+            commission=commission, slippage=0.0))
+    return {"fills": fills, "reports": reports, "impact_trades": impact_trades,
+            "n_impact": n_impact, "n_flat": n_flat}
 
 
 def reconcile_run(fills, marks: Dict[str, float], initial_capital: float) -> dict:
@@ -200,9 +213,26 @@ def _vol_target_returns(returns, *, target_ann: float = 0.10, lookback: int = 8,
     return out
 
 
+def _tca_lite(impact, impact_trades) -> dict:
+    """Rank #11 TCA-lite: recompute the impact cost across the calibration band (aggressive→lowest,
+    conservative→highest) and check the charged total sits inside it. L2 has no real fills, so the
+    calibration band is the only defensible 'assumed vs reference' cost check."""
+    from services.research.realism.impact_calibration import (
+        default_crypto_impact_calibration, scenario_impact)
+    cal = default_crypto_impact_calibration()
+
+    def total(imp):
+        return sum(imp.total_cost_notional(n, a) for n, a in impact_trades)
+
+    charged = total(impact)
+    lo, hi = total(scenario_impact(cal.aggressive)), total(scenario_impact(cal.conservative))
+    return {"assumed": round(charged, 2), "band_lo": round(lo, 2), "band_hi": round(hi, 2),
+            "in_band": lo - 1e-6 <= charged <= hi + 1e-6, "provenance": cal.provenance}
+
+
 def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
-                             vol_target: dict = None) -> DryRunRun:
+                             vol_target: dict = None, impact=None, adv_by_period: dict = None) -> DryRunRun:
     """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
     价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
     ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。"""
@@ -214,12 +244,15 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
 
     held: dict = {}                       # instrument -> signed qty
     all_fills: list = []
+    all_impact_trades: list = []          # (notional, adv) per impact-costed fill, for TCA-lite
+    tot_impact = tot_flat = 0
     cum_cash = 0.0
     curve: list = []
     tot_appr = tot_rej = 0
     prev_equity = aum
     for t in periods:
         prices_t = prices_by_period[t]
+        adv_t = adv_by_period.get(t) if adv_by_period else None
         targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum)
         intents = build_intents(targets, held, strategy_id=strategy_id)
         screened = screen_intents(intents, gate=gate,
@@ -227,7 +260,11 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
         tot_appr += len(screened["approved"])
         tot_rej += len(screened["rejected"])
         filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
-                                run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps)
+                                run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps,
+                                impact=impact, adv=adv_t)
+        all_impact_trades.extend(filled.get("impact_trades", []))
+        tot_impact += filled.get("n_impact", 0)
+        tot_flat += filled.get("n_flat", 0)
         for f in filled["fills"]:
             all_fills.append(f)
             held[f.instrument_id] = held.get(f.instrument_id, 0) + (
@@ -268,9 +305,16 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
            "residual": round(residual, 9),
            "avg_net_exposure_pct": round(statistics.fmean([abs(p["net"]) / aum for p in curve]), 6)
            if curve else 0.0}
+    # Rank #11: honest cost-model provenance + TCA-lite band, surfaced read-only on the console.
+    used_impact = impact is not None and tot_impact > 0
+    cost = {"cost_model": "IMPACT_AC" if used_impact else "FLAT_BPS",
+            "cost_provenance": "UNCALIBRATED_PRINCIPLED" if used_impact else "FLAT_BPS",
+            "cost_fills": {"impact": tot_impact, "flat": tot_flat}, "cost_bps": cost_bps}
+    if used_impact:
+        cost["tca"] = _tca_lite(impact, all_impact_trades)
     return DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
         pnl=pnl, audit_root=str(audit.seal().head_hash),
         detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
-                "equity_curve": curve, "equity_curve_vt": vt_curve})
+                "equity_curve": curve, "equity_curve_vt": vt_curve, **cost})
