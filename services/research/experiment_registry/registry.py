@@ -108,3 +108,18 @@ class ExperimentRegistry:
 
     def list_evaluations(self, alpha_id: str) -> list[dict]:
         return self._store.list_evaluations(alpha_id)
+
+    def verify_evaluation(self, run_id: str) -> bool:
+        """Rank #12 — the missing verify half of the write-once evaluation store: recompute the
+        content_hash from the STORED evaluation_json + dataset_version and compare it to the stored
+        content_hash. Detects post-hoc tampering of a recorded artifact (a metric edited directly in
+        sqlite). Fail-closed: an unknown run_id or any error is False (never a silent 'verified')."""
+        try:
+            row = self._store.get_evaluation(run_id)
+            if row is None:
+                return False
+            recomputed = stable_hash({"evaluation": json.loads(row["evaluation_json"]),
+                                      "dataset_version": row["dataset_version"]})
+            return recomputed == row["content_hash"]
+        except Exception:
+            return False

@@ -122,3 +122,36 @@ def test_content_hash_is_deterministic_across_registries():
     h1 = r1.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
     h2 = r2.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
     assert r1.get_evaluation(h1)["content_hash"] == r2.get_evaluation(h2)["content_hash"]
+
+
+# ---- Rank #12: the missing verify half — tamper detection on the write-once store ----
+
+def test_verify_evaluation_true_for_untampered_record():
+    reg = _reg()
+    rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    assert reg.verify_evaluation(rid) is True
+
+
+def test_verify_evaluation_detects_a_tampered_metric():
+    reg = _reg()
+    rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    # edit the stored evaluation_json directly (verdict flipped) WITHOUT updating content_hash
+    row = reg.get_evaluation(rid)
+    tampered = row["evaluation_json"].replace('"verdict": "PASS"', '"verdict": "FAIL"')
+    assert tampered != row["evaluation_json"]                 # the edit actually landed
+    reg._store._conn.execute("UPDATE evaluations SET evaluation_json=? WHERE run_id=?", (tampered, rid))
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False                # recomputed hash != stored hash
+
+
+def test_verify_evaluation_detects_a_tampered_content_hash():
+    reg = _reg()
+    rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    reg._store._conn.execute("UPDATE evaluations SET content_hash='deadbeef' WHERE run_id=?", (rid,))
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False
+
+
+def test_verify_evaluation_unknown_run_id_fails_closed():
+    reg = _reg()
+    assert reg.verify_evaluation("no-such-run") is False
