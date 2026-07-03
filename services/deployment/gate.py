@@ -111,10 +111,12 @@ def evaluate_deployment(
     grant: Optional[ApprovalRequest] = None,
     versions: Sequence[VersionRecord] = (),
     approved_pins: Optional[Mapping[str, str]] = None,
+    audit_sink: object = None,
+    at: int = 0,
 ) -> DeploymentDecision:
     try:
         if environment in _RESEARCH_ENVS:
-            return DeploymentDecision(True, environment, ())
+            return DeploymentDecision(True, environment, ())   # research envs: free, nothing to record
 
         # PAPER and above need human approval. Multi-party path (grant=) raises the
         # bar to 3 distinct humans + hash-chain audit; the single-record path is kept
@@ -142,6 +144,18 @@ def evaluate_deployment(
                     and safety_config.allow_order_submission):
                 reasons.append("LIVE_FLAGS_DISABLED")
 
-        return DeploymentDecision(not reasons, environment, tuple(reasons))
+        decision = DeploymentDecision(not reasons, environment, tuple(reasons))
+        # Rank #20: record the governance decision to the optional audit sink. Done INSIDE the try
+        # so an audit failure fails closed (a decision we cannot record must not be treated as
+        # allowed) — consistent with the gate's fail-closed posture. None sink -> zero regression.
+        if audit_sink is not None:
+            actor_id = actor.actor_id if actor is not None else (
+                "multi_party_grant" if grant is not None else "unknown")
+            audit_sink.append(
+                event_id=f"deploy.{environment.value}.{subject}.{at}", actor=actor_id,
+                action="deployment.evaluate", timestamp=at, target=f"{environment.value}:{subject}",
+                metadata={"allowed": str(decision.allowed), "reasons": ",".join(decision.reasons),
+                          "n_versions": str(len(versions))})
+        return decision
     except Exception:
         return DeploymentDecision(False, environment, ("DEPLOYMENT_ERROR",))   # fail-closed
