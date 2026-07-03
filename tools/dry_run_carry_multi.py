@@ -17,11 +17,15 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.research.realism.impact import AlmgrenChrissImpact
+from services.research.realism.impact_calibration import default_crypto_impact_calibration, scenario_impact
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
 from tools.crypto_carry_stress import _slip_bps
+
+_MAX_PARTICIPATION = 0.10       # Rank #11: realistic participation cap (was a 1e7 placeholder)
 
 _DB = os.path.join("data", "cache", "crypto_funding.db")
 _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
@@ -60,6 +64,7 @@ def main() -> None:
                                  for t in panel.event_times]
     sig = ax.evaluate(COMPOSITE, panel)
     insts, close, fmat, ev = panel.instruments, panel.matrices["close"], panel.matrices["funding"], panel.event_times
+    vmat = panel.matrices["volume"]
 
     # weekly sampling: first row, then every >= _WEEK_MS later
     rows, last = [], None
@@ -68,7 +73,10 @@ def main() -> None:
             rows.append(r)
             last = ev[r]
 
+    # Rank #11: per-period ADV from the in-panel close*volume — same source feeds the impact cost
+    # (adv_by_period, notional) and the participation gate (vol_by_period, shares/units).
     periods, weights_by_period, prices_by_period, rate_by_period = [], {}, {}, {}
+    adv_by_period, vol_by_period = {}, {}
     for r in rows:
         legs = _legs(sig[r], QUANTILE)
         if not legs:
@@ -78,6 +86,9 @@ def main() -> None:
         weights_by_period[t] = {insts[i]: w for i, w in legs.items()}
         prices_by_period[t] = {insts[i]: close[r][i] for i in legs if close[r][i] and close[r][i] > 0}
         rate_by_period[t] = {insts[i]: (fmat[r][i] or 0.0) for i in legs}
+        adv_by_period[t] = {insts[i]: close[r][i] * vmat[r][i] for i in legs
+                            if close[r][i] and vmat[r][i] and close[r][i] > 0 and vmat[r][i] > 0}
+        vol_by_period[t] = {insts[i]: vmat[r][i] for i in legs if vmat[r][i] and vmat[r][i] > 0}
 
     held_names = sorted({n for w in weights_by_period.values() for n in w})
     cost_bps = statistics.fmean([slip[n] for n in held_names]) if held_names else 0.0
@@ -92,24 +103,30 @@ def main() -> None:
         allowed_instruments=frozenset(held_names), allowed_accounts=frozenset({"paper"}),
         default_max_position_qty=10 ** 13, max_order_notional=1e14, fat_finger_qty=10 ** 13,
         max_gross_exposure=1e14, max_net_exposure=1e14, max_leverage=1e7, max_single_name_pct=1e7,
-        max_turnover=1e7, max_participation_rate=1e7, max_instrument_vol=5.0, daily_loss_limit=1e14,
-        max_drawdown=1.0)
+        max_turnover=1e7, max_participation_rate=_MAX_PARTICIPATION, max_instrument_vol=5.0,
+        daily_loss_limit=1e14, max_drawdown=1.0)
     gate = PreTradeRiskGate(limits, kill_switch=ks)
 
     def ctx_factory(intent, prices, period):
+        # Rank #11: real per-period ADV (units/shares) feeds the participation gate — same source as the
+        # impact cost (was a 1e12 placeholder). Missing -> large fallback so a data gap can't fake liquidity.
+        adv_units = vol_by_period.get(period, {}).get(intent.instrument_id, 1e18)
         return RiskContext(
             account=AccountRiskState(account_id="paper", cash=_AUM * 10, equity=_AUM * 10, day_pnl=0.0,
                                      peak_equity=_AUM * 10, positions=()),
             market=MarketContext(instrument_id=intent.instrument_id, known=True,
                                  reference_price=prices.get(intent.instrument_id, 1.0), market_open=True,
-                                 price_as_of=period, est_daily_volume=1e12, instrument_vol=0.8),
+                                 price_as_of=period, est_daily_volume=adv_units, instrument_vol=0.8),
             strategy=StrategyApproval(strategy_id="carry", approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    # Rank #11: charge participation-driven Almgren-Chriss impact (base calibration) instead of flat bps;
+    # names lacking ADV fall back to cost_bps per-name. TCA-lite band lands in run detail.
+    impact = scenario_impact(default_crypto_impact_calibration().base)
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=_AUM,
-        cost_bps=cost_bps, cash_flow_fn=cash_flow_fn,
+        cost_bps=cost_bps, cash_flow_fn=cash_flow_fn, impact=impact, adv_by_period=adv_by_period,
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
 
     if os.path.exists(_OUT):
@@ -122,6 +139,12 @@ def main() -> None:
           f"· 累计资金费 ${p['total_funding']:,.0f} · 对账残差 {p['residual']}", flush=True)
     print(f"  raw 曲线 {len(run.detail['equity_curve'])} 点 · vol-target 曲线 {len(run.detail['equity_curve_vt'])} 点 "
           f"-> {_OUT}", flush=True)
+    cf = run.detail.get("cost_fills", {})
+    print(f"  成本模型: {run.detail.get('cost_model')} · 冲击成交 {cf.get('impact')}/平bps回退 {cf.get('flat')}", flush=True)
+    if "tca" in run.detail:
+        tca = run.detail["tca"]
+        print(f"  TCA-lite: 计入 ${tca['assumed']:,.0f} · 区间 [${tca['band_lo']:,.0f}, ${tca['band_hi']:,.0f}] "
+              f"· in_band={tca['in_band']}", flush=True)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@
 QUANTOS = 安全关键的 **AI 量化研究平台**,就绪等级 **L2_DRY_RUN_ONLY**(只研究 + 干跑模拟,
 **无实盘、无券商、无真凭证**)。权威规格:`QUANTOS_MASTER_BLUEPRINT.md`;开发计划:
 `docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md`;因子方法论地图:`docs/factor-methodology-implementation-map.md`。
+**当前活路线(2026-07-03 起,机构级补全):`docs/2026-07-03-institutional-completion-plan.md`**
+(7 路专项复核 + Rank #8–28 详细开发计划,承接同日核实版审计 Rank #7–19;#7/#9 已落地)。
 
 **机器强制的不变量**(改动绝不能破):
 - `LIVE_TRADING_ENABLED=false / REAL_BROKER_ENABLED=false / ALLOW_ORDER_SUBMISSION=false /
@@ -124,6 +126,111 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   **corr=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条一半,总收益~187% 保住,VIX regime 被抹平。**
   两条正交 crypto 边合成 Sharpe~2/回撤 8% 的强分散。诚实:收益流层面(不同宇宙/规模、231 共同周、gross 无成本 RELATIVE 比较);
   同一执行 book(统一宇宙 + 干跑流水线)= 自然下一步。
+- **对标顶级路线图 Rank #1 已做 + 诚实更正(2026-07-01,`tools/dry_run_combo_riskparity_multi.py`)**:风险平衡统一执行
+  book(rolling 逆波动 sleeve,PIT)+ portfolio-of-books 配置——**carry+crowd 分散不敌执行现实**:三种方式 VT 1.20/1.14/1.21
+  均 < crowd_contra 单条 VT 1.38。1.95/8% 是 gross 理想化(carry gross~1.44),净-成本下 carry 仅~0.58 拉不动 crowd,
+  净曲线相关 +0.04。执行流水线抓到理想-vs-真的差。**deployable = crowd_contra 单条。** 见 `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md`。
+- **对标顶级路线图 Rank #2 已做(2026-07-01,Barra-lite read-only 诊断第一版)**:`services/portfolio/barra_lite.py`
+  新增纯函数 read-only 因子风险诊断核(`winsorize/zscore/corr_exposure/build_barra_lite_model/barra_lite_report`),
+  复用现有 `FactorRiskModel` + `risk_decomposition`;`tools/barra_lite_diagnostics.py` 从本地缓存构建
+  5 因子(`carry/crowding/liquidity/market_beta/volatility`)并输出 gitignored 的 `data/cache/barra_lite_snapshot.json`。
+  首跑:58 symbols / 5 factors;carry total_var 0.6544、crowd_contra 1.3969、carry_crowd_equal 0.5733。
+  诚实边界:诊断-only,不等同完整机构级 Barra 因子库,不改权重/晋级/闸门/干跑/券商路径;治理测试钉死无网络/券商/订单/凭证 surface。
+- **对标顶级路线图 Rank #3 已做(2026-07-02,拥挤门 primitive)**:`services/portfolio/crowding_gate.py`
+  新增纯函数 fail-closed crowding gate,输入候选权重 + caller-supplied crowding evidence,输出 `PASS/WARN/BLOCK`。
+  score=按绝对权重的拥挤暴露均值;缺失覆盖不足、显式 None/NaN/inf、空 book、非有限权重均 `BLOCK`。
+  诚实边界:primitive only,未自动接入 `build_portfolio`/干跑/预交易门/券商/生命周期;后续若要改变组合构建行为需单独 spec。
+- **对标顶级路线图 Rank #4 已做(2026-07-02,协方差感知多 book 资本配置 primitive)**:`services/portfolio/capital_allocator.py`
+  新增纯函数 fail-closed covariance-aware capital allocator,输入多策略收益流 + 可选容量/质量/前次权重,输出 `ALLOCATED/BLOCKED`
+  研究 AUM 权重建议、turnover 与诊断(`book_stats`/capacity/effective caps/risk contribution)。默认使用 lower-confidence expected return
+  (`mean - mean_shrink_z * vol/sqrt(n)`) + shrunk covariance + 现有 constrained mean-variance optimizer,并叠加 per-book cap、capacity cap 与 no-trade band。
+  诚实边界:研究 allocation primitive only,不读 `DryRunStore`/`run_registry`,不写 DB,不自动调仓,不接 dry-run/pre-trade/broker/lifecycle/readiness/console;
+  治理测试钉死无网络/券商/订单/凭证 surface。`quality_multiplier` 来源和容量衰减曲线仍是后续独立 primitive。
+- **对标顶级路线图 Rank #5 已做(2026-07-03,Brinson-Fachler 归因 primitive)**:`services/portfolio/brinson.py`
+  新增纯函数 benchmark-relative attribution,输入 caller-supplied portfolio/benchmark weights + asset returns + group map,
+  输出 `ATTRIBUTED/BLOCKED`、逐组 allocation/selection/interaction/active return 与恒等式残差诊断。手算两组、benchmark=portfolio
+  零主动收益、long-short 权重加性、缺 return/group、非有限值、权重和异常、确定性均测试钉死。
+  诚实边界:研究解释 primitive only,不读写 DB,不接 `DryRunStore`/`run_registry`,不自动调仓,不接 dry-run/pre-trade/broker/lifecycle/readiness/console;
+  多层 sector/style/macro 适配器仍是后续独立接线,当前只对 caller-supplied 单层 group map 做严谨恒等式归因。
+- **对标顶级路线图 Rank #6 已做(2026-07-03,冲击模型校准 primitive)**:`services/research/realism/impact_calibration.py`
+  新增纯函数 calibration set,把 RE-1 的文献默认/敏感性假设形式化为 aggressive/base/conservative 三情景
+  (`temp_coef` 5/10/20bps,`perm_coef` 2.5/5/10bps,平方根 exponent=0.5),provenance=`UNCALIBRATED_PRINCIPLED`,
+  并提供 `impact_band_from_calibration()` 可直接喂给 `capacity_band`。测试钉死情景排序、`AlmgrenChrissImpact`
+  转换、capacity band 契约、非法参数 fail-closed 与治理边界。
+  诚实边界:这不是 venue/tick 实测校准,不改 dry-run 成本/成交、不改 `CostModel`/组合构建/预交易门/券商/生命周期/readiness/console;
+  真实成交校准仍需 tick/LOB/执行数据。
+- **新前向路线图 Rank #7 已做(2026-07-03,压力门接真实历史情景重演)**:审计发现 `StressTestEngine` 用 4 个臆造固定倍数
+  「编造」情景,而真危机重演 `realism/scenario.py` 就在隔壁闲置。现在调用方给逐期 timestamps → 真危机窗口(2021-05/LUNA/
+  FTX/2023-03 银行)重演 + 内生最差回撤窗;无 timestamps → 旧倍数仅作诚实标注回退(`SYNTHETIC_MULTIPLIER_UNCALIBRATED`)。
+  每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
+  console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
+  诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图 S3「溯源与持久」sprint 推进(2026-07-03,#12/#15/#19/#24 各一切片)**:
+  **#12**(c7d0e5e)`ExperimentRegistry.verify_evaluation` 篡改检测(重算 content_hash 比对,改指标/改哈希/未知 id
+  全 fail-closed,4 测)——补上「只算不验」缺的验证半边。剩 CatalogEvidence 封套 + BHY 接守卫 = 待做。**#15**(c5ae7a2)
+  特征层持久化:`SqliteFeatureRegistryStore`(镜像 run_registry,含 leakage_passed+code_version 审计)+ `SqliteFeatureValueStore`
+  (克隆 fundamental_store 双时点 + feature_version,PIT/截断不变/版本隔离/fail-closed,10 测)——特征层脱离「重启即失」。
+  剩 rolling_feature 写通道 + 离线填充 + console 读 = 采纳待做。**#19**(9cc4c25)复现底座:`evidence/dry_run_books.json`
+  指纹(5 book 承重数 + 残差界 + code_version)+ `tools/build_evidence_digests.py` 生成器 + `tests/reproducibility/` 门测试
+  (缓存在场重算断言、缺席诚实 skip;drift 实测会红、rebuild 恢复绿)——repo 现能自证其引用的干跑结论。剩扩到其余快照 +
+  完整 rebuild harness = 待做。**#24**(前端地板已在 a4e4350 IA 重构落地:30/30 冒烟 + 集成 + payload 守卫,47 测);
+  console_api 5167 行拆路由组 = 大重构宜专注新会话做。**远端已推 origin/codex/impact-calibration。**
+- **机构级路线图 S2「承重」Rank #22 强制机制做完(2026-07-03,数据质量从「算而不 gate」变机器强制)**:
+  (e241c00)① `_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 opt-in `strict=`:单标的数据集质量报告不过
+  (重复/乱序/缺失/未来时间戳)→ raise `FatalIngestionError`(fail-closed,默认 False 零回归);yahoo fetcher 接 strict=True。
+  ② `services/data/quality.py::check_volume_units` 跨币量纲一致性守卫(max/min > ratio → 非单一量纲,formalize
+  crypto_daily.db bug 的 EOS $20k vs BTC $3.7Q ~17 数量级启发式);scenario_tail_research 改用它作单一真源。9 新测试。
+  **诚实边界:volume 回填 + trend 容量重算需 coingecko 网络(本环境被墙)= 待网络;抓 bug 的强制机制已就位并测过。**
+  **S2「承重」四项(#10/#11/#13/#22)全推进**(#22 强制机制 done、回填待网络)。远端已推:`origin/codex/impact-calibration`。
+- **机构级路线图 S2「承重」Rank #11 + #13 做完(2026-07-03,执行现实主义 + 风控门承重)**:
+  **#11**(cbf8609)冲击成本进干跑:`simulate_fills`/`run_multi_period_dry_run` 加可选 `impact`(Almgren-Chriss)+
+  `adv_by_period`——commission 变参与率驱动的冲击成本(缺 ADV 逐笔回退平 bps,恒等式残差不破);cost_model/
+  cost_provenance/TCA-lite 区间落 detail(透传 console)。carry 驱动用面板 close*volume 同源喂**冲击成本**(名义)
+  + **参与率门** est_daily_volume(单位)+ 真实 max_participation_rate=0.10。**活跑:IMPACT_AC/6365 笔/TCA 计入 $8.8k
+  区间[$4.4k,$17.6k] in-band/残差 4e-9,参与率门拒 95 笔(真容量约束,曾 0)**。诚实边界:crowd/combo(OI 无 spot
+  volume)+ trend(volume 不可靠,#22)暂平 bps。**#13**(93fd065)研究风控门承重:新 `dry_run_guard.evaluate_dry_run_risk`
+  只跑干跑接缝**有真输入的 4 引擎**(market/drawdown/concentration/stress,各 fail-closed;stress 用 timestamps →
+  REAL_HISTORICAL_REPLAY),**其余 5 引擎 SKIPPED_NO_HONEST_INPUT——绝不喂编造数据伪造风控放行**(这正是平台不能做的);
+  接进 crowd_contra 干跑落 detail(VT 序列 3/4 过,market-VaR 仅在 RiskConfig 默认阈值日频紧下未过,诚实标注 config_provenance)。
+  晋级门 guard_to_paper 接线 + 5 引擎喂真输入 = 后续。**S2 剩 #22**(数据质量强制 + volume 量纲修复,含网络回填)。
+- **机构级路线图 S2「承重」sprint Rank #10 做完(2026-07-03,组合原语从诊断变 load-bearing——全盘最大杠杆)**:
+  三子项全落地、每项 tests-first + `validate.py` 绿 + 活驱动器端到端跑过。**10a**(a287e95)拥挤门加固:
+  `crowding_gate` 加最大单名并行判据(外部评审 P0 稀释修复——集中且拥挤的单名独立触发,不被加权平均稀释)+
+  可选 ADV/流动性维;接进 crowd_contra 干跑(逐周从真 global_ls cs-rank 评估、落 `DryRunRun.detail`、真 BLOCK
+  跳调仓)——诊断非否决(crowd_contra 按构造持拥挤名 → 232 周全 WARN 记录不否决;集中判据在扩散 book 不触发,
+  但集中 book 会 BLOCK);非-block 周字节等价(回归安全)。**10b**(55d7e17)资本配置器驱动 riskparity sleeve 权重
+  (PIT 仅过去收益,BLOCKED/观测不足回退 rolling 逆波动;231/313 周用 allocator)+ `_clean_weights` 改有界迭代注水
+  (显式收敛+fail-closed)。**10c**(0d14bb7/32d7755)优化器加 Rockafellar-Uryasev CVaR 尾部惩罚选项(尾部次梯度,
+  非光滑路径取最优可行迭代;光滑路径字节等价)+ 经 allocator `cvar_penalty` 接进 riskparity(尾部感知 sleeve 定权,
+  carry 0.47/crowd 0.53)。**52 新测试;三条既有 book(carry/crowd/trend/combo)未动,riskparity 按设计变(allocator 驱动)。**
+  诚实边界:拥挤阈值未校准(R-1);carry/combo 拥挤接线待 crowding 证据覆盖其宇宙(#22/#17)。**下一步 S2**:#11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
+- **机构级路线图 S1「守卫与留痕」sprint 全做完(2026-07-03,活路线 `docs/2026-07-03-institutional-completion-plan.md`)**:
+  4 项 P1/S 全落地、每项 tests-first + `validate.py` 绿。**Rank #8**(6ca7d92)PIT 裸读机器守卫:
+  `tests/governance/test_pit_read_boundary.py` AST 钉死 services/ 白名单外 0 裸 `fetch_bars` + tools/ 计数棘轮
+  (35,只减不增),正负控制 + 实地探针证明守卫会红。**Rank #20**(0630f0c)治理决策留痕:新
+  `services/monitoring/audit_store.py::DurableAuditLog`(append-only sqlite 哈希链,存 entry_hash 读时重算抓字段篡改、
+  prev 链抓重排、seal/verify_against 抓截断/替换/擦除,镜像 run_registry 模式、无墙钟);`KillSwitch.arm/reset/
+  reset_with_grant` 与 `evaluate_deployment` 加**可选** `audit_sink=`(默认 None 零回归,失败安全排序:arm 先停机后审计、
+  reset 先审计后恢复、部署门审计在 try 内失败即关)。**Rank #18**(4e41851)runner 调用方身份:POST /run 强制
+  `X-Operator`(缺→400),operator 落 run 行(走 payload_json 免迁移、不进 run_id)+ 审计链 `research.run.triggered`;
+  **活系统端到端验证过**(无 header 400 / 有 header 200 回显 / 非白名单 kind 仍 400 / 审计链记实);前端 `triggerRun`
+  带 localStorage operator 标签 + ResearchRuns 页输入框。诚实钉死:operator=自述式、未鉴权(非 RBAC)。**Rank #21**
+  (5e2a64b)fetcher 治理收编:`yahoo_equity_fetch` 改走规范 `ingest_provider_rows` 接缝(只 stdlib+services、进
+  `_FETCHERS`→全 10 网络 fetcher 入 AST 边界)+ 存 **RAW 未调价**(去掉 adjclose 回溯比例烘价的非-PIT-vintage 前视,
+  完整分红调整留读取时 Rank #23),provenance=`YAHOO_V8_QUOTE_RAW`。**系统已启动并在跑**:console API :8400(真数据)、
+  runner :8420(已重启加载 #18)、前端 :3100(连真后端、新 7 组导航)。**S1 剩清理批**:CLAUDE.md 计数刷新、
+  跟踪 AGENTS.md。**下一 sprint S2「承重」**:#10 组合原语接线 → #11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
+- **前端信息架构重构已做(2026-07-03,用户指令「按顶级 AI 量化系统彻底重构前端」)**:42 页 → 30 页,
+  7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→治理与系统);砍 12 个纯合成蓝图/
+  重复/演示页(旧路由语义就近重定向,蓝图页→SystemCompleteness 诚实完整度页——删页不删诚实);路由/导航/
+  冒烟测试收敛到单一页面注册表 `src/app/routes.tsx`(新页一行自动进导航+测试);测试地板 14/42 → **30/30
+  全冒烟 + 注册表一致性**(44 fe tests);后端端点零改动(契约锁定)。typecheck/build/test/validate 全绿。
+  Rank #24 前端半边(全页冒烟)提前落地;console_api 后端拆分 + provenance 徽标断言仍待做。
+- **新前向路线图 Rank #9 已做(2026-07-03,部署门强制 version content-hash 钉死)**:版本契约(ConfigVersion/StrategyVersion/
+  ModelVersion)一直存在但 `evaluate_deployment` 从不校验——「version-pin gate」原是 overclaim。现在 PAPER+ 必须声明部署内容
+  且逐版本与批准钉死表(id→content_hash)比对,fail-closed(`VERSION_PIN_REQUIRED/_NOT_PINNED/_MISMATCH/HASH_MISSING/
+  STRATEGY_VERSION_NOT_APPROVED`);多方 grant 强路径不绕过(批准=谁可部署,钉死=部署什么);DEV/TEST 不受限;LIVE 仍被
+  readiness pin + LIVE flags 结构性挡死。
 - **统一执行 book 做了(2026-07-01,`tools/dry_run_combo_multi.py`,第 4 条策略)**:carry 面板加 OI global_ls,每周
   0.5·carry_legs+0.5·crowd_legs 过干跑流水线。RAW/VT 两条曲线:carry 0.45/77%→0.65/22%、crowd 1.21/12%→1.38/11%、
   **combo 0.58/56%→1.20/15%**。诚实教训:naive 权重 blend 是 carry-dominated(58币 vs 14大币半权)→ combo VT 1.20 improved

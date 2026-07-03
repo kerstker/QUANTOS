@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
-import { triggerRun, runnerEnabled, RUNNABLE_KINDS, type RunParamSpec } from '@/lib/api/research-runner-api';
+import { triggerRun, runnerEnabled, RUNNABLE_KINDS, getOperator, setOperator, type RunParamSpec } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -55,6 +55,7 @@ export default function ResearchRuns() {
     s => fetchResearchRuns(s), [reloadKey]);
   const data = usingBackend ? payload! : fallbackRuns;
   const [kind, setKind] = useState('全部');
+  const [operator, setOperatorState] = useState(getOperator());
   const [trigMsg, setTrigMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
   // per-kind param values for kinds that expose a typed schema (e.g. factory search depth)
   const [paramVals, setParamVals] = useState<Record<string, Record<string, number | boolean>>>(() => {
@@ -148,6 +149,15 @@ export default function ResearchRuns() {
           {bi('研究运行 · 只跑回测/搜索/取数 · 不下单 / 不碰实盘 / 不碰凭证(L2)',
             'Research only — backtests / searches / data refresh · no orders / no live / no credentials (L2)')}
         </div>
+        {/* Rank #18: every trigger is tagged with a self-asserted operator (accountability, NOT authn). */}
+        <label className="mb-2 flex items-center gap-2 text-2xs text-faint">
+          <span>{bi('操作者标签', 'Operator tag')}</span>
+          <input value={operator} disabled={!runnerEnabled()}
+            onChange={e => { setOperatorState(e.target.value); setOperator(e.target.value); }}
+            className="w-40 rounded border border-line bg-transparent px-2 py-1 text-xs text-ink disabled:text-faint"
+            placeholder="console-operator" />
+          <span className="text-faint/70">{bi('· 自述式,未鉴权', '· self-asserted, unauthenticated')}</span>
+        </label>
         <div className="flex flex-wrap items-start gap-2">
           {RUNNABLE_KINDS.map(rk => (
             <div key={rk.kind} className={`rounded-md border px-2 py-1.5 ${rk.params ? 'border-line/70' : 'border-transparent'}`}>

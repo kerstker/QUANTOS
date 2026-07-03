@@ -42,6 +42,7 @@ class RiskRun:
     status: str = "QUEUED"; decision: Optional[RiskDecision] = None
     gates_passed: int = 0; gates_total: int = 9
     gate_results: Dict[str, bool] = field(default_factory=dict)
+    gate_reports: Dict[str, Any] = field(default_factory=dict)   # per-engine report object (None on engine error)
     decision_reasons: List[str] = field(default_factory=list)
     reproducibility_hash: str = ""; created_at: float = field(default_factory=time.time)
 
@@ -82,6 +83,10 @@ class RegimeRiskReport:
 class PortfolioStressReport:
     passed: bool = True; worst_scenario: str = ""; worst_stress_loss: float = 0.0
     scenarios_survived: int = 0; total_scenarios: int = 0
+    # provenance: REAL_HISTORICAL_REPLAY (named crisis windows + endogenous worst window),
+    # SYNTHETIC_MULTIPLIER_UNCALIBRATED (legacy no-timestamp fallback), INVALID_INPUT (fail-closed)
+    provenance: str = ""; scenarios_skipped: int = 0
+    scenario_losses: Dict[str, float] = field(default_factory=dict)
 
 @dataclass
 class CapacityRiskReport:

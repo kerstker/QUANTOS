@@ -2,7 +2,10 @@
 
 evaluate_deployment(environment, ...) -> DeploymentDecision:
   * DEV / TEST: always allowed (research).
-  * PAPER: requires a VERIFIED HUMAN ApprovalRecord (approved, approver == actor, actor human).
+  * PAPER: requires a VERIFIED HUMAN ApprovalRecord (approved, approver == actor, actor
+    human) AND content-hash-pinned versions (Rank #9): the deploy must state WHAT it
+    deploys (ConfigVersion/StrategyVersion/ModelVersion payload) and every stated
+    version's content_hash must match the approved pin registry.
   * STAGING / LIVE: ALSO require readiness == L4_LIVE_APPROVED AND the SafetyConfig
     live flags enabled — both OFF/below at L2_DRY_RUN_ONLY, so these are blocked.
 Any error -> blocked (fail-closed). Mirrors the DeploymentRecord contract, which
@@ -12,12 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Mapping, Optional, Sequence, Union
 
 from quantos.contracts.alpha import Actor
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyConfig
-from quantos.contracts.governance import ApprovalRecord, Environment
+from quantos.contracts.governance import (
+    ApprovalRecord, ConfigVersion, Environment, ModelVersion, StrategyVersion,
+)
 from services.governance.approval import ApprovalRequest, verify_multi_party_grant
+
+VersionRecord = Union[ConfigVersion, StrategyVersion, ModelVersion]
 
 
 class ReadinessLevel(str, Enum):
@@ -46,6 +53,36 @@ class DeploymentDecision:
     reasons: tuple[str, ...] = ()
 
 
+def _version_id(version: VersionRecord) -> str:
+    for attr in ("config_id", "strategy_id", "model_id"):
+        vid = getattr(version, attr, None)
+        if vid:
+            return str(vid)
+    return ""
+
+
+def _verify_version_pins(versions: Sequence[VersionRecord],
+                         approved_pins: Optional[Mapping[str, str]]) -> list[str]:
+    """Rank #9 — fail-closed pin verification. A PAPER+ deploy must state its versions
+    and each must match the approved pin registry (id -> expected content_hash). The
+    version CONTRACTS predate this check; the gate never verified them before — this
+    closes the contract-to-gate gap ('version-pin gate' is now literally true)."""
+    if not versions or approved_pins is None:
+        return ["VERSION_PIN_REQUIRED"]
+    reasons: list[str] = []
+    for version in versions:
+        vid = _version_id(version)
+        if not version.content_hash:
+            reasons.append("VERSION_HASH_MISSING")
+        elif vid not in approved_pins:
+            reasons.append("VERSION_NOT_PINNED")
+        elif approved_pins[vid] != version.content_hash:
+            reasons.append("VERSION_PIN_MISMATCH")
+        if isinstance(version, StrategyVersion) and not version.approved:
+            reasons.append("STRATEGY_VERSION_NOT_APPROVED")
+    return reasons
+
+
 def _verified_human_approval(approval: Optional[ApprovalRecord], actor: Optional[Actor],
                              subject: str) -> list[str]:
     reasons = []
@@ -72,10 +109,14 @@ def evaluate_deployment(
     readiness: Optional[ReadinessLevel] = None,
     subject: str = "",
     grant: Optional[ApprovalRequest] = None,
+    versions: Sequence[VersionRecord] = (),
+    approved_pins: Optional[Mapping[str, str]] = None,
+    audit_sink: object = None,
+    at: int = 0,
 ) -> DeploymentDecision:
     try:
         if environment in _RESEARCH_ENVS:
-            return DeploymentDecision(True, environment, ())
+            return DeploymentDecision(True, environment, ())   # research envs: free, nothing to record
 
         # PAPER and above need human approval. Multi-party path (grant=) raises the
         # bar to 3 distinct humans + hash-chain audit; the single-record path is kept
@@ -84,6 +125,11 @@ def evaluate_deployment(
             reasons = [] if verify_multi_party_grant(grant, subject) else ["NO_MULTI_PARTY_APPROVAL"]
         else:
             reasons = _verified_human_approval(approval, actor, subject)
+
+        # Rank #9: PAPER and above must also state WHAT is deployed, content-hash
+        # pinned against the approved registry — the stronger grant path does not
+        # weaken this (approval says WHO may deploy; pins say WHAT may deploy).
+        reasons.extend(_verify_version_pins(versions, approved_pins))
 
         # A caller may REQUEST a readiness, but it is capped at the non-overridable
         # platform pin — passing readiness=L4 cannot unlock LIVE while the platform
@@ -98,6 +144,18 @@ def evaluate_deployment(
                     and safety_config.allow_order_submission):
                 reasons.append("LIVE_FLAGS_DISABLED")
 
-        return DeploymentDecision(not reasons, environment, tuple(reasons))
+        decision = DeploymentDecision(not reasons, environment, tuple(reasons))
+        # Rank #20: record the governance decision to the optional audit sink. Done INSIDE the try
+        # so an audit failure fails closed (a decision we cannot record must not be treated as
+        # allowed) — consistent with the gate's fail-closed posture. None sink -> zero regression.
+        if audit_sink is not None:
+            actor_id = actor.actor_id if actor is not None else (
+                "multi_party_grant" if grant is not None else "unknown")
+            audit_sink.append(
+                event_id=f"deploy.{environment.value}.{subject}.{at}", actor=actor_id,
+                action="deployment.evaluate", timestamp=at, target=f"{environment.value}:{subject}",
+                metadata={"allowed": str(decision.allowed), "reasons": ",".join(decision.reasons),
+                          "n_versions": str(len(versions))})
+        return decision
     except Exception:
         return DeploymentDecision(False, environment, ("DEPLOYMENT_ERROR",))   # fail-closed

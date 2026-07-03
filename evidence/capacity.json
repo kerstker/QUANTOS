@@ -1,0 +1,28 @@
+{
+  "artifact": "data/cache/capacity_snapshot.json",
+  "code_version": "e1979f411351",
+  "extractor": "capacity",
+  "kind": "json_numbers",
+  "numbers": {
+    "carry.impact_over_participation_ratio": {
+      "abs_tol": 1.0,
+      "rel_tol": 0.01,
+      "value": 2071.175757
+    },
+    "carry.participation_cap_aum": {
+      "abs_tol": 1.0,
+      "rel_tol": 0.01,
+      "value": 1980883.32138
+    },
+    "crowd_contra.impact_over_participation_ratio": {
+      "abs_tol": 1.0,
+      "rel_tol": 0.01,
+      "value": 1271.773377
+    },
+    "crowd_contra.participation_cap_aum": {
+      "abs_tol": 1.0,
+      "rel_tol": 0.01,
+      "value": 7174784.76269
+    }
+  }
+}

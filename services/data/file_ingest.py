@@ -31,11 +31,15 @@ class IngestionReport:
     quality: object
 
 
-def _ingest_records(records, parse, store, *, now, dataset_id, version) -> IngestionReport:
+def _ingest_records(records, parse, store, *, now, dataset_id, version, strict: bool = False) -> IngestionReport:
     """共享失败关闭接入核心。`records` 产出 (index, raw);`parse(raw)` 返回
     (canonical_row_dict, knowledge_time),可抛(→ rejected)。parse 抛
     FatalIngestionError 则向上传播(配置错误,非坏行)。canonical_row_dict 含
-    instrument_id/event_time/OHLCV,不含 knowledge_time。"""
+    instrument_id/event_time/OHLCV,不含 knowledge_time。
+
+    Rank #22:`strict=True` 时,若数据质量报告不通过(重复/乱序/缺失/未来时间戳)→ 抛
+    `FatalIngestionError`(fail-closed,承重数据集不得静默接入坏数据)。默认 False = 零回归。
+    质量报告的重复-时间戳检查以**单一时间序列**为前提,故 strict 用于单标的接入(逐 fetcher 常态)。"""
     rows_read = 0
     valid_bars, rejected = [], []
     bars_ingested = 0
@@ -59,16 +63,20 @@ def _ingest_records(records, parse, store, *, now, dataset_id, version) -> Inges
             bars_ingested += 1
         else:
             duplicates += 1
+    quality = build_report(dataset_id, sorted(b.event_time for b in valid_bars), as_of=now, version=version)
+    if strict and not quality.passed:
+        failed = [c.name for c in quality.checks if not c.passed]
+        raise FatalIngestionError(f"strict ingestion: dataset {dataset_id!r} failed quality checks {failed}")
     return IngestionReport(
         rows_read=rows_read, bars_ingested=bars_ingested, duplicates=duplicates,
         rejected=tuple(rejected),
         content_hash=content_hash_of(valid_bars) if valid_bars else "",
-        quality=build_report(dataset_id, sorted(b.event_time for b in valid_bars), as_of=now, version=version),
+        quality=quality,
     )
 
 
 def ingest_bars_csv(path: str, store, *, knowledge_time_default=None, now=None,
-                    dataset_id: str = "ingested", version: str = "") -> IngestionReport:
+                    dataset_id: str = "ingested", version: str = "", strict: bool = False) -> IngestionReport:
     def parse(raw):
         row = {k: v for k, v in raw.items() if v not in ("", None)}
         kt_raw = row.pop("knowledge_time", None)
@@ -80,4 +88,4 @@ def ingest_bars_csv(path: str, store, *, knowledge_time_default=None, now=None,
 
     with open(path, newline="", encoding="utf-8") as fh:
         records = list(enumerate(csv.DictReader(fh)))
-    return _ingest_records(records, parse, store, now=now, dataset_id=dataset_id, version=version)
+    return _ingest_records(records, parse, store, now=now, dataset_id=dataset_id, version=version, strict=strict)

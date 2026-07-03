@@ -113,11 +113,13 @@ def _trend_capacity():
         turnover.append([(abs(w.get(n, 0.0) - prevw.get(n, 0.0)), adv.get(n, 0.0)) for n in names])
         prevw = w
     band = capacity_band(gross, turnover, _AUM_GRID, _COEF_LO_HI, max_participation=0.10)
-    # data-quality guard: crypto_daily.db volume 单位跨币不一致(实测 EOS ~$20k vs BTC ~$3.7Q,~17 个数量级),
-    # 无法真实——不可能。这样的 ADV 会让容量结论无意义。诚实标注 UNRELIABLE,不假装 $8k 是真容量。
+    # data-quality guard (Rank #22): reuse the canonical cross-instrument volume-unit check — the
+    # crypto_daily.db bug (EOS ~$20k vs BTC ~$3.7Q, ~17 orders of magnitude) makes ADV/capacity
+    # meaningless. Honestly labelled UNRELIABLE, not faking $8k as a real capacity.
+    from services.data.quality import check_volume_units
     advs = [a for a in adv.values() if a > 0]
     spread = (max(advs) / min(advs)) if advs else 0.0
-    unreliable = spread > 1e6
+    unreliable = not check_volume_units(adv, max_ratio=1e6).passed
     out = {"aum_low": band["aum_low"], "aum_high": band["aum_high"],
            "participation_cap_aum": band["participation_cap_aum"], "n_periods": len(gross),
            "adv_max_min_spread": spread,

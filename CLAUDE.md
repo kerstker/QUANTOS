@@ -120,7 +120,14 @@ Real, tested backend engines (`*_TESTED` in the audit):
   corr(carry,crowd)=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条(16%/15%)一半,总收益~187%
   保住;VIX regime 依赖被抹平(high+2.44/low+1.65/mid+1.82)。** = 两条正交 crypto 边(资金费 carry + OI 持仓反向)合成
   Sharpe~2/回撤 8% 的强分散。诚实:收益流层面(不同宇宙 58币/14币、不同规模、231 共同周),gross 无成本 → RELATIVE 比较;
-  同一执行 book(统一宇宙 + 干跑流水线)= 后续。诊断非门禁。
+  同一执行 book(统一宇宙 + 干跑流水线)= 后续。诊断非门禁。**⚠ 更正(见下 risk-parity 条):此 1.95/8% 是 gross
+  理想化,净-成本执行不成立。**
+- `services/research/book_combine.py::rolling_inverse_vol_weights` + `tools/dry_run_combo_riskparity_multi.py` —
+  **风险平衡统一执行 book(路线图 Rank #1,已做)**:每周按 rolling 逆波动(PIT trailing 窗口)分配 carry/crowd 两个
+  sleeve,过干跑流水线,第 5 条策略 `carry_crowd_risk_parity`。**关键诚实结论:carry+crowd 分散不敌执行现实**——三种
+  方式(naive-merge VT 1.20 / risk-parity-merge VT 1.14 / portfolio-of-books 配置 VT 1.21)**均 < crowd_contra 单条 VT 1.38**。
+  根因:1.95/8% 是 gross(carry gross~1.44);净-成本+整手+vol-target 下 carry 仅~0.58、拉不动 crowd;净曲线相关 +0.04
+  (非 gross -0.04)。执行流水线抓到理想-vs-真的差。**deployable = crowd_contra 单条。** dry_run.db 现 5 条策略并列存证。
 - `tools/dry_run_combo_multi.py` — **统一执行 book(把组合从收益流相加升级成真的一个 book 过干跑流水线)**:carry 面板
   加 OI `global_ls` 矩阵,每周权重 = 0.5·carry_legs + 0.5·crowd_legs,过门 + 净-成本 + 资金费 + vol-target,第 4 条策略
   `carry_crowd_combo` 落 dry_run.db。**诚实结论(4 条对比,RAW 无杠杆 / VT vol-target 可部署两条曲线都存):carry
@@ -217,11 +224,14 @@ Real, tested backend engines (`*_TESTED` in the audit):
   governance/process subsystems (incident/committee/RBAC/…), kept HONESTLY LABELED (not faked — faking
   would break the honesty posture); synthetic root `_factor_values`/`_forward_returns` (`math.sin/cos`);
   contract-guarded by `tests/research/test_console_api_contract.py`.
-- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind; **37
-  pages, route-lazy code-split** (+ FX Research). The audit doc's original split
-  (7 REAL / 6 PARTIAL / 17 MOCK / 6 NONE) predates this session — REAL has grown
-  substantially after the 4-break + paper-track + FX wiring (CryptoLive, FxResearch,
-  ResearchRuns, LifecycleMonitor, BacktestResults, DataCatalog, Portfolio, AlphaZoo, …).
+- `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind. **2026-07-03
+  信息架构重构:42 页 → 30 页 · 7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→
+  治理与系统)**。路由/导航/冒烟测试的唯一真源 = `src/app/routes.tsx` 页面注册表(新页加一行,
+  自动进导航 + 自动被冒烟覆盖);删掉的 12 页 = 纯合成蓝图(incident/reviewer/access/committee/
+  promotion/model-risk)+ 合成或重复(Agents/Phase3A/ScenarioStress/BacktestExplainability/
+  SignalToPortfolio/Overview),旧路由语义就近重定向(蓝图页 → SystemCompleteness,那里
+  REAL_REPO_INVENTORY 诚实列出缺失子系统——删页不删诚实);后端 console_api 端点零改动
+  (契约测试锁定)。测试地板:**30/30 页全冒烟 + 注册表一致性测试**(44 fe tests)。
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain

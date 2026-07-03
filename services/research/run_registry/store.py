@@ -42,7 +42,8 @@ class ResearchRunStore:
 
     def upsert(self, r: ResearchRun) -> None:
         payload = json.dumps({"params": r.params, "metrics": r.metrics, "series": r.series,
-                              "caveats": r.caveats, "log": r.log, "code_version": r.code_version})
+                              "caveats": r.caveats, "log": r.log, "code_version": r.code_version,
+                              "operator": r.operator})
         with self._lock:
             self._c.execute(
                 "INSERT OR REPLACE INTO runs (run_id,kind,title,status,created_ts,finished_ts,verdict,"
@@ -56,7 +57,7 @@ class ResearchRunStore:
         return ResearchRun(run_id=row[0], kind=row[1], title=row[2], status=row[3], created_ts=row[4],
                            finished_ts=row[5], verdict=row[6], provenance=row[7], error=row[8],
                            params=p["params"], metrics=p["metrics"], series=p["series"], caveats=p["caveats"],
-                           log=p.get("log", []), code_version=p.get("code_version"))
+                           log=p.get("log", []), code_version=p.get("code_version"), operator=p.get("operator"))
 
     def append_log(self, run_id: str, line: str) -> None:
         """Append one progress/log line to a run, live (read-modify-write under the lock)."""

@@ -100,7 +100,7 @@ function OptimizerTile() {
 
 const TILES: TileDef[] = [
   { id: 'runs', title: 'Research Runs', titleZh: '研究运行', to: '/research/runs', render: () => <RunsTile /> },
-  { id: 'overview', title: 'Research Funnel', titleZh: '研究漏斗', to: '/research', render: () => <OverviewTile /> },
+  { id: 'overview', title: 'Research Funnel', titleZh: '研究漏斗', to: '/research/alpha-zoo', render: () => <OverviewTile /> },
   { id: 'crypto', title: 'Crypto Live', titleZh: '加密实盘', to: '/research/crypto-live', render: () => <CryptoTile /> },
   { id: 'safety', title: 'Safety Primitives', titleZh: '安全原语', to: '/research/risk', render: () => <SafetyTile /> },
   { id: 'optimizer', title: 'De-redundant Set', titleZh: '去冗余选集', to: '/research/population-optimizer', render: () => <OptimizerTile /> },
