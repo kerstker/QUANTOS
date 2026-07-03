@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 
+from services.portfolio.capital_allocator import allocate_capital, CapitalAllocatorConfig
 from services.research import alpha_expression as ax
 from services.research.book_combine import rolling_inverse_vol_weights
 from services.risk.pre_trade.config import RiskLimits
@@ -30,8 +31,9 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
 _COST_BPS = 9.0
-_LOOKBACK = 8          # trailing 周数用于 sleeve 逆波动
+_LOOKBACK = 8          # trailing 周数用于 sleeve 逆波动(回退路径)
 _MIN_HIST = 4
+_MIN_OBS = 20          # allocate_capital 需要的最少观测数;不足则回退逆波动
 
 
 def _sleeve_return(legs, r, rn, close, fmat, idx_of):
@@ -70,11 +72,26 @@ def main() -> None:
 
     periods, weights_by_period, prices_by_period, rate_by_period = [], {}, {}, {}
     sleeve_wlog = []
+    alloc_source = {"capital_allocator": 0, "inverse_vol_fallback": 0}
     for k in range(len(seq)):
         r, cl, ol = seq[k]
-        # PIT 风险平衡:仅用 [0,k) 的 sleeve 收益定权重(k=0 或历史不足 → 等权)
-        s = rolling_inverse_vol_weights([carry_sret, crowd_sret], end_idx=k, lookback=_LOOKBACK, min_history=_MIN_HIST)
-        sc, sq = s[0], s[1]
+        # Rank #10b: sleeve weights now come from the covariance-aware capital allocator (PIT — only
+        # past [0,k) sleeve returns), which makes that primitive load-bearing. It fails closed
+        # (BLOCKED / too few obs / no positive edge) -> fall back to the rolling inverse-vol so the
+        # book never stalls. Both emit non-negative sleeve weights summing to 1 (drop-in shape).
+        sc = sq = None
+        if k >= _MIN_OBS:
+            plan = allocate_capital({"carry": tuple(carry_sret[:k]), "crowd": tuple(crowd_sret[:k])},
+                                    config=CapitalAllocatorConfig(max_weight=1.0, mean_shrink_z=1.0))
+            if plan.status == "ALLOCATED":
+                aw = {a.book_id: a.target_weight for a in plan.allocations}
+                sc, sq = aw.get("carry", 0.0), aw.get("crowd", 0.0)
+                alloc_source["capital_allocator"] += 1
+        if sc is None:                                   # fail-closed fallback: PIT rolling inverse-vol
+            s = rolling_inverse_vol_weights([carry_sret, crowd_sret], end_idx=k,
+                                            lookback=_LOOKBACK, min_history=_MIN_HIST)
+            sc, sq = s[0], s[1]
+            alloc_source["inverse_vol_fallback"] += 1
         sleeve_wlog.append((sc, sq))
         combined = {}
         for i, w in cl.items():
@@ -121,12 +138,14 @@ def main() -> None:
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
 
+    run.detail["sleeve_allocator"] = {**alloc_source, "provenance": "REAL_CAPITAL_ALLOCATOR"}
     DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # 第 5 条策略,与前 4 并列
     p = run.pnl
     avg_sc = sum(a for a, _ in sleeve_wlog) / len(sleeve_wlog) if sleeve_wlog else 0.0
     avg_sq = sum(b for _, b in sleeve_wlog) / len(sleeve_wlog) if sleeve_wlog else 0.0
     print(f"=== CARRY+CROWD 风险平衡统一 book · {len(held_names)} 币 · {p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)
-    print(f"  平均 sleeve 权重: carry {avg_sc:.2f} / crowd {avg_sq:.2f}(rolling 逆波动,PIT)", flush=True)
+    print(f"  平均 sleeve 权重: carry {avg_sc:.2f} / crowd {avg_sq:.2f} "
+          f"· 配置来源: allocator {alloc_source['capital_allocator']}/逆波动回退 {alloc_source['inverse_vol_fallback']}", flush=True)
     print(f"DryRunRun {run.run_id}: 意图 {run.n_intents} · 门批准 {run.n_approved} · 拒绝 {run.n_rejected}", flush=True)
     print(f"  RAW 净收益 {p['total_return']*100:.1f}% · 夏普(RAW) {p['sharpe']} · 回撤(RAW) {p['max_drawdown']*100:.0f}% "
           f"· 资金费 ${p['total_funding']:,.0f} · 残差 {p['residual']}", flush=True)
