@@ -1,0 +1,39 @@
+{
+  "artifact": "data/cache/dry_run.db",
+  "books": {
+    "carry": {
+      "max_drawdown": 0.7107,
+      "sharpe": 0.4848,
+      "total_return": 1.553231
+    },
+    "carry_crowd_combo": {
+      "max_drawdown": 0.5577,
+      "sharpe": 0.5733,
+      "total_return": 1.642805
+    },
+    "carry_crowd_risk_parity": {
+      "max_drawdown": 0.5577,
+      "sharpe": 0.5933,
+      "total_return": 1.803165
+    },
+    "crowd_contra": {
+      "max_drawdown": 0.0982,
+      "sharpe": 1.1095,
+      "total_return": 1.289144
+    },
+    "trend": {
+      "max_drawdown": 0.3709,
+      "sharpe": 0.4046,
+      "total_return": 0.074929
+    }
+  },
+  "code_version": "c5ae7a243a04",
+  "description": "Deployable dry-run book conclusions; reconciliation residual must stay ~0.",
+  "kind": "dry_run_db",
+  "residual_max": 1e-06,
+  "tolerances": {
+    "max_drawdown": 0.01,
+    "sharpe": 0.02,
+    "total_return": 0.02
+  }
+}
