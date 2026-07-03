@@ -101,8 +101,10 @@ class AlphaLifecycleManager:
         if dst == AlphaState.TESTING:
             return guards.guard_to_testing(evaluation, self.config, cc)
         if dst == AlphaState.VALIDATED:
-            bh_ok = alpha_id in self.catalog.bh_fdr_survivors(self.config.fdr_q)
-            return guards.guard_to_validated(evaluation, self.config, cc, bh_survived=bh_ok)
+            # Rank #12: promotion requires surviving the arbitrary-dependence BHY FDR (stricter than
+            # plain BH — correct when the catalog's edges are correlated), not just BH.
+            fdr_ok = alpha_id in self.catalog.bhy_fdr_survivors(self.config.fdr_q)
+            return guards.guard_to_validated(evaluation, self.config, cc, bh_survived=fdr_ok)
         if dst == AlphaState.PAPER_TRADING:
             return guards.guard_to_paper(evaluation, self.config, cc)
         if dst == AlphaState.APPROVED:

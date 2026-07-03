@@ -111,6 +111,16 @@ class AlphaCatalog:
         survivors = benjamini_hochberg([self._pvalues[a] for a in ids], q=q)
         return {ids[i] for i in survivors}
 
+    def bhy_fdr_survivors(self, q: float = 0.10) -> set[str]:
+        """Alpha ids whose IC p-value survives catalog-wide Benjamini-Hochberg-YEKUTIELI FDR at
+        level q — the arbitrary-DEPENDENCE FDR control (stricter than plain BH), the correct lens
+        when the catalog's edges are correlated (which they are). Wired into the VALIDATED guard
+        (Rank #12); BHY was implemented but unused before."""
+        from .multiple_testing import benjamini_hochberg_yekutieli
+        ids = sorted(self._pvalues)
+        survivors = benjamini_hochberg_yekutieli([self._pvalues[a] for a in ids], q=q)
+        return {ids[i] for i in survivors}
+
     # --- state (low-level; the lifecycle manager is the validated chokepoint) -
 
     def get(self, alpha_id: str) -> AlphaDefinition:
