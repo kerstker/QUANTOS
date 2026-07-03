@@ -80,3 +80,25 @@ def test_invalid_adv_for_covered_name_fails_closed(bad):
         {"A": 1.0}, {"A": 0.10}, adv_by_symbol={"A": bad}, book_notional=10e6)
     assert decision.status == "BLOCK"
     assert any("invalid_adv:A" in r for r in decision.reasons)
+
+
+# ---- Rank #10 wiring helper: aggregate per-period decisions for run detail ----
+
+def test_summarize_gate_decisions_counts_and_worst_score():
+    from services.portfolio.crowding_gate import summarize_gate_decisions
+    ds = [
+        evaluate_crowding_gate({"A": 0.5, "B": -0.5}, {"A": 0.10, "B": 0.10}),   # PASS
+        evaluate_crowding_gate({"A": 0.5, "B": -0.5}, {"A": 0.50, "B": 0.54}),   # WARN ~0.52
+        evaluate_crowding_gate({"A": 0.6, "B": -0.4}, {"A": 0.70, "B": 0.80}),   # BLOCK ~0.74
+    ]
+    s = summarize_gate_decisions(ds)
+    assert s["n_periods"] == 3 and s["n_pass"] == 1 and s["n_warn"] == 1 and s["n_block"] == 1
+    assert s["worst_score"] == pytest.approx(0.74, abs=1e-6)
+    assert s["provenance"] == "REAL_CROWDING_GATE"
+    assert s["sample_reasons"]                                # WARN/BLOCK reasons collected
+
+
+def test_summarize_empty_is_zeroed():
+    from services.portfolio.crowding_gate import summarize_gate_decisions
+    s = summarize_gate_decisions([])
+    assert s["n_periods"] == 0 and s["worst_score"] is None and s["sample_reasons"] == []

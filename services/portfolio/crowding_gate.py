@@ -7,7 +7,7 @@ pre-trade, lifecycle, credentials, RNG, or wall clock.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -192,6 +192,29 @@ def evaluate_crowding_gate(
         reasons=tuple(reasons),
         exposures=exposures,
     )
+
+
+def summarize_gate_decisions(decisions: Sequence[CrowdingGateDecision]) -> dict:
+    """Aggregate per-period crowding-gate decisions into a run-detail summary (Rank #10 wiring),
+    so a dry-run book's crowding profile is surfaced read-only on the console. Pure/deterministic."""
+    by_status = {"PASS": 0, "WARN": 0, "BLOCK": 0}
+    worst: float | None = None
+    reasons: list[str] = []
+    for decision in decisions:
+        by_status[decision.status] = by_status.get(decision.status, 0) + 1
+        if decision.score is not None and (worst is None or decision.score > worst):
+            worst = decision.score
+        if decision.status in ("WARN", "BLOCK"):
+            reasons.extend(decision.reasons)
+    return {
+        "n_periods": len(decisions),
+        "n_pass": by_status["PASS"],
+        "n_warn": by_status["WARN"],
+        "n_block": by_status["BLOCK"],
+        "worst_score": worst,
+        "sample_reasons": sorted(set(reasons))[:10],
+        "provenance": "REAL_CROWDING_GATE",
+    }
 
 
 def project_symbol_crowding(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 
+from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.research import alpha_expression as ax
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
@@ -26,11 +27,26 @@ _COST_BPS = 10.0            # 平 10bps:大币偏保守,对上证伪里 net@10bp
 _WEEK_MS = 7 * 24 * 3600 * 1000
 
 
+def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
+    """Rank #10a crowding evidence: trailing-window mean global_ls per instrument, cross-sectionally
+    ranked to [0,1] (higher = more crowded-long). Scale-free, so the gate's thresholds apply."""
+    means = {}
+    for i in idx:
+        window = [gmat[rr][i] for rr in range(max(0, r - lookback + 1), r + 1) if gmat[rr][i] is not None]
+        if window:
+            means[i] = sum(window) / len(window)
+    if len(means) < 2:
+        return {}
+    ordered = sorted(means, key=lambda i: means[i])
+    return {i: k / (len(ordered) - 1) for k, i in enumerate(ordered)}
+
+
 def main() -> None:
     panel, instruments = build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
     fmat = panel.matrices["funding"]
+    gmat = panel.matrices["global_ls"]
     ev = panel.event_times
     sig = ax.evaluate(CROWD_CONTRA, panel)
 
@@ -41,16 +57,39 @@ def main() -> None:
             rows.append(r)
             last = ev[r]
 
+    # Rank #10a: the crowding gate is now LOAD-BEARING on this book — evaluated every week from real
+    # global_ls evidence, recorded in run detail, and (on a genuine concentration/invalid BLOCK) it
+    # skips that week's rebalance (carry prior holdings). crowd_contra is dollar-neutral + diffuse, so
+    # by construction it lands in WARN (crowded names ARE the edge) and never over-concentrates — the
+    # gate documents the crowding profile without vetoing the thesis; a concentrated book WOULD block.
     periods, weights_by_period, prices_by_period, rate_by_period = [], {}, {}, {}
+    gate_decisions, prev_weights = [], None
     for r in rows:
         legs = _legs(sig[r], QUANTILE)
         if not legs:
             continue
         t = int(ev[r])
+        target = {insts[i]: w for i, w in legs.items()}
+        crowd = {insts[i]: rank for i, rank in _crowding_rank(gmat, r, list(legs)).items()}
+        blocked = False
+        if crowd:
+            decision = evaluate_crowding_gate(target, crowd)
+            gate_decisions.append(decision)
+            blocked = decision.status == "BLOCK"
         periods.append(t)
-        weights_by_period[t] = {insts[i]: w for i, w in legs.items()}
-        prices_by_period[t] = {insts[i]: close[r][i] for i in legs if close[r][i] and close[r][i] > 0}
-        rate_by_period[t] = {insts[i]: (fmat[r][i] or 0.0) for i in legs}
+        # legs-only prices/rates preserve the exact historical funding semantics (only the current
+        # book's names accrue funding); the BLOCK path additionally prices the carried names so a
+        # skipped rebalance is still MTM/funded correctly. BLOCK never fires for this diffuse book,
+        # so non-block weeks are byte-identical to the pre-wiring run (regression-safe).
+        idx = set(legs)
+        if blocked and prev_weights is not None:
+            weights_by_period[t] = dict(prev_weights)        # skip rebalance: carry prior book
+            idx |= {i for i in range(len(insts)) if insts[i] in prev_weights}
+        else:
+            weights_by_period[t] = target
+            prev_weights = target
+        prices_by_period[t] = {insts[i]: close[r][i] for i in idx if close[r][i] and close[r][i] > 0}
+        rate_by_period[t] = {insts[i]: (fmat[r][i] or 0.0) for i in idx}
 
     held_names = sorted({n for w in weights_by_period.values() for n in w})
 
@@ -83,8 +122,13 @@ def main() -> None:
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
 
+    # Rank #10a: surface the crowding-gate profile read-only in the run detail (-> console dry-run page)
+    crowding = summarize_gate_decisions(gate_decisions)
+    run.detail["crowding_gate"] = crowding
     DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # append alongside carry + trend
     p = run.pnl
+    print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"
+          f"/BLOCK {crowding['n_block']} · 最差分 {crowding['worst_score']}", flush=True)
     print(f"=== CROWD_CONTRA 周度滚动干跑 · OI 大币 {len(instruments)} · {p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)
     print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)
     print(f"  总收益 {p['total_return']*100:.1f}% · 夏普(周→年) {p['sharpe']} · 最大回撤 {p['max_drawdown']*100:.0f}% "
