@@ -43,6 +43,7 @@ from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
 from live.governance.mandate import AUTO
@@ -68,6 +69,8 @@ _RECON_TOLERANCE = 1e-6
 _MAX_STALENESS_MS = 7 * 86_400_000       # 周度信号,容忍一周内的价格新鲜度
 _RISK_STATE_PATH = os.path.join("data", "cache", "live_risk_state.json")
 _MAX_DRAWDOWN_PCT = 0.20                 # 工程安全网默认值,非业务风险容忍度(见模块 docstring)
+_FORWARD_DB = os.path.join("data", "cache", "paper_track.db")      # Stage 0 前向台账(对账纸面侧)
+_PARITY_PATH = os.path.join("data", "cache", "live_parity.jsonl")  # 逐周对账快照(append-only)
 
 
 def _load_peak_equity(default: float) -> float:
@@ -294,6 +297,30 @@ def main() -> None:
         mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
         decided_ts=decided_ts, now=now)
 
+    # live-paper 对账(2026-07-05):纸面侧优先用 Stage 0 台账里记录在案的权重(不是重算的
+    # 信号——重算会掩盖两条路径间的信号漂移);台账缺这一期时回退到本轮计算的 weights,
+    # 来源如实标注。live 侧仓位:submit 用真实账本(含本轮成交),preview 用真实历史仓位。
+    paper_weights, paper_source = None, "recomputed_signal"
+    try:
+        from services.research.paper_trading.forward import ForwardLedger
+        paper_weights = paper_weights_from_forward_ledger(
+            ForwardLedger(_FORWARD_DB), _STRATEGY_ID, decided_ts)
+        if paper_weights is not None:
+            paper_source = "forward_ledger"
+    except Exception:
+        pass
+    parity = parity_report(
+        paper_weights=paper_weights if paper_weights is not None else weights,
+        paper_source=paper_source, aum=aum, prices=prices,
+        ledger_positions=(ledger.all_positions() if submit else ledger_positions),
+        ledger_orders=write_ledger.orders(), strategy_id=_STRATEGY_ID, decided_ts=decided_ts,
+        mode="submit" if submit else "preview")
+    parity["ran_at"] = now
+    with open(_PARITY_PATH, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(parity) + "\n")
+    if parity["unexpected_live_positions"]:
+        alerts.append(f"parity: unexpected live positions {parity['unexpected_live_positions']}")
+
     if result.submission_errors:
         alerts.append(f"{len(result.submission_errors)} submission errors")
     if result.ledger_write_errors:
@@ -309,6 +336,11 @@ def main() -> None:
         "n_submission_errors": len(result.submission_errors),
         "n_ledger_write_errors": len(result.ledger_write_errors),
         "reconciliation": recon, "aum": aum, "alerts": alerts,
+        "parity": {"paper_source": parity["paper_source"],
+                   "n_paper_legs": parity["n_paper_legs"],
+                   "n_with_live_order": parity["n_with_live_order"],
+                   "max_abs_gap_notional": parity["max_abs_gap_notional"],
+                   "unexpected_live_positions": parity["unexpected_live_positions"]},
     }
     if not submit:
         status["would_submit"] = [{"instrument_id": o.instrument_id, "side": o.side.value,
