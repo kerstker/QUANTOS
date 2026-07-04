@@ -118,11 +118,20 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `get_order` 回查再判定真失败(避免误判致重复下单)、记账失败不再让真实成功的订单被误记为失败
   (新增 `LiveBatchResult.ledger_write_errors` 单独追踪)、`exchange_filters()` 失败 fail-closed、
   Hedge Mode 双向持仓不再被覆盖丢失一侧净敞口、HTTP 响应非 JSON 兜底。**记录在案暂不修复**:
-  `RiskLimits` 裸数量阈值的 UNIT_SCALE 折算未强制、`reconcile_positions` 无生产调用方(尚无调度器)、
-  限流/退避/时钟偏移校正/崩溃恢复(这些是"调度器接线时"的运维硬化,调度器本身还不存在)、1000X 前缀
-  合约命名。全部记录在设计文档 §0。设计:
-  `docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`。撤单/改单、Bybit/Hyperliquid
-  具体实现(协议已留口子)、console 页面、生产调度驱动器 = 非目标(留后续)。
+  限流/退避/时钟偏移校正/崩溃恢复、1000X 前缀合约命名。全部记录在设计文档 §0。
+  **调度驱动器已落地**(同日):`live/governance/mandate_store.py`(mandate 文件加载器,
+  fail-closed,数字由用户自己签署,不代填)+ `live/execution/reconciliation.py::preflight_check`
+  (drift 超容忍度硬停,回答审查发现 #7)+ `tools/live_track_advance.py`(周度驱动器,与 Stage 0
+  同一条 crowd_contra 信号路径;默认 preview 模式——唯读方法透传真实 venue、`place_order` 只记录
+  不真提交;`--submit` 也不够,没有用户签署的 `key/live_mandate.json` 时 `evaluate_mandate` 仍
+  fail-closed 到 `NEEDS_HUMAN_REVIEW`,两层独立保护)。gate 裸数量阈值(`fat_finger_qty` 等)不
+  按 `UNIT_SCALE` 折算,而是设成有效无限——多资产 book 里这类阈值不感知价格本来就不是对的工具,
+  真正保护交给名义额类检查。**真实联调**:preview 模式对着真实测试网跑通,对账前置在真实数据上
+  正确拦下一次真实 drift(交易所侧遗留的 0.002 BTC 测试仓位 vs 全新本地账本),核对补记后全链路
+  正常跑完(真实 AUM $4993.81、真实 gate 评估、mandate 缺失 → 安全零提交)。**110 tests(102 单元
+  + 8 治理边界)全绿**。设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`
+  §7。撤单/改单、Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面、仓位/回撤实时监控+
+  自动减仓(更重的新自动化行为,需独立设计)= 非目标(留后续)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

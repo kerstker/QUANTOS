@@ -19,3 +19,14 @@ def reconcile_positions(ledger_positions: Mapping[str, float], venue_positions: 
         drift[inst] = venue_positions.get(inst, 0.0) - ledger_positions.get(inst, 0.0)
     max_abs = max((abs(d) for d in drift.values()), default=0.0)
     return {"drift": drift, "in_sync": max_abs <= tolerance, "max_abs_drift": max_abs}
+
+
+def preflight_check(ledger_positions: Mapping[str, float], venue_positions: Mapping[str, float],
+                    *, tolerance: float = 1e-6) -> dict:
+    """调仓前置检查:核对本地账本与交易所真实仓位。存在超出容忍度的 drift -> `proceed=False`
+    (HARD_STOP)——不该在一个已知不一致的账本基础上继续计算/提交新调仓,那会用错误的
+    current_positions 算出错误的目标增量,可能放大孤儿仓位或重复下单(2026-07-04 对抗式审查
+    发现 #7:`reconcile_positions` 此前零调用方,drift 永远不会被任何代码路径发现)。这是驱动器
+    在真正调用 `submit_live_batch` 之前应该跑的第一步。"""
+    r = reconcile_positions(ledger_positions, venue_positions, tolerance=tolerance)
+    return {**r, "proceed": r["in_sync"]}

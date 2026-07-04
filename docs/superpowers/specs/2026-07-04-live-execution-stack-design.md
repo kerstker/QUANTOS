@@ -251,3 +251,42 @@ gate 拒绝的意图不到 mandate 这一层。
 真实网络联调(等用户测试网 key);Bybit/Hyperliquid 具体实现(协议已留口子);撤单/改单;
 杠杆/保证金模式配置;真钱路径的任何代码分支(mainnet 恒结构性拒绝);console 页面(读接口后补);
 mandate 文件的具体数字签署(那是用户在 Go/No-Go 前的动作,不是本阶段代码要填的默认值)。
+
+## 7. 2026-07-04 补:调度驱动器落地(对抗式审查发现 #7/#11 的答案)
+
+`live/governance/mandate_store.py::load_mandate`(mandate 文件加载器,fail-closed,数字由用户
+自己签署)+ `live/execution/reconciliation.py::preflight_check`(drift 超容忍度硬停)+
+`tools/live_track_advance.py`(周度驱动器,与 Stage 0 前向跟踪同一条 crowd_contra 信号路径)——
+这是 `submit_live_batch`/`reconcile_positions` 第一次有真实生产调用方。
+
+**默认 preview 模式**(唯读方法透传真实 venue,`place_order` 只记录不真提交);`--submit` 才可能
+真正下单,但没有用户签署的 `key/live_mandate.json` 时 `evaluate_mandate` 仍 fail-closed 到
+`NEEDS_HUMAN_REVIEW`,零提交——两层保护(模式 + mandate)独立生效。
+
+**gate 限额的正确解法(回答审查发现 #1):** 不是把 `RiskLimits` 的裸数量阈值(`fat_finger_qty`/
+`default_max_position_qty`)也乘 `UNIT_SCALE`(容易算错、也容易被"消除莫名拒绝"的冲动放宽)——
+而是认识到这些**不感知价格**的阈值对多资产加密货币 book 本来就不是正确的工具(不同币单价差
+好几个数量级,统一的"最大数量"没有意义),把它们设成有效无限,把真正的保护完全交给**天然价格
+感知、与 `UNIT_SCALE` 无关**的名义额类检查(`max_order_notional`/`max_gross_exposure`/
+`max_net_exposure`/`daily_loss_limit`)。
+
+**真实联调验证:** 用真实测试网账户跑了一次 preview(`--no-refresh`),对账前置检查在**真实数据**
+上正确拦下了一次真实 drift(本地账本是新建的空账本,交易所侧还留着更早手动烟测下的 0.002 BTC
+仓位)——手动核对补记后(把那笔已知的真实成交写回账本,不是新动作)重跑,全链路正常跑通:
+真实 AUM(`$4993.81`,交易所侧可用余额)、真实 gate 评估、mandate 缺失 → 正确 fail-closed 到
+`NEEDS_HUMAN_REVIEW`、零提交。
+
+**观察到但未深究(不是本次范围):** `tools/live_track_advance.py::_latest_weights_and_prices`
+(与 Stage 0 `forward_track_advance.py` 同一条 `build_panel`/`CROWD_CONTRA`/`_legs` 调用链)
+在几次相邻的独立进程调用之间,产出的信号权重从"1 个标的"变成"空字典"——`decided_ts`(panel 最新
+event_time)保持不变,复跑三次确认非 hash-seed 随机性(每次都是空)。根因未查(不影响本次交付
+的正确性:无论生成几笔意图,没有 mandate 签署就是零提交,driver 两种情况下都安全);这是
+**既有** crowd_contra 信号计算链的特性,不是本次新增代码引入的问题,值得独立排查但不阻塞
+Stage 1 交付。
+
+## 8. 非目标(Stage 1.5,本次仍不做)
+
+仓位/回撤实时监控 + 触发式自动减仓(reduce-only flatten)——这是比"周度调仓"更重的新自动化
+行为(风险突破 → 自主决策平仓),需要独立设计/brainstorm,不与本次的"串起既有部件"合并;
+API 限流/退避/熔断;时钟偏移校正;崩溃恢复(核对上一批次状态未知的 client_order_id);
+确认送达的告警通道;定时任务本身的注册(用户人工执行,同 Stage 0 的 schtasks 模式)。
