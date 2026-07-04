@@ -1,0 +1,146 @@
+"""治理:机器钉死 live/ 执行栈(Stage 1,实盘路线)的 L2 安全边界。镜像
+test_broker_adapter_boundary.py / test_signing_boundary.py 的 AST 检查风格,应用到整棵 live/ 树。
+设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §4。
+
+1) 仅 live/exchange/binance_futures.py 可含网络 import;live/ 其余文件一律不许;
+2) live/ 全树无交易所/券商 SDK import;
+3) live/ 全树源码不含提幣/划转调用字面量(place_order/submit_order 是本树正当职责,不在禁止清单);
+4) BinanceFuturesAdapter(base_url=MAINNET_BASE) 在 L2 默认下必须 raise SafetyViolation;
+5) 源码无硬编码 API key/secret 字面量;
+6) services/ 树任何文件不得 import live/(单向依赖:live/ 依赖 services/,反向禁止);
+7) evaluate_mandate 在 mandate 缺失/过期/venue 不匹配时,对非空 orders 恒 NEEDS_HUMAN_REVIEW
+   (fail-closed 冒烟——完整分支覆盖在 tests/live/test_mandate.py)。
+"""
+import ast
+import os
+import re
+
+import pytest
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_LIVE = os.path.join(_ROOT, "live")
+_SERVICES = os.path.join(_ROOT, "services")
+_BINANCE_ADAPTER = os.path.join(_LIVE, "exchange", "binance_futures.py")
+
+_FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
+                  "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
+_NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket", "websockets",
+                  "ftplib", "telnetlib", "http"}
+# 真红线:把钱转出账户的调用——下单(place_order/submit_order)是本树正当职责,刻意不在此清单
+_FORBIDDEN_TRANSFER_CALLS = [".withdraw(", "create_withdrawal", "transfer(", "sapiPost"]
+
+
+def _all_py_files(root):
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if fn.endswith(".py"):
+                out.append(os.path.join(dirpath, fn))
+    return out
+
+
+def _import_roots(path):
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    roots = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                roots.add(a.name.split(".")[0])
+        elif isinstance(n, ast.ImportFrom) and n.module and n.level == 0:
+            roots.add(n.module.split(".")[0])
+    return roots
+
+
+_LIVE_FILES = _all_py_files(_LIVE)
+
+
+def test_only_binance_adapter_has_network_imports():
+    offenders = []
+    for path in _LIVE_FILES:
+        if os.path.normpath(path) == os.path.normpath(_BINANCE_ADAPTER):
+            continue
+        bad = _import_roots(path) & _NETWORK_ROOTS
+        if bad:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {sorted(bad)}")
+    assert not offenders, "network import outside the venue-adapter seam:\n" + "\n".join(offenders)
+
+
+def test_binance_adapter_only_stdlib_network_no_sdk():
+    roots = _import_roots(_BINANCE_ADAPTER)
+    assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange SDK: {sorted(roots & _FORBIDDEN_SDK)}"
+    assert roots & _NETWORK_ROOTS, "expected binance_futures.py to use urllib for its signed REST calls"
+
+
+def test_live_tree_has_no_exchange_sdk_anywhere():
+    offenders = []
+    for path in _LIVE_FILES:
+        bad = _import_roots(path) & _FORBIDDEN_SDK
+        if bad:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {sorted(bad)}")
+    assert not offenders, "FORBIDDEN exchange/broker SDK in live/:\n" + "\n".join(offenders)
+
+
+def test_live_tree_has_no_withdraw_or_transfer_calls():
+    offenders = []
+    for path in _LIVE_FILES:
+        src = open(path, encoding="utf-8").read()
+        hits = [w for w in _FORBIDDEN_TRANSFER_CALLS if w in src]
+        if hits:
+            offenders.append(f"{os.path.relpath(path, _ROOT)}: {hits}")
+    assert not offenders, "FORBIDDEN withdraw/transfer call in live/ (order submission is fine; " \
+                          "moving money OUT of the account is not):\n" + "\n".join(offenders)
+
+
+def test_mainnet_adapter_uninstantiable_at_l2():
+    from live.exchange.binance_futures import BinanceFuturesAdapter
+    from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyViolation
+    assert RESEARCH_SAFE_DEFAULTS.live_trading_armed is False
+    with pytest.raises(SafetyViolation):
+        BinanceFuturesAdapter(api_key="k", api_secret="s", base_url=BinanceFuturesAdapter.MAINNET_BASE,
+                              safety_config=RESEARCH_SAFE_DEFAULTS)
+
+
+def test_no_hardcoded_api_key_material_in_live_tree():
+    pattern = re.compile(r'(API_KEY|API_SECRET|SECRET_KEY|PRIVATE_KEY)\s*=\s*["\'][A-Za-z0-9]{8,}')
+    offenders = []
+    for path in _LIVE_FILES:
+        src = open(path, encoding="utf-8").read()
+        if pattern.search(src) or "-----BEGIN" in src:
+            offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, f"hardcoded key-like literal found in: {offenders}"
+
+
+def test_services_tree_does_not_import_live():
+    offenders = []
+    for dirpath, _dirs, files in os.walk(_SERVICES):
+        for fn in files:
+            if fn.endswith(".py"):
+                p = os.path.join(dirpath, fn)
+                if "live" in _import_roots(p):
+                    offenders.append(os.path.relpath(p, _ROOT))
+    assert not offenders, "services/ must never depend on live/ (one-way: live/ -> services/ only):\n" \
+                          + "\n".join(offenders)
+
+
+def test_evaluate_mandate_fails_closed_without_valid_mandate():
+    from live.contracts import LiveOrderRequest
+    from live.governance.mandate import NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
+    from quantos.contracts.trading import OrderSide
+
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.01,
+                             client_order_id="c1")
+    prices = {"BTC": 60000.0}
+
+    assert evaluate_mandate([order], prices, None, venue="binance_testnet", now=1).tier \
+        == NEEDS_HUMAN_REVIEW
+
+    expired = Mandate(mandate_id="m", venue="binance_testnet", allowed_instruments=frozenset({"BTC"}),
+                      max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9,
+                      expires_at=0)
+    assert evaluate_mandate([order], prices, expired, venue="binance_testnet", now=1).tier \
+        == NEEDS_HUMAN_REVIEW
+
+    valid = Mandate(mandate_id="m", venue="binance_testnet", allowed_instruments=frozenset({"BTC"}),
+                    max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9)
+    assert evaluate_mandate([order], prices, valid, venue="bybit_testnet", now=1).tier \
+        == NEEDS_HUMAN_REVIEW

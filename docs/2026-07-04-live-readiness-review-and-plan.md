@@ -60,25 +60,41 @@ colocation、做市、毫秒级风控、监管报送。周度调仓 + 14 个高�
 **门 0→1:** 无(纯研究侧)。**8 周证据钟已于 2026-07-02(数据时间)起走,最早 Go/No-Go 评审
 ≈ 2026-08 下旬(≥8 个已兑现前向周)。**
 
-### Stage 1 — 实盘执行栈(先测试网,结构上碰不到真钱)
-按 Phase 14 三信任域的精神建**独立 `live/` 树 + 独立进程**,研究核心 `services/` 一行不改、治理门保持全绿:
-1. `live/exchange/binance_futures.py`:纯 stdlib(urllib + hmac-SHA256 签名)的 USDT-M 永续 REST 客户端
-   ——**绝不引入 ccxt/交易所 SDK**;先只接 **testnet**(`testnet.binancefuture.com`)。
-2. `live/execution/`:目标权重 → 订单批(名义额/步长/最小额过滤、幂等 clientOrderId、重试、部分成交处理)
-   → 成交回报对账 → 本地仓位账本(SQLite,append-only)。复用乾跑的订单契约与对账恒等式。
-3. **人批准每一次调仓**(周度,人在回路):系统算出订单批 → 呈现给人(逐单+风险摘要)→ 人显式输入
-   批准 token → 才提交。**AI 永不自主下单**——`ALLOW_AI_DIRECT_TRADING=false` 在实盘架构里依然为真。
-4. 预交易门 + kill-switch 接进实盘路径:每笔订单先过 `PreTradeRiskGate`;仓位/回撤监控进程越限
-   → 告警 + (预授权的)reduce-only flatten。
-5. `live/` 树的**专属治理测试**:密钥只读自 env、无提币 API 调用、无自动批准路径、
-   订单端点只允许出现在 `live/exchange/` 单一文件。
+### Stage 1 — 实盘执行栈(先测试网,结构上碰不到真钱)✅ 代码+测试完成 2026-07-04(真联调未做)
+按 Phase 14 三信任域的精神建**独立 `live/` 树**,研究核心 `services/` 一行不改、治理门保持全绿。
+用户已拍板批准模式 = **分级授权**(书面 mandate 硬限额内自动执行,越限/新策略/kill-switch 复位
+升级人工审查)——不是"人批准每一次调仓",下面按已拍板的模式记录:
 
-**门 1→2(Go/No-Go 评审,人工):** 前向 paper-track ≥ N 周为正且与回测特征一致 + testnet
-连续 ≥2 次周度调仓全对账(残差≈0)+ 证据包填入 `docs/phase3a/` 追踪器 + 书面批准限额。
+1. ✅ `live/exchange/binance_futures.py`:纯 stdlib(urllib + hmac-SHA256 签名)USDT-M 永续 REST 客户端
+   ——**绝不引入 ccxt/交易所 SDK**。mainnet 构造在 L2 默认下结构性 `raise SafetyViolation`(与
+   `LiveBrokerAdapter` 对称);testnet 不受五个安全 flag 管辖(见 spec §1.1,那治理真钱/真券商)。
+2. ✅ `live/execution/{filters,position_ledger,reconciliation}.py`:目标权重 → 订单批(交易所步长/
+   最小名义额过滤、冪等 client_order_id)→ append-only 本地仓位账本(SQLite)→ 对账纯函数(只报告
+   drift,不自动修正)。
+3. ✅ **分级授权,非"每笔人批"**:`live/governance/mandate.py` —— 已获 `PreTradeRiskGate` 批准的订单,
+   再按人工签署的 mandate(单笔/总 gross/总 net/逐标的限额)分级:限额内 `AUTO` 机械执行(**AI 仍不
+   自主决策**——执行的是人预先书面授权的确定性策略,类似预设止损单),超限/mandate 缺失或过期/
+   venue 不匹配/任何评估异常 → `NEEDS_HUMAN_REVIEW`(留存、不提交,fail-closed 到底绝不默认 AUTO)。
+4. ✅ `live/pipeline.py::submit_live_batch`:复用既有 `PreTradeRiskGate`+`KillSwitch`+
+   `GlobalAuditLog`(零重造风控/审计逻辑)——每笔订单先过门,kill-switch latched 则全批被拒。
+5. ✅ `live/` 树的**专属治理测试**(`tests/governance/test_live_execution_boundary.py`):密钥只读自
+   env、无提幣/划转字面量、无自动批准路径(mandate fail-closed 冒烟)、订单端点只允许出现在
+   `live/exchange/binance_futures.py` 单一文件、`services/` 单向不得 import `live/`。
+   **重要:`live/` 故意不进通用治理扫描器**(它的 `FORBIDDEN_APIS` categorically 禁 `place_order`
+   ——研究/纸面树里对,但那正是 `live/` 的正当职责),等价保护由这份专属测试给。
+6. **未做(不在本次自动执行范围内)**:真实测试网联调(响应字段名依文档假设,未对真响应验证)、
+   仓位/回撤实时监控进程 + reduce-only flatten、mandate 文件的具体数字签署、Bybit/Hyperliquid
+   具体实现(协议已留口子)、撤单/改单。
+共 71 tests(63 单元 + 8 治理边界)全绿,含端到端缩放往返 integration 测试。设计文档:
+`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`。
+
+**门 1→2(Go/No-Go 评审,人工):** 前向 paper-track ≥8 周为正且与回测特征一致(见 Stage 0,证据钟
+已起走)+ testnet 真实联调连续 ≥2 次周度调仓全对账(残差≈0)+ 证据包填入 `docs/phase3a/` 追踪器 +
+书面签署 mandate(限额+允许清单+签署人)。
 
 ### Stage 2 — 真钱小资金(受限 mandate)
 1. 真实 API 密钥(**只交易权限、禁提币、IP 白名单**),密钥只进 env / gitignored `key/`。
-2. 初始资金建议 $3k–10k(14 币 L/S,每腿名义额需舒适高于交易所最小名义额;$2k 以下部分腿会被
+2. 初始资金 $3k–5k(用户已拍板,14 币 L/S,每腿名义额需舒适高于交易所最小名义额;$2k 以下部分腿会被
    最小额卡掉,组合失真)。杠杆 1x 起步(vol-target 需要时再议)。
 3. 硬限额写死在实盘配置:单日最大亏损、总回撤 kill-switch 线、单腿最大名义额、总敞口上限。
 4. 每周:人批准调仓;每日:自动对账(交易所仓位 vs 本地账本)+ 心跳告警;
@@ -108,14 +124,16 @@ live-vs-paper 偏差、真实成交成本 vs 假设 10bps、资金费现金流�
 
 ---
 
-## 5. 待用户拍板的决策
+## 5. 用户已拍板的决策(2026-07-04)
 
-1. **交易所**:Binance USDT-M 永续(推荐——数据/信号/成本假设全部基于 Binance fapi,有 testnet)
-   / OKX / Bybit。需用户完成开户/KYC/期货权限,API 密钥由用户创建并只给只交易权限。
-2. **批准模式**:人批准每次周度调仓(推荐)vs 限额内预授权自动执行。
-3. **真钱前的前向证据门**:≥4 周(最低)/ ≥8 周(标准)——Stage 0/1 并行建设,这个门只影响
-   真钱开闸时间,不影响开发进度。
-4. **实验资金量级**:$3k–10k 建议区间内定数。
+1. **交易所**:Binance + Bybit + Hyperliquid,Binance 先行(数据/信号/成本假设全部基于 Binance
+   fapi,有 testnet;venue 可插拔,`live/exchange/base.py::VenueAdapter` 协议已留口子)。需用户完成
+   开户/KYC/期货权限,API 密钥由用户创建并只给只交易权限。
+2. **批准模式**:**分级授权**——书面 mandate 硬限额内自动执行,越限/新策略/kill-switch 复位升级
+   人工审查(`live/governance/mandate.py`,已实现)。
+3. **真钱前的前向证据门**:**≥8 周**(机构标准)。Stage 0 证据钟已于 2026-07-02(数据时间)起走,
+   最早 Go/No-Go ≈ 2026-08 下旬;Stage 1/2 开发照常并行,这个门只影响真钱开闸时间。
+4. **实验资金量级**:**$3k–5k**(推荐起步),杠杆 1x 起步。
 
 ---
 *本文档随各阶段推进更新;每道门的通过证据记录在 `docs/phase3a/` 追踪器。*
