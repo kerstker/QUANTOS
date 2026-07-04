@@ -63,6 +63,32 @@ def _adapt_refresh(j: dict) -> dict:
             "provenance": "tools/binance_oi_metrics_fetch.py"}
 
 
+def _adapt_ic_panel(j: dict) -> dict:
+    rows = j.get("rows", []) or []
+    scored = [r for r in rows if r.get("t_stat") is not None]
+    best = max(scored, key=lambda r: abs(r["t_stat"])) if scored else None
+    return {"title": "IC 面板(全因子横向比较)", "params": {},
+            "metrics": {"n_factors": len(rows),
+                        "best_factor": best["name"] if best else None,
+                        "best_t_stat": best["t_stat"] if best else None},
+            "series": {}, "verdict": "DIAGNOSTIC",
+            "caveats": ["初筛诊断,非晋级门禁——不驱动任何自动晋级"],
+            "provenance": "tools/ic_panel_research.py"}
+
+
+def _adapt_wide_gauntlet(j: dict) -> dict:
+    results = j.get("results", []) or []
+    metrics = {}
+    for r in results:
+        net = ((r.get("by_cost") or {}).get("25bps") or {}).get("ann_sharpe")
+        metrics[f"{r['name']}_net25bps_sharpe"] = net
+        metrics[f"{r['name']}_verdict"] = r.get("verdict")
+    return {"title": "宽宇宙候选证伪(成本扫描)", "params": {}, "metrics": metrics,
+            "series": {}, "verdict": "DIAGNOSTIC",
+            "caveats": ["周度 L/S 分位 + 换手计费;无冲击模型、未评估空腿可行性——初筛证伪,非晋级门禁"],
+            "provenance": "tools/wide_factor_gauntlet.py"}
+
+
 RUN_KINDS: dict = {
     "carry_strategy": RunSpec("tools.crypto_carry_strategy:main", {}, adapt_carry, "资金费 Carry 策略",
                               runner=_tool_then_json("tools.crypto_carry_strategy", "crypto_carry_strategy.json")),
@@ -81,6 +107,11 @@ RUN_KINDS: dict = {
                             runner=_tool_then_json("tools.crypto_factory_loop", "crypto_factory_loop.json")),
     "data_refresh": RunSpec("tools.binance_oi_metrics_fetch:main", {"intraday": bool}, _adapt_refresh,
                             "刷新持仓数据", runner=_refresh_runner),
+    "ic_panel": RunSpec("tools.ic_panel_research:main", {}, _adapt_ic_panel, "IC 面板",
+                        runner=_tool_then_json("tools.ic_panel_research", "ic_panel_snapshot.json")),
+    "wide_gauntlet": RunSpec("tools.wide_factor_gauntlet:main", {}, _adapt_wide_gauntlet,
+                             "宽宇宙候选证伪",
+                             runner=_tool_then_json("tools.wide_factor_gauntlet", "wide_factor_gauntlet.json")),
 }
 
 
