@@ -190,7 +190,8 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       audit: GlobalAuditLog, strategy_id: str, decided_ts: int, now: int,
                       unit_scale: int = UNIT_SCALE,
                       max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
-                      poll_sleep: Callable[[], None] = lambda: None) -> LiveBatchResult:
+                      poll_sleep: Callable[[], None] = lambda: None,
+                      slicer: Optional[Callable] = None) -> LiveBatchResult:
     run_id = _det_id(strategy_id, decided_ts, tuple(sorted(weights.items())))
     audit.append(event_id=_det_id("live_start", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
@@ -242,71 +243,98 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             mandate_reasons=decision.reasons)
 
     submitted, errors, ledger_errors = [], [], []
-    for o in adjusted:
-        result = None
-        recovered = False
-        try:
-            result = venue.place_order(o)
-        except Exception as exc:
-            # POST 失败不代表订单没有抵达交易所——响应可能在真正送达前就丢了(网络中断/超时)。
-            # 想当然地把它算成"真失败"会导致下一次重试对着一笔其实已存在的订单重复下单
-            # (2026-07-04 对抗式审查发现 #4/#5)。先用 get_order 回查权威状态再下结论。
+    for parent in adjusted:
+        # 切单(2026-07-05,§⑥):slicer 缺省 None = 不切,行为与之前完全一致。子单序列内
+        # 任一片真失败/未干净成交 -> 中止剩余子单(执行环境已明显异常,盲目继续只会放大问题;
+        # 已成交部分照常如实记账);不同母单之间仍然 fail-soft 互不影响。
+        children = list(slicer(parent)) if slicer is not None else [parent]
+        for child_idx, o in enumerate(children):
+            is_sliced = len(children) > 1
+            has_more = child_idx < len(children) - 1
+            result = None
+            recovered = False
+            genuine_error = False
             try:
-                result = venue.get_order(o.instrument_id, o.client_order_id)
-            except Exception:
-                result = None
-            if result is None:
-                errors.append((o, f"{type(exc).__name__}: {exc}"))
-                audit.append(event_id=_det_id("live_submit_err", run_id, o.instrument_id),
-                             actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMIT_FAILED",
+                result = venue.place_order(o)
+            except Exception as exc:
+                # POST 失败不代表订单没有抵达交易所——响应可能在真正送达前就丢了(网络中断/超时)。
+                # 想当然地把它算成"真失败"会导致下一次重试对着一笔其实已存在的订单重复下单
+                # (2026-07-04 对抗式审查发现 #4/#5)。先用 get_order 回查权威状态再下结论。
+                try:
+                    result = venue.get_order(o.instrument_id, o.client_order_id)
+                except Exception:
+                    result = None
+                if result is None:
+                    errors.append((o, f"{type(exc).__name__}: {exc}"))
+                    audit.append(event_id=_det_id("live_submit_err", run_id, o.client_order_id),
+                                 actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMIT_FAILED",
+                                 timestamp=now, target=o.instrument_id,
+                                 metadata={"error": type(exc).__name__})
+                    genuine_error = True
+                else:
+                    recovered = True
+                    audit.append(event_id=_det_id("live_recover", run_id, o.client_order_id),
+                                 actor=f"live:{strategy_id}",
+                                 action="LIVE_ORDER_RECOVERED_AFTER_SUBMIT_ERROR",
+                                 timestamp=now, target=o.instrument_id,
+                                 metadata={"original_error": type(exc).__name__})
+            if genuine_error:
+                if is_sliced and has_more:
+                    audit.append(event_id=_det_id("live_slice_abort", run_id, o.client_order_id),
+                                 actor=f"live:{strategy_id}", action="LIVE_SLICING_ABORTED",
+                                 timestamp=now, target=o.instrument_id,
+                                 metadata={"failed_child": o.client_order_id,
+                                           "children_skipped": str(len(children) - 1 - child_idx)})
+                break                    # 单子单时等价于跳到下一个母单(旧 fail-soft 行为)
+
+            confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=max_confirm_polls,
+                                                   poll_sleep=poll_sleep)
+            if not is_terminal:
+                # 超时策略:轮询打满仍非终态 -> 主动撤单 + 回查权威状态,不留僵尸订单挂到下一轮
+                confirmed, is_terminal, outcome = _cancel_and_requery(
+                    venue, o.instrument_id, o.client_order_id, confirmed)
+                audit.append(event_id=_det_id("live_timeout_cancel", run_id, o.client_order_id),
+                             actor=f"live:{strategy_id}", action="LIVE_ORDER_TIMEOUT_CANCEL",
                              timestamp=now, target=o.instrument_id,
-                             metadata={"error": type(exc).__name__})
-                continue
-            recovered = True
-            audit.append(event_id=_det_id("live_recover", run_id, o.instrument_id),
-                         actor=f"live:{strategy_id}", action="LIVE_ORDER_RECOVERED_AFTER_SUBMIT_ERROR",
-                         timestamp=now, target=o.instrument_id,
-                         metadata={"original_error": type(exc).__name__})
+                             metadata={"outcome": outcome, "status": confirmed.status,
+                                       "filled_qty": str(confirmed.filled_qty)})
+            try:
+                ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                         submitted_at=now, venue_order_id=confirmed.venue_order_id,
+                                         status=confirmed.status)
+                if confirmed.filled_qty > 0:
+                    ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
+                                       o.instrument_id, o.side, confirmed.filled_qty,
+                                       confirmed.avg_price, filled_at=now)
+                    _record_tca_failsoft(ledger, audit, o, confirmed,
+                                         decision_price=prices.get(o.instrument_id), run_id=run_id,
+                                         strategy_id=strategy_id, now=now)
+            except Exception as exc:
+                # 记账失败 ≠ 下单失败——这笔单在 venue 侧真实存在(已确认或至少已受理),必须算进
+                # submitted 而不是 submission_errors,否则调用方会误判"没下单"进而重发/重复加仓
+                # (2026-07-04 对抗式审查发现 #2)。记账失败单独追踪,留给人工去对账補记。
+                ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
+                audit.append(event_id=_det_id("live_ledger_err", run_id, o.client_order_id),
+                             actor=f"live:{strategy_id}", action="LIVE_LEDGER_WRITE_FAILED",
+                             timestamp=now, target=o.instrument_id,
+                             metadata={"error": type(exc).__name__,
+                                       "venue_order_id": confirmed.venue_order_id})
 
-        confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=max_confirm_polls,
-                                               poll_sleep=poll_sleep)
-        if not is_terminal:
-            # 超时策略:轮询打满仍非终态 -> 主动撤单 + 回查权威状态,不留僵尸订单挂到下一轮
-            confirmed, is_terminal, outcome = _cancel_and_requery(
-                venue, o.instrument_id, o.client_order_id, confirmed)
-            audit.append(event_id=_det_id("live_timeout_cancel", run_id, o.instrument_id),
-                         actor=f"live:{strategy_id}", action="LIVE_ORDER_TIMEOUT_CANCEL",
-                         timestamp=now, target=o.instrument_id,
-                         metadata={"outcome": outcome, "status": confirmed.status,
-                                   "filled_qty": str(confirmed.filled_qty)})
-        try:
-            ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                     submitted_at=now, venue_order_id=confirmed.venue_order_id,
-                                     status=confirmed.status)
-            if confirmed.filled_qty > 0:
-                ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
-                                   o.instrument_id, o.side, confirmed.filled_qty, confirmed.avg_price,
-                                   filled_at=now)
-                _record_tca_failsoft(ledger, audit, o, confirmed,
-                                     decision_price=prices.get(o.instrument_id), run_id=run_id,
-                                     strategy_id=strategy_id, now=now)
-        except Exception as exc:
-            # 记账失败 ≠ 下单失败——这笔单在 venue 侧真实存在(已确认或至少已受理),必须算进
-            # submitted 而不是 submission_errors,否则调用方会误判"没下单"进而重发/重复加仓
-            # (2026-07-04 对抗式审查发现 #2)。记账失败单独追踪,留给人工去对账補记。
-            ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
-            audit.append(event_id=_det_id("live_ledger_err", run_id, o.instrument_id),
-                         actor=f"live:{strategy_id}", action="LIVE_LEDGER_WRITE_FAILED", timestamp=now,
+            audit.append(event_id=_det_id("live_submit", run_id, o.client_order_id),
+                         actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
                          target=o.instrument_id,
-                         metadata={"error": type(exc).__name__, "venue_order_id": confirmed.venue_order_id})
-
-        audit.append(event_id=_det_id("live_submit", run_id, o.instrument_id),
-                     actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
-                     target=o.instrument_id,
-                     metadata={"quantity": str(o.quantity), "side": o.side.value,
-                               "venue_order_id": confirmed.venue_order_id, "status": confirmed.status,
-                               "confirmed": str(is_terminal), "recovered": str(recovered)})
-        submitted.append(confirmed)
+                         metadata={"quantity": str(o.quantity), "side": o.side.value,
+                                   "venue_order_id": confirmed.venue_order_id,
+                                   "status": confirmed.status,
+                                   "confirmed": str(is_terminal), "recovered": str(recovered)})
+            submitted.append(confirmed)
+            if is_sliced and has_more and confirmed.status != "FILLED":
+                audit.append(event_id=_det_id("live_slice_abort", run_id, o.client_order_id),
+                             actor=f"live:{strategy_id}", action="LIVE_SLICING_ABORTED",
+                             timestamp=now, target=o.instrument_id,
+                             metadata={"failed_child": o.client_order_id, "status": confirmed.status,
+                                       "children_skipped": str(len(children) - 1 - child_idx)})
+                break
 
     return LiveBatchResult(
         tier=AUTO, submitted=tuple(submitted), rejected_by_gate=tuple(screened["rejected"]),
