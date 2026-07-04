@@ -324,3 +324,78 @@ actor,`services/risk/pre_trade/kill_switch.py` 本来就允许**任何** actor �
 ①已经把系统halt 了,人工介入后可以用这个函数手算该减多少仓、再用既有的
 `submit_live_batch`(mandate 里临时松绑 kill switch 状态或走人工审批的多方批准流程)执行,
 不是完全没有退路,只是不自动。
+
+## 10. 2026-07-04 补:Bybit venue adapter(venue 可插拔的第二个实现)
+
+`live/exchange/bybit_futures.py`,V5 统一账户(USDT 永续,`linear` category),满足同一
+`VenueAdapter` Protocol。与 `binance_futures.py` 底层协议的真实差异(2026-07-04 研究 Bybit V5
+公开文档得出,**尚未对真测试网响应验证**——首次真实联调等用户提供 Bybit 测试网 API key):
+
+1. **签名在 header,不在 query/body**:`sign_str = timestamp + api_key + recv_window + query_or_body`,
+   HMAC-SHA256 十六进制放进 `X-BAPI-SIGN` header(Binance 是把签名串追加进 query string)。
+2. **统一响应信封** `{retCode, retMsg, result, time}`,`retCode==0` 才是成功——`_unwrap()` 统一校验,
+   非 2xx HTTP 或非零 retCode 都 fail-closed 成 `RuntimeError`。
+3. **Hedge Mode 用 `positionIdx` 字段**(0=one-way/1=多头腿/2=空头腿),不是 Binance 那样在
+   `positions` 数组里出现两条独立记录区分。本系统假设 one-way(下单固定 `positionIdx=0`),但
+   `positions()` 依然按标的**累加净数量**做防御——镜像 2026-07-04 对抗式审查发现 #13(Binance
+   hedge-mode 覆盖 bug)的同一修复姿态,防止账户意外处于 hedge mode 时静默丢失一侧敞口。
+4. **订单查询分两个端点**:`/v5/order/realtime`(未结/部分成交)与 `/v5/order/history`(已终态)——
+   不像 Binance 一个 `/fapi/v1/order` 通吃。`get_order` 先查 realtime、找不到再查 history,两边都空
+   才是真正"不存在"。这个假设**未经真实验证**,首次联调需要重点检查。
+5. **一开始就走轮询确认**:`place_order` 的响应本身不带成交状态字段(`status="NEW"` 是占位),
+   `submit_live_batch` 现有的"提交后轮询 `get_order` 直到终态"逻辑天然适用——这次没有重蹈
+   Binance 最初"同步 ACK = 最终成交"的覆辙,直接把上次审查的教训用在了新 adapter 的设计起点上。
+
+`live/execution/filters.py`/`live/pipeline.py`/`live/governance/mandate.py` 零改动即可搭配
+`BybitFuturesAdapter`(它们只依赖 `VenueAdapter` Protocol,不知道具体是哪家交易所)。治理边界测试
+(`tests/governance/test_live_execution_boundary.py`)已扩展为对两个 venue adapter 文件同时检查
+(mainnet 结构性拒绝、无 SDK、无提幣/划转字面量)。**22 个新单元测试 + 2 个 Protocol 一致性测试,
+全绿**。
+
+## 11. 2026-07-04 补:Hyperliquid ——需要人工拍板的依赖决定(不建假实现)
+
+研究 Hyperliquid API(鏈上永续 DEX)公开文档发现一个**架构性质根本不同**的事实:Hyperliquid
+**没有 API key/secret**,下单等"L1 动作"需要用**以太坊私钥**签名——先把 action 用 **msgpack**
+序列化、算 connection_id(**Keccak-256** 哈希,不是 Python stdlib `hashlib` 的标准 SHA-3,两者输出
+不同)构造出一个 phantom agent,再用 **secp256k1 ECDSA** 对它签名。这需要 `msgpack` +
+Keccak-256 库 + secp256k1 签名库(如 `eth_account`/`eth_keys`/`coincurve`)——**全部都不是 Python
+stdlib**,与 `live/exchange/{binance,bybit}_futures.py`"纯 stdlib、零第三方依赖"的既有纪律直接冲突。
+
+**为什么不现在就建:**
+- 手刻 Keccak-256 + secp256k1 签名(避免引入依赖)工程量不小、容易出安全性错误(签名算法实现
+  bug 可能导致私钥泄露或产生看似有效实则错误的签名)——**不建议**;
+- 引入 `eth_account` 这类依赖,意味着**这个进程需要持有一把以太坊私钥**——这与 QUANTOS 现有
+  "研究进程不碰真实密钥材料"的安全姿态(参见 `services/governance/signing.py` 的出进程签名权威
+  设计)性质上更接近,需要认真评估密钥怎么存、谁能访问、要不要走类似的隔离设计,而不是简单地
+  `pip install eth_account` 完事;
+- 建一个「看起来能跑但签名是假的/占位的」半成品 adapter,比不建更危险——它会让人误以为
+  Hyperliquid 已经就绪,实际上一旦真的调用签名会失败或(更糟)产生错误但被接受的签名。
+
+**结论:** `live/exchange/hyperliquid.py` 暂不实现。若要推进,需要人工先决定:(a) 是否批准引入
+`eth_account`(或等价库)作为新依赖;(b) 私钥材料如何存储/隔离(是否要等 Phase 14 出进程签名权威
+落地后才接入 Hyperliquid,而不是在研究进程里直接持有以太坊私钥)。`VenueAdapter` Protocol 已经
+是 venue-agnostic 的,`live/execution/filters.py`/`live/pipeline.py`/`live/governance/mandate.py`
+零改动即可支持 Hyperliquid——真正的空缺只在 `live/exchange/hyperliquid.py` 这一个文件,决定做出后
+随时可以补。
+
+## 12. 2026-07-04 补:限流退避 + 时钟偏移校正(运维硬化)
+
+回答 2026-07-04 对抗式审查记录在案的两个运维缺口:
+
+**限流感知退避** `live/exchange/retry.py::call_with_backoff`——纯函数骨架(`sleep` 可注入,
+测试零真延迟),两个 venue adapter 各自定义自己的 `is_rate_limited` 判定:Binance 是 HTTP
+429/418;Bybit 是 HTTP 429 或业务错误码 `retCode==10006`("Too many visits!")。指数退避
+(`base_delay * 2^attempt`),耗尽仍限流 → `RateLimitedError`(区别于普通 `RuntimeError`,
+调用方/未来驱动器可以据此识别"这是限流,该退避/告警",而不是当成随机的提交错误)。**签名
+每次重试都重新计算**(含 timestamp)——退避可能跨越数秒,复用旧签名有落在 `recvWindow`/
+`recv_window` 之外的风险。
+
+**时钟偏移校正** `sync_clock()`(两个 adapter 都有,同款语义):拉取交易所公开的服务器时间
+端点(Binance `/fapi/v1/time`,Bybit `/v5/market/time`),计算本机时钟相对服务器的偏移(ms),
+之后所有签名请求的 timestamp 都加上这个偏移。Fail-soft(查询失败保留旧偏移,默认 0,不打断
+流程)——不调用 `sync_clock()` 则行为与硬化前完全一致(向后兼容,现有测试/调用方零改动)。
+真实驱动器接线时应该在每轮开始前调用一次 `sync_clock()`。
+
+两处硬化都是纯粹的"运维稳健性"改进,不改变任何 fail-closed 安全语义——限流退避耗尽依然是
+`raise`(不会静默放行),时钟校正失败依然回落到未校正状态(不会假装校正成功)。**live/ 全套测试
+从 149 增至 166(Binance +6/Bybit +6/retry 独立模块 +5),全绿。**

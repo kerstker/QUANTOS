@@ -36,3 +36,17 @@ def test_incomplete_object_does_not_satisfy_protocol():
             return None
 
     assert not isinstance(_Half(), VenueAdapter)
+
+
+def test_binance_adapter_satisfies_protocol():
+    from live.exchange.binance_futures import BinanceFuturesAdapter
+    c = BinanceFuturesAdapter(api_key="k", api_secret="s", base_url=BinanceFuturesAdapter.TESTNET_BASE,
+                              http_request=lambda *a, **kw: (200, b"{}"))
+    assert isinstance(c, VenueAdapter)
+
+
+def test_bybit_adapter_satisfies_protocol():
+    from live.exchange.bybit_futures import BybitFuturesAdapter
+    c = BybitFuturesAdapter(api_key="k", api_secret="s", base_url=BybitFuturesAdapter.TESTNET_BASE,
+                            http_request=lambda *a, **kw: (200, b"{}"))
+    assert isinstance(c, VenueAdapter)

@@ -20,16 +20,24 @@ _KEY, _SECRET = "test-api-key", "test-api-secret"
 
 
 class _FakeTransport:
-    """记录每次调用;按 path 返回预置的 (status, json_body)。"""
+    """记录每次调用;按 path 返回预置的 (status, json_body),或一个序列(逐次消费,超出重复最后一个
+    ——用于测试限流重试后成功的场景)。"""
 
     def __init__(self, responses):
-        self.responses = responses          # {path: (status, dict)}
+        self.responses = responses          # {path: (status, dict) | list[(status, dict)]}
         self.calls = []
+        self._path_counts = {}
 
     def __call__(self, method, url, *, body=None, headers=None):
         path = url.split("?")[0].replace(BinanceFuturesAdapter.TESTNET_BASE, "")
         self.calls.append({"method": method, "url": url, "body": body, "headers": headers})
-        status, payload = self.responses.get(path, (404, {"msg": "not found"}))
+        entry = self.responses.get(path, (404, {"msg": "not found"}))
+        if isinstance(entry, list):
+            idx = min(self._path_counts.get(path, 0), len(entry) - 1)
+            self._path_counts[path] = self._path_counts.get(path, 0) + 1
+            status, payload = entry[idx]
+        else:
+            status, payload = entry
         return status, json.dumps(payload).encode()
 
 
@@ -244,3 +252,63 @@ def test_no_withdraw_or_transfer_methods_exist():
     c, _ = _client()
     for forbidden in ("withdraw", "transfer", "create_withdrawal"):
         assert not hasattr(c, forbidden)
+
+
+# --- 2026-07-04 运维硬化:限流退避 + 时钟偏移校正 ---
+
+def test_rate_limited_429_retries_with_backoff_then_succeeds():
+    sleeps = []
+    resp = {"/fapi/v2/account": [
+        (429, {"code": -1003, "msg": "Too many requests"}),
+        (429, {"code": -1003, "msg": "Too many requests"}),
+        (200, {"totalWalletBalance": "1000.0", "availableBalance": "900.0", "positions": []}),
+    ]}
+    c, t = _client(resp, sleep=sleeps.append, max_retries=5, retry_base_delay=1.0)
+    raw = c.account()
+    assert raw["totalWalletBalance"] == "1000.0"
+    assert len(t.calls) == 3
+    assert sleeps == [1.0, 2.0]
+
+
+def test_rate_limited_418_ip_ban_also_triggers_backoff():
+    resp = {"/fapi/v2/account": [
+        (418, {"code": -1003, "msg": "IP banned"}),
+        (200, {"totalWalletBalance": "1000.0", "availableBalance": "900.0", "positions": []}),
+    ]}
+    c, t = _client(resp, sleep=lambda s: None)
+    c.account()
+    assert len(t.calls) == 2
+
+
+def test_rate_limited_exhausted_retries_raises_rate_limited_error():
+    from live.exchange.retry import RateLimitedError
+    resp = {"/fapi/v2/account": (429, {"code": -1003, "msg": "Too many requests"})}
+    c, _ = _client(resp, sleep=lambda s: None, max_retries=2)
+    with pytest.raises(RateLimitedError):
+        c.account()
+
+
+def test_non_rate_limit_error_does_not_retry():
+    resp = {"/fapi/v2/account": (400, {"code": -1102, "msg": "bad param"})}
+    c, t = _client(resp, sleep=lambda s: None)
+    with pytest.raises(RuntimeError):
+        c.account()
+    assert len(t.calls) == 1                                   # 非限流失败不重试
+
+
+def test_sync_clock_applies_offset_to_subsequent_signed_requests():
+    c, t = _client({
+        "/fapi/v1/time": (200, {"serverTime": 1_700_000_010_000}),   # 服务器比本机快 10s
+        "/fapi/v2/account": (200, {"totalWalletBalance": "1", "availableBalance": "1", "positions": []}),
+    })
+    offset = c.sync_clock()
+    assert offset == 10_000
+    c.account()
+    qs = t.calls[-1]["url"].split("?", 1)[1]
+    assert "timestamp=1700000010000" in qs                      # 本机时间 + 偏移
+
+
+def test_sync_clock_failure_is_fail_soft_keeps_prior_offset():
+    c, _ = _client({"/fapi/v1/time": (500, {"msg": "unavailable"})})
+    offset = c.sync_clock()
+    assert offset == 0                                          # 失败保持默认 0,不抛异常打断流程

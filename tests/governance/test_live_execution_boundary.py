@@ -1,11 +1,11 @@
 """治理:机器钉死 live/ 执行栈(Stage 1,实盘路线)的 L2 安全边界。镜像
 test_broker_adapter_boundary.py / test_signing_boundary.py 的 AST 检查风格,应用到整棵 live/ 树。
-设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §4。
+设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §4/§10。
 
-1) 仅 live/exchange/binance_futures.py 可含网络 import;live/ 其余文件一律不许;
+1) 仅 live/exchange/{binance,bybit}_futures.py 可含网络 import;live/ 其余文件一律不许;
 2) live/ 全树无交易所/券商 SDK import;
 3) live/ 全树源码不含提幣/划转调用字面量(place_order/submit_order 是本树正当职责,不在禁止清单);
-4) BinanceFuturesAdapter(base_url=MAINNET_BASE) 在 L2 默认下必须 raise SafetyViolation;
+4) 每个 venue adapter(base_url=MAINNET_BASE)在 L2 默认下必须 raise SafetyViolation;
 5) 源码无硬编码 API key/secret 字面量;
 6) services/ 树任何文件不得 import live/(单向依赖:live/ 依赖 services/,反向禁止);
 7) evaluate_mandate 在 mandate 缺失/过期/venue 不匹配时,对非空 orders 恒 NEEDS_HUMAN_REVIEW
@@ -20,7 +20,8 @@ import pytest
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _LIVE = os.path.join(_ROOT, "live")
 _SERVICES = os.path.join(_ROOT, "services")
-_BINANCE_ADAPTER = os.path.join(_LIVE, "exchange", "binance_futures.py")
+_VENUE_ADAPTERS = (os.path.join(_LIVE, "exchange", "binance_futures.py"),
+                   os.path.join(_LIVE, "exchange", "bybit_futures.py"))
 
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
@@ -54,10 +55,13 @@ def _import_roots(path):
 _LIVE_FILES = _all_py_files(_LIVE)
 
 
-def test_only_binance_adapter_has_network_imports():
+_VENUE_ADAPTER_PATHS = {os.path.normpath(p) for p in _VENUE_ADAPTERS}
+
+
+def test_only_venue_adapters_have_network_imports():
     offenders = []
     for path in _LIVE_FILES:
-        if os.path.normpath(path) == os.path.normpath(_BINANCE_ADAPTER):
+        if os.path.normpath(path) in _VENUE_ADAPTER_PATHS:
             continue
         bad = _import_roots(path) & _NETWORK_ROOTS
         if bad:
@@ -65,10 +69,13 @@ def test_only_binance_adapter_has_network_imports():
     assert not offenders, "network import outside the venue-adapter seam:\n" + "\n".join(offenders)
 
 
-def test_binance_adapter_only_stdlib_network_no_sdk():
-    roots = _import_roots(_BINANCE_ADAPTER)
-    assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange SDK: {sorted(roots & _FORBIDDEN_SDK)}"
-    assert roots & _NETWORK_ROOTS, "expected binance_futures.py to use urllib for its signed REST calls"
+def test_venue_adapters_only_stdlib_network_no_sdk():
+    for adapter in _VENUE_ADAPTERS:
+        roots = _import_roots(adapter)
+        assert not (roots & _FORBIDDEN_SDK), \
+            f"FORBIDDEN exchange SDK in {os.path.relpath(adapter, _ROOT)}: {sorted(roots & _FORBIDDEN_SDK)}"
+        assert roots & _NETWORK_ROOTS, \
+            f"expected {os.path.relpath(adapter, _ROOT)} to use urllib for its signed REST calls"
 
 
 def test_live_tree_has_no_exchange_sdk_anywhere():
@@ -91,13 +98,15 @@ def test_live_tree_has_no_withdraw_or_transfer_calls():
                           "moving money OUT of the account is not):\n" + "\n".join(offenders)
 
 
-def test_mainnet_adapter_uninstantiable_at_l2():
+def test_mainnet_adapters_uninstantiable_at_l2():
     from live.exchange.binance_futures import BinanceFuturesAdapter
+    from live.exchange.bybit_futures import BybitFuturesAdapter
     from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyViolation
     assert RESEARCH_SAFE_DEFAULTS.live_trading_armed is False
-    with pytest.raises(SafetyViolation):
-        BinanceFuturesAdapter(api_key="k", api_secret="s", base_url=BinanceFuturesAdapter.MAINNET_BASE,
-                              safety_config=RESEARCH_SAFE_DEFAULTS)
+    for cls in (BinanceFuturesAdapter, BybitFuturesAdapter):
+        with pytest.raises(SafetyViolation):
+            cls(api_key="k", api_secret="s", base_url=cls.MAINNET_BASE,
+               safety_config=RESEARCH_SAFE_DEFAULTS)
 
 
 def test_no_hardcoded_api_key_material_in_live_tree():

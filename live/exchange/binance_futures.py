@@ -13,6 +13,12 @@ mainnet 结构性拒绝(与 services/trading/broker_adapter.py::LiveBrokerAdapte
 用 MAINNET_BASE 构造时若 `not safety_config.live_trading_armed`(L2 默认恒 False)→ raise
 SafetyViolation。testnet 不受 SafetyConfig 管辖(它治理的是真钱/真券商,测试网是交易所官方沙盒,
 零真实资本——见设计 spec §1.1);testnet 的准入来自"是否提供了测试网 API key"这一自然前提。
+
+**运维硬化(2026-07-04,§12):** HTTP 429(限流)/418(IP 封禁)不再和其它错误一视同仁地立刻
+raise——`live/exchange/retry.py::call_with_backoff` 指数退避重试,耗尽仍限流才 `RateLimitedError`
+(区别于普通 `RuntimeError`,调用方可识别)。`sync_clock()` 拉取交易所服务器时间、计算本机时钟
+偏移,修正签名请求的 `timestamp`——fail-soft(查询失败保留旧偏移,不打断流程),默认偏移为 0
+(不调用 `sync_clock()` 则行为与之前完全一致)。
 """
 from __future__ import annotations
 
@@ -26,9 +32,16 @@ import urllib.request
 from typing import Callable, Optional
 
 from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult, VenuePosition
+from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
 _ORDER_NOT_FOUND_CODE = -2013     # Binance: "Order does not exist."
+_RATE_LIMIT_STATUSES = frozenset({429, 418})
+
+
+def _is_rate_limited(result: tuple) -> bool:
+    status, _data = result
+    return status in _RATE_LIMIT_STATUSES
 
 
 def _format_qty(qty: float) -> str:
@@ -56,7 +69,9 @@ class BinanceFuturesAdapter:
     def __init__(self, *, api_key: str, api_secret: str, base_url: str,
                 http_request: Optional[Callable] = None,
                 clock: Optional[Callable[[], float]] = None,
-                safety_config: Optional[SafetyConfig] = None) -> None:
+                safety_config: Optional[SafetyConfig] = None,
+                max_retries: int = 3, retry_base_delay: float = 1.0,
+                sleep: Optional[Callable[[float], None]] = None) -> None:
         if base_url == self.MAINNET_BASE:
             cfg = safety_config or SafetyConfig()
             if not cfg.live_trading_armed:
@@ -73,12 +88,29 @@ class BinanceFuturesAdapter:
         self._api_secret = api_secret
         self._http = http_request or _default_http_request
         self._clock = clock or time.time
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+        self._sleep = sleep or time.sleep
+        self._clock_offset_ms = 0
+
+    def sync_clock(self) -> int:
+        """拉取交易所服务器时间,计算本机时钟相对服务器的偏移(ms),修正往后所有签名请求的
+        timestamp——回答 2026-07-04 审查记录在案的时钟偏移缺口(recvWindow 硬编码 5000ms,没有
+        校正在真实网络延迟/时钟漂移下容易导致 -1021 时间戳错误)。公开端点,不签名;失败 fail-soft
+        (保留旧偏移,不让一次网络抖动打断整个流程)。"""
+        try:
+            status, data = self._get("/fapi/v1/time", signed=False)
+            if 200 <= status < 300 and isinstance(data, dict) and "serverTime" in data:
+                self._clock_offset_ms = int(data["serverTime"]) - int(self._clock() * 1000)
+        except Exception:
+            pass
+        return self._clock_offset_ms
 
     # --- 签名核心 ---
 
     def _signed_query(self, params: dict) -> str:
         p = dict(params)
-        p["timestamp"] = int(self._clock() * 1000)
+        p["timestamp"] = int(self._clock() * 1000) + self._clock_offset_ms
         p.setdefault("recvWindow", 5000)
         qs = urllib.parse.urlencode(p)
         sig = hmac.new(self._api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
@@ -98,18 +130,28 @@ class BinanceFuturesAdapter:
     def _get(self, path: str, params: Optional[dict] = None, *, signed: bool = True):
         params = params or {}
         headers = {"X-MBX-APIKEY": self._api_key}
-        qs = self._signed_query(params) if signed else urllib.parse.urlencode(params)
-        url = self._base_url + path + (f"?{qs}" if qs else "")
-        status, body = self._http("GET", url, body=None, headers=headers)
-        return status, self._parse_json(status, body)
+
+        def _do():
+            # 签名串(含 timestamp)每次重试都重新算——退避可能跨越数秒,复用旧 timestamp 有落在
+            # recvWindow 之外的风险(2026-07-04 运维硬化,§12)。
+            qs = self._signed_query(params) if signed else urllib.parse.urlencode(params)
+            url = self._base_url + path + (f"?{qs}" if qs else "")
+            status, body = self._http("GET", url, body=None, headers=headers)
+            return status, self._parse_json(status, body)
+        return call_with_backoff(_do, is_rate_limited=_is_rate_limited, max_retries=self._max_retries,
+                                 base_delay=self._retry_base_delay, sleep=self._sleep)
 
     def _post_signed(self, path: str, params: dict):
-        qs = self._signed_query(params)
         headers = {"X-MBX-APIKEY": self._api_key,
                   "Content-Type": "application/x-www-form-urlencoded"}
         url = self._base_url + path
-        status, body = self._http("POST", url, body=qs.encode(), headers=headers)
-        return status, self._parse_json(status, body)
+
+        def _do():
+            qs = self._signed_query(params)                    # 同上,每次重试重新签名
+            status, body = self._http("POST", url, body=qs.encode(), headers=headers)
+            return status, self._parse_json(status, body)
+        return call_with_backoff(_do, is_rate_limited=_is_rate_limited, max_retries=self._max_retries,
+                                 base_delay=self._retry_base_delay, sleep=self._sleep)
 
     # --- 公开(无签名) ---
 
