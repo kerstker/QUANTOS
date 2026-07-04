@@ -118,6 +118,8 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
+    # live trading route: Stage 0 forward paper-track evidence clock + Stage 1 testnet execution stack
+    "/api/v1/console/live-trading": ("", ("snapshot_present", "verdict", "forward_track", "execution_stack", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -161,6 +163,8 @@ REAL_DATA_PROVENANCE = {
     # DataCatalog enumerates the real on-disk PIT store (crypto_daily.db) for its DATASETS when present;
     # the feature/lineage block stays synthetic regardless (honest partial). Synthetic when no db (CI).
     "/api/v1/console/data-catalog": {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"},
+    # live trading: REAL forward-track/live-track JSON snapshots when present, SYNTHETIC-empty in CI.
+    "/api/v1/console/live-trading": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_TRADING_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.

@@ -1504,6 +1504,65 @@ export interface ResearchFindingsPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface LiveTradingForwardAlpha {
+  alpha_id: string;
+  n_forward_periods: number | null;
+  weeks_to_go_no_go: number | null;
+  paper_sharpe: number | null;
+  paper_ic: number | null;
+  cum_return: number | null;
+  backtest_reference_sharpe: number | null;
+  reference_weeks: number | null;
+  pending_decisions: number | null;
+  last_decision_ts: number | null;
+}
+export interface LiveTradingForwardTrack {
+  present: boolean;
+  ran_at?: number;
+  staleness_days?: Record<string, { freshest_days: number | null; worst_days: number | null; n_stale: number | null; n_total: number }>;
+  evidence_gate_weeks?: number;
+  alphas?: LiveTradingForwardAlpha[];
+  alerts?: string[];
+}
+export interface LiveTradingReconciliation {
+  drift?: Record<string, number>;
+  in_sync?: boolean;
+  max_abs_drift?: number;
+  proceed?: boolean;
+}
+export interface LiveTradingWouldSubmitOrder {
+  instrument_id: string;
+  side: string;
+  quantity: number;
+}
+export interface LiveTradingExecutionStack {
+  present: boolean;
+  ran_at?: number;
+  mode?: string;                 // "preview" | "submit"
+  hard_stop?: boolean;
+  tier?: string;                 // "AUTO" | "NEEDS_HUMAN_REVIEW"
+  n_submitted?: number;
+  n_pending_review?: number;
+  n_rejected_by_gate?: number;
+  n_dropped_by_filters?: number;
+  n_submission_errors?: number;
+  n_ledger_write_errors?: number;
+  reconciliation?: LiveTradingReconciliation;
+  risk_breach?: { reasons?: string[]; drawdown_pct?: number; gross_exposure?: number; net_exposure?: number } | null;
+  aum?: number;
+  peak_equity?: number;
+  would_submit?: LiveTradingWouldSubmitOrder[];
+  alerts?: string[];
+}
+export interface LiveTradingPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_LIVE_TRADING_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;                // LIVE_TRADING_TRACKING_OK | NO_SNAPSHOT
+  forward_track: LiveTradingForwardTrack;
+  execution_stack: LiveTradingExecutionStack;
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

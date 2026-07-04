@@ -3946,6 +3946,10 @@ def _load_experiment_store():
 
 
 _PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
+_FORWARD_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "forward_track_status.json")
+_LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
+_LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
+_EVIDENCE_GATE_WEEKS = 8
 
 
 def _load_paper_track_store():
@@ -5184,6 +5188,86 @@ def _research_findings_payload() -> Dict:
 @app.get("/api/v1/console/research-findings")
 async def research_findings() -> Dict:
     return _research_findings_payload()
+
+
+def _live_trading_payload() -> Dict:
+    """实盘路线状态(2026-07-04):Stage 0 真前向 paper-track 证据钟 + Stage 1 测试网执行栈,聚合
+    `tools/{forward_track_advance,live_track_advance}.py` 写的真实只读 JSON 状态快照。诚实边界:
+    纯诊断展示,不驱动任何自动化或晋级;真钱 Go/No-Go 是 Phase 3A 人工评审。测试网执行(execution_stack)
+    与真前向纸面跟踪(forward_track)都在 L2_DRY_RUN_ONLY 边界内——测试网是交易所官方沙盒零真实资本,
+    不是真钱;fail-closed 到 SYNTHETIC(两个驱动器都还没跑过,如 CI/新检出)。"""
+    ft = _load_json_snapshot(_FORWARD_TRACK_STATUS)
+    lt = _load_json_snapshot(_LIVE_TRACK_STATUS)
+    risk = _load_json_snapshot(_LIVE_RISK_STATE)
+    present = bool(ft or lt)
+
+    forward_track: Dict = {"present": False}
+    if ft:
+        alphas = ft.get("alphas", {}) or {}
+        forward_track = {
+            "present": True,
+            "ran_at": ft.get("ran_at"),
+            "staleness_days": ft.get("staleness_days", {}),
+            "evidence_gate_weeks": _EVIDENCE_GATE_WEEKS,
+            "alphas": [
+                {
+                    "alpha_id": aid,
+                    "n_forward_periods": a.get("n_forward_periods"),
+                    "weeks_to_go_no_go": max(0, _EVIDENCE_GATE_WEEKS - (a.get("n_forward_periods") or 0)),
+                    "paper_sharpe": a.get("paper_sharpe"),
+                    "paper_ic": a.get("paper_ic"),
+                    "cum_return": a.get("cum_return"),
+                    "backtest_reference_sharpe": a.get("backtest_reference_sharpe"),
+                    "reference_weeks": a.get("reference_weeks"),
+                    "pending_decisions": a.get("pending_decisions"),
+                    "last_decision_ts": a.get("last_decision_ts"),
+                }
+                for aid, a in alphas.items()
+            ],
+            "alerts": ft.get("alerts", []),
+        }
+
+    execution_stack: Dict = {"present": False}
+    if lt:
+        execution_stack = {
+            "present": True,
+            "ran_at": lt.get("ran_at"),
+            "mode": lt.get("mode"),
+            "hard_stop": bool(lt.get("hard_stop", False)),
+            "tier": lt.get("tier"),
+            "n_submitted": lt.get("n_submitted"),
+            "n_pending_review": lt.get("n_pending_review"),
+            "n_rejected_by_gate": lt.get("n_rejected_by_gate"),
+            "n_dropped_by_filters": lt.get("n_dropped_by_filters"),
+            "n_submission_errors": lt.get("n_submission_errors"),
+            "n_ledger_write_errors": lt.get("n_ledger_write_errors"),
+            "reconciliation": lt.get("reconciliation", {}),
+            "risk_breach": lt.get("risk_breach"),
+            "aum": lt.get("aum"),
+            "peak_equity": (risk or {}).get("peak_equity"),
+            "would_submit": lt.get("would_submit", []),
+            "alerts": lt.get("alerts", []),
+        }
+
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_LIVE_TRADING_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": "LIVE_TRADING_TRACKING_OK" if present else "NO_SNAPSHOT",
+        "forward_track": forward_track,
+        "execution_stack": execution_stack,
+        "honesty_note": (
+            "这是诊断展示,不驱动任何自动化或晋级;真钱 Go/No-Go 是 Phase 3A 人工评审。测试网执行"
+            "(execution_stack)与真前向纸面跟踪(forward_track)都在 L2_DRY_RUN_ONLY 边界内——测试网是"
+            "交易所官方沙盒零真实资本,不是真钱。"),
+    }
+
+
+@app.get("/api/v1/console/live-trading")
+async def live_trading() -> Dict:
+    return _live_trading_payload()
 
 
 if __name__ == "__main__":

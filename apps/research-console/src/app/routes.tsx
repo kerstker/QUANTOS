@@ -91,6 +91,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/CarryReadiness') },
   { path: '/research/paper-trading', zh: '纸面跟踪', en: 'Paper Track', icon: 'PT', group: 'execution',
     load: () => import('@/pages/PaperTrading') },
+  { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
+    load: () => import('@/pages/LiveTrading') },
   { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'execution',
     load: () => import('@/pages/LifecycleMonitor') },
 
