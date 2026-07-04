@@ -1535,6 +1535,37 @@ export interface LiveTradingWouldSubmitOrder {
   side: string;
   quantity: number;
 }
+export interface LiveTradingTcaByInstrument {
+  n_fills: number;
+  mean_slippage_bps: number | null;
+  worst_slippage_bps: number | null;
+}
+export interface LiveTradingTca {
+  n_fills: number;
+  n_with_slippage: number;
+  mean_slippage_bps: number | null;
+  median_slippage_bps: number | null;
+  worst_slippage_bps: number | null;
+  notional_weighted_slippage_bps: number | null;
+  total_notional: number;
+  assumed_cost_bps: number;
+  weighted_minus_assumed_bps: number | null;
+  by_instrument: Record<string, LiveTradingTcaByInstrument>;
+}
+export interface LiveTradingParitySummary {
+  paper_source: string;          // "forward_ledger" | "recomputed_signal"
+  n_paper_legs: number;
+  n_with_live_order: number;
+  max_abs_gap_notional: number | null;
+  unexpected_live_positions: string[];
+}
+export interface LiveTradingEmergencySummary {
+  target_gross: number;
+  n_submitted: number;
+  n_rejected: number;
+  n_errors: number;
+  n_ledger_write_errors: number;
+}
 export interface LiveTradingExecutionStack {
   present: boolean;
   ran_at?: number;
@@ -1553,6 +1584,12 @@ export interface LiveTradingExecutionStack {
   peak_equity?: number;
   would_submit?: LiveTradingWouldSubmitOrder[];
   alerts?: string[];
+  // 2026-07-05 机构级补全(驱动器落进快照,console 只读展示)
+  venue?: string | null;         // "binance" | "bybit"
+  tca?: LiveTradingTca | null;
+  order_stats?: Record<string, number> | null;
+  parity?: LiveTradingParitySummary | null;
+  emergency?: LiveTradingEmergencySummary | null;
 }
 export interface LiveTradingPayload extends ConsolePayloadBase {
   data_provenance: "REAL_LIVE_TRADING_SNAPSHOT" | string;

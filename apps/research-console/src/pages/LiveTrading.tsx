@@ -8,7 +8,7 @@ import { money, pct, pctPoints, fixed, stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchLiveTradingSnapshot } from '@/lib/api/research-console-api';
 import type {
-  LiveTradingPayload, LiveTradingForwardAlpha, LiveTradingWouldSubmitOrder,
+  LiveTradingPayload, LiveTradingForwardAlpha, LiveTradingWouldSubmitOrder, LiveTradingTca,
 } from '@/lib/types/research';
 
 /**
@@ -72,6 +72,11 @@ export default function LiveTrading() {
   const recon = lt.reconciliation ?? {};
   const reconOk = recon.proceed !== false;
   const riskBreach = lt.risk_breach;
+  const tca: LiveTradingTca | null = lt.tca ?? null;
+  const orderStats = lt.order_stats ?? null;
+  const parity = lt.parity ?? null;
+  const emergency = lt.emergency ?? null;
+  const tcaByInst = tca ? Object.entries(tca.by_instrument ?? {}) : [];
 
   return (
     <PageShell>
@@ -126,6 +131,7 @@ export default function LiveTrading() {
       <Panel eyebrow={bi('Stage 1', 'STAGE 1')} title={bi('测试网执行栈', 'Testnet Execution Stack')}
         right={lt.present ? (
           <div className="flex items-center gap-2">
+            {lt.venue && <Chip label={lt.venue} tone="info" />}
             <Chip label={MODE_ZH[lt.mode ?? ''] ?? lt.mode} tone={lt.mode === 'submit' ? 'warn' : 'info'} />
             <Chip label={bi(`更新于 ${stamp(lt.ran_at)}`, `updated ${stamp(lt.ran_at)}`)} tone="muted" />
           </div>
@@ -199,6 +205,95 @@ export default function LiveTrading() {
               </div>
             )}
 
+            {emergency && (
+              <div className="rounded border border-neg/40 bg-neg/[0.06] px-3 py-2 text-2xs">
+                <div className="mb-1 font-semibold text-neg">
+                  {bi('紧急减仓(独立通道,不经共用风控门)', 'Emergency flatten (independent channel, bypasses the shared gate)')}
+                </div>
+                <span className="text-muted mono">
+                  target_gross={money(emergency.target_gross, 'USD')} · {bi('提交', 'submitted')} {emergency.n_submitted} ·{' '}
+                  {bi('拒绝', 'rejected')} {emergency.n_rejected} · {bi('错误', 'errors')} {emergency.n_errors}
+                </span>
+              </div>
+            )}
+
+            {/* --- TCA 成交质量 + live-paper 对账 + 订单统计(2026-07-05 机构级补全) --- */}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <div className="rounded-lg border border-line bg-inset/40 px-3.5 py-3">
+                <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+                  {bi('成交质量 TCA(累计)', 'TCA — cumulative fill quality')}
+                </div>
+                {tca && tca.n_with_slippage > 0 ? (
+                  <div className="flex flex-col gap-1 text-2xs text-muted">
+                    <div>
+                      <span className="tnum text-base font-bold text-ink">
+                        {tca.notional_weighted_slippage_bps != null ? fixed(tca.notional_weighted_slippage_bps, 2) : '—'}
+                      </span>{' '}
+                      bps {bi('名义额加权滑点', 'notional-weighted slippage')}
+                    </div>
+                    <div className="mono">
+                      mean {tca.mean_slippage_bps != null ? fixed(tca.mean_slippage_bps, 2) : '—'} · worst{' '}
+                      {tca.worst_slippage_bps != null ? fixed(tca.worst_slippage_bps, 2) : '—'} · n={tca.n_with_slippage}
+                    </div>
+                    <div className={tca.weighted_minus_assumed_bps != null && tca.weighted_minus_assumed_bps > 0 ? 'text-neg' : 'text-pos'}>
+                      {bi(`vs 回测假设 ${fixed(tca.assumed_cost_bps, 0)}bps:`, `vs backtest assumption ${fixed(tca.assumed_cost_bps, 0)}bps:`)}{' '}
+                      {tca.weighted_minus_assumed_bps != null
+                        ? `${tca.weighted_minus_assumed_bps > 0 ? '+' : ''}${fixed(tca.weighted_minus_assumed_bps, 2)}bps`
+                        : '—'}
+                    </div>
+                    {tcaByInst.length > 0 && (
+                      <div className="mono text-faint">
+                        {tcaByInst.map(([inst, b]) => `${inst}:${b.mean_slippage_bps != null ? fixed(b.mean_slippage_bps, 1) : '—'}bps`).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-2xs text-faint">{bi('尚无确认成交(preview 模式不产生成交)', 'No confirmed fills yet (preview mode produces none)')}</span>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-line bg-inset/40 px-3.5 py-3">
+                <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+                  {bi('live-paper 对账(本周期)', 'Live-vs-paper parity (this cycle)')}
+                </div>
+                {parity ? (
+                  <div className="flex flex-col gap-1 text-2xs text-muted">
+                    <div>
+                      <Chip label={parity.paper_source === 'forward_ledger' ? bi('纸面=台账记录', 'paper=recorded ledger') : bi('纸面=重算信号', 'paper=recomputed')}
+                        tone={parity.paper_source === 'forward_ledger' ? 'pos' : 'warn'} />
+                    </div>
+                    <div className="mono">
+                      {bi('纸面腿', 'paper legs')} {parity.n_paper_legs} · {bi('有订单', 'with order')} {parity.n_with_live_order} ·{' '}
+                      max|gap|={parity.max_abs_gap_notional != null ? money(parity.max_abs_gap_notional, 'USD') : '—'}
+                    </div>
+                    {parity.unexpected_live_positions.length > 0 && (
+                      <div className="text-warn">
+                        ⚠ {bi('账外仓位', 'unexpected positions')}: {parity.unexpected_live_positions.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-2xs text-faint">{bi('尚无对账快照', 'No parity snapshot yet')}</span>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-line bg-inset/40 px-3.5 py-3">
+                <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+                  {bi('订单统计(账本累计,含撤单/超时归因)', 'Order stats (ledger cumulative, incl. cancel/timeout)')}
+                </div>
+                {orderStats && Object.keys(orderStats).length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(orderStats).map(([st, n]) => (
+                      <Chip key={st} label={`${st}: ${n}`}
+                        tone={st === 'FILLED' ? 'pos' : st === 'REJECTED' || st === 'EXPIRED' ? 'neg' : st === 'CANCELED' ? 'warn' : 'muted'} />
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-2xs text-faint">{bi('账本暂无订单', 'No orders in the ledger yet')}</span>
+                )}
+              </div>
+            </div>
+
             {(lt.alerts ?? []).length > 0 && (
               <div className="flex flex-col gap-1">
                 {lt.alerts!.map((a, i) => (
@@ -218,9 +313,9 @@ export default function LiveTrading() {
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
         {bi('只读 · 两份离线快照(forward_track_status.json / live_track_status.json)· 分级授权(mandate)fail-closed 到底 · '
-          + '减仓自动提交故意未接线(架构决定待人工拍板)',
+          + '紧急减仓走独立 reduce-only 通道(2026-07-05 用户拍板;结构上只能减仓,治理测试钉死)',
           'Read-only · two offline snapshots (forward_track_status.json / live_track_status.json) · tiered mandate authorization is fail-closed to the core · '
-          + 'auto flatten-order submission is deliberately unwired (architecture decision pending human sign-off)')}
+          + 'emergency flatten runs an independent reduce-only channel (user-approved 2026-07-05; structurally reduce-only, governance-pinned)')}
       </div>
     </PageShell>
   );

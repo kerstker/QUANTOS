@@ -5247,6 +5247,13 @@ def _live_trading_payload() -> Dict:
             "peak_equity": (risk or {}).get("peak_equity"),
             "would_submit": lt.get("would_submit", []),
             "alerts": lt.get("alerts", []),
+            # 2026-07-05 机构级补全:驱动器落进快照的成交质量/订单统计/live-paper 对账/紧急减仓
+            # (console 只读展示,遵守 services/ 不 import live/ 的单向边界——数据由驱动器写入)
+            "venue": lt.get("venue"),
+            "tca": lt.get("tca"),
+            "order_stats": lt.get("order_stats"),
+            "parity": lt.get("parity"),
+            "emergency": lt.get("emergency"),
         }
 
     return {

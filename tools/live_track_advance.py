@@ -47,6 +47,7 @@ from live.execution.emergency import flatten_target_for_breach, submit_emergency
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
+from live.execution.tca import tca_summary
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.pipeline import UNIT_SCALE, resolve_unconfirmed_orders, submit_live_batch
@@ -377,8 +378,15 @@ def main() -> None:
     if result.tier != AUTO:
         alerts.append(f"batch tier={result.tier}: {len(result.pending_review)} orders pending human review")
 
+    # 成交质量(TCA)+ 订单统计:读真实账本(不是 preview 草稿)——历史累计口径,供 console 展示
+    order_stats: dict = {}
+    for o_row in ledger.orders():
+        order_stats[o_row["status"]] = order_stats.get(o_row["status"], 0) + 1
+    tca = tca_summary(ledger.tca_records())
+
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
+        "venue": venue_arg, "tca": tca, "order_stats": order_stats,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),
         "n_dropped_by_filters": len(result.dropped_by_filters),
