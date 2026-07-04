@@ -7,6 +7,11 @@ Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](QUANTOS_MASTER_BLUEPRINT.md)
 
 Readiness: **L2_DRY_RUN_ONLY** — research + dry-run simulation only. No live
 trading, no broker connectivity, no real credentials.
+**2026-07-04 用户拍板启动通往小资金实盘的 Phase 3A 人工门路线**(非绕过边界):审查+分阶段计划
+= [`docs/2026-07-04-live-readiness-review-and-plan.md`](docs/2026-07-04-live-readiness-review-and-plan.md)。
+已拍板:Binance 先行(venue 可插拔,Bybit/Hyperliquid 后续)、分级授权(mandate 限额内自动、越限升人工)、
+真钱前 ≥8 周前向证据、$3k–5k 起步。Stage 0(前向证据钟)已 2026-07-04 落地,钟已起走;
+readiness 仍是 L2,直到 Go/No-Go 人工评审通过。
 
 ## Safety boundary (non-negotiable — blueprint §1)
 
@@ -75,6 +80,16 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/research/{run_registry,research_runner,experiment_registry}/` —
   durable sqlite run store + the guarded mutating runner + immutable experiment
   artifacts/DSR trial-count persistence.
+- `services/research/paper_trading/forward.py` + `tools/{live_data_refresh,forward_track_advance,
+  alert_sink}.py` — **真前向 paper-track(实盘路线 Stage 0,2026-07-04)**:与 advance.py 历史切分的
+  定义性区别 = **决策先落库、结果后兑现**(`forward_decisions` append-only 台账,decided_ts=数据时间 +
+  recorded_at=墙钟证明先后;无前视 min_gap 6.5 天、覆盖率 <0.8 fail-closed 留 pending、决策不可改写)。
+  周度驱动器与干跑同一条信号路径(`build_panel`+`CROWD_CONTRA`/`CARRY`+`_legs`),增量刷新三源
+  (klines/funding/OI,幂等 fail-soft,staleness 三维口径——退市币停更≠告警),告警走本地 jsonl 台账
+  + 可选 Telegram(密钥只 env)。**首条决策 2026-07-02(数据时间)已落库(crowd_contra +
+  carry_oi_majors 各 14 腿),8 周证据钟已起走;gross+funding 口径,非晋级门禁**——真钱 Go/No-Go
+  是 Phase 3A 人工评审。周一 09:00 schtasks 调度(人工注册,错过自动 catch-up)。15 tests +
+  治理边界扩充(3 个新工具钉进只读数据边界)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

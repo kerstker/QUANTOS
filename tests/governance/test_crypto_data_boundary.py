@@ -17,7 +17,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
              os.path.join(_ROOT, "tools", "frankfurter_fetch.py"),
-             os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py")]
+             os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py"),
+             # Stage 0 (实盘路线) 生产化刷新/前向跟踪/告警——同样的只读数据边界钉住它们
+             os.path.join(_ROOT, "tools", "live_data_refresh.py"),
+             os.path.join(_ROOT, "tools", "forward_track_advance.py"),
+             os.path.join(_ROOT, "tools", "alert_sink.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
@@ -38,6 +42,7 @@ def _import_roots(path: str) -> set:
 # `concurrent` is the stdlib thread pool that only OVERLAPS the high-latency archive GETs — none of these
 # add network/trade/credential capability, so they do not weaken the boundary.
 _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "concurrent",
+                    "sqlite3",  # 纯 stdlib 本地存储(增量刷新读水位/PIT 库)——不增加网络/交易/凭证能力
                     "services", "tools", "__future__"}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
