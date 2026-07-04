@@ -128,10 +128,18 @@ Real, tested backend engines (`*_TESTED` in the audit):
   按 `UNIT_SCALE` 折算,而是设成有效无限——多资产 book 里这类阈值不感知价格本来就不是对的工具,
   真正保护交给名义额类检查。**真实联调**:preview 模式对着真实测试网跑通,对账前置在真实数据上
   正确拦下一次真实 drift(交易所侧遗留的 0.002 BTC 测试仓位 vs 全新本地账本),核对补记后全链路
-  正常跑完(真实 AUM $4993.81、真实 gate 评估、mandate 缺失 → 安全零提交)。**110 tests(102 单元
-  + 8 治理边界)全绿**。设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`
-  §7。撤单/改单、Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面、仓位/回撤实时监控+
-  自动减仓(更重的新自动化行为,需独立设计)= 非目标(留后续)。
+  正常跑完(真实 AUM $4993.81、真实 gate 评估、mandate 缺失 → 安全零提交)。
+  **仓位/回撤监控已落地**(同日,`live/execution/risk_monitor.py`,分两级——同 mandate 的分级
+  授权哲学):①`evaluate_risk_state`+`respond_to_breach`(纯函数算真实回撤/总敞口/净敞口,越限
+  即 `arm` 既有 `KillSwitch`——任何 actor 皆可触发,零新风险,已接进驱动器的对账后第二道前置
+  检查,峰值权益持久化 `data/cache/live_risk_state.json`)全自动、真实联调跑通;②
+  `compute_flatten_orders`(算 REDUCE-ONLY 减仓量的纯函数,15 tests)**故意没接自动提交**——
+  真实架构冲突:`check_kill_switch` 一旦触发会挡下包括 reduce-only 在内的所有意图,①触发 kill
+  switch 后②想走同一个 gate 送减仓单会被同一个 kill switch 挡下,越紧急越送不出去;解法(改
+  共用 gate 认识 reduce-only 语义 / 给紧急减仓开独立安全路径)都是需要人工拍板的架构决定,不是
+  该由代码悄悄选一个的,留白记录在设计文档 §9。**125 tests(117 单元 + 8 治理边界)全绿**。
+  设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md` §7/§9。撤单/改单、
+  Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面、减仓自动提交(见上)= 非目标(留后续)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

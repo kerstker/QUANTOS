@@ -21,6 +21,14 @@ mandate.py`)。mandate 的真实数字由用户自己创建文件签署,本文�
 一个统一的"最大数量"没有意义,这里设成有效无限;真正的保护交给天然价格感知、与 `UNIT_SCALE`
 缩放无关的名义额类检查(`max_order_notional`/`max_gross_exposure`/`max_net_exposure`/
 `daily_loss_limit`)——这是 2026-07-04 审查发现 #1 的正确解法,不是"把裸数量阈值也乘 UNIT_SCALE"。
+
+**回撤/敞口监控(2026-07-04 追加):** 对账通过后、下单前,额外核对真实权益相对历史峰值的回撤 +
+真实总/净敞口(`live/execution/risk_monitor.py::evaluate_risk_state`)。越限 -> `arm` 既有
+`KillSwitch`(任何 actor 皆可触发,零新风险)+ 告警 + 本轮硬停。**减仓订单的自动提交故意没有接
+线**:kill-switch 一旦触发,既有 `PreTradeRiskGate.check_kill_switch` 会挡下包括 reduce-only
+在内的所有意图,要让减仓单在紧急状态下还能送出需要一条不经过共用 gate 的独立安全路径——这是
+需要人工明确拍板的架构决定,`compute_flatten_orders` 已经是测试好的纯计算,等这个决定之后再接。
+峰值权益跟踪:`data/cache/live_risk_state.json`(gitignored,首次运行以当前权益为峰值起点)。
 """
 from __future__ import annotations
 
@@ -33,6 +41,7 @@ from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.reconciliation import preflight_check
+from live.execution.risk_monitor import evaluate_risk_state, respond_to_breach
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.pipeline import UNIT_SCALE, submit_live_batch
@@ -54,6 +63,24 @@ _MANDATE_PATH = os.path.join("key", "live_mandate.json")
 _KEY_FILE = os.path.join("key", "binance_test_key.json")
 _RECON_TOLERANCE = 1e-6
 _MAX_STALENESS_MS = 7 * 86_400_000       # 周度信号,容忍一周内的价格新鲜度
+_RISK_STATE_PATH = os.path.join("data", "cache", "live_risk_state.json")
+_MAX_DRAWDOWN_PCT = 0.20                 # 工程安全网默认值,非业务风险容忍度(见模块 docstring)
+
+
+def _load_peak_equity(default: float) -> float:
+    if os.path.exists(_RISK_STATE_PATH):
+        try:
+            with open(_RISK_STATE_PATH, encoding="utf-8") as fh:
+                v = json.load(fh).get("peak_equity")
+            if v is not None:
+                return float(v)
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+    return default
+
+
+def _save_peak_equity(value: float) -> None:
+    json.dump({"peak_equity": value}, open(_RISK_STATE_PATH, "w", encoding="utf-8"))
 
 
 def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
@@ -180,6 +207,30 @@ def main() -> None:
 
     account = real_venue.account()
     aum = float(account.get("availableBalance", 0.0) or 0.0)
+    equity = float(account.get("totalMarginBalance", 0.0) or 0.0)   # 含未实现盈亏,回撤监控用这个
+
+    peak_equity = max(_load_peak_equity(equity), equity)
+    _save_peak_equity(peak_equity)
+
+    kill_switch = KillSwitch()
+    breach = evaluate_risk_state(
+        equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
+        max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=aum * 2, max_net_exposure=aum * 0.3)
+    risk_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
+    if breach.breached:
+        alerts.append(f"RISK BREACH: {breach.reasons} (drawdown={breach.drawdown_pct:.2%}, "
+                      f"gross=${breach.gross_exposure:.2f}, net=${breach.net_exposure:.2f}) "
+                      f"-> {risk_response['action']}")
+        emit(alerts, context="live_track", now_ms=now)
+        json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
+                  "risk_breach": {"reasons": breach.reasons, "drawdown_pct": breach.drawdown_pct,
+                                 "gross_exposure": breach.gross_exposure,
+                                 "net_exposure": breach.net_exposure},
+                  "risk_response": risk_response["action"], "alerts": alerts},
+                 open(_STATUS_PATH, "w", encoding="utf-8"), indent=2)
+        print(f"HARD STOP: risk breach {breach.reasons} -> {risk_response['action']} "
+              f"-> {_STATUS_PATH}", flush=True)
+        return
 
     mandate = None
     try:
@@ -190,7 +241,7 @@ def main() -> None:
     gate = PreTradeRiskGate(
         gate_limits(weights.keys(), gross_cap=aum * 2, net_cap=aum * 0.3,
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
-        kill_switch=KillSwitch())
+        kill_switch=kill_switch)
     venue = real_venue if submit else PreviewVenue(real_venue)
     audit = GlobalAuditLog()
 

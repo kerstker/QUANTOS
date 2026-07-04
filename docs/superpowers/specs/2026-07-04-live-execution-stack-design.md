@@ -284,9 +284,43 @@ event_time)保持不变,复跑三次确认非 hash-seed 随机性(每次都是�
 **既有** crowd_contra 信号计算链的特性,不是本次新增代码引入的问题,值得独立排查但不阻塞
 Stage 1 交付。
 
-## 8. 非目标(Stage 1.5,本次仍不做)
+## 8. 非目标(本次仍不做)
 
-仓位/回撤实时监控 + 触发式自动减仓(reduce-only flatten)——这是比"周度调仓"更重的新自动化
-行为(风险突破 → 自主决策平仓),需要独立设计/brainstorm,不与本次的"串起既有部件"合并;
 API 限流/退避/熔断;时钟偏移校正;崩溃恢复(核对上一批次状态未知的 client_order_id);
 确认送达的告警通道;定时任务本身的注册(用户人工执行,同 Stage 0 的 schtasks 模式)。
+仓位/回撤监控的**减仓下单**部分——见 §9,故意留了一个未接线的架构决定点。
+
+## 9. 2026-07-04 补:仓位/回撤监控(分两级,只做了安全的那一级)
+
+`live/execution/risk_monitor.py`,分两级(与 `mandate.py` 分级授权同一哲学——安全响应可以
+自动,新的下单触发必须由人另外签署才激活):
+
+**① `evaluate_risk_state` + `respond_to_breach`(已接线、全自动、零新风险):** 纯函数算真实
+权益相对历史峰值的回撤 + 真实总/净敞口,越限即 `arm` 既有 `KillSwitch`(non-human SYSTEM
+actor,`services/risk/pre_trade/kill_switch.py` 本来就允许**任何** actor 触发——halt 只会让
+系统更保守,不引入任何新风险)。fail-closed:某标的缺价导致无法估值本身就算一次越限(不是
+静默跳过)。已接进 `tools/live_track_advance.py`(对账通过后、下单前的第二道前置检查,同
+对账硬停的结构)。峰值权益持久化在 `data/cache/live_risk_state.json`(首次运行以当前权益
+为起点)。真实联调:阈值默认工程保守值(回撤 20%、gross ≤2×AUM、net ≤0.3×AUM),对着测试网
+真实账户跑通,当前 0.002 BTC 测试仓位远在阈值内,零误报。
+
+**② `compute_flatten_orders`(纯计算,故意没有接自动提交):** 给定当前仓位 + 目标 gross
+上限,算出等比例缩减各腿的 REDUCE-ONLY 数量(每条腿只朝 0 缩放,绝不反手、绝不新增仓位)——
+已测试(15 tests),返回形状与 `apply_exchange_filters` 的 `desired` 参数一致,可以直接喂给
+既有交易所过滤器。**没有接自动提交的原因是一个真实的架构冲突,不是偷懒:**
+`services/risk/pre_trade/checks.py::check_kill_switch` 一旦 `KillSwitch` 被触发,会挡下
+**所有**意图,包括 reduce-only——也就是说,①越限触发 kill switch 之后,如果想让②的减仓单
+经过同一个 `PreTradeRiskGate` 送出去,会被自己刚触发的同一个 kill switch 挡下,越是紧急、
+越送不出减仓单。要解决这个矛盾,只有两条路,都是需要人工明确拍板的架构决定,不是代码层面
+可以自己悄悄选一个的:
+- (a) 修改共用的 `check_kill_switch`,让它认识"这是 reduce-only、只减不增"这个语义、豁免它
+  ——但 `services/risk/pre_trade/` 是研究/纸面/实盘所有路径共用的核心风控引擎,改它的通用
+  检查逻辑影响面很大,需要谨慎评审;
+- (b) 给"紧急减仓"开一条不经过共用 `PreTradeRiskGate` 的独立安全路径(自己的最小化检查:
+  只减不增、有目标上限、有人工签署的授权)——架构上更干净,但是一个新的、平行于主执行路径
+  的组件,同样需要独立设计。
+
+在这个决定之前,`compute_flatten_orders` 保持"测试好、能用、没上线"的状态——真实世界里,
+①已经把系统halt 了,人工介入后可以用这个函数手算该减多少仓、再用既有的
+`submit_live_batch`(mandate 里临时松绑 kill switch 状态或走人工审批的多方批准流程)执行,
+不是完全没有退路,只是不自动。
