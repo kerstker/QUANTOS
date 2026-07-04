@@ -158,6 +158,41 @@ Real, tested backend engines (`*_TESTED` in the audit):
   preview 联调再次跑通。**live/+治理边界测试从 125 增至 178,全绿;设计文档 §10–§13。**
   Hyperliquid(msgpack+Keccak+secp256k1 签名,依赖模型与 HMAC 系彻底不同)是需要人工拍板的
   依赖决定,写了决策文档不建假实现(§11)。
+  **机构级补全 9 包已全部落地**(2026-07-05 第二批,9 commits,live/+治理测试 178→267,全量
+  门禁 1437 全绿;设计+实施结果 = `docs/superpowers/specs/2026-07-05-institutional-live-stack-
+  design.md`;运维手册 = `docs/runbooks/live-trading-runbook.md`):① OMS 撤单(两所
+  `cancel_order`)+ 超时策略(轮询打满→撤单→**回查权威状态**记账——撤单/成交赛跑与部分成交
+  都按交易所真实量入账;崩溃恢复对遗留开单也主动撤,防止与本轮订单叠加)+ **Bybit 状态归一化**
+  (原样 "Filled" vs 流水线 "FILLED" 的既有缺口,不修则 Bybit 驱动下订单永远确认不了);
+  ② **紧急减仓独立通道**(用户拍板,补掉 §9 留白):`live/execution/emergency.py` 不咨询共用
+  gate/kill-switch(治理测试钉死不 import),结构窄校验网格测试证明"只可能减少敞口",
+  `LiveOrderRequest.reduce_only` 两所原生透传,`flatten_target_for_breach` 策略 = 回撤越限全平/
+  敞口越限等比减回限额 90%/纯数据质量问题不自动交易(交给人),交易所过滤器在此**刻意
+  fail-open**(对减仓单而言"不提交"才是危险动作——与加仓路径相反的不对称),已接驱动器
+  breach 分支(preview 同样只记录);③ TCA(账本 `live_tca` 表惰性建表平滑迁移 + 带方向滑点
+  bps + `tca_summary` 对照回测 10bps 假设,流水线/紧急通道都 fail-soft 记录,绝不影响仓位
+  记账);④ live-paper 对账(`live/execution/parity.py`:Stage 0 **记录在案**权重——非重算
+  信号,重算会掩盖信号漂移——vs live 账本仓位 + 确定性 client_order_id 订单归因,逐周
+  `data/cache/live_parity.jsonl`;真实联调正确抓到交易所遗留 0.002 BTC 测试仓);⑤ `--venue
+  bybit` 驱动器选项 + **mandate 必填 `exchange` 域**(两所 testnet 都叫 "testnet",不签交易所
+  域会互相误认;unset/mismatch 皆 fail-closed 升人工)+ per-venue 账本/状态/风控峰值/对账路径
+  与余额解析(Bybit V5 信封与 Binance 形状不同);⑥ TWAP 切单(`live/execution/slicer.py`
+  确定性子单 ID/步长感知/总量绝不超母单,`submit_live_batch(slicer=)` 默认 None 行为不变,
+  子单序列内失败即中止剩余——诚实定位:规模化预留,现阶段不启用);⑦ console:驱动器把
+  TCA/订单统计/venue 写进状态快照(**console 只读快照,`services/` 不 import `live/` 的单向
+  边界不破**),`/api/v1/console/live-trading` + LiveTrading 页加 TCA/对账/订单统计/紧急减仓
+  卡片,TS 类型 + 契约测试同 commit;⑧ 运维 runbook(周度周期/故障处置/key 与 mandate 生命
+  周期/preview→--submit 检查清单);⑨ 策略研究一轮**诚实证伪**:5 新候选过 IC 面板(注册表
+  各加一行),日频 `reversal_7_wide` t=16.4/`low_vol_wide` t=15.7 统计巨大,但新建
+  `tools/wide_factor_gauntlet.py`(周度 L/S 分位 + 换手计费 0/10/25/50bps)一轮打掉——
+  reversal 周度毛夏普 0.21、10bps 即负(**日频大 IC = 微观结构买卖价差反弹,持有不过夜就
+  没了,与 FX +0.70 mirage 同类**),low_vol 毛 0.49 净@25bps 0.26 无可交易边,funding
+  变体/OI 变化率无信号;**可部署 book 不变(crowd_contra 单条)**;诚实性核查:crowd_contra
+  日频面板 t=0.66 vs 周度重算 t=2.99(n=232)= 慢速持仓因子的持有期口径效应、非数据损坏
+  (相对首跑 4.32 随样本延长有软化,仍显著);runner 白名单 +`ic_panel`/+`wide_gauntlet`
+  (前端可触发,`ALLOWED_KINDS` 同步)。遗留:Bybit 真实联调(等 key 填入
+  `key/bybit_test_key.json`,真实下单前单独确认)、mandate 真实数字(用户签)、Hyperliquid
+  (维持推迟)、IC 面板 per-factor 持有期口径(候选改进)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

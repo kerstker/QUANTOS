@@ -122,3 +122,51 @@ n_slices)`:母单按名义额上限或等分切子单,子单 client_order_id 确
 `tests/live/ + tests/governance/test_live_execution_boundary.py` 全绿;⑦ 完成后
 前端 typecheck + 契约测试绿;全部完成后 `scripts/validate.py` 全量门禁绿。
 文档同步:本文件 + CLAUDE.md + 记忆文件在收尾 commit 更新,测试数只报实测值。
+
+---
+
+## 实施结果(同日全部落地,9 包 9 commits)
+
+**live/ + 治理边界测试从 178 增至 267;`scripts/validate.py` 全量门禁(1437 python 测试 +
+治理扫描器)全绿;前端 typecheck 干净、48/48 测试绿、契约测试绿。** 逐包:
+
+- **①(7581d11)** 两 adapter `cancel_order` + 超时策略(轮询打满 → 撤单 → **回查权威状态**
+  记账——撤单与成交赛跑、部分成交后撤销都按交易所真实 filled_qty 入账);崩溃恢复对遗留
+  开单也主动撤(防止上轮遗留单稍后成交与本轮叠加双倍仓位)。**顺带钉死既有缺口:Bybit
+  原样状态("Filled")与流水线终态集合("FILLED")不匹配,接上 Bybit 驱动器后订单永远
+  确认不了——adapter 边界统一归一化。**
+- **②(b6d1bef)** 紧急减仓独立通道(用户拍板):`live/execution/emergency.py`,不咨询共用
+  gate/kill-switch(治理测试钉死不 import),结构窄校验网格测试证明"只可能减少敞口";
+  `LiveOrderRequest.reduce_only` + 两所原生 reduceOnly;`flatten_target_for_breach` 策略
+  (回撤全平/敞口减回 90%/纯数据质量问题不自动交易);过滤器在此 fail-open(减仓单
+  "不提交"才是危险动作——与加仓路径刻意相反的不对称)。已接驱动器 breach 分支。
+- **③(7d238e5)** TCA:账本 `live_tca` 表(惰性建表老库平滑迁移)+ 带方向滑点 bps +
+  `tca_summary` 对照回测 10bps 假设;流水线与紧急通道都 fail-soft 记录。
+- **④(a44e254)** live-paper 对账:纸面侧用 Stage 0 **记录在案**权重(非重算信号),live 侧
+  账本仓位 + 确定性 client_order_id 订单归因;逐周 `live_parity.jsonl`。真实联调:正确抓到
+  交易所侧遗留 0.002 BTC 测试仓位(`unexpected: ['BTC']`)。
+- **⑤(9c35522)** `--venue bybit` + **mandate 必填 `exchange` 域**(两所 testnet 都叫
+  "testnet",不签交易所域会互相误认——unset/mismatch 都 fail-closed 升人工);per-venue
+  账本/状态/风控峰值/对账路径 + per-venue 余额解析;模板预填 exchange="binance"。
+  Bybit 真实联调等用户 key(`key/bybit_test_key.json` 已建但为空)。
+- **⑥(4d38c37)** TWAP 切单:`plan_slices`(等分/名义额上限,确定性子单 ID,步长感知,
+  总量绝不超母单);`submit_live_batch(slicer=)` 默认 None 行为不变;子单序列内失败即中止
+  剩余(跨母单仍 fail-soft)。诚实定位:为规模化预留,现阶段不启用。
+- **⑦(06253c2)** console:驱动器把 TCA/订单统计/venue 落进状态快照(console 只读,
+  `services/` 不 import `live/` 边界不破),`/live-trading` 端点 + LiveTrading.tsx 加
+  TCA/对账/订单统计/紧急减仓卡片;TS 类型 + 契约测试同 commit。
+- **⑧(72df437)** 运维 runbook:`docs/runbooks/live-trading-runbook.md`(周度周期/故障
+  处置/key 与 mandate 生命周期/preview→--submit 检查清单)。
+- **⑨(b8ce645)** 策略研究一轮,**诚实证伪**:5 个新候选过 IC 面板(注册表各加一行)——
+  日频 `reversal_7_wide` t=16.4 / `low_vol_wide` t=15.7 统计巨大;新建
+  `tools/wide_factor_gauntlet.py`(周度 L/S 分位 + 换手计费 0/10/25/50bps)一轮打掉:
+  reversal 周度毛夏普 0.21、10bps 即负(日频大 IC = 微观结构买卖价差反弹,持有不过夜就
+  没了——与 FX +0.70 mirage 同类);low_vol 毛 0.49 净@25bps 0.26,无可交易边;funding
+  变体/OI 变化率无信号。**可部署 book 不变(crowd_contra 单条)。** 诚实性核查:
+  crowd_contra 日频面板 t=0.66 vs 周度重算 t=2.99(n=232)——慢速持仓因子的持有期口径
+  效应,非数据损坏;相对首跑 4.32 有软化(样本延长),仍显著。runner 白名单
+  +ic_panel/+wide_gauntlet(前端可触发)。
+
+**遗留(非本轮目标):** Bybit 真实联调(等 key 填入;真实下单前单独确认)、mandate 真实
+数字(用户签)、Hyperliquid(依赖决定,维持推迟)、IC 面板 per-factor 持有期口径
+(registry 加 horizon 字段,候选改进)。
