@@ -13,8 +13,8 @@ import os
 
 from live.governance.mandate import Mandate
 
-_REQUIRED = ("mandate_id", "venue", "allowed_instruments", "max_single_order_notional",
-            "max_gross_notional", "max_net_notional")
+_REQUIRED = ("mandate_id", "venue", "exchange", "allowed_instruments",
+            "max_single_order_notional", "max_gross_notional", "max_net_notional")
 
 
 class MandateLoadError(RuntimeError):
@@ -40,6 +40,7 @@ def load_mandate(path: str) -> Mandate:
         return Mandate(
             mandate_id=str(data["mandate_id"]),
             venue=str(data["venue"]),
+            exchange=str(data["exchange"]),
             allowed_instruments=frozenset(data["allowed_instruments"]),
             max_single_order_notional=float(data["max_single_order_notional"]),
             max_gross_notional=float(data["max_gross_notional"]),

@@ -67,6 +67,7 @@ def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None
 class BinanceFuturesAdapter:
     TESTNET_BASE = "https://testnet.binancefuture.com"
     MAINNET_BASE = "https://fapi.binance.com"
+    venue_name = "binance"     # mandate 交易所域匹配(mandate.exchange 必须等于它,2026-07-05)
 
     def __init__(self, *, api_key: str, api_secret: str, base_url: str,
                 http_request: Optional[Callable] = None,

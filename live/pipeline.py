@@ -223,7 +223,8 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                      action="LIVE_ORDER_DROPPED_BY_FILTER", timestamp=now, target=instrument_id,
                      metadata={"reason": reason})
 
-    decision = evaluate_mandate(adjusted, prices, mandate, venue=venue.venue_mode, now=now,
+    decision = evaluate_mandate(adjusted, prices, mandate, venue=venue.venue_mode,
+                               exchange=getattr(venue, "venue_name", ""), now=now,
                                current_positions=current_positions)
     audit.append(event_id=_det_id("live_mandate", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_MANDATE_DECISION", timestamp=now, target=run_id,

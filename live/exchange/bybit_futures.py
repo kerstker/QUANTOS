@@ -91,6 +91,7 @@ def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None
 class BybitFuturesAdapter:
     TESTNET_BASE = "https://api-testnet.bybit.com"
     MAINNET_BASE = "https://api.bybit.com"
+    venue_name = "bybit"       # mandate 交易所域匹配(mandate.exchange 必须等于它,2026-07-05)
     _RECV_WINDOW = "5000"
 
     def __init__(self, *, api_key: str, api_secret: str, base_url: str,

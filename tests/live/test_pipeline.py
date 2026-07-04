@@ -60,10 +60,10 @@ def _ctx_factory(prices=_PRICES, unit_scale=UNIT_SCALE):
     return _factory
 
 
-_WIDE_MANDATE = Mandate(mandate_id="m1", venue="testnet",
+_WIDE_MANDATE = Mandate(mandate_id="m1", venue="testnet", exchange="fake",
                         allowed_instruments=frozenset({"BTC", "ETH"}),
                         max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9)
-_TINY_MANDATE = Mandate(mandate_id="m2", venue="testnet",
+_TINY_MANDATE = Mandate(mandate_id="m2", venue="testnet", exchange="fake",
                         allowed_instruments=frozenset({"BTC", "ETH"}),
                         max_single_order_notional=1.0, max_gross_notional=1.0, max_net_notional=1.0)
 
@@ -90,6 +90,7 @@ class _FakeVenue:
     cancel_explodes_for: 撤单调用本身抛异常且订单保持 NEW(网络故障)。
     """
     venue_mode = "testnet"
+    venue_name = "fake"
 
     def __init__(self, *, fail_recoverable_for=(), fail_unrecoverable_for=(), never_confirms_for=(),
                  cancel_races_fill_for=(), cancel_after_partial_fill_for=(), cancel_explodes_for=()):

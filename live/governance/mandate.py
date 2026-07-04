@@ -22,9 +22,16 @@ class Mandate:
     mandate_id: str
     venue: str
     allowed_instruments: frozenset            # 空集 = fail-closed 拒绝一切(同 RiskLimits 惯例)
+    # exchange(2026-07-05):mandate 的交易所域。两家交易所的 testnet 都叫 "testnet"——只靠
+    # venue 匹配,给 Binance 签的 mandate 会被 Bybit 误认。空串 = 未签署交易所域 -> 恒升级人工
+    # (fail-closed;文件加载器把它列为必填)。字段带默认值仅为 dataclass 字段排序,不是许可。
+    exchange: str = ""
     max_single_order_notional: float
     max_gross_notional: float
     max_net_notional: float
+    max_single_order_notional: float = 0.0
+    max_gross_notional: float = 0.0
+    max_net_notional: float = 0.0
     per_instrument_max_notional: Tuple[Tuple[str, float], ...] = ()
     approved_by: Tuple[str, ...] = ()         # 签署 mandate 的人工 actor_id(留痕)
     issued_at: int = 0
@@ -38,7 +45,7 @@ class MandateDecision:
 
 
 def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, float],
-                     mandate: Optional[Mandate], *, venue: str, now: int,
+                     mandate: Optional[Mandate], *, venue: str, exchange: str, now: int,
                      current_positions: Optional[Mapping[str, float]] = None) -> MandateDecision:
     try:
         if mandate is None:
@@ -47,6 +54,12 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             return MandateDecision(NEEDS_HUMAN_REVIEW, ("mandate_expired",))
         if venue != mandate.venue:
             return MandateDecision(NEEDS_HUMAN_REVIEW, ("venue_mismatch",))
+        # 交易所域(2026-07-05):两家的 testnet 都叫 "testnet",只靠 venue 匹配,给 Binance 签
+        # 的 mandate 会被 Bybit 误认——mandate 必须显式签署它授权的交易所。
+        if not mandate.exchange:
+            return MandateDecision(NEEDS_HUMAN_REVIEW, ("exchange_unset",))
+        if exchange != mandate.exchange:
+            return MandateDecision(NEEDS_HUMAN_REVIEW, ("exchange_mismatch",))
         if not orders:
             return MandateDecision(AUTO, ())          # 空批次,没什么好审的
 

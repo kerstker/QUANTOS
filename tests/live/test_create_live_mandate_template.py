@@ -17,6 +17,11 @@ def test_build_template_venue_prefilled_to_testnet():
     assert build_template()["venue"] == "testnet"
 
 
+def test_build_template_exchange_prefilled_to_binance():
+    # 同上:结构性协议匹配字段(mandate.exchange == adapter.venue_name),默认驱动器连 Binance
+    assert build_template()["exchange"] == "binance"
+
+
 def test_build_template_placeholder_numbers_cannot_load_as_real_mandate(tmp_path):
     path = tmp_path / "live_mandate.json"
     path.write_text(json.dumps(build_template()), encoding="utf-8")

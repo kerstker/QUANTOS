@@ -18,6 +18,7 @@ from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult, 
 @runtime_checkable
 class VenueAdapter(Protocol):
     venue_mode: str            # "testnet" | "mainnet"
+    venue_name: str            # "binance" | "bybit" | ...(mandate 交易所域匹配用,2026-07-05)
 
     def place_order(self, order: LiveOrderRequest) -> VenueOrderResult: ...
 

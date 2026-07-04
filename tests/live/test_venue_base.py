@@ -6,6 +6,7 @@ from live.exchange.base import VenueAdapter
 
 class _FakeVenue:
     venue_mode = "testnet"
+    venue_name = "fake"
 
     def place_order(self, order):
         return VenueOrderResult(venue_order_id="1", client_order_id=order.client_order_id,
@@ -76,3 +77,12 @@ def test_bybit_adapter_satisfies_protocol():
     c = BybitFuturesAdapter(api_key="k", api_secret="s", base_url=BybitFuturesAdapter.TESTNET_BASE,
                             http_request=lambda *a, **kw: (200, b"{}"))
     assert isinstance(c, VenueAdapter)
+
+
+def test_adapters_declare_distinct_venue_names():
+    # mandate 交易所域匹配的根基:两个适配器必须自报不同的 venue_name(2026-07-05)
+    from live.exchange.binance_futures import BinanceFuturesAdapter
+    from live.exchange.bybit_futures import BybitFuturesAdapter
+    assert BinanceFuturesAdapter.venue_name == "binance"
+    assert BybitFuturesAdapter.venue_name == "bybit"
+    assert BinanceFuturesAdapter.venue_name != BybitFuturesAdapter.venue_name

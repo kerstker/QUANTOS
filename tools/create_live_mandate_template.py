@@ -29,9 +29,10 @@ def build_template() -> dict:
             "再删掉这个 _instructions 字段(可选,留着也不影响加载)。",
             "所有 REPLACE_ME* 占位符必须被替换成真实值,否则 load_mandate 会 fail-closed 报错"
             "(这是故意的,防止模板被误当真实 mandate 加载)。",
-            "venue 字段已预填 'testnet',因为当前驱动器 tools/live_track_advance.py 恒连"
-            " Binance 测试网(BinanceFuturesAdapter.TESTNET_BASE)——mandate.venue 必须等于"
-            " venue.venue_mode 才会生效;这不是风险数字,除非驱动器换了连接目标否则不要改。",
+            "venue 字段已预填 'testnet'(mandate.venue 必须等于 venue.venue_mode)、exchange"
+            " 字段已预填 'binance'(mandate.exchange 必须等于适配器的 venue_name——两家交易所"
+            "的 testnet 都叫 'testnet',不签交易所域会被另一家误认)。这两个是结构性协议匹配"
+            "字段、非风险数字;驱动器用 --venue bybit 时要把 exchange 改成 'bybit'。",
             "allowed_instruments 用交易所侧合约符号(如 'BTCUSDT'),不是币种简称 'BTC'。",
             "notional 都是名义额(quantity * price 的美元值),不是币的数量。",
             "issued_at/expires_at 是 epoch 毫秒;expires_at 可以填 null = 永不过期"
@@ -40,6 +41,7 @@ def build_template() -> dict:
         ],
         "mandate_id": f"{_PLACEHOLDER}_e.g._mandate_2026_07_stage1",
         "venue": "testnet",
+        "exchange": "binance",
         "allowed_instruments": [f"{_PLACEHOLDER}_e.g._BTCUSDT"],
         "max_single_order_notional": _PLACEHOLDER_NUMBER,
         "max_gross_notional": _PLACEHOLDER_NUMBER,

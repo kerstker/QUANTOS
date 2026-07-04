@@ -41,6 +41,7 @@ import time
 
 from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
+from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
@@ -61,22 +62,59 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
 
 _STRATEGY_ID = "crowd_contra"
-_LEDGER_PATH = os.path.join("data", "cache", "live_track.db")
-_STATUS_PATH = os.path.join("data", "cache", "live_track_status.json")
 _MANDATE_PATH = os.path.join("key", "live_mandate.json")
-_KEY_FILE = os.path.join("key", "binance_test_key.json")
+
+def _binance_balances(account: dict) -> tuple:
+    """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
+    return (float(account.get("availableBalance", 0.0) or 0.0),
+            float(account.get("totalMarginBalance", 0.0) or 0.0))
+
+
+def _bybit_balances(account: dict) -> tuple:
+    """同上——Bybit V5 wallet-balance 信封:result.list[0] 里的统一账户余额字段。"""
+    rows = ((account.get("result") or {}).get("list")) or [{}]
+    row = rows[0] or {}
+    return (float(row.get("totalAvailableBalance", 0.0) or 0.0),
+            float(row.get("totalEquity", 0.0) or 0.0))
+
+
+# 多 venue(2026-07-05):不同交易所 = 不同账户 = 独立账本/状态/风控峰值/对账文件,绝不混写。
+# binance 沿用无后缀的历史路径(账本连续性);其它 venue 加后缀。
+_VENUES = {
+    "binance": {
+        "adapter": BinanceFuturesAdapter,
+        "env": ("BINANCE_TESTNET_API_KEY", "BINANCE_TESTNET_API_SECRET"),
+        "key_file": os.path.join("key", "binance_test_key.json"),
+        "suffix": "",
+        "balances": _binance_balances,
+    },
+    "bybit": {
+        "adapter": BybitFuturesAdapter,
+        "env": ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
+        "key_file": os.path.join("key", "bybit_test_key.json"),
+        "suffix": "_bybit",
+        "balances": _bybit_balances,
+    },
+}
+
+
+def _venue_paths(suffix: str) -> dict:
+    return {
+        "ledger": os.path.join("data", "cache", f"live_track{suffix}.db"),
+        "status": os.path.join("data", "cache", f"live_track_status{suffix}.json"),
+        "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
+        "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
+    }
 _RECON_TOLERANCE = 1e-6
 _MAX_STALENESS_MS = 7 * 86_400_000       # 周度信号,容忍一周内的价格新鲜度
-_RISK_STATE_PATH = os.path.join("data", "cache", "live_risk_state.json")
 _MAX_DRAWDOWN_PCT = 0.20                 # 工程安全网默认值,非业务风险容忍度(见模块 docstring)
 _FORWARD_DB = os.path.join("data", "cache", "paper_track.db")      # Stage 0 前向台账(对账纸面侧)
-_PARITY_PATH = os.path.join("data", "cache", "live_parity.jsonl")  # 逐周对账快照(append-only)
 
 
-def _load_peak_equity(default: float) -> float:
-    if os.path.exists(_RISK_STATE_PATH):
+def _load_peak_equity(path: str, default: float) -> float:
+    if os.path.exists(path):
         try:
-            with open(_RISK_STATE_PATH, encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 v = json.load(fh).get("peak_equity")
             if v is not None:
                 return float(v)
@@ -85,8 +123,8 @@ def _load_peak_equity(default: float) -> float:
     return default
 
 
-def _save_peak_equity(value: float) -> None:
-    json.dump({"peak_equity": value}, open(_RISK_STATE_PATH, "w", encoding="utf-8"))
+def _save_peak_equity(path: str, value: float) -> None:
+    json.dump({"peak_equity": value}, open(path, "w", encoding="utf-8"))
 
 
 def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
@@ -126,6 +164,7 @@ class PreviewVenue:
     def __init__(self, real_venue):
         self._real = real_venue
         self.venue_mode = real_venue.venue_mode
+        self.venue_name = real_venue.venue_name
         self.would_submit = []
 
     def place_order(self, order):
@@ -150,20 +189,22 @@ class PreviewVenue:
         return self._real.positions()
 
 
-def _load_credentials():
-    api_key = os.environ.get("BINANCE_TESTNET_API_KEY")
-    api_secret = os.environ.get("BINANCE_TESTNET_API_SECRET")
+def _load_credentials(venue_cfg: dict, venue_name: str):
+    env_key, env_secret = venue_cfg["env"]
+    api_key = os.environ.get(env_key)
+    api_secret = os.environ.get(env_secret)
     if api_key and api_secret:
         return api_key.strip(), api_secret.strip()
-    if os.path.exists(_KEY_FILE):
-        with open(_KEY_FILE, encoding="utf-8") as fh:
+    key_file = venue_cfg["key_file"]
+    if os.path.exists(key_file):
+        with open(key_file, encoding="utf-8") as fh:
             data = json.load(fh)
         k, s = data.get("api_key"), data.get("api_secret")
         if k and s:
             return k.strip(), s.strip()
     raise RuntimeError(
-        "Binance testnet credentials not found "
-        "(set $BINANCE_TESTNET_API_KEY/$BINANCE_TESTNET_API_SECRET, or key/binance_test_key.json)")
+        f"{venue_name} testnet credentials not found "
+        f"(set ${env_key}/${env_secret}, or {key_file})")
 
 
 def _latest_weights_and_prices(panel_bundle=None):
@@ -182,6 +223,13 @@ def _latest_weights_and_prices(panel_bundle=None):
 def main() -> None:
     submit = "--submit" in sys.argv
     do_refresh = "--no-refresh" not in sys.argv
+    venue_arg = "binance"
+    if "--venue" in sys.argv:
+        venue_arg = sys.argv[sys.argv.index("--venue") + 1]
+    if venue_arg not in _VENUES:
+        raise SystemExit(f"unknown --venue {venue_arg!r} (choose from {sorted(_VENUES)})")
+    venue_cfg = _VENUES[venue_arg]
+    paths = _venue_paths(venue_cfg["suffix"])
     now = int(time.time() * 1000)
     alerts: list = []
 
@@ -196,11 +244,13 @@ def main() -> None:
 
     weights, prices, decided_ts = _latest_weights_and_prices()
 
-    api_key, api_secret = _load_credentials()
-    real_venue = BinanceFuturesAdapter(api_key=api_key, api_secret=api_secret,
-                                       base_url=BinanceFuturesAdapter.TESTNET_BASE)
+    api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
+    adapter_cls = venue_cfg["adapter"]
+    real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
+                             base_url=adapter_cls.TESTNET_BASE)
+    real_venue.sync_clock()                  # 时钟偏移校正,fail-soft(失败保留默认 0 偏移)
 
-    ledger = LiveLedger(_LEDGER_PATH, create=True)
+    ledger = LiveLedger(paths["ledger"], create=True)
 
     # 崩溃恢复(2026-07-04):上一轮若在提交订单后、成交确认完成前被杀掉(如 Windows 定时任务被
     # 系统重启打断),本地账本可能停在一个非终态快照。在读 ledger_positions 之前先核对+补记,
@@ -219,16 +269,15 @@ def main() -> None:
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
                   "reconciliation": recon, "alerts": alerts},
-                 open(_STATUS_PATH, "w", encoding="utf-8"), indent=2)
-        print(f"HARD STOP: reconciliation drift {recon['drift']} -> {_STATUS_PATH}", flush=True)
+                 open(paths["status"], "w", encoding="utf-8"), indent=2)
+        print(f"HARD STOP: reconciliation drift {recon['drift']} -> {paths['status']}", flush=True)
         return
 
     account = real_venue.account()
-    aum = float(account.get("availableBalance", 0.0) or 0.0)
-    equity = float(account.get("totalMarginBalance", 0.0) or 0.0)   # 含未实现盈亏,回撤监控用这个
+    aum, equity = venue_cfg["balances"](account)   # equity 含未实现盈亏,回撤监控用它;形状因所而异
 
-    peak_equity = max(_load_peak_equity(equity), equity)
-    _save_peak_equity(peak_equity)
+    peak_equity = max(_load_peak_equity(paths["risk_state"], equity), equity)
+    _save_peak_equity(paths["risk_state"], peak_equity)
 
     venue = real_venue if submit else PreviewVenue(real_venue)
     # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
@@ -275,9 +324,9 @@ def main() -> None:
                                  "net_exposure": breach.net_exposure},
                   "risk_response": risk_response["action"], "emergency": emergency_summary,
                   "alerts": alerts},
-                 open(_STATUS_PATH, "w", encoding="utf-8"), indent=2)
+                 open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: risk breach {breach.reasons} -> {risk_response['action']} "
-              f"emergency={emergency_summary} -> {_STATUS_PATH}", flush=True)
+              f"emergency={emergency_summary} -> {paths['status']}", flush=True)
         return
 
     mandate = None
@@ -316,7 +365,7 @@ def main() -> None:
         ledger_orders=write_ledger.orders(), strategy_id=_STRATEGY_ID, decided_ts=decided_ts,
         mode="submit" if submit else "preview")
     parity["ran_at"] = now
-    with open(_PARITY_PATH, "a", encoding="utf-8") as fh:
+    with open(paths["parity"], "a", encoding="utf-8") as fh:
         fh.write(json.dumps(parity) + "\n")
     if parity["unexpected_live_positions"]:
         alerts.append(f"parity: unexpected live positions {parity['unexpected_live_positions']}")
@@ -345,11 +394,11 @@ def main() -> None:
     if not submit:
         status["would_submit"] = [{"instrument_id": o.instrument_id, "side": o.side.value,
                                    "quantity": o.quantity} for o in venue.would_submit]
-    json.dump(status, open(_STATUS_PATH, "w", encoding="utf-8"), indent=2)
+    json.dump(status, open(paths["status"], "w", encoding="utf-8"), indent=2)
     emit(alerts, context="live_track", now_ms=now)
     print(f"=== live_track ({'SUBMIT' if submit else 'PREVIEW'}) tier={result.tier} "
           f"submitted={len(result.submitted)} pending={len(result.pending_review)} "
-          f"errors={len(result.submission_errors)} aum=${aum:.2f} -> {_STATUS_PATH}", flush=True)
+          f"errors={len(result.submission_errors)} aum=${aum:.2f} -> {paths['status']}", flush=True)
 
 
 if __name__ == "__main__":

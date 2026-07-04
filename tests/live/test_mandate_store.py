@@ -32,7 +32,7 @@ def test_malformed_json_raises_clear_error(tmp_path):
 
 def test_valid_mandate_loads_all_fields(tmp_path):
     path = _write(tmp_path, {
-        "mandate_id": "m-2026-07", "venue": "testnet",
+        "mandate_id": "m-2026-07", "venue": "testnet", "exchange": "binance",
         "allowed_instruments": ["BTC", "ETH"],
         "max_single_order_notional": 500.0, "max_gross_notional": 3000.0,
         "max_net_notional": 1500.0,
@@ -41,6 +41,7 @@ def test_valid_mandate_loads_all_fields(tmp_path):
     })
     m = load_mandate(path)
     assert m.mandate_id == "m-2026-07" and m.venue == "testnet"
+    assert m.exchange == "binance"
     assert m.allowed_instruments == frozenset({"BTC", "ETH"})
     assert m.max_single_order_notional == 500.0
     assert m.max_gross_notional == 3000.0 and m.max_net_notional == 1500.0
@@ -51,7 +52,7 @@ def test_valid_mandate_loads_all_fields(tmp_path):
 
 def test_null_expires_at_means_no_expiry(tmp_path):
     path = _write(tmp_path, {
-        "mandate_id": "m", "venue": "testnet", "allowed_instruments": ["BTC"],
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance", "allowed_instruments": ["BTC"],
         "max_single_order_notional": 1.0, "max_gross_notional": 1.0, "max_net_notional": 1.0,
         "expires_at": None,
     })
@@ -61,7 +62,7 @@ def test_null_expires_at_means_no_expiry(tmp_path):
 
 def test_optional_fields_default_sensibly(tmp_path):
     path = _write(tmp_path, {
-        "mandate_id": "m", "venue": "testnet", "allowed_instruments": ["BTC"],
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance", "allowed_instruments": ["BTC"],
         "max_single_order_notional": 1.0, "max_gross_notional": 1.0, "max_net_notional": 1.0,
     })
     m = load_mandate(path)
@@ -71,12 +72,12 @@ def test_optional_fields_default_sensibly(tmp_path):
 
 
 @pytest.mark.parametrize("missing_field", [
-    "mandate_id", "venue", "allowed_instruments",
+    "mandate_id", "venue", "exchange", "allowed_instruments",
     "max_single_order_notional", "max_gross_notional", "max_net_notional",
 ])
 def test_missing_required_field_raises_clear_error(tmp_path, missing_field):
     data = {
-        "mandate_id": "m", "venue": "testnet", "allowed_instruments": ["BTC"],
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance", "allowed_instruments": ["BTC"],
         "max_single_order_notional": 1.0, "max_gross_notional": 1.0, "max_net_notional": 1.0,
     }
     del data[missing_field]
@@ -87,7 +88,7 @@ def test_missing_required_field_raises_clear_error(tmp_path, missing_field):
 
 def test_wrong_type_field_raises_clear_error(tmp_path):
     path = _write(tmp_path, {
-        "mandate_id": "m", "venue": "testnet", "allowed_instruments": ["BTC"],
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance", "allowed_instruments": ["BTC"],
         "max_single_order_notional": "not-a-number", "max_gross_notional": 1.0,
         "max_net_notional": 1.0,
     })

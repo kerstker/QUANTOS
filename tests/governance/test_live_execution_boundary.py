@@ -176,16 +176,16 @@ def test_evaluate_mandate_fails_closed_without_valid_mandate():
                              client_order_id="c1")
     prices = {"BTC": 60000.0}
 
-    assert evaluate_mandate([order], prices, None, venue="binance_testnet", now=1).tier \
+    assert evaluate_mandate([order], prices, None, venue="binance_testnet", exchange="binance", now=1).tier \
         == NEEDS_HUMAN_REVIEW
 
-    expired = Mandate(mandate_id="m", venue="binance_testnet", allowed_instruments=frozenset({"BTC"}),
+    expired = Mandate(mandate_id="m", venue="binance_testnet", exchange="binance", allowed_instruments=frozenset({"BTC"}),
                       max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9,
                       expires_at=0)
-    assert evaluate_mandate([order], prices, expired, venue="binance_testnet", now=1).tier \
+    assert evaluate_mandate([order], prices, expired, venue="binance_testnet", exchange="binance", now=1).tier \
         == NEEDS_HUMAN_REVIEW
 
-    valid = Mandate(mandate_id="m", venue="binance_testnet", allowed_instruments=frozenset({"BTC"}),
+    valid = Mandate(mandate_id="m", venue="binance_testnet", exchange="binance", allowed_instruments=frozenset({"BTC"}),
                     max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9)
-    assert evaluate_mandate([order], prices, valid, venue="bybit_testnet", now=1).tier \
+    assert evaluate_mandate([order], prices, valid, venue="bybit_testnet", exchange="binance", now=1).tier \
         == NEEDS_HUMAN_REVIEW

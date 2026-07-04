@@ -53,6 +53,7 @@ def test_make_ctx_factory_handles_missing_price_honestly():
 
 class _FakeRealVenue:
     venue_mode = "testnet"
+    venue_name = "fake"
 
     def __init__(self):
         self.place_order_calls = []
