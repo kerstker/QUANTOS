@@ -16,7 +16,7 @@ import pytest
 from live.contracts import ExchangeFilters, VenueOrderResult
 from live.execution.position_ledger import LiveLedger
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate
-from live.pipeline import UNIT_SCALE, plan_scaled_targets, submit_live_batch
+from live.pipeline import UNIT_SCALE, plan_scaled_targets, resolve_unconfirmed_orders, submit_live_batch
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.config import RiskLimits
@@ -363,3 +363,77 @@ def test_ledger_write_failure_still_counts_order_as_submitted_not_failed(ledger)
     assert "LIVE_LEDGER_WRITE_FAILED" in actions
     assert "LIVE_ORDER_SUBMIT_FAILED" not in actions
     assert "LIVE_ORDER_SUBMITTED" in actions                      # 仍然记为已提交
+
+
+# --- resolve_unconfirmed_orders:崩溃恢复(驱动器启动时核对未知状态订单,发现 #11 的一部分) ---
+
+def test_resolve_unconfirmed_orders_no_unresolved_orders_is_a_noop(ledger):
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="FILLED")
+    ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0, filled_at=_NOW)
+    venue = _FakeVenue()
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert out["resolved"] == []
+    assert venue.get_order_calls == []                            # 全终态,没必要去查
+
+
+def test_resolve_unconfirmed_orders_confirms_and_backfills_fill(ledger):
+    # 模拟上一轮:提交了但驱动器在确认成交前被杀掉,本地账本停在 "NEW"
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.015, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()
+    # _FakeVenue.get_order 从其内部状态表读取——手动注入"交易所侧其实已经成交"的状态
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
+                                           instrument_id="BTC", status="FILLED",
+                                           filled_qty=0.015, avg_price=61000.0)
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW + 1000)
+    assert len(out["resolved"]) == 1 and out["resolved"][0]["client_order_id"] == "c1"
+    assert ledger.orders()[0]["status"] == "FILLED"
+    assert ledger.position("BTC") == pytest.approx(0.015)          # 补记的成交生效
+
+
+def test_resolve_unconfirmed_orders_still_not_found_is_left_pending_honestly(ledger):
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()                                            # get_order 找不到(默认返回 None)
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert out["resolved"] == []
+    assert ledger.orders()[0]["status"] == "NEW"                   # 诚实保留原状态,不假装确认
+    assert ledger.position("BTC") == 0.0
+
+
+def test_resolve_unconfirmed_orders_venue_query_failure_is_fail_soft(ledger):
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+
+    class _ExplodingGetOrderVenue(_FakeVenue):
+        def get_order(self, instrument_id, client_order_id):
+            raise RuntimeError("network blip")
+
+    out = resolve_unconfirmed_orders(ledger, _ExplodingGetOrderVenue(), now=_NOW)
+    assert out["resolved"] == []                                    # 本轮跳过,不崩溃,下次再试
+    assert ledger.orders()[0]["status"] == "NEW"
+
+
+def test_resolve_unconfirmed_orders_terminal_with_zero_fill_updates_status_no_fill(ledger):
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
+                                           instrument_id="BTC", status="REJECTED",
+                                           filled_qty=0.0, avg_price=0.0)
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert len(out["resolved"]) == 1
+    assert ledger.orders()[0]["status"] == "REJECTED"
+    assert ledger.position("BTC") == 0.0                            # 没有真实成交,不该有仓位
+
+
+def test_resolve_unconfirmed_orders_handles_multiple_orders_independently(ledger):
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c2", "ETH", OrderSide.SELL, 1.0, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v1", client_order_id="c1",
+                                           instrument_id="BTC", status="FILLED",
+                                           filled_qty=0.01, avg_price=60000.0)
+    # c2 保持查不到(venue._orders 里没有 c2)
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert len(out["resolved"]) == 1 and out["resolved"][0]["client_order_id"] == "c1"
+    assert ledger.position("BTC") == pytest.approx(0.01)
+    assert ledger.position("ETH") == 0.0
+    orders_by_id = {o["client_order_id"]: o["status"] for o in ledger.orders()}
+    assert orders_by_id == {"c1": "FILLED", "c2": "NEW"}

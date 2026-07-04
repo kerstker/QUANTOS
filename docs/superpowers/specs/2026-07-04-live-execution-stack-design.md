@@ -399,3 +399,37 @@ stdlib**,与 `live/exchange/{binance,bybit}_futures.py`"纯 stdlib、零第三�
 两处硬化都是纯粹的"运维稳健性"改进,不改变任何 fail-closed 安全语义——限流退避耗尽依然是
 `raise`(不会静默放行),时钟校正失败依然回落到未校正状态(不会假装校正成功)。**live/ 全套测试
 从 149 增至 166(Binance +6/Bybit +6/retry 独立模块 +5),全绿。**
+
+## 13. 2026-07-04 补:崩溃恢复 + preview 账本隔离 + mandate 模板工具
+
+**崩溃恢复** `live/pipeline.py::resolve_unconfirmed_orders(ledger, venue, *, now)`——回答审查
+记录在案的缺口:如果上一轮驱动器在 `submit_live_batch` 提交订单之后、`_confirm_fill` 轮询
+确认终态之前被杀掉(比如 Windows 定时任务被系统重启打断),本地账本会停在一个非终态快照
+(如 `NEW`),但交易所侧订单可能早已成交或被拒绝。这个函数扫描本地账本里状态非终态的每一笔
+订单,用 `venue.get_order` 回查权威状态,确认终态且有真实成交量则补记 fill。Fail-soft:单笔
+查询异常/查不到都不中断整体,诚实保留原状态留到下次再试,不假装确认、不崩溃整个驱动器。
+`tools/live_track_advance.py` 在每轮读 `ledger_positions` 之前调用它——避免用一个已知过期的
+仓位快照去算这一轮的目标增量。6 个新测试覆盖:无未决订单/确认成交补记/查不到诚实跳过/查询
+异常 fail-soft/终态但零成交不误记仓位/多笔订单独立处理。
+
+**顺带修的一个纵深防御缺口**:审查这段代码时发现 preview 模式(默认路径,无 `--submit`)理论上
+如果未来 mandate 判成 `AUTO`(目前还不可能,因为还没有真实 mandate 文件),会把"本来会提交
+什么"的占位记录写进真实账本 `data/cache/live_track.db`,污染真实仓位历史。修复:`write_ledger
+= ledger if submit else LiveLedger(":memory:", create=True)`——`current_positions` 仍然读自
+真实账本(所以 preview 的目标增量计算永远基于真实历史),但写入目标是一次性草稿账本,不管
+tier 判成什么都不触碰真实文件。真实测试网 preview 跑通验证(tier=NEEDS_HUMAN_REVIEW,
+submitted=0,账本无新增记录)。
+
+**Mandate 创建辅助工具** `tools/create_live_mandate_template.py`——生成
+`key/live_mandate.json.template`(在 `key/` 目录,已被 `.gitignore` 排除,不进版本库)。
+所有风险数字(`max_single_order_notional`/`max_gross_notional`/`max_net_notional`/
+`per_instrument_max_notional` 的值/`issued_at`)故意填成无法被 `float()` 解析的占位字符串
+(如 `"REPLACE_ME_WITH_A_REAL_NUMBER"`)——这样即便有人把模板原样复制成
+`key/live_mandate.json`,`load_mandate` 也会 fail-closed 报错,不会被误当真实 mandate 加载。
+`venue` 字段是例外,预填 `"testnet"`——这不是风险数字,是结构性协议匹配字段(必须等于驱动器
+实际连接的 `venue.venue_mode`,当前恒为 Binance 测试网),代填正确值只是省一次用户排查
+"数字填对了为什么还是 NEEDS_HUMAN_REVIEW"的机会。真实的限额数字依然 100% 由用户自己决定、
+自己写入、自己签署——本工具和 `mandate_store.py` 一样,不代填任何风险容忍度判断。6 个新测试。
+
+**live/ + 治理边界测试从 166 增至 178(崩溃恢复 +6/mandate 模板 +6);
+`scripts/validate.py` 全量门禁(1435 python 测试 + 治理扫描器)全绿。**

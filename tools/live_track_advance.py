@@ -44,7 +44,7 @@ from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import evaluate_risk_state, respond_to_breach
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
-from live.pipeline import UNIT_SCALE, submit_live_batch
+from live.pipeline import UNIT_SCALE, resolve_unconfirmed_orders, submit_live_batch
 from services.monitoring.audit_log import GlobalAuditLog
 from services.research import alpha_expression as ax
 from services.risk.pre_trade.config import RiskLimits
@@ -192,6 +192,15 @@ def main() -> None:
                                        base_url=BinanceFuturesAdapter.TESTNET_BASE)
 
     ledger = LiveLedger(_LEDGER_PATH, create=True)
+
+    # 崩溃恢复(2026-07-04):上一轮若在提交订单后、成交确认完成前被杀掉(如 Windows 定时任务被
+    # 系统重启打断),本地账本可能停在一个非终态快照。在读 ledger_positions 之前先核对+补记,
+    # 否则这一轮会用一个已知过期的仓位去算目标增量。fail-soft,查不到/查询失败都留到下次再试。
+    recovery = resolve_unconfirmed_orders(ledger, real_venue, now=now)
+    if recovery["resolved"]:
+        alerts.append(f"crash-recovery: resolved {len(recovery['resolved'])} unconfirmed order(s) "
+                      f"from a prior run: {recovery['resolved']}")
+
     venue_positions = {k: v.quantity for k, v in real_venue.positions().items()}
     ledger_positions = ledger.all_positions()
     recon = preflight_check(ledger_positions, venue_positions, tolerance=_RECON_TOLERANCE)
@@ -243,12 +252,17 @@ def main() -> None:
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
     venue = real_venue if submit else PreviewVenue(real_venue)
+    # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
+    # (上面的 ledger_positions),但写入目标必须是一次性草稿账本,不管 tier 判成什么都不触碰
+    # data/cache/live_track.db。这是纵深防御:即便未来 mandate 判成 AUTO,preview 模式也不会
+    # 意外把占位记录污染进真实账本。
+    write_ledger = ledger if submit else LiveLedger(":memory:", create=True)
     audit = GlobalAuditLog()
 
     result = submit_live_batch(
         weights=weights, prices=prices, aum=aum, current_positions=ledger_positions,
         gate=gate, ctx_factory=make_ctx_factory(prices, aum=aum, now=now), venue=venue,
-        mandate=mandate, ledger=ledger, audit=audit, strategy_id=_STRATEGY_ID,
+        mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
         decided_ts=decided_ts, now=now)
 
     if result.submission_errors:

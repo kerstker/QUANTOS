@@ -118,7 +118,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `get_order` 回查再判定真失败(避免误判致重复下单)、记账失败不再让真实成功的订单被误记为失败
   (新增 `LiveBatchResult.ledger_write_errors` 单独追踪)、`exchange_filters()` 失败 fail-closed、
   Hedge Mode 双向持仓不再被覆盖丢失一侧净敞口、HTTP 响应非 JSON 兜底。**记录在案暂不修复**:
-  限流/退避/时钟偏移校正/崩溃恢复、1000X 前缀合约命名。全部记录在设计文档 §0。
+  1000X 前缀合约命名(限流退避/时钟偏移校正/崩溃恢复已在下面的 2026-07-04 续作中修复)。
+  全部记录在设计文档 §0。
   **调度驱动器已落地**(同日):`live/governance/mandate_store.py`(mandate 文件加载器,
   fail-closed,数字由用户自己签署,不代填)+ `live/execution/reconciliation.py::preflight_check`
   (drift 超容忍度硬停,回答审查发现 #7)+ `tools/live_track_advance.py`(周度驱动器,与 Stage 0
@@ -140,6 +141,23 @@ Real, tested backend engines (`*_TESTED` in the audit):
   该由代码悄悄选一个的,留白记录在设计文档 §9。**125 tests(117 单元 + 8 治理边界)全绿**。
   设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md` §7/§9。撤单/改单、
   Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面、减仓自动提交(见上)= 非目标(留后续)。
+  **venue 可插拔第二个实现 + 运维硬化 + 崩溃恢复已落地**(2026-07-05,同一条 Stage 1 树):
+  `live/exchange/bybit_futures.py`(Bybit V5 统一账户,同一 `VenueAdapter` Protocol;与 Binance
+  真实协议差异——签名走 header 不走 query、统一 `{retCode,result}` 信封、Hedge Mode 用
+  `positionIdx`;从第一天就走轮询确认终态,没有重蹈 Binance 最初"同步 ACK=最终成交"的覆辙)+
+  `live/exchange/retry.py`(共享限流感知退避 `call_with_backoff`,两个 adapter 各自定义
+  `is_rate_limited`,签名每次重试都重新计算避免退避跨越 recvWindow)+ 两个 adapter 都加
+  `sync_clock()`(拉交易所服务器时间校正本机偏移,fail-soft)+ `live/pipeline.py::
+  resolve_unconfirmed_orders`(驱动器启动时崩溃恢复——核对本地账本非终态订单,`get_order`
+  回查权威状态补记 fill,回答"驱动器在确认成交前被杀掉"的缺口,已接进 `tools/
+  live_track_advance.py` 每轮读仓位之前)+ 顺带修的纵深防御:preview 模式现在用一次性草稿
+  账本写(`current_positions` 仍读真实账本),不管 mandate 判成什么 tier 都不会把占位记录
+  污染进真实账本 + `tools/create_live_mandate_template.py`(生成 `key/live_mandate.json.
+  template`,所有风险数字故意填不可解析占位符防误当真实 mandate 加载,`venue` 字段例外预填
+  `"testnet"`——结构性协议匹配,非风险数字;真实限额依然 100% 用户自己签署)。真实测试网
+  preview 联调再次跑通。**live/+治理边界测试从 125 增至 178,全绿;设计文档 §10–§13。**
+  Hyperliquid(msgpack+Keccak+secp256k1 签名,依赖模型与 HMAC 系彻底不同)是需要人工拍板的
+  依赖决定,写了决策文档不建假实现(§11)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

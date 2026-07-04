@@ -37,6 +37,7 @@ from live.exchange.base import VenueAdapter
 from live.execution.filters import apply_exchange_filters
 from live.execution.position_ledger import LiveLedger
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
+from quantos.contracts.trading import OrderSide
 from services.execution.dry_run_pipeline import screen_intents
 from services.execution.intent_builder import build_intents
 from services.monitoring.audit_log import GlobalAuditLog
@@ -99,6 +100,36 @@ def _confirm_fill(venue: VenueAdapter, order: LiveOrderRequest, initial: VenueOr
             if result.status in _TERMINAL_ORDER_STATUSES:
                 return result, True
     return result, False
+
+
+def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: int) -> dict:
+    """驱动器启动时的崩溃恢复(2026-07-04 审查记录在案的缺口):核对本地账本里状态非终态的订单,
+    用 `venue.get_order` 回查权威状态并补记确认后的成交。回答的场景是:上一轮驱动器在
+    `submit_live_batch` 提交订单之后、`_confirm_fill` 轮询确认完成之前被杀掉(比如 Windows
+    定时任务被系统重启打断)——本地账本停在一个非终态快照,但交易所侧订单可能早已经成交或
+    被拒绝。**这应该在每轮计算新决策之前调用一次**,避免用一个已知过期的 `current_positions`
+    去算这一轮的目标增量。
+
+    fail-soft:单笔查询异常/查不到都不中断整体,留到下次再试(不假装确认、不崩溃整个驱动器)。
+    """
+    resolved = []
+    for o in ledger.orders():
+        if o["status"] in _TERMINAL_ORDER_STATUSES:
+            continue
+        try:
+            result = venue.get_order(o["instrument_id"], o["client_order_id"])
+        except Exception:
+            continue                                        # 查询本身失败,这轮先跳过,下次再试
+        if result is None:
+            continue                                         # 交易所侧确实查不到,诚实保留原状态
+        ledger.update_status(o["client_order_id"], result.status, venue_order_id=result.venue_order_id)
+        if result.status in _TERMINAL_ORDER_STATUSES and result.filled_qty > 0:
+            ledger.record_fill(_det_id("recover_fill", o["client_order_id"]), o["client_order_id"],
+                               o["instrument_id"], OrderSide(o["side"]), result.filled_qty,
+                               result.avg_price, filled_at=now)
+        resolved.append({"client_order_id": o["client_order_id"], "status": result.status,
+                        "filled_qty": result.filled_qty})
+    return {"resolved": resolved}
 
 
 def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
