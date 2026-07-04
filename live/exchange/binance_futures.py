@@ -6,8 +6,9 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.3。
 
 诚实边界:请求签名机制(HMAC-SHA256 查询串)、`exchangeInfo`/`account`/`order` 响应字段名依
 公开 API 文档规格假设,**尚未对真测试网响应验证**——首次真实联调是用户提供测试网 API key 后的
-显式步骤,不在本次自动执行范围内。只实现 MARKET 单(与前向跟踪信号路径一致);不提供撤单/改单/
-杠杆配置;绝不提供提幣(withdraw)/划转(transfer)——治理测试钉死这一点。
+显式步骤,不在本次自动执行范围内。只实现 MARKET 单(与前向跟踪信号路径一致);提供撤单
+(`cancel_order`,2026-07-05 OMS 补全——超时僵尸单处置的前提);不提供改单/杠杆配置;
+绝不提供提幣(withdraw)/划转(transfer)——治理测试钉死这一点。
 
 mainnet 结构性拒绝(与 services/trading/broker_adapter.py::LiveBrokerAdapter 对称):
 用 MAINNET_BASE 构造时若 `not safety_config.live_trading_armed`(L2 默认恒 False)→ raise
@@ -36,6 +37,7 @@ from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
 _ORDER_NOT_FOUND_CODE = -2013     # Binance: "Order does not exist."
+_CANCEL_REJECTED_CODE = -2011     # Binance: "Unknown order sent."(不存在或已终态,无法撤)
 _RATE_LIMIT_STATUSES = frozenset({429, 418})
 
 
@@ -153,6 +155,17 @@ class BinanceFuturesAdapter:
         return call_with_backoff(_do, is_rate_limited=_is_rate_limited, max_retries=self._max_retries,
                                  base_delay=self._retry_base_delay, sleep=self._sleep)
 
+    def _delete_signed(self, path: str, params: dict):
+        headers = {"X-MBX-APIKEY": self._api_key}
+
+        def _do():
+            qs = self._signed_query(params)                    # 同上,每次重试重新签名
+            url = self._base_url + path + f"?{qs}"
+            status, body = self._http("DELETE", url, body=None, headers=headers)
+            return status, self._parse_json(status, body)
+        return call_with_backoff(_do, is_rate_limited=_is_rate_limited, max_retries=self._max_retries,
+                                 base_delay=self._retry_base_delay, sleep=self._sleep)
+
     # --- 公开(无签名) ---
 
     def exchange_info(self) -> dict:
@@ -259,3 +272,21 @@ class BinanceFuturesAdapter:
         if isinstance(data, dict) and data.get("code") == _ORDER_NOT_FOUND_CODE:
             return None                                      # 语义化"订单不存在" -> None,非异常
         raise RuntimeError(f"get_order failed: {status} {data}")
+
+    def cancel_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]:
+        """撤单(OMS 超时策略的前提,2026-07-05)。响应可能带着撤单前已发生的部分成交
+        (executedQty>0)——按交易所报的真实数量透传,绝不假设"撤单=零成交"。-2011(无法撤:
+        不存在或已终态)/-2013(不存在)-> 语义化 None——撤单与成交赛跑的正常路径,调用方
+        必须再 get_order 回查权威状态定论,不是异常。"""
+        params = {"symbol": instrument_id + "USDT", "origClientOrderId": client_order_id}
+        status, data = self._delete_signed("/fapi/v1/order", params)
+        if 200 <= status < 300:
+            return VenueOrderResult(
+                venue_order_id=str(data.get("orderId", "")),
+                client_order_id=data.get("clientOrderId", client_order_id),
+                instrument_id=instrument_id, status=data.get("status", "UNKNOWN"),
+                filled_qty=float(data.get("executedQty", 0) or 0),
+                avg_price=float(data.get("avgPrice", 0) or 0), raw=data)
+        if isinstance(data, dict) and data.get("code") in (_CANCEL_REJECTED_CODE, _ORDER_NOT_FOUND_CODE):
+            return None
+        raise RuntimeError(f"cancel_order failed: {status} {data}")

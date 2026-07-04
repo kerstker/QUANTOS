@@ -131,6 +131,9 @@ class PreviewVenue:
     def get_order(self, instrument_id, client_order_id):
         return None                      # 预览模式从不真提交,查不到是正常的,不是错误
 
+    def cancel_order(self, instrument_id, client_order_id):
+        return None                      # 同上:没有真实订单可撤,语义化"不存在"
+
     def exchange_filters(self):
         return self._real.exchange_filters()
 

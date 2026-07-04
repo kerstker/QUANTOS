@@ -312,3 +312,39 @@ def test_sync_clock_failure_is_fail_soft_keeps_prior_offset():
     c, _ = _client({"/fapi/v1/time": (500, {"msg": "unavailable"})})
     offset = c.sync_clock()
     assert offset == 0                                          # 失败保持默认 0,不抛异常打断流程
+
+
+# --- cancel_order(OMS 补全:超时僵尸单处置的前提) ---
+
+def test_cancel_order_sends_signed_delete_and_parses_result():
+    c, t = _client({"/fapi/v1/order": (200, {"orderId": 77, "clientOrderId": "c1",
+                                             "status": "CANCELED", "executedQty": "0.001",
+                                             "avgPrice": "60000.0"})})
+    r = c.cancel_order("BTC", "c1")
+    call = t.calls[0]
+    assert call["method"] == "DELETE"
+    qs = call["url"].split("?", 1)[1]
+    assert _verify_signature(qs)
+    params = dict(urllib.parse.parse_qsl(qs))
+    assert params["symbol"] == "BTCUSDT" and params["origClientOrderId"] == "c1"
+    # 撤单响应可能带着已发生的部分成交——按交易所报的真实 executedQty 透传,绝不假设撤单=零成交
+    assert r.status == "CANCELED" and r.filled_qty == pytest.approx(0.001)
+    assert r.venue_order_id == "77"
+
+
+def test_cancel_order_unknown_or_already_terminal_returns_none():
+    # -2011 CANCEL_REJECTED("Unknown order sent.")= 订单不存在或已终态无法撤——语义化 None,
+    # 调用方必须回查 get_order 拿权威状态(撤单与成交赛跑的正常路径),不是异常
+    c, _ = _client({"/fapi/v1/order": (400, {"code": -2011, "msg": "Unknown order sent."})})
+    assert c.cancel_order("BTC", "ghost") is None
+
+
+def test_cancel_order_order_does_not_exist_code_also_returns_none():
+    c, _ = _client({"/fapi/v1/order": (400, {"code": -2013, "msg": "Order does not exist."})})
+    assert c.cancel_order("BTC", "ghost") is None
+
+
+def test_cancel_order_other_error_raises():
+    c, _ = _client({"/fapi/v1/order": (500, {"code": -1000, "msg": "internal error"})})
+    with pytest.raises(RuntimeError):
+        c.cancel_order("BTC", "c1")

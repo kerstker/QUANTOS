@@ -102,6 +102,34 @@ def _confirm_fill(venue: VenueAdapter, order: LiveOrderRequest, initial: VenueOr
     return result, False
 
 
+def _cancel_and_requery(venue: VenueAdapter, instrument_id: str, client_order_id: str,
+                        last: VenueOrderResult) -> Tuple[VenueOrderResult, bool, str]:
+    """确认轮询打满仍非终态 -> 主动撤单消灭僵尸订单(2026-07-05 OMS 超时策略),然后**必须**
+    回查权威状态再记账:撤单可能与成交赛跑——撤到时订单可能已部分/全部成交,绝不能假设
+    "撤单=零成交"或"撤单失败=没成交"。信任顺序:撤单后的 get_order 回查 > 撤单响应 > 最后
+    已知状态。venue 不支持撤单(如旧 preview 包装)-> 优雅降级为旧行为(诚实留非终态,崩溃
+    恢复下轮兜底)。返回 (最终状态, 是否终态, 结局描述——供审计)。"""
+    cancel_fn = getattr(venue, "cancel_order", None)
+    if cancel_fn is None:
+        return last, False, "cancel_unsupported"
+    cancel_result, cancel_error = None, None
+    try:
+        cancel_result = cancel_fn(instrument_id, client_order_id)
+    except Exception as exc:
+        cancel_error = type(exc).__name__
+    try:
+        final = venue.get_order(instrument_id, client_order_id)
+    except Exception:
+        final = None
+    if final is None:
+        final = cancel_result
+    if final is None:
+        return last, False, f"unresolved({cancel_error or 'order_not_found'})"
+    if final.status in _TERMINAL_ORDER_STATUSES:
+        return final, True, f"terminal_{final.status.lower()}"
+    return final, False, "still_open_after_cancel"
+
+
 def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: int) -> dict:
     """驱动器启动时的崩溃恢复(2026-07-04 审查记录在案的缺口):核对本地账本里状态非终态的订单,
     用 `venue.get_order` 回查权威状态并补记确认后的成交。回答的场景是:上一轮驱动器在
@@ -122,6 +150,11 @@ def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: 
             continue                                        # 查询本身失败,这轮先跳过,下次再试
         if result is None:
             continue                                         # 交易所侧确实查不到,诚实保留原状态
+        if result.status not in _TERMINAL_ORDER_STATUSES:
+            # 上一轮遗留的还开着的订单不能带进新一轮决策——它稍后成交会和本轮订单叠加成双倍
+            # 仓位。主动撤掉,再按回查的权威终态记账(撤单可能与成交赛跑,见 _cancel_and_requery)。
+            result, _is_terminal, _outcome = _cancel_and_requery(
+                venue, o["instrument_id"], o["client_order_id"], result)
         ledger.update_status(o["client_order_id"], result.status, venue_order_id=result.venue_order_id)
         if result.status in _TERMINAL_ORDER_STATUSES and result.filled_qty > 0:
             ledger.record_fill(_det_id("recover_fill", o["client_order_id"]), o["client_order_id"],
@@ -217,6 +250,15 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
 
         confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=max_confirm_polls,
                                                poll_sleep=poll_sleep)
+        if not is_terminal:
+            # 超时策略:轮询打满仍非终态 -> 主动撤单 + 回查权威状态,不留僵尸订单挂到下一轮
+            confirmed, is_terminal, outcome = _cancel_and_requery(
+                venue, o.instrument_id, o.client_order_id, confirmed)
+            audit.append(event_id=_det_id("live_timeout_cancel", run_id, o.instrument_id),
+                         actor=f"live:{strategy_id}", action="LIVE_ORDER_TIMEOUT_CANCEL",
+                         timestamp=now, target=o.instrument_id,
+                         metadata={"outcome": outcome, "status": confirmed.status,
+                                   "filled_qty": str(confirmed.filled_qty)})
         try:
             ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
                                      submitted_at=now, venue_order_id=confirmed.venue_order_id,

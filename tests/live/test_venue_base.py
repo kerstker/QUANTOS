@@ -14,6 +14,9 @@ class _FakeVenue:
     def get_order(self, instrument_id, client_order_id):
         return None
 
+    def cancel_order(self, instrument_id, client_order_id):
+        return None
+
     def account(self):
         return {}
 
@@ -36,6 +39,29 @@ def test_incomplete_object_does_not_satisfy_protocol():
             return None
 
     assert not isinstance(_Half(), VenueAdapter)
+
+
+def test_venue_without_cancel_order_does_not_satisfy_protocol():
+    # 撤单是协议的一等成员(OMS 超时策略依赖它)——缺了它不算一个完整的 venue
+    class _NoCancel:
+        venue_mode = "testnet"
+
+        def place_order(self, order):
+            return None
+
+        def get_order(self, instrument_id, client_order_id):
+            return None
+
+        def account(self):
+            return {}
+
+        def positions(self):
+            return {}
+
+        def exchange_filters(self):
+            return {}
+
+    assert not isinstance(_NoCancel(), VenueAdapter)
 
 
 def test_binance_adapter_satisfies_protocol():

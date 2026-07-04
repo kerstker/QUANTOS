@@ -228,7 +228,7 @@ def test_get_order_found_in_realtime_unfilled():
          "cumExecQty": "0", "avgPrice": "0"}]}, "time": 1700000000000}
     c, t = _client({"/v5/order/realtime": (200, resp)})
     r = c.get_order("BTC", "c1")
-    assert r.status == "New" and r.filled_qty == 0.0
+    assert r.status == "NEW" and r.filled_qty == 0.0            # Bybit 原样 "New" 必须归一化
     assert t.calls[0]["url"].split("?")[0].endswith("/v5/order/realtime")
 
 
@@ -240,7 +240,7 @@ def test_get_order_falls_back_to_history_when_not_in_realtime():
     c, t = _client({"/v5/order/realtime": (200, realtime_empty),
                     "/v5/order/history": (200, history_hit)})
     r = c.get_order("BTC", "c1")
-    assert r.status == "Filled" and r.filled_qty == pytest.approx(0.015)
+    assert r.status == "FILLED" and r.filled_qty == pytest.approx(0.015)   # 归一化后的规范状态
     assert len(t.calls) == 2                                    # 先 realtime 后 history
 
 
@@ -255,6 +255,66 @@ def test_get_order_nonzero_retcode_raises():
     c, _ = _client({"/v5/order/realtime": (200, resp)})
     with pytest.raises(RuntimeError):
         c.get_order("BTC", "c1")
+
+
+# --- 状态归一化:Bybit 原样状态("Filled"/"Cancelled"…)必须映射到流水线的规范集合 ---
+# (否则 live/pipeline.py 的 _TERMINAL_ORDER_STATUSES 永远匹配不上,订单永远"确认不了"——
+#  这是接 Bybit 驱动器前必须钉死的既有缺口)
+
+@pytest.mark.parametrize("raw,canonical", [
+    ("Created", "NEW"), ("New", "NEW"), ("Untriggered", "NEW"), ("Triggered", "NEW"),
+    ("PartiallyFilled", "PARTIALLY_FILLED"),
+    ("Filled", "FILLED"),
+    ("Cancelled", "CANCELED"), ("PartiallyFilledCanceled", "CANCELED"),
+    ("Rejected", "REJECTED"),
+    ("Deactivated", "EXPIRED"),
+])
+def test_get_order_normalizes_bybit_statuses_to_canonical(raw, canonical):
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": [
+        {"orderId": "1", "orderLinkId": "c1", "symbol": "BTCUSDT", "orderStatus": raw,
+         "cumExecQty": "0", "avgPrice": "0"}]}, "time": 1700000000000}
+    c, _ = _client({"/v5/order/realtime": (200, resp)})
+    assert c.get_order("BTC", "c1").status == canonical
+
+
+def test_get_order_unknown_status_passes_through_honestly():
+    # 未来 Bybit 新增的未知状态:原样透传(诚实),流水线自然不会把它当终态确认——安全默认
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": [
+        {"orderId": "1", "orderLinkId": "c1", "symbol": "BTCUSDT", "orderStatus": "SomethingNew2027",
+         "cumExecQty": "0", "avgPrice": "0"}]}, "time": 1700000000000}
+    c, _ = _client({"/v5/order/realtime": (200, resp)})
+    assert c.get_order("BTC", "c1").status == "SomethingNew2027"
+
+
+# --- cancel_order(OMS 补全) ---
+
+def test_cancel_order_posts_cancel_and_ack_is_not_treated_as_terminal():
+    # Bybit 撤单 ACK 只回 {orderId, orderLinkId},不带最终状态——ACK 只表示"请求被受理",
+    # 不保证已撤成。诚实返回非终态,调用方必须 get_order 回查权威状态。
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"orderId": "1", "orderLinkId": "c1"},
+           "time": 1700000000000}
+    c, t = _client({"/v5/order/cancel": (200, resp)})
+    r = c.cancel_order("BTC", "c1")
+    body = json.loads(t.calls[0]["body"])
+    assert body == {"category": "linear", "symbol": "BTCUSDT", "orderLinkId": "c1"}
+    assert r is not None
+    assert r.status not in {"FILLED", "CANCELED", "REJECTED", "EXPIRED"}
+
+
+def test_cancel_order_not_exists_or_too_late_returns_none():
+    # retCode 110001 = "order not exists or too late to cancel" —— 语义化 None(撤单与成交
+    # 赛跑的正常路径:订单可能已成交),不是异常;调用方回查 get_order 定论
+    resp = {"retCode": 110001, "retMsg": "order not exists or too late to cancel",
+           "result": {}, "time": 1700000000000}
+    c, _ = _client({"/v5/order/cancel": (200, resp)})
+    assert c.cancel_order("BTC", "ghost") is None
+
+
+def test_cancel_order_other_retcode_raises():
+    resp = {"retCode": 10001, "retMsg": "params error", "result": {}, "time": 1700000000000}
+    c, _ = _client({"/v5/order/cancel": (200, resp)})
+    with pytest.raises(RuntimeError):
+        c.cancel_order("BTC", "c1")
 
 
 def test_no_withdraw_or_transfer_methods_exist():

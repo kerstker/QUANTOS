@@ -18,8 +18,16 @@ Bybit V5 公开文档得出,尚未对真测试网响应验证——首次真实�
    单子需要查 `/v5/order/history`)——不像 Binance 一个 `/fapi/v1/order` 端点通吃。`get_order` 先查
    realtime、找不到再查 history,两边都空才是真正"不存在"。这个假设未经真实验证,标注在此。
 
-只实现 MARKET 单;不提供撤单/改单/杠杆配置;绝不提供提幣(withdraw)/划转(transfer)。mainnet
-结构性拒绝,与 `BinanceFuturesAdapter`/`services/trading/broker_adapter.py::LiveBrokerAdapter` 对称。
+只实现 MARKET 单;提供撤单(`cancel_order`,2026-07-05 OMS 补全;注意 Bybit 撤单 ACK 只回
+`{orderId, orderLinkId}` 不带最终状态——ACK 仅表示"请求被受理",不保证已撤成,调用方必须
+`get_order` 回查权威状态);不提供改单/杠杆配置;绝不提供提幣(withdraw)/划转(transfer)。
+mainnet 结构性拒绝,与 `BinanceFuturesAdapter`/`services/trading/broker_adapter.py::
+LiveBrokerAdapter` 对称。
+
+**状态归一化(2026-07-05):** Bybit 原样状态("Filled"/"Cancelled"/"PartiallyFilledCanceled"…)
+与流水线 `_TERMINAL_ORDER_STATUSES` 的规范大写集合(Binance 风格)不匹配——不归一化的话订单
+永远"确认不了"(轮询打满也见不到终态)。`get_order` 统一映射到规范集合;未知状态原样透传
+(诚实,流水线自然当非终态处理——安全默认)。
 
 **运维硬化(2026-07-04,§12,与 binance_futures.py 同款):** HTTP 429 或业务错误码 `retCode==10006`
 ("Too many visits!")都视为限流信号,`live/exchange/retry.py::call_with_backoff` 指数退避重试,
@@ -42,6 +50,17 @@ from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
 _RATE_LIMIT_RETCODE = 10006
+_CANCEL_NOT_EXISTS_RETCODE = 110001    # "order not exists or too late to cancel"
+
+# Bybit V5 orderStatus -> 流水线规范状态(见模块 docstring"状态归一化")
+_STATUS_NORMALIZE = {
+    "Created": "NEW", "New": "NEW", "Untriggered": "NEW", "Triggered": "NEW",
+    "PartiallyFilled": "PARTIALLY_FILLED",
+    "Filled": "FILLED",
+    "Cancelled": "CANCELED", "PartiallyFilledCanceled": "CANCELED",
+    "Rejected": "REJECTED",
+    "Deactivated": "EXPIRED",
+}
 
 
 def _is_rate_limited(result: tuple) -> bool:
@@ -270,9 +289,27 @@ class BybitFuturesAdapter:
             item = self._query_orders("/v5/order/history", instrument_id, client_order_id)
         if item is None:
             return None
+        raw_status = item.get("orderStatus", "UNKNOWN")
         return VenueOrderResult(
             venue_order_id=str(item.get("orderId", "")),
             client_order_id=item.get("orderLinkId", client_order_id),
-            instrument_id=instrument_id, status=item.get("orderStatus", "UNKNOWN"),
+            instrument_id=instrument_id,
+            status=_STATUS_NORMALIZE.get(raw_status, raw_status),   # 未知状态原样透传(诚实)
             filled_qty=float(item.get("cumExecQty", 0) or 0),
             avg_price=float(item.get("avgPrice", 0) or 0), raw=item)
+
+    def cancel_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]:
+        """撤单。retCode 110001("order not exists or too late to cancel")-> 语义化 None——撤单与
+        成交赛跑的正常路径(订单可能已成交),调用方回查 get_order 定论。成功 ACK 只回
+        {orderId, orderLinkId} 不带最终状态——诚实返回非终态 UNKNOWN,绝不冒充 CANCELED。"""
+        params = {"category": "linear", "symbol": instrument_id + "USDT",
+                 "orderLinkId": client_order_id}
+        status, data = self._post_signed("/v5/order/cancel", params)
+        if isinstance(data, dict) and data.get("retCode") == _CANCEL_NOT_EXISTS_RETCODE:
+            return None
+        result = self._unwrap(status, data, action="cancel_order")
+        return VenueOrderResult(
+            venue_order_id=str(result.get("orderId", "")),
+            client_order_id=result.get("orderLinkId", client_order_id),
+            instrument_id=instrument_id, status="UNKNOWN",
+            filled_qty=0.0, avg_price=0.0, raw=data)

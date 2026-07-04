@@ -23,6 +23,10 @@ class VenueAdapter(Protocol):
 
     def get_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]: ...
 
+    # 撤单(2026-07-05 OMS 补全):订单不存在/已终态无法撤 -> None(与 get_order 的"语义化不存在"
+    # 口径一致)。撤单 ACK 不保证已撤成(可能与成交赛跑)——调用方必须再 get_order 回查权威状态。
+    def cancel_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]: ...
+
     def account(self) -> dict: ...                        # 原始诊断形状,不用于对账
 
     def positions(self) -> dict[str, VenuePosition]: ...   # 规范化仓位——reconcile_positions 的输入

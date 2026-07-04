@@ -68,6 +68,9 @@ _TINY_MANDATE = Mandate(mandate_id="m2", venue="testnet",
                         max_single_order_notional=1.0, max_gross_notional=1.0, max_net_notional=1.0)
 
 
+_TERMINAL = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED"})
+
+
 class _FakeVenue:
     """刻意模拟 Binance MARKET 单的真实异步行为(而非早期版本的"同步即终态"错误假设):
     place_order 的 ACK 恒为 status=NEW/filled_qty=0(除非该标的在 never_confirms_for 之外,
@@ -78,16 +81,29 @@ class _FakeVenue:
     fail_unrecoverable_for: place_order 抛异常且订单确实从未抵达 venue(get_order 也查不到)
     ——真失败。
     never_confirms_for: 订单永远停在 NEW,轮询耗尽也不会看到 FILLED。
+
+    撤单同样模拟"最不方便"的真实行为(2026-07-05 OMS 补全):
+    cancel_races_fill_for: 撤单来得太晚——交易所拒绝撤单(抛异常),订单其实已全部成交,
+    随后的 get_order 回查会看到 FILLED。
+    cancel_after_partial_fill_for: 撤单成功,但撤到时已部分成交(40%)——CANCELED 且
+    filled_qty>0,绝不能被当成"零成交"。
+    cancel_explodes_for: 撤单调用本身抛异常且订单保持 NEW(网络故障)。
     """
     venue_mode = "testnet"
 
-    def __init__(self, *, fail_recoverable_for=(), fail_unrecoverable_for=(), never_confirms_for=()):
+    def __init__(self, *, fail_recoverable_for=(), fail_unrecoverable_for=(), never_confirms_for=(),
+                 cancel_races_fill_for=(), cancel_after_partial_fill_for=(), cancel_explodes_for=()):
         self.calls = []
         self.get_order_calls = []
+        self.cancel_calls = []
         self._fail_recoverable = set(fail_recoverable_for)
         self._fail_unrecoverable = set(fail_unrecoverable_for)
         self._never_confirms = set(never_confirms_for)
+        self._cancel_races_fill = set(cancel_races_fill_for)
+        self._cancel_partial = set(cancel_after_partial_fill_for)
+        self._cancel_explodes = set(cancel_explodes_for)
         self._orders = {}          # client_order_id -> VenueOrderResult(最新已知状态)
+        self._qty = {}             # client_order_id -> 原始下单数量(部分成交场景需要)
 
     def place_order(self, order):
         self.calls.append(order)
@@ -98,6 +114,7 @@ class _FakeVenue:
                                instrument_id=order.instrument_id, status="NEW",
                                filled_qty=0.0, avg_price=0.0)
         self._orders[order.client_order_id] = ack
+        self._qty[order.client_order_id] = order.quantity
         if order.instrument_id not in self._never_confirms:
             # "稍后"成交:下一次 get_order 轮询会看到这个,而不是 place_order 自己同步返回
             self._orders[order.client_order_id] = VenueOrderResult(
@@ -112,6 +129,33 @@ class _FakeVenue:
         self.get_order_calls.append(client_order_id)
         return self._orders.get(client_order_id)
 
+    def cancel_order(self, instrument_id, client_order_id):
+        self.cancel_calls.append(client_order_id)
+        if instrument_id in self._cancel_explodes:
+            raise RuntimeError("simulated cancel network failure")
+        existing = self._orders.get(client_order_id)
+        if instrument_id in self._cancel_races_fill:
+            # 撤单来得太晚:订单已全部成交,交易所拒绝撤单——回查 get_order 才看得到真相
+            if existing is not None:
+                qty = self._qty.get(client_order_id, existing.filled_qty)
+                self._orders[client_order_id] = VenueOrderResult(
+                    venue_order_id=existing.venue_order_id, client_order_id=client_order_id,
+                    instrument_id=instrument_id, status="FILLED", filled_qty=qty,
+                    avg_price=_PRICES[instrument_id])
+            raise RuntimeError("simulated: order already filled, too late to cancel")
+        if existing is None or existing.status in _TERMINAL:
+            return None                                       # 不存在/已终态无法撤 -> 语义化 None
+        filled = existing.filled_qty
+        avg = existing.avg_price
+        if instrument_id in self._cancel_partial:
+            filled = self._qty.get(client_order_id, 0.0) * 0.4
+            avg = _PRICES[instrument_id]
+        canceled = VenueOrderResult(venue_order_id=existing.venue_order_id,
+                                    client_order_id=client_order_id, instrument_id=instrument_id,
+                                    status="CANCELED", filled_qty=filled, avg_price=avg)
+        self._orders[client_order_id] = canceled
+        return canceled
+
     def account(self):
         return {}
 
@@ -120,6 +164,11 @@ class _FakeVenue:
 
     def exchange_filters(self):
         return _FILTERS
+
+
+class _NoCancelVenue(_FakeVenue):
+    """不支持撤单的 venue(如 preview 包装器的旧形态)——超时策略必须优雅降级,不崩溃。"""
+    cancel_order = None
 
 
 class _ExplodingFiltersVenue(_FakeVenue):
@@ -286,10 +335,31 @@ def test_missing_mandate_forces_review(ledger):
     assert venue.calls == []
 
 
-# --- 成交确认:同步 ACK 不是终态,必须轮询(核心修复,发现 #1/#6/#12) ---
+# --- 成交确认:同步 ACK 不是终态,必须轮询(核心修复,发现 #1/#6/#12);
+# --- 轮询打满仍非终态 -> 主动撤单 + 回查权威状态(2026-07-05 OMS 超时策略,消灭僵尸订单) ---
 
-def test_unconfirmed_after_max_polls_records_honest_new_status_not_a_fake_fill(ledger):
+def test_timeout_cancels_zombie_order_and_records_terminal_cancel(ledger):
     venue = _FakeVenue(never_confirms_for={"BTC"})
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW,
+        max_confirm_polls=3)
+    assert result.tier == AUTO
+    assert len(result.submitted) == 1
+    assert venue.cancel_calls != []                             # 超时后主动撤单,不留僵尸订单
+    assert result.submitted[0].status == "CANCELED"             # 回查确认的终态
+    assert result.submitted[0].filled_qty == 0.0
+    assert ledger.position("BTC") == 0.0                        # 零成交,账本不动
+    assert ledger.orders()[0]["status"] == "CANCELED"
+    actions = [e.action for e in audit.events]
+    assert "LIVE_ORDER_TIMEOUT_CANCEL" in actions               # 超时撤单全程审计
+
+
+def test_timeout_without_cancel_support_records_honest_new_status_not_a_fake_fill(ledger):
+    # venue 不支持撤单(如旧 preview 包装)时,超时策略优雅降级为旧行为:诚实留 NEW,不假装终态
+    venue = _NoCancelVenue(never_confirms_for={"BTC"})
     audit = GlobalAuditLog()
     result = submit_live_batch(
         weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
@@ -301,8 +371,54 @@ def test_unconfirmed_after_max_polls_records_honest_new_status_not_a_fake_fill(l
     assert result.submitted[0].status == "NEW"                  # 诚实:没确认到终态就不假装 FILLED
     assert result.submitted[0].filled_qty == 0.0
     assert ledger.position("BTC") == 0.0                        # 没有假成交被记进账本
-    assert len(venue.get_order_calls) == 3                      # 确实打光了 max_confirm_polls 次
-    events = {e.action: e for e in audit.events}
+    submit_ev = [e for e in audit.events if e.action == "LIVE_ORDER_SUBMITTED"][0]
+    assert submit_ev.metadata["confirmed"] == "False"
+
+
+def test_timeout_cancel_races_fill_records_the_real_fill(ledger):
+    # 撤单来得太晚:交易所拒绝撤单(订单已成交)——必须回查 get_order 记下真实成交,
+    # 绝不能想当然把"撤单失败"当成"订单没成交"
+    venue = _FakeVenue(never_confirms_for={"BTC"}, cancel_races_fill_for={"BTC"})
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW,
+        max_confirm_polls=2)
+    assert result.tier == AUTO
+    assert result.submitted[0].status == "FILLED"
+    assert ledger.position("BTC") == pytest.approx(5.0)          # 真实成交被完整记账
+    actions = [e.action for e in audit.events]
+    assert "LIVE_ORDER_TIMEOUT_CANCEL" in actions
+
+
+def test_timeout_cancel_after_partial_fill_records_partial_qty(ledger):
+    # 撤到时已部分成交:CANCELED 但 filled_qty>0——按交易所报的真实部分成交记账,
+    # 绝不假设"撤单=零成交"(这正是账本静默漏仓位的经典来源)
+    venue = _FakeVenue(never_confirms_for={"BTC"}, cancel_after_partial_fill_for={"BTC"})
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW,
+        max_confirm_polls=2)
+    assert result.submitted[0].status == "CANCELED"
+    assert result.submitted[0].filled_qty == pytest.approx(2.0)   # 5.0 * 0.4
+    assert ledger.position("BTC") == pytest.approx(2.0)           # 部分成交如实入账
+    assert ledger.orders()[0]["status"] == "CANCELED"
+
+
+def test_timeout_cancel_failure_with_order_still_open_stays_honestly_unconfirmed(ledger):
+    # 撤单调用本身网络故障、订单还开着:诚实留非终态(崩溃恢复下轮兜底),不伪造任何终态
+    venue = _FakeVenue(never_confirms_for={"BTC"}, cancel_explodes_for={"BTC"})
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW,
+        max_confirm_polls=2)
+    assert result.submitted[0].status == "NEW"
+    assert ledger.position("BTC") == 0.0
     submit_ev = [e for e in audit.events if e.action == "LIVE_ORDER_SUBMITTED"][0]
     assert submit_ev.metadata["confirmed"] == "False"
 
@@ -397,6 +513,35 @@ def test_resolve_unconfirmed_orders_still_not_found_is_left_pending_honestly(led
     assert out["resolved"] == []
     assert ledger.orders()[0]["status"] == "NEW"                   # 诚实保留原状态,不假装确认
     assert ledger.position("BTC") == 0.0
+
+
+def test_resolve_unconfirmed_orders_cancels_stale_open_order_before_new_cycle(ledger):
+    # 上一轮遗留的还开着的订单不能带进新一轮决策——它稍后成交会和本轮订单叠加成双倍仓位。
+    # 崩溃恢复必须主动撤掉它,并按回查的终态记账。
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
+                                           instrument_id="BTC", status="NEW",
+                                           filled_qty=0.0, avg_price=0.0)
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert venue.cancel_calls == ["c1"]
+    assert len(out["resolved"]) == 1 and out["resolved"][0]["status"] == "CANCELED"
+    assert ledger.orders()[0]["status"] == "CANCELED"
+    assert ledger.position("BTC") == 0.0
+
+
+def test_resolve_unconfirmed_orders_stale_cancel_races_fill_backfills_the_fill(ledger):
+    # 恢复时撤单来得太晚(订单其实已成交):回查看到 FILLED,补记真实成交
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue(cancel_races_fill_for={"BTC"})
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
+                                           instrument_id="BTC", status="NEW",
+                                           filled_qty=0.0, avg_price=0.0)
+    venue._qty["c1"] = 0.01
+    out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
+    assert len(out["resolved"]) == 1 and out["resolved"][0]["status"] == "FILLED"
+    assert ledger.orders()[0]["status"] == "FILLED"
+    assert ledger.position("BTC") == pytest.approx(0.01)
 
 
 def test_resolve_unconfirmed_orders_venue_query_failure_is_fail_soft(ledger):
