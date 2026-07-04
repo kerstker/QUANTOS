@@ -165,6 +165,25 @@ def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: 
     return {"resolved": resolved}
 
 
+def _record_tca_failsoft(ledger: LiveLedger, audit: GlobalAuditLog, order: LiveOrderRequest,
+                         confirmed: VenueOrderResult, *, decision_price: Optional[float],
+                         run_id: str, strategy_id: str, now: int) -> None:
+    """成交质量记录(TCA,2026-07-05)。fail-soft:TCA 是诊断数据,写失败绝不能影响成交记账
+    (仓位真相优先于诊断)——单独 try + 单独审计事件。决策价缺失/成交均价非正 -> 跳过
+    (无法计算滑点,诚实缺失)。"""
+    if decision_price is None or confirmed.avg_price <= 0:
+        return
+    try:
+        ledger.record_tca(_det_id("tca", order.client_order_id), client_order_id=order.client_order_id,
+                          instrument_id=order.instrument_id, side=order.side,
+                          decision_price=decision_price, fill_price=confirmed.avg_price,
+                          quantity=confirmed.filled_qty, recorded_at=now)
+    except Exception as exc:
+        audit.append(event_id=_det_id("live_tca_err", run_id, order.instrument_id),
+                     actor=f"live:{strategy_id}", action="LIVE_TCA_WRITE_FAILED", timestamp=now,
+                     target=order.instrument_id, metadata={"error": type(exc).__name__})
+
+
 def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
                       current_positions: Mapping[str, float], gate, ctx_factory: Callable,
                       venue: VenueAdapter, mandate: Optional[Mandate], ledger: LiveLedger,
@@ -267,6 +286,9 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                 ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
                                    o.instrument_id, o.side, confirmed.filled_qty, confirmed.avg_price,
                                    filled_at=now)
+                _record_tca_failsoft(ledger, audit, o, confirmed,
+                                     decision_price=prices.get(o.instrument_id), run_id=run_id,
+                                     strategy_id=strategy_id, now=now)
         except Exception as exc:
             # 记账失败 ≠ 下单失败——这笔单在 venue 侧真实存在(已确认或至少已受理),必须算进
             # submitted 而不是 submission_errors,否则调用方会误判"没下单"进而重发/重复加仓

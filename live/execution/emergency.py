@@ -30,7 +30,7 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import RiskBreach
 from live.exchange.base import VenueAdapter
 from live.pipeline import (DEFAULT_MAX_CONFIRM_POLLS, _cancel_and_requery, _confirm_fill,
-                           _det_id)
+                           _det_id, _record_tca_failsoft)
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 
@@ -175,6 +175,10 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
                 ledger.record_fill(_det_id("emg_fill", o.client_order_id), o.client_order_id,
                                    o.instrument_id, o.side, confirmed.filled_qty,
                                    confirmed.avg_price, filled_at=now)
+                # 紧急减仓的滑点恰恰是最值得度量的执行成本(压力时刻的市场冲击)
+                _record_tca_failsoft(ledger, audit, o, confirmed,
+                                     decision_price=prices.get(o.instrument_id), run_id=run_id,
+                                     strategy_id="emergency_flatten", now=now)
         except Exception as exc:
             ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
             audit.append(event_id=_det_id("emg_ledger_err", run_id, o.instrument_id),

@@ -32,6 +32,21 @@ CREATE TABLE IF NOT EXISTS live_fills (
   filled_at       INTEGER NOT NULL
 );
 """
+# TCA 表(2026-07-05)单独建:老账本(建库时还没有它)必须能平滑迁移——`record_tca` 惰性建表、
+# `tca_records` 缺表返回空,核心 schema 校验(_TABLES)不包含它,避免老库一打开就被拒。
+_TCA_SCHEMA = """
+CREATE TABLE IF NOT EXISTS live_tca (
+  fill_id          TEXT PRIMARY KEY,
+  client_order_id  TEXT NOT NULL,
+  instrument_id    TEXT NOT NULL,
+  side             TEXT NOT NULL,
+  decision_price   REAL NOT NULL,
+  fill_price       REAL NOT NULL,
+  quantity         REAL NOT NULL,
+  slippage_bps     REAL,
+  recorded_at      INTEGER NOT NULL
+);
+"""
 _TABLES = ("live_orders", "live_fills")
 
 
@@ -45,6 +60,7 @@ class LiveLedger:
         self._conn.row_factory = sqlite3.Row
         if create:
             self._conn.executescript(_SCHEMA)
+            self._conn.executescript(_TCA_SCHEMA)
             self._conn.commit()
         self._require_schema()
 
@@ -88,6 +104,31 @@ class LiveLedger:
             (fill_id, client_order_id, instrument_id, side.value, float(quantity), float(price),
              int(filled_at)))
         self._conn.commit()
+
+    def record_tca(self, fill_id: str, *, client_order_id: str, instrument_id: str,
+                   side: OrderSide, decision_price: float, fill_price: float, quantity: float,
+                   recorded_at: int) -> None:
+        """成交质量记录(2026-07-05 TCA)。惰性建表(老账本平滑迁移);INSERT OR IGNORE 幂等。
+        slippage_bps 在写入时算好落库(带方向:买贵/卖贱为正=成本),读取端零重算。"""
+        from live.execution.tca import slippage_bps
+        self._conn.executescript(_TCA_SCHEMA)
+        self._conn.execute(
+            "INSERT OR IGNORE INTO live_tca"
+            "(fill_id, client_order_id, instrument_id, side, decision_price, fill_price,"
+            " quantity, slippage_bps, recorded_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (fill_id, client_order_id, instrument_id, side.value, float(decision_price),
+             float(fill_price), float(quantity),
+             slippage_bps(side, decision_price=decision_price, fill_price=fill_price),
+             int(recorded_at)))
+        self._conn.commit()
+
+    def tca_records(self) -> List[dict]:
+        rows = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='live_tca'").fetchall()
+        if not rows:
+            return []                                          # 老账本无 TCA 表 -> 诚实空,不炸
+        return [dict(r) for r in
+                self._conn.execute("SELECT * FROM live_tca ORDER BY recorded_at")]
 
     def orders(self) -> List[dict]:
         return [dict(r) for r in
