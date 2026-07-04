@@ -84,13 +84,24 @@ class BinanceFuturesAdapter:
         sig = hmac.new(self._api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
         return f"{qs}&signature={sig}"
 
+    @staticmethod
+    def _parse_json(status: int, body: bytes) -> dict:
+        """反向代理/网关故障或限流页面可能返回非 JSON body(2026-07-04 对抗式审查发现 #14)——
+        统一成清晰的 RuntimeError,而不是让未处理的 json.JSONDecodeError 冒泡到调用方,和其它
+        错误路径的诊断体验保持一致。"""
+        try:
+            return json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            snippet = body[:200] if isinstance(body, (bytes, bytearray)) else str(body)[:200]
+            raise RuntimeError(f"non-JSON response (status {status}): {snippet!r}") from exc
+
     def _get(self, path: str, params: Optional[dict] = None, *, signed: bool = True):
         params = params or {}
         headers = {"X-MBX-APIKEY": self._api_key}
         qs = self._signed_query(params) if signed else urllib.parse.urlencode(params)
         url = self._base_url + path + (f"?{qs}" if qs else "")
         status, body = self._http("GET", url, body=None, headers=headers)
-        return status, json.loads(body)
+        return status, self._parse_json(status, body)
 
     def _post_signed(self, path: str, params: dict):
         qs = self._signed_query(params)
@@ -98,7 +109,7 @@ class BinanceFuturesAdapter:
                   "Content-Type": "application/x-www-form-urlencoded"}
         url = self._base_url + path
         status, body = self._http("POST", url, body=qs.encode(), headers=headers)
-        return status, json.loads(body)
+        return status, self._parse_json(status, body)
 
     # --- 公开(无签名) ---
 
@@ -146,8 +157,13 @@ class BinanceFuturesAdapter:
         return data
 
     def positions(self) -> dict:
+        """规范化仓位。Hedge Mode(双向持仓)下同一 symbol 会在 `positions` 数组里出现 LONG/SHORT
+        两条记录——2026-07-04 对抗式审查发现 #13:早期实现按 symbol 做 key 直接覆盖写入,会静默
+        丢弃一侧、把净敞口算错而不报错(比崩溃更危险)。这里改成按标的**累加**净数量;entry_price
+        没有单一"入场价"的良定义(两条腿是相反方向的仓位),取绝对数量更大那条腿的入场价作为参考。
+        """
         raw = self.account()
-        out: dict = {}
+        legs: dict = {}                                       # inst -> (net_qty, dominant_entry, dominant_abs_qty)
         for p in raw.get("positions", []):
             symbol = p.get("symbol", "")
             if not symbol.endswith("USDT"):
@@ -157,14 +173,18 @@ class BinanceFuturesAdapter:
             except (KeyError, TypeError, ValueError):
                 continue
             if qty == 0.0:
-                continue                                     # 平仓不出现(诚实,不塞噪声)
+                continue                                      # 该腿本身平仓,跳过(不代表整个标的平仓)
             try:
                 entry = float(p.get("entryPrice", 0.0) or 0.0)
             except (TypeError, ValueError):
                 entry = 0.0
             inst = symbol[:-4]
-            out[inst] = VenuePosition(instrument_id=inst, quantity=qty, entry_price=entry)
-        return out
+            prev_qty, prev_entry, prev_abs = legs.get(inst, (0.0, 0.0, 0.0))
+            abs_qty = abs(qty)
+            dominant_entry, dominant_abs = (entry, abs_qty) if abs_qty >= prev_abs else (prev_entry, prev_abs)
+            legs[inst] = (prev_qty + qty, dominant_entry, dominant_abs)
+        return {inst: VenuePosition(instrument_id=inst, quantity=q, entry_price=e)
+               for inst, (q, e, _) in legs.items() if q != 0.0}   # 净敞口归零(完全对冲)= 诚实丢弃
 
     def place_order(self, order: LiveOrderRequest) -> VenueOrderResult:
         params = {

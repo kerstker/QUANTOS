@@ -12,6 +12,19 @@ venue——缩放只存在于 gate 出入这一段,`live/execution/*` 全程浮�
 `ctx_factory` 由调用方装配(镜像既有编排器"核心不硬编码账户/安全装配"的原则),调用方须保证
 `MarketContext.reference_price = 真实价格 / unit_scale`,使 `intent.quantity × reference_price`
 落在真实美元名义额上——这是本文件唯一要求调用方遵守的约定,已在 spec 与本文件测试里钉死。
+**同样,`RiskLimits` 里任何"裸数量"阈值(fat_finger_qty/default_max_position_qty/仓位相关的
+参与率检查)若被喂进本流水线的 gate,也必须按同一个 unit_scale 折算——这不是自动生效的,调用方
+自己的 `RiskLimits` 配置需要显式按 unit_scale 换算,否则真实小额仓位可能被误判超限,或运维为
+"消除莫名拒绝"而随手放宽阈值、削弱风控实际保护力度(2026-07-04 对抗式审查发现 #1,记录在案、
+留给接线真实驱动器时处理,本文件的测试固定用刻意放到极大的 RiskLimits 规避这个问题,不代表已解决)。
+
+**成交确认,为何轮询:** Binance MARKET 单的下单 ACK **不保证同步反映最终成交**——2026-07-04
+真实测试网联调已经证伪"同步 ACK = 最终成交"这个曾经隐含的假设(BUY 0.002 BTC 成功,但 ACK 回
+`status=NEW, filled_qty=0.0, avg_price=0.0`)。所以提交后必须轮询 `venue.get_order()` 直到终态
+(FILLED/CANCELED/REJECTED/EXPIRED)或耗尽重试次数,用**确认后**的状态记账,而不是同步 ACK。
+`poll_sleep` 由调用方注入(默认 no-op,零延迟——测试友好);真实驱动器必须传入真实
+`lambda: time.sleep(...)`,否则轮询在真实撮合完成前就打光重试次数——墙钟仍然只在调用方边界,
+本文件不直接 import time/sleep。
 """
 from __future__ import annotations
 
@@ -19,15 +32,19 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
+from live.contracts import LiveOrderRequest, VenueOrderResult
 from live.exchange.base import VenueAdapter
 from live.execution.filters import apply_exchange_filters
 from live.execution.position_ledger import LiveLedger
-from live.governance.mandate import AUTO, Mandate, evaluate_mandate
+from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
 from services.execution.dry_run_pipeline import screen_intents
 from services.execution.intent_builder import build_intents
 from services.monitoring.audit_log import GlobalAuditLog
 
 UNIT_SCALE = 1_000_000     # 1 unit = 1e-6 coin;仅 gate 出入段使用,见模块 docstring
+# MARKET 单可能长期停在 PARTIALLY_FILLED(理论上罕见,但不假装它是终态);只有这四种才算"问完了"。
+_TERMINAL_ORDER_STATUSES = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED"})
+DEFAULT_MAX_CONFIRM_POLLS = 5
 
 
 def _det_id(*parts) -> str:
@@ -58,14 +75,39 @@ class LiveBatchResult:
     rejected_by_gate: Tuple = ()
     dropped_by_filters: Tuple = ()
     submission_errors: Tuple = ()
+    ledger_write_errors: Tuple = ()
     mandate_reasons: Tuple = field(default_factory=tuple)
+
+
+def _confirm_fill(venue: VenueAdapter, order: LiveOrderRequest, initial: VenueOrderResult, *,
+                  max_polls: int, poll_sleep: Callable[[], None]) -> Tuple[VenueOrderResult, bool]:
+    """MARKET 单 ACK 不保证同步反映最终成交(见模块 docstring)。轮询 get_order 直到终态或耗尽
+    max_polls;get_order 期间的瞬时故障(如刚下单时的读复制延迟)fail-soft 忽略、继续用上一个
+    已知状态重试,不因为一次轮询失败就放弃。耗尽仍未到终态 -> 诚实返回 (最后已知状态, False),
+    调用方据此不能假装已确认成交(不伪造 FILLED,也不假装 0 仓位)。"""
+    result = initial
+    if result.status in _TERMINAL_ORDER_STATUSES:
+        return result, True
+    for _ in range(max_polls):
+        poll_sleep()
+        try:
+            polled = venue.get_order(order.instrument_id, order.client_order_id)
+        except Exception:
+            polled = None
+        if polled is not None:
+            result = polled
+            if result.status in _TERMINAL_ORDER_STATUSES:
+                return result, True
+    return result, False
 
 
 def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
                       current_positions: Mapping[str, float], gate, ctx_factory: Callable,
                       venue: VenueAdapter, mandate: Optional[Mandate], ledger: LiveLedger,
                       audit: GlobalAuditLog, strategy_id: str, decided_ts: int, now: int,
-                      unit_scale: int = UNIT_SCALE) -> LiveBatchResult:
+                      unit_scale: int = UNIT_SCALE,
+                      max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
+                      poll_sleep: Callable[[], None] = lambda: None) -> LiveBatchResult:
     run_id = _det_id(strategy_id, decided_ts, tuple(sorted(weights.items())))
     audit.append(event_id=_det_id("live_start", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
@@ -82,7 +124,15 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
 
     desired = [(intent.instrument_id, intent.side, intent.quantity / unit_scale)
               for intent, _ref in screened["approved"]]
-    filters = venue.exchange_filters()
+    try:
+        filters = venue.exchange_filters()
+    except Exception as exc:
+        audit.append(event_id=_det_id("live_filters_err", run_id), actor=f"live:{strategy_id}",
+                     action="LIVE_EXCHANGE_FILTERS_FAILED", timestamp=now, target=run_id,
+                     metadata={"error": type(exc).__name__})
+        return LiveBatchResult(
+            tier=NEEDS_HUMAN_REVIEW, rejected_by_gate=tuple(screened["rejected"]),
+            mandate_reasons=(f"exchange_filters_failed:{type(exc).__name__}",))
     adjusted, dropped = apply_exchange_filters(desired, filters, prices,
                                                strategy_id=strategy_id, decided_ts=decided_ts)
     for instrument_id, reason in dropped:
@@ -107,29 +157,62 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             rejected_by_gate=tuple(screened["rejected"]), dropped_by_filters=tuple(dropped),
             mandate_reasons=decision.reasons)
 
-    submitted, errors = [], []
+    submitted, errors, ledger_errors = [], [], []
     for o in adjusted:
+        result = None
+        recovered = False
         try:
             result = venue.place_order(o)
-            ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                     submitted_at=now, venue_order_id=result.venue_order_id,
-                                     status=result.status)
-            if result.filled_qty > 0:
-                ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
-                                   o.instrument_id, o.side, result.filled_qty, result.avg_price,
-                                   filled_at=now)
-            audit.append(event_id=_det_id("live_submit", run_id, o.instrument_id),
-                         actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
-                         target=o.instrument_id,
-                         metadata={"quantity": str(o.quantity), "side": o.side.value,
-                                   "venue_order_id": result.venue_order_id, "status": result.status})
-            submitted.append(result)
         except Exception as exc:
-            errors.append((o, f"{type(exc).__name__}: {exc}"))
-            audit.append(event_id=_det_id("live_submit_err", run_id, o.instrument_id),
-                         actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMIT_FAILED", timestamp=now,
-                         target=o.instrument_id, metadata={"error": type(exc).__name__})
+            # POST 失败不代表订单没有抵达交易所——响应可能在真正送达前就丢了(网络中断/超时)。
+            # 想当然地把它算成"真失败"会导致下一次重试对着一笔其实已存在的订单重复下单
+            # (2026-07-04 对抗式审查发现 #4/#5)。先用 get_order 回查权威状态再下结论。
+            try:
+                result = venue.get_order(o.instrument_id, o.client_order_id)
+            except Exception:
+                result = None
+            if result is None:
+                errors.append((o, f"{type(exc).__name__}: {exc}"))
+                audit.append(event_id=_det_id("live_submit_err", run_id, o.instrument_id),
+                             actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMIT_FAILED",
+                             timestamp=now, target=o.instrument_id,
+                             metadata={"error": type(exc).__name__})
+                continue
+            recovered = True
+            audit.append(event_id=_det_id("live_recover", run_id, o.instrument_id),
+                         actor=f"live:{strategy_id}", action="LIVE_ORDER_RECOVERED_AFTER_SUBMIT_ERROR",
+                         timestamp=now, target=o.instrument_id,
+                         metadata={"original_error": type(exc).__name__})
+
+        confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=max_confirm_polls,
+                                               poll_sleep=poll_sleep)
+        try:
+            ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                     submitted_at=now, venue_order_id=confirmed.venue_order_id,
+                                     status=confirmed.status)
+            if confirmed.filled_qty > 0:
+                ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
+                                   o.instrument_id, o.side, confirmed.filled_qty, confirmed.avg_price,
+                                   filled_at=now)
+        except Exception as exc:
+            # 记账失败 ≠ 下单失败——这笔单在 venue 侧真实存在(已确认或至少已受理),必须算进
+            # submitted 而不是 submission_errors,否则调用方会误判"没下单"进而重发/重复加仓
+            # (2026-07-04 对抗式审查发现 #2)。记账失败单独追踪,留给人工去对账補记。
+            ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
+            audit.append(event_id=_det_id("live_ledger_err", run_id, o.instrument_id),
+                         actor=f"live:{strategy_id}", action="LIVE_LEDGER_WRITE_FAILED", timestamp=now,
+                         target=o.instrument_id,
+                         metadata={"error": type(exc).__name__, "venue_order_id": confirmed.venue_order_id})
+
+        audit.append(event_id=_det_id("live_submit", run_id, o.instrument_id),
+                     actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
+                     target=o.instrument_id,
+                     metadata={"quantity": str(o.quantity), "side": o.side.value,
+                               "venue_order_id": confirmed.venue_order_id, "status": confirmed.status,
+                               "confirmed": str(is_terminal), "recovered": str(recovered)})
+        submitted.append(confirmed)
 
     return LiveBatchResult(
         tier=AUTO, submitted=tuple(submitted), rejected_by_gate=tuple(screened["rejected"]),
-        dropped_by_filters=tuple(dropped), submission_errors=tuple(errors))
+        dropped_by_filters=tuple(dropped), submission_errors=tuple(errors),
+        ledger_write_errors=tuple(ledger_errors))

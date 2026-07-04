@@ -103,18 +103,26 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `NEEDS_HUMAN_REVIEW`,fail-closed 到底绝不默认 AUTO)、`pipeline.py`(`submit_live_batch`:决策→
   缩放整数喂 gate(`UNIT_SCALE`=1e6,1 unit=1e-6 币,仅 gate 出入段使用)→换算回真实浮点→交易所
   过滤器→mandate 分级→AUTO 提交/REVIEW 留存不提交→ledger→`GlobalAuditLog`,全程复用既有
-  `screen_intents`/`build_intents`/风控门/审计链,零重造风险逻辑)。**71 tests(63 单元 +
+  `screen_intents`/`build_intents`/风控门/审计链,零重造风险逻辑)。**87 tests(79 单元 +
   8 治理边界)全绿,含端到端缩放往返integration 测试**。**关键架构事实,勿"优化"掉**:`live/`
   故意不在通用治理扫描器(`run_paper_to_live_governance_check.py`)的 `SCAN_SUBDIRS`(`quantos`+
   `services`)里——那个扫描器的 `FORBIDDEN_APIS` categorically 禁止 `place_order`(研究/纸面树里
   这是对的红线),但 `place_order` 正是 `live/` 执行缝的正当职责;`live/` 的等价保护是专属
   `tests/governance/test_live_execution_boundary.py`(镜像 broker_adapter/signing 边界测试风格:
   只 exchange/binance_futures.py 含网络 import、无交易所 SDK、无提幣/划转字面量、mainnet 不可实例化、
-  无硬编码密钥、`services/` 单向不得 import `live/`)。**诚实边界**:Binance 签名请求格式/
-  `exchangeInfo` 响应字段名依公开文档规格假设,**尚未对真测试网响应验证**(全部注入假 HTTP
-  transport 测试,零真网络)——首次真实联调是用户提供测试网 API key 后的显式步骤,不在本次范围。
-  设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`。撤单/改单、
-  Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面 = 非目标(留后续)。
+  无硬编码密钥、`services/` 单向不得 import `live/`)。**真实测试网联调已完成**(同日):
+  exchange_filters/account/positions/get_order(不存在)四个只读调用 100% 对上真实响应;一次真实
+  place_order(BUY 0.002 BTC)成功但**恰恰证伪了"同步 ACK = 最终成交"的隐藏假设**(回 status=NEW/
+  filled_qty=0.0)——随即用 ultracode workflow 做了一次 5 维度对抗式审查(24 发现/15 确认),
+  修复:**成交必须轮询 `get_order` 确认终态才记账**(不再信同步 ACK)、venue 调用异常后先
+  `get_order` 回查再判定真失败(避免误判致重复下单)、记账失败不再让真实成功的订单被误记为失败
+  (新增 `LiveBatchResult.ledger_write_errors` 单独追踪)、`exchange_filters()` 失败 fail-closed、
+  Hedge Mode 双向持仓不再被覆盖丢失一侧净敞口、HTTP 响应非 JSON 兜底。**记录在案暂不修复**:
+  `RiskLimits` 裸数量阈值的 UNIT_SCALE 折算未强制、`reconcile_positions` 无生产调用方(尚无调度器)、
+  限流/退避/时钟偏移校正/崩溃恢复(这些是"调度器接线时"的运维硬化,调度器本身还不存在)、1000X 前缀
+  合约命名。全部记录在设计文档 §0。设计:
+  `docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`。撤单/改单、Bybit/Hyperliquid
+  具体实现(协议已留口子)、console 页面、生产调度驱动器 = 非目标(留后续)。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

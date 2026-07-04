@@ -129,6 +129,38 @@ def test_positions_normalizes_raw_account_into_venue_positions():
     assert pos["ETH"].entry_price == pytest.approx(3000.0)
 
 
+def test_positions_nets_hedge_mode_long_and_short_legs_instead_of_overwriting():
+    # 2026-07-04 对抗式审查发现 #13:Hedge Mode 下同一 symbol 有 LONG/SHORT 两条记录,
+    # 早期实现用 dict 覆盖写入会静默丢弃一侧、把净敞口算错而不报错。
+    resp = {"positions": [
+        {"symbol": "BTCUSDT", "positionSide": "LONG", "positionAmt": "0.010", "entryPrice": "50000.0"},
+        {"symbol": "BTCUSDT", "positionSide": "SHORT", "positionAmt": "-0.020", "entryPrice": "51000.0"},
+    ]}
+    c, _ = _client({"/fapi/v2/account": (200, resp)})
+    pos = c.positions()
+    assert pos["BTC"].quantity == pytest.approx(0.010 - 0.020)   # 净敞口 = 两腿相加,不是覆盖
+
+
+def test_positions_hedge_mode_legs_that_net_to_zero_are_dropped():
+    resp = {"positions": [
+        {"symbol": "BTCUSDT", "positionSide": "LONG", "positionAmt": "0.010", "entryPrice": "50000.0"},
+        {"symbol": "BTCUSDT", "positionSide": "SHORT", "positionAmt": "-0.010", "entryPrice": "50000.0"},
+    ]}
+    c, _ = _client({"/fapi/v2/account": (200, resp)})
+    pos = c.positions()
+    assert "BTC" not in pos                                       # 完全对冲 = 净敞口 0,同单腿平仓一致
+
+
+def test_positions_entry_price_from_dominant_leg_by_abs_quantity():
+    resp = {"positions": [
+        {"symbol": "BTCUSDT", "positionSide": "LONG", "positionAmt": "0.001", "entryPrice": "40000.0"},
+        {"symbol": "BTCUSDT", "positionSide": "SHORT", "positionAmt": "-0.020", "entryPrice": "51000.0"},
+    ]}
+    c, _ = _client({"/fapi/v2/account": (200, resp)})
+    pos = c.positions()
+    assert pos["BTC"].entry_price == pytest.approx(51000.0)        # 取绝对量更大那条腿的入场价
+
+
 def test_place_order_signs_body_and_parses_result():
     order_resp = {"orderId": 999, "clientOrderId": "cid-abc", "symbol": "BTCUSDT",
                   "status": "NEW", "executedQty": "0.0", "avgPrice": "0.0"}
@@ -193,6 +225,19 @@ def test_get_order_other_error_raises():
     c, _ = _client({"/fapi/v1/order": (500, {"msg": "internal error"})})
     with pytest.raises(RuntimeError):
         c.get_order("BTC", "c1")
+
+
+def test_non_json_response_body_raises_clear_runtime_error_not_json_decode_error():
+    # 2026-07-04 对抗式审查发现 #14:反向代理故障/限流页面可能返回非 JSON body。
+    class _HtmlTransport:
+        def __call__(self, method, url, *, body=None, headers=None):
+            return 200, b"<html><body>Service Unavailable</body></html>"
+
+    c = BinanceFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                              base_url=BinanceFuturesAdapter.TESTNET_BASE,
+                              http_request=_HtmlTransport(), clock=lambda: 1_700_000_000.0)
+    with pytest.raises(RuntimeError):     # 不是未处理的 json.JSONDecodeError
+        c.account()
 
 
 def test_no_withdraw_or_transfer_methods_exist():

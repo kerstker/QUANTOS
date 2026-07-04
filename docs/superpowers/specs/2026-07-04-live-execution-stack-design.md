@@ -3,9 +3,55 @@
 > **背景:** Stage 0(真前向 paper-track)已 2026-07-04 落地(commit `e6ff3c8`),8 周证据钟已起走。
 > 本文是 Stage 1——把执行栈接到**真交易所(先测试网,假钱零风险)**,为 Go/No-Go 后的真钱小资金
 > 铺路。决策记录:`docs/2026-07-04-live-readiness-review-and-plan.md`。
-> **诚实标注:** Binance USDT-M 合约签名请求格式、`exchangeInfo` 过滤器字段名依训练知识写就,
-> **尚未对真测试网响应验证**——首次真实联调是用户提供测试网 API key 后的显式步骤,不在本次
-> 自动执行范围内。本阶段目标是把结构建对、测试打底、治理钉死,而非声称"已验证可跑"。
+> **诚实标注(2026-07-04 更新):** 首版写就时,Binance 签名请求格式/响应字段名依训练知识假设,
+> 尚未验证。**同日已完成真实测试网联调**:`exchange_filters`/`account`/`positions`/
+> `get_order`(不存在)四个只读调用 100% 对上真实响应;一次真实 `place_order`(BUY 0.002 BTC)
+> 也成功,但**恰恰这次真实调用证伪了一个隐藏假设**——见 §7。
+
+## 0. 2026-07-04 对抗式审查:发现 + 修复
+
+真实测试网联调后,用 ultracode workflow 对 Stage 1 全部代码跑了一次 5 维度(数值缩放/fail-closed
+边界/幂等重试/量化机构运维视角/真实响应假设)对抗式审查(每条发现经 3 个独立复核者反驳,≥2 票
+"真实"才算确认)。24 条发现,15 条确认为真实缺陷。**已修复(本次提交内):**
+
+- **[CRITICAL]** `submit_live_batch` 曾经只信 `place_order` 的**同步** ACK 来判断是否成交——
+  真实联调证伪了这个假设(BUY 0.002 BTC 成功,但 ACK 回 `status=NEW, filled_qty=0.0`)。修复:
+  提交后轮询 `venue.get_order()` 直到终态(`FILLED/CANCELED/REJECTED/EXPIRED`)或耗尽
+  `max_confirm_polls`,用**确认后**的状态记账;耗尽仍未确认则诚实记录最后已知状态(不伪造
+  FILLED,也不假装 0 仓位)。`poll_sleep` 由调用方注入(默认 no-op),真实驱动器必须传入真实
+  `lambda: time.sleep(...)`——墙钟仍只在调用方边界,`live/pipeline.py` 本身不 import time。
+- **[HIGH]** `place_order` 抛异常不代表订单没有抵达交易所(响应可能在真正送达前就丢了)。修复:
+  异常后先用 `get_order` 回查权威状态,能找到就当恢复成功处理(审计记 
+  `LIVE_ORDER_RECOVERED_AFTER_SUBMIT_ERROR`);两边都查不到才是真失败。
+- **[HIGH]** 记账(ledger/audit)失败不再让一笔真实成功的订单被误记成"提交失败"——venue 侧
+  确认成功后,记账失败单独记进新增的 `LiveBatchResult.ledger_write_errors`,订单仍计入
+  `submitted`(否则调用方可能误判"没下单"而重复下单)。
+- **[MEDIUM]** `venue.exchange_filters()` 调用补上 try/except,失败时 fail-closed 返回
+  `NEEDS_HUMAN_REVIEW` + 审计记录,而不是让异常直接崩溃传播。
+- **[MEDIUM]** `BinanceFuturesAdapter.positions()` 修复 Hedge Mode(双向持仓)下同一标的
+  LONG/SHORT 两条记录互相覆盖、静默丢失一侧净敞口的问题——改成按标的累加净数量,entry_price
+  取绝对数量更大那条腿的入场价(没有单一"入场价"的良定义)。
+- **[LOW]** HTTP 响应体解析补上 JSON 异常兜底,非 JSON body(网关故障页等)统一成清晰的
+  `RuntimeError` 而不是未处理的 `json.JSONDecodeError`。
+
+**记录在案、暂不修复(不是本轮范围,留给接线真实驱动器/调度器时处理):**
+
+- 单元测试的 fake venue(`tests/live/test_pipeline.py::_FakeVenue`)已改为**模拟真实异步行为**
+  (NEW ACK → 轮询后 FILLED),不再是旧版本"同步即终态"的错误假设——这正是旧假设能在
+  "71 tests 全绿"下溜走的根本原因,现在测试本身就会抓住任何回归。
+- `RiskLimits` 里"裸数量"类阈值(`fat_finger_qty`/`default_max_position_qty`/参与率检查)若
+  真实接线,必须按同一个 `UNIT_SCALE` 折算,否则真实小额仓位可能被误判超限、或运维为"消除莫名
+  拒绝"而随手放宽阈值削弱风控——本文件测试固定用刻意放到极大的 `RiskLimits` 规避,不代表已解决,
+  真实驱动器接线时需要显式处理。
+- `live/execution/reconciliation.py::reconcile_positions` 目前**没有任何生产调用方**——没有
+  类似 `tools/forward_track_advance.py` 的调度驱动器会去调用它,drift 目前不会被任何代码路径
+  发现。这不是这几个文件本身的 bug,而是"生产驱动器/调度器"这一层根本还不存在(Stage 1 只建了
+  执行栈的各个部件,不含调度)。
+- API 限流(429/418)感知/退避/熔断、时钟偏移校正(`recvWindow` 硬编码 5000ms)、崩溃恢复(启动时
+  核对上一批次状态未知的 `client_order_id`)、确认送达的告警通道——这些是"能安全无人值守定时运行"
+  需要的运维硬化,在真正写出调度驱动器之前都不适用,留作那时的工作范围。
+- "1000X 前缀"合约(如 1000SHIBUSDT)命名不匹配问题——当前 14 个大币标的不含此类合约,暂不影响
+  crowd_contra 上线,但会在宇宙扩展时炸掉,已记录。
 
 ## 1. 与现有安全边界的关系(核心设计决策)
 
