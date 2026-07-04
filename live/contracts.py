@@ -49,8 +49,13 @@ class ExchangeFilters:
 @dataclass(frozen=True)
 class LiveOrderRequest:
     """已过交易所过滤器取整的、随时可提交的浮点数量订单(恒 MARKET——Stage 1 唯一支持的类型,
-    见设计 spec §3.3/§6;不需要 order_type 字段,类型本身就排除了 LIMIT 的歧义)。"""
+    见设计 spec §3.3/§6;不需要 order_type 字段,类型本身就排除了 LIMIT 的歧义)。
+
+    reduce_only(2026-07-05 紧急减仓通道):True 时适配器把交易所原生 reduceOnly 参数一并传出,
+    交易所侧保证该单只能减仓、不能开新仓——是 `live/execution/emergency.py` 结构校验之外的
+    第二重保证。普通订单恒 False(适配器此时不带该参数,请求形状与已真实联调验证的完全一致)。"""
     instrument_id: str
     side: OrderSide
     quantity: float
     client_order_id: str
+    reduce_only: bool = False

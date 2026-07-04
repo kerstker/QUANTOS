@@ -389,3 +389,26 @@ def test_sync_clock_failure_is_fail_soft_keeps_prior_offset():
 def _order(inst, side, qty, cid):
     from live.contracts import LiveOrderRequest
     return LiveOrderRequest(instrument_id=inst, side=side, quantity=qty, client_order_id=cid)
+
+
+# --- reduce_only(紧急减仓通道的交易所侧第二重保证) ---
+
+def test_place_order_reduce_only_passes_flag_to_exchange():
+    from live.contracts import LiveOrderRequest
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"orderId": "x", "orderLinkId": "c"},
+           "time": 1700000000000}
+    c, t = _client({"/v5/order/create": (200, resp)})
+    c.place_order(LiveOrderRequest(instrument_id="BTC", side=OrderSide.SELL, quantity=0.01,
+                                   client_order_id="c", reduce_only=True))
+    body = json.loads(t.calls[0]["body"])
+    assert body["reduceOnly"] is True
+
+
+def test_place_order_default_omits_reduce_only_param():
+    from live.contracts import LiveOrderRequest
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"orderId": "x", "orderLinkId": "c"},
+           "time": 1700000000000}
+    c, t = _client({"/v5/order/create": (200, resp)})
+    c.place_order(LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.01,
+                                   client_order_id="c"))
+    assert "reduceOnly" not in json.loads(t.calls[0]["body"])

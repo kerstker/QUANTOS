@@ -265,6 +265,8 @@ class BybitFuturesAdapter:
             "positionIdx": 0,                                    # one-way 模式假设,见模块 docstring
             "orderLinkId": order.client_order_id,
         }
+        if order.reduce_only:
+            params["reduceOnly"] = True          # 仅紧急减仓通道;普通单不带,保持请求形状不变
         status, data = self._post_signed("/v5/order/create", params)
         result = self._unwrap(status, data, action="place_order")
         return VenueOrderResult(

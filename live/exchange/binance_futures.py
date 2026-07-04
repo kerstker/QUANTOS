@@ -249,6 +249,8 @@ class BinanceFuturesAdapter:
             "quantity": _format_qty(order.quantity),
             "newClientOrderId": order.client_order_id,
         }
+        if order.reduce_only:
+            params["reduceOnly"] = "true"        # 仅紧急减仓通道;普通单不带,保持已验证的请求形状
         status, data = self._post_signed("/fapi/v1/order", params)
         if not (200 <= status < 300):
             raise RuntimeError(f"place_order failed: {status} {data}")

@@ -131,6 +131,42 @@ def test_services_tree_does_not_import_live():
                           + "\n".join(offenders)
 
 
+def test_emergency_channel_is_structurally_independent_of_the_shared_gate():
+    """紧急减仓通道(live/execution/emergency.py)的存在意义 = 不被 kill-switch 挡住,
+    它的安全性因此**必须**来自结构约束而非共用 gate——机器钉死两点:
+    ① 不 import 共用风控门/kill switch(否则"独立"名存实亡);
+    ② 它构造的每一笔订单都强制 reduce_only=True(源码级检查 + 行为级性质测试在
+       tests/live/test_emergency.py 的网格测试)。"""
+    path = os.path.join(_LIVE, "execution", "emergency.py")
+    src = open(path, encoding="utf-8").read()
+    roots_and_modules = set()
+    tree = ast.parse(src)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            roots_and_modules.update(a.name for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            roots_and_modules.add(n.module)
+            roots_and_modules.update(f"{n.module}.{a.name}" for a in n.names)
+    forbidden = [m for m in roots_and_modules
+                 if "pre_trade.gate" in m or "PreTradeRiskGate" in m
+                 or "kill_switch" in m or "KillSwitch" in m]
+    assert not forbidden, \
+        f"emergency channel must not couple to the shared gate/kill-switch: {forbidden}"
+    assert "reduce_only=True" in src, \
+        "emergency channel must force reduce_only=True on every order it constructs"
+    assert "reduce_only=False" not in src
+
+
+def test_emergency_validation_grid_only_reducing_orders_pass():
+    """行为级冒烟(完整网格在 tests/live/test_emergency.py):加仓方向/超量/无持仓全被拒。"""
+    from live.execution.emergency import validate_flatten_order
+    from quantos.contracts.trading import OrderSide
+    assert validate_flatten_order(OrderSide.SELL, 0.5, position=1.0) is None
+    assert validate_flatten_order(OrderSide.BUY, 0.5, position=1.0) is not None
+    assert validate_flatten_order(OrderSide.SELL, 1.5, position=1.0) is not None
+    assert validate_flatten_order(OrderSide.SELL, 0.5, position=0.0) is not None
+
+
 def test_evaluate_mandate_fails_closed_without_valid_mandate():
     from live.contracts import LiveOrderRequest
     from live.governance.mandate import NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate

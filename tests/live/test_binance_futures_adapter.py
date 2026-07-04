@@ -348,3 +348,25 @@ def test_cancel_order_other_error_raises():
     c, _ = _client({"/fapi/v1/order": (500, {"code": -1000, "msg": "internal error"})})
     with pytest.raises(RuntimeError):
         c.cancel_order("BTC", "c1")
+
+
+# --- reduce_only(紧急减仓通道的交易所侧第二重保证) ---
+
+def test_place_order_reduce_only_passes_flag_to_exchange():
+    from quantos.contracts.trading import OrderSide as _OS
+    c, t = _client({"/fapi/v1/order": (200, {"orderId": 1, "clientOrderId": "c1", "status": "NEW",
+                                             "executedQty": "0", "avgPrice": "0"})})
+    c.place_order(LiveOrderRequest(instrument_id="BTC", side=_OS.SELL, quantity=0.01,
+                                   client_order_id="c1", reduce_only=True))
+    body = t.calls[0]["body"].decode()
+    assert "reduceOnly=true" in body
+
+
+def test_place_order_default_omits_reduce_only_param():
+    # 普通订单绝不带 reduceOnly——保持与已真实联调验证过的请求形状完全一致
+    from quantos.contracts.trading import OrderSide as _OS
+    c, t = _client({"/fapi/v1/order": (200, {"orderId": 1, "clientOrderId": "c1", "status": "NEW",
+                                             "executedQty": "0", "avgPrice": "0"})})
+    c.place_order(LiveOrderRequest(instrument_id="BTC", side=_OS.BUY, quantity=0.01,
+                                   client_order_id="c1"))
+    assert "reduceOnly" not in t.calls[0]["body"].decode()

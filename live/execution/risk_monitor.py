@@ -7,10 +7,10 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §9。
    `KillSwitch.arm()`(既有、已测试、"任何 actor 皆可触发"的安全机制——halt 只会让系统更
    保守,监控发现越限就可以直接自动用,不引入任何新的风险)。
 ② `compute_flatten_orders`:纯函数,算出把敞口带回目标范围所需的 REDUCE-ONLY 数量(每条腿
-   只朝 0 方向缩放,绝不反手、绝不新增仓位)。**这只是计算,不接自动提交**——kill-switch 一旦
-   触发,既有 `PreTradeRiskGate.check_kill_switch` 会挡下包括 reduce-only 在内的所有意图
-   (`services/risk/pre_trade/checks.py`),要让减仓单在紧急状态下还能送出,需要一条不经过
-   共用 gate 的独立安全路径,这是需要人工明确拍板的架构决定,本文件故意不做这个决定。
+   只朝 0 方向缩放,绝不反手、绝不新增仓位)。自动提交曾因架构冲突留白(kill-switch 触发后
+   共用 gate 会挡下包括 reduce-only 在内的所有意图);**2026-07-05 用户拍板"独立紧急通道"
+   方案后已接线**——`live/execution/emergency.py::submit_emergency_flatten`(不经过共用
+   gate,自带结构性"只能减仓"窄校验 + 强制 reduce-only,见该模块 docstring)。
 """
 from __future__ import annotations
 

@@ -22,12 +22,14 @@ mandate.py`)。mandate 的真实数字由用户自己创建文件签署,本文�
 缩放无关的名义额类检查(`max_order_notional`/`max_gross_exposure`/`max_net_exposure`/
 `daily_loss_limit`)——这是 2026-07-04 审查发现 #1 的正确解法,不是"把裸数量阈值也乘 UNIT_SCALE"。
 
-**回撤/敞口监控(2026-07-04 追加):** 对账通过后、下单前,额外核对真实权益相对历史峰值的回撤 +
-真实总/净敞口(`live/execution/risk_monitor.py::evaluate_risk_state`)。越限 -> `arm` 既有
-`KillSwitch`(任何 actor 皆可触发,零新风险)+ 告警 + 本轮硬停。**减仓订单的自动提交故意没有接
-线**:kill-switch 一旦触发,既有 `PreTradeRiskGate.check_kill_switch` 会挡下包括 reduce-only
-在内的所有意图,要让减仓单在紧急状态下还能送出需要一条不经过共用 gate 的独立安全路径——这是
-需要人工明确拍板的架构决定,`compute_flatten_orders` 已经是测试好的纯计算,等这个决定之后再接。
+**回撤/敞口监控(2026-07-04 追加)+ 紧急减仓自动提交(2026-07-05,用户拍板"独立紧急通道"):**
+对账通过后、下单前,额外核对真实权益相对历史峰值的回撤 + 真实总/净敞口
+(`live/execution/risk_monitor.py::evaluate_risk_state`)。越限 -> `arm` 既有 `KillSwitch` +
+告警 + 本轮硬停常规批次;随后走 `live/execution/emergency.py` 的**独立紧急通道**自动减仓
+(不经过被 kill-switch 挡住的共用 gate,自带结构性"只能减仓"窄校验 + 强制 reduce-only,
+见该模块 docstring)。减仓目标由 `flatten_target_for_breach` 决定:回撤越限全平、敞口越限
+等比减回限额 90%、纯数据质量问题不自动交易(保守停机交给人)。preview 模式下紧急减仓同样
+只记录不真提交(同一 PreviewVenue/草稿账本机制)。
 峰值权益跟踪:`data/cache/live_risk_state.json`(gitignored,首次运行以当前权益为峰值起点)。
 """
 from __future__ import annotations
@@ -40,8 +42,9 @@ import time
 from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.execution.position_ledger import LiveLedger
+from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.reconciliation import preflight_check
-from live.execution.risk_monitor import evaluate_risk_state, respond_to_breach
+from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.pipeline import UNIT_SCALE, resolve_unconfirmed_orders, submit_live_batch
@@ -224,6 +227,14 @@ def main() -> None:
     peak_equity = max(_load_peak_equity(equity), equity)
     _save_peak_equity(peak_equity)
 
+    venue = real_venue if submit else PreviewVenue(real_venue)
+    # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
+    # (上面的 ledger_positions),但写入目标必须是一次性草稿账本,不管 tier 判成什么都不触碰
+    # data/cache/live_track.db。这是纵深防御:即便未来 mandate 判成 AUTO,preview 模式也不会
+    # 意外把占位记录污染进真实账本。紧急减仓走同一套 preview 机制。
+    write_ledger = ledger if submit else LiveLedger(":memory:", create=True)
+    audit = GlobalAuditLog()
+
     kill_switch = KillSwitch()
     breach = evaluate_risk_state(
         equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
@@ -233,15 +244,37 @@ def main() -> None:
         alerts.append(f"RISK BREACH: {breach.reasons} (drawdown={breach.drawdown_pct:.2%}, "
                       f"gross=${breach.gross_exposure:.2f}, net=${breach.net_exposure:.2f}) "
                       f"-> {risk_response['action']}")
+        # 紧急减仓:独立通道,不经过被 kill-switch 挡住的共用 gate(2026-07-05 用户拍板)。
+        # preview 模式同样只记录不真提交(PreviewVenue + 草稿账本)。
+        flatten_target = flatten_target_for_breach(breach, max_gross_exposure=aum * 2,
+                                                   max_net_exposure=aum * 0.3)
+        emergency_summary = None
+        if flatten_target is not None:
+            flatten = compute_flatten_orders(venue_positions, prices,
+                                             target_gross_exposure=flatten_target)
+            emergency = submit_emergency_flatten(
+                flatten_orders=flatten, positions=venue_positions, prices=prices, venue=venue,
+                ledger=write_ledger, audit=audit, now=now)
+            emergency_summary = {
+                "target_gross": flatten_target, "n_submitted": len(emergency.submitted),
+                "n_rejected": len(emergency.rejected), "n_errors": len(emergency.errors),
+                "n_ledger_write_errors": len(emergency.ledger_write_errors)}
+            alerts.append(f"EMERGENCY FLATTEN ({'SUBMIT' if submit else 'PREVIEW'}): "
+                          f"target_gross=${flatten_target:.2f} "
+                          f"submitted={len(emergency.submitted)} rejected={len(emergency.rejected)} "
+                          f"errors={len(emergency.errors)}")
+        else:
+            alerts.append("no auto-flatten (data-quality breach only) — manual review required")
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
                   "risk_breach": {"reasons": breach.reasons, "drawdown_pct": breach.drawdown_pct,
                                  "gross_exposure": breach.gross_exposure,
                                  "net_exposure": breach.net_exposure},
-                  "risk_response": risk_response["action"], "alerts": alerts},
+                  "risk_response": risk_response["action"], "emergency": emergency_summary,
+                  "alerts": alerts},
                  open(_STATUS_PATH, "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: risk breach {breach.reasons} -> {risk_response['action']} "
-              f"-> {_STATUS_PATH}", flush=True)
+              f"emergency={emergency_summary} -> {_STATUS_PATH}", flush=True)
         return
 
     mandate = None
@@ -254,13 +287,6 @@ def main() -> None:
         gate_limits(weights.keys(), gross_cap=aum * 2, net_cap=aum * 0.3,
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
-    venue = real_venue if submit else PreviewVenue(real_venue)
-    # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
-    # (上面的 ledger_positions),但写入目标必须是一次性草稿账本,不管 tier 判成什么都不触碰
-    # data/cache/live_track.db。这是纵深防御:即便未来 mandate 判成 AUTO,preview 模式也不会
-    # 意外把占位记录污染进真实账本。
-    write_ledger = ledger if submit else LiveLedger(":memory:", create=True)
-    audit = GlobalAuditLog()
 
     result = submit_live_batch(
         weights=weights, prices=prices, aum=aum, current_positions=ledger_positions,
