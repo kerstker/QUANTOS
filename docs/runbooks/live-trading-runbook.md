@@ -131,3 +131,24 @@ false、`n_submission_errors=0`、`alerts` 无红色项。
 Windows 计划任务(人工注册,错过自动 catch-up):每周一 09:00 依次跑两个驱动器。
 查看:`schtasks /query /tn QUANTOS_forward_track`(及 live_track)。驱动器幂等
 (决策不可改写 + client_order_id 确定性),手工补跑安全。
+
+## 8. 交易台(LiveDesk,2026-07-05)
+
+前端「交易台」页(`/research/live-desk`)= 类交易所实时界面:双所权益/仓位/uPnL/订单成交
+流水/TCA,8s 轮询。后端 `tools/live_ops_api.py`:
+
+```bash
+python -m uvicorn tools.live_ops_api:app --host 127.0.0.1 --port 8440
+```
+
+操作面治理:页面上的「跑 Preview/真实提交」只会以固定 argv 子进程运行驱动器 CLI——与人工
+敲命令行完全同一条 mandate→gate→确认→记账链;「真实提交」需输入 `submit <venue>` 文本
+双重确认;单飞锁防并发。仅限本机(CORS 只放 3100,无认证——单机工作站口径,多用户部署
+是 Phase 14)。Bybit Demo 模拟资金:页面按钮或 `python -m tools.bybit_demo_funds --amount N`。
+
+## 9. Bybit Demo(2026-07-05)
+
+testnet.bybit.com 水龙头长期失灵;官方主推 Demo Trading(api-demo.bybit.com,V5 协议同
+testnet 只换主机)。key 必须在主站切到 Demo Trading 后创建(真实账户 key 在 demo 主机无效,
+反之亦然)。驱动器 `--venue bybit_demo`;mandate 文件 `key/live_mandate_bybit_demo.json`
+(per-venue,一份 mandate 只授权一个交易所)。

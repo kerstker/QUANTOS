@@ -127,16 +127,33 @@ def main() -> None:
         decs = ledger.decisions(alpha_id)
         due = (not decs) or (t_last - decs[-1]["decided_ts"] >= _DECISION_DUE_MS)
         recorded_new = False
+        recorded_ts = None
         if due:
-            weights, signals = _weights_and_signals(sig[r_last], insts)
-            if weights:
-                recorded_new = ledger.record_decision(
-                    alpha_id, t_last, recorded_at=now_ms, weights=weights, signals=signals)
-            else:
-                alerts.append(f"{alpha_id}: no legs at {t_last} — decision skipped")
+            # 信号行回看(2026-07-05,与 live 驱动器同一修复):周一调度时本周首行往往就是
+            # 面板最新行,而最新行的 OI 常常还没更新(K线刷新快于 OI 指标)——盲取会整周跳过
+            # 决策、证据钟白丢一周。在本周窗口内回看最近一行有信号的行;decided_ts 如实用该行
+            # 数据时间(决策带数据时间,口径不变)。回看行的价格补进 prices,兑现定价不受影响。
+            lo = rows[-2] if len(rows) > 1 else max(-1, r_last - 7)
+            for r_try in range(r_last, lo, -1):
+                weights, signals = _weights_and_signals(sig[r_try], insts)
+                if weights:
+                    t_dec = int(ev[r_try])
+                    recorded_new = ledger.record_decision(
+                        alpha_id, t_dec, recorded_at=now_ms, weights=weights, signals=signals)
+                    prices.setdefault(t_dec, {insts[i]: close[r_try][i]
+                                              for i in range(len(insts))
+                                              if close[r_try][i] and close[r_try][i] > 0})
+                    recorded_ts = t_dec
+                    if r_try != r_last:
+                        alerts.append(f"{alpha_id}: freshest weekly row had no signal, "
+                                      f"decided at ts={t_dec} instead of {t_last}")
+                    break
+            if recorded_ts is None:
+                alerts.append(f"{alpha_id}: no legs within this week's lookback of {t_last} "
+                              f"— decision skipped")
 
         first_dec_ts = (decs[0]["decided_ts"] if decs
-                        else t_last if recorded_new else int(ev[rows[-1]]) + 1)
+                        else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
         ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, prices, funding_sum,
                                                   before_ts=first_dec_ts)
         out = realize_due(ledger, store, alpha_id, timestamps=[int(ev[r]) for r in rows],
