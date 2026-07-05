@@ -318,7 +318,8 @@ def main() -> None:
                                              target_gross_exposure=flatten_target)
             emergency = submit_emergency_flatten(
                 flatten_orders=flatten, positions=venue_positions, prices=prices, venue=venue,
-                ledger=write_ledger, audit=audit, now=now)
+                ledger=write_ledger, audit=audit, now=now,
+                poll_sleep=lambda: time.sleep(1.0))
             emergency_summary = {
                 "target_gross": flatten_target, "n_submitted": len(emergency.submitted),
                 "n_rejected": len(emergency.rejected), "n_errors": len(emergency.errors),
@@ -365,7 +366,8 @@ def main() -> None:
         weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
         gate=gate, ctx_factory=make_ctx_factory(prices, aum=aum, now=now), venue=venue,
         mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
-        decided_ts=decided_ts, now=now)
+        decided_ts=decided_ts, now=now,
+        poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
 
     # live-paper 对账(2026-07-05):纸面侧优先用 Stage 0 台账里记录在案的权重(不是重算的
     # 信号——重算会掩盖两条路径间的信号漂移);台账缺这一期时回退到本轮计算的 weights,
@@ -393,6 +395,8 @@ def main() -> None:
 
     if result.submission_errors:
         alerts.append(f"{len(result.submission_errors)} submission errors")
+        for failed_order, err in result.submission_errors:
+            alerts.append(f"submit failed {failed_order.instrument_id}: {err[:160]}")
     if result.ledger_write_errors:
         alerts.append(f"{len(result.ledger_write_errors)} ledger write errors — reconcile manually")
     if result.tier != AUTO:
