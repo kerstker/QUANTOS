@@ -26,6 +26,7 @@ class RunSpec:
     adapter: Callable                     # tool-output dict -> ResearchRun field dict
     title: str
     runner: Optional[Callable] = None     # injected (tests) or resolved from entrypoint at run time
+    param_bounds: Optional[dict] = None   # optional key -> (min, max) inclusive; unbounded if key absent
 
     def resolve(self) -> Callable:
         if self.runner is not None:
@@ -101,7 +102,10 @@ RUN_KINDS: dict = {
     "factory_orthogonal": RunSpec("tools.crypto_factory_orthogonal:main",
                                   {"generations": int, "population": int},
                                   lambda j: adapt_factory("factory_orthogonal", j), "自主正交发现(放大)",
-                                  runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json")),
+                                  runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json"),
+                                  # 2026-07-06 安全审查 punch-list:此前无上限,可提交一个跑到天荒地老的任务
+                                  # (默认 generations=8/population=64,给"放大"留够头寸但不放行天文数字)
+                                  param_bounds={"generations": (1, 500), "population": (1, 5000)}),
     "factory_loop": RunSpec("tools.crypto_factory_loop:main", {},
                             lambda j: adapt_factory("factory_loop", j), "自主正交发现(loop-until-dry)",
                             runner=_tool_then_json("tools.crypto_factory_loop", "crypto_factory_loop.json")),
@@ -116,13 +120,20 @@ RUN_KINDS: dict = {
 
 
 def validate_params(kind: str, params: dict) -> dict:
-    """Reject an unknown kind (KeyError) or any param outside the kind's typed schema (ValueError)."""
+    """Reject an unknown kind (KeyError), any param outside the kind's typed schema, or a value outside
+    the kind's declared bounds (ValueError) — e.g. `factory_orthogonal`'s generations/population, which
+    without a bound could be handed an unbounded value and run essentially forever."""
     spec = RUN_KINDS[kind]
+    bounds = spec.param_bounds or {}
     out = {}
     for k, v in params.items():
         if k not in spec.param_schema:
             raise ValueError(f"unknown param {k!r} for kind {kind!r}")
         if not isinstance(v, spec.param_schema[k]):
             raise ValueError(f"param {k!r} must be {spec.param_schema[k].__name__}")
+        if k in bounds:
+            lo, hi = bounds[k]
+            if not (lo <= v <= hi):
+                raise ValueError(f"param {k!r} must be between {lo} and {hi}, got {v!r}")
         out[k] = v
     return out

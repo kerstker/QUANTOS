@@ -5,6 +5,7 @@ connect to brokers, place orders, store credentials, or mutate trading state.
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import hashlib
 import json
@@ -4564,7 +4565,10 @@ async def phase3a_readiness() -> Dict:
 
 @app.get("/api/v1/console/architecture")
 async def architecture() -> Dict:
-    payload = _architecture_payload()
+    # 2026-07-06 安全审查 punch-list:_architecture_payload -> _repo_inventory 是同步全仓库文件
+    # 遍历(实测约 0.11s),此前直接内联在 async handler 里会冻结事件循环这段时间——offload 到
+    # 线程池,响应内容不变。
+    payload = await asyncio.to_thread(_architecture_payload)
     # The module/maturity map is a CURATED roadmap; the `inventory` block is REAL repo introspection.
     # Mark REAL when the inventory actually populated (it always does outside FS errors), else honest synthetic.
     real_inv = bool(payload.get("inventory", {}).get("domains"))
@@ -4885,7 +4889,8 @@ async def system_health() -> Dict:
 
 @app.get("/api/v1/console/system-completeness")
 async def system_completeness() -> Dict:
-    payload = _system_completeness_payload()
+    # 同上 architecture 端点:_system_completeness_payload 同样内部调 _repo_inventory
+    payload = await asyncio.to_thread(_system_completeness_payload)
     real_inv = bool(payload.get("inventory", {}).get("domains"))  # curated map + REAL repo introspection
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

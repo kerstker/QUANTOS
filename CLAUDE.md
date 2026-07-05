@@ -415,6 +415,9 @@ python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --
 #   then run the frontend with both URLs (the `research-console-live` launch.json config sets these):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_RUNNER_URL=http://127.0.0.1:8420 \
   VITE_MOCK_MODE=false npm run dev   # → /research/runs lists every run; buttons trigger new ones
+#   2026-07-06: POST /run + /cancel now require a local shared-secret header (X-Runner-Token,
+#   mirrors live_ops_api's X-Ops-Token) — first launch generates key/research_runner_token.txt
+#   (gitignored); paste its contents into the "Runner Token" field on /research/runs.
 ```
 
 Note: all backend services now live under the repo-root `services/` tree

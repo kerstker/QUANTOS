@@ -23,11 +23,22 @@ export function setOperator(name: string): void {
   try { localStorage.setItem(OPERATOR_KEY, name.trim()); } catch { /* ignore */ }
 }
 
+// 2026-07-06 安全审查 punch-list:后端 /run + /cancel 现在要求本机共享密钥 `X-Runner-Token`
+// (镜像 live_ops_api 的 `X-Ops-Token` / LiveDesk 的 useOpsToken)。这是一个真实密钥,不是问责标签
+// ——只存 sessionStorage(关闭标签页即清空),绝不进 localStorage/构建产物。
+const RUNNER_TOKEN_KEY = 'quantos_runner_token';
+export function getRunnerToken(): string {
+  try { return sessionStorage.getItem(RUNNER_TOKEN_KEY) || ''; } catch { return ''; }
+}
+export function setRunnerToken(token: string): void {
+  try { sessionStorage.setItem(RUNNER_TOKEN_KEY, token); } catch { /* private-mode etc */ }
+}
+
 export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   const res = await fetch(new URL('/run', RESEARCH_RUNNER_BASE), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator() },
+    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
     body: JSON.stringify({ kind, params }),
   });
   if (!res.ok) {
@@ -40,9 +51,11 @@ export async function triggerRun(kind: string, params: Record<string, unknown> =
 
 export async function cancelRun(runId: string): Promise<{ run_id: string; cancelled: boolean }> {
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
+  // 2026-07-06 修复:后端 /cancel 现在要求 X-Operator(与 /run 对称的问责标签)+ X-Runner-Token
+  // (本机共享密钥),少了任一个头都会出错(400/401)。
   const res = await fetch(new URL('/cancel', RESEARCH_RUNNER_BASE), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
     body: JSON.stringify({ run_id: runId }),
   });
   if (!res.ok) throw new Error(`runner returned ${res.status}`);

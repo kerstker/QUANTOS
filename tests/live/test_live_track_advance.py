@@ -193,3 +193,58 @@ def test_each_venue_has_its_own_mandate_ledger_and_state_paths():
     assert len(mandates) == len(_VENUES)
     ledgers = {_venue_paths(v["suffix"])["ledger"] for v in _VENUES.values()}
     assert len(ledgers) == len(_VENUES)
+
+
+# --- 2026-07-06 安全审查 punch-list:peak_equity/day_state 竞态 + 崩溃安全 ---
+# 风险哨兵(小时级)与周度驱动器共享同一批状态文件、各自独立进程、无锁——与 kill-switch
+# 那次(2026-07-05)同一类竞态,见 concurrent-state-write-races 记忆。
+
+
+def test_save_peak_equity_writes_when_higher_than_disk(tmp_path):
+    from tools.live_track_advance import _load_peak_equity, _save_peak_equity
+    path = str(tmp_path / "peak.json")
+    _save_peak_equity(path, 100.0)
+    _save_peak_equity(path, 150.0)
+    assert _load_peak_equity(path, default=0.0) == 150.0
+
+
+def test_save_peak_equity_never_lowers_a_concurrently_written_higher_peak(tmp_path):
+    # 模拟真实竞态:driver 读到 peak=100(稍早的快照)-> 与此同时 sentinel 观测到更高权益,
+    # 把磁盘上的 peak 写成 150 -> driver 基于自己那份稍旧的读数算出 100,调用 _save_peak_equity
+    # 时绝不能把磁盘上 sentinel 刚写入的 150 覆盖回 100(回撤计算会因此被低估,越限检测延迟/漏判)
+    from tools.live_track_advance import _load_peak_equity, _save_peak_equity
+    path = str(tmp_path / "peak.json")
+    _save_peak_equity(path, 100.0)                 # driver 的旧读数对应的历史起点
+
+    _save_peak_equity(path, 150.0)                 # sentinel: 观测到更高权益,真实新峰值
+
+    _save_peak_equity(path, 100.0)                 # driver: 基于自己那份旧快照重新写回 100
+    assert _load_peak_equity(path, default=0.0) == 150.0   # sentinel 的新峰值必须存活
+
+
+def test_save_day_state_writes_when_no_existing_state(tmp_path):
+    from tools.live_track_advance import _load_day_state, _save_day_state
+    path = str(tmp_path / "day.json")
+    _save_day_state(path, {"day": "2026-07-06", "start_equity": 1000.0})
+    assert _load_day_state(path) == {"day": "2026-07-06", "start_equity": 1000.0}
+
+
+def test_save_day_state_keeps_first_writers_baseline_for_same_day(tmp_path):
+    # 模拟真实竞态:两个进程在同一天的日界附近都读到"昨天"的旧状态,都为今天算出各自的
+    # start_equity 基线;sentinel 先写入(start_equity=1000)成为今天的权威起点 ->
+    # driver 基于自己那份稍旧的读数,试图用不同的 start_equity(1050)重新建立今天的基线 ->
+    # 必须是"同一天首个写入者生效",不能被后到的写入覆盖(否则日内止损起点悄悄漂移)
+    from tools.live_track_advance import _load_day_state, _save_day_state
+    path = str(tmp_path / "day.json")
+    _save_day_state(path, {"day": "2026-07-06", "start_equity": 1000.0})   # sentinel: 今天首写
+
+    _save_day_state(path, {"day": "2026-07-06", "start_equity": 1050.0})  # driver: 迟到的第二次今天首写尝试
+    assert _load_day_state(path) == {"day": "2026-07-06", "start_equity": 1000.0}
+
+
+def test_save_day_state_writes_when_day_actually_changes(tmp_path):
+    from tools.live_track_advance import _load_day_state, _save_day_state
+    path = str(tmp_path / "day.json")
+    _save_day_state(path, {"day": "2026-07-05", "start_equity": 900.0})
+    _save_day_state(path, {"day": "2026-07-06", "start_equity": 1000.0})
+    assert _load_day_state(path) == {"day": "2026-07-06", "start_equity": 1000.0}

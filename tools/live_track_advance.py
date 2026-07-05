@@ -45,6 +45,7 @@ from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores
 from live.execution.day_pnl import compute_day_pnl
+from live.execution.state_io import atomic_write_json
 from live.governance.kill_switch_store import (load_kill_switch_state,
                                                save_kill_switch_state_if_tripped)
 from live.governance.review_queue import ReviewQueue
@@ -161,7 +162,17 @@ def _load_day_state(path: str) -> Optional[dict]:
 
 
 def _save_day_state(path: str, state: dict) -> None:
-    json.dump(state, open(path, "w", encoding="utf-8"))
+    """**2026-07-06 安全审查 punch-list 修复**:风险哨兵(小时级)与本驱动器(周度)共享
+    同一个 day_state 文件、各自独立进程、无锁——与 kill-switch 竞态(2026-07-05)同一类问题
+    (见 concurrent-state-write-races 记忆)。同一天的起始权益基线一旦被任意一方建立,就是
+    当天的权威起点,不能被后到的第二次"今天首写"尝试用不同的 start_equity 覆盖(否则日内
+    止损起点悄悄漂移)。语义:同一天 -> 保留磁盘上已有的基线(首写者生效);日期真的变了或
+    磁盘无记录 -> 正常落盘。落盘本身用 `atomic_write_json`,进程写到一半被杀不会留下截断
+    JSON(此前 `json.dump(obj, open(path, "w"))` 不是原子操作)。"""
+    existing = _load_day_state(path)
+    if existing is not None and existing.get("day") == state.get("day"):
+        return
+    atomic_write_json(path, state)
 _RECON_TOLERANCE = 1e-6
 _MAX_STALENESS_MS = 7 * 86_400_000       # 周度信号,容忍一周内的价格新鲜度
 _MAX_DRAWDOWN_PCT = 0.20                 # 工程安全网默认值,非业务风险容忍度(见模块 docstring)
@@ -181,7 +192,13 @@ def _load_peak_equity(path: str, default: float) -> float:
 
 
 def _save_peak_equity(path: str, value: float) -> None:
-    json.dump({"peak_equity": value}, open(path, "w", encoding="utf-8"))
+    """**2026-07-06 安全审查 punch-list 修复**:peak_equity 与 day_state 同一类跨进程写竞态
+    (哨兵 vs 驱动器,无锁共享文件)。峰值权益在业务语义上只增不减——修复用同款"只加不减"
+    写前重读:落盘前重新读一次磁盘上的当前值,取两者较大者,绝不能让一份基于稍旧读数算出的
+    较低峰值,覆盖掉磁盘上并发进程刚记录的更高峰值(回撤 = (峰值-权益)/峰值,峰值被低估会
+    让回撤越限检测延迟甚至漏判)。"""
+    on_disk = _load_peak_equity(path, default=value)
+    atomic_write_json(path, {"peak_equity": max(value, on_disk)})
 
 
 def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
