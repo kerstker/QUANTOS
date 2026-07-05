@@ -63,7 +63,6 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
 
 _STRATEGY_ID = "crowd_contra"
-_MANDATE_PATH = os.path.join("key", "live_mandate.json")
 
 def _binance_balances(account: dict) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
@@ -88,6 +87,9 @@ _VENUES = {
         "key_file": os.path.join("key", "binance_test_key.json"),
         "suffix": "",
         "balances": _binance_balances,
+        # per-venue mandate(2026-07-05):一个 mandate 只授权一个交易所(exchange 域),
+        # 多所并行各签各的文件,绝不共用
+        "mandate_file": os.path.join("key", "live_mandate.json"),
     },
     "bybit": {
         "adapter": BybitFuturesAdapter,
@@ -95,6 +97,7 @@ _VENUES = {
         "key_file": os.path.join("key", "bybit_test_key.json"),
         "suffix": "_bybit",
         "balances": _bybit_balances,
+        "mandate_file": os.path.join("key", "live_mandate_bybit.json"),
     },
 }
 
@@ -344,7 +347,7 @@ def main() -> None:
 
     mandate = None
     try:
-        mandate = load_mandate(_MANDATE_PATH)
+        mandate = load_mandate(venue_cfg["mandate_file"])
     except MandateLoadError as exc:
         alerts.append(f"mandate not loaded ({exc}) — batch will require human review")
 

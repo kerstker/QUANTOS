@@ -140,3 +140,12 @@ def test_latest_weights_all_rows_empty_is_honest_empty():
     weights, prices, decided_ts = _latest_weights_and_prices((panel, insts))
     assert weights == {}                            # 回看窗口内全空 -> 诚实空,不硬凑
     assert decided_ts == 3
+
+
+def test_each_venue_has_its_own_mandate_ledger_and_state_paths():
+    # 一个 mandate 只授权一个交易所;不同交易所 = 不同账户,账本/状态/mandate 绝不共用
+    from tools.live_track_advance import _VENUES, _venue_paths
+    mandates = {v["mandate_file"] for v in _VENUES.values()}
+    assert len(mandates) == len(_VENUES)
+    ledgers = {_venue_paths(v["suffix"])["ledger"] for v in _VENUES.values()}
+    assert len(ledgers) == len(_VENUES)
