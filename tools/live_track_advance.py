@@ -45,6 +45,7 @@ from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores
 from live.execution.day_pnl import compute_day_pnl
+from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions
@@ -130,6 +131,7 @@ def _venue_paths(suffix: str) -> dict:
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
         "audit": os.path.join("data", "cache", f"live_audit{suffix}.db"),
+        "kill_switch": os.path.join("data", "cache", f"live_kill_switch{suffix}.json"),
     }
 
 
@@ -414,11 +416,29 @@ def main() -> None:
     # 后者由 write_ledger 的 preview/submit 分离机制单独把关,两个关注点不冲突)。
     audit = DurableAuditLog(paths["audit"], create=True)
 
-    kill_switch = KillSwitch()
+    # 跨进程持久化(2026-07-05,机构审计发现:此前每次运行都全新构造 KillSwitch(),上一轮/
+    # 哨兵触发的闩锁在下一次调度里完全看不到,自动"恢复"成未触发——latch 的核心承诺"halt 直到
+    # 人工复位"在跨进程场景下从未真正生效)。已触发就在这里立刻硬停,不浪费功夫评估这一轮的
+    # 新决策(即便这一轮本身风险平静,一个更早的、尚未被人工复位的事件依然应该挡住提交)。
+    kill_switch = KillSwitch(state=load_kill_switch_state(paths["kill_switch"]))
+    if kill_switch.is_active():
+        alerts.append(f"HALTED: kill-switch still tripped from a prior incident "
+                      f"(incident_id={kill_switch.state.incident_id}, "
+                      f"reason={kill_switch.state.reason!r}) — human reset required, "
+                      f"see docs/runbooks/live-trading-runbook.md")
+        emit(alerts, context="live_track", now_ms=now)
+        json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
+                  "kill_switch_halted": True, "incident_id": kill_switch.state.incident_id,
+                  "alerts": alerts}, open(paths["status"], "w", encoding="utf-8"), indent=2)
+        print(f"HARD STOP: kill-switch still tripped (incident={kill_switch.state.incident_id}) "
+              f"-> {paths['status']}", flush=True)
+        return
+
     breach = evaluate_risk_state(
         equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
         max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=aum * 2, max_net_exposure=aum * 0.3)
     risk_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
+    save_kill_switch_state(paths["kill_switch"], kill_switch.state)
     if breach.breached:
         alerts.append(f"RISK BREACH: {breach.reasons} (drawdown={breach.drawdown_pct:.2%}, "
                       f"gross=${breach.gross_exposure:.2f}, net=${breach.net_exposure:.2f}) "

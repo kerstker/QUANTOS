@@ -11,6 +11,11 @@ import { money, fixed, stamp } from '@/ui/format';
  */
 
 const OPS_URL: string = (import.meta as any).env?.VITE_OPS_URL || 'http://127.0.0.1:8440';
+// 本机共享密钥认证(2026-07-05):ops API 的全部端点现在要求 X-Ops-Token 匹配
+// key/live_ops_token.txt(首次启动自动生成)。开发时把该文件内容填进 .env 的
+// VITE_OPS_TOKEN——前端不生成/不猜这个值,只是把你自己已经能读到的本机密钥转发过去。
+const OPS_TOKEN: string = (import.meta as any).env?.VITE_OPS_TOKEN || '';
+const OPS_HEADERS: Record<string, string> = OPS_TOKEN ? { 'X-Ops-Token': OPS_TOKEN } : {};
 const POLL_MS = 8000;
 
 interface PositionRow {
@@ -92,7 +97,7 @@ export default function LiveDesk() {
 
   const poll = useCallback(async () => {
     try {
-      const r = await fetch(`${OPS_URL}/api/v1/liveops/dashboard`);
+      const r = await fetch(`${OPS_URL}/api/v1/liveops/dashboard`, { headers: OPS_HEADERS });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setData(await r.json());
       setErr(null);
@@ -120,7 +125,7 @@ export default function LiveDesk() {
     setBusy(true);
     try {
       const r = await fetch(`${OPS_URL}/api/v1/liveops/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
         body: JSON.stringify({ venue, submit, refresh: false }),
       });
       const j = await r.json();
@@ -138,7 +143,7 @@ export default function LiveDesk() {
     setBusy(true);
     try {
       const r = await fetch(`${OPS_URL}/api/v1/liveops/demo-funds`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
         body: JSON.stringify({ amount: 5000 }),
       });
       const j = await r.json();
@@ -190,7 +195,12 @@ export default function LiveDesk() {
       <div className="flex items-center gap-3">
         <Chip label={err ? bi('ops API 不可达', 'ops API unreachable') : bi('实时', 'LIVE')} tone={err ? 'neg' : 'pos'} />
         {data && <span className="text-2xs text-muted">{bi('更新于', 'updated')} {stamp(data.generated_at)}</span>}
-        {err && <span className="text-2xs text-neg mono">{err} · {bi('启动:', 'start:')} python -m uvicorn tools.live_ops_api:app --port 8440</span>}
+        {err && <span className="text-2xs text-neg mono">
+          {err} · {err.includes('401')
+            ? bi('认证失败:把 key/live_ops_token.txt 的内容填进 .env 的 VITE_OPS_TOKEN',
+                 'auth failed: put key/live_ops_token.txt’s content into .env as VITE_OPS_TOKEN')
+            : `${bi('启动:', 'start:')} python -m uvicorn tools.live_ops_api:app --port 8440`}
+        </span>}
         {lastAction && <span className="text-2xs text-info">{lastAction}</span>}
       </div>
 

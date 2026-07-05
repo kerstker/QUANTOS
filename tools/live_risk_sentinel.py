@@ -27,8 +27,10 @@ import time
 
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.position_ledger import LiveLedger
-from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state
+from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
+from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
 from live.governance.mandate_store import MandateLoadError, load_mandate
+from services.risk.pre_trade.kill_switch import KillSwitch
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.firm_aggregation import aggregate_firm_books
 from tools.alert_sink import emit
@@ -107,6 +109,14 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     alerts = [f"SENTINEL RISK BREACH [{venue_name}]: {breach.reasons} "
               f"(drawdown={breach.drawdown_pct:.2%}, gross=${breach.gross_exposure:.2f}, "
               f"net=${breach.net_exposure:.2f})"]
+
+    # 跨进程闩锁(2026-07-05):哨兵触发的越限必须让下一次调度的驱动器也"看得到",不然
+    # halt 的承诺只在哨兵自己这次心跳内有效。与驱动器共享同一个 kill_switch 状态文件。
+    kill_switch = KillSwitch(state=load_kill_switch_state(paths["kill_switch"]))
+    kill_switch_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
+    save_kill_switch_state(paths["kill_switch"], kill_switch.state)
+    out["kill_switch_action"] = kill_switch_response["action"]
+
     if act:
         target = flatten_target_for_breach(breach, max_gross_exposure=caps["max_gross_exposure"],
                                            max_net_exposure=caps["max_net_exposure"])

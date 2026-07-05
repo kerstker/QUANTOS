@@ -10,8 +10,14 @@
    mandate → gate → 确认 → 记账链,没有任何旁路;
 2. venue 参数白名单(_VENUES 键),submit 是布尔——不存在自由字符串到达命令行;
 3. 响应永不包含密钥值(凭证只在进程内构造适配器用);
-4. CORS 仅本机 3100(与 console_api 同款);全部端点无认证——**仅限本机使用**,这是单机
-   研究工作站的口径,不是多用户部署(那是 Phase 14)。
+4. CORS 仅本机 3100(与 console_api 同款)。
+
+**本机共享密钥认证(2026-07-05,机构审计 P1):** 此前全部端点零认证——同一台机器上任意
+进程(包括恶意进程)都能打这个端口触发真实提交。全部端点现在要求请求头 `X-Ops-Token` 匹配
+`key/live_ops_token.txt`(首次启动自动生成,gitignored,与其它密钥文件同一目录/同一"只
+检查、不外泄"处理方式)。这不是多用户认证(那是 Phase 14 的范畴)——威胁模型是"同机其它
+进程",共享密钥文件本身要求与读取 mandate/ledger 文件同等的本机访问权限,把"零门槛"提高
+到"至少要能读 key/ 目录"。
 
 实时口径诚实标注:dashboard 每次被轮询都现场查交易所(REST),"实时"= 轮询间隔粒度
 (前端默认 8s),不是 websocket 推送——周度调仓策略不需要毫秒级,这是刻意的简单。
@@ -20,13 +26,14 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import threading
 import time
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -35,6 +42,33 @@ from live.execution.tca import tca_summary
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from tools.live_snapshot import binance_position_rows, bybit_position_rows
 from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
+
+_TOKEN_FILE = os.path.join("key", "live_ops_token.txt")
+
+
+def _load_or_create_token(path: str = _TOKEN_FILE) -> str:
+    """本机共享密钥:首次启动生成、之后复用同一个值(不重启就变,否则前端每次都要重配)。
+    只检查、绝不打印/记录这个值本身——与全库密钥处理的既有边界一致。"""
+    if os.path.exists(path):
+        tok = open(path, encoding="utf-8").read().strip()
+        if tok:
+            return tok
+    tok = secrets.token_urlsafe(32)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(tok)
+    return tok
+
+
+_OPS_TOKEN = _load_or_create_token()
+
+
+def require_ops_token(x_ops_token: Optional[str] = Header(default=None)) -> None:
+    if x_ops_token is None or not secrets.compare_digest(x_ops_token, _OPS_TOKEN):
+        raise HTTPException(401, "missing or invalid X-Ops-Token")
+
 
 app = FastAPI(title="QUANTOS Live Ops", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3100", "http://127.0.0.1:3100"],
@@ -128,7 +162,7 @@ def _venue_dashboard(venue: str) -> dict:
     return out
 
 
-@app.get("/api/v1/liveops/dashboard")
+@app.get("/api/v1/liveops/dashboard", dependencies=[Depends(require_ops_token)])
 async def dashboard() -> dict:
     return {
         "source": "LIVE_OPS_REALTIME",
@@ -169,7 +203,7 @@ def _run_driver(venue: str, submit: bool, refresh: bool) -> None:
         _RUN_LOCK.release()
 
 
-@app.post("/api/v1/liveops/run")
+@app.post("/api/v1/liveops/run", dependencies=[Depends(require_ops_token)])
 async def run(req: RunRequest) -> dict:
     if req.venue not in _VENUES:
         raise HTTPException(400, f"unknown venue {req.venue!r} (allowed: {sorted(_VENUES)})")
@@ -187,7 +221,7 @@ class DemoFundsRequest(BaseModel):
     amount: float = 5000.0
 
 
-@app.post("/api/v1/liveops/demo-funds")
+@app.post("/api/v1/liveops/demo-funds", dependencies=[Depends(require_ops_token)])
 async def demo_funds(req: DemoFundsRequest) -> dict:
     if req.amount <= 0 or req.amount > 1_000_000:
         raise HTTPException(400, "amount out of range")

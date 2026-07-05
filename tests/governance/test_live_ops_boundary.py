@@ -38,18 +38,55 @@ def test_ops_api_run_command_is_fixed_argv_no_shell():
 
 def test_ops_api_rejects_unknown_venue():
     from fastapi.testclient import TestClient
-    from tools.live_ops_api import app
+    from tools.live_ops_api import _OPS_TOKEN, app
     client = TestClient(app)
-    r = client.post("/api/v1/liveops/run", json={"venue": "evil; rm -rf /", "submit": False})
+    r = client.post("/api/v1/liveops/run", json={"venue": "evil; rm -rf /", "submit": False},
+                    headers={"X-Ops-Token": _OPS_TOKEN})
     assert r.status_code == 400
 
 
 def test_ops_api_rejects_out_of_range_demo_amount():
     from fastapi.testclient import TestClient
+    from tools.live_ops_api import _OPS_TOKEN, app
+    client = TestClient(app)
+    headers = {"X-Ops-Token": _OPS_TOKEN}
+    assert client.post("/api/v1/liveops/demo-funds", json={"amount": -5}, headers=headers).status_code == 400
+    assert client.post("/api/v1/liveops/demo-funds", json={"amount": 10_000_000}, headers=headers).status_code == 400
+
+
+# --- 本机共享密钥认证(2026-07-05) ---
+
+def test_ops_api_rejects_requests_without_token():
+    from fastapi.testclient import TestClient
     from tools.live_ops_api import app
     client = TestClient(app)
-    assert client.post("/api/v1/liveops/demo-funds", json={"amount": -5}).status_code == 400
-    assert client.post("/api/v1/liveops/demo-funds", json={"amount": 10_000_000}).status_code == 400
+    assert client.get("/api/v1/liveops/dashboard").status_code == 401
+    assert client.post("/api/v1/liveops/run", json={"venue": "binance", "submit": False}).status_code == 401
+    assert client.post("/api/v1/liveops/demo-funds", json={"amount": 100}).status_code == 401
+
+
+def test_ops_api_rejects_wrong_token():
+    from fastapi.testclient import TestClient
+    from tools.live_ops_api import app
+    client = TestClient(app)
+    r = client.get("/api/v1/liveops/dashboard", headers={"X-Ops-Token": "wrong-token-value"})
+    assert r.status_code == 401
+
+
+def test_ops_api_accepts_correct_token():
+    from fastapi.testclient import TestClient
+    from tools.live_ops_api import _OPS_TOKEN, app
+    client = TestClient(app)
+    r = client.get("/api/v1/liveops/dashboard", headers={"X-Ops-Token": _OPS_TOKEN})
+    assert r.status_code == 200
+
+
+def test_ops_token_file_is_gitignored():
+    # 一次生成、跨进程复用的本机密钥文件绝不能被提交
+    proc_result = __import__("subprocess").run(
+        ["git", "check-ignore", os.path.join("key", "live_ops_token.txt")],
+        cwd=_ROOT, capture_output=True, text=True)
+    assert proc_result.returncode == 0, "key/live_ops_token.txt must be gitignored"
 
 
 def test_ops_api_source_never_serializes_secrets():
