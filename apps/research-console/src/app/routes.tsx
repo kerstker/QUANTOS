@@ -93,6 +93,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/PaperTrading') },
   { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
     load: () => import('@/pages/LiveTrading') },
+  { path: '/research/live-desk', zh: '交易台', en: 'Live Desk', icon: 'LD', group: 'execution',
+    load: () => import('@/pages/LiveDesk') },
   { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'execution',
     load: () => import('@/pages/LifecycleMonitor') },
 
