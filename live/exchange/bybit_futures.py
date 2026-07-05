@@ -90,6 +90,10 @@ def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None
 
 class BybitFuturesAdapter:
     TESTNET_BASE = "https://api-testnet.bybit.com"
+    # Demo Trading(2026-07-05):testnet 水龙头长期失灵,Bybit 官方主推的模拟环境是主站
+    # Demo(api-demo)——V5 协议与 testnet 完全一致,只换主机;零真实资本,治理上与 testnet
+    # 同类(venue_mode 同为 "testnet"),不受 mainnet 门禁管辖、也绝不放宽 mainnet 门禁。
+    DEMO_BASE = "https://api-demo.bybit.com"
     MAINNET_BASE = "https://api.bybit.com"
     venue_name = "bybit"       # mandate 交易所域匹配(mandate.exchange 必须等于它,2026-07-05)
     _RECV_WINDOW = "5000"
@@ -107,10 +111,11 @@ class BybitFuturesAdapter:
                     "mainnet base_url requires live_trading_armed (Phase 3A human gate) — "
                     "refusing construction at L2 (mirrors LiveBrokerAdapter's seam refusal)")
             self.venue_mode = "mainnet"
-        elif base_url == self.TESTNET_BASE:
-            self.venue_mode = "testnet"
+        elif base_url in (self.TESTNET_BASE, self.DEMO_BASE):
+            self.venue_mode = "testnet"        # demo 与 testnet 同为零真实资本的模拟环境
         else:
-            raise ValueError(f"unknown base_url {base_url!r} — only TESTNET_BASE/MAINNET_BASE permitted")
+            raise ValueError(
+                f"unknown base_url {base_url!r} — only TESTNET_BASE/DEMO_BASE/MAINNET_BASE permitted")
         self._base_url = base_url
         self._api_key = api_key
         self._api_secret = api_secret

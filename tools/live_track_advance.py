@@ -83,6 +83,7 @@ def _bybit_balances(account: dict) -> tuple:
 _VENUES = {
     "binance": {
         "adapter": BinanceFuturesAdapter,
+        "base_url": BinanceFuturesAdapter.TESTNET_BASE,
         "env": ("BINANCE_TESTNET_API_KEY", "BINANCE_TESTNET_API_SECRET"),
         "key_file": os.path.join("key", "binance_test_key.json"),
         "suffix": "",
@@ -93,11 +94,23 @@ _VENUES = {
     },
     "bybit": {
         "adapter": BybitFuturesAdapter,
+        "base_url": BybitFuturesAdapter.TESTNET_BASE,
         "env": ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
         "key_file": os.path.join("key", "bybit_test_key.json"),
         "suffix": "_bybit",
         "balances": _bybit_balances,
         "mandate_file": os.path.join("key", "live_mandate_bybit.json"),
+    },
+    # Demo Trading(2026-07-05):testnet 水龙头失灵,Bybit 官方主推的模拟环境——V5 协议同
+    # testnet,只换主机;独立账户 = 独立 key/账本/状态/mandate 文件
+    "bybit_demo": {
+        "adapter": BybitFuturesAdapter,
+        "base_url": BybitFuturesAdapter.DEMO_BASE,
+        "env": ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET"),
+        "key_file": os.path.join("key", "bybit_demo_key.json"),
+        "suffix": "_bybit_demo",
+        "balances": _bybit_balances,
+        "mandate_file": os.path.join("key", "live_mandate_bybit_demo.json"),
     },
 }
 
@@ -262,7 +275,7 @@ def main() -> None:
     api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
     adapter_cls = venue_cfg["adapter"]
     real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
-                             base_url=adapter_cls.TESTNET_BASE)
+                             base_url=venue_cfg["base_url"])
     real_venue.sync_clock()                  # 时钟偏移校正,fail-soft(失败保留默认 0 偏移)
 
     ledger = LiveLedger(paths["ledger"], create=True)

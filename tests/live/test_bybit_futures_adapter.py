@@ -412,3 +412,23 @@ def test_place_order_default_omits_reduce_only_param():
     c.place_order(LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.01,
                                    client_order_id="c"))
     assert "reduceOnly" not in json.loads(t.calls[0]["body"])
+
+
+# --- Demo Trading 主机(2026-07-05:testnet 水龙头失灵,Bybit 官方主推的模拟环境) ---
+
+def test_demo_base_construction_succeeds_zero_real_capital_class():
+    # api-demo 与 testnet 同为零真实资本的模拟环境(V5 协议完全一致,只换主机)——
+    # venue_mode 同为 "testnet"(mandate venue 域口径一致),不受 mainnet 门禁管辖
+    c = BybitFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                            base_url=BybitFuturesAdapter.DEMO_BASE,
+                            http_request=lambda *a, **kw: (200, b"{}"))
+    assert c.venue_mode == "testnet"
+    assert c.venue_name == "bybit"
+
+
+def test_demo_base_is_not_mainnet():
+    assert BybitFuturesAdapter.DEMO_BASE != BybitFuturesAdapter.MAINNET_BASE
+    # mainnet 依旧结构性拒绝(demo 的加入绝不放宽真钱门禁)
+    with pytest.raises(SafetyViolation):
+        BybitFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                            base_url=BybitFuturesAdapter.MAINNET_BASE)
