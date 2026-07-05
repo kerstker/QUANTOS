@@ -34,8 +34,18 @@ def test_gate_limits_notional_fields_come_from_params():
     assert limits.allowed_instruments == frozenset({"BTC"})
 
 
+def _factory_kwargs(**overrides):
+    base = dict(prices={"BTC": 60000.0}, aum=100_000.0, now=1_700_000_000_000,
+               price_as_of=1_700_000_000_000, current_positions={}, day_pnl=0.0,
+               peak_equity=100_000.0)
+    base.update(overrides)
+    prices = base.pop("prices")
+    return prices, base
+
+
 def test_make_ctx_factory_scales_reference_price_by_unit_scale():
-    factory = make_ctx_factory({"BTC": 60000.0}, aum=100_000.0, now=1_700_000_000_000)
+    prices, kw = _factory_kwargs()
+    factory = make_ctx_factory(prices, **kw)
     ctx = factory(_FakeIntent("BTC"))
     assert ctx.market.reference_price == pytest.approx(60000.0 / _UNIT_SCALE)
     assert ctx.market.known is True
@@ -43,10 +53,42 @@ def test_make_ctx_factory_scales_reference_price_by_unit_scale():
 
 
 def test_make_ctx_factory_handles_missing_price_honestly():
-    factory = make_ctx_factory({}, aum=100_000.0, now=1_700_000_000_000)
+    prices, kw = _factory_kwargs(prices={})
+    factory = make_ctx_factory(prices, **kw)
     ctx = factory(_FakeIntent("GHOST"))
     assert ctx.market.known is False
     assert ctx.market.reference_price is None
+
+
+# --- 2026-07-05 机构审计修复:新鲜度门真实接线 + 账户上下文去虚构 ---
+
+def test_price_as_of_is_real_decision_time_not_wall_clock():
+    # 修复前 price_as_of 恒等于 now,新鲜度门 (now - price_as_of > max_staleness) 数学上永远
+    # 不触发。decided_ts 明显早于 now 时,ctx 必须诚实带出这个差值。
+    prices, kw = _factory_kwargs(now=1_700_000_100_000, price_as_of=1_700_000_000_000)
+    factory = make_ctx_factory(prices, **kw)
+    ctx = factory(_FakeIntent("BTC"))
+    assert ctx.market.price_as_of == 1_700_000_000_000
+    assert ctx.now - ctx.market.price_as_of == 100_000
+
+
+def test_real_positions_appear_in_account_context():
+    prices, kw = _factory_kwargs(current_positions={"BTC": 0.01})
+    factory = make_ctx_factory(prices, **kw)
+    ctx = factory(_FakeIntent("BTC"))
+    assert len(ctx.account.positions) == 1
+    assert ctx.account.position_qty("BTC") == 10_000       # 0.01 * UNIT_SCALE
+
+
+def test_real_day_pnl_and_peak_equity_flow_through():
+    prices, kw = _factory_kwargs(day_pnl=-250.0, peak_equity=120_000.0, aum=100_000.0)
+    factory = make_ctx_factory(prices, **kw)
+    ctx = factory(_FakeIntent("BTC"))
+    assert ctx.account.day_pnl == -250.0
+    assert ctx.account.peak_equity == 120_000.0
+    # 回撤门必须能用真实峰值算出真实回撤(120000 峰值、100000 权益 -> ~16.7% 回撤),
+    # 而不是修复前 peak_equity=aum 恒等式导致的回撤恒 0
+    assert (ctx.account.peak_equity - ctx.account.equity) / ctx.account.peak_equity > 0.15
 
 
 # --- PreviewVenue ---

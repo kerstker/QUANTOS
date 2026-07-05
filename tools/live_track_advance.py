@@ -43,8 +43,11 @@ from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
+from live.execution.day_pnl import compute_day_pnl
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.gate_context import build_gate_positions
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
+from live.execution.price_check import flag_divergent_instruments
 from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
 from live.execution.tca import tca_summary
@@ -58,6 +61,7 @@ from services.risk.pre_trade.context import AccountRiskState, MarketContext, Ris
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from tools.alert_sink import emit
+from tools.coingecko_fetch import fetch_simple_prices
 from tools.crypto_oi_research import QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
@@ -121,7 +125,30 @@ def _venue_paths(suffix: str) -> dict:
         "status": os.path.join("data", "cache", f"live_track_status{suffix}.json"),
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
+        "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
     }
+
+
+_MAX_PRICE_DIVERGENCE_PCT = 0.05   # 工程默认(非业务风险容忍度)——crypto 正常跨源价差远小于此
+# 决策价格(可能因信号行回看滞后 1-3 天,见 _latest_weights_and_prices)与"当前" CoinGecko
+# 价格的比较只在数据足够新鲜时才有意义——decided_ts 比 now 早太多时,拿走了几天的历史价格
+# 去比"现在"的价格是苹果比橘子(crypto 数日内 15%+ 波动是常态,不代表数据源损坏),会让
+# 这道防线变成"狼来了"式假阳性,反而侵蚀它的可信度。超出这个窗口 -> 跳过核价(新鲜度门
+# `check_market_session` 已经在管这类过旧数据的场景)。
+_CROSS_CHECK_MAX_STALENESS_MS = 3 * 86_400_000
+
+
+def _load_day_state(path: str) -> Optional[dict]:
+    if os.path.exists(path):
+        try:
+            return json.load(open(path, encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def _save_day_state(path: str, state: dict) -> None:
+    json.dump(state, open(path, "w", encoding="utf-8"))
 _RECON_TOLERANCE = 1e-6
 _MAX_STALENESS_MS = 7 * 86_400_000       # 周度信号,容忍一周内的价格新鲜度
 _MAX_DRAWDOWN_PCT = 0.20                 # 工程安全网默认值,非业务风险容忍度(见模块 docstring)
@@ -155,19 +182,33 @@ def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss
         max_instrument_vol=5.0, daily_loss_limit=daily_loss_cap, max_drawdown=0.5)
 
 
-def make_ctx_factory(prices, *, aum, now, unit_scale=UNIT_SCALE):
+def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pnl, peak_equity,
+                     unit_scale=UNIT_SCALE):
     """gate 用的 RiskContext 工厂。`reference_price = 真实价格 / unit_scale`,使
     `intent.quantity(缩放整数) × reference_price` 落在真实美元名义额上(见 live/pipeline.py
     模块 docstring 的缩放约定)。est_daily_volume/instrument_vol 沿用既有 crowd_contra 干跑
-    驱动器同款占位符(真实逐标的成交量数据尚未接入,诚实标注,非本次范围)。"""
+    驱动器同款占位符(真实逐标的成交量数据尚未接入,诚实标注,非本次范围)。
+
+    **2026-07-05 机构审计修复(此前账户上下文全部硬编码,gate 账户级检查结构性失效):**
+    - `price_as_of` 现在必须是真实决策数据时间(`decided_ts`),不再等于 `now`——此前恒等
+      导致 `check_market_session` 的新鲜度门 `now - price_as_of > max_staleness` 数学上
+      永远不触发;
+    - `current_positions` 折算成真实 `Position` 序列(见 `build_gate_positions`)——此前
+      `positions=()` 让仓位限额/集中度/敞口/杠杆检查全部对着"从未持仓"的虚构账户评估;
+    - `day_pnl`/`peak_equity` 现在是调用方算好的真实值(见 `compute_day_pnl`/
+      `_load_peak_equity`)——此前 `day_pnl=0.0`/`peak_equity=aum` 让日内止损/回撤门
+      结构性恒不触发。"""
+    gate_positions = build_gate_positions(current_positions, prices, unit_scale=unit_scale)
+
     def _factory(intent):
         px = prices.get(intent.instrument_id)
         return RiskContext(
-            account=AccountRiskState(account_id="live_testnet", cash=aum, equity=aum, day_pnl=0.0,
-                                     peak_equity=aum, positions=()),
+            account=AccountRiskState(account_id="live_testnet", cash=aum, equity=aum,
+                                     day_pnl=day_pnl, peak_equity=peak_equity,
+                                     positions=gate_positions),
             market=MarketContext(instrument_id=intent.instrument_id, known=px is not None,
                                  reference_price=(px / unit_scale) if px else None, market_open=True,
-                                 price_as_of=now, est_daily_volume=1e12, instrument_vol=0.8),
+                                 price_as_of=price_as_of, est_daily_volume=1e12, instrument_vol=0.8),
             strategy=StrategyApproval(strategy_id=_STRATEGY_ID, approved=True,
                                       approval_id="live-track-driver"),
             now=now, max_staleness=_MAX_STALENESS_MS)
@@ -272,6 +313,31 @@ def main() -> None:
 
     weights, prices, decided_ts = _latest_weights_and_prices()
 
+    # 跨源核价(2026-07-05,机构审计 P0):单一数据源(Binance K线)一次静默滞后/错误会
+    # 同时误导双所下单——用独立第二源(CoinGecko)交叉核价,单标的偏离超阈值或无法验证
+    # 一律从本轮 weights 剔除(fail-soft per-instrument,不因一个标的核价失败拖垮整批;
+    # 只从 weights 剔除、不动 prices——prices 还要喂风控的持仓估值,那是另一个关注点)。
+    # 第二源整体不可用(如网络故障)-> 不逐个标的误判,只整体告警。决策价过旧 -> 直接跳过
+    # (见 _CROSS_CHECK_MAX_STALENESS_MS 注释,避免历史价 vs 当前价的假阳性)。
+    if now - decided_ts > _CROSS_CHECK_MAX_STALENESS_MS:
+        alerts.append(f"cross-venue price check skipped: decided_ts is "
+                      f"{(now - decided_ts) / 86_400_000:.1f}d old (comparing against a moving "
+                      f"target would be unreliable) — relying on the freshness gate instead")
+    else:
+        try:
+            secondary_prices = fetch_simple_prices(list(prices.keys()))
+            secondary_unavailable = False
+        except Exception as exc:
+            secondary_prices = {}
+            secondary_unavailable = True
+            alerts.append(f"cross-venue price check unavailable: {type(exc).__name__}: {exc}")
+        flagged = flag_divergent_instruments(
+            {k: v for k, v in prices.items() if k in weights}, secondary_prices,
+            max_divergence_pct=_MAX_PRICE_DIVERGENCE_PCT, secondary_unavailable=secondary_unavailable)
+        if flagged:
+            alerts.append(f"cross-venue price check dropped {len(flagged)} instrument(s): {flagged}")
+            weights = {k: w for k, w in weights.items() if k not in flagged}
+
     api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
     adapter_cls = venue_cfg["adapter"]
     real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
@@ -306,6 +372,11 @@ def main() -> None:
 
     peak_equity = max(_load_peak_equity(paths["risk_state"], equity), equity)
     _save_peak_equity(paths["risk_state"], peak_equity)
+
+    day_key = time.strftime("%Y-%m-%d", time.gmtime(now / 1000))
+    day_pnl, day_state = compute_day_pnl(_load_day_state(paths["day_state"]), equity=equity,
+                                        day_key=day_key)
+    _save_day_state(paths["day_state"], day_state)
 
     venue = real_venue if submit else PreviewVenue(real_venue)
     # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
@@ -382,9 +453,12 @@ def main() -> None:
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
 
+    ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
+                                   current_positions=ledger_positions, day_pnl=day_pnl,
+                                   peak_equity=peak_equity)
     result = submit_live_batch(
         weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
-        gate=gate, ctx_factory=make_ctx_factory(prices, aum=aum, now=now), venue=venue,
+        gate=gate, ctx_factory=ctx_factory, venue=venue,
         mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
         decided_ts=decided_ts, now=now,
         poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
