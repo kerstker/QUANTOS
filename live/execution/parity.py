@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from typing import Mapping, Optional, Sequence
 
-from live.execution.filters import client_order_id
+from live.execution.filters import decision_prefix
 
 
 def paper_weights_from_forward_ledger(forward_ledger, alpha_id: str,
@@ -42,12 +42,12 @@ def parity_report(*, paper_weights: Mapping[str, float], paper_source: str, aum:
 
     - 目标名义额 = weight × aum(带符号);实际名义额 = 账本仓位 × 现价(带符号);
       gap = 实际 − 目标(缺价 -> None,诚实缺失,不进聚合统计)。
-    - 订单归因:用与流水线相同的确定性 client_order_id 把该周期的订单挂回每条腿——
+    - 订单归因:同一决策腿的所有订单共享确定性的 16 位 decision_prefix(2026-07-05 起订单
+      ID 还包含方向+数量,一条腿可能有多笔订单——取最近提交的那笔做状态归因)——
       "no_order" 意味着这条腿从未提交(mandate/过滤器拦截或 preview),订单状态则透露
       超时撤单/拒绝等执行事故。
     - live 有仓位但纸面没有这条腿 -> unexpected_live_positions(遗留测试仓位/对账缺口)。
     """
-    orders_by_cid = {o["client_order_id"]: o for o in ledger_orders}
     per_instrument = []
     gaps = []
     n_with_order = 0
@@ -58,7 +58,10 @@ def parity_report(*, paper_weights: Mapping[str, float], paper_source: str, aum:
         pos_qty = float(ledger_positions.get(inst, 0.0))
         actual_notional = pos_qty * px if (px is not None and px > 0) else None
         gap = (actual_notional - target_notional) if actual_notional is not None else None
-        order = orders_by_cid.get(client_order_id(strategy_id, decided_ts, inst))
+        prefix = decision_prefix(strategy_id, decided_ts, inst)
+        leg_orders = [o for o in ledger_orders if o["client_order_id"].startswith(prefix)]
+        order = (max(leg_orders, key=lambda o: o.get("submitted_at", 0))
+                 if leg_orders else None)
         if order is not None:
             n_with_order += 1
         if gap is not None:

@@ -369,9 +369,13 @@ def main() -> None:
     # gross 上限——账户余额只是物理上限,不是授权。0.95 是工程余量(整批 gross 恰好贴着上限
     # 会被浮点舍入随机顶过线,不是风险数字)。没有 mandate 时维持余额口径(反正 fail-closed
     # 全量升人工,不会真提交)。
-    deploy_aum = aum
+    # 容量基数用 equity(含未实现盈亏)而非 availableBalance:mandate 提额超过余额后,
+    # available 会随保证金占用漂移(建仓越多 available 越小),用它定容量会让 book 自我收缩;
+    # equity 才是经济上正确的资本基数(2026-07-05 提额到 10000 时暴露)。
+    capital_base = equity if equity > 0 else aum
+    deploy_aum = capital_base
     if mandate is not None and mandate.max_gross_notional > 0:
-        deploy_aum = min(aum, 0.95 * mandate.max_gross_notional)
+        deploy_aum = min(capital_base, 0.95 * mandate.max_gross_notional)
 
     gate = PreTradeRiskGate(
         gate_limits(weights.keys(), gross_cap=aum * 2, net_cap=aum * 0.3,

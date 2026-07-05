@@ -15,20 +15,20 @@ _LOWPRICE_FILT = ExchangeFilters(instrument_id="XRP", step_size=1.0, min_qty=1.0
 # --- client_order_id ---
 
 def test_client_order_id_is_deterministic():
-    a = client_order_id("crowd_contra", 1_700_000_000_000, "BTC")
-    b = client_order_id("crowd_contra", 1_700_000_000_000, "BTC")
+    a = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
+    b = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
     assert a == b
 
 
 def test_client_order_id_differs_on_any_input_change():
-    base = client_order_id("crowd_contra", 1_700_000_000_000, "BTC")
-    assert client_order_id("carry_oi_majors", 1_700_000_000_000, "BTC") != base
-    assert client_order_id("crowd_contra", 1_700_000_000_001, "BTC") != base
-    assert client_order_id("crowd_contra", 1_700_000_000_000, "ETH") != base
+    base = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
+    assert client_order_id("carry_oi_majors", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015) != base
+    assert client_order_id("crowd_contra", 1_700_000_000_001, "BTC", OrderSide.BUY, 0.015) != base
+    assert client_order_id("crowd_contra", 1_700_000_000_000, "ETH", OrderSide.BUY, 0.015) != base
 
 
 def test_client_order_id_fits_binance_limit():
-    cid = client_order_id("crowd_contra", 1_700_000_000_000, "BTC")
+    cid = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
     assert 0 < len(cid) <= 36
     assert all(c.isalnum() for c in cid)          # 无特殊字符,肯定合法
 
@@ -61,7 +61,8 @@ def test_apply_exchange_filters_rounds_and_assigns_client_order_id():
     o = adjusted[0]
     assert o.instrument_id == "BTC" and o.side == OrderSide.BUY
     assert o.quantity == pytest.approx(0.015)                # 0.0158 -> floor to 0.001 grid
-    assert o.client_order_id == client_order_id("crowd_contra", 1_700_000_000_000, "BTC")
+    assert o.client_order_id == client_order_id("crowd_contra", 1_700_000_000_000, "BTC",
+                                                OrderSide.BUY, o.quantity)
 
 
 def test_apply_exchange_filters_drops_when_no_filter_available():
@@ -117,3 +118,48 @@ def test_apply_exchange_filters_low_price_coin_whole_unit_step():
         strategy_id="s", decided_ts=1)
     assert dropped == []
     assert adjusted[0].quantity == pytest.approx(333.0)
+
+
+# --- client_order_id 必须区分"同一决策的不同增量"(2026-07-05 双所真实调仓暴露的关键 bug) ---
+# 旧键 (strategy, decided_ts, instrument) 下,调仓批与首批同 ID:Binance 重复执行但账本
+# INSERT OR IGNORE 静默吞掉记账(仓位漂移),Bybit 直接被交易所去重没执行还误报成功。
+
+def test_client_order_id_differs_for_different_quantities():
+    from live.execution.filters import client_order_id
+    from quantos.contracts.trading import OrderSide
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 2.5)
+    assert a != b                                   # 不同增量 = 不同订单,绝不能同 ID
+
+
+def test_client_order_id_differs_for_different_sides():
+    from live.execution.filters import client_order_id
+    from quantos.contracts.trading import OrderSide
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.SELL, 1.0)
+    assert a != b
+
+
+def test_client_order_id_stable_for_identical_order():
+    from live.execution.filters import client_order_id
+    from quantos.contracts.trading import OrderSide
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 0.015)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 0.015)
+    assert a == b                                   # 同一订单重试仍幂等
+
+
+def test_client_order_id_keeps_decision_prefix_for_parity_linking():
+    from live.execution.filters import client_order_id, decision_prefix
+    from quantos.contracts.trading import OrderSide
+    p = decision_prefix("s", 1000, "BTC")
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 2.5)
+    assert a.startswith(p) and b.startswith(p)      # 同一决策的所有订单共享前缀(对账归因用)
+    assert not client_order_id("s", 1000, "ETH", OrderSide.BUY, 1.0).startswith(p)
+
+
+def test_client_order_id_fits_exchange_limits_even_with_slice_suffix():
+    from live.execution.filters import client_order_id
+    from quantos.contracts.trading import OrderSide
+    cid = client_order_id("crowd_contra", 1_783_036_800_000, "DOGE", OrderSide.SELL, 4811.123456)
+    assert len(cid) <= 32                            # Binance 上限 36,留 -sNN 切单后缀余量

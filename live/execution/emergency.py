@@ -133,7 +133,7 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
         adjusted = [replace(
             __req, reduce_only=True) for __req in (
             # 过滤器不可用 -> 原始数量直接构造请求,交易所是最终校验者
-            _raw_request(inst, side, qty, _cid("emergency_flatten", now, inst))
+            _raw_request(inst, side, qty, _cid("emergency_flatten", now, inst, side, qty))
             for inst, side, qty in validated)]
     else:
         adjusted = [replace(o, reduce_only=True) for o in adjusted]    # 强制 reduce-only

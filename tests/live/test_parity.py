@@ -7,7 +7,7 @@ live 账本的真实仓位/订单按 decided_ts 对齐:每标的目标名义额 
 """
 import pytest
 
-from live.execution.filters import client_order_id
+from live.execution.filters import decision_prefix
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from services.research.paper_trading.forward import ForwardLedger
 
@@ -17,7 +17,8 @@ _AUM = 6000.0
 
 
 def _orders_for(weights, statuses, strategy_id="crowd_contra", decided_ts=_NOW):
-    return [{"client_order_id": client_order_id(strategy_id, decided_ts, inst),
+    return [{"client_order_id": decision_prefix(strategy_id, decided_ts, inst) + "0" * 16,
+             "submitted_at": decided_ts,
              "instrument_id": inst, "status": statuses.get(inst, "FILLED")}
             for inst in weights if inst in statuses]
 

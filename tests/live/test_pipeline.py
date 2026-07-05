@@ -583,3 +583,39 @@ def test_resolve_unconfirmed_orders_handles_multiple_orders_independently(ledger
     assert ledger.position("ETH") == 0.0
     orders_by_id = {o["client_order_id"]: o["status"] for o in ledger.orders()}
     assert orders_by_id == {"c1": "FILLED", "c2": "NEW"}
+
+
+# --- 调仓回归(2026-07-05 双所真实调仓暴露):同一 decided_ts 下第二批不同增量的订单
+# --- 必须有不同 client_order_id,且两批都被完整记账 ---
+
+def test_resize_batch_same_decided_ts_books_both_batches(ledger):
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    # 第一批:目标 0.5 权重
+    r1 = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert ledger.position("BTC") == pytest.approx(5.0)
+    # 第二批(同 decided_ts,mandate 提额后的调仓):容量放大 -> 增量 10.0(不同于第一批的 5.0)
+    r2 = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=1_800_000.0,
+        current_positions={"BTC": 5.0},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW + 1000)
+    assert len(r2.submitted) == 1
+    cids = {c.client_order_id for c in venue.calls}
+    assert len(cids) == 2                              # 两批订单 ID 不同(增量不同 = 订单不同)
+    assert ledger.position("BTC") == pytest.approx(15.0)   # 第二批记账绝不被吞
+
+
+def test_recovery_books_increment_not_cumulative_fill(ledger):
+    # 提交路径确认时已记部分成交 40,交易所最终累计成交 100 —— 恢复只补 60,不重复记 100
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 100.0, submitted_at=_NOW, status="NEW")
+    ledger.record_fill("partial-1", "c1", "BTC", OrderSide.BUY, 40.0, 60000.0, filled_at=_NOW)
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v1", client_order_id="c1",
+                                           instrument_id="BTC", status="FILLED",
+                                           filled_qty=100.0, avg_price=60000.0)
+    resolve_unconfirmed_orders(ledger, venue, now=_NOW + 1000)
+    assert ledger.position("BTC") == pytest.approx(100.0)   # 40 + 60,不是 40 + 100

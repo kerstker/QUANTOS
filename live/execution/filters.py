@@ -17,11 +17,26 @@ from quantos.contracts.trading import OrderSide
 _MAX_CLIENT_ORDER_ID_LEN = 36     # Binance newClientOrderId 硬限制
 
 
-def client_order_id(strategy_id: str, decided_ts: int, instrument_id: str) -> str:
-    """确定性哈希:同一决策(策略+决策时间+标的)重试产生同一 ID,交易所天然去重、不会重复下单。
-    纯 hex(无特殊字符),长度 32 < 36 限制,安全裕量。"""
+def decision_prefix(strategy_id: str, decided_ts: int, instrument_id: str) -> str:
+    """同一决策(策略+决策时间+标的)下所有订单共享的 16 位前缀——live-paper 对账用它把订单
+    挂回决策腿(一条腿可能因调仓/重试产生多笔不同数量的订单)。"""
     key = f"{strategy_id}|{decided_ts}|{instrument_id}".encode()
-    return hashlib.sha256(key).hexdigest()[:32]
+    return hashlib.sha256(key).hexdigest()[:16]
+
+
+def client_order_id(strategy_id: str, decided_ts: int, instrument_id: str,
+                    side, quantity: float) -> str:
+    """确定性订单 ID = 决策前缀 16 位 + 订单身份(方向+数量)16 位,共 32 位 hex(<36 上限,
+    留切单 -sNN 后缀余量)。
+
+    **为什么必须包含方向+数量(2026-07-05 双所真实调仓暴露的关键 bug):** 旧键只有
+    (策略, 决策时间, 标的)——同一决策时间下的第二批订单(mandate 提额后的调仓增量)与第一批
+    **同 ID**:Binance 允许已成交 ID 复用,新单真实执行但账本 INSERT OR IGNORE 把记账当重复
+    静默吞掉(仓位漂移不报错);Bybit 直接按 orderLinkId 去重没执行,轮询还查到旧单的 FILLED
+    误报成功。正确的幂等语义是"同一笔订单的重试去重",订单身份 = 决策 + 方向 + 数量。"""
+    ident = f"{getattr(side, 'value', side)}|{quantity:.10f}".encode()
+    return decision_prefix(strategy_id, decided_ts, instrument_id) + \
+        hashlib.sha256(ident).hexdigest()[:16]
 
 
 def round_to_step(qty: float, step_size: float) -> float:
@@ -62,7 +77,7 @@ def apply_exchange_filters(desired: Sequence[Tuple[str, OrderSide, float]],
         if rounded * price < filt.min_notional:
             dropped.append((instrument_id, "below_min_notional"))
             continue
-        cid = client_order_id(strategy_id, decided_ts, instrument_id)
+        cid = client_order_id(strategy_id, decided_ts, instrument_id, side, rounded)
         adjusted.append(LiveOrderRequest(instrument_id=instrument_id, side=side,
                                          quantity=rounded, client_order_id=cid))
     return adjusted, dropped

@@ -157,9 +157,15 @@ def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: 
                 venue, o["instrument_id"], o["client_order_id"], result)
         ledger.update_status(o["client_order_id"], result.status, venue_order_id=result.venue_order_id)
         if result.status in _TERMINAL_ORDER_STATUSES and result.filled_qty > 0:
-            ledger.record_fill(_det_id("recover_fill", o["client_order_id"]), o["client_order_id"],
-                               o["instrument_id"], OrderSide(o["side"]), result.filled_qty,
-                               result.avg_price, filled_at=now)
+            # 增量记账:交易所报的 filled_qty 是**累计**口径——上一轮可能已把部分成交记过账
+            # (提交路径确认时的快照),恢复只补差额,绝不按累计量重复记(那会双倍计仓)。
+            already = sum(f["quantity"] for f in ledger.fills(o["instrument_id"])
+                          if f["client_order_id"] == o["client_order_id"])
+            increment = result.filled_qty - already
+            if increment > 1e-12:
+                ledger.record_fill(_det_id("recover_fill", o["client_order_id"]),
+                                   o["client_order_id"], o["instrument_id"], OrderSide(o["side"]),
+                                   increment, result.avg_price, filled_at=now)
         resolved.append({"client_order_id": o["client_order_id"], "status": result.status,
                         "filled_qty": result.filled_qty})
     return {"resolved": resolved}
@@ -192,7 +198,9 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
                       poll_sleep: Callable[[], None] = lambda: None,
                       slicer: Optional[Callable] = None) -> LiveBatchResult:
-    run_id = _det_id(strategy_id, decided_ts, tuple(sorted(weights.items())))
+    # run_id 含 now:同一决策在同一轮内确定,但两次独立调用(如提额后的调仓批)是两次运行,
+    # 审计事件 id 不能撞(GlobalAuditLog 防重放会拒绝重复 event_id)
+    run_id = _det_id(strategy_id, decided_ts, now, tuple(sorted(weights.items())))
     audit.append(event_id=_det_id("live_start", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
                 metadata={"aum": str(aum), "n_weights": str(len(weights))})
