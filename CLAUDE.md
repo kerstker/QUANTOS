@@ -193,6 +193,29 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (前端可触发,`ALLOWED_KINDS` 同步)。遗留:Bybit 真实联调(等 key 填入
   `key/bybit_test_key.json`,真实下单前单独确认)、mandate 真实数字(用户签)、Hyperliquid
   (维持推迟)、IC 面板 per-factor 持有期口径(候选改进)。
+  **双所真实上线 + 机构级差距审计与修复**(2026-07-05 续二,commits a359aeb…2af05f7):
+  用户提额 mandate 至 10000 USDT 后真实调仓,**暴露 CRITICAL bug**——旧 `client_order_id`
+  键(策略+decided_ts+标的)在同一决策的调仓增量批次间撞 ID:Binance 允许已成交 ID 复用→
+  新单真实执行但账本 `INSERT OR IGNORE` 静默吞掉记账(仓位漂移 2.6x 不报错);Bybit 按
+  `orderLinkId` 去重→根本没执行还因轮询查到旧单 FILLED 误报成功。修复:订单 ID =
+  决策前缀(16)+hash(方向|数量)(16),同订单重试仍幂等、不同增量视为不同订单。**Bybit
+  Demo 双所并行落地**(testnet 水龙头失灵,改用官方 Demo Trading——`DEMO_BASE`,demo 专属
+  资金申领端点)。**交易台**(`tools/live_ops_api.py:8440` + LiveDesk.tsx)——类交易所实时
+  界面,双所权益/仓位/uPnL/流水/净值曲线,操作只经驱动器 CLI 子进程(与人工 CLI 同一条治理
+  链)。**48-agent 10 维度机构级差距审计**(全审计+对抗式核实,加权 51%——元发现:原始
+  15 个 P0 核实后仅 5 个真站得住,其余被"testnet/demo 零真实资本+Phase 3A 评审兜底"降级
+  P1,但评审放行当天会集体转正,必须放行前修完)后修复:①价格新鲜度门此前 `price_as_of=now`
+  结构性恒真,现传真实 `decided_ts`;②跨源核价(CoinGecko 独立源,接线时抓到"决策价 vs
+  当前价"苹果比橘子的假阳性陷阱,加了新鲜度守卫);③Gate 账户上下文此前全部硬编码虚构
+  (positions=()/day_pnl=0/peak_equity=aum,双层防御实质单层),现接真实仓位/日内盈亏/峰值;
+  ④firm 级敞口聚合 + 拥挤度门(两个已建未接线的原语接上,真实数据分别抓到 8 个跨所重叠
+  标的和 0.509 拥挤分);⑤GlobalAuditLog→DurableAuditLog;⑥live-paper 偏差自动升级(真实
+  抓到 7.1% AUM 的 parity gap);⑦死人开关+灾备;⑧ops API 认证;⑨**kill-switch 跨进程
+  闩锁**(比审计原文更根本的发现:此前每次运行全新构造 `KillSwitch()`,latch 跨进程从未
+  真正生效,现持久化 + 驱动器/哨兵共享状态)+ 强制三方复位工具;⑩NEEDS_HUMAN_REVIEW
+  持久化队列(此前只计数、进程退出即丢,现持久化+ops API+LiveDesk 面板,诚实边界:只记录
+  决定不自动重提交)。**417→427 live+治理测试,全量门禁全绿**。仍未做:研究晋级前端闭环、
+  多方批准持久化存储、LIMIT/条件单、strategy_id 仓位隔离。设计文档 §14。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

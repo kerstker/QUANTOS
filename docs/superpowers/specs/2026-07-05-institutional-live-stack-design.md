@@ -170,3 +170,51 @@ n_slices)`:母单按名义额上限或等分切子单,子单 client_order_id 确
 **遗留(非本轮目标):** Bybit 真实联调(等 key 填入;真实下单前单独确认)、mandate 真实
 数字(用户签)、Hyperliquid(依赖决定,维持推迟)、IC 面板 per-factor 持有期口径
 (registry 加 horizon 字段,候选改进)。
+
+---
+
+## 14. 2026-07-05 续二:机构级差距审计(48-agent)+ 修复(commits 9c72eb5…2af05f7)
+
+用户提额到 10000 USDT 并要求"按顶级机构标准继续"后,先跑了一次 48-agent 10 维度机构级
+差距审计(全审计 + 对抗式核实,零失败)。**元发现**:原始审计标了约 15 个 P0,核实后仅 5 个
+真正站得住,其余全部被"当前仍是 testnet/demo,真钱前有 Phase 3A 人工评审兜底"这句话降级到
+P1——这个模式本身证明 L2 边界在真正生效,但也意味着评审放行那天这些 P1 会集体转正为 P0,
+必须在放行前修完,不能放行后才开始。加权总分 51%(风控 5.5、数据 4.0、治理 4.5、执行栈
+6.5、运维 4.0、证据链 6.0、AI 自主性 5.5、组合 5.5、研究平台 6.0、前端 4.5,10 分制)。
+
+**已修复(本轮全部完成,417→427 live+治理测试,全量门禁 1437+ 全绿):**
+
+- **P0-1 数据单源+新鲜度门**(`9c72eb5`):`price_as_of` 此前恒等于 `now`,新鲜度门数学上
+  永远不触发——现在传真实 `decided_ts`。新增跨源核价(`live/execution/price_check.py` +
+  CoinGecko `/simple/price` 独立源),单标的偏离超阈值/无法验证即从本轮剔除。**接线时抓到
+  一个真实设计陷阱**:决策价(可能因信号回看滞后 1-3 天)vs CoinGecko"当前"价是苹果比橘子,
+  加了新鲜度守卫(>3 天跳过核价,交给新鲜度门处理),避免"狼来了"式假阳性。
+- **P1 Gate 账户上下文去虚构**(同 commit,审计标"证据最干净"):`AccountRiskState` 此前
+  硬编码 positions=()/day_pnl=0.0/peak_equity=aum——仓位限额/集中度/敞口/杠杆/日内止损/
+  回撤检查全部对着虚构账户评估(双层防御实质单层)。新增 `gate_context.py::
+  build_gate_positions` + `day_pnl.py::compute_day_pnl`(UTC 跨日重置,与 peak_equity 同款
+  持久化模式)。真实验证:回撤门现在能算出真实 16.7% 回撤(此前恒 0)。
+- **P1 quick wins 打包**(`9c51ed0`):firm 级敞口聚合(`services/portfolio/
+  firm_aggregation.py` 已建未接线,接进哨兵——真实数据抓到两所 8 个重叠标的的隐藏拥挤)、
+  拥挤度门(`crowding_gate.py` 已建未接线,新增 `crowding_score.py` 用 global_ls 极端度做
+  证据源——真实数据触发 WARN score=0.509)、GlobalAuditLog→DurableAuditLog(内存链换持久化
+  哈希链)、live-paper 偏差自动升级(真实数据当场抓到 7.1% AUM 的 parity gap——正是审计报告
+  举的"此前从未升级"的原始案例)。
+- **P0 运维地基**(`84264b4`):死人开关(`tools/watchdog.py`,检查各调度任务 `ran_at`)+
+  灾备(`tools/live_backup.py`,业务数据+mandate 配置,刻意不含 API 密钥)。
+- **P1 治理操作化**(`2648993`+`2af05f7`):ops API 本机 token 认证(此前零认证,同机任意
+  进程可触发真实提交)+ **kill-switch 跨进程闩锁**(比审计原文更根本的发现:`KillSwitch()`
+  此前每次运行都全新构造,上一轮/哨兵触发的闩锁下一次调度完全看不到——latch"halt 直到
+  人工复位"的核心承诺在跨进程场景下从未真正生效;新增 `kill_switch_store.py` 持久化,
+  驱动器/哨兵共享同一状态文件)+ 强制三方复位工具(`live_kill_switch_reset.py` 结构性只走
+  `reset_with_grant()`,治理测试钉死不含 `.reset(`)+ NEEDS_HUMAN_REVIEW 持久化队列
+  (`review_queue.py` + ops API + LiveDesk 面板,诚实边界:只记录人工决定,不自动重新提交)。
+
+**诚实亮点(审计确认,非本轮新增)**:订单生命周期正确性、崩溃恢复+幂等、紧急减仓架构
+隔离、fail-closed 全审计零绕过口子、防过拟合库层质量——均是从真实事故里学会的教训被
+固化成代码,不是纸面设计。
+
+**仍未做(诚实记录,按审计路线图排序):** 研究晋级前端闭环(新因子进 forward-track 需改
+源码)、多方批准状态机持久化存储(approval.py 本身仍是纯状态机,`live_kill_switch_reset.py`
+的三步在一次调用里连续执行,不是三人分别登录)、LIMIT/条件单(仅 MARKET)、strategy_id 维度
+的仓位隔离(为第二条策略上线预留)、组合级现实主义引擎接入实盘风控。
