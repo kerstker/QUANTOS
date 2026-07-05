@@ -46,6 +46,7 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores
 from live.execution.day_pnl import compute_day_pnl
 from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
+from live.governance.review_queue import ReviewQueue
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions
@@ -132,6 +133,9 @@ def _venue_paths(suffix: str) -> dict:
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
         "audit": os.path.join("data", "cache", f"live_audit{suffix}.db"),
         "kill_switch": os.path.join("data", "cache", f"live_kill_switch{suffix}.json"),
+        # 共享(非 per-venue):一份人工审查收件箱,不是 N 个要分别check 的文件;schema 自带
+        # venue 列区分来源。
+        "review_queue": os.path.join("data", "cache", "live_review_queue.db"),
     }
 
 
@@ -543,6 +547,13 @@ def main() -> None:
         alerts.append(f"{len(result.ledger_write_errors)} ledger write errors — reconcile manually")
     if result.tier != AUTO:
         alerts.append(f"batch tier={result.tier}: {len(result.pending_review)} orders pending human review")
+        if result.pending_review:
+            # 持久化(2026-07-05,机构审计 P1):此前 pending_review 只被计数,进程退出即丢——
+            # 人类除了编辑全局 mandate 文件这把钝器之外无处可看。只做记录,不做"批准后自动
+            # 重新提交"(那需要独立设计,见 review_queue.py 模块说明)。
+            ReviewQueue(paths["review_queue"], create=True).record_batch(
+                venue_arg, decided_ts=decided_ts, orders=result.pending_review,
+                reasons=result.mandate_reasons, recorded_at=now)
 
     # 成交质量(TCA)+ 订单统计:读真实账本(不是 preview 草稿)——历史累计口径,供 console 展示
     order_stats: dict = {}

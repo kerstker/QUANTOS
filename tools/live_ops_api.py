@@ -40,8 +40,11 @@ from pydantic import BaseModel
 from live.execution.position_ledger import LiveLedger
 from live.execution.tca import tca_summary
 from live.governance.mandate_store import MandateLoadError, load_mandate
+from live.governance.review_queue import ReviewQueue
 from tools.live_snapshot import binance_position_rows, bybit_position_rows
 from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
+
+_REVIEW_QUEUE_PATH = os.path.join("data", "cache", "live_review_queue.db")
 
 _TOKEN_FILE = os.path.join("key", "live_ops_token.txt")
 
@@ -229,6 +232,37 @@ async def demo_funds(req: DemoFundsRequest) -> dict:
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
                           cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return {"returncode": proc.returncode, "output": (proc.stdout + proc.stderr)[-500:]}
+
+
+@app.get("/api/v1/liveops/pending-review", dependencies=[Depends(require_ops_token)])
+async def pending_review() -> dict:
+    """NEEDS_HUMAN_REVIEW 队列(2026-07-05):只读展示。**批准/拒绝在这里只记录人工决定,
+    不会自动重新提交订单**——见 live/governance/review_queue.py 模块说明的诚实边界。"""
+    if not os.path.exists(_REVIEW_QUEUE_PATH):
+        return {"pending": []}
+    return {"pending": ReviewQueue(_REVIEW_QUEUE_PATH).pending()}
+
+
+class ReviewDecisionRequest(BaseModel):
+    status: str                    # "APPROVED" | "REJECTED"
+    reviewer: str
+    note: str = ""
+
+
+@app.post("/api/v1/liveops/pending-review/{row_id}/decide",
+          dependencies=[Depends(require_ops_token)])
+async def decide_pending_review(row_id: int, req: ReviewDecisionRequest) -> dict:
+    if req.status not in ("APPROVED", "REJECTED"):
+        raise HTTPException(400, "status must be APPROVED or REJECTED")
+    if not req.reviewer.strip():
+        raise HTTPException(400, "reviewer name is required (accountability, not auth)")
+    if not os.path.exists(_REVIEW_QUEUE_PATH):
+        raise HTTPException(404, "no review queue yet")
+    ReviewQueue(_REVIEW_QUEUE_PATH).mark_reviewed(
+        row_id, status=req.status, reviewer=req.reviewer, at=int(time.time() * 1000),
+        note=req.note)
+    return {"ok": True, "row_id": row_id, "status": req.status,
+           "note": "decision recorded only — it does NOT resubmit the order"}
 
 
 if __name__ == "__main__":

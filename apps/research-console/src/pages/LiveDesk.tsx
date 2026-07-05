@@ -88,8 +88,14 @@ function EquityCurve({ points }: { points: EquityPoint[] }) {
   );
 }
 
+interface PendingReviewRow {
+  id: number; venue: string; decided_ts: number; client_order_id: string;
+  instrument_id: string; side: string; quantity: number; reasons: string; recorded_at: number;
+}
+
 export default function LiveDesk() {
   const [data, setData] = useState<DeskPayload | null>(null);
+  const [pending, setPending] = useState<PendingReviewRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -104,12 +110,34 @@ export default function LiveDesk() {
     } catch (e) {
       setErr(String(e));
     }
+    try {
+      const r2 = await fetch(`${OPS_URL}/api/v1/liveops/pending-review`, { headers: OPS_HEADERS });
+      if (r2.ok) setPending((await r2.json()).pending ?? []);
+    } catch { /* dashboard error already surfaced above */ }
   }, []);
 
   useEffect(() => {
     poll();
     timer.current = setInterval(poll, POLL_MS);
     return () => { if (timer.current) clearInterval(timer.current); };
+  }, [poll]);
+
+  const decideReview = useCallback(async (row: PendingReviewRow, status: 'APPROVED' | 'REJECTED') => {
+    const reviewer = window.prompt(
+      `${status === 'APPROVED' ? '批准' : '拒绝'} ${row.instrument_id} ${row.side} ${row.quantity}`
+      + `\n注意:这只记录人工决定,不会自动重新提交订单。你的名字(留痕):`);
+    if (!reviewer || !reviewer.trim()) return;
+    try {
+      const r = await fetch(`${OPS_URL}/api/v1/liveops/pending-review/${row.id}/decide`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
+        body: JSON.stringify({ status, reviewer: reviewer.trim() }),
+      });
+      setLastAction(r.ok ? `已记录:${row.instrument_id} ${status} by ${reviewer.trim()}` : `失败:HTTP ${r.status}`);
+    } catch (e) {
+      setLastAction(`失败:${String(e)}`);
+    } finally {
+      poll();
+    }
   }, [poll]);
 
   const runDriver = useCallback(async (venue: string, submit: boolean) => {
@@ -215,6 +243,29 @@ export default function LiveDesk() {
           {bi('上次操作', 'last action')}: {runState.venue} {runState.submit ? 'SUBMIT' : 'preview'} · rc={String(runState.returncode)}
           {runState.tail && <span className="mono"> · {runState.tail.slice(-160)}</span>}
         </div>
+      )}
+
+      {pending.length > 0 && (
+        <Panel eyebrow={bi('人工审查', 'HUMAN REVIEW')}
+          title={bi(`待人工审查(${pending.length})`, `Pending Human Review (${pending.length})`)}
+          right={<Chip label={bi('批准/拒绝仅记录,不自动重提交', 'decision recorded only, no auto-resubmit')} tone="warn" />}>
+          <DataTable rows={pending} getKey={r => r.id} columns={[
+            { key: 'venue', header: bi('交易所', 'Venue'), render: r => <span className="mono">{r.venue}</span> },
+            { key: 'inst', header: bi('标的', 'Inst'), render: r => <span className="mono text-ink">{r.instrument_id}</span> },
+            { key: 'side', header: bi('方向', 'Side'), render: r => <Chip label={r.side} tone={r.side === 'BUY' ? 'pos' : 'neg'} /> },
+            { key: 'qty', header: bi('数量', 'Qty'), align: 'right', mono: true, render: r => fixed(r.quantity, 6) },
+            { key: 'reasons', header: bi('原因', 'Reasons'), render: r => <span className="text-2xs text-warn">{r.reasons}</span> },
+            { key: 't', header: bi('记录于', 'Recorded'), mono: true, render: r => stamp(r.recorded_at) },
+            { key: 'actions', header: bi('操作', 'Actions'), render: r => (
+                <div className="flex gap-1.5">
+                  <button className="rounded border border-pos/50 px-2 py-0.5 text-2xs text-pos hover:bg-pos/10"
+                    onClick={() => decideReview(r, 'APPROVED')}>{bi('批准', 'Approve')}</button>
+                  <button className="rounded border border-neg/50 px-2 py-0.5 text-2xs text-neg hover:bg-neg/10"
+                    onClick={() => decideReview(r, 'REJECTED')}>{bi('拒绝', 'Reject')}</button>
+                </div>
+              ) },
+          ]} />
+        </Panel>
       )}
 
       {venues.map(v => (

@@ -106,3 +106,38 @@ def test_ops_api_cors_is_localhost_only():
     src = _src()
     assert 'allow_origins=["http://localhost:3100", "http://127.0.0.1:3100"]' in src
     assert '"*"' not in src.split("allow_origins")[1].split("]")[0]
+
+
+# --- NEEDS_HUMAN_REVIEW 队列(2026-07-05):只读展示 + 记录决定,绝不自动重新提交 ---
+
+def test_ops_api_pending_review_decision_never_resubmits_orders():
+    src = _src()
+    assert "submit_live_batch" not in src            # 已在上面钉过,这里再次确认覆盖新端点
+    assert "place_order" not in src
+
+
+def test_ops_api_pending_review_requires_reviewer_name():
+    from fastapi.testclient import TestClient
+    from tools.live_ops_api import _OPS_TOKEN, app
+    client = TestClient(app)
+    headers = {"X-Ops-Token": _OPS_TOKEN}
+    r = client.post("/api/v1/liveops/pending-review/1/decide",
+                    json={"status": "APPROVED", "reviewer": "  "}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_ops_api_pending_review_rejects_invalid_status():
+    from fastapi.testclient import TestClient
+    from tools.live_ops_api import _OPS_TOKEN, app
+    client = TestClient(app)
+    headers = {"X-Ops-Token": _OPS_TOKEN}
+    r = client.post("/api/v1/liveops/pending-review/1/decide",
+                    json={"status": "MAYBE", "reviewer": "alice"}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_ops_api_pending_review_requires_auth():
+    from fastapi.testclient import TestClient
+    from tools.live_ops_api import app
+    client = TestClient(app)
+    assert client.get("/api/v1/liveops/pending-review").status_code == 401
