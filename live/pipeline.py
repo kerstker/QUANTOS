@@ -197,7 +197,8 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       unit_scale: int = UNIT_SCALE,
                       max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
                       poll_sleep: Callable[[], None] = lambda: None,
-                      slicer: Optional[Callable] = None) -> LiveBatchResult:
+                      slicer: Optional[Callable] = None,
+                      frozen: frozenset = frozenset()) -> LiveBatchResult:
     # run_id 含 now:同一决策在同一轮内确定,但两次独立调用(如提额后的调仓批)是两次运行,
     # 审计事件 id 不能撞(GlobalAuditLog 防重放会拒绝重复 event_id)
     run_id = _det_id(strategy_id, decided_ts, now, tuple(sorted(weights.items())))
@@ -205,8 +206,19 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
                 metadata={"aum": str(aum), "n_weights": str(len(weights))})
 
-    scaled_targets = plan_scaled_targets(weights, prices, aum, unit_scale=unit_scale)
-    scaled_current = {inst: int(round(qty * unit_scale)) for inst, qty in current_positions.items()}
+    # 冻结语义(2026-07-06,空权重根因调查修复③):被跨源核价等数据质量检查剔除的标的,必须
+    # 从 targets 与 current 两侧同时排除——只从 weights 剔除的话,凡有持仓的名字会被
+    # build_intents 视为"目标 0"生成真实平仓单,把"这个标的的价格暂时核不上"放大成"主动平仓"。
+    # 冻结 = 本轮对该标的什么都不做,仓位原样。mandate 的账户上下文仍看全量 current_positions
+    # (账户事实不因冻结而改变——evaluate_mandate 在下方收的仍是未过滤的 current_positions)。
+    if frozen:
+        audit.append(event_id=_det_id("live_frozen", run_id), actor=f"live:{strategy_id}",
+                    action="LIVE_INSTRUMENTS_FROZEN", timestamp=now, target=run_id,
+                    metadata={"instruments": ",".join(sorted(frozen))})
+    weights_active = {k: w for k, w in weights.items() if k not in frozen}
+    scaled_targets = plan_scaled_targets(weights_active, prices, aum, unit_scale=unit_scale)
+    scaled_current = {inst: int(round(qty * unit_scale)) for inst, qty in current_positions.items()
+                      if inst not in frozen}
     intents = build_intents(scaled_targets, scaled_current, strategy_id=strategy_id)
     screened = screen_intents(intents, gate=gate, ctx_factory=ctx_factory)
     for intent, reasons in screened["rejected"]:

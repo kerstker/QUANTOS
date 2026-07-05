@@ -30,6 +30,7 @@ from tools.alert_sink import emit
 from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
+from tools.signal_quality import rows_with_acceptable_coverage
 
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
@@ -133,8 +134,15 @@ def main() -> None:
             # 面板最新行,而最新行的 OI 常常还没更新(K线刷新快于 OI 指标)——盲取会整周跳过
             # 决策、证据钟白丢一周。在本周窗口内回看最近一行有信号的行;decided_ts 如实用该行
             # 数据时间(决策带数据时间,口径不变)。回看行的价格补进 prices,兑现定价不受影响。
+            # 2026-07-06 根因调查修复①:OI 归档逐 symbol 滞后发布,发布窗口内最新行可能是
+            # "毛边行"(部分覆盖)——只查 `if weights:` 会把毛边行记成残缺决策,永久污染
+            # append-only 证据台账。覆盖率门与 live 驱动器同一口径(tools/signal_quality.py)。
             lo = rows[-2] if len(rows) > 1 else max(-1, r_last - 7)
-            for r_try in range(r_last, lo, -1):
+            candidates = list(range(r_last, lo, -1))
+            acceptable = set(rows_with_acceptable_coverage(sig, candidates))
+            for r_try in candidates:
+                if r_try not in acceptable:
+                    continue
                 weights, signals = _weights_and_signals(sig[r_try], insts)
                 if weights:
                     t_dec = int(ev[r_try])

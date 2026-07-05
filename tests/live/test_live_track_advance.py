@@ -186,6 +186,73 @@ def test_latest_weights_all_rows_empty_is_honest_empty():
     assert ls_row == {}
 
 
+# --- 2026-07-06 P0(空权重根因调查 CONFIRMED 修复):walkback 覆盖率门 + 跳批语义 ---
+
+def _panel_with_marginal_then_full_rows():
+    """r0/r1 满行(10/10 有 OI),r2 毛边行(恰 4/10——过 _legs 的绝对门槛 4 但远低于
+    0.8×10 覆盖率),r3 全空(OI 归档还没到)。模拟归档逐 symbol 发布窗口内的真实缓存形态。"""
+    import services.research.alpha_expression as ax
+    insts = [f"C{i}" for i in range(10)]
+    ls_full = [1.0 + i * 0.1 for i in range(10)]
+    ls_marginal = ls_full[:4] + [None] * 6
+    close_full = [100.0 + i for i in range(10)]
+    matrices = {
+        "global_ls": [ls_full, ls_full, ls_marginal, [None] * 10],
+        "close": [close_full, close_full, close_full, close_full],
+    }
+    return ax.FieldPanel(instruments=insts, event_times=[1000, 2000, 3000, 4000],
+                         matrices=matrices)
+
+
+def test_walkback_skips_marginal_partial_coverage_row():
+    # 修复前:r2 毛边行 4 个非 None 过 `if legs:` 即被接受 -> 2 腿退化 book;
+    # 修复后:覆盖率 4/10 < 0.8×(窗口内最大 10) -> 跳过毛边行,落到 r1 满行
+    from tools.live_track_advance import _latest_weights_and_prices
+    panel = _panel_with_marginal_then_full_rows()
+    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, panel.instruments))
+    assert decided_ts == 2000                       # 满行,不是毛边行的 3000
+    assert len(weights) >= 4                        # 满截面 book,不是 2 腿退化 book
+
+
+def test_walkback_uniform_low_coverage_universe_is_accepted():
+    # 整个窗口都是 6/10(退市币现实)——覆盖率相对窗口内最大截面数,最新行照常接受
+    import services.research.alpha_expression as ax
+    from tools.live_track_advance import _latest_weights_and_prices
+    insts = [f"C{i}" for i in range(10)]
+    ls_row6 = [1.0 + i * 0.1 for i in range(6)] + [None] * 4
+    close_full = [100.0 + i for i in range(10)]
+    matrices = {"global_ls": [ls_row6, ls_row6, ls_row6],
+                "close": [close_full, close_full, close_full]}
+    panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
+    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, insts))
+    assert weights
+    assert decided_ts == 3
+
+
+def test_batch_skip_reason_empty_weights():
+    from tools.live_track_advance import batch_skip_reason
+    assert batch_skip_reason({}, crowding_blocked=False, expected_legs=None) is not None
+
+
+def test_batch_skip_reason_crowding_block():
+    from tools.live_track_advance import batch_skip_reason
+    assert batch_skip_reason({"BTC": 0.5}, crowding_blocked=True, expected_legs=None) is not None
+
+
+def test_batch_skip_reason_signal_shrink_below_ratio():
+    # 上次决策 14 腿,这轮只剩 7 腿(< 0.8×14)——数据质量问题,跳批保仓,不是"平掉一半 book"
+    from tools.live_track_advance import batch_skip_reason
+    weights = {f"C{i}": 0.1 for i in range(7)}
+    assert batch_skip_reason(weights, crowding_blocked=False, expected_legs=14) is not None
+
+
+def test_batch_skip_reason_healthy_batch_returns_none():
+    from tools.live_track_advance import batch_skip_reason
+    weights = {f"C{i}": 0.1 for i in range(13)}
+    assert batch_skip_reason(weights, crowding_blocked=False, expected_legs=14) is None
+    assert batch_skip_reason({"BTC": 0.5}, crowding_blocked=False, expected_legs=None) is None
+
+
 def test_each_venue_has_its_own_mandate_ledger_and_state_paths():
     # 一个 mandate 只授权一个交易所;不同交易所 = 不同账户,账本/状态/mandate 绝不共用
     from tools.live_track_advance import _VENUES, _venue_paths

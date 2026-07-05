@@ -59,7 +59,8 @@ from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_st
 from live.execution.tca import tca_summary
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
-from live.pipeline import UNIT_SCALE, resolve_unconfirmed_orders, submit_live_batch
+from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
+                           submit_live_batch)
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.crowding_gate import evaluate_crowding_gate
 from services.research import alpha_expression as ax
@@ -72,6 +73,7 @@ from tools.coingecko_fetch import fetch_simple_prices
 from tools.crypto_oi_research import QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
+from tools.signal_quality import rows_with_acceptable_coverage
 
 _STRATEGY_ID = "crowd_contra"
 
@@ -150,6 +152,10 @@ _MAX_SLIPPAGE_OVER_ASSUMED_BPS = 50.0
 # 这道防线变成"狼来了"式假阳性,反而侵蚀它的可信度。超出这个窗口 -> 跳过核价(新鲜度门
 # `check_market_session` 已经在管这类过旧数据的场景)。
 _CROSS_CHECK_MAX_STALENESS_MS = 3 * 86_400_000
+# 0~3 天窗口内阈值按决策价年龄放大(2026-07-06 根因调查:2.5 天旧的决策价 vs 现价偏 15% 是
+# crypto 正常波动,不是数据源损坏;固定 5% 阈值在这个窗口内是"狼来了"式误剔的来源)。
+# 5%/天 ≈ crypto 大市值币日波动的工程量级(非风险数字)。
+_CROSS_CHECK_DIVERGENCE_PER_DAY = 0.05
 
 
 def _load_day_state(path: str) -> Optional[dict]:
@@ -299,9 +305,12 @@ _SIGNAL_MAX_LOOKBACK_ROWS = 7      # 信号行回看上限(日频面板 = 一周
 
 
 def _latest_weights_and_prices(panel_bundle=None):
-    """最近一行**有信号**的决策快照。2026-07-05 修复:面板最后一行常常 OI 全空(K线刷新比
-    OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮静默零意图。
-    改为从最后一行往回找第一行 `_legs` 非空的行(有界回看,超出上限诚实返回空,不硬凑);
+    """最近一行**有信号且覆盖率达标**的决策快照。2026-07-05 修复:面板最后一行常常 OI 全空
+    (K线刷新比 OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮
+    静默零意图。改为从最后一行往回找(有界回看,超出上限诚实返回空,不硬凑)。
+    **2026-07-06 根因调查修复①**:OI 归档逐 symbol 滞后发布,发布窗口内最新行可能是"毛边行"
+    (4~13/24 部分覆盖)——`if legs:` 会接受它产出 2~8 腿的退化 book。现在接受条件加覆盖率门:
+    该行非 None 信号数 ≥ 0.8 × 回看窗口内最大截面数(见 tools/signal_quality.py)。
     价格取同一行(决策快照自洽),decided_ts = 该行数据时间(决策带数据时间,与 Stage 0 同一
     诚实口径)。同时带出该行的 `global_ls`(拥挤度门的证据源,见 `crowding_score.py`)。"""
     panel, _instruments = panel_bundle if panel_bundle is not None else build_panel()
@@ -311,7 +320,8 @@ def _latest_weights_and_prices(panel_bundle=None):
     ev = panel.event_times
     sig = ax.evaluate(CROWD_CONTRA, panel)
     r_last = len(ev) - 1
-    for r in range(r_last, max(r_last - _SIGNAL_MAX_LOOKBACK_ROWS, -1), -1):
+    candidates = list(range(r_last, max(r_last - _SIGNAL_MAX_LOOKBACK_ROWS, -1), -1))
+    for r in rows_with_acceptable_coverage(sig, candidates):
         legs = _legs(sig[r], QUANTILE)
         if legs:
             weights = {insts[i]: w for i, w in legs.items()}
@@ -320,6 +330,28 @@ def _latest_weights_and_prices(panel_bundle=None):
                      if global_ls[r][i] is not None}
             return weights, prices, int(ev[r]), ls_row
     return {}, {}, int(ev[r_last]), {}
+
+
+_MIN_SIGNAL_LEG_RATIO = 0.8   # 与覆盖率门同一口径:信号腿数掉到上次决策的 80% 以下即视为数据问题
+
+
+def batch_skip_reason(weights, *, crowding_blocked, expected_legs,
+                      min_ratio=_MIN_SIGNAL_LEG_RATIO):
+    """本轮是否应该跳过整批(保持现有仓位、只告警)——**信号收缩与平仓解耦**(2026-07-06
+    根因调查修复②):空/残缺 weights 喂进 build_intents 不是"少交易",而是把消失的持仓名字
+    目标置 0、生成真实平仓单——数据质量问题被放大成"主动清仓 churn"。任何数据质量性质的
+    信号收缩都应该跳批,而不是照常执行一个退化 book。返回 None = 批次健康,照常执行。"""
+    if crowding_blocked:
+        return ("crowding gate BLOCK — skipping batch (existing positions untouched, "
+                "no new/rebalance orders this cycle)")
+    if not weights:
+        return ("signal empty after walkback — data-quality issue, skipping batch "
+                "(existing positions untouched)")
+    if expected_legs and len(weights) < min_ratio * expected_legs:
+        return (f"signal shrank to {len(weights)}/{expected_legs} legs "
+                f"(< {min_ratio:.0%}) — data-quality issue, skipping batch "
+                f"(existing positions untouched)")
+    return None
 
 
 def main() -> None:
@@ -348,24 +380,29 @@ def main() -> None:
 
     # 拥挤度门(2026-07-05,机构审计 P1 quick win):crowding_gate.py 已建成测试却从未接入
     # 真实下单路径。crowd_contra 本身就是"反着做拥挤的散户多空仓位",这里量化它交易的对象
-    # (global_ls 偏离 1.0 的截面分位)作为证据喂给门。BLOCK -> 本轮零新意图(不动现有仓位,
-    # 只是不新增/调整这本已判定过度拥挤的 book);WARN -> 仅告警。诊断证据不足(coverage 太低/
-    # 无 global_ls 数据)时门本身 fail-closed 返回 BLOCK,同样只是不新增仓位,不是灾难。
+    # (global_ls 偏离 1.0 的截面分位)作为证据喂给门。BLOCK -> 跳过整批(不动现有仓位,
+    # 只是不新增/调整这本已判定过度拥挤的 book,见 batch_skip_reason——2026-07-06 修复:
+    # 此前 BLOCK 分支把 weights 置空,空 weights 会让 build_intents 把全部持仓目标置 0、
+    # 生成真实平仓单,行为与本注释的承诺相反);WARN -> 仅告警。诊断证据不足(coverage 太低/
+    # 无 global_ls 数据)时门本身 fail-closed 返回 BLOCK,同样只是跳批,不是灾难。
+    crowding_blocked = False
     if weights:
         crowding_scores = compute_crowding_scores(global_ls_row)
         crowding_decision = evaluate_crowding_gate(weights, crowding_scores)
         if crowding_decision.status != "PASS":
             alerts.append(f"crowding gate {crowding_decision.status}: {crowding_decision.reasons} "
                          f"(score={crowding_decision.score})")
-        if crowding_decision.status == "BLOCK":
-            weights = {}
+        crowding_blocked = crowding_decision.status == "BLOCK"
 
     # 跨源核价(2026-07-05,机构审计 P0):单一数据源(Binance K线)一次静默滞后/错误会
-    # 同时误导双所下单——用独立第二源(CoinGecko)交叉核价,单标的偏离超阈值或无法验证
-    # 一律从本轮 weights 剔除(fail-soft per-instrument,不因一个标的核价失败拖垮整批;
-    # 只从 weights 剔除、不动 prices——prices 还要喂风控的持仓估值,那是另一个关注点)。
-    # 第二源整体不可用(如网络故障)-> 不逐个标的误判,只整体告警。决策价过旧 -> 直接跳过
-    # (见 _CROSS_CHECK_MAX_STALENESS_MS 注释,避免历史价 vs 当前价的假阳性)。
+    # 同时误导双所下单——用独立第二源(CoinGecko)交叉核价。**2026-07-06 修复:剔除改冻结**
+    # ——此前"从 weights 剔除"会让有持仓的名字被 build_intents 视为目标 0 生成真实平仓单,
+    # 把"这个标的核不上价"放大成"主动平仓";现在核不上/偏离超阈值的标的进 frozen 集合,
+    # 由 submit_live_batch 从 targets 与 current 双侧排除(本轮对它什么都不做,仓位原样)。
+    # 阈值按决策价年龄放大(决策价因 OI 滞后结构性旧 1~3 天,crypto 正常日波动会造成偏离,
+    # 不代表数据源损坏);超过 3 天直接跳过检查(新鲜度门在管过旧数据)。真正的同时点核价
+    # (venue 盘口 vs 独立源)等 venue 适配器有 book_ticker 后升级——见战线② LIMIT 设计。
+    frozen_names: set = set()
     if now - decided_ts > _CROSS_CHECK_MAX_STALENESS_MS:
         alerts.append(f"cross-venue price check skipped: decided_ts is "
                       f"{(now - decided_ts) / 86_400_000:.1f}d old (comparing against a moving "
@@ -378,12 +415,34 @@ def main() -> None:
             secondary_prices = {}
             secondary_unavailable = True
             alerts.append(f"cross-venue price check unavailable: {type(exc).__name__}: {exc}")
+        age_days = (now - decided_ts) / 86_400_000
+        max_div = _MAX_PRICE_DIVERGENCE_PCT + _CROSS_CHECK_DIVERGENCE_PER_DAY * age_days
         flagged = flag_divergent_instruments(
             {k: v for k, v in prices.items() if k in weights}, secondary_prices,
-            max_divergence_pct=_MAX_PRICE_DIVERGENCE_PCT, secondary_unavailable=secondary_unavailable)
+            max_divergence_pct=max_div, secondary_unavailable=secondary_unavailable)
         if flagged:
-            alerts.append(f"cross-venue price check dropped {len(flagged)} instrument(s): {flagged}")
-            weights = {k: w for k, w in weights.items() if k not in flagged}
+            frozen_names = set(flagged)
+            alerts.append(f"cross-venue price check froze {len(flagged)} instrument(s) "
+                          f"(positions untouched, threshold={max_div:.1%} at "
+                          f"{age_days:.1f}d age): {flagged}")
+            if len(frozen_names) >= 0.5 * max(len(weights), 1):
+                alerts.append("cross-venue check froze most of the book — treat as a data "
+                              "incident, investigate the price sources before next cycle")
+
+    # 信号收缩防护的参照:上次记录在案的决策腿数(Stage 0 前向台账;也是下方 parity 的纸面侧)。
+    # 提早加载:跳批判断需要它。fail-soft——台账缺失只影响收缩比较,空信号检查照常有效。
+    paper_weights, paper_source = None, "recomputed_signal"
+    try:
+        from services.research.paper_trading.forward import ForwardLedger
+        paper_weights = paper_weights_from_forward_ledger(
+            ForwardLedger(_FORWARD_DB), _STRATEGY_ID, decided_ts)
+        if paper_weights is not None:
+            paper_source = "forward_ledger"
+    except Exception:
+        pass
+    expected_legs = len(paper_weights) if paper_weights else None
+    skip_reason = batch_skip_reason(weights, crowding_blocked=crowding_blocked,
+                                    expected_legs=expected_legs)
 
     api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
     adapter_cls = venue_cfg["adapter"]
@@ -529,25 +588,25 @@ def main() -> None:
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=ledger_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity)
-    result = submit_live_batch(
-        weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
-        gate=gate, ctx_factory=ctx_factory, venue=venue,
-        mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
-        decided_ts=decided_ts, now=now,
-        poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
+    # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
+    # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
+    # (那会把消失的持仓名字目标置 0、生成真实平仓单)。对账/风控/kill-switch 检查在上面已
+    # 照常跑完——跳的只是"新订单",不是安全检查。
+    if skip_reason is not None:
+        alerts.append(f"BATCH SKIPPED (positions untouched): {skip_reason}")
+        result = LiveBatchResult(tier="SKIPPED_DATA_QUALITY")
+    else:
+        result = submit_live_batch(
+            weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
+            gate=gate, ctx_factory=ctx_factory, venue=venue,
+            mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
+            decided_ts=decided_ts, now=now, frozen=frozenset(frozen_names),
+            poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
 
     # live-paper 对账(2026-07-05):纸面侧优先用 Stage 0 台账里记录在案的权重(不是重算的
     # 信号——重算会掩盖两条路径间的信号漂移);台账缺这一期时回退到本轮计算的 weights,
-    # 来源如实标注。live 侧仓位:submit 用真实账本(含本轮成交),preview 用真实历史仓位。
-    paper_weights, paper_source = None, "recomputed_signal"
-    try:
-        from services.research.paper_trading.forward import ForwardLedger
-        paper_weights = paper_weights_from_forward_ledger(
-            ForwardLedger(_FORWARD_DB), _STRATEGY_ID, decided_ts)
-        if paper_weights is not None:
-            paper_source = "forward_ledger"
-    except Exception:
-        pass
+    # 来源如实标注(paper_weights 已在跳批判断前加载)。live 侧仓位:submit 用真实账本
+    # (含本轮成交),preview 用真实历史仓位。
     parity = parity_report(
         paper_weights=paper_weights if paper_weights is not None else weights,
         paper_source=paper_source, aum=deploy_aum, prices=prices,
@@ -566,7 +625,7 @@ def main() -> None:
             alerts.append(f"submit failed {failed_order.instrument_id}: {err[:160]}")
     if result.ledger_write_errors:
         alerts.append(f"{len(result.ledger_write_errors)} ledger write errors — reconcile manually")
-    if result.tier != AUTO:
+    if result.tier not in (AUTO, "SKIPPED_DATA_QUALITY"):
         alerts.append(f"batch tier={result.tier}: {len(result.pending_review)} orders pending human review")
         if result.pending_review:
             # 持久化(2026-07-05,机构审计 P1):此前 pending_review 只被计数,进程退出即丢——
@@ -597,6 +656,7 @@ def main() -> None:
         "n_dropped_by_filters": len(result.dropped_by_filters),
         "n_submission_errors": len(result.submission_errors),
         "n_ledger_write_errors": len(result.ledger_write_errors),
+        "batch_skipped": skip_reason, "n_frozen": len(frozen_names),
         "reconciliation": recon, "aum": aum, "deploy_aum": deploy_aum, "alerts": alerts,
         "parity": {"paper_source": parity["paper_source"],
                    "n_paper_legs": parity["n_paper_legs"],

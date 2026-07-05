@@ -619,3 +619,45 @@ def test_recovery_books_increment_not_cumulative_fill(ledger):
                                            filled_qty=100.0, avg_price=60000.0)
     resolve_unconfirmed_orders(ledger, venue, now=_NOW + 1000)
     assert ledger.position("BTC") == pytest.approx(100.0)   # 40 + 60,不是 40 + 100
+
+
+# --- 2026-07-06 P0(空权重根因调查修复②③):冻结语义——信号收缩与平仓解耦 ---
+# 修复前:凡从 weights 里消失的持仓名字,build_intents 视为目标 0 -> 生成真实平仓单。
+# 跨源核价剔除/信号毛边收缩由此被放大成"主动清仓 churn"。冻结 = targets 与 current 双侧
+# 排除,该标的的仓位原样不动;mandate 的账户上下文仍看全量 current_positions(那是账户事实)。
+
+def test_frozen_held_instrument_generates_no_close_intent(ledger):
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={"ETH": -100.0}, frozen=frozenset({"ETH"}),
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert result.tier == AUTO
+    touched = {c.instrument_id for c in venue.calls}
+    assert "ETH" not in touched                      # 冻结的持仓绝不产生平仓单
+    assert "BTC" in touched                          # 未冻结的照常交易
+
+
+def test_frozen_target_instrument_is_not_opened(ledger):
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    submit_live_batch(
+        weights={"BTC": 0.5, "ETH": -0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={}, frozen=frozenset({"ETH"}),
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert {c.instrument_id for c in venue.calls} == {"BTC"}
+
+
+def test_default_no_frozen_keeps_existing_rebalance_close_behavior(ledger):
+    # 不传 frozen:weights 里没有的持仓仍然目标 0(正常调仓的平仓语义不变,这是特性不是 bug)
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={"ETH": -100.0},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert "ETH" in {c.instrument_id for c in venue.calls}
