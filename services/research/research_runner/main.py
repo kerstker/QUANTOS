@@ -79,6 +79,20 @@ class CancelRequest(BaseModel):
 
 
 @app.post("/cancel")
-async def cancel(req: CancelRequest) -> dict:
+async def cancel(req: CancelRequest, x_operator: str = Header(default=None)) -> dict:
+    # 2026-07-05 安全审查 MEDIUM 修复:/cancel 此前不要求 X-Operator,与 /run 的问责要求
+    # 不对称——任何人可以枚举 /api/v1/console/research-runs(公开只读)拿到 run_id 后匿名
+    # 撤销别人的任务,连事后追责都做不到。同 /run 一样,这是自报的问责标签,不是身份认证
+    # (那是 Phase 14 的范畴)。
+    operator = (x_operator or "").strip()
+    if not operator:
+        raise HTTPException(status_code=400, detail="X-Operator header required (self-asserted operator tag)")
     # soft cancel: mark the run cancelled and drop its result (a running tool is not force-killed)
-    return {"run_id": req.run_id, "cancelled": _queue.cancel(req.run_id)}
+    cancelled = _queue.cancel(req.run_id)
+    try:
+        _audit.append(event_id=f"cancel.{req.run_id}.{int(time.time())}", actor=operator,
+                     action="research.run.cancelled", timestamp=int(time.time()),
+                     target=req.run_id, metadata={"cancelled": str(cancelled)})
+    except Exception:
+        pass
+    return {"run_id": req.run_id, "cancelled": cancelled, "operator": operator}

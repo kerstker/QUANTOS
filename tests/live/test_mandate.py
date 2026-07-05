@@ -135,3 +135,33 @@ def test_exchange_unset_on_mandate_needs_review():
     d = evaluate_mandate(orders, {"BTC": 60000.0}, m, venue="binance_testnet", exchange="binance",
                          now=1)
     assert d.tier == NEEDS_HUMAN_REVIEW and "exchange_unset" in d.reasons
+
+
+# --- 2026-07-05 安全审查 HIGH 发现:NaN 参与比较恒为 False,静默绕过限额检查 ---
+# 纵深防御:即便 mandate_store 已经在加载时挡住了,evaluate_mandate 自己也不该信任
+# "price 参数是有限数"这个假设(price 来自实时行情,不是 mandate 文件)。
+
+def test_nan_price_input_fails_closed_not_silently_passes():
+    orders = [_order("BTC", OrderSide.BUY, 1.0)]
+    d = evaluate_mandate(orders, {"BTC": float("nan")}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW
+
+
+def test_infinite_price_input_fails_closed_not_silently_passes():
+    orders = [_order("BTC", OrderSide.BUY, 1.0)]
+    d = evaluate_mandate(orders, {"BTC": float("inf")}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW
+
+
+def test_mandate_with_nan_threshold_fails_closed_even_if_constructed_directly():
+    # 即便有人绕过 mandate_store 直接构造 Mandate(如未来新增的调用路径),evaluate_mandate
+    # 本身也不该被 NaN 阈值架空——纵深防御,不能只靠加载层一道关卡
+    m = Mandate(mandate_id="m", venue="binance_testnet", exchange="binance",
+               allowed_instruments=frozenset({"BTC"}), max_single_order_notional=float("nan"),
+               max_gross_notional=1e9, max_net_notional=1e9)
+    orders = [_order("BTC", OrderSide.BUY, 1000.0)]      # 名义额 $60,000,000
+    d = evaluate_mandate(orders, {"BTC": 60000.0}, m, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW

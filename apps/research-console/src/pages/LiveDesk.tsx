@@ -11,11 +11,24 @@ import { money, fixed, stamp } from '@/ui/format';
  */
 
 const OPS_URL: string = (import.meta as any).env?.VITE_OPS_URL || 'http://127.0.0.1:8440';
-// 本机共享密钥认证(2026-07-05):ops API 的全部端点现在要求 X-Ops-Token 匹配
-// key/live_ops_token.txt(首次启动自动生成)。开发时把该文件内容填进 .env 的
-// VITE_OPS_TOKEN——前端不生成/不猜这个值,只是把你自己已经能读到的本机密钥转发过去。
-const OPS_TOKEN: string = (import.meta as any).env?.VITE_OPS_TOKEN || '';
-const OPS_HEADERS: Record<string, string> = OPS_TOKEN ? { 'X-Ops-Token': OPS_TOKEN } : {};
+// 本机共享密钥认证(2026-07-05,2026-07-05 安全审查后修正):ops API 的全部端点要求
+// X-Ops-Token 匹配 key/live_ops_token.txt。**刻意不用 VITE_ 前缀的构建期变量**——Vite 会把
+// 那类变量原样编译进最终 JS bundle 明文,任何能拿到这份 JS 文件的人(一旦控制台以
+// `--host`/反代/静态托管等非纯 loopback dev server 方式暴露)`grep` 一下就能拿到共享密钥,
+// 绕过浏览器直接对 ops API 发起真实请求。改为运行时输入:只存在 sessionStorage(不进构建
+// 产物、关闭标签页即清空,不跨会话持久化)。
+const OPS_TOKEN_STORAGE_KEY = 'quantos_ops_token';
+
+function useOpsToken(): [string, (t: string) => void] {
+  const [token, setTokenState] = useState<string>(() => {
+    try { return sessionStorage.getItem(OPS_TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+  });
+  const setToken = (t: string) => {
+    setTokenState(t);
+    try { sessionStorage.setItem(OPS_TOKEN_STORAGE_KEY, t); } catch { /* private-mode etc */ }
+  };
+  return [token, setToken];
+}
 const POLL_MS = 8000;
 
 interface PositionRow {
@@ -99,11 +112,14 @@ export default function LiveDesk() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [opsToken, setOpsToken] = useOpsToken();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const opsHeaders: Record<string, string> = opsToken ? { 'X-Ops-Token': opsToken } : {};
 
   const poll = useCallback(async () => {
+    if (!opsToken) { setErr('need-token'); return; }
     try {
-      const r = await fetch(`${OPS_URL}/api/v1/liveops/dashboard`, { headers: OPS_HEADERS });
+      const r = await fetch(`${OPS_URL}/api/v1/liveops/dashboard`, { headers: opsHeaders });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setData(await r.json());
       setErr(null);
@@ -111,10 +127,11 @@ export default function LiveDesk() {
       setErr(String(e));
     }
     try {
-      const r2 = await fetch(`${OPS_URL}/api/v1/liveops/pending-review`, { headers: OPS_HEADERS });
+      const r2 = await fetch(`${OPS_URL}/api/v1/liveops/pending-review`, { headers: opsHeaders });
       if (r2.ok) setPending((await r2.json()).pending ?? []);
     } catch { /* dashboard error already surfaced above */ }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opsToken]);
 
   useEffect(() => {
     poll();
@@ -129,7 +146,7 @@ export default function LiveDesk() {
     if (!reviewer || !reviewer.trim()) return;
     try {
       const r = await fetch(`${OPS_URL}/api/v1/liveops/pending-review/${row.id}/decide`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...opsHeaders },
         body: JSON.stringify({ status, reviewer: reviewer.trim() }),
       });
       setLastAction(r.ok ? `已记录:${row.instrument_id} ${status} by ${reviewer.trim()}` : `失败:HTTP ${r.status}`);
@@ -153,7 +170,7 @@ export default function LiveDesk() {
     setBusy(true);
     try {
       const r = await fetch(`${OPS_URL}/api/v1/liveops/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...opsHeaders },
         body: JSON.stringify({ venue, submit, refresh: false }),
       });
       const j = await r.json();
@@ -171,7 +188,7 @@ export default function LiveDesk() {
     setBusy(true);
     try {
       const r = await fetch(`${OPS_URL}/api/v1/liveops/demo-funds`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...OPS_HEADERS },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...opsHeaders },
         body: JSON.stringify({ amount: 5000 }),
       });
       const j = await r.json();
@@ -223,14 +240,34 @@ export default function LiveDesk() {
       <div className="flex items-center gap-3">
         <Chip label={err ? bi('ops API 不可达', 'ops API unreachable') : bi('实时', 'LIVE')} tone={err ? 'neg' : 'pos'} />
         {data && <span className="text-2xs text-muted">{bi('更新于', 'updated')} {stamp(data.generated_at)}</span>}
-        {err && <span className="text-2xs text-neg mono">
+        {err && err !== 'need-token' && <span className="text-2xs text-neg mono">
           {err} · {err.includes('401')
-            ? bi('认证失败:把 key/live_ops_token.txt 的内容填进 .env 的 VITE_OPS_TOKEN',
-                 'auth failed: put key/live_ops_token.txt’s content into .env as VITE_OPS_TOKEN')
+            ? bi('token 不对——重新粘贴 key/live_ops_token.txt 的内容', 'wrong token — re-paste key/live_ops_token.txt')
             : `${bi('启动:', 'start:')} python -m uvicorn tools.live_ops_api:app --port 8440`}
         </span>}
         {lastAction && <span className="text-2xs text-info">{lastAction}</span>}
       </div>
+
+      {(err === 'need-token' || !opsToken) && (
+        <div className="rounded-lg border border-info/40 bg-info/[0.06] px-3 py-2.5 text-2xs">
+          <div className="mb-1.5 text-muted">
+            {bi('需要本机操作密钥——只存在本标签页会话里(sessionStorage),绝不打进前端构建产物',
+              'ops token required — kept only in this tab’s session (sessionStorage), never baked into the build')}
+          </div>
+          <form className="flex gap-2" onSubmit={e => {
+            e.preventDefault();
+            const input = (e.currentTarget.elements.namedItem('token') as HTMLInputElement);
+            setOpsToken(input.value.trim());
+          }}>
+            <input name="token" type="password" autoComplete="off"
+              placeholder={bi('粘贴 key/live_ops_token.txt 的内容', 'paste key/live_ops_token.txt contents')}
+              className="flex-1 rounded border border-line bg-inset/60 px-2 py-1 text-2xs mono text-ink" />
+            <button type="submit" className="rounded border border-line px-2.5 py-1 text-2xs text-ink hover:border-ink/40">
+              {bi('连接', 'Connect')}
+            </button>
+          </form>
+        </div>
+      )}
 
       {runState?.running && (
         <div className="rounded border border-info/40 bg-info/[0.06] px-3 py-2 text-2xs text-info">

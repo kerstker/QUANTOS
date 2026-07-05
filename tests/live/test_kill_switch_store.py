@@ -48,3 +48,42 @@ def test_cross_process_simulation_persisted_trip_survives_new_instance(tmp_path)
 
     driver_ks = KillSwitch(state=load_kill_switch_state(path))
     assert driver_ks.is_active() is True                # 驱动器"看得到"哨兵的触发
+
+
+# --- 2026-07-05 安全审查发现的竞态修复:untripped 状态绝不写盘覆盖并发进程刚记录的 tripped ---
+
+def test_save_if_tripped_writes_when_tripped(tmp_path):
+    from live.governance.kill_switch_store import save_kill_switch_state_if_tripped
+    path = str(tmp_path / "ks.json")
+    from quantos.contracts.alpha import Actor, ActorKind
+    ks = KillSwitch()
+    ks.arm(Actor(actor_id="x", kind=ActorKind.SYSTEM), "breach", at=1)
+    save_kill_switch_state_if_tripped(path, ks.state)
+    assert load_kill_switch_state(path).tripped is True
+
+
+def test_save_if_tripped_is_a_noop_when_not_tripped(tmp_path):
+    # 关键回归测试:untripped 状态绝不写盘——防止把并发进程(如哨兵)刚写入的真实
+    # 熔断静默覆盖回"未触发"(2026-07-05 安全审查 CRITICAL 发现)
+    from live.governance.kill_switch_store import save_kill_switch_state_if_tripped
+    path = str(tmp_path / "ks.json")
+    save_kill_switch_state_if_tripped(path, KillSwitchState())     # 从未触发,不该写文件
+    assert not __import__("os").path.exists(path)
+
+
+def test_save_if_tripped_never_clobbers_a_concurrently_tripped_file(tmp_path):
+    # 模拟真实竞态:driver 读到 untripped -> 与此同时 sentinel 把文件写成 tripped ->
+    # driver 自己这一轮评估也是 untripped,调用 save_if_tripped 时绝不能覆盖磁盘上
+    # sentinel 刚写入的 tripped 状态
+    from live.governance.kill_switch_store import save_kill_switch_state_if_tripped
+    path = str(tmp_path / "ks.json")
+    driver_state = load_kill_switch_state(path)            # driver: 读到 untripped
+    assert driver_state.tripped is False
+
+    from quantos.contracts.alpha import Actor, ActorKind
+    sentinel_ks = KillSwitch()
+    sentinel_ks.arm(Actor(actor_id="sentinel", kind=ActorKind.SYSTEM), "real breach", at=100)
+    save_kill_switch_state_if_tripped(path, sentinel_ks.state)   # sentinel: 真实触发,写盘
+
+    save_kill_switch_state_if_tripped(path, driver_state)   # driver: 自己评估 untripped,试图写回
+    assert load_kill_switch_state(path).tripped is True     # sentinel 的触发必须存活

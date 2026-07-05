@@ -143,8 +143,13 @@ python -m uvicorn tools.live_ops_api:app --host 127.0.0.1 --port 8440
 
 操作面治理:页面上的「跑 Preview/真实提交」只会以固定 argv 子进程运行驱动器 CLI——与人工
 敲命令行完全同一条 mandate→gate→确认→记账链;「真实提交」需输入 `submit <venue>` 文本
-双重确认;单飞锁防并发。仅限本机(CORS 只放 3100,无认证——单机工作站口径,多用户部署
-是 Phase 14)。Bybit Demo 模拟资金:页面按钮或 `python -m tools.bybit_demo_funds --amount N`。
+双重确认;单飞锁防并发。**本机 token 认证**(2026-07-05,同机任意进程此前可零门槛触发真实
+提交,已修复):首次启动 `live_ops_api` 会在 `key/live_ops_token.txt`(gitignored)生成
+一个随机 token;打开交易台页面时,把这个文件的内容粘贴进页面上的输入框——**只存在浏览器
+这个标签页的 sessionStorage 里,关闭标签页即清空,绝不会打进前端构建产物**(2026-07-05
+安全审查发现:早期版本用 `VITE_OPS_TOKEN` 构建期变量,会被 Vite 编译进 JS bundle 明文,
+已改掉)。CORS 仍只放 3100(单机工作站口径,多用户部署是 Phase 14)。Bybit Demo 模拟资金:
+页面按钮或 `python -m tools.bybit_demo_funds --amount N`。
 
 ## 9. Bybit Demo(2026-07-05)
 

@@ -7,6 +7,7 @@ mandate 从不越过 gate 直接放行任何东西,它回答的是"这批已获�
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Mapping, Optional, Sequence, Tuple
 
@@ -26,9 +27,6 @@ class Mandate:
     # venue 匹配,给 Binance 签的 mandate 会被 Bybit 误认。空串 = 未签署交易所域 -> 恒升级人工
     # (fail-closed;文件加载器把它列为必填)。字段带默认值仅为 dataclass 字段排序,不是许可。
     exchange: str = ""
-    max_single_order_notional: float
-    max_gross_notional: float
-    max_net_notional: float
     max_single_order_notional: float = 0.0
     max_gross_notional: float = 0.0
     max_net_notional: float = 0.0
@@ -60,6 +58,16 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             return MandateDecision(NEEDS_HUMAN_REVIEW, ("exchange_unset",))
         if exchange != mandate.exchange:
             return MandateDecision(NEEDS_HUMAN_REVIEW, ("exchange_mismatch",))
+        # 2026-07-05 安全审查 HIGH 修复,纵深防御:mandate_store.load_mandate 已经在加载时
+        # 拒绝 NaN/Infinity 阈值,但 Mandate 也可能被直接构造(不经过那道关卡)——NaN 参与
+        # `>`/`abs()>` 比较恒为 False,会让"任意大小订单都未超限"静默成立且不触发下面的
+        # fail-closed 分支。这里不假设调用方已经把关。
+        for _name, _val in (("max_single_order_notional", mandate.max_single_order_notional),
+                            ("max_gross_notional", mandate.max_gross_notional),
+                            ("max_net_notional", mandate.max_net_notional)):
+            if not math.isfinite(_val):
+                return MandateDecision(NEEDS_HUMAN_REVIEW, (f"non_finite_mandate_field:{_name}",))
+
         if not orders:
             return MandateDecision(AUTO, ())          # 空批次,没什么好审的
 
@@ -73,7 +81,9 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
                 reasons.append(f"instrument_not_allowed:{o.instrument_id}")
                 continue
             price = prices.get(o.instrument_id)
-            if price is None or price <= 0:
+            # NaN/Infinity 参与 `price <= 0` 比较恒为 False——必须显式检查有限性,否则一个
+            # 坏掉的行情源(NaN/inf 价格)会被当成"价格合法"直接放行(2026-07-05 安全审查)。
+            if price is None or not math.isfinite(price) or price <= 0:
                 reasons.append(f"no_price:{o.instrument_id}")
                 continue
             notional = o.quantity * price

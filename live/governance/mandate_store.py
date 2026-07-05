@@ -9,6 +9,7 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6 延伸。
 from __future__ import annotations
 
 import json
+import math
 import os
 
 from live.governance.mandate import Mandate
@@ -37,19 +38,39 @@ def load_mandate(path: str) -> Mandate:
     if missing:
         raise MandateLoadError(f"mandate file has invalid/missing fields {missing}: {path}")
     try:
+        # 2026-07-05 安全审查 HIGH 修复:`json.load` 默认放行非标准 NaN/Infinity 字面量
+        # (标准 JSON 不允许,但 Python 的 json 模块默认 allow_nan=True)——`float("nan")`
+        # 不抛异常,而 evaluate_mandate 全部用 `>`/`abs()>` 比较限额,NaN 参与比较恒为
+        # False,会让"任意大小订单都未超限"静默成立,且不触发 fail-closed 分支。
+        # 每个名义额字段转换后必须立刻校验有限,不能指望上游格式校验替我们把关。
+        def _finite_float(value, field_name: str) -> float:
+            v = float(value)
+            if not math.isfinite(v):
+                raise MandateLoadError(f"mandate field {field_name!r} must be a finite number, "
+                                       f"got {value!r}: {path}")
+            return v
+
+        max_single = _finite_float(data["max_single_order_notional"], "max_single_order_notional")
+        max_gross = _finite_float(data["max_gross_notional"], "max_gross_notional")
+        max_net = _finite_float(data["max_net_notional"], "max_net_notional")
+        per_instrument = tuple(
+            (str(k), _finite_float(v, f"per_instrument_max_notional[{k}]"))
+            for k, v in data.get("per_instrument_max_notional", {}).items())
+
         return Mandate(
             mandate_id=str(data["mandate_id"]),
             venue=str(data["venue"]),
             exchange=str(data["exchange"]),
             allowed_instruments=frozenset(data["allowed_instruments"]),
-            max_single_order_notional=float(data["max_single_order_notional"]),
-            max_gross_notional=float(data["max_gross_notional"]),
-            max_net_notional=float(data["max_net_notional"]),
-            per_instrument_max_notional=tuple(
-                (str(k), float(v)) for k, v in data.get("per_instrument_max_notional", {}).items()),
+            max_single_order_notional=max_single,
+            max_gross_notional=max_gross,
+            max_net_notional=max_net,
+            per_instrument_max_notional=per_instrument,
             approved_by=tuple(str(a) for a in data.get("approved_by", ())),
             issued_at=int(data.get("issued_at", 0)),
             expires_at=(int(data["expires_at"]) if data.get("expires_at") is not None else None),
         )
+    except MandateLoadError:
+        raise
     except (TypeError, ValueError) as exc:
         raise MandateLoadError(f"mandate file has invalid/missing fields: {path}: {exc}") from exc

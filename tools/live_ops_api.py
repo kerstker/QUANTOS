@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -229,8 +230,13 @@ async def demo_funds(req: DemoFundsRequest) -> dict:
     if req.amount <= 0 or req.amount > 1_000_000:
         raise HTTPException(400, "amount out of range")
     cmd = [sys.executable, "-m", "tools.bybit_demo_funds", "--amount", str(req.amount)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
-                          cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # 2026-07-05 安全审查 MEDIUM 修复:同步 subprocess.run 直接写在 async def 里会冻结
+    # 整个单线程事件循环最长 120 秒(/run 端点早已用 threading.Thread 避免了同款问题,
+    # 这里补齐)——期间连 GET /dashboard(判断是否需要人工介入 kill-switch 的唯一界面)
+    # 都会被这一个请求挂起。
+    proc = await asyncio.to_thread(
+        subprocess.run, cmd, capture_output=True, text=True, timeout=120,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return {"returncode": proc.returncode, "output": (proc.stdout + proc.stderr)[-500:]}
 
 

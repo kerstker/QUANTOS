@@ -94,3 +94,39 @@ def test_wrong_type_field_raises_clear_error(tmp_path):
     })
     with pytest.raises(MandateLoadError, match="invalid/missing"):
         load_mandate(path)
+
+
+# --- 2026-07-05 安全审查 HIGH 发现:NaN 数值字面量静默绕过全部名义额限额检查 ---
+
+def test_load_mandate_rejects_nan_gross_notional(tmp_path):
+    path = _write(tmp_path, {
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance",
+        "allowed_instruments": ["BTC"], "max_single_order_notional": 1.0,
+        "max_gross_notional": float("nan"), "max_net_notional": 1.0,
+    })
+    with pytest.raises(MandateLoadError):
+        load_mandate(path)
+
+
+def test_load_mandate_rejects_nan_from_json_literal(tmp_path):
+    # json.load 默认接受非标准 NaN 字面量(标准 JSON 不允许,但 Python json 模块默认放行)——
+    # 必须显式拒绝,不能指望上游格式校验
+    import json as _json
+    path = tmp_path / "live_mandate.json"
+    path.write_text(_json.dumps({
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance",
+        "allowed_instruments": ["BTC"], "max_single_order_notional": 1.0,
+        "max_gross_notional": 1.0, "max_net_notional": 1.0,
+    }).replace('"max_gross_notional": 1.0', '"max_gross_notional": NaN'), encoding="utf-8")
+    with pytest.raises(MandateLoadError):
+        load_mandate(str(path))
+
+
+def test_load_mandate_rejects_infinity(tmp_path):
+    path = _write(tmp_path, {
+        "mandate_id": "m", "venue": "testnet", "exchange": "binance",
+        "allowed_instruments": ["BTC"], "max_single_order_notional": float("inf"),
+        "max_gross_notional": 1.0, "max_net_notional": 1.0,
+    })
+    with pytest.raises(MandateLoadError):
+        load_mandate(path)

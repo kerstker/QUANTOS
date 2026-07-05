@@ -34,3 +34,18 @@ def save_kill_switch_state(path: str, state: KillSwitchState) -> None:
         os.makedirs(parent, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(state.model_dump_json())
+
+
+def save_kill_switch_state_if_tripped(path: str, state: KillSwitchState) -> None:
+    """**2026-07-05 安全审查 CRITICAL 修复**:driver 与哨兵共享同一个 kill-switch 状态文件、
+    各自独立进程运行、彼此之间无锁——纯粹的读-改-写竞态:进程 A 读到 untripped,进程 B
+    并发把文件写成 tripped(真实越限),A 自己这一轮评估也是 untripped,若无条件写回会用
+    A 内存里的旧 untripped 值覆盖 B 刚落盘的真实熔断,静默撤销刚触发的保护——恰好发生在
+    最需要保护生效的时刻(市场剧烈波动时哨兵和驱动器最可能同时活跃)。
+
+    修复用"只加不减"语义:只在**这次评估后状态确实是 tripped** 时才写盘;untripped 从不
+    写盘(磁盘没有文件本身就是"从未触发"的合法默认状态,见 `load_kill_switch_state`)。
+    这样任何进程都不可能用自己的 untripped 视角覆盖别的进程刚写入的 tripped——复位只能
+    通过专门的 `tools/live_kill_switch_reset.py`(强制三方审批)显式进行。"""
+    if state.tripped:
+        save_kill_switch_state(path, state)

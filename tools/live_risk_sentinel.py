@@ -28,7 +28,8 @@ import time
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
-from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
+from live.governance.kill_switch_store import (load_kill_switch_state,
+                                               save_kill_switch_state_if_tripped)
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.monitoring.audit_store import DurableAuditLog
@@ -114,7 +115,9 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     # halt 的承诺只在哨兵自己这次心跳内有效。与驱动器共享同一个 kill_switch 状态文件。
     kill_switch = KillSwitch(state=load_kill_switch_state(paths["kill_switch"]))
     kill_switch_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
-    save_kill_switch_state(paths["kill_switch"], kill_switch.state)
+    # 2026-07-05 安全审查 CRITICAL 修复(与驱动器同款):只在 tripped 时才写盘,untripped
+    # 绝不覆盖磁盘——见 save_kill_switch_state_if_tripped 文档。
+    save_kill_switch_state_if_tripped(paths["kill_switch"], kill_switch.state)
     out["kill_switch_action"] = kill_switch_response["action"]
 
     if act:

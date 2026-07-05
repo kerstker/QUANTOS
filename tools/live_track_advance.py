@@ -45,7 +45,8 @@ from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores
 from live.execution.day_pnl import compute_day_pnl
-from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
+from live.governance.kill_switch_store import (load_kill_switch_state,
+                                               save_kill_switch_state_if_tripped)
 from live.governance.review_queue import ReviewQueue
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.evidence_escalation import check_evidence_deviation
@@ -442,7 +443,10 @@ def main() -> None:
         equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
         max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=aum * 2, max_net_exposure=aum * 0.3)
     risk_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
-    save_kill_switch_state(paths["kill_switch"], kill_switch.state)
+    # 2026-07-05 安全审查 CRITICAL 修复:只在 tripped 时才写盘(见 save_kill_switch_state_if_
+    # tripped 文档)——untripped 绝不写盘,防止用本进程的旧视角覆盖哨兵/另一次调用并发写入的
+    # 真实熔断(纯粹的读-改-写竞态,此前每轮正常调度都会无条件覆盖一次)。
+    save_kill_switch_state_if_tripped(paths["kill_switch"], kill_switch.state)
     if breach.breached:
         alerts.append(f"RISK BREACH: {breach.reasons} (drawdown={breach.drawdown_pct:.2%}, "
                       f"gross=${breach.gross_exposure:.2f}, net=${breach.net_exposure:.2f}) "
