@@ -33,7 +33,9 @@ def build_template() -> dict:
             " 字段已预填 'binance'(mandate.exchange 必须等于适配器的 venue_name——两家交易所"
             "的 testnet 都叫 'testnet',不签交易所域会被另一家误认)。这两个是结构性协议匹配"
             "字段、非风险数字;驱动器用 --venue bybit 时要把 exchange 改成 'bybit'。",
-            "allowed_instruments 用交易所侧合约符号(如 'BTCUSDT'),不是币种简称 'BTC'。",
+            "allowed_instruments 用裸标的名(如 'BTC'),不是交易所合约符号 'BTCUSDT'——"
+            "流水线内部统一裸名,适配器提交时才拼 USDT 后缀;填合约符号会导致全部订单被"
+            " instrument_not_allowed 拒绝(fail-closed,但不是你想要的)。",
             "notional 都是名义额(quantity * price 的美元值),不是币的数量。",
             "issued_at/expires_at 是 epoch 毫秒;expires_at 可以填 null = 永不过期"
             "(不建议——8 周前向证据窗口之后应该重新审视限额,而不是让 mandate 无限期有效)。",
@@ -42,12 +44,12 @@ def build_template() -> dict:
         "mandate_id": f"{_PLACEHOLDER}_e.g._mandate_2026_07_stage1",
         "venue": "testnet",
         "exchange": "binance",
-        "allowed_instruments": [f"{_PLACEHOLDER}_e.g._BTCUSDT"],
+        "allowed_instruments": [f"{_PLACEHOLDER}_e.g._BTC"],
         "max_single_order_notional": _PLACEHOLDER_NUMBER,
         "max_gross_notional": _PLACEHOLDER_NUMBER,
         "max_net_notional": _PLACEHOLDER_NUMBER,
         "per_instrument_max_notional": {
-            f"{_PLACEHOLDER}_e.g._BTCUSDT": _PLACEHOLDER_NUMBER,
+            f"{_PLACEHOLDER}_e.g._BTC": _PLACEHOLDER_NUMBER,
         },
         "approved_by": [f"{_PLACEHOLDER}_your_name_or_id"],
         "issued_at": f"{_PLACEHOLDER_NUMBER}_EPOCH_MS",

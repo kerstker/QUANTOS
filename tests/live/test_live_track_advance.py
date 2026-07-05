@@ -102,3 +102,41 @@ def test_preview_venue_readonly_methods_pass_through_to_real_venue():
     assert preview.account() == {"totalWalletBalance": "5000.0"}
     assert preview.positions() == {"BTC": "real-position"}
     assert preview.venue_mode == "testnet"
+
+
+# --- _latest_weights_and_prices:信号行选择(2026-07-05 修复"最后一行 OI 全空 -> 权重为空") ---
+
+def _panel_with_stale_last_row():
+    """10 个标的、4 行:前 3 行 global_ls/close 齐全,最后一行 global_ls 全 None
+    (模拟真实现象:K线刷新比 OI 指标快,最新行还没有持仓数据)。"""
+    import services.research.alpha_expression as ax
+    insts = [f"C{i}" for i in range(10)]
+    ev = [1000, 2000, 3000, 4000]
+    ls_full = [float(i + 1) for i in range(10)]
+    close_full = [100.0 + i for i in range(10)]
+    matrices = {
+        "global_ls": [ls_full, ls_full, ls_full, [None] * 10],
+        "close": [close_full, close_full, [c + 1 for c in close_full], close_full],
+    }
+    return ax.FieldPanel(instruments=insts, event_times=ev, matrices=matrices)
+
+
+def test_latest_weights_walks_back_to_last_row_with_signal_coverage():
+    from tools.live_track_advance import _latest_weights_and_prices
+    panel = _panel_with_stale_last_row()
+    weights, prices, decided_ts = _latest_weights_and_prices((panel, panel.instruments))
+    assert weights                                  # 不再因最后一行全空而产出空 book
+    assert decided_ts == 3000                       # 用的是最近一行有信号的行(诚实:决策带数据时间)
+    assert prices["C0"] == 101.0                    # 价格取同一行(决策快照自洽)
+
+
+def test_latest_weights_all_rows_empty_is_honest_empty():
+    import services.research.alpha_expression as ax
+    from tools.live_track_advance import _latest_weights_and_prices
+    insts = [f"C{i}" for i in range(10)]
+    matrices = {"global_ls": [[None] * 10] * 3,
+                "close": [[100.0] * 10] * 3}
+    panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
+    weights, prices, decided_ts = _latest_weights_and_prices((panel, insts))
+    assert weights == {}                            # 回看窗口内全空 -> 诚实空,不硬凑
+    assert decided_ts == 3

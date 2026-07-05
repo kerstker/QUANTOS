@@ -208,17 +208,28 @@ def _load_credentials(venue_cfg: dict, venue_name: str):
         f"(set ${env_key}/${env_secret}, or {key_file})")
 
 
+_SIGNAL_MAX_LOOKBACK_ROWS = 7      # 信号行回看上限(日频面板 = 一周);再往前就该修数据而不是硬交易
+
+
 def _latest_weights_and_prices(panel_bundle=None):
+    """最近一行**有信号**的决策快照。2026-07-05 修复:面板最后一行常常 OI 全空(K线刷新比
+    OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮静默零意图。
+    改为从最后一行往回找第一行 `_legs` 非空的行(有界回看,超出上限诚实返回空,不硬凑);
+    价格取同一行(决策快照自洽),decided_ts = 该行数据时间(决策带数据时间,与 Stage 0 同一
+    诚实口径)。"""
     panel, _instruments = panel_bundle if panel_bundle is not None else build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
     ev = panel.event_times
     sig = ax.evaluate(CROWD_CONTRA, panel)
     r_last = len(ev) - 1
-    legs = _legs(sig[r_last], QUANTILE)
-    weights = {insts[i]: w for i, w in legs.items()}
-    prices = {insts[i]: close[r_last][i] for i in range(len(insts)) if close[r_last][i]}
-    return weights, prices, int(ev[r_last])
+    for r in range(r_last, max(r_last - _SIGNAL_MAX_LOOKBACK_ROWS, -1), -1):
+        legs = _legs(sig[r], QUANTILE)
+        if legs:
+            weights = {insts[i]: w for i, w in legs.items()}
+            prices = {insts[i]: close[r][i] for i in range(len(insts)) if close[r][i]}
+            return weights, prices, int(ev[r])
+    return {}, {}, int(ev[r_last])
 
 
 def main() -> None:
@@ -336,13 +347,22 @@ def main() -> None:
     except MandateLoadError as exc:
         alerts.append(f"mandate not loaded ({exc}) — batch will require human review")
 
+    # 部署容量按 mandate 定(2026-07-05,用户口头授权"总限额 2000 USDT"后落地):mandate 是
+    # "系统可以不经人工自主执行多少"的业务授权,所以 book 的目标 gross 必须 ≤ mandate 的
+    # gross 上限——账户余额只是物理上限,不是授权。0.95 是工程余量(整批 gross 恰好贴着上限
+    # 会被浮点舍入随机顶过线,不是风险数字)。没有 mandate 时维持余额口径(反正 fail-closed
+    # 全量升人工,不会真提交)。
+    deploy_aum = aum
+    if mandate is not None and mandate.max_gross_notional > 0:
+        deploy_aum = min(aum, 0.95 * mandate.max_gross_notional)
+
     gate = PreTradeRiskGate(
         gate_limits(weights.keys(), gross_cap=aum * 2, net_cap=aum * 0.3,
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
 
     result = submit_live_batch(
-        weights=weights, prices=prices, aum=aum, current_positions=ledger_positions,
+        weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
         gate=gate, ctx_factory=make_ctx_factory(prices, aum=aum, now=now), venue=venue,
         mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
         decided_ts=decided_ts, now=now)
@@ -361,7 +381,7 @@ def main() -> None:
         pass
     parity = parity_report(
         paper_weights=paper_weights if paper_weights is not None else weights,
-        paper_source=paper_source, aum=aum, prices=prices,
+        paper_source=paper_source, aum=deploy_aum, prices=prices,
         ledger_positions=(ledger.all_positions() if submit else ledger_positions),
         ledger_orders=write_ledger.orders(), strategy_id=_STRATEGY_ID, decided_ts=decided_ts,
         mode="submit" if submit else "preview")
@@ -392,7 +412,7 @@ def main() -> None:
         "n_dropped_by_filters": len(result.dropped_by_filters),
         "n_submission_errors": len(result.submission_errors),
         "n_ledger_write_errors": len(result.ledger_write_errors),
-        "reconciliation": recon, "aum": aum, "alerts": alerts,
+        "reconciliation": recon, "aum": aum, "deploy_aum": deploy_aum, "alerts": alerts,
         "parity": {"paper_source": parity["paper_source"],
                    "n_paper_legs": parity["n_paper_legs"],
                    "n_with_live_order": parity["n_with_live_order"],
