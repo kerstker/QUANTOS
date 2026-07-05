@@ -25,10 +25,12 @@ interface FillRow {
   fill_id: string; instrument_id: string; side: string; quantity: number;
   price: number; filled_at: number; client_order_id: string;
 }
+interface EquityPoint { ts: number; equity: number; gross_notional?: number; upnl_total?: number; }
 interface VenuePanel {
   venue: string; configured: boolean; ok?: boolean; error?: string;
   equity?: number; available?: number; positions?: PositionRow[];
   gross_notional?: number; net_notional?: number; upnl_total?: number;
+  equity_curve?: EquityPoint[];
   recent_orders?: OrderRow[]; recent_fills?: FillRow[];
   tca?: { n_with_slippage: number; notional_weighted_slippage_bps: number | null;
           assumed_cost_bps: number; weighted_minus_assumed_bps: number | null } | null;
@@ -50,6 +52,36 @@ interface DeskPayload {
 const VENUE_ZH: Record<string, string> = {
   binance: 'Binance 测试网', bybit: 'Bybit 测试网(弃用)', bybit_demo: 'Bybit Demo',
 };
+
+function EquityCurve({ points }: { points: EquityPoint[] }) {
+  // 纯 SVG 净值曲线(风险哨兵心跳积累的真实权益历史)——零图表库依赖
+  if (points.length < 2) {
+    return <span className="text-2xs text-faint">
+      {bi('权益点不足(风险哨兵每小时心跳积累)', 'not enough equity points (sentinel accrues hourly)')}
+    </span>;
+  }
+  const W = 560, H = 96, PAD = 4;
+  const eq = points.map(p => p.equity);
+  const lo = Math.min(...eq), hi = Math.max(...eq);
+  const span = hi - lo || 1;
+  const x = (i: number) => PAD + (i / (points.length - 1)) * (W - 2 * PAD);
+  const y = (v: number) => H - PAD - ((v - lo) / span) * (H - 2 * PAD);
+  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join(' ');
+  const up = eq[eq.length - 1] >= eq[0];
+  return (
+    <div className="overflow-x-auto">
+      <svg width={W} height={H} className="block">
+        <path d={d} fill="none" strokeWidth={1.5}
+          className={up ? 'stroke-emerald-400' : 'stroke-rose-400'} />
+      </svg>
+      <div className="mt-0.5 flex justify-between text-2xs text-faint mono">
+        <span>{stamp(points[0].ts)}</span>
+        <span>{fixed(lo, 2)} – {fixed(hi, 2)}</span>
+        <span>{stamp(points[points.length - 1].ts)}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function LiveDesk() {
   const [data, setData] = useState<DeskPayload | null>(null);
@@ -211,6 +243,13 @@ export default function LiveDesk() {
                   value={v.mandate ? money(v.mandate.max_gross_notional, 'USD') : bi('未签署', 'unsigned')}
                   tone={v.mandate ? 'pos' : 'warn'} />
               </KpiStrip>
+
+              <div>
+                <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+                  {bi('净值曲线(哨兵心跳)', 'Equity curve (sentinel heartbeats)')}
+                </div>
+                <EquityCurve points={v.equity_curve ?? []} />
+              </div>
 
               <div>
                 <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">

@@ -152,3 +152,19 @@ testnet.bybit.com 水龙头长期失灵;官方主推 Demo Trading(api-demo.bybit
 testnet 只换主机)。key 必须在主站切到 Demo Trading 后创建(真实账户 key 在 demo 主机无效,
 反之亦然)。驱动器 `--venue bybit_demo`;mandate 文件 `key/live_mandate_bybit_demo.json`
 (per-venue,一份 mandate 只授权一个交易所)。
+
+## 10. 持续运营(风险哨兵 + 证据包,2026-07-05)
+
+**风险哨兵**(`python -m tools.live_risk_sentinel [--act]`):两次周度调仓之间的持续风控——
+逐 venue 查真实权益/仓位,落权益曲线点(`data/cache/live_equity*.jsonl`,交易台净值曲线的
+数据源),用与驱动器同一套 `evaluate_risk_state` 评估(回撤 0.20 + mandate 派生敞口限额)。
+默认只告警;`--act` 越限时走独立紧急减仓通道(与驱动器 breach 分支同一策略)。峰值权益与
+驱动器共用同一文件(同一回撤口径)。建议每小时调度。
+
+**Go/No-Go 证据包**(`python -m tools.gonogo_report`):聚合前向证据钟/对账历史/TCA/权益
+曲线/事故台账 → `data/cache/gonogo_report.json` + `docs/reports/gonogo-<date>.md`。只聚合
+不下结论——结论是 Phase 3A 人工评审的事。评审前跑一次即可。
+
+**调度注册**:`scripts/register_schedules.ps1` 一次注册全套(周一双所批 + 每小时哨兵 +
+ops API 自启)——**运行它 = 签署常驻自动化授权**,脚本头部列明了每条的含义;单条删除
+`schtasks /delete /f /tn QUANTOS_<name>`。

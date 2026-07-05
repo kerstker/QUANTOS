@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from live.execution.position_ledger import LiveLedger
 from live.execution.tca import tca_summary
 from live.governance.mandate_store import MandateLoadError, load_mandate
+from tools.live_snapshot import binance_position_rows, bybit_position_rows
 from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
 
 app = FastAPI(title="QUANTOS Live Ops", version="0.1.0")
@@ -50,42 +51,21 @@ def _venue_adapter(venue: str):
     return cfg["adapter"](api_key=api_key, api_secret=api_secret, base_url=cfg["base_url"])
 
 
-def _binance_position_rows(raw_account: dict) -> list:
+def _equity_curve(suffix: str, max_points: int = 500) -> list:
+    """风险哨兵落的权益点(append-only jsonl),取尾部 N 点给前端画净值曲线。"""
+    path = os.path.join("data", "cache", f"live_equity{suffix}.jsonl")
+    if not os.path.exists(path):
+        return []
     out = []
-    for p in raw_account.get("positions", []):
-        try:
-            qty = float(p.get("positionAmt", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-        if qty == 0.0 or not p.get("symbol", "").endswith("USDT"):
-            continue
-        entry = float(p.get("entryPrice", 0) or 0)
-        upnl = float(p.get("unrealizedProfit", 0) or 0)
-        mark = entry + (upnl / qty if qty else 0.0)
-        out.append({"instrument_id": p["symbol"][:-4], "qty": qty, "entry_price": entry,
-                    "mark_price": mark, "upnl": upnl, "notional": qty * mark})
-    return out
-
-
-def _bybit_position_rows(venue) -> list:
-    status, data = venue._get("/v5/position/list",
-                              {"category": "linear", "settleCoin": "USDT"}, signed=True)
-    result = (data or {}).get("result") or {}
-    out = []
-    for p in result.get("list", []) or []:
-        try:
-            size = float(p.get("size", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-        if size == 0.0 or not p.get("symbol", "").endswith("USDT"):
-            continue
-        qty = size if p.get("side") == "Buy" else -size
-        entry = float(p.get("avgPrice", 0) or 0)
-        mark = float(p.get("markPrice", 0) or 0)
-        upnl = float(p.get("unrealisedPnl", 0) or 0)
-        out.append({"instrument_id": p["symbol"][:-4], "qty": qty, "entry_price": entry,
-                    "mark_price": mark, "upnl": upnl, "notional": qty * (mark or entry)})
-    return out
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    return out[-max_points:]
 
 
 def _venue_dashboard(venue: str) -> dict:
@@ -100,9 +80,11 @@ def _venue_dashboard(venue: str) -> dict:
         acct = v.account()
         aum, equity = cfg["balances"](acct)
         if venue == "binance":
-            positions = _binance_position_rows(acct)
+            positions = binance_position_rows(acct)
         else:
-            positions = _bybit_position_rows(v)
+            _status, raw_pos = v._get("/v5/position/list",
+                                      {"category": "linear", "settleCoin": "USDT"}, signed=True)
+            positions = bybit_position_rows(raw_pos)
         gross = sum(abs(p["notional"]) for p in positions)
         net = sum(p["notional"] for p in positions)
         out.update({
@@ -122,6 +104,8 @@ def _venue_dashboard(venue: str) -> dict:
         out["tca"] = tca_summary(ledger.tca_records())
     except Exception as exc:
         out["ledger_error"] = f"{type(exc).__name__}: {exc}"
+
+    out["equity_curve"] = _equity_curve(cfg["suffix"])   # 风险哨兵心跳积累的真实权益历史
 
     try:
         m = load_mandate(cfg["mandate_file"])
