@@ -29,7 +29,8 @@ from live.execution.emergency import flatten_target_for_breach, submit_emergency
 from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state
 from live.governance.mandate_store import MandateLoadError, load_mandate
-from services.monitoring.audit_log import GlobalAuditLog
+from services.monitoring.audit_store import DurableAuditLog
+from services.portfolio.firm_aggregation import aggregate_firm_books
 from tools.alert_sink import emit
 from tools.live_snapshot import binance_position_rows, bybit_position_rows, portfolio_summary
 from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equity,
@@ -96,7 +97,10 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
 
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
-           "reasons": list(breach.reasons), "acted": False}
+           "reasons": list(breach.reasons), "acted": False,
+           # firm 级聚合(main() 用)——按标的的真实美元名义额(带符号),不是权重
+           "notional_by_instrument": {r["instrument_id"]: r["qty"] * r["mark_price"]
+                                      for r in rows if r["mark_price"] > 0}}
     if not breach.breached:
         return out
 
@@ -111,7 +115,7 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
             ledger = LiveLedger(paths["ledger"], create=True)
             result = submit_emergency_flatten(
                 flatten_orders=flatten, positions=positions, prices=prices, venue=venue,
-                ledger=ledger, audit=GlobalAuditLog(), now=now,
+                ledger=ledger, audit=DurableAuditLog(paths["audit"], create=True), now=now,
                 poll_sleep=lambda: time.sleep(1.0))
             out["acted"] = True
             out["emergency"] = {"target_gross": target, "n_submitted": len(result.submitted),
@@ -144,13 +148,33 @@ def main() -> None:
             emit([f"SENTINEL CHECK FAILED [{name}]: {type(exc).__name__}: {exc}"],
                  context="risk_sentinel", now_ms=now)
             results.append({"venue": name, "error": f"{type(exc).__name__}: {exc}"})
+    # firm 级聚合(2026-07-05,机构审计 P1 quick win):两所跑同一策略、同一批标的——此前
+    # 风控只按单 venue 评估,一个标的在两所同向持仓形成的"隐藏拥挤"没有任何地方汇总看到。
+    # `aggregate_firm_books` 是已建好的诊断原语(services/portfolio/firm_aggregation.py),
+    # 只是从未接线;这里 book = venue(每个 venue 当一本"book"),权重直接用真实美元名义额
+    # (book_notionals=1.0 即权重本身就是美元值,不需要再折算)。诊断,不阻断——status json
+    # 里如实展示,越限判断仍由各 venue 独立的 mandate/回撤/敞口检查负责。
+    firm_view = None
+    book_positions = {r["venue"]: r["notional_by_instrument"] for r in results
+                      if "notional_by_instrument" in r}
+    if len(book_positions) >= 2:
+        firm_view = aggregate_firm_books(
+            book_positions, {v: 1.0 for v in book_positions})
+        if firm_view.get("n_overlaps"):
+            emit([f"SENTINEL FIRM AGGREGATION: {firm_view['n_overlaps']} symbol(s) held across "
+                  f"multiple venues (hidden concentration): {firm_view['overlaps']}"],
+                 context="risk_sentinel", now_ms=now)
+
     status_path = os.path.join("data", "cache", "risk_sentinel_status.json")
-    json.dump({"ran_at": now, "act": act, "results": results},
+    json.dump({"ran_at": now, "act": act, "results": results, "firm_view": firm_view},
               open(status_path, "w", encoding="utf-8"), indent=2)
     for r in results:
         flag = "BREACH" if r.get("breached") else ("ERROR" if r.get("error") else "ok")
         print(f"[{flag}] {r['venue']}: equity={r.get('equity')} gross={r.get('gross_notional')} "
               f"upnl={r.get('upnl_total')}", flush=True)
+    if firm_view:
+        print(f"[firm] gross=${firm_view['firm_gross']:.2f} net=${firm_view['firm_net']:.2f} "
+              f"overlaps={firm_view['n_overlaps']}", flush=True)
     print(f"-> {status_path}", flush=True)
 
 

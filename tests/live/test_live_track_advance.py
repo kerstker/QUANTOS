@@ -166,10 +166,11 @@ def _panel_with_stale_last_row():
 def test_latest_weights_walks_back_to_last_row_with_signal_coverage():
     from tools.live_track_advance import _latest_weights_and_prices
     panel = _panel_with_stale_last_row()
-    weights, prices, decided_ts = _latest_weights_and_prices((panel, panel.instruments))
+    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, panel.instruments))
     assert weights                                  # 不再因最后一行全空而产出空 book
     assert decided_ts == 3000                       # 用的是最近一行有信号的行(诚实:决策带数据时间)
     assert prices["C0"] == 101.0                    # 价格取同一行(决策快照自洽)
+    assert ls_row["C0"] == pytest.approx(1.0)       # 拥挤度门证据源:同一行的 global_ls
 
 
 def test_latest_weights_all_rows_empty_is_honest_empty():
@@ -179,9 +180,10 @@ def test_latest_weights_all_rows_empty_is_honest_empty():
     matrices = {"global_ls": [[None] * 10] * 3,
                 "close": [[100.0] * 10] * 3}
     panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
-    weights, prices, decided_ts = _latest_weights_and_prices((panel, insts))
+    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, insts))
     assert weights == {}                            # 回看窗口内全空 -> 诚实空,不硬凑
     assert decided_ts == 3
+    assert ls_row == {}
 
 
 def test_each_venue_has_its_own_mandate_ledger_and_state_paths():

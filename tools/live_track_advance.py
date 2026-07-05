@@ -43,8 +43,10 @@ from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
+from live.execution.crowding_score import compute_crowding_scores
 from live.execution.day_pnl import compute_day_pnl
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from live.execution.price_check import flag_divergent_instruments
@@ -54,7 +56,8 @@ from live.execution.tca import tca_summary
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.pipeline import UNIT_SCALE, resolve_unconfirmed_orders, submit_live_batch
-from services.monitoring.audit_log import GlobalAuditLog
+from services.monitoring.audit_store import DurableAuditLog
+from services.portfolio.crowding_gate import evaluate_crowding_gate
 from services.research import alpha_expression as ax
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import AccountRiskState, MarketContext, RiskContext, StrategyApproval
@@ -126,10 +129,13 @@ def _venue_paths(suffix: str) -> dict:
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
+        "audit": os.path.join("data", "cache", f"live_audit{suffix}.db"),
     }
 
 
 _MAX_PRICE_DIVERGENCE_PCT = 0.05   # 工程默认(非业务风险容忍度)——crypto 正常跨源价差远小于此
+_MAX_PARITY_GAP_PCT_OF_AUM = 0.05  # live-paper 偏差升级阈值(工程默认)
+_MAX_SLIPPAGE_OVER_ASSUMED_BPS = 50.0
 # 决策价格(可能因信号行回看滞后 1-3 天,见 _latest_weights_and_prices)与"当前" CoinGecko
 # 价格的比较只在数据足够新鲜时才有意义——decided_ts 比 now 早太多时,拿走了几天的历史价格
 # 去比"现在"的价格是苹果比橘子(crypto 数日内 15%+ 波动是常态,不代表数据源损坏),会让
@@ -273,10 +279,11 @@ def _latest_weights_and_prices(panel_bundle=None):
     OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮静默零意图。
     改为从最后一行往回找第一行 `_legs` 非空的行(有界回看,超出上限诚实返回空,不硬凑);
     价格取同一行(决策快照自洽),decided_ts = 该行数据时间(决策带数据时间,与 Stage 0 同一
-    诚实口径)。"""
+    诚实口径)。同时带出该行的 `global_ls`(拥挤度门的证据源,见 `crowding_score.py`)。"""
     panel, _instruments = panel_bundle if panel_bundle is not None else build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
+    global_ls = panel.matrices.get("global_ls", [[None] * len(insts)] * len(panel.event_times))
     ev = panel.event_times
     sig = ax.evaluate(CROWD_CONTRA, panel)
     r_last = len(ev) - 1
@@ -285,8 +292,10 @@ def _latest_weights_and_prices(panel_bundle=None):
         if legs:
             weights = {insts[i]: w for i, w in legs.items()}
             prices = {insts[i]: close[r][i] for i in range(len(insts)) if close[r][i]}
-            return weights, prices, int(ev[r])
-    return {}, {}, int(ev[r_last])
+            ls_row = {insts[i]: global_ls[r][i] for i in range(len(insts))
+                     if global_ls[r][i] is not None}
+            return weights, prices, int(ev[r]), ls_row
+    return {}, {}, int(ev[r_last]), {}
 
 
 def main() -> None:
@@ -311,7 +320,21 @@ def main() -> None:
             emit([f"live_track refresh CRASHED: {exc}"], context="live_track", now_ms=now)
             raise
 
-    weights, prices, decided_ts = _latest_weights_and_prices()
+    weights, prices, decided_ts, global_ls_row = _latest_weights_and_prices()
+
+    # 拥挤度门(2026-07-05,机构审计 P1 quick win):crowding_gate.py 已建成测试却从未接入
+    # 真实下单路径。crowd_contra 本身就是"反着做拥挤的散户多空仓位",这里量化它交易的对象
+    # (global_ls 偏离 1.0 的截面分位)作为证据喂给门。BLOCK -> 本轮零新意图(不动现有仓位,
+    # 只是不新增/调整这本已判定过度拥挤的 book);WARN -> 仅告警。诊断证据不足(coverage 太低/
+    # 无 global_ls 数据)时门本身 fail-closed 返回 BLOCK,同样只是不新增仓位,不是灾难。
+    if weights:
+        crowding_scores = compute_crowding_scores(global_ls_row)
+        crowding_decision = evaluate_crowding_gate(weights, crowding_scores)
+        if crowding_decision.status != "PASS":
+            alerts.append(f"crowding gate {crowding_decision.status}: {crowding_decision.reasons} "
+                         f"(score={crowding_decision.score})")
+        if crowding_decision.status == "BLOCK":
+            weights = {}
 
     # 跨源核价(2026-07-05,机构审计 P0):单一数据源(Binance K线)一次静默滞后/错误会
     # 同时误导双所下单——用独立第二源(CoinGecko)交叉核价,单标的偏离超阈值或无法验证
@@ -384,7 +407,12 @@ def main() -> None:
     # data/cache/live_track.db。这是纵深防御:即便未来 mandate 判成 AUTO,preview 模式也不会
     # 意外把占位记录污染进真实账本。紧急减仓走同一套 preview 机制。
     write_ledger = ledger if submit else LiveLedger(":memory:", create=True)
-    audit = GlobalAuditLog()
+    # 持久化审计链(2026-07-05,机构审计 P1 quick win):此前 GlobalAuditLog 是纯内存链,
+    # 进程退出即丢——真钱决策的"我们当时评估过什么、为什么放行/拒绝"完全无痕。DurableAuditLog
+    # 与 GlobalAuditLog 同一 append/events/chain_valid 接口(duck-typed audit sink),换构造器
+    # 就是全部改动。preview 模式也持久化(这里记的是"评估过什么",不是"真下了什么单"——
+    # 后者由 write_ledger 的 preview/submit 分离机制单独把关,两个关注点不冲突)。
+    audit = DurableAuditLog(paths["audit"], create=True)
 
     kill_switch = KillSwitch()
     breach = evaluate_risk_state(
@@ -501,6 +529,13 @@ def main() -> None:
     for o_row in ledger.orders():
         order_stats[o_row["status"]] = order_stats.get(o_row["status"], 0) + 1
     tca = tca_summary(ledger.tca_records())
+
+    # live-paper 偏差自动升级(2026-07-05,机构审计 P1 quick win):此前 gap/滑点异常只是
+    # 淹没在普通 alerts 里(真实数据出现过 gap≈7% AUM、滑点 942bps 都没被特别对待)。
+    escalations = check_evidence_deviation(
+        parity, tca, aum=deploy_aum, max_gap_pct_of_aum=_MAX_PARITY_GAP_PCT_OF_AUM,
+        max_slippage_over_assumed_bps=_MAX_SLIPPAGE_OVER_ASSUMED_BPS)
+    alerts.extend(escalations)
 
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
