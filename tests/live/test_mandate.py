@@ -137,6 +137,53 @@ def test_exchange_unset_on_mandate_needs_review():
     assert d.tier == NEEDS_HUMAN_REVIEW and "exchange_unset" in d.reasons
 
 
+# --- 账户级 gross/net 聚合(2026-07-06 审计 P1-3/P1-2):gross/net 此前只算当批订单,
+# --- 一批各自 < max_gross 仍可让账户总敞口(已有仓位 + 本批)超签署上限;多策略共享同一
+# --- mandate 时第二策略看不到第一策略的敞口。账户级投影(现有敞口 + 本批 delta)只新增
+# --- reason(永不放宽当批检查),因 live 传的是账户级仓位,同时挡住多策略超发。 ---
+
+def test_account_level_gross_aggregates_existing_position_over_mandate():
+    # 已有 BTC 空头 $1500(-0.025 @ 60000);本批 ETH BUY 0.3 @ 3000 = $900:单笔 < $1000、
+    # 当批 gross $900 < $2000(旧逻辑 AUTO)。账户 gross = |−1500| + |900| = $2400 > $2000。
+    # 用空头让 net 部分抵消($−600,不触发 net),干净地只考核 gross。
+    orders = [_order("ETH", OrderSide.BUY, 0.3, "c1")]
+    d = evaluate_mandate(orders, {"BTC": 60000.0, "ETH": 3000.0}, _M,
+                         venue="binance_testnet", exchange="binance", now=1,
+                         current_positions={"BTC": -0.025})
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("account_gross_notional_exceeded" in r for r in d.reasons)
+
+
+def test_account_level_net_aggregates_existing_same_direction():
+    # 已有 ETH 多头 $1200(0.4 @ 3000)+ 本批 ETH BUY 0.3 @ 3000 = $900... 但 ETH 会触发
+    # per-instrument?_M 只对 BTC 设 cap。account net = $1200 + $900 = $2100 > max_net $1500。
+    # 当批 net = $900 < $1500(旧逻辑不触发 net)。
+    orders = [_order("ETH", OrderSide.BUY, 0.3, "c1")]
+    d = evaluate_mandate(orders, {"ETH": 3000.0}, _M,
+                         venue="binance_testnet", exchange="binance", now=1,
+                         current_positions={"ETH": 0.4})
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("account_net_notional_exceeded" in r for r in d.reasons)
+
+
+def test_account_position_unpriced_fails_closed():
+    # 持有一笔无法定价的非零仓位 -> 无法诚实计算账户 gross -> 升人工(fail-closed)
+    orders = [_order("ETH", OrderSide.BUY, 0.1, "c1")]        # $300,当批各项内
+    d = evaluate_mandate(orders, {"ETH": 3000.0}, _M, venue="binance_testnet", exchange="binance",
+                         now=1, current_positions={"BTC": 0.02})   # 持 BTC 但未提供 BTC 价
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("account_position_unpriced" in r for r in d.reasons)
+
+
+def test_account_level_check_does_not_relax_within_limits():
+    # 已有小仓位 + 小单,账户 gross/net 仍在限内 -> 不新增 account 类 reason(不误升人工)
+    orders = [_order("ETH", OrderSide.BUY, 0.1, "c1")]        # $300
+    d = evaluate_mandate(orders, {"BTC": 60000.0, "ETH": 3000.0}, _M,
+                         venue="binance_testnet", exchange="binance", now=1,
+                         current_positions={"BTC": 0.005})    # $300 long; account gross $600 < $2000
+    assert d.tier == AUTO and d.reasons == ()
+
+
 # --- 2026-07-05 安全审查 HIGH 发现:NaN 参与比较恒为 False,静默绕过限额检查 ---
 # 纵深防御:即便 mandate_store 已经在加载时挡住了,evaluate_mandate 自己也不该信任
 # "price 参数是有限数"这个假设(price 来自实时行情,不是 mandate 文件)。

@@ -76,6 +76,7 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
         reasons = []
         gross = 0.0
         net = 0.0
+        batch_signed_by_inst: dict = {}       # 每标的本批 signed 名义额(账户级投影用,审计 P1-2)
         for o in orders:
             # 未知 order_type 恒升人工(2026-07-06 战线②,§5 纵深防御——只收紧不放宽):
             # 真实构造路径已被 `LiveOrderRequest.__post_init__` 挡死(fail-closed 最前沿),
@@ -121,6 +122,8 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             signed = notional if o.side == OrderSide.BUY else -notional
             gross += abs(notional)
             net += signed
+            batch_signed_by_inst[o.instrument_id] = \
+                batch_signed_by_inst.get(o.instrument_id, 0.0) + signed
             cap = per_inst_caps.get(o.instrument_id)
             if cap is not None:
                 existing_notional = current_positions.get(o.instrument_id, 0.0) * price
@@ -132,6 +135,27 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             reasons.append("gross_notional_exceeded")
         if abs(net) > mandate.max_net_notional:
             reasons.append("net_notional_exceeded")
+
+        # 账户级投影 gross/net(审计 P1-2):当批检查只看本批订单——一批各自 < max_gross 仍可
+        # 让账户总敞口(已有仓位 + 本批 delta)超签署上限;live 传的是**账户级**仓位,所以这一处
+        # 同时挡住"多策略共享同一 mandate 各自贴 cap、账户 N× 超发"。这是 ADD-only 的额外检查
+        # (绝不放宽上面的当批 gross/net 检查——减仓批次的当批周转仍受当批 gross 约束)。持有一笔
+        # 无法定价的非零仓位 → 无法诚实计算账户敞口 → fail-closed 升人工。
+        signed_by_inst = dict(batch_signed_by_inst)
+        for _inst, _pos in current_positions.items():
+            if not _pos:
+                continue
+            _p = prices.get(_inst)
+            if _p is None or not math.isfinite(_p) or _p <= 0:
+                reasons.append(f"account_position_unpriced:{_inst}")
+                continue
+            signed_by_inst[_inst] = signed_by_inst.get(_inst, 0.0) + _pos * _p
+        proj_gross = sum(abs(v) for v in signed_by_inst.values())
+        proj_net = sum(signed_by_inst.values())
+        if proj_gross > mandate.max_gross_notional:
+            reasons.append("account_gross_notional_exceeded")
+        if abs(proj_net) > mandate.max_net_notional:
+            reasons.append("account_net_notional_exceeded")
 
         if reasons:
             return MandateDecision(NEEDS_HUMAN_REVIEW, tuple(reasons))
