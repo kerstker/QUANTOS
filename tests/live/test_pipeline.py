@@ -619,6 +619,30 @@ def test_resize_batch_same_decided_ts_books_both_batches(ledger):
     assert ledger.position("BTC") == pytest.approx(15.0)   # 第二批记账绝不被吞
 
 
+def test_resize_same_qty_delta_different_prior_books_both(ledger):
+    """audit P1-3: two rebalancing increments at the same decided_ts with the SAME delta
+    quantity but different prior position (BUY 5.0 from 0, then BUY 5.0 from 5.0) used to
+    collide on client_order_id -> the second batch's accounting was silently swallowed by
+    INSERT OR IGNORE -> ledger drift (5.0 instead of 10.0) while Binance really re-executed.
+    Distinguishing the id by prior position books both increments."""
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert ledger.position("BTC") == pytest.approx(5.0)     # target 5.0 from 0 -> delta 5.0
+    # second batch: target 10.0 from current 5.0 -> delta 5.0 (SAME quantity as batch 1)
+    r2 = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=1_200_000.0, current_positions={"BTC": 5.0},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW + 1000)
+    assert len(r2.submitted) == 1
+    cids = {c.client_order_id for c in venue.calls}
+    assert len(cids) == 2                                   # same-qty increments must NOT collide
+    assert ledger.position("BTC") == pytest.approx(10.0)    # both 5.0 increments booked
+
+
 def test_recovery_books_increment_not_cumulative_fill(ledger):
     # 提交路径确认时已记部分成交 40,交易所最终累计成交 100 —— 恢复只补 60,不重复记 100
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 100.0, strategy_id="crowd_contra",

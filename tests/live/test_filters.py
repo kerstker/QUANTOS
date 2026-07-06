@@ -148,6 +148,23 @@ def test_client_order_id_stable_for_identical_order():
     assert a == b                                   # 同一订单重试仍幂等
 
 
+def test_client_order_id_distinguishes_same_qty_different_prior_position():
+    """audit P1-3: two logically-distinct increments at the SAME (strategy, decided_ts, inst,
+    side, quantity) but different prior position (current=0 then current=5, both delta 5.0) are
+    NOT the same order and must get different ids — else the second's accounting is silently
+    swallowed by the ledger's INSERT OR IGNORE (real dual-venue resize drift). Same prior stays
+    idempotent (crash-rebuild against the same position re-derives the same id, venue dedups)."""
+    from live.execution.filters import client_order_id
+
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 5.0, prior_qty=0.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 5.0, prior_qty=5.0)
+    assert a != b
+    assert client_order_id("s", 1000, "BTC", OrderSide.BUY, 5.0, prior_qty=5.0) == b   # idempotent
+    # default (prior_qty omitted) stays byte-identical to the legacy id — golden MARKET chain safe
+    assert client_order_id("s", 1000, "BTC", OrderSide.BUY, 5.0) == \
+        client_order_id("s", 1000, "BTC", OrderSide.BUY, 5.0)
+
+
 def test_client_order_id_keeps_decision_prefix_for_parity_linking():
     from live.execution.filters import client_order_id, decision_prefix
     from quantos.contracts.trading import OrderSide

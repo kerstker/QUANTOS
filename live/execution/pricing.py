@@ -103,7 +103,8 @@ def limit_price_for(side: OrderSide, *, anchor: Optional[float], band_pct: float
 
 def to_limit_orders(adjusted: Sequence[LiveOrderRequest], *, anchors: Mapping[str, float],
                     filters: Mapping[str, ExchangeFilters], pricing: LimitPricing,
-                    strategy_id: str, decided_ts: int
+                    strategy_id: str, decided_ts: int,
+                    current_positions: Optional[Mapping[str, float]] = None
                     ) -> Tuple[List[LiveOrderRequest], List[Tuple[str, str]]]:
     """MARKET 请求 -> LIMIT 请求(逐笔 fail-soft):anchor 缺失/定价失败 -> 丢弃并附原因
     "no_limit_anchor"(**不静默回退 MARKET**——用户显式要了价格上限,悄悄摘掉它是欺骗);
@@ -120,8 +121,10 @@ def to_limit_orders(adjusted: Sequence[LiveOrderRequest], *, anchors: Mapping[st
         if price is None:
             dropped.append((o.instrument_id, "no_limit_anchor"))
             continue
+        prior = (None if current_positions is None
+                 else float(current_positions.get(o.instrument_id, 0.0)))
         cid = client_order_id(strategy_id, decided_ts, o.instrument_id, o.side, o.quantity,
-                              limit_price=price)
+                              limit_price=price, prior_qty=prior)
         out.append(replace(o, order_type="LIMIT", limit_price=price, post_only=pricing.post_only,
                            client_order_id=cid))
     return out, dropped

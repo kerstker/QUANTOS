@@ -274,7 +274,8 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             tier=NEEDS_HUMAN_REVIEW, rejected_by_gate=tuple(screened["rejected"]),
             mandate_reasons=(f"exchange_filters_failed:{type(exc).__name__}",))
     adjusted, dropped = apply_exchange_filters(desired, filters, prices,
-                                               strategy_id=strategy_id, decided_ts=decided_ts)
+                                               strategy_id=strategy_id, decided_ts=decided_ts,
+                                               current_positions=current_positions)
     for instrument_id, reason in dropped:
         audit.append(event_id=_det_id("live_drop", run_id, instrument_id), actor=f"live:{strategy_id}",
                      action="LIVE_ORDER_DROPPED_BY_FILTER", timestamp=now, target=instrument_id,
@@ -305,7 +306,7 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                              timestamp=now, target=inst, metadata={"source": source})
         adjusted, price_dropped = to_limit_orders(
             adjusted, anchors=anchors, filters=filters, pricing=limit_pricing,
-            strategy_id=strategy_id, decided_ts=decided_ts)
+            strategy_id=strategy_id, decided_ts=decided_ts, current_positions=current_positions)
         for instrument_id, reason in price_dropped:
             dropped.append((instrument_id, reason))
             audit.append(event_id=_det_id("live_drop_limit", run_id, instrument_id),
