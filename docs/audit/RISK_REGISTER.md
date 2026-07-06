@@ -6,7 +6,7 @@
 ## 本轮自主修复进度(2026-07-06,全部 TDD + 全量门禁全绿 + 独立提交)
 
 用户 2026-07-06 授权自主推进"让系统更 fail-closed/更诚实/更严格"的加固(不触碰人工门)。本轮已修复
-4 项(均只让系统更严,永不放松风控),门禁从 1564 → 1573 passed:
+**7 项**(均只让系统更严,永不放松风控)+ 把 live 执行栈纳入 CI 门禁,门禁总覆盖 **2096 测试**全绿:
 
 | 风险 | 修复 | commit |
 |---|---|---|
@@ -14,6 +14,7 @@
 | P1-3 client_order_id 同数量碰撞 | 把下单口径前仓位纳入订单身份(可选参,默认逐字节不变),同数量不同增量不再撞 ID 静默吞记账,保留崩溃重建幂等 | `1d0a40b` |
 | P1-2 mandate gross/net 只算当批 + 多策略超发 | 新增账户级投影 gross/net(现有敞口 + 本批 delta),ADD-only 不放宽当批检查;因 live 传账户级仓位,同时挡住多策略共享 mandate 超发;无法定价的持仓 fail-closed | `c96f285` |
 | P3-1 aiokafka 网络边界洞 | `_NETWORK_ROOTS` 补齐消息/异步网络/DB 客户端 + 精确豁免隔离模块,新增同类 import 现会被守卫挡下 | `6ca9aff` |
+| P1-4 place-后-未落库孤儿窗口(主路径 + 紧急通道) | place_order 前先落 `PENDING_NEW` 意图行(best-effort,不阻止下单),确认后 `update_status` 结算;崩溃恢复现能发现并对账孤儿订单 | `04a890a`/`4bca401` |
 | **P1-10(审计中新发现)门禁从不跑 tests/live** | `scripts/validate.py`(即 CI)硬编码测试目录,遗漏 `tests/live`(36 文件,最安全关键的下单/风控/对账代码)+ trading/tools——live 栈回归静默过 CI。作为独立子进程纳入(避 basename 冲突),门禁 1567→1567+527=2094 全绿 | `(见 git log)` |
 
 > **P1-10 是本轮审计中途实测发现的真实缺口**(初版 GAP_MATRIX 维度 15 因此偏乐观):此前 CLAUDE.md 里
@@ -23,10 +24,13 @@
 > = "漂移是否 intended" 的研究判断,故 `tests/reproducibility` 暂不纳入门禁,留用户定夺
 > (`python -m tools.build_evidence_digests` 可重生成)。
 
-**未在本轮做(需人工决定或更大改动,已留提示词)**:P0-1/P0-2(Phase 14 + mandate 签名,需真人)、
-P1-1(验证门作 live 前置——会阻断现部署的 crowd_contra,需用户决定人工 override 记录)、P1-4(place-后-
-未落库孤儿窗口——触碰最安全关键的下单路径,需专门会话仔细做)、P1-5(ctx 回填 + 撤单率——撤单率需阈值)、
-P1-6(firm 硬门——需阈值)、P2-3(峰值权益合理性上界——需阈值)。见 [`NEXT_CLAUDE_CODE_PROMPTS.md`](NEXT_CLAUDE_CODE_PROMPTS.md) 提示词 1。
+**未在本轮做(需人工决定或需风险阈值数字,已留提示词)**:P0-1/P0-2(Phase 14 + mandate 签名,需真人)、
+P1-1(验证门作 live 前置——机制可建但**接线会阻断现部署的 crowd_contra**,需用户先定人工 override 记录)、
+P1-5(ctx 回填重复/频率引擎——重复引擎在 P1-3 修好幂等后已是纵深防御;频率引擎需 `max_orders_per_window`/
+`rate_window_s` 阈值数字 + fingerprint 格式匹配,非无阈值可做)、P1-6(firm 硬门——需敞口上限数字)、
+P2-3(峰值权益合理性上界——需合理性阈值)。见 [`NEXT_CLAUDE_CODE_PROMPTS.md`](NEXT_CLAUDE_CODE_PROMPTS.md) 提示词 1/3。
+**本轮结论:所有"无需风险阈值数字、无需人工决定、可干净完成"的 fail-closed 加固已全部落地(7 项);
+剩余项都卡在需要你签一个数字或拍一个板。**
 
 ## 一句话安全结论(先说最重要的)
 
