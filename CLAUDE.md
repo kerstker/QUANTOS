@@ -40,6 +40,13 @@ governed by code review, the governance scanner, and (Phase 14) deployment/proce
 isolation. The autonomous agent path holds only a non-human actor and reaches the
 state machine/gate only through the hardened `ResearchAgentLoop`; direct manager/
 catalog access is for human-controlled workflows and is not an agent API.
+**2026-07-06 战线①注:`promotion_api`(端口 8460,默认不启动、不进任何自启/调度)把上述
+build-time 绕过面变成了 runtime HTTP 能力——持 `key/governance_token.txt` 的任何本机进程
+(含 AI agent)可用三个自报 X-Operator 标签走完三方批准并执行晋级。X-Operator 是问责标签、
+非身份认证;启动前必读 `services/governance/promotion_api/main.py` docstring 与设计文档
+(`docs/superpowers/specs/2026-07-06-promotion-closed-loop-design.md` §7);agent 运行环境
+不得持有 gov token;真身份认证/出进程签名 = Phase 14。APPROVED ≠ 真钱:LIVE 仍被
+readiness pin + 五旗帜结构性挡死。**
 
 ## What actually exists (verified 2026-06-29 by full-system audit)
 
@@ -315,6 +322,21 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `ApprovalRecord` 路径一字不动;LIVE 仍被 readiness pin + LIVE flags 结构性挡死(grant 合法也不解锁 LIVE)。治理
   `tests/governance/test_multi_party_approval_boundary.py` 钉死"无 SDK/网络 import + 非人到不了 APPROVED"。诚实边界:
   强化的是*批准的构造路径*,单进程内挡不住受信代码凑三个 HUMAN Actor 绕过(那是子项目3)。
+- `services/governance/{approval_store,promotion_api/}.py` + `services/alpha/promotion.py` —
+  **晋级闭环(战线①,2026-07-06)**:多方批准 append-only sqlite 持久化(`approvals.db`,
+  write-only-adds 严格前缀检查 + 同事务链头承诺 n_steps/head_hash 抓整体截断 + fail-closed
+  重载逐条重算哈希;并发写者靠主键撞 IntegrityError → `ApprovalStoreConflict`)+ 晋级执行核
+  (`execute_promotion`:预检全部不烧 grant → **先烧 grant 再 advance**(崩溃/失败即作废,
+  绝不留可复花 grant)→ 烧后全路径落 `DurableAuditLog`;证据只来自 evaluation artifact 的
+  `net_sharpe`/`catalog_trial_count` + paper_track.db,artifact 被篡改经 `verify_evaluation`
+  判废,任一缺失 guard fail-closed 拒绝——grant 路径比旧单人路径**更严**:eval_trial_count
+  取不到即拒,不像旧路径 None 静默跳过)+ 独立 mutating 服务 promotion_api(X-Gov-Token +
+  X-Operator,GET 也认证,CORS 仅 3100,**默认不启动**——威胁模型扩张见上方 Threat model 注)
+  + 前端 `PromotionQueue.tsx`(候选证据卡/步骤时间线/历史,威胁模型横幅常驻)。
+  `AlphaLifecycleManager.advance(grant=, eval_trial_count=)` 纯加法入口,旧 ApprovalRecord
+  路径一字不动;grant.request_id 记进 approval_id/evidence_hash(转换链与三方批准相连)。
+  62 tests(后端 56 + 前端 6)。设计+评审对照:`docs/superpowers/specs/
+  2026-07-06-promotion-closed-loop-design.md`。
 - `services/governance/signing.py` + `docs/PHASE_14_PROCESS_ISOLATION.md` — **出进程签名权威接缝(轨道3 子项目3,
   收口)**:全代码库反复出现的同一句诚实注脚——「单进程内挡不住受信代码」(`verify_ref` 无密钥哈希、直接凑三个
   `HUMAN` Actor、直接调 manager/catalog、重算 broker 守卫)——本子项目一次性回答它:真防御只能在进程外。

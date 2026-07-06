@@ -99,6 +99,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/LifecycleMonitor') },
 
   // ---- 治理与系统:审计、健康、诚实完整度 ----
+  { path: '/research/promotion-queue', zh: '晋级审批', en: 'Promotion Queue', icon: 'PQ', group: 'system',
+    load: () => import('@/pages/PromotionQueue') },
   { path: '/research/evidence-ledger', zh: '证据链', en: 'Evidence Ledger', icon: 'EL', group: 'system',
     load: () => import('@/pages/EvidenceLedger') },
   { path: '/research/events', zh: '事件流', en: 'Events', icon: 'EV', group: 'system',

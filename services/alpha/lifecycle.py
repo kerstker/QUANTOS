@@ -58,14 +58,20 @@ class AlphaLifecycleManager:
         approval: Optional[ApprovalRecord] = None,
         paper_evidence: Optional[dict] = None,
         dataset_version: str = "",
+        grant=None,                      # 多方批准聚合(services.governance.approval.ApprovalRequest)
+        eval_trial_count: Optional[int] = None,   # grant 路径:来自 evaluation artifact 的 eval 期 trial count
     ) -> AlphaTransition:
+        # 战线①(2026-07-06)加法入口:dst==APPROVED 且传入 grant 时走多方批准 guard
+        # (guards.guard_to_approved_with_grant,镜像 KillSwitch.reset_with_grant /
+        # evaluate_deployment(grant=) 先例);grant is None → 旧 ApprovalRecord 路径一字不动。
         src = self.catalog.state(alpha_id)
 
         # 1) structural lock — raises InvalidAlphaTransition / UnauthorizedPromotion
         assert_alpha_transition(src, dst, actor)
 
         # 2) evidence guard
-        ok, reasons = self._run_guard(alpha_id, dst, actor, evaluation, approval, paper_evidence)
+        ok, reasons = self._run_guard(alpha_id, dst, actor, evaluation, approval, paper_evidence,
+                                      grant=grant, eval_trial_count=eval_trial_count)
         if not ok:
             raise GuardRejected(reasons)
 
@@ -73,10 +79,14 @@ class AlphaLifecycleManager:
         if evaluation is not None:
             self._eval_trial_count[alpha_id] = evaluation.catalog_trial_count
         self.catalog._set_state(alpha_id, dst)
+        # grant 可追溯性(评审 #2):grant 路径下把 grant.request_id 记进 evidence_hash 与
+        # AlphaTransition.approval_id,使 APPROVED 转换在转换链上与其三方批准连着;旧路径不变。
+        approval_ref = approval.approval_id if approval else (
+            getattr(grant, "request_id", "") if grant is not None else "")
         evidence_hash = stable_hash({
             "alpha_id": alpha_id, "src": src.value, "dst": dst.value,
             "eval": getattr(evaluation, "reproducibility_hash", ""),
-            "approval": approval.approval_id if approval else "",
+            "approval": approval_ref,
         })
         prev_audit = self.audit[-1].entry_hash if self.audit else ""
         self.audit.append(AuditEvent(
@@ -90,13 +100,14 @@ class AlphaLifecycleManager:
         tr = AlphaTransition(
             transition_id=f"t{len(self.transitions) + 1}", alpha_id=alpha_id,
             src_state=src, dst_state=dst, actor=actor, evidence_hash=evidence_hash,
-            approval_id=approval.approval_id if approval else "",
+            approval_id=approval_ref,
             dataset_version=dataset_version, timestamp=timestamp, prev_hash=prev_tr,
         )
         self.transitions.append(tr)
         return tr
 
-    def _run_guard(self, alpha_id, dst, actor, evaluation, approval, paper_evidence):
+    def _run_guard(self, alpha_id, dst, actor, evaluation, approval, paper_evidence,
+                   grant=None, eval_trial_count=None):
         cc = self.catalog.global_trial_count()
         if dst == AlphaState.TESTING:
             return guards.guard_to_testing(evaluation, self.config, cc)
@@ -108,6 +119,15 @@ class AlphaLifecycleManager:
         if dst == AlphaState.PAPER_TRADING:
             return guards.guard_to_paper(evaluation, self.config, cc)
         if dst == AlphaState.APPROVED:
+            if grant is not None:
+                # 多方批准路径:eval trial count 优先取调用方从 evaluation artifact 显式喂入的值
+                # (评审 #1——新进程里 self._eval_trial_count 恒空,靠它就结构性失效);两者都
+                # 没有 → guard 内 fail-closed 拒绝(NO_EVALUATION_TRIAL_COUNT)。
+                etc = eval_trial_count if eval_trial_count is not None \
+                    else self._eval_trial_count.get(alpha_id)
+                return guards.guard_to_approved_with_grant(
+                    alpha_id, grant, actor, paper_evidence, self.config,
+                    eval_trial_count=etc, catalog_count=cc)
             return guards.guard_to_approved(
                 alpha_id, approval, actor, paper_evidence, self.config,
                 eval_trial_count=self._eval_trial_count.get(alpha_id), catalog_count=cc)
