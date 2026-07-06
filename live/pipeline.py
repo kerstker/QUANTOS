@@ -346,6 +346,20 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             result = None
             recovered = False
             genuine_error = False
+            # pre-journal(审计 P1-4):在下单**之前**先落一条 PENDING_NEW 意图行,这样进程若在
+            # place_order 与下面的确认/记账之间被杀,resolve_unconfirmed_orders(只遍历 ledger.orders())
+            # 也能发现这笔"已在交易所、账本却没记"的孤儿并回查对账。best-effort:pre-journal 写失败
+            # **不**跳过下单——保留"记账失败 ≠ 下单失败、不能让真实订单被误当失败"的既有不变量
+            # (那笔的孤儿风险与改动前一样,不因加了这道 journal 而变差);下面的确认后写入会兜住它。
+            journaled = False
+            try:
+                ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                         strategy_id=strategy_id, submitted_at=now,
+                                         status="PENDING_NEW", order_type=o.order_type,
+                                         limit_price=o.limit_price)
+                journaled = True
+            except Exception:
+                pass                                  # 无法 journal 也要下单(既有不变量);确认后写入会再试
             try:
                 result = venue.place_order(o)
             except Exception as exc:
@@ -397,11 +411,17 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                                        "filled_qty": str(confirmed.filled_qty),
                                        "order_type": o.order_type})
             try:
-                ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                         strategy_id=strategy_id, submitted_at=now,
-                                         venue_order_id=confirmed.venue_order_id,
-                                         status=confirmed.status, order_type=o.order_type,
-                                         limit_price=o.limit_price)
+                # 确认后落最终状态:pre-journal 成功 -> UPDATE 那条 PENDING_NEW 行到终态;pre-journal
+                # 失败(如账本坏)-> 退回原来的 INSERT,让这一次写失败仍被下面 except 记成 ledger 错误。
+                if journaled:
+                    ledger.update_status(o.client_order_id, confirmed.status,
+                                         venue_order_id=confirmed.venue_order_id)
+                else:
+                    ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                             strategy_id=strategy_id, submitted_at=now,
+                                             venue_order_id=confirmed.venue_order_id,
+                                             status=confirmed.status, order_type=o.order_type,
+                                             limit_price=o.limit_price)
                 if confirmed.filled_qty > 0:
                     ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
                                        o.instrument_id, o.side, confirmed.filled_qty,

@@ -643,6 +643,43 @@ def test_resize_same_qty_delta_different_prior_books_both(ledger):
     assert ledger.position("BTC") == pytest.approx(10.0)    # both 5.0 increments booked
 
 
+def test_order_is_journaled_before_place_order(ledger):
+    """audit P1-4:订单必须在被送到交易所**之前**就有账本行。否则进程在 place_order 与 post-confirm
+    记账之间被杀(driver 自己担心的 Windows 定时任务被系统重启打断),订单已在交易所却无任何账本
+    记录,而 resolve_unconfirmed_orders 只遍历 ledger.orders()——永远发现不了这个孤儿(对未成交
+    的 LIMIT 挂单最锐利:无仓位可供对账兜底)。pre-journal 一条 PENDING 行让孤儿可被恢复。"""
+    captured = {}
+
+    class _SpyVenue(_FakeVenue):
+        def place_order(self, o):
+            captured[o.client_order_id] = [r["client_order_id"] for r in ledger.orders()]
+            return super().place_order(o)
+
+    venue = _SpyVenue()
+    audit = GlobalAuditLog()
+    submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert captured, "place_order 从未被调用"
+    for cid, rows_at_place in captured.items():
+        assert cid in rows_at_place, "订单在被 journal 之前就送到了交易所(孤儿窗口未关闭)"
+
+
+def test_resolve_reconciles_pre_journaled_pending_orphan(ledger):
+    """pre-journal 的非终态 PENDING 行(订单已下、进程在记账前死掉)可恢复:崩溃恢复按
+    client_order_id 回查交易所权威状态并补记成交。"""
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="PENDING_NEW")
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v1", client_order_id="c1",
+                                           instrument_id="BTC", status="FILLED",
+                                           filled_qty=0.01, avg_price=60000.0)
+    resolve_unconfirmed_orders(ledger, venue, now=_NOW + 1000)
+    assert ledger.orders()[0]["status"] == "FILLED"
+    assert ledger.position("BTC") == pytest.approx(0.01)
+
+
 def test_recovery_books_increment_not_cumulative_fill(ledger):
     # 提交路径确认时已记部分成交 40,交易所最终累计成交 100 —— 恢复只补 60,不重复记 100
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 100.0, strategy_id="crowd_contra",
