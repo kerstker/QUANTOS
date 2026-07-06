@@ -49,7 +49,8 @@ from live.execution.state_io import atomic_write_json
 from live.governance.kill_switch_store import (load_kill_switch_state,
                                                save_kill_switch_state_if_tripped)
 from live.governance.review_queue import ReviewQueue
-from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.emergency import (EMERGENCY_STRATEGY_ID, flatten_target_for_breach,
+                                      submit_emergency_flatten)
 from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
@@ -371,12 +372,24 @@ def position_scopes(ledger, strategy_id: str) -> tuple:
     return ledger.all_positions(), ledger.all_positions(strategy_id=strategy_id)
 
 
+def emergency_unreconciled_instruments(ledger, *, epsilon: float = 1e-9) -> frozenset:
+    """紧急减仓保留账本(`EMERGENCY_STRATEGY_ID`)里仍有非零净仓位的标的(2026-07-06 对抗式
+    复审 CONFIRMED 修复,front3-strategy 高危发现):`emergency.py` 的减仓 fill 恒记进独立
+    保留账本、不落回原策略——账户级 `all_positions()` 因此立即正确,但策略级视图
+    (`all_positions(strategy_id=strategy)`)对那个标的仍是"减仓前的旧仓位",直到人工核实
+    并把保留账本的净额重新归属回正确的策略(设计文档 §9 留白:重归属是事故复盘的人工决定,
+    本函数不做也不该做)。调用方应把返回集合并入 `frozen`——冻结这些标的(排除出本轮
+    targets 与 current 双侧)防止驱动器拿这个陈旧基线算出方向/大小都错的真实订单;这不是
+    "解决"重归属问题,只是在问题解决前不让它造成真实的错误下单。纯读、无副作用。"""
+    residual = ledger.all_positions(strategy_id=EMERGENCY_STRATEGY_ID)
+    return frozenset(inst for inst, qty in residual.items() if abs(qty) > epsilon)
+
+
 def multi_strategy_mandate_alert(ledger_strategy_ids, current_strategy: str, mandate) -> "str | None":
     """多策略共享未分块 mandate 的告警(评审 #5 简化落地):基于**本次调用的 strategy_id**
     判断(第二条策略首次运行、任何订单落库之前就响,不等事后 fills);emergency_flatten
     保留账本不算策略。提醒而非硬停(维持"mandate 数字由用户签、代码不代填"的哲学);
     mandate 一旦签署 per-strategy 子限额块(commit 2,待用户拍板),告警自动闭嘴。"""
-    from live.execution.emergency import EMERGENCY_STRATEGY_ID
     seen = {s for s in set(ledger_strategy_ids) | {current_strategy}
             if s != EMERGENCY_STRATEGY_ID}
     if len(seen) >= 2 and not getattr(mandate, "strategies", None):
@@ -582,6 +595,18 @@ def main() -> None:
     # 口径分离(2026-07-06 战线③,本战线最大实施风险):账户级喂 preflight/gate/mandate/风控,
     # 策略级喂目标增量/parity——见 position_scopes docstring。
     account_positions, strategy_positions = position_scopes(ledger, strategy_id)
+    # 紧急减仓陈旧基线防护(2026-07-06 对抗式复审 CONFIRMED 修复,front3-strategy 高危发现):
+    # emergency.py 的减仓 fill 恒记进 EMERGENCY_STRATEGY_ID 保留账本、不落回原策略——若那个
+    # 保留账本对某标的仍有非零净仓位,说明策略级视图对该标的还是"减仓前的旧仓位",在人工
+    # 重归属之前继续拿它算目标增量会产出方向/大小都错的真实订单。冻结这些标的(与跨源核价
+    # 同一套排除双侧机制),不是"解决"重归属问题,只是不让它在解决前造成错误下单。
+    emergency_frozen = emergency_unreconciled_instruments(ledger)
+    if emergency_frozen:
+        frozen_names |= emergency_frozen
+        alerts.append(f"emergency-flatten residual froze {len(emergency_frozen)} instrument(s) "
+                      f"(strategy-level position view is stale until a human manually "
+                      f"reattributes the reserved '{EMERGENCY_STRATEGY_ID}' ledger entries): "
+                      f"{sorted(emergency_frozen)}")
     # 对账永远是账户级的(venue 只知道账户;per-strategy vs venue 对账被明令禁止,
     # 见 live/execution/reconciliation.py)
     recon = preflight_check(account_positions, venue_positions, tolerance=_RECON_TOLERANCE)

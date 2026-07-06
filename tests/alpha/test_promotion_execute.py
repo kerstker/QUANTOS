@@ -3,9 +3,11 @@
 consume 前预检(评审 #4:错的执行人 / 非法转换不白烧)、experiments db 单飞锁(评审 #7)。"""
 import json
 import os
+import threading
 
 import pytest
 
+import services.alpha.promotion as promotion_mod
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
@@ -120,6 +122,110 @@ def test_wrong_executor_prechecked_without_burning(env):
     with pytest.raises(PromotionPrecheckError):
         _execute(env, executor="bob")           # bob 不是 APPROVED 步的 carol
     assert env["store"].load("req-1").state == ApprovalState.APPROVED   # 未烧
+
+
+# --- 进程内单飞锁(2026-07-06 对抗式复审 CONFIRMED 修复,front1-governance 高危发现)-------
+#
+# 此前 lock_path 默认 None 时,execute_promotion 对"同一进程内并发调用同一 request_id"没有
+# 任何保护:两个调用者各自 load() 到同一份 APPROVED 请求、各自 consume() 出逐字节相同的
+# CONSUMED 步骤,ApprovalStore.save() 的严格前缀检查对"完全相同的追加"是无声 no-op(不是
+# 分叉,不 raise)——于是两次 advance()+registry.save()+PROMOTION_EXECUTED 审计各自独立发生,
+# 一次性 grant 被实际执行两次。三个独立审查维度各自复现了这个反例并全票确认。
+
+def test_concurrent_execute_promotion_same_request_id_is_serialized(env, monkeypatch):
+    # ApprovalStore/DurableAuditLog 已是 check_same_thread=False(线程安全);
+    # SqliteExperimentStore/PaperTrackStore 默认不是——镜像 promotion_api 每次 HTTP 请求都
+    # 新建 registry/paper 对象的真实模式,每个线程自己 fresh 一份,指向同一份 tmp_path 文件。
+    _approved_request(env["store"])
+    tmp_path = env["tmp"]
+    thread_a_inside = threading.Event()
+    release_thread_a = threading.Event()
+    original_consume = promotion_mod.consume
+
+    def _slow_consume(*args, **kwargs):
+        thread_a_inside.set()
+        assert release_thread_a.wait(timeout=5), "test setup failure: never released"
+        return original_consume(*args, **kwargs)
+
+    monkeypatch.setattr(promotion_mod, "consume", _slow_consume)
+
+    def _fresh_call(now, nonce):
+        registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db")))
+        paper = PaperTrackStore(str(tmp_path / "paper_track.db"))
+        return execute_promotion(store=env["store"], registry=registry, audit=env["audit"],
+                                 request_id="req-1", executor_id="carol", now=now,
+                                 paper_store=paper, nonce=nonce)
+
+    result_a = {}
+
+    def _run_a():
+        result_a["outcome"] = _fresh_call(now=20, nonce="nA")
+
+    thread_a = threading.Thread(target=_run_a)
+    thread_a.start()
+    assert thread_a_inside.wait(timeout=5), "thread A never entered the locked critical section"
+
+    # thread A is still holding the process-internal lock (paused inside consume()) — a second
+    # concurrent call for the SAME request_id must be rejected, not silently double-executed.
+    with pytest.raises(PromotionPrecheckError, match="PROMOTION_IN_PROGRESS"):
+        _fresh_call(now=20, nonce="nB")
+
+    release_thread_a.set()
+    thread_a.join(timeout=5)
+    assert not thread_a.is_alive()
+    assert result_a["outcome"].ok is True
+
+    executed_events = [e for e in env["audit"].events if e.action == "PROMOTION_EXECUTED"]
+    assert len(executed_events) == 1, "grant must be executed exactly once, not twice"
+    assert env["store"].load("req-1").state == ApprovalState.CONSUMED
+
+
+def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_path):
+    # 按 request_id 分片的锁不能变成全局互斥——两个不相干的晋级请求必须能各自独立通过。
+    exp_path = str(tmp_path / "exp.db")
+    paper_path = str(tmp_path / "paper_track.db")
+    registry = ExperimentRegistry(SqliteExperimentStore(exp_path, create=True))
+    cat = AlphaCatalog()
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    paper = PaperTrackStore(paper_path, create=True)
+    for alpha_id in ("a1", "a2"):
+        cat.register(AlphaDefinition(alpha_id=alpha_id, name=alpha_id, factor_ids=("f1",)))
+        mgr = AlphaLifecycleManager(cat)
+        cc = cat.global_trial_count()
+        mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)
+        mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(alpha_id, cc))
+        mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(alpha_id, cc))
+        registry.record_evaluation(_eval_report(alpha_id, cc), dataset_version="v1", recorded_ts=3)
+        paper.append_periods(alpha_id, [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
+        paper.recompute_summary(alpha_id, backtest_sharpe=1.2)
+    registry.save(cat, now=3)
+
+    for req_id, alpha_id in (("req-1", "a1"), ("req-2", "a2")):
+        subject = promotion_subject(alpha_id, S.APPROVED)
+        req = open_request(req_id, subject, Actor(actor_id="alice", kind=ActorKind.HUMAN), at=10)
+        req = review(req, Actor(actor_id="bob", kind=ActorKind.HUMAN), at=11)
+        req = approve(req, Actor(actor_id="carol", kind=ActorKind.HUMAN), at=12)
+        store.save(req, kind="ALPHA_PROMOTION", now=12)
+
+    results = {}
+
+    def _run(req_id):
+        # 每个线程自己 fresh 一份 registry/paper(SqliteExperimentStore/PaperTrackStore 默认
+        # check_same_thread=True,不能跨线程共享同一个 Python 对象);store/audit 已线程安全。
+        thread_registry = ExperimentRegistry(SqliteExperimentStore(exp_path))
+        thread_paper = PaperTrackStore(paper_path)
+        results[req_id] = execute_promotion(
+            store=store, registry=thread_registry, audit=audit, request_id=req_id,
+            executor_id="carol", now=20, paper_store=thread_paper, nonce=req_id)
+
+    threads = [threading.Thread(target=_run, args=(r,)) for r in ("req-1", "req-2")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+    assert not any(t.is_alive() for t in threads)
+    assert results["req-1"].ok is True and results["req-2"].ok is True
 
 
 def test_not_yet_approved_request_prechecked(env):

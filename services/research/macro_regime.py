@@ -82,13 +82,28 @@ def _ym(yyyymmdd: int) -> int:
     return (yyyymmdd // 10000) * 12 + (yyyymmdd // 100 % 100) - 1
 
 
+def _last_by_key(items, key):
+    """"max by key, 平局时保留 items 里**最后**出现的那个"(2026-07-06 对抗式复审 CONFIRMED
+    修复:Python 内置 `max()` 平局保留*第一个*遇到的,与 `pit_series` 的稳定排序+覆盖写
+    (逐条 `latest_val[e]=v` 覆盖,平局时**最后**处理的行胜出)不一致——同一个 (event,
+    knowledge) 出现两次但 value 不同时,两套实现会给出不同答案,打破"语义与逐点函数完全
+    一致"的等价性声明。改用显式 `>=` 比较,让平局统一由"更晚出现"的行胜出,两套实现在
+    平局上也保持一致。"""
+    best, best_key = None, None
+    for item in items:
+        k = key(item)
+        if best is None or k >= best_key:
+            best, best_key = item, k
+    return best
+
+
 def pit_latest_asof(rows: Sequence[tuple], as_of: int) -> Optional[float]:
     """as_of 时点可知的**最新 event**(不是最新 knowledge)的最新可知值;无可知行 → None。"""
     best = None                                        # (event, knowledge, value)
     for e, k, v in rows:
         if k > as_of or v is None:
             continue
-        if best is None or (e, k) > (best[0], best[1]):
+        if best is None or (e, k) >= (best[0], best[1]):
             best = (e, k, v)
     return best[2] if best else None
 
@@ -101,12 +116,12 @@ def pit_yoy_asof(rows: Sequence[tuple], as_of: int, months_back: int = 12) -> Op
     if not knowable:
         return None
     e0 = max(e for e, _, _ in knowable)
-    v0 = max((r for r in knowable if r[0] == e0), key=lambda r: r[1])[2]
+    v0 = _last_by_key([r for r in knowable if r[0] == e0], key=lambda r: r[1])[2]
     target = _ym(e0) - months_back
     base = [r for r in knowable if _ym(r[0]) == target]
     if not base:
         return None
-    v1 = max(base, key=lambda r: (r[0], r[1]))[2]
+    v1 = _last_by_key(base, key=lambda r: (r[0], r[1]))[2]
     return None if v1 == 0 else v0 / v1 - 1.0
 
 
@@ -115,9 +130,14 @@ def pit_series(rows: Sequence[tuple], as_ofs: Sequence[int],
     """批量 PIT 求值(调用侧确定性能策略,评审 required_change):as_ofs 必须**升序**,对 rows 只做
     一次 (knowledge, event) 排序 + 单调游标增量索引 —— O(R log R + R + W),而不是每个 as_of 全表扫
     O(W×R)(CPIAUCSL 全 vintage >10 万行 × ~230-300 周会是分钟级)。语义与逐点函数完全一致
-    (months_back=None ≡ pit_latest_asof;否则 ≡ pit_yoy_asof;等价性有测试钉死)。确定性:
+    (months_back=None ≡ pit_latest_asof;否则 ≡ pit_yoy_asof;等价性有测试钉死,含平局情形——
+    2026-07-06 对抗式复审 CONFIRMED 修复:排序键刻意只取 (knowledge, event),不把 value 混进
+    比较——`sorted()` 是稳定排序,(knowledge, event) 相同的行按原始 `rows` 顺序保留相对次序,
+    循环覆盖写让**最后**一行胜出,与 `pit_latest_asof`/`pit_yoy_asof` 现在统一的"平局由更晚
+    出现的行胜出"规则一致;此前把 value 当第三顺位排序键会让平局胜负偶然取决于数值大小,
+    与逐点函数的平局语义各自独立、可能给出不同答案)。确定性:
     排序键完全有序,无 RNG/墙钟。as_ofs 非升序 → ValueError(fail-closed,静默错序会给错答案)。"""
-    order = sorted((k, e, v) for e, k, v in rows if v is not None)
+    order = sorted(((k, e, v) for e, k, v in rows if v is not None), key=lambda row: (row[0], row[1]))
     latest_val: dict = {}                              # event -> 最新可知值(knowledge 升序后写覆盖)
     month_event: dict = {}                             # 月序号 -> 该月最大 event
     max_event: Optional[int] = None

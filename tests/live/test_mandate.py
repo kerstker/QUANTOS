@@ -193,27 +193,31 @@ def test_limit_buy_notional_lower_limit_price_does_not_shrink_below_decision_pri
     assert d_limit.reasons == d_market.reasons and d_limit.tier == d_market.tier
 
 
-def test_limit_sell_notional_uses_lower_of_decision_and_limit_price():
-    # SELL 限价 LOWER 于决策价(更保守的卖价假设)-> 名义额按更低价评估(min)
+def test_limit_sell_notional_lower_limit_price_does_not_shrink_below_decision_price():
+    # SELL 限价 LOWER 于决策价:保守口径恒取 max(与 BUY 同公式),名义额仍按更大的决策价
+    # 评估,不因限价更低而"省"出额度(2026-07-06 对抗式复审修复前,SELL 分支错用 min,
+    # 会在此场景"侥幸"给出同样结果——真正的反例在下一测试)。
     limit_order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.SELL, quantity=0.015,
                                    client_order_id="c1", order_type="LIMIT", limit_price=50000.0)
-    d = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
-                         exchange="binance", now=1)
-    # 0.015 * 50000 = $750 < single cap $1000 -> 应该 AUTO(若错用 60000 会是 $900,同样 AUTO,
-    # 所以用 per-instrument cap 场景更能证明是否真的用了 min——见下一测试)
-    assert d.tier == AUTO
-
-
-def test_limit_sell_notional_higher_limit_price_does_not_reduce_below_decision_price():
-    # SELL 限价 HIGHER 于决策价:保守口径取 min(决策价),不因限价更高而"省"出额度
-    limit_order = LiveOrderRequest(instrument_id="ETH", side=OrderSide.SELL, quantity=0.4,
-                                   client_order_id="c1", order_type="LIMIT", limit_price=5000.0)
-    d_limit = evaluate_mandate([limit_order], {"ETH": 3000.0}, _M, venue="binance_testnet",
+    d_limit = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
                               exchange="binance", now=1)
-    market_order = _order("ETH", OrderSide.SELL, 0.4, "c2")
-    d_market = evaluate_mandate([market_order], {"ETH": 3000.0}, _M, venue="binance_testnet",
+    market_order = _order("BTC", OrderSide.SELL, 0.015, "c2")
+    d_market = evaluate_mandate([market_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
                                 exchange="binance", now=1)
     assert d_limit.reasons == d_market.reasons and d_limit.tier == d_market.tier
+
+
+def test_limit_sell_notional_higher_limit_price_escalates_via_per_instrument_cap():
+    # 2026-07-06 对抗式复审 CONFIRMED 修复的反例:决策价评估的名义额本身未超限(0.013*60000=
+    # $780 < BTC per-instrument cap $800),但市场在决策之后上涨、限价随实时盘口走高到 65000
+    # (0.013*65000=$845,超过 $800)——修复前的 SELL-min() bug 会捡回更小的决策价、把这单
+    # 静默放成 AUTO;修复后恒取 max,必须正确升人工。
+    limit_order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.SELL, quantity=0.013,
+                                   client_order_id="c1", order_type="LIMIT", limit_price=65000.0)
+    d = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("per_instrument_cap_exceeded" in r for r in d.reasons)
 
 
 def test_limit_order_without_limit_price_falls_back_to_decision_price_only():

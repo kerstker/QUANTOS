@@ -85,6 +85,24 @@ def test_pit_series_matches_point_functions():
     assert got_yoy == [pit_yoy_asof(_CPI_ROWS, a, 12) for a in as_ofs]
 
 
+def test_pit_functions_agree_on_exact_duplicate_event_and_knowledge_tie():
+    # 2026-07-06 对抗式复审 CONFIRMED 修复的反例:同一 (event, knowledge) 出现两次但 value
+    # 不同(如同日两次录入/覆盖)。修复前 pit_latest_asof(严格 `>`,平局保留*第一*行)与
+    # pit_series(排序键含 value,平局胜负偶然取决于数值大小)在这种输入上会给出不同答案,
+    # 打破二者"语义完全一致"的等价性声明——三个函数现在统一"平局由 rows 里**最后**出现的
+    # 那行胜出"。
+    rows = [(20200101, 20200213, 100.0), (20200101, 20200213, 200.0)]
+    assert pit_latest_asof(rows, 20200213) == 200.0     # 最后一行(200.0)胜出,不是 100.0
+    assert pit_series(rows, [20200213]) == [200.0]
+
+    # YoY 路径同一枚反例:基期(months_back 之前那个月)也可能有平局,pit_yoy_asof 与
+    # pit_series(months_back=) 必须一致地选"最后出现"的那行。
+    yoy_rows = [(20190101, 20190213, 10.0), (20190101, 20190213, 20.0),   # 基期平局
+               (20200101, 20200213, 30.0)]
+    assert pit_yoy_asof(yoy_rows, 20200213, 12) == pytest.approx(30.0 / 20.0 - 1.0)
+    assert pit_series(yoy_rows, [20200213], months_back=12) == [pytest.approx(30.0 / 20.0 - 1.0)]
+
+
 def test_pit_series_rejects_unsorted_as_ofs():
     with pytest.raises(ValueError):
         pit_series(_CPI_ROWS, [20210101, 20200101])

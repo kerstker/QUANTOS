@@ -28,6 +28,7 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "fred_fetch.py"),
              os.path.join(_ROOT, "tools", "alfred_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
+_QUANTOS = os.path.join(_ROOT, "quantos")
 
 
 def _import_roots(path: str) -> set:
@@ -48,9 +49,16 @@ def _import_roots(path: str) -> set:
 # add network/trade/credential capability, so they do not weaken the boundary.
 _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "concurrent",
                     "sqlite3",  # 纯 stdlib 本地存储(增量刷新读水位/PIT 库)——不增加网络/交易/凭证能力
-                    "csv",      # 纯 stdlib 文本解析(fred_fetch 解析 fredgraph CSV)——不增加网络/交易/凭证能力
-                    "quantos",  # 内部契约包(FeatureValue 双时态契约,拒 lookahead)——不增加网络/交易/凭证能力
                     "services", "tools", "__future__"}
+# per-file 额外允许项(2026-07-06 对抗式复审 CONFIRMED 修复):此前 "csv"/"quantos" 加进
+# 上面那个*全局*集合,意味着其余 12 个从不 import 它们的抓取器也被这条测试"允许"这么做——
+# 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
+# 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
+_EXTRA_ALLOWED_BY_FILE = {
+    # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
+    "fred_fetch.py": {"csv", "quantos"},
+    "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要
+}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
@@ -64,7 +72,8 @@ _NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket
 def test_tools_fetcher_only_stdlib_and_services_imports():
     for fetcher in _FETCHERS:
         roots = _import_roots(fetcher)
-        assert roots <= _ALLOWED_FETCHER, f"unexpected imports in {fetcher}: {sorted(roots - _ALLOWED_FETCHER)}"
+        allowed = _ALLOWED_FETCHER | _EXTRA_ALLOWED_BY_FILE.get(os.path.basename(fetcher), set())
+        assert roots <= allowed, f"unexpected imports in {fetcher}: {sorted(roots - allowed)}"
         assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange/broker SDK in {fetcher}: {sorted(roots & _FORBIDDEN_SDK)}"
 
 
@@ -85,3 +94,23 @@ def test_services_tree_has_no_network_imports():
                 if bad:
                     offenders.append(f"{os.path.relpath(p, _ROOT)}: {sorted(bad)}")
     assert not offenders, "network imports inside services/ break the offline-core guarantee:\n" + "\n".join(offenders)
+
+
+def test_quantos_tree_has_no_network_imports():
+    # 2026-07-06 对抗式复审 CONFIRMED 修复:`_ALLOWED_FETCHER`/`_EXTRA_ALLOWED_BY_FILE` 只查
+    # 每个抓取器*自己*的直接 import——一个抓取器 `from quantos.x import y` 时,若 quantos/x.py
+    # 内部本身 import 了网络库,这条边界测试看不到(它只看抓取器文件的 AST 根,不看被 import
+    # 模块的内容)。quantos/ 是所有抓取器都可能间接触达的内部契约包,必须像 services/ 一样
+    # 整棵树钉死零网络 import——这是那道"抓取器直接 import 检查"的必要补充,不是重复。
+    offenders = []
+    for dirpath, _dirs, files in os.walk(_QUANTOS):
+        for fn in files:
+            if fn.endswith(".py"):
+                p = os.path.join(dirpath, fn)
+                bad = _import_roots(p) & _NETWORK_ROOTS
+                if bad:
+                    offenders.append(f"{os.path.relpath(p, _ROOT)}: {sorted(bad)}")
+    assert not offenders, ("network imports inside quantos/ would let any fetcher gain network "
+                           "capability transitively via `from quantos.x import y` "
+                           "(the per-fetcher allowlist only sees direct imports):\n"
+                           + "\n".join(offenders))

@@ -93,11 +93,17 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             if price is None or not math.isfinite(price) or price <= 0:
                 reasons.append(f"no_price:{o.instrument_id}")
                 continue
-            # LIMIT 名义额口径(2026-07-06,批判必须修改 #5——零成本保守修正):偏差源是锚
-            # (实时盘口 mid)相对决策价的漂移(决策价可能滞后 1-3 天,是百分点级而非 band 的
-            # 数十 bps 级),不是 band 本身。BUY 取 max(决策价,限价)、SELL 取 min——限价单的
-            # 限价是事前已知的边界,往"名义额更大"的方向保守评估零成本;§2 的锚容忍度门
-            # (`resolve_anchor`)已经兜住了锚本身离谱失控的情形,这里只是纵深防御第二层。
+            # LIMIT 名义额口径(2026-07-06 战线②引入,2026-07-06 对抗式复审 CONFIRMED 修复):
+            # 偏差源是锚(实时盘口 mid)相对决策价的漂移(决策价可能滞后 1-3 天,是百分点级而非
+            # band 的数十 bps 级),不是 band 本身。**恒取 max(决策价,限价)——两侧同一公式,
+            # 不按方向分支。** 名义额是无符号的"经济敞口大小"(quantity 恒为正,方向由 side
+            # 单独表达),"往名义额更大的方向保守评估"这个设计目标本身就与买卖方向无关——取
+            # 两个候选价里更大的那个,才是唯一在两个方向上都不放松的选择。此前 SELL 分支写成
+            # min(决策价,限价)是一个方向性 bug:当市场在决策之后上涨(限价随实时盘口走高,
+            # 高于滞后的决策价)时,min() 会捡回那个更小、更过时的决策价,把真实更大的经济
+            # 敞口算小,恰好让本该升人工的超限 SELL 单被误判 AUTO——三个独立维度的对抗式复审
+            # 各自独立复现了这个反例并全票确认。§2 的锚容忍度门(`resolve_anchor`)兜住锚本身
+            # 离谱失控的情形,这里是纵深防御第二层,与方向无关。
             eval_price = price
             if order_type == "LIMIT":
                 limit_price = getattr(o, "limit_price", None)
@@ -108,8 +114,7 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
                 if limit_price is None or not math.isfinite(limit_price) or limit_price <= 0:
                     reasons.append(f"limit_price_missing:{o.instrument_id}")
                     continue
-                eval_price = (max(price, limit_price) if o.side == OrderSide.BUY
-                             else min(price, limit_price))
+                eval_price = max(price, limit_price)
             notional = o.quantity * eval_price
             if notional > mandate.max_single_order_notional:
                 reasons.append(f"single_order_notional_exceeded:{o.instrument_id}")

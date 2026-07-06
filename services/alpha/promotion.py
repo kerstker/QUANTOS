@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, Optional
 
 from quantos.contracts.alpha import Actor, ActorKind, can_alpha_transition
 from quantos.contracts.research import AlphaState
@@ -42,6 +43,29 @@ from .lifecycle import AlphaLifecycleManager, GuardRejected
 # 第一期晋级白名单:只有 →APPROVED(唯一 human-only 的晋级)。TESTING/VALIDATED/
 # PAPER_TRADING 已有 agent/评估路径,不进此队列。
 PROMOTABLE_DSTS = frozenset({AlphaState.APPROVED})
+
+# 进程内单飞锁(2026-07-06 对抗式复审 CONFIRMED 修复,front1-governance 高危发现):此前
+# execute_promotion 自身对"同一 request_id 被并发调用两次"没有任何保护——lock_path 是可选
+# 参数,默认 None 时 _SingleFlight 是纯 no-op;两个并发调用者各自 load() 到同一份 APPROVED
+# 请求、各自 consume() 出内容逐字节相同的 CONSUMED 步骤(entry_hash 是 state/actor/timestamp/
+# note/prev_hash 的纯函数,无随机/无墙钟),ApprovalStore.save() 的严格前缀检查只在"分叉"时
+# raise ApprovalStoreConflict,对"完全相同的追加"是无声的 no-op——于是两次 advance()+
+# registry.save()+PROMOTION_EXECUTED 审计会各自独立发生,一次性 grant 被实际执行两次。
+# 唯一现有的调用方(promotion_api)恰好总是传 lock_path 且额外加了进程内 _EXEC_LOCK,今天
+# 生产环境不可达——但这是调用方的自觉,不是本函数自身的保证。这里加一把按 request_id 分片
+# 的进程内锁,让 execute_promotion 本身对"同一进程内的并发调用"天然安全,不再依赖调用方
+# 记得传 lock_path;lock_path 仍然保留、语义不变,是额外的跨进程(多 worker)保护。
+_REQUEST_LOCKS: Dict[str, threading.Lock] = {}
+_REQUEST_LOCKS_META = threading.Lock()
+
+
+def _request_lock(request_id: str) -> threading.Lock:
+    with _REQUEST_LOCKS_META:
+        lock = _REQUEST_LOCKS.get(request_id)
+        if lock is None:
+            lock = threading.Lock()
+            _REQUEST_LOCKS[request_id] = lock
+        return lock
 
 PROMOTION_KIND = "ALPHA_PROMOTION"
 
@@ -167,7 +191,33 @@ def execute_promotion(*, store, registry, audit, request_id: str, executor_id: s
                       paper_store=None, config: Optional[AlphaFactoryConfig] = None,
                       nonce: str = "", lock_path: Optional[str] = None) -> PromotionOutcome:
     """兑现一份三方批准。预检失败 raise PromotionPrecheckError(grant 未烧);
-    烧毁之后一律返回 PromotionOutcome(burned=True)且必落审计。"""
+    烧毁之后一律返回 PromotionOutcome(burned=True)且必落审计。
+
+    **进程内单飞**(2026-07-06 对抗式复审 CONFIRMED 修复,见模块顶部 `_REQUEST_LOCKS` 注释):
+    按 `request_id` 分片的锁,非阻塞获取——同一进程内对同一 request_id 的第二次并发调用
+    直接 `PromotionPrecheckError`(grant 未烧,可安全重试),不再依赖调用方记得传 `lock_path`。
+    `lock_path` 仍然保留、语义不变,是额外的跨进程(多 worker)保护。已知的有界内存足迹:
+    `_REQUEST_LOCKS` 按 request_id 累积、进程生命周期内不回收——人工晋级审批量级下可忽略,
+    不是需要立即解决的问题。"""
+    process_lock = _request_lock(request_id)
+    if not process_lock.acquire(blocking=False):
+        raise PromotionPrecheckError(
+            f"PROMOTION_IN_PROGRESS: another execution of {request_id!r} is already running "
+            f"in this process — grant not burned, safe to retry once it completes")
+    try:
+        return _execute_promotion_locked(
+            store=store, registry=registry, audit=audit, request_id=request_id,
+            executor_id=executor_id, now=now, paper_store=paper_store, config=config,
+            nonce=nonce, lock_path=lock_path)
+    finally:
+        process_lock.release()
+
+
+def _execute_promotion_locked(*, store, registry, audit, request_id: str, executor_id: str,
+                              now: int, paper_store=None,
+                              config: Optional[AlphaFactoryConfig] = None, nonce: str = "",
+                              lock_path: Optional[str] = None) -> PromotionOutcome:
+    """`execute_promotion` 的真正实现,已持有进程内单飞锁——原逻辑一字不动。"""
     req = store.load(request_id)                       # fail-closed 重载(篡改/损坏在此拒绝)
 
     # --- consume 前预检(评审 #4:全部不烧 grant)---

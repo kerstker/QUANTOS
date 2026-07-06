@@ -14,9 +14,10 @@ import pytest
 
 from live.execution.position_ledger import LiveLedger
 from quantos.contracts.trading import OrderSide
+from live.execution.emergency import EMERGENCY_STRATEGY_ID
 from tools.live_track_advance import (_STRATEGIES, _STRATEGY_ID, _VENUES, _venue_paths,
-                                      make_ctx_factory, multi_strategy_mandate_alert,
-                                      position_scopes)
+                                      emergency_unreconciled_instruments, make_ctx_factory,
+                                      multi_strategy_mandate_alert, position_scopes)
 
 _NOW = 1_700_000_000_000
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -125,6 +126,49 @@ def test_driver_wires_strategy_positions_into_batch_and_account_into_gates():
     # 旧的单口径变量绑定不允许再出现(防止有人把两个口径又合回一个);
     # "ledger_positions=" 作为 parity_report 的形参名仍然合法
     assert "ledger_positions = " not in _SRC
+
+
+# --- 紧急减仓陈旧基线防护(2026-07-06 对抗式复审 CONFIRMED 修复,front3-strategy 高危发现):
+# 减仓 fill 记进 EMERGENCY_STRATEGY_ID 保留账本、不落回原策略,策略级视图对该标的仍是
+# "减仓前的旧仓位",必须冻结直到人工重归属 ---
+
+def test_emergency_unreconciled_instruments_detects_nonzero_residual(tmp_path):
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.record_fill("fa", "a1", "BTC", OrderSide.BUY, 2.0, 60000.0,
+                       strategy_id="crowd_contra", filled_at=_NOW)
+    ledger.record_fill("fe", "e1", "BTC", OrderSide.SELL, 2.0, 60000.0,
+                       strategy_id=EMERGENCY_STRATEGY_ID, filled_at=_NOW)
+    assert emergency_unreconciled_instruments(ledger) == frozenset({"BTC"})
+
+
+def test_emergency_unreconciled_instruments_empty_when_no_emergency_fills(tmp_path):
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.record_fill("fa", "a1", "BTC", OrderSide.BUY, 2.0, 60000.0,
+                       strategy_id="crowd_contra", filled_at=_NOW)
+    assert emergency_unreconciled_instruments(ledger) == frozenset()
+
+
+def test_emergency_unreconciled_instruments_empty_once_manually_reattributed(tmp_path):
+    # 人工重归属后(把保留账本的净额用一对相反 fill 抹平),该标的不再冻结——重归属"怎么做"
+    # 是人工决定,本函数只负责诚实反映保留账本当前是否还有残留净仓位。
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.record_fill("fe1", "e1", "BTC", OrderSide.SELL, 2.0, 60000.0,
+                       strategy_id=EMERGENCY_STRATEGY_ID, filled_at=_NOW)
+    ledger.record_fill("fe2", "e2", "BTC", OrderSide.BUY, 2.0, 60000.0,
+                       strategy_id=EMERGENCY_STRATEGY_ID, filled_at=_NOW + 1)
+    assert emergency_unreconciled_instruments(ledger) == frozenset()
+
+
+def test_driver_freezes_emergency_residual_before_submitting_batch():
+    # 源码结构钉子(main() 是网络胶水不可离线跑):emergency 残留检测必须发生在
+    # position_scopes 之后、submit_live_batch 之前,且并入同一个 frozen_names 集合
+    # (与跨源核价共用排除双侧机制,不是另起一套)。
+    assert "emergency_frozen = emergency_unreconciled_instruments(ledger)" in _SRC
+    assert "frozen_names |= emergency_frozen" in _SRC
+    i_scopes = _SRC.index("account_positions, strategy_positions = position_scopes(")
+    i_emergency = _SRC.index("emergency_frozen = emergency_unreconciled_instruments(ledger)")
+    i_submit = _SRC.index("frozen=frozenset(frozen_names)")
+    assert i_scopes < i_emergency < i_submit
 
 
 # --- 多策略未签 mandate 子限额告警(评审 #5 简化落地:本轮范围裁定 #2) ---

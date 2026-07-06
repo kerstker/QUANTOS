@@ -217,7 +217,14 @@ def test_two_strategies_same_instrument_opposite_netting(two_strategy_ledger):
 
 
 def test_partition_invariant_sums_to_account(two_strategy_ledger):
-    # 结构性不变量:Σ_s per-strategy positions 逐标的恒等于账户级(含 emergency 保留账本)
+    # 结构性不变量:Σ_s per-strategy positions 逐标的恒等于账户级(含 emergency 保留账本)。
+    # **诚实边界(2026-07-06 对抗式复审确认,low severity,非功能缺陷)**:这是一个 groupby-
+    # 再求和的数学恒等式——对"任意"非空 strategy_id 标注都成立,不管标注是否*正确*。它不能
+    # 也不该被当成"strategy_id 归属正确"的安全网:一个把 fill 错标到别的合法 strategy_id 的
+    # 未来 bug,此断言依然会通过。真正验证归属正确性的是
+    # tests/live/test_pipeline.py::test_recovery_fill_inherits_order_strategy_id_not_current_driver
+    # 与 tests/live/test_emergency.py::test_emergency_fills_use_reserved_strategy_id——它们断言
+    # 具体的 strategy_id 值,不是求和恒等式。
     ledger = two_strategy_ledger
     ledger.record_fill("fe1", "e1", "BTC", OrderSide.SELL, 0.003, 60500.0,
                        strategy_id="emergency_flatten", filled_at=_NOW + 2)

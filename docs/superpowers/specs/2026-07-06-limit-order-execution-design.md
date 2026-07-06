@@ -147,13 +147,25 @@ n_canceled_zero_fill, n_partial, fill_rate_qty_weighted}`——ledger 是唯一�
 
 ## 7. mandate 名义额口径(live/governance/mandate.py)
 
-**批判必须修改⑤,零成本保守修正,选定方案:** LIMIT 单的名义额评估 = `BUY` 取
-`max(决策价, 限价)`、`SELL` 取 `min(决策价, 限价)`。
+**批判必须修改⑤,零成本保守修正,选定方案(2026-07-06 对抗式复审后二次更正):** LIMIT 单的
+名义额评估 = **两侧统一 `max(决策价, 限价)`**,不按方向分支。
 
 原设计文本的论证是错的(已改正):偏差源不是 `band`(数十 bps),而是**锚**(实时盘口 mid)
 相对决策价的漂移——决策价可能滞后 1–3 天,是百分点级而非 bps 级。限价单的限价是**事前
 已知**的价格上限/下限,往"名义额更大"的方向保守评估零成本;§2 的锚容忍度门已经兜住了锚本身
 离谱失控的情形,这里是纵深防御第二层。
+
+**二次更正(落地实现曾经写成 `BUY: max` / `SELL: min`,已被对抗式复审 CONFIRMED 推翻):**
+名义额 = `quantity × eval_price` 恒为无符号的"经济敞口大小"(方向由 `side` 单独表达,与
+`eval_price` 的取值无关),"往名义额更大的方向保守评估"这个目标因此与买卖方向无关——两侧都
+应该取两个候选价里更大的那个。`SELL` 分支写成 `min` 是方向性 bug:当市场在决策之后**上涨**
+(限价随实时盘口走高、高于滞后的决策价)时,`min()` 会捡回那个更小、更过时的决策价,把真实
+更大的 SELL 经济敞口算小,让本该升人工的超限订单被误判 AUTO——三个独立审查维度(LIMIT 安全/
+跨战线安全边界/测试诚实性)各自独立复现了同一个反例(SELL BTC 0.013、决策价 60000、限价
+65000:决策价评估 $780 未超 $800 的 per-instrument cap,真实/限价评估 $845 超限)并全票确认。
+已修复为两侧统一 `max`;`tests/live/test_mandate.py` 的
+`test_limit_sell_notional_higher_limit_price_escalates_via_per_instrument_cap` 钉死这个
+反例不再回归。
 
 **未知 `order_type` 恒升人工**(同一 commit,fail-closed 纵深防御,只收紧不放宽):真实
 构造路径已被 `LiveOrderRequest.__post_init__` 挡死,这里防的是"万一有别的构造路径/
