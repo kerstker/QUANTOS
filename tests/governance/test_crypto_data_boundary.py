@@ -66,7 +66,18 @@ _FORBIDDEN_TRADE_CALLS = ["create_order", "place_order", "submit_order", "cancel
                           "create_market_order", "create_limit_order", "fapiPrivate", "sapiPost",
                           ".withdraw(", "create_withdrawal", "transfer("]
 _NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket", "websockets",
-                  "ftplib", "telnetlib", "http"}
+                  "ftplib", "telnetlib", "http",
+                  # 消息/异步网络/DB 客户端(审计 P3-1):同样赋予网络能力,必须一并挡在离线核之外。
+                  # 此前缺席,使一个 aiokafka import 逃过了'services/ 零网络 import'守卫。
+                  "aiokafka", "kafka", "confluent_kafka", "aio_pika", "pika", "nats",
+                  "redis", "aioredis", "pymongo", "motor", "psycopg2", "asyncpg", "zmq", "pyzmq"}
+
+# 已隔离的非功能模块(CLAUDE.md 明列 NON-FUNCTIONAL,被 services/risk/pre_trade 取代,不接线):
+# 其 aiokafka import 正是它被隔离的原因。守卫扩展后会命中它,故在此显式豁免——豁免是精确到文件、
+# 有据可查的,任何**别处**新增的同类 import 仍会被 test_services_tree_has_no_network_imports 挡下。
+_QUARANTINED_NONFUNCTIONAL = {
+    os.path.normpath(os.path.join(_SERVICES, "trading", "pre_trade_risk", "main.py")),
+}
 
 
 def test_tools_fetcher_only_stdlib_and_services_imports():
@@ -84,12 +95,26 @@ def test_tools_fetcher_has_no_trade_or_transfer_calls():
         assert not hits, f"FORBIDDEN trade/transfer calls in {fetcher} (read-only DATA only!): {hits}"
 
 
+def test_network_roots_cover_message_and_async_clients():
+    """审计 P3-1:`_NETWORK_ROOTS` 此前只列 http/socket 系,不含 aiokafka/kafka/redis/pika 等
+    消息/异步网络客户端——它们能悄悄进入 services/ 逃过离线核守卫(文档 §8 却称'零网络 import
+    机器钉死')。唯一的现存使用者正是被隔离的 pre_trade_risk/main.py(其 aiokafka import 恰是
+    它被隔离的原因);守卫必须能识别这类 import,才能挡住任何在别处新增的同类 import。"""
+    for client in ("aiokafka", "kafka", "redis", "pika", "pymongo"):
+        assert client in _NETWORK_ROOTS
+    quarantined = os.path.join(_SERVICES, "trading", "pre_trade_risk", "main.py")
+    assert _import_roots(quarantined) & _NETWORK_ROOTS, \
+        "守卫必须识别被隔离模块的网络/消息 import(否则同类 import 在别处新增也检不出)"
+
+
 def test_services_tree_has_no_network_imports():
     offenders = []
     for dirpath, _dirs, files in os.walk(_SERVICES):
         for fn in files:
             if fn.endswith(".py"):
                 p = os.path.join(dirpath, fn)
+                if os.path.normpath(p) in _QUARANTINED_NONFUNCTIONAL:
+                    continue        # 已隔离的非功能模块(CLAUDE.md 明列),其网络 import 正是隔离原因
                 bad = _import_roots(p) & _NETWORK_ROOTS
                 if bad:
                     offenders.append(f"{os.path.relpath(p, _ROOT)}: {sorted(bad)}")
