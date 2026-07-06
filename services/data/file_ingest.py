@@ -63,7 +63,10 @@ def _ingest_records(records, parse, store, *, now, dataset_id, version, strict: 
             bars_ingested += 1
         else:
             duplicates += 1
-    quality = build_report(dataset_id, sorted(b.event_time for b in valid_bars), as_of=now, version=version)
+    # Quality report must see the ORIGINAL arrival order, not a sorted copy — sorting first made
+    # count_out_of_order structurally always 0 (a dead check; audit P2-1). Duplicate/future/completeness
+    # checks are order-independent; ordering is the whole point of feeding the un-sorted series.
+    quality = build_report(dataset_id, [b.event_time for b in valid_bars], as_of=now, version=version)
     if strict and not quality.passed:
         failed = [c.name for c in quality.checks if not c.passed]
         raise FatalIngestionError(f"strict ingestion: dataset {dataset_id!r} failed quality checks {failed}")

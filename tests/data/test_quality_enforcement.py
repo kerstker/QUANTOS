@@ -47,6 +47,8 @@ _GOOD = [("BTC", 20240101, 20240101, 100, 101, 99, 100, 5),
          ("BTC", 20240102, 20240102, 100, 102, 99, 101, 6)]
 _DUP = [("BTC", 20240101, 20240101, 100, 101, 99, 100, 5),
         ("BTC", 20240101, 20240101, 100, 102, 99, 101, 6)]   # duplicate event_time -> quality fails
+_OOO = [("BTC", 20240102, 20240102, 100, 102, 99, 101, 6),
+        ("BTC", 20240101, 20240101, 100, 101, 99, 100, 5)]   # event_time goes backwards -> out-of-order
 
 
 def test_strict_ingestion_raises_on_bad_quality(tmp_path):
@@ -66,3 +68,21 @@ def test_strict_passes_clean_dataset(tmp_path):
     store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
     rep = ingest_bars_csv(_csv(tmp_path, _GOOD), store, dataset_id="BTC", strict=True)
     assert rep.bars_ingested == 2 and rep.quality.passed is True
+
+
+# ---- (1b) out-of-order detection at ingestion (audit P2-1: was a dead check) ----
+
+def test_out_of_order_detected_at_ingestion(tmp_path):
+    """Regression (audit P2-1): _ingest_records sorted event_times before the quality
+    check, so count_out_of_order saw an already-sorted series and was structurally always
+    0 — a dead check. The report must detect out-of-order arrival on the ORIGINAL order."""
+    store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
+    rep = ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC")   # default strict=False
+    assert rep.quality.out_of_order_count >= 1
+    assert rep.quality.passed is False
+
+
+def test_strict_ingestion_raises_on_out_of_order(tmp_path):
+    store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
+    with pytest.raises(FatalIngestionError):
+        ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC", strict=True)
