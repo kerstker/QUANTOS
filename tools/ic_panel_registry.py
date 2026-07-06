@@ -1,6 +1,10 @@
 """截面 IC 面板的命名宇宙 + 命名因子注册表(声明式)。新候选因子出现时,加一行 FACTOR_REGISTRY 条目
 (需要新宇宙就先加一行 UNIVERSE_REGISTRY),重跑 tools/ic_panel_research.py 即可——这是"以后新候选都过
 一遍"的具体落地方式。因子的真实定义直接复用已验证/已提交的表达式,不重新发明。
+
+可选键 `holding_periods`(缺省 [1],向后兼容):per-factor 多持有期口径,单位=面板自身周期(当前
+四宇宙全日频,7≈周度)。慢速持仓类因子给 [1,7,14](7 直接对齐已证实的周度口径效应,可复核
+crowd_contra 周度重算 t≈2.99);336 币宽宇宙给 [1,7] 省算力。h>1 走非重叠抽样(t-stat 诚实)。
 """
 from __future__ import annotations
 
@@ -74,41 +78,41 @@ UNIVERSE_REGISTRY = {
 }
 
 FACTOR_REGISTRY = [
-    {"name": "carry_composite", "universe": "crypto_funding",
+    {"name": "carry_composite", "holding_periods": [1, 7, 14], "universe": "crypto_funding",
      "thesis": "资金费 carry composite(已验证,唯一过关的信号)",
      "signal_fn": lambda panel: ax.evaluate(CARRY_COMPOSITE, panel)},
-    {"name": "crowd_contra", "universe": "crypto_oi_majors",
+    {"name": "crowd_contra", "holding_periods": [1, 7, 14], "universe": "crypto_oi_majors",
      "thesis": "反着做拥挤的散户多空仓位(候选第二边,对 carry 增量 IR 1.13,4/5 项证伪检验通过)",
      "signal_fn": lambda panel: ax.evaluate(CROWD_CONTRA, panel)},
-    {"name": "trend_composite", "universe": "crypto_daily",
+    {"name": "trend_composite", "holding_periods": [1, 7, 14], "universe": "crypto_daily",
      "thesis": "日线趋势 composite(dist_from_high 7/14/30 + momentum 7)",
      "signal_fn": lambda panel: signal_composite(panel, list(TREND_COMPOSITE))},
-    {"name": "dist_from_high_14", "universe": "crypto_daily",
+    {"name": "dist_from_high_14", "holding_periods": [1, 7, 14], "universe": "crypto_daily",
      "thesis": "单因子基线:distance-from-high(14 日)",
      "signal_fn": lambda panel: signal_from_window_op(panel, "dist_from_high", 14)},
-    {"name": "momentum_7_wide", "universe": "crypto_binance_wide",
+    {"name": "momentum_7_wide", "holding_periods": [1, 7], "universe": "crypto_binance_wide",
      "thesis": "单因子基线(宽宇宙对照):336 币上动量 7 日是否仍无 edge",
      "signal_fn": lambda panel: signal_from_window_op(panel, "momentum", 7)},
     # --- 2026-07-05 新候选批次(机构级补全 ⑨:先过 IC 面板横向比较,幸存者才进证伪流程) ---
-    {"name": "funding_contra_level", "universe": "crypto_funding",
+    {"name": "funding_contra_level", "holding_periods": [1, 7, 14], "universe": "crypto_funding",
      "thesis": "反着做资金费水平:持续高资金费=做多过热拥挤,后续价格是否系统性走弱"
                "(与 carry 收现金流不同——这里测的是价格方向预测力)",
      "signal_fn": lambda panel: ax.evaluate(
          ("cs_rank", ("neg", ("ts_mean", ("field", "funding"), 7))), panel)},
-    {"name": "funding_contra_delta", "universe": "crypto_funding",
+    {"name": "funding_contra_delta", "holding_periods": [1, 7, 14], "universe": "crypto_funding",
      "thesis": "反着做资金费变化:资金费快速上行=拥挤度在恶化,与水平口径分开检验",
      "signal_fn": lambda panel: ax.evaluate(
          ("cs_rank", ("neg", ("ts_delta", ("field", "funding"), 7))), panel)},
-    {"name": "oi_ls_delta_contra", "universe": "crypto_oi_majors",
+    {"name": "oi_ls_delta_contra", "holding_periods": [1, 7, 14], "universe": "crypto_oi_majors",
      "thesis": "反着做持仓比变化(crowd_contra 用水平,这里用 7 期变化):散户多空比快速上行"
                "是否比水平本身更有预测力",
      "signal_fn": lambda panel: ax.evaluate(
          ("cs_rank", ("neg", ("ts_delta", ("field", "global_ls"), 7))), panel)},
-    {"name": "low_vol_wide", "universe": "crypto_binance_wide",
+    {"name": "low_vol_wide", "holding_periods": [1, 7], "universe": "crypto_binance_wide",
      "thesis": "截面低波异象(336 币宽宇宙):低已实现波动的币是否风险调整后更强",
      "signal_fn": lambda panel: [[-v if v is not None else None for v in row]
                                  for row in signal_from_window_op(panel, "volatility", 30)]},
-    {"name": "reversal_7_wide", "universe": "crypto_binance_wide",
+    {"name": "reversal_7_wide", "holding_periods": [1, 7], "universe": "crypto_binance_wide",
      "thesis": "短期反转(= momentum_7_wide 的反号,把'宽宇宙动量 IC 显著为负'的既有发现"
                "翻成正向候选正式检验)",
      "signal_fn": lambda panel: [[-v if v is not None else None for v in row]

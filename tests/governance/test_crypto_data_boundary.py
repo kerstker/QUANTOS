@@ -21,7 +21,12 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # Stage 0 (实盘路线) 生产化刷新/前向跟踪/告警——同样的只读数据边界钉住它们
              os.path.join(_ROOT, "tools", "live_data_refresh.py"),
              os.path.join(_ROOT, "tools", "forward_track_advance.py"),
-             os.path.join(_ROOT, "tools", "alert_sink.py")]
+             os.path.join(_ROOT, "tools", "alert_sink.py"),
+             # 宏观数据抓取器:fred_fetch 是补钉的既有缺口(带网络却一直不在名单里,2026-07-06 核查
+             # 发现);alfred_fetch 是 vintage 抓取器(api.stlouisfed.org,key 只走 env / gitignored
+             # key/ 目录,错误路径对 URL 脱敏)——同一条只读数据边界钉住两者
+             os.path.join(_ROOT, "tools", "fred_fetch.py"),
+             os.path.join(_ROOT, "tools", "alfred_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 
 
@@ -43,6 +48,8 @@ def _import_roots(path: str) -> set:
 # add network/trade/credential capability, so they do not weaken the boundary.
 _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "concurrent",
                     "sqlite3",  # 纯 stdlib 本地存储(增量刷新读水位/PIT 库)——不增加网络/交易/凭证能力
+                    "csv",      # 纯 stdlib 文本解析(fred_fetch 解析 fredgraph CSV)——不增加网络/交易/凭证能力
+                    "quantos",  # 内部契约包(FeatureValue 双时态契约,拒 lookahead)——不增加网络/交易/凭证能力
                     "services", "tools", "__future__"}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",

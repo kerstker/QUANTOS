@@ -81,6 +81,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
   paper-track 的候选第二边,现在有了横向对比证据;`carry_composite` 对价格 IC≈0(诚实——carry 的边在
   资金费现金流、非价格方向预测);`momentum_7_wide`(336 币宽宇宙)IC 明显为负(-0.063,与既有"宽宇宙
   动量类因子多数年份负夏普"结论一致)。是否把 crowd_contra 送入 paper-track/干跑,是另一个独立决策。
+  **2026-07-06 战线④(持有期口径)**:+`compute_horizon_ic_series(signal, price, horizon)`
+  ——非重叠 h 期持有截面 IC(刻意无 stride/重叠参数,重叠收益会让 naive t 虚高;h=1 与旧函数
+  **逐位相等**,parity 工具 `tools/ic_panel_h1_parity_check.py` 验证过)。注册表可选
+  `holding_periods`(慢速持仓类 [1,7,14]),快照 `schema_version: 2` 只加字段,契约测试绑定
+  v2。**首跑发现:crowd_contra h1 t=0.66→h7 2.91→h14 3.35(持有期口径效应在面板内复现);
+  carry_composite h1 t=0.19→h7 2.75(新信息:周度口径下显著);momentum/reversal 宽宇宙日频
+  ±16 → h7 缩到 ±5(印证微观结构反弹)。可部署 book 不变(crowd_contra 单条)。**
 - `services/research/paper_trading/domain/pnl.py` — **real reconciled PnL
   attribution** (realized+unrealized−costs, `reconciliation.py`/`consistency.py`).
   No longer the `notional*0.001` placeholder this file used to claim.
@@ -263,6 +270,14 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (高VIX+1.96 vs 低+1.25;倒挂+1.76 vs 正常+0.88)——crowd 正好在 carry 走弱处走强 = 强分散故事**,系统化了 RE-2 的 LUNA/FTX
   危机发现。诚实边界:regime 标签=全样本分位(回顾性描述,非 PIT 可交易择时);gross 无成本(RELATIVE 模式才是结论);经济发布类
   (CPI/GDP,需 ALFRED vintage)+ 股票(BYO-CSV/ALFRED)= 显式待办;HY-OAS 仅 2023-07+(FRED 限)信用维覆盖 155/期。诊断非门禁。
+  **2026-07-06 战线④(ALFRED vintage)**:经济发布类机器已落地——`tools/alfred_fetch.py`
+  (CPIAUCSL/UNRATE/GDPC1 全 vintage,knowledge_time=**realtime_start**(首次真实可知日,
+  绝不用期首冒充)、独立 `macro_alfred.db` 不混 macro_fred.db、无 key fail-closed 零网络请求、
+  错误路径对 URL 脱敏(key 在 query 里)、分页不齐 raise;13 tests 全 fake transport)+
+  `macro_regime.py` PIT 批量游标 + 驱动器新维 `inflation_CPI_yoy`/`labor_UNRATE`(缺库诚实
+  整体缺席,绝不用最新修正值冒充 vintage)。**等待用户放免费 FRED API key(env `FRED_API_KEY`
+  或 `key/fred_api_key.txt`)后 `python -m tools.alfred_fetch` 首跑**;fetcher 已钉进
+  test_crypto_data_boundary(顺带补钉 fred_fetch 一直不在名单的存量缺口)。
 - `services/research/book_combine.py` + `tools/combo_book_research.py` — **组合分散验证(兑现 regime 互补故事)**:把
   carry+crowd_contra 逐周 gross 收益按 ISO 年-周对齐(`align_on_common_weeks`)+ 等权/逆波动组合。**分散强兑现:
   corr(carry,crowd)=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条(16%/15%)一半,总收益~187%

@@ -1451,11 +1451,8 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   safety_note: string;
 }
 
-export interface IcPanelRow {
-  name: string;
-  universe: string;
-  thesis: string;
-  n_instruments: number;
+// 单个持有期口径的聚合统计(= 快照 row 的六统计 + per_year 形状)。
+export interface IcPanelAgg {
   n_periods: number;
   mean_ic: number | null;
   ic_std: number | null;
@@ -1463,6 +1460,17 @@ export interface IcPanelRow {
   hit_rate: number | null;
   t_stat: number | null;
   per_year: Record<string, number | null>;
+}
+
+export interface IcPanelRow extends IcPanelAgg {
+  name: string;
+  universe: string;
+  thesis: string;
+  n_instruments: number;
+  // schema_version>=2(2026-07-06 per-factor 持有期口径):顶层六统计恒 == by_period["1"](h=1 锚,
+  // 跨因子可比);h>1 非重叠抽样(t-stat 诚实)。旧快照/mock 无这两个字段 -> 可选,页面兜底显示 "—"。
+  holding_periods?: number[];
+  by_period?: Record<string, IcPanelAgg>;
 }
 
 export interface IcPanelPayload extends ConsolePayloadBase {
