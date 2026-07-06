@@ -54,6 +54,21 @@ CHECKS = [
         ],
         REPO,
     ),
+    (
+        # 2026-07-06 审计发现并修复:live 执行栈(tests/live,36 文件——最安全关键的下单/风控/
+        # 对账代码)+ trading + tools 此前从未进入这个 fail-closed 门禁,回归不会被 CI 抓到。三者
+        # 离线、快、全绿(527 tests)。作为独立子进程运行,是因为 tests/live 与 tests/research 存在
+        # 同名测试文件(test_pipeline.py / test_contracts.py 等),在同一 pytest 进程里会 basename
+        # 冲突收集失败——正是本文件顶部 docstring 描述的"每组独立子进程"模式。
+        "pytest: live execution stack (live, trading, tools)",
+        [
+            sys.executable, "-m", "pytest", "-q",
+            "tests/live",
+            "tests/trading",
+            "tests/tools",
+        ],
+        REPO,
+    ),
 ]
 
 
