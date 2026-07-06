@@ -148,6 +148,16 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
     submitted, errors, ledger_errors = [], [], []
     for o in adjusted:
         result = None
+        # pre-journal(审计 P1-4):下单前先落 PENDING_NEW 意图行,关闭 place 与记账之间的孤儿窗口
+        # (镜像主流水线;best-effort,写失败不跳过下单——去风险单绝不能因记账故障而不发)。
+        journaled = False
+        try:
+            ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                     strategy_id=EMERGENCY_STRATEGY_ID, submitted_at=now,
+                                     status="PENDING_NEW")
+            journaled = True
+        except Exception:
+            pass
         try:
             result = venue.place_order(o)
         except Exception as exc:
@@ -174,10 +184,14 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
                          metadata={"outcome": outcome, "status": confirmed.status})
 
         try:
-            ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                     strategy_id=EMERGENCY_STRATEGY_ID, submitted_at=now,
-                                     venue_order_id=confirmed.venue_order_id,
-                                     status=confirmed.status)
+            if journaled:
+                ledger.update_status(o.client_order_id, confirmed.status,
+                                     venue_order_id=confirmed.venue_order_id)
+            else:
+                ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
+                                         strategy_id=EMERGENCY_STRATEGY_ID, submitted_at=now,
+                                         venue_order_id=confirmed.venue_order_id,
+                                         status=confirmed.status)
             if confirmed.filled_qty > 0:
                 ledger.record_fill(_det_id("emg_fill", o.client_order_id), o.client_order_id,
                                    o.instrument_id, o.side, confirmed.filled_qty,

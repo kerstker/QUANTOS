@@ -277,6 +277,24 @@ def test_ledger_write_failure_tracked_separately_not_as_submit_failure(ledger):
     assert len(result.ledger_write_errors) == 1
 
 
+def test_emergency_order_journaled_before_place_order(ledger):
+    """audit P1-4:紧急减仓通道同样在 place_order 与记账之间有孤儿窗口——减仓单必须在被送到
+    交易所**之前**就有账本行,否则进程被杀会留下一笔已在交易所、账本却查不到的孤儿减仓单。"""
+    captured = {}
+
+    class _SpyVenue(_FakeVenue):
+        def place_order(self, o):
+            captured[o.client_order_id] = [r["client_order_id"] for r in ledger.orders()]
+            return super().place_order(o)
+
+    venue = _SpyVenue()
+    submit_emergency_flatten(flatten_orders=[("BTC", OrderSide.SELL, 2.0)], positions={"BTC": 2.0},
+                             prices=_PRICES, venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
+    assert captured, "place_order 从未被调用"
+    for cid, rows_at_place in captured.items():
+        assert cid in rows_at_place, "减仓单在被 journal 之前就送到了交易所(孤儿窗口未关闭)"
+
+
 def test_empty_flatten_orders_is_a_noop(ledger):
     venue = _FakeVenue()
     result = submit_emergency_flatten(flatten_orders=[], positions={}, prices=_PRICES,
