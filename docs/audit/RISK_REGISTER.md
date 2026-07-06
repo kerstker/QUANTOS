@@ -14,6 +14,14 @@
 | P1-3 client_order_id 同数量碰撞 | 把下单口径前仓位纳入订单身份(可选参,默认逐字节不变),同数量不同增量不再撞 ID 静默吞记账,保留崩溃重建幂等 | `1d0a40b` |
 | P1-2 mandate gross/net 只算当批 + 多策略超发 | 新增账户级投影 gross/net(现有敞口 + 本批 delta),ADD-only 不放宽当批检查;因 live 传账户级仓位,同时挡住多策略共享 mandate 超发;无法定价的持仓 fail-closed | `c96f285` |
 | P3-1 aiokafka 网络边界洞 | `_NETWORK_ROOTS` 补齐消息/异步网络/DB 客户端 + 精确豁免隔离模块,新增同类 import 现会被守卫挡下 | `6ca9aff` |
+| **P1-10(审计中新发现)门禁从不跑 tests/live** | `scripts/validate.py`(即 CI)硬编码测试目录,遗漏 `tests/live`(36 文件,最安全关键的下单/风控/对账代码)+ trading/tools——live 栈回归静默过 CI。作为独立子进程纳入(避 basename 冲突),门禁 1567→1567+527=2094 全绿 | `(见 git log)` |
+
+> **P1-10 是本轮审计中途实测发现的真实缺口**(初版 GAP_MATRIX 维度 15 因此偏乐观):此前 CLAUDE.md 里
+> "全量门禁 N passed" 来自对整棵树跑 pytest,而 CI 实际跑的 `validate.py` 从不包含 live 执行栈。已修复。
+> **附带发现(未修,交还用户)**:`tests/reproducibility/test_evidence_snapshots.py` 有预存在的证据摘要漂移
+> (crowd_contra t_stat live 0.6204 vs digest 0.6554,即 CLAUDE.md 记录的样本延长软化)——是否重生成摘要
+> = "漂移是否 intended" 的研究判断,故 `tests/reproducibility` 暂不纳入门禁,留用户定夺
+> (`python -m tools.build_evidence_digests` 可重生成)。
 
 **未在本轮做(需人工决定或更大改动,已留提示词)**:P0-1/P0-2(Phase 14 + mandate 签名,需真人)、
 P1-1(验证门作 live 前置——会阻断现部署的 crowd_contra,需用户决定人工 override 记录)、P1-4(place-后-

@@ -37,7 +37,11 @@
 | 12 | 审计/回放/事件溯源 | 哈希链 GlobalAuditLog + DurableAuditLog + append-only 账本 + 不可变实验制品 | **3** | `monitoring/audit_log.py:26`、`experiment_registry/registry.py:112`、`position_ledger.py:30` | 无统一事件总线;无跨服务 correlation/causation ID;无事件级回放 | P2/LATENT | P2 |
 | 13 | AI Agent/治理 | guardrail 非人研究 loop;结构性到不了 APPROVED;能力白名单;逐候选错误隔离 | **4** | `agent_loop.py:34`、`guardrails.py:36`、`alpha.py:192` | promotion_api 把绕过面变 runtime;mandate 可被 agent 改(无签名) | P0/LATENT | **P1** |
 | 14 | 前端/控制台 | 真只读 console(42 GET 端点)+ MOCK_MODE 标识 + 危险按钮经治理 CLI 子进程 | **4** | `console_api/main.py`(0 变更端点)、`routes.tsx`、`live_ops_api.py:73` | 真/合成同端点混杂;无统一 auth/RBAC(per-service token) | P3/ACTIVE | P3 |
-| 15 | DevOps/MLOps/安全/测试 | CI(validate.yml on push/PR)+ 1564 测试 + 治理扫描器 + git hooks + 密钥 gitignore | **3** | `.github/workflows/validate.yml`、`scripts/validate.py`、`.gitignore:51` | **无 Docker/容器化**;无 staging/prod 隔离基建;无监控告警/灾备基建 | P2/LATENT | P2 |
+| 15 | DevOps/MLOps/安全/测试 | CI(validate.yml on push/PR)+ 治理扫描器 + git hooks + 密钥 gitignore | **3** | `.github/workflows/validate.yml`、`scripts/validate.py`、`.gitignore:51` | **无 Docker/容器化**;无 staging/prod 隔离基建;无监控告警/灾备基建;~~门禁遗漏 tests/live~~(本轮已修) | P2/LATENT | P2 |
+
+> **维度 15 修正(本轮审计发现并修复)**:`scripts/validate.py`(CI 门禁)此前硬编码测试目录、**从不运行
+> `tests/live`(36 文件,live 执行栈)**——最安全关键的下单代码不在 CI 里。已作为独立子进程纳入(+527 测试,
+> 门禁总覆盖 2094)。另发现 `tests/reproducibility` 有预存在证据摘要漂移,交还用户(见 RISK_REGISTER P1-10)。
 
 **均分 ≈ 3.67**。清晰的两极分布:**研究 + 安全治理半区(维度 2/3/5/6/7/8/11/13/14)= 近机构级 4 分;执行 + 运维基建半区(维度 1/9/10/12/15)= 工程化原型 3 分。**
 
