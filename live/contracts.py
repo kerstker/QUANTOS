@@ -13,10 +13,13 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.1/§3.4。
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
 from quantos.contracts.trading import OrderSide
+
+_VALID_ORDER_TYPES = frozenset({"MARKET", "LIMIT"})
 
 
 @dataclass(frozen=True)
@@ -48,14 +51,41 @@ class ExchangeFilters:
 
 @dataclass(frozen=True)
 class LiveOrderRequest:
-    """已过交易所过滤器取整的、随时可提交的浮点数量订单(恒 MARKET——Stage 1 唯一支持的类型,
-    见设计 spec §3.3/§6;不需要 order_type 字段,类型本身就排除了 LIMIT 的歧义)。
+    """已过交易所过滤器取整的、随时可提交的浮点数量订单。设计:
+    docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §1(LIMIT 扩展)。
 
     reduce_only(2026-07-05 紧急减仓通道):True 时适配器把交易所原生 reduceOnly 参数一并传出,
     交易所侧保证该单只能减仓、不能开新仓——是 `live/execution/emergency.py` 结构校验之外的
-    第二重保证。普通订单恒 False(适配器此时不带该参数,请求形状与已真实联调验证的完全一致)。"""
+    第二重保证。普通订单恒 False(适配器此时不带该参数,请求形状与已真实联调验证的完全一致)。
+
+    order_type/limit_price/post_only(2026-07-06 战线②,默认路径字节不变):
+    - `order_type`(默认 "MARKET"):不传 == 改动前的构造调用完全等价。"LIMIT" 是唯一的
+      另一个合法值——本设计的最小可用版是可成交限价(marketable limit),不是做市。
+    - `limit_price`:仅 LIMIT 使用,构造期 fail-closed 校验(finite ∧ >0),已按 tick 取整
+      的真实价格。MARKET 携带非 None 值是构造错误(fail-closed 最前沿,后续 mandate/adapter
+      只是纵深防御)。
+    - `post_only`:仅 LIMIT 使用(Binance GTX / Bybit PostOnly),字段预留、驱动器不接。
+    """
     instrument_id: str
     side: OrderSide
     quantity: float
     client_order_id: str
     reduce_only: bool = False
+    order_type: str = "MARKET"
+    limit_price: Optional[float] = None
+    post_only: bool = False
+
+    def __post_init__(self) -> None:
+        if self.order_type not in _VALID_ORDER_TYPES:
+            raise ValueError(f"unknown order_type {self.order_type!r} (expected one of "
+                            f"{sorted(_VALID_ORDER_TYPES)})")
+        if self.order_type == "LIMIT":
+            if (self.limit_price is None or not math.isfinite(self.limit_price)
+                    or self.limit_price <= 0):
+                raise ValueError(
+                    f"LIMIT order requires a finite positive limit_price, got {self.limit_price!r}")
+        else:
+            if self.limit_price is not None or self.post_only:
+                raise ValueError(
+                    "MARKET order must not carry limit_price/post_only "
+                    f"(got limit_price={self.limit_price!r}, post_only={self.post_only!r})")

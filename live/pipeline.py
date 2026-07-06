@@ -30,12 +30,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from live.contracts import LiveOrderRequest, VenueOrderResult
 from live.exchange.base import VenueAdapter
 from live.execution.filters import apply_exchange_filters
 from live.execution.position_ledger import LiveLedger
+from live.execution.pricing import LimitPricing, resolve_anchor, to_limit_orders
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
 from quantos.contracts.trading import OrderSide
 from services.execution.dry_run_pipeline import screen_intents
@@ -44,8 +45,21 @@ from services.monitoring.audit_log import GlobalAuditLog
 
 UNIT_SCALE = 1_000_000     # 1 unit = 1e-6 coin;仅 gate 出入段使用,见模块 docstring
 # MARKET 单可能长期停在 PARTIALLY_FILLED(理论上罕见,但不假装它是终态);只有这四种才算"问完了"。
-_TERMINAL_ORDER_STATUSES = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED"})
+# **PREVIEW_NOT_SUBMITTED(2026-07-06 战线②,preview+LIMIT 短路轮询修复,批判必须修改④):**
+# preview 模式(`tools/live_track_advance.py::PreviewVenue`)从不真实提交,这个状态本身就是
+# "已经问完了"——不会再有后续状态转换。不加进这个集合的话,_confirm_fill 会把它当非终态、
+# 白白消耗 max_polls 次真实 poll_sleep(LIMIT 默认 30 次 ≈ 30 秒/腿),随后 _cancel_and_requery
+# 还会因为 venue.cancel_order/get_order 恒 None 而产出误导性的 LIVE_ORDER_TIMEOUT_CANCEL
+# 审计事件 + 把 confirmed.status 计成"未确认"——limit_fill_stats 会把纯预览批次全部污染成
+# 假的"零成交撤单"。这个字符串只在 preview 路径出现,真实 venue 永远不会返回它,因此对
+# submit 模式(真实 MARKET/LIMIT)零影响。
+_TERMINAL_ORDER_STATUSES = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED",
+                                      "PREVIEW_NOT_SUBMITTED"})
 DEFAULT_MAX_CONFIRM_POLLS = 5
+# LIMIT 单挂单时长(2026-07-06 战线②):远大于 MARKET 的 5——限价单"不成交"是正常路径而非
+# 异常,需要给市场更多时间达到限价。工程占位数字(非业务风险容忍度),真实使用前需用户确认
+# 或改数(见 open questions)。
+DEFAULT_LIMIT_MAX_CONFIRM_POLLS = 30
 
 
 def _det_id(*parts) -> str:
@@ -202,13 +216,25 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
                       poll_sleep: Callable[[], None] = lambda: None,
                       slicer: Optional[Callable] = None,
-                      frozen: frozenset = frozenset()) -> LiveBatchResult:
+                      frozen: frozenset = frozenset(),
+                      limit_pricing: Optional[LimitPricing] = None,
+                      limit_max_confirm_polls: int = DEFAULT_LIMIT_MAX_CONFIRM_POLLS
+                      ) -> LiveBatchResult:
     """`current_positions` vs `account_positions` 口径分离(2026-07-06 战线③,评审 #1):
     `current_positions` = **本策略**的分账仓位——目标增量必须对着本策略自己的仓位算,否则第二条
     策略的 delta 会去 net 第一条策略的持仓(把别人的仓当自己的平掉);`account_positions` =
     **账户级**全量仓位——mandate 的 per-instrument cap 投影约束的是账户对该标的的总敞口,只看
     本策略仓位会让两条策略各自贴着 cap、账户实际 2×cap 双双判 AUTO。`account_positions=None`
-    回退到 `current_positions`(单策略调用方向后兼容:单策略下账户=策略是事实,不是近似)。"""
+    回退到 `current_positions`(单策略调用方向后兼容:单策略下账户=策略是事实,不是近似)。
+
+    `limit_pricing`(2026-07-06 战线②,默认 None = 一切现有行为不变):给定时,过滤器取整
+    后、mandate 评估前插入一段定价——逐标的调 `venue.book_ticker()` 组盘口锚(fail-soft,
+    结构退化/网络失败/偏离决策价过大一律回退决策价,见 `live/execution/pricing.py::
+    resolve_anchor`),再 `to_limit_orders` 把 MARKET 请求换成 LIMIT(定价失败的腿并入
+    `dropped_by_filters`,绝不静默留作 MARKET)。**MARKET 单继续尊重调用方传入的
+    `max_confirm_polls`**(不因为加了 LIMIT 就悄悄改变 MARKET 的既有可配行为);LIMIT 单
+    用独立的 `limit_max_confirm_polls`(挂单不成交是 LIMIT 的正常路径,需要远大于 MARKET
+    的等待窗口)。"""
     # run_id 含 now:同一决策在同一轮内确定,但两次独立调用(如提额后的调仓批)是两次运行,
     # 审计事件 id 不能撞(GlobalAuditLog 防重放会拒绝重复 event_id)
     run_id = _det_id(strategy_id, decided_ts, now, tuple(sorted(weights.items())))
@@ -253,6 +279,38 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
         audit.append(event_id=_det_id("live_drop", run_id, instrument_id), actor=f"live:{strategy_id}",
                      action="LIVE_ORDER_DROPPED_BY_FILTER", timestamp=now, target=instrument_id,
                      metadata={"reason": reason})
+
+    # LIMIT 定价装配(2026-07-06 战线②):limit_pricing=None 时这整段不执行,adjusted 保持
+    # apply_exchange_filters 产出的 MARKET 请求——与改动前完全一致(回归锁)。
+    if limit_pricing is not None:
+        book_ticker_fn = getattr(venue, "book_ticker", None)
+        anchors: Dict[str, float] = {}
+        for o in adjusted:
+            inst = o.instrument_id
+            book = None
+            if book_ticker_fn is not None:
+                try:
+                    book = book_ticker_fn(inst)
+                except Exception:
+                    book = None                      # fail-soft:网络失败等同于"没有盘口"
+            anchor, source = resolve_anchor(book, decision_price=prices.get(inst),
+                                           max_deviation_pct=limit_pricing.anchor_max_deviation_pct)
+            if anchor is not None:
+                anchors[inst] = anchor
+            if source != "book_ticker":
+                # 回退决策价锚(网络失败/结构退化/偏离过大)或彻底无锚,都要留痕——运维需要
+                # 分清"预期内的限价撤单"与"锚源持续不可用需要人工介入"。
+                audit.append(event_id=_det_id("live_limit_anchor_fallback", run_id, inst),
+                             actor=f"live:{strategy_id}", action="LIVE_LIMIT_ANCHOR_FALLBACK",
+                             timestamp=now, target=inst, metadata={"source": source})
+        adjusted, price_dropped = to_limit_orders(
+            adjusted, anchors=anchors, filters=filters, pricing=limit_pricing,
+            strategy_id=strategy_id, decided_ts=decided_ts)
+        for instrument_id, reason in price_dropped:
+            dropped.append((instrument_id, reason))
+            audit.append(event_id=_det_id("live_drop_limit", run_id, instrument_id),
+                         actor=f"live:{strategy_id}", action="LIVE_ORDER_DROPPED_BY_FILTER",
+                         timestamp=now, target=instrument_id, metadata={"reason": reason})
 
     # mandate 的账户上下文 = 账户级仓位(见函数 docstring 的口径分离;冻结不改变账户事实,
     # 这里刻意不按 frozen 过滤——与既有"mandate 仍看全量 current_positions"的语义一致)
@@ -320,7 +378,12 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                                            "children_skipped": str(len(children) - 1 - child_idx)})
                 break                    # 单子单时等价于跳到下一个母单(旧 fail-soft 行为)
 
-            confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=max_confirm_polls,
+            # 轮询窗口(2026-07-06 战线②,批判必须修改③):MARKET 继续尊重调用方传入的
+            # `max_confirm_polls`(不静默改成硬编码常量);LIMIT 用独立的
+            # `limit_max_confirm_polls`(挂单不成交是正常路径,需要远大于 MARKET 的等待窗口)。
+            polls_for_order = (limit_max_confirm_polls if o.order_type == "LIMIT"
+                              else max_confirm_polls)
+            confirmed, is_terminal = _confirm_fill(venue, o, result, max_polls=polls_for_order,
                                                    poll_sleep=poll_sleep)
             if not is_terminal:
                 # 超时策略:轮询打满仍非终态 -> 主动撤单 + 回查权威状态,不留僵尸订单挂到下一轮
@@ -330,12 +393,14 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                              actor=f"live:{strategy_id}", action="LIVE_ORDER_TIMEOUT_CANCEL",
                              timestamp=now, target=o.instrument_id,
                              metadata={"outcome": outcome, "status": confirmed.status,
-                                       "filled_qty": str(confirmed.filled_qty)})
+                                       "filled_qty": str(confirmed.filled_qty),
+                                       "order_type": o.order_type})
             try:
                 ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
                                          strategy_id=strategy_id, submitted_at=now,
                                          venue_order_id=confirmed.venue_order_id,
-                                         status=confirmed.status)
+                                         status=confirmed.status, order_type=o.order_type,
+                                         limit_price=o.limit_price)
                 if confirmed.filled_qty > 0:
                     ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
                                        o.instrument_id, o.side, confirmed.filled_qty,
@@ -354,13 +419,16 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                              metadata={"error": type(exc).__name__,
                                        "venue_order_id": confirmed.venue_order_id})
 
+            submit_metadata = {"quantity": str(o.quantity), "side": o.side.value,
+                              "venue_order_id": confirmed.venue_order_id,
+                              "status": confirmed.status,
+                              "confirmed": str(is_terminal), "recovered": str(recovered),
+                              "order_type": o.order_type}
+            if o.order_type == "LIMIT":
+                submit_metadata["limit_price"] = str(o.limit_price)
             audit.append(event_id=_det_id("live_submit", run_id, o.client_order_id),
                          actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
-                         target=o.instrument_id,
-                         metadata={"quantity": str(o.quantity), "side": o.side.value,
-                                   "venue_order_id": confirmed.venue_order_id,
-                                   "status": confirmed.status,
-                                   "confirmed": str(is_terminal), "recovered": str(recovered)})
+                         target=o.instrument_id, metadata=submit_metadata)
             submitted.append(confirmed)
             if is_sliced and has_more and confirmed.status != "FILLED":
                 audit.append(event_id=_det_id("live_slice_abort", run_id, o.client_order_id),

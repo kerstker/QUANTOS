@@ -432,3 +432,68 @@ def test_demo_base_is_not_mainnet():
     with pytest.raises(SafetyViolation):
         BybitFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
                             base_url=BybitFuturesAdapter.MAINNET_BASE)
+
+
+# --- LIMIT 扩展(2026-07-06 战线②):默认 MARKET 请求形状字节不变 + LIMIT 参数/timeInForce ---
+
+def test_bybit_market_request_shape_byte_identical():
+    # 回归锁:MARKET 单的 body 必须与改动前完全同键同值(不含 price)
+    resp = {"retCode": 0, "retMsg": "OK",
+           "result": {"orderId": "abc123", "orderLinkId": "cid-1"}, "time": 1700000000000}
+    c, t = _client({"/v5/order/create": (200, resp)})
+    c.place_order(_order("BTC", OrderSide.BUY, 0.015, "cid-1"))
+    body = json.loads(t.calls[0]["body"])
+    assert body == {"category": "linear", "symbol": "BTCUSDT", "side": "Buy",
+                    "orderType": "Market", "qty": "0.015", "positionIdx": 0,
+                    "orderLinkId": "cid-1"}
+
+
+def test_bybit_limit_params():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"orderId": "x", "orderLinkId": "c"},
+           "time": 1700000000000}
+    c, t = _client({"/v5/order/create": (200, resp)})
+    from live.contracts import LiveOrderRequest
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                             client_order_id="c", order_type="LIMIT", limit_price=60123.4)
+    c.place_order(order)
+    body = json.loads(t.calls[0]["body"])
+    assert body["orderType"] == "Limit"
+    assert body["price"] == "60123.4"
+    assert body["timeInForce"] == "GTC"
+    assert body["positionIdx"] == 0                # 保持 one-way 假设不变
+
+
+def test_bybit_limit_post_only_uses_postonly_time_in_force():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"orderId": "x", "orderLinkId": "c"},
+           "time": 1700000000000}
+    c, t = _client({"/v5/order/create": (200, resp)})
+    from live.contracts import LiveOrderRequest
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                             client_order_id="c", order_type="LIMIT", limit_price=60123.4,
+                             post_only=True)
+    c.place_order(order)
+    body = json.loads(t.calls[0]["body"])
+    assert body["timeInForce"] == "PostOnly"
+
+
+def test_bybit_book_ticker_envelope():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": [
+        {"symbol": "BTCUSDT", "bid1Price": "59990.10", "ask1Price": "60010.20"}]},
+        "time": 1700000000000}
+    c, t = _client({"/v5/market/tickers": (200, resp)})
+    book = c.book_ticker("BTC")
+    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20)}
+    headers = t.calls[0]["headers"] or {}
+    assert "X-BAPI-SIGN" not in headers                # 公开端点,不签名
+
+
+def test_bybit_book_ticker_nonzero_retcode_fails_soft_returns_none():
+    resp = {"retCode": 10001, "retMsg": "params error", "result": {}, "time": 1700000000000}
+    c, _ = _client({"/v5/market/tickers": (200, resp)})
+    assert c.book_ticker("BTC") is None
+
+
+def test_bybit_book_ticker_empty_list_fails_soft_returns_none():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": []}, "time": 1700000000000}
+    c, _ = _client({"/v5/market/tickers": (200, resp)})
+    assert c.book_ticker("BTC") is None

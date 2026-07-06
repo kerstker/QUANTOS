@@ -230,8 +230,29 @@ Real, tested backend engines (`*_TESTED` in the audit):
   持久化队列(此前只计数、进程退出即丢,现持久化+ops API+LiveDesk 面板,诚实边界:只记录
   决定不自动重提交)。**417→427 live+治理测试,全量门禁全绿**。仍未做:研究晋级前端闭环、
   多方批准持久化存储、LIMIT/条件单、strategy_id 仓位隔离。设计文档 §14。
-  **(2026-07-06 战线①③④更新:晋级闭环+多方批准持久化 ✓(见 services/governance 条)、
-  strategy_id 仓位隔离 ✓(见下)、IC 持有期+ALFRED ✓;LIMIT/条件单 = 战线②进行中。)**
+  **(2026-07-06 战线①②③④全部落地:晋级闭环+多方批准持久化 ✓(见 services/governance 条)、
+  LIMIT 限价单 ✓(见下)、strategy_id 仓位隔离 ✓(见下)、IC 持有期+ALFRED ✓。条件单
+  仍未做。)**
+  **LIMIT 限价单已落地**(2026-07-06 战线②,默认不启用):`LiveOrderRequest` 加
+  `order_type`("MARKET"/"LIMIT")/`limit_price`/`post_only`,全部默认值——不传时两所适配器
+  HTTP 请求形状、`client_order_id` 哈希、驱动器行为与改动前逐字节相同(回归锁测试钉死)。
+  最小可用版 = **可成交限价(marketable limit)= 市价单加价格上限**,非做市。定价核
+  `live/execution/pricing.py::resolve_anchor` 不只防 `book_ticker` 网络失败,还防"成功但
+  退化"的响应(testnet/demo 流动性稀薄,交叉盘/零价/与决策价偏离离谱的天价 mid 是常态不是
+  异常)——结构校验 + 偏离容忍度门(5%,工程占位),任一不过回退决策价锚。mandate 名义额对
+  LIMIT 取保守口径(BUY: max(决策价,限价)/SELL: min,零成本纵深防御,未知 order_type 恒升
+  人工)。account/strategy 仓位口径分离(战线③)与 LIMIT 定价装配顺序共存:过滤器取整后、
+  mandate 评估前插入定价段。MARKET 继续尊重调用方 `max_confirm_polls`(不静默改行为);
+  LIMIT 用独立更长轮询窗口(挂单不成交是正常路径,默认 30 次远大于 MARKET 的 5)。
+  preview 模式加 `PREVIEW_NOT_SUBMITTED` 终态短路(顺带修了一个预先存在的 MARKET-preview
+  轮询空转小 bug)。账本 order_type/limit_price 双轨迁移(新库 `_SCHEMA` 直接带列 + 老库
+  惰性 ALTER,nullable 无 DEFAULT——历史订单诚实读回 NULL,不猜测回填)。紧急减仓通道恒
+  MARKET,治理测试源码级钉死绝不构造 LIMIT。CLI `--order-type {market,limit}`(默认
+  market,mandate schema 不动——理由:LIMIT 只收紧价格风险不扩大授权,已签署 mandate 全部
+  继续有效)。真实 Binance 测试网 preview 联调跑通(13 腿全部拿到真实盘口锚定价,零
+  anchor-fallback 告警)。**真实 `--submit` LIMIT 下单待用户单独放行**。band_pct/挂单时长/
+  偏离容忍度均为工程占位数字,真实使用前需用户确认或改数。设计:
+  `docs/superpowers/specs/2026-07-06-limit-order-execution-design.md`。
   **strategy_id 仓位隔离已落地**(2026-07-06 战线③):核心裁定 = strategy_id 只是**本地账本
   分区维度**;venue/保证金/风控/对账/紧急减仓全部维持账户级(交易所不知道策略;per-strategy
   vs venue 对账 = 拿本地分解自己对自己、伪造独立性,reconciliation.py 明令禁止)。结构性

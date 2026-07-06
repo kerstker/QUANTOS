@@ -27,6 +27,9 @@ class _FakeVenue:
     def exchange_filters(self):
         return {}
 
+    def book_ticker(self, instrument_id):
+        return None
+
 
 def test_fake_venue_satisfies_protocol():
     assert isinstance(_FakeVenue(), VenueAdapter)
@@ -62,7 +65,37 @@ def test_venue_without_cancel_order_does_not_satisfy_protocol():
         def exchange_filters(self):
             return {}
 
+        def book_ticker(self, instrument_id):
+            return None
+
     assert not isinstance(_NoCancel(), VenueAdapter)
+
+
+def test_venue_without_book_ticker_does_not_satisfy_protocol():
+    # book_ticker 是 LIMIT 定价锚的来源(2026-07-06 战线②)——协议加了这个必须成员后,
+    # 缺了它的 venue 不再算一个完整实现(批判必须修改:_FakeVenue 等 fake 必须同步)
+    class _NoBookTicker:
+        venue_mode = "testnet"
+
+        def place_order(self, order):
+            return None
+
+        def get_order(self, instrument_id, client_order_id):
+            return None
+
+        def cancel_order(self, instrument_id, client_order_id):
+            return None
+
+        def account(self):
+            return {}
+
+        def positions(self):
+            return {}
+
+        def exchange_filters(self):
+            return {}
+
+    assert not isinstance(_NoBookTicker(), VenueAdapter)
 
 
 def test_binance_adapter_satisfies_protocol():

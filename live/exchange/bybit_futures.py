@@ -220,6 +220,23 @@ class BybitFuturesAdapter:
                                         min_notional=min_notional, tick_size=tick_size)
         return out
 
+    def book_ticker(self, instrument_id: str) -> Optional[dict]:
+        """只读盘口(2026-07-06 战线②,LIMIT 定价锚来源):GET /v5/market/tickers?category=linear,
+        不签名。信封 result.list[0] 的 bid1Price/ask1Price;retCode!=0/空 list/解析失败 -> None
+        (fail-soft,调用方 `live/execution/pricing.py::resolve_anchor` 据此回退决策价锚)。"""
+        try:
+            status, data = self._get("/v5/market/tickers",
+                                     {"category": "linear", "symbol": instrument_id + "USDT"},
+                                     signed=False)
+            result = self._unwrap(status, data, action="book_ticker")
+            items = result.get("list", []) or []
+            if not items:
+                return None
+            item = items[0]
+            return {"bid": float(item["bid1Price"]), "ask": float(item["ask1Price"])}
+        except Exception:
+            return None
+
     # --- 签名(账户/订单) ---
 
     def account(self) -> dict:
@@ -266,11 +283,17 @@ class BybitFuturesAdapter:
             "category": "linear",
             "symbol": order.instrument_id + "USDT",
             "side": "Buy" if order.side.value == "BUY" else "Sell",
-            "orderType": "Market",
+            "orderType": "Market" if order.order_type == "MARKET" else "Limit",
             "qty": _format_qty(order.quantity),
             "positionIdx": 0,                                    # one-way 模式假设,见模块 docstring
             "orderLinkId": order.client_order_id,
         }
+        # LIMIT(2026-07-06 战线②):默认路径(order_type="MARKET")这个分支不触发,body 与
+        # 改动前逐键相等(回归锁 test_bybit_market_request_shape_byte_identical 钉死)。价格
+        # 已在 live/execution/pricing.py 按 tick 取整,这里只格式化不再取整。
+        if order.order_type == "LIMIT":
+            params["price"] = _format_qty(order.limit_price)
+            params["timeInForce"] = "PostOnly" if order.post_only else "GTC"
         if order.reduce_only:
             params["reduceOnly"] = True          # 仅紧急减仓通道;普通单不带,保持请求形状不变
         status, data = self._post_signed("/v5/order/create", params)

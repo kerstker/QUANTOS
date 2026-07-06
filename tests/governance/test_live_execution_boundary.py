@@ -167,6 +167,21 @@ def test_emergency_validation_grid_only_reducing_orders_pass():
     assert validate_flatten_order(OrderSide.SELL, 0.5, position=0.0) is not None
 
 
+def test_governance_emergency_channel_never_limit():
+    """紧急减仓通道恒 MARKET(2026-07-06 战线②,LIMIT 设计 §0):紧急场景下"不成交"才是危险,
+    emergency.py 绝不构造 LIMIT。源码级钉死构造语义(不是裸子串检查——"order_type=" 这个
+    模式专指关键字参数赋值,未来在 docstring 里写一句"本通道绝不构造 LIMIT" 不会误触发这条
+    测试,因为 docstring 文本不会匹配 `order_type=` 这个赋值形状;同时防"LIMIT" 出现在任何
+    构造语句里)。行为级证明见 `live.contracts.LiveOrderRequest.__post_init__`——emergency.py
+    构造 `LiveOrderRequest` 时从不传 order_type,默认值 "MARKET" 结构性生效。"""
+    path = os.path.join(_LIVE, "execution", "emergency.py")
+    src = open(path, encoding="utf-8").read()
+    assert "order_type=" not in src, \
+        "emergency channel must never construct a non-default order_type (MARKET only)"
+    assert "LIMIT" not in src, \
+        "emergency channel must never reference LIMIT — non-fill risk is the danger in a crisis"
+
+
 def test_evaluate_mandate_fails_closed_without_valid_mandate():
     from live.contracts import LiveOrderRequest
     from live.governance.mandate import NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate

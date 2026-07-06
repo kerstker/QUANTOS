@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from typing import Dict, List, Mapping, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from live.contracts import ExchangeFilters, LiveOrderRequest
 from quantos.contracts.trading import OrderSide
@@ -25,18 +25,24 @@ def decision_prefix(strategy_id: str, decided_ts: int, instrument_id: str) -> st
 
 
 def client_order_id(strategy_id: str, decided_ts: int, instrument_id: str,
-                    side, quantity: float) -> str:
-    """确定性订单 ID = 决策前缀 16 位 + 订单身份(方向+数量)16 位,共 32 位 hex(<36 上限,
-    留切单 -sNN 后缀余量)。
+                    side, quantity: float, limit_price: Optional[float] = None) -> str:
+    """确定性订单 ID = 决策前缀 16 位 + 订单身份(方向+数量[+限价])16 位,共 32 位 hex(<36
+    上限,留切单 -sNN 后缀余量)。
 
     **为什么必须包含方向+数量(2026-07-05 双所真实调仓暴露的关键 bug):** 旧键只有
     (策略, 决策时间, 标的)——同一决策时间下的第二批订单(mandate 提额后的调仓增量)与第一批
     **同 ID**:Binance 允许已成交 ID 复用,新单真实执行但账本 INSERT OR IGNORE 把记账当重复
     静默吞掉(仓位漂移不报错);Bybit 直接按 orderLinkId 去重没执行,轮询还查到旧单的 FILLED
-    误报成功。正确的幂等语义是"同一笔订单的重试去重",订单身份 = 决策 + 方向 + 数量。"""
-    ident = f"{getattr(side, 'value', side)}|{quantity:.10f}".encode()
+    误报成功。正确的幂等语义是"同一笔订单的重试去重",订单身份 = 决策 + 方向 + 数量。
+
+    **limit_price(2026-07-06 战线②):** 默认 None,输出与改动前逐字节相同(golden 测试
+    钉死——已在途的 MARKET 幂等链不许漂移)。LIMIT 改价重发必须是不同订单(同一决策同数量但
+    不同限价,交易所不能把它当同一笔订单的重试去重),同限价重试仍幂等。"""
+    ident = f"{getattr(side, 'value', side)}|{quantity:.10f}"
+    if limit_price is not None:
+        ident += f"|L{limit_price:.10f}"
     return decision_prefix(strategy_id, decided_ts, instrument_id) + \
-        hashlib.sha256(ident).hexdigest()[:16]
+        hashlib.sha256(ident.encode()).hexdigest()[:16]
 
 
 def round_to_step(qty: float, step_size: float) -> float:

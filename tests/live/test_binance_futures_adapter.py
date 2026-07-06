@@ -370,3 +370,76 @@ def test_place_order_default_omits_reduce_only_param():
     c.place_order(LiveOrderRequest(instrument_id="BTC", side=_OS.BUY, quantity=0.01,
                                    client_order_id="c1"))
     assert "reduceOnly" not in t.calls[0]["body"].decode()
+
+
+# --- LIMIT 扩展(2026-07-06 战线②):默认 MARKET 请求形状字节不变 + LIMIT 参数/timeInForce ---
+
+def test_binance_market_request_shape_byte_identical():
+    # 回归锁:MARKET 单的 params 必须与改动前完全同键同值(不含 price/timeInForce)
+    c, t = _client({"/fapi/v1/order": (200, {"orderId": 999, "clientOrderId": "cid-abc",
+                                             "symbol": "BTCUSDT", "status": "NEW",
+                                             "executedQty": "0.0", "avgPrice": "0.0"})})
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                             client_order_id="cid-abc")
+    c.place_order(order)
+    params = dict(urllib.parse.parse_qsl(t.calls[0]["body"].decode()))
+    business_keys = {"symbol", "side", "type", "quantity", "newClientOrderId"}
+    assert {k: v for k, v in params.items() if k in business_keys} == {
+        "symbol": "BTCUSDT", "side": "BUY", "type": "MARKET",
+        "quantity": "0.015", "newClientOrderId": "cid-abc"}
+    assert "price" not in params and "timeInForce" not in params and "reduceOnly" not in params
+
+
+def test_binance_limit_params():
+    order_resp = {"orderId": 1, "clientOrderId": "c1", "status": "NEW",
+                 "executedQty": "0", "avgPrice": "0"}
+    c, t = _client({"/fapi/v1/order": (200, order_resp)})
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                             client_order_id="c1", order_type="LIMIT", limit_price=60123.4)
+    c.place_order(order)
+    params = dict(urllib.parse.parse_qsl(t.calls[0]["body"].decode()))
+    assert params["type"] == "LIMIT"
+    assert params["price"] == "60123.4"              # 十进制字符串,无科学计数法
+    assert params["timeInForce"] == "GTC"
+    assert params["newClientOrderId"] == "c1"
+
+
+def test_binance_limit_post_only_uses_gtx_time_in_force():
+    order_resp = {"orderId": 1, "clientOrderId": "c1", "status": "NEW",
+                 "executedQty": "0", "avgPrice": "0"}
+    c, t = _client({"/fapi/v1/order": (200, order_resp)})
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                             client_order_id="c1", order_type="LIMIT", limit_price=60123.4,
+                             post_only=True)
+    c.place_order(order)
+    params = dict(urllib.parse.parse_qsl(t.calls[0]["body"].decode()))
+    assert params["timeInForce"] == "GTX"
+
+
+def test_binance_book_ticker_parses_and_fails_soft():
+    resp = {"symbol": "BTCUSDT", "bidPrice": "59990.10", "askPrice": "60010.20"}
+    c, t = _client({"/fapi/v1/ticker/bookTicker": (200, resp)})
+    book = c.book_ticker("BTC")
+    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20)}
+    assert "signature" not in t.calls[0]["url"]           # 公开端点,不签名
+
+
+def test_binance_book_ticker_non_2xx_fails_soft_returns_none():
+    c, _ = _client({"/fapi/v1/ticker/bookTicker": (500, {"msg": "internal error"})})
+    assert c.book_ticker("BTC") is None
+
+
+def test_binance_book_ticker_missing_fields_fails_soft_returns_none():
+    c, _ = _client({"/fapi/v1/ticker/bookTicker": (200, {"symbol": "BTCUSDT"})})
+    assert c.book_ticker("BTC") is None
+
+
+def test_binance_book_ticker_non_json_fails_soft_returns_none():
+    class _HtmlTransport:
+        def __call__(self, method, url, *, body=None, headers=None):
+            return 200, b"<html>Service Unavailable</html>"
+
+    c = BinanceFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                              base_url=BinanceFuturesAdapter.TESTNET_BASE,
+                              http_request=_HtmlTransport(), clock=lambda: 1_700_000_000.0)
+    assert c.book_ticker("BTC") is None

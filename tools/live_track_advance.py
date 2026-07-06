@@ -54,6 +54,7 @@ from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from live.execution.price_check import flag_divergent_instruments
+from live.execution.pricing import LimitPricing
 from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
 from live.execution.tca import tca_summary
@@ -296,6 +297,11 @@ class PreviewVenue:
     def positions(self):
         return self._real.positions()
 
+    def book_ticker(self, instrument_id):
+        # 只读(2026-07-06 战线②,LIMIT 定价锚来源)——同 exchange_filters/account/positions
+        # 一样透传真实 venue,定价基于真实市况而非造假数据。
+        return self._real.book_ticker(instrument_id)
+
 
 def _load_credentials(venue_cfg: dict, venue_name: str):
     env_key, env_secret = venue_cfg["env"]
@@ -381,6 +387,61 @@ def multi_strategy_mandate_alert(ledger_strategy_ids, current_strategy: str, man
     return None
 
 
+def resolve_limit_pricing(argv) -> tuple:
+    """`--order-type {market,limit}` 解析(2026-07-06 战线②)。默认 "market",
+    limit_pricing=None——**驱动器默认行为一个字节不变**。选 CLI flag 而非 mandate schema
+    的理由:mandate 签的是"系统可不经人工自主执行多少"(风险额度),LIMIT 只是执行方式且只会
+    **收紧**价格风险(封顶滑点),不扩大授权;不动 mandate schema 也意味着已签署的
+    key/live_mandate*.json 全部继续有效。是否要把执行方式也纳入 mandate 签署 = 留给用户拍板
+    (open question,见设计文档)。band_pct/挂单时长(`LimitPricing()` 的工程默认)同样是
+    留待用户确认的占位数字。"""
+    order_type = "market"
+    if "--order-type" in argv:
+        order_type = argv[argv.index("--order-type") + 1]
+    if order_type not in ("market", "limit"):
+        raise SystemExit(f"unknown --order-type {order_type!r} (choose from market/limit)")
+    limit_pricing = LimitPricing() if order_type == "limit" else None
+    return order_type, limit_pricing
+
+
+def compute_limit_fill_stats(ledger: LiveLedger, client_order_ids) -> dict:
+    """LIMIT 单执行统计(2026-07-06,批判必须修改⑥:数据源明确)。`VenueOrderResult` 不带
+    请求量(venue 语义,不该为诊断统计扩展它)——账本 `live_orders`(quantity=请求量,
+    order_type 列)join `live_fills`(quantity=实际成交量)按 client_order_id 是唯一同时
+    知道"请求了多少"和"实际成交了多少"的地方。只统计 `client_order_ids`(本轮提交的订单)
+    范围内、且 order_type=="LIMIT" 的行——不污染历史/别的批次的统计。"""
+    ids = set(client_order_ids)
+    if not ids:
+        return {"n_limit": 0, "n_filled": 0, "n_canceled_zero_fill": 0, "n_partial": 0,
+               "fill_rate_qty_weighted": None}
+    orders_by_id = {o["client_order_id"]: o for o in ledger.orders()
+                    if o["client_order_id"] in ids and o.get("order_type") == "LIMIT"}
+    filled_by_id: Dict[str, float] = {}
+    for f in ledger.fills():
+        cid = f["client_order_id"]
+        if cid in orders_by_id:
+            filled_by_id[cid] = filled_by_id.get(cid, 0.0) + f["quantity"]
+
+    n_filled = n_canceled_zero = n_partial = 0
+    total_requested = 0.0
+    total_filled = 0.0
+    for cid, o in orders_by_id.items():
+        requested = o["quantity"]
+        filled = filled_by_id.get(cid, 0.0)
+        total_requested += requested
+        total_filled += filled
+        if o["status"] == "FILLED":
+            n_filled += 1
+        elif o["status"] == "CANCELED" and filled <= 1e-12:
+            n_canceled_zero += 1
+        elif 1e-12 < filled < requested - 1e-12:
+            n_partial += 1
+    fill_rate = (total_filled / total_requested) if total_requested > 0 else None
+    return {"n_limit": len(orders_by_id), "n_filled": n_filled,
+           "n_canceled_zero_fill": n_canceled_zero, "n_partial": n_partial,
+           "fill_rate_qty_weighted": fill_rate}
+
+
 _MIN_SIGNAL_LEG_RATIO = 0.8   # 与覆盖率门同一口径:信号腿数掉到上次决策的 80% 以下即视为数据问题
 
 
@@ -411,6 +472,7 @@ def main() -> None:
         venue_arg = sys.argv[sys.argv.index("--venue") + 1]
     if venue_arg not in _VENUES:
         raise SystemExit(f"unknown --venue {venue_arg!r} (choose from {sorted(_VENUES)})")
+    order_type_arg, limit_pricing = resolve_limit_pricing(sys.argv)
     strategy_id = _STRATEGY_ID
     if "--strategy" in sys.argv:
         strategy_id = sys.argv[sys.argv.index("--strategy") + 1]
@@ -674,6 +736,7 @@ def main() -> None:
             gate=gate, ctx_factory=ctx_factory, venue=venue,
             mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=strategy_id,
             decided_ts=decided_ts, now=now, frozen=frozenset(frozen_names),
+            limit_pricing=limit_pricing,   # None 除非 --order-type limit(默认行为字节不变)
             poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
 
     # live-paper 对账(2026-07-05):纸面侧优先用 Stage 0 台账里记录在案的权重(不是重算的
@@ -722,6 +785,20 @@ def main() -> None:
         max_slippage_over_assumed_bps=_MAX_SLIPPAGE_OVER_ASSUMED_BPS)
     alerts.extend(escalations)
 
+    # LIMIT 执行统计(2026-07-06 战线②):只在 --order-type limit 时计算/暴露——status 快照
+    # 默认路径(不带 --order-type)不新增这些字段。锚回退告警(book_ticker 不可用/退化,本轮
+    # 已发生过的 LIVE_LIMIT_ANCHOR_FALLBACK 审计事件)一并留痕,运维不必单独去翻审计库。
+    limit_fill_stats = None
+    if order_type_arg == "limit":
+        limit_fill_stats = compute_limit_fill_stats(
+            write_ledger, [s.client_order_id for s in result.submitted])
+        anchor_fallbacks = [e.target for e in audit.events
+                           if e.action == "LIVE_LIMIT_ANCHOR_FALLBACK" and e.timestamp == now]
+        if anchor_fallbacks:
+            alerts.append(f"LIMIT anchor fallback for {len(anchor_fallbacks)} instrument(s) "
+                          f"(book_ticker unavailable/degraded this cycle, used decision price): "
+                          f"{anchor_fallbacks}")
+
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
         "strategy": strategy_id,
@@ -740,8 +817,14 @@ def main() -> None:
                    "unexpected_live_positions": parity["unexpected_live_positions"]},
     }
     if not submit:
+        # order_type/limit_price(2026-07-06 战线②):would_submit 是运维核对"本来会提交什么"
+        # 的唯一窗口——LIMIT 模式下不带限价的话这份清单诊断价值有限(看不出定价是否合理)。
         status["would_submit"] = [{"instrument_id": o.instrument_id, "side": o.side.value,
-                                   "quantity": o.quantity} for o in venue.would_submit]
+                                   "quantity": o.quantity, "order_type": o.order_type,
+                                   "limit_price": o.limit_price} for o in venue.would_submit]
+    if order_type_arg == "limit":
+        status["order_type"] = order_type_arg
+        status["limit_fill_stats"] = limit_fill_stats
     json.dump(status, open(paths["status"], "w", encoding="utf-8"), indent=2)
     emit(alerts, context="live_track", now_ms=now)
     print(f"=== live_track ({'SUBMIT' if submit else 'PREVIEW'}) tier={result.tier} "

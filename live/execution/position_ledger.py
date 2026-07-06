@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS live_orders (
   submitted_at    INTEGER NOT NULL,
   venue_order_id  TEXT,
   status          TEXT NOT NULL DEFAULT 'NEW',
-  strategy_id     TEXT NOT NULL
+  strategy_id     TEXT NOT NULL,
+  order_type      TEXT,
+  limit_price     REAL
 );
 CREATE TABLE IF NOT EXISTS live_fills (
   fill_id         TEXT PRIMARY KEY,
@@ -70,6 +72,13 @@ _TABLES = ("live_orders", "live_fills")
 # 运维产物,按用户裁定同样保持该回填值),不是猜测。
 _BACKFILL_STRATEGY_ID = "crowd_contra"
 _STRATEGY_TABLES = ("live_orders", "live_fills", "live_tca")
+# order_type/limit_price(2026-07-06 战线②):**双轨**——_SCHEMA(上面)让新建账本/preview
+# 一次性草稿账本(create=True)直接带列;`_migrate_order_type_columns` 给存量真实测试网账本
+# 惰性 ALTER。两列刻意**不设 NOT NULL/DEFAULT**(与 strategy_id 的强制回填不同):存量行读回
+# NULL 是诚实的("当时只有 MARKET,这个字段当时根本不存在"),不是拿 'MARKET' 去猜一个从未
+# 记录过的历史事实;新写入永远由 Python API 显式传值(默认 order_type="MARKET"),不依赖
+# SQL 端默认值。只作用于 live_orders(live_fills/live_tca 不需要下单方式这个维度)。
+_ORDER_TYPE_TABLE = "live_orders"
 
 
 class LiveLedgerError(RuntimeError):
@@ -87,6 +96,7 @@ class LiveLedger:
         self._require_schema()
         # 迁移必须在无 create 路径也跑:ops API / gonogo_report 用 LiveLedger(path) 打开
         self._migrate_strategy_id()
+        self._migrate_order_type_columns()
 
     def _require_schema(self) -> None:
         try:
@@ -131,15 +141,48 @@ class LiveLedger:
         if changed:
             self._conn.commit()
 
+    def _add_column_if_missing(self, table: str, column: str, sql_type: str) -> bool:
+        """通用 nullable ADD COLUMN(无 NOT NULL/DEFAULT)——duplicate column 按"已被并发
+        迁移完成"吞掉(镜像 `_add_strategy_column_if_missing` 的并发防御,理由同前:多个独立
+        进程可能同时看到列缺失、同时 ALTER)。其它 OperationalError(真实损坏)照常暴露。"""
+        try:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+            return True
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+            return False
+
+    def _add_order_type_columns_if_missing(self) -> bool:
+        """order_type/limit_price 的惰性 ALTER 那一半(存量真实测试网账本;_SCHEMA 已经让
+        新库/preview 草稿账本直接带列)。两列均 nullable、无 DEFAULT——老行读回 NULL 是诚实
+        的(见模块常量注释),不是回填一个从未记录过的历史事实。"""
+        changed = self._add_column_if_missing(_ORDER_TYPE_TABLE, "order_type", "TEXT")
+        changed = self._add_column_if_missing(_ORDER_TYPE_TABLE, "limit_price", "REAL") or changed
+        return changed
+
+    def _migrate_order_type_columns(self) -> None:
+        exists = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (_ORDER_TYPE_TABLE,)).fetchone()
+        if exists is None:
+            return
+        cols = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({_ORDER_TYPE_TABLE})")}
+        if {"order_type", "limit_price"} <= cols:
+            return
+        if self._add_order_type_columns_if_missing():
+            self._conn.commit()
+
     def record_submission(self, client_order_id: str, instrument_id: str, side: OrderSide,
                           quantity: float, *, strategy_id: str, submitted_at: int,
-                          venue_order_id: str = "", status: str = "NEW") -> None:
+                          venue_order_id: str = "", status: str = "NEW",
+                          order_type: str = "MARKET", limit_price: Optional[float] = None) -> None:
         self._conn.execute(
             "INSERT OR IGNORE INTO live_orders"
             "(client_order_id, instrument_id, side, quantity, submitted_at, venue_order_id,"
-            " status, strategy_id) VALUES (?,?,?,?,?,?,?,?)",
+            " status, strategy_id, order_type, limit_price) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (client_order_id, instrument_id, side.value, float(quantity), int(submitted_at),
-             venue_order_id, status, strategy_id))
+             venue_order_id, status, strategy_id, order_type, limit_price))
         self._conn.commit()
 
     def update_status(self, client_order_id: str, status: str, *,

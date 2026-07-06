@@ -77,6 +77,13 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
         gross = 0.0
         net = 0.0
         for o in orders:
+            # 未知 order_type 恒升人工(2026-07-06 战线②,§5 纵深防御——只收紧不放宽):
+            # 真实构造路径已被 `LiveOrderRequest.__post_init__` 挡死(fail-closed 最前沿),
+            # 这里防的是"万一有别的构造路径/duck-typed 调用方"绕过契约校验。
+            order_type = getattr(o, "order_type", "MARKET")
+            if order_type not in ("MARKET", "LIMIT"):
+                reasons.append(f"unknown_order_type:{o.instrument_id}")
+                continue
             if o.instrument_id not in mandate.allowed_instruments:
                 reasons.append(f"instrument_not_allowed:{o.instrument_id}")
                 continue
@@ -86,7 +93,24 @@ def evaluate_mandate(orders: Sequence[LiveOrderRequest], prices: Mapping[str, fl
             if price is None or not math.isfinite(price) or price <= 0:
                 reasons.append(f"no_price:{o.instrument_id}")
                 continue
-            notional = o.quantity * price
+            # LIMIT 名义额口径(2026-07-06,批判必须修改 #5——零成本保守修正):偏差源是锚
+            # (实时盘口 mid)相对决策价的漂移(决策价可能滞后 1-3 天,是百分点级而非 band 的
+            # 数十 bps 级),不是 band 本身。BUY 取 max(决策价,限价)、SELL 取 min——限价单的
+            # 限价是事前已知的边界,往"名义额更大"的方向保守评估零成本;§2 的锚容忍度门
+            # (`resolve_anchor`)已经兜住了锚本身离谱失控的情形,这里只是纵深防御第二层。
+            eval_price = price
+            if order_type == "LIMIT":
+                limit_price = getattr(o, "limit_price", None)
+                # 真实构造路径已被 `LiveOrderRequest.__post_init__` 保证 LIMIT 恒带合法
+                # limit_price——这里遇到缺失/非法值只可能来自绕过契约的 duck-typed 调用方,
+                # 与"未知 order_type"同一性质的可疑输入,同样恒升人工(fail-closed,不悄悄
+                # 退化成按决策价评估——那会让一个本该显眼的异常状态被无声吞掉)。
+                if limit_price is None or not math.isfinite(limit_price) or limit_price <= 0:
+                    reasons.append(f"limit_price_missing:{o.instrument_id}")
+                    continue
+                eval_price = (max(price, limit_price) if o.side == OrderSide.BUY
+                             else min(price, limit_price))
+            notional = o.quantity * eval_price
             if notional > mandate.max_single_order_notional:
                 reasons.append(f"single_order_notional_exceeded:{o.instrument_id}")
             signed = notional if o.side == OrderSide.BUY else -notional

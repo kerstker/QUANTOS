@@ -204,6 +204,20 @@ class BinanceFuturesAdapter:
                                         min_notional=min_notional, tick_size=tick_size)
         return out
 
+    def book_ticker(self, instrument_id: str) -> Optional[dict]:
+        """只读盘口(2026-07-06 战线②,LIMIT 定价锚来源):GET /fapi/v1/ticker/bookTicker,不
+        签名。fail-soft——非 2xx/非 JSON/缺字段一律返回 None(调用方
+        `live/execution/pricing.py::resolve_anchor` 据此回退决策价锚),绝不因盘口拿不到
+        而抛异常打断整批。"""
+        try:
+            status, data = self._get("/fapi/v1/ticker/bookTicker",
+                                     {"symbol": instrument_id + "USDT"}, signed=False)
+            if not (200 <= status < 300):
+                return None
+            return {"bid": float(data["bidPrice"]), "ask": float(data["askPrice"])}
+        except Exception:
+            return None
+
     # --- 签名(账户/订单) ---
 
     def account(self) -> dict:
@@ -246,10 +260,18 @@ class BinanceFuturesAdapter:
         params = {
             "symbol": order.instrument_id + "USDT",
             "side": order.side.value,
-            "type": "MARKET",
+            "type": order.order_type,
             "quantity": _format_qty(order.quantity),
             "newClientOrderId": order.client_order_id,
         }
+        # LIMIT(2026-07-06 战线②):默认路径(order_type="MARKET")这个分支不触发,params
+        # 与改动前逐键相等(回归锁 test_binance_market_request_shape_byte_identical 钉死)。
+        # 价格已在 live/execution/pricing.py 按 tick 取整,这里只格式化不再取整(单一职责)。
+        # GTX(post-only)越过盘口时 Binance 直接给终态 EXPIRED——已在 _TERMINAL_ORDER_STATUSES,
+        # 流水线零改动即正确处置。
+        if order.order_type == "LIMIT":
+            params["price"] = _format_qty(order.limit_price)
+            params["timeInForce"] = "GTX" if order.post_only else "GTC"
         if order.reduce_only:
             params["reduceOnly"] = "true"        # 仅紧急减仓通道;普通单不带,保持已验证的请求形状
         status, data = self._post_signed("/fapi/v1/order", params)

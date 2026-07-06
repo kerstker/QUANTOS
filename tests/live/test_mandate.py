@@ -165,3 +165,93 @@ def test_mandate_with_nan_threshold_fails_closed_even_if_constructed_directly():
     d = evaluate_mandate(orders, {"BTC": 60000.0}, m, venue="binance_testnet",
                          exchange="binance", now=1)
     assert d.tier == NEEDS_HUMAN_REVIEW
+
+
+# --- LIMIT 扩展(2026-07-06 战线②,批判必须修改 #5):名义额口径 = BUY 取
+# max(决策价,限价)/SELL 取 min(决策价,限价)——保守、零成本修正;偏差源是锚(实时盘口 mid)
+# 相对决策价的漂移(可能滞后 1-3 天),不是 band 本身(band 只有数十 bps) ---
+
+def test_limit_buy_notional_higher_price_pushes_over_single_order_cap():
+    # single cap=$1000(见 _M)。0.015 * 决策价 60000 = $900(不超);限价 70000 -> $1050(超)
+    limit_order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                                   client_order_id="c1", order_type="LIMIT", limit_price=70000.0)
+    d = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("single_order_notional_exceeded" in r for r in d.reasons)
+
+
+def test_limit_buy_notional_lower_limit_price_does_not_shrink_below_decision_price():
+    # BUY 限价 LOWER 于决策价:保守口径取 max,名义额仍按决策价评估(不因限价更低而"省"出额度)
+    limit_order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.015,
+                                   client_order_id="c1", order_type="LIMIT", limit_price=50000.0)
+    d_limit = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                              exchange="binance", now=1)
+    market_order = _order("BTC", OrderSide.BUY, 0.015, "c2")
+    d_market = evaluate_mandate([market_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                                exchange="binance", now=1)
+    assert d_limit.reasons == d_market.reasons and d_limit.tier == d_market.tier
+
+
+def test_limit_sell_notional_uses_lower_of_decision_and_limit_price():
+    # SELL 限价 LOWER 于决策价(更保守的卖价假设)-> 名义额按更低价评估(min)
+    limit_order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.SELL, quantity=0.015,
+                                   client_order_id="c1", order_type="LIMIT", limit_price=50000.0)
+    d = evaluate_mandate([limit_order], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    # 0.015 * 50000 = $750 < single cap $1000 -> 应该 AUTO(若错用 60000 会是 $900,同样 AUTO,
+    # 所以用 per-instrument cap 场景更能证明是否真的用了 min——见下一测试)
+    assert d.tier == AUTO
+
+
+def test_limit_sell_notional_higher_limit_price_does_not_reduce_below_decision_price():
+    # SELL 限价 HIGHER 于决策价:保守口径取 min(决策价),不因限价更高而"省"出额度
+    limit_order = LiveOrderRequest(instrument_id="ETH", side=OrderSide.SELL, quantity=0.4,
+                                   client_order_id="c1", order_type="LIMIT", limit_price=5000.0)
+    d_limit = evaluate_mandate([limit_order], {"ETH": 3000.0}, _M, venue="binance_testnet",
+                              exchange="binance", now=1)
+    market_order = _order("ETH", OrderSide.SELL, 0.4, "c2")
+    d_market = evaluate_mandate([market_order], {"ETH": 3000.0}, _M, venue="binance_testnet",
+                                exchange="binance", now=1)
+    assert d_limit.reasons == d_market.reasons and d_limit.tier == d_market.tier
+
+
+def test_limit_order_without_limit_price_falls_back_to_decision_price_only():
+    # 防御性:即便有人绕过契约校验直接拼出 order_type="LIMIT" 但 limit_price=None 的对象
+    # (真实构造路径已被 __post_init__ 挡死,这里模拟 duck-typed 假订单),不能崩溃
+    class _FakeLimitOrder:
+        instrument_id = "BTC"
+        side = OrderSide.BUY
+        quantity = 0.01
+        order_type = "LIMIT"
+        limit_price = None
+
+    d = evaluate_mandate([_FakeLimitOrder()], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW              # fail-closed(异常求值),绝不 AUTO
+
+
+# --- unknown order_type 恒升人工(2026-07-06,§5 纵深防御;构造期已挡死,这里用
+# duck-typed 假订单模拟"万一有别的构造路径"的场景) ---
+
+def test_unknown_order_type_escalates_to_human_review():
+    class _FakeUnknownOrder:
+        instrument_id = "BTC"
+        side = OrderSide.BUY
+        quantity = 0.01
+        order_type = "STOP_LIMIT"
+        limit_price = None
+
+    d = evaluate_mandate([_FakeUnknownOrder()], {"BTC": 60000.0}, _M, venue="binance_testnet",
+                         exchange="binance", now=1)
+    assert d.tier == NEEDS_HUMAN_REVIEW
+    assert any("unknown_order_type" in r for r in d.reasons)
+
+
+def test_market_orders_missing_order_type_attr_still_evaluate_normally():
+    # getattr(o, "order_type", "MARKET") 的向后兼容:LiveOrderRequest 本身总有该字段
+    # (默认 "MARKET"),真实调用路径不会走到这个分支,但纵深防御不能假设它一定存在
+    orders = [_order("BTC", OrderSide.BUY, 0.01, "c1"), _order("ETH", OrderSide.SELL, 0.1, "c2")]
+    prices = {"BTC": 60000.0, "ETH": 3000.0}
+    d = evaluate_mandate(orders, prices, _M, venue="binance_testnet", exchange="binance", now=1)
+    assert d.tier == AUTO and d.reasons == ()

@@ -146,6 +146,108 @@ def test_preview_venue_readonly_methods_pass_through_to_real_venue():
     assert preview.venue_mode == "testnet"
 
 
+def test_preview_venue_book_ticker_passes_through_to_real_venue():
+    # LIMIT 定价锚来源(2026-07-06 战线②):book_ticker 是只读方法,preview 模式必须像
+    # exchange_filters/account/positions 一样透传真实 venue(定价基于真实市况,不是造假数据)
+    class _FakeRealVenueWithBookTicker(_FakeRealVenue):
+        def book_ticker(self, instrument_id):
+            return {"bid": 59990.0, "ask": 60010.0}
+
+    real = _FakeRealVenueWithBookTicker()
+    preview = PreviewVenue(real)
+    assert preview.book_ticker("BTC") == {"bid": 59990.0, "ask": 60010.0}
+
+
+# --- LIMIT CLI flag(2026-07-06 战线②):默认 market,limit_pricing=None,驱动器默认行为
+# --- 一个字节不变(批判必须修改④ open question:CLI flag 而非 mandate schema) ---
+
+def test_resolve_limit_pricing_defaults_to_market_with_none_pricing():
+    from tools.live_track_advance import resolve_limit_pricing
+    order_type, limit_pricing = resolve_limit_pricing([])
+    assert order_type == "market" and limit_pricing is None
+
+
+def test_resolve_limit_pricing_no_order_type_flag_among_other_args():
+    from tools.live_track_advance import resolve_limit_pricing
+    order_type, limit_pricing = resolve_limit_pricing(["prog", "--submit", "--venue", "binance"])
+    assert order_type == "market" and limit_pricing is None
+
+
+def test_resolve_limit_pricing_limit_flag_enables_limit_pricing():
+    from live.execution.pricing import LimitPricing
+    from tools.live_track_advance import resolve_limit_pricing
+    order_type, limit_pricing = resolve_limit_pricing(["--order-type", "limit"])
+    assert order_type == "limit"
+    assert isinstance(limit_pricing, LimitPricing)
+
+
+def test_resolve_limit_pricing_unknown_value_raises_systemexit():
+    from tools.live_track_advance import resolve_limit_pricing
+    with pytest.raises(SystemExit):
+        resolve_limit_pricing(["--order-type", "bogus"])
+
+
+# --- limit_fill_stats 数据源(2026-07-06,批判必须修改⑥):从账本 live_orders(quantity=
+# --- 请求量)+ live_fills(quantity=实际成交量)按 client_order_id 关联算数量加权成交率——
+# --- VenueOrderResult 不带请求量,ledger 才是唯一同时知道两者的地方 ---
+
+def test_compute_limit_fill_stats_empty_ids_is_honest_zero(tmp_path):
+    from live.execution.position_ledger import LiveLedger
+    from tools.live_track_advance import compute_limit_fill_stats
+    ledger = LiveLedger(str(tmp_path / "l.db"), create=True)
+    stats = compute_limit_fill_stats(ledger, [])
+    assert stats == {"n_limit": 0, "n_filled": 0, "n_canceled_zero_fill": 0, "n_partial": 0,
+                     "fill_rate_qty_weighted": None}
+
+
+def test_compute_limit_fill_stats_aggregates_fill_and_cancel_outcomes(tmp_path):
+    from live.execution.position_ledger import LiveLedger
+    from tools.live_track_advance import compute_limit_fill_stats
+    ledger = LiveLedger(str(tmp_path / "l.db"), create=True)
+    # c1: 全部成交
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 1.0, strategy_id="s", submitted_at=1,
+                             status="FILLED", order_type="LIMIT", limit_price=60000.0)
+    ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 1.0, 60000.0, strategy_id="s",
+                       filled_at=1)
+    # c2: 撤单零成交
+    ledger.record_submission("c2", "ETH", OrderSide.SELL, 2.0, strategy_id="s", submitted_at=1,
+                             status="CANCELED", order_type="LIMIT", limit_price=3000.0)
+    # c3: 部分成交后撤单(40%)
+    ledger.record_submission("c3", "BTC", OrderSide.BUY, 1.0, strategy_id="s", submitted_at=1,
+                             status="CANCELED", order_type="LIMIT", limit_price=60100.0)
+    ledger.record_fill("f3", "c3", "BTC", OrderSide.BUY, 0.4, 60100.0, strategy_id="s",
+                       filled_at=1)
+    # c4: MARKET 单(不应计入 LIMIT 统计)
+    ledger.record_submission("c4", "BTC", OrderSide.BUY, 1.0, strategy_id="s", submitted_at=1,
+                             status="FILLED")
+    ledger.record_fill("f4", "c4", "BTC", OrderSide.BUY, 1.0, 60000.0, strategy_id="s",
+                       filled_at=1)
+
+    stats = compute_limit_fill_stats(ledger, ["c1", "c2", "c3", "c4"])
+    assert stats["n_limit"] == 3                     # c4 是 MARKET,不计入
+    assert stats["n_filled"] == 1
+    assert stats["n_canceled_zero_fill"] == 1
+    assert stats["n_partial"] == 1
+    # 请求量 1+2+1=4,成交量 1+0+0.4=1.4
+    assert stats["fill_rate_qty_weighted"] == pytest.approx(1.4 / 4.0)
+
+
+def test_compute_limit_fill_stats_ignores_ids_outside_the_batch(tmp_path):
+    from live.execution.position_ledger import LiveLedger
+    from tools.live_track_advance import compute_limit_fill_stats
+    ledger = LiveLedger(str(tmp_path / "l.db"), create=True)
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 1.0, strategy_id="s", submitted_at=1,
+                             status="FILLED", order_type="LIMIT", limit_price=60000.0)
+    ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 1.0, 60000.0, strategy_id="s",
+                       filled_at=1)
+    # 另一笔历史 LIMIT 单不在本轮 client_order_ids 里 —— 不应污染本轮统计
+    ledger.record_submission("c-old", "ETH", OrderSide.SELL, 5.0, strategy_id="s", submitted_at=0,
+                             status="CANCELED", order_type="LIMIT", limit_price=1.0)
+    stats = compute_limit_fill_stats(ledger, ["c1"])
+    assert stats["n_limit"] == 1
+    assert stats["fill_rate_qty_weighted"] == pytest.approx(1.0)
+
+
 # --- _latest_weights_and_prices:信号行选择(2026-07-05 修复"最后一行 OI 全空 -> 权重为空") ---
 
 def _panel_with_stale_last_row():

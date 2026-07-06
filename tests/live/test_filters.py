@@ -163,3 +163,45 @@ def test_client_order_id_fits_exchange_limits_even_with_slice_suffix():
     from quantos.contracts.trading import OrderSide
     cid = client_order_id("crowd_contra", 1_783_036_800_000, "DOGE", OrderSide.SELL, 4811.123456)
     assert len(cid) <= 32                            # Binance 上限 36,留 -sNN 切单后缀余量
+
+
+# --- LIMIT 扩展(2026-07-06 战线②):limit_price 参与订单身份,重定价 = 不同订单 ---
+# golden 值钉死:limit_price=None(默认)时输出必须与改动前逐字节相同——已在途的 MARKET
+# 幂等链(真实测试网历史订单)绝不能因为这次改动漂移。
+
+def test_client_order_id_market_golden_unchanged():
+    cid = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
+    assert cid == "4c88b54744c798c567c1457cbbd8b969"
+
+
+def test_client_order_id_limit_price_none_matches_market_call():
+    # limit_price=None(默认参数)与不传该参数完全同一输出——不是"新的默认行为",是同一行为
+    a = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015)
+    b = client_order_id("crowd_contra", 1_700_000_000_000, "BTC", OrderSide.BUY, 0.015,
+                        limit_price=None)
+    assert a == b
+
+
+def test_client_order_id_limit_reprice_differs_from_market():
+    market = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0)
+    limit = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60000.0)
+    assert market != limit
+
+
+def test_client_order_id_differs_for_different_limit_prices():
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60000.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60100.0)
+    assert a != b                                    # 改价重发不能被交易所当重试去重
+
+
+def test_client_order_id_same_limit_price_is_idempotent():
+    a = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60000.0)
+    b = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60000.0)
+    assert a == b                                    # 同一限价重试仍幂等
+
+
+def test_client_order_id_limit_still_shares_decision_prefix():
+    from live.execution.filters import decision_prefix
+    p = decision_prefix("s", 1000, "BTC")
+    cid = client_order_id("s", 1000, "BTC", OrderSide.BUY, 1.0, limit_price=60000.0)
+    assert cid.startswith(p)

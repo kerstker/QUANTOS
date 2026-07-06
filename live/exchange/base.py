@@ -33,3 +33,8 @@ class VenueAdapter(Protocol):
     def positions(self) -> dict[str, VenuePosition]: ...   # 规范化仓位——reconcile_positions 的输入
 
     def exchange_filters(self) -> dict[str, ExchangeFilters]: ...
+
+    # 只读盘口(2026-07-06 战线②,LIMIT 定价锚来源):fail-soft——网络失败/解析失败一律
+    # 返回 None(合法),调用方(live/execution/pricing.py::resolve_anchor)据此回退决策价锚。
+    # 绝不因盘口拿不到而抛异常打断整批。
+    def book_ticker(self, instrument_id: str) -> Optional[dict]: ...

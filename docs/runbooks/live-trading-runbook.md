@@ -42,6 +42,36 @@ bybit 版本加 `_bybit` 后缀,绝不与 binance 混写。
 console「实盘路线」页,或直接 `data/cache/live_track_status.json`。正常 = `hard_stop` 不存在/
 false、`n_submission_errors=0`、`alerts` 无红色项。
 
+## 1.5 LIMIT 限价单(2026-07-06,默认不启用)
+
+设计文档:`docs/superpowers/specs/2026-07-06-limit-order-execution-design.md`。默认路径
+(不带 `--order-type`)一字节不变——本节只在显式启用 LIMIT 时适用。
+
+```bash
+python -m tools.live_track_advance --venue binance --order-type limit          # preview,默认
+python -m tools.live_track_advance --venue binance --order-type limit --submit  # 真实挂单/撤单
+```
+
+- **经济定位**:本实现是可成交限价(marketable limit)= 市价单加价格上限,不是做市;
+  定价 = 盘口 mid(`venue.book_ticker()`,fail-soft)± 20bps(工程占位,`LimitPricing`
+  默认)± band,按方向取整到 tick。盘口不可用/退化(交叉盘/零价/与决策价偏离 >5%)时回退
+  决策价锚 + 告警(`LIVE_LIMIT_ANCHOR_FALLBACK`)。
+- **挂单不成交是正常路径**:轮询窗口 30 次 × 1s ≈ 30 秒,打满后主动撤单 + 回查权威状态,
+  部分成交按交易所报的真实量入账,零成交本轮该标的仓位原样不动(不是异常,不需要人工
+  干预)。`data/cache/live_track_status*.json` 里 `limit_fill_stats` 字段(`n_limit`/
+  `n_filled`/`n_canceled_zero_fill`/`n_partial`/`fill_rate_qty_weighted`)是判断"band 是否
+  设得太紧/太松"的第一手数据——**没有自动改价追单**,连续多周 `fill_rate_qty_weighted` 很低
+  说明 book 在悄悄落后 paper book,需要人工重新评估 band/挂单时长。
+- **preview 模式完全兼容**:`place_order` 只记录不真提交,`get_order`/`cancel_order` 恒
+  `None`(预览从未真提交,查/撤都没有意义)——已确认这个状态在 preview 下被识别为"已经
+  问完了",零真实轮询燃烧、零假 `LIVE_ORDER_TIMEOUT_CANCEL` 审计。
+- **紧急减仓恒 MARKET**:kill-switch/风险哨兵触发的紧急通道绝不构造 LIMIT(治理测试钉死)
+  ——紧急场景下"不成交"才是危险,与 LIMIT 的经济定位刚好相反。
+- **真实首次启用前**:先备份 `data/cache/live_track*.db`(账本迁移是加列级安全操作,不
+  重写任何存量行,但这是真实交易数据,遵循既有灾备惯例);`band_pct`/挂单时长/锚偏离容忍度
+  都是工程占位数字,真实使用前建议按自己对"滑点上限 vs 成交率"的偏好重新评估(见设计文档
+  §12 open questions)。
+
 ## 2. 故障处置
 
 ### 2.1 限流(HTTP 429/418,Bybit retCode 10006)
