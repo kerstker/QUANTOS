@@ -485,8 +485,10 @@ def test_ledger_write_failure_still_counts_order_as_submitted_not_failed(ledger)
 # --- resolve_unconfirmed_orders:崩溃恢复(驱动器启动时核对未知状态订单,发现 #11 的一部分) ---
 
 def test_resolve_unconfirmed_orders_no_unresolved_orders_is_a_noop(ledger):
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="FILLED")
-    ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0, filled_at=_NOW)
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="FILLED")
+    ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0,
+                       strategy_id="crowd_contra", filled_at=_NOW)
     venue = _FakeVenue()
     out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
     assert out["resolved"] == []
@@ -495,7 +497,8 @@ def test_resolve_unconfirmed_orders_no_unresolved_orders_is_a_noop(ledger):
 
 def test_resolve_unconfirmed_orders_confirms_and_backfills_fill(ledger):
     # 模拟上一轮:提交了但驱动器在确认成交前被杀掉,本地账本停在 "NEW"
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.015, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.015, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue()
     # _FakeVenue.get_order 从其内部状态表读取——手动注入"交易所侧其实已经成交"的状态
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
@@ -508,7 +511,8 @@ def test_resolve_unconfirmed_orders_confirms_and_backfills_fill(ledger):
 
 
 def test_resolve_unconfirmed_orders_still_not_found_is_left_pending_honestly(ledger):
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue()                                            # get_order 找不到(默认返回 None)
     out = resolve_unconfirmed_orders(ledger, venue, now=_NOW)
     assert out["resolved"] == []
@@ -519,7 +523,8 @@ def test_resolve_unconfirmed_orders_still_not_found_is_left_pending_honestly(led
 def test_resolve_unconfirmed_orders_cancels_stale_open_order_before_new_cycle(ledger):
     # 上一轮遗留的还开着的订单不能带进新一轮决策——它稍后成交会和本轮订单叠加成双倍仓位。
     # 崩溃恢复必须主动撤掉它,并按回查的终态记账。
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue()
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
                                            instrument_id="BTC", status="NEW",
@@ -533,7 +538,8 @@ def test_resolve_unconfirmed_orders_cancels_stale_open_order_before_new_cycle(le
 
 def test_resolve_unconfirmed_orders_stale_cancel_races_fill_backfills_the_fill(ledger):
     # 恢复时撤单来得太晚(订单其实已成交):回查看到 FILLED,补记真实成交
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue(cancel_races_fill_for={"BTC"})
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
                                            instrument_id="BTC", status="NEW",
@@ -546,7 +552,8 @@ def test_resolve_unconfirmed_orders_stale_cancel_races_fill_backfills_the_fill(l
 
 
 def test_resolve_unconfirmed_orders_venue_query_failure_is_fail_soft(ledger):
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
 
     class _ExplodingGetOrderVenue(_FakeVenue):
         def get_order(self, instrument_id, client_order_id):
@@ -558,7 +565,8 @@ def test_resolve_unconfirmed_orders_venue_query_failure_is_fail_soft(ledger):
 
 
 def test_resolve_unconfirmed_orders_terminal_with_zero_fill_updates_status_no_fill(ledger):
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue()
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
                                            instrument_id="BTC", status="REJECTED",
@@ -570,8 +578,10 @@ def test_resolve_unconfirmed_orders_terminal_with_zero_fill_updates_status_no_fi
 
 
 def test_resolve_unconfirmed_orders_handles_multiple_orders_independently(ledger):
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, submitted_at=_NOW, status="NEW")
-    ledger.record_submission("c2", "ETH", OrderSide.SELL, 1.0, submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
+    ledger.record_submission("c2", "ETH", OrderSide.SELL, 1.0, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
     venue = _FakeVenue()
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v1", client_order_id="c1",
                                            instrument_id="BTC", status="FILLED",
@@ -611,8 +621,10 @@ def test_resize_batch_same_decided_ts_books_both_batches(ledger):
 
 def test_recovery_books_increment_not_cumulative_fill(ledger):
     # 提交路径确认时已记部分成交 40,交易所最终累计成交 100 —— 恢复只补 60,不重复记 100
-    ledger.record_submission("c1", "BTC", OrderSide.BUY, 100.0, submitted_at=_NOW, status="NEW")
-    ledger.record_fill("partial-1", "c1", "BTC", OrderSide.BUY, 40.0, 60000.0, filled_at=_NOW)
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 100.0, strategy_id="crowd_contra",
+                             submitted_at=_NOW, status="NEW")
+    ledger.record_fill("partial-1", "c1", "BTC", OrderSide.BUY, 40.0, 60000.0,
+                       strategy_id="crowd_contra", filled_at=_NOW)
     venue = _FakeVenue()
     venue._orders["c1"] = VenueOrderResult(venue_order_id="v1", client_order_id="c1",
                                            instrument_id="BTC", status="FILLED",
@@ -661,3 +673,106 @@ def test_default_no_frozen_keeps_existing_rebalance_close_behavior(ledger):
         gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
         ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
     assert "ETH" in {c.instrument_id for c in venue.calls}
+
+
+# --- 2026-07-06 战线③(strategy_id 仓位隔离):账本分账打标 + 恢复继承 + 口径分离 ---
+
+def test_pipeline_stamps_strategy_id_on_ledger_rows(ledger):
+    venue = _FakeVenue()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=GlobalAuditLog(), strategy_id="stratX", decided_ts=_NOW, now=_NOW)
+    assert result.tier == AUTO and len(result.submitted) == 1
+    assert all(o["strategy_id"] == "stratX" for o in ledger.orders())
+    assert all(f["strategy_id"] == "stratX" for f in ledger.fills())
+    assert all(t["strategy_id"] == "stratX" for t in ledger.tca_records())
+    # 分账立即可用:账户级与策略级一致(单策略),别的策略读不到这笔
+    assert ledger.all_positions(strategy_id="stratX")["BTC"] == pytest.approx(5.0)
+    assert ledger.all_positions(strategy_id="other") == {}
+
+
+def test_recovery_fill_inherits_order_strategy_id_not_current_driver(ledger):
+    # 崩溃恢复补记的 fill 必须从**订单行**继承 strategy_id(账目跟着订单走)——恢复路径
+    # 不需要、也不应该知道当前驱动器跑的是哪条策略(订单行加列的第一个真实受益者)
+    ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.015, strategy_id="stratX",
+                             submitted_at=_NOW, status="NEW")
+    venue = _FakeVenue()
+    venue._orders["c1"] = VenueOrderResult(venue_order_id="v-c1", client_order_id="c1",
+                                           instrument_id="BTC", status="FILLED",
+                                           filled_qty=0.015, avg_price=61000.0)
+    resolve_unconfirmed_orders(ledger, venue, now=_NOW + 1000)
+    fills = ledger.fills()
+    assert len(fills) == 1 and fills[0]["strategy_id"] == "stratX"
+    assert ledger.all_positions(strategy_id="stratX")["BTC"] == pytest.approx(0.015)
+
+
+def test_mandate_sees_account_positions_while_intents_use_strategy_positions(ledger, monkeypatch):
+    """评审 required #1:evaluate_mandate 的 per-instrument cap 投影必须收**账户级**仓位
+    (共享 venue mandate 的单标的上限约束的是账户对该标的的总敞口——只看本策略仓位会让
+    两条策略各自贴着 cap、账户实际 2×cap 双双判 AUTO);而 build_intents 的目标增量必须
+    对着**本策略自己的仓位**算(否则第二条策略会把第一条的持仓当自己的平掉)。"""
+    captured = {}
+    import live.pipeline as lp
+    real_evaluate = lp.evaluate_mandate
+
+    def spy_evaluate(orders, prices, mandate, **kw):
+        captured["mandate_positions"] = dict(kw["current_positions"])
+        return real_evaluate(orders, prices, mandate, **kw)
+
+    monkeypatch.setattr(lp, "evaluate_mandate", spy_evaluate)
+    venue = _FakeVenue()
+    strategy_positions = {"BTC": 2.0}                    # 本策略已持有 2.0
+    account_positions = {"BTC": 4.5, "ETH": -100.0}      # 账户级还叠着另一条策略的仓位
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions=strategy_positions, account_positions=account_positions,
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=GlobalAuditLog(), strategy_id="stratX", decided_ts=_NOW, now=_NOW)
+    assert result.tier == AUTO
+    # mandate 收到的是账户级(含另一条策略的 ETH 空头)
+    assert captured["mandate_positions"] == account_positions
+    # 目标增量对着策略级仓位算:目标 5.0 − 本策略 2.0 = 买 3.0(不是 5.0 − 4.5 = 0.5)
+    assert len(venue.calls) == 1
+    assert venue.calls[0].quantity == pytest.approx(3.0)
+    assert venue.calls[0].side == OrderSide.BUY
+
+
+def test_account_positions_none_falls_back_to_current_positions(ledger, monkeypatch):
+    # 向后兼容:单策略调用方不传 account_positions -> mandate 沿用 current_positions
+    #(单策略下账户=策略是事实,不是近似)
+    captured = {}
+    import live.pipeline as lp
+    real_evaluate = lp.evaluate_mandate
+
+    def spy_evaluate(orders, prices, mandate, **kw):
+        captured["mandate_positions"] = dict(kw["current_positions"])
+        return real_evaluate(orders, prices, mandate, **kw)
+
+    monkeypatch.setattr(lp, "evaluate_mandate", spy_evaluate)
+    submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={"BTC": 2.0},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=_FakeVenue(), mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=GlobalAuditLog(), strategy_id="crowd_contra",
+        decided_ts=_NOW, now=_NOW)
+    assert captured["mandate_positions"] == {"BTC": 2.0}
+
+
+def test_per_instrument_cap_enforced_on_account_level_exposure(ledger):
+    # 端到端证明口径修复的意义:本策略仓位 0,但账户级已有 4.9 BTC(另一条策略的),
+    # cap=$300k —— 新增 5.0 后账户投影 9.9×60000=$594k 超 cap,必须升人工;
+    # 若错用策略级仓位(0+5.0=5.0×60000=$300k=cap 恰好不超)就会漏放。
+    capped = Mandate(mandate_id="m3", venue="testnet", exchange="fake",
+                     allowed_instruments=frozenset({"BTC"}),
+                     max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9,
+                     per_instrument_max_notional=(("BTC", 300_000.0),))
+    venue = _FakeVenue()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={}, account_positions={"BTC": 4.9},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=capped,
+        ledger=ledger, audit=GlobalAuditLog(), strategy_id="stratX", decided_ts=_NOW, now=_NOW)
+    assert result.tier == NEEDS_HUMAN_REVIEW
+    assert any("per_instrument_cap_exceeded" in r for r in result.mandate_reasons)
+    assert venue.calls == []

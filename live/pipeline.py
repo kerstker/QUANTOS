@@ -163,9 +163,12 @@ def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: 
                           if f["client_order_id"] == o["client_order_id"])
             increment = result.filled_qty - already
             if increment > 1e-12:
+                # 恢复 fill 的 strategy_id 从**订单行**继承(2026-07-06 战线③):账目跟着订单
+                # 走,恢复路径不需要知道当前驱动器跑的是哪条策略(迁移后 orders() 行必有此键)。
                 ledger.record_fill(_det_id("recover_fill", o["client_order_id"]),
                                    o["client_order_id"], o["instrument_id"], OrderSide(o["side"]),
-                                   increment, result.avg_price, filled_at=now)
+                                   increment, result.avg_price, strategy_id=o["strategy_id"],
+                                   filled_at=now)
         resolved.append({"client_order_id": o["client_order_id"], "status": result.status,
                         "filled_qty": result.filled_qty})
     return {"resolved": resolved}
@@ -183,7 +186,7 @@ def _record_tca_failsoft(ledger: LiveLedger, audit: GlobalAuditLog, order: LiveO
         ledger.record_tca(_det_id("tca", order.client_order_id), client_order_id=order.client_order_id,
                           instrument_id=order.instrument_id, side=order.side,
                           decision_price=decision_price, fill_price=confirmed.avg_price,
-                          quantity=confirmed.filled_qty, recorded_at=now)
+                          quantity=confirmed.filled_qty, strategy_id=strategy_id, recorded_at=now)
     except Exception as exc:
         audit.append(event_id=_det_id("live_tca_err", run_id, order.instrument_id),
                      actor=f"live:{strategy_id}", action="LIVE_TCA_WRITE_FAILED", timestamp=now,
@@ -194,11 +197,18 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       current_positions: Mapping[str, float], gate, ctx_factory: Callable,
                       venue: VenueAdapter, mandate: Optional[Mandate], ledger: LiveLedger,
                       audit: GlobalAuditLog, strategy_id: str, decided_ts: int, now: int,
+                      account_positions: Optional[Mapping[str, float]] = None,
                       unit_scale: int = UNIT_SCALE,
                       max_confirm_polls: int = DEFAULT_MAX_CONFIRM_POLLS,
                       poll_sleep: Callable[[], None] = lambda: None,
                       slicer: Optional[Callable] = None,
                       frozen: frozenset = frozenset()) -> LiveBatchResult:
+    """`current_positions` vs `account_positions` 口径分离(2026-07-06 战线③,评审 #1):
+    `current_positions` = **本策略**的分账仓位——目标增量必须对着本策略自己的仓位算,否则第二条
+    策略的 delta 会去 net 第一条策略的持仓(把别人的仓当自己的平掉);`account_positions` =
+    **账户级**全量仓位——mandate 的 per-instrument cap 投影约束的是账户对该标的的总敞口,只看
+    本策略仓位会让两条策略各自贴着 cap、账户实际 2×cap 双双判 AUTO。`account_positions=None`
+    回退到 `current_positions`(单策略调用方向后兼容:单策略下账户=策略是事实,不是近似)。"""
     # run_id 含 now:同一决策在同一轮内确定,但两次独立调用(如提额后的调仓批)是两次运行,
     # 审计事件 id 不能撞(GlobalAuditLog 防重放会拒绝重复 event_id)
     run_id = _det_id(strategy_id, decided_ts, now, tuple(sorted(weights.items())))
@@ -244,9 +254,12 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                      action="LIVE_ORDER_DROPPED_BY_FILTER", timestamp=now, target=instrument_id,
                      metadata={"reason": reason})
 
+    # mandate 的账户上下文 = 账户级仓位(见函数 docstring 的口径分离;冻结不改变账户事实,
+    # 这里刻意不按 frozen 过滤——与既有"mandate 仍看全量 current_positions"的语义一致)
+    mandate_positions = account_positions if account_positions is not None else current_positions
     decision = evaluate_mandate(adjusted, prices, mandate, venue=venue.venue_mode,
                                exchange=getattr(venue, "venue_name", ""), now=now,
-                               current_positions=current_positions)
+                               current_positions=mandate_positions)
     audit.append(event_id=_det_id("live_mandate", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_MANDATE_DECISION", timestamp=now, target=run_id,
                 metadata={"tier": decision.tier, "reasons": ",".join(decision.reasons)})
@@ -320,12 +333,13 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                                        "filled_qty": str(confirmed.filled_qty)})
             try:
                 ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                         submitted_at=now, venue_order_id=confirmed.venue_order_id,
+                                         strategy_id=strategy_id, submitted_at=now,
+                                         venue_order_id=confirmed.venue_order_id,
                                          status=confirmed.status)
                 if confirmed.filled_qty > 0:
                     ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
                                        o.instrument_id, o.side, confirmed.filled_qty,
-                                       confirmed.avg_price, filled_at=now)
+                                       confirmed.avg_price, strategy_id=strategy_id, filled_at=now)
                     _record_tca_failsoft(ledger, audit, o, confirmed,
                                          decision_price=prices.get(o.instrument_id), run_id=run_id,
                                          strategy_id=strategy_id, now=now)

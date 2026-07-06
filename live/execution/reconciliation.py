@@ -1,8 +1,18 @@
 """本地账本 vs 交易所仓位对账(Stage 1)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5。
+docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5;账户级口径裁定:
+docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md §2。
 
 纯函数——只报告 drift,**不自动修正**。drift 是留给人/ops 流程处理的信号(核对成交回报是否
 漏记、是否有账外仓位变动),不是本层的决策权;`live/pipeline.py` 从不据此自动下单调整仓位。
+
+**对账永远是账户级的(2026-07-06 战线③裁定,勿"改进"成 per-strategy):** venue 仓位是账户级
+事实——Binance /fapi positionRisk、Bybit V5 position list 都不知道策略(Hedge Mode 的
+positionIdx 区分的是多空方向,不是策略)。**明令禁止**任何 "per-strategy vs venue" 对账:
+venue 侧没有这个信息,拿单策略分账去对账户级 venue 仓位必然报假 drift(其它策略的持仓全成了
+"漂移"),而拿本地分解对本地分解则是自己对自己、伪造独立性。调用方必须喂
+`ledger.all_positions()`(无参 = 账户级)。策略级一致性的真实保证 = 账本分区恒等式
+(Σ per-strategy == 账户级,结构性成立)+ 本文件的账户级外部核对,两者合起来:账户级 in_sync
+∧ 分区恒等式成立 ⇒ 每个策略分账的可信度等于账户账本的可信度。
 """
 from __future__ import annotations
 

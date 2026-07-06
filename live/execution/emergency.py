@@ -36,6 +36,12 @@ from services.monitoring.audit_log import GlobalAuditLog
 
 _EXPOSURE_BREACH_MARGIN = 0.9      # 减回到限额的 90%,留余量防止下一轮立刻再次越限
 _QTY_EPS = 1e-12                   # 浮点表示噪声容差(不改变"绝不超量"的方向)
+# 紧急减仓的保留账本(2026-07-06 战线③):与既有 audit actor "live:emergency_flatten" 同词,
+# 不造新词。紧急减仓作用于**账户级** venue 仓位,成交无法按策略归属(也不该在紧急时刻做归属
+# 决策)——记入保留账本后:账户级 `all_positions()` 立即正确(含减仓效果),各策略分账仍显示
+# "该策略以为自己持有的仓位",差额全部落在本账本里——分区恒等式不破、对账不破。事后重归属
+# (按比例/人工判断)是事故复盘的人工决定,不自动做(设计文档 §9 留白)。
+EMERGENCY_STRATEGY_ID = "emergency_flatten"
 
 
 def validate_flatten_order(side: OrderSide, qty: float, *, position: float) -> Optional[str]:
@@ -123,7 +129,7 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
     try:
         filters = venue.exchange_filters()
         adjusted, _dropped = apply_exchange_filters(validated, filters, prices,
-                                                    strategy_id="emergency_flatten",
+                                                    strategy_id=EMERGENCY_STRATEGY_ID,
                                                     decided_ts=now)
     except Exception as exc:
         audit.append(event_id=_det_id("emg_filters_err", run_id), actor="live:emergency_flatten",
@@ -133,7 +139,7 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
         adjusted = [replace(
             __req, reduce_only=True) for __req in (
             # 过滤器不可用 -> 原始数量直接构造请求,交易所是最终校验者
-            _raw_request(inst, side, qty, _cid("emergency_flatten", now, inst, side, qty))
+            _raw_request(inst, side, qty, _cid(EMERGENCY_STRATEGY_ID, now, inst, side, qty))
             for inst, side, qty in validated)]
     else:
         adjusted = [replace(o, reduce_only=True) for o in adjusted]    # 强制 reduce-only
@@ -169,16 +175,18 @@ def submit_emergency_flatten(*, flatten_orders: Sequence[Tuple[str, OrderSide, f
 
         try:
             ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                     submitted_at=now, venue_order_id=confirmed.venue_order_id,
+                                     strategy_id=EMERGENCY_STRATEGY_ID, submitted_at=now,
+                                     venue_order_id=confirmed.venue_order_id,
                                      status=confirmed.status)
             if confirmed.filled_qty > 0:
                 ledger.record_fill(_det_id("emg_fill", o.client_order_id), o.client_order_id,
                                    o.instrument_id, o.side, confirmed.filled_qty,
-                                   confirmed.avg_price, filled_at=now)
+                                   confirmed.avg_price, strategy_id=EMERGENCY_STRATEGY_ID,
+                                   filled_at=now)
                 # 紧急减仓的滑点恰恰是最值得度量的执行成本(压力时刻的市场冲击)
                 _record_tca_failsoft(ledger, audit, o, confirmed,
                                      decision_price=prices.get(o.instrument_id), run_id=run_id,
-                                     strategy_id="emergency_flatten", now=now)
+                                     strategy_id=EMERGENCY_STRATEGY_ID, now=now)
         except Exception as exc:
             ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
             audit.append(event_id=_det_id("emg_ledger_err", run_id, o.instrument_id),

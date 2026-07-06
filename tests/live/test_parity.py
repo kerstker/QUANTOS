@@ -100,3 +100,33 @@ def test_paper_weights_missing_decision_returns_none(tmp_path):
     fwd.record_decision("crowd_contra", _NOW, recorded_at=_NOW, weights={"BTC": 1.0}, signals={})
     assert paper_weights_from_forward_ledger(fwd, "crowd_contra", _NOW + 1) is None   # 不同期
     assert paper_weights_from_forward_ledger(fwd, "other_alpha", _NOW) is None        # 不同策略
+
+
+# --- 2026-07-06 战线③:parity 的 live 侧必须是**策略过滤**后的分账仓位 ---
+
+def test_parity_uses_strategy_filtered_positions_no_cross_strategy_false_positives(tmp_path):
+    """驱动器必须传 all_positions(strategy_id=本策略):否则第二条策略上线当天,第一条策略的
+    全部持仓都会变成本策略 parity 报告里的 unexpected_live_positions 假阳性。parity_report
+    本身是纯函数零改动(吃什么算什么)——这条钉的是喂给它的口径。"""
+    from live.execution.position_ledger import LiveLedger
+    from quantos.contracts.trading import OrderSide
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    # strat_a 持有 BTC(它自己的纸面决策);strat_b 持有 ETH(另一条策略的仓)
+    ledger.record_fill("fa", "a1", "BTC", OrderSide.BUY, 0.05, 60000.0,
+                       strategy_id="strat_a", filled_at=_NOW)
+    ledger.record_fill("fb", "b1", "ETH", OrderSide.SELL, 1.0, 3000.0,
+                       strategy_id="strat_b", filled_at=_NOW)
+
+    rep = parity_report(paper_weights={"BTC": 0.5}, paper_source="forward_ledger", aum=_AUM,
+                        prices=_PRICES,
+                        ledger_positions=ledger.all_positions(strategy_id="strat_a"),
+                        ledger_orders=ledger.orders(strategy_id="strat_a"),
+                        strategy_id="strat_a", decided_ts=_NOW, mode="submit")
+    assert rep["unexpected_live_positions"] == []          # strat_b 的 ETH 不进本策略的报告
+
+    # 反例(错误口径):喂账户级仓位 -> strat_b 的 ETH 变成假阳性
+    wrong = parity_report(paper_weights={"BTC": 0.5}, paper_source="forward_ledger", aum=_AUM,
+                          prices=_PRICES, ledger_positions=ledger.all_positions(),
+                          ledger_orders=ledger.orders(),
+                          strategy_id="strat_a", decided_ts=_NOW, mode="submit")
+    assert wrong["unexpected_live_positions"] == ["ETH"]

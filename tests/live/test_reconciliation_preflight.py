@@ -27,3 +27,29 @@ def test_drift_within_tolerance_proceeds():
 def test_empty_both_sides_proceeds():
     r = preflight_check({}, {})
     assert r["proceed"] is True and r["max_abs_drift"] == 0.0
+
+
+# --- 2026-07-06 战线③:对账永远是账户级(明令禁止 per-strategy vs venue 对账) ---
+
+def test_preflight_stays_account_level_with_multi_strategy_ledger(tmp_path):
+    """说明性测试(钉死设计裁定,不是新功能):venue 只知道账户,对账必须喂
+    `all_positions()`(账户级);拿单策略分账去对 venue 必然报假 drift——那不是对账,
+    是把其它策略的持仓当成漂移。"""
+    from live.execution.position_ledger import LiveLedger
+    from quantos.contracts.trading import OrderSide
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.record_fill("fa", "a1", "BTC", OrderSide.BUY, 0.010, 60000.0,
+                       strategy_id="strat_a", filled_at=1000)
+    ledger.record_fill("fb", "b1", "BTC", OrderSide.SELL, 0.004, 60000.0,
+                       strategy_id="strat_b", filled_at=1001)
+    venue_positions = {"BTC": 0.006}                      # 交易所看到的账户净仓位
+
+    # 唯一诚实的对账:账户级账本 vs venue —— in_sync
+    r = preflight_check(ledger.all_positions(), venue_positions, tolerance=1e-9)
+    assert r["proceed"] is True
+
+    # 反例(禁止的做法):单策略分账 vs venue —— 必然假 drift(strat_b 的 -0.004 被当成漂移)
+    wrong = preflight_check(ledger.all_positions(strategy_id="strat_a"), venue_positions,
+                            tolerance=1e-9)
+    assert wrong["proceed"] is False
+    assert wrong["drift"]["BTC"] == pytest.approx(-0.004)

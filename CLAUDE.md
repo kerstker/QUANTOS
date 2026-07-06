@@ -230,6 +230,25 @@ Real, tested backend engines (`*_TESTED` in the audit):
   持久化队列(此前只计数、进程退出即丢,现持久化+ops API+LiveDesk 面板,诚实边界:只记录
   决定不自动重提交)。**417→427 live+治理测试,全量门禁全绿**。仍未做:研究晋级前端闭环、
   多方批准持久化存储、LIMIT/条件单、strategy_id 仓位隔离。设计文档 §14。
+  **(2026-07-06 战线①③④更新:晋级闭环+多方批准持久化 ✓(见 services/governance 条)、
+  strategy_id 仓位隔离 ✓(见下)、IC 持有期+ALFRED ✓;LIMIT/条件单 = 战线②进行中。)**
+  **strategy_id 仓位隔离已落地**(2026-07-06 战线③):核心裁定 = strategy_id 只是**本地账本
+  分区维度**;venue/保证金/风控/对账/紧急减仓全部维持账户级(交易所不知道策略;per-strategy
+  vs venue 对账 = 拿本地分解自己对自己、伪造独立性,reconciliation.py 明令禁止)。结构性
+  不变量:各策略分区求和恒等于账户级 `all_positions()` 全集(测试钉死)。账本三表加 NOT NULL
+  `strategy_id`(新库无默认——裸 INSERT 报错不静默错标;老库惰性迁移 ALTER ADD COLUMN
+  DEFAULT 'crowd_contra',存量回填值经**只读核查为历史事实**:32-hex 决策订单前缀逐一反算
+  `decision_prefix("crowd_contra",…)` 命中;并发迁移吞 duplicate column——真实环境常驻 ops API
+  抢先迁移恰好证明该路径 load-bearing)。`submit_live_batch(account_positions=)` 口径分离:
+  目标增量对**本策略**分账仓位算(否则第二策略的 delta 会平掉第一策略的仓),mandate
+  per-instrument cap 投影收**账户级**全量(否则两策略各贴 cap、账户 2×cap 双双 AUTO);崩溃
+  恢复 fill 从订单行继承归属;紧急减仓记保留账本 `EMERGENCY_STRATEGY_ID`(不在紧急时刻做归属
+  决策,差额落保留账本、恒等式不破)。驱动器 `--strategy` + `_STRATEGIES` 注册表(未注册
+  SystemExit 先于任何网络)、`_venue_paths(strategy_id=)` 路径单一真源(默认策略沿历史路径,
+  只 status 分策略)、第二策略共享 mandate 首跑落单前即告警。真实账本已迁移并逐行比对备份
+  (binance 25 fills / bybit_demo 20 fills 全 crowd_contra;备份
+  `data/backup/pre-strategy-isolation-20260706/`)。+40 tests,全量门禁 1559 绿。设计:
+  `docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md`。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/

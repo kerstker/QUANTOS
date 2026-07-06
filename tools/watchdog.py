@@ -15,7 +15,7 @@ import time
 
 from live.execution.watchdog_check import check_staleness
 from tools.alert_sink import emit
-from tools.live_track_advance import _VENUES, _venue_paths
+from tools.live_track_advance import _STRATEGIES, _STRATEGY_ID, _VENUES, _venue_paths
 
 _FORWARD_TRACK_STATUS = os.path.join("data", "cache", "forward_track_status.json")
 _SENTINEL_STATUS = os.path.join("data", "cache", "risk_sentinel_status.json")
@@ -36,6 +36,23 @@ def _ran_at(path: str) -> "int | None":
         return None
 
 
+def live_track_status_targets(venue_name: str, suffix: str) -> list:
+    """per-(venue, **已调度** strategy) 的 status 新鲜度目标(2026-07-06 战线③,评审 #10)。
+    默认策略沿历史路径、恒被期待(venue 已配置即应每周运行);非默认策略只有在其状态文件
+    已存在(= 真的被调度运行过)时才进入期待集——注册表回答"谁能跑",不回答"谁被调度了",
+    按注册表全集期待会对"注册了但只在别的 venue 调度"的策略永久误报。代价诚实记录在案:
+    非默认策略被调度过一次后彻底下线,其遗留状态文件会持续告警,直到人工删除该文件
+    (这是特性——静默消失的调度正是死人开关要抓的)。返回 [(label, path), ...]。"""
+    targets = [(f"live_track_advance[{venue_name}]", _venue_paths(suffix)["status"])]
+    for strat in sorted(_STRATEGIES):
+        if strat == _STRATEGY_ID:
+            continue                                     # 默认策略走历史路径,上面已覆盖
+        path = _venue_paths(suffix, strategy_id=strat)["status"]
+        if os.path.exists(path):
+            targets.append((f"live_track_advance[{venue_name}:{strat}]", path))
+    return targets
+
+
 def main() -> None:
     now = int(time.time() * 1000)
     warnings = []
@@ -45,10 +62,9 @@ def main() -> None:
     for name, cfg in _VENUES.items():
         if not (os.path.exists(cfg["key_file"]) or os.environ.get(cfg["env"][0])):
             continue                                     # 未配置的 venue 不该被期待运行
-        paths = _venue_paths(cfg["suffix"])
-        warnings.append(check_staleness(_ran_at(paths["status"]), now=now,
-                                        max_age_ms=_WEEKLY_MAX_AGE_MS,
-                                        label=f"live_track_advance[{name}]"))
+        for label, path in live_track_status_targets(name, cfg["suffix"]):
+            warnings.append(check_staleness(_ran_at(path), now=now,
+                                            max_age_ms=_WEEKLY_MAX_AGE_MS, label=label))
     warnings.append(check_staleness(_ran_at(_SENTINEL_STATUS), now=now,
                                     max_age_ms=_HOURLY_MAX_AGE_MS, label="live_risk_sentinel"))
 

@@ -45,6 +45,21 @@ def test_manifest_never_includes_api_key_files(tmp_path):
     assert "live_mandate.json" in names
 
 
+def test_manifest_covers_per_strategy_status_files(tmp_path):
+    # 2026-07-06 战线③(评审 #6):非默认策略的 status 落
+    # live_track_status{suffix}_{strategy}.json —— 备份 glob "live_track_status*.json"
+    # 必须覆盖它,这里钉死(不许它只是"碰巧匹配")
+    cache = tmp_path / "cache"
+    key = tmp_path / "key"
+    cache.mkdir()
+    key.mkdir()
+    (cache / "live_track_status_stratX.json").write_text("x")
+    (cache / "live_track_status_bybit_demo_stratX.json").write_text("x")
+    names = {os.path.basename(p) for p in build_backup_manifest(str(cache), str(key))}
+    assert {"live_track_status_stratX.json",
+            "live_track_status_bybit_demo_stratX.json"} <= names
+
+
 def test_manifest_skips_nonexistent_files_honestly(tmp_path):
     cache = tmp_path / "cache"
     key = tmp_path / "key"

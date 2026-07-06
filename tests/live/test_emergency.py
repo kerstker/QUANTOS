@@ -32,13 +32,13 @@ def ledger(tmp_path):
     return LiveLedger(str(tmp_path / "live.db"), create=True)
 
 
-def _prefill(ledger, positions):
+def _prefill(ledger, positions, *, strategy_id="crowd_contra"):
     """把"当前持仓"预填进账本(模拟历史成交的累计结果),让减仓后的净仓位有真实语义。"""
     i = 0
     for inst, qty in positions.items():
         side = OrderSide.BUY if qty > 0 else OrderSide.SELL
         ledger.record_fill(f"pre-{i}", f"pre-order-{i}", inst, side, abs(qty),
-                           _PRICES[inst], filled_at=_NOW - 1000)
+                           _PRICES[inst], strategy_id=strategy_id, filled_at=_NOW - 1000)
         i += 1
 
 
@@ -282,3 +282,25 @@ def test_empty_flatten_orders_is_a_noop(ledger):
     result = submit_emergency_flatten(flatten_orders=[], positions={}, prices=_PRICES,
                                       venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
     assert result.submitted == () and venue.calls == []
+
+
+# --- 2026-07-06 战线③:紧急减仓成交记入保留账本 emergency_flatten ---
+
+def test_emergency_fills_use_reserved_strategy_id(ledger):
+    from live.execution.emergency import EMERGENCY_STRATEGY_ID
+    positions = {"BTC": 2.0}                                    # 账户级 venue 仓位
+    _prefill(ledger, positions, strategy_id="strat_a")          # 本地分账里这是 strat_a 的仓
+    orders = compute_flatten_orders(positions, _PRICES, target_gross_exposure=0.0)
+    venue = _FakeVenue()
+    result = submit_emergency_flatten(flatten_orders=orders, positions=positions, prices=_PRICES,
+                                      venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
+    assert len(result.submitted) == 1
+    emg_fills = ledger.fills(strategy_id=EMERGENCY_STRATEGY_ID)
+    assert len(emg_fills) == 1 and emg_fills[0]["instrument_id"] == "BTC"
+    # 账户级立即含减仓效果;strat_a 的分账不变("它以为自己持有的仓"),差额落在保留账本里,
+    # 分区恒等式不破——事后重归属是事故复盘的人工决定
+    assert ledger.all_positions().get("BTC", 0.0) == pytest.approx(0.0)
+    assert ledger.all_positions(strategy_id="strat_a")["BTC"] == pytest.approx(2.0)
+    assert ledger.all_positions(strategy_id=EMERGENCY_STRATEGY_ID)["BTC"] == pytest.approx(-2.0)
+    # TCA 同样落保留账本
+    assert all(t["strategy_id"] == EMERGENCY_STRATEGY_ID for t in ledger.tca_records())

@@ -75,6 +75,8 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
 from tools.signal_quality import rows_with_acceptable_coverage
 
+# 默认策略(账本回填/历史 status 路径的连续性锚点)。策略注册表 `_STRATEGIES` 在
+# `_latest_weights_and_prices` 定义之后(镜像 ic_panel_registry「加一行」范式)。
 _STRATEGY_ID = "crowd_contra"
 
 def _binance_balances(account: dict) -> tuple:
@@ -128,10 +130,19 @@ _VENUES = {
 }
 
 
-def _venue_paths(suffix: str) -> dict:
+def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
+    """**只有 status 是 per-strategy 的**(2026-07-06 战线③):两条策略顺序跑同一 venue 会
+    互相覆盖 status 快照 -> 默认策略沿用历史路径(连续性:watchdog/ops API/gonogo/备份 glob
+    不破),非默认策略加 `_{strategy_id}` 后缀;规则只在这一处生效,驱动器全部 4 个 status
+    写点(3 个 hard-stop + 正常收尾)共用 paths["status"]。其余全部是**账户概念、per-venue
+    共享**:账本(分账靠 strategy_id 列,不靠拆文件)/风控峰值/day_state/审计/kill_switch,
+    按策略拆开反而错;parity jsonl append-only 且记录自带 strategy_id 字段(自描述,共享
+    一个文件)。"""
+    strategy_part = "" if strategy_id == _STRATEGY_ID else f"_{strategy_id}"
+    status_name = f"live_track_status{suffix}{strategy_part}.json"
     return {
         "ledger": os.path.join("data", "cache", f"live_track{suffix}.db"),
-        "status": os.path.join("data", "cache", f"live_track_status{suffix}.json"),
+        "status": os.path.join("data", "cache", status_name),
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
@@ -219,7 +230,7 @@ def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss
 
 
 def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pnl, peak_equity,
-                     unit_scale=UNIT_SCALE):
+                     unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID):
     """gate 用的 RiskContext 工厂。`reference_price = 真实价格 / unit_scale`,使
     `intent.quantity(缩放整数) × reference_price` 落在真实美元名义额上(见 live/pipeline.py
     模块 docstring 的缩放约定)。est_daily_volume/instrument_vol 沿用既有 crowd_contra 干跑
@@ -245,7 +256,10 @@ def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pn
             market=MarketContext(instrument_id=intent.instrument_id, known=px is not None,
                                  reference_price=(px / unit_scale) if px else None, market_open=True,
                                  price_as_of=price_as_of, est_daily_volume=1e12, instrument_vol=0.8),
-            strategy=StrategyApproval(strategy_id=_STRATEGY_ID, approved=True,
+            # strategy_id 参数化(2026-07-06 评审 #8):此前硬编码默认策略,注册表化后第二条
+            # 策略的 gate 审计上下文会挂错策略名(check_strategy_approved 不比对 id,不误拒,
+            # 但审计痕迹必须真实)
+            strategy=StrategyApproval(strategy_id=strategy_id, approved=True,
                                       approval_id="live-track-driver"),
             now=now, max_staleness=_MAX_STALENESS_MS)
     return _factory
@@ -332,6 +346,41 @@ def _latest_weights_and_prices(panel_bundle=None):
     return {}, {}, int(ev[r_last]), {}
 
 
+# 策略注册表(2026-07-06 战线③,镜像 ic_panel_registry「加一行」范式):第二条策略上线 =
+# 这里加一行(signal 返回 (weights, prices, decided_ts, global_ls_row) 四元组)+ 用户重签
+# mandate(per-strategy 子限额 = commit 2,业务决定待用户拍板;未分块前两条策略共享 venue
+# 全额度,驱动器会告警,见 multi_strategy_mandate_alert)。CLI:--strategy(默认 crowd_contra,
+# 未注册 -> SystemExit)。注意:策略名会进 status 文件名(非默认策略),只用文件系统安全字符。
+_STRATEGIES = {
+    "crowd_contra": {"signal": _latest_weights_and_prices},
+}
+
+
+def position_scopes(ledger, strategy_id: str) -> tuple:
+    """两个仓位口径,一次取对(接错就是 bug,评审 risks #1):
+    - 账户级 `all_positions()` -> preflight 对账(venue 只知道账户)、gate 账户上下文
+      (敞口/集中度/杠杆看全账户)、mandate 的 per-instrument cap 投影(约束账户总敞口);
+    - 策略级 `all_positions(strategy_id=…)` -> 目标增量计算(否则第二条策略会把第一条的
+      持仓当自己的平掉)、parity(否则别的策略持仓全是 unexpected 假阳性)。"""
+    return ledger.all_positions(), ledger.all_positions(strategy_id=strategy_id)
+
+
+def multi_strategy_mandate_alert(ledger_strategy_ids, current_strategy: str, mandate) -> "str | None":
+    """多策略共享未分块 mandate 的告警(评审 #5 简化落地):基于**本次调用的 strategy_id**
+    判断(第二条策略首次运行、任何订单落库之前就响,不等事后 fills);emergency_flatten
+    保留账本不算策略。提醒而非硬停(维持"mandate 数字由用户签、代码不代填"的哲学);
+    mandate 一旦签署 per-strategy 子限额块(commit 2,待用户拍板),告警自动闭嘴。"""
+    from live.execution.emergency import EMERGENCY_STRATEGY_ID
+    seen = {s for s in set(ledger_strategy_ids) | {current_strategy}
+            if s != EMERGENCY_STRATEGY_ID}
+    if len(seen) >= 2 and not getattr(mandate, "strategies", None):
+        return (f"multiple strategies {sorted(seen)} share this venue's mandate but no "
+                f"per-strategy sub-limits are signed — total authorized notional is shared "
+                f"(worst case N× intended exposure); re-sign the mandate with per-strategy "
+                f"blocks before running more than one strategy with --submit")
+    return None
+
+
 _MIN_SIGNAL_LEG_RATIO = 0.8   # 与覆盖率门同一口径:信号腿数掉到上次决策的 80% 以下即视为数据问题
 
 
@@ -362,8 +411,14 @@ def main() -> None:
         venue_arg = sys.argv[sys.argv.index("--venue") + 1]
     if venue_arg not in _VENUES:
         raise SystemExit(f"unknown --venue {venue_arg!r} (choose from {sorted(_VENUES)})")
+    strategy_id = _STRATEGY_ID
+    if "--strategy" in sys.argv:
+        strategy_id = sys.argv[sys.argv.index("--strategy") + 1]
+    if strategy_id not in _STRATEGIES:
+        raise SystemExit(f"unknown --strategy {strategy_id!r} (choose from {sorted(_STRATEGIES)})")
     venue_cfg = _VENUES[venue_arg]
-    paths = _venue_paths(venue_cfg["suffix"])
+    # status 路径 per-(venue, strategy)(默认策略沿历史路径),其余账户级共享——见 _venue_paths
+    paths = _venue_paths(venue_cfg["suffix"], strategy_id=strategy_id)
     now = int(time.time() * 1000)
     alerts: list = []
 
@@ -376,7 +431,7 @@ def main() -> None:
             emit([f"live_track refresh CRASHED: {exc}"], context="live_track", now_ms=now)
             raise
 
-    weights, prices, decided_ts, global_ls_row = _latest_weights_and_prices()
+    weights, prices, decided_ts, global_ls_row = _STRATEGIES[strategy_id]["signal"]()
 
     # 拥挤度门(2026-07-05,机构审计 P1 quick win):crowding_gate.py 已建成测试却从未接入
     # 真实下单路径。crowd_contra 本身就是"反着做拥挤的散户多空仓位",这里量化它交易的对象
@@ -435,7 +490,7 @@ def main() -> None:
     try:
         from services.research.paper_trading.forward import ForwardLedger
         paper_weights = paper_weights_from_forward_ledger(
-            ForwardLedger(_FORWARD_DB), _STRATEGY_ID, decided_ts)
+            ForwardLedger(_FORWARD_DB), strategy_id, decided_ts)
         if paper_weights is not None:
             paper_source = "forward_ledger"
     except Exception:
@@ -453,22 +508,27 @@ def main() -> None:
     ledger = LiveLedger(paths["ledger"], create=True)
 
     # 崩溃恢复(2026-07-04):上一轮若在提交订单后、成交确认完成前被杀掉(如 Windows 定时任务被
-    # 系统重启打断),本地账本可能停在一个非终态快照。在读 ledger_positions 之前先核对+补记,
-    # 否则这一轮会用一个已知过期的仓位去算目标增量。fail-soft,查不到/查询失败都留到下次再试。
+    # 系统重启打断),本地账本可能停在一个非终态快照。在读仓位之前先核对+补记,否则这一轮会用
+    # 一个已知过期的仓位去算目标增量。fail-soft,查不到/查询失败都留到下次再试。账户级跑一遍
+    # 覆盖全部策略的遗留订单(补记的 fill 从订单行继承 strategy_id,与本轮跑哪条策略无关)。
     recovery = resolve_unconfirmed_orders(ledger, real_venue, now=now)
     if recovery["resolved"]:
         alerts.append(f"crash-recovery: resolved {len(recovery['resolved'])} unconfirmed order(s) "
                       f"from a prior run: {recovery['resolved']}")
 
     venue_positions = {k: v.quantity for k, v in real_venue.positions().items()}
-    ledger_positions = ledger.all_positions()
-    recon = preflight_check(ledger_positions, venue_positions, tolerance=_RECON_TOLERANCE)
+    # 口径分离(2026-07-06 战线③,本战线最大实施风险):账户级喂 preflight/gate/mandate/风控,
+    # 策略级喂目标增量/parity——见 position_scopes docstring。
+    account_positions, strategy_positions = position_scopes(ledger, strategy_id)
+    # 对账永远是账户级的(venue 只知道账户;per-strategy vs venue 对账被明令禁止,
+    # 见 live/execution/reconciliation.py)
+    recon = preflight_check(account_positions, venue_positions, tolerance=_RECON_TOLERANCE)
     if not recon["proceed"]:
         alerts.append(f"RECONCILIATION DRIFT: {recon['drift']} (max {recon['max_abs_drift']}) "
                       f"— refusing to submit new orders this cycle (HARD STOP)")
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
-                  "reconciliation": recon, "alerts": alerts},
+                  "strategy": strategy_id, "reconciliation": recon, "alerts": alerts},
                  open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: reconciliation drift {recon['drift']} -> {paths['status']}", flush=True)
         return
@@ -485,8 +545,8 @@ def main() -> None:
     _save_day_state(paths["day_state"], day_state)
 
     venue = real_venue if submit else PreviewVenue(real_venue)
-    # preview 模式绝不能把"本来会提交什么"写进真实账本——current_positions 仍然读自真实历史
-    # (上面的 ledger_positions),但写入目标必须是一次性草稿账本,不管 tier 判成什么都不触碰
+    # preview 模式绝不能把"本来会提交什么"写进真实账本——仓位仍然读自真实历史(上面的
+    # account/strategy_positions),但写入目标必须是一次性草稿账本,不管 tier 判成什么都不触碰
     # data/cache/live_track.db。这是纵深防御:即便未来 mandate 判成 AUTO,preview 模式也不会
     # 意外把占位记录污染进真实账本。紧急减仓走同一套 preview 机制。
     write_ledger = ledger if submit else LiveLedger(":memory:", create=True)
@@ -509,7 +569,8 @@ def main() -> None:
                       f"see docs/runbooks/live-trading-runbook.md")
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
-                  "kill_switch_halted": True, "incident_id": kill_switch.state.incident_id,
+                  "strategy": strategy_id, "kill_switch_halted": True,
+                  "incident_id": kill_switch.state.incident_id,
                   "alerts": alerts}, open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: kill-switch still tripped (incident={kill_switch.state.incident_id}) "
               f"-> {paths['status']}", flush=True)
@@ -551,6 +612,7 @@ def main() -> None:
             alerts.append("no auto-flatten (data-quality breach only) — manual review required")
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
+                  "strategy": strategy_id,
                   "risk_breach": {"reasons": breach.reasons, "drawdown_pct": breach.drawdown_pct,
                                  "gross_exposure": breach.gross_exposure,
                                  "net_exposure": breach.net_exposure},
@@ -566,6 +628,13 @@ def main() -> None:
         mandate = load_mandate(venue_cfg["mandate_file"])
     except MandateLoadError as exc:
         alerts.append(f"mandate not loaded ({exc}) — batch will require human review")
+
+    # 多策略共享未分块 mandate 的告警(2026-07-06 战线③,评审 #5):基于本次 strategy_id +
+    # 账本历史(orders ∪ fills)判断,第二条策略首次运行、任何订单落库之前就响。
+    # 提醒而非硬停;per-strategy 子限额(mandate.strategies)是待用户签署的业务决定。
+    ms_alert = multi_strategy_mandate_alert(ledger.strategy_ids(), strategy_id, mandate)
+    if ms_alert is not None:
+        alerts.append(ms_alert)
 
     # 部署容量按 mandate 定(2026-07-05,用户口头授权"总限额 2000 USDT"后落地):mandate 是
     # "系统可以不经人工自主执行多少"的业务授权,所以 book 的目标 gross 必须 ≤ mandate 的
@@ -585,9 +654,10 @@ def main() -> None:
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
 
+    # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
-                                   current_positions=ledger_positions, day_pnl=day_pnl,
-                                   peak_equity=peak_equity)
+                                   current_positions=account_positions, day_pnl=day_pnl,
+                                   peak_equity=peak_equity, strategy_id=strategy_id)
     # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
     # (那会把消失的持仓名字目标置 0、生成真实平仓单)。对账/风控/kill-switch 检查在上面已
@@ -596,22 +666,26 @@ def main() -> None:
         alerts.append(f"BATCH SKIPPED (positions untouched): {skip_reason}")
         result = LiveBatchResult(tier="SKIPPED_DATA_QUALITY")
     else:
+        # current_positions=策略级(目标增量对着本策略自己的仓位算,绝不 net 别的策略的仓);
+        # account_positions=账户级(mandate per-instrument cap 投影约束账户总敞口)——评审 #1
         result = submit_live_batch(
-            weights=weights, prices=prices, aum=deploy_aum, current_positions=ledger_positions,
+            weights=weights, prices=prices, aum=deploy_aum,
+            current_positions=strategy_positions, account_positions=account_positions,
             gate=gate, ctx_factory=ctx_factory, venue=venue,
-            mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=_STRATEGY_ID,
+            mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=strategy_id,
             decided_ts=decided_ts, now=now, frozen=frozenset(frozen_names),
             poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
 
     # live-paper 对账(2026-07-05):纸面侧优先用 Stage 0 台账里记录在案的权重(不是重算的
     # 信号——重算会掩盖两条路径间的信号漂移);台账缺这一期时回退到本轮计算的 weights,
-    # 来源如实标注(paper_weights 已在跳批判断前加载)。live 侧仓位:submit 用真实账本
-    # (含本轮成交),preview 用真实历史仓位。
+    # 来源如实标注(paper_weights 已在跳批判断前加载)。live 侧仓位:**策略过滤后的分账**
+    # (2026-07-06 战线③:否则第二条策略上线当天,第一条的全部持仓都是本策略 parity 里的
+    # unexpected 假阳性)——submit 用真实账本重读(含本轮成交),preview 用真实历史分账。
     parity = parity_report(
         paper_weights=paper_weights if paper_weights is not None else weights,
         paper_source=paper_source, aum=deploy_aum, prices=prices,
-        ledger_positions=(ledger.all_positions() if submit else ledger_positions),
-        ledger_orders=write_ledger.orders(), strategy_id=_STRATEGY_ID, decided_ts=decided_ts,
+        ledger_positions=(ledger.all_positions(strategy_id=strategy_id) if submit else strategy_positions),
+        ledger_orders=write_ledger.orders(), strategy_id=strategy_id, decided_ts=decided_ts,
         mode="submit" if submit else "preview")
     parity["ran_at"] = now
     with open(paths["parity"], "a", encoding="utf-8") as fh:
@@ -650,6 +724,7 @@ def main() -> None:
 
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
+        "strategy": strategy_id,
         "venue": venue_arg, "tca": tca, "order_stats": order_stats,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),

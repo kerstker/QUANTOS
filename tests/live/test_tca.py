@@ -53,9 +53,11 @@ def test_invalid_prices_return_none():
 
 def test_record_tca_round_trip_and_idempotent(ledger):
     ledger.record_tca("f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.BUY,
-                      decision_price=60000.0, fill_price=60060.0, quantity=0.01, recorded_at=_NOW)
+                      decision_price=60000.0, fill_price=60060.0, quantity=0.01,
+                      strategy_id="crowd_contra", recorded_at=_NOW)
     ledger.record_tca("f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.BUY,
-                      decision_price=1.0, fill_price=2.0, quantity=9.9, recorded_at=_NOW)  # 重复写忽略
+                      decision_price=1.0, fill_price=2.0, quantity=9.9,
+                      strategy_id="crowd_contra", recorded_at=_NOW)  # 重复写忽略
     rows = ledger.tca_records()
     assert len(rows) == 1
     assert rows[0]["fill_id"] == "f1"
@@ -82,7 +84,8 @@ def test_tca_records_on_legacy_ledger_without_table_is_empty_and_lazy_creates(tm
     legacy = LiveLedger(path)                                   # create=False,老库原样打开
     assert legacy.tca_records() == []
     legacy.record_tca("f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.SELL,
-                      decision_price=100.0, fill_price=99.0, quantity=1.0, recorded_at=_NOW)
+                      decision_price=100.0, fill_price=99.0, quantity=1.0,
+                      strategy_id="crowd_contra", recorded_at=_NOW)
     assert len(legacy.tca_records()) == 1
 
 
