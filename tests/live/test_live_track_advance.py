@@ -75,6 +75,28 @@ def test_make_ctx_factory_recent_timestamps_default_empty_keeps_old_behavior():
     assert ctx.recent_timestamps == ()
 
 
+# --- 真实 ADV/波动接线(Phase 4 子项1,P1-5 深化):升级结构性失效的 check_liquidity/check_volatility ---
+
+def test_make_ctx_factory_adv_vol_default_none_keeps_placeholder():
+    # 未提供(None)-> 保留占位符 1e12/0.8(向后兼容零回归,gate 不因此误拒)
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(prices, **kw)(_FakeIntent("BTC"))
+    assert ctx.market.est_daily_volume == 1e12 and ctx.market.instrument_vol == 0.8
+
+
+def test_make_ctx_factory_uses_real_adv_vol_when_provided():
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(prices, adv_units={"BTC": 2e7}, inst_vol={"BTC": 0.9}, **kw)(_FakeIntent("BTC"))
+    assert ctx.market.est_daily_volume == 2e7 and ctx.market.instrument_vol == 0.9
+
+
+def test_make_ctx_factory_missing_adv_vol_fails_closed_none():
+    # 提供了 dict 但缺该标的 -> None -> check_liquidity/check_volatility fail-closed 拒(缺数据不放行)
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(prices, adv_units={}, inst_vol={}, **kw)(_FakeIntent("GHOST"))
+    assert ctx.market.est_daily_volume is None and ctx.market.instrument_vol is None
+
+
 # --- 2026-07-05 机构审计修复:新鲜度门真实接线 + 账户上下文去虚构 ---
 
 def test_price_as_of_is_real_decision_time_not_wall_clock():

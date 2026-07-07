@@ -256,7 +256,8 @@ def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss
 
 
 def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pnl, peak_equity,
-                     unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID, recent_timestamps=()):
+                     unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID, recent_timestamps=(),
+                     adv_units=None, inst_vol=None):
     """gate 用的 RiskContext 工厂。`reference_price = 真实价格 / unit_scale`,使
     `intent.quantity(缩放整数) × reference_price` 落在真实美元名义额上(见 live/pipeline.py
     模块 docstring 的缩放约定)。est_daily_volume/instrument_vol 沿用既有 crowd_contra 干跑
@@ -275,13 +276,19 @@ def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pn
 
     def _factory(intent):
         px = prices.get(intent.instrument_id)
+        # ADV/波动(Phase 4 子项1,P1-5 深化):adv_units/inst_vol 提供真实值时用之(缺键 → None →
+        # check_liquidity/check_volatility **fail-closed 拒该标的**);未提供(None,向后兼容)时保留既有
+        # 占位符 est_daily_volume=1e12/instrument_vol=0.8(gate 不因此误拒)。缩放:真实 ADV 须 ×unit_scale
+        # (见 live/execution/market_stats.py),使 intent.quantity(缩放整数)/est_daily_volume = 真实参与率。
+        est_vol = 1e12 if adv_units is None else adv_units.get(intent.instrument_id)
+        inst_v = 0.8 if inst_vol is None else inst_vol.get(intent.instrument_id)
         return RiskContext(
             account=AccountRiskState(account_id="live_testnet", cash=aum, equity=aum,
                                      day_pnl=day_pnl, peak_equity=peak_equity,
                                      positions=gate_positions),
             market=MarketContext(instrument_id=intent.instrument_id, known=px is not None,
                                  reference_price=(px / unit_scale) if px else None, market_open=True,
-                                 price_as_of=price_as_of, est_daily_volume=1e12, instrument_vol=0.8),
+                                 price_as_of=price_as_of, est_daily_volume=est_vol, instrument_vol=inst_v),
             # strategy_id 参数化(2026-07-06 评审 #8):此前硬编码默认策略,注册表化后第二条
             # 策略的 gate 审计上下文会挂错策略名(check_strategy_approved 不比对 id,不误拒,
             # 但审计痕迹必须真实)
