@@ -34,12 +34,21 @@ from live.governance.mandate_store import MandateLoadError, load_mandate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.firm_aggregation import aggregate_firm_books
+from services.portfolio.firm_gate import evaluate_firm_gate
 from tools.alert_sink import emit
 from tools.live_snapshot import binance_position_rows, bybit_position_rows, portfolio_summary
 from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equity,
                                       _save_peak_equity, _venue_paths)
 
 _MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
+# firm 级敞口硬门上限(审计 P1-6;**用户 2026-07-07 亲自签署**的业务风险预算,非工程占位):
+# 所有交易所加总的名义额绝对值之和上限 / 净方向敞口上限(gross 的 1/2)/ 单个币跨所占 firm_gross
+# 的比例上限。哨兵(能看到两所仓位)据此写 firm_gate_status.json;驱动器读它 BLOCK 就停止新增(见
+# services/portfolio/firm_gate.py::firm_gate_skip_reason,自清除、不 arm 三方复位 kill-switch)。
+_FIRM_MAX_GROSS = 20000.0
+_FIRM_MAX_NET = 10000.0
+_FIRM_MAX_SINGLE_NAME_WEIGHT = 0.20
+_FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
 
 
 def _equity_path(suffix: str) -> str:
@@ -170,6 +179,7 @@ def main() -> None:
     firm_view = None
     book_positions = {r["venue"]: r["notional_by_instrument"] for r in results
                       if "notional_by_instrument" in r}
+    firm_gate = None
     if len(book_positions) >= 2:
         firm_view = aggregate_firm_books(
             book_positions, {v: 1.0 for v in book_positions})
@@ -177,9 +187,25 @@ def main() -> None:
             emit([f"SENTINEL FIRM AGGREGATION: {firm_view['n_overlaps']} symbol(s) held across "
                   f"multiple venues (hidden concentration): {firm_view['overlaps']}"],
                  context="risk_sentinel", now_ms=now)
+        # firm 硬门(审计 P1-6):把诊断视图 + 用户签署的上限 -> BLOCK/PASS,写状态供驱动器读。
+        # BLOCK 是真实**跨所越限**(不再只是 overlap 存在);驱动器读到即停止新增,自清除。
+        firm_gate = evaluate_firm_gate(firm_view, max_gross=_FIRM_MAX_GROSS, max_net=_FIRM_MAX_NET,
+                                       max_single_name_weight=_FIRM_MAX_SINGLE_NAME_WEIGHT)
+        firm_gate = {**firm_gate, "ran_at": now,
+                     "firm_gross": firm_view.get("firm_gross"), "firm_net": firm_view.get("firm_net"),
+                     "limits": {"max_gross": _FIRM_MAX_GROSS, "max_net": _FIRM_MAX_NET,
+                                "max_single_name_weight": _FIRM_MAX_SINGLE_NAME_WEIGHT}}
+        json.dump(firm_gate, open(_FIRM_GATE_STATUS_PATH, "w", encoding="utf-8"), indent=2)
+        if firm_gate["status"] == "BLOCK":
+            emit([f"SENTINEL FIRM GATE BLOCK: {firm_gate['reasons']} — firm over signed limits "
+                  f"(gross=${firm_view['firm_gross']:.2f}/${_FIRM_MAX_GROSS:.0f}, "
+                  f"net=${firm_view['firm_net']:.2f}/${_FIRM_MAX_NET:.0f}); drivers will stop adding "
+                  f"new exposure until it drops back (self-clearing) — human review advised"],
+                 context="risk_sentinel", now_ms=now)
 
     status_path = os.path.join("data", "cache", "risk_sentinel_status.json")
-    json.dump({"ran_at": now, "act": act, "results": results, "firm_view": firm_view},
+    json.dump({"ran_at": now, "act": act, "results": results, "firm_view": firm_view,
+               "firm_gate": firm_gate},
               open(status_path, "w", encoding="utf-8"), indent=2)
     for r in results:
         flag = "BREACH" if r.get("breached") else ("ERROR" if r.get("error") else "ok")

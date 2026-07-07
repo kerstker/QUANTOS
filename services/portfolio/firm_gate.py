@@ -65,3 +65,17 @@ def evaluate_firm_gate(firm_view: dict, *, max_gross: Optional[float] = None,
     if reasons:
         return {"status": "BLOCK", "reasons": tuple(reasons)}
     return {"status": "PASS", "reasons": ()}
+
+
+def firm_gate_skip_reason(firm_status: object) -> Optional[str]:
+    """给驱动器读的桥:firm 门是**跨所**的,只有能看到两所仓位的哨兵能算——驱动器(单 venue 跑)
+    读哨兵写的 firm_gate 状态 dict,BLOCK 时返回一条 skip 原因(驱动器据此**停止新增**、自清除:
+    敞口降回限内后哨兵下一轮写回 PASS,驱动器恢复;不 arm 需三方复位的 kill-switch——exposure 限额
+    震荡附近不该把系统卡死)。fail-safe:None/非 dict/非 BLOCK -> None(无 firm 数据时单 venue 的
+    per-venue mandate 兜底,不伪造 block)。"""
+    if not isinstance(firm_status, dict):
+        return None
+    if firm_status.get("status") == "BLOCK":
+        reasons = firm_status.get("reasons", ())
+        return f"firm_gate_block:{','.join(str(r) for r in reasons)}"
+    return None

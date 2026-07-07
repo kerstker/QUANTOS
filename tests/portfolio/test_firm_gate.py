@@ -1,7 +1,7 @@
 """firm 级敞口硬门(services/portfolio/firm_gate.py):把 aggregate_firm_books 的诊断视图 + 上限
 -> BLOCK/PASS/UNCONFIGURED。审计 P1-6——把"只诊断不阻断"的 firm 聚合升级成可阻断的硬门(数字由人签)。"""
 from services.portfolio.firm_aggregation import aggregate_firm_books
-from services.portfolio.firm_gate import evaluate_firm_gate
+from services.portfolio.firm_gate import evaluate_firm_gate, firm_gate_skip_reason
 
 
 def _view(books, notionals=None):
@@ -64,3 +64,21 @@ def test_non_finite_limit_fails_closed():
     view = _view({"a": {"BTC": 1.0}}, {"a": 1000.0})
     d = evaluate_firm_gate(view, max_gross=float("nan"))
     assert d["status"] == "BLOCK" and any("non_finite_firm_limit" in r for r in d["reasons"])
+
+
+# --- firm_gate_skip_reason:哨兵写状态 -> 驱动器读并停止新增 ---
+
+def test_skip_reason_block_returns_reason():
+    r = firm_gate_skip_reason({"status": "BLOCK", "reasons": ["firm_gross_exceeded:20001.00>20000.00"]})
+    assert r is not None and r.startswith("firm_gate_block:")
+
+
+def test_skip_reason_pass_is_none():
+    assert firm_gate_skip_reason({"status": "PASS", "reasons": []}) is None
+
+
+def test_skip_reason_missing_or_bad_is_none_failsafe():
+    # 无 firm 数据(单 venue / 哨兵没跑)-> None,不伪造 block(per-venue mandate 兜底)
+    assert firm_gate_skip_reason(None) is None
+    assert firm_gate_skip_reason("not-a-dict") is None
+    assert firm_gate_skip_reason({}) is None

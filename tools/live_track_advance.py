@@ -63,6 +63,7 @@ from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.governance.validation_attestation import (ValidationAttestationError, load_attestations,
                                                     require_validation_attestation)
+from services.portfolio.firm_gate import firm_gate_skip_reason
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
                            submit_live_batch)
 from services.monitoring.audit_store import DurableAuditLog
@@ -85,6 +86,8 @@ _STRATEGY_ID = "crowd_contra"
 # 验证证明门文件(审计 P1-1):策略级、跨 venue 共享(不是 per-venue 授权),gitignored(与 mandate
 # 同处 key/,由真人签署)。缺文件/坏文件 -> fail-closed 全部 BLOCK。模板见 tools.create_validation_attestation_template。
 _VALIDATION_ATTESTATION_FILE = os.path.join("key", "live_validation_attestations.json")
+# firm 硬门状态(审计 P1-6):由哨兵 tools/live_risk_sentinel.py 写(它能看两所仓位),驱动器只读。
+_FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
 
 def _binance_balances(account: dict) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
@@ -176,13 +179,18 @@ _CROSS_CHECK_MAX_STALENESS_MS = 3 * 86_400_000
 _CROSS_CHECK_DIVERGENCE_PER_DAY = 0.05
 
 
-def _load_day_state(path: str) -> Optional[dict]:
+def _load_json_or_none(path: str) -> Optional[dict]:
+    """通用只读 JSON 加载:缺文件/坏文件 -> None(fail-safe,不崩驱动器)。"""
     if os.path.exists(path):
         try:
             return json.load(open(path, encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
     return None
+
+
+def _load_day_state(path: str) -> Optional[dict]:
+    return _load_json_or_none(path)
 
 
 def _save_day_state(path: str, state: dict) -> None:
@@ -769,6 +777,18 @@ def main() -> None:
             # fail-closed:复用跳批路径(仓位原样不动),即便 mandate 已签也不真提交。skip_reason
             # 字符串记进 status JSON(line ~840)= 真源;preserve 既有的数据质量跳批原因。
             skip_reason = skip_reason or f"blocked_no_validation_attestation:{att_reason}"
+
+    # firm 级敞口硬门(审计 P1-6,用户 2026-07-07 签署上限):firm 门是**跨所**的,只有哨兵能算——
+    # 这里读哨兵写的 firm_gate_status.json,BLOCK(firm 超签署的 gross/net/单名集中上限)时停止新增
+    # (自清除:敞口降回限内后哨兵写回 PASS,驱动器恢复;不 arm 三方复位 kill-switch)。缺文件/单
+    # venue -> None,per-venue mandate 兜底。preview 只告警,--submit 才跳批(与 attestation 一致)。
+    firm_status = _load_json_or_none(_FIRM_GATE_STATUS_PATH)
+    firm_skip = firm_gate_skip_reason(firm_status)
+    if firm_skip is not None:
+        alerts.append(f"firm gate BLOCK ({firm_skip}) — live submit will stop adding new exposure "
+                      f"until firm exposure drops back under signed limits")
+        if submit:
+            skip_reason = skip_reason or firm_skip
 
     # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
