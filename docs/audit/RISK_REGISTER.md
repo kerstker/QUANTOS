@@ -32,10 +32,12 @@
 - P0-1/P0-2(Phase 14 + mandate 签名,需真人)。
 - **P1-6 接线**:firm 硬门机制已建好,接进 `tools/live_risk_sentinel.py` 只差你签 3 个上限(firm max_gross /
   max_net / max_single_name_weight)。
-- **P1-5 频率引擎**:用户 2026-07-07 给了方向(时间窗 24H、中高频率)。⚠ **重大含义**:现平台是**周度
-  cadence**(`_MAX_STALENESS_MS`=7 天、周一调度、crowd_contra 周度信号),而"24H 中高频"需要**实时/日内
-  数据层**——正是审计维度 2 标记为 MISSING 的能力。这不是一个 rate-limit 数字能解决的,是需要一起设计的
-  cadence 转型(与 P2-3 同属"共同探讨"桶)。频率引擎的 timestamp 回填机制可先建,但阈值 + cadence 需先谈。
+- **P1-5 频率引擎**:✅**已接线**(2026-07-07)——改名 `rate_window_s`→`rate_window_ms`(消除"秒当 ms"
+  死代码陷阱)+ 从持久账本回填 recent_timestamps + runaway-guard(24h 窗/上限 500 **工程占位待你确认**)。
+  ⚠ 但"24H 中高频"的**大方向**是一次**周度→日内 cadence 转型**,牵动实时数据层(审计维度 2 标记 MISSING)、
+  调度、新鲜度、成本——见专门文档 [`CADENCE_1H_SHIFT.md`](CADENCE_1H_SHIFT.md)。**关键裁定:现有信号类 1H
+  大概率无边**(crowd_contra 持有期越短边越弱)。基础设施(CadenceConfig / 1H 抓取器 / 频率护栏)已建为纯加法,
+  但真启用 1H 执行需整组危险单点一起改 + 过验证门,是需一起设计的决定。
 - **P2-3 峰值权益合理性上界**:用户 2026-07-07 明确"需要共同探讨",不自动实现。
 见 [`NEXT_CLAUDE_CODE_PROMPTS.md`](NEXT_CLAUDE_CODE_PROMPTS.md)。**结论:所有无需风险阈值、无需人工拍板的
 fail-closed 加固已全部落地(10 项);剩余项要么等你签一个数字(P1-6 接线),要么是需要一起设计的策略/
