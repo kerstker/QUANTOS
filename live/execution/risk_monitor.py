@@ -14,6 +14,7 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §9。
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import List, Mapping, Optional, Tuple
 
@@ -33,12 +34,25 @@ class RiskBreach:
     net_exposure: float
 
 
+def _finite(x: object) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
+
+
 def evaluate_risk_state(*, equity: float, peak_equity: float, positions: Mapping[str, float],
                         prices: Mapping[str, float], max_drawdown_pct: float,
-                        max_gross_exposure: float, max_net_exposure: float) -> RiskBreach:
+                        max_gross_exposure: float, max_net_exposure: float,
+                        min_margin_ratio: Optional[float] = None,
+                        maint_margin_balance: Optional[float] = None,
+                        margin_maint_amount: Optional[float] = None) -> RiskBreach:
     """纯函数:根据真实权益/仓位/价格算回撤 + 总/净敞口,判断是否越过阈值。fail-closed:
     peak_equity<=0 或某腿缺价导致无法估值 -> 记进 reasons(本身就算一次越限,不是静默跳过——
-    "数据不完整、无法确认安全"和"确认越限"在响应上应该一样保守)。"""
+    "数据不完整、无法确认安全"和"确认越限"在响应上应该一样保守)。
+
+    维持保证金比率地板(Phase 5 item 2,加法可选,默认 None -> 旧行为字节等价):`min_margin_ratio`
+    非 None 时,比率 = maint_margin_balance / margin_maint_amount(如 Binance totalMarginBalance /
+    totalMaintMargin)< 地板 -> 记 'margin_ratio_below_floor'。margin_maint_amount<=0(无维持要求)
+    -> 安全不报;开启但余额/维持额缺或非有限 -> fail-closed 记 'margin_data_incomplete'。地板是用户签
+    的风险数字——默认 None(不绑定)。"""
     reasons: List[str] = []
     drawdown_pct = 0.0
     if peak_equity > 0:
@@ -65,6 +79,19 @@ def evaluate_risk_state(*, equity: float, peak_equity: float, positions: Mapping
         reasons.append(f"gross_exposure_exceeded:{gross:.2f}>{max_gross_exposure}")
     if abs(net) > max_net_exposure:
         reasons.append(f"net_exposure_exceeded:{net:.2f}>{max_net_exposure}")
+
+    # 维持保证金比率地板(加法,默认 None 不绑定 -> 上面逻辑完全不变)
+    if min_margin_ratio is not None:
+        if not _finite(margin_maint_amount):
+            reasons.append("margin_data_incomplete:maint_amount")
+        elif float(margin_maint_amount) > 0:                 # 有维持保证金要求才有比率可言
+            if not _finite(maint_margin_balance):
+                reasons.append("margin_data_incomplete:balance")
+            else:
+                ratio = float(maint_margin_balance) / float(margin_maint_amount)
+                if ratio < float(min_margin_ratio):
+                    reasons.append(f"margin_ratio_below_floor:{ratio:.4f}<{float(min_margin_ratio)}")
+        # margin_maint_amount<=0 -> 无维持要求 -> 安全,不报
 
     return RiskBreach(breached=bool(reasons), reasons=tuple(reasons), drawdown_pct=drawdown_pct,
                       gross_exposure=gross, net_exposure=net)

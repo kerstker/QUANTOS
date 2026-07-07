@@ -80,6 +80,50 @@ def test_multiple_simultaneous_breaches_all_reported():
     assert "net_exposure_exceeded" in reasons_str
 
 
+# --- evaluate_risk_state: additive margin-ratio floor (Phase 5 item 2, all params default None) ---
+
+def test_margin_params_default_none_byte_identical():
+    # 新增 margin 参默认 None -> 与既有 no-breach 用例逐位相同(零回归)
+    r = evaluate_risk_state(equity=95_000.0, peak_equity=100_000.0,
+                            positions={"BTC": 0.01}, prices={"BTC": 60000.0},
+                            max_drawdown_pct=0.20, max_gross_exposure=1e9, max_net_exposure=1e9)
+    assert r.breached is False and r.reasons == ()
+
+
+def test_margin_ratio_below_floor_adds_reason():
+    r = evaluate_risk_state(equity=100_000.0, peak_equity=100_000.0, positions={}, prices={},
+                            max_drawdown_pct=0.5, max_gross_exposure=1e9, max_net_exposure=1e9,
+                            maint_margin_balance=1100.0, margin_maint_amount=1000.0,
+                            min_margin_ratio=1.5)          # ratio 1.1 < 1.5 -> breach
+    assert r.breached is True
+    assert any("margin_ratio_below_floor" in x for x in r.reasons)
+
+
+def test_margin_ratio_above_floor_no_reason():
+    r = evaluate_risk_state(equity=100_000.0, peak_equity=100_000.0, positions={}, prices={},
+                            max_drawdown_pct=0.5, max_gross_exposure=1e9, max_net_exposure=1e9,
+                            maint_margin_balance=3000.0, margin_maint_amount=1000.0,
+                            min_margin_ratio=1.5)          # ratio 3.0 >= 1.5 -> ok
+    assert r.breached is False
+
+
+def test_margin_no_maintenance_requirement_is_safe():
+    # margin_maint_amount 0(无持仓/无维持保证金要求)-> 安全,不报(不是数据缺失)
+    r = evaluate_risk_state(equity=100_000.0, peak_equity=100_000.0, positions={}, prices={},
+                            max_drawdown_pct=0.5, max_gross_exposure=1e9, max_net_exposure=1e9,
+                            maint_margin_balance=100.0, margin_maint_amount=0.0, min_margin_ratio=1.5)
+    assert r.breached is False
+
+
+def test_margin_incomplete_data_fails_closed_when_enabled():
+    # 开启 min_margin_ratio 但余额缺 -> fail-closed 记一条 reason(数据不全 = 保守当越限)
+    r = evaluate_risk_state(equity=100_000.0, peak_equity=100_000.0, positions={}, prices={},
+                            max_drawdown_pct=0.5, max_gross_exposure=1e9, max_net_exposure=1e9,
+                            maint_margin_balance=None, margin_maint_amount=1000.0, min_margin_ratio=1.5)
+    assert r.breached is True
+    assert any("margin_data_incomplete" in x for x in r.reasons)
+
+
 # --- respond_to_breach ---
 
 def test_no_breach_does_not_arm_kill_switch():

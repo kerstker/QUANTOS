@@ -21,10 +21,13 @@ risk_state 文件(同一个回撤口径,不各说各话)。用法:
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
+from typing import Optional
 
+from live.execution.anomaly import detect_equity_anomaly
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
 from live.execution.position_ledger import LiveLedger
 from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
@@ -41,6 +44,10 @@ from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equ
                                       _save_peak_equity, _venue_paths)
 
 _MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
+# 盘中权益跳变告警阈值(Phase 5 item 2):两轮之间 |权益跳变| 超过它就**告警一次**(仅告警,绝不
+# arm kill-switch / 减仓 / 碰 order 路径——异常常良性但值得人看)。**默认 None = 关闭**(生产字节
+# 等价):这是**用户签的风险数字**,签一个数(如 0.15)才启用。见 live/execution/anomaly.py 文档。
+_EQUITY_JUMP_ALERT_PCT: Optional[float] = None
 # firm 级敞口硬门上限(审计 P1-6;**用户 2026-07-07 亲自签署**的业务风险预算,非工程占位):
 # 所有交易所加总的名义额绝对值之和上限 / 净方向敞口上限(gross 的 1/2)/ 单个币跨所占 firm_gross
 # 的比例上限。哨兵(能看到两所仓位)据此写 firm_gate_status.json;驱动器读它 BLOCK 就停止新增(见
@@ -58,6 +65,29 @@ def _equity_path(suffix: str) -> str:
 def append_equity_point(path: str, point: dict) -> None:
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(point) + "\n")
+
+
+def _last_equity_point(path: str) -> Optional[float]:
+    """读权益曲线 jsonl 里最近一条有效正 equity(异常检测的基线)。缺文件/无有效行 -> None
+    (fail-safe:无基线时检测器 fail-closed 到 insufficient_history,只加告警不动作)。"""
+    if not os.path.exists(path):
+        return None
+    last: Optional[float] = None
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            eq = obj.get("equity")
+            if isinstance(eq, (int, float)) and not isinstance(eq, bool) and math.isfinite(eq) and eq > 0:
+                last = float(eq)
+    except OSError:
+        return None
+    return last
 
 
 def sentinel_caps(mandate) -> dict:
@@ -87,8 +117,12 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
         rows = bybit_position_rows(data)
     summary = portfolio_summary(rows)
 
+    # 盘中权益异常(Phase 5 item 2):读**上一轮**基线(须在 append 当前点之前,否则基线=自己 -> 跳变 0)
+    prior_equity = _last_equity_point(_equity_path(cfg["suffix"]))
     point = {"ts": now, "equity": equity, "available": aum, **summary}
     append_equity_point(_equity_path(cfg["suffix"]), point)
+    anomaly = detect_equity_anomaly(prior_equity=prior_equity, current_equity=equity,
+                                    max_jump_pct=_EQUITY_JUMP_ALERT_PCT)
 
     peak = max(_load_peak_equity(paths["risk_state"], equity), equity)
     _save_peak_equity(paths["risk_state"], peak)
@@ -110,9 +144,19 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
            "reasons": list(breach.reasons), "acted": False,
+           "anomaly": {"anomalous": anomaly.anomalous, "reasons": list(anomaly.reasons),
+                       "jump_pct": anomaly.jump_pct},
            # firm 级聚合(main() 用)——按标的的真实美元名义额(带符号),不是权重
            "notional_by_instrument": {r["instrument_id"]: r["qty"] * r["mark_price"]
                                       for r in rows if r["mark_price"] > 0}}
+
+    # 异常告警**独立于** breach 路径(权益跳变可能仍在静态限内)——只告警,绝不 arm/减仓/下单。
+    # 检测器默认关闭(_EQUITY_JUMP_ALERT_PCT=None)时 anomalous 恒 False -> 无告警 -> 行为字节等价。
+    if anomaly.anomalous:
+        emit([f"SENTINEL EQUITY ANOMALY [{venue_name}]: {list(anomaly.reasons)} "
+              f"(jump={anomaly.jump_pct:.2%}) — ALERT ONLY, no auto-action"],
+             context="risk_sentinel", now_ms=now)
+
     if not breach.breached:
         return out
 
