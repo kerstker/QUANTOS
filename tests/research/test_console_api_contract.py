@@ -120,6 +120,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
     # live trading route: Stage 0 forward paper-track evidence clock + Stage 1 testnet execution stack
     "/api/v1/console/live-trading": ("", ("snapshot_present", "verdict", "forward_track", "execution_stack", "honesty_note")),
+    # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
+    "/api/v1/console/gonogo": ("", ("snapshot_present", "verdict", "forward_evidence",
+                                    "execution_evidence", "incidents", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -165,6 +168,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/data-catalog": {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"},
     # live trading: REAL forward-track/live-track JSON snapshots when present, SYNTHETIC-empty in CI.
     "/api/v1/console/live-trading": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_TRADING_SNAPSHOT"},
+    # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
+    "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.

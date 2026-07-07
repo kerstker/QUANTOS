@@ -3950,6 +3950,7 @@ _PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
 _FORWARD_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "forward_track_status.json")
 _LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
 _LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
+_GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
 _EVIDENCE_GATE_WEEKS = 8
 
 
@@ -5280,6 +5281,37 @@ def _live_trading_payload() -> Dict:
 @app.get("/api/v1/console/live-trading")
 async def live_trading() -> Dict:
     return _live_trading_payload()
+
+
+def _gonogo_payload() -> Dict:
+    """GoNoGo 证据包(Phase 5 item 3):读 `tools/gonogo_report.py` 写的只读 gonogo_report.json 快照
+    (前向证据 + 逐 venue PnL/成本归因 + 事故台账)。console_api **只读该快照**、绝不 import live/tools
+    (单向边界,契约测试钉死)。fail-closed 到 SYNTHETIC(驱动器还没跑过,如 CI/新检出)。诚实边界:
+    只聚合既有真实产物,不下 Go/No-Go 结论——结论是 Phase 3A 人工评审。"""
+    rep = _load_json_snapshot(_GONOGO_REPORT)
+    present = bool(rep)
+    rep = rep or {}
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_GONOGO_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": "GONOGO_EVIDENCE_READY" if present else "NO_SNAPSHOT",
+        "generated_at": rep.get("generated_at"),
+        "readiness": rep.get("readiness", "L2_DRY_RUN_ONLY"),
+        "forward_evidence": rep.get("forward_evidence", {"present": False}),
+        "execution_evidence": rep.get("execution_evidence", {}),
+        "incidents": rep.get("incidents", {}),
+        "honesty_note": rep.get(
+            "honesty_note",
+            "GoNoGo 证据包只聚合既有真实产物,不下结论——结论是 Phase 3A 人工评审;无快照时为合成占位。"),
+    }
+
+
+@app.get("/api/v1/console/gonogo")
+async def gonogo() -> Dict:
+    return _gonogo_payload()
 
 
 if __name__ == "__main__":

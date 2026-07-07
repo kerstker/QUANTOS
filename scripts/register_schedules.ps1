@@ -19,6 +19,10 @@
 #   7. 每小时死人开关:检查以上任务是否按预期节奏运行,静默失败会大声告警;
 #   8. 每日灾备:业务数据+mandate 配置备份到 data/backup/(不含 API 密钥,见
 #      tools/live_backup.py 模块说明——密钥备份是你自己的安全实践)。
+#   9. 每日 23:00 盘后 GoNoGo 证据报告(Phase 5 item 3):聚合前向证据 + 逐 venue PnL/成本归因 +
+#      事故台账,落 data/cache/gonogo_report.json + docs/reports/gonogo-<date>.md。**纯只读报告**——
+#      不下 Go/No-Go 结论(结论是 Phase 3A 人工评审)、不驱动任何自动化、不碰 order 路径。console
+#      /api/v1/console/gonogo 只读该快照展示。
 #
 # 诚实边界:①②是"自动跑研究/回测",产出落数据快照供人工在前端/console 查看——不等于
 # "自动晋级/自动上线新策略"。任何新因子从这里跑出来之后,能不能进 paper-track/干跑/真实
@@ -49,6 +53,8 @@ schtasks /create /f /tn "QUANTOS_watchdog" `
   /tr "cmd /c cd /d $wd && $py -m tools.watchdog" /sc HOURLY
 schtasks /create /f /tn "QUANTOS_backup" `
   /tr "cmd /c cd /d $wd && $py -m tools.live_backup" /sc DAILY /st 03:00
+schtasks /create /f /tn "QUANTOS_gonogo_report" `
+  /tr "cmd /c cd /d $wd && $py -m tools.gonogo_report" /sc DAILY /st 23:00
 
 schtasks /query /fo CSV | Select-String "QUANTOS"
 Write-Host "`n全部注册完成。删除单条: schtasks /delete /f /tn QUANTOS_<name>"
