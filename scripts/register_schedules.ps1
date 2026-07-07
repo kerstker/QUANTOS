@@ -6,6 +6,11 @@
 #      不写 AlphaCatalog/不驱动晋级,auto_approved 恒 0,只落 data/cache/ 快照供人工查看);
 #   2. 每周日 20:30 IC 面板诊断刷新(逐候选因子截面 IC + 多持有期,同样纯诊断非门禁);
 #   3. 每周一 09:00 前向证据钟推进(纸面,零订单);
+#   3b. 每周一 09:05 alpha 维护 sweep(Phase 5 item 1):经审计 manager(非人)把衰退 alpha 降级/
+#      退役,落只读快照 data/cache/alpha_maintenance_status.json;live 驱动器读到本策略 RETIRED/PAUSED
+#      即**停止新增敞口**(现有仓位原样不动,绝不自动减仓——减仓目标数字 + full-flatten 需人签)。
+#      纯研究状态 sweep + 停止加仓联动,不驱动任何自动晋级、不碰 order 路径。排在 09:00 证据推进之后、
+#      09:10 真实调仓之前,故当轮降级能挡下同一早上的加仓。无 backtest 参照/无证据时 fail-closed 空跑。
 #   4. 每周一 09:10/09:20 双所真实提交调仓(--submit;mandate fail-closed 限额内自动,
 #      超限自动升级人工,mandate 删除即全停);
 #   5. 每小时风险哨兵 --act:越限时走独立 reduce-only 紧急通道自动减仓
@@ -30,6 +35,8 @@ schtasks /create /f /tn "QUANTOS_ic_panel_refresh" `
   /tr "cmd /c cd /d $wd && $py -m tools.ic_panel_research" /sc WEEKLY /d SUN /st 20:30
 schtasks /create /f /tn "QUANTOS_forward_track" `
   /tr "cmd /c cd /d $wd && $py -m tools.forward_track_advance" /sc WEEKLY /d MON /st 09:00
+schtasks /create /f /tn "QUANTOS_alpha_maintenance" `
+  /tr "cmd /c cd /d $wd && $py -m tools.alpha_maintenance_sweep" /sc WEEKLY /d MON /st 09:05
 schtasks /create /f /tn "QUANTOS_live_track_binance" `
   /tr "cmd /c cd /d $wd && $py -m tools.live_track_advance --submit" /sc WEEKLY /d MON /st 09:10
 schtasks /create /f /tn "QUANTOS_live_track_bybit_demo" `

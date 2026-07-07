@@ -392,6 +392,32 @@ def test_batch_skip_reason_healthy_batch_returns_none():
     assert batch_skip_reason({"BTC": 0.5}, crowding_blocked=False, expected_legs=None) is None
 
 
+def test_maintenance_skip_reads_status_file_and_stops_adding_on_retired(tmp_path):
+    # Phase 5 item 1:维护 sweep 快照标本策略 RETIRED/PAUSED -> 驱动器读到一条 skip 原因(停止新增)。
+    import json
+    from tools.live_track_advance import maintenance_skip
+    p = tmp_path / "alpha_maintenance_status.json"
+    json.dump({"strategies": {"crowd_contra": {"state": "RETIRED", "reasons": ["decay"]}}},
+              open(p, "w"))
+    assert maintenance_skip("crowd_contra", path=str(p)).startswith("maintenance_retired:")
+    assert maintenance_skip("carry", path=str(p)) is None       # 只影响被降级的策略
+
+
+def test_maintenance_skip_absent_file_is_none_byte_identical(tmp_path):
+    # 快照不存在(未调度 sweep)-> None -> skip_reason 不变 -> 旧行为字节等价
+    from tools.live_track_advance import maintenance_skip
+    assert maintenance_skip("crowd_contra", path=str(tmp_path / "absent.json")) is None
+
+
+def test_maintenance_skip_degraded_does_not_stop(tmp_path):
+    # DEGRADED 只观察不停(保守加法,不越权自动停一个仍合规的策略)
+    import json
+    from tools.live_track_advance import maintenance_skip
+    p = tmp_path / "m.json"
+    json.dump({"strategies": {"crowd_contra": {"state": "DEGRADED", "reasons": ["ic"]}}}, open(p, "w"))
+    assert maintenance_skip("crowd_contra", path=str(p)) is None
+
+
 def test_each_venue_has_its_own_mandate_ledger_and_state_paths():
     # 一个 mandate 只授权一个交易所;不同交易所 = 不同账户,账本/状态/mandate 绝不共用
     from tools.live_track_advance import _VENUES, _venue_paths

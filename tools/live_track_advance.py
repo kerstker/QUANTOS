@@ -63,6 +63,7 @@ from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.governance.validation_attestation import (ValidationAttestationError, load_attestations,
                                                     require_validation_attestation)
+from services.alpha.live_linkage import maintenance_skip_reason
 from services.portfolio.firm_gate import firm_gate_skip_reason
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
                            submit_live_batch)
@@ -88,6 +89,9 @@ _STRATEGY_ID = "crowd_contra"
 _VALIDATION_ATTESTATION_FILE = os.path.join("key", "live_validation_attestations.json")
 # firm 硬门状态(审计 P1-6):由哨兵 tools/live_risk_sentinel.py 写(它能看两所仓位),驱动器只读。
 _FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
+# alpha 维护 sweep 状态(Phase 5 item 1,P1-7):由 tools/alpha_maintenance_sweep.py 写(经审计 manager
+# 降级/退役衰退 alpha),驱动器只读。本策略 RETIRED/PAUSED -> 停止新增敞口(现有仓位原样不动)。
+_MAINTENANCE_STATUS_PATH = os.path.join("data", "cache", "alpha_maintenance_status.json")
 
 def _binance_balances(account: dict) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
@@ -191,6 +195,13 @@ def _load_json_or_none(path: str) -> Optional[dict]:
 
 def _load_day_state(path: str) -> Optional[dict]:
     return _load_json_or_none(path)
+
+
+def maintenance_skip(strategy_id: str, *, path: str = _MAINTENANCE_STATUS_PATH) -> Optional[str]:
+    """读维护 sweep 快照 -> 本策略 skip 原因(RETIRED/PAUSED -> 停止新增敞口,现有仓位原样不动)。
+    镜像 firm_gate 桥:缺文件(未调度 sweep)/坏文件/本策略未降级 -> None -> skip_reason 不变 ->
+    旧行为字节等价。DEGRADED 只观察不停(见 live_linkage._SKIP_STATES 的保守选择)。"""
+    return maintenance_skip_reason(_load_json_or_none(path), strategy_id)
 
 
 def _save_day_state(path: str, state: dict) -> None:
@@ -818,6 +829,17 @@ def main() -> None:
                       f"until firm exposure drops back under signed limits")
         if submit:
             skip_reason = skip_reason or firm_skip
+
+    # alpha 维护联动(Phase 5 item 1,P1-7):维护 sweep(tools/alpha_maintenance_sweep.py)把衰退
+    # alpha 经审计 manager 降级/退役,写 alpha_maintenance_status.json。本策略 RETIRED/PAUSED ->
+    # **停止新增敞口**(现有仓位原样不动;绝不自动减仓——减仓目标数字 + full-flatten 需人签,spec §9)。
+    # 缺文件(未调度 sweep)-> None -> 旧行为字节等价。preview 只告警,--submit 才跳批(与 firm 一致)。
+    maint_skip = maintenance_skip(strategy_id)
+    if maint_skip is not None:
+        alerts.append(f"alpha maintenance downgrade ({maint_skip}) — live submit will stop adding new "
+                      f"exposure for this strategy (existing positions untouched)")
+        if submit:
+            skip_reason = skip_reason or maint_skip
 
     # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
