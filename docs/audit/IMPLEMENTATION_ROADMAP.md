@@ -54,8 +54,14 @@
 
 ---
 
-## Phase 3 — Validation Gate 强制化 + Paper/前向生产化 + firm 硬门
+## Phase 3 — Validation Gate 强制化 + Paper/前向生产化 + firm 硬门 ✅ 已完成(2026-07-07)
 
+- **落地**:①firm 硬门(P1-6)已接线(用户签 20000/10000/0.20)✅;②验证门作 live 前置(P1-1)已在 Phase 1
+  接线✅;③组合优化器 sizing——**诚实裁定不硬接线**(单策略下优化器恒等 no-op,硬接会用未验证 book 替换已验证
+  book 造回归),交付默认关闭 opt-in hook `sleeve_sizing.py`(证明恒等)+ 文档化风险预算等价物✅;④拥挤门校准——
+  **实测 233 周发现平均分结构性钉死 ~0.50(错误统计量,默认阈值失效)**,暴露 `CALIBRATED_DEFAULTS`(值字节不变)
+  + 敏感性发现文档化 + 契约锁,行为变更(WARN-only/短腿口径/签数字)待用户拍板✅。
+  设计:`docs/superpowers/specs/2026-07-07-phase3-optimizer-and-crowding.md`。全 TDD、门禁全绿。
 - **目标**:未经验证的策略结构性无法进入货币路径;组合级风险有硬门。
 - **改造内容**:
   1. **firm 级敞口硬门**(P1-6):`aggregate_firm_books` 结果接入组合级硬门(firm 净/毛/单 symbol 跨账户集中上限),越限升人工/按比例减仓。**阈值由用户签署**(机制我建,数字人工定)。
