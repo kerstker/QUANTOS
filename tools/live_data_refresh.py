@@ -54,7 +54,8 @@ def refresh_prices(tickers, *, now_ms: int, fetch=fetch_daily_rows, db_path: str
     刷新不扩宇宙(扩宇宙是研究决策,不是刷新的职责)。"""
     wm = price_watermarks(db_path)
     store = SqlitePITStore(db_path, create=False)
-    report = {"source": "prices", "refreshed": 0, "skipped": 0, "ingested_rows": 0, "failed": []}
+    report = {"source": "prices", "refreshed": 0, "skipped": 0, "ingested_rows": 0, "failed": [],
+              "quality_failed": []}      # P1-8:本轮单标的接入质量报告不过的 ticker(供决策门聚合;不 raise)
     for tk in tickers:
         gap = _gap_days(wm.get(tk, 0), now_ms)
         if gap <= 1:                          # 只差今天(未收盘,PIT 本来就丢) → 无缺口
@@ -65,6 +66,11 @@ def refresh_prices(tickers, *, now_ms: int, fetch=fetch_daily_rows, db_path: str
             rep = ingest_provider_rows(rows, store, dataset_id=f"bnf-{tk}", now=now_ms, time_unit="ms")
             report["refreshed"] += 1
             report["ingested_rows"] += getattr(rep, "bars_ingested", 0) or 0
+            # P1-8:透出单标的质量 pass/fail 供跨标的决策门聚合(正规接入 build_report 的报告,不翻 strict 让刷新
+            # raise——klines 已 dedup+sort 正常运行几乎不触发,近零假阳性;不 raise 保刷新 fail-soft 不变)
+            q = getattr(rep, "quality", None)
+            if q is not None and not q.passed:
+                report["quality_failed"].append(tk)
         except Exception as exc:              # fail-soft:记录、继续
             report["failed"].append(f"{tk}: {exc}")
         if sleep:

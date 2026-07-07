@@ -31,6 +31,7 @@ from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
 from tools.signal_quality import rows_with_acceptable_coverage
+from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(纯跨标的门)
 
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
@@ -38,8 +39,25 @@ _STATUS = os.path.join("data", "cache", "forward_track_status.json")
 _DAY_MS = 86_400_000
 _WEEK_MS = 7 * _DAY_MS
 _DECISION_DUE_MS = _WEEK_MS - 12 * 3600 * 1000      # 7 天 − 12h 容差(数据网格抖动)
+_MAX_DECISION_AGE_MS = 8 * _DAY_MS                  # P1-8:决策数据时间合法上限(OI 逐 symbol 滞后回看
+#                                                     ~7 天为合法,超 8 天=信号源实质冻结)。工程占位,待用户确认。
 _SYSTEMIC_STALE_FRAC = 0.2                          # >20% ticker 落后 = 系统性问题(≠个别退市)
 _ALPHAS = {"crowd_contra": CROWD_CONTRA, "carry_oi_majors": CARRY}
+
+
+def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed):
+    """P1-8 决策门(纯 helper,镜像 live 驱动器 batch_skip_reason 范式)。返回 None=可落决策;返回原因串=
+    数据不够干净,调用方暂停本轮决策(证据钟暂停=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进
+    不可改写台账。复用 gate_decision_inputs 四项检查;staleness 判据与上面 :102 的告警**同判据**,只把'只告警'
+    升成'挡决策'、不更激进。"""
+    rep = gate_decision_inputs(
+        weights=weights, prices=prices, decided_ts=decided_ts, now=now,
+        max_decision_age_ms=_MAX_DECISION_AGE_MS, staleness=stale, stale_limits=STALE_LIMITS,
+        ingestion_quality_failed=tuple(quality_failed))
+    if rep.passed:
+        return None
+    failed = [c.name for c in rep.checks if not c.passed]
+    return f"decision blocked (evidence clock paused,留 pending): {failed}"
 
 
 def _weekly_rows(event_times) -> list:
@@ -86,10 +104,12 @@ def main() -> None:
     alerts: list = []
     do_refresh = "--no-refresh" not in sys.argv
 
+    quality_failed: set = set()      # P1-8:本轮单标的接入质量不过的 ticker(供决策门聚合;--no-refresh 时为空)
     if do_refresh:
         try:
             refresh = run_refresh(now_ms=now_ms)
             for rep in refresh["reports"]:
+                quality_failed.update(rep.get("quality_failed", []))
                 for f in rep.get("failed", []):
                     alerts.append(f"refresh {rep['source']}: {f}")
         except Exception as exc:
@@ -129,6 +149,7 @@ def main() -> None:
         due = (not decs) or (t_last - decs[-1]["decided_ts"] >= _DECISION_DUE_MS)
         recorded_new = False
         recorded_ts = None
+        blocked = False              # P1-8:本轮是否被决策门挡住(区分"无腿跳过"vs"数据脏暂停")
         if due:
             # 信号行回看(2026-07-05,与 live 驱动器同一修复):周一调度时本周首行往往就是
             # 面板最新行,而最新行的 OI 常常还没更新(K线刷新快于 OI 指标)——盲取会整周跳过
@@ -146,17 +167,25 @@ def main() -> None:
                 weights, signals = _weights_and_signals(sig[r_try], insts)
                 if weights:
                     t_dec = int(ev[r_try])
+                    dec_prices = {insts[i]: close[r_try][i] for i in range(len(insts))
+                                  if close[r_try][i] and close[r_try][i] > 0}
+                    # P1-8 决策门:数据不够干净(源停更/决策过旧/加权名字缺价/接入质量不过)则**暂停证据钟**
+                    # (本轮不落决策=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进不可改写台账。
+                    block = decision_block_reason(weights=weights, prices=dec_prices, decided_ts=t_dec,
+                                                  now=now_ms, stale=stale, quality_failed=quality_failed)
+                    if block is not None:
+                        alerts.append(f"{alpha_id}: {block}")
+                        blocked = True
+                        break
                     recorded_new = ledger.record_decision(
                         alpha_id, t_dec, recorded_at=now_ms, weights=weights, signals=signals)
-                    prices.setdefault(t_dec, {insts[i]: close[r_try][i]
-                                              for i in range(len(insts))
-                                              if close[r_try][i] and close[r_try][i] > 0})
+                    prices.setdefault(t_dec, dec_prices)
                     recorded_ts = t_dec
                     if r_try != r_last:
                         alerts.append(f"{alpha_id}: freshest weekly row had no signal, "
                                       f"decided at ts={t_dec} instead of {t_last}")
                     break
-            if recorded_ts is None:
+            if recorded_ts is None and not blocked:
                 alerts.append(f"{alpha_id}: no legs within this week's lookback of {t_last} "
                               f"— decision skipped")
 
