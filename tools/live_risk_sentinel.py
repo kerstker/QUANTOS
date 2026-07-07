@@ -45,9 +45,13 @@ from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equ
 
 _MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
 # 盘中权益跳变告警阈值(Phase 5 item 2):两轮之间 |权益跳变| 超过它就**告警一次**(仅告警,绝不
-# arm kill-switch / 减仓 / 碰 order 路径——异常常良性但值得人看)。**默认 None = 关闭**(生产字节
-# 等价):这是**用户签的风险数字**,签一个数(如 0.15)才启用。见 live/execution/anomaly.py 文档。
-_EQUITY_JUMP_ALERT_PCT: Optional[float] = None
+# arm kill-switch / 减仓 / 碰 order 路径——异常常良性但值得人看)。**用户 2026-07-07 签署 0.15**
+# (此前默认 None=关闭)。见 live/execution/anomaly.py 文档。
+_EQUITY_JUMP_ALERT_PCT: Optional[float] = 0.15
+# 维持保证金比率地板(Phase 5 item 2):维持保证金余额 / 维持保证金要求 < 它 -> 记 breach -> arm
+# kill-switch(halt,fail-safe 停止方向)。**用户 2026-07-07 签署 2.0**(此前默认 None=不绑定)。
+# 数据不全(维持额缺/非有限)fail-closed 记 breach;无维持要求(mm<=0,即无仓)-> 安全不报。
+_MIN_MARGIN_RATIO: Optional[float] = 2.0
 # firm 级敞口硬门上限(审计 P1-6;**用户 2026-07-07 亲自签署**的业务风险预算,非工程占位):
 # 所有交易所加总的名义额绝对值之和上限 / 净方向敞口上限(gross 的 1/2)/ 单个币跨所占 firm_gross
 # 的比例上限。哨兵(能看到两所仓位)据此写 firm_gate_status.json;驱动器读它 BLOCK 就停止新增(见
@@ -136,10 +140,15 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
 
     positions = {r["instrument_id"]: r["qty"] for r in rows}
     prices = {r["instrument_id"]: r["mark_price"] for r in rows if r["mark_price"] > 0}
+    # 维持保证金比率地板(用户签署 2.0):从账户 payload 取维持保证金余额/要求喂 gate。字段缺失 -> None
+    # -> evaluate_risk_state fail-closed 记 breach;无维持要求(mm<=0,无仓)-> 安全不报。
+    maint_bal, maint_req = cfg["margin"](acct)
     breach = evaluate_risk_state(
         equity=equity, peak_equity=peak, positions=positions, prices=prices,
         max_drawdown_pct=_MAX_DRAWDOWN_PCT,
-        max_gross_exposure=caps["max_gross_exposure"], max_net_exposure=caps["max_net_exposure"])
+        max_gross_exposure=caps["max_gross_exposure"], max_net_exposure=caps["max_net_exposure"],
+        min_margin_ratio=_MIN_MARGIN_RATIO, maint_margin_balance=maint_bal,
+        margin_maint_amount=maint_req)
 
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,

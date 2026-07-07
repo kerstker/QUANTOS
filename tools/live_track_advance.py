@@ -107,6 +107,30 @@ def _bybit_balances(account: dict) -> tuple:
             float(row.get("totalEquity", 0.0) or 0.0))
 
 
+def _num_or_none(d: dict, key: str):
+    """字段present -> float(含 "0"->0.0);字段**缺失** -> None(区分"无维持要求=安全"与"数据缺失=fail-closed")。"""
+    v = d.get(key)
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _binance_margin(account: dict) -> tuple:
+    """(维持保证金余额, 维持保证金要求)——Binance /fapi/v2/account 的 totalMarginBalance/totalMaintMargin。
+    字段缺失 -> None(供 evaluate_risk_state fail-closed);present="0"(无仓)-> 0.0(安全,非缺失)。"""
+    return (_num_or_none(account, "totalMarginBalance"), _num_or_none(account, "totalMaintMargin"))
+
+
+def _bybit_margin(account: dict) -> tuple:
+    """同上——Bybit V5 wallet:result.list[0] 的 totalMarginBalance/totalMaintenanceMargin。"""
+    rows = ((account.get("result") or {}).get("list")) or [{}]
+    row = rows[0] or {}
+    return (_num_or_none(row, "totalMarginBalance"), _num_or_none(row, "totalMaintenanceMargin"))
+
+
 # 多 venue(2026-07-05):不同交易所 = 不同账户 = 独立账本/状态/风控峰值/对账文件,绝不混写。
 # binance 沿用无后缀的历史路径(账本连续性);其它 venue 加后缀。
 _VENUES = {
@@ -117,6 +141,7 @@ _VENUES = {
         "key_file": os.path.join("key", "binance_test_key.json"),
         "suffix": "",
         "balances": _binance_balances,
+        "margin": _binance_margin,
         # per-venue mandate(2026-07-05):一个 mandate 只授权一个交易所(exchange 域),
         # 多所并行各签各的文件,绝不共用
         "mandate_file": os.path.join("key", "live_mandate.json"),
@@ -128,6 +153,7 @@ _VENUES = {
         "key_file": os.path.join("key", "bybit_test_key.json"),
         "suffix": "_bybit",
         "balances": _bybit_balances,
+        "margin": _bybit_margin,
         "mandate_file": os.path.join("key", "live_mandate_bybit.json"),
     },
     # Demo Trading(2026-07-05):testnet 水龙头失灵,Bybit 官方主推的模拟环境——V5 协议同
@@ -139,6 +165,7 @@ _VENUES = {
         "key_file": os.path.join("key", "bybit_demo_key.json"),
         "suffix": "_bybit_demo",
         "balances": _bybit_balances,
+        "margin": _bybit_margin,
         "mandate_file": os.path.join("key", "live_mandate_bybit_demo.json"),
     },
 }

@@ -32,3 +32,15 @@ def test_last_equity_point_empty_file_is_none(tmp_path):
     p = str(tmp_path / "eq.jsonl")
     open(p, "w").close()
     assert _last_equity_point(p) is None
+
+
+def test_signed_equity_jump_alert_threshold_is_active():
+    # 用户 2026-07-07 签署:权益异常告警阈值 15%(alert-only)。drift-lock:防止意外改回 None/漂移。
+    from tools import live_risk_sentinel as s
+    assert s._EQUITY_JUMP_ALERT_PCT == 0.15
+
+
+def test_signed_min_margin_ratio_is_active():
+    # 用户 2026-07-07 签署:维持保证金比率地板 2.0(低于即 breach → arm kill-switch)。drift-lock。
+    from tools import live_risk_sentinel as s
+    assert s._MIN_MARGIN_RATIO == 2.0

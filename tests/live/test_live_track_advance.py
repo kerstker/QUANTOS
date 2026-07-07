@@ -418,6 +418,38 @@ def test_maintenance_skip_degraded_does_not_stop(tmp_path):
     assert maintenance_skip("crowd_contra", path=str(p)) is None
 
 
+def test_binance_margin_extracts_balance_and_maint():
+    from tools.live_track_advance import _binance_margin
+    mb, mm = _binance_margin({"totalMarginBalance": "5000", "totalMaintMargin": "100"})
+    assert mb == 5000.0 and mm == 100.0
+
+
+def test_binance_margin_present_zero_is_zero_not_none():
+    # 有仓但无维持要求(或空账户)-> 字段present="0" -> 0.0(evaluate_risk_state 据此判"无维持要求=安全")
+    from tools.live_track_advance import _binance_margin
+    mb, mm = _binance_margin({"totalMarginBalance": "100", "totalMaintMargin": "0"})
+    assert mm == 0.0
+
+
+def test_binance_margin_absent_fields_return_none_failclosed():
+    from tools.live_track_advance import _binance_margin
+    mb, mm = _binance_margin({})
+    assert mb is None and mm is None      # 字段缺失 -> None -> 上游 fail-closed 记 breach
+
+
+def test_bybit_margin_extracts_from_v5_wallet():
+    from tools.live_track_advance import _bybit_margin
+    acct = {"result": {"list": [{"totalMarginBalance": "3000", "totalMaintenanceMargin": "50"}]}}
+    mb, mm = _bybit_margin(acct)
+    assert mb == 3000.0 and mm == 50.0
+
+
+def test_bybit_margin_absent_returns_none():
+    from tools.live_track_advance import _bybit_margin
+    assert _bybit_margin({"result": {"list": [{}]}}) == (None, None)
+    assert _bybit_margin({}) == (None, None)
+
+
 def test_each_venue_has_its_own_mandate_ledger_and_state_paths():
     # 一个 mandate 只授权一个交易所;不同交易所 = 不同账户,账本/状态/mandate 绝不共用
     from tools.live_track_advance import _VENUES, _venue_paths
