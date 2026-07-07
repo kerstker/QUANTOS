@@ -114,7 +114,17 @@
 
 ---
 
-## Phase 6 — 事件总线 + 可观测性 + 容器化 + 架构解耦
+## Phase 6 — 事件总线 + 可观测性 + 容器化 + 架构解耦 ◑ 部分完成(2026-07-07,纯加法半区已上;大重构/不可验证半区留)
+
+> 落地结果 + 诚实裁定:`docs/superpowers/specs/2026-07-07-phase6-eventbus-decoupling-container-scaffold.md`
+> (容器化细节:`2026-07-07-containerization-design.md`;脚手架:`docs/PLANNED_SCAFFOLDS.md`)。**核心张力:本 Phase
+> 核心价值项(架构解耦、真实容器化)本质是大重构 / 需真实部署环境,直接撞"不做大重构"红线 + 本机 Docker 不通。**
+> 每项拆成纯加法半区(已 TDD 做完、过全量门禁)+ 大重构/不可验证半区(设计文档 + 回归网锁记录、留用户拍板):
+> ① 独立落盘事件总线 `services/monitoring/event_bus.py`(publish/replay/subscribe,correlation/causation 存列不改
+> Event 契约);② 域 import 边界测试(AST 钉今天已成立的 leaf 不变量,回归网);③ 镜像 L2 安全不变量测试 + 标注
+> UNBUILT 的 Dockerfile + .dockerignore;④ 空脚手架守卫测试 + PLANNED 诚实清单。全量门禁绿(validate.py 三检 PASS)。
+> **留用户拍板(大重构 / post-L2)**:事件 producer 穿线让因果图长出来、research 拆子包 + console_api 拆 router 让
+> "域间无环"能绿(有环今天不成立,回归网已就位)、真实容器 build + staging/prod 隔离 + 配置管理 + 监控告警/灾备。
 
 - **目标**:全链路可追溯/可回放;可安全迭代的运维基建。
 - **改造内容**:
