@@ -10,7 +10,7 @@ import pytest
 
 from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
 from services.data.persistent_store import SqlitePITStore
-from services.data.quality import check_volume_units
+from services.data.quality import VolumeUnitsError, assert_volume_units, check_volume_units
 
 
 # ---- (2) cross-instrument volume-unit consistency ----
@@ -30,6 +30,30 @@ def test_mixed_volume_units_fail():
 def test_volume_units_ignore_nonpositive_and_thin_cross_section():
     assert check_volume_units({"BTC": 3e9, "ZERO": 0.0}, max_ratio=1e6).passed is True   # 0 ignored
     assert check_volume_units({"BTC": 3e9}, max_ratio=1e6).passed is True                # <2 -> trivially ok
+
+
+# ---- (2b) assert_volume_units: fail-closed 版(承重容量/ADV 消费点用,P2-2 接线) ----
+
+def test_assert_volume_units_passes_consistent():
+    check = assert_volume_units({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
+    assert check.passed is True and check.name == "volume_units"
+
+
+def test_assert_volume_units_raises_on_mixed():
+    # 复刻 crypto_daily.db bug:BTC $3.7Q vs EOS $20k → ratio ~1.8e11 >> 1e6 → 硬拒
+    with pytest.raises(VolumeUnitsError):
+        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+
+
+def test_assert_volume_units_thin_cross_section_and_zero_ok():
+    assert_volume_units({"BTC": 3e9}, max_ratio=1e6)               # <2 名 → 平凡通过(单标的零回归)
+    assert_volume_units({"BTC": 3e9, "Z": 0.0}, max_ratio=1e6)     # 0 被忽略
+
+
+def test_assert_volume_units_error_carries_ratio():
+    with pytest.raises(VolumeUnitsError) as exc:
+        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+    assert "ratio" in str(exc.value)
 
 
 # ---- (1) strict ingestion gate (single-instrument datasets) ----

@@ -93,10 +93,28 @@ def participation_cap_aum(turnover_by_period: Turnover, max_participation: float
 
 def capacity_band(gross_returns, turnover_by_period, aum_grid, impact_coef_lo_hi,
                   ppy: int = 52, sharpe_floor: float = 0.3, max_participation: float = 0.10,
-                  execution_horizon: int = 1, base_impact: Optional[AlmgrenChrissImpact] = None) -> dict:
+                  execution_horizon: int = 1, base_impact: Optional[AlmgrenChrissImpact] = None,
+                  volume_units_max_ratio: Optional[float] = None) -> dict:
     """扫冲击系数 [lo, hi](保守→激进)→ critical_aum 的区间带,并与参与率上限取 min 得 honest binding 容量。
     激进系数容量更小 = 下界。诚实:真容量 = min(冲击-夏普容量, 参与率可行容量)——两个约束里更紧的那个。
-    execution_horizon = 周度调仓铺开执行的天数(单日参与率约束放宽 → 参与率容量 ×H)。"""
+    execution_horizon = 周度调仓铺开执行的天数(单日参与率约束放宽 → 参与率容量 ×H)。
+
+    `volume_units_max_ratio`(P2-2 接线):非 None 时,对 turnover 里的 ADV 横截面强制 volume 单位一致性
+    (`check_volume_units`)——混单位(如 crypto_daily.db 的 EOS $20k vs BTC $3.7Q,~17 数量级)则 fail-closed
+    返回全 None + `data_quality/provenance='UNRELIABLE_VOLUME_UNITS'`,拒绝把混单位当真规模出容量数。默认 None =
+    旧行为逐字节不变(正常返回只多一个 `data_quality:'OK'` 键)。"""
+    if volume_units_max_ratio is not None:
+        from services.data.quality import check_volume_units    # lazy:避免顶层 research→data 耦合(无环无网络)
+        advs, _i = {}, 0
+        for legs in turnover_by_period:
+            for _frac, adv in legs:
+                advs[_i] = adv                                   # 键只需唯一;check 用 .values() 过滤 >0 后比 max/min
+                _i += 1
+        if not check_volume_units(advs, max_ratio=volume_units_max_ratio).passed:
+            return {"aum_low": None, "aum_high": None, "impact_aum_low": None, "impact_aum_high": None,
+                    "participation_cap_aum": None, "max_participation": max_participation,
+                    "execution_horizon": execution_horizon, "curves": {},
+                    "provenance": "UNRELIABLE_VOLUME_UNITS", "data_quality": "UNRELIABLE_VOLUME_UNITS"}
     base = base_impact or AlmgrenChrissImpact()
     lo_coef, hi_coef = impact_coef_lo_hi
     curves = {}
@@ -117,4 +135,4 @@ def capacity_band(gross_returns, turnover_by_period, aum_grid, impact_coef_lo_hi
             "impact_aum_low": crit["aggressive"], "impact_aum_high": crit["conservative"],
             "participation_cap_aum": part_cap, "max_participation": max_participation,
             "execution_horizon": execution_horizon,
-            "curves": curves, "provenance": "UNCALIBRATED_PRINCIPLED"}
+            "curves": curves, "provenance": "UNCALIBRATED_PRINCIPLED", "data_quality": "OK"}
