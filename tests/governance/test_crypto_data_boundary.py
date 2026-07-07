@@ -13,6 +13,7 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_klines_1h_fetch.py"),   # 1H 小时线抓取器(2026-07-07)
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
