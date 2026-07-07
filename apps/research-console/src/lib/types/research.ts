@@ -1608,6 +1608,56 @@ export interface LiveTradingPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+// ---- GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents ----
+export interface GonogoPnl {
+  present: boolean;
+  n_points?: number;
+  first_equity?: number | null;
+  last_equity?: number | null;
+  total_equity_change?: number | null;
+  latest_unrealized_pnl?: number | null;
+  latest_gross_notional?: number | null;
+  latest_net_notional?: number | null;
+  execution_cost_estimate?: number | null;
+  note?: string;
+}
+export interface GonogoVenue {
+  venue: string;
+  parity?: {
+    n_cycles?: number; n_submit_cycles?: number; latest_max_abs_gap?: number | null;
+    unexpected_position_events?: number; paper_source_recomputed_cycles?: number;
+  };
+  tca?: {
+    n_with_slippage?: number; notional_weighted_slippage_bps?: number | null;
+    assumed_cost_bps?: number; weighted_minus_assumed_bps?: number | null; worst_slippage_bps?: number | null;
+  } | null;
+  equity?: { n_points?: number; first?: number; last?: number; max_drawdown_observed?: number };
+  pnl?: GonogoPnl;
+}
+export interface GonogoForwardAlpha {
+  weeks_accumulated?: number; weeks_to_gate?: number; paper_sharpe?: number | null;
+  paper_ic?: number | null; cum_return?: number | null; backtest_reference_sharpe?: number | null;
+  pending_decisions?: number | null;
+}
+export interface GonogoIncidents {
+  n_alert_batches?: number; risk_breaches?: number; reconciliation_hard_stops?: number;
+  emergency_flattens?: number; sentinel_failures?: number;
+}
+export interface GonogoPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_GONOGO_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;                 // GONOGO_EVIDENCE_READY | NO_SNAPSHOT
+  generated_at?: number | null;
+  readiness?: string;
+  forward_evidence: {
+    present: boolean; ran_at?: number | null; gate_weeks?: number;
+    alphas?: Record<string, GonogoForwardAlpha>;
+  };
+  execution_evidence: Record<string, GonogoVenue>;
+  incidents: GonogoIncidents;
+  honesty_note: string;
+}
+
 export interface CryptoLivePayload extends ConsolePayloadBase {
   data_provenance: "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT" | string;
   crypto_mode: string;

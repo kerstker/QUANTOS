@@ -95,6 +95,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/LiveTrading') },
   { path: '/research/live-desk', zh: '交易台', en: 'Live Desk', icon: 'LD', group: 'execution',
     load: () => import('@/pages/LiveDesk') },
+  { path: '/research/gonogo', zh: 'GoNoGo 证据', en: 'GoNoGo Evidence', icon: 'GG', group: 'execution',
+    load: () => import('@/pages/Gonogo') },
   { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'execution',
     load: () => import('@/pages/LifecycleMonitor') },
 
