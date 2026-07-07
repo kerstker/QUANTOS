@@ -138,7 +138,16 @@
 
 ---
 
-## Phase 7 — Phase 14 信任边界 + Phase 3A 小资金实盘前验收门
+## Phase 7 — Phase 14 信任边界 + Phase 3A 小资金实盘前验收门 ⛔ 人工门(agent 不可自行完成;唯一纯加法辅助=Go/No-Go 清单,2026-07-07)
+
+> 诚实裁定:`docs/superpowers/specs/2026-07-07-phase7-trust-boundary-and-go-live-gate.md`。**本 Phase 全部实质都在
+> agent 安全边界之外**——真人签署、真实密钥、真实部署隔离(自主授权只覆盖 fail-closed 加固,不覆盖绕过代码强制的
+> 人工门)。四项:① 出进程签名+RBAC(P0-2)= 拒绝式接缝 signing.py + 边界测试已在,真实现=post-L2/部署基建;
+> ② mandate 密码学完整性(P0-1)= 单进程内签名校验是 theater(受信代码持同一把 key),真防御只能出进程;③ 进程
+> 隔离(Phase 14)= 部署基建;④ Go/No-Go = 100% 人工。**唯一 agent 可做的纯加法诚实交付** =
+> `docs/PHASE_3A_GO_NO_GO_CHECKLIST.md`(逐条列门槛 + 现状 + 显式"人工签此"字段,不下结论不设数字,与
+> tools/gonogo_report 证据包互补)。**这标志系统性路线图里 agent 能做的部分收口(Phases 0–6 已落地过门禁);
+> 真钱放行按设计交还给人。**
 
 - **目标**:补齐真钱前的最后结构性前置;人工 Go/No-Go 放行。
 - **改造内容**:
