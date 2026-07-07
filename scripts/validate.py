@@ -47,6 +47,10 @@ CHECKS = [
             "tests/monitoring",
             "tests/deployment",
             "tests/governance",
+            # 2026-07-07:证据摘要漂移已纠正(crowd_contra t_stat 样本延长软化,tools.build_evidence_digests
+            # 重生成),该 reproducibility 门现纳入 CI——本地有 data/cache/ artifact 时校验数字不漂移,
+            # CI 无 artifact 时诚实 skip(绝不当作 passed)。
+            "tests/reproducibility",
             "services/research/console_api/tests/test_console_api.py",
             "services/research/factor_engine/tests/test_model_compile.py",
             "services/trading/dry_run_adapters/tests/test_dry_run.py",
