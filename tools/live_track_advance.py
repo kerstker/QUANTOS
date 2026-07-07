@@ -233,6 +233,15 @@ def _save_peak_equity(path: str, value: float) -> None:
     atomic_write_json(path, {"peak_equity": max(value, on_disk)})
 
 
+# 频率护栏(审计 P1-5,用户 2026-07-07 给的方向"24H 窗口/中高频"):这是防**失控循环**的运维
+# runaway-guard(调度每分钟误触发/崩溃重启循环/重试风暴),不是紧节流器。窗口=24h、上限=500 是
+# **工程占位**(远高于中高频正常量:14 币 book 每轮≤14 单、一天中高频~数百单;远低于失控:每分钟级
+# 循环数千/时)——真实使用前需用户确认或改数,同 band_pct/mandate 前口径的"占位需签"惯例。窗口值
+# 与 ctx.now(ms)同单位是不变量(见 checks.py::check_rate_limit)。
+_RATE_WINDOW_MS = 86_400_000            # 24 小时滚动窗
+_RATE_MAX_ORDERS = 500                  # runaway ceiling(工程占位,待用户确认)
+
+
 def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
     """gate 的客观安全边界(非业务授权,见模块 docstring)。裸数量类阈值设成有效无限——多资产
     book 里"最大 N 个单位"跨币种没有统一意义;保护交给价格感知的名义额类检查。"""
@@ -241,11 +250,13 @@ def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss
         default_max_position_qty=10 ** 15, fat_finger_qty=10 ** 15,
         max_order_notional=single_order_cap, max_gross_exposure=gross_cap, max_net_exposure=net_cap,
         max_leverage=3.0, max_single_name_pct=0.5, max_turnover=1.0, max_participation_rate=1.0,
-        max_instrument_vol=5.0, daily_loss_limit=daily_loss_cap, max_drawdown=0.5)
+        max_instrument_vol=5.0, daily_loss_limit=daily_loss_cap, max_drawdown=0.5,
+        # 频率 runaway-guard(P1-5):接活了此前的死代码(需驱动器回填 recent_timestamps 才生效)
+        rate_window_ms=_RATE_WINDOW_MS, max_orders_per_window=_RATE_MAX_ORDERS)
 
 
 def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pnl, peak_equity,
-                     unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID):
+                     unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID, recent_timestamps=()):
     """gate 用的 RiskContext 工厂。`reference_price = 真实价格 / unit_scale`,使
     `intent.quantity(缩放整数) × reference_price` 落在真实美元名义额上(见 live/pipeline.py
     模块 docstring 的缩放约定)。est_daily_volume/instrument_vol 沿用既有 crowd_contra 干跑
@@ -276,6 +287,9 @@ def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pn
             # 但审计痕迹必须真实)
             strategy=StrategyApproval(strategy_id=strategy_id, approved=True,
                                       approval_id="live-track-driver"),
+            # 频率护栏(P1-5):最近窗口内的历史提交时间戳(ms,与 now 同基),接活 check_rate_limit。
+            # 对本轮 batch 内每个 intent 是同一份快照(工厂闭包)——拦的是跨轮累积失控,不含本轮自身。
+            recent_timestamps=recent_timestamps,
             now=now, max_staleness=_MAX_STALENESS_MS)
     return _factory
 
@@ -754,10 +768,18 @@ def main() -> None:
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
 
+    # 频率护栏回填(审计 P1-5):从**持久** ledger(非 write_ledger 的 :memory:,故 preview 与 submit
+    # 看同一份提交历史)读最近 24h 窗内的历史提交时间戳(submitted_at 已是 ms、与 now 同基,零换算),
+    # 喂给 check_rate_limit。装配在 submit_live_batch 之前,故快照只含前几轮、不含本轮 batch 自身——拦的
+    # 是"跨轮累积失控提交"(调度每分钟误触发/崩溃重启循环/重试风暴),失控时本轮全部 intent 一次闸死。
+    _rate_cutoff = now - _RATE_WINDOW_MS
+    recent_ts = tuple(int(o["submitted_at"]) for o in ledger.orders()
+                      if int(o["submitted_at"]) >= _rate_cutoff)
     # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
-                                   peak_equity=peak_equity, strategy_id=strategy_id)
+                                   peak_equity=peak_equity, strategy_id=strategy_id,
+                                   recent_timestamps=recent_ts)
     # 验证证明门(审计 P1-1,用户 2026-07-07 批准"接线 + 可审计人工 override"):真提交前,strategy_id
     # 必须在案有 PASS 验证或可审计人工 override(见 live/governance/validation_attestation.py)。这是
     # 比风控门/mandate 更靠前的**策略级准入**门("这个策略压根有没有资格上真钱")。缺凭证:preview 只

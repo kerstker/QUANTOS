@@ -60,6 +60,21 @@ def test_make_ctx_factory_handles_missing_price_honestly():
     assert ctx.market.reference_price is None
 
 
+# --- 频率护栏回填(审计 P1-5):recent_timestamps 透传进 ctx,接活 check_rate_limit ---
+
+def test_make_ctx_factory_threads_recent_timestamps():
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(prices, recent_timestamps=(111, 222, 333), **kw)(_FakeIntent("BTC"))
+    assert ctx.recent_timestamps == (111, 222, 333)
+
+
+def test_make_ctx_factory_recent_timestamps_default_empty_keeps_old_behavior():
+    # 默认空 -> check_rate_limit 恒 no-op(与接线前行为一致,零回归)
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(prices, **kw)(_FakeIntent("BTC"))
+    assert ctx.recent_timestamps == ()
+
+
 # --- 2026-07-05 机构审计修复:新鲜度门真实接线 + 账户上下文去虚构 ---
 
 def test_price_as_of_is_real_decision_time_not_wall_clock():

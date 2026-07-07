@@ -183,7 +183,9 @@ def check_turnover(intent, ctx, limits):
 
 
 def check_rate_limit(intent, ctx, limits):
-    cutoff = ctx.now - limits.rate_window_s
+    # 单位不变量(审计 P1-5):ctx.now / ctx.recent_timestamps / limits.rate_window_ms **必须同一时间单位**
+    # (live 路径 = 毫秒;dry-run 路径 recent_timestamps 恒空、此检查 no-op)。三者同基故纯减法比较正确。
+    cutoff = ctx.now - limits.rate_window_ms
     recent = sum(1 for t in ctx.recent_timestamps if t >= cutoff)
     return (R.TURNOVER_LIMIT_EXCEEDED,) if recent >= limits.max_orders_per_window else ()
 

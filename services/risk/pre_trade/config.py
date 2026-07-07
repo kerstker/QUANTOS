@@ -32,7 +32,10 @@ class RiskLimits:
     # turnover / rate (rate -> TURNOVER_LIMIT_EXCEEDED)
     max_turnover: float = 1.0
     max_orders_per_window: int = 50                         # AT limit rejects (>=)
-    rate_window_s: int = 60
+    # 单位不变量(审计 P1-5):此字段与 ctx.now / ctx.recent_timestamps 同单位——live 路径全是**毫秒**。
+    # 旧名 rate_window_s 是个陷阱:它被当 ms 从 ms 的 ctx.now 相减(check_rate_limit),"_s"名不副实,
+    # 把它设成秒会让窗口塌成毫秒级、护栏失效。改名 rate_window_ms 消除这个未来必然误导的地雷。
+    rate_window_ms: int = 60_000                             # 60s(dry-run 无害占位;live 由 gate_limits 覆盖)
     # liquidity / volatility
     max_participation_rate: float = 0.10
     max_instrument_vol: float = 0.80
