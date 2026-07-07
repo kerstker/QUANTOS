@@ -5,8 +5,9 @@
 
 ## 本轮自主修复进度(2026-07-06,全部 TDD + 全量门禁全绿 + 独立提交)
 
-用户 2026-07-06 授权自主推进"让系统更 fail-closed/更诚实/更严格"的加固(不触碰人工门)。本轮已修复
-**7 项**(均只让系统更严,永不放松风控)+ 把 live 执行栈纳入 CI 门禁,门禁总覆盖 **2096 测试**全绿:
+用户 2026-07-06/07 授权自主推进"让系统更 fail-closed/更诚实/更严格"的加固(不触碰人工门)。已落地
+**10 项**(均只让系统更严,永不放松风控)+ 把 live 执行栈与 reproducibility 纳入 CI 门禁,门禁总覆盖
+**2129 测试**全绿:
 
 | 风险 | 修复 | commit |
 |---|---|---|
@@ -15,6 +16,9 @@
 | P1-2 mandate gross/net 只算当批 + 多策略超发 | 新增账户级投影 gross/net(现有敞口 + 本批 delta),ADD-only 不放宽当批检查;因 live 传账户级仓位,同时挡住多策略共享 mandate 超发;无法定价的持仓 fail-closed | `c96f285` |
 | P3-1 aiokafka 网络边界洞 | `_NETWORK_ROOTS` 补齐消息/异步网络/DB 客户端 + 精确豁免隔离模块,新增同类 import 现会被守卫挡下 | `6ca9aff` |
 | P1-4 place-后-未落库孤儿窗口(主路径 + 紧急通道) | place_order 前先落 `PENDING_NEW` 意图行(best-effort,不阻止下单),确认后 `update_status` 结算;崩溃恢复现能发现并对账孤儿订单 | `04a890a`/`4bca401` |
+| 证据摘要漂移 + reproducibility 纳入门禁 | crowd_contra t_stat 样本软化(0.6554→0.6204,核实良性)重生成摘要,`tests/reproducibility` 进 CI | (见 git log) |
+| **P1-1 验证门作 live 前置**(接线) | `live/governance/validation_attestation.py` 策略级准入门(PASS 验证或可审计人工 override,fail-closed)+ 接进驱动器 preflight(preview 只告警、--submit fail-closed 跳批)+ 签署模板;**crowd_contra 现真提交被挡,直到你签 `key/live_validation_attestations.json`** | `(见 git log)` |
+| P1-6 firm 敞口硬门(**机制,未接线**) | `services/portfolio/firm_gate.py::evaluate_firm_gate` 纯函数:越 firm gross/net/单名集中上限→BLOCK,NaN 上限 fail-closed,没配数字→UNCONFIGURED;**接线进哨兵需你给 3 个上限数字** | `(见 git log)` |
 | **P1-10(审计中新发现)门禁从不跑 tests/live** | `scripts/validate.py`(即 CI)硬编码测试目录,遗漏 `tests/live`(36 文件,最安全关键的下单/风控/对账代码)+ trading/tools——live 栈回归静默过 CI。作为独立子进程纳入(避 basename 冲突),门禁 1567→1567+527=2094 全绿 | `(见 git log)` |
 
 > **P1-10 是本轮审计中途实测发现的真实缺口**(初版 GAP_MATRIX 维度 15 因此偏乐观):此前 CLAUDE.md 里
@@ -24,13 +28,18 @@
 > = "漂移是否 intended" 的研究判断,故 `tests/reproducibility` 暂不纳入门禁,留用户定夺
 > (`python -m tools.build_evidence_digests` 可重生成)。
 
-**未在本轮做(需人工决定或需风险阈值数字,已留提示词)**:P0-1/P0-2(Phase 14 + mandate 签名,需真人)、
-P1-1(验证门作 live 前置——机制可建但**接线会阻断现部署的 crowd_contra**,需用户先定人工 override 记录)、
-P1-5(ctx 回填重复/频率引擎——重复引擎在 P1-3 修好幂等后已是纵深防御;频率引擎需 `max_orders_per_window`/
-`rate_window_s` 阈值数字 + fingerprint 格式匹配,非无阈值可做)、P1-6(firm 硬门——需敞口上限数字)、
-P2-3(峰值权益合理性上界——需合理性阈值)。见 [`NEXT_CLAUDE_CODE_PROMPTS.md`](NEXT_CLAUDE_CODE_PROMPTS.md) 提示词 1/3。
-**本轮结论:所有"无需风险阈值数字、无需人工决定、可干净完成"的 fail-closed 加固已全部落地(7 项);
-剩余项都卡在需要你签一个数字或拍一个板。**
+**剩余项(卡在需要用户的数字/拍板)**:
+- P0-1/P0-2(Phase 14 + mandate 签名,需真人)。
+- **P1-6 接线**:firm 硬门机制已建好,接进 `tools/live_risk_sentinel.py` 只差你签 3 个上限(firm max_gross /
+  max_net / max_single_name_weight)。
+- **P1-5 频率引擎**:用户 2026-07-07 给了方向(时间窗 24H、中高频率)。⚠ **重大含义**:现平台是**周度
+  cadence**(`_MAX_STALENESS_MS`=7 天、周一调度、crowd_contra 周度信号),而"24H 中高频"需要**实时/日内
+  数据层**——正是审计维度 2 标记为 MISSING 的能力。这不是一个 rate-limit 数字能解决的,是需要一起设计的
+  cadence 转型(与 P2-3 同属"共同探讨"桶)。频率引擎的 timestamp 回填机制可先建,但阈值 + cadence 需先谈。
+- **P2-3 峰值权益合理性上界**:用户 2026-07-07 明确"需要共同探讨",不自动实现。
+见 [`NEXT_CLAUDE_CODE_PROMPTS.md`](NEXT_CLAUDE_CODE_PROMPTS.md)。**结论:所有无需风险阈值、无需人工拍板的
+fail-closed 加固已全部落地(10 项);剩余项要么等你签一个数字(P1-6 接线),要么是需要一起设计的策略/
+cadence 决定(P1-5 中高频转型、P2-3 峰值上界)。**
 
 ## 一句话安全结论(先说最重要的)
 
