@@ -15,6 +15,19 @@ GateStatus = Literal["PASS", "WARN", "BLOCK"]
 _EPS = 1e-12
 _SEVERITY = {"PASS": 0, "WARN": 1, "BLOCK": 2}
 
+# 拥挤门阈值来源(Phase 3 子项3,P2-7):2026-07-07 敏感性扫描(233 周真 global_ls)记录在案,详见
+# docs/superpowers/specs/2026-07-07-crowding-gate-calibration.md。**关键实测发现**:crowd_contra 这类美元
+# 中性 fade-the-crowd book 的**账户级 gross 加权平均**拥挤分结构性钉死在 ≈0.50(长腿 ≈0.135 + 短腿 ≈0.869
+# 相消),故平均分对本 book 类别信息量低——WARN=0.45 恒触发(告警疲劳)、BLOCK=0.60 近死(~0.9%);真正有
+# 信息的是 concentration 判据(单名集中×拥挤,实测有充足余量)。**下方默认值逐字保持现状(字节不变);是否把
+# 平均分路径改 WARN-only / 换短腿口径 / 用户签新阈值 = 有意行为变更,待用户拍板(firm-gate 式"机制我建、数字
+# 人签")。** 契约测试(tests/portfolio/test_crowding_gate.py)钉死这组默认不因无声改动而漂移。
+CALIBRATED_DEFAULTS = {
+    "threshold": 0.60, "warn_threshold": 0.45, "min_coverage": 0.80,
+    "max_name_weight": 0.25, "max_exit_days": 5.0,
+    "provenance": "SENSITIVITY_SCANNED_2026_07_07_DEFAULTS_PENDING_RECALIBRATION",
+}
+
 
 def _worst(a: GateStatus, b: GateStatus) -> GateStatus:
     """The more severe of two statuses (PASS < WARN < BLOCK) — escalation never de-escalates."""
@@ -82,9 +95,10 @@ def evaluate_crowding_gate(
 ) -> CrowdingGateDecision:
     """Evaluate a long-short book against supplied crowding evidence.
 
-    Beyond the gross-weighted average crowding score, two Rank #10a criteria (UNCALIBRATED
-    thresholds, calibration is R-1) evaluate independently so a few extreme names cannot hide
-    behind the average:
+    Beyond the gross-weighted average crowding score, two Rank #10a criteria (thresholds sensitivity-
+    scanned 2026-07-07 — see CALIBRATED_DEFAULTS above + docs/superpowers/specs/2026-07-07-crowding-gate-
+    calibration.md; the average score is low-information for dollar-neutral fade books, so lean on
+    concentration) evaluate independently so a few extreme names cannot hide behind the average:
     - concentration: a name that is BOTH concentrated (abs_weight/gross > max_name_weight) AND
       crowded (> concentrated_crowding_block, default = threshold) trips BLOCK on its own;
     - liquidity (optional, needs adv_by_symbol + book_notional): exit_days = position_notional/ADV

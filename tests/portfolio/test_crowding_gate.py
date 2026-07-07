@@ -167,3 +167,14 @@ def test_project_symbol_crowding_missing_factor_returns_empty_map():
     projected = project_symbol_crowding({"A": 1.0}, {"liquidity": {"A": 0.3}}, factor_name="crowding")
 
     assert projected == {}
+
+
+# --- 校准 drift lock(Phase 3 子项3,P2-7):CALIBRATED_DEFAULTS 与签名默认不得漂移 ---
+
+def test_calibrated_defaults_match_signature_and_documented():
+    import inspect
+    from services.portfolio.crowding_gate import CALIBRATED_DEFAULTS, evaluate_crowding_gate
+    sig = inspect.signature(evaluate_crowding_gate)
+    for k in ("threshold", "warn_threshold", "min_coverage", "max_name_weight", "max_exit_days"):
+        assert sig.parameters[k].default == CALIBRATED_DEFAULTS[k], f"{k} drifted from CALIBRATED_DEFAULTS"
+    assert CALIBRATED_DEFAULTS["provenance"].startswith("SENSITIVITY_SCANNED")   # 扫描已做、发现记录在案
