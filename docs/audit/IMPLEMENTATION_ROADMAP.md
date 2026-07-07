@@ -93,7 +93,15 @@
 
 ---
 
-## Phase 5 — Portfolio 生命周期 + Post-Trade 对账 + 退休调度
+## Phase 5 — Portfolio 生命周期 + Post-Trade 对账 + 退休调度 ◑ 部分完成(2026-07-07,机制承重 + 只读报告已上;减仓数字/异常阈值留签)
+
+> 落地结果 + 诚实裁定:`docs/superpowers/specs/2026-07-07-phase5-lifecycle-and-monitoring.md`。
+> 三项机制半区大多已建但缺调度/接线;本轮把死代码 `run_maintenance` 接成周度承重驱动器 + live"停止加仓"
+> 联动(item 1),补上真缺的权益异常检测 + margin 门(item 2,默认惰性),把已有 GoNoGo 报告补测试 + PnL/
+> 成本归因 + 上架 console + 日调度(item 3,全只读)。全量门禁绿(validate.py 三检 PASS,live 栈 674;前端
+> typecheck/build/61 tests 绿)。**留用户签**:降级→自动**减仓目标数字** + RETIRED→全平人工确认、异常跳变%/
+> margin 地板阈值、近实时(<小时)cadence、维护 sweep 的 backtest 参照数据。自主动作严格 fail-safe 方向
+> (只减不加 / 只加告警 / 只读报告),涉及风险数字一律建机制 + fail-closed 默认、不代签。
 
 - **目标**:多 alpha 失效自动 de-risk;盘后对账/归因自动化。
 - **改造内容**:
