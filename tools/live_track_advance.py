@@ -61,6 +61,8 @@ from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_st
 from live.execution.tca import tca_summary
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
+from live.governance.validation_attestation import (ValidationAttestationError, load_attestations,
+                                                    require_validation_attestation)
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
                            submit_live_batch)
 from services.monitoring.audit_store import DurableAuditLog
@@ -80,6 +82,9 @@ from tools.signal_quality import rows_with_acceptable_coverage
 # 默认策略(账本回填/历史 status 路径的连续性锚点)。策略注册表 `_STRATEGIES` 在
 # `_latest_weights_and_prices` 定义之后(镜像 ic_panel_registry「加一行」范式)。
 _STRATEGY_ID = "crowd_contra"
+# 验证证明门文件(审计 P1-1):策略级、跨 venue 共享(不是 per-venue 授权),gitignored(与 mandate
+# 同处 key/,由真人签署)。缺文件/坏文件 -> fail-closed 全部 BLOCK。模板见 tools.create_validation_attestation_template。
+_VALIDATION_ATTESTATION_FILE = os.path.join("key", "live_validation_attestations.json")
 
 def _binance_balances(account: dict) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
@@ -745,6 +750,26 @@ def main() -> None:
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity, strategy_id=strategy_id)
+    # 验证证明门(审计 P1-1,用户 2026-07-07 批准"接线 + 可审计人工 override"):真提交前,strategy_id
+    # 必须在案有 PASS 验证或可审计人工 override(见 live/governance/validation_attestation.py)。这是
+    # 比风控门/mandate 更靠前的**策略级准入**门("这个策略压根有没有资格上真钱")。缺凭证:preview 只
+    # 告警(不改行为);--submit fail-closed 把本批降级为跳批(仓位原样不动、不真提交,即便已签 mandate)。
+    # crowd_contra 从未走过形式化验证门 → 需你签 key/live_validation_attestations.json 的人工 override
+    # (用 python -m tools.create_validation_attestation_template 生成模板;真实签名/理由由你填,agent 不代签)。
+    try:
+        attestations = load_attestations(_VALIDATION_ATTESTATION_FILE)
+    except ValidationAttestationError as exc:
+        attestations = {}                                   # 文件坏 -> 视同无凭证(fail-closed,全部 BLOCK)
+        alerts.append(f"validation attestation file invalid ({exc}) — live submit BLOCKED for all strategies")
+    att_reason = require_validation_attestation(strategy_id, attestations)
+    if att_reason is not None:
+        alerts.append(f"no validation attestation for {strategy_id} ({att_reason}) — "
+                      f"sign {_VALIDATION_ATTESTATION_FILE} to allow live submit")
+        if submit:
+            # fail-closed:复用跳批路径(仓位原样不动),即便 mandate 已签也不真提交。skip_reason
+            # 字符串记进 status JSON(line ~840)= 真源;preserve 既有的数据质量跳批原因。
+            skip_reason = skip_reason or f"blocked_no_validation_attestation:{att_reason}"
+
     # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
     # (那会把消失的持仓名字目标置 0、生成真实平仓单)。对账/风控/kill-switch 检查在上面已
