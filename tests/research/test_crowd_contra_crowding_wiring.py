@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tools.dry_run_crowd_contra_multi import _crowding_rank
+from tools.dry_run_crowd_contra_multi import _MAX_CROWDING_Z, _crowding_rank, _crowding_zscore
 
 
 def test_cross_sectional_rank_spans_zero_to_one():
@@ -34,3 +34,27 @@ def test_missing_values_are_skipped_and_thin_cross_section_returns_empty():
 def test_none_only_window_yields_no_evidence():
     gmat = [[None, None], [None, None]]
     assert _crowding_rank(gmat, r=1, idx=[0, 1], lookback=2) == {}
+
+
+# --- 绝对拥挤 z-score(正确统计量,用户签 z*=3.0)---
+
+def test_crowding_zscore_deviation_from_own_history():
+    # 历史 [1..12] 均值 6.5,当前 20 -> 正 z(远高于自己历史)
+    gmat = [[float(v)] for v in range(1, 13)] + [[20.0]]
+    z = _crowding_zscore(gmat, r=12, i=0, min_hist=12)
+    assert z is not None and z > 3.0
+
+
+def test_crowding_zscore_insufficient_history_returns_none():
+    gmat = [[1.0], [2.0], [3.0], [4.0]]              # 只有 4 期历史 < min_hist=12
+    assert _crowding_zscore(gmat, r=3, i=0, min_hist=12) is None
+
+
+def test_crowding_zscore_zero_variance_returns_none():
+    gmat = [[5.0] for _ in range(13)]                # 历史零方差 -> None(不制造 inf z)
+    assert _crowding_zscore(gmat, r=12, i=0, min_hist=12) is None
+
+
+def test_signed_max_crowding_z_is_active():
+    # 用户 2026-07-07 签署:绝对拥挤 z-score BLOCK 阈值 3.0(flag 最拥挤 ~10% 周)。drift-lock。
+    assert _MAX_CROWDING_Z == 3.0

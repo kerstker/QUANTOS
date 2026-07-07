@@ -17,11 +17,14 @@ _SEVERITY = {"PASS": 0, "WARN": 1, "BLOCK": 2}
 
 # 拥挤门阈值来源(Phase 3 子项3,P2-7):2026-07-07 敏感性扫描(233 周真 global_ls)记录在案,详见
 # docs/superpowers/specs/2026-07-07-crowding-gate-calibration.md。**关键实测发现**:crowd_contra 这类美元
-# 中性 fade-the-crowd book 的**账户级 gross 加权平均**拥挤分结构性钉死在 ≈0.50(长腿 ≈0.135 + 短腿 ≈0.869
-# 相消),故平均分对本 book 类别信息量低——WARN=0.45 恒触发(告警疲劳)、BLOCK=0.60 近死(~0.9%);真正有
-# 信息的是 concentration 判据(单名集中×拥挤,实测有充足余量)。**下方默认值逐字保持现状(字节不变);是否把
-# 平均分路径改 WARN-only / 换短腿口径 / 用户签新阈值 = 有意行为变更,待用户拍板(firm-gate 式"机制我建、数字
-# 人签")。** 契约测试(tests/portfolio/test_crowding_gate.py)钉死这组默认不因无声改动而漂移。
+# 中性 fade-the-crowd book 的 rank-based 统计量**全部结构性恒定**(gross 加权平均拥挤分恒 ≈0.500、max 恒 1.0、
+# 短腿恒 ≈0.77、max 单名权重 ≈0.07 从不触发集中度)——cross-sectional rank 只测"本周相对排位"、不测绝对拥挤,
+# 任何 rank 阈值都不是有效的绝对拥挤门。**用户 2026-07-07 拍板(WARN-only + z-score 门@3.0)**:平均分路径由
+# 调用方传 `average_warn_only=True` 封顶 WARN(诊断非门禁);真正的 BLOCK 由**绝对 z-score 判据**给出(被 short
+# 名字的 global_ls 时序 z > `max_crowding_z`,正确统计量,实测 short MAX z 变化 -0.5..5.87、p90≈2.9)。crowd_contra
+# 干跑驱动器已接线(z*=3.0,233 周 BLOCK 21/~9%,校准文档)。**下方默认值逐字保持现状(字节不变,为不传新参的
+# 旧调用方保留旧行为——net-directional book 平均分仍有信息可 BLOCK);新参默认 False/None 亦字节等价。** 契约
+# 测试(tests/portfolio/test_crowding_gate.py)钉死这组默认不因无声改动而漂移。
 CALIBRATED_DEFAULTS = {
     "threshold": 0.60, "warn_threshold": 0.45, "min_coverage": 0.80,
     "max_name_weight": 0.25, "max_exit_days": 5.0,
@@ -92,6 +95,9 @@ def evaluate_crowding_gate(
     adv_by_symbol: Mapping[str, float] | None = None,
     book_notional: float | None = None,
     max_exit_days: float = 5.0,
+    average_warn_only: bool = False,
+    crowding_z_by_symbol: Mapping[str, float] | None = None,
+    max_crowding_z: float | None = None,
 ) -> CrowdingGateDecision:
     """Evaluate a long-short book against supplied crowding evidence.
 
@@ -113,6 +119,8 @@ def evaluate_crowding_gate(
         raise ValueError("max_name_weight must satisfy 0 < max_name_weight <= 1")
     if concentrated_crowding_block is not None and not _is_finite_number(concentrated_crowding_block):
         raise ValueError("concentrated_crowding_block must be a finite number or None")
+    if max_crowding_z is not None and not _is_finite_number(max_crowding_z):
+        raise ValueError("max_crowding_z must be a finite number or None")
     if not _is_finite_number(max_exit_days) or float(max_exit_days) <= 0.0:
         raise ValueError("max_exit_days must be a positive finite number")
 
@@ -158,11 +166,15 @@ def evaluate_crowding_gate(
 
     score = weighted_score / covered_gross
 
-    # base verdict from the gross-weighted average
+    # base verdict from the gross-weighted average. **average_warn_only**(用户 2026-07-07 签署,见
+    # docs/superpowers/specs/2026-07-07-crowding-gate-calibration.md):对称 L/S fade book 的 gross 加权
+    # 平均拥挤分是**结构性常数**(实测恒 0.500,cross-sectional rank 天然),把它当 BLOCK 门是把数学常数
+    # 当风险信号。True -> 平均分路径封顶 WARN(诊断,永不 BLOCK);默认 False 保留旧行为(对 net-directional
+    # book 平均分仍有信息,可 BLOCK)。真正的 BLOCK 交给下方绝对 z-score 判据。
     status: GateStatus = "PASS"
     reasons: list[str] = []
     if score > float(threshold):
-        status = "BLOCK"
+        status = "WARN" if average_warn_only else "BLOCK"
         reasons.append(f"crowding_score:{score:.6f}>threshold:{float(threshold):.6f}")
     elif score > float(warn_threshold):
         status = "WARN"
@@ -182,6 +194,25 @@ def evaluate_crowding_gate(
         elif crowding > float(warn_threshold):
             status = _worst(status, "WARN")
             reasons.append(f"concentrated_crowded_warn:{symbol}:w={conc:.4f},c={crowding:.4f}")
+
+    # 绝对拥挤 z-score BLOCK 判据(**正确统计量**,用户 2026-07-07 签署 z*=3.0)。rank 分测"本周相对
+    # 排位"、结构性恒定;绝对 z = 被 short 名字的 global_ls 当前值 vs **它自己的时序历史**,真的区分
+    # "正常"与"这个拥挤多头现在异常拥挤=挤压风险"。只评 **short 腿**(挤压风险在被 short 的拥挤多头);
+    # 缺 z(历史不足)-> 该名不评 z 维(其它判据仍在);非有限 z -> fail-closed BLOCK。
+    if crowding_z_by_symbol is not None and max_crowding_z is not None:
+        for symbol in sorted(weights):
+            w = weights[symbol]
+            if not _is_finite_number(w) or float(w) >= 0.0:
+                continue                                    # 只看 short 腿
+            z = crowding_z_by_symbol.get(symbol)
+            if z is None:
+                continue                                    # z 需足够历史;缺则不评该名的 z 维
+            if not _is_finite_number(z):
+                return _block(score, threshold, (f"invalid_crowding_z:{symbol}",), exposures)
+            if float(z) > float(max_crowding_z):
+                status = _worst(status, "BLOCK")
+                reasons.append(
+                    f"absolute_crowding_z_block:{symbol}:z={float(z):.4f}>{float(max_crowding_z):.4f}")
 
     # Rank #10a — optional ADV / liquidity dimension: exit_days = position_notional / ADV.
     if adv_by_symbol is not None and book_notional is not None:

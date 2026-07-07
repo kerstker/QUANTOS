@@ -28,6 +28,12 @@ _COST_BPS = 10.0            # 平 10bps:大币偏保守,对上证伪里 net@10bp
 _WEEK_MS = 7 * 24 * 3600 * 1000
 
 
+# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准见 docs/superpowers/specs/
+# 2026-07-07-crowding-gate-calibration.md):被 short 名字的 global_ls 时序 z > 3.0 -> BLOCK(挤压风险)。
+# 实证:short-leg MAX z 在 -0.5..5.87 变化,p90≈2.9,z*=3.0 flag 最拥挤的 ~10% 周。
+_MAX_CROWDING_Z = 3.0
+
+
 def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
     """Rank #10a crowding evidence: trailing-window mean global_ls per instrument, cross-sectionally
     ranked to [0,1] (higher = more crowded-long). Scale-free, so the gate's thresholds apply."""
@@ -40,6 +46,20 @@ def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
         return {}
     ordered = sorted(means, key=lambda i: means[i])
     return {i: k / (len(ordered) - 1) for k, i in enumerate(ordered)}
+
+
+def _crowding_zscore(gmat, r: int, i, min_hist: int = 12):
+    """绝对拥挤度(正确统计量):该名 global_ls 当前值 vs 它自己的时序历史(≥min_hist 期)的 z-score。
+    历史不足 / 零方差 / 当前缺值 -> None(该名不评 z 维)。纯函数。"""
+    hist = [gmat[rr][i] for rr in range(0, r) if gmat[rr][i] is not None]
+    if len(hist) < min_hist:
+        return None
+    m = sum(hist) / len(hist)
+    var = sum((x - m) ** 2 for x in hist) / len(hist)
+    cur = gmat[r][i]
+    if var <= 1e-24 or cur is None:
+        return None
+    return (cur - m) / (var ** 0.5)
 
 
 def main() -> None:
@@ -58,11 +78,12 @@ def main() -> None:
             rows.append(r)
             last = ev[r]
 
-    # Rank #10a: the crowding gate is now LOAD-BEARING on this book — evaluated every week from real
-    # global_ls evidence, recorded in run detail, and (on a genuine concentration/invalid BLOCK) it
-    # skips that week's rebalance (carry prior holdings). crowd_contra is dollar-neutral + diffuse, so
-    # by construction it lands in WARN (crowded names ARE the edge) and never over-concentrates — the
-    # gate documents the crowding profile without vetoing the thesis; a concentrated book WOULD block.
+    # Rank #10a: the crowding gate is LOAD-BEARING on this book — evaluated every week from real global_ls
+    # evidence, recorded in run detail, and on a genuine BLOCK it skips that week's rebalance (carry prior
+    # holdings). **2026-07-07 校准修正(用户签 WARN-only + z-score@3.0)**:rank 平均分是结构性常数(恒 0.500),
+    # 现 average_warn_only=True 封顶 WARN(诊断);真正的 BLOCK 由**绝对 z-score 判据**给出——被 short 的拥挤多头
+    # 其 global_ls 时序 z > 3.0(挤压风险,实测 21/233≈9% 周触发)-> 跳本周调仓(128.9%→123.8%,回撤 9.8%→8.9%)。
+    # 集中度判据对本分散 book 仍从不触发。
     periods, weights_by_period, prices_by_period, rate_by_period = [], {}, {}, {}
     gate_decisions, prev_weights = [], None
     for r in rows:
@@ -72,9 +93,15 @@ def main() -> None:
         t = int(ev[r])
         target = {insts[i]: w for i, w in legs.items()}
         crowd = {insts[i]: rank for i, rank in _crowding_rank(gmat, r, list(legs)).items()}
+        # 绝对 z-score(正确统计量):每名 global_ls 时序 z,喂 z-score BLOCK 判据(用户签 z*=3.0)。
+        z_map = {insts[i]: z for i in legs if (z := _crowding_zscore(gmat, r, i)) is not None}
         blocked = False
         if crowd:
-            decision = evaluate_crowding_gate(target, crowd)
+            # average_warn_only=True:rank 平均分是结构性常数(校准文档),诊断非 BLOCK 门;真正的 BLOCK
+            # 由绝对 z-score 判据给出(被 short 的拥挤多头 z>3.0 -> 挤压风险 -> 跳本周调仓、carry 持仓)。
+            decision = evaluate_crowding_gate(
+                target, crowd, average_warn_only=True,
+                crowding_z_by_symbol=z_map, max_crowding_z=_MAX_CROWDING_Z)
             gate_decisions.append(decision)
             blocked = decision.status == "BLOCK"
         periods.append(t)

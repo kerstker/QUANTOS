@@ -38,13 +38,17 @@ Phase 3 校准发现 crowd_contra 的 gross 加权**平均拥挤分**结构性�
 z-score = 该名当前 global_ls vs **它自己的时序历史**(≥12 期)——回答"这个名字**现在**是否异常拥挤"
 (挤压风险),而非"它这周相对别人排第几"。**短腿 MAX z** 从 ~0 到 5.9σ 真的在动,p90≈2.9。
 
-## 建议(有意行为变更,待用户签)
+## 决定(用户 2026-07-07 拍板:WARN-only + z-score 门@3.0)—— ✅ 已落地
 
-1. **rank 平均路径改 WARN-only**:平均分恒 = 0.500,把它当 BLOCK 门是把一个数学常数当风险信号。改成只
-   记录/告警(不 BLOCK),诚实承认它是诊断而非门禁。—— 立即、干净。
-2. **集中度判据保留原样**:对本 book 从不触发(分散),但对**未来可能集中**的 book 仍是有效的真判据,无害保留。
-3. **正确的 BLOCK 门 = 新的绝对 z-score 判据**(需用户签 z 阈值):被 short 名字的 MAX global_ls z-score
-   超过 z* → WARN/BLOCK。参考:**z\*=3.0 flag 最拥挤的 ~10% 周**(p90=2.91);z\*=2.5 更敏感。这是需要新加
-   evidence(每名时序 z)+ 用户签 z\* 的机制,是"机制我建、数字人签"的下一步,非本诊断自动启用。
+1. **rank 平均路径改 WARN-only**:平均分恒 = 0.500,把它当 BLOCK 门是把数学常数当风险信号。落地为 gate 加
+   `average_warn_only` 参(默认 False 字节等价;crowd_contra 驱动器传 True → 平均分封顶 WARN,诊断非门禁)。
+2. **集中度判据保留原样**:对本分散 book 从不触发,但对未来可能集中的 book 仍有效,无害保留。
+3. **正确的 BLOCK 门 = 绝对 z-score 判据**(用户签 **z\*=3.0**):gate 加 `crowding_z_by_symbol`/`max_crowding_z`
+   参(默认 None 字节等价),被 short 名字的 global_ls 时序 z > z\* → BLOCK(挤压风险);缺 z(历史不足)不评该
+   名 z 维,非有限 z → fail-closed BLOCK。crowd_contra 驱动器算每名 z + 传 z\*=3.0。**实测效果:233 周 BLOCK
+   21/~9%(对上 p90≈2.9)**;干跑从 128.9%/夏普1.110/回撤9.8% → 123.8%/1.090/回撤8.9%(z-gate 跳过高挤压周,
+   小幅用收益换更低尾部回撤;evidence digest 已随之重生成)。
 
-诚实边界:本诊断只算+落快照,**不改 crowding_gate 行为**;上述三条都是有意行为变更,待用户拍板。
+落地:gate 参 8 tests + 驱动器 z 证据 4 tests(含 z\*=3.0 drift-lock)。gate 默认行为字节等价(新参默认 False/None);
+只有 crowd_contra 驱动器主动传新参激活。live 路径 avg 0.5<0.6 本就从不 BLOCK(已是事实 WARN-only),z-gate 需
+per-name 历史穿线(= Phase 4 延后的注册表 4→5 tuple)→ 留 live 侧后续。
