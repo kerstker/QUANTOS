@@ -305,7 +305,7 @@ def _panel_with_stale_last_row():
 def test_latest_weights_walks_back_to_last_row_with_signal_coverage():
     from tools.live_track_advance import _latest_weights_and_prices
     panel = _panel_with_stale_last_row()
-    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, panel.instruments))
+    weights, prices, decided_ts, ls_row, _evidence = _latest_weights_and_prices((panel, panel.instruments))
     assert weights                                  # 不再因最后一行全空而产出空 book
     assert decided_ts == 3000                       # 用的是最近一行有信号的行(诚实:决策带数据时间)
     assert prices["C0"] == 101.0                    # 价格取同一行(决策快照自洽)
@@ -319,10 +319,66 @@ def test_latest_weights_all_rows_empty_is_honest_empty():
     matrices = {"global_ls": [[None] * 10] * 3,
                 "close": [[100.0] * 10] * 3}
     panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
-    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, insts))
+    weights, prices, decided_ts, ls_row, evidence = _latest_weights_and_prices((panel, insts))
     assert weights == {}                            # 回看窗口内全空 -> 诚实空,不硬凑
     assert decided_ts == 3
     assert ls_row == {}
+    assert evidence == {}                           # 空 book -> 空证据
+
+
+def _panel_with_evidence_history(n_rows=15):
+    """够长历史(z 需 ≥12)+ volume 矩阵(ADV 需)+ close 变化(vol 需)。C0 global_ls 随时间爬升
+    (拥挤度上升,会被 short 且有充足方差 -> 有限 z);其余名近恒定(z 零方差 -> None)。"""
+    import services.research.alpha_expression as ax
+    insts = [f"C{i}" for i in range(4)]
+    ev = [1000 * (r + 1) for r in range(n_rows)]
+    matrices = {"global_ls": [], "close": [], "volume": []}
+    for r in range(n_rows):
+        matrices["global_ls"].append([1.0 + r * 0.2, 2.0, 3.0, 4.0])
+        matrices["close"].append([100.0 + r, 200.0 + r * 2, 300.0 + r, 400.0 - r])
+        matrices["volume"].append([1000.0, 2000.0, 3000.0, 4000.0])
+    return ax.FieldPanel(instruments=insts, event_times=ev, matrices=matrices)
+
+
+def test_latest_weights_returns_per_leg_evidence():
+    # 5-tuple 穿线:第 5 元素 evidence[name] = {adv_units, inst_vol, crowding_z},从同一决策行算
+    from tools.live_track_advance import _latest_weights_and_prices
+    panel = _panel_with_evidence_history()
+    result = _latest_weights_and_prices((panel, panel.instruments))
+    assert len(result) == 5
+    weights, prices, decided_ts, ls_row, evidence = result
+    assert weights and isinstance(evidence, dict)
+    for name in weights:
+        assert name in evidence
+        assert evidence[name]["adv_units"] is not None     # volume present -> 真实 ADV
+        assert evidence[name]["inst_vol"] is not None      # close 历史 -> 真实 vol
+        assert "crowding_z" in evidence[name]              # z 键在(方差不足的名字为 None)
+
+
+def test_vol_annualize_matches_threshold_units_and_passes_normal_vol():
+    # vol-annualize 口径必须和 gate_limits 的 max_instrument_vol=5.0(年化)一致——配错会静默失配
+    # (太小=门死、太大=误拒)。日频对数收益 pstdev × sqrt(365) = 年化。
+    import math
+    from live.execution.market_stats import realized_volatility
+    from tools.live_track_advance import _VOL_ANNUALIZE, _VOL_WINDOW
+    assert _VOL_ANNUALIZE == 365.0                       # drift-lock(签署口径)
+    closes = [100.0 * (1.0 + 0.02 * math.sin(i)) for i in range(40)]   # ~2% 日波动的合成价
+    v = realized_volatility(closes, window=_VOL_WINDOW, annualize=_VOL_ANNUALIZE)
+    assert v is not None and 0.0 < v < 5.0               # 正常波动远在阈内 -> 过门(只缺数据/病态才拒)
+
+
+def test_latest_weights_evidence_fail_closed_on_missing_data():
+    import services.research.alpha_expression as ax
+    from tools.live_track_advance import _latest_weights_and_prices
+    insts = [f"C{i}" for i in range(4)]
+    # 无 volume 矩阵 + 只 3 行(z 历史 <12)-> adv/z fail-closed None
+    matrices = {"global_ls": [[1.0, 2.0, 3.0, 4.0]] * 3, "close": [[100.0, 210.0, 300.0, 390.0]] * 3}
+    panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
+    weights, prices, decided_ts, ls_row, evidence = _latest_weights_and_prices((panel, insts))
+    assert weights
+    for name in weights:
+        assert evidence[name]["adv_units"] is None         # 无 volume -> fail-closed None
+        assert evidence[name]["crowding_z"] is None        # 历史 <12 -> None
 
 
 # --- 2026-07-06 P0(空权重根因调查 CONFIRMED 修复):walkback 覆盖率门 + 跳批语义 ---
@@ -348,7 +404,7 @@ def test_walkback_skips_marginal_partial_coverage_row():
     # 修复后:覆盖率 4/10 < 0.8×(窗口内最大 10) -> 跳过毛边行,落到 r1 满行
     from tools.live_track_advance import _latest_weights_and_prices
     panel = _panel_with_marginal_then_full_rows()
-    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, panel.instruments))
+    weights, prices, decided_ts, ls_row, _evidence = _latest_weights_and_prices((panel, panel.instruments))
     assert decided_ts == 2000                       # 满行,不是毛边行的 3000
     assert len(weights) >= 4                        # 满截面 book,不是 2 腿退化 book
 
@@ -363,7 +419,7 @@ def test_walkback_uniform_low_coverage_universe_is_accepted():
     matrices = {"global_ls": [ls_row6, ls_row6, ls_row6],
                 "close": [close_full, close_full, close_full]}
     panel = ax.FieldPanel(instruments=insts, event_times=[1, 2, 3], matrices=matrices)
-    weights, prices, decided_ts, ls_row = _latest_weights_and_prices((panel, insts))
+    weights, prices, decided_ts, ls_row, _evidence = _latest_weights_and_prices((panel, insts))
     assert weights
     assert decided_ts == 3
 

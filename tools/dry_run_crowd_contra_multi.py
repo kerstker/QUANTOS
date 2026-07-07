@@ -19,6 +19,7 @@ from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
+from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
 from tools.crypto_oi_research import build_panel, _legs, QUANTILE
 from tools.crypto_oi_verify import CROWD_CONTRA
 
@@ -46,20 +47,6 @@ def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
         return {}
     ordered = sorted(means, key=lambda i: means[i])
     return {i: k / (len(ordered) - 1) for k, i in enumerate(ordered)}
-
-
-def _crowding_zscore(gmat, r: int, i, min_hist: int = 12):
-    """绝对拥挤度(正确统计量):该名 global_ls 当前值 vs 它自己的时序历史(≥min_hist 期)的 z-score。
-    历史不足 / 零方差 / 当前缺值 -> None(该名不评 z 维)。纯函数。"""
-    hist = [gmat[rr][i] for rr in range(0, r) if gmat[rr][i] is not None]
-    if len(hist) < min_hist:
-        return None
-    m = sum(hist) / len(hist)
-    var = sum((x - m) ** 2 for x in hist) / len(hist)
-    cur = gmat[r][i]
-    if var <= 1e-24 or cur is None:
-        return None
-    return (cur - m) / (var ** 0.5)
 
 
 def main() -> None:

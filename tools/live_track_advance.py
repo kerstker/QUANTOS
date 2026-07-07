@@ -43,7 +43,8 @@ from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.execution.position_ledger import LiveLedger
-from live.execution.crowding_score import compute_crowding_scores
+from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
+from live.execution.market_stats import average_daily_volume_units, realized_volatility
 from live.execution.day_pnl import compute_day_pnl
 from live.execution.state_io import atomic_write_json
 from live.governance.kill_switch_store import (load_kill_switch_state,
@@ -92,6 +93,15 @@ _FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
 # alpha 维护 sweep 状态(Phase 5 item 1,P1-7):由 tools/alpha_maintenance_sweep.py 写(经审计 manager
 # 降级/退役衰退 alpha),驱动器只读。本策略 RETIRED/PAUSED -> 停止新增敞口(现有仓位原样不动)。
 _MAINTENANCE_STATUS_PATH = os.path.join("data", "cache", "alpha_maintenance_status.json")
+# 每腿证据窗口(工程占位,非风险数字——只影响喂进门的 ADV/vol **值**,阈值 1.0/5.0 未动、值恒远在阈内)。
+# _VOL_ANNUALIZE=365:日频对数收益 pstdev × sqrt(365) = 年化,与 gate_limits 的 max_instrument_vol=5.0
+# (年化口径)匹配——这个换算必须和阈值口径一致(见回归审查:annualize 配错会静默失配)。
+_ADV_WINDOW = 30
+_VOL_WINDOW = 30
+_VOL_ANNUALIZE = 365.0
+# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准 docs/superpowers/specs/2026-07-07-crowding-
+# gate-calibration.md):被 short 名字 global_ls 时序 z > 3.0 -> BLOCK(挤压保护)。与干跑驱动器同一签署值。
+_MAX_CROWDING_Z = 3.0
 
 def _binance_balances(account: dict) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
@@ -410,6 +420,7 @@ def _latest_weights_and_prices(panel_bundle=None):
     insts = panel.instruments
     close = panel.matrices["close"]
     global_ls = panel.matrices.get("global_ls", [[None] * len(insts)] * len(panel.event_times))
+    volume = panel.matrices.get("volume")            # 合成测试面板可能无 volume -> ADV fail-closed None
     ev = panel.event_times
     sig = ax.evaluate(CROWD_CONTRA, panel)
     r_last = len(ev) - 1
@@ -421,12 +432,24 @@ def _latest_weights_and_prices(panel_bundle=None):
             prices = {insts[i]: close[r][i] for i in range(len(insts)) if close[r][i]}
             ls_row = {insts[i]: global_ls[r][i] for i in range(len(insts))
                      if global_ls[r][i] is not None}
-            return weights, prices, int(ev[r]), ls_row
-    return {}, {}, int(ev[r_last]), {}
+            # 每腿证据(从**同一决策行 r** 算,零 row-drift):ADV(缺 volume/窗口不足 -> None fail-closed)、
+            # 真实波动(对数收益,年化)、绝对拥挤 z(vs 自身历史,<12 期/零方差 -> None,该名不评 z 维)。
+            evidence = {}
+            for i in legs:
+                adv = (average_daily_volume_units([volume[rr][i] for rr in range(r + 1)],
+                                                  unit_scale=UNIT_SCALE, window=_ADV_WINDOW)
+                       if volume is not None else None)
+                vol = realized_volatility([close[rr][i] for rr in range(r + 1)],
+                                          window=_VOL_WINDOW, annualize=_VOL_ANNUALIZE)
+                evidence[insts[i]] = {"adv_units": adv, "inst_vol": vol,
+                                      "crowding_z": crowding_zscore(global_ls, r, i)}
+            return weights, prices, int(ev[r]), ls_row, evidence
+    return {}, {}, int(ev[r_last]), {}, {}
 
 
 # 策略注册表(2026-07-06 战线③,镜像 ic_panel_registry「加一行」范式):第二条策略上线 =
-# 这里加一行(signal 返回 (weights, prices, decided_ts, global_ls_row) 四元组)+ 用户重签
+# 这里加一行(signal 返回 (weights, prices, decided_ts, global_ls_row, evidence) 五元组——evidence[name]=
+# {adv_units, inst_vol, crowding_z},见 _latest_weights_and_prices;新策略必须同样返回五元组)+ 用户重签
 # mandate(per-strategy 子限额 = commit 2,业务决定待用户拍板;未分块前两条策略共享 venue
 # 全额度,驱动器会告警,见 multi_strategy_mandate_alert)。CLI:--strategy(默认 crowd_contra,
 # 未注册 -> SystemExit)。注意:策略名会进 status 文件名(非默认策略),只用文件系统安全字符。
@@ -578,19 +601,20 @@ def main() -> None:
             emit([f"live_track refresh CRASHED: {exc}"], context="live_track", now_ms=now)
             raise
 
-    weights, prices, decided_ts, global_ls_row = _STRATEGIES[strategy_id]["signal"]()
+    weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES[strategy_id]["signal"]()
 
-    # 拥挤度门(2026-07-05,机构审计 P1 quick win):crowding_gate.py 已建成测试却从未接入
-    # 真实下单路径。crowd_contra 本身就是"反着做拥挤的散户多空仓位",这里量化它交易的对象
-    # (global_ls 偏离 1.0 的截面分位)作为证据喂给门。BLOCK -> 跳过整批(不动现有仓位,
-    # 只是不新增/调整这本已判定过度拥挤的 book,见 batch_skip_reason——2026-07-06 修复:
-    # 此前 BLOCK 分支把 weights 置空,空 weights 会让 build_intents 把全部持仓目标置 0、
-    # 生成真实平仓单,行为与本注释的承诺相反);WARN -> 仅告警。诊断证据不足(coverage 太低/
-    # 无 global_ls 数据)时门本身 fail-closed 返回 BLOCK,同样只是跳批,不是灾难。
+    # 拥挤度门(2026-07-05,机构审计 P1 quick win;2026-07-07 校准修正接线):crowd_contra 本身就是"反着做
+    # 拥挤的散户多空仓位"。**平均分是结构性常数**(校准文档),故 average_warn_only=True 把它降为诊断 WARN;
+    # 真正的 BLOCK 由**绝对 z-score 判据**给出——被 short 名字 global_ls 时序 z > 3.0(挤压保护,用户签)。
+    # BLOCK -> 跳过整批(不动现有仓位,见 batch_skip_reason——2026-07-06 修复:BLOCK 不再置空 weights,
+    # 避免生成真实平仓单);WARN -> 仅告警。证据不足(coverage 太低/无 global_ls)时门 fail-closed BLOCK。
     crowding_blocked = False
     if weights:
         crowding_scores = compute_crowding_scores(global_ls_row)
-        crowding_decision = evaluate_crowding_gate(weights, crowding_scores)
+        z_map = {s: e["crowding_z"] for s, e in evidence.items() if e.get("crowding_z") is not None}
+        crowding_decision = evaluate_crowding_gate(
+            weights, crowding_scores, average_warn_only=True,
+            crowding_z_by_symbol=z_map, max_crowding_z=_MAX_CROWDING_Z)
         if crowding_decision.status != "PASS":
             alerts.append(f"crowding gate {crowding_decision.status}: {crowding_decision.reasons} "
                          f"(score={crowding_decision.score})")
@@ -820,7 +844,12 @@ def main() -> None:
     _rate_cutoff = now - _RATE_WINDOW_MS
     recent_ts = tuple(int(o["submitted_at"]) for o in ledger.orders()
                       if int(o["submitted_at"]) >= _rate_cutoff)
-    # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)
+    # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)。
+    # **ADV/波动门刻意仍传占位符(不接真实值)**——2026-07-07 testnet preview 联调发现:真实 ADV/vol
+    # 只覆盖当前信号的 14 腿,而**平仓单**(退出不在本期信号里的遗留仓位)缺证据会被 fail-closed 拒——
+    # 这是 fail-safe 反方向的错(平仓/减仓永远应能过,要能退出)。且 $5k AUM 下真实参与率 ~1e-7 << 阈值
+    # 1.0,ADV 门本就从不绑定(RE-1:carry ~$2M/crowd ~$7M 才绑),接线净价值≈0。evidence 里的 adv/vol
+    # 已算好可用,真正接线需先给平仓/减仓单设计 reduce-only 豁免 + 规模到位,留后续(设计文档记录)。
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity, strategy_id=strategy_id,
@@ -910,6 +939,11 @@ def main() -> None:
             alerts.append(f"submit failed {failed_order.instrument_id}: {err[:160]}")
     if result.ledger_write_errors:
         alerts.append(f"{len(result.ledger_write_errors)} ledger write errors — reconcile manually")
+    if result.rejected_by_gate:
+        # 2026-07-07:被预交易门拒的腿(冻结、不下单)必须可见,不能静默少执行——运维据此核对是哪个引擎拒的。
+        rejected_ids = sorted({getattr(o, "instrument_id", "?") for o, _r in result.rejected_by_gate})
+        alerts.append(f"{len(result.rejected_by_gate)} leg(s) rejected by pre-trade gate "
+                      f"(frozen, positions untouched): {rejected_ids}")
     if result.tier not in (AUTO, "SKIPPED_DATA_QUALITY"):
         alerts.append(f"batch tier={result.tier}: {len(result.pending_review)} orders pending human review")
         if result.pending_review:

@@ -128,6 +128,23 @@ def test_driver_wires_strategy_positions_into_batch_and_account_into_gates():
     assert "ledger_positions = " not in _SRC
 
 
+def test_driver_wires_live_crowding_z_gate():
+    # 源码结构钉子(2026-07-07 注册表 4->5 tuple 接线,main() 不可离线跑):拥挤 z-gate 用 average_warn_only
+    # + 用户签的 z*=3.0(挤压保护)。防止有人把接线悄悄改回默认门。
+    assert "average_warn_only=True" in _SRC
+    assert "max_crowding_z=_MAX_CROWDING_Z" in _SRC
+    assert "_MAX_CROWDING_Z = 3.0" in _SRC                     # 签署值 drift-lock(源码级)
+    # signal 现返回五元组(evidence 携带 adv/vol/z),解包点必须同步
+    assert "weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES" in _SRC
+
+
+def test_driver_does_not_gate_adv_vol_avoiding_exit_order_rejection():
+    # 2026-07-07 testnet preview 发现:真实 ADV/vol 只覆盖当前信号腿,平仓/减仓单(退出遗留仓位)缺证据会
+    # 被 fail-closed 拒——fail-safe 反方向。故 ADV/vol **刻意不接线**(仍传占位符,evidence 里已算好留用)。
+    assert "recent_timestamps=recent_ts)" in _SRC             # make_ctx_factory 调用不带 adv_units/inst_vol
+    assert "adv_units=adv_units" not in _SRC                  # 未接线(防止误接导致挡平仓单)
+
+
 # --- 紧急减仓陈旧基线防护(2026-07-06 对抗式复审 CONFIRMED 修复,front3-strategy 高危发现):
 # 减仓 fill 记进 EMERGENCY_STRATEGY_ID 保留账本、不落回原策略,策略级视图对该标的仍是
 # "减仓前的旧仓位",必须冻结直到人工重归属 ---
