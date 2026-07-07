@@ -832,8 +832,12 @@ def main() -> None:
     if mandate is not None and mandate.max_gross_notional > 0:
         deploy_aum = min(capital_base, 0.95 * mandate.max_gross_notional)
 
+    # allowed_instruments = 本期信号腿 ∪ **账户当前持仓**(2026-07-07):持有但不在本期信号里的遗留仓位
+    # 会生成 target-0 **平仓单**,若 allowed_instruments 只含信号腿,check_instrument_allowed 会拒掉平仓单
+    # (structural allow-list,不是 reduce-only 豁免能修的),导致持仓平不掉。并入持仓只放行**已持有名字的
+    # 平仓**(它们没有信号权重、不会生成新开仓单),绝不放行新标的开仓。
     gate = PreTradeRiskGate(
-        gate_limits(weights.keys(), gross_cap=aum * 2, net_cap=aum * 0.3,
+        gate_limits(set(weights) | set(account_positions), gross_cap=aum * 2, net_cap=aum * 0.3,
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
 
@@ -845,15 +849,17 @@ def main() -> None:
     recent_ts = tuple(int(o["submitted_at"]) for o in ledger.orders()
                       if int(o["submitted_at"]) >= _rate_cutoff)
     # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)。
-    # **ADV/波动门刻意仍传占位符(不接真实值)**——2026-07-07 testnet preview 联调发现:真实 ADV/vol
-    # 只覆盖当前信号的 14 腿,而**平仓单**(退出不在本期信号里的遗留仓位)缺证据会被 fail-closed 拒——
-    # 这是 fail-safe 反方向的错(平仓/减仓永远应能过,要能退出)。且 $5k AUM 下真实参与率 ~1e-7 << 阈值
-    # 1.0,ADV 门本就从不绑定(RE-1:carry ~$2M/crowd ~$7M 才绑),接线净价值≈0。evidence 里的 adv/vol
-    # 已算好可用,真正接线需先给平仓/减仓单设计 reduce-only 豁免 + 规模到位,留后续(设计文档记录)。
+    # 真实 ADV/波动喂进流动性/波动门(2026-07-07 接线,把结构性失效占位符升为真实承重)。**平仓单不再被
+    # 误挡**:reduce-only 豁免(check_liquidity/volatility 对证明为纯降敞口的单放行,缺 ADV/vol 也过)+
+    # allowed_instruments 并入持仓,两者合起来让退出遗留仓位的平仓单畅通。加仓单缺数据仍 fail-closed 拒
+    # (真实且承重);$5k AUM 下真实参与率 ~1e-7 << 阈值 1.0,故正常加仓单不误拒。evidence 空(与空 weights
+    # 同现,已跳批)-> None -> 占位符路径(字节等价)。
+    adv_units = {s: e["adv_units"] for s, e in evidence.items()} if evidence else None
+    inst_vol = {s: e["inst_vol"] for s, e in evidence.items()} if evidence else None
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity, strategy_id=strategy_id,
-                                   recent_timestamps=recent_ts)
+                                   recent_timestamps=recent_ts, adv_units=adv_units, inst_vol=inst_vol)
     # 验证证明门(审计 P1-1,用户 2026-07-07 批准"接线 + 可审计人工 override"):真提交前,strategy_id
     # 必须在案有 PASS 验证或可审计人工 override(见 live/governance/validation_attestation.py)。这是
     # 比风控门/mandate 更靠前的**策略级准入**门("这个策略压根有没有资格上真钱")。缺凭证:preview 只

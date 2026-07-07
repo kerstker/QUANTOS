@@ -138,11 +138,16 @@ def test_driver_wires_live_crowding_z_gate():
     assert "weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES" in _SRC
 
 
-def test_driver_does_not_gate_adv_vol_avoiding_exit_order_rejection():
-    # 2026-07-07 testnet preview 发现:真实 ADV/vol 只覆盖当前信号腿,平仓/减仓单(退出遗留仓位)缺证据会
-    # 被 fail-closed 拒——fail-safe 反方向。故 ADV/vol **刻意不接线**(仍传占位符,evidence 里已算好留用)。
-    assert "recent_timestamps=recent_ts)" in _SRC             # make_ctx_factory 调用不带 adv_units/inst_vol
-    assert "adv_units=adv_units" not in _SRC                  # 未接线(防止误接导致挡平仓单)
+def test_driver_allows_closing_held_positions_not_in_signal():
+    # 2026-07-07:allowed_instruments 并入账户持仓,让遗留仓位(不在本期信号)的平仓单不被
+    # check_instrument_allowed 挡(structural allow-list)。只放行已持有名字的平仓,不放行新开仓。
+    assert "gate_limits(set(weights) | set(account_positions)" in _SRC
+
+
+def test_driver_wires_real_adv_vol_now_that_exits_are_exempt():
+    # 2026-07-07:reduce-only 豁免(gate)+ allowed_instruments 并入持仓(driver)让平仓单畅通后,真实
+    # ADV/vol 已可安全接线(把结构性失效的流动性/波动门升为真实承重)。加仓单缺数据仍 fail-closed 拒。
+    assert "adv_units=adv_units, inst_vol=inst_vol" in _SRC
 
 
 # --- 紧急减仓陈旧基线防护(2026-07-06 对抗式复审 CONFIRMED 修复,front3-strategy 高危发现):
