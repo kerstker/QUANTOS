@@ -1,0 +1,18 @@
+# QUANTOS 镜像 build context 排除(Phase 6 item 3)。镜像 L2 安全不变量的一部分——
+# 即便某处误加 `COPY .`,凭证/数据/执行栈也不会进 build context(纵深防御)。
+# 与 .gitignore 的凭证/数据排除口径一致;由 tests/governance/test_container_boundary.py 钉死。
+key/
+data/
+live/
+.env
+.env.*
+*.db
+*.secret.yaml
+node_modules
+__pycache__/
+.pytest_cache/
+.git/
+apps/
+tools/
+tests/
+docs/
