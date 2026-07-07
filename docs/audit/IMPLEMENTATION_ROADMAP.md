@@ -73,8 +73,14 @@
 
 ---
 
-## Phase 4 — OMS/EMS 订单完整性 + Pre-Trade 引擎全承重 + Kill Switch 增强
+## Phase 4 — OMS/EMS 订单完整性 + Pre-Trade 引擎全承重 + Kill Switch 增强 ◑ 部分完成(2026-07-07)
 
+- **落地**:④紧急减仓对抗式属性/网格测试(P2-3)✅ 穷尽证明"任意输入只减敞口"(65 用例);①ADV/波动承重
+  **机制** ✅(`live/execution/market_stats.py` fail-closed + `make_ctx_factory` 接口零回归)——**激活待用户签
+  `max_participation_rate`/`max_instrument_vol` + 注册表穿线**(NEEDS_USER_SIGNED_NUMBER)。**诚实延后**:②OMS/EMS
+  大部分已做(撤单/崩溃恢复/确定性 ID/preflight 满足"不丢单不重单")或需 cadence/post-L2(改单/主备/长连接);
+  ③同点跨源核价(P2-6)= CLEAN_TDD 但触碰核价路径,留专门 follow-up;staleness 收紧绑 1H cadence(已推迟)。
+  设计+四项裁定:`docs/superpowers/specs/2026-07-07-phase4-oms-and-pretrade.md`。全 TDD、门禁全绿。
 - **目标**:live 执行栈达到可受控小资金实盘的订单完整性与风控承重。
 - **改造内容**:
   1. **live 风控引擎全承重**(P1-5 深化):接入真实逐标的 ADV/已实现波动喂 MarketContext,`max_participation_rate`/`max_instrument_vol` 设校准值。
