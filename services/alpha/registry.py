@@ -33,6 +33,17 @@ class AlphaAssetRegistry:
         of a COMPLETED lifecycle transition — proven by a non-empty `lifecycle_event_ids`, which only
         AlphaLifecycleManager.advance() populates. A directly-constructed APPROVED asset (no transition
         proof) is rejected, so the registry can never be a backdoor around the human-only promotion."""
+        self._validate_and_store(asset)
+        self._audit.append({"event": "add", "alpha_id": asset.alpha_id, "version": asset.version,
+                            "status": asset.status.value, "generator": asset.generator,
+                            "owner": asset.owner, "lifecycle_event_ids": list(asset.lifecycle_event_ids),
+                            "ts": int(ts)})
+        return asset
+
+    def _validate_and_store(self, asset: AlphaAsset) -> None:
+        """三条守卫(APPROVED 须 lifecycle_event_ids、version 不可重、version 单调)+ 写 _versions。
+        从 add() 抽出供 restore() 复用——**含 containment 不变量,守卫顺序/语义逐字保留**:非人不能经
+        registry(内存 add 或 sqlite restore)后门到 APPROVED。"""
         if asset.status == AlphaState.APPROVED and not asset.lifecycle_event_ids:
             raise ValueError(f"alpha {asset.alpha_id}: APPROVED requires lifecycle_event_ids (promotion "
                              "goes through AlphaLifecycleManager, not direct registry.add)")
@@ -45,11 +56,13 @@ class AlphaAssetRegistry:
             if asset.version <= max(vmap):
                 raise ValueError(f"alpha {asset.alpha_id} version must exceed {max(vmap)}, got {asset.version}")
             vmap[asset.version] = asset
-        self._audit.append({"event": "add", "alpha_id": asset.alpha_id, "version": asset.version,
-                            "status": asset.status.value, "generator": asset.generator,
-                            "owner": asset.owner, "lifecycle_event_ids": list(asset.lifecycle_event_ids),
-                            "ts": int(ts)})
-        return asset
+
+    def restore(self, assets, audit) -> None:
+        """从持久层(asset_store.load_registry)重建内存态。fail-closed:逐 asset 过 _validate_and_store
+        的同一套守卫(升序;损坏/单调违反/伪造 APPROVED 即 raise,不静默部分加载),再置 _audit。"""
+        for asset in assets:
+            self._validate_and_store(asset)
+        self._audit = list(audit)
 
     # --- read ---
     def get(self, alpha_id: str, version: Optional[int] = None) -> Optional[AlphaAsset]:
