@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import statistics
 import time
@@ -47,6 +48,45 @@ def _load(path: str):
         return json.load(open(path, encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def _num(x):
+    """有限数字 -> 自身,否则 None(None/NaN/inf/非数不当数字算)。"""
+    return x if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+
+def assemble_pnl_attribution(equity_points, tca) -> dict:
+    """从持久化权益曲线 + TCA 汇总算 PnL/成本归因(全真实数据,纯函数,不造 fill-matching)。
+    equity_points = live_equity{suffix}.jsonl 的行(每行含 equity + 哨兵 spread 进的
+    upnl_total/gross_notional/net_notional);tca = tca_summary 结果或 None。空/无有效 equity
+    -> {"present": False}。**诚实边界**:total_equity_change 是权益总账(含已实现+未实现+资金费
+    净额);execution_cost_estimate = TCA 加权滑点 × 名义额 的近似,非精确账实拆分——真实
+    realized/unrealized 拆分需成本基,本阶段刻意不引入(不硬凑一个假 waterfall)。"""
+    pts = [p for p in (equity_points or []) if _num(p.get("equity")) is not None]
+    if not pts:
+        return {"present": False}
+    first_eq = _num(pts[0].get("equity"))
+    last = pts[-1]
+    last_eq = _num(last.get("equity"))
+    cost = None
+    if isinstance(tca, dict):
+        w = _num(tca.get("notional_weighted_slippage_bps"))
+        tn = _num(tca.get("total_notional"))
+        if w is not None and tn is not None:
+            cost = w / 1e4 * tn
+    return {
+        "present": True,
+        "n_points": len(pts),
+        "first_equity": first_eq,
+        "last_equity": last_eq,
+        "total_equity_change": last_eq - first_eq,
+        "latest_unrealized_pnl": _num(last.get("upnl_total")),
+        "latest_gross_notional": _num(last.get("gross_notional")),
+        "latest_net_notional": _num(last.get("net_notional")),
+        "execution_cost_estimate": cost,
+        "note": ("equity_change 含已实现+未实现+资金费净额(equity 是总账);execution_cost_estimate "
+                 "是 TCA 加权滑点×名义额的近似,非精确账实归因(realized/unrealized 拆分需成本基,未引入)。"),
+    }
 
 
 def _forward_evidence() -> dict:
@@ -88,11 +128,12 @@ def _venue_evidence(name: str) -> dict:
                 1 for r in parity_rows if r.get("paper_source") == "recomputed_signal"),
         }
 
+    t_full = None
     try:
         from live.execution.position_ledger import LiveLedger
         from live.execution.tca import tca_summary
-        t = tca_summary(LiveLedger(paths["ledger"]).tca_records())
-        out["tca"] = {k: t.get(k) for k in
+        t_full = tca_summary(LiveLedger(paths["ledger"]).tca_records())
+        out["tca"] = {k: t_full.get(k) for k in
                       ("n_with_slippage", "notional_weighted_slippage_bps",
                        "assumed_cost_bps", "weighted_minus_assumed_bps", "worst_slippage_bps")}
     except Exception:
@@ -113,6 +154,8 @@ def _venue_evidence(name: str) -> dict:
             "first": vals[0], "last": vals[-1],
             "max_drawdown_observed": max_dd,
         }
+    # PnL/成本归因(Phase 5 item 3):从真实权益曲线 + 完整 TCA 算(纯函数,含未实现/敞口/执行成本估计)
+    out["pnl"] = assemble_pnl_attribution(eq, t_full)
     return out
 
 
@@ -129,7 +172,10 @@ def _incidents() -> dict:
     }
 
 
-def build_report(now_ms: int) -> dict:
+def assemble_report(*, forward_evidence: dict, execution_evidence: dict, incidents: dict,
+                    now_ms: int) -> dict:
+    """纯装配核(无 IO/墙钟,now_ms 传入):把已加载的各证据块拼成报告 dict。既有顶层键字节等价,
+    PnL/成本归因块附在各 venue 的 execution_evidence 里(加法)。测试直接喂手造证据、不碰磁盘。"""
     return {
         "schema": "gonogo_report.v1",
         "generated_at": now_ms,
@@ -137,11 +183,21 @@ def build_report(now_ms: int) -> dict:
         "honesty_note": ("本报告只聚合既有真实产物,不下 Go/No-Go 结论——结论是 Phase 3A 人工"
                          "评审的事。测试网/Demo 均零真实资本;TCA 若出现负滑点大概率是决策价"
                          "时点失真(见 runbook §6),读数需带口径。"),
-        "forward_evidence": _forward_evidence(),
-        "execution_evidence": {name: _venue_evidence(name) for name in _VENUES
-                               if os.path.exists(_VENUES[name]["key_file"])},
-        "incidents": _incidents(),
+        "forward_evidence": forward_evidence,
+        "execution_evidence": execution_evidence,
+        "incidents": incidents,
     }
+
+
+def build_report(now_ms: int) -> dict:
+    """驱动器边界:加载所有真实产物(IO)再交给纯 assemble_report 装配。"""
+    return assemble_report(
+        forward_evidence=_forward_evidence(),
+        execution_evidence={name: _venue_evidence(name) for name in _VENUES
+                            if os.path.exists(_VENUES[name]["key_file"])},
+        incidents=_incidents(),
+        now_ms=now_ms,
+    )
 
 
 def render_markdown(rep: dict) -> str:
@@ -175,6 +231,12 @@ def render_markdown(rep: dict) -> str:
             e = v["equity"]
             lines.append(f"- 权益:{e['first']:.2f} → {e['last']:.2f}"
                          f"(观测点 {e['n_points']},观测期最大回撤 {e['max_drawdown_observed']:.2%})")
+        if v.get("pnl") and v["pnl"].get("present"):
+            pn = v["pnl"]
+            lines.append(f"- PnL 归因:权益 {pn['first_equity']:.2f} → {pn['last_equity']:.2f} "
+                         f"(变动 {pn['total_equity_change']:+.2f});最新未实现 {pn['latest_unrealized_pnl']};"
+                         f"最新 gross/net {pn['latest_gross_notional']}/{pn['latest_net_notional']};"
+                         f"执行成本估计 {pn['execution_cost_estimate']}")
         lines.append("")
     inc = rep["incidents"]
     lines += ["## 事故台账", "",
