@@ -35,8 +35,14 @@
 
 ---
 
-## Phase 2 — Data Quality Gate + Feature/Alpha 持久化生产化
+## Phase 2 — Data Quality Gate + Feature/Alpha 持久化生产化 ✅ 已完成(2026-07-07)
 
+- **落地**:P1-8 前向决策门(`services/data/panel_quality.py`,坏/停更数据暂停证据钟留 pending)✅;
+  P2-2 volume 单位守卫接进容量引擎(`capacity_curve` fail-closed 拒绝混单位出容量数)✅;
+  P3-4 AlphaAsset sqlite 持久化(`services/alpha/asset_store.py`,fail-closed + 篡改检测 + containment
+  守卫经 restore 复用)+ cs_genome 育种谱系接线(`make_child_asset` 记 parent_ids/mutation_op)✅。
+  全 TDD、门禁全绿。诚实边界:幅度价格突刺不硬挡(会误杀 LUNA 真实尾部)、gp/evolutionary 谱系未接
+  (无 asset 挂载点)、生产驱动器 save/load 注入留一行 open question。
 - **目标**:数据异常自动阻断承重决策;研究资产跨会话可查询。
 - **改造内容**:
   1. **数据质量强制门**(P1-8):喂承重决策(前向证据、可部署 book)的单标的抓取器统一开 `strict=True`;前向兑现前加一道质量门,不过 fail-closed 留 pending。
