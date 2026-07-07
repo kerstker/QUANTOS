@@ -322,3 +322,64 @@ def test_emergency_fills_use_reserved_strategy_id(ledger):
     assert ledger.all_positions(strategy_id=EMERGENCY_STRATEGY_ID)["BTC"] == pytest.approx(-2.0)
     # TCA 同样落保留账本
     assert all(t["strategy_id"] == EMERGENCY_STRATEGY_ID for t in ledger.tca_records())
+
+
+# --- 对抗式属性/网格测试(Phase 4 子项4,P2-3):证明 submit_emergency_flatten 对**任意**输入只减敞口 ---
+# 此前只在 validate_flatten_order(纯校验器)上网格测,submit_emergency_flatten 的 venue 侧行为(实际发出的
+# 订单)只有零散单点。这里穷尽 仓位(多/空/零)× 方向 × 数量(含超仓)× fail-open,断言每笔发出的 venue 订单
+# reduce_only=True 且结构上不增加 |仓位|;非法(同向/超仓/零仓)一律不发。
+
+import itertools as _it
+
+_POS_GRID = [-2.0, -1.0, -0.25, 0.0, 0.25, 1.0, 2.0]
+_QTY_GRID = [0.1, 0.25, 1.0, 2.0, 3.0]          # 含 < 与 > |pos|
+_SIDE_GRID = [OrderSide.BUY, OrderSide.SELL]
+
+
+def _assert_only_reduces(venue, pos):
+    for call in venue.calls:
+        assert call.reduce_only is True                              # ① 交易所侧 reduceOnly 恒真
+        opposes = (pos > 0 and call.side == OrderSide.SELL) or (pos < 0 and call.side == OrderSide.BUY)
+        assert opposes                                               # ② 方向必与持仓相反
+        assert call.quantity <= abs(pos) + 1e-9                      # ③ 数量 ≤ |持仓|(绝不穿越零点)
+
+
+@pytest.mark.parametrize("pos,side,qty", list(_it.product(_POS_GRID, _SIDE_GRID, _QTY_GRID)))
+def test_submit_emergency_flatten_property_only_reduces(ledger, pos, side, qty):
+    venue = _FakeVenue()
+    if pos != 0.0:
+        _prefill(ledger, {"BTC": pos})
+    submit_emergency_flatten(flatten_orders=[("BTC", side, qty)], positions={"BTC": pos}, prices=_PRICES,
+                             venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
+    _assert_only_reduces(venue, pos)
+    if validate_flatten_order(side, qty, position=pos) is not None:   # 非法 -> 结构上不发
+        assert venue.calls == []
+
+
+@pytest.mark.parametrize("pos,side,qty", list(_it.product([-1.0, 1.0], _SIDE_GRID, [0.25, 1.0, 2.0])))
+def test_submit_emergency_flatten_failopen_branch_still_only_reduces(ledger, pos, side, qty):
+    # 交易所过滤器失败 -> fail-open 提交原始数量,但仍必须 reduce_only + 只减敞口(不对称的安全设计)
+    venue = _ExplodingFiltersVenue()
+    _prefill(ledger, {"BTC": pos})
+    submit_emergency_flatten(flatten_orders=[("BTC", side, qty)], positions={"BTC": pos}, prices=_PRICES,
+                             venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
+    _assert_only_reduces(venue, pos)
+    if validate_flatten_order(side, qty, position=pos) is not None:
+        assert venue.calls == []
+
+
+def test_submit_emergency_flatten_mixed_batch_isolates_only_reducing(ledger):
+    # 混合批:合法减仓 + 非法(同向/超仓/无仓)混在一起 -> 只发合法减仓单,每笔 reduce_only
+    _prefill(ledger, {"BTC": 2.0, "ETH": -1.0})
+    positions = {"BTC": 2.0, "ETH": -1.0}
+    orders = [("BTC", OrderSide.SELL, 1.0),    # 合法(多头减)
+              ("BTC", OrderSide.BUY, 0.5),     # 非法(同向加仓)
+              ("ETH", OrderSide.BUY, 0.5),     # 合法(空头减)
+              ("ETH", OrderSide.SELL, 0.5),    # 非法(同向加空)
+              ("SOL", OrderSide.SELL, 1.0)]    # 非法(无仓位)
+    venue = _FakeVenue()
+    submit_emergency_flatten(flatten_orders=orders, positions=positions, prices=_PRICES,
+                             venue=venue, ledger=ledger, audit=GlobalAuditLog(), now=_NOW)
+    assert all(c.reduce_only for c in venue.calls)
+    sent = {(c.instrument_id, c.side) for c in venue.calls}
+    assert sent == {("BTC", OrderSide.SELL), ("ETH", OrderSide.BUY)}   # 只发两笔合法减仓
