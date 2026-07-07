@@ -18,7 +18,7 @@
 | P1-4 place-后-未落库孤儿窗口(主路径 + 紧急通道) | place_order 前先落 `PENDING_NEW` 意图行(best-effort,不阻止下单),确认后 `update_status` 结算;崩溃恢复现能发现并对账孤儿订单 | `04a890a`/`4bca401` |
 | 证据摘要漂移 + reproducibility 纳入门禁 | crowd_contra t_stat 样本软化(0.6554→0.6204,核实良性)重生成摘要,`tests/reproducibility` 进 CI | (见 git log) |
 | **P1-1 验证门作 live 前置**(接线) | `live/governance/validation_attestation.py` 策略级准入门(PASS 验证或可审计人工 override,fail-closed)+ 接进驱动器 preflight(preview 只告警、--submit fail-closed 跳批)+ 签署模板;**crowd_contra 现真提交被挡,直到你签 `key/live_validation_attestations.json`** | `(见 git log)` |
-| P1-6 firm 敞口硬门(**机制,未接线**) | `services/portfolio/firm_gate.py::evaluate_firm_gate` 纯函数:越 firm gross/net/单名集中上限→BLOCK,NaN 上限 fail-closed,没配数字→UNCONFIGURED;**接线进哨兵需你给 3 个上限数字** | `(见 git log)` |
+| P1-6 firm 敞口硬门(**已接线**) | `evaluate_firm_gate` + 用户签署上限(gross 20000/net 10000/单名 20%)接进哨兵(算门+写 `firm_gate_status.json`+BLOCK 告警)与驱动器(读状态→BLOCK 停止新增、自清除,不 arm kill-switch);auto-减仓留后续 | `(见 git log)` |
 | **P1-10(审计中新发现)门禁从不跑 tests/live** | `scripts/validate.py`(即 CI)硬编码测试目录,遗漏 `tests/live`(36 文件,最安全关键的下单/风控/对账代码)+ trading/tools——live 栈回归静默过 CI。作为独立子进程纳入(避 basename 冲突),门禁 1567→1567+527=2094 全绿 | `(见 git log)` |
 
 > **P1-10 是本轮审计中途实测发现的真实缺口**(初版 GAP_MATRIX 维度 15 因此偏乐观):此前 CLAUDE.md 里
