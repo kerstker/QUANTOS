@@ -16,11 +16,16 @@ from quantos.contracts.alpha_asset import AlphaAsset, AlphaLineage
 
 def make_child_asset(*, alpha_id: str, expression: str, parents: Sequence[AlphaAsset],
                      mutation_op: str, evaluation: Optional[AlphaEvaluation] = None,
-                     metric: str = "net_sharpe", **meta) -> AlphaAsset:
+                     metric: str = "net_sharpe", parent_ids: Optional[Sequence[str]] = None,
+                     **meta) -> AlphaAsset:
     """Construct the child asset. `perf_delta` = child[metric] - max(parent[metric]) when both the child
     and at least one parent have an evaluation, else None (fail-safe). `generator` defaults to the first
-    parent's generator unless given in `meta`. Any other AlphaAsset field may be overridden via `meta`."""
-    parent_ids = tuple(p.alpha_id for p in parents)
+    parent's generator unless given in `meta`. Any other AlphaAsset field may be overridden via `meta`.
+
+    `parent_ids`(P3-4):育种时父代 asset 常不在本次 best 作用域(拿不到 AlphaAsset 对象),用此显式记全
+    谱系;None(默认)则从 `parents` 派生(旧行为逐字节不变)。perf_delta 始终只从 in-scope 的 `parents`
+    评估算(拿不到评估的父不参与,fail-safe 契约既有)。"""
+    pids = tuple(parent_ids) if parent_ids is not None else tuple(p.alpha_id for p in parents)
 
     perf_delta = None
     if evaluation is not None and parents:
@@ -30,7 +35,7 @@ def make_child_asset(*, alpha_id: str, expression: str, parents: Sequence[AlphaA
         if child_m is not None and parent_ms:
             perf_delta = child_m - max(parent_ms)
 
-    lineage = AlphaLineage(parent_ids=parent_ids, mutation_op=mutation_op, perf_delta=perf_delta)
+    lineage = AlphaLineage(parent_ids=pids, mutation_op=mutation_op, perf_delta=perf_delta)
     if "generator" not in meta and parents:
         meta["generator"] = parents[0].generator
     return AlphaAsset(alpha_id=alpha_id, expression=expression, evaluation=evaluation,

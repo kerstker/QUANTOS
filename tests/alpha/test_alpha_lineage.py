@@ -37,3 +37,20 @@ def test_metadata_overrides_and_generator_explicit():
     c = make_child_asset(alpha_id="c", expression="x", parents=[p], mutation_op="mutate",
                          generator="gp", tags=("bred",), version=3)
     assert c.generator == "gp" and c.tags == ("bred",) and c.version == 3
+
+
+def test_explicit_parent_ids_override_records_full_genealogy():
+    # 育种时父代 asset 常不在本次 best 作用域(拿不到 AlphaAsset 对象);parent_ids override 记全谱系,
+    # perf_delta 仍从 in-scope parents 评估算(拿不到的父不参与 delta,fail-safe 契约既有)
+    p1 = _asset("p1", 1.0)
+    child_ev = AlphaEvaluation(alpha_id="c", verdict=ValidationVerdict.PASS, net_sharpe=1.5)
+    c = make_child_asset(alpha_id="c", expression="x", parents=[p1], parent_ids=("p1", "p2_out"),
+                         mutation_op="crossover", evaluation=child_ev)
+    assert c.lineage.parent_ids == ("p1", "p2_out")            # 全谱系(含不在 scope 的父)
+    assert abs(c.lineage.perf_delta - (1.5 - 1.0)) < 1e-9      # perf_delta 仍从 in-scope p1 算
+
+
+def test_default_parent_ids_unchanged_from_parents():
+    p = _asset("p", 1.0)
+    c = make_child_asset(alpha_id="c", expression="x", parents=[p], mutation_op="mutate")
+    assert c.lineage.parent_ids == ("p",)                     # parent_ids=None -> 从 parents 派生(旧行为)

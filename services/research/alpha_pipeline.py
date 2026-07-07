@@ -20,13 +20,14 @@ Pure-Python stdlib, deterministic (caller supplies the timestamp).
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.alpha_asset import AlphaAsset
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.evaluator import AlphaEvaluator
 from services.alpha.population_optimizer import optimize_population
+from services.alpha.lineage import make_child_asset
 from services.alpha.registry import AlphaAssetRegistry
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 
@@ -56,7 +57,8 @@ def _fields(expr, acc: Optional[set] = None) -> set:
 def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horizon: int = 1,
                              dataset_version: str = "", timestamp: int = 0, generator: str = "cs_genome",
                              max_k: int = 8, min_periods: int = 2,
-                             adapter_config: Optional[SignalAdapterConfig] = None) -> dict:
+                             adapter_config: Optional[SignalAdapterConfig] = None,
+                             bred_by: Optional[Mapping[str, tuple]] = None) -> dict:
     """Run the contained research-to-portfolio pipeline over `exprs` (nested-tuple cs alphas) on `panel`.
     Returns the evaluated assets (with COMPUTED leakage_ok), the populated registry + memory, the
     optimized portfolio, the Signal->Portfolio target book, and the auto research brief."""
@@ -99,9 +101,20 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         if len(eco) >= 2:
             eco_returns_by_id[aid] = eco
 
-        asset = AlphaAsset.from_definition(
-            defn, evaluation=ev, generator=generator, expression=ax.serialize(expr),
-            data_dependencies=deps, dataset_version=dataset_version)
+        # 谱系接线(P3-4):育种子代(cs_genome mutate/crossover)用 make_child_asset 记 parent_ids/
+        # mutation_op/perf_delta;非育种(seed / 外部 exprs)维持 from_definition(lineage 空,诚实)。
+        # bred_by=None -> 全走 from_definition,与改动前逐字节相同。
+        if bred_by and aid in bred_by:
+            parent_ids, op = bred_by[aid]
+            parents_in_scope = [p for p in (registry.get(pid) for pid in parent_ids) if p is not None]
+            asset = make_child_asset(
+                alpha_id=aid, expression=ax.serialize(expr), parents=parents_in_scope,
+                parent_ids=parent_ids, mutation_op=op, evaluation=ev, generator=generator,
+                name=aid, universe="cs", data_dependencies=deps, dataset_version=dataset_version)
+        else:
+            asset = AlphaAsset.from_definition(
+                defn, evaluation=ev, generator=generator, expression=ax.serialize(expr),
+                data_dependencies=deps, dataset_version=dataset_version)
         registry.add(asset, ts=timestamp)
         memory.record(ResearchNote.from_asset(asset, hypothesis=ax.serialize(expr)))
         expr_by_id[aid] = expr

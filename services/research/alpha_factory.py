@@ -88,6 +88,7 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
     else:
         pop = list(seeds)
 
+    bred_by: dict = {}                                  # P3-4:child_aid -> (parent_ids, op),育种谱系
     for gen in range(generations):
         for expr in pop:
             _score(expr)
@@ -95,9 +96,14 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
         # breed the next generation deterministically: elite + their mutations + elite-pair crossovers
         nxt = list(elite)
         for i, e in enumerate(elite):
-            nxt.append(cs_genome.mutate(e, fields, windows, gen * 1000 + i))
+            e_aid = ax.alpha_id(e)
+            child_m = cs_genome.mutate(e, fields, windows, gen * 1000 + i)
+            nxt.append(child_m)
+            bred_by.setdefault(ax.alpha_id(child_m), ((e_aid,), "mutate"))       # 首见 dedup 保确定性
             mate = elite[(i + 1) % len(elite)]
-            nxt.append(cs_genome.crossover(e, mate, fields, windows, gen * 1000 + i))
+            child_c = cs_genome.crossover(e, mate, fields, windows, gen * 1000 + i)
+            nxt.append(child_c)
+            bred_by.setdefault(ax.alpha_id(child_c), ((e_aid, ax.alpha_id(mate)), "crossover"))
         seen, pop = set(), []
         for e in nxt:
             a = ax.alpha_id(e)
@@ -111,7 +117,7 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
     best_exprs = [e for _s, e in best]
     pipeline_out = run_alpha_asset_pipeline(panel, best_exprs, fwd_horizon=fwd_horizon,
                                             dataset_version=dataset_version, timestamp=timestamp,
-                                            max_k=elite_k)
+                                            max_k=elite_k, bred_by=bred_by)   # P3-4:育种子代记谱系
     return {
         "generations": generations,
         "population_size": population_size,
