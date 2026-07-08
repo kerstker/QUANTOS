@@ -1,4 +1,5 @@
-"""独立密钥权限校验工具(2026-07-08,安全 P0 补丁)—— **不接线,仅供人工手动调用**。
+"""独立密钥权限校验工具(2026-07-08,安全 P0 补丁;2026-07-09 接入 `tools/live_track_advance.py`
+的 `--submit` 前置链,见下方"接线现状")。
 
 ## 审计发现(已核实)
 
@@ -8,7 +9,21 @@
 本身的实际权限做任何检查——如果人工在交易所网站创建主网 key 时漏勾"禁用提现"或忘了绑 IP 白名单,
 系统不会有任何提示。
 
-## 范围边界(反复强调——读这份文件/改这份文件的人先看这一段)
+## 接线现状(2026-07-09,取代下面已过期的"绝不接入"表述)
+
+本工具**已接入** `tools/live_track_advance.py::mainnet_key_safety_skip_reason`,在该驱动器
+`main()` 的 `--submit` 前置链里无条件调用(preview 模式只告警、`--submit` 才真正跳批)。接线本身
+对本机(0 个 MAINNET 凭据)是逐字节 no-op(`_load_mainnet_credentials` 抛 `RuntimeError` ->
+直接 `return None`,不发起任何网络请求),不影响 11 个既有排程任务今天的行为。
+
+**接线时尚未做的事,如实记录**:下方"端点/字段名诚实标注"里承认的 Binance
+(`enableWithdrawals`/`ipRestrict`/`enableFutures`/`enableReading`)与 Bybit
+(`result.ips`/`result.permissions.Wallet`)字段名假设,**接线这一刻依然未经真实 API 响应验证**
+——这不是遗漏,是刻意的风险排序:fail-closed 设计保证字段名对不上时退化成 `UNKNOWN`(跳批,不是
+误判 SAFE 放行),所以先接线让"驱动器不会因为一个从未验证过的 KeyError 而崩溃"这条不变量先立住;
+真实字段名核对仍然是**用户在拿到真实 mainnet key 后必须手动做一次**的步骤,不因为已接线而免除。
+
+## 范围边界(历史记录,2026-07-08 首次交付时的决定;接线现状见上方新段落)
 
 这一轮只交付一个**独立、可手动调用**的校验工具。**绝不接入** `tools/live_track_advance.py`
 的 `--submit` 前置链、`tools/live_ops_api.py`、或任何 scheduled task——11 个 QUANTOS 排程任务

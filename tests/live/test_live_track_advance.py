@@ -568,3 +568,277 @@ def test_save_day_state_writes_when_day_actually_changes(tmp_path):
     _save_day_state(path, {"day": "2026-07-05", "start_equity": 900.0})
     _save_day_state(path, {"day": "2026-07-06", "start_equity": 1000.0})
     assert _load_day_state(path) == {"day": "2026-07-06", "start_equity": 1000.0}
+
+
+# --- 2026-07-08 安全加固:MAINNET key 权限硬门接线(tools/verify_key_permissions.py 此前
+# --- "建好了没打开",审计 2026-07-07 §有序阻塞清单 #6)。镜像 firm_gate/maintenance 同一桥
+# --- 模式:main() 是薄胶水、不单测(见本文件顶部 docstring),被测对象是桥函数
+# --- mainnet_key_safety_skip_reason。头号验收标准:当前这台机器 0 个 MAINNET 凭据的环境下,
+# --- --submit 行为必须逐字节不变 —— 用调用记录(跟随本文件既有惯例,不引入 mock 库)直接证明
+# --- check_binance/bybit_key_permissions 从未被调用,不是"调用了但恰好没影响"。
+
+def test_mainnet_key_safety_skip_reason_no_mainnet_creds_is_exact_noop(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    def _raise_not_found(_venue):
+        raise RuntimeError("binance MAINNET credentials not found")
+
+    calls = []
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", _raise_not_found)
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: calls.append(("binance", k, s)),
+        "bybit": lambda k, s: calls.append(("bybit", k, s)),
+    })
+
+    assert mainnet_key_safety_skip_reason("binance") is None
+    assert mainnet_key_safety_skip_reason("bybit") is None
+    assert calls == []   # check_*_key_permissions 从未被调用 —— 真 no-op,不是"调用了但恰好没影响"
+
+
+def test_mainnet_key_safety_skip_reason_no_mainnet_creds_real_loader_end_to_end(monkeypatch, tmp_path):
+    # 不 mock _load_mainnet_credentials 本身:真实凭据查找路径(env 未设 + key/ 目录下无 mainnet
+    # key 文件)也必须落到同一个"未配置"分支 —— 不是只靠上一个测试的 mock 掩盖问题。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    for env_key in ("BINANCE_MAINNET_API_KEY", "BINANCE_MAINNET_API_SECRET",
+                    "BYBIT_MAINNET_API_KEY", "BYBIT_MAINNET_API_SECRET"):
+        monkeypatch.delenv(env_key, raising=False)
+    monkeypatch.chdir(tmp_path)   # key/binance_mainnet_key.json / key/bybit_mainnet_key.json 均不存在
+
+    calls = []
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: calls.append(("binance", k, s)),
+        "bybit": lambda k, s: calls.append(("bybit", k, s)),
+    })
+
+    assert mainnet_key_safety_skip_reason("binance") is None
+    assert mainnet_key_safety_skip_reason("bybit") is None
+    assert calls == []
+
+
+def test_mainnet_key_safety_skip_reason_safe_key_passes(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", lambda venue: ("k", "s"))
+    safe_result = vkp.KeyPermissionResult(venue="binance", safety=vkp.KeySafety.SAFE,
+                                          reasons=("enableWithdrawals=false", "ipRestrict=true"))
+    monkeypatch.setattr(vkp, "_CHECKERS", {"binance": lambda k, s: safe_result})
+
+    assert mainnet_key_safety_skip_reason("binance") is None
+
+
+def test_mainnet_key_safety_skip_reason_unsafe_key_is_skip_reason(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", lambda venue: ("k", "s"))
+    unsafe_result = vkp.KeyPermissionResult(
+        venue="binance", safety=vkp.KeySafety.UNSAFE,
+        reasons=("enableWithdrawals=true — this key CAN withdraw funds",))
+    monkeypatch.setattr(vkp, "_CHECKERS", {"binance": lambda k, s: unsafe_result})
+
+    reason = mainnet_key_safety_skip_reason("binance")
+    assert reason is not None
+    assert "mainnet_key_permission_unsafe" in reason and "binance" in reason
+
+
+def test_mainnet_key_safety_skip_reason_unknown_key_is_skip_reason(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", lambda venue: ("k", "s"))
+    unknown_result = vkp.KeyPermissionResult(venue="bybit", safety=vkp.KeySafety.UNKNOWN,
+                                             reasons=("non-2xx status 500",))
+    monkeypatch.setattr(vkp, "_CHECKERS", {"bybit": lambda k, s: unknown_result})
+
+    reason = mainnet_key_safety_skip_reason("bybit")
+    assert reason is not None
+    assert "mainnet_key_permission_unknown" in reason
+
+
+def test_mainnet_key_safety_skip_reason_checker_exception_fails_closed_to_unknown(monkeypatch):
+    # 网络请求异常(交易所 API 不可达等)—— 必须 fail-closed 成"跳批",不能让检查本身的异常
+    # 变成"跳过检查、直接放行"(check_*_key_permissions 本身已经把这类异常优雅收敛成 UNKNOWN,
+    # 这里模拟的是纵深防御那一层:万一未来实现变了也不会失守)。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    def _boom(_k, _s):
+        raise ConnectionError("network unreachable")
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", lambda venue: ("k", "s"))
+    monkeypatch.setattr(vkp, "_CHECKERS", {"binance": _boom})
+
+    reason = mainnet_key_safety_skip_reason("binance")
+    assert reason is not None
+    assert "ConnectionError" in reason
+
+
+def test_mainnet_key_safety_skip_reason_venues_are_independent(monkeypatch):
+    # "该 venue 这一批被跳过,其它 venue 不受影响":本函数按 venue 字符串纯查找,不共享任何
+    # 跨 venue 状态 —— binance UNSAFE 不影响 bybit 单独求值的结果。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", lambda venue: ("k", "s"))
+    unsafe_result = vkp.KeyPermissionResult(venue="binance", safety=vkp.KeySafety.UNSAFE,
+                                            reasons=("enableWithdrawals=true",))
+    safe_result = vkp.KeyPermissionResult(venue="bybit", safety=vkp.KeySafety.SAFE, reasons=("ok",))
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: unsafe_result,
+        "bybit": lambda k, s: safe_result,
+    })
+
+    assert mainnet_key_safety_skip_reason("binance") is not None
+    assert mainnet_key_safety_skip_reason("bybit") is None
+
+
+# --- 2026-07-09 对抗式审查修复:bybit_demo(_VENUES 第三个 key)此前未走过任何测试——
+# --- _MAINNET_CREDENTIAL_CONFIG/_CHECKERS 只认 "binance"/"bybit" 两个交易所家族,直传
+# --- venue_arg="bybit_demo" 会在 _MAINNET_CREDENTIAL_CONFIG[venue] 上抛未捕获 KeyError,
+# --- 不是本函数承诺的 "no mainnet 凭据 -> None" no-op。回归锁:归一化到 exchange family 后,
+# --- bybit_demo 必须与 bybit 表现逐字节一致(no-op / SAFE / UNSAFE 三态都要覆盖,不能只测 no-op
+# --- 掩盖归一化本身接错 checker 的可能)。
+
+def test_mainnet_key_safety_skip_reason_bybit_demo_no_mainnet_creds_is_exact_noop(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    def _raise_not_found(_venue):
+        raise RuntimeError("bybit MAINNET credentials not found")
+
+    calls = []
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", _raise_not_found)
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: calls.append(("binance", k, s)),
+        "bybit": lambda k, s: calls.append(("bybit", k, s)),
+    })
+
+    assert mainnet_key_safety_skip_reason("bybit_demo") is None
+    assert calls == []   # 归一化后仍是未配置凭据 -> 真 no-op,不是 KeyError 崩溃
+
+
+def test_mainnet_key_safety_skip_reason_bybit_demo_no_mainnet_creds_real_loader_end_to_end(
+        monkeypatch, tmp_path):
+    # 不 mock _load_mainnet_credentials:真实凭据查找路径(env 未设 + key/ 目录下无
+    # bybit_mainnet_key.json)也必须落到"未配置"分支,证明 KeyError 不会从
+    # _MAINNET_CREDENTIAL_CONFIG["bybit_demo"] 这个不存在的 key 上冒出来。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    for env_key in ("BYBIT_MAINNET_API_KEY", "BYBIT_MAINNET_API_SECRET"):
+        monkeypatch.delenv(env_key, raising=False)
+    monkeypatch.chdir(tmp_path)   # key/bybit_mainnet_key.json 不存在
+
+    calls = []
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "bybit": lambda k, s: calls.append(("bybit", k, s)),
+    })
+
+    assert mainnet_key_safety_skip_reason("bybit_demo") is None
+    assert calls == []
+
+
+def test_mainnet_key_safety_skip_reason_bybit_demo_maps_to_bybit_checker(monkeypatch):
+    # bybit_demo 归一化后必须真的走 bybit 的 checker(不是自成一路、也不是误接 binance)。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    seen_venues = []
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials",
+                        lambda venue: (seen_venues.append(venue), ("k", "s"))[1])
+    unsafe_result = vkp.KeyPermissionResult(
+        venue="bybit", safety=vkp.KeySafety.UNSAFE,
+        reasons=("enableWithdrawals=true — this key CAN withdraw funds",))
+    monkeypatch.setattr(vkp, "_CHECKERS", {"bybit": lambda k, s: unsafe_result})
+
+    reason = mainnet_key_safety_skip_reason("bybit_demo")
+    assert reason is not None
+    assert "mainnet_key_permission_unsafe" in reason and "bybit_demo" in reason
+    assert seen_venues == ["bybit"]   # 凭据加载走归一化后的交易所家族,不是原始 venue 字符串
+
+
+# --- 2026-07-09 对抗式审查修复(medium):_load_mainnet_credentials 只在"确认未配置"时抛
+# --- RuntimeError;若 mainnet key 文件存在但损坏(JSON 解析失败/不可读),抛的是
+# --- json.JSONDecodeError(ValueError 子类)/OSError,不该被当成"没配置"而 no-op 放行——
+# --- 必须 fail-closed 成非 None 的 skip 原因,而不是让异常穿透 main()。
+
+def test_mainnet_key_safety_skip_reason_corrupt_credential_load_fails_closed_not_noop(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    def _raise_json_decode_error(_venue):
+        import json
+        raise json.JSONDecodeError("Expecting value", "not json", 0)
+
+    calls = []
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", _raise_json_decode_error)
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: calls.append(("binance", k, s)),
+    })
+
+    reason = mainnet_key_safety_skip_reason("binance")
+    assert reason is not None                     # 绝不能是 None(那等同"未配置"的 no-op 语义)
+    assert "mainnet_key_permission_unknown" in reason
+    assert "JSONDecodeError" in reason
+    assert calls == []   # 凭据都没拿到,checker 不应该被调用
+
+
+def test_mainnet_key_safety_skip_reason_unreadable_credential_file_fails_closed_not_noop(monkeypatch):
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    def _raise_os_error(_venue):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(vkp, "_load_mainnet_credentials", _raise_os_error)
+    monkeypatch.setattr(vkp, "_CHECKERS", {"bybit": lambda k, s: (_ for _ in ()).throw(
+        AssertionError("checker must not be called"))})
+
+    reason = mainnet_key_safety_skip_reason("bybit")
+    assert reason is not None
+    assert "mainnet_key_permission_unknown" in reason
+    assert "OSError" in reason
+
+
+def test_mainnet_key_safety_skip_reason_corrupt_credential_real_file_end_to_end(monkeypatch, tmp_path):
+    # 不 mock _load_mainnet_credentials:真实文件系统路径上放一个损坏的 mainnet key 文件,
+    # 证明修复覆盖的是真实的 json.load 失败模式,不只是 mock 出来的异常类型。
+    import tools.verify_key_permissions as vkp
+    from tools.live_track_advance import mainnet_key_safety_skip_reason
+
+    for env_key in ("BINANCE_MAINNET_API_KEY", "BINANCE_MAINNET_API_SECRET"):
+        monkeypatch.delenv(env_key, raising=False)
+    monkeypatch.chdir(tmp_path)
+    key_dir = tmp_path / "key"
+    key_dir.mkdir()
+    (key_dir / "binance_mainnet_key.json").write_text("{not valid json", encoding="utf-8")
+
+    calls = []
+    monkeypatch.setattr(vkp, "_CHECKERS", {
+        "binance": lambda k, s: calls.append(("binance", k, s)),
+    })
+
+    reason = mainnet_key_safety_skip_reason("binance")
+    assert reason is not None
+    assert "mainnet_key_permission_unknown" in reason
+    assert calls == []
+
+
+# --- 兜底回归:对 _VENUES 里**每一个**真实注册的 venue(不只是硬编码的 "binance"/"bybit")
+# --- 跑一遍 mainnet_key_safety_skip_reason,断言不抛异常——drift(将来 _VENUES 新增第四个 venue
+# --- 而 verify_key_permissions 的交易所家族归一化没跟上)被自动捕获,而不是要等到生产任务崩溃。
+
+def test_mainnet_key_safety_skip_reason_never_raises_for_any_registered_venue(monkeypatch, tmp_path):
+    from tools.live_track_advance import _VENUES, mainnet_key_safety_skip_reason
+
+    for env_key in ("BINANCE_MAINNET_API_KEY", "BINANCE_MAINNET_API_SECRET",
+                    "BYBIT_MAINNET_API_KEY", "BYBIT_MAINNET_API_SECRET"):
+        monkeypatch.delenv(env_key, raising=False)
+    monkeypatch.chdir(tmp_path)   # 无 mainnet key 文件 -> 全部 venue 应落到 no-op None 分支
+
+    for venue in _VENUES:
+        assert mainnet_key_safety_skip_reason(venue) is None

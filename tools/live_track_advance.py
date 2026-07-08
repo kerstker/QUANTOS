@@ -241,6 +241,68 @@ def maintenance_skip(strategy_id: str, *, path: str = _MAINTENANCE_STATUS_PATH) 
     return maintenance_skip_reason(_load_json_or_none(path), strategy_id)
 
 
+def mainnet_key_safety_skip_reason(venue: str) -> Optional[str]:
+    """MAINNET key 权限桥(2026-07-08 安全加固,只加不减 —— 见 tools/verify_key_permissions.py,
+    此前"建好了没打开",审计 2026-07-07 §有序阻塞清单 #6)。镜像 firm_gate/maintenance 同一桥模式:
+    调用方(main())只管 "skip 原因是否非 None",本函数负责判定。
+
+    **该 venue 未配置 MAINNET 凭据(`_load_mainnet_credentials` 抛 RuntimeError)—— 当前这台机器
+    100% 会发生的情况(没有任何 mainnet key/env)—— 原样返回 None,不调用任何
+    check_binance_key_permissions/check_bybit_key_permissions,不做任何网络请求。这是本函数
+    存在的头号验收标准:no mainnet 凭据 = 逐字节 no-op。**
+
+    配置了(未来场景):调用对应 venue 的 check_*_key_permissions;SAFE -> None(放行);
+    UNSAFE/UNKNOWN -> 返回一条 skip 原因字符串。检查过程本身抛异常(理论上 check_* 已经把
+    网络/解析异常优雅收敛成 UNKNOWN 不外抛,这里是纵深防御)—— 同样视为 UNKNOWN、返回非
+    None 原因,绝不能让检查异常变成"跳过检查、直接放行"。
+
+    延迟导入(函数内,非模块顶层):`tools.verify_key_permissions` 顶层 `from tools.live_track_advance
+    import _load_credentials` 反向依赖本模块——模块级 import 会在本模块尚未执行完 `_load_credentials`
+    定义前触发循环导入 ImportError;调用时(main() 运行时)本模块早已加载完毕,延迟导入零风险。
+
+    **venue -> exchange family 归一化(2026-07-09 修复,对抗式审查发现的 high severity 缺口):**
+    `_VENUES`(本模块)有三个 key——`binance`/`bybit`/`bybit_demo`——但
+    `tools.verify_key_permissions._MAINNET_CREDENTIAL_CONFIG`/`_CHECKERS` 只认两个交易所家族
+    `binance`/`bybit`(mainnet 诊断端点按交易所分,不按 testnet/demo 细分)。此前直接把 `venue`
+    原样传给 `_load_mainnet_credentials`,对 `bybit_demo` 会在 `_MAINNET_CREDENTIAL_CONFIG[venue]`
+    上抛**未捕获的 `KeyError`**(不是本函数承诺捕获的 `RuntimeError`)——不是 no-op,而是让整个
+    `main()` 崩溃(调用处在任何 `alerts` 落盘/emit 之前,连崩溃告警都发不出)。归一化用的是 adapter
+    的 `venue_name`——与 mandate 文件的 `exchange` 域(bybit_demo 的 mandate 就签着
+    `"exchange": "bybit"`)是同一个"这个 venue 背后是哪个交易所家族"概念,`BybitFuturesAdapter`
+    的 testnet/demo 两个 base_url 都归一化到同一个 `venue_name="bybit"`。`venue` 不在 `_VENUES`
+    里理论上不会发生(`main()` 已经校验过),原样透传不悄悄吞掉,交给下面的 `_load_mainnet_credentials`
+    /`_CHECKERS` 查找自然报错。
+
+    **凭据加载阶段的非 RuntimeError 异常(2026-07-09 修复,对抗式审查发现的 medium severity 缺口):**
+    `_load_mainnet_credentials` 只在"确认未配置"(env 未设 + key 文件不存在)时抛 `RuntimeError`——
+    这是唯一该被视为"不适用、no-op"的路径。但若 mainnet key 文件**存在**却内容不是合法 JSON
+    (`json.load` 抛 `json.JSONDecodeError`,是 `ValueError` 子类)或不可读(`OSError`),异常类型
+    不是 `RuntimeError`,不会被上面那个 `except RuntimeError` 捕获——这种情况恰恰不该被当成"没配置"
+    而 no-op 放行(文件明明存在,只是读不出来,安全状态未知,理应 fail-closed 跳批而不是假装什么都
+    没发生);这里单独捕获、归入 `UNKNOWN`,与 `_CHECKERS` 调用异常那条纵深防御分支同一哲学,
+    只是分开写以保留"仅 RuntimeError = 真无凭据 = None"这条更窄的语义不被误宽泛。"""
+    from tools.verify_key_permissions import _CHECKERS, KeySafety, _load_mainnet_credentials
+    exchange = _VENUES[venue]["adapter"].venue_name if venue in _VENUES else venue
+    try:
+        api_key, api_secret = _load_mainnet_credentials(exchange)
+    except RuntimeError:
+        return None   # no MAINNET credentials configured for this venue — current environment, exact no-op
+    except Exception as exc:
+        # 见 docstring 新增段落:凭据文件存在但加载失败(损坏 JSON/不可读)不是"未配置",不能
+        # no-op 放行——fail-closed 成 UNKNOWN skip 原因。
+        return (f"mainnet_key_permission_unknown:{venue}:credential load raised "
+               f"{type(exc).__name__}")
+    try:
+        result = _CHECKERS[exchange](api_key, api_secret)
+        safety, reasons = result.safety, result.reasons
+    except Exception as exc:
+        # 见 docstring:fail-closed 纵深防御,不是预期路径(check_* 本身已优雅收敛成 UNKNOWN)。
+        safety, reasons = KeySafety.UNKNOWN, (f"key permission check raised {type(exc).__name__}",)
+    if safety is KeySafety.SAFE:
+        return None
+    return f"mainnet_key_permission_{safety.value.lower()}:{venue}:{'; '.join(reasons)}"
+
+
 def _save_day_state(path: str, state: dict) -> None:
     """**2026-07-06 安全审查 punch-list 修复**:风险哨兵(小时级)与本驱动器(周度)共享
     同一个 day_state 文件、各自独立进程、无锁——与 kill-switch 竞态(2026-07-05)同一类问题
@@ -902,6 +964,21 @@ def main() -> None:
                       f"exposure for this strategy (existing positions untouched)")
         if submit:
             skip_reason = skip_reason or maint_skip
+
+    # MAINNET key 权限硬门(2026-07-08 安全加固,只加不减 — 工具本身见 tools/verify_key_permissions.py,
+    # 此前"建好了没打开",审计 2026-07-07 §有序阻塞清单 #6):这个 venue 若也配置了 MAINNET 凭据(与本
+    # 文件用的 TESTNET 凭据是完全不同的一套 env/文件),必须先确认这把 key 没有被误开提现权限/未绑 IP
+    # 白名单,才允许继续新增敞口。**当前这台机器 100% 未配置任何 MAINNET 凭据 -> mainnet_key_safety_
+    # skip_reason 原样返回 None -> 不告警不跳批,与改动前逐字节相同行为**(no-op 是本次改动的头号验收
+    # 标准)。preview 只告警,--submit 才跳批,与 attestation/firm/maintenance 同一套模式。
+    mainnet_key_skip = mainnet_key_safety_skip_reason(venue_arg)
+    if mainnet_key_skip is not None:
+        alerts.append(f"MAINNET key permission check unsafe ({mainnet_key_skip}) — live submit will "
+                      f"stop adding new exposure until the key is confirmed SAFE (see "
+                      f"tools/verify_key_permissions.py, run: python -m tools.verify_key_permissions "
+                      f"--venue {venue_arg})")
+        if submit:
+            skip_reason = skip_reason or mainnet_key_skip
 
     # 跳批语义(2026-07-06 根因调查修复②):数据质量性质的信号收缩(空信号/腿数骤减/拥挤
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
