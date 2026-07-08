@@ -34,6 +34,10 @@ const POLL_MS = 8000;
 interface PositionRow {
   instrument_id: string; qty: number; entry_price: number; mark_price: number;
   upnl: number; notional: number;
+  // 审计 §4.4 [P1-R3]:交易所已算好的真实强平价(Bybit V5 position/list 的 liqPrice),
+  // 纯只读透传展示——不驱动任何判断/告警。Binance 侧未接(需要额外一次 API 调用,不在本次
+  // 范围内),字段缺失时前端如实显示"—"。
+  liquidation_price?: number | null;
 }
 interface OrderRow {
   client_order_id: string; instrument_id: string; side: string; quantity: number;
@@ -205,6 +209,8 @@ export default function LiveDesk() {
       render: p => <span className={p.qty >= 0 ? 'text-pos' : 'text-neg'}>{fixed(p.qty, 4)}</span> },
     { key: 'entry', header: bi('开仓均价', 'Entry'), align: 'right', mono: true, render: p => fixed(p.entry_price, 4) },
     { key: 'mark', header: bi('标记价', 'Mark'), align: 'right', mono: true, render: p => fixed(p.mark_price, 4) },
+    { key: 'liq', header: bi('强平价', 'Liq'), align: 'right', mono: true,
+      render: p => p.liquidation_price != null ? fixed(p.liquidation_price, 4) : '—' },
     { key: 'notional', header: bi('名义额', 'Notional'), align: 'right', mono: true,
       render: p => money(Math.abs(p.notional), 'USD') },
     { key: 'upnl', header: 'uPnL', align: 'right', mono: true,

@@ -39,6 +39,41 @@ def test_bybit_rows_parse_envelope_and_sign_by_side():
     assert ada["notional"] == pytest.approx(-840.0 * 0.185)
 
 
+def test_bybit_rows_parse_liquidation_price_when_present():
+    # 审计 §4.4 [P1-R3]:Bybit V5 position/list 自带 liqPrice(交易所已算好的真实强平价),
+    # 此前被丢弃——这里只断言展示层如实透传,不做任何判断/告警。
+    raw = {"result": {"list": [
+        {"symbol": "ADAUSDT", "side": "Sell", "size": "840", "avgPrice": "0.19",
+         "markPrice": "0.185", "unrealisedPnl": "4.2", "liqPrice": "0.24"},
+    ]}}
+    rows = bybit_position_rows(raw)
+    assert rows[0]["liquidation_price"] == pytest.approx(0.24)
+
+
+def test_bybit_rows_liquidation_price_none_when_missing_or_empty():
+    # Bybit 对无杠杆/部分仓位类型可能不返回 liqPrice,或返回空字符串——诚实缺省 None,
+    # 绝不臆造一个数字。
+    raw = {"result": {"list": [
+        {"symbol": "ADAUSDT", "side": "Sell", "size": "840", "avgPrice": "0.19",
+         "markPrice": "0.185", "unrealisedPnl": "4.2"},                   # liqPrice 缺失
+        {"symbol": "OPUSDT", "side": "Buy", "size": "1375", "avgPrice": "0.108",
+         "markPrice": "0.110", "unrealisedPnl": "2.75", "liqPrice": ""},  # liqPrice 空字符串
+    ]}}
+    rows = bybit_position_rows(raw)
+    assert len(rows) == 2
+    assert all(r["liquidation_price"] is None for r in rows)
+
+
+def test_bybit_rows_liquidation_price_none_when_unparseable():
+    # 防御性:字段存在但不是合法数字(理论上不该发生,但解析层不能因此崩溃)-> None。
+    raw = {"result": {"list": [
+        {"symbol": "ADAUSDT", "side": "Sell", "size": "840", "avgPrice": "0.19",
+         "markPrice": "0.185", "unrealisedPnl": "4.2", "liqPrice": "n/a"},
+    ]}}
+    rows = bybit_position_rows(raw)
+    assert rows[0]["liquidation_price"] is None
+
+
 def test_portfolio_summary_gross_net_upnl():
     rows = [{"instrument_id": "A", "qty": 1, "entry_price": 1, "mark_price": 1,
              "upnl": 2.0, "notional": 100.0},
