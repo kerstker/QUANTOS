@@ -176,6 +176,26 @@ def compute_risk_snapshot(returns: List[float], weights: Dict[str, float],
     }
 
 
+def log_clock_sync_status(venue_name: str, venue, *, now: int) -> None:
+    """诊断 `docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md` §有序阻塞清单 #4
+    (2026-07-09):一次现场检查 bybit_demo 撞到交易所 retCode 10002(签名时间戳偏差超
+    recv_window),但 `sync_clock()` 的 fail-soft 吞掉的失败当时没留下任何记录——运维只能等
+    下一层签名请求被拒才后知后觉。venue 适配器现在暴露 `last_clock_sync_ok`/
+    `last_clock_sync_error`(见 `live/exchange/bybit_futures.py::sync_clock`);这里把"这次同步
+    失败了"这个事实写进哨兵本来就在维护的告警台账(`tools/alert_sink.py::emit` ->
+    `data/cache/alerts.jsonl`),不新开外部告警通道。**只在失败时写**(与其它哨兵告警的惯例
+    一致,成功是常态不需要噪音)。`last_clock_sync_ok` 为 `True` 或 `None`(适配器不支持这个
+    属性,如当前的 binance 适配器——本次加固刻意只动 bybit,不越界改 binance)都不告警,只有
+    显式 `False` 才算数——绝不因为属性缺失而误报。"""
+    if getattr(venue, "last_clock_sync_ok", None) is not False:
+        return
+    reason = getattr(venue, "last_clock_sync_error", None) or "unknown reason"
+    emit([f"SENTINEL CLOCK SYNC FAILED [{venue_name}]: {reason} — falling back to previous "
+          f"clock offset (fail-soft); signed requests may be rejected if local clock has since "
+          f"drifted beyond the exchange recv_window"],
+         context="risk_sentinel", now_ms=now)
+
+
 def sentinel_caps(mandate) -> dict:
     """敞口限额从 mandate 派生(业务授权即风险预算);mandate 缺失时 fail-closed 用 0 敞口
     上限没有意义(会永远告警)——改用"只看回撤"口径,敞口限额设为无穷并在结果里如实标注。"""
@@ -192,6 +212,9 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     api_key, api_secret = _load_credentials(cfg, venue_name)
     venue = cfg["adapter"](api_key=api_key, api_secret=api_secret, base_url=cfg["base_url"])
     venue.sync_clock()
+    # 时钟同步可见性(2026-07-09):在下一次调用(account())可能因时间戳偏差被交易所拒之前就
+    # 把这次同步的结果记下来——即便 account() 随即抛出异常,这条告警也已经落盘。
+    log_clock_sync_status(venue_name, venue, now=now)
 
     acct = venue.account()
     aum, equity = cfg["balances"](acct)
@@ -235,6 +258,10 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
            "reasons": list(breach.reasons), "acted": False,
+           # 这一轮的时钟同步结果(None=适配器不支持/binance;True/False=bybit 的实际结果)——
+           # 与上面的 log_clock_sync_status 告警互补:这个字段是"这一轮状态快照"的一部分,
+           # 落进 risk_sentinel_status.json,即便这一轮没有触发告警也能回头核对。
+           "clock_sync_ok": getattr(venue, "last_clock_sync_ok", None),
            "anomaly": {"anomalous": anomaly.anomalous, "reasons": list(anomaly.reasons),
                        "jump_pct": anomaly.jump_pct},
            # firm 级聚合(main() 用)——按标的的真实美元名义额(带符号),不是权重

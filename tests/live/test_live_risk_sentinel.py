@@ -140,3 +140,54 @@ def test_position_weights_from_notional_zero_gross_is_empty():
     from tools.live_risk_sentinel import _position_weights_from_notional
     assert _position_weights_from_notional({"BTC": 100.0}, gross_notional=0.0) == {}
     assert _position_weights_from_notional({}, gross_notional=0.0) == {}
+
+
+# ---------------------------------------------------------------------------
+# 诊断 docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md §有序阻塞清单 #4
+# (2026-07-09):一次现场 bybit_demo 检查撞到 retCode 10002(时间戳偏差超 recv_window),但
+# `sync_clock()` fail-soft 吞掉的失败当时完全没留下记录。`log_clock_sync_status` 把 venue
+# 适配器新增的 `last_clock_sync_ok`/`last_clock_sync_error` 写进既有告警台账(`tools/alert_sink
+# .emit`,不新开通道)——check_venue 本身仍不便单测(真连网络),这里直接单测这段新逻辑。
+# ---------------------------------------------------------------------------
+
+class _FakeVenue:
+    def __init__(self, ok, error=None):
+        self.last_clock_sync_ok = ok
+        self.last_clock_sync_error = error
+
+
+def test_log_clock_sync_status_emits_alert_when_sync_failed(monkeypatch):
+    from tools import live_risk_sentinel as s
+    captured = []
+    monkeypatch.setattr(s, "emit",
+                        lambda alerts, **kw: captured.append((list(alerts), kw)) or {"n": len(alerts)})
+    venue = _FakeVenue(False, "TimeoutError: timed out")
+    s.log_clock_sync_status("bybit_demo", venue, now=123)
+    assert len(captured) == 1
+    alerts, kw = captured[0]
+    assert len(alerts) == 1
+    assert "CLOCK SYNC FAILED" in alerts[0]
+    assert "bybit_demo" in alerts[0]
+    assert "TimeoutError: timed out" in alerts[0]
+    assert kw["context"] == "risk_sentinel"
+    assert kw["now_ms"] == 123
+
+
+def test_log_clock_sync_status_no_alert_when_sync_ok(monkeypatch):
+    from tools import live_risk_sentinel as s
+    captured = []
+    monkeypatch.setattr(s, "emit", lambda alerts, **kw: captured.append(alerts))
+    s.log_clock_sync_status("binance", _FakeVenue(True), now=123)
+    assert captured == []
+
+
+def test_log_clock_sync_status_no_alert_when_venue_lacks_attribute(monkeypatch):
+    # 防御性:venue 对象没有这个属性(理论上不会发生——本文件底部会钉死 binance/bybit 都有)时
+    # 绝不误报告警(None 视为"未知"而非"失败")
+    from tools import live_risk_sentinel as s
+    captured = []
+    monkeypatch.setattr(s, "emit", lambda alerts, **kw: captured.append(alerts))
+    class _NoAttrVenue:
+        pass
+    s.log_clock_sync_status("binance", _NoAttrVenue(), now=123)
+    assert captured == []

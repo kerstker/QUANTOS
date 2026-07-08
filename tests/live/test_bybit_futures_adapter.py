@@ -376,14 +376,96 @@ def test_sync_clock_applies_offset_to_subsequent_signed_requests():
     })
     offset = c.sync_clock()
     assert offset == 10_000
+    assert c.last_clock_sync_ok is True
+    assert c.last_clock_sync_error is None
     c.account()
     assert t.calls[-1]["headers"]["X-BAPI-TIMESTAMP"] == "1700000010000"
 
 
 def test_sync_clock_failure_is_fail_soft_keeps_prior_offset():
-    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})})
+    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})},
+                   sleep=lambda s: None)
     offset = c.sync_clock()
     assert offset == 0
+
+
+# --- 2026-07-09 硬化(诊断 docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md §4):
+# sync_clock 失败此前被裸 except 完全吞掉、运维两眼一抹黑,只能等下一层签名请求被交易所拒
+# (retCode 10002 时间戳偏差)才后知后觉。现在:失败可见(last_clock_sync_ok/last_clock_sync_error)
+# + 失败后短间隔重试一次,仍失败才 fail-soft 保留旧偏移(不抛异常、不改变整体设计哲学)。
+
+def test_last_clock_sync_ok_initially_none_before_first_sync():
+    c, _ = _client()
+    assert c.last_clock_sync_ok is None
+    assert c.last_clock_sync_error is None
+
+
+def test_sync_clock_failure_sets_visible_failure_flag_and_reason():
+    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})},
+                   sleep=lambda s: None)
+    c.sync_clock()
+    assert c.last_clock_sync_ok is False
+    assert c.last_clock_sync_error is not None and "500" in c.last_clock_sync_error
+
+
+def test_sync_clock_retries_once_after_failure_then_succeeds():
+    sleeps = []
+    resp = {"/v5/market/time": [
+        (500, {"retCode": 0, "retMsg": "unavailable"}),
+        (200, {"retCode": 0, "retMsg": "OK", "result": {}, "time": 1_700_000_005_000}),
+    ]}
+    c, t = _client(resp, sleep=sleeps.append)
+    offset = c.sync_clock()
+    assert offset == 5_000
+    assert c.last_clock_sync_ok is True
+    assert c.last_clock_sync_error is None
+    assert len(t.calls) == 2                      # 首次失败 + 重试各打一次 /v5/market/time
+    assert len(sleeps) == 1                        # 只重试一次,短间隔非长 sleep/复杂退避框架
+
+
+def test_sync_clock_two_consecutive_failures_stays_fail_soft_and_does_not_raise():
+    resp = {"/v5/market/time": [
+        (500, {"retCode": 0, "retMsg": "unavailable"}),
+        (500, {"retCode": 0, "retMsg": "still unavailable"}),
+    ]}
+    c, t = _client(resp, sleep=lambda s: None)
+    offset = c.sync_clock()                        # 不抛异常
+    assert offset == 0
+    assert c.last_clock_sync_ok is False
+    assert c.last_clock_sync_error is not None
+    assert len(t.calls) == 2
+
+
+def test_sync_clock_failure_after_prior_success_keeps_prior_nonzero_offset():
+    responses = {"/v5/market/time": (200, {"retCode": 0, "retMsg": "OK", "result": {},
+                                           "time": 1_700_000_010_000})}
+    c, t = _client(responses, sleep=lambda s: None)
+    first = c.sync_clock()
+    assert first == 10_000
+    # 模拟之后网络持续抖动(两次尝试都失败)——旧的非零偏移必须原样保留,不被重置为 0
+    t.responses["/v5/market/time"] = [
+        (500, {"retCode": 0, "retMsg": "down"}),
+        (500, {"retCode": 0, "retMsg": "down"}),
+    ]
+    t._path_counts["/v5/market/time"] = 0
+    second = c.sync_clock()
+    assert second == 10_000
+    assert c.last_clock_sync_ok is False
+
+
+def test_sync_clock_transport_exception_is_caught_and_recorded():
+    # 真实根因场景之一:传输层直接抛异常(超时/连接失败),不是 HTTP 状态错误
+    def bad_transport(method, url, *, body=None, headers=None):
+        if "/v5/market/time" in url:
+            raise ConnectionError("boom")
+        return 200, b'{"retCode":0,"retMsg":"OK","result":{},"time":0}'
+    c = BybitFuturesAdapter(api_key=_KEY, api_secret=_SECRET, base_url=BybitFuturesAdapter.TESTNET_BASE,
+                            http_request=bad_transport, clock=lambda: 1_700_000_000.0,
+                            sleep=lambda s: None)
+    offset = c.sync_clock()
+    assert offset == 0
+    assert c.last_clock_sync_ok is False
+    assert "ConnectionError" in c.last_clock_sync_error
 
 
 def _order(inst, side, qty, cid):
