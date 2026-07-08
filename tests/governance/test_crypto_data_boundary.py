@@ -27,7 +27,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # 发现);alfred_fetch 是 vintage 抓取器(api.stlouisfed.org,key 只走 env / gitignored
              # key/ 目录,错误路径对 URL 脱敏)——同一条只读数据边界钉住两者
              os.path.join(_ROOT, "tools", "fred_fetch.py"),
-             os.path.join(_ROOT, "tools", "alfred_fetch.py")]
+             os.path.join(_ROOT, "tools", "alfred_fetch.py"),
+             # 密钥权限校验工具(2026-07-08,安全 P0):独立、手动调用,查询交易所 mainnet 账户的
+             # API key 权限位(提现是否禁用/IP 是否受限)。只读诊断,不接线(见其模块 docstring)——
+             # 但它确实发起真实签名网络请求,同一条只读数据边界必须钉住它。
+             os.path.join(_ROOT, "tools", "verify_key_permissions.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 _QUANTOS = os.path.join(_ROOT, "quantos")
 
@@ -59,6 +63,11 @@ _EXTRA_ALLOWED_BY_FILE = {
     # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
     "fred_fetch.py": {"csv", "quantos"},
     "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要
+    # 密钥权限校验工具:HMAC 签名(hashlib/hmac,与既有 exchange adapter 同一算法的纯函数镜像)+
+    # argparse(手动 CLI)+ dataclasses/enum/typing(结构化 SAFE/UNSAFE/UNKNOWN 结果)+ `live`
+    # (复用 live/exchange/{binance,bybit}_futures.py 与 retry.py 里已导出的 ungated 辅助函数/常量,
+    # 见模块 docstring"设计决定"——不实例化任何 gated 类,不碰任何 LIVE 安全旗标)。
+    "verify_key_permissions.py": {"hashlib", "hmac", "argparse", "dataclasses", "enum", "typing", "live"},
 }
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
