@@ -37,6 +37,12 @@ research-ml = [
     "numpy==2.4.4",
     "scikit-learn==1.8.0",
 ]
+# live backup encryption (tools/live_backup.py). 2026-07-08 code review fix: previously
+# undeclared (only "happened to be installed" via unrelated tools) even though the
+# fail-closed passphrase gate makes every scheduled backup depend on it being real.
+live-backup = [
+    "cryptography==46.0.7",
+]
 dev = [
     "pytest==7.4.0",
     "pytest-asyncio",

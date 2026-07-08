@@ -10,3 +10,10 @@ pydantic==2.12.5
 # research ML layer (deterministic stacking; non-network, no-RNG-leak — pinned to installed versions)
 numpy==2.4.4
 scikit-learn==1.8.0
+
+# live backup encryption (tools/live_backup.py: AES-256-GCM via cryptography.hazmat.AESGCM).
+# 2026-07-08 code review fix: this was previously undeclared (only "happened to be installed"
+# in this machine's conda env via unrelated tools) — the fail-closed passphrase gate makes
+# every scheduled backup depend on it being real/importable, so it must be a real declared
+# dependency, not a happy accident of this one machine's environment.
+cryptography==46.0.7
