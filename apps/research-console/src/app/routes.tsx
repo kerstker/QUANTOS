@@ -2,7 +2,7 @@ import type React from 'react';
 
 /**
  * 单一页面注册表(single source of truth)——路由、左侧导航、冒烟测试全部由此派生。
- * 新增页面 = 在 PAGES 加一行:自动进导航组、自动获得路由、自动被 30/30 冒烟测试覆盖。
+ * 新增页面 = 在 PAGES 加一行:自动进导航组、自动获得路由、自动被全量冒烟测试覆盖(见 pages.smoke.test.tsx)。
  * 分组即研究生命周期(顶级量化系统的工作流):总览 → 数据 → 因子研究 → 验证 → 组合与风险 → 执行与跟踪 → 治理与系统。
  * 2026-07-03 信息架构重构:42 页 → 30 页(砍掉 12 个纯合成蓝图/重复/演示页,旧路由在 REDIRECTS 语义就近重定向;
  * 诚实姿态由 SystemCompleteness 的 REAL_REPO_INVENTORY 统一承担——删页不删诚实)。
@@ -36,7 +36,9 @@ export const GROUPS: readonly GroupDef[] = [
 ] as const;
 
 export const PAGES: readonly PageDef[] = [
-  // ---- 总览:唯一落地仪表盘(原 Overview 的漏斗已是此页磁贴) ----
+  // ---- 总览:新手引导(真正的首页 — 说明全流程、导向各分组)+ 唯一落地仪表盘 ----
+  { path: '/research/getting-started', zh: '新手引导', en: 'Getting Started', icon: 'GS', group: 'overview',
+    load: () => import('@/pages/GettingStarted') },
   { path: '/research/command', zh: '指挥中心', en: 'Command Center', icon: 'CC', group: 'overview',
     load: () => import('@/pages/CommandCenter') },
 
@@ -123,7 +125,7 @@ export const PAGES: readonly PageDef[] = [
 
 /** 旧路由 → 语义就近的新目标(书签不断链;蓝图页统一去「系统完整度」——那里诚实说明哪些子系统尚未建成)。 */
 export const REDIRECTS: readonly RedirectDef[] = [
-  { from: '/research', to: '/research/command' },
+  { from: '/research', to: '/research/getting-started' },
   { from: '/research/model-risk-review', to: '/research/system-completeness' },
   { from: '/research/reviewer-workflow', to: '/research/system-completeness' },
   { from: '/research/access-control', to: '/research/system-completeness' },

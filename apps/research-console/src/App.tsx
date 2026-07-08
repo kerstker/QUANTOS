@@ -27,7 +27,7 @@ export default function App() {
     <AppShell nav={nav}>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/research/command" replace />} />
+          <Route path="/" element={<Navigate to="/research/getting-started" replace />} />
           {REDIRECTS.map(r => (
             <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
           ))}
