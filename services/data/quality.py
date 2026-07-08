@@ -25,6 +25,21 @@ def check_volume_units(volume_by_instrument: Mapping[str, float], max_ratio: flo
                             detail=f"max/min volume ratio {ratio:.3e} vs max {max_ratio:.0e}")
 
 
+class VolumeUnitsError(ValueError):
+    """跨标的 volume 单位不一致(容量/ADV 承重消费点用):数据本应干净、一旦坏了绝不能出数。"""
+
+
+def assert_volume_units(volume_by_instrument, max_ratio: float = 1e6):
+    """`check_volume_units` 的 fail-closed 版(P2-2 接线):复用同一判据,不过即 raise
+    `VolumeUnitsError`(拒绝出容量数),过则返回该 `DataQualityCheck` 供调用方留证。
+    check_volume_units 保留原样作 LABEL(scenario 研究对已知混单位 trend 的诚实残缺报告),二者
+    posture 不同、都诚实、刻意不合并——见 docs/audit/IMPLEMENTATION_ROADMAP.md Phase 2。"""
+    check = check_volume_units(volume_by_instrument, max_ratio=max_ratio)
+    if not check.passed:
+        raise VolumeUnitsError(check.detail)
+    return check
+
+
 def count_duplicate_event_times(times: Sequence[int]) -> int:
     seen, dups = set(), 0
     for t in times:

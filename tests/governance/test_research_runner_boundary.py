@@ -60,3 +60,34 @@ def test_whitelist_is_subset_of_registry_allowed_kinds():
     from services.research.research_runner.run_kinds import RUN_KINDS
     from services.research.run_registry.contract import ALLOWED_KINDS
     assert set(RUN_KINDS) <= ALLOWED_KINDS, f"runner kinds not in registry whitelist: {set(RUN_KINDS) - ALLOWED_KINDS}"
+
+
+# --- 2026-07-05 安全审查 MEDIUM 修复:/cancel 与 /run 同等问责要求 ---
+# --- 2026-07-06 续:/cancel 与 /run 同等本机共享密钥认证要求 ---
+
+def test_cancel_requires_operator_header():
+    from fastapi.testclient import TestClient
+    from services.research.research_runner import main as m
+    client = TestClient(m.app)
+    r = client.post("/cancel", json={"run_id": "run_nonexistent"},
+                    headers={"X-Runner-Token": m._RUNNER_TOKEN})
+    assert r.status_code == 400
+
+
+def test_cancel_accepts_operator_header_and_records_it():
+    from fastapi.testclient import TestClient
+    from services.research.research_runner import main as m
+    client = TestClient(m.app)
+    r = client.post("/cancel", json={"run_id": "run_nonexistent"},
+                    headers={"X-Operator": "alice", "X-Runner-Token": m._RUNNER_TOKEN})
+    assert r.status_code == 200
+    assert r.json()["operator"] == "alice"
+
+
+def test_cancel_requires_runner_token():
+    from fastapi.testclient import TestClient
+    from services.research.research_runner import main as m
+    client = TestClient(m.app)
+    r = client.post("/cancel", json={"run_id": "run_nonexistent"},
+                    headers={"X-Operator": "alice"})
+    assert r.status_code == 401

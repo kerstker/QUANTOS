@@ -40,7 +40,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 9 | 全局多重检验预算账本(跨会话 trial 计数) | 3 | P2 / M | `experiment_registry`、DSR n_trials | 把「一共试了多少次」变成全局账,防跨会话选择偏差 |
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
-| 12 | crowd_contra 送前向 paper-track | 2 | P2 / S | `paper_trading/store` | 已过 8 项证伪 + 干跑,前向跟踪是独立决策 |
+| **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
 | 13 | 数据漂移检测(分布/regime 漂移告警) | 3/6 | P2 / M | `macro_regime`、data quality | 生产化监控雏形 |
 
 ## 4. 需外部资源(钱与组织,非代码缺陷)

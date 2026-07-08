@@ -54,3 +54,37 @@ def test_execution_horizon_scales_capacity_linearly():
     assert c5 == c1 * 5
     # 参与率翻倍也线性
     assert participation_cap_aum(_TURN, max_participation=0.20, execution_horizon=1) == c1 * 2
+
+
+# --- volume-units fail-closed 守卫(P2-2 接线):混单位则拒绝出容量数 ---
+
+_GRID = [1e5, 1e6, 1e7, 1e8, 1e9]
+
+
+def test_capacity_band_default_has_no_volume_guard_and_new_key():
+    # 不传 volume_units_max_ratio -> 旧行为(provenance UNCALIBRATED)+ 新键 data_quality=='OK' 恒存在
+    band = capacity_band(_GROSS, _TURN, _GRID, (5, 20))
+    assert band["provenance"] == "UNCALIBRATED_PRINCIPLED"
+    assert band["data_quality"] == "OK"
+
+
+def test_capacity_band_guard_passes_consistent_units():
+    turnover = [[(0.5, 1e6)], [(0.5, 3e6)]]
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
+    assert band["data_quality"] == "OK"
+
+
+def test_capacity_band_guard_fail_closed_on_mixed_units():
+    # BTC $3.7Q vs EOS $20k 混单位 -> fail-closed:拒绝出容量数(全 None)
+    turnover = [[(0.5, 3.7e15)], [(0.5, 2.0e4)]]
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
+    assert band["provenance"] == "UNRELIABLE_VOLUME_UNITS"
+    assert band["data_quality"] == "UNRELIABLE_VOLUME_UNITS"
+    assert band["aum_low"] is None and band["aum_high"] is None
+    assert band["participation_cap_aum"] is None
+
+
+def test_capacity_band_guard_ignores_zero_adv():
+    turnover = [[(0.5, 1e6), (0.5, 0.0)], [(0.5, 3e6)]]      # 0 adv 被忽略(同 check_volume_units)
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
+    assert band["data_quality"] == "OK"

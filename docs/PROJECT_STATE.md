@@ -165,6 +165,18 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   每份 `PortfolioStressReport` 带 provenance/scenarios_skipped/scenario_losses,`RiskApprovalGate.approve(timestamps=)` 透传,
   console risk-dashboard 透出 stress 块(契约测试钉死无 provenance 的压力数不上线)。诚实边界:console 路径暂无逐期时间戳,
   诚实显示回退标注;有时间戳的调用方(如干跑 book)同一字段拿到 `REAL_HISTORICAL_REPLAY`。
+- **机构级路线图收官批(2026-07-03,PR #15 已合 main,续批在 `codex/firm-aggregation-and-followups`)**:
+  PR #15(S1–S3 共 11 项)合并进 main 前**发现并修了一个 CI 隔离 bug**——3 个 lifecycle 测试依赖 gitignored
+  `experiment_registry.db`(本地过、CI 红),加 `_require_real_registry` 守卫(有库跑、无库诚实 skip),两 CI 检查转绿后合并。
+  续批(新分支)把路线图剩余项**逐个交付核心切片**、每项 tests-first + 门绿:**#25**(45ffb5e)`firm_aggregation`
+  跨 book 真实暴露 + 重叠检测(primitive,9 测);**#26**(bb8afb8)system-health 真 `monitoring` 块(build_snapshot
+  验 durable 审计链);**#27**(272fd71)`IncidentLedger` + 端到端 kill-switch 演练测试 + runbook;**#14**(e7ba04f)
+  PIT regime 分类器(扩展窗分位 + 免估计,截断不变);**#15 采纳**(0e93684)物化桥 read==recompute bit-identical;
+  **#12 BHY**(44a277d)BHY FDR 接进晋级守卫(比 BH 严);**#19 rebuild**(f831f4e)离线重算编排器 + digests 扩到
+  ic_panel/capacity;**#16**(41151a0)ML 提议器 spec;**#28 pin**(7d2e035)`.python-version`=3.12 消解解释器漂移。
+  **剩余(诚实分类)**:①**大重构宜专注做**——#24 console_api 5167 行拆路由组、#12 CatalogEvidence 封套 + effective_trials;
+  ②**外部资源阻塞**——#17 股票历史成分/ALFRED、#22 volume 回填(coingecko 网络被墙);③**CI 迭代**——#28 lockfile/
+  coverage/pip-audit;④**增量采纳**——#25 driver(dry_run.db 不存逐符号权重)、#15 驱动器读缓存。核心/基础全部已建已测。
 - **机构级路线图 S3「溯源与持久」sprint 推进(2026-07-03,#12/#15/#19/#24 各一切片)**:
   **#12**(c7d0e5e)`ExperimentRegistry.verify_evaluation` 篡改检测(重算 content_hash 比对,改指标/改哈希/未知 id
   全 fail-closed,4 测)——补上「只算不验」缺的验证半边。剩 CatalogEvidence 封套 + BHY 接守卫 = 待做。**#15**(c5ae7a2)

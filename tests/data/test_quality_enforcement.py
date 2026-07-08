@@ -10,7 +10,7 @@ import pytest
 
 from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
 from services.data.persistent_store import SqlitePITStore
-from services.data.quality import check_volume_units
+from services.data.quality import VolumeUnitsError, assert_volume_units, check_volume_units
 
 
 # ---- (2) cross-instrument volume-unit consistency ----
@@ -32,6 +32,30 @@ def test_volume_units_ignore_nonpositive_and_thin_cross_section():
     assert check_volume_units({"BTC": 3e9}, max_ratio=1e6).passed is True                # <2 -> trivially ok
 
 
+# ---- (2b) assert_volume_units: fail-closed 版(承重容量/ADV 消费点用,P2-2 接线) ----
+
+def test_assert_volume_units_passes_consistent():
+    check = assert_volume_units({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
+    assert check.passed is True and check.name == "volume_units"
+
+
+def test_assert_volume_units_raises_on_mixed():
+    # 复刻 crypto_daily.db bug:BTC $3.7Q vs EOS $20k → ratio ~1.8e11 >> 1e6 → 硬拒
+    with pytest.raises(VolumeUnitsError):
+        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+
+
+def test_assert_volume_units_thin_cross_section_and_zero_ok():
+    assert_volume_units({"BTC": 3e9}, max_ratio=1e6)               # <2 名 → 平凡通过(单标的零回归)
+    assert_volume_units({"BTC": 3e9, "Z": 0.0}, max_ratio=1e6)     # 0 被忽略
+
+
+def test_assert_volume_units_error_carries_ratio():
+    with pytest.raises(VolumeUnitsError) as exc:
+        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+    assert "ratio" in str(exc.value)
+
+
 # ---- (1) strict ingestion gate (single-instrument datasets) ----
 
 def _csv(tmp_path, rows):
@@ -47,6 +71,8 @@ _GOOD = [("BTC", 20240101, 20240101, 100, 101, 99, 100, 5),
          ("BTC", 20240102, 20240102, 100, 102, 99, 101, 6)]
 _DUP = [("BTC", 20240101, 20240101, 100, 101, 99, 100, 5),
         ("BTC", 20240101, 20240101, 100, 102, 99, 101, 6)]   # duplicate event_time -> quality fails
+_OOO = [("BTC", 20240102, 20240102, 100, 102, 99, 101, 6),
+        ("BTC", 20240101, 20240101, 100, 101, 99, 100, 5)]   # event_time goes backwards -> out-of-order
 
 
 def test_strict_ingestion_raises_on_bad_quality(tmp_path):
@@ -66,3 +92,21 @@ def test_strict_passes_clean_dataset(tmp_path):
     store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
     rep = ingest_bars_csv(_csv(tmp_path, _GOOD), store, dataset_id="BTC", strict=True)
     assert rep.bars_ingested == 2 and rep.quality.passed is True
+
+
+# ---- (1b) out-of-order detection at ingestion (audit P2-1: was a dead check) ----
+
+def test_out_of_order_detected_at_ingestion(tmp_path):
+    """Regression (audit P2-1): _ingest_records sorted event_times before the quality
+    check, so count_out_of_order saw an already-sorted series and was structurally always
+    0 — a dead check. The report must detect out-of-order arrival on the ORIGINAL order."""
+    store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
+    rep = ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC")   # default strict=False
+    assert rep.quality.out_of_order_count >= 1
+    assert rep.quality.passed is False
+
+
+def test_strict_ingestion_raises_on_out_of_order(tmp_path):
+    store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
+    with pytest.raises(FatalIngestionError):
+        ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC", strict=True)

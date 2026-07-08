@@ -60,3 +60,20 @@ def test_survivorship_free_and_approved_set():
     assert cat.approved_set().keys() == {"a1"}
     # retired alpha is still queryable (no survivorship bias in the catalog)
     assert "a2" in cat.all_ids() and cat.state("a2") == AlphaState.RETIRED
+
+
+# ---- Rank #12: BHY FDR wired into the catalog (used by the VALIDATED guard) ----
+
+def test_bhy_fdr_survivors_is_wired_and_stricter_than_bh():
+    from services.alpha.catalog import AlphaCatalog
+    cat = AlphaCatalog()
+    # p-values chosen so BHY (arbitrary-dependence) rejects fewer than plain BH (indices 2,3 survive
+    # BH but not BHY): the promotion guard now uses the stricter BHY, so those alphas no longer pass.
+    pvals = {"a0": 0.001, "a1": 0.008, "a2": 0.02, "a3": 0.04, "a4": 0.2}
+    for aid, p in pvals.items():
+        cat.register(_def(aid))
+        cat.set_pvalue(aid, p)
+    bh = cat.bh_fdr_survivors(q=0.05)
+    bhy = cat.bhy_fdr_survivors(q=0.05)
+    assert bhy < bh                                      # strictly fewer survivors under BHY
+    assert bhy == {"a0", "a1"} and bh == {"a0", "a1", "a2", "a3"}

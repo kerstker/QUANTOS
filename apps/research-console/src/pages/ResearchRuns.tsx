@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
-import { triggerRun, runnerEnabled, RUNNABLE_KINDS, getOperator, setOperator, type RunParamSpec } from '@/lib/api/research-runner-api';
+import { triggerRun, runnerEnabled, RUNNABLE_KINDS, getOperator, setOperator, getRunnerToken, setRunnerToken, type RunParamSpec } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -56,6 +56,7 @@ export default function ResearchRuns() {
   const data = usingBackend ? payload! : fallbackRuns;
   const [kind, setKind] = useState('全部');
   const [operator, setOperatorState] = useState(getOperator());
+  const [runnerToken, setRunnerTokenState] = useState(getRunnerToken());
   const [trigMsg, setTrigMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
   // per-kind param values for kinds that expose a typed schema (e.g. factory search depth)
   const [paramVals, setParamVals] = useState<Record<string, Record<string, number | boolean>>>(() => {
@@ -157,6 +158,17 @@ export default function ResearchRuns() {
             className="w-40 rounded border border-line bg-transparent px-2 py-1 text-xs text-ink disabled:text-faint"
             placeholder="console-operator" />
           <span className="text-faint/70">{bi('· 自述式,未鉴权', '· self-asserted, unauthenticated')}</span>
+        </label>
+        {/* 2026-07-06:后端 /run + /cancel 现在要求本机共享密钥,镜像 LiveDesk 的 useOpsToken——
+            只存 sessionStorage(关标签页即清空),绝不进构建产物。key/research_runner_token.txt
+            首次启动 research_runner 时自动生成。 */}
+        <label className="mb-2 flex items-center gap-2 text-2xs text-faint">
+          <span>{bi('Runner Token', 'Runner token')}</span>
+          <input type="password" value={runnerToken} disabled={!runnerEnabled()}
+            onChange={e => { setRunnerTokenState(e.target.value); setRunnerToken(e.target.value); }}
+            className="w-40 rounded border border-line bg-transparent px-2 py-1 text-xs text-ink disabled:text-faint"
+            placeholder={bi('粘贴 key/research_runner_token.txt', 'paste key/research_runner_token.txt')} />
+          <span className="text-faint/70">{bi('· 本机共享密钥,仅存本标签页', '· local shared secret, this tab only')}</span>
         </label>
         <div className="flex flex-wrap items-start gap-2">
           {RUNNABLE_KINDS.map(rk => (

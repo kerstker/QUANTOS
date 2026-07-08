@@ -130,6 +130,74 @@ def test_absolute_weight_drives_score_for_long_short_books():
     assert decision.score == pytest.approx(0.64)
 
 
+def _diffuse_high_avg_book():
+    # 5 名各 0.2(无一 >0.25 集中阈)+ 全高拥挤 0.9 -> 平均 0.9>threshold,但集中度判据不触发,
+    # 故可隔离"平均分路径"的 BLOCK/WARN 行为
+    weights = {c: 0.2 for c in "ABCDE"}
+    crowding = {c: 0.9 for c in "ABCDE"}
+    return weights, crowding
+
+
+def test_average_path_blocks_by_default():
+    # 默认(average_warn_only=False)平均分 > threshold -> BLOCK(字节等价旧行为)
+    w, c = _diffuse_high_avg_book()
+    d = evaluate_crowding_gate(w, c, threshold=0.60, warn_threshold=0.45)
+    assert d.status == "BLOCK"
+
+
+def test_average_warn_only_caps_average_at_warn():
+    # 用户 2026-07-07 签署:rank 平均分是结构性常数,不当 BLOCK 门 -> average_warn_only=True 封顶 WARN
+    w, c = _diffuse_high_avg_book()
+    d = evaluate_crowding_gate(w, c, threshold=0.60, warn_threshold=0.45, average_warn_only=True)
+    assert d.status == "WARN"
+
+
+def test_absolute_z_gate_blocks_shorted_crowded_name():
+    # 正确统计量:被 short 的名字绝对拥挤 z > z* -> BLOCK(挤压风险)
+    d = evaluate_crowding_gate(
+        {"A": -0.2, "B": 0.2}, {"A": 0.5, "B": 0.5},
+        average_warn_only=True, crowding_z_by_symbol={"A": 3.5, "B": 0.1}, max_crowding_z=3.0)
+    assert d.status == "BLOCK"
+    assert any("absolute_crowding_z_block:A" in r for r in d.reasons)
+
+
+def test_absolute_z_gate_ignores_long_names():
+    # z 判据只评 short 腿(long 腿再高 z 也不由此 BLOCK)
+    d = evaluate_crowding_gate(
+        {"A": 0.2, "B": 0.2}, {"A": 0.5, "B": 0.5},
+        average_warn_only=True, crowding_z_by_symbol={"A": 9.0}, max_crowding_z=3.0)
+    assert d.status != "BLOCK"
+
+
+def test_absolute_z_gate_below_threshold_no_block():
+    d = evaluate_crowding_gate(
+        {"A": -0.2}, {"A": 0.5},
+        average_warn_only=True, crowding_z_by_symbol={"A": 2.9}, max_crowding_z=3.0)
+    assert d.status != "BLOCK"
+
+
+def test_absolute_z_missing_is_skipped_not_blocked():
+    # z 需足够历史;缺 z 的名字不评 z 维(不 fail-open 成 BLOCK,其它判据仍在)
+    d = evaluate_crowding_gate(
+        {"A": -0.2}, {"A": 0.5},
+        average_warn_only=True, crowding_z_by_symbol={}, max_crowding_z=3.0)
+    assert d.status != "BLOCK"
+
+
+def test_absolute_z_non_finite_fails_closed():
+    d = evaluate_crowding_gate(
+        {"A": -0.2}, {"A": 0.5},
+        average_warn_only=True, crowding_z_by_symbol={"A": float("nan")}, max_crowding_z=3.0)
+    assert d.status == "BLOCK"
+    assert any("invalid_crowding_z:A" in r for r in d.reasons)
+
+
+def test_new_params_default_none_false_byte_identical():
+    # 不传新参 -> 与旧签名逐字节相同(默认关闭 z 门 + average 可 BLOCK)
+    w, c = _diffuse_high_avg_book()
+    assert evaluate_crowding_gate(w, c).status == "BLOCK"
+
+
 def test_config_validation_rejects_invalid_thresholds():
     with pytest.raises(ValueError):
         evaluate_crowding_gate({"A": 1.0}, {"A": 0.1}, threshold=0.40, warn_threshold=0.50)
@@ -167,3 +235,14 @@ def test_project_symbol_crowding_missing_factor_returns_empty_map():
     projected = project_symbol_crowding({"A": 1.0}, {"liquidity": {"A": 0.3}}, factor_name="crowding")
 
     assert projected == {}
+
+
+# --- 校准 drift lock(Phase 3 子项3,P2-7):CALIBRATED_DEFAULTS 与签名默认不得漂移 ---
+
+def test_calibrated_defaults_match_signature_and_documented():
+    import inspect
+    from services.portfolio.crowding_gate import CALIBRATED_DEFAULTS, evaluate_crowding_gate
+    sig = inspect.signature(evaluate_crowding_gate)
+    for k in ("threshold", "warn_threshold", "min_coverage", "max_name_weight", "max_exit_days"):
+        assert sig.parameters[k].default == CALIBRATED_DEFAULTS[k], f"{k} drifted from CALIBRATED_DEFAULTS"
+    assert CALIBRATED_DEFAULTS["provenance"].startswith("SENSITIVITY_SCANNED")   # 扫描已做、发现记录在案

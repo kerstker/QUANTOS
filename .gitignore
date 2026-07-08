@@ -39,6 +39,7 @@ backtest_results/
 research_outputs/
 data/raw/
 data/cache/
+data/backup/
 
 # Secrets / live config (must never be committed — see blueprint §1.1, §5.2, §14)
 .env

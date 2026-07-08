@@ -13,12 +13,23 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "coingecko_volume_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_klines_1h_fetch.py"),   # 1H 小时线抓取器(2026-07-07)
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
              os.path.join(_ROOT, "tools", "frankfurter_fetch.py"),
-             os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py")]
+             os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py"),
+             # Stage 0 (实盘路线) 生产化刷新/前向跟踪/告警——同样的只读数据边界钉住它们
+             os.path.join(_ROOT, "tools", "live_data_refresh.py"),
+             os.path.join(_ROOT, "tools", "forward_track_advance.py"),
+             os.path.join(_ROOT, "tools", "alert_sink.py"),
+             # 宏观数据抓取器:fred_fetch 是补钉的既有缺口(带网络却一直不在名单里,2026-07-06 核查
+             # 发现);alfred_fetch 是 vintage 抓取器(api.stlouisfed.org,key 只走 env / gitignored
+             # key/ 目录,错误路径对 URL 脱敏)——同一条只读数据边界钉住两者
+             os.path.join(_ROOT, "tools", "fred_fetch.py"),
+             os.path.join(_ROOT, "tools", "alfred_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
+_QUANTOS = os.path.join(_ROOT, "quantos")
 
 
 def _import_roots(path: str) -> set:
@@ -38,7 +49,17 @@ def _import_roots(path: str) -> set:
 # `concurrent` is the stdlib thread pool that only OVERLAPS the high-latency archive GETs — none of these
 # add network/trade/credential capability, so they do not weaken the boundary.
 _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "concurrent",
+                    "sqlite3",  # 纯 stdlib 本地存储(增量刷新读水位/PIT 库)——不增加网络/交易/凭证能力
                     "services", "tools", "__future__"}
+# per-file 额外允许项(2026-07-06 对抗式复审 CONFIRMED 修复):此前 "csv"/"quantos" 加进
+# 上面那个*全局*集合,意味着其余 12 个从不 import 它们的抓取器也被这条测试"允许"这么做——
+# 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
+# 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
+_EXTRA_ALLOWED_BY_FILE = {
+    # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
+    "fred_fetch.py": {"csv", "quantos"},
+    "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要
+}
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
@@ -46,13 +67,25 @@ _FORBIDDEN_TRADE_CALLS = ["create_order", "place_order", "submit_order", "cancel
                           "create_market_order", "create_limit_order", "fapiPrivate", "sapiPost",
                           ".withdraw(", "create_withdrawal", "transfer("]
 _NETWORK_ROOTS = {"urllib", "socket", "requests", "httpx", "aiohttp", "websocket", "websockets",
-                  "ftplib", "telnetlib", "http"}
+                  "ftplib", "telnetlib", "http",
+                  # 消息/异步网络/DB 客户端(审计 P3-1):同样赋予网络能力,必须一并挡在离线核之外。
+                  # 此前缺席,使一个 aiokafka import 逃过了'services/ 零网络 import'守卫。
+                  "aiokafka", "kafka", "confluent_kafka", "aio_pika", "pika", "nats",
+                  "redis", "aioredis", "pymongo", "motor", "psycopg2", "asyncpg", "zmq", "pyzmq"}
+
+# 已隔离的非功能模块(CLAUDE.md 明列 NON-FUNCTIONAL,被 services/risk/pre_trade 取代,不接线):
+# 其 aiokafka import 正是它被隔离的原因。守卫扩展后会命中它,故在此显式豁免——豁免是精确到文件、
+# 有据可查的,任何**别处**新增的同类 import 仍会被 test_services_tree_has_no_network_imports 挡下。
+_QUARANTINED_NONFUNCTIONAL = {
+    os.path.normpath(os.path.join(_SERVICES, "trading", "pre_trade_risk", "main.py")),
+}
 
 
 def test_tools_fetcher_only_stdlib_and_services_imports():
     for fetcher in _FETCHERS:
         roots = _import_roots(fetcher)
-        assert roots <= _ALLOWED_FETCHER, f"unexpected imports in {fetcher}: {sorted(roots - _ALLOWED_FETCHER)}"
+        allowed = _ALLOWED_FETCHER | _EXTRA_ALLOWED_BY_FILE.get(os.path.basename(fetcher), set())
+        assert roots <= allowed, f"unexpected imports in {fetcher}: {sorted(roots - allowed)}"
         assert not (roots & _FORBIDDEN_SDK), f"FORBIDDEN exchange/broker SDK in {fetcher}: {sorted(roots & _FORBIDDEN_SDK)}"
 
 
@@ -63,13 +96,47 @@ def test_tools_fetcher_has_no_trade_or_transfer_calls():
         assert not hits, f"FORBIDDEN trade/transfer calls in {fetcher} (read-only DATA only!): {hits}"
 
 
+def test_network_roots_cover_message_and_async_clients():
+    """审计 P3-1:`_NETWORK_ROOTS` 此前只列 http/socket 系,不含 aiokafka/kafka/redis/pika 等
+    消息/异步网络客户端——它们能悄悄进入 services/ 逃过离线核守卫(文档 §8 却称'零网络 import
+    机器钉死')。唯一的现存使用者正是被隔离的 pre_trade_risk/main.py(其 aiokafka import 恰是
+    它被隔离的原因);守卫必须能识别这类 import,才能挡住任何在别处新增的同类 import。"""
+    for client in ("aiokafka", "kafka", "redis", "pika", "pymongo"):
+        assert client in _NETWORK_ROOTS
+    quarantined = os.path.join(_SERVICES, "trading", "pre_trade_risk", "main.py")
+    assert _import_roots(quarantined) & _NETWORK_ROOTS, \
+        "守卫必须识别被隔离模块的网络/消息 import(否则同类 import 在别处新增也检不出)"
+
+
 def test_services_tree_has_no_network_imports():
     offenders = []
     for dirpath, _dirs, files in os.walk(_SERVICES):
         for fn in files:
             if fn.endswith(".py"):
                 p = os.path.join(dirpath, fn)
+                if os.path.normpath(p) in _QUARANTINED_NONFUNCTIONAL:
+                    continue        # 已隔离的非功能模块(CLAUDE.md 明列),其网络 import 正是隔离原因
                 bad = _import_roots(p) & _NETWORK_ROOTS
                 if bad:
                     offenders.append(f"{os.path.relpath(p, _ROOT)}: {sorted(bad)}")
     assert not offenders, "network imports inside services/ break the offline-core guarantee:\n" + "\n".join(offenders)
+
+
+def test_quantos_tree_has_no_network_imports():
+    # 2026-07-06 对抗式复审 CONFIRMED 修复:`_ALLOWED_FETCHER`/`_EXTRA_ALLOWED_BY_FILE` 只查
+    # 每个抓取器*自己*的直接 import——一个抓取器 `from quantos.x import y` 时,若 quantos/x.py
+    # 内部本身 import 了网络库,这条边界测试看不到(它只看抓取器文件的 AST 根,不看被 import
+    # 模块的内容)。quantos/ 是所有抓取器都可能间接触达的内部契约包,必须像 services/ 一样
+    # 整棵树钉死零网络 import——这是那道"抓取器直接 import 检查"的必要补充,不是重复。
+    offenders = []
+    for dirpath, _dirs, files in os.walk(_QUANTOS):
+        for fn in files:
+            if fn.endswith(".py"):
+                p = os.path.join(dirpath, fn)
+                bad = _import_roots(p) & _NETWORK_ROOTS
+                if bad:
+                    offenders.append(f"{os.path.relpath(p, _ROOT)}: {sorted(bad)}")
+    assert not offenders, ("network imports inside quantos/ would let any fetcher gain network "
+                           "capability transitively via `from quantos.x import y` "
+                           "(the per-fetcher allowlist only sees direct imports):\n"
+                           + "\n".join(offenders))

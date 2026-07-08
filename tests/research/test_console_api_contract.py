@@ -118,6 +118,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
+    # live trading route: Stage 0 forward paper-track evidence clock + Stage 1 testnet execution stack
+    "/api/v1/console/live-trading": ("", ("snapshot_present", "verdict", "forward_track", "execution_stack", "honesty_note")),
+    # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
+    "/api/v1/console/gonogo": ("", ("snapshot_present", "verdict", "forward_evidence",
+                                    "execution_evidence", "incidents", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -161,6 +166,10 @@ REAL_DATA_PROVENANCE = {
     # DataCatalog enumerates the real on-disk PIT store (crypto_daily.db) for its DATASETS when present;
     # the feature/lineage block stays synthetic regardless (honest partial). Synthetic when no db (CI).
     "/api/v1/console/data-catalog": {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"},
+    # live trading: REAL forward-track/live-track JSON snapshots when present, SYNTHETIC-empty in CI.
+    "/api/v1/console/live-trading": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_TRADING_SNAPSHOT"},
+    # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
+    "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
@@ -232,6 +241,35 @@ def test_unknown_alpha_id_falls_back_to_default_visibly():
     for path in ("/api/v1/console/risk-dashboard", "/api/v1/console/paper-trading"):
         body = client.get(path + "?alpha_id=does-not-exist").json()
         assert body["selected_alpha_id"] == "alpha-1", f"{path} did not fall back visibly"
+
+
+def test_ic_panel_by_period_schema_v2_consistency():
+    """IC 面板 schema v2(per-factor 持有期):快照存在且 schema_version>=2 时,每行必须带
+    holding_periods + by_period,且 by_period['1'] 的六统计 + per_year 与顶层字段完全一致
+    (顶层 h=1 是向后兼容锚)。绑定 schema_version 而非'有没有 by_period',消除"本地旧快照
+    静默跳过"窗口(评审 required_change);CI 无快照时诚实 skip。"""
+    import json as _json
+    import os as _os
+
+    import pytest as _pytest
+
+    from services.research.console_api.main import _IC_PANEL_SNAPSHOT
+    if not _os.path.exists(_IC_PANEL_SNAPSHOT):
+        _pytest.skip("no ic_panel snapshot (CI/fresh checkout)")
+    snap = _json.load(open(_IC_PANEL_SNAPSHOT, encoding="utf-8"))
+    if int(snap.get("schema_version", 1)) < 2:
+        _pytest.skip("pre-v2 snapshot — rerun tools/ic_panel_research.py to migrate")
+
+    body = client.get("/api/v1/console/ic-panel").json()
+    assert body["snapshot_present"] is True
+    assert body["rows"], "v2 snapshot must have rows"
+    for row in body["rows"]:
+        assert row.get("holding_periods"), f"{row.get('name')}: missing holding_periods"
+        bp = row.get("by_period")
+        assert bp and "1" in bp, f"{row.get('name')}: missing by_period['1']"
+        for f in ("mean_ic", "ic_std", "icir", "hit_rate", "t_stat", "n_periods", "per_year"):
+            assert row[f] == bp["1"][f], f"{row.get('name')}: top-level {f} != by_period['1']"
+        assert set(bp) == {str(h) for h in row["holding_periods"]}
 
 
 def test_risk_dashboard_stress_block_carries_provenance_and_scenarios():

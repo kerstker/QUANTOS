@@ -13,7 +13,8 @@ from typing import Optional
 
 VALID_STATUS = {"queued", "running", "done", "error", "cancelled"}
 ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
-                 "factory_orthogonal", "factory_loop", "data_refresh"}
+                 "factory_orthogonal", "factory_loop", "data_refresh",
+                 "ic_panel", "wide_gauntlet"}
 
 
 def make_run_id(kind: str, params: dict, created_ts: int) -> str:

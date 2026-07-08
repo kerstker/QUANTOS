@@ -11,6 +11,8 @@ import type {
   DryRunPipelinePayload,
   IcPanelPayload,
   ResearchFindingsPayload,
+  LiveTradingPayload,
+  GonogoPayload,
   ResearchRunsPayload,
   ResearchRunPayload,
   ResearchRunsComparePayload,
@@ -261,6 +263,14 @@ export function fetchIcPanelSnapshot(signal?: AbortSignal) {
 
 export function fetchResearchFindings(signal?: AbortSignal) {
   return fetchConsoleJson<ResearchFindingsPayload>('/api/v1/console/research-findings', signal);
+}
+
+export function fetchLiveTradingSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<LiveTradingPayload>('/api/v1/console/live-trading', signal);
+}
+
+export function fetchGonogo(signal?: AbortSignal) {
+  return fetchConsoleJson<GonogoPayload>('/api/v1/console/gonogo', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

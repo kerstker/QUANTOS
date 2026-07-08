@@ -26,6 +26,7 @@ class RunSpec:
     adapter: Callable                     # tool-output dict -> ResearchRun field dict
     title: str
     runner: Optional[Callable] = None     # injected (tests) or resolved from entrypoint at run time
+    param_bounds: Optional[dict] = None   # optional key -> (min, max) inclusive; unbounded if key absent
 
     def resolve(self) -> Callable:
         if self.runner is not None:
@@ -63,6 +64,32 @@ def _adapt_refresh(j: dict) -> dict:
             "provenance": "tools/binance_oi_metrics_fetch.py"}
 
 
+def _adapt_ic_panel(j: dict) -> dict:
+    rows = j.get("rows", []) or []
+    scored = [r for r in rows if r.get("t_stat") is not None]
+    best = max(scored, key=lambda r: abs(r["t_stat"])) if scored else None
+    return {"title": "IC 面板(全因子横向比较)", "params": {},
+            "metrics": {"n_factors": len(rows),
+                        "best_factor": best["name"] if best else None,
+                        "best_t_stat": best["t_stat"] if best else None},
+            "series": {}, "verdict": "DIAGNOSTIC",
+            "caveats": ["初筛诊断,非晋级门禁——不驱动任何自动晋级"],
+            "provenance": "tools/ic_panel_research.py"}
+
+
+def _adapt_wide_gauntlet(j: dict) -> dict:
+    results = j.get("results", []) or []
+    metrics = {}
+    for r in results:
+        net = ((r.get("by_cost") or {}).get("25bps") or {}).get("ann_sharpe")
+        metrics[f"{r['name']}_net25bps_sharpe"] = net
+        metrics[f"{r['name']}_verdict"] = r.get("verdict")
+    return {"title": "宽宇宙候选证伪(成本扫描)", "params": {}, "metrics": metrics,
+            "series": {}, "verdict": "DIAGNOSTIC",
+            "caveats": ["周度 L/S 分位 + 换手计费;无冲击模型、未评估空腿可行性——初筛证伪,非晋级门禁"],
+            "provenance": "tools/wide_factor_gauntlet.py"}
+
+
 RUN_KINDS: dict = {
     "carry_strategy": RunSpec("tools.crypto_carry_strategy:main", {}, adapt_carry, "资金费 Carry 策略",
                               runner=_tool_then_json("tools.crypto_carry_strategy", "crypto_carry_strategy.json")),
@@ -75,23 +102,38 @@ RUN_KINDS: dict = {
     "factory_orthogonal": RunSpec("tools.crypto_factory_orthogonal:main",
                                   {"generations": int, "population": int},
                                   lambda j: adapt_factory("factory_orthogonal", j), "自主正交发现(放大)",
-                                  runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json")),
+                                  runner=_tool_then_json("tools.crypto_factory_orthogonal", "crypto_factory_orthogonal.json"),
+                                  # 2026-07-06 安全审查 punch-list:此前无上限,可提交一个跑到天荒地老的任务
+                                  # (默认 generations=8/population=64,给"放大"留够头寸但不放行天文数字)
+                                  param_bounds={"generations": (1, 500), "population": (1, 5000)}),
     "factory_loop": RunSpec("tools.crypto_factory_loop:main", {},
                             lambda j: adapt_factory("factory_loop", j), "自主正交发现(loop-until-dry)",
                             runner=_tool_then_json("tools.crypto_factory_loop", "crypto_factory_loop.json")),
     "data_refresh": RunSpec("tools.binance_oi_metrics_fetch:main", {"intraday": bool}, _adapt_refresh,
                             "刷新持仓数据", runner=_refresh_runner),
+    "ic_panel": RunSpec("tools.ic_panel_research:main", {}, _adapt_ic_panel, "IC 面板",
+                        runner=_tool_then_json("tools.ic_panel_research", "ic_panel_snapshot.json")),
+    "wide_gauntlet": RunSpec("tools.wide_factor_gauntlet:main", {}, _adapt_wide_gauntlet,
+                             "宽宇宙候选证伪",
+                             runner=_tool_then_json("tools.wide_factor_gauntlet", "wide_factor_gauntlet.json")),
 }
 
 
 def validate_params(kind: str, params: dict) -> dict:
-    """Reject an unknown kind (KeyError) or any param outside the kind's typed schema (ValueError)."""
+    """Reject an unknown kind (KeyError), any param outside the kind's typed schema, or a value outside
+    the kind's declared bounds (ValueError) — e.g. `factory_orthogonal`'s generations/population, which
+    without a bound could be handed an unbounded value and run essentially forever."""
     spec = RUN_KINDS[kind]
+    bounds = spec.param_bounds or {}
     out = {}
     for k, v in params.items():
         if k not in spec.param_schema:
             raise ValueError(f"unknown param {k!r} for kind {kind!r}")
         if not isinstance(v, spec.param_schema[k]):
             raise ValueError(f"param {k!r} must be {spec.param_schema[k].__name__}")
+        if k in bounds:
+            lo, hi = bounds[k]
+            if not (lo <= v <= hi):
+                raise ValueError(f"param {k!r} must be between {lo} and {hi}, got {v!r}")
         out[k] = v
     return out

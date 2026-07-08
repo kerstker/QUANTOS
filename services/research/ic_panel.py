@@ -62,6 +62,49 @@ def compute_period_ic_series(signal_matrix: Matrix, price_matrix: Matrix) -> lis
     return out
 
 
+def compute_horizon_ic_series(signal_matrix: Matrix, price_matrix: Matrix, horizon: int) -> tuple:
+    """h 期持有的截面 rank IC:起点 t 的 IC = corr_rank(signal[t], price[t+h]/price[t]-1)。
+
+    抽样 = **非重叠**(起点 t=0,h,2h,…,t+h<T)。这是唯一诚实的口径:重叠收益会让 IC 序列
+    自相关、naive t-stat 虚高——所以这里刻意不提供 stride/重叠参数(比 Newey-West 简单、可审计,
+    与 crowd_contra 周度重算 t=2.99 的方法论同族)。抽样起点固定 0 → 有相位依赖(确定性、已知局限)。
+
+    "持有期"单位 = 面板自身的周期(当前四个宇宙全是日频面板,h=7≈周度口径),不是绝对日历天。
+
+    返回 (ics, start_indices):start_indices 是每个 IC 的起点行号,调用方用它对齐 event_times
+    再喂 aggregate_ic_series 做 per_year。性质(有测试钉死):horizon=1 时 ics 与
+    compute_period_ic_series 逐元素**逐位**相等(同一套浮点运算顺序)。每期有效对 <
+    _MIN_PAIRS_PER_PERIOD 仍记 None;tie 处理沿用 _rank 的既有简化。"""
+    if horizon < 1:
+        raise ValueError(f"horizon must be >= 1, got {horizon}")
+    T = len(signal_matrix)
+    ics: list = []
+    starts: list = []
+    for t in range(0, T - horizon, horizon):
+        pairs = []
+        for i in range(len(signal_matrix[t])):
+            s = signal_matrix[t][i]
+            p0 = price_matrix[t][i] if t < len(price_matrix) else None
+            p1 = price_matrix[t + horizon][i] if t + horizon < len(price_matrix) else None
+            if s is None or p0 is None or p1 is None or p0 <= 0:
+                continue
+            pairs.append((s, p1 / p0 - 1.0))
+        starts.append(t)
+        if len(pairs) < _MIN_PAIRS_PER_PERIOD:
+            ics.append(None)
+            continue
+        sr = _rank([p[0] for p in pairs])
+        rr = _rank([p[1] for p in pairs])
+        a = [sr[p[0]] for p in pairs]
+        b = [rr[p[1]] for p in pairs]
+        ma, mb = statistics.fmean(a), statistics.fmean(b)
+        num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+        da = sum((x - ma) ** 2 for x in a) ** 0.5
+        db = sum((y - mb) ** 2 for y in b) ** 0.5
+        ics.append(num / (da * db) if da > 0 and db > 0 else None)
+    return ics, starts
+
+
 def aggregate_ic_series(ics: list, event_times: Optional[Sequence[int]] = None) -> dict:
     """逐期 IC 序列 -> 聚合统计。样本不足(n<10)时导出字段全 None(诚实);n_periods 恒是真实计数。"""
     valid = [(i, v) for i, v in enumerate(ics) if v is not None]

@@ -1,0 +1,335 @@
+"""execute_promotion(战线①,2026-07-06):先烧 grant 再推进(fail-closed 方向)、
+证据只来自真实 artifact(evaluation artifact + paper_track.db,绝不代填)、烧毁后全路径审计、
+consume 前预检(评审 #4:错的执行人 / 非法转换不白烧)、experiments db 单飞锁(评审 #7)。"""
+import json
+import os
+import threading
+
+import pytest
+
+import services.alpha.promotion as promotion_mod
+from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
+from quantos.contracts.research import AlphaState, ValidationVerdict
+from services.alpha.catalog import AlphaCatalog
+from services.alpha.guards import promotion_subject
+from services.alpha.lifecycle import AlphaLifecycleManager
+from services.alpha.promotion import (
+    PromotionPrecheckError, execute_promotion, gather_promotion_evidence,
+)
+from services.governance.approval import ApprovalState, approve, open_request, review
+from services.governance.approval_store import ApprovalStore
+from services.monitoring.audit_store import DurableAuditLog
+from services.research.experiment_registry.registry import ExperimentRegistry
+from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.paper_trading.store import PaperTrackStore
+
+S = AlphaState
+AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
+
+
+def _eval_report(alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
+    return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
+                           pbo=0.1, catalog_trial_count=trial_count, marginal_ir=0.5,
+                           net_sharpe=net_sharpe, reproducibility_hash=repro)
+
+
+def _seed_registry(tmp_path, *, with_artifact=True):
+    """experiments db:a1 在 PAPER_TRADING + (可选)一份真实 evaluation artifact。"""
+    registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db"), create=True))
+    cat = AlphaCatalog()
+    cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    mgr = AlphaLifecycleManager(cat)
+    cc = cat.global_trial_count()
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report("a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report("a1", cc))
+    registry.save(cat, now=3)
+    if with_artifact:
+        registry.record_evaluation(_eval_report("a1", cc), dataset_version="v1", recorded_ts=3)
+    return registry
+
+
+def _seed_paper(tmp_path, alpha_id="a1"):
+    store = PaperTrackStore(str(tmp_path / "paper_track.db"), create=True)
+    store.append_periods(alpha_id, [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
+    store.recompute_summary(alpha_id, backtest_sharpe=1.2)
+    return store
+
+
+def _approved_request(store, alpha_id="a1", request_id="req-1"):
+    subject = promotion_subject(alpha_id, S.APPROVED)
+    req = open_request(request_id, subject, Actor(actor_id="alice", kind=ActorKind.HUMAN), at=10)
+    req = review(req, Actor(actor_id="bob", kind=ActorKind.HUMAN), at=11)
+    req = approve(req, Actor(actor_id="carol", kind=ActorKind.HUMAN), at=12)
+    store.save(req, kind="ALPHA_PROMOTION", now=12)
+    return req
+
+
+@pytest.fixture()
+def env(tmp_path):
+    return {
+        "store": ApprovalStore(str(tmp_path / "approvals.db")),
+        "registry": _seed_registry(tmp_path),
+        "paper": _seed_paper(tmp_path),
+        "audit": DurableAuditLog(str(tmp_path / "gov_audit.db")),
+        "tmp": tmp_path,
+    }
+
+
+def _execute(env, request_id="req-1", executor="carol", now=20, nonce="n1"):
+    return execute_promotion(
+        store=env["store"], registry=env["registry"], audit=env["audit"],
+        request_id=request_id, executor_id=executor, now=now,
+        paper_store=env["paper"], nonce=nonce)
+
+
+# --- 证据采集:只来自真实 artifact ---------------------------------------------
+
+def test_gather_evidence_from_real_artifacts(env):
+    ev = gather_promotion_evidence(env["registry"], env["paper"], "a1")
+    assert ev.backtest_sharpe == 1.2            # 来自 evaluation artifact 的 net_sharpe
+    assert ev.paper_sharpe is not None          # 来自 paper_track.db track(a1)
+    assert ev.eval_trial_count == 1             # 来自 evaluation artifact 的 catalog_trial_count
+    assert ev.notes == ()
+
+
+def test_gather_evidence_fail_closed_when_missing(tmp_path):
+    registry = _seed_registry(tmp_path, with_artifact=False)
+    ev = gather_promotion_evidence(registry, None, "a1")
+    assert ev.backtest_sharpe is None and ev.eval_trial_count is None
+    assert "NO_EVALUATION_ARTIFACT" in ev.notes
+    assert "NO_PAPER_TRACK_STORE" in ev.notes
+
+
+def test_gather_evidence_rejects_tampered_artifact(env):
+    # 直接改 sqlite 里的 evaluation_json(把 net_sharpe 吹大)→ verify_evaluation 抓到 → 证据作废
+    conn = env["registry"]._store._conn
+    row = conn.execute("SELECT run_id, evaluation_json FROM evaluations").fetchone()
+    payload = json.loads(row["evaluation_json"])
+    payload["net_sharpe"] = 99.0
+    conn.execute("UPDATE evaluations SET evaluation_json=? WHERE run_id=?",
+                 (json.dumps(payload, sort_keys=True, default=str), row["run_id"]))
+    conn.commit()
+    ev = gather_promotion_evidence(env["registry"], env["paper"], "a1")
+    assert ev.backtest_sharpe is None
+    assert "EVALUATION_ARTIFACT_INVALID" in ev.notes
+
+
+# --- 预检(不烧 grant)---------------------------------------------------------
+
+def test_wrong_executor_prechecked_without_burning(env):
+    _approved_request(env["store"])
+    with pytest.raises(PromotionPrecheckError):
+        _execute(env, executor="bob")           # bob 不是 APPROVED 步的 carol
+    assert env["store"].load("req-1").state == ApprovalState.APPROVED   # 未烧
+
+
+# --- 进程内单飞锁(2026-07-06 对抗式复审 CONFIRMED 修复,front1-governance 高危发现)-------
+#
+# 此前 lock_path 默认 None 时,execute_promotion 对"同一进程内并发调用同一 request_id"没有
+# 任何保护:两个调用者各自 load() 到同一份 APPROVED 请求、各自 consume() 出逐字节相同的
+# CONSUMED 步骤,ApprovalStore.save() 的严格前缀检查对"完全相同的追加"是无声 no-op(不是
+# 分叉,不 raise)——于是两次 advance()+registry.save()+PROMOTION_EXECUTED 审计各自独立发生,
+# 一次性 grant 被实际执行两次。三个独立审查维度各自复现了这个反例并全票确认。
+
+def test_concurrent_execute_promotion_same_request_id_is_serialized(env, monkeypatch):
+    # ApprovalStore/DurableAuditLog 已是 check_same_thread=False(线程安全);
+    # SqliteExperimentStore/PaperTrackStore 默认不是——镜像 promotion_api 每次 HTTP 请求都
+    # 新建 registry/paper 对象的真实模式,每个线程自己 fresh 一份,指向同一份 tmp_path 文件。
+    _approved_request(env["store"])
+    tmp_path = env["tmp"]
+    thread_a_inside = threading.Event()
+    release_thread_a = threading.Event()
+    original_consume = promotion_mod.consume
+
+    def _slow_consume(*args, **kwargs):
+        thread_a_inside.set()
+        assert release_thread_a.wait(timeout=5), "test setup failure: never released"
+        return original_consume(*args, **kwargs)
+
+    monkeypatch.setattr(promotion_mod, "consume", _slow_consume)
+
+    def _fresh_call(now, nonce):
+        registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db")))
+        paper = PaperTrackStore(str(tmp_path / "paper_track.db"))
+        return execute_promotion(store=env["store"], registry=registry, audit=env["audit"],
+                                 request_id="req-1", executor_id="carol", now=now,
+                                 paper_store=paper, nonce=nonce)
+
+    result_a = {}
+
+    def _run_a():
+        result_a["outcome"] = _fresh_call(now=20, nonce="nA")
+
+    thread_a = threading.Thread(target=_run_a)
+    thread_a.start()
+    assert thread_a_inside.wait(timeout=5), "thread A never entered the locked critical section"
+
+    # thread A is still holding the process-internal lock (paused inside consume()) — a second
+    # concurrent call for the SAME request_id must be rejected, not silently double-executed.
+    with pytest.raises(PromotionPrecheckError, match="PROMOTION_IN_PROGRESS"):
+        _fresh_call(now=20, nonce="nB")
+
+    release_thread_a.set()
+    thread_a.join(timeout=5)
+    assert not thread_a.is_alive()
+    assert result_a["outcome"].ok is True
+
+    executed_events = [e for e in env["audit"].events if e.action == "PROMOTION_EXECUTED"]
+    assert len(executed_events) == 1, "grant must be executed exactly once, not twice"
+    assert env["store"].load("req-1").state == ApprovalState.CONSUMED
+
+
+def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_path):
+    # 按 request_id 分片的锁不能变成全局互斥——两个不相干的晋级请求必须能各自独立通过。
+    exp_path = str(tmp_path / "exp.db")
+    paper_path = str(tmp_path / "paper_track.db")
+    registry = ExperimentRegistry(SqliteExperimentStore(exp_path, create=True))
+    cat = AlphaCatalog()
+    store = ApprovalStore(str(tmp_path / "approvals.db"))
+    audit = DurableAuditLog(str(tmp_path / "gov_audit.db"))
+    paper = PaperTrackStore(paper_path, create=True)
+    for alpha_id in ("a1", "a2"):
+        cat.register(AlphaDefinition(alpha_id=alpha_id, name=alpha_id, factor_ids=("f1",)))
+        mgr = AlphaLifecycleManager(cat)
+        cc = cat.global_trial_count()
+        mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)
+        mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(alpha_id, cc))
+        mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(alpha_id, cc))
+        registry.record_evaluation(_eval_report(alpha_id, cc), dataset_version="v1", recorded_ts=3)
+        paper.append_periods(alpha_id, [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
+        paper.recompute_summary(alpha_id, backtest_sharpe=1.2)
+    registry.save(cat, now=3)
+
+    for req_id, alpha_id in (("req-1", "a1"), ("req-2", "a2")):
+        subject = promotion_subject(alpha_id, S.APPROVED)
+        req = open_request(req_id, subject, Actor(actor_id="alice", kind=ActorKind.HUMAN), at=10)
+        req = review(req, Actor(actor_id="bob", kind=ActorKind.HUMAN), at=11)
+        req = approve(req, Actor(actor_id="carol", kind=ActorKind.HUMAN), at=12)
+        store.save(req, kind="ALPHA_PROMOTION", now=12)
+
+    results = {}
+
+    def _run(req_id):
+        # 每个线程自己 fresh 一份 registry/paper(SqliteExperimentStore/PaperTrackStore 默认
+        # check_same_thread=True,不能跨线程共享同一个 Python 对象);store/audit 已线程安全。
+        thread_registry = ExperimentRegistry(SqliteExperimentStore(exp_path))
+        thread_paper = PaperTrackStore(paper_path)
+        results[req_id] = execute_promotion(
+            store=store, registry=thread_registry, audit=audit, request_id=req_id,
+            executor_id="carol", now=20, paper_store=thread_paper, nonce=req_id)
+
+    threads = [threading.Thread(target=_run, args=(r,)) for r in ("req-1", "req-2")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+    assert not any(t.is_alive() for t in threads)
+    assert results["req-1"].ok is True and results["req-2"].ok is True
+
+
+def test_not_yet_approved_request_prechecked(env):
+    subject = promotion_subject("a1", S.APPROVED)
+    req = open_request("req-2", subject, Actor(actor_id="alice", kind=ActorKind.HUMAN), at=10)
+    env["store"].save(req, kind="ALPHA_PROMOTION", now=10)
+    with pytest.raises(PromotionPrecheckError):
+        _execute(env, request_id="req-2", executor="alice")
+    assert env["store"].load("req-2").state == ApprovalState.REQUESTED
+
+
+def test_unknown_alpha_prechecked_without_burning(env):
+    subject = promotion_subject("ghost", S.APPROVED)
+    req = open_request("req-3", subject, Actor(actor_id="alice", kind=ActorKind.HUMAN), at=10)
+    req = review(req, Actor(actor_id="bob", kind=ActorKind.HUMAN), at=11)
+    req = approve(req, Actor(actor_id="carol", kind=ActorKind.HUMAN), at=12)
+    env["store"].save(req, kind="ALPHA_PROMOTION", now=12)
+    with pytest.raises(PromotionPrecheckError):
+        _execute(env, request_id="req-3")
+    assert env["store"].load("req-3").state == ApprovalState.APPROVED   # 未烧
+
+
+def test_single_flight_lock_prechecks_busy(env):
+    _approved_request(env["store"])
+    lock_path = str(env["tmp"] / "experiments_reg.db.promotion.lock")
+    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    os.close(fd)
+    try:
+        with pytest.raises(PromotionPrecheckError):
+            execute_promotion(store=env["store"], registry=env["registry"], audit=env["audit"],
+                              request_id="req-1", executor_id="carol", now=20,
+                              paper_store=env["paper"], lock_path=lock_path)
+        assert env["store"].load("req-1").state == ApprovalState.APPROVED   # 未烧
+    finally:
+        os.remove(lock_path)
+
+
+# --- 烧毁语义 + 落盘 + 审计 -----------------------------------------------------
+
+def test_execute_promotion_happy_path_persists_catalog(env):
+    _approved_request(env["store"])
+    outcome = _execute(env)
+    assert outcome.ok and outcome.burned
+    assert outcome.alpha_id == "a1" and outcome.dst == "APPROVED"
+    # experiment_registry 落盘生效:全新 catalog 重载后状态是 APPROVED
+    fresh = AlphaCatalog()
+    env["registry"].load_into(fresh)
+    assert fresh.state("a1") == S.APPROVED
+    # grant 已烧
+    assert env["store"].load("req-1").state == ApprovalState.CONSUMED
+    # 审计落链且链自洽
+    actions = [e.action for e in env["audit"].events]
+    assert "PROMOTION_EXECUTED" in actions
+    assert env["audit"].chain_valid()
+
+
+def test_execute_promotion_burns_grant_before_advance(env, tmp_path):
+    """guard 拒绝(paper 证据缺失)时:grant 已 CONSUMED(烧毁),状态未推进,审计落
+    PROMOTION_EXECUTION_FAILED;再次 execute → 预检拒绝(一次性,须重走三方)。"""
+    _approved_request(env["store"])
+    env["paper"] = PaperTrackStore(str(tmp_path / "empty_paper.db"), create=True)   # 无 track 行
+    outcome = _execute(env)
+    assert not outcome.ok and outcome.burned
+    assert any("NO_PAPER" in r or "PAPER_EVIDENCE" in r for r in outcome.reasons)
+    assert env["store"].load("req-1").state == ApprovalState.CONSUMED
+    fresh = AlphaCatalog()
+    env["registry"].load_into(fresh)
+    assert fresh.state("a1") == S.PAPER_TRADING          # 未推进
+    actions = [e.action for e in env["audit"].events]
+    assert "PROMOTION_EXECUTION_FAILED" in actions
+    assert env["audit"].chain_valid()
+    with pytest.raises(PromotionPrecheckError):          # grant 一次性:烧毁后不可再花
+        _execute(env, now=21, nonce="n2")
+
+
+def test_execute_promotion_audits_failure_with_reasons(env, tmp_path):
+    _approved_request(env["store"])
+    env["paper"] = PaperTrackStore(str(tmp_path / "empty_paper.db"), create=True)
+    outcome = _execute(env)
+    assert outcome.audit_ok
+    failed = [e for e in env["audit"].events if e.action == "PROMOTION_EXECUTION_FAILED"]
+    assert failed and failed[0].metadata.get("reasons")
+
+
+def test_audit_event_ids_survive_duplicate_base(env):
+    """DurableAuditLog 重复 event_id 即抛(评审 #5)——同基串(同 request 同秒重试)必须
+    自动加序号仍落链,绝不把审计路径打成异常。"""
+    from services.alpha.promotion import _audit_event
+    ok1 = _audit_event(env["audit"], request_id="req-x", alpha_id="a1", actor="carol",
+                       action="PROMOTION_EXECUTION_FAILED", now=20, nonce="",
+                       metadata={"reasons": ["R1"]})
+    ok2 = _audit_event(env["audit"], request_id="req-x", alpha_id="a1", actor="carol",
+                       action="PROMOTION_EXECUTION_FAILED", now=20, nonce="",
+                       metadata={"reasons": ["R1"]})
+    assert ok1 and ok2
+    assert len(env["audit"].events) == 2
+    assert env["audit"].chain_valid()
+
+
+def test_stale_eval_trial_count_rejected_end_to_end(env):
+    """catalog 长大后(新 trial 落库),旧 artifact 的 trial count 过期 → guard 拒(评审 #1)。"""
+    _approved_request(env["store"])
+    # 往 experiments db 再灌 5 个 trial(模拟研究继续跑)
+    env["registry"]._store.add_trials([f"extra{k}" for k in range(5)], first_seen_ts=15)
+    outcome = _execute(env)
+    assert not outcome.ok and outcome.burned
+    assert "TRIAL_COUNT_UNDERSTATED_AT_APPROVAL" in outcome.reasons

@@ -55,6 +55,40 @@ def fetch_ohlc(coin_id: str = "bitcoin", *, vs_currency: str = "usd", days: int 
     return http_get(url, {"x-cg-demo-api-key": key, "accept": "application/json"})
 
 
+# instrument_id(裸标的名,live/ 全树的约定) -> CoinGecko coin id。仅覆盖当前 mandate universe
+# 已知的主流币种(top-100,slug 稳定);新标的加一行即可,未在此映射的标的核价时诚实
+# "unverifiable"(见 live/execution/price_check.py),不会误报成"发散"。
+SYMBOL_TO_COINGECKO_ID = {
+    "AAVE": "aave", "ADA": "cardano", "APT": "aptos", "ATOM": "cosmos",
+    "AVAX": "avalanche-2", "BCH": "bitcoin-cash", "BNB": "binancecoin", "BTC": "bitcoin",
+    "DOGE": "dogecoin", "DOT": "polkadot", "ETC": "ethereum-classic", "ETH": "ethereum",
+    "FIL": "filecoin", "ICP": "internet-computer", "INJ": "injective-protocol",
+    "LINK": "chainlink", "LTC": "litecoin", "NEAR": "near", "OP": "optimism",
+    "SOL": "solana", "TRX": "tron", "UNI": "uniswap", "XLM": "stellar", "XRP": "ripple",
+}
+
+
+def fetch_simple_prices(instrument_ids, *, vs_currency: str = "usd",
+                        http_get=_http_get_json) -> dict:
+    """跨源核价用的独立第二价格源(2026-07-05)。GET 一次 `/simple/price` 拿多个币种的
+    现价,只对 `SYMBOL_TO_COINGECKO_ID` 里有映射的标的发起查询——未映射的标的直接不在
+    返回结果里(调用方视为"unverifiable",fail-soft,不是本函数该报错的场景)。"""
+    ids = [SYMBOL_TO_COINGECKO_ID[i] for i in instrument_ids if i in SYMBOL_TO_COINGECKO_ID]
+    if not ids:
+        return {}
+    key = _read_key()
+    url = f"{DEMO_BASE}/simple/price?ids={','.join(sorted(set(ids)))}&vs_currencies={vs_currency}"
+    data = http_get(url, {"x-cg-demo-api-key": key, "accept": "application/json"})
+    id_to_symbol = {v: k for k, v in SYMBOL_TO_COINGECKO_ID.items()}
+    out = {}
+    for cg_id, row in (data or {}).items():
+        sym = id_to_symbol.get(cg_id)
+        price = (row or {}).get(vs_currency)
+        if sym is not None and isinstance(price, (int, float)):
+            out[sym] = float(price)
+    return out
+
+
 def parse_ohlc(payload, *, instrument_id: str, interval_ms: int, now_ms=None) -> list:
     """Pure: CoinGecko [[ts_ms, open, high, low, close], ...] -> canonical bar rows.
     event_time = ts (bar open); knowledge_time = ts + interval_ms (knowable at CLOSE,

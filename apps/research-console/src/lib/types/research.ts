@@ -1451,11 +1451,8 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   safety_note: string;
 }
 
-export interface IcPanelRow {
-  name: string;
-  universe: string;
-  thesis: string;
-  n_instruments: number;
+// 单个持有期口径的聚合统计(= 快照 row 的六统计 + per_year 形状)。
+export interface IcPanelAgg {
   n_periods: number;
   mean_ic: number | null;
   ic_std: number | null;
@@ -1463,6 +1460,17 @@ export interface IcPanelRow {
   hit_rate: number | null;
   t_stat: number | null;
   per_year: Record<string, number | null>;
+}
+
+export interface IcPanelRow extends IcPanelAgg {
+  name: string;
+  universe: string;
+  thesis: string;
+  n_instruments: number;
+  // schema_version>=2(2026-07-06 per-factor 持有期口径):顶层六统计恒 == by_period["1"](h=1 锚,
+  // 跨因子可比);h>1 非重叠抽样(t-stat 诚实)。旧快照/mock 无这两个字段 -> 可选,页面兜底显示 "—"。
+  holding_periods?: number[];
+  by_period?: Record<string, IcPanelAgg>;
 }
 
 export interface IcPanelPayload extends ConsolePayloadBase {
@@ -1501,6 +1509,152 @@ export interface ResearchFindingsPayload extends ConsolePayloadBase {
     combo?: Record<string, ResearchFindingsMetric>;
     note?: string;
   };
+  honesty_note: string;
+}
+
+export interface LiveTradingForwardAlpha {
+  alpha_id: string;
+  n_forward_periods: number | null;
+  weeks_to_go_no_go: number | null;
+  paper_sharpe: number | null;
+  paper_ic: number | null;
+  cum_return: number | null;
+  backtest_reference_sharpe: number | null;
+  reference_weeks: number | null;
+  pending_decisions: number | null;
+  last_decision_ts: number | null;
+}
+export interface LiveTradingForwardTrack {
+  present: boolean;
+  ran_at?: number;
+  staleness_days?: Record<string, { freshest_days: number | null; worst_days: number | null; n_stale: number | null; n_total: number }>;
+  evidence_gate_weeks?: number;
+  alphas?: LiveTradingForwardAlpha[];
+  alerts?: string[];
+}
+export interface LiveTradingReconciliation {
+  drift?: Record<string, number>;
+  in_sync?: boolean;
+  max_abs_drift?: number;
+  proceed?: boolean;
+}
+export interface LiveTradingWouldSubmitOrder {
+  instrument_id: string;
+  side: string;
+  quantity: number;
+}
+export interface LiveTradingTcaByInstrument {
+  n_fills: number;
+  mean_slippage_bps: number | null;
+  worst_slippage_bps: number | null;
+}
+export interface LiveTradingTca {
+  n_fills: number;
+  n_with_slippage: number;
+  mean_slippage_bps: number | null;
+  median_slippage_bps: number | null;
+  worst_slippage_bps: number | null;
+  notional_weighted_slippage_bps: number | null;
+  total_notional: number;
+  assumed_cost_bps: number;
+  weighted_minus_assumed_bps: number | null;
+  by_instrument: Record<string, LiveTradingTcaByInstrument>;
+}
+export interface LiveTradingParitySummary {
+  paper_source: string;          // "forward_ledger" | "recomputed_signal"
+  n_paper_legs: number;
+  n_with_live_order: number;
+  max_abs_gap_notional: number | null;
+  unexpected_live_positions: string[];
+}
+export interface LiveTradingEmergencySummary {
+  target_gross: number;
+  n_submitted: number;
+  n_rejected: number;
+  n_errors: number;
+  n_ledger_write_errors: number;
+}
+export interface LiveTradingExecutionStack {
+  present: boolean;
+  ran_at?: number;
+  mode?: string;                 // "preview" | "submit"
+  hard_stop?: boolean;
+  tier?: string;                 // "AUTO" | "NEEDS_HUMAN_REVIEW"
+  n_submitted?: number;
+  n_pending_review?: number;
+  n_rejected_by_gate?: number;
+  n_dropped_by_filters?: number;
+  n_submission_errors?: number;
+  n_ledger_write_errors?: number;
+  reconciliation?: LiveTradingReconciliation;
+  risk_breach?: { reasons?: string[]; drawdown_pct?: number; gross_exposure?: number; net_exposure?: number } | null;
+  aum?: number;
+  peak_equity?: number;
+  would_submit?: LiveTradingWouldSubmitOrder[];
+  alerts?: string[];
+  // 2026-07-05 机构级补全(驱动器落进快照,console 只读展示)
+  venue?: string | null;         // "binance" | "bybit"
+  tca?: LiveTradingTca | null;
+  order_stats?: Record<string, number> | null;
+  parity?: LiveTradingParitySummary | null;
+  emergency?: LiveTradingEmergencySummary | null;
+}
+export interface LiveTradingPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_LIVE_TRADING_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;                // LIVE_TRADING_TRACKING_OK | NO_SNAPSHOT
+  forward_track: LiveTradingForwardTrack;
+  execution_stack: LiveTradingExecutionStack;
+  honesty_note: string;
+}
+
+// ---- GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents ----
+export interface GonogoPnl {
+  present: boolean;
+  n_points?: number;
+  first_equity?: number | null;
+  last_equity?: number | null;
+  total_equity_change?: number | null;
+  latest_unrealized_pnl?: number | null;
+  latest_gross_notional?: number | null;
+  latest_net_notional?: number | null;
+  execution_cost_estimate?: number | null;
+  note?: string;
+}
+export interface GonogoVenue {
+  venue: string;
+  parity?: {
+    n_cycles?: number; n_submit_cycles?: number; latest_max_abs_gap?: number | null;
+    unexpected_position_events?: number; paper_source_recomputed_cycles?: number;
+  };
+  tca?: {
+    n_with_slippage?: number; notional_weighted_slippage_bps?: number | null;
+    assumed_cost_bps?: number; weighted_minus_assumed_bps?: number | null; worst_slippage_bps?: number | null;
+  } | null;
+  equity?: { n_points?: number; first?: number; last?: number; max_drawdown_observed?: number };
+  pnl?: GonogoPnl;
+}
+export interface GonogoForwardAlpha {
+  weeks_accumulated?: number; weeks_to_gate?: number; paper_sharpe?: number | null;
+  paper_ic?: number | null; cum_return?: number | null; backtest_reference_sharpe?: number | null;
+  pending_decisions?: number | null;
+}
+export interface GonogoIncidents {
+  n_alert_batches?: number; risk_breaches?: number; reconciliation_hard_stops?: number;
+  emergency_flattens?: number; sentinel_failures?: number;
+}
+export interface GonogoPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_GONOGO_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;                 // GONOGO_EVIDENCE_READY | NO_SNAPSHOT
+  generated_at?: number | null;
+  readiness?: string;
+  forward_evidence: {
+    present: boolean; ran_at?: number | null; gate_weeks?: number;
+    alphas?: Record<string, GonogoForwardAlpha>;
+  };
+  execution_evidence: Record<string, GonogoVenue>;
+  incidents: GonogoIncidents;
   honesty_note: string;
 }
 

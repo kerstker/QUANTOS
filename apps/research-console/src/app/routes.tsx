@@ -91,10 +91,18 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/CarryReadiness') },
   { path: '/research/paper-trading', zh: '纸面跟踪', en: 'Paper Track', icon: 'PT', group: 'execution',
     load: () => import('@/pages/PaperTrading') },
+  { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
+    load: () => import('@/pages/LiveTrading') },
+  { path: '/research/live-desk', zh: '交易台', en: 'Live Desk', icon: 'LD', group: 'execution',
+    load: () => import('@/pages/LiveDesk') },
+  { path: '/research/gonogo', zh: 'GoNoGo 证据', en: 'GoNoGo Evidence', icon: 'GG', group: 'execution',
+    load: () => import('@/pages/Gonogo') },
   { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'execution',
     load: () => import('@/pages/LifecycleMonitor') },
 
   // ---- 治理与系统:审计、健康、诚实完整度 ----
+  { path: '/research/promotion-queue', zh: '晋级审批', en: 'Promotion Queue', icon: 'PQ', group: 'system',
+    load: () => import('@/pages/PromotionQueue') },
   { path: '/research/evidence-ledger', zh: '证据链', en: 'Evidence Ledger', icon: 'EL', group: 'system',
     load: () => import('@/pages/EvidenceLedger') },
   { path: '/research/events', zh: '事件流', en: 'Events', icon: 'EV', group: 'system',

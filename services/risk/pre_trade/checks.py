@@ -20,6 +20,26 @@ def _finite_pos(x) -> bool:
     return isinstance(x, (int, float)) and math.isfinite(x) and x > 0
 
 
+def _is_exposure_reducing(intent, ctx) -> bool:
+    """这单是否**纯降低**本标的敞口(证明自**真实当前仓位**,非可伪造的调用方标志)——镜像
+    live/execution/emergency.validate_flatten_order。True 仅当:持有非零仓位、方向与之相反、且量 ≤ |仓位|
+    (只朝零缩、绝不穿越零点翻到反向)。pos=0/未知(调用方未填 positions)-> False = **fail-closed**:
+    证明不了减仓就保留检查,故对每个既有空仓 caller(dry-run 全部)字节等价。
+
+    只有 ADD-side 市场风险检查(liquidity/volatility)据此放行——降敞口的单永远应能过(退出/去风险
+    是安全方向)。**绝不**用于 kill-switch/net_exposure/结构性权限检查(见 checks.py 各处 + 设计文档)。"""
+    try:
+        pos = ctx.account.position_qty(intent.instrument_id)   # 带符号,真实持仓;0=无仓/未知
+        delta = ctx.signed_delta(intent)                        # +q BUY / -q SELL
+    except Exception:
+        return False                                            # fail-closed
+    if pos == 0 or delta == 0:
+        return False                                            # 无仓=纯开 / 无变化 -> 不豁免
+    if (pos > 0) == (delta > 0):
+        return False                                            # 同向 -> 加仓 -> 不豁免
+    return abs(delta) <= abs(pos)                                # 反向且 ≤|仓位| -> 只朝零缩、不穿越
+
+
 # --- Stage A: hard gates (safety / permission / structural) ------------------
 
 def check_kill_switch(intent, ctx, limits):
@@ -183,12 +203,18 @@ def check_turnover(intent, ctx, limits):
 
 
 def check_rate_limit(intent, ctx, limits):
-    cutoff = ctx.now - limits.rate_window_s
+    # 单位不变量(审计 P1-5):ctx.now / ctx.recent_timestamps / limits.rate_window_ms **必须同一时间单位**
+    # (live 路径 = 毫秒;dry-run 路径 recent_timestamps 恒空、此检查 no-op)。三者同基故纯减法比较正确。
+    cutoff = ctx.now - limits.rate_window_ms
     recent = sum(1 for t in ctx.recent_timestamps if t >= cutoff)
     return (R.TURNOVER_LIMIT_EXCEEDED,) if recent >= limits.max_orders_per_window else ()
 
 
 def check_liquidity(intent, ctx, limits):
+    # reduce-only 豁免:证明为纯降敞口的单永远应能过(退出/去风险),不被流动性 fail-closed 挡——见
+    # _is_exposure_reducing。无仓/加仓/翻仓不豁免,故对既有空仓 caller 字节等价。
+    if _is_exposure_reducing(intent, ctx):
+        return ()
     vol = ctx.market.est_daily_volume
     if vol is None or not math.isfinite(vol) or vol <= 0:
         return (R.LIQUIDITY_LIMIT_EXCEEDED,)
@@ -196,6 +222,8 @@ def check_liquidity(intent, ctx, limits):
 
 
 def check_volatility(intent, ctx, limits):
+    if _is_exposure_reducing(intent, ctx):                      # 同上:减仓不被波动 fail-closed 挡
+        return ()
     iv = ctx.market.instrument_vol
     if iv is None or not math.isfinite(iv) or iv > limits.max_instrument_vol:
         return (R.VOLATILITY_LIMIT_EXCEEDED,)

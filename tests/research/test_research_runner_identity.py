@@ -32,7 +32,8 @@ def _client(tmp_path, monkeypatch):
 
 def test_post_run_without_operator_header_is_400(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
-    r = client.post("/run", json={"kind": "carry_strategy", "params": {}})
+    r = client.post("/run", json={"kind": "carry_strategy", "params": {}},
+                    headers={"X-Runner-Token": m._RUNNER_TOKEN})
     assert r.status_code == 400
     assert "X-Operator" in r.json()["detail"]
     assert stub.calls == []                                  # never reached submit
@@ -41,7 +42,7 @@ def test_post_run_without_operator_header_is_400(tmp_path, monkeypatch):
 def test_post_run_with_blank_operator_is_400(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
     r = client.post("/run", json={"kind": "carry_strategy", "params": {}},
-                    headers={"X-Operator": "   "})
+                    headers={"X-Operator": "   ", "X-Runner-Token": m._RUNNER_TOKEN})
     assert r.status_code == 400
     assert stub.calls == []
 
@@ -49,7 +50,7 @@ def test_post_run_with_blank_operator_is_400(tmp_path, monkeypatch):
 def test_post_run_threads_operator_and_records_audit(tmp_path, monkeypatch):
     client, stub = _client(tmp_path, monkeypatch)
     r = client.post("/run", json={"kind": "carry_strategy", "params": {}},
-                    headers={"X-Operator": "alice"})
+                    headers={"X-Operator": "alice", "X-Runner-Token": m._RUNNER_TOKEN})
     assert r.status_code == 200
     body = r.json()
     assert body["operator"] == "alice"
