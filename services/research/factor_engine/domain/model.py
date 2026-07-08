@@ -363,8 +363,8 @@ def compute_ic(factor_values: List[float], forward_returns: List[float]) -> Dict
     rank_ic = cov_r / (std_rf * std_rr) if std_rf > 0 and std_rr > 0 else None
 
     ic_std = statistics.stdev([(factor_values[i] - mean_f) * (forward_returns[i] - mean_r) / (std_f * std_r)
-                                for i in range(n)]) if ic else None
-    icir = ic / ic_std if ic and ic_std and ic_std > 0 else None
+                                for i in range(n)]) if ic is not None else None
+    icir = ic / ic_std if ic is not None and ic_std is not None and ic_std > 0 else None
 
     return {"ic_mean": ic, "rank_ic": rank_ic, "icir": icir, "ic_std": ic_std}
 
