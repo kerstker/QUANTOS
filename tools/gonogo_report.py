@@ -24,6 +24,9 @@ from tools.live_track_advance import _VENUES, _venue_paths
 _FORWARD_STATUS = os.path.join("data", "cache", "forward_track_status.json")
 _ALERTS = os.path.join("data", "cache", "alerts.jsonl")
 _OUT_JSON = os.path.join("data", "cache", "gonogo_report.json")
+# 审计 §4.4 [P1-R2]:哨兵(tools/live_risk_sentinel.py)每小时算好的 VaR/CVaR/HHI 只读快照——
+# gonogo 直接读这里,不重算(同一份计算,避免两处口径不一致)。
+_RISK_SENTINEL_STATUS = os.path.join("data", "cache", "risk_sentinel_status.json")
 _EVIDENCE_GATE_WEEKS = 8
 
 
@@ -109,6 +112,19 @@ def _forward_evidence() -> dict:
             "alphas": alphas}
 
 
+def _venue_risk_snapshot(sentinel_status, venue_name: str):
+    """从哨兵状态快照(risk_sentinel_status.json,已由 live_risk_sentinel.py 算好)摘取某 venue
+    的只读 VaR/CVaR/HHI 展示——不重算,同一份计算避免两处口径不一致(审计 §4.4 [P1-R2])。
+    哨兵还没跑过 / 该 venue 本轮查询出错(结果里只有 error 键,没有 risk_snapshot)-> 诚实
+    None,不是 0(不能把"没算"和"算出来是低风险"混为一谈)。"""
+    if not sentinel_status:
+        return None
+    for r in sentinel_status.get("results") or []:
+        if r.get("venue") == venue_name:
+            return r.get("risk_snapshot")
+    return None
+
+
 def _venue_evidence(name: str) -> dict:
     cfg = _VENUES[name]
     paths = _venue_paths(cfg["suffix"])
@@ -156,6 +172,8 @@ def _venue_evidence(name: str) -> dict:
         }
     # PnL/成本归因(Phase 5 item 3):从真实权益曲线 + 完整 TCA 算(纯函数,含未实现/敞口/执行成本估计)
     out["pnl"] = assemble_pnl_attribution(eq, t_full)
+    # 只读风险展示(审计 §4.4 [P1-R2]):读哨兵已经算好的 VaR/CVaR/HHI,不重算、不参与任何结论。
+    out["risk_snapshot"] = _venue_risk_snapshot(_load(_RISK_SENTINEL_STATUS), name)
     return out
 
 
@@ -237,6 +255,11 @@ def render_markdown(rep: dict) -> str:
                          f"(变动 {pn['total_equity_change']:+.2f});最新未实现 {pn['latest_unrealized_pnl']};"
                          f"最新 gross/net {pn['latest_gross_notional']}/{pn['latest_net_notional']};"
                          f"执行成本估计 {pn['execution_cost_estimate']}")
+        if v.get("risk_snapshot"):
+            rs = v["risk_snapshot"]
+            lines.append(f"- 风险展示(只读,非门禁,审计 §4.4):VaR95={rs.get('var_95')} "
+                         f"CVaR95={rs.get('cvar_95')} HHI={rs.get('hhi')}"
+                         f"(日频收益点数={rs.get('n_daily_returns')},持仓数={rs.get('n_positions')})")
         lines.append("")
     inc = rep["incidents"]
     lines += ["## 事故台账", "",
