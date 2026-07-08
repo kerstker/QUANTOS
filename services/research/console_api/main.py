@@ -589,17 +589,23 @@ def _real_monitoring_snapshot() -> Dict:
     """Rank #26: the REAL integrity snapshot via monitoring.build_snapshot — it verifies the durable
     governance audit chain (Rank #20) and reports the kill-switch state, replacing a purely hardcoded
     health view. The service latencies below stay ILLUSTRATIVE (there is no real service mesh at L2);
-    this block is the verifiable health signal. Fail-closed to an honest marker if the chain is absent."""
+    this block is the verifiable health signal. Fail-closed to an honest marker if the chain is absent.
+
+    审计 2026-07-07 P0-1 修复:`kill_switch=KillSwitch()` 不传参数此前永远构造全新"从未触发"的默认
+    状态,且缺失审计链时的早退分支还硬编码 `kill_switch_active=False` —— 两条路径都与实盘 kill-switch
+    是否真的跳闸无关。现在两条分支都经 `_load_live_kill_switch_state()` 读取跨进程持久化的真实闩锁
+    状态(该函数 docstring 说明了 services/ 不 import live/ 的边界怎么绕开)。"""
     try:
         from services.monitoring.health import build_snapshot
         from services.monitoring.audit_store import DurableAuditLog
         from services.risk.pre_trade.kill_switch import KillSwitch
-        audit_db = os.path.join("data", "cache", "governance_audit.db")
-        if not os.path.exists(audit_db):
+        real_kill_switch = KillSwitch(state=_load_live_kill_switch_state())
+        if not os.path.exists(_GOVERNANCE_AUDIT_DB):
             return {"provenance": "NO_DURABLE_AUDIT_CHAIN", "audit_chain_valid": None,
-                    "kill_switch_active": False, "healthy": None, "anomalies": [], "audit_events": 0}
-        audit = DurableAuditLog(audit_db)
-        snap = build_snapshot(timestamp=0, audit_log=audit, kill_switch=KillSwitch())
+                    "kill_switch_active": real_kill_switch.is_active(), "healthy": None,
+                    "anomalies": [], "audit_events": 0}
+        audit = DurableAuditLog(_GOVERNANCE_AUDIT_DB)
+        snap = build_snapshot(timestamp=0, audit_log=audit, kill_switch=real_kill_switch)
         return {"provenance": "REAL_MONITORING_SNAPSHOT", "audit_chain_valid": snap.audit_chain_valid,
                 "kill_switch_active": snap.kill_switch_active, "healthy": snap.healthy,
                 "anomalies": list(snap.anomalies), "audit_events": len(audit.events)}
@@ -3950,7 +3956,9 @@ _PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
 _FORWARD_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "forward_track_status.json")
 _LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
 _LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
+_LIVE_KILL_SWITCH_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_kill_switch.json")
 _GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
+_GOVERNANCE_AUDIT_DB = os.path.join(_REPO_ROOT, "data", "cache", "governance_audit.db")
 _EVIDENCE_GATE_WEEKS = 8
 
 
@@ -3962,6 +3970,37 @@ def _load_paper_track_store():
         return PaperTrackStore(_PAPER_TRACK_DB, create=False) if os.path.exists(_PAPER_TRACK_DB) else None
     except Exception:
         return None
+
+
+def _load_live_kill_switch_state():
+    """审计 2026-07-07 P0-1 修复:两块自称 REAL 的安全看板(`_real_monitoring_snapshot`/
+    `_safety_primitives_payload`)此前都用 `KillSwitch()` 不传参数构造,永远拿到全新"从未触发"的
+    默认状态 —— 即便实盘 kill-switch 真的已经跳闸,页面也看不出来(全份审计最危险的单一发现)。
+
+    真正跨进程持久化的实盘闩锁状态由 `tools/live_track_advance.py` / `tools/live_risk_sentinel.py`
+    经 `live/governance/kill_switch_store.py::save_kill_switch_state`(仅在 tripped 时落盘,见其
+    `save_kill_switch_state_if_tripped`)写入 `_LIVE_KILL_SWITCH_STATE`(默认/主 venue,无后缀 ——
+    与本文件既有 `_LIVE_TRACK_STATUS`/`_LIVE_RISK_STATE` 同一套路径口径)。
+
+    `services/` 不得 import `live/`(单向边界,`tests/governance/test_live_execution_boundary.py::
+    test_services_tree_does_not_import_live` + `tests/governance/test_domain_import_boundary.py::
+    test_services_does_not_import_live` 机器钉死),所以这里**不**导入
+    `live.governance.kill_switch_store`,而是照抄本文件其余 live/* 快照(`_live_trading_payload`/
+    `_gonogo_payload`)的既有模式 —— 只读裸 JSON 文件,靠两边都已依赖的 `quantos.contracts.killswitch`
+    契约(无依赖 leaf)反序列化。
+
+    fail-closed 语义与 `load_kill_switch_state` 逐字一致(KEEP IN SYNC —— 该函数是唯一权威源):
+    文件不存在 -> 合法的"从未触发"默认状态;文件存在但损坏/无法解析 -> 读成已触发(安全状态损坏
+    绝不能被解读为"安全")。"""
+    from quantos.contracts.killswitch import KillSwitchState
+    if not os.path.exists(_LIVE_KILL_SWITCH_STATE):
+        return KillSwitchState()
+    try:
+        with open(_LIVE_KILL_SWITCH_STATE, encoding="utf-8") as fh:
+            return KillSwitchState.model_validate_json(fh.read())
+    except Exception:
+        return KillSwitchState(tripped=True, incident_id="corrupt-state-fail-closed",
+                               reason="kill-switch state file unreadable/corrupt — failing closed")
 
 
 def _decision_from_verdict(v) -> str:
@@ -4031,11 +4070,15 @@ def _real_experiment_rows(st) -> List[Dict]:
 def _safety_primitives_payload() -> Dict:
     """READ-ONLY status of the REAL safety primitives: the latched KillSwitch + the pre-trade gate's
     CHECK_REGISTRY + the authoritative SafetyConfig flags. No order intent is built, nothing is armed or
-    reset (those are human-only); this surfaces the live/disallowed posture so it is visible, not hidden."""
+    reset (those are human-only); this surfaces the live/disallowed posture so it is visible, not hidden.
+
+    审计 2026-07-07 P0-1 修复:`KillSwitch()` 不传参数此前永远构造"从未触发"的默认状态 —— Risk.tsx
+    的熔断器卡片因此即便实盘已经跳闸也会显示"未触发/CLEAR"(全份审计最危险的单一发现)。现在经
+    `_load_live_kill_switch_state()` 读取跨进程持久化的真实闩锁状态。"""
     from services.risk.pre_trade.kill_switch import KillSwitch
     from services.risk.pre_trade.checks import CHECK_REGISTRY
     from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS as _cfg
-    ks = KillSwitch()
+    ks = KillSwitch(state=_load_live_kill_switch_state())
     checks = [{"name": n, "stage": s} for n, s, _fn in CHECK_REGISTRY]
     return {
         "safety_mode": "L2_DRY_RUN_ONLY",
