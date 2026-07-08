@@ -30,8 +30,8 @@
 
 **剩余项(卡在需要用户的数字/拍板)**:
 - P0-1/P0-2(Phase 14 + mandate 签名,需真人)。
-- **P1-6 接线**:firm 硬门机制已建好,接进 `tools/live_risk_sentinel.py` 只差你签 3 个上限(firm max_gross /
-  max_net / max_single_name_weight)。
+- ~~P1-6 接线~~:**2026-07-07 已签署接线完成**(firm max_gross=20000/max_net=10000/max_single_name_weight=0.20,
+  用户签)——`evaluate_firm_gate` 真实 BLOCK,详见下方 P1-6 条目更新。
 - **P1-5 频率引擎**:✅**已接线**(2026-07-07)——改名 `rate_window_s`→`rate_window_ms`(消除"秒当 ms"
   死代码陷阱)+ 从持久账本回填 recent_timestamps + runaway-guard(24h 窗/上限 500 **工程占位待你确认**)。
   ⚠ 但"24H 中高频"的**大方向**是一次**周度→日内 cadence 转型**,牵动实时数据层(审计维度 2 标记 MISSING)、
@@ -79,12 +79,13 @@ cadence 决定(P1-5 中高频转型、P2-3 峰值上界)。**
 - **修复**:live 驱动器 preflight 加 fail-closed 前置:每个将 live 的 strategy_id 必须有在案的 PASS ValidationResult(或显式记录、可审计的人工 override),否则即便 `--submit`+已签 mandate 也拒绝。
 - **验收**:`live_track_advance` 对缺 PASS 验证 artifact 的 strategy_id 结构性拒绝提交并落审计;有测试证明拒绝路径。
 
-### P1-2 · mandate gross/net 只算当批 + 多策略共享额度超发只告警不硬停 · LATENT
-- **描述**:`evaluate_mandate` 的 gross/net 累加只遍历当批订单(`live/governance/mandate.py:118`),不含账户已有敞口、也不感知同 venue 其它策略的并发敞口。`multi_strategy_mandate_alert`(`live_track_advance.py:388`)只返回提示字符串不阻断。多策略共享 mandate(或单策略多次增量)时账户总 gross/net 可达 N× 签署上限而各批仍判 AUTO。per-instrument cap 已用 account 级投影修过,gross/net 未同等处理(memory 记为 disclosed-not-fixed)。
-- **触发**:Phase 3A arm 真钱后,>1 策略在同 venue 共用同一 mandate 且均 `--submit`;或单策略同周多次增量。
-- **后果**:账户真实 gross/net 超签署授权而不升人工。
-- **修复**:`evaluate_mandate` 增账户级敞口参数,gross/net 对(现有全量敞口 + 本批 delta)投影;跨策略共享时聚合;子限额缺失且 >1 策略共享 → 硬降 NEEDS_HUMAN_REVIEW。
-- **验收**:两条策略各提交使账户 60% gross 上限的批次,第二批返回 NEEDS_HUMAN_REVIEW;单策略连续两批累计超上限时第二批升人工。
+### P1-2 · mandate gross/net 只算当批 + 多策略共享额度超发只告警不硬停 · 部分已修复(2026-07-08 复核)
+- **描述**(2026-07-08 更新,替换下方已过时的原始描述):`c96f285` 已把 `evaluate_mandate` 的 gross/net 从"只算当批订单"升级为**账户级投影**(`account_positions`=`ledger.all_positions()` 全量现有敞口 + 本批 delta 二次校验同一签署上限,ADD-only),**已堵住"多批各自达标、账户总敞口 N× 超发"这条原始风险场景**。**但** per-strategy 子限额分配业务决定显式推迟未做——`multi_strategy_mandate_alert`(`live_track_advance.py:388`)自称"提醒而非硬停",只 append 告警字符串不设 skip_reason,残留缺口:①无公平子额度分配,先到策略可耗尽全部共享额度;②两策略真并发提交的竞态未覆盖。当前 `_STRATEGIES` 仅注册 crowd_contra 一条,该场景 **dormant**(未被触发),**在第二条策略注册前必须解决**。
+  <details><summary>原始描述(2026-07-06,保留存档)</summary>`evaluate_mandate` 的 gross/net 累加只遍历当批订单(`live/governance/mandate.py:118`),不含账户已有敞口、也不感知同 venue 其它策略的并发敞口。`multi_strategy_mandate_alert`(`live_track_advance.py:388`)只返回提示字符串不阻断。多策略共享 mandate(或单策略多次增量)时账户总 gross/net 可达 N× 签署上限而各批仍判 AUTO。per-instrument cap 已用 account 级投影修过,gross/net 未同等处理(memory 记为 disclosed-not-fixed)。</details>
+- **触发**:Phase 3A arm 真钱后,>1 策略在同 venue 共用同一 mandate 且均 `--submit`;或单策略同周多次增量(后者已被账户级投影堵住)。
+- **后果**:第二条策略上线前无实际后果(dormant);上线后,先到策略可能耗尽共享额度,后到策略被迫升人工(非资金越限风险,是可用性/公平性风险)。
+- **修复**:mandate 文件加 per-strategy 子限额字段(业务决定,需用户签);`_STRATEGIES` 注册第二条策略前必须补上,否则 `multi_strategy_mandate_alert` 从 WARN 升级为硬停(skip_reason)作为过渡缓解。
+- **验收**:两条策略各提交使账户 60% gross 上限的批次,第二批返回 NEEDS_HUMAN_REVIEW(账户级投影已满足);子限额分配公平性另需专门测试覆盖(未做)。
 
 ### P1-3 · client_order_id 同数量碰撞 → 静默吞记账 → 账实漂移 / 真钱重复执行 · LATENT
 - **描述**:`client_order_id = decision_prefix(strategy,decided_ts,inst) + hash(side|quantity)`(`live/execution/filters.py:44`),不含 now/nonce;`decided_ts` 取自数据事件时间(`live_track_advance.py:352`),同数据两次调用恒等。同 `(strategy,decided_ts,inst,side,quantity)` 的两笔逻辑上不同的调仓增量 → **完全相同 ID**。`record_submission`/`record_fill` 均 `INSERT OR IGNORE`(`position_ledger.py:181/203`)静默吞掉第二笔记账;Binance 允许复用已成交 clientOrderId → 真实再执行、账本无痕漂移(Bybit 侧则被去重不执行还误报成功)。a359aeb 修复只把碰撞从"必然"收窄到"同数量",未消除。
@@ -107,12 +108,13 @@ cadence 决定(P1-5 中高频转型、P2-3 峰值上界)。**
 - **修复**:接入真实逐标的 ADV/已实现波动喂 MarketContext,设校准阈值;从 LiveLedger 回填最近窗口 fingerprints/timestamps;新增撤单率检查引擎。
 - **验收**:超 ADV×max_participation_rate 的订单返回 LIQUIDITY_LIMIT_EXCEEDED;窗口内重复 intent 返回 DUPLICATE_ORDER;撤单率超阈值被拒。
 
-### P1-6 · firm 跨账户/跨 venue 敞口聚合只诊断不阻断,隐藏拥挤无自动限额 · LATENT
-- **描述**:`aggregate_firm_books`(`firm_aggregation.py:8`)在 `live_risk_sentinel` 里聚合两所净/毛敞口 + overlap,但明确"只诊断不阻断"(`live_risk_sentinel.py:168`),越限判断仍由各 venue 独立 mandate 负责。同 symbol 两所同向持仓形成的 2x 集中不被任何 per-venue 检查捕获,也无 firm 级硬门。
-- **触发**:多 venue 实盘且两所跑相关/相同 book 时同向叠加。
-- **后果**:firm 级净敞口/单名集中可超预期风险,唯一反馈是需人工阅读的告警(2007-08 quant 拥挤踩踏模式)。
-- **修复**:为 firm 聚合结果接入组合级硬门(firm 净/毛/单 symbol 跨账户集中上限),越限升人工或按比例减仓。
-- **验收**:构造两所同向持仓触发 firm 级集中上限,系统产生阻断/减仓决定而非仅告警。
+### P1-6 · firm 跨账户/跨 venue 敞口聚合硬门 · 已接线(2026-07-07 用户签署,2026-07-08 复核确认真实 BLOCK)
+- **描述**(2026-07-08 更新,替换下方已过时的"只诊断不阻断"描述):`evaluate_firm_gate`(`services/portfolio/firm_gate.py:30-67`)+ 用户签署上限(`gross=20000`/`net=10000`/`single_name_weight=0.20`,2026-07-07)已**真实接线**,三文件交叉确认:①`tools/live_risk_sentinel.py:59-61,245-250` 算门 + 写 `firm_gate_status.json` + BLOCK 告警;②`tools/live_track_advance.py:887-912` 读状态,越限时对**新增仓位**批次整体设 `skip_reason`、结果 `SKIPPED_DATA_QUALITY`(仅 `--submit` 生效,preview 只告警);③自清除(限内恢复自动解除)。`aggregate_firm_books`(`firm_aggregation.py:8`,原诊断函数)仍保留为纯诊断展示,但**决策路径已不再依赖它**——firm_gate 是独立的、真实生效的硬门。
+  <details><summary>原始描述(2026-07-06,保留存档,已被上方取代)</summary>`aggregate_firm_books`(`firm_aggregation.py:8`)在 `live_risk_sentinel` 里聚合两所净/毛敞口 + overlap,但明确"只诊断不阻断"(`live_risk_sentinel.py:168`),越限判断仍由各 venue 独立 mandate 负责。同 symbol 两所同向持仓形成的 2x 集中不被任何 per-venue 检查捕获,也无 firm 级硬门。</details>
+- **触发**:多 venue 实盘且两所跑相关/相同 book 时同向叠加超过已签上限——**现在会被硬门拦下**,不再是"只告警"。
+- **后果**:已消除原描述的资金风险(2007-08 quant 拥挤踩踏模式的自动阻断已就位)。**残留缺口**:越限时是"停止新增",不是"自动按比例减仓"(auto-de-risk 留后续,与 P1-7 同类)。
+- **修复(残留部分)**:越限时从"停止新增"升级为"按比例主动减仓"(可选,当前"停止恶化+需人工介入"已是合理的保守默认)。
+- **验收**:✅ 构造两所同向持仓触发 firm 级集中上限,系统产生阻断(已在 §4.4 风控层审计中通过读代码 file:line 三方交叉验证,未来可补一条端到端集成测试固化)。
 
 ### P1-7 · 多 alpha 同时失效无自动检测与自动 de-risk 闭环 · LATENT
 - **描述**:`degradation_monitor`(live-vs-backtest→建议)、`retirement.sweep`、`maintenance.run_maintenance` 已建已测,但 `run_maintenance` **无墙钟调度器、需调用方手工供证据、无自动 live 指标喂入**(`maintenance.py:14` 自认"the HOOK a Phase-14 scheduler will call"),且只驱动 alpha catalog 研究状态机,不自动收缩 live 仓位。周度调度器只跑挖矿 + IC 面板,不跑维护。
