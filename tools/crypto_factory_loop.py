@@ -35,6 +35,16 @@ WINDOWS = (3, 7, 14, 30)
 QUANTILE = 0.3
 DRY_LIMIT = 2
 MAX_ROUNDS = 8
+# 2026-07-08 top-tier gap audit S4.3/S4.8 ("highest-value single fix"): population scoring inside
+# run_alpha_factory is a pure function per candidate (no RNG/wall-clock) and was single-threaded --
+# historical mining runs evaluated only a few hundred genomes total. min(4, cpu_count) -- NOT the
+# full core count -- both because this is an offline research run sharing the machine, and because
+# an ad hoc benchmark at this driver's actual scale (24 instruments, daily OI panel, population 48)
+# found 4 workers beat 8 (~1.1-1.3x vs ~1.1x): per-candidate compute here is only moderately larger
+# than one-time process/pickle overhead, so piling on more workers thins each worker's task share
+# without amortizing better. See services/research/alpha_factory.py::run_alpha_factory max_workers
+# and tests/research/test_alpha_factory_parallel.py for the bit-identical-results proof.
+MAX_WORKERS = min(4, os.cpu_count() or 1)
 _OUT = os.path.join("data", "cache", "crypto_factory_loop.json")
 
 
@@ -86,7 +96,7 @@ def main() -> None:
         rnd += 1
         out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=5, population_size=48,
                                 elite_k=14, quantile=QUANTILE, basis_returns=known, basis_min_overlap=200,
-                                dataset_version=f"loop{rnd}", timestamp=rnd)
+                                dataset_version=f"loop{rnd}", timestamp=rnd, max_workers=MAX_WORKERS)
         found = None
         for b in out["best"]:
             e = ax.deserialize(b["expr"])
