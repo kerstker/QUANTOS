@@ -1,5 +1,12 @@
 # Barra-lite Diagnostics Implementation Plan
 
+> **⚠ SUPERSEDED — already landed** as `c48e210` (2026-07-02, `services/portfolio/barra_lite.py`),
+> an independent rewrite (dict-keyed `zscore`, percentile winsorize, silent-zero on missing data —
+> all different from this plan's prescribed `Sequence`-keyed/σ-winsorize/raise-on-missing design).
+> **Do NOT execute this plan's embedded source code** — doing so would overwrite the shipped
+> implementation, which `tools/rebuild_snapshots.py` already depends on, with an incompatible
+> signature. Kept for historical/design-motivation reference only.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a read-only Barra-lite diagnostic layer that turns existing QUANTOS dry-run/research books into structured factor loadings and risk reports without changing weights, gates, or trading capability.
