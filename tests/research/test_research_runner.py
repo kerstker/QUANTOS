@@ -7,7 +7,7 @@ from services.research.run_registry import contract
 from services.research.run_registry.store import ResearchRunStore
 from services.research.run_registry.registry import RunRegistry
 from services.research.research_runner.run_kinds import RUN_KINDS, RunSpec, validate_params
-from services.research.research_runner.runner import JobQueue
+from services.research.research_runner.runner import JobQueue, _git_sha
 
 
 def _register_stub(name, spec):
@@ -166,6 +166,91 @@ def test_soft_cancel_drops_result(tmp_path):
         assert reg.get(rid).status == "cancelled"       # result dropped, stays cancelled
     finally:
         _unregister_stub("_slow")
+
+
+# --- 2026-07-07 审计 P2: _git_sha() 在 git worktree 布局下 .git 是文件(非目录),裸 os.path.join
+# 直接抛异常被吞掉静默返回 None -> 经 research_runner 产生的每条 run 都丢失 code_version ---
+
+def test_git_sha_reads_plain_repo_git_dir(tmp_path, monkeypatch):
+    """Baseline: a normal clone where .git IS a directory must keep working unchanged."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    refs_dir = git_dir / "refs" / "heads"
+    refs_dir.mkdir(parents=True)
+    (refs_dir / "main").write_text("abc123def4567890deadbeef\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    assert _git_sha() == "abc123def456"
+
+
+def test_git_sha_follows_worktree_gitdir_file(tmp_path, monkeypatch):
+    """A `git worktree add` checkout on a BRANCH (the default/typical case) — faithfully
+    reproducing real git's on-disk layout, not a simplified stand-in:
+
+      - .git is a FILE containing 'gitdir: <private per-worktree gitdir path>'.
+      - The private gitdir has HEAD (a symbolic ref) + a `commondir` file, and its own
+        refs/ directory exists but is EMPTY (verified against a real `git worktree add`
+        checkout: `refs/heads/<branch>` is NOT under the private gitdir).
+      - The actual branch ref lives in the COMMON gitdir, reached by resolving `commondir`
+        (a relative path, e.g. '../..') against the private gitdir.
+
+    _git_sha() must follow gitdir -> commondir -> common gitdir's refs/heads/<branch>,
+    not silently return None."""
+    main_git = tmp_path / "main_repo" / ".git"
+    real_gitdir = main_git / "worktrees" / "wt1"
+    real_gitdir.mkdir(parents=True)
+    (real_gitdir / "HEAD").write_text("ref: refs/heads/feature\n", encoding="utf-8")
+    (real_gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+    (real_gitdir / "refs").mkdir()          # present but EMPTY, as in a real worktree
+
+    common_refs_dir = main_git / "refs" / "heads"
+    common_refs_dir.mkdir(parents=True)
+    (common_refs_dir / "feature").write_text("deadbeefcafe0000feed\n", encoding="utf-8")
+
+    worktree_dir = tmp_path / "worktree"
+    worktree_dir.mkdir()
+    (worktree_dir / ".git").write_text(f"gitdir: {real_gitdir}\n", encoding="utf-8")
+
+    monkeypatch.chdir(worktree_dir)
+    assert _git_sha() == "deadbeefcafe"
+
+
+def test_git_sha_worktree_falls_back_to_packed_refs_in_common_gitdir(tmp_path, monkeypatch):
+    """If the branch ref has been packed (no loose refs/heads/<branch> file at all, only an
+    entry in packed-refs), resolution must still work via the common gitdir."""
+    main_git = tmp_path / "main_repo" / ".git"
+    real_gitdir = main_git / "worktrees" / "wt1"
+    real_gitdir.mkdir(parents=True)
+    (real_gitdir / "HEAD").write_text("ref: refs/heads/packed-branch\n", encoding="utf-8")
+    (real_gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+    (real_gitdir / "refs").mkdir()
+
+    main_git.mkdir(parents=True, exist_ok=True)
+    (main_git / "packed-refs").write_text(
+        "# pack-refs with: peeled fully-peeled sorted\n"
+        "cafefeed0000deadbeef1234 refs/heads/packed-branch\n",
+        encoding="utf-8",
+    )
+
+    worktree_dir = tmp_path / "worktree3"
+    worktree_dir.mkdir()
+    (worktree_dir / ".git").write_text(f"gitdir: {real_gitdir}\n", encoding="utf-8")
+
+    monkeypatch.chdir(worktree_dir)
+    assert _git_sha() == "cafefeed0000"
+
+
+def test_git_sha_returns_none_when_worktree_gitdir_target_missing(tmp_path, monkeypatch):
+    """Double failure: the .git file resolves to a gitdir that itself has no readable HEAD.
+    Must degrade gracefully to None, not raise (submit()/​_run() must never crash on this)."""
+    worktree_dir = tmp_path / "worktree2"
+    worktree_dir.mkdir()
+    missing_gitdir = tmp_path / "does_not_exist"
+    (worktree_dir / ".git").write_text(f"gitdir: {missing_gitdir}\n", encoding="utf-8")
+
+    monkeypatch.chdir(worktree_dir)
+    assert _git_sha() is None
 
 
 def test_cancel_terminal_run_returns_false(tmp_path):

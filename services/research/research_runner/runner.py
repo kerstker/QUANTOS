@@ -17,14 +17,60 @@ from services.research.run_registry.contract import ResearchRun, make_run_id
 from .run_kinds import RUN_KINDS, validate_params
 
 
+def _read_ref(git_dir: str, ref: str) -> str | None:
+    """Resolve `ref` (e.g. 'refs/heads/main') rooted at `git_dir`: a loose ref file if
+    present, else a `packed-refs` entry (git packs infrequently-updated refs there and
+    drops the loose file). Returns None (never raises) if neither resolves."""
+    loose = os.path.join(git_dir, ref)
+    if os.path.isfile(loose):
+        return open(loose, encoding="utf-8").read().strip()
+    packed = os.path.join(git_dir, "packed-refs")
+    if os.path.isfile(packed):
+        for line in open(packed, encoding="utf-8"):
+            line = line.strip()
+            if not line or line[0] in "#^":
+                continue
+            sha, _, name = line.partition(" ")
+            if name == ref:
+                return sha
+    return None
+
+
 def _git_sha() -> str | None:
-    """Current commit sha (pure file read of .git — no subprocess/shell). None if unavailable."""
+    """Current commit sha (pure file read of .git — no subprocess/shell). None if unavailable.
+
+    Handles all layouts:
+      - plain clone: .git is a DIRECTORY containing HEAD (+ refs/...).
+      - git worktree (`git worktree add`): .git is a FILE containing a single line
+        'gitdir: <path to the private per-worktree git dir>'; HEAD lives there.
+        Detached HEAD in a worktree: HEAD holds the sha directly, resolved below with no
+        further indirection. HEAD on a branch (the default/typical `git worktree add`
+        state): the private gitdir's own refs/ tree is EMPTY — the branch ref actually
+        lives in the shared/common gitdir, reached via this private gitdir's `commondir`
+        file (a path, usually relative e.g. '../..', to the common gitdir).
+      - packed refs: the branch ref may have no loose file at all, only a `packed-refs`
+        entry (in whichever gitdir — private or common — actually holds it).
+    """
     try:
-        head = open(os.path.join(".git", "HEAD"), encoding="utf-8").read().strip()
-        if head.startswith("ref:"):
-            ref = head.split(" ", 1)[1].strip()
-            return open(os.path.join(".git", ref), encoding="utf-8").read().strip()[:12]
-        return head[:12]
+        git_dir = ".git"
+        if os.path.isfile(git_dir):
+            pointer = open(git_dir, encoding="utf-8").read().strip()
+            if not pointer.startswith("gitdir:"):
+                return None
+            git_dir = pointer.split(":", 1)[1].strip()
+        head = open(os.path.join(git_dir, "HEAD"), encoding="utf-8").read().strip()
+        if not head.startswith("ref:"):
+            return head[:12]
+        ref = head.split(" ", 1)[1].strip()
+
+        sha = _read_ref(git_dir, ref)
+        if sha is None:
+            commondir_file = os.path.join(git_dir, "commondir")
+            if os.path.isfile(commondir_file):
+                commondir = open(commondir_file, encoding="utf-8").read().strip()
+                common_gitdir = os.path.normpath(os.path.join(git_dir, commondir))
+                sha = _read_ref(common_gitdir, ref)
+        return sha[:12] if sha else None
     except Exception:
         return None
 
