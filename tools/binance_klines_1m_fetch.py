@@ -73,13 +73,40 @@ def parse_klines_1m(batch, *, instrument_id: str) -> dict:
     return out
 
 
+_PAGE_MAX_RETRIES = 4       # up to 5 attempts per page before giving up on the whole fetch
+_PAGE_RETRY_BASE_DELAY = 1.0
+
+
+def _fetch_page_with_retry(symbol: str, *, end_ms: int, sleep, kw: dict):
+    """One page of `fetch_klines`, retried with exponential backoff on ANY exception (network
+    blips, not just rate-limiting — this endpoint returns no structured rate-limit signal we can
+    branch on, unlike the live exchange adapters' `call_with_backoff`, which is why this is a
+    separate, simpler exception-retry loop rather than a reuse of `live/exchange/retry.py`).
+    A real fetch is 100s of sequential pages (2026-07-09: observed this environment's network
+    blip mid-run, discarding every already-successful page before it) — retrying the ONE flaky
+    page is far cheaper than losing the whole run. Exhausting the budget re-raises the last error
+    (never silently returns something that looks like "no data" — that would be misread as "this
+    period genuinely has no bars" instead of "the network failed")."""
+    last_exc = None
+    for attempt in range(_PAGE_MAX_RETRIES + 1):
+        try:
+            return fetch_klines(symbol, interval="1m", limit=1000, end_ms=end_ms, **kw)
+        except Exception as exc:                        # noqa: BLE001 — deliberately broad: any
+            last_exc = exc                               # transport failure should retry, not just
+            if attempt < _PAGE_MAX_RETRIES:               # a specific exception type
+                sleep(_PAGE_RETRY_BASE_DELAY * (2 ** attempt))
+    raise last_exc
+
+
 def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_get=None,
-                      now_ms=None) -> list:
+                      now_ms=None, sleep=time.sleep) -> list:
     """Paginate public 1m klines over [start_ms, end_ms], snap to the UTC minute grid, drop any
     bar not yet closed as of `now_ms` (no lookahead) and anything outside [start_ms, end_ms].
     Returns canonical bar rows via BN1M_SPEC (kt=close). No key. Fail-soft: empty list if the
     pair/range yields no data. `http_get` defaults to the shared stdlib-urllib helper used by
-    `fetch_klines` (dual-host failover lives there, not here — see module docstring)."""
+    `fetch_klines` (dual-host failover lives there, not here — see module docstring). `sleep` is
+    injectable (tests pass a recording no-op) — used both for the existing inter-page courtesy
+    delay and the new per-page retry backoff below."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     if end_ms is None:
@@ -92,7 +119,7 @@ def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_g
     span_minutes = (end_ms - start_ms) // _MINUTE_MS + 1
     max_pages = max(1, (span_minutes // 1000) + 2)     # ~ enough pages to cover the range (1000 bars/page)
     for _ in range(max_pages):
-        batch = fetch_klines(symbol, interval="1m", limit=1000, end_ms=cursor, **kw)
+        batch = _fetch_page_with_retry(symbol, end_ms=cursor, sleep=sleep, kw=kw)
         if not isinstance(batch, list) or not batch:
             break
         by_bucket.update(parse_klines_1m(batch, instrument_id=ticker))
@@ -100,7 +127,7 @@ def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_g
         if len(batch) < 1000 or oldest <= start_ms:
             break                                      # reached start of requested range / short page
         cursor = oldest - 1                             # next page ends just before this batch's oldest
-        time.sleep(0.25)
+        sleep(0.25)
     live_minute = (now_ms // _MINUTE_MS) * _MINUTE_MS
     raw = [row for b, row in sorted(by_bucket.items())
            if start_ms <= b < live_minute and b <= end_ms]
