@@ -18,7 +18,6 @@ import statistics
 from dataclasses import dataclass
 from typing import Optional
 
-_ANNUALIZE = math.sqrt(252.0)
 _EPS = 1e-10
 
 
@@ -47,7 +46,15 @@ def orthogonalize(
     candidate_returns: tuple[float, ...],
     approved_set: dict[str, tuple[float, ...]],
     min_overlap: int = 60,
+    periods_per_year: int = 252,
 ) -> OrthogonalizationResult:
+    # 2026-07-09: annualization base for marginal_ir below. Default 252 (daily) is UNCHANGED for
+    # every existing caller. AlphaEvaluator passes its own periods_per_year here (services/alpha/
+    # evaluator.py) so marginal_ir stays consistent with the SAME net_sharpe already correctly
+    # annualized at that evaluator's cadence — this was a real, verified sibling bug to the
+    # panel_to_periods/AlphaEvaluator.periods_per_year fix (a hardcoded sqrt(252) here silently
+    # over-annualized marginal_ir by sqrt(252/52)~=2.20x for the first weekly-cadence evaluator).
+    annualize = math.sqrt(periods_per_year)
     # common shared window across candidate + every basis vector
     lengths = [len(candidate_returns)] + [len(v) for v in approved_set.values()]
     overlap = min(lengths) if lengths else 0
@@ -58,7 +65,7 @@ def orthogonalize(
         if len(cand) < 2:
             return OrthogonalizationResult(ok=False, overlap=len(cand))
         sd = statistics.pstdev(cand)
-        ir = statistics.fmean(cand) / sd * _ANNUALIZE if sd > _EPS else None
+        ir = statistics.fmean(cand) / sd * annualize if sd > _EPS else None
         return OrthogonalizationResult(ok=True, overlap=len(cand), residual=tuple(cand),
                                        explained_r2=0.0, marginal_ir=ir)
 
@@ -88,7 +95,7 @@ def orthogonalize(
     explained_r2 = 1.0 - var_res / var_cand if var_cand > _EPS else 1.0
 
     sd_res = statistics.pstdev(residual)
-    marginal_ir = statistics.fmean(residual) / sd_res * _ANNUALIZE if sd_res > _EPS else 0.0
+    marginal_ir = statistics.fmean(residual) / sd_res * annualize if sd_res > _EPS else 0.0
 
     return OrthogonalizationResult(
         ok=True, overlap=overlap, residual=tuple(residual),

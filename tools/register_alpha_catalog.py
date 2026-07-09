@@ -44,6 +44,7 @@ from typing import Dict, Optional, Sequence, Tuple
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
+from services.alpha.evaluator import AlphaEvaluator
 from services.alpha.factory import AlphaFactory
 from services.research import alpha_expression as ax
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -56,17 +57,24 @@ _EXP_DB = os.path.join("data", "cache", "experiment_registry.db")
 _FWD_HORIZON = 7   # weekly-forward returns on the daily panel — matches the deployed weekly-
                    # rebalanced dry-run/forward-paper-track book's real cadence (tools/dry_run_
                    # {carry,crowd_contra}_multi.py), not the original daily-discovery-time IC.
-_DATASET_VERSION = "carry_crowd_registration_v2_pbo_align_fix"   # v1's evaluations predate the
-                                                                  # 2026-07-09 batch_pbo calendar-
-                                                                  # alignment fix; bumped so this
-                                                                  # run's evaluation artifacts get a
-                                                                  # fresh run_id rather than
-                                                                  # colliding with the stale v1
-                                                                  # artifact under the write-once
-                                                                  # immutability check (correct
-                                                                  # behavior: the code changed, this
-                                                                  # is honestly a new evaluation
-                                                                  # lineage, not the same one).
+_PERIODS_PER_YEAR = 52   # weekly cadence (52wk/yr), matching services/execution/dry_run_pipeline.py
+                         # ::_ann_sharpe's own convention for this same weekly-rebalanced book —
+                         # paired with non_overlapping=True below (2026-07-09 fix; see panel_to_
+                         # periods' docstring): daily-stride overlapping periods fed to sharpe()
+                         # under a 252 annualization overstated net_sharpe ~1.9-2.2x (confirmed on
+                         # real crowd_contra data, recorded 3.35 vs honest ~1.8 non-overlapping).
+_DATASET_VERSION = "carry_crowd_registration_v3_nonoverlap_fix"   # v2's evaluations predate the
+                                                                  # 2026-07-09 non-overlapping-
+                                                                  # period + weekly-annualization
+                                                                  # fix (top-tier gap audit finding
+                                                                  # #1); bumped so this run's
+                                                                  # evaluation artifacts get a fresh
+                                                                  # run_id rather than colliding
+                                                                  # with the stale v2 artifact under
+                                                                  # the write-once immutability
+                                                                  # check (correct behavior: the
+                                                                  # code changed, this is honestly a
+                                                                  # new evaluation lineage).
 
 # (alpha_id, name, expression, factor_ids) — the two real, currently-deployed edges (CLAUDE.md:
 # crowd_contra is the sole "deployable" book; carry is a real-but-weaker supplementary edge).
@@ -92,7 +100,7 @@ def build_candidates(panel, candidates=None, *, fwd_horizon: int = _FWD_HORIZON
     evidence: Dict[str, dict] = {}
     for alpha_id, name, expr, factor_ids in candidates:
         matrix = ax.evaluate(expr, panel)
-        periods = ax.panel_to_periods(matrix, panel, fwd_horizon=fwd_horizon)
+        periods = ax.panel_to_periods(matrix, panel, fwd_horizon=fwd_horizon, non_overlapping=True)
         leak_ok = compute_leakage_ok(expr, panel)
         defn = AlphaDefinition(alpha_id=alpha_id, name=name, factor_ids=factor_ids, universe="cs_majors")
         out.append((defn, periods))
@@ -102,16 +110,18 @@ def build_candidates(panel, candidates=None, *, fwd_horizon: int = _FWD_HORIZON
 
 def register_new_candidates(catalog: AlphaCatalog, candidates: Sequence[tuple], evidence: dict, *,
                             config: Optional[AlphaFactoryConfig] = None,
-                            actor: Optional[Actor] = None, timestamp: int = 0) -> dict:
+                            actor: Optional[Actor] = None, timestamp: int = 0,
+                            evaluator: Optional[AlphaEvaluator] = None) -> dict:
     """Runs AlphaFactory only on candidates whose alpha_id is NOT already in `catalog` (idempotent
     re-run: AlphaCatalog.register() raises on a duplicate id, and re-scoring an already-registered
     alpha belongs to AlphaLifecycleManager.advance(), not here). Returns {} (no-op) when every
-    candidate is already registered."""
+    candidate is already registered. `evaluator` lets the caller supply a periods_per_year matching
+    this driver's weekly (non-overlapping) cadence — see main()."""
     already = set(catalog.all_ids())
     fresh = [(defn, periods) for defn, periods in candidates if defn.alpha_id not in already]
     if not fresh:
         return {}
-    factory = AlphaFactory(catalog=catalog, config=config, actor=actor)
+    factory = AlphaFactory(catalog=catalog, config=config, actor=actor, evaluator=evaluator)
     return factory.run(fresh, timestamp=timestamp, evidence=evidence)
 
 
@@ -129,7 +139,9 @@ def main() -> None:
 
     config = AlphaFactoryConfig(compute_regime_evidence=True)
     actor = Actor(actor_id="register-alpha-catalog", kind=ActorKind.SYSTEM)
-    report = register_new_candidates(catalog, candidates, evidence, config=config, actor=actor, timestamp=now)
+    evaluator = AlphaEvaluator(catalog, config, periods_per_year=_PERIODS_PER_YEAR)
+    report = register_new_candidates(catalog, candidates, evidence, config=config, actor=actor,
+                                     timestamp=now, evaluator=evaluator)
 
     if not report:
         print(f"no new candidates to register (already present in {_EXP_DB})")

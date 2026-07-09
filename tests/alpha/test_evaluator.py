@@ -42,6 +42,45 @@ def test_metrics_are_net_of_cost():
     assert costed.net_sharpe < free.net_sharpe
 
 
+def test_periods_per_year_default_is_252_and_matches_sharpe_directly():
+    """2026-07-09: a caller whose periods are a coarser cadence than daily (e.g. weekly, via
+    panel_to_periods(non_overlapping=True)) must be able to annualize correctly. Default (252,
+    unspecified) must reproduce the exact value services.research.backtest_engine.metrics.sharpe
+    itself would give at its own default ppy — i.e. this is genuinely wired through, not ignored."""
+    from services.alpha.panel_backtest import run_panel_backtest
+    from services.research.backtest_engine.metrics import sharpe as _sharpe
+    cost = CostModel(0, 0)
+    periods = _panel()
+    r_default = AlphaEvaluator(_cat(), cost=cost).evaluate("a1", periods)
+    net = run_panel_backtest(periods, cost=cost).period_returns
+    assert math.isclose(r_default.net_sharpe, _sharpe(net), rel_tol=1e-9)
+
+
+def test_periods_per_year_override_changes_net_sharpe_by_the_expected_sqrt_ratio():
+    """A weekly caller (ppy=52) must NOT get the daily (ppy=252) annualization — confirms the
+    2026-07-09 fix (tools/register_alpha_catalog.py) actually changes the reported net_sharpe,
+    not just accepts-and-ignores the parameter."""
+    cost = CostModel(0, 0)
+    daily = AlphaEvaluator(_cat(), cost=cost, periods_per_year=252).evaluate("a1", _panel())
+    weekly = AlphaEvaluator(_cat(), cost=cost, periods_per_year=52).evaluate("a1", _panel())
+    assert daily.net_sharpe != weekly.net_sharpe
+    assert math.isclose(weekly.net_sharpe, daily.net_sharpe * math.sqrt(52 / 252), rel_tol=1e-9)
+
+
+def test_periods_per_year_also_scales_marginal_ir_not_just_net_sharpe():
+    """2026-07-09 sibling bug (found by adversarial re-verification of the above fix):
+    marginal_ir (from services/alpha/orthogonalize.py) used to hardcode sqrt(252) regardless of
+    self.periods_per_year, silently inflating it ~2.2x whenever a caller (like the real weekly
+    tools/register_alpha_catalog.py registration) used periods_per_year=52. Confirms evaluate()
+    now threads periods_per_year into the orthogonalize() call too, not just sharpe()."""
+    cost = CostModel(0, 0)
+    daily = AlphaEvaluator(_cat(), cost=cost, periods_per_year=252).evaluate("a1", _panel())
+    weekly = AlphaEvaluator(_cat(), cost=cost, periods_per_year=52).evaluate("a1", _panel())
+    assert daily.marginal_ir is not None and weekly.marginal_ir is not None
+    assert daily.marginal_ir != weekly.marginal_ir
+    assert math.isclose(weekly.marginal_ir, daily.marginal_ir * math.sqrt(52 / 252), rel_tol=1e-9)
+
+
 def test_evaluation_is_deterministic():
     r1 = AlphaEvaluator(_cat(), cost=CostModel(1, 2)).evaluate("a1", _panel())
     r2 = AlphaEvaluator(_cat(), cost=CostModel(1, 2)).evaluate("a1", _panel())

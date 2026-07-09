@@ -425,7 +425,7 @@ def alpha_id(expr) -> str:
 
 
 def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
-                     price_field: str = "close") -> list:
+                     price_field: str = "close", non_overlapping: bool = False) -> list:
     """Each period's cross-section of alpha values -> a PanelPeriod, with the realized forward return
     (price[t+h]/price[t]-1) as the label. Instruments lacking a finite alpha or a valid forward price
     are dropped; periods with < 2 survivors are skipped. Same shape the backtest/evaluator consume.
@@ -433,11 +433,29 @@ def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
     Stamps `event_time=panel.event_times[r]` on every period (2026-07-09, see services/alpha/
     factory.py::batch_pbo docstring) — this is the production path every real alpha's periods come
     through, so batch_pbo can align candidates by CALENDAR time rather than by list position when
-    two alphas have different valid-period histories (different factors drop different rows)."""
+    two alphas have different valid-period histories (different factors drop different rows).
+
+    non_overlapping=True (2026-07-09, real-data bug found via tools/register_alpha_catalog.py + a
+    top-tier gap audit): with fwd_horizon>1, consecutive periods normally OVERLAP — period r's
+    forward return spans rows [r, r+fwd_horizon) and shares fwd_horizon-1 of those rows with period
+    r+1's window. Feeding overlapping periods to Sharpe/DSR as if they were independent observations
+    inflates both (confirmed on real crowd_contra data: recorded net_sharpe=3.35 under daily-stride-
+    with-7-day-forward-return overlap vs 1.80 once resampled non-overlapping — much closer to the
+    real deployed weekly dry-run book's own reported 1.21). non_overlapping=True keeps only every
+    fwd_horizon-th ROW measured by panel row index (not calendar time — robust to thin-cross-section
+    gaps where a candidate row is skipped for <2 valid instruments; the gate slides forward to the
+    next row that clears both the row-gap AND the coverage requirement, exactly mirroring the real
+    deployed tools/dry_run_crowd_contra_multi.py's own week-boundary sampling: first period, then
+    every period whose row is >= fwd_horizon rows past the last KEPT one). Default False: zero
+    behavior change for every existing caller (all currently use fwd_horizon=1, where overlap is
+    moot — a 1-row-ahead forward return never overlaps a neighboring 1-row-ahead forward return)."""
     px = panel.matrices[price_field]
     t, n = _dims(alpha)
     periods = []
+    last_kept_r = None
     for r in range(t - fwd_horizon):
+        if non_overlapping and last_kept_r is not None and r - last_kept_r < fwd_horizon:
+            continue
         rf = r + fwd_horizon
         insts, sigs, fwds = [], [], []
         for i in range(n):
@@ -451,4 +469,5 @@ def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
         if len(insts) >= 2:
             periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds),
                                        event_time=int(panel.event_times[r])))
+            last_kept_r = r
     return periods

@@ -123,3 +123,50 @@ def test_evaluate_and_backtest_a_cross_sectional_alpha():
     res = run_panel_backtest(periods)
     assert len(res.period_returns) == len(periods)
     assert all(math.isfinite(r) for r in res.period_returns)
+
+
+# ---- non_overlapping resampling (2026-07-09, real-data Sharpe/DSR inflation fix) -------------
+def _wide_store(n_rows: int = 21):
+    """21 daily buckets, 3 instruments, deterministic non-degenerate prices (no gaps)."""
+    s = SqlitePITStore(":memory:", create=True)
+    ets = [10 * (i + 1) for i in range(n_rows)]
+    px = {
+        "A": [10.0 + 0.1 * ((i * 7) % 5) for i in range(n_rows)],
+        "B": [10.0 + 0.05 * i for i in range(n_rows)],
+        "C": [20.0 - 0.03 * i for i in range(n_rows)],
+    }
+    for inst, series in px.items():
+        s.add_many(inst, [_bar(inst, et, c) for et, c in zip(ets, series)])
+    return s, ets
+
+
+def test_panel_to_periods_non_overlapping_skips_rows_within_the_forward_window():
+    s, ets = _wide_store()
+    panel = ax.build_field_panel(s, ["A", "B", "C"], ets)
+    expr = ("cs_rank", ("field", "close"))
+    alpha = ax.evaluate(expr, panel)
+    overlapping = ax.panel_to_periods(alpha, panel, fwd_horizon=3)
+    non_overlapping = ax.panel_to_periods(alpha, panel, fwd_horizon=3, non_overlapping=True)
+    assert len(non_overlapping) < len(overlapping)   # strictly fewer: gaps are enforced
+    # consecutive KEPT periods must never share a row of their forward-return window: the row
+    # index gap between them (recoverable from event_time here, since this fixture's rows are
+    # exactly 10ms apart with no gaps) must be >= fwd_horizon.
+    row_of = {et: i for i, et in enumerate(ets)}
+    rows = [row_of[p.event_time] for p in non_overlapping]
+    gaps = [b - a for a, b in zip(rows, rows[1:])]
+    assert gaps and all(g >= 3 for g in gaps)
+
+
+def test_panel_to_periods_non_overlapping_is_a_noop_at_fwd_horizon_1():
+    """fwd_horizon=1 periods are already 1 row apart by construction — non_overlapping=True must
+    change NOTHING here, since every existing real caller uses fwd_horizon=1 (backward-compat
+    guarantee, not just an assertion of convenience)."""
+    s, ets = _store()
+    panel = ax.build_field_panel(s, ["A", "B", "C"], ets)
+    expr = ("cs_rank", ("ts_delta", ("field", "close"), 1))
+    alpha = ax.evaluate(expr, panel)
+    default = ax.panel_to_periods(alpha, panel, fwd_horizon=1)
+    explicit_off = ax.panel_to_periods(alpha, panel, fwd_horizon=1, non_overlapping=False)
+    explicit_on = ax.panel_to_periods(alpha, panel, fwd_horizon=1, non_overlapping=True)
+    assert [p.event_time for p in default] == [p.event_time for p in explicit_off] == \
+           [p.event_time for p in explicit_on]

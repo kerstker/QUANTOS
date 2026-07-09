@@ -54,13 +54,20 @@ def _panel_market_prices(periods) -> list:
 class AlphaEvaluator:
     def __init__(self, catalog, config: Optional[AlphaFactoryConfig] = None,
                  gate: Optional[ValidationGate] = None, cost: Optional[CostModel] = None,
-                 quantile: float = 0.2, target_aum: float = 1e7):
+                 quantile: float = 0.2, target_aum: float = 1e7, periods_per_year: int = 252):
         self.catalog = catalog
         self.config = config or AlphaFactoryConfig()
         self.gate = gate or ValidationGate()
         self.cost = cost or CostModel()
         self.quantile = quantile
         self.target_aum = target_aum
+        # 2026-07-09: annualization base for sharpe(net) below. Default 252 (daily) is UNCHANGED
+        # for every existing caller. A caller whose periods are a coarser, non-overlapping cadence
+        # (e.g. panel_to_periods(..., non_overlapping=True) with fwd_horizon=7 -> weekly periods)
+        # must pass the matching periods_per_year (52 for weekly) or sharpe()/DSR's n_obs both stay
+        # correct in COUNT (len(net) already reflects the coarser cadence) but sharpe() would still
+        # mis-annualize under the wrong sqrt(ppy) scalar if left at 252.
+        self.periods_per_year = periods_per_year
 
     def _panel_regime_profitable_frac(self, periods, net) -> Optional[float]:
         """Fraction of volatility regimes in which the factor's net returns are profitable,
@@ -101,14 +108,15 @@ class AlphaEvaluator:
         # 2) dollar-neutral net-of-cost panel backtest
         res = run_panel_backtest(periods, cost=self.cost, quantile=self.quantile, target_aum=self.target_aum)
         net = res.period_returns
-        ns = sharpe(net)
+        ns = sharpe(net, self.periods_per_year)
         net_sharpe = ns if math.isfinite(ns) else 0.0   # P1-1 clamp
         observed_sr = (statistics.fmean(net) / statistics.pstdev(net)) \
             if len(net) > 1 and statistics.pstdev(net) > 0 else 0.0
         turnover = statistics.fmean(res.turnovers) if res.turnovers else 0.0
 
         # marginal edge vs the approved set (residual IR) and capacity haircut
-        ortho = orthogonalize(tuple(net), self.catalog.approved_set(), min_overlap=self.config.min_overlap)
+        ortho = orthogonalize(tuple(net), self.catalog.approved_set(), min_overlap=self.config.min_overlap,
+                              periods_per_year=self.periods_per_year)
         marginal_ir = ortho.marginal_ir if ortho.ok else None
         adv_per_period = [sum(p.adv_notional) for p in periods if p.adv_notional]
         if adv_per_period:
