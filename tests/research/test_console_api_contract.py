@@ -118,6 +118,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
+    # lance 1m strategy validation: independent refutation of a user-supplied strategy's claimed Sharpe 5.01
+    "/api/v1/console/lance-1m-validation": ("", ("snapshot_present", "verdict", "fee_sweep",
+                                                 "rolling_window_stress_1bps", "rolling_window_stress_5bps",
+                                                 "parameter_sensitivity_5bps", "ohlc_ambiguity_comparison",
+                                                 "honesty_note")),
     # live trading route: Stage 0 forward paper-track evidence clock + Stage 1 testnet execution stack
     "/api/v1/console/live-trading": ("", ("snapshot_present", "verdict", "forward_track", "execution_stack", "honesty_note")),
     # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
@@ -143,6 +148,7 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/ic-panel": {"SYNTHETIC_DETERMINISTIC", "REAL_IC_PANEL_OFFLINE_SNAPSHOT"},
     "/api/v1/console/research-findings": {"SYNTHETIC_DETERMINISTIC", "REAL_RESEARCH_FINDINGS"},
+    "/api/v1/console/lance-1m-validation": {"SYNTHETIC_DETERMINISTIC", "REAL_LANCE_1M_VALIDATION"},
     # architecture: curated module/maturity roadmap + REAL repo introspection (`inventory`). REAL marker
     # when the live FS walk populated the inventory (always, outside FS errors), else honest synthetic.
     "/api/v1/console/architecture": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},

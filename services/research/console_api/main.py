@@ -3868,6 +3868,7 @@ _DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
 _CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "capacity_snapshot.json")
 _MACRO_REGIME_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "macro_regime_snapshot.json")
 _COMBO_BOOK_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "combo_book_snapshot.json")
+_LANCE_1M_VALIDATION_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "lance_1m_validation.json")
 
 
 # --- Phase 1B: REAL per-factor return series (offline crypto research snapshot) -----------------------
@@ -5237,6 +5238,39 @@ def _research_findings_payload() -> Dict:
 @app.get("/api/v1/console/research-findings")
 async def research_findings() -> Dict:
     return _research_findings_payload()
+
+
+def _lance_1m_validation_payload() -> Dict:
+    """用户提供的 docs/test/lance_1m_strategy.md(1分钟BTC均值回归策略,自称夏普5.01)的独立复核结果
+    (只读)。读 tools/lance_1m_research.py 写的离线快照,fail-closed 到 SYNTHETIC。诚实标注:诊断非
+    门禁,不驱动任何自动晋级/下单;该策略未注册进 AlphaCatalog、未接入 dry-run/live 任何路径。"""
+    snap = _load_json_snapshot(_LANCE_1M_VALIDATION_SNAPSHOT)
+    present = bool(snap)
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "REAL_LANCE_1M_VALIDATION" if present else "SYNTHETIC_DETERMINISTIC",
+        "snapshot_present": present,
+        "verdict": "REFUTED" if present else "NO_SNAPSHOT",
+        "doc": (snap or {}).get("doc", "docs/test/lance_1m_strategy.md"),
+        "fee_sweep": (snap or {}).get("fee_sweep", {}),
+        "rolling_window_stress_1bps": (snap or {}).get("rolling_window_stress_full_dataset_1bps", {}),
+        "rolling_window_stress_5bps": (snap or {}).get("rolling_window_stress_full_dataset_5bps", {}),
+        "parameter_sensitivity_5bps": (snap or {}).get("parameter_sensitivity_5bps", {}),
+        "ohlc_ambiguity_comparison": (snap or {}).get("ohlc_ambiguity_comparison_doc_window_1bps", {}),
+        "honesty_note": ("文档自称夏普5.01/总收益+17.9%(1bps手续费,138,755根K线,2025-12~2026-06);用53.7万根"
+                         "真实1分钟BTC K线独立复核后,在文档自称窗口+文档自己最乐观的1bps假设下,实测夏普为负"
+                         "(约-5至-6区间,非+5.01),4种窗口切分×5档手续费×107窗口滚动压力测试×4参数±30%敏感性"
+                         "全部一致为负。已用合成数据验证引擎本身无bug,已剥离本模块自己的OHLC歧义保守裁决重跑"
+                         "确认负号不是该工程决策导致的,已用0bps分解排除成本模型单位错误的可能。诊断结论,非"
+                         "晋级门禁——该策略未注册进 AlphaCatalog、不驱动任何自动晋级/下单。"),
+    }
+
+
+@app.get("/api/v1/console/lance-1m-validation")
+async def lance_1m_validation() -> Dict:
+    return _lance_1m_validation_payload()
 
 
 def _live_trading_payload() -> Dict:

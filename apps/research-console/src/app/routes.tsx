@@ -65,6 +65,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/DslExplorer') },
   { path: '/research/findings', zh: '研究结论', en: 'Findings', icon: 'RF', group: 'alpha',
     load: () => import('@/pages/ResearchFindings') },
+  { path: '/research/lance-1m-validation', zh: 'Lance 1分钟验证', en: 'Lance 1m Validation', icon: 'L1M', group: 'alpha',
+    load: () => import('@/pages/Lance1mValidation') },
 
   // ---- 验证:不自欺关卡与证据 ----
   { path: '/research/validation', zh: '验证门', en: 'Validation Gate', icon: 'VA', group: 'validation',

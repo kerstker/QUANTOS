@@ -1515,6 +1515,50 @@ export interface ResearchFindingsPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface Lance1mFeeResult {
+  num_trades: number;
+  win_rate: number;
+  win_loss_ratio: number;
+  profit_factor: number;
+  total_return: number;
+  total_net_pnl: number;
+  total_cost: number;
+  sharpe: number;
+  max_drawdown: number;
+  avg_bars_held: number;
+  n_bars: number;
+}
+export interface Lance1mFeeSweepWindow {
+  label: string;
+  n_bars: number;
+  by_fee: Record<string, Lance1mFeeResult>;
+}
+export interface Lance1mRollingStress {
+  fee_bps?: number;
+  window_size?: number;
+  n_windows?: number;
+  pct_positive?: number;
+  mean_sharpe?: number;
+  median_sharpe?: number;
+  mean_alpha?: number;
+  median_alpha?: number;
+}
+export interface Lance1mValidationPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_LANCE_1M_VALIDATION" | string;
+  snapshot_present: boolean;
+  verdict: string;                // REFUTED | NO_SNAPSHOT
+  doc: string;
+  fee_sweep: Record<string, Lance1mFeeSweepWindow>;
+  rolling_window_stress_1bps: Lance1mRollingStress;
+  rolling_window_stress_5bps: Lance1mRollingStress;
+  parameter_sensitivity_5bps: Record<string, Record<string, number>>;
+  ohlc_ambiguity_comparison: {
+    conservative_ohlc_ambiguity?: Lance1mFeeResult;
+    doc_literal_no_override?: Lance1mFeeResult;
+  };
+  honesty_note: string;
+}
+
 export interface LiveTradingForwardAlpha {
   alpha_id: string;
   n_forward_periods: number | null;
