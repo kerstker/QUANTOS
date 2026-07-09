@@ -10,6 +10,15 @@ GOVERNANCE NOTE: the gate trusts that `oos_sharpe`, `deflated_sharpe`, `pbo` and
 upstream backtest/validation pipeline. It is a metrics arbiter, not a proof that
 the backtest was run — the caller must guarantee provenance (e.g. a stored
 reproducibility hash / audit record).
+
+CALIBRATION NOTE (2026-07-10, gap audit rank #7): min_deflated_sharpe=0.60 is DELIBERATELY looser
+than the ~0.95 "statistically significant" convention in the Bailey/Lopez de Prado Deflated-Sharpe
+literature — a pre-filter ahead of MANDATORY human review, not a standalone significance claim. See
+services/alpha/config.py::AlphaFactoryConfig's module docstring for the full rationale (this value
+must stay equal to that module's own independently-declared copy — tests/alpha/
+test_threshold_configs_agree.py locks the two together so a future tuning pass can't silently drift
+them apart and make this gate's PASS/FAIL disagree with the later guard_to_validated transition
+check). max_pbo=0.50 is the same honest-policy-default posture, not literature-derived.
 """
 from __future__ import annotations
 
