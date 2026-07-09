@@ -8,19 +8,30 @@ Every product is `valid()` and PIT-safe by construction (it only composes the en
 
 Used by the contained evolutionary/MCTS search to discover funding/price/volume cross-sectional alphas
 beyond a hand-written grid, with the usual honesty machinery (DSR deflation, no-peek OOS, de-redundancy).
+
+2026-07-09 (top-tier gap audit rank #2): imports _CS2 (cs_residualize, the DSL's only cross-sectional
+NEUTRALIZATION primitive) so mutate/crossover can propose a candidate residualized against another
+signal/field — e.g. "momentum, market-beta-neutralized". Before this, cs_residualize existed and was
+tested but was UNREACHABLE by every automated search path (in-gate ResearchAgentLoop and out-of-gate
+alpha_factory alike): every machine-discovered candidate was unconditionally a raw, un-neutralized
+exposure, and neutralization was possible only if a human hand-wrote the expression. The growth path
+(_mutate_node's kind==3) can now wrap a subtree in cs_residualize against a fresh atom (the same
+atom-generation machinery _E2's binary growth already uses) as the neutralization target.
 """
 from __future__ import annotations
 
 import hashlib
 
-from .alpha_expression import _TS_WINDOW, _CS, _EW1, _EW2, _TS_PAIR, serialize, canonicalize, alpha_id  # noqa: F401
+from .alpha_expression import _TS_WINDOW, _CS, _CS2, _EW1, _EW2, _TS_PAIR, serialize, canonicalize, alpha_id  # noqa: F401
 
 _TS = tuple(_TS_WINDOW)          # windowed unary ops (op, child, window)
 _CSO = tuple(_CS)                # cross-sectional unary ops (op, child)
+_CS2O = tuple(_CS2)              # cross-sectional binary/neutralization ops (op, child, target): cs_residualize
 _E1 = tuple(_EW1)                # elementwise unary (op, child)
 _E2 = tuple(_EW2)                # elementwise binary (op, a, b)
 _TSP = tuple(_TS_PAIR)           # windowed pairwise ops (op, a, b, window): ts_corr/ts_cov/ts_beta
 _MAX_DEPTH = 6
+_CS_ROOTS = _CSO + _CS2O         # either kind is already a valid cross-sectional root (no extra cs_rank wrap needed)
 
 
 def _hidx(seed: str, mod: int) -> int:
@@ -51,8 +62,9 @@ def _replace(t, path, new):
 
 
 def valid(t, fields) -> bool:
-    """Structurally valid, depth-bounded, cross-sectional (root is a cs op), references only `fields`."""
-    if _depth(t) > _MAX_DEPTH or not isinstance(t, tuple) or t[0] not in _CSO:
+    """Structurally valid, depth-bounded, cross-sectional (root is a cs op, unary or the
+    cs_residualize neutralization binary), references only `fields`."""
+    if _depth(t) > _MAX_DEPTH or not isinstance(t, tuple) or t[0] not in _CS_ROOTS:
         return False
     return _node_ok(t, fields)
 
@@ -69,7 +81,7 @@ def _node_ok(t, fields) -> bool:
         return len(t) == 3 and isinstance(t[2], int) and t[2] >= 1 and _node_ok(t[1], fields)
     if h in _CSO or h in _E1:
         return len(t) == 2 and _node_ok(t[1], fields)
-    if h in _E2:
+    if h in _E2 or h in _CS2O:
         return len(t) == 3 and _node_ok(t[1], fields) and _node_ok(t[2], fields)
     if h in _TSP:                # ts_corr/ts_cov/ts_beta share (op, a, b, window)
         return len(t) == 4 and isinstance(t[3], int) and t[3] >= 1 and _node_ok(t[1], fields) and _node_ok(t[2], fields)
@@ -79,8 +91,9 @@ def _node_ok(t, fields) -> bool:
 
 
 def _ensure_cs(t):
-    """Guarantee the output is cross-sectional: wrap in cs_rank if the root is not already a cs op."""
-    return t if (isinstance(t, tuple) and t[0] in _CSO) else ("cs_rank", t)
+    """Guarantee the output is cross-sectional: wrap in cs_rank if the root is not already a cs op
+    (a unary _CSO op or the cs_residualize neutralization binary)."""
+    return t if (isinstance(t, tuple) and t[0] in _CS_ROOTS) else ("cs_rank", t)
 
 
 def _atom(fields, windows, seed):
@@ -106,17 +119,23 @@ def _mutate_node(sub, fields, windows, seed, grow_ok):
             return (_E1[_hidx(seed + "o", len(_E1))],) + sub[1:]
         if sub[0] in _E2:
             return (_E2[_hidx(seed + "o", len(_E2))],) + sub[1:]
+        if sub[0] in _CS2O:
+            return (_CS2O[_hidx(seed + "o", len(_CS2O))],) + sub[1:]
     if kind == 2 and isinstance(sub, tuple) and sub[0] == "field":           # swap field
         return ("field", fields[_hidx(seed + "sf", len(fields))])
     if kind == 3 and grow_ok:                                                # wrap (grow depth by 1)
-        w = _hidx(seed + "g", 4)
+        w = _hidx(seed + "g", 5)
         if w == 0:
             return (_TS[_hidx(seed + "gt", len(_TS))], sub, windows[_hidx(seed + "gw", len(windows))])
         if w == 1:
             return (_CSO[_hidx(seed + "gc", len(_CSO))], sub)
         if w == 2:
             return (_E1[_hidx(seed + "ge", len(_E1))], sub)
-        return (_E2[_hidx(seed + "gb", len(_E2))], sub, _atom(fields, windows, seed + "gba"))  # binary interaction
+        if w == 3:
+            return (_E2[_hidx(seed + "gb", len(_E2))], sub, _atom(fields, windows, seed + "gba"))  # binary interaction
+        # neutralize: residualize sub against a fresh atom (a raw field or windowed-ts of one) —
+        # the search's only way to propose a risk-neutralized candidate (2026-07-09, gap audit).
+        return (_CS2O[_hidx(seed + "gr", len(_CS2O))], sub, _atom(fields, windows, seed + "gra"))
     return _atom(fields, windows, seed + "r")                                # replace with fresh atom
 
 
