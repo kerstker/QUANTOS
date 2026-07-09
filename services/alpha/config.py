@@ -19,13 +19,22 @@ class AlphaFactoryConfig:
                                           # computed marginal_ir every run but never read it). A
                                           # policy pre-filter ahead of mandatory human review, not a
                                           # literature-derived constant — same posture as
-                                          # min_deflated_sharpe's own 0.60 (see that field's docstring
-                                          # discussion in docs/RESEARCH_WORKFLOW.md). guard_to_paper's
-                                          # existing marginal_ir<=0 (NO_MARGINAL_EDGE) sign-only check
-                                          # is unchanged and still runs at the later PAPER_TRADING
+                                          # min_deflated_sharpe's own 0.60, which docs/
+                                          # RESEARCH_WORKFLOW.md:147-148 also states as a bare
+                                          # default with no derivation commentary (i.e. an
+                                          # honestly-undocumented policy choice, not a citation to
+                                          # an existing justification). guard_to_paper's existing
+                                          # marginal_ir<=0 (NO_MARGINAL_EDGE) sign-only check is
+                                          # unchanged and still runs at the later PAPER_TRADING
                                           # transition; this is a stricter, earlier, magnitude-aware
-                                          # companion at the point every candidate's verdict is first
-                                          # computed.
+                                          # companion at the point every candidate's verdict is
+                                          # first computed. 2026-07-10 follow-up: paired with
+                                          # rho_cut (below) reused as a NARROWER single-pair
+                                          # correlation check in the same verdict chain — marginal_ir's
+                                          # multivariate Gram-Schmidt residual can still clear a
+                                          # candidate ~95%+ pairwise-correlated with ONE approved
+                                          # alpha if the candidate's own edge is strong enough
+                                          # (independently verified via adversarial review).
     crowd_max: float = 0.60               # max public-factor R^2 before crowding penalty
     min_overlap: int = 60                 # min overlapping points for correlation/orthogonalization
     min_capacity_notional: float = 0.0

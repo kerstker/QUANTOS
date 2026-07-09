@@ -75,6 +75,13 @@ class AlphaEvaluation(BaseModel):
     observed_sr: float = 0.0
     turnover: float = Field(default=0.0, ge=0)
     marginal_ir: Optional[float] = None      # incremental edge vs approved set (step 6/13)
+    max_corr_vs_approved: Optional[float] = None   # 2026-07-10: max |pairwise corr| vs the
+                                              # approved set — a narrower, single-pair check
+                                              # marginal_ir's multivariate Gram-Schmidt residual
+                                              # can miss (a candidate with strong-enough OWN edge
+                                              # can clear marginal_ir even at rho~0.95 to one
+                                              # approved alpha). None = not assessed (no approved
+                                              # set yet, or insufficient overlap with every member).
     crowding_score: Optional[float] = None    # public-factor R^2 (None = unknown)
     deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
     pbo: float = Field(default=0.0, ge=0, le=1)

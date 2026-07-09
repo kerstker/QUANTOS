@@ -28,6 +28,7 @@ from services.research.validation.gate import ValidationGate
 
 from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
+from .correlation import max_abs_corr_to_set
 from .metrics import series_metrics
 from .multiple_testing import catalog_dsr
 from .orthogonalize import orthogonalize
@@ -118,6 +119,16 @@ class AlphaEvaluator:
         ortho = orthogonalize(tuple(net), self.catalog.approved_set(), min_overlap=self.config.min_overlap,
                               periods_per_year=self.periods_per_year)
         marginal_ir = ortho.marginal_ir if ortho.ok else None
+        # 2026-07-10 (gap audit rank #3 follow-up): a NARROWER, single-pair correlation check
+        # alongside marginal_ir's multivariate one. Independently verified (adversarial review):
+        # Gram-Schmidt residualization against the WHOLE approved set can still leave a candidate
+        # above the marginal_ir floor even at ~95% pairwise correlation to ONE approved alpha, if
+        # the candidate's own edge is strong enough — marginal_ir alone can miss a near-duplicate
+        # of an approved alpha that also happens to carry real idiosyncratic edge. Reuses
+        # config.rho_cut (already existed, described in its own docstring as "correlation cut for
+        # clustering / redundancy" — this is exactly that purpose, just never wired here before).
+        max_corr_vs_approved = max_abs_corr_to_set(alpha_id, tuple(net), self.catalog.approved_set(),
+                                                    min_overlap=self.config.min_overlap)
         adv_per_period = [sum(p.adv_notional) for p in periods if p.adv_notional]
         if adv_per_period:
             cap = capacity_notional(statistics.fmean(adv_per_period), self.cost)
@@ -170,6 +181,12 @@ class AlphaEvaluator:
             # at the PAPER_TRADING transition) is unchanged and still runs; this is an earlier,
             # magnitude-aware companion at first-verdict time.
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("TOO_REDUNDANT_VS_APPROVED_SET",)
+        elif approved_set_nonempty and max_corr_vs_approved is not None \
+                and max_corr_vs_approved > self.config.rho_cut:
+            # 2026-07-10: narrower single-pair catch for exactly the case marginal_ir's
+            # multivariate residual can miss — near-duplicate of one approved alpha that also
+            # carries enough of its own idiosyncratic edge to clear the marginal_ir floor.
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("TOO_CORRELATED_VS_APPROVED_SET",)
         else:
             # real out-of-sample walk-forward (audit P2): the edge must persist
             # across sequential held-out folds, not just have a positive full-sample
@@ -199,6 +216,7 @@ class AlphaEvaluator:
             n_periods=m["n_periods"], coverage_ok=m["coverage_ok"],
             net_sharpe=net_sharpe, capacity_adj_sharpe=cap_adj_sharpe,
             observed_sr=observed_sr, turnover=turnover, marginal_ir=marginal_ir,
+            max_corr_vs_approved=max_corr_vs_approved,
             deflated_sharpe=dsr, pbo=_clamp01(pbo) if pbo is not None else 0.0,
             catalog_trial_count=trial_count,
             verdict=verdict, reasons=tuple(reasons), as_of=as_of, reproducibility_hash=repro,

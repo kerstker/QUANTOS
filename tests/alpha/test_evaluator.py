@@ -245,3 +245,66 @@ def test_empty_approved_set_never_triggers_the_redundancy_check():
         "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
     assert "TOO_REDUNDANT_VS_APPROVED_SET" not in r.reasons
     assert "MARGINAL_IR_NOT_ASSESSED" not in r.reasons
+
+
+# ---- pairwise-correlation redundancy gate (2026-07-10, gap audit rank #3 follow-up) -----------
+# marginal_ir's multivariate Gram-Schmidt residual can clear a candidate that is still ~99.9%
+# pairwise-correlated with ONE approved alpha, as long as the candidate carries enough of its own
+# idiosyncratic edge — independently verified via adversarial review. This narrower single-pair
+# check catches exactly that case.
+
+def _highly_correlated_series(n=200, own_edge=0.0005):
+    approved = tuple(0.001 * math.sin(i * 0.31) + 0.0001 for i in range(n))
+    candidate = tuple(0.90 * a + 0.10 * (own_edge + 0.0005 * math.sin(i * 0.53))
+                      for i, a in enumerate(approved))
+    return approved, candidate
+
+
+def _evaluate_with_pinned_net(cat, cfg, net, *, evidence=None):
+    """Pin AlphaEvaluator's internal `net` (period_returns) to an exact hand-crafted series —
+    the cross-sectional panel-backtest weighting can't be reverse-engineered to hit an exact
+    target series directly, so this monkeypatches run_panel_backtest for the call only."""
+    import services.alpha.evaluator as ev_mod
+
+    class _FakeRes:
+        def __init__(self, period_returns):
+            self.period_returns = period_returns
+            self.turnovers = [0.1] * len(period_returns)
+
+    real = ev_mod.run_panel_backtest
+    ev_mod.run_panel_backtest = lambda periods, cost=None, quantile=None, target_aum=None: _FakeRes(net)
+    try:
+        evidence = evidence or {"leakage_ok": True, "pbo": 0.1, "regime_profitable_frac": 1.0}
+        return AlphaEvaluator(cat, cfg, cost=CostModel(0, 0)).evaluate("a1", _panel(n_periods=15), **evidence)
+    finally:
+        ev_mod.run_panel_backtest = real
+
+
+def test_candidate_highly_pairwise_correlated_to_one_approved_alpha_routes_to_human_review():
+    """The exact gap marginal_ir alone can miss: ~99.9% pairwise-correlated with one approved
+    alpha, but the candidate's own idiosyncratic edge is strong enough to clear marginal_ir >=
+    0.10 anyway. The narrower pairwise-correlation check must still catch it."""
+    approved, candidate = _highly_correlated_series()
+    cat = _cat_with_approved(approved_returns=approved)
+    cfg = AlphaFactoryConfig(min_overlap=10)
+    r = _evaluate_with_pinned_net(cat, cfg, candidate)
+    assert r.max_corr_vs_approved is not None and r.max_corr_vs_approved > cfg.rho_cut
+    assert r.marginal_ir is not None and r.marginal_ir >= cfg.min_marginal_ir_vs_approved  # clears the OTHER check
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "TOO_CORRELATED_VS_APPROVED_SET" in r.reasons
+
+
+def test_candidate_with_low_correlation_is_not_flagged_by_the_pairwise_check():
+    approved, _ = _highly_correlated_series()
+    independent = tuple(0.001 if i % 2 == 0 else -0.001 for i in range(len(approved)))
+    cat = _cat_with_approved(approved_returns=approved)
+    cfg = AlphaFactoryConfig(min_overlap=10)
+    r = _evaluate_with_pinned_net(cat, cfg, independent)
+    assert "TOO_CORRELATED_VS_APPROVED_SET" not in r.reasons
+
+
+def test_pairwise_correlation_check_is_a_noop_on_empty_approved_set():
+    """Regression guard: no approved alpha yet -> the new check must never fire."""
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert "TOO_CORRELATED_VS_APPROVED_SET" not in r.reasons
