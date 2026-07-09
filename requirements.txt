@@ -4,7 +4,7 @@
 # prometheus_client (see requirements-dev.txt / pyproject optional-deps).
 fastapi==0.138.2
 starlette==0.50.0
-uvicorn==0.40.0
+uvicorn==0.51.0
 pydantic==2.13.4
 
 # research ML layer (deterministic stacking; non-network, no-RNG-leak — pinned to installed versions)
