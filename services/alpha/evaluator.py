@@ -145,6 +145,7 @@ class AlphaEvaluator:
 
         # 4) verdict — fail closed to human review on thin coverage OR when DSR
         #    cannot be honestly computed against the catalog yet (review P0)
+        approved_set_nonempty = bool(self.catalog.approved_set())
         if not m["coverage_ok"]:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("THIN_COVERAGE",)
         elif dsr_raw is None:
@@ -156,6 +157,19 @@ class AlphaEvaluator:
             if val is None)):
             # fail closed: never let an unscored alpha PASS on a silent default
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, unassessed
+        elif approved_set_nonempty and not ortho.ok:
+            # there IS something to be redundant against, but not enough overlap to honestly
+            # judge it (2026-07-09, gap audit rank #3) — fail closed rather than silently PASS
+            # an unassessed-for-redundancy candidate once a real approved set exists.
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("MARGINAL_IR_NOT_ASSESSED",)
+        elif approved_set_nonempty and marginal_ir is not None \
+                and marginal_ir < self.config.min_marginal_ir_vs_approved:
+            # marginal_ir was always computed but never READ here before this fix — a candidate
+            # 90%+ redundant with an already-approved alpha could clear DSR/PBO/leakage/regime in
+            # isolation and still auto-advance. guard_to_paper's marginal_ir<=0 sign check (later,
+            # at the PAPER_TRADING transition) is unchanged and still runs; this is an earlier,
+            # magnitude-aware companion at first-verdict time.
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("TOO_REDUNDANT_VS_APPROVED_SET",)
         else:
             # real out-of-sample walk-forward (audit P2): the edge must persist
             # across sequential held-out folds, not just have a positive full-sample

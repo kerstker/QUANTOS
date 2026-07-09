@@ -10,6 +10,22 @@ class AlphaFactoryConfig:
     min_deflated_sharpe: float = 0.60     # promotion floor (mirrors ValidationConfig)
     max_pbo: float = 0.50                  # promotion ceiling on overfitting probability
     rho_cut: float = 0.70                 # correlation cut for clustering / redundancy
+    min_marginal_ir_vs_approved: float = 0.10  # 2026-07-09 (gap audit rank #3): floor on marginal_ir
+                                          # (the orthogonalized incremental IR vs the APPROVED set)
+                                          # once that set is non-empty — below this, the candidate is
+                                          # judged too redundant with an already-approved alpha to
+                                          # auto-advance, even if its raw DSR/PBO/leakage/regime all
+                                          # pass in isolation (evaluator.py's verdict logic previously
+                                          # computed marginal_ir every run but never read it). A
+                                          # policy pre-filter ahead of mandatory human review, not a
+                                          # literature-derived constant — same posture as
+                                          # min_deflated_sharpe's own 0.60 (see that field's docstring
+                                          # discussion in docs/RESEARCH_WORKFLOW.md). guard_to_paper's
+                                          # existing marginal_ir<=0 (NO_MARGINAL_EDGE) sign-only check
+                                          # is unchanged and still runs at the later PAPER_TRADING
+                                          # transition; this is a stricter, earlier, magnitude-aware
+                                          # companion at the point every candidate's verdict is first
+                                          # computed.
     crowd_max: float = 0.60               # max public-factor R^2 before crowding penalty
     min_overlap: int = 60                 # min overlapping points for correlation/orthogonalization
     min_capacity_notional: float = 0.0

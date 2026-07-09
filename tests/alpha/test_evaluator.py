@@ -3,10 +3,11 @@ panel backtest + catalog-wide DSR -> AlphaEvaluation."""
 import math
 
 from quantos.contracts.alpha import AlphaDefinition
-from quantos.contracts.research import ValidationVerdict
+from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.config import AlphaFactoryConfig
 from services.alpha.evaluator import AlphaEvaluator
-from services.alpha.panel_backtest import PanelPeriod
+from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 from services.research.backtest_engine.costs import CostModel
 
 
@@ -24,6 +25,16 @@ def _panel(n_periods=15, n_inst=12):
 def _cat():
     c = AlphaCatalog()
     c.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    return c
+
+
+def _cat_with_approved(approved_returns):
+    """a1 (the candidate under test) + an already-APPROVED alpha with the given return series."""
+    c = AlphaCatalog()
+    c.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    c.register(AlphaDefinition(alpha_id="approved1", name="B", factor_ids=("f2",)))
+    c.set_returns("approved1", approved_returns)
+    c._set_state("approved1", AlphaState.APPROVED)
     return c
 
 
@@ -176,3 +187,61 @@ def test_compute_regime_evidence_default_off_unchanged():
     # default config -> regime still NOT assessed (byte-identical fail-closed behavior)
     r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel())
     assert "REGIME_NOT_ASSESSED" in r.reasons
+
+
+# ---- marginal_ir redundancy gate (2026-07-09, gap audit rank #3) -----------------------------
+
+def test_candidate_duplicating_an_approved_alpha_routes_to_human_review():
+    """A candidate whose net returns are IDENTICAL to an already-approved alpha's has ~zero
+    marginal_ir (fully explained by the approved set) — must not silently PASS just because its
+    own DSR/PBO/leakage/regime all clear in isolation."""
+    cost = CostModel(0, 0)
+    net = run_panel_backtest(_panel(), cost=cost).period_returns
+    cat = _cat_with_approved(approved_returns=net)   # approved1's returns == a1's own net returns
+    cfg = AlphaFactoryConfig(min_overlap=10)          # panel has 15 periods; default min_overlap=60
+    r = AlphaEvaluator(cat, cfg, cost=cost).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "TOO_REDUNDANT_VS_APPROVED_SET" in r.reasons
+    assert r.marginal_ir is not None and abs(r.marginal_ir) < cfg.min_marginal_ir_vs_approved
+
+
+def test_candidate_genuinely_independent_of_approved_set_is_not_flagged_redundant():
+    """A candidate whose net returns are essentially UNCORRELATED with the approved alpha's keeps
+    a healthy marginal_ir and must NOT be routed to human review by the redundancy check (though
+    it may still land there for other honest reasons — this test only asserts the redundancy
+    reason specifically is absent)."""
+    cost = CostModel(0, 0)
+    net = run_panel_backtest(_panel(), cost=cost).period_returns
+    # an approved-alpha series that alternates independently of a1's own pattern
+    unrelated = tuple(0.01 if i % 2 == 0 else -0.01 for i in range(len(net)))
+    cat = _cat_with_approved(approved_returns=unrelated)
+    cfg = AlphaFactoryConfig(min_overlap=10)
+    r = AlphaEvaluator(cat, cfg, cost=cost).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert "TOO_REDUNDANT_VS_APPROVED_SET" not in r.reasons
+    assert r.marginal_ir is not None and abs(r.marginal_ir) >= cfg.min_marginal_ir_vs_approved
+
+
+def test_insufficient_overlap_with_nonempty_approved_set_routes_to_human_review():
+    """An approved set exists, but overlap is too thin to honestly compute a marginal_ir (default
+    min_overlap=60 vs this panel's 15 periods) — must fail closed rather than silently PASS an
+    unassessed-for-redundancy candidate, distinct from the TOO_REDUNDANT reason."""
+    cost = CostModel(0, 0)
+    net = run_panel_backtest(_panel(), cost=cost).period_returns
+    cat = _cat_with_approved(approved_returns=net)   # default config: min_overlap=60 > 15 periods
+    r = AlphaEvaluator(cat, cost=cost).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "MARGINAL_IR_NOT_ASSESSED" in r.reasons
+    assert r.marginal_ir is None
+
+
+def test_empty_approved_set_never_triggers_the_redundancy_check():
+    """No approved alpha exists yet (e.g. a catalog's first-ever registration) — there is nothing
+    to be redundant AGAINST, so the new check must be a complete no-op, matching pre-fix
+    behavior exactly (regression guard for the 2026-07-09 gap-audit rank #3 change)."""
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert "TOO_REDUNDANT_VS_APPROVED_SET" not in r.reasons
+    assert "MARGINAL_IR_NOT_ASSESSED" not in r.reasons
