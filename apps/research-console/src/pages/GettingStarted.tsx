@@ -24,38 +24,41 @@ const STAGES: readonly Stage[] = [
     group: 'data',
     titleZh: '数据 — 研究的原料',
     titleEn: 'Data — the raw material',
-    descZh: '下游每一步研究都从这里的真实历史数据出发:数据目录展示 point-in-time 数据集、版本与无生存偏差的宇宙定义;'
-      + '加密市场是在离线 CoinGecko 快照上跑出的真实因子表现;外汇市场是 ECB/Frankfurter 汇率快照(46 种货币,1999 年至今)。'
-      + '这一步不产出任何交易信号,只保证后面每一步用的数据干净、可复现、没有前视偏差。',
+    descZh: '下游每一步研究都从这里的真实历史数据出发:数据目录展示 point-in-time 数据集、版本、质量检查与无生存偏差的'
+      + '宇宙定义。这一步不产出任何交易信号,只保证后面每一步用的数据干净、可复现、没有前视偏差。',
     descEn: 'Every downstream step starts from real historical data here: Data Catalog shows point-in-time datasets, '
-      + 'versioning, and survivorship-free universes; Crypto Live is real factor performance run on offline CoinGecko '
-      + 'snapshots; FX Research is ECB/Frankfurter rate snapshots (46 currencies since 1999). This step produces no '
-      + 'trading signal — it just guarantees everything downstream is clean, reproducible, and lookahead-free.',
+      + 'versioning, quality checks, and survivorship-free universes. This step produces no trading signal — it just '
+      + 'guarantees everything downstream is clean, reproducible, and lookahead-free.',
   },
   {
     group: 'alpha',
     titleZh: '因子研究 — 发现候选 alpha',
     titleEn: 'Alpha research — discover candidates',
     descZh: '研究运行是唯一的可变操作台,在这里触发真实的回测/搜索任务并写入运行注册表;IC 面板是横向初筛诊断(不是晋级门禁),'
-      + '用截面 rank-IC / ICIR / t-stat 比较候选因子;因子工厂与 DSL 检查器用于构造和检验因子表达式;Alpha 资产库汇总每个候选'
-      + '因子的多维评估;相关图谱检查因子之间是否冗余;研究结论沉淀容量、情景、宏观 regime 等现实主义诊断成果。',
+      + '用截面 rank-IC / ICIR / t-stat 比较候选因子;DSL 检查器验证因子表达式的静态类型与 PIT 安全性;Alpha 资产库汇总每个'
+      + '候选因子的多维评估(含生命周期状态分布);相关图谱检查因子之间是否冗余;研究结论沉淀容量、情景、宏观 regime 等'
+      + '现实主义诊断成果,以及不定期收到的外部策略主张审计。',
     descEn: 'Research Runs is the only mutating surface — it triggers real backtest/search jobs and writes to the run '
       + 'registry; IC Panel is a cross-sectional screening diagnostic (not a promotion gate) comparing candidates by '
-      + 'rank-IC / ICIR / t-stat; Alpha Factory and DSL Explorer construct and inspect factor expressions; Alpha Zoo '
-      + 'aggregates multi-dimensional evaluation per candidate; Alpha Graph checks for redundancy; Findings holds the '
-      + 'realism/macro/diversification diagnostics.',
+      + 'rank-IC / ICIR / t-stat; DSL Explorer verifies factor-expression static typing and PIT safety; Alpha Zoo '
+      + 'aggregates multi-dimensional evaluation per candidate (incl. lifecycle-state composition); Alpha Graph checks '
+      + 'for redundancy; Findings holds the realism/macro/diversification diagnostics plus any external strategy '
+      + 'claims that have been independently audited.',
   },
   {
     group: 'validation',
     titleZh: '验证 — 不自欺关卡',
     titleEn: 'Validation — no-self-deception gates',
     descZh: '一个因子哪怕历史回测好看,也要先过 Deflated Sharpe Ratio、组合式清洗交叉验证(CPCV)、purged & embargoed '
-      + 'walk-forward 这些验证门,才有资格往下走;实验登记保存不可篡改的实验产物和试验计数,防止事后调参美化结果;'
-      + '回测战果与计算实验室分别看结果汇总与底层计算过程。',
+      + 'walk-forward 这些验证门(含 What-if 成本/压力敏感性估算),才有资格往下走;实验登记保存不可篡改的实验产物和'
+      + '试验计数,防止事后调参美化结果;回测战果看结果汇总;加密市场/外汇市场是这套关卡在具体资产类别上的完整案例——'
+      + '前者是机器因子发现被无窥视 OOS 验证捕获选择性过拟合,后者是一个看似为正的全样本结果被可交易关卡证伪。',
     descEn: 'Even a good-looking backtest must clear Deflated Sharpe Ratio, combinatorial purged cross-validation '
-      + '(CPCV), and purged & embargoed walk-forward gates before it can proceed; Experiments persists immutable '
-      + 'artifacts and trial counts so results cannot be beautified after the fact; Backtest Results and Computation '
-      + 'Lab show the result summary and the underlying computation respectively.',
+      + '(CPCV), and purged & embargoed walk-forward gates (with a what-if cost/stress sensitivity estimate) before '
+      + 'it can proceed; Experiments persists immutable artifacts and trial counts so results cannot be beautified '
+      + 'after the fact; Backtest Results shows the result summary; Crypto Live / FX Research are full case studies '
+      + 'of these gates on specific asset classes — the former catches selection overfitting via no-peek OOS, the '
+      + 'latter shows a seemingly-positive full-sample result refuted by a tradable-universe gauntlet.',
   },
   {
     group: 'portfolio',
@@ -74,31 +77,32 @@ const STAGES: readonly Stage[] = [
     titleZh: '执行与跟踪 — 当真钱一样跑一遍,但从不真的发单',
     titleEn: 'Execution — run it like real money, never actually send an order',
     descZh: '干跑流水线是运行时关卡:权重经过盘前风控 + kill-switch + 纸面成交 + 对账,全程哈希链留痕,纯进程内'
-      + '模拟、不发出任何外部网络请求;纸面跟踪是前向(非回测)持续观察;Carry 就绪、GoNoGo 证据、实盘路线汇总走向'
-      + '实盘所需的证据以及 Phase 3A 人工批准阶段;交易台连接的是真实交易所测试网/demo REST 接口(不同于干跑流水线'
-      + '的纯进程内模拟),可通过二次确认的 SUBMIT 按钮提交测试网订单——仅 testnet/demo、零真实资产,且全程经'
-      + ' mandate + 预交易门治理;生命周期看一个策略在整条状态机上的位置。注意:交易台、实盘路线、GoNoGo 证据这几个'
-      + '页面各自有自己独立的操作/确认流程,不在本页"不发起任何操作"的静态承诺范围内。',
+      + '模拟、不发出任何外部网络请求;Carry 就绪、GoNoGo 证据、实盘路线汇总走向实盘所需的证据以及 Phase 3A '
+      + '人工批准阶段;交易台连接的是真实交易所测试网/demo REST 接口(不同于干跑流水线的纯进程内模拟),可通过'
+      + '二次确认的 SUBMIT 按钮提交测试网订单——仅 testnet/demo、零真实资产,且全程经 mandate + 预交易门治理;'
+      + '生命周期看一个策略在整条状态机上的位置,并可按行钻取每个已追踪因子的纸面前向回放。注意:交易台、实盘'
+      + '路线、GoNoGo 证据这几个页面各自有自己独立的操作/确认流程,不在本页"不发起任何操作"的静态承诺范围内。',
     descEn: 'Dry-Run Pipeline is a runtime chokepoint: weights pass pre-trade risk + kill-switch, get paper-filled, '
       + 'and reconciled, all hash-chain logged — a pure in-process simulation that makes no external network '
-      + 'requests; Paper Track is forward (not backtest) ongoing observation; Carry Readiness, GoNoGo Evidence, and '
-      + 'Live Trading aggregate the evidence and the Phase 3A human-approval stages needed to reach live; Live Desk '
-      + "connects to real exchange testnet/demo REST endpoints (not the dry-run pipeline's in-process simulation) "
-      + 'and can submit testnet orders via a double-confirmation SUBMIT button — testnet/demo only, zero real '
-      + 'capital, governed end-to-end by mandate + pre-trade gate; Lifecycle shows where a strategy sits on the '
-      + 'state machine. Note: Live Desk, Live Trading, and GoNoGo Evidence each have their own action/confirmation '
-      + 'flow and are not covered by this page\'s blanket "triggers nothing" promise.',
+      + 'requests; Carry Readiness, GoNoGo Evidence, and Live Trading aggregate the evidence and the Phase 3A '
+      + 'human-approval stages needed to reach live; Live Desk connects to real exchange testnet/demo REST '
+      + "endpoints (not the dry-run pipeline's in-process simulation) and can submit testnet orders via a "
+      + 'double-confirmation SUBMIT button — testnet/demo only, zero real capital, governed end-to-end by mandate '
+      + '+ pre-trade gate; Lifecycle shows where a strategy sits on the state machine, with a row-level drill-down '
+      + "into each tracked alpha's forward paper-track replay. Note: Live Desk, Live Trading, and GoNoGo Evidence "
+      + 'each have their own action/confirmation flow and are not covered by this page\'s blanket "triggers '
+      + 'nothing" promise.',
   },
   {
     group: 'system',
     titleZh: '治理与系统 — 系统本身的治理层',
     titleEn: 'Governance & system — the governance layer over the system itself',
-    descZh: '晋级审批是因子/策略状态推进时的人工把关记录;证据链与事件流是哈希链审计日志;系统健康看服务与安全'
-      + '原语的实时状态;系统完整度诚实列出哪些子系统是真实构建、哪些仍是占位;架构页给整体拓扑。',
-    descEn: 'Promotion Queue records the human sign-off each time a factor/strategy state advances; Evidence Ledger '
-      + 'and Events are hash-chained audit logs; System Health shows live service and safety-primitive status; '
-      + 'System Completeness honestly lists which subsystems are really built versus still placeholders; '
-      + 'Architecture gives the overall topology.',
+    descZh: '晋级审批是因子/策略状态推进时的多方人工把关记录;事件流是审计日志;系统健康看服务与安全原语的实时'
+      + '状态;系统完整度以真实代码仓库内省为地基,诚实列出哪些子系统是真实构建、哪些仍是占位,是唯一的诚实盘点入口。',
+    descEn: 'Promotion Queue records the multi-party human sign-off each time a factor/strategy state advances; '
+      + 'Events is the audit log; System Health shows live service and safety-primitive status; System Completeness '
+      + 'is grounded in real repo introspection and honestly lists which subsystems are really built versus still '
+      + 'placeholders — the single source of truth for that.',
   },
 ] as const;
 

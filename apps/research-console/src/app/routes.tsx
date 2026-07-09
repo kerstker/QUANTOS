@@ -6,6 +6,12 @@ import type React from 'react';
  * 分组即研究生命周期(顶级量化系统的工作流):总览 → 数据 → 因子研究 → 验证 → 组合与风险 → 执行与跟踪 → 治理与系统。
  * 2026-07-03 信息架构重构:42 页 → 30 页(砍掉 12 个纯合成蓝图/重复/演示页,旧路由在 REDIRECTS 语义就近重定向;
  * 诚实姿态由 SystemCompleteness 的 REAL_REPO_INVENTORY 统一承担——删页不删诚实)。
+ * 2026-07-09 第二轮重组:36 页(含 2 条仅路由)→ 30 页。审计发现的不是"假页面"而是"重叠"——5 对页面
+ * 实质展示同一批底层数据、或已被更权威的真实版本取代,合并后信息零损失(独有价值迁移见各页面注释);
+ * 1 个页面(证据链)是唯二真正满足"数据一直合成占位 + 对应子系统从未真正建成 + 未诚实披露"这条归档
+ * 硬标准的页面(对比 MonitoringDrift/SystemHealth/DslExplorer 那些同样含合成成分但已用横幅诚实声明、
+ * 因而不归档的页面)。Crypto Live / FX Research 从「数据」组挪到「验证」组——核心内容是资产类别专属的
+ * "无窥视 OOS + 可交易关卡"案例研究,方法论上属于"不自欺关卡",不是数据基础设施。
  */
 
 export type GroupId =
@@ -42,21 +48,15 @@ export const PAGES: readonly PageDef[] = [
   { path: '/research/command', zh: '指挥中心', en: 'Command Center', icon: 'CC', group: 'overview',
     load: () => import('@/pages/CommandCenter') },
 
-  // ---- 数据:研究的原料(全真实快照) ----
+  // ---- 数据:纯基础设施(数据集/质量/血缘)。资产类别层面的验证案例见「验证」组 ----
   { path: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC', group: 'data',
     load: () => import('@/pages/DataCatalog') },
-  { path: '/research/crypto-live', zh: '加密市场', en: 'Crypto Live', icon: '₿', group: 'data',
-    load: () => import('@/pages/CryptoLive') },
-  { path: '/research/fx-research', zh: '外汇市场', en: 'FX Research', icon: 'FX', group: 'data',
-    load: () => import('@/pages/FxResearch') },
 
   // ---- 因子研究:发现与操作(ResearchRuns 是唯一可变操作台) ----
   { path: '/research/runs', zh: '研究运行', en: 'Research Runs', icon: 'RR', group: 'alpha',
     load: () => import('@/pages/ResearchRuns') },
   { path: '/research/ic-panel', zh: 'IC 面板', en: 'IC Panel', icon: 'IC', group: 'alpha',
     load: () => import('@/pages/ICPanel') },
-  { path: '/research/alpha-factory', zh: '因子工厂', en: 'Alpha Factory', icon: 'AF', group: 'alpha',
-    load: () => import('@/pages/AlphaFactory') },
   { path: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ', group: 'alpha',
     load: () => import('@/pages/AlphaZoo') },
   { path: '/research/alpha-graph', zh: '相关图谱', en: 'Alpha Graph', icon: 'GR', group: 'alpha',
@@ -65,18 +65,18 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/DslExplorer') },
   { path: '/research/findings', zh: '研究结论', en: 'Findings', icon: 'RF', group: 'alpha',
     load: () => import('@/pages/ResearchFindings') },
-  { path: '/research/lance-1m-validation', zh: 'Lance 1分钟验证', en: 'Lance 1m Validation', icon: 'L1M', group: 'alpha',
-    load: () => import('@/pages/Lance1mValidation') },
 
-  // ---- 验证:不自欺关卡与证据 ----
+  // ---- 验证:不自欺关卡与证据(含资产类别层面的 OOS/可交易关卡案例研究) ----
   { path: '/research/validation', zh: '验证门', en: 'Validation Gate', icon: 'VA', group: 'validation',
     load: () => import('@/pages/Validation') },
   { path: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX', group: 'validation',
     load: () => import('@/pages/Experiments') },
   { path: '/research/backtest-results', zh: '回测战果', en: 'Backtest Results', icon: 'BR', group: 'validation',
     load: () => import('@/pages/BacktestResults') },
-  { path: '/research/computation-lab', zh: '计算实验室', en: 'Computation Lab', icon: 'CL', group: 'validation',
-    load: () => import('@/pages/ComputationLab') },
+  { path: '/research/crypto-live', zh: '加密市场', en: 'Crypto Live', icon: '₿', group: 'validation',
+    load: () => import('@/pages/CryptoLive') },
+  { path: '/research/fx-research', zh: '外汇市场', en: 'FX Research', icon: 'FX', group: 'validation',
+    load: () => import('@/pages/FxResearch') },
 
   // ---- 组合与风险 ----
   { path: '/research/portfolio', zh: '组合构建', en: 'Portfolio', icon: 'PF', group: 'portfolio',
@@ -88,13 +88,11 @@ export const PAGES: readonly PageDef[] = [
   { path: '/research/monitoring-drift', zh: '衰退监控', en: 'Drift Monitor', icon: 'MD', group: 'portfolio',
     load: () => import('@/pages/MonitoringDrift') },
 
-  // ---- 执行与跟踪:干跑是运行时 chokepoint,纸面/生命周期是前向证据 ----
+  // ---- 执行与跟踪:干跑是运行时 chokepoint,生命周期含纸面轨迹钻取 ----
   { path: '/research/dry-run', zh: '干跑流水线', en: 'Dry-Run Pipeline', icon: 'DR', group: 'execution',
     load: () => import('@/pages/DryRunPipeline') },
   { path: '/research/carry-readiness', zh: 'Carry 就绪', en: 'Carry Readiness', icon: 'CY', group: 'execution',
     load: () => import('@/pages/CarryReadiness') },
-  { path: '/research/paper-trading', zh: '纸面跟踪', en: 'Paper Track', icon: 'PT', group: 'execution',
-    load: () => import('@/pages/PaperTrading') },
   { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
     load: () => import('@/pages/LiveTrading') },
   { path: '/research/live-desk', zh: '交易台', en: 'Live Desk', icon: 'LD', group: 'execution',
@@ -107,16 +105,12 @@ export const PAGES: readonly PageDef[] = [
   // ---- 治理与系统:审计、健康、诚实完整度 ----
   { path: '/research/promotion-queue', zh: '晋级审批', en: 'Promotion Queue', icon: 'PQ', group: 'system',
     load: () => import('@/pages/PromotionQueue') },
-  { path: '/research/evidence-ledger', zh: '证据链', en: 'Evidence Ledger', icon: 'EL', group: 'system',
-    load: () => import('@/pages/EvidenceLedger') },
   { path: '/research/events', zh: '事件流', en: 'Events', icon: 'EV', group: 'system',
     load: () => import('@/pages/Events') },
   { path: '/research/system-health', zh: '系统健康', en: 'Health', icon: 'SY', group: 'system',
     load: () => import('@/pages/SystemHealth') },
   { path: '/research/system-completeness', zh: '系统完整度', en: 'Completeness', icon: 'CP', group: 'system',
     load: () => import('@/pages/SystemCompleteness') },
-  { path: '/research/architecture', zh: '架构', en: 'Architecture', icon: 'AR', group: 'system',
-    load: () => import('@/pages/Architecture') },
 
   // ---- 仅路由(不进导航) ----
   { path: '/research/runs/:id', zh: '运行详情', en: 'Run Detail', icon: 'RD', group: null,
@@ -139,4 +133,11 @@ export const REDIRECTS: readonly RedirectDef[] = [
   { from: '/research/scenario-stress', to: '/research/risk' },
   { from: '/research/backtest-explainability', to: '/research/backtest-results' },
   { from: '/research/signal-to-portfolio', to: '/research/portfolio' },
+  // 2026-07-09 第二轮重组新增(合并/归档,见文件头注释)
+  { from: '/research/alpha-factory', to: '/research/alpha-zoo' },
+  { from: '/research/lance-1m-validation', to: '/research/findings' },
+  { from: '/research/computation-lab', to: '/research/validation' },
+  { from: '/research/paper-trading', to: '/research/lifecycle-monitor' },
+  { from: '/research/architecture', to: '/research/system-completeness' },
+  { from: '/research/evidence-ledger', to: '/research/system-completeness' },
 ] as const;

@@ -6,6 +6,8 @@ import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, StatusChip, Chip,
 } from '@/ui/primitives';
+import { Donut } from '@/ui/charts';
+import { statusTone } from '@/ui/format';
 
 /**
  * Alpha Zoo — the multi-dimensional factor-analysis cockpit. Each alpha carries its FULL evaluation across
@@ -168,6 +170,16 @@ export default function AlphaZoo() {
 
   const promotable = allRows.filter(r => typeof r.deflated_sharpe === 'number' && r.deflated_sharpe >= 0.6).length;
 
+  // lifecycle composition (migrated from the retired Alpha Factory page, 2026-07-09 nav reorg —
+  // same donut, now driven by the full 全量 rows instead of a 12-candidate subset).
+  const lifecycleSegments = useMemo(() => {
+    const counts = allRows.reduce<Record<string, number>>((acc, r) => {
+      acc[r.status] = (acc[r.status] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).map(([label, value]) => ({ label, value, tone: statusTone(label) }));
+  }, [allRows]);
+
   return (
     <PageShell>
       <PageHeader title="Alpha Zoo" titleZh="Alpha 资产库"
@@ -182,6 +194,19 @@ export default function AlphaZoo() {
         <StatTile label={bi('分析维度', 'Dimensions')} value={String(dims.length)} tone="info" />
         <StatTile label={bi('当前筛出', 'Filtered')} value={String(rows.length)} accent />
       </KpiStrip>
+
+      <Panel eyebrow={bi('生命周期构成', 'Lifecycle composition')} title={bi('全量资产的生命周期状态分布', 'Lifecycle-state distribution across all assets')}>
+        <div className="flex items-center gap-4">
+          <Donut size={132} segments={lifecycleSegments} />
+          <div className="flex flex-col gap-1 text-2xs">
+            {lifecycleSegments.map(s => (
+              <span key={s.label} className="flex items-center gap-1.5">
+                <StatusChip value={s.label} /><span className="text-muted">× {s.value}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </Panel>
 
       <Panel eyebrow={bi('多维散点', 'Multi-dim scatter')} title={bi('因子分布(任选两维)', 'Factor map (pick any two dims)')}
         right={

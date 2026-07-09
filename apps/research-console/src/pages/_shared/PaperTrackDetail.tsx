@@ -1,24 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { fetchPaperTradingSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import { mockPaperRuns } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
 import type { PaperTradingPayload, PaperRun, CalculationLineageItem } from '@/lib/types/research';
 import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, Chip, KeyValue, type Column,
+  Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, KeyValue, type Column,
 } from '@/ui/primitives';
 import { AreaChart, UnderwaterChart } from '@/ui/charts';
 import { num, pct, pctPoints, fixed, money, statusTone, type Tone } from '@/ui/format';
 
-const ALPHA_IDS = ['alpha-1', 'alpha-2', 'alpha-3', 'alpha-4'];
+/**
+ * 纸面回放详情——权益曲线/回撤/绩效指标/计算血缘的钻取视图。2026-07-09 从已并入 LifecycleMonitor
+ * 的独立页 PaperTrading.tsx 抽出(该页原来用一个不对应真实 ID 的通用 "alpha-N" 马甲展示这批真实
+ * alpha 的历史回放,现在按行钻取,alphaId 由调用方(LifecycleMonitor 的 PAPER_TRACK_SLOT 映射表)
+ * 传入真实 experiment_registry alpha_id 对应的槽位)。
+ */
 
 const TONE_TEXT: Record<Tone, string> = {
   pos: 'text-pos', neg: 'text-neg', warn: 'text-warn', info: 'text-info',
   accent: 'text-accent', special: 'text-special', muted: 'text-muted',
 };
 
-/** Known metric keys get a bilingual label + display formatter; unknowns fall through. */
 const METRIC_META: Record<string, { zh: string; en: string; fmt: (v: number) => string; tone?: Tone }> = {
   sharpe: { zh: '夏普', en: 'Sharpe', fmt: v => fixed(v, 2), tone: 'accent' },
   max_drawdown: { zh: '最大回撤', en: 'Max Drawdown', fmt: v => pctPoints(v, 1), tone: 'neg' },
@@ -33,53 +36,40 @@ const metricLabel = (k: string) => {
 };
 const metricFmt = (k: string, v: number) => (METRIC_META[k]?.fmt ?? ((x: number) => fixed(x, 2)))(v);
 
-export default function PaperTrading() {
-  const [selectedAlpha, setSelectedAlpha] = useState('alpha-1');
-  const [payload, setPayload] = useState<PaperTradingPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
+export function PaperTrackDetail({ alphaId }: { alphaId: string }) {
+  const [payload, setPayload] = React.useState<PaperTradingPayload | null>(null);
+  const [apiState, setApiState] = React.useState<ConsoleApiState>('disabled');
+  const [apiError, setApiError] = React.useState<string | null>(null);
   const apiEnabled = isResearchConsoleApiEnabled();
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
+      setPayload(null); setApiState('disabled'); setApiError(null);
       return;
     }
-
     const controller = new AbortController();
     setApiState('loading');
     setApiError(null);
-    fetchPaperTradingSnapshot(selectedAlpha, controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
+    fetchPaperTradingSnapshot(alphaId, controller.signal)
+      .then(next => { setPayload(next); setApiState('connected'); })
       .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
+        if (controller.signal.aborted) return;
+        setPayload(null); setApiState('error');
         setApiError(error instanceof Error ? error.message : String(error));
       });
-
     return () => controller.abort();
-  }, [apiEnabled, selectedAlpha]);
+  }, [apiEnabled, alphaId]);
 
   const usingBackend = apiState === 'connected' && payload !== null;
   const r: PaperRun = usingBackend ? payload.run : mockPaperRuns[0];
   const lineage: CalculationLineageItem[] = usingBackend ? payload.lineage ?? [] : [];
 
-  // Equity series (deterministic; derived only from payload/mock fields).
   const equity = r.equity_curve.map(p => ({ x: p.timestamp, y: p.equity }));
   const startEquity = equity.length ? equity[0].y : r.final_equity;
   const peakEquity = equity.reduce((m, p) => Math.max(m, p.y), startEquity);
   const totalPnl = r.final_equity - startEquity;
   const totalReturn = startEquity > 0 ? totalPnl / startEquity : 0;
 
-  // Underwater drawdown derived from the running peak (deterministic, no lookahead).
   let peak = startEquity;
   const drawdown = equity.map(p => {
     peak = Math.max(peak, p.y);
@@ -87,7 +77,6 @@ export default function PaperTrading() {
   });
   const troughDd = drawdown.reduce((m, p) => Math.min(m, p.y), 0);
 
-  // Order the metrics map: known keys first (in a stable preferred order), then the rest.
   const preferred = ['sharpe', 'annual_return', 'max_drawdown', 'volatility', 'sortino', 'win_rate'];
   const metricKeys = Object.keys(r.metrics).sort((a, b) => {
     const ia = preferred.indexOf(a), ib = preferred.indexOf(b);
@@ -104,29 +93,7 @@ export default function PaperTrading() {
   ];
 
   return (
-    <PageShell>
-      <PageHeader title="Paper Trading" titleZh="纸面交易"
-        subtitle={bi('纸面回放运行的只读快照:权益曲线、回撤、绩效指标与计算血缘(无真实下单、无券商)',
-          'Read-only snapshot of a paper-replay run — equity, drawdown, metrics, calculation lineage (no live orders, no broker)')}
-        actions={
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-2xs uppercase tracking-wide text-faint">{bi('因子', 'Alpha')}</span>
-            {ALPHA_IDS.map(alphaId => {
-              const active = selectedAlpha === alphaId;
-              return (
-                <button key={alphaId} onClick={() => setSelectedAlpha(alphaId)}
-                  className={`rounded-md border px-2.5 py-1 text-2xs font-semibold transition-colors ${
-                    active ? 'border-accent/50 bg-accent/15 text-accent'
-                           : 'border-line bg-elevated/40 text-muted hover:bg-elevated/70'}`}>
-                  {alphaId}
-                </button>
-              );
-            })}
-          </div>
-        } />
-
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError} />
-
+    <div className="flex flex-col gap-4 border-t border-line pt-4">
       <KpiStrip cols={7}>
         <StatTile label={bi('运行状态', 'Run Status')} value={<StatusChip value={r.status} />} tone={statusTone(r.status)} />
         <StatTile label={bi('最终权益', 'Final Equity')} value={money(r.final_equity)} accent />
@@ -143,29 +110,8 @@ export default function PaperTrading() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2" eyebrow={bi('回放', 'Replay')} title={bi('权益曲线', 'Equity Curve')}
           right={<Chip label={bi(`峰值 ${money(peakEquity)}`, `peak ${money(peakEquity)}`)} tone="special" />}>
-          <AreaChart data={equity} height={236} tone="accent" yFormat={v => money(v)} />
+          <AreaChart data={equity} height={200} tone="accent" yFormat={v => money(v)} />
         </Panel>
-
-        <Panel eyebrow={bi('运行', 'Run')} title={bi('运行明细', 'Run Detail')}>
-          <KeyValue cols={1} items={[
-            { k: bi('运行 ID', 'Run ID'), v: r.run_id },
-            { k: bi('因子 ID', 'Alpha ID'), v: r.alpha_id },
-            { k: bi('选中因子', 'Selected'), v: usingBackend ? payload.selected_alpha_id : selectedAlpha },
-            { k: bi('起始权益', 'Start Equity'), v: money(startEquity) },
-            { k: bi('最终权益', 'Final Equity'), v: money(r.final_equity) },
-            { k: bi('累计盈亏', 'Total PnL'), v: money(totalPnl) },
-            { k: bi('成交数', 'Trades'), v: num(r.total_trades) },
-            { k: bi('状态', 'Status'), v: <StatusChip value={r.status} /> },
-          ]} />
-        </Panel>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel className="xl:col-span-2" eyebrow={bi('风险', 'Risk')} title={bi('水下回撤', 'Underwater Drawdown')}
-          right={<Chip label={bi(`谷底 ${pct(troughDd, 1)}`, `trough ${pct(troughDd, 1)}`)} tone="neg" />}>
-          <UnderwaterChart data={drawdown} height={176} yFormat={v => pct(v, 1)} />
-        </Panel>
-
         <Panel eyebrow={bi('绩效', 'Performance')} title={bi('指标', 'Metrics')}>
           {metricKeys.length === 0
             ? <div className="py-6 text-center text-2xs text-faint">{bi('无指标', 'No metrics')}</div>
@@ -185,6 +131,11 @@ export default function PaperTrading() {
         </Panel>
       </div>
 
+      <Panel eyebrow={bi('风险', 'Risk')} title={bi('水下回撤', 'Underwater Drawdown')}
+        right={<Chip label={bi(`谷底 ${pct(troughDd, 1)}`, `trough ${pct(troughDd, 1)}`)} tone="neg" />}>
+        <UnderwaterChart data={drawdown} height={150} yFormat={v => pct(v, 1)} />
+      </Panel>
+
       <Panel eyebrow={bi('可复现性', 'Reproducibility')} title={bi('计算血缘', 'Calculation Lineage')}
         right={lineage.length > 0
           ? <Chip label={bi(`${lineage.length} 节点`, `${lineage.length} nodes`)} tone="info" />
@@ -192,6 +143,8 @@ export default function PaperTrading() {
         <DataTable columns={lineageCols} rows={lineage} getKey={l => l.id}
           empty={bi('后端连接后显示计算血缘', 'Calculation lineage appears when backend is connected')} />
       </Panel>
-    </PageShell>
+
+      {apiError && <div className="text-2xs text-neg">{apiError}</div>}
+    </div>
   );
 }
