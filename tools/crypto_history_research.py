@@ -76,7 +76,7 @@ def _periods_with_times(store, instruments, ets, op, window):
             rows.append((inst, float(s), fb.close / nb.close - 1.0))
         if len(rows) >= 2:
             periods.append(PanelPeriod(tuple(r[0] for r in rows), tuple(r[1] for r in rows),
-                                       tuple(r[2] for r in rows)))
+                                       tuple(r[2] for r in rows), event_time=int(t)))
             times.append(t)
     return periods, times
 

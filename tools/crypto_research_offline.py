@@ -68,12 +68,20 @@ def regenerate(now_ms: int) -> dict:
     instruments = instruments[:MAX_INSTRUMENTS]
     event_times = event_times[-RECENT_PERIODS:]
 
-    # Phase 3: persist real immutable evaluation artifacts (+ DSR trial count) into the experiment_registry
-    # so the Experiments / EvidenceLedger console pages read REAL recorded evidence, not synthetic. Fresh
-    # each regen for a deterministic snapshot (drop any prior db first).
+    # Phase 3: persist real immutable evaluation artifacts (+ DSR trial count) into a DEDICATED demo
+    # registry so the Experiments / Alpha Zoo console pages read REAL recorded evidence, not synthetic.
+    # Fresh each regen for a deterministic snapshot (drop any prior db first).
+    #
+    # 2026-07-09 (audit P0 fix, "AlphaCatalog governs zero real candidates"): this MUST be a file
+    # distinct from data/cache/experiment_registry.db. That file is the real, durable production
+    # AlphaCatalog (tools/register_alpha_catalog.py registers carry_composite/crowd_contra into it;
+    # services/governance/promotion_api/main.py reads it for actual human promotion decisions) — before
+    # this fix, this function's own os.remove()+rebuild silently wiped ANY real registration the moment
+    # someone re-ran this demo-panel regenerator, with zero warning. Demo/exploration output and the real
+    # production catalog must never share physical storage.
     from services.research.experiment_registry.store import SqliteExperimentStore
     from services.research.experiment_registry.registry import ExperimentRegistry
-    exp_db = os.path.join("data", "cache", "experiment_registry.db")
+    exp_db = os.path.join("data", "cache", "crypto_research_demo_registry.db")
     if os.path.exists(exp_db):
         os.remove(exp_db)
     registry = ExperimentRegistry(SqliteExperimentStore(exp_db, create=True))

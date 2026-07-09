@@ -56,7 +56,8 @@ def build_fundamental_periods(fund_store, price_store, instruments: Sequence[str
             fwds.append(fwd_bar.close / now_bar.close - 1.0)
         if len(sig_insts) >= 2:
             periods.append(PanelPeriod(instruments=tuple(sig_insts),
-                                       signals=tuple(sigs), forward_returns=tuple(fwds)))
+                                       signals=tuple(sigs), forward_returns=tuple(fwds),
+                                       event_time=int(t)))
     return periods
 
 

@@ -69,7 +69,8 @@ def _periods_timed(alpha, panel):
             fwds.append(p1 / p0 - 1.0)
         if len(insts) >= 2:
             from services.alpha.panel_backtest import PanelPeriod
-            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds)))
+            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds),
+                                       event_time=int(panel.event_times[r])))
             times.append(panel.event_times[r])
     return periods, times
 

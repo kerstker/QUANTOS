@@ -30,16 +30,67 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
     candidate batch, via CSCV over the candidates' net panel returns. Returns None
     (NOT a passing 0.0) when it cannot be honestly computed — a single candidate,
     too few periods, or malformed panels — so the evaluator fails closed to human
-    review rather than treating an unmeasured selection as overfitting-free."""
+    review rather than treating an unmeasured selection as overfitting-free.
+
+    **Calendar alignment (2026-07-09, real-data bug found registering carry_composite/
+    crowd_contra into AlphaCatalog for the first time, tools/register_alpha_catalog.py):**
+    two real alphas routinely have DIFFERENT valid-period histories — different factors drop
+    different rows depending on their own data availability (e.g. an OI-based signal's history
+    starting ~1.5 years after a funding-based signal's). The original implementation compared
+    candidates' period_returns by LIST POSITION (series[:min_len]) — silently comparing
+    different calendar windows as if they were contemporaneous. Confirmed on real data: this
+    forced a spurious PBO=1.0 (every CSCV split "flipped") purely because one candidate's early,
+    non-overlapping history contained an outlier the other candidate had no data for at all —
+    unrelated to genuine selection overfitting, and it dropped to 0.086 once the same unmodified
+    pbo_cscv() was fed calendar-aligned returns instead.
+
+    When every candidate's PanelPeriod carries `event_time`, this aligns all candidates to the
+    INTERSECTION of their common event_times (sorted) before block-summing — an empty
+    intersection (zero true overlap) honestly returns None rather than fabricating a number from
+    calendar-disjoint data. When ANY candidate's periods lack event_time (legacy callers that
+    hand-build PanelPeriod directly, e.g. some tests), falls back unchanged to the original
+    positional-truncation behavior — a documented, backward-compatible limitation for
+    un-timestamped candidates, not a regression for those callers.
+
+    Coverage (2026-07-09, extended same day as the fix once a review flagged the initial fix as
+    scoped too narrowly): EVERY real PanelPeriod-construction site now stamps event_time —
+    services.research.alpha_expression.panel_to_periods (register_alpha_catalog.py's path) AND
+    the three provider builders the autonomous ResearchAgentLoop/GuidedSearchLoop actually run on
+    (services.research.{panel_builder.build_panel_periods (+ its volume-signal variant, +
+    gp_tree.py which calls it verbatim), fundamental_factors.build_fundamental_periods,
+    interaction_factors.build_interaction_periods}) AND the standalone tools/ drivers that hand-
+    build PanelPeriod inline before a multi-candidate ResearchAgentLoop.run() batch (tools/
+    {crypto_alpha_research.py, crypto_history_research.py}, plus the four single-candidate
+    drivers — crypto_alpha_search/crypto_binance_research/crypto_funding_research/
+    crypto_smallcap_research.py — that reuse crypto_alpha_research._periods_timed and were fixed
+    for consistency even though a 1-candidate batch always gets pbo=None regardless).
+    tools/crypto_daily_composite.py's two PanelPeriod sites are the one deliberate exception: that
+    driver never touches AlphaFactory/ResearchAgentLoop/batch_pbo at all, so it is out of scope.
+    """
     series: list[list[float]] = []
+    times: list[list[int]] = []
     for _defn, periods in candidates:
         try:
             res = run_panel_backtest(periods, cost=cost, quantile=quantile, target_aum=target_aum)
         except Exception:
             return None
-        series.append(list(res.period_returns))
+        rets = list(res.period_returns)
+        series.append(rets)
+        times.append([p.event_time for p in periods])
     if len(series) < 2:                       # CSCV selection bias needs >= 2 configs
         return None
+
+    all_timestamped = all(
+        len(ts) == len(rs) and all(t is not None for t in ts) for ts, rs in zip(times, series))
+    if all_timestamped:
+        common = set(times[0])
+        for ts in times[1:]:
+            common &= set(ts)
+        common_sorted = sorted(common)
+        by_time = [dict(zip(ts, rs)) for ts, rs in zip(times, series)]
+        series = [[d[ct] for ct in common_sorted] for d in by_time]
+    # else: legacy positional fallback — `series` is already the raw per-candidate return lists.
+
     t = min((len(s) for s in series), default=0)
     if t < 4:                                 # need >= 2 IS/OOS blocks
         return None

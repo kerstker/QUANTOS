@@ -428,7 +428,12 @@ def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
                      price_field: str = "close") -> list:
     """Each period's cross-section of alpha values -> a PanelPeriod, with the realized forward return
     (price[t+h]/price[t]-1) as the label. Instruments lacking a finite alpha or a valid forward price
-    are dropped; periods with < 2 survivors are skipped. Same shape the backtest/evaluator consume."""
+    are dropped; periods with < 2 survivors are skipped. Same shape the backtest/evaluator consume.
+
+    Stamps `event_time=panel.event_times[r]` on every period (2026-07-09, see services/alpha/
+    factory.py::batch_pbo docstring) — this is the production path every real alpha's periods come
+    through, so batch_pbo can align candidates by CALENDAR time rather than by list position when
+    two alphas have different valid-period histories (different factors drop different rows)."""
     px = panel.matrices[price_field]
     t, n = _dims(alpha)
     periods = []
@@ -444,5 +449,6 @@ def panel_to_periods(alpha: Matrix, panel: FieldPanel, *, fwd_horizon: int = 1,
             sigs.append(float(a))
             fwds.append(p1 / p0 - 1.0)
         if len(insts) >= 2:
-            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds)))
+            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds),
+                                       event_time=int(panel.event_times[r])))
     return periods
