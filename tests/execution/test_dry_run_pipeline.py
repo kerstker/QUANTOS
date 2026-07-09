@@ -138,6 +138,57 @@ def test_target_quantities_drops_zero_and_missing_price():
     assert q == {"ETH": 10}  # BTC rounds to 0 -> dropped ; XRP missing -> dropped
 
 
+# --- plan_target_quantities filters (F10 audit: exchange step/min-qty/min-notional) ----------
+
+def test_target_quantities_filters_none_matches_unfiltered_baseline():
+    """filters=None (default) must reproduce the exact pre-existing behavior -- the head-line
+    acceptance bar for this optional addition."""
+    w = {"BTC": 0.5, "ETH": -0.5, "DOGE": 0.1}
+    px = {"BTC": 100.0, "ETH": 50.0, "DOGE": 0.0}
+    implicit = plan_target_quantities(w, px, aum=10000.0)
+    explicit = plan_target_quantities(w, px, aum=10000.0, filters=None)
+    assert implicit == explicit == {"BTC": 50, "ETH": -100}
+
+
+def test_target_quantities_filters_rounds_to_step():
+    """A step_size that doesn't evenly divide the raw quantity must actually change the result
+    (floor to the grid), not pass the raw rounded value through untouched."""
+    unfiltered = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0)
+    assert unfiltered == {"BTC": 53}                          # baseline: plain round(), no step
+
+    filters = {"BTC": (10.0, 0.0, 0.0)}                       # step_size=10, no min_qty/min_notional
+    filtered = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0, filters=filters)
+    assert filtered == {"BTC": 50}                             # 53 -> floor to nearest 10 -> 50
+
+
+def test_target_quantities_filters_drops_below_min_notional():
+    """A leg whose rounded quantity*price falls below min_notional is excluded THIS PERIOD ONLY
+    (fail-soft) -- other legs, including ones with no filter entry, proceed normally."""
+    filters = {"BTC": (1.0, 0.0, 1e6)}                         # impossibly high min_notional -> BTC dropped
+    w = {"BTC": 0.1, "ETH": 0.5}
+    px = {"BTC": 100.0, "ETH": 50.0}
+    q = plan_target_quantities(w, px, aum=10000.0, filters=filters)
+    assert "BTC" not in q
+    assert q["ETH"] == 100                                     # unaffected: no filter entry for ETH
+
+
+def test_target_quantities_filters_drops_below_min_qty():
+    filters = {"BTC": (1.0, 100.0, 0.0)}                       # min_qty=100 but raw qty ~53
+    q = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0, filters=filters)
+    assert "BTC" not in q
+
+
+def test_target_quantities_filters_missing_instrument_passthrough():
+    """Missing filter data for an instrument must NOT block quantization of the others -- and must
+    NOT itself be quantized (honest 'data incomplete, don't apply' stance)."""
+    filters = {"ETH": (10.0, 0.0, 0.0)}                        # only ETH has filter data
+    w = {"BTC": 0.53, "ETH": 0.53}
+    px = {"BTC": 100.0, "ETH": 100.0}
+    q = plan_target_quantities(w, px, aum=10000.0, filters=filters)
+    assert q["BTC"] == 53                                      # no filter for BTC -> untouched passthrough
+    assert q["ETH"] == 50                                      # ETH quantized via step_size=10
+
+
 # --- Multi-period rolling dry-run --------------------------------------------
 
 def _mp_ctx(intent, prices, period):
@@ -269,6 +320,48 @@ def test_multi_period_records_net_exposure():
     # period 1: BTC +5000@100 / ETH -10000@50 = +500k -500k = 0 (dollar-neutral at clean-lot entry)
     assert abs(r.detail["equity_curve"][0]["net"]) < 1.0
     assert "avg_net_exposure_pct" in r.pnl and r.pnl["avg_net_exposure_pct"] >= 0.0
+
+
+# --- run_multi_period_dry_run `filters` (F10 audit: exchange-quantization plumbed end-to-end) --
+
+def test_multi_period_filters_none_matches_unfiltered_exactly():
+    """filters=None (default) must produce byte-identical output to the call that omits the
+    parameter entirely -- the head-line acceptance bar for this optional addition."""
+    baseline = _mp()
+    explicit_none = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=_gate(),
+        ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, filters=None)
+    assert (baseline.run_id, baseline.audit_root, baseline.pnl, baseline.detail) == \
+           (explicit_none.run_id, explicit_none.audit_root, explicit_none.pnl, explicit_none.detail)
+
+
+def test_multi_period_filters_changes_quantities_end_to_end():
+    """Passing filters through the full pipeline (not just plan_target_quantities in isolation)
+    must actually change the traded quantities -- proven via the recorded gross notional, which
+    is a direct function of the (now step-quantized) fill quantities."""
+    filters = {"BTC": (7.0, 0.0, 0.0), "ETH": (7.0, 0.0, 0.0)}
+    unfiltered = _mp()
+    filtered = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=_gate(),
+        ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, filters=filters)
+    # t=1: BTC raw target 5000 -> step 7 floors to 4998 ; ETH raw target -10000 -> floors to -9996
+    # gross notional therefore differs from the unfiltered (exact round-number) baseline.
+    assert unfiltered.detail["equity_curve"][0]["gross"] != filtered.detail["equity_curve"][0]["gross"]
+    assert filtered.detail["equity_curve"][0]["gross"] == 4998 * 100 + 9996 * 50
+
+
+def test_multi_period_filters_min_notional_drops_only_affected_leg():
+    """A leg whose quantized size falls below min_notional is excluded fail-soft (this leg only,
+    this period only) -- it must NOT fail or block the other leg's fill."""
+    filters = {"BTC": (1.0, 0.0, 1e15)}  # BTC always below min_notional -> dropped
+    r = run_multi_period_dry_run(
+        periods=[1], weights_by_period={1: {"BTC": 0.5, "ETH": -0.5}},
+        prices_by_period={1: {"BTC": 100.0, "ETH": 50.0}},
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry",
+        aum=1e6, cost_bps=5.0, filters=filters)
+    assert r.detail["equity_curve"][0]["fills"] == 1  # only ETH fills; BTC excluded fail-soft
 
 
 # --- broker adapter seam guard (轨道3 子项目1) ---------------------------------

@@ -4,15 +4,19 @@ docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.4。
 纯函数、无网络、无墙钟——输入输出皆为真实浮点数量(见 contracts.py 顶部关于两级下单类型的
 说明)。`apply_exchange_filters` 是唯一把"策略想要的数量"折算成"交易所肯接受的数量"的地方:
 步长取整、低于最小名义额/最小数量 fail-soft 丢弃(附原因,绝不因单笔失败中断整批)。
+
+`round_to_step` 已搬到 `services/execution/quantization.py`(2026-07-08,F10 审计——回测/干跑
+引擎需要同一份步长取整实现,而 `services/` 不能反向 import `live/`)。这里原样 re-export,逐字节
+零行为变化(见 tests/live/test_filters.py);两边用的是同一份函数体,不是两份可能分叉的复制品。
 """
 from __future__ import annotations
 
 import hashlib
-import math
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from live.contracts import ExchangeFilters, LiveOrderRequest
 from quantos.contracts.trading import OrderSide
+from services.execution.quantization import round_to_step
 
 _MAX_CLIENT_ORDER_ID_LEN = 36     # Binance newClientOrderId 硬限制
 
@@ -53,15 +57,6 @@ def client_order_id(strategy_id: str, decided_ts: int, instrument_id: str,
         ident += f"|L{limit_price:.10f}"
     return decision_prefix(strategy_id, decided_ts, instrument_id) + \
         hashlib.sha256(ident.encode()).hexdigest()[:16]
-
-
-def round_to_step(qty: float, step_size: float) -> float:
-    """向下取整到交易所步长网格(绝不超发——宁可少买/少卖,不可超过策略意图)。step_size<=0 直通。
-    +1e-9 epsilon 只为吸收浮点表示噪声(如 0.3/0.1 因二进制浮点略小于 3),不改变真实取整方向。"""
-    if step_size <= 0:
-        return qty
-    steps = math.floor(qty / step_size + 1e-9)
-    return round(steps * step_size, 10)
 
 
 def apply_exchange_filters(desired: Sequence[Tuple[str, OrderSide, float]],

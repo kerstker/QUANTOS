@@ -13,11 +13,12 @@ from __future__ import annotations
 import hashlib
 import math
 import statistics
-from typing import Callable, Dict, Sequence
+from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from quantos.contracts.risk import RiskDecisionType
 from services.execution.dry_run_store import DryRunRun
 from services.execution.intent_builder import build_intents
+from services.execution.quantization import meets_min_notional, round_to_step
 from services.monitoring.audit_log import GlobalAuditLog
 from services.research.paper_trading.domain.models import FillMethod, OrderSide as PaperSide, PaperFill
 from services.research.paper_trading.domain.reconciliation import reconcile
@@ -30,14 +31,33 @@ def _det_id(*parts) -> str:
     return hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()[:16]
 
 
-def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float) -> Dict[str, int]:
-    """权重 → 目标整数手数:round(w * aum / price)。价缺失/≤0 跳过(fail-soft);0 手不下意图。"""
+def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float,
+                           filters: Optional[Dict[str, Tuple[float, float, float]]] = None
+                           ) -> Dict[str, int]:
+    """权重 → 目标整数手数:round(w * aum / price)。价缺失/≤0 跳过(fail-soft);0 手不下意图。
+
+    `filters`(可选,F10 审计——小资金规模下交易所步长/最小名义额不可忽略近似):
+    `{instrument_id: (step_size, min_qty, min_notional)}`。传入且该标的有对应条目时,目标数量先
+    向下取整到 `step_size` 网格(`round_to_step`,绝不超发),再过 `min_qty`/`min_notional` 门槛;
+    不达标(含取整到 0)的标的这一期被诚实排除(不进 `out`)——与既有"价格缺失/≤0 -> 跳过"同一
+    fail-soft 语义,不因单一标的数据不全/量太小而中断整批。`filters` 里没有该标的的条目时直通、
+    不做任何量化(数据不全不阻塞)。`filters=None`(默认)-> 输出与改动前逐字节相同。"""
     out: Dict[str, int] = {}
     for inst, w in weights.items():
         px = prices.get(inst)
         if px is None or px <= 0:
             continue
-        q = int(round(w * aum / px))
+        raw = w * aum / px
+        filt = filters.get(inst) if filters else None
+        if filt is None:
+            q = int(round(raw))
+        else:
+            step_size, min_qty, min_notional = filt
+            sign = -1.0 if raw < 0 else 1.0
+            rounded_abs = round_to_step(abs(raw), step_size)
+            if rounded_abs <= 0 or rounded_abs < min_qty or not meets_min_notional(rounded_abs, px, min_notional):
+                continue
+            q = int(round(sign * rounded_abs))
         if q != 0:
             out[inst] = q
     return out
@@ -232,10 +252,16 @@ def _tca_lite(impact, impact_trades) -> dict:
 
 def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
-                             vol_target: dict = None, impact=None, adv_by_period: dict = None) -> DryRunRun:
+                             vol_target: dict = None, impact=None, adv_by_period: dict = None,
+                             filters: Optional[Dict[str, Tuple[float, float, float]]] = None) -> DryRunRun:
     """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
     价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
-    ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。"""
+    ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。
+
+    `filters`(可选,F10 审计,2026-07-08——小资金规模下交易所步长/最小名义额不是可忽略的近似误差):
+    `{instrument_id: (step_size, min_qty, min_notional)}`,原样透传给每期的 `plan_target_quantities`
+    (见其 docstring)。默认 None -> 每期目标手数计算与改动前逐字节相同(回归测试钉死)。这轮只交付
+    管线本身有能力做量化——真实 Binance/Bybit exchangeInfo 数据接进具体驱动器是后续独立工作。"""
     run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]))
     audit = GlobalAuditLog()
     audit.append(event_id=_det_id("mstart", run_id), actor=f"dry_run:{strategy_id}", action="MULTI_START",
@@ -253,7 +279,7 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     for t in periods:
         prices_t = prices_by_period[t]
         adv_t = adv_by_period.get(t) if adv_by_period else None
-        targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum)
+        targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum, filters=filters)
         intents = build_intents(targets, held, strategy_id=strategy_id)
         screened = screen_intents(intents, gate=gate,
                                   ctx_factory=lambda i, _p=prices_t, _t=t: ctx_factory(i, _p, _t))
