@@ -102,7 +102,16 @@ def build_candidates(panel, candidates=None, *, fwd_horizon: int = _FWD_HORIZON
         matrix = ax.evaluate(expr, panel)
         periods = ax.panel_to_periods(matrix, panel, fwd_horizon=fwd_horizon, non_overlapping=True)
         leak_ok = compute_leakage_ok(expr, panel)
-        defn = AlphaDefinition(alpha_id=alpha_id, name=name, factor_ids=factor_ids, universe="cs_majors")
+        # 2026-07-10 (gap audit rank #6 follow-up): params carries the serialized expression, matching
+        # the established convention in gp_tree.py/search_space.py — AlphaDefinition.definition_hash
+        # hashes ONLY factor_ids/universe/params, so two candidates sharing factor_ids (not the case
+        # for carry_composite/crowd_contra today — "funding" vs "global_ls" — but a real risk for any
+        # FUTURE alpha sharing a field with one of these two) would otherwise silently collide to one
+        # trial-count entry. Confirmed safe for the two real, already-registered alphas: this
+        # construction is only reached for candidates NOT already in the catalog
+        # (register_new_candidates' idempotency skip), so it never touches their persisted state.
+        defn = AlphaDefinition(alpha_id=alpha_id, name=name, factor_ids=factor_ids, universe="cs_majors",
+                               params={"expr": ax.serialize(expr)})
         out.append((defn, periods))
         evidence[alpha_id] = {"leakage_ok": leak_ok}
     return out, evidence
