@@ -129,3 +129,39 @@ def test_dsr_rejects_extreme_skew_kurt():
 def test_pbo_rejects_ragged_matrix():
     with pytest.raises(ValueError):
         pbo_cscv([[1.0, 2.0, 3.0], [4.0, 5.0]])
+
+
+# --- capacity soft-fail (2026-07-10, gap audit rank #5) -----------------------
+
+def test_capacity_ratio_none_is_a_complete_noop():
+    """Default (not assessed) must match pre-fix behavior byte-for-byte — every existing caller
+    (and every real currently-recorded evaluation) never passes capacity_ratio."""
+    res = GATE.evaluate("alpha-good", **CLEAN)
+    assert res.verdict == ValidationVerdict.PASS
+    assert not any("CAPACITY" in r for r in res.reasons)
+
+
+def test_low_capacity_ratio_is_a_soft_warn():
+    res = GATE.evaluate("alpha-thin-capacity", **{**CLEAN, "capacity_ratio": 0.1})
+    assert res.verdict == ValidationVerdict.WARN and not res.promotable
+    assert any("CAPACITY_BELOW_TARGET_AUM" in r for r in res.reasons)
+
+
+def test_capacity_ratio_above_floor_does_not_warn():
+    res = GATE.evaluate("alpha-ample-capacity", **{**CLEAN, "capacity_ratio": 2.0})
+    assert res.verdict == ValidationVerdict.PASS
+    assert not any("CAPACITY" in r for r in res.reasons)
+
+
+def test_capacity_ratio_exactly_at_floor_does_not_warn():
+    cfg = ValidationConfig()
+    res = ValidationGate(cfg).evaluate(
+        "alpha-at-floor", **{**CLEAN, "capacity_ratio": cfg.min_capacity_ratio})
+    assert not any("CAPACITY" in r for r in res.reasons)   # strict <, not <=
+
+
+def test_low_capacity_combined_with_another_soft_failure_is_a_hard_fail():
+    # two soft failures (low OOS sharpe + low capacity) escalate to FAIL, same as the existing
+    # 2-soft-failures-escalate rule for any other pair of soft criteria.
+    res = GATE.evaluate("alpha-double-soft", **{**CLEAN, "oos_sharpe": -0.5, "capacity_ratio": 0.1})
+    assert res.verdict == ValidationVerdict.FAIL and not res.promotable

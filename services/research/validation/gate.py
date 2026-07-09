@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 from quantos.contracts.research import ValidationResult, ValidationVerdict
 
@@ -28,6 +29,17 @@ class ValidationConfig:
     human_review_trials: int = 30         # this many trials => human review even if stats pass
     marginal_review_trials: int = 20      # fewer trials but marginal DSR => human review
     marginal_deflated_sharpe: float = 0.70
+    min_capacity_ratio: float = 0.50      # 2026-07-10 (gap audit rank #5): soft-fail floor on
+                                          # capacity_notional/target_aum — an alpha that can't
+                                          # carry at least this fraction of its own target AUM
+                                          # before market-impact costs erode it warrants a WARN,
+                                          # mirroring min_oos_sharpe's existing soft-fail pattern
+                                          # (this is the "at minimum WARN" framing, not a hard
+                                          # FAIL — capacity realism is UNCALIBRATED_PRINCIPLED per
+                                          # services/research/realism/impact.py, not literature-
+                                          # derived, same honest-policy-default posture as
+                                          # min_deflated_sharpe/min_marginal_ir_vs_approved). A
+                                          # policy pre-filter, not a derived constant.
 
 
 class ValidationGate:
@@ -45,6 +57,7 @@ class ValidationGate:
         leakage_ok: bool,
         regime_profitable_frac: float,
         walk_forward_passed: bool,
+        capacity_ratio: Optional[float] = None,
     ) -> ValidationResult:
         c = self.config
 
@@ -78,6 +91,11 @@ class ValidationGate:
             serious.append(f"REGIME_UNSTABLE ({regime_profitable_frac:.2f}<{c.min_profitable_regime_frac})")
         if oos_sharpe < c.min_oos_sharpe:
             soft.append(f"OOS_SHARPE_BELOW_MIN ({oos_sharpe:.2f}<{c.min_oos_sharpe})")
+        if capacity_ratio is not None and capacity_ratio < c.min_capacity_ratio:
+            # 2026-07-10: soft-fail, not serious — capacity realism is diagnostic/UNCALIBRATED
+            # (see ValidationConfig.min_capacity_ratio docstring). None (not assessed, the
+            # default) is a complete no-op, matching every existing caller unchanged.
+            soft.append(f"CAPACITY_BELOW_TARGET_AUM ({capacity_ratio:.2f}<{c.min_capacity_ratio})")
         if not walk_forward_passed:
             # a real out-of-sample walk-forward failure is a hard red flag, not a
             # soft warning: the edge did not persist across held-out folds (review)

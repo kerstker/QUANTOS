@@ -308,3 +308,50 @@ def test_pairwise_correlation_check_is_a_noop_on_empty_approved_set():
     r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
         "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
     assert "TOO_CORRELATED_VS_APPROVED_SET" not in r.reasons
+
+
+# ---- capacity_ratio wiring + default impact_coef (2026-07-10, gap audit rank #5) --------------
+
+def test_capacity_ratio_is_none_without_real_adv_data():
+    """Every real production PanelPeriod-construction path today never populates adv_notional —
+    capacity_ratio must stay None (not assessed), never defaulted to a passing/failing value."""
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert not any("CAPACITY_BELOW_TARGET_AUM" in reason for reason in r.reasons)
+
+
+def test_thin_capacity_reaches_the_gate_as_a_warn():
+    """With real ADV data present and a target_aum the alpha genuinely cannot carry, the new
+    capacity_ratio wiring must reach ValidationGate and produce the CAPACITY WARN reason."""
+    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0), target_aum=1e12).evaluate(
+        "a1", _panel_with_adv(adv=1e5), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    assert any("CAPACITY_BELOW_TARGET_AUM" in reason for reason in r.reasons)
+    assert r.verdict in (ValidationVerdict.WARN, ValidationVerdict.FAIL)
+
+
+def test_default_impact_coef_is_inert_without_adv_notional():
+    """2026-07-10: AlphaEvaluator's default CostModel gained a nonzero impact_coef (10.0). This
+    MUST NOT change any result for periods without adv_notional — confirmed by comparing the
+    fully-default evaluator (impact_coef=10.0 implicitly) against one with impact EXPLICITLY
+    disabled (impact_coef=0.0), both fed the same adv_notional-less panel: byte-identical."""
+    cat_a, cat_b = _seeded_cat(0), _seeded_cat(0)
+    default_evaluator = AlphaEvaluator(cat_a)   # picks up the new impact_coef=10.0 default
+    explicit_no_impact = AlphaEvaluator(cat_b, cost=CostModel(fee_bps=1.0, slippage_bps=2.0, impact_coef=0.0))
+    r_default = default_evaluator.evaluate("a1", _panel())
+    r_explicit = explicit_no_impact.evaluate("a1", _panel())
+    assert r_default.net_sharpe == r_explicit.net_sharpe
+    assert r_default.deflated_sharpe == r_explicit.deflated_sharpe
+    assert r_default.reproducibility_hash == r_explicit.reproducibility_hash
+
+
+def test_default_impact_coef_activates_when_adv_notional_is_present():
+    """The flip side: once a caller DOES supply real adv_notional, the new nonzero default
+    impact_coef must actually bite (lower net_sharpe than impact explicitly disabled) — proving
+    it's genuinely wired through run_panel_backtest, not silently inert everywhere."""
+    cat_a, cat_b = _seeded_cat(0), _seeded_cat(0)
+    default_evaluator = AlphaEvaluator(cat_a)
+    explicit_no_impact = AlphaEvaluator(cat_b, cost=CostModel(fee_bps=1.0, slippage_bps=2.0, impact_coef=0.0))
+    panel = _panel_with_adv(adv=1e4)   # small ADV -> high participation -> impact cost bites
+    r_default = default_evaluator.evaluate("a1", panel)
+    r_explicit = explicit_no_impact.evaluate("a1", panel)
+    assert r_default.net_sharpe != r_explicit.net_sharpe

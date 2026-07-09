@@ -59,7 +59,20 @@ class AlphaEvaluator:
         self.catalog = catalog
         self.config = config or AlphaFactoryConfig()
         self.gate = gate or ValidationGate()
-        self.cost = cost or CostModel()
+        # 2026-07-10 (gap audit rank #5): default impact_coef=10.0 (the UNCALIBRATED_PRINCIPLED
+        # band's own class default, services/research/realism/impact.py::AlmgrenChrissImpact,
+        # also the midpoint of tools/capacity_research.py's swept (5.0, 20.0) coefficient band) —
+        # was 0.0 (impact disabled), which made services/alpha/capacity.py's impact-budget branch
+        # dead code for every real caller (capacity.py's own docstring promises consistency with
+        # CostModel.impact_bps, but with impact_coef=0 that branch never executed). Confirmed
+        # SAFE/currently-inert: run_panel_backtest only applies impact cost when BOTH
+        # cost.impact_coef>0 AND PanelPeriod.adv_notional is populated, and no real
+        # PanelPeriod-construction path (panel_to_periods/panel_builder/fundamental_factors/
+        # interaction_factors) populates adv_notional today — so this changes ZERO currently-
+        # recorded evaluation numbers; it only activates once/if a future caller wires real ADV
+        # data into a period stream (a separate task). fee_bps/slippage_bps keep their own
+        # CostModel field defaults (1.0/2.0), unchanged.
+        self.cost = cost or CostModel(impact_coef=10.0)
         self.quantile = quantile
         self.target_aum = target_aum
         # 2026-07-09: annualization base for sharpe(net) below. Default 252 (daily) is UNCHANGED
@@ -130,9 +143,14 @@ class AlphaEvaluator:
         max_corr_vs_approved = max_abs_corr_to_set(alpha_id, tuple(net), self.catalog.approved_set(),
                                                     min_overlap=self.config.min_overlap)
         adv_per_period = [sum(p.adv_notional) for p in periods if p.adv_notional]
+        capacity_ratio = None   # 2026-07-10: None (not assessed) unless real ADV data is present,
+                                # mirroring cap_adj_sharpe's own "capacity unknown -> no haircut"
+                                # honesty — never defaulted to a passing value.
         if adv_per_period:
             cap = capacity_notional(statistics.fmean(adv_per_period), self.cost)
             cap_adj_sharpe = capacity_adjusted_sharpe(net_sharpe, cap, self.target_aum)
+            if self.target_aum > 0:
+                capacity_ratio = cap / self.target_aum
         else:
             cap_adj_sharpe = net_sharpe   # capacity unknown -> no haircut
 
@@ -199,6 +217,7 @@ class AlphaEvaluator:
                 oos_sharpe=net_sharpe, deflated_sharpe=dsr, pbo=_clamp01(pbo),
                 trial_count=trial_count, leakage_ok=leakage_ok,
                 regime_profitable_frac=regime_profitable_frac, walk_forward_passed=wf_passed,
+                capacity_ratio=capacity_ratio,
             )
             verdict, reasons = vr.verdict, vr.reasons
 
