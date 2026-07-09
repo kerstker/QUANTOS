@@ -299,8 +299,16 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     final_equity = curve[-1]["equity"] if curve else aum
     residual = (reconcile(all_fills, marks=prices_by_period[periods[-1]], initial_capital=aum)
                 .reconciliation_residual()) if periods else 0.0
+    # sharpe_vt/max_drawdown_vt (审计发现 #10): same pure helpers applied to the VT curve's OWN `ret`
+    # series -- this is what makes the "RAW -> VT" figures quoted in docs reproducible from this function's
+    # output alone. vol_target=None -> honestly None (not 0, not omitted): callers must be able to tell
+    # "not computed" apart from "computed as zero".
+    vt_returns = [p["ret"] for p in vt_curve]
+    sharpe_vt = _ann_sharpe(vt_returns) if vol_target is not None else None
+    max_drawdown_vt = _max_drawdown_from_returns(vt_returns) if vol_target is not None else None
     pnl = {"total_return": round(final_equity / aum - 1.0, 6), "sharpe": _ann_sharpe(returns),
-           "max_drawdown": _max_drawdown_from_returns(returns), "final_equity": round(final_equity, 6),
+           "max_drawdown": _max_drawdown_from_returns(returns), "sharpe_vt": sharpe_vt,
+           "max_drawdown_vt": max_drawdown_vt, "final_equity": round(final_equity, 6),
            "total_funding": round(cum_cash, 6), "n_periods": len(periods), "total_rejected": tot_rej,
            "residual": round(residual, 9),
            "avg_net_exposure_pct": round(statistics.fmean([abs(p["net"]) / aum for p in curve]), 6)

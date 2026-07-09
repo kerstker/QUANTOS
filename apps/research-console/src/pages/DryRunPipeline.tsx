@@ -139,9 +139,12 @@ export default function DryRunPipeline() {
           <KpiStrip cols={6}>
             <StatTile label={bi('总收益', 'Total return')} value={pnl.total_return == null ? '—' : `${(pnl.total_return * 100).toFixed(1)}%`}
               tone={(pnl.total_return ?? 0) >= 0 ? 'pos' : 'neg'} accent />
-            <StatTile label={bi('夏普(周→年)', 'Sharpe (wk→yr)')} value={pnl.sharpe == null ? '—' : signed(pnl.sharpe, 2)} tone="info" />
+            <StatTile label={bi('夏普(周→年)', 'Sharpe (wk→yr)')} value={pnl.sharpe == null ? '—' : signed(pnl.sharpe, 2)} tone="info"
+              sub={pnl.sharpe_vt == null ? undefined : bi(`VT ${signed(pnl.sharpe_vt, 2)}`, `VT ${signed(pnl.sharpe_vt, 2)}`)} />
             <StatTile label={bi('最大回撤', 'Max drawdown')} value={pnl.max_drawdown == null ? '—' : `${(pnl.max_drawdown * 100).toFixed(0)}%`} tone="warn"
-              sub={bi('截面价差,非净敞口', 'cross-sectional, not net')} />
+              sub={pnl.max_drawdown_vt == null
+                ? bi('截面价差,非净敞口', 'cross-sectional, not net')
+                : bi(`VT ${(pnl.max_drawdown_vt * 100).toFixed(0)}% · 截面价差,非净敞口`, `VT ${(pnl.max_drawdown_vt * 100).toFixed(0)}% · cross-sectional, not net`)} />
             <StatTile label={bi('净敞口', 'Net exposure')} value={pnl.avg_net_exposure_pct == null ? '—' : `${(pnl.avg_net_exposure_pct * 100).toFixed(1)}%`}
               tone={(pnl.avg_net_exposure_pct ?? 1) < 0.05 ? 'pos' : 'warn'} sub={bi('≈0 = 美元中性', '≈0 = dollar-neutral')} />
             <StatTile label={bi('周期数', 'Periods')} value={String(mp.n_periods ?? mp.equity_curve?.length ?? 0)} tone="muted" sub={bi('周度', 'weekly')} />

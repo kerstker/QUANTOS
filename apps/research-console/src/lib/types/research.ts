@@ -1421,6 +1421,9 @@ export interface DryRunPnl {
   // multi-period summary (run_multi_period_dry_run)
   total_return?: number; sharpe?: number; max_drawdown?: number; final_equity?: number;
   total_funding?: number; n_periods?: number; total_rejected?: number; avg_net_exposure_pct?: number;
+  // vol-target curve summary stats (审计发现 #10): honestly null when vol_target wasn't requested —
+  // NOT 0 and NOT omitted, so callers can tell "not computed" apart from "computed as zero".
+  sharpe_vt?: number | null; max_drawdown_vt?: number | null;
 }
 
 export interface DryRunRunRow {

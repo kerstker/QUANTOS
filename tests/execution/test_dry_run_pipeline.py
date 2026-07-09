@@ -1,8 +1,8 @@
 from quantos.contracts.alpha import Actor, ActorKind
 
-from services.execution.dry_run_pipeline import (_vol_target_returns, plan_target_quantities, reconcile_run,
-                                                 run_dry_run_pipeline, run_multi_period_dry_run,
-                                                 screen_intents, simulate_fills)
+from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
+                                                 plan_target_quantities, reconcile_run, run_dry_run_pipeline,
+                                                 run_multi_period_dry_run, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
@@ -203,6 +203,64 @@ def test_vol_target_returns_passthrough_then_scales():
 def test_multi_period_vol_target_curve_present():
     r = _mp(vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
     assert len(r.detail["equity_curve_vt"]) == len(r.detail["equity_curve"]) == 3
+
+
+def test_multi_period_vol_target_sharpe_and_drawdown_computed():
+    """sharpe_vt/max_drawdown_vt are the same pure helpers applied to the vt-curve's OWN `ret` series
+    (not the raw returns) -- reproducibility of the "RAW -> VT" figures quoted in docs."""
+    vt = {"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52}
+    r = _mp(vol_target=vt)
+    vt_returns = [p["ret"] for p in r.detail["equity_curve_vt"]]
+    assert r.pnl["sharpe_vt"] == _ann_sharpe(vt_returns)
+    assert r.pnl["max_drawdown_vt"] == _max_drawdown_from_returns(vt_returns)
+    # sanity: vol-target actually reshaped the series here (lookback=1 << n periods=3), else this test
+    # wouldn't distinguish "computed from vt curve" from "computed from raw curve"
+    raw_returns = [p["ret"] for p in r.detail["equity_curve"]]
+    assert vt_returns != raw_returns
+
+
+def test_multi_period_vol_target_passthrough_matches_raw_exactly():
+    """lookback (10) >> n periods (3) -> _vol_target_returns is pure passthrough, so the vt curve is
+    IDENTICAL to the raw curve and sharpe_vt/max_drawdown_vt must equal the raw fields exactly."""
+    vt = {"target_ann": 0.10, "lookback": 10, "lev_cap": 3.0, "ppy": 52}
+    r = _mp(vol_target=vt)
+    assert r.pnl["sharpe_vt"] == r.pnl["sharpe"]
+    assert r.pnl["max_drawdown_vt"] == r.pnl["max_drawdown"]
+
+
+def test_multi_period_no_vol_target_sharpe_vt_is_none():
+    """vol_target=None must NOT silently omit the keys or coerce to 0 -- callers need to tell "not computed"
+    apart from "computed as zero"."""
+    r = _mp(vol_target=None)
+    assert r.detail["equity_curve_vt"] == []
+    assert "sharpe_vt" in r.pnl and "max_drawdown_vt" in r.pnl
+    assert r.pnl["sharpe_vt"] is None
+    assert r.pnl["max_drawdown_vt"] is None
+
+
+def test_multi_period_vol_target_single_period_matches_raw_edge_behavior():
+    """Single-period run: _ann_sharpe defines len(returns)<2 -> 0.0 for RAW (insufficient sample);
+    sharpe_vt must follow the identical edge behavior. lookback(1) >= n returns(1) means
+    _vol_target_returns is pure passthrough, so max_drawdown_vt must equal the raw max_drawdown
+    exactly (not invent a new edge semantic) -- _max_drawdown_from_returns has NO len<2 special case."""
+    r = run_multi_period_dry_run(
+        periods=[1], weights_by_period={1: {"BTC": 0.5}}, prices_by_period={1: {"BTC": 100.0}},
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
+    assert r.pnl["sharpe"] == 0.0
+    assert r.pnl["sharpe_vt"] == 0.0
+    assert r.pnl["max_drawdown_vt"] == r.pnl["max_drawdown"]
+
+
+def test_multi_period_vol_target_empty_periods_no_crash():
+    """periods=[] boundary: RAW already reduces to 0.0/0.0 (empty returns); vt must not crash and must
+    mirror the same edge behavior (equity_curve_vt also stays empty)."""
+    r = run_multi_period_dry_run(
+        periods=[], weights_by_period={}, prices_by_period={}, gate=_gate(), ctx_factory=_mp_ctx,
+        adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6, cost_bps=5.0,
+        vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
+    assert r.detail["equity_curve_vt"] == []
+    assert r.pnl["sharpe_vt"] == 0.0 and r.pnl["max_drawdown_vt"] == 0.0
 
 
 def test_multi_period_records_net_exposure():
