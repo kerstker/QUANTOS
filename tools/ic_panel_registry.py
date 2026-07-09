@@ -70,11 +70,20 @@ def _crypto_binance_wide_panel():
     return _build("crypto_binance.db", instruments)
 
 
+def _equity_daily_panel():
+    """2026-07-10(路线图 Rank #8):流动美股大盘宇宙(79 支,10 年日线,tools/yahoo_equity_fetch.py
+    已抓、PIT-vintage 未复权原始 OHLC)——第一个非加密/FX 资产类别接进 IC 面板。诚实边界:当前成分
+    宇宙(幸存者偏差,快照自己标注)、Yahoo close 只按拆股调整未按分红调整(非完整总收益价)。"""
+    instruments = sorted(_load_json("equity_universe_snapshot.json")["instruments"])
+    return _build("equity_daily.db", instruments, fields=("close", "volume"))
+
+
 UNIVERSE_REGISTRY = {
     "crypto_funding": _crypto_funding_panel,
     "crypto_oi_majors": _crypto_oi_majors_panel,
     "crypto_daily": _crypto_daily_panel,
     "crypto_binance_wide": _crypto_binance_wide_panel,
+    "equity_daily": _equity_daily_panel,
 }
 
 FACTOR_REGISTRY = [
@@ -117,4 +126,16 @@ FACTOR_REGISTRY = [
                "翻成正向候选正式检验)",
      "signal_fn": lambda panel: [[-v if v is not None else None for v in row]
                                  for row in signal_from_window_op(panel, "momentum", 7)]},
+    # --- 2026-07-10 新资产类别首批(路线图 Rank #8):79 支流动美股大盘,首次接进 IC 面板 ---
+    {"name": "equity_momentum_12_1", "holding_periods": [1, 7, 21], "universe": "equity_daily",
+     "thesis": "经典股票动量(Jegadeesh-Titman):12 个月收益、跳过最近 1 个月(避开短期反转污染)"
+               "= price[t-21]/price[t-252]-1,截面排序。日线约 252 个交易日/年、21 个交易日/月。",
+     "signal_fn": lambda panel: ax.evaluate(
+         ("cs_rank", ("sub", ("div", ("ts_delay", ("field", "close"), 21),
+                             ("ts_delay", ("field", "close"), 252)), ("const", 1.0))), panel)},
+    {"name": "equity_low_vol", "holding_periods": [1, 7, 21], "universe": "equity_daily",
+     "thesis": "经典低波异象(Ang et al):过去 60 日已实现波动率截面排序取负(低波动=正分),"
+               "风险调整后是否系统性跑赢——镜像 crypto low_vol_wide 同一构造,换资产类别对照。",
+     "signal_fn": lambda panel: [[-v if v is not None else None for v in row]
+                                 for row in signal_from_window_op(panel, "volatility", 60)]},
 ]
