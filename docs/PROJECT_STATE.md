@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-10 权威覆盖层:** 顶级系统目标、成熟度和缺口不再使用手工完成度百分比。
+> 当前机器真源为 `docs/QUANTOS_TOP_TIER_STANDARD.md`、
+> `config/top_tier_requirements.json`、`evidence/top_tier_assessment.json` 和
+> `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`。运行
+> `python scripts/assess_top_tier.py --check` 可检测证据漂移；`python scripts/validate.py`
+> 已先执行该检查。当前基线: `NOT_TOP_TIER`, 22 项要求中 13 项 PASS、1 项 PARTIAL、
+> 8 项需人工/外部证据、5 条红线未关闭。控制台 `/research/system-completeness`
+> 已直接渲染同一证据源，不再生成 `completion_score` 或虚构模块。
+>
+> `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md` 与旧机构补全计划保留为历史研究输入；
+> 新开发排序必须以能力矩阵中的 `classification`、`red_line`、目标成熟度和
+> `next_action` 为准，同时始终保持 `L2_DRY_RUN_ONLY`。
+
 > **用途**:换新上下文/新会话时,**只读这一个文件就能接着干**。每当上下文快满时刷新它。
 > 约定:本文中文叙述;代码标识符英文。最近更新锚点:见末尾"提交锚点"。
 
@@ -9,8 +22,8 @@
 QUANTOS = 安全关键的 **AI 量化研究平台**,就绪等级 **L2_DRY_RUN_ONLY**(只研究 + 干跑模拟,
 **无实盘、无券商、无真凭证**)。权威规格:`QUANTOS_MASTER_BLUEPRINT.md`;开发计划:
 `docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md`;因子方法论地图:`docs/factor-methodology-implementation-map.md`。
-**当前活路线(2026-07-03 起,机构级补全):`docs/2026-07-03-institutional-completion-plan.md`**
-(7 路专项复核 + Rank #8–28 详细开发计划,承接同日核实版审计 Rank #7–19;#7/#9 已落地)。
+**当前活路线(2026-07-10 起):** `docs/QUANTOS_TOP_TIER_STANDARD.md` +
+`docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`;旧计划仅作历史输入。
 
 **机器强制的不变量**(改动绝不能破):
 - `LIVE_TRADING_ENABLED=false / REAL_BROKER_ENABLED=false / ALLOW_ORDER_SUBMISSION=false /

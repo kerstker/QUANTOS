@@ -1,5 +1,14 @@
 # QUANTOS 对标顶级 AI 量化 · 差距 + 修补路线图
 
+> **状态:历史输入(2026-07-10 起非权威)。** 本文的手工分数、排名和完成描述保留用于
+> 追溯研究决策，不再作为当前成熟度或开发排序真源。权威标准见
+> `docs/QUANTOS_TOP_TIER_STANDARD.md`;机器可验证要求见
+> `config/top_tier_requirements.json`;当前结果见
+> `evidence/top_tier_assessment.json` 与
+> `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`。任何新工作先运行
+> `python scripts/assess_top_tier.py --check`,并按红线、证据缺口、目标成熟度和
+> `L2_SAFE_NOW / NEEDS_EXTERNAL / POST_L2` 分类排序。
+
 > **生成:** 2026-07-01,多代理并行对标(8 维;4 维由工作流深度对标 + web 检索,4 维由 2026-06-29 基线报告 + 本会话更新补齐)。
 > **对标对象:** 顶级 AI 量化(RenTech / Two Sigma / Citadel / HRT / Jane Street + 现代 ML 基金)。
 > **打分基准:** 作为「研究/干跑平台」(非「能赚钱的实盘基金」)——两套基准差数量级,下文区分。
