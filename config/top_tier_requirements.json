@@ -112,7 +112,7 @@
                                                   "paths":  [
                                                                 "services/research/validation",
                                                                 "services/alpha/evaluator.py",
-                                                                "tests/research/test_pbo.py"
+                                                                "tests/research/test_validation.py"
                                                             ],
                                                   "pass_maturity":  "M4"
                                               },
@@ -489,11 +489,12 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "paths_exist",
+                             "checker":  "text_contains_all",
                              "checker_args":  {
-                                                  "paths":  [
-                                                                "apps/research-console/src/pages/SystemCompleteness.tsx"
-                                                            ],
+                                                  "path":  "apps/research-console/src/pages/SystemCompleteness.tsx",
+                                                  "needles":  [
+                                                                  "TOP_TIER_EVIDENCE_ASSESSMENT"
+                                                              ],
                                                   "pass_maturity":  "M4"
                                               },
                              "next_action":  "Replace legacy hand-written completion scores"

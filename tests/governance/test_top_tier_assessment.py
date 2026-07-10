@@ -103,3 +103,14 @@ def test_assessment_is_deterministic(tmp_path):
     path = _write_registry(tmp_path, [_requirement(
         "PLATFORM.PROOF", checker="paths_exist", checker_args={"paths": ["proof.txt"]})])
     assert assess_repository(tmp_path, path) == assess_repository(tmp_path, path)
+
+
+def test_checker_pass_below_target_is_partial_and_red_line_remains_open(tmp_path):
+    (tmp_path / "proof.txt").write_text("proof", encoding="utf-8")
+    path = _write_registry(tmp_path, [_requirement(
+        "PLATFORM.PARTIAL", target_maturity="M4", red_line=True,
+        checker="paths_exist", checker_args={"paths": ["proof.txt"], "pass_maturity": "M2"})])
+    report = assess_repository(tmp_path, path)
+    assert report["requirements"][0]["status"] == "PARTIAL"
+    assert report["summary"]["red_lines_failed"] == 1
+    assert report["verdict"] == "NOT_TOP_TIER"

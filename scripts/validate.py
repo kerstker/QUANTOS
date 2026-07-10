@@ -27,6 +27,11 @@ SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
 # test suites resolve from a single rootdir and run in one pytest invocation.
 CHECKS = [
     (
+        "top-tier-assessment-artifacts",
+        [sys.executable, os.path.join(REPO, "scripts", "assess_top_tier.py"), "--check"],
+        REPO,
+    ),
+    (
         "governance-scanner",
         [sys.executable, SCANNER],
         REPO,

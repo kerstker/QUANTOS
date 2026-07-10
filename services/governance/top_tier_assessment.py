@@ -133,11 +133,15 @@ def assess_repository(repo_root: str | Path, requirements_path: str | Path) -> d
             result = checker(root, requirement.get("checker_args", {}), requirement["target_maturity"])
         if result["status"] not in STATUSES or result["current_maturity"] not in MATURITIES:
             raise RegistryError(f"checker returned invalid result for {requirement['id']}")
+        meets_target = result["status"] == "PASS" and (
+            _maturity_value(result["current_maturity"]) >= _maturity_value(requirement["target_maturity"]))
+        if result["status"] == "PASS" and not meets_target:
+            result = {**result, "status": "PARTIAL",
+                      "detail": result["detail"] + "; evidence does not meet target maturity"}
         assessed.append({
             **requirement,
             **result,
-            "meets_target": result["status"] == "PASS"
-            and _maturity_value(result["current_maturity"]) >= _maturity_value(requirement["target_maturity"]),
+            "meets_target": meets_target,
         })
 
     red_lines_failed = sum(1 for item in assessed if item["red_line"] and item["status"] != "PASS")
