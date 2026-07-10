@@ -734,19 +734,13 @@ def test_system_completeness_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
-    assert payload["audit_mode"] == "READ_ONLY_SYSTEM_COMPLETENESS_AUDIT"
-    assert payload["current_level"] == "L2_5_RESEARCH_CONTROL_PLANE"
-    assert payload["institutional_target"] == "TOP_TIER_AI_QUANT_TRADING_SYSTEM"
-    # frontend_routes / api_endpoints are now REAL repo introspection (not the curated len(modules)).
+    assert payload["data_provenance"] == "TOP_TIER_EVIDENCE_ASSESSMENT"
+    assert payload["assessment"]["verdict"] in {"NOT_TOP_TIER", "IN_PROGRESS", "TOP_TIER_RESEARCH"}
     inv = payload["inventory"]
     assert inv["domains"] and inv["total_services_modules"] > 0
-    assert payload["data_provenance"] == "REAL_REPO_INVENTORY"
-    assert payload["summary"]["frontend_routes"] == inv["n_console_pages"]
-    assert payload["summary"]["api_endpoints"] == inv["n_console_endpoints"]
-    assert payload["summary"]["backend_backed_modules"] == 25
-    assert payload["summary"]["live_trading_authorized"] is False
-    assert len(payload["modules"]) == 25
-    assert any(module["id"] == "system-completeness" for module in payload["modules"])
-    assert any(gap["severity"] == "CRITICAL" for gap in payload["gaps"])
-    assert any(check["status"] == "FAIL" for check in payload["checks"])
+    assert payload["summary"]["total"] == len(payload["requirements"])
+    assert len(payload["domains"]) == 11
+    assert any(item["status"] == "MANUAL_EVIDENCE_REQUIRED" for item in payload["requirements"])
+    assert payload["red_lines"]
+    assert all("completion_score" not in item for item in payload["requirements"])
     assert payload["safety_boundary"]["execution_boundary"] == "LIVE_TRADING_DISALLOWED"

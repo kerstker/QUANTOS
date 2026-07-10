@@ -12,12 +12,14 @@ import json
 import math
 import os
 import statistics
+from pathlib import Path
 from typing import Dict, List
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.execution.dry_run_store import DryRunStore
+from services.governance.top_tier_assessment import assess_repository
 from services.research.factor_engine.domain.model import compute_ic, compute_max_drawdown, compute_sharpe
 from services.research.factor_set import select_synergistic_set
 from services.research.paper_trading.domain.pnl import PnLAttributor
@@ -26,6 +28,8 @@ from services.risk.research_risk.domain.models import RiskConfig, RiskRun
 
 
 app = FastAPI(title="QUANTOS Research Console API", version="0.1.0")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_TOP_TIER_REQUIREMENTS = _REPO_ROOT / "config" / "top_tier_requirements.json"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3100", "http://localhost:3100"],
@@ -3377,6 +3381,27 @@ def _release_committee_payload() -> Dict:
 
 
 def _system_completeness_payload() -> Dict:
+    assessment = assess_repository(_REPO_ROOT, _TOP_TIER_REQUIREMENTS)
+    red_lines = [item for item in assessment["requirements"]
+                 if item["red_line"] and item["status"] != "PASS"]
+    return {
+        "assessment": {"schema_version": assessment["schema_version"],
+                       "verdict": assessment["verdict"]},
+        "domains": assessment["domains"],
+        "requirements": assessment["requirements"],
+        "red_lines": red_lines,
+        "summary": assessment["summary"],
+        "inventory": _repo_inventory(),
+        "safety_boundary": {
+            "read_only_console": True,
+            "execution_boundary": "LIVE_TRADING_DISALLOWED",
+            "authorized_level": "L2_DRY_RUN_ONLY",
+            "live_trading_authorized": False,
+        },
+    }
+
+    # Legacy hand-written scorecard retained temporarily below for history only.
+    # It is unreachable and will be removed after the frontend migration lands.
     modules = [
         {
             "id": "overview",
@@ -4936,12 +4961,11 @@ async def system_health() -> Dict:
 async def system_completeness() -> Dict:
     # 同上 architecture 端点:_system_completeness_payload 同样内部调 _repo_inventory
     payload = await asyncio.to_thread(_system_completeness_payload)
-    real_inv = bool(payload.get("inventory", {}).get("domains"))  # curated map + REAL repo introspection
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
         "api_version": "0.1.0",
-        "data_provenance": "REAL_REPO_INVENTORY" if real_inv else "SYNTHETIC_DETERMINISTIC",
+        "data_provenance": "TOP_TIER_EVIDENCE_ASSESSMENT",
         **payload,
     }
 

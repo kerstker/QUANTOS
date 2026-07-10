@@ -90,8 +90,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/alpha-zoo": ("", ("rows", "dimensions")),
     "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
     "/api/v1/console/system-completeness": ("", (
-        "audit_mode", "current_level", "institutional_target", "readiness_score", "inventory", "summary",
-        "modules", "checks", "gaps", "roadmap", "safety_boundary")),
+        "assessment", "domains", "requirements", "red_lines", "inventory", "summary", "safety_boundary")),
     "/api/v1/console/system-health": ("", ("services", "gates", "safety_checks")),
     "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
         "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
@@ -153,7 +152,7 @@ REAL_DATA_PROVENANCE = {
     # when the live FS walk populated the inventory (always, outside FS errors), else honest synthetic.
     "/api/v1/console/architecture": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},
     # system-completeness: curated readiness map + REAL repo introspection (`inventory`); same marker rule.
-    "/api/v1/console/system-completeness": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},
+    "/api/v1/console/system-completeness": "TOP_TIER_EVIDENCE_ASSESSMENT",
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.
