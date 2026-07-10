@@ -5,7 +5,7 @@
 
 **System verdict:** `NOT_TOP_TIER`
 
-**Requirements:** 22 total; 12 pass; 1 failed; 8 manual/external; 6 red lines open
+**Requirements:** 22 total; 13 pass; 0 failed; 8 manual/external; 5 red lines open
 
 ## Domain Summary
 
@@ -15,7 +15,7 @@
 | `alpha_research` | M3 | 2 | 2 | 0 |
 | `data_moat` | M1 | 1 | 2 | 0 |
 | `execution_microstructure` | M1 | 1 | 2 | 0 |
-| `frontend_console` | M1 | 1 | 2 | 1 |
+| `frontend_console` | M3 | 2 | 2 | 0 |
 | `governance_security` | M1 | 1 | 2 | 1 |
 | `platform_engineering` | M1 | 0 | 2 | 2 |
 | `portfolio_construction` | M3 | 2 | 2 | 0 |
@@ -35,7 +35,7 @@
 | `DATA.VENDOR.DEPTH` | `data_moat` | B | NEEDS_EXTERNAL | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | NO | - | requires external or human-verified evidence Next: Acquire licensed source and record SLA evidence |
 | `EXECUTION.DRYRUN.RECONCILIATION` | `execution_microstructure` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `services/execution/dry_run_pipeline.py`<br>`tests/integration/test_dry_run_all.py` | all declared evidence paths exist Next: Sustain long-running forward evidence |
 | `EXECUTION.MULTIVENUE.SOR` | `execution_microstructure` | B | POST_L2 | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | NO | - | requires external or human-verified evidence Next: Keep simulated until post-L2 approval |
-| `FRONTEND.EVIDENCE.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M1 / M4 | FAILED | YES | `apps/research-console/src/pages/SystemCompleteness.tsx` | missing required markers: TOP_TIER_EVIDENCE_ASSESSMENT Next: Replace legacy hand-written completion scores |
+| `FRONTEND.EVIDENCE.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `apps/research-console/src/pages/SystemCompleteness.tsx` | all required markers are present Next: Replace legacy hand-written completion scores |
 | `FRONTEND.ROUTES.SINGLE_SOURCE` | `frontend_console` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `apps/research-console/src/app/routes.tsx`<br>`apps/research-console/src/pages/__tests__/pages.smoke.test.tsx` | all declared evidence paths exist Next: Add E2E accessibility and visual regression |
 | `GOV.APPROVAL.HASHCHAIN` | `governance_security` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `services/governance/approval.py`<br>`services/governance/approval_store.py` | all declared evidence paths exist Next: Bind approval to strong external identity |
 | `GOV.IDENTITY.STRONG_AUTH` | `governance_security` | B | L2_SAFE_NOW | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | YES | - | requires external or human-verified evidence Next: Implement strong identity outside shared-token trust |

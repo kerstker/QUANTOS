@@ -1125,73 +1125,68 @@ export interface IntegrationGateStatus {
   s: string;
 }
 
-export interface SystemCompletenessModule {
-  id: string;
-  name: string;
-  name_zh: string;
-  route: string;
-  endpoint: string;
-  layer: string;
-  status: string;
-  backend_contract: string;
-  frontend_status: string;
-  completion_score: number;
-  gap: string;
-}
+export type TopTierRequirementStatus =
+  | "PASS"
+  | "PARTIAL"
+  | "FAILED"
+  | "UNVERIFIED"
+  | "MANUAL_EVIDENCE_REQUIRED";
 
-export interface SystemCompletenessGap {
+export interface TopTierRequirement {
   id: string;
-  area: string;
-  severity: string;
-  status: string;
-  impact: string;
+  domain: string;
+  tier: "A" | "B";
+  target_maturity: string;
+  current_maturity: string;
+  classification: "L2_SAFE_NOW" | "NEEDS_EXTERNAL" | "POST_L2";
+  description: string;
+  required_evidence: string[];
+  red_line: boolean;
+  checker: string;
   next_action: string;
+  status: TopTierRequirementStatus;
+  meets_target: boolean;
+  evidence: string[];
+  detail: string;
 }
 
-export interface SystemCompletenessCheck {
-  id: string;
-  name: string;
-  status: string;
-  evidence: string;
+export interface TopTierDomainAssessment {
+  domain: string;
+  current_maturity: string;
+  requirements: number;
+  passed: number;
+  red_lines_failed: number;
 }
 
 export interface SystemCompletenessPayload extends ConsolePayloadBase {
-  data_provenance?: "REAL_REPO_INVENTORY" | string;
-  audit_mode: string;
-  current_level: string;
-  institutional_target: string;
-  readiness_score: number;
-  inventory?: {
+  data_provenance?: "TOP_TIER_EVIDENCE_ASSESSMENT" | string;
+  assessment: {
+    schema_version: number;
+    verdict: string;
+  };
+  inventory: {
     domains: { domain: string; n_modules: number; loc: number }[];
     total_services_modules: number; total_services_loc: number;
     n_test_files: number; n_test_functions: number;
     n_console_pages: number; n_console_endpoints: number;
   };
   summary: {
-    frontend_routes: number;
-    api_endpoints: number;
-    backend_backed_modules: number;
-    backend_modules?: number;
-    test_functions?: number;
-    fully_operational_modules: number;
-    read_only_modules: number;
-    open_high_gaps: number;
-    live_trading_authorized: boolean;
+    total: number;
+    passed: number;
+    partial: number;
+    failed: number;
+    unverified: number;
+    manual_evidence_required: number;
+    red_lines_failed: number;
   };
-  modules: SystemCompletenessModule[];
-  checks: SystemCompletenessCheck[];
-  gaps: SystemCompletenessGap[];
-  roadmap: Array<{
-    phase: string;
-    objective: string;
-    exit_criteria: string;
-    status: string;
-  }>;
+  domains: TopTierDomainAssessment[];
+  requirements: TopTierRequirement[];
+  red_lines: TopTierRequirement[];
   safety_boundary: {
     read_only_console: boolean;
     execution_boundary: string;
     authorized_level: string;
-    blocked_until: string[];
+    live_trading_authorized: boolean;
   };
 }
 
