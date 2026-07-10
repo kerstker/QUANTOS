@@ -233,6 +233,9 @@ class LiveLedger:
         return [dict(r) for r in
                 self._conn.execute("SELECT * FROM live_tca ORDER BY recorded_at")]
 
+    def close(self) -> None:
+        self._conn.close()
+
     def orders(self, strategy_id: Optional[str] = None) -> List[dict]:
         if strategy_id is None:
             return [dict(r) for r in

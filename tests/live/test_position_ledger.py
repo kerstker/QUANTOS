@@ -20,6 +20,14 @@ def test_missing_db_fails_closed(tmp_path):
         LiveLedger(str(tmp_path / "nonexistent.db"), create=False)
 
 
+def test_close_releases_live_ledger_connection(tmp_path):
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.close()
+    ledger.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        ledger.orders()
+
+
 def test_record_submission_is_idempotent(ledger):
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra", submitted_at=1000)
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra", submitted_at=1000)   # 重复提交
