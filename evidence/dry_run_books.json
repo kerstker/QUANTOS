@@ -21,13 +21,18 @@
       "sharpe": 1.0896,
       "total_return": 1.23759
     },
+    "crowd_contra_signal_adapter": {
+      "max_drawdown": 0.102,
+      "sharpe": 1.368,
+      "total_return": 0.973328
+    },
     "trend": {
       "max_drawdown": 0.3709,
       "sharpe": 0.4046,
       "total_return": 0.074929
     }
   },
-  "code_version": "f10a35b0f94b",
+  "code_version": "20bb757944dc",
   "description": "Deployable dry-run book conclusions; reconciliation residual must stay ~0.",
   "kind": "dry_run_db",
   "residual_max": 1e-06,
