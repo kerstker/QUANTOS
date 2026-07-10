@@ -1,0 +1,502 @@
+{
+    "schema_version":  1,
+    "requirements":  [
+                         {
+                             "id":  "DATA.PIT.CONTRACT",
+                             "domain":  "data_moat",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "PIT and bitemporal contracts are implemented",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "quantos/contracts/data.py",
+                                                                "tests/contracts/test_data_feature.py"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Add cross-source quality and historical membership evidence"
+                         },
+                         {
+                             "id":  "DATA.VENDOR.DEPTH",
+                             "domain":  "data_moat",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "NEEDS_EXTERNAL",
+                             "description":  "Licensed tick and order-book data with SLA",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Acquire licensed source and record SLA evidence"
+                         },
+                         {
+                             "id":  "ALPHA.TRIAL.GLOBAL_LEDGER",
+                             "domain":  "alpha_research",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Global trial ledger survives sessions",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/alpha/catalog.py",
+                                                                "services/research/experiment_registry"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Prove all search paths write equivalent trials"
+                         },
+                         {
+                             "id":  "ALPHA.MULTI_ASSET.RESEARCH",
+                             "domain":  "alpha_research",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Multi-asset factor research has real artifacts",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "tools/ic_panel_registry.py",
+                                                                "data/cache/equity_universe_snapshot.json"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Add stronger non-crypto PIT universes"
+                         },
+                         {
+                             "id":  "VALIDATION.ANTIOVERFIT.GATE",
+                             "domain":  "validation_model_risk",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "DSR PBO CPCV FDR and leakage are load-bearing",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/research/validation",
+                                                                "services/alpha/evaluator.py",
+                                                                "tests/research/test_pbo.py"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Maintain threshold sensitivity evidence"
+                         },
+                         {
+                             "id":  "VALIDATION.CHALLENGER.MODEL_RISK",
+                             "domain":  "validation_model_risk",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Independent challenger and model cards exist",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Implement model registry and challenger review"
+                         },
+                         {
+                             "id":  "PORTFOLIO.CONSTRAINED.OPTIMIZATION",
+                             "domain":  "portfolio_construction",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Feasibility-checked optimizer and risk model",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/portfolio/optimizer.py",
+                                                                "services/portfolio/factor_risk.py"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Add portfolio-level tail budget"
+                         },
+                         {
+                             "id":  "PORTFOLIO.COST.CAPACITY.LOAD_BEARING",
+                             "domain":  "portfolio_construction",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Cost capacity crowding constrain decisions",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/research/realism",
+                                                                "services/alpha/capacity.py"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Unify all limits in portfolio construction"
+                         },
+                         {
+                             "id":  "RISK.FAIL_CLOSED.GATES",
+                             "domain":  "risk_management",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Research and pre-trade gates fail closed",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/risk/research_risk",
+                                                                "services/risk/pre_trade"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Add unified persisted intraday risk state"
+                         },
+                         {
+                             "id":  "RISK.RECOVERY.DRILL",
+                             "domain":  "risk_management",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Risk state restart and disaster drills are proven",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Automate restart and recovery drills"
+                         },
+                         {
+                             "id":  "EXECUTION.DRYRUN.RECONCILIATION",
+                             "domain":  "execution_microstructure",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Dry-run pipeline reconciles PnL and audit chain",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/execution/dry_run_pipeline.py",
+                                                                "tests/integration/test_dry_run_all.py"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Sustain long-running forward evidence"
+                         },
+                         {
+                             "id":  "EXECUTION.MULTIVENUE.SOR",
+                             "domain":  "execution_microstructure",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "POST_L2",
+                             "description":  "Multi-venue SOR and production microstructure",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Keep simulated until post-L2 approval"
+                         },
+                         {
+                             "id":  "AI.AGENT.NONHUMAN.BOUNDARY",
+                             "domain":  "ai_agents",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "AI agents cannot approve or trade directly",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/intelligence/guardrails.py",
+                                                                "tests/intelligence"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Add model and prompt registry"
+                         },
+                         {
+                             "id":  "AI.MODEL.REGISTRY.REDTEAM",
+                             "domain":  "ai_agents",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Model prompt tools evaluation and red-team lineage",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Build governed model registry and offline eval"
+                         },
+                         {
+                             "id":  "GOV.APPROVAL.HASHCHAIN",
+                             "domain":  "governance_security",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Multi-party approval and audit hash chain exist",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "services/governance/approval.py",
+                                                                "services/governance/approval_store.py"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Bind approval to strong external identity"
+                         },
+                         {
+                             "id":  "GOV.IDENTITY.STRONG_AUTH",
+                             "domain":  "governance_security",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "OIDC mTLS RBAC and separation of duties are enforced",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Implement strong identity outside shared-token trust"
+                         },
+                         {
+                             "id":  "PLATFORM.CI.UNIFIED_GATE",
+                             "domain":  "platform_engineering",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "One gate covers backend frontend governance and evidence",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "text_contains_all",
+                             "checker_args":  {
+                                                  "path":  "scripts/validate.py",
+                                                  "needles":  [
+                                                                  "tests/governance",
+                                                                  "tests/live"
+                                                              ],
+                                                  "pass_maturity":  "M2"
+                                              },
+                             "next_action":  "Add frontend and static supply-chain checks to canonical gate"
+                         },
+                         {
+                             "id":  "PLATFORM.SUPPLY_CHAIN",
+                             "domain":  "platform_engineering",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "SBOM SAST dependency scan and signed artifacts",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Implement reproducible signed supply-chain evidence"
+                         },
+                         {
+                             "id":  "OPS.BACKUP.ENCRYPTED",
+                             "domain":  "reliability_operations",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Encrypted backups and freshness watchdog exist",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "tools/live_backup.py",
+                                                                "tools/watchdog.py"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Add restore CLI and restore verification"
+                         },
+                         {
+                             "id":  "OPS.RESTORE.DRILL",
+                             "domain":  "reliability_operations",
+                             "tier":  "B",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "RPO RTO and restore drill evidence are current",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "manual_evidence",
+                             "checker_args":  {
+
+                                              },
+                             "next_action":  "Run automated restore drills and retain evidence"
+                         },
+                         {
+                             "id":  "FRONTEND.ROUTES.SINGLE_SOURCE",
+                             "domain":  "frontend_console",
+                             "tier":  "A",
+                             "target_maturity":  "M3",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Routes navigation and smoke tests share registry",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  false,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "apps/research-console/src/app/routes.tsx",
+                                                                "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+                                                            ],
+                                                  "pass_maturity":  "M3"
+                                              },
+                             "next_action":  "Add E2E accessibility and visual regression"
+                         },
+                         {
+                             "id":  "FRONTEND.EVIDENCE.SINGLE_SOURCE",
+                             "domain":  "frontend_console",
+                             "tier":  "A",
+                             "target_maturity":  "M4",
+                             "classification":  "L2_SAFE_NOW",
+                             "description":  "Completeness UI consumes assessor without hand scores",
+                             "required_evidence":  [
+                                                       "implementation",
+                                                       "verification",
+                                                       "governance",
+                                                       "reproducibility"
+                                                   ],
+                             "red_line":  true,
+                             "checker":  "paths_exist",
+                             "checker_args":  {
+                                                  "paths":  [
+                                                                "apps/research-console/src/pages/SystemCompleteness.tsx"
+                                                            ],
+                                                  "pass_maturity":  "M4"
+                                              },
+                             "next_action":  "Replace legacy hand-written completion scores"
+                         }
+                     ]
+}
