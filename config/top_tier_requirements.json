@@ -381,11 +381,14 @@
                                                   "path":  "scripts/validate.py",
                                                   "needles":  [
                                                                   "tests/governance",
-                                                                  "tests/live"
+                                                                  "tests/live",
+                                                                  "frontend: typecheck",
+                                                                  "frontend: tests",
+                                                                  "frontend: production build"
                                                               ],
-                                                  "pass_maturity":  "M2"
+                                                  "pass_maturity":  "M4"
                                               },
-                             "next_action":  "Add frontend and static supply-chain checks to canonical gate"
+                             "next_action":  "Keep backend frontend governance and evidence checks synchronized"
                          },
                          {
                              "id":  "PLATFORM.SUPPLY_CHAIN",

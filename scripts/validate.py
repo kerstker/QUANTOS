@@ -15,12 +15,14 @@ directly (not via the shell), so it is unaffected by any shell command hooks.
 Exit code is non-zero if ANY check fails (fail-closed).
 """
 import os
+import shutil
 import subprocess
 import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
+NPM = shutil.which("npm") or "npm"
 
 # (name, argv, cwd)
 # Since Phase 1 unified the two service trees under the repo root, all Python
@@ -77,6 +79,21 @@ CHECKS = [
             "tests/tools",
         ],
         REPO,
+    ),
+    (
+        "frontend: typecheck",
+        [NPM, "run", "typecheck"],
+        APPS,
+    ),
+    (
+        "frontend: tests",
+        [NPM, "test"],
+        APPS,
+    ),
+    (
+        "frontend: production build",
+        [NPM, "run", "build"],
+        APPS,
     ),
 ]
 

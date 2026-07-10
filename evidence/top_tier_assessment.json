@@ -45,8 +45,8 @@
     {
       "current_maturity": "M1",
       "domain": "platform_engineering",
-      "passed": 0,
-      "red_lines_failed": 2,
+      "passed": 1,
+      "red_lines_failed": 1,
       "requirements": 2
     },
     {
@@ -492,22 +492,25 @@
       "checker_args": {
         "needles": [
           "tests/governance",
-          "tests/live"
+          "tests/live",
+          "frontend: typecheck",
+          "frontend: tests",
+          "frontend: production build"
         ],
-        "pass_maturity": "M2",
+        "pass_maturity": "M4",
         "path": "scripts/validate.py"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M2",
+      "current_maturity": "M4",
       "description": "One gate covers backend frontend governance and evidence",
-      "detail": "all required markers are present; evidence does not meet target maturity",
+      "detail": "all required markers are present",
       "domain": "platform_engineering",
       "evidence": [
         "scripts/validate.py"
       ],
       "id": "PLATFORM.CI.UNIFIED_GATE",
-      "meets_target": false,
-      "next_action": "Add frontend and static supply-chain checks to canonical gate",
+      "meets_target": true,
+      "next_action": "Keep backend frontend governance and evidence checks synchronized",
       "red_line": true,
       "required_evidence": [
         "implementation",
@@ -515,7 +518,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -723,9 +726,9 @@
   "summary": {
     "failed": 0,
     "manual_evidence_required": 7,
-    "partial": 1,
-    "passed": 14,
-    "red_lines_failed": 4,
+    "partial": 0,
+    "passed": 15,
+    "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
   },
