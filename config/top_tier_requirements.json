@@ -445,11 +445,13 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "manual_evidence",
+                             "checker":  "restore_drill_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/restore_drill_latest.json",
+                                                  "max_rpo_ms":  86400000,
+                                                  "pass_maturity":  "M4"
                                               },
-                             "next_action":  "Run automated restore drills and retain evidence"
+                             "next_action":  "Schedule recurring encrypted restore drills and monitor freshness"
                          },
                          {
                              "id":  "FRONTEND.ROUTES.SINGLE_SOURCE",

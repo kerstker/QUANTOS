@@ -60,6 +60,41 @@ def _manual_evidence(_repo_root: Path, _args: dict[str, Any], _target: str) -> d
     return _result("MANUAL_EVIDENCE_REQUIRED", "M1", [], "requires external or human-verified evidence")
 
 
+def _restore_drill_evidence(repo_root: Path, args: dict[str, Any], target: str) -> dict[str, Any]:
+    path = args.get("path")
+    if not isinstance(path, str):
+        return _result("UNVERIFIED", "M0", [], "checker requires an evidence path")
+    evidence_path = repo_root / path
+    if not evidence_path.is_file():
+        return _result("FAILED", "M2", [path], f"missing: {path}")
+    try:
+        document = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return _result("FAILED", "M2", [path], f"invalid restore evidence: {exc}")
+    required = {
+        "schema_version": 1,
+        "verdict": "PASS",
+        "mode": "ENCRYPTED",
+        "integrity_verified": True,
+        "rto_met": True,
+        "rpo_met": True,
+    }
+    failures = [key for key, expected in required.items() if document.get(key) != expected]
+    numeric = ("file_count", "elapsed_ms", "rto_ms", "source_age_ms", "max_rpo_ms")
+    if any(not isinstance(document.get(key), int) for key in numeric):
+        failures.append("numeric_fields")
+    elif (document["file_count"] <= 0 or document["elapsed_ms"] > document["rto_ms"]
+          or document["source_age_ms"] > document["max_rpo_ms"]):
+        failures.append("thresholds")
+    configured_rpo = args.get("max_rpo_ms")
+    if isinstance(configured_rpo, int) and document.get("max_rpo_ms", configured_rpo + 1) > configured_rpo:
+        failures.append("configured_rpo")
+    if failures:
+        return _result("FAILED", "M3", [path], "restore evidence failed: " + ", ".join(failures))
+    maturity = args.get("pass_maturity", target)
+    return _result("PASS", maturity, [path], "encrypted restore integrity, RPO, and RTO evidence verified")
+
+
 def _result(status: str, maturity: str, evidence: list[str], detail: str) -> dict[str, Any]:
     return {"status": status, "current_maturity": maturity, "evidence": evidence, "detail": detail}
 
@@ -68,6 +103,7 @@ CHECKERS: dict[str, Callable[[Path, dict[str, Any], str], dict[str, Any]]] = {
     "paths_exist": _paths_exist,
     "text_contains_all": _text_contains_all,
     "manual_evidence": _manual_evidence,
+    "restore_drill_evidence": _restore_drill_evidence,
 }
 
 

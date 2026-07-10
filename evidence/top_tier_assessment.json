@@ -57,10 +57,10 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "reliability_operations",
-      "passed": 1,
-      "red_lines_failed": 1,
+      "passed": 2,
+      "red_lines_failed": 0,
       "requirements": 2
     },
     {
@@ -459,17 +459,23 @@
       "tier": "A"
     },
     {
-      "checker": "manual_evidence",
-      "checker_args": {},
+      "checker": "restore_drill_evidence",
+      "checker_args": {
+        "max_rpo_ms": 86400000,
+        "pass_maturity": "M4",
+        "path": "evidence/restore_drill_latest.json"
+      },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M4",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "requires external or human-verified evidence",
+      "detail": "encrypted restore integrity, RPO, and RTO evidence verified",
       "domain": "reliability_operations",
-      "evidence": [],
+      "evidence": [
+        "evidence/restore_drill_latest.json"
+      ],
       "id": "OPS.RESTORE.DRILL",
-      "meets_target": false,
-      "next_action": "Run automated restore drills and retain evidence",
+      "meets_target": true,
+      "next_action": "Schedule recurring encrypted restore drills and monitor freshness",
       "red_line": true,
       "required_evidence": [
         "implementation",
@@ -477,7 +483,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "MANUAL_EVIDENCE_REQUIRED",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -716,10 +722,10 @@
   "schema_version": 1,
   "summary": {
     "failed": 0,
-    "manual_evidence_required": 8,
+    "manual_evidence_required": 7,
     "partial": 1,
-    "passed": 13,
-    "red_lines_failed": 5,
+    "passed": 14,
+    "red_lines_failed": 4,
     "total": 22,
     "unverified": 0
   },

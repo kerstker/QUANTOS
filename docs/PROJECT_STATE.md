@@ -6,8 +6,12 @@
 > `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`。运行
 > `python scripts/assess_top_tier.py --check` 可检测证据漂移；`python scripts/validate.py`
 > 已先执行该检查。当前基线: `NOT_TOP_TIER`, 22 项要求中 13 项 PASS、1 项 PARTIAL、
-> 8 项需人工/外部证据、5 条红线未关闭。控制台 `/research/system-completeness`
+> 8 项需人工/外部证据、4 条红线未关闭。控制台 `/research/system-completeness`
 > 已直接渲染同一证据源，不再生成 `completion_score` 或虚构模块。
+> `OPS.RESTORE.DRILL` 已于 2026-07-10 用一次性进程内密钥完成真实加密备份与隔离恢复演练:
+> 24 个文件逐字节 SHA-256 校验，RTO 773ms / 300000ms，RPO 2ms / 86400000ms；
+> 证据在 `evidence/restore_drill_latest.json`，恢复目标从不覆盖活动状态。当前基线升至
+> `NOT_TOP_TIER`, 14/22 PASS。
 >
 > `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md` 与旧机构补全计划保留为历史研究输入；
 > 新开发排序必须以能力矩阵中的 `classification`、`red_line`、目标成熟度和

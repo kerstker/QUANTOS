@@ -5,7 +5,7 @@
 
 **System verdict:** `NOT_TOP_TIER`
 
-**Requirements:** 22 total; 13 pass; 0 failed; 8 manual/external; 5 red lines open
+**Requirements:** 22 total; 14 pass; 0 failed; 7 manual/external; 4 red lines open
 
 ## Domain Summary
 
@@ -19,7 +19,7 @@
 | `governance_security` | M1 | 1 | 2 | 1 |
 | `platform_engineering` | M1 | 0 | 2 | 2 |
 | `portfolio_construction` | M3 | 2 | 2 | 0 |
-| `reliability_operations` | M1 | 1 | 2 | 1 |
+| `reliability_operations` | M3 | 2 | 2 | 0 |
 | `risk_management` | M1 | 1 | 2 | 1 |
 | `validation_model_risk` | M1 | 1 | 2 | 0 |
 
@@ -40,7 +40,7 @@
 | `GOV.APPROVAL.HASHCHAIN` | `governance_security` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `services/governance/approval.py`<br>`services/governance/approval_store.py` | all declared evidence paths exist Next: Bind approval to strong external identity |
 | `GOV.IDENTITY.STRONG_AUTH` | `governance_security` | B | L2_SAFE_NOW | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | YES | - | requires external or human-verified evidence Next: Implement strong identity outside shared-token trust |
 | `OPS.BACKUP.ENCRYPTED` | `reliability_operations` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `tools/live_backup.py`<br>`tools/watchdog.py` | all declared evidence paths exist Next: Add restore CLI and restore verification |
-| `OPS.RESTORE.DRILL` | `reliability_operations` | B | L2_SAFE_NOW | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | YES | - | requires external or human-verified evidence Next: Run automated restore drills and retain evidence |
+| `OPS.RESTORE.DRILL` | `reliability_operations` | B | L2_SAFE_NOW | M4 / M4 | PASS | YES | `evidence/restore_drill_latest.json` | encrypted restore integrity, RPO, and RTO evidence verified Next: Schedule recurring encrypted restore drills and monitor freshness |
 | `PLATFORM.CI.UNIFIED_GATE` | `platform_engineering` | A | L2_SAFE_NOW | M2 / M4 | PARTIAL | YES | `scripts/validate.py` | all required markers are present; evidence does not meet target maturity Next: Add frontend and static supply-chain checks to canonical gate |
 | `PLATFORM.SUPPLY_CHAIN` | `platform_engineering` | B | L2_SAFE_NOW | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | YES | - | requires external or human-verified evidence Next: Implement reproducible signed supply-chain evidence |
 | `PORTFOLIO.CONSTRAINED.OPTIMIZATION` | `portfolio_construction` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `services/portfolio/optimizer.py`<br>`services/portfolio/factor_risk.py` | all declared evidence paths exist Next: Add portfolio-level tail budget |

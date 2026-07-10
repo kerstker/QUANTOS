@@ -114,3 +114,28 @@ def test_checker_pass_below_target_is_partial_and_red_line_remains_open(tmp_path
     assert report["requirements"][0]["status"] == "PARTIAL"
     assert report["summary"]["red_lines_failed"] == 1
     assert report["verdict"] == "NOT_TOP_TIER"
+
+
+def test_restore_drill_checker_requires_encrypted_integrity_rpo_and_rto_evidence(tmp_path):
+    evidence = tmp_path / "restore.json"
+    registry = _write_registry(tmp_path, [_requirement(
+        "OPS.RESTORE.DRILL", domain="reliability_operations", tier="B",
+        target_maturity="M4", red_line=True, checker="restore_drill_evidence",
+        checker_args={"path": "restore.json", "max_rpo_ms": 86_400_000, "pass_maturity": "M4"},
+    )])
+
+    evidence.write_text(json.dumps({
+        "schema_version": 1, "verdict": "PASS", "mode": "PLAINTEXT",
+        "integrity_verified": True, "rto_met": True, "rpo_met": True,
+        "file_count": 1, "elapsed_ms": 10, "rto_ms": 100,
+        "source_age_ms": 10, "max_rpo_ms": 86_400_000,
+    }), encoding="utf-8")
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "FAILED"
+
+    payload = json.loads(evidence.read_text(encoding="utf-8"))
+    payload["mode"] = "ENCRYPTED"
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "PASS"
+    assert report["requirements"][0]["current_maturity"] == "M4"
