@@ -8,5 +8,5 @@ uvicorn==0.40.0
 pydantic==2.13.4
 
 # research ML layer (deterministic stacking; non-network, no-RNG-leak — pinned to installed versions)
-numpy==2.4.4
+numpy==2.4.6
 scikit-learn==1.8.0

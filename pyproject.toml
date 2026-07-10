@@ -34,7 +34,7 @@ pre_trade_risk = [
 # research ML layer (services/research/ml): deterministic stacking over existing factor signals.
 # Non-network, used deterministically (fixed random_state, single-thread). Not needed by console_api.
 research-ml = [
-    "numpy==2.4.4",
+    "numpy==2.4.6",
     "scikit-learn==1.8.0",
 ]
 dev = [
