@@ -27,7 +27,7 @@
 
 | # | 维度 | 当前状态 | 分 | 主要证据(file:line) | 核心缺口 | 最高风险 | 优先级 |
 |---|---|---|:-:|---|---|:-:|:-:|
-| 1 | 总体架构 | 真契约领域模型 + fail-closed 环境隔离 + live/ 单向边界;但无事件总线、无服务注册表、包级循环依赖、god-module | **3** | `quantos/contracts/config.py:17`、`deployment/gate.py:43`、`console_api/main.py:5288`(5288 行) | 无运行时事件总线/服务发现;research↔alpha 循环依赖;99 空 DDD 目录 | P2/LATENT | P2 |
+| 1 | 总体架构 | 真契约领域模型 + fail-closed 环境隔离 + live/ 单向边界;但无事件总线、无服务注册表、包级循环依赖 | **3** | `quantos/contracts/config.py:17`、`deployment/gate.py:43`、`.importlinter` | 无运行时事件总线/服务发现;research↔alpha 循环依赖(16处,import-linter已记录);console_api已按router拆分 | P2/LATENT | P2 |
 | 2 | 数据层 | PIT/宇宙/复权/日历/泄漏检测 + strict/atomic/cadence + content-addressed raw archive;perp mark 定价;前向 quality/lineage 双门 fail-closed;完整准入 evidence 与 redacted event 同事务;显式 volume unit/semantics | **4** | `services/data/{adapters,quality,file_ingest,persistent_store,panel_quality,raw_archive,refresh_history,admission_store}.py`、`tools/{live_data_refresh,data_quality_admission,raw_data_lineage_backfill,data_refresh_slo_evidence}.py` | mark/OI 最近窗口 lineage PASS；funding quality/lineage/SLO BLOCK；仅 2/30 轮历史；历史 backfill、外部 WORM/异地副本、流式接入及 FX/宏观/股票等价准入契约仍缺 | P1/LATENT | P1 |
 | 3 | Alpha Factory | 真 DSL + 确定性生成器 + fail-closed 证据门 + 10 态审计生命周期；AlphaAsset sqlite/育种 lineage；周度维护 sweep | **4** | `alpha_expression.py`、`evaluator.py`、`asset_store.py`、`maintenance.py`、`tools/alpha_maintenance_sweep.py` | 自动衰退已联动停止新增；实际减仓比例/退休全平待人工授权；GP/evolutionary 仍缺统一 asset 挂载点 | P1/PARTIAL | P2 |
 | 4 | 回测引擎 | 事件驱动 + 向量化 + 成本模型 + PnL 对账恒等式;确定性可复现(无 RNG/墙钟只在边界) | **4** | `execution/dry_run_pipeline.py`、`experiment_registry/store.py:73`、`evaluator.py:166` | 无撮合/限价簿模拟;容量系数未校准;冲击 stub | P2/LATENT | P2 |
