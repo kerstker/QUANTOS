@@ -1,5 +1,11 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-16 Wave0后P2质量改进:** import-linter依赖治理已引入（4个合约，检测到
+> research↔alpha 16处循环依赖，live/隔离与contracts清洁度已验证）；147个空DDD目录
+> 已用PLANNED.md标记为架构占位；console_api已验证为按router拆分（7548行分布多视图）；
+> L2备份调度代码完整但待积累30天运营证据。GAP_MATRIX维度1已更新反映改进。
+> 最新提交：53f3715（docs更新）、45b72e3（import-linter）、b3eb210（DDD标记）。
+
 > **2026-07-15 顶级续审与恢复证据纠偏:** 当前机器权威仍是
 > `config/top_tier_requirements.json` + `services/governance/top_tier_assessment.py` +
 > 两个生成制品；07-07 手工审计只作历史快照。制品准入已推进到 V4 的双 registry-head
