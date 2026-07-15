@@ -11,7 +11,7 @@ QUANTOS 不只是一台量化机器,而应是一个**有特权分级的动态自
 
 | 环 | 自治程度 | 范围 | 现状 |
 |---|---|---|---|
-| **用户态 / Ring 3** | 全自动(且应该) | 研究工厂:取数→清洗→归类→搜因子→回测→验证;元学习(bandit 学有效搜索方向、退役衰减因子、正交发现逼新 edge) | 真骨架已在:`session.run_research_session`、`ResearchAgentLoop` 的 UCB bandit 跨会话持久、`degradation_monitor`、正交 `basis_returns` |
+| **用户态 / Ring 3** | 全自动(且应该) | 研究工厂:取数→清洗→归类→搜因子→回测→验证;元学习(bandit 学有效搜索方向、退役衰减因子、正交发现逼新 edge) | 真骨架已在:`services.intelligence.research_session.run_research_session`、`ResearchAgentLoop` 的 UCB bandit 跨会话持久、`degradation_monitor`、正交 `basis_returns` |
 | **自诊断层 / Ring 1** | 自动观察 + 人工动手 | 系统照镜子:扫自身代码、跑治理扫描、检测缺口/漂移/坏模块,产出诚实待办,甚至起草修复+测试。改代码必须过人工+CI+治理扫描 | 9 智能体审计就是这件事(现人工触发,可做成定时自检) |
 | **内核态 / Ring 0** | 永远人工 | 风控门、安全配置、晋级闸门、凭证、实盘开关 | `governance scanner` = 安全启动/代码签名,机器拦死任何往这层塞券商SDK/下单/翻flag的改动 |
 

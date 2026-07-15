@@ -1,8 +1,8 @@
 """真前向 paper-track 周度驱动器(Stage 0,实盘路线)。设计:
-docs/superpowers/specs/2026-07-04-forward-track-live-design.md §2.3。
+docs/engineering/specs/2026-07-04-forward-track-live-design.md §2.3。
 
 每次运行(幂等,错过可 catch-up):
-1. 增量刷新三个数据源(tools/live_data_refresh);
+1. 增量刷新四个数据源(tools/live_data_refresh):现货参考、funding、永续 mark price、OI;
 2. build_panel(OI 大币宇宙)→ 与干跑驱动器**同一条信号路径**算 CROWD_CONTRA(主边)与
    CARRY(对照,同宇宙变体,诚实命名 carry_oi_majors)→ _legs 权重;
 3. 距上次决策 ≥7 天则 record_decision(决策先落库,墙钟 recorded_at 证明先后);
@@ -24,12 +24,15 @@ import time
 
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
-from services.research.paper_trading.forward import ForwardLedger, realize_due
+from services.research.paper_trading.forward import realize_due
+from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
 from tools.alert_sink import emit
 from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.data_quality_admission import run_data_quality_admission
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
+from tools.binance_perp_mark_fetch import load_mark_prices
 from tools.signal_quality import rows_with_acceptable_coverage
 from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(纯跨标的门)
 
@@ -43,9 +46,11 @@ _MAX_DECISION_AGE_MS = 8 * _DAY_MS                  # P1-8:决策数据时间合
 #                                                     ~7 天为合法,超 8 天=信号源实质冻结)。工程占位,待用户确认。
 _SYSTEMIC_STALE_FRAC = 0.2                          # >20% ticker 落后 = 系统性问题(≠个别退市)
 _ALPHAS = {"crowd_contra": CROWD_CONTRA, "carry_oi_majors": CARRY}
+_REQUIRED_RAW_LINEAGE = frozenset({"funding", "oi_metrics", "perp_mark_prices"})
 
 
-def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed):
+def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,
+                          quality_evidence_current=False):
     """P1-8 决策门(纯 helper,镜像 live 驱动器 batch_skip_reason 范式)。返回 None=可落决策;返回原因串=
     数据不够干净,调用方暂停本轮决策(证据钟暂停=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进
     不可改写台账。复用 gate_decision_inputs 四项检查;staleness 判据与上面 :102 的告警**同判据**,只把'只告警'
@@ -53,11 +58,62 @@ def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_fa
     rep = gate_decision_inputs(
         weights=weights, prices=prices, decided_ts=decided_ts, now=now,
         max_decision_age_ms=_MAX_DECISION_AGE_MS, staleness=stale, stale_limits=STALE_LIMITS,
-        ingestion_quality_failed=tuple(quality_failed))
+        ingestion_quality_failed=tuple(quality_failed),
+        quality_evidence_current=quality_evidence_current)
     if rep.passed:
         return None
     failed = [c.name for c in rep.checks if not c.passed]
     return f"decision blocked (evidence clock paused,留 pending): {failed}"
+
+
+def raw_lineage_block_reason(raw_lineage) -> str | None:
+    if not isinstance(raw_lineage, dict):
+        return "raw lineage summary missing"
+    if raw_lineage.get("status") != "PASS":
+        return f"raw lineage integrity is not PASS: {raw_lineage.get('status')}"
+    datasets = set(raw_lineage.get("datasets", {}))
+    missing = sorted(_REQUIRED_RAW_LINEAGE - datasets)
+    if missing:
+        return f"raw lineage datasets missing: {missing}"
+    return None
+
+
+def authoritative_admission_status(*, now_ms: int, runner=None) -> tuple:
+    """Persist the admission decision and return a redacted load-bearing summary."""
+    resolved_runner = runner or run_data_quality_admission
+    try:
+        evidence, decision, inserted = resolved_runner(now_ms=now_ms)
+        if (
+            not isinstance(evidence, dict)
+            or decision.verdict != evidence.get("verdict")
+            or decision.quality_verdict != evidence.get("quality_verdict")
+            or decision.lineage_verdict != evidence.get("lineage_verdict")
+        ):
+            raise ValueError("authority decision does not match evidence")
+        current = decision.verdict == "PASS"
+        summary = {
+            "status": "PASS",
+            "admission_id": decision.admission_id,
+            "verdict": decision.verdict,
+            "quality_verdict": decision.quality_verdict,
+            "lineage_verdict": decision.lineage_verdict,
+            "evidence_sha256": decision.evidence_sha256,
+            "decision_hash": decision.decision_hash,
+            "inserted": bool(inserted),
+        }
+        alerts = [] if current else [
+            "data-quality admission BLOCK "
+            f"(reasons={len(decision.block_reasons)})"
+        ]
+        return current, summary, alerts
+    except Exception as exc:
+        return False, {
+            "status": "BREACH",
+            "error_type": type(exc).__name__,
+        }, [
+            "data-quality admission authority BREACH: "
+            f"{type(exc).__name__}"
+        ]
 
 
 def _weekly_rows(event_times) -> list:
@@ -74,6 +130,17 @@ def _weights_and_signals(sig_row, insts):
     weights = {insts[i]: w for i, w in legs.items()}
     signals = {insts[i]: sig_row[i] for i in range(len(insts)) if sig_row[i] is not None}
     return weights, signals
+
+
+def _mark_price_map(mark_by_ticker, timestamps) -> dict:
+    return {
+        int(timestamp): {
+            ticker: float(days[int(timestamp)])
+            for ticker, days in mark_by_ticker.items()
+            if int(timestamp) in days
+        }
+        for timestamp in timestamps
+    }
 
 
 def _reference_sharpe(sig, rows, ev, insts, prices, funding_sum, *, before_ts) -> tuple:
@@ -104,17 +171,49 @@ def main() -> None:
     alerts: list = []
     do_refresh = "--no-refresh" not in sys.argv
 
-    quality_failed: set = set()      # P1-8:本轮单标的接入质量不过的 ticker(供决策门聚合;--no-refresh 时为空)
+    blocked_instruments: set = set()
+    quality_evidence_current = False
+    admission_status = {"status": "SKIPPED"}
     if do_refresh:
         try:
             refresh = run_refresh(now_ms=now_ms)
-            for rep in refresh["reports"]:
-                quality_failed.update(rep.get("quality_failed", []))
+            reports = refresh.get("reports", [])
+            expected_sources = {"prices", "funding", "oi_metrics", "perp_mark_prices"}
+            observed_sources = {rep.get("source") for rep in reports}
+            quality_evidence_current = expected_sources.issubset(observed_sources)
+            if not quality_evidence_current:
+                missing = sorted(expected_sources - observed_sources)
+                alerts.append(f"refresh quality evidence incomplete; missing sources: {missing}")
+            for rep in reports:
+                failed_tickers = set(rep.get("failed_tickers", ()))
+                failed_tickers.update(rep.get("quality_failed", ()))
+                blocked_instruments.update(failed_tickers)
                 for f in rep.get("failed", []):
                     alerts.append(f"refresh {rep['source']}: {f}")
+                if rep.get("failed") and not failed_tickers:
+                    quality_evidence_current = False
+                    alerts.append(
+                        f"refresh {rep.get('source')}: unstructured failure; all evidence blocked"
+                    )
+            lineage_block = raw_lineage_block_reason(refresh.get("raw_lineage"))
+            if lineage_block is not None:
+                quality_evidence_current = False
+                alerts.append(lineage_block)
+            admission_current, admission_status, admission_alerts = (
+                authoritative_admission_status(now_ms=now_ms)
+            )
+            quality_evidence_current = (
+                quality_evidence_current and admission_current
+            )
+            alerts.extend(admission_alerts)
         except Exception as exc:
             emit([f"refresh CRASHED: {exc}"], context="forward_track", now_ms=now_ms)
             raise
+    else:
+        alerts.append(
+            "refresh skipped: current ingestion quality evidence unavailable; "
+            "decision and realization blocked"
+        )
     stale = staleness_days(now_ms)
     for src, limit in STALE_LIMITS.items():
         s = stale.get(src) or {}
@@ -129,8 +228,11 @@ def main() -> None:
     ev = panel.event_times
     close = panel.matrices["close"]
     rows = _weekly_rows(ev)
-    prices = {int(ev[r]): {insts[i]: close[r][i] for i in range(len(insts))
-                           if close[r][i] and close[r][i] > 0} for r in rows}
+    spot_prices = {int(ev[r]): {insts[i]: close[r][i] for i in range(len(insts))
+                                if close[r][i] and close[r][i] > 0} for r in rows}
+    prices = _mark_price_map(
+        load_mark_prices(), [int(ev[r]) for r in rows]
+    )
     fund = {tk: {int(k): v for k, v in d.items()}
             for tk, d in json.load(open(_FUND, encoding="utf-8")).items()}
 
@@ -167,12 +269,13 @@ def main() -> None:
                 weights, signals = _weights_and_signals(sig[r_try], insts)
                 if weights:
                     t_dec = int(ev[r_try])
-                    dec_prices = {insts[i]: close[r_try][i] for i in range(len(insts))
-                                  if close[r_try][i] and close[r_try][i] > 0}
+                    dec_prices = dict(prices.get(t_dec, {}))
                     # P1-8 决策门:数据不够干净(源停更/决策过旧/加权名字缺价/接入质量不过)则**暂停证据钟**
                     # (本轮不落决策=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进不可改写台账。
                     block = decision_block_reason(weights=weights, prices=dec_prices, decided_ts=t_dec,
-                                                  now=now_ms, stale=stale, quality_failed=quality_failed)
+                                                  now=now_ms, stale=stale,
+                                                  quality_failed=blocked_instruments,
+                                                  quality_evidence_current=quality_evidence_current)
                     if block is not None:
                         alerts.append(f"{alpha_id}: {block}")
                         blocked = True
@@ -191,10 +294,12 @@ def main() -> None:
 
         first_dec_ts = (decs[0]["decided_ts"] if decs
                         else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
-        ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, prices, funding_sum,
+        ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, spot_prices, funding_sum,
                                                   before_ts=first_dec_ts)
         out = realize_due(ledger, store, alpha_id, timestamps=[int(ev[r]) for r in rows],
-                          prices=prices, funding_sum=funding_sum, backtest_sharpe=ref_sharpe)
+                          prices=prices, funding_sum=funding_sum, backtest_sharpe=ref_sharpe,
+                          blocked_instruments=blocked_instruments,
+                          quality_evidence_current=quality_evidence_current)
         alerts.extend(out["alerts"])
 
         track = store.track(alpha_id) or {}
@@ -208,8 +313,13 @@ def main() -> None:
             "last_decision_ts": (ledger.decisions(alpha_id)[-1]["decided_ts"]
                                  if ledger.decisions(alpha_id) else None),
             "recorded_new_decision": recorded_new, "n_realized_this_run": out["n_realized"],
+            "n_quality_blocked_this_run": out["n_quality_blocked"],
         }
 
+    status["quality_evidence_current"] = quality_evidence_current
+    status["data_quality_admission"] = admission_status
+    status["forward_price_basis"] = "BINANCE_USDM_PERP_MARK_PRICE"
+    status["blocked_instruments"] = sorted(blocked_instruments)
     status["alerts"] = alerts
     json.dump(status, open(_STATUS, "w", encoding="utf-8"), indent=2)
     emit(alerts, context="forward_track", now_ms=now_ms)

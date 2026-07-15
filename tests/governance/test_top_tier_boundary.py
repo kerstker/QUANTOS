@@ -18,7 +18,16 @@ ASSESSOR_FILES = [
 def test_cli_generates_stable_json_and_matrix(tmp_path):
     json_path = tmp_path / "assessment.json"
     matrix_path = tmp_path / "matrix.md"
-    args = ["--repo-root", str(ROOT), "--json-out", str(json_path), "--matrix-out", str(matrix_path)]
+    args = [
+        "--repo-root",
+        str(ROOT),
+        "--json-out",
+        str(json_path),
+        "--matrix-out",
+        str(matrix_path),
+        "--as-of-ms",
+        "1784044800000",
+    ]
     assert main(args) == 0
     first_json = json_path.read_bytes()
     first_matrix = matrix_path.read_bytes()

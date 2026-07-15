@@ -21,7 +21,7 @@ def _digests():
         if not filename.endswith(".json"):
             continue
         path = os.path.join(_EVIDENCE, filename)
-        document = json.load(open(path, encoding="utf-8"))
+        document = json.load(open(path, encoding="utf-8-sig"))
         if isinstance(document, dict) and {"artifact", "kind"} <= document.keys():
             digests.append(path)
     return digests

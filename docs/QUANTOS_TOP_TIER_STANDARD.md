@@ -1,6 +1,6 @@
 # QUANTOS Top-Tier Standard
 
-Authoritative design: `docs/superpowers/specs/2026-07-10-top-tier-ai-quant-system-design.md`.
+Authoritative design: `docs/engineering/specs/2026-07-10-top-tier-ai-quant-system-design.md`.
 
 ## Authority
 
@@ -26,6 +26,15 @@ The system remains `L2_DRY_RUN_ONLY`. Top-tier research maturity never enables l
 ## Evidence Contract
 
 Requirements select from six evidence types: implementation, verification, data, operation, governance, and reproducibility. A checker success below the target maturity is `PARTIAL`, not `PASS`. External and post-L2 requirements never auto-pass.
+
+Risk recovery evidence is scoped to the state classes and failure injections named in its artifact. It does not imply high availability, venue recovery, production disaster recovery, or live-trading readiness.
+
+An offline SBOM and pinned-input baseline may establish M3 supply-chain discipline, but it cannot satisfy M4 without externally sourced vulnerability evidence and identity-backed artifact signatures verified outside the build process.
+
+A governed offline model registry, real agent-boundary red-team run, and challenger
+decision can establish M2 model-risk evidence. They cannot satisfy M3 while raw
+evaluation data is not retained, no runtime LLM prompt surface exists, review is
+not bound to strong external identity, and longitudinal evaluation history is absent.
 
 ## Domains
 

@@ -12,7 +12,6 @@ costs (fees + funding paid) are real — measured by the cost model. Reports ONL
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
@@ -20,21 +19,35 @@ import time
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
+from services.data.raw_archive import DEFAULT_RAW_ARCHIVE
+from services.data.research_adapter import adapt_research_market_data
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
+from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from tools.binance_klines_fetch import fetch_daily_rows
-from tools.binance_funding_fetch import fetch_perp_symbols, fetch_daily_funding
+from tools.binance_funding_fetch import (fetch_perp_symbols, fetch_daily_funding,
+                                         validate_daily_funding)
+from tools.cache_io import atomic_write_json
 from tools.crypto_alpha_research import _periods_timed, _per_year
 from tools.crypto_smallcap_research import _BLOCK, _ret_vol
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 _DB = os.path.join("data", "cache", "crypto_funding.db")
 _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
+_FUND_CACHE = os.path.join("data", "cache", "crypto_funding_rates.json")
+_DAY_MS = 86_400_000
 _MIN_BARS = 400
 _MIN_VOL = 0.01
 
@@ -56,7 +69,42 @@ ALPHAS = {
 }
 
 
-def main() -> None:
+def _funding_dataset_version(
+    panel,
+    *,
+    bar_source_version: str,
+    funding_source_version: str,
+) -> str:
+    return field_panel_dataset_version(
+        panel,
+        source_versions={
+            "bars": bar_source_version,
+            "funding": funding_source_version,
+        },
+    )
+
+
+def _run_registered_pool(
+    candidates,
+    *,
+    registry: ExperimentRegistry,
+    search_id: str,
+    dataset_version: str,
+    recorded_at: int,
+):
+    return run_registered_candidate_batch(
+        candidates,
+        registry=registry,
+        search_id=search_id,
+        search_kind="CRYPTO_FUNDING_RESEARCH",
+        search_source="tools.crypto_funding_research",
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+    )
+
+
+def _main(registry: ExperimentRegistry) -> None:
     cap = int(sys.argv[1]) if len(sys.argv) > 1 else 120
     now_ms = int(time.time() * 1000)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
@@ -65,17 +113,43 @@ def main() -> None:
 
     store = SqlitePITStore(_DB, create=True)
     funding_by_tk, instruments, all_ets, dropped, failed = {}, [], set(), 0, 0
+    failures = []
     for tk in syms:
         try:
-            rows = fetch_daily_rows(tk, days=2200, now_ms=now_ms)
-            fund = fetch_daily_funding(tk, days=2200, now_ms=now_ms)
-        except Exception:
+            rows = fetch_daily_rows(
+                tk,
+                days=2200,
+                now_ms=now_ms,
+                archive_root=DEFAULT_RAW_ARCHIVE,
+                observed_at_ms=now_ms,
+            )
+            fund = fetch_daily_funding(
+                tk,
+                days=2200,
+                now_ms=now_ms,
+                archive_root=DEFAULT_RAW_ARCHIVE,
+                observed_at_ms=now_ms,
+            )
+            if (not rows or len(rows) < _MIN_BARS or _ret_vol(rows) < _MIN_VOL
+                    or len(fund) < _MIN_BARS):
+                dropped += 1
+                continue
+            expected_end = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
+            validate_daily_funding(tk, fund, expected_end=expected_end)
+            ingest_provider_rows(
+                rows,
+                store,
+                dataset_id=f"bnf-{tk}",
+                now=now_ms,
+                time_unit="ms",
+                strict=True,
+                expected_interval=_DAY_MS,
+                expected_end=expected_end,
+            )
+        except Exception as exc:
             failed += 1
+            failures.append({"ticker": tk, "error": f"{type(exc).__name__}: {exc}"})
             continue
-        if not rows or len(rows) < _MIN_BARS or _ret_vol(rows) < _MIN_VOL or len(fund) < _MIN_BARS:
-            dropped += 1
-            continue
-        ingest_provider_rows(rows, store, dataset_id=f"bnf-{tk}", now=now_ms, time_unit="ms")
         funding_by_tk[tk] = fund
         instruments.append(tk)
         all_ets.update(r["event_time"] for r in rows)
@@ -96,20 +170,55 @@ def main() -> None:
     print(f"\n{len(instruments)} perps x {len(event_times)} daily periods (dropped {dropped}, failed {failed}); "
           f"panel {time.perf_counter()-t0:.1f}s; funding cells {cover}", flush=True)
 
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
-    rows_out, pool_ret = [], {}
+    candidate_rows = []
     for name, expr in ALPHAS.items():
         alpha = ax.evaluate(expr, panel)
         periods, times = _periods_timed(alpha, panel)
         if len(periods) < 24:
             continue
+        defn = AlphaDefinition(alpha_id=ax.alpha_id(expr), name=name, factor_ids=("close",),
+                               params={"family": "funding_alpha", "expr": ax.serialize(expr)})
+        candidate_rows.append((name, tuple(periods), tuple(times), defn))
+
+    bar_source_version = adapt_research_market_data(store).dataset_version(
+        instruments,
+        event_times,
+    )
+    funding_source_version = stable_hash(
+        {
+            ticker: tuple(sorted(daily.items()))
+            for ticker, daily in sorted(funding_by_tk.items())
+        }
+    )
+    dataset_version = _funding_dataset_version(
+        panel,
+        bar_source_version=bar_source_version,
+        funding_source_version=funding_source_version,
+    )
+    batch_result = _run_registered_pool(
+        tuple(
+            (definition, periods)
+            for _name, periods, _times, definition in candidate_rows
+        ),
+        registry=registry,
+        search_id=make_search_id(
+            source="tools.crypto_funding_research",
+            search_kind="CRYPTO_FUNDING_RESEARCH",
+            dataset_version=dataset_version,
+            recorded_at=now_ms,
+            params={"candidate_count": len(candidate_rows)},
+        ),
+        dataset_version=dataset_version,
+        recorded_at=now_ms,
+    )
+    report = batch_result["report"]
+
+    rows_out, pool_ret = [], {}
+    for name, periods, times, defn in candidate_rows:
         ret = list(run_panel_backtest(periods).period_returns)
         pool_ret[name] = ret
         py = _per_year(times, ret)
-        defn = AlphaDefinition(alpha_id=ax.alpha_id(expr), name=name, factor_ids=("close",),
-                               params={"family": "funding_alpha", "expr": ax.serialize(expr)})
-        ev = next(iter(loop.run([(defn, periods)], timestamp=0)["report"].values())).get("evaluation")
+        ev = report.get(defn.alpha_id, {}).get("evaluation")
         rows_out.append({"name": name, "full_sharpe": round(sharpe(ret), 3),
                          "deflated": round(ev.deflated_sharpe, 4) if ev else None,
                          "ic": round(ev.ic_mean, 4) if ev else None,
@@ -127,12 +236,17 @@ def main() -> None:
         oos = {"n_aligned": L, "selection": sel, "naive_best": {"alpha_id": bid, "sharpe": round(bsr, 4)}}
 
     rows_out.sort(key=lambda r: r["full_sharpe"], reverse=True)
-    auto = sum(1 for aid in catalog.all_ids() if str(catalog.state(aid).value) == "APPROVED")
+    auto = sum(1 for entry in report.values() if entry.get("state") == "APPROVED")
     snap = {"generated_at": now_ms // 1000, "provider": "Binance public klines + funding (perp)",
             "n_instruments": len(instruments), "n_periods": len(event_times), "instruments": instruments,
-            "auto_approved": auto, "alphas": rows_out, "oos": oos}
-    with open(_SNAP, "w", encoding="utf-8") as fh:
-        json.dump(snap, fh, indent=2)
+            "auto_approved": auto, "alphas": rows_out, "oos": oos,
+            "data_quality": {"strict_daily": True, "failures": failures}}
+    atomic_write_json(
+        _FUND_CACHE,
+        {tk: {str(day): value for day, value in daily.items()}
+         for tk, daily in funding_by_tk.items()},
+    )
+    atomic_write_json(_SNAP, snap, indent=2)
 
     print(f"\n=== PRICE+FUNDING cross-sectional alphas: {len(instruments)} perps x {len(event_times)} periods ===")
     print(f"auto_approved={auto} (must be 0)")
@@ -149,6 +263,11 @@ def main() -> None:
     survivors = [r["name"] for r in rows_out if r["full_sharpe"] > 0 and r["pos_years"] >= max(1, r["n_years"] - 1)]
     print(f"cross-regime survivors: {survivors or 'NONE'}")
     print(f"-> wrote {_SNAP}")
+
+
+def main() -> None:
+    with production_experiment_registry() as registry:
+        _main(registry)
 
 
 if __name__ == "__main__":

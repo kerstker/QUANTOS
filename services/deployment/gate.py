@@ -23,6 +23,7 @@ from quantos.contracts.governance import (
     ApprovalRecord, ConfigVersion, Environment, ModelVersion, StrategyVersion,
 )
 from services.governance.approval import ApprovalRequest, verify_multi_party_grant
+from services.deployment.events import deployment_recorded_event
 
 VersionRecord = Union[ConfigVersion, StrategyVersion, ModelVersion]
 
@@ -112,6 +113,7 @@ def evaluate_deployment(
     versions: Sequence[VersionRecord] = (),
     approved_pins: Optional[Mapping[str, str]] = None,
     audit_sink: object = None,
+    event_sink: object = None,
     at: int = 0,
 ) -> DeploymentDecision:
     try:
@@ -156,6 +158,22 @@ def evaluate_deployment(
                 action="deployment.evaluate", timestamp=at, target=f"{environment.value}:{subject}",
                 metadata={"allowed": str(decision.allowed), "reasons": ",".join(decision.reasons),
                           "n_versions": str(len(versions))})
+        if event_sink is not None:
+            actor_id = actor.actor_id if actor is not None else (
+                "multi_party_grant" if grant is not None else "unknown"
+            )
+            event_sink.publish_once(
+                deployment_recorded_event(
+                    environment=environment.value,
+                    subject=subject,
+                    actor_id=actor_id,
+                    allowed=decision.allowed,
+                    reasons=decision.reasons,
+                    version_ids=[_version_id(version) for version in versions],
+                    at_ms=at,
+                ),
+                correlation_id=subject,
+            )
         return decision
     except Exception:
         return DeploymentDecision(False, environment, ("DEPLOYMENT_ERROR",))   # fail-closed

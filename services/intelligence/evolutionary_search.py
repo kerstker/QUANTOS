@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Callable, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
+from services.alpha.factor_set import novelty_vs_basis
 
 from .agent_loop import ResearchAgentLoop
 from .evidence import provider_leakage_evidence
@@ -22,8 +23,8 @@ from .reward import evaluation_reward, generalization_gap
 from services.research.interaction_factors import interaction_definition, make_interaction_provider
 from services.research.panel_builder import make_data_periods_provider
 from services.research.fundamental_factors import make_fundamental_periods_provider
+from services.research.ports.persistence import TrialPersistenceError
 from services.research import gp_tree, gp_genome
-from services.research.factor_set import novelty_vs_basis
 from services.research.subtree_stats import structural_commonness, update_corpus
 
 DEFAULT_VOCAB = {
@@ -219,6 +220,8 @@ class EvolutionarySearchLoop:
                 periods = self.provider(defn)
                 candidates.append((defn, periods))
                 ok.append((g, defn))
+            except TrialPersistenceError:
+                raise
             except Exception as exc:                       # isolate: errored genome scores 0, continue
                 evaluated[g] = 0.0
                 history.append({"genome": g, "reward": 0.0, "error": type(exc).__name__})

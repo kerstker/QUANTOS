@@ -1,13 +1,80 @@
 """research_runner: the ONLY mutating surface — a guarded async trigger that runs WHITELISTED research
 kinds and writes results to the run_registry. It can never run anything but research (no order/broker/
 credential path); unknown kinds and unknown params are rejected fail-closed."""
+from contextlib import contextmanager
+from dataclasses import replace
+import json
+
 import pytest
 
 from services.research.run_registry import contract
 from services.research.run_registry.store import ResearchRunStore
 from services.research.run_registry.registry import RunRegistry
-from services.research.research_runner.run_kinds import RUN_KINDS, RunSpec, validate_params
-from services.research.research_runner.runner import JobQueue, _git_sha
+from services.research_runner.run_kinds import (
+    DIAGNOSTIC_ONLY,
+    RUN_KINDS,
+    SELECTION_BEARING,
+    RunPurpose,
+    RunSpec,
+    validate_params,
+)
+from services.research_runner.runner import (
+    JobQueue,
+    ProvenanceError,
+    _git_sha,
+    validate_run_provenance,
+)
+
+
+def _factory_panel():
+    from services.research.alpha_expression import FieldPanel
+
+    return FieldPanel(
+        ["A", "B"],
+        [1, 2, 3, 4],
+        {
+            "close": [[100.0, 101.0]] * 4,
+            "funding": [[0.001, -0.001]] * 4,
+            "global_ls": [[1.1, 0.9]] * 4,
+        },
+    )
+
+
+def _patch_factory_tool(monkeypatch, module, captured):
+    marker = object()
+
+    @contextmanager
+    def registry_context():
+        yield marker
+
+    def fake_factory(*_args, **kwargs):
+        captured.append(kwargs)
+        return {
+            "n_evaluated": 0,
+            "best": [],
+            "scored_by": "orthogonal_incremental_ir",
+        }
+
+    monkeypatch.setattr(module, "build_panel", lambda **_kwargs: (_factory_panel(), ["A", "B"]))
+    monkeypatch.setattr(module, "economic_return_series", lambda *_args, **_kwargs: [0.01] * 4)
+    monkeypatch.setattr(module, "sharpe", lambda *_args, **_kwargs: 1.0)
+    monkeypatch.setattr(
+        module,
+        "walk_forward_selection_oos",
+        lambda *_args, **_kwargs: {"n_folds": 0, "mean_oos_sharpe": None, "folds": []},
+    )
+    monkeypatch.setattr(module, "production_experiment_registry", registry_context)
+    monkeypatch.setattr(module, "run_alpha_factory", fake_factory)
+    return marker
+
+
+def _assert_persistent_factory_call(call, marker):
+    assert call["search_registry"] is marker
+    assert call["search_id"].startswith("search-")
+    assert call["search_kind"]
+    assert call["search_source"].startswith("tools.crypto_factory_")
+    assert call["dataset_version"]
+    assert isinstance(call["timestamp"], int)
 
 
 def _register_stub(name, spec):
@@ -27,6 +94,21 @@ def test_whitelist_is_research_only():
         root = spec.entrypoint.split(":")[0].split(".")[0]
         assert root in {"services", "tools"}
         assert "trading" not in spec.entrypoint and "order" not in spec.entrypoint
+
+
+def test_runner_kinds_have_explicit_research_use_policies():
+    selection_bearing = {
+        kind
+        for kind, spec in RUN_KINDS.items()
+        if spec.provenance_policy.purpose is RunPurpose.SELECTION_BEARING
+    }
+    diagnostic_only = {
+        kind
+        for kind, spec in RUN_KINDS.items()
+        if spec.provenance_policy.purpose is RunPurpose.DIAGNOSTIC_ONLY
+    }
+    assert selection_bearing == {"factory_orthogonal", "factory_loop"}
+    assert diagnostic_only == set(RUN_KINDS) - selection_bearing
 
 
 def test_validate_params_rejects_unknown_key():
@@ -76,21 +158,305 @@ def test_factory_params_reject_non_positive_population():
         validate_params("factory_orthogonal", {"population": -1})
 
 
+def test_factory_orthogonal_runner_kind_injects_durable_trial_provenance(
+    tmp_path, monkeypatch
+):
+    import tools.crypto_factory_orthogonal as tool
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "cache").mkdir(parents=True)
+    captured = []
+    marker = _patch_factory_tool(monkeypatch, tool, captured)
+
+    result = RUN_KINDS["factory_orthogonal"].runner(
+        {"generations": 1, "population": 4}
+    )
+
+    assert result["containment"].startswith("research")
+    assert len(captured) == 1
+    _assert_persistent_factory_call(captured[0], marker)
+
+
+def test_factory_loop_runner_kind_injects_provenance_for_every_round(
+    tmp_path, monkeypatch
+):
+    import tools.crypto_factory_loop as tool
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "cache").mkdir(parents=True)
+    captured = []
+    marker = _patch_factory_tool(monkeypatch, tool, captured)
+
+    result = RUN_KINDS["factory_loop"].runner({})
+
+    assert result["containment"].startswith("research")
+    assert len(captured) == tool.DRY_LIMIT
+    for call in captured:
+        _assert_persistent_factory_call(call, marker)
+    assert len({call["search_id"] for call in captured}) == len(captured)
+
+
 def test_job_runs_and_writes_registry(tmp_path):
     reg = RunRegistry(ResearchRunStore(str(tmp_path / "runs.db")))
     _register_stub("_stub", RunSpec(
         entrypoint="services.research._x:noop", param_schema={"n": int},
         adapter=lambda out: {"title": "stub", "params": {}, "metrics": {"v": out}, "series": {},
-                             "verdict": "DONE", "caveats": [], "provenance": "stub"},
-        title="stub", runner=lambda params: params["n"] * 2))
+                             "verdict": "DONE", "caveats": [],
+                             "provenance": "services/research/_x.py"},
+        title="stub", provenance_policy=DIAGNOSTIC_ONLY,
+        runner=lambda params: params["n"] * 2))
     try:
         q = JobQueue(reg, max_workers=1)
         rid = q.submit("_stub", {"n": 21}, now=1000)
         q.join()
         got = reg.get(rid)
         assert got.status == "done" and got.metrics["v"] == 42 and got.kind == "_stub"
+        provenance = validate_run_provenance(got, RUN_KINDS["_stub"])
+        assert provenance["purpose"] == "DIAGNOSTIC_ONLY"
+        assert provenance["selection_eligible"] is False
+        assert provenance["ledger_binding_status"] == "NOT_APPLICABLE"
+        assert provenance["result_authority"] == "NON_AUTHORITATIVE_RUN_REGISTRY_MIRROR"
+        assert provenance["result_sha256"]
     finally:
         _unregister_stub("_stub")
+
+
+def test_same_second_submissions_are_distinct_invocations(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "same-second.db")))
+    _register_stub("_same_second", RunSpec(
+        entrypoint="services.research._x:noop",
+        param_schema={},
+        adapter=lambda _out: {
+            "title": "same-second",
+            "metrics": {},
+            "series": {},
+            "verdict": "DONE",
+            "caveats": [],
+            "provenance": "services/research/_x.py",
+        },
+        title="same-second",
+        provenance_policy=DIAGNOSTIC_ONLY,
+        runner=lambda _params: None,
+    ))
+    try:
+        queue = JobQueue(reg, max_workers=2)
+        first = queue.submit("_same_second", {}, now=1000, operator="alice")
+        second = queue.submit("_same_second", {}, now=1000, operator="bob")
+        queue.join()
+        assert first != second
+        assert {reg.get(first).operator, reg.get(second).operator} == {"alice", "bob"}
+        assert reg.get(first).invocation_id != reg.get(second).invocation_id
+    finally:
+        _unregister_stub("_same_second")
+
+
+def test_duplicate_invocation_id_is_idempotent_across_seconds(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "duplicate-invocation.db")))
+    calls = []
+    _register_stub("_duplicate_invocation", RunSpec(
+        entrypoint="services.research._x:noop",
+        param_schema={},
+        adapter=lambda _out: {
+            "title": "duplicate",
+            "metrics": {},
+            "series": {},
+            "verdict": "DONE",
+            "caveats": [],
+            "provenance": "services/research/_x.py",
+        },
+        title="duplicate",
+        provenance_policy=DIAGNOSTIC_ONLY,
+        runner=lambda _params: calls.append("ran"),
+    ))
+    try:
+        queue = JobQueue(reg, max_workers=1)
+        run_id = queue.submit(
+            "_duplicate_invocation", {}, now=1000, invocation_id="fixed"
+        )
+        replayed_run_id = queue.submit(
+            "_duplicate_invocation", {}, now=1001, invocation_id="fixed"
+        )
+        queue.join()
+        assert calls == ["ran"]
+        assert replayed_run_id == run_id
+        assert reg.get(run_id).invocation_id == "fixed"
+    finally:
+        _unregister_stub("_duplicate_invocation")
+
+
+@pytest.mark.parametrize(
+    ("second_kind", "second_params", "second_operator"),
+    [
+        ("_invocation_a", {"value": 2}, "alice"),
+        ("_invocation_b", {"value": 1}, "alice"),
+        ("_invocation_a", {"value": 1}, "bob"),
+    ],
+)
+def test_invocation_reuse_with_different_request_fails_closed(
+    tmp_path, second_kind, second_params, second_operator
+):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "invocation-conflict.db")))
+    calls = []
+
+    def spec(label):
+        return RunSpec(
+            entrypoint="services.research._x:noop",
+            param_schema={"value": int},
+            adapter=lambda _out: {
+                "title": label,
+                "metrics": {},
+                "series": {},
+                "verdict": "DONE",
+                "caveats": [],
+                "provenance": "services/research/_x.py",
+            },
+            title=label,
+            provenance_policy=DIAGNOSTIC_ONLY,
+            runner=lambda _params: calls.append(label),
+        )
+
+    _register_stub("_invocation_a", spec("a"))
+    _register_stub("_invocation_b", spec("b"))
+    try:
+        queue = JobQueue(reg, max_workers=1)
+        queue.submit(
+            "_invocation_a",
+            {"value": 1},
+            now=1000,
+            operator="alice",
+            invocation_id="fixed-conflict",
+        )
+        with pytest.raises(contract.InvocationConflictError, match="different kind, params, or operator"):
+            queue.submit(
+                second_kind,
+                second_params,
+                now=1001,
+                operator=second_operator,
+                invocation_id="fixed-conflict",
+            )
+        queue.join()
+        assert calls == ["a"]
+        assert len(reg.list()) == 1
+    finally:
+        _unregister_stub("_invocation_a")
+        _unregister_stub("_invocation_b")
+
+
+def test_selection_bearing_result_names_authority_but_stays_unbound_and_ineligible(
+    tmp_path, monkeypatch
+):
+    import services.research_runner.runner as runner_module
+
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "selection.db")))
+    monkeypatch.setattr(runner_module, "_git_sha", lambda: "abc123def456")
+    _register_stub("_selection", RunSpec(
+        entrypoint="services.research._x:select",
+        param_schema={},
+        adapter=lambda _out: {
+            "title": "selection",
+            "metrics": {"score": 1.5},
+            "series": {},
+            "verdict": "CANDIDATE",
+            "caveats": ["not promoted"],
+            "provenance": "services/research/_x.py",
+        },
+        title="selection",
+        provenance_policy=SELECTION_BEARING,
+        runner=lambda _params: {"candidate": "alpha-1"},
+    ))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        rid = q.submit("_selection", {}, now=7)
+        q.join()
+        got = reg.get(rid)
+        provenance = validate_run_provenance(got, RUN_KINDS["_selection"])
+        assert provenance["purpose"] == "SELECTION_BEARING"
+        assert provenance["selection_eligible"] is False
+        assert provenance["evidence_authority"] == "EXPERIMENT_REGISTRY_GLOBAL_TRIAL_LEDGER"
+        assert provenance["ledger_binding_status"] == "UNBOUND"
+        assert provenance["result_authority"] == "NON_AUTHORITATIVE_RUN_REGISTRY_MIRROR"
+        assert provenance["code_version"] == "abc123def456"
+        assert provenance["code_attestation"] == "HEAD_ONLY_WORKTREE_UNATTESTED"
+        assert provenance["result_sha256"]
+        false_green = dict(provenance, selection_eligible=True)
+        with pytest.raises(ProvenanceError, match="selection_eligible"):
+            validate_run_provenance(
+                replace(got, provenance=json.dumps(false_green)),
+                RUN_KINDS["_selection"],
+            )
+    finally:
+        _unregister_stub("_selection")
+
+
+@pytest.mark.parametrize("code_version", [None, "not-a-commit"])
+def test_selection_bearing_submit_fails_before_persistence_without_valid_code_version(
+    tmp_path, monkeypatch, code_version
+):
+    import services.research_runner.runner as runner_module
+
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "missing-code.db")))
+    monkeypatch.setattr(runner_module, "_git_sha", lambda: code_version)
+    _register_stub("_selection_no_code", RunSpec(
+        entrypoint="services.research._x:select",
+        param_schema={},
+        adapter=lambda _out: {},
+        title="selection",
+        provenance_policy=SELECTION_BEARING,
+        runner=lambda _params: {},
+    ))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        with pytest.raises(ProvenanceError, match="code version"):
+            q.submit("_selection_no_code", {}, now=7)
+        assert reg.list() == []
+    finally:
+        _unregister_stub("_selection_no_code")
+
+
+def test_adapter_cannot_override_declared_source(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "wrong-source.db")))
+    _register_stub("_wrong_source", RunSpec(
+        entrypoint="services.research._x:diagnose",
+        param_schema={},
+        adapter=lambda _out: {"provenance": "unknown.py"},
+        title="diagnostic",
+        provenance_policy=DIAGNOSTIC_ONLY,
+        runner=lambda _params: {},
+    ))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        rid = q.submit("_wrong_source", {}, now=8)
+        q.join()
+        got = reg.get(rid)
+        assert got.status == "error"
+        assert "does not match" in (got.error or "")
+        assert json.loads(got.provenance)["selection_eligible"] is False
+    finally:
+        _unregister_stub("_wrong_source")
+
+
+def test_persisted_result_tampering_breaks_provenance_validation(tmp_path):
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "tamper.db")))
+    _register_stub("_tamper", RunSpec(
+        entrypoint="services.research._x:diagnose",
+        param_schema={},
+        adapter=lambda _out: {
+            "metrics": {"score": 1.0},
+            "provenance": "services/research/_x.py",
+        },
+        title="diagnostic",
+        provenance_policy=DIAGNOSTIC_ONLY,
+        runner=lambda _params: {},
+    ))
+    try:
+        q = JobQueue(reg, max_workers=1)
+        rid = q.submit("_tamper", {}, now=9)
+        q.join()
+        got = reg.get(rid)
+        with pytest.raises(ProvenanceError, match="result digest"):
+            validate_run_provenance(replace(got, metrics={"score": 99.0}), RUN_KINDS["_tamper"])
+    finally:
+        _unregister_stub("_tamper")
 
 
 def test_job_error_sets_error_status(tmp_path):
@@ -100,7 +466,8 @@ def test_job_error_sets_error_status(tmp_path):
         raise RuntimeError("kaboom")
 
     _register_stub("_boom", RunSpec(entrypoint="services.research._x:boom", param_schema={},
-                                    adapter=lambda out: {}, title="boom", runner=_boom))
+                                    adapter=lambda out: {}, title="boom",
+                                    provenance_policy=DIAGNOSTIC_ONLY, runner=_boom))
     try:
         q = JobQueue(reg, max_workers=1)
         rid = q.submit("_boom", {}, now=1)
@@ -128,8 +495,9 @@ def test_live_log_captured_from_stdout_and_git_sha(tmp_path):
 
     _register_stub("_log", RunSpec(entrypoint="services.research._x:p", param_schema={},
         adapter=lambda out: {"title": "t", "params": {}, "metrics": {"v": out}, "series": {},
-                             "verdict": "D", "caveats": [], "provenance": "s"},
-        title="t", runner=_printer))
+                             "verdict": "D", "caveats": [],
+                             "provenance": "services/research/_x.py"},
+        title="t", provenance_policy=DIAGNOSTIC_ONLY, runner=_printer))
     try:
         q = JobQueue(reg, max_workers=1)
         rid = q.submit("_log", {}, now=1)
@@ -154,8 +522,9 @@ def test_soft_cancel_drops_result(tmp_path):
 
     _register_stub("_slow", RunSpec(entrypoint="services.research._x:s", param_schema={},
         adapter=lambda out: {"title": "t", "params": {}, "metrics": {"v": out}, "series": {},
-                             "verdict": "D", "caveats": [], "provenance": "s"},
-        title="t", runner=_slow))
+                             "verdict": "D", "caveats": [],
+                             "provenance": "services/research/_x.py"},
+        title="t", provenance_policy=DIAGNOSTIC_ONLY, runner=_slow))
     try:
         q = JobQueue(reg, max_workers=1)
         rid = q.submit("_slow", {}, now=1)
@@ -166,6 +535,51 @@ def test_soft_cancel_drops_result(tmp_path):
         assert reg.get(rid).status == "cancelled"       # result dropped, stays cancelled
     finally:
         _unregister_stub("_slow")
+
+
+def test_cancelled_queued_run_never_starts_or_gets_overwritten(tmp_path):
+    import threading
+
+    reg = RunRegistry(ResearchRunStore(str(tmp_path / "queued-cancel.db")))
+    first_started = threading.Event()
+    release_first = threading.Event()
+    calls = []
+
+    def _serial(_params):
+        calls.append("started")
+        if len(calls) == 1:
+            first_started.set()
+            release_first.wait(3)
+        return 1
+
+    _register_stub("_queued_cancel", RunSpec(
+        entrypoint="services.research._x:serial",
+        param_schema={},
+        adapter=lambda _out: {
+            "title": "serial",
+            "metrics": {},
+            "series": {},
+            "verdict": "DONE",
+            "caveats": [],
+            "provenance": "services/research/_x.py",
+        },
+        title="serial",
+        provenance_policy=DIAGNOSTIC_ONLY,
+        runner=_serial,
+    ))
+    try:
+        queue = JobQueue(reg, max_workers=1)
+        first = queue.submit("_queued_cancel", {}, now=1)
+        assert first_started.wait(3)
+        second = queue.submit("_queued_cancel", {}, now=1)
+        assert queue.cancel(second) is True
+        release_first.set()
+        queue.join()
+        assert reg.get(first).status == "done"
+        assert reg.get(second).status == "cancelled"
+        assert calls == ["started"]
+    finally:
+        _unregister_stub("_queued_cancel")
 
 
 # --- 2026-07-07 审计 P2: _git_sha() 在 git worktree 布局下 .git 是文件(非目录),裸 os.path.join
@@ -258,8 +672,9 @@ def test_cancel_terminal_run_returns_false(tmp_path):
     q = JobQueue(reg, max_workers=1)
     _register_stub("_done", RunSpec(entrypoint="services.research._x:d", param_schema={},
         adapter=lambda out: {"title": "t", "params": {}, "metrics": {}, "series": {},
-                             "verdict": "D", "caveats": [], "provenance": "s"},
-        title="t", runner=lambda _p: 1))
+                             "verdict": "D", "caveats": [],
+                             "provenance": "services/research/_x.py"},
+        title="t", provenance_policy=DIAGNOSTIC_ONLY, runner=lambda _p: 1))
     try:
         rid = q.submit("_done", {}, now=1)
         q.join()

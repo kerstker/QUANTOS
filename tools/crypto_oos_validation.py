@@ -28,7 +28,7 @@ from services.research.backtest_engine.metrics import sharpe
 from services.research.panel_builder import make_data_periods_provider
 from services.alpha.panel_backtest import run_panel_backtest
 from services.intelligence.evolutionary_search import genome_to_definition, make_evolution_provider
-from services.research.validation.walk_forward import walk_forward_splits
+from services.validation.walk_forward import walk_forward_splits
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 
 OPERATORS = ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",

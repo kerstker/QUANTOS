@@ -176,6 +176,38 @@ export interface AgentsPayload extends ConsolePayloadBase {
 
 export interface EventsPayload extends ConsolePayloadBase {
   events: EventRecord[];
+  event_bus_health: EventBusHealth;
+}
+
+export interface EventBusHealthAlert {
+  code: string;
+  observed: number | null;
+  severity: string;
+  threshold: number | null;
+}
+
+export interface EventBusHealth {
+  schema_version: number;
+  verdict: string;
+  checked_at_ms: number;
+  group_id: string;
+  consumer_mode: string;
+  integrity: {
+    event_chain_valid: boolean | null;
+    consumer_chain_valid: boolean | null;
+    coordination_chain_valid: boolean | null;
+  };
+  active_workers: string[];
+  partition_count: number;
+  pending_events: number | null;
+  oldest_pending_age_ms: number | null;
+  dead_letter_count: number | null;
+  event_records: number | null;
+  consumer_journal_records: number | null;
+  coordination_journal_records: number | null;
+  allocated_bytes: number | null;
+  retention_mode: string;
+  alerts: EventBusHealthAlert[];
 }
 
 export interface ArchitectureModule {

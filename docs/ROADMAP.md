@@ -60,8 +60,9 @@ QUANTOS 是一个**安全关键的 AI 量化研究平台**,当前就绪等级 **
 - 截面 alpha 引擎(`services/research/alpha_expression.py`):在 PIT 面板上组合时序算子 +
   截面算子(rank/scale/demean/zscore),解锁 Alpha101 那类真因子;无前视测试钉死。
 - 因子发现:GP 表达式树、进化搜索(opt-in 去冗余 / 多样性奖励)、MCTS/UCT 导航、UCB 导引搜索。
-- 主线编排 `research/session.py::run_research_session`:模式 `evolutionary/gp/mcts`,
-  搜后产出去冗余协同集,`oos_validate=True` 对自己挖的因子跑无窥视 OOS 自验证。
+- 正式主线编排 `intelligence/research_session.py::run_research_session`:固定受控搜索 runtime，
+  调用 `research/session.py` 的确定性核心；模式 `evolutionary/gp/mcts`，搜后产出去冗余
+  协同集，`oos_validate=True` 对自己挖的因子跑无窥视 OOS 自验证。
 
 **(2) 诚实机器(防过拟合 / 防自欺)**
 - 无窥视滚动选择 OOS、walk-forward(含 embargo 禁运)、Deflated Sharpe、PBO、regime 门——全部 fail-closed。

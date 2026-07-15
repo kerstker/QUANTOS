@@ -1,5 +1,5 @@
 """Stage 1 周度实盘驱动器(测试网,preview 默认)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §0/§3.7 延伸。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §0/§3.7 延伸。
 
 把 Stage 1 各部件第一次串成一个真正的调用方——2026-07-04 对抗式审查发现 #7/#11:
 `reconcile_positions`/`submit_live_batch` 此前全仓库零生产调用方,只有单元测试在调用。
@@ -38,6 +38,7 @@ import json
 import os
 import sys
 import time
+from typing import Dict, Optional
 
 from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
@@ -46,25 +47,35 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
 from live.execution.market_stats import average_daily_volume_units, realized_volatility
 from live.execution.day_pnl import compute_day_pnl
+from live.execution.equity_state import (record_and_validate_peak_equity,
+                                         save_peak_equity)
 from live.execution.state_io import atomic_write_json
-from live.governance.kill_switch_store import (load_kill_switch_state,
-                                               save_kill_switch_state_if_tripped)
+from live.governance.kill_switch_store import (
+    load_kill_switch_state,
+    open_authoritative_kill_switch_store,
+    write_kill_switch_json_mirror,
+)
 from live.governance.review_queue import ReviewQueue
 from live.execution.emergency import (EMERGENCY_STRATEGY_ID, flatten_target_for_breach,
                                       submit_emergency_flatten)
 from live.execution.evidence_escalation import check_evidence_deviation
-from live.execution.gate_context import build_gate_positions
+from live.execution.gate_context import build_gate_positions, build_recent_order_gate_inputs
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
-from live.execution.price_check import flag_divergent_instruments
+from live.execution.price_check import flag_noncontemporaneous_instruments
 from live.execution.pricing import LimitPricing
 from live.execution.reconciliation import preflight_check
-from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
+from live.execution.risk_monitor import (
+    compute_flatten_orders,
+    evaluate_risk_state,
+    respond_to_breach_persisted,
+)
 from live.execution.tca import tca_summary
 from live.governance.mandate import AUTO
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.governance.validation_attestation import (ValidationAttestationError, load_attestations,
                                                     require_validation_attestation)
 from services.alpha.live_linkage import maintenance_skip_reason
+from services.alpha.maintenance_store import MaintenanceStore
 from services.portfolio.firm_gate import firm_gate_skip_reason
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
                            submit_live_batch)
@@ -76,10 +87,11 @@ from services.risk.pre_trade.context import AccountRiskState, MarketContext, Ris
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from tools.alert_sink import emit
-from tools.coingecko_fetch import fetch_simple_prices
+from tools.coingecko_fetch import fetch_simple_price_observations
 from tools.crypto_oi_research import QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.live_data_refresh import run_refresh
+from tools.kill_switch_events import dispatch_and_project_kill_switch_events
 from tools.signal_quality import rows_with_acceptable_coverage
 
 # 默认策略(账本回填/历史 status 路径的连续性锚点)。策略注册表 `_STRATEGIES` 在
@@ -99,7 +111,7 @@ _MAINTENANCE_STATUS_PATH = os.path.join("data", "cache", "alpha_maintenance_stat
 _ADV_WINDOW = 30
 _VOL_WINDOW = 30
 _VOL_ANNUALIZE = 365.0
-# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准 docs/superpowers/specs/2026-07-07-crowding-
+# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准 docs/engineering/specs/2026-07-07-crowding-
 # gate-calibration.md):被 short 名字 global_ls 时序 z > 3.0 -> BLOCK(挤压保护)。与干跑驱动器同一签署值。
 _MAX_CROWDING_Z = 3.0
 
@@ -195,6 +207,7 @@ def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
         "ledger": os.path.join("data", "cache", f"live_track{suffix}.db"),
         "status": os.path.join("data", "cache", status_name),
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
+        "equity": os.path.join("data", "cache", f"live_equity{suffix}.jsonl"),
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
         "audit": os.path.join("data", "cache", f"live_audit{suffix}.db"),
@@ -208,16 +221,10 @@ def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
 _MAX_PRICE_DIVERGENCE_PCT = 0.05   # 工程默认(非业务风险容忍度)——crypto 正常跨源价差远小于此
 _MAX_PARITY_GAP_PCT_OF_AUM = 0.05  # live-paper 偏差升级阈值(工程默认)
 _MAX_SLIPPAGE_OVER_ASSUMED_BPS = 50.0
-# 决策价格(可能因信号行回看滞后 1-3 天,见 _latest_weights_and_prices)与"当前" CoinGecko
-# 价格的比较只在数据足够新鲜时才有意义——decided_ts 比 now 早太多时,拿走了几天的历史价格
-# 去比"现在"的价格是苹果比橘子(crypto 数日内 15%+ 波动是常态,不代表数据源损坏),会让
-# 这道防线变成"狼来了"式假阳性,反而侵蚀它的可信度。超出这个窗口 -> 跳过核价(新鲜度门
-# `check_market_session` 已经在管这类过旧数据的场景)。
-_CROSS_CHECK_MAX_STALENESS_MS = 3 * 86_400_000
-# 0~3 天窗口内阈值按决策价年龄放大(2026-07-06 根因调查:2.5 天旧的决策价 vs 现价偏 15% 是
-# crypto 正常波动,不是数据源损坏;固定 5% 阈值在这个窗口内是"狼来了"式误剔的来源)。
-# 5%/天 ≈ crypto 大市值币日波动的工程量级(非风险数字)。
-_CROSS_CHECK_DIVERGENCE_PER_DAY = 0.05
+# P2-6 current-price evidence limits. These are conservative L2 engineering baselines,
+# explicitly UNCALIBRATED until retained source observations support empirical tuning.
+_CROSS_CHECK_MAX_AGE_MS = 5 * 60_000
+_CROSS_CHECK_MAX_SKEW_MS = 5 * 60_000
 
 
 def _load_json_or_none(path: str) -> Optional[dict]:
@@ -234,10 +241,31 @@ def _load_day_state(path: str) -> Optional[dict]:
     return _load_json_or_none(path)
 
 
-def maintenance_skip(strategy_id: str, *, path: str = _MAINTENANCE_STATUS_PATH) -> Optional[str]:
+def maintenance_skip(
+    strategy_id: str,
+    *,
+    path: str = _MAINTENANCE_STATUS_PATH,
+    db_path: Optional[str] = None,
+) -> Optional[str]:
     """读维护 sweep 快照 -> 本策略 skip 原因(RETIRED/PAUSED -> 停止新增敞口,现有仓位原样不动)。
     镜像 firm_gate 桥:缺文件(未调度 sweep)/坏文件/本策略未降级 -> None -> skip_reason 不变 ->
     旧行为字节等价。DEGRADED 只观察不停(见 live_linkage._SKIP_STATES 的保守选择)。"""
+    authoritative_path = db_path or os.path.join(
+        os.path.dirname(path) or ".", "alpha_maintenance.db"
+    )
+    if os.path.exists(authoritative_path):
+        store = None
+        try:
+            store = MaintenanceStore(authoritative_path, create=False)
+            snapshot = store.latest_snapshot()
+        except Exception:
+            return "maintenance_state_invalid"
+        finally:
+            if store is not None:
+                store.close()
+        if snapshot is None:
+            return "maintenance_state_missing"
+        return maintenance_skip_reason(snapshot, strategy_id)
     return maintenance_skip_reason(_load_json_or_none(path), strategy_id)
 
 
@@ -339,8 +367,7 @@ def _save_peak_equity(path: str, value: float) -> None:
     写前重读:落盘前重新读一次磁盘上的当前值,取两者较大者,绝不能让一份基于稍旧读数算出的
     较低峰值,覆盖掉磁盘上并发进程刚记录的更高峰值(回撤 = (峰值-权益)/峰值,峰值被低估会
     让回撤越限检测延迟甚至漏判)。"""
-    on_disk = _load_peak_equity(path, default=value)
-    atomic_write_json(path, {"peak_equity": max(value, on_disk)})
+    save_peak_equity(path, value)
 
 
 # 频率护栏(审计 P1-5,用户 2026-07-07 给的方向"24H 窗口/中高频"):这是防**失控循环**的运维
@@ -350,6 +377,9 @@ def _save_peak_equity(path: str, value: float) -> None:
 # 与 ctx.now(ms)同单位是不变量(见 checks.py::check_rate_limit)。
 _RATE_WINDOW_MS = 86_400_000            # 24 小时滚动窗
 _RATE_MAX_ORDERS = 500                  # runaway ceiling(工程占位,待用户确认)
+_DUPLICATE_WINDOW_MS = 300_000          # 5 分钟调度/重试去重窗
+_MAX_CANCEL_RATE = 0.80                 # L2 工程基线；外部执行数据校准前不冒充实证阈值
+_MIN_CANCEL_RATE_SAMPLES = 20
 
 
 def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
@@ -362,11 +392,14 @@ def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss
         max_leverage=3.0, max_single_name_pct=0.5, max_turnover=1.0, max_participation_rate=1.0,
         max_instrument_vol=5.0, daily_loss_limit=daily_loss_cap, max_drawdown=0.5,
         # 频率 runaway-guard(P1-5):接活了此前的死代码(需驱动器回填 recent_timestamps 才生效)
-        rate_window_ms=_RATE_WINDOW_MS, max_orders_per_window=_RATE_MAX_ORDERS)
+        rate_window_ms=_RATE_WINDOW_MS, max_orders_per_window=_RATE_MAX_ORDERS,
+        max_cancel_rate=_MAX_CANCEL_RATE,
+        min_cancel_rate_samples=_MIN_CANCEL_RATE_SAMPLES)
 
 
 def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pnl, peak_equity,
                      unit_scale=UNIT_SCALE, strategy_id=_STRATEGY_ID, recent_timestamps=(),
+                     recent_order_fingerprints=(), recent_order_statuses=(),
                      adv_units=None, inst_vol=None):
     """gate 用的 RiskContext 工厂。`reference_price = 真实价格 / unit_scale`,使
     `intent.quantity(缩放整数) × reference_price` 落在真实美元名义额上(见 live/pipeline.py
@@ -407,6 +440,8 @@ def make_ctx_factory(prices, *, aum, now, price_as_of, current_positions, day_pn
             # 频率护栏(P1-5):最近窗口内的历史提交时间戳(ms,与 now 同基),接活 check_rate_limit。
             # 对本轮 batch 内每个 intent 是同一份快照(工厂闭包)——拦的是跨轮累积失控,不含本轮自身。
             recent_timestamps=recent_timestamps,
+            recent_order_fingerprints=recent_order_fingerprints,
+            recent_order_statuses=recent_order_statuses,
             now=now, max_staleness=_MAX_STALENESS_MS)
     return _factory
 
@@ -682,46 +717,59 @@ def main() -> None:
                          f"(score={crowding_decision.score})")
         crowding_blocked = crowding_decision.status == "BLOCK"
 
-    # 跨源核价(2026-07-05,机构审计 P0):单一数据源(Binance K线)一次静默滞后/错误会
-    # 同时误导双所下单——用独立第二源(CoinGecko)交叉核价。**2026-07-06 修复:剔除改冻结**
-    # ——此前"从 weights 剔除"会让有持仓的名字被 build_intents 视为目标 0 生成真实平仓单,
-    # 把"这个标的核不上价"放大成"主动平仓";现在核不上/偏离超阈值的标的进 frozen 集合,
-    # 由 submit_live_batch 从 targets 与 current 双侧排除(本轮对它什么都不做,仓位原样)。
-    # 阈值按决策价年龄放大(决策价因 OI 滞后结构性旧 1~3 天,crypto 正常日波动会造成偏离,
-    # 不代表数据源损坏);超过 3 天直接跳过检查(新鲜度门在管过旧数据)。真正的同时点核价
-    # (venue 盘口 vs 独立源)等 venue 适配器有 book_ticker 后升级——见战线② LIMIT 设计。
-    frozen_names: set = set()
-    if now - decided_ts > _CROSS_CHECK_MAX_STALENESS_MS:
-        alerts.append(f"cross-venue price check skipped: decided_ts is "
-                      f"{(now - decided_ts) / 86_400_000:.1f}d old (comparing against a moving "
-                      f"target would be unreliable) — relying on the freshness gate instead")
-    else:
+    api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
+    adapter_cls = venue_cfg["adapter"]
+    real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
+                             base_url=venue_cfg["base_url"])
+    real_venue.sync_clock()                  # 时钟偏移校正,fail-soft(失败保留默认 0 偏移)
+
+    # P2-6 contemporaneous cross-source check. Historical decision prices remain inputs to
+    # strategy/risk evaluation, but never provide an age-based escape hatch from this check.
+    # Missing or bad current evidence freezes the name on both target/current sides, leaving
+    # any existing position untouched. A whole-source failure therefore freezes every target.
+    target_instruments = tuple(sorted(weights))
+    venue_books = {}
+    for instrument_id in target_instruments:
         try:
-            secondary_prices = fetch_simple_prices(list(prices.keys()))
-            secondary_unavailable = False
+            venue_books[instrument_id] = real_venue.book_ticker(instrument_id)
         except Exception as exc:
-            secondary_prices = {}
-            secondary_unavailable = True
-            alerts.append(f"cross-venue price check unavailable: {type(exc).__name__}: {exc}")
-        age_days = (now - decided_ts) / 86_400_000
-        max_div = _MAX_PRICE_DIVERGENCE_PCT + _CROSS_CHECK_DIVERGENCE_PER_DAY * age_days
-        flagged = flag_divergent_instruments(
-            {k: v for k, v in prices.items() if k in weights}, secondary_prices,
-            max_divergence_pct=max_div, secondary_unavailable=secondary_unavailable)
-        if flagged:
-            frozen_names = set(flagged)
-            alerts.append(f"cross-venue price check froze {len(flagged)} instrument(s) "
-                          f"(positions untouched, threshold={max_div:.1%} at "
-                          f"{age_days:.1f}d age): {flagged}")
-            if len(frozen_names) >= 0.5 * max(len(weights), 1):
-                alerts.append("cross-venue check froze most of the book — treat as a data "
-                              "incident, investigate the price sources before next cycle")
+            venue_books[instrument_id] = None
+            alerts.append(
+                f"current venue book unavailable for {instrument_id}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    try:
+        secondary_observations = fetch_simple_price_observations(target_instruments)
+    except Exception as exc:
+        secondary_observations = {}
+        alerts.append(f"current secondary price source unavailable: {type(exc).__name__}: {exc}")
+    price_check_now = int(time.time() * 1000)
+    flagged = flag_noncontemporaneous_instruments(
+        target_instruments,
+        venue_books,
+        secondary_observations,
+        now_ms=price_check_now,
+        max_divergence_pct=_MAX_PRICE_DIVERGENCE_PCT,
+        max_age_ms=_CROSS_CHECK_MAX_AGE_MS,
+        max_skew_ms=_CROSS_CHECK_MAX_SKEW_MS,
+    )
+    frozen_names: set = set(flagged)
+    if flagged:
+        alerts.append(
+            f"current cross-source price check froze {len(flagged)} instrument(s) "
+            f"(positions untouched; UNCALIBRATED limits: divergence="
+            f"{_MAX_PRICE_DIVERGENCE_PCT:.1%}, age_ms={_CROSS_CHECK_MAX_AGE_MS}, "
+            f"skew_ms={_CROSS_CHECK_MAX_SKEW_MS}): {flagged}"
+        )
+        if len(frozen_names) >= 0.5 * max(len(weights), 1):
+            alerts.append("current cross-source check froze most of the book — treat as a data "
+                          "incident, investigate the price sources before next cycle")
 
     # 信号收缩防护的参照:上次记录在案的决策腿数(Stage 0 前向台账;也是下方 parity 的纸面侧)。
     # 提早加载:跳批判断需要它。fail-soft——台账缺失只影响收缩比较,空信号检查照常有效。
     paper_weights, paper_source = None, "recomputed_signal"
     try:
-        from services.research.paper_trading.forward import ForwardLedger
+        from services.research.paper_trading.forward_store import ForwardLedger
         paper_weights = paper_weights_from_forward_ledger(
             ForwardLedger(_FORWARD_DB), strategy_id, decided_ts)
         if paper_weights is not None:
@@ -731,12 +779,6 @@ def main() -> None:
     expected_legs = len(paper_weights) if paper_weights else None
     skip_reason = batch_skip_reason(weights, crowding_blocked=crowding_blocked,
                                     expected_legs=expected_legs)
-
-    api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
-    adapter_cls = venue_cfg["adapter"]
-    real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
-                             base_url=venue_cfg["base_url"])
-    real_venue.sync_clock()                  # 时钟偏移校正,fail-soft(失败保留默认 0 偏移)
 
     ledger = LiveLedger(paths["ledger"], create=True)
 
@@ -781,8 +823,24 @@ def main() -> None:
     account = real_venue.account()
     aum, equity = venue_cfg["balances"](account)   # equity 含未实现盈亏,回撤监控用它;形状因所而异
 
-    peak_equity = max(_load_peak_equity(paths["risk_state"], equity), equity)
-    _save_peak_equity(paths["risk_state"], peak_equity)
+    peak_state = record_and_validate_peak_equity(
+        state_path=paths["risk_state"],
+        history_path=paths["equity"],
+        observation={
+            "ts": now,
+            "equity": equity,
+            "available": aum,
+            "source": "live_track",
+            "strategy_id": strategy_id,
+        },
+    )
+    peak_equity = peak_state.peak_equity
+    if not peak_state.valid:
+        alerts.append(
+            "PEAK EQUITY STATE INVALID: "
+            f"{peak_state.reason} (observed_max={peak_state.observed_max_equity}) "
+            "— hard stop; drawdown auto-flatten disabled until state is reviewed"
+        )
 
     day_key = time.strftime("%Y-%m-%d", time.gmtime(now / 1000))
     day_pnl, day_state = compute_day_pnl(_load_day_state(paths["day_state"]), equity=equity,
@@ -824,11 +882,36 @@ def main() -> None:
     breach = evaluate_risk_state(
         equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
         max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=aum * 2, max_net_exposure=aum * 0.3)
-    risk_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
-    # 2026-07-05 安全审查 CRITICAL 修复:只在 tripped 时才写盘(见 save_kill_switch_state_if_
-    # tripped 文档)——untripped 绝不写盘,防止用本进程的旧视角覆盖哨兵/另一次调用并发写入的
-    # 真实熔断(纯粹的读-改-写竞态,此前每轮正常调度都会无条件覆盖一次)。
-    save_kill_switch_state_if_tripped(paths["kill_switch"], kill_switch.state)
+    kill_switch_store = open_authoritative_kill_switch_store(paths["kill_switch"])
+    try:
+        risk_response = respond_to_breach_persisted(
+            store=kill_switch_store,
+            breach=breach,
+            at=now,
+        )
+        authoritative_state = kill_switch_store.load_state()
+        try:
+            write_kill_switch_json_mirror(paths["kill_switch"], authoritative_state)
+        except Exception as exc:
+            alerts.append(
+                f"KILL-SWITCH JSON MIRROR FAILED: {type(exc).__name__}; "
+                "SQLite authority remains active"
+            )
+        try:
+            dispatch_and_project_kill_switch_events(
+                kill_switch_store,
+                state_path=paths["kill_switch"],
+                now=now,
+                worker_id="live-track-kill-switch-event-projection",
+            )
+        except Exception as exc:
+            alerts.append(
+                f"KILL-SWITCH EVENT DELIVERY PENDING: {type(exc).__name__}; "
+                "authoritative transition remains durable"
+            )
+    finally:
+        kill_switch_store.close()
+    kill_switch = KillSwitch(state=authoritative_state)
     if breach.breached:
         alerts.append(f"RISK BREACH: {breach.reasons} (drawdown={breach.drawdown_pct:.2%}, "
                       f"gross=${breach.gross_exposure:.2f}, net=${breach.net_exposure:.2f}) "
@@ -858,6 +941,11 @@ def main() -> None:
         emit(alerts, context="live_track", now_ms=now)
         json.dump({"ran_at": now, "mode": "submit" if submit else "preview", "hard_stop": True,
                   "strategy": strategy_id,
+                  "peak_equity_state": {
+                      "valid": peak_state.valid,
+                      "reason": peak_state.reason,
+                      "observed_max_equity": peak_state.observed_max_equity,
+                  },
                   "risk_breach": {"reasons": breach.reasons, "drawdown_pct": breach.drawdown_pct,
                                  "gross_exposure": breach.gross_exposure,
                                  "net_exposure": breach.net_exposure},
@@ -907,9 +995,10 @@ def main() -> None:
     # 看同一份提交历史)读最近 24h 窗内的历史提交时间戳(submitted_at 已是 ms、与 now 同基,零换算),
     # 喂给 check_rate_limit。装配在 submit_live_batch 之前,故快照只含前几轮、不含本轮 batch 自身——拦的
     # 是"跨轮累积失控提交"(调度每分钟误触发/崩溃重启循环/重试风暴),失控时本轮全部 intent 一次闸死。
-    _rate_cutoff = now - _RATE_WINDOW_MS
-    recent_ts = tuple(int(o["submitted_at"]) for o in ledger.orders()
-                      if int(o["submitted_at"]) >= _rate_cutoff)
+    recent_orders = build_recent_order_gate_inputs(
+        ledger.orders(), now=now, rate_window_ms=_RATE_WINDOW_MS,
+        duplicate_window_ms=_DUPLICATE_WINDOW_MS, unit_scale=UNIT_SCALE,
+    )
     # gate 的账户上下文看**账户级**仓位(敞口/集中度/杠杆约束的是全账户,不是单策略的切片)。
     # 真实 ADV/波动喂进流动性/波动门(2026-07-07 接线,把结构性失效占位符升为真实承重)。**平仓单不再被
     # 误挡**:reduce-only 豁免(check_liquidity/volatility 对证明为纯降敞口的单放行,缺 ADV/vol 也过)+
@@ -921,7 +1010,10 @@ def main() -> None:
     ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity, strategy_id=strategy_id,
-                                   recent_timestamps=recent_ts, adv_units=adv_units, inst_vol=inst_vol)
+                                   recent_timestamps=recent_orders.timestamps,
+                                   recent_order_fingerprints=recent_orders.fingerprints,
+                                   recent_order_statuses=recent_orders.statuses,
+                                   adv_units=adv_units, inst_vol=inst_vol)
     # 验证证明门(审计 P1-1,用户 2026-07-07 批准"接线 + 可审计人工 override"):真提交前,strategy_id
     # 必须在案有 PASS 验证或可审计人工 override(见 live/governance/validation_attestation.py)。这是
     # 比风控门/mandate 更靠前的**策略级准入**门("这个策略压根有没有资格上真钱")。缺凭证:preview 只
@@ -994,7 +1086,8 @@ def main() -> None:
             weights=weights, prices=prices, aum=deploy_aum,
             current_positions=strategy_positions, account_positions=account_positions,
             gate=gate, ctx_factory=ctx_factory, venue=venue,
-            mandate=mandate, ledger=write_ledger, audit=audit, strategy_id=strategy_id,
+            mandate=mandate, validation_attestation=attestations.get(strategy_id),
+            ledger=write_ledger, audit=audit, strategy_id=strategy_id,
             decided_ts=decided_ts, now=now, frozen=frozenset(frozen_names),
             limit_pricing=limit_pricing,   # None 除非 --order-type limit(默认行为字节不变)
             poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光

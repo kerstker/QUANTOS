@@ -1,5 +1,5 @@
 """live/ 树的 venue-agnostic 值类型(Stage 1)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.1/§3.4。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.1/§3.4。
 
 **两级下单类型,刻意不合并**(单元制不同,合并会掩盖一个真实的数量级问题):
 - `quantos.contracts.trading.OrderIntent`(复用,不重造):**风控门货币**,`quantity: int`——
@@ -52,7 +52,7 @@ class ExchangeFilters:
 @dataclass(frozen=True)
 class LiveOrderRequest:
     """已过交易所过滤器取整的、随时可提交的浮点数量订单。设计:
-    docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §1(LIMIT 扩展)。
+    docs/engineering/specs/2026-07-06-limit-order-execution-design.md §1(LIMIT 扩展)。
 
     reduce_only(2026-07-05 紧急减仓通道):True 时适配器把交易所原生 reduceOnly 参数一并传出,
     交易所侧保证该单只能减仓、不能开新仓——是 `live/execution/emergency.py` 结构校验之外的

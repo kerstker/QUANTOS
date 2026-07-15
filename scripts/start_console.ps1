@@ -25,11 +25,11 @@ function Start-Labeled {
 
 Write-Host "启动 console_api(只读研究 API,:8400)..." -ForegroundColor Cyan
 Start-Labeled -Title "QUANTOS console_api :8400" -WorkDir $root `
-    -Command "python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400"
+    -Command "python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400"
 
 Write-Host "启动 research_runner(研究运行器/唯一可变面,:8420)..." -ForegroundColor Cyan
 Start-Labeled -Title "QUANTOS research_runner :8420" -WorkDir $root `
-    -Command "python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --port 8420"
+    -Command "python -m uvicorn services.research_runner.main:app --host 127.0.0.1 --port 8420"
 
 Start-Sleep -Seconds 2
 
@@ -49,4 +49,4 @@ Write-Host ""
 Write-Host "未包含(有意):" -ForegroundColor DarkGray
 Write-Host "  live/ 实盘自动化 —— 由 schtasks 排程管理,不要在此重复手动拉起" -ForegroundColor DarkGray
 Write-Host "  promotion_api(:8460)—— 默认不自启,需要时手动:" -ForegroundColor DarkGray
-Write-Host "    python -m uvicorn services.governance.promotion_api.main:app --host 127.0.0.1 --port 8460" -ForegroundColor DarkGray
+Write-Host "    python -m uvicorn services.promotion_api.main:app --host 127.0.0.1 --port 8460" -ForegroundColor DarkGray

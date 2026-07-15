@@ -4,7 +4,7 @@ The whole question: does the system make money once the cross-section is WIDE en
 inefficient tail? Binance public klines give multi-year daily for ~437 USDT pairs, free, no key — an
 order of magnitude more breadth than the rate-limited CryptoCompare path. This driver pulls that whole
 universe (minus stablecoins / wrapped / too-short / pegged), builds the field panel, and runs the SAME
-curated cross-sectional alphas (alpha_expression engine) through the UNCHANGED contained loop, with
+curated cross-sectional alphas through the durable registered-candidate composition, with
 per-CALENDAR-YEAR net Sharpe (incl. 2022 bear) and a long-sample no-peek OOS.
 
 Read-only public DATA only (no key/account/order/SDK). auto_approved must stay 0. Honest caveats stand:
@@ -25,21 +25,78 @@ from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
+from services.research.experiment_registry.registry import ExperimentRegistry
 from quantos.contracts.alpha import AlphaDefinition
 from tools.binance_klines_fetch import fetch_usdt_symbols, fetch_daily_rows
-from tools.crypto_alpha_research import ALPHAS, _periods_timed, _per_year
+from tools.crypto_alpha_research import ALPHAS, FWD, _periods_timed, _per_year
 from tools.crypto_smallcap_research import _BLOCK, _ret_vol
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 _DB = os.path.join("data", "cache", "crypto_binance.db")
 _SNAP = os.path.join("data", "cache", "crypto_binance_snapshot.json")
 _MIN_BARS = 400
 _MIN_VOL = 0.01
+_SEARCH_KIND = "CRYPTO_BINANCE_CURATED_ALPHA_RESEARCH"
+_SEARCH_SOURCE = "tools.crypto_binance_research"
 
 
-def main() -> None:
+def _run_registered_panel(
+    panel,
+    *,
+    registry: ExperimentRegistry,
+    recorded_at: int,
+):
+    candidate_rows = []
+    for name, expr in ALPHAS.items():
+        alpha = ax.evaluate(expr, panel)
+        periods, times = _periods_timed(alpha, panel)
+        if len(periods) < 24:
+            continue
+        definition = AlphaDefinition(
+            alpha_id=ax.alpha_id(expr),
+            name=name,
+            factor_ids=("close",),
+            params={"family": "cs_alpha", "expr": ax.serialize(expr)},
+        )
+        candidate_rows.append(
+            (name, expr, tuple(periods), tuple(times), definition)
+        )
+
+    dataset_version = field_panel_dataset_version(
+        panel,
+        source_versions={"forward_horizon": FWD},
+    )
+    batch_result = run_registered_candidate_batch(
+        tuple(
+            (definition, periods)
+            for _name, _expr, periods, _times, definition in candidate_rows
+        ),
+        registry=registry,
+        search_id=make_search_id(
+            source=_SEARCH_SOURCE,
+            search_kind=_SEARCH_KIND,
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            params={"candidate_count": len(candidate_rows), "forward_horizon": FWD},
+        ),
+        search_kind=_SEARCH_KIND,
+        search_source=_SEARCH_SOURCE,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+    )
+    return tuple(candidate_rows), batch_result, dataset_version
+
+
+def _main(registry: ExperimentRegistry) -> None:
     cap = int(sys.argv[1]) if len(sys.argv) > 1 else 0     # 0 = all USDT pairs
     now_ms = int(time.time() * 1000)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
@@ -78,21 +135,19 @@ def main() -> None:
     print(f"\n{len(instruments)} coins x {len(event_times)} daily periods "
           f"(dropped {dropped}, failed {failed}); panel built {time.perf_counter()-t0:.1f}s", flush=True)
 
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
+    candidate_rows, batch_result, _dataset_version = _run_registered_panel(
+        panel,
+        registry=registry,
+        recorded_at=now_ms,
+    )
+    report = batch_result["report"]
     rows_out, pool_ret = [], {}
-    for name, expr in ALPHAS.items():
-        alpha = ax.evaluate(expr, panel)
-        periods, times = _periods_timed(alpha, panel)
-        if len(periods) < 24:
-            continue
+    for name, _expr, periods, times, definition in candidate_rows:
         ret = list(run_panel_backtest(periods).period_returns)
         pool_ret[name] = ret
         full = round(sharpe(ret), 3)
         py = _per_year(times, ret)
-        defn = AlphaDefinition(alpha_id=ax.alpha_id(expr), name=name, factor_ids=("close",),
-                               params={"family": "cs_alpha", "expr": ax.serialize(expr)})
-        ev = next(iter(loop.run([(defn, periods)], timestamp=0)["report"].values())).get("evaluation")
+        ev = report.get(definition.alpha_id, {}).get("evaluation")
         rows_out.append({"name": name, "full_sharpe": full,
                          "deflated": round(ev.deflated_sharpe, 4) if ev else None,
                          "ic": round(ev.ic_mean, 4) if ev else None,
@@ -110,7 +165,7 @@ def main() -> None:
         oos = {"n_aligned": L, "selection": sel, "naive_best": {"alpha_id": bid, "sharpe": round(bsr, 4)}}
 
     rows_out.sort(key=lambda r: r["full_sharpe"], reverse=True)
-    auto = sum(1 for aid in catalog.all_ids() if str(catalog.state(aid).value) == "APPROVED")
+    auto = sum(1 for entry in report.values() if entry.get("state") == "APPROVED")
     snap = {"generated_at": now_ms // 1000, "provider": "Binance public klines (wide cross-section)",
             "n_instruments": len(instruments), "n_periods": len(event_times), "instruments": instruments,
             "auto_approved": auto, "alphas": rows_out, "oos": oos}
@@ -132,6 +187,11 @@ def main() -> None:
     survivors = [r["name"] for r in rows_out if r["full_sharpe"] > 0 and r["pos_years"] >= max(1, r["n_years"] - 1)]
     print(f"cross-regime survivors (full +ve AND +ve in all-but-one year): {survivors or 'NONE'}")
     print(f"-> wrote {_SNAP}")
+
+
+def main() -> None:
+    with production_experiment_registry() as registry:
+        _main(registry)
 
 
 if __name__ == "__main__":

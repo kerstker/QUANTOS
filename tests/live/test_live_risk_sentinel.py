@@ -191,3 +191,58 @@ def test_log_clock_sync_status_no_alert_when_venue_lacks_attribute(monkeypatch):
         pass
     s.log_clock_sync_status("binance", _NoAttrVenue(), now=123)
     assert captured == []
+
+
+def test_persisted_breach_commits_state_event_and_dispatch_ack_atomically(tmp_path):
+    from live.execution.risk_monitor import RiskBreach
+    from live.governance.kill_switch_store import kill_switch_db_path
+    from quantos.contracts.events import EVENT_KILL_SWITCH_ACTIVATED
+    from services.monitoring.domain_event_runtime import open_domain_event_bus
+    from services.risk.pre_trade.kill_switch_store import KillSwitchStateStore
+    from tools import live_risk_sentinel as s
+
+    state_path = str(tmp_path / "live_kill_switch.json")
+    breach = RiskBreach(
+        breached=True,
+        reasons=("drawdown_exceeded:0.2500>0.2",),
+        drawdown_pct=0.25,
+        gross_exposure=100.0,
+        net_exposure=0.0,
+    )
+
+    result = s.persist_kill_switch_breach(
+        state_path=state_path,
+        breach=breach,
+        at=1_000,
+    )
+
+    assert result["response"]["action"] == "kill_switch_armed"
+    assert result["state"].tripped is True
+    assert result["mirror_error"] is None
+    assert result["delivery_error"] is None
+    assert result["delivery"]["dispatch"] == {"dispatched": 1, "pending": 0}
+
+    store = KillSwitchStateStore(kill_switch_db_path(state_path), create=False)
+    try:
+        assert store.load_state() == result["state"]
+        assert store.pending_event_outbox() == ()
+        assert store.chain_valid()
+    finally:
+        store.close()
+
+    bus = open_domain_event_bus(str(tmp_path / "domain_events.db"))
+    try:
+        records = bus.records()
+        assert len(records) == 1
+        assert records[0]["event"].event_type == EVENT_KILL_SWITCH_ACTIVATED
+        assert bus.chain_valid()
+    finally:
+        bus.close()
+
+    repeated = s.persist_kill_switch_breach(
+        state_path=state_path,
+        breach=breach,
+        at=1_001,
+    )
+    assert repeated["response"]["action"] == "already_tripped"
+    assert repeated["delivery"]["dispatch"] == {"dispatched": 0, "pending": 0}

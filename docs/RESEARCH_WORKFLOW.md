@@ -46,7 +46,7 @@ QUANTOS 的研究工作从"有一堆历史数据"到"一个信号有没有资格
 
 ```bash
 # 1) 后端只读 console API(计算好的研究快照,GET-only,无券商/OMS)
-python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
 
 # 2) 前端指向真实后端(默认是 mock 模式,不加这两个环境变量就看不到真数据)
 cd apps/research-console
@@ -56,7 +56,7 @@ VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
 
 # 3)(可选)如果想从前端页面直接触发研究任务(而不是自己敲命令行),再起 research_runner——
 #    它是整个系统里唯一被允许"写"的接口,且被治理测试钉死为研究专用白名单(见 §2.6)
-python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --port 8420
+python -m uvicorn services.research_runner.main:app --host 127.0.0.1 --port 8420
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 \
   VITE_RUNNER_URL=http://127.0.0.1:8420 VITE_MOCK_MODE=false npm run dev
 ```
@@ -152,7 +152,8 @@ python -m tools.crypto_factory_loop
 
 **在哪触发**:不需要手动一步步调用这些模块——`services/alpha/evaluator.py` 把它们串成一条流水
 线(PIT 截面 IC 序列 → 净成本回测 → 全 catalog 口径 DSR → `ValidationGate`),`alpha_factory` 的
-搜索循环、`services/research/session.py`(可复现研究会话编排器)在挖掘过程中就会喂给它。对应页面
+搜索循环、`services/intelligence/research_session.py`（固定受控搜索 runtime 的正式编排入口；
+确定性核心在 `services/research/session.py`）在挖掘过程中就会喂给它。对应页面
 **验证门**(`/research/validation`)、**实验登记**(`/research/experiments`,每次评估的不可变
 制品落 `experiment_registry.db`)、**回测战果**(`/research/backtest-results`)。
 
@@ -224,9 +225,9 @@ python -m tools.alpha_maintenance_sweep
 
 ### 2.6 (可选)从前端直接触发,而不是敲命令行
 
-**研究运行**页(`/research/runs`)背后是 `services/research/research_runner`——整个系统里**唯一**
+**研究运行**页(`/research/runs`)背后是 `services/research_runner`——整个系统里**唯一**
 被允许"写"的服务,`POST /run {kind, params}` 只接受一个白名单(`RUN_KINDS`,定义在
-`services/research/research_runner/run_kinds.py`),比如 `carry_strategy`/`oi_research`/
+`services/research_runner/run_kinds.py`),比如 `carry_strategy`/`oi_research`/
 `combo_book`/`factory_orthogonal`/`factory_loop` 等——每个 kind 对应上面 §2.2/§2.3 的某个研究
 工具,没有任何订单/券商/凭证入口(被 `tests/governance/test_research_runner_boundary.py` 机器
 钉死)。在页面上点按钮,本质上就是异步跑了一遍你也可以在命令行敲的那条 `python -m tools.xxx`。
@@ -307,10 +308,11 @@ console API 的每个只读端点都在返回体里带一个 `data_provenance` �
   真实成本、vol-target)后,三种统一执行方式都不敌 `crowd_contra` 单条自己跑——根因是 1.95/8% 那
   个漂亮数字是 gross 的,净成本 + vol-target 下 carry 的贡献被压缩到拉不动组合。**结论:一个分散
   故事必须过执行现实这一关才能算数,不能只看收益流层面的相关系数。**
-- **现实主义引擎抓出过真实的数据质量 bug。** 在给 trend 策略做容量分析时,`crypto_daily.db` 的
-  volume 字段被发现跨币种单位不一致(个别币种和 BTC 相差约 17 个数量级,physically 不可能),
-  项目诚实标注 `UNRELIABLE_VOLUME_UNITS`、不报假数字,而是把它列成独立的修复任务——这类"诊断
-  引擎顺手抓出数据 bug"的情况值得认真对待,不要因为它不是"你要找的那个问题"就忽略过去。
+- **现实主义引擎抓到的是消费端量纲 bug，不是数据库混单位。** `crypto_daily.db` 的 CoinGecko
+  `total_volumes` 已是 USD 24h rolling notional；旧 trend 容量代码又乘一次 close，才制造出 BTC `$Q`
+  级、EOS `$K` 级的假极差。2026-07-13 已用显式 `VolumeUnit/VolumeSemantics` 和统一 quote-notional
+  转换修复，重算 BTC/EOS 中位 ADV 约 `$43.5B/$119.6K`，trend 容量约 `$47.9K`。后者仍是短样本、
+  未校准诊断，不是部署额度；横截面流动性极差只作保守 dispersion guard，不能当作单位证据。
 - **拥挤度/crowding 是一个独立的风险维度,不能只看 IC/Sharpe。** `crowd_contra` 是一个基于持仓
   拥挤度反向操作的因子,天然需要独立的拥挤度监控(`services/portfolio/crowding_gate.py`)——统计
   上显著的边,如果自己在把市场推向拥挤,也可能是自我实现的风险,这也是为什么干跑驱动器里能看到
@@ -329,15 +331,13 @@ console API 的每个只读端点都在返回体里带一个 `data_provenance` �
   PAPER_TRADING → SHADOW → APPROVED → …`)——其中 `APPROVED` 是**唯一**授权走向实盘的状态,
   且这个状态机的结构性设计决定了**非人类 actor 到不了 APPROVED**(自动化/AI 研究循环最多只能把
   一个 alpha 推到 `SHADOW`)。真正的多方人工批准机制见 `services/governance/approval.py`。
-- **限定条件(`CLAUDE.md` 2026-07-06 注脚,与本条同属"非协商安全边界"的一部分,不能只靠状态机
-  本身的结构性保证)**:上面这句"非人类 actor 到不了 APPROVED"说的是状态机本身
-  (`can_alpha_transition` 校验 `actor.kind == HUMAN`)。但如果启动了 `services/governance/
-  promotion_api`(端口 8460,**默认不启动**)、且治理 token(`key/governance_token.txt`)落入了
-  自动化/agent 运行环境手中,这个 build-time 结构性保证会被绕过——持有该 token 的任何本机进程
-  可以用三个自报的 `X-Operator` 标签走完三方批准并真的把状态推到 `APPROVED`,零代码变更、零
-  code-review 痕迹。即便走到 `APPROVED` 也不等于解锁实盘(LIVE 仍被 readiness pin + 五个 LIVE
-  旗帜结构性挡死),但「agent 运行环境不得持有 `key/governance_token.txt`」本身就是这条安全边界
-  的一部分,不是可有可无的操作细节。
+- **强身份限定条件(2026-07-12)**:`services/promotion_api` 已删除本地共享治理 token
+  与自报操作者标签。每个调用必须携带外部 OIDC 非对称签名 access token，并通过 issuer/audience、
+  时效、MFA、RFC 8705 mTLS 证书绑定及动作 RBAC；状态机 actor 只能由已验证的 `issuer|subject`
+  构造。浏览器已实现 Authorization Code + PKCE S256，一次性事务仅存 sessionStorage，access token
+  仅驻内存。缺外部 IdP 策略或可信 TLS scope 时 fail-closed。当前仓库只证明单机 M2 验证边界；外部
+  IdP 运营、可信 TLS、密钥托管、身份生命周期及 AI workload 排除的部署证据仍缺，不能宣称 M4。即便走到 `APPROVED` 也不
+  解锁实盘，LIVE 仍被 readiness pin 与五个 LIVE 旗帜结构性挡死。
 - 本文档只描述研究/回测/干跑范围内的流程。任何关于"实盘怎么做"的内容不在这份文档的范围内,也
   不应该从本文档的任何一步自然推出"这样就能自动实盘"的结论——实盘路径是显式独立的人工门控项目
   (见 `docs/runbooks/live-trading-runbook.md`、`docs/PHASE_3A_GO_NO_GO_CHECKLIST.md`),不是本文
@@ -351,7 +351,7 @@ console API 的每个只读端点都在返回体里带一个 `data_provenance` �
   这里,任何文档与它冲突以它为准。
 - **`docs/README.md`**——240+ 份文档的导航索引,回答"这么多文档该信哪一份"。
 - **`docs/audit/` 系列**——多维度独立审计报告(`RISK_REGISTER.md` 是活文档,其余是时间点快照)。
-- **`docs/superpowers/specs/` + `docs/superpowers/plans/`**——这个项目"先写设计、再写实施计划、
+- **`docs/engineering/specs/` + `docs/engineering/plans/`**——这个项目"先写设计、再写实施计划、
   再 TDD 实现"的开发范式本身,想看某个具体能力(比如 IC 面板、干跑流水线、组合分散验证)当初为
   什么这么设计,按日期文件名去找对应的 spec/plan。
 - **`docs/runbooks/live-trading-runbook.md`**——如果你的问题是"研究通过之后,通往实盘的路径是

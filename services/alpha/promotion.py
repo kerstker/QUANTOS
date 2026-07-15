@@ -18,7 +18,7 @@
 
 威胁模型(诚实,勿删):`execute_promotion` 用自报的 executor_id 铸造 `Actor(kind=HUMAN)`。
 经 promotion_api 暴露后,这把「受信代码在进程内凑 HUMAN Actor」这个 build-time 绕过面变成
-runtime HTTP 能力 —— 详见 services/governance/promotion_api/main.py 的模块 docstring 与设计
+runtime HTTP 能力 —— 详见 services/promotion_api/main.py 的模块 docstring 与设计
 文档。本模块自身仍是单进程受信代码层(与 CLAUDE.md 威胁模型一致);真正的出进程身份 =
 Phase 14。核心无墙钟/无随机(now/nonce 由调用方注入);绝不 import 券商/网络 SDK、不 import
 live/、不 import tools/。
@@ -32,13 +32,17 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from quantos.contracts.alpha import Actor, ActorKind, can_alpha_transition
+from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS
+from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.research import AlphaState
 from services.governance.approval import ApprovalState, consume
 
 from .catalog import AlphaCatalog
 from .config import AlphaFactoryConfig
+from .events import alpha_promoted_event
 from .guards import grant_approver, parse_promotion_subject
 from .lifecycle import AlphaLifecycleManager, GuardRejected
+from .model_card import verify_model_card_exists
 
 # 第一期晋级白名单:只有 →APPROVED(唯一 human-only 的晋级)。TESTING/VALIDATED/
 # PAPER_TRADING 已有 agent/评估路径,不进此队列。
@@ -101,6 +105,7 @@ class PromotionOutcome:
     reasons: tuple = ()
     audit_ok: bool = True
     evidence_notes: tuple = field(default_factory=tuple)
+    event_outbox_id: str = ""
 
 
 def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> PromotionEvidence:
@@ -243,6 +248,17 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
         src = catalog.state(alpha_id)
         if not can_alpha_transition(src, dst):
             raise PromotionPrecheckError(f"ILLEGAL_TRANSITION: {src.value}->{dst.value}")
+
+        # Model card gate (VALIDATION.CHALLENGER.MODEL_RISK M1→M2): 向 APPROVED 晋级必须有
+        # model_card 文件(缺失抛 ModelCardMissing → PromotionPrecheckError,不烧 grant)。
+        # 其他晋级路径(→TESTING/VALIDATED/PAPER_TRADING)不需要 model card(那些已有
+        # agent/评估路径,见 PROMOTABLE_DSTS 注释)。
+        if dst == AlphaState.APPROVED:
+            try:
+                verify_model_card_exists(alpha_id)
+            except Exception as exc:
+                raise PromotionPrecheckError(f"MODEL_CARD_GATE_FAILED: {exc}")
+
         evidence = gather_promotion_evidence(registry, paper_store, alpha_id)   # 纯读,在烧之前
 
         # --- ① 先烧 grant(fail-closed 方向:宁可烧废也不留可复花的 grant)---
@@ -259,7 +275,29 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
             manager.advance(alpha_id, dst, actor, timestamp=now, grant=consumed,
                             paper_evidence=evidence.paper_evidence(),
                             eval_trial_count=evidence.eval_trial_count)
-            registry.save(catalog, now=now)            # ③ 状态持久化(累积语义,锁内)
+            promotion_event = alpha_promoted_event(
+                request_id=request_id,
+                alpha_id=alpha_id,
+                src=src.value,
+                dst=dst.value,
+                actor_id=executor_id,
+                grant_head_hash=consumed.head_hash,
+                eval_run_id=evidence.eval_run_id,
+                evidence_notes=evidence.notes,
+                at_ms=now,
+            )
+            CANONICAL_EVENT_SCHEMAS.validate(promotion_event)
+            registry.save(
+                catalog,
+                now=now,
+                event_outbox=(
+                    EventOutboxMessage(
+                        event=promotion_event,
+                        correlation_id=request_id,
+                        causation_id=consumed.head_hash,
+                    ),
+                ),
+            )
         except GuardRejected as exc:
             audit_ok = _audit_event(audit, request_id=request_id, alpha_id=alpha_id,
                                     actor=executor_id, action="PROMOTION_EXECUTION_FAILED",
@@ -282,6 +320,7 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
                                 now=now, nonce=nonce, metadata=meta_base)
         return PromotionOutcome(ok=True, request_id=request_id, alpha_id=alpha_id,
                                 dst=dst.value, burned=True, reasons=(),
-                                audit_ok=audit_ok, evidence_notes=evidence.notes)
+                                audit_ok=audit_ok, evidence_notes=evidence.notes,
+                                event_outbox_id=promotion_event.event_id)
     finally:
         lock.release()

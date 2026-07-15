@@ -11,23 +11,27 @@
     直接渲染其 `kill_switch.is_active`/`trip_count` —— 这是审计里最危险的那条真实渲染路径)
 
 真正跨进程持久化的实盘 kill-switch 状态由 `tools/live_track_advance.py` /
-`tools/live_risk_sentinel.py` 经 `live/governance/kill_switch_store.py::save_kill_switch_state`
-写入 `data/cache/live_kill_switch.json`(默认 venue,无后缀)。`services/` 不得 import `live/`
+`tools/live_risk_sentinel.py` 原子写入 `data/cache/live_kill_switch.db`;同名 JSON 只是兼容镜像。
+`services/` 不得 import `live/`
 (单向边界,`tests/governance/test_live_execution_boundary.py::test_services_tree_does_not_import_live`
 + `tests/governance/test_domain_import_boundary.py::test_services_does_not_import_live` 机器钉死),
-所以 console_api 侧改为直接读裸 JSON 文件、用两边共享的 `quantos.contracts.killswitch.KillSwitchState`
-契约反序列化(镜像本文件其余 live/* 只读快照 `_live_trading_payload`/`_gonogo_payload` 的既有模式),
-不导入 `live/` 的任何 Python 代码。
+所以 console_api 直接使用 risk 域的 append-only SQLite store;只有数据库尚未创建时才读取旧 JSON,
+不导入 `live/` 的任何 Python 代码。数据库存在但打不开/链损坏时必须 fail-closed,不得回退旧镜像。
 
 所有测试用 monkeypatch 把路径常量指向 tmp_path,不碰真实 data/cache/。
 """
 from fastapi.testclient import TestClient
 
 from quantos.contracts.killswitch import KillSwitchState
+from services.console.main import app
 from services.monitoring.audit_store import DurableAuditLog
-from services.research.console_api import main as capi
+from services.console.api import main as capi
+from services.risk.pre_trade.kill_switch_store import (
+    KillSwitchStateStore,
+    kill_switch_authority_path,
+)
 
-client = TestClient(capi.app)
+client = TestClient(app)
 
 TRIPPED = KillSwitchState(tripped=True, incident_id="incident-1", reason="drawdown breach",
                           armed_at=1000, trip_count=3)
@@ -35,6 +39,15 @@ TRIPPED = KillSwitchState(tripped=True, incident_id="incident-1", reason="drawdo
 
 def _write_state(path, state: KillSwitchState) -> KillSwitchState:
     path.write_text(state.model_dump_json(), encoding="utf-8")
+    return state
+
+
+def _write_authority(path, state: KillSwitchState) -> KillSwitchState:
+    store = KillSwitchStateStore(kill_switch_authority_path(str(path)), create=True)
+    try:
+        store.bootstrap(state, recorded_at=max(state.armed_at, state.reset_at))
+    finally:
+        store.close()
     return state
 
 
@@ -70,6 +83,42 @@ def test_safety_primitives_fails_closed_on_corrupt_state_file(tmp_path, monkeypa
     payload = capi._safety_primitives_payload()
 
     # 状态文件损坏必须读成"已触发"—— 安全状态损坏绝不能被解读为"安全"
+    assert payload["kill_switch"]["is_active"] is True
+
+
+def test_safety_primitives_prefers_authority_over_stale_clear_mirror(tmp_path, monkeypatch):
+    path = tmp_path / "live_kill_switch.json"
+    _write_state(path, KillSwitchState())
+    _write_authority(path, TRIPPED)
+    monkeypatch.setattr(capi, "_LIVE_KILL_SWITCH_STATE", str(path))
+
+    payload = capi._safety_primitives_payload()
+
+    assert payload["kill_switch"]["is_active"] is True
+    assert payload["kill_switch"]["trip_count"] == 3
+
+
+def test_safety_primitives_prefers_clear_authority_over_stale_tripped_mirror(tmp_path, monkeypatch):
+    path = tmp_path / "live_kill_switch.json"
+    _write_state(path, TRIPPED)
+    _write_authority(path, KillSwitchState())
+    monkeypatch.setattr(capi, "_LIVE_KILL_SWITCH_STATE", str(path))
+
+    payload = capi._safety_primitives_payload()
+
+    assert payload["kill_switch"]["is_active"] is False
+    assert payload["kill_switch"]["trip_count"] == 0
+
+
+def test_safety_primitives_corrupt_authority_overrides_valid_clear_mirror(tmp_path, monkeypatch):
+    path = tmp_path / "live_kill_switch.json"
+    _write_state(path, KillSwitchState())
+    authority = tmp_path / "live_kill_switch.db"
+    authority.write_bytes(b"not-a-sqlite-database")
+    monkeypatch.setattr(capi, "_LIVE_KILL_SWITCH_STATE", str(path))
+
+    payload = capi._safety_primitives_payload()
+
     assert payload["kill_switch"]["is_active"] is True
 
 

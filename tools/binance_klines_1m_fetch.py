@@ -38,8 +38,12 @@ from __future__ import annotations
 
 import time
 
-from services.data.adapters import SourceSpec, normalize_records
-from tools.binance_klines_fetch import fetch_klines
+from services.data.adapters import (SourceSpec, VolumeSemantics, VolumeUnit,
+                                    normalize_records)
+from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
+                                       archive_json_response)
+from tools.binance_klines_fetch import (_parse_klines_for_interval,
+                                        fetch_klines)
 
 _MINUTE_MS = 60_000
 
@@ -49,28 +53,20 @@ BN1M_SPEC = SourceSpec(
                "low": "l", "close": "c", "volume": "v"},
     knowledge_lag=_MINUTE_MS,   # kt = open + 1m = CLOSE (deliberate; see module docstring — do NOT
                                 # revert this to the daily fetcher's knowledge_lag=0)
+    volume_unit=VolumeUnit.BASE_ASSET,
+    volume_semantics=VolumeSemantics.PER_BAR,
 )
 
 
-def parse_klines_1m(batch, *, instrument_id: str) -> dict:
+def parse_klines_1m(batch, *, instrument_id: str, diagnostics=None) -> dict:
     """Pure: a klines array -> {minute_bucket_ms: row}. Each kline = [openTime, o, h, l, c, v, ...].
     Snaps openTime to the UTC minute grid (mirror of parse_klines_1h but on _MINUTE_MS)."""
-    out = {}
-    if not isinstance(batch, list):
-        return out
-    for k in batch:
-        if not (isinstance(k, (list, tuple)) and len(k) >= 6):
-            continue
-        try:
-            ts = int(k[0])
-            o, h, low, c, v = float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])
-        except (TypeError, ValueError):
-            continue
-        if c <= 0 or o <= 0:
-            continue
-        bucket = (ts // _MINUTE_MS) * _MINUTE_MS
-        out[bucket] = {"sym": instrument_id, "ts": bucket, "o": o, "h": h, "l": low, "c": c, "v": v}
-    return out
+    return _parse_klines_for_interval(
+        batch,
+        instrument_id=instrument_id,
+        interval_ms=_MINUTE_MS,
+        diagnostics=diagnostics,
+    )
 
 
 _PAGE_MAX_RETRIES = 4       # up to 5 attempts per page before giving up on the whole fetch
@@ -99,7 +95,8 @@ def _fetch_page_with_retry(symbol: str, *, end_ms: int, sleep, kw: dict):
 
 
 def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_get=None,
-                      now_ms=None, sleep=time.sleep) -> list:
+                      now_ms=None, sleep=time.sleep, archive_root=None,
+                      observed_at_ms=None) -> list:
     """Paginate public 1m klines over [start_ms, end_ms], snap to the UTC minute grid, drop any
     bar not yet closed as of `now_ms` (no lookahead) and anything outside [start_ms, end_ms].
     Returns canonical bar rows via BN1M_SPEC (kt=close). No key. Fail-soft: empty list if the
@@ -109,6 +106,8 @@ def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_g
     delay and the new per-page retry backoff below."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
+    if archive_root is not None and observed_at_ms is None:
+        raise ValueError("observed_at_ms is required when archive_root is set")
     if end_ms is None:
         end_ms = now_ms
     if start_ms > end_ms:
@@ -119,10 +118,34 @@ def fetch_minute_rows(ticker: str = "BTC", *, start_ms: int, end_ms=None, http_g
     span_minutes = (end_ms - start_ms) // _MINUTE_MS + 1
     max_pages = max(1, (span_minutes // 1000) + 2)     # ~ enough pages to cover the range (1000 bars/page)
     for _ in range(max_pages):
-        batch = _fetch_page_with_retry(symbol, end_ms=cursor, sleep=sleep, kw=kw)
+        source_uris = []
+        page_kw = dict(kw)
+        page_kw["source_sink"] = source_uris
+        batch = _fetch_page_with_retry(
+            symbol, end_ms=cursor, sleep=sleep, kw=page_kw
+        )
+        diagnostics = {}
+        parsed = parse_klines_1m(
+            batch, instrument_id=ticker, diagnostics=diagnostics
+        )
+        overlap = len(set(by_bucket).intersection(parsed))
+        if overlap:
+            diagnostics["duplicate_rows"] += overlap
+            diagnostics["accepted_rows"] -= overlap
+        if archive_root is not None:
+            archive_json_response(
+                root=archive_root,
+                payload=batch,
+                source_uri=source_uris[-1],
+                provider="Binance public spot klines",
+                dataset_id="spot_klines_1m",
+                instrument_id=ticker,
+                observed_at_ms=int(observed_at_ms),
+                parse_diagnostics=diagnostics,
+            )
         if not isinstance(batch, list) or not batch:
             break
-        by_bucket.update(parse_klines_1m(batch, instrument_id=ticker))
+        by_bucket.update(parsed)
         oldest = int(batch[0][0])
         if len(batch) < 1000 or oldest <= start_ms:
             break                                      # reached start of requested range / short page
@@ -172,14 +195,28 @@ def main() -> None:
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
     store = SqlitePITStore(os.path.join("data", "cache", "crypto_binance_1m.db"), create=True)
     now_ms = int(time.time() * 1000)
-    rows = fetch_minute_rows(tk, start_ms=parsed["start_ms"], end_ms=parsed["end_ms"], now_ms=now_ms)
+    rows = fetch_minute_rows(
+        tk,
+        start_ms=parsed["start_ms"],
+        end_ms=parsed["end_ms"],
+        now_ms=now_ms,
+        archive_root=DEFAULT_RAW_ARCHIVE,
+        observed_at_ms=now_ms,
+    )
     # strict=True (2026-07-09): this fetch feeds a rigorous strategy validation where the
     # strategy's own doc names gap-induced EMA/volume-ratio skew as a known risk (§11.4) — a
     # silently-accepted gap/duplicate/out-of-order bar would corrupt every indicator computed
     # from it, not just the affected minute. Fail loudly (FatalIngestionError) rather than
     # silently ingesting a compromised series; audit F4 flagged exactly this default-off gap.
-    rep = ingest_provider_rows(rows, store, dataset_id=f"bn1m-{tk}", now=now_ms, time_unit="ms",
-                               strict=True)
+    rep = ingest_provider_rows(
+        rows,
+        store,
+        dataset_id=f"bn1m-{tk}",
+        now=now_ms,
+        time_unit="ms",
+        strict=True,
+        expected_interval=_MINUTE_MS,
+    )
     span = (time.strftime("%Y-%m-%d %H:%M", time.gmtime(rows[0]["event_time"] / 1000)) + " .. " +
             time.strftime("%Y-%m-%d %H:%M", time.gmtime(rows[-1]["event_time"] / 1000))) if rows else "—"
     print(f"{tk}USDT 1m: {len(rows)} minute bars [{span}], ingested {rep.bars_ingested}")

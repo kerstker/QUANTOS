@@ -59,7 +59,7 @@ make hooks            # 或:sh scripts/install-hooks.sh
 
 - PR 必须通过 CI 的 `validate`(后端门禁 + 前端)两个检查,并至少 1 人评审通过才可合并到 `main`。
 - 按 PR 模板逐项自查(安全红线、tests-first、门禁绿、无密钥、契约两侧同改)。
-- 大改动(新子系统/破坏性变更)先开 issue 或设计文档(`docs/superpowers/specs/`)对齐再动手。
+- 大改动(新子系统/破坏性变更)先开 issue 或设计文档(`docs/engineering/specs/`)对齐再动手。
 
 ## 6. 常用命令速查
 

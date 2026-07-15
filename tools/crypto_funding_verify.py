@@ -16,7 +16,7 @@ from services.data.caching_store import CachingPITStore
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.backtest_engine.costs import CostModel
-from services.research.validation.walk_forward import walk_forward_splits
+from services.validation.walk_forward import walk_forward_splits
 from services.alpha.panel_backtest import run_panel_backtest
 from tools.binance_funding_fetch import fetch_daily_funding
 from tools.crypto_alpha_research import _periods_timed, _per_year
@@ -70,14 +70,14 @@ def main() -> None:
 
     print(f"\n=== fund_avg7 ALONE: {len(panel.instruments)} perps x {len(event_times)} periods ===")
     print(f"full-sample net Sharpe(3bps) {round(sharpe(ret3),3)}  turnover {turn}")
-    print(f"--- tracked no-peek OOS (this factor only) ---")
+    print("--- tracked no-peek OOS (this factor only) ---")
     for w, isr, osr in folds:
         print(f"  fold{w}: IS {isr:>6}  OOS {osr:>6}")
     print(f"  mean OOS {mean_oos}  OOS+ {oos_pos} ({len(folds)} folds)")
-    print(f"--- cost stress (full-sample net Sharpe) ---")
+    print("--- cost stress (full-sample net Sharpe) ---")
     for bps in COST_BPS:
         print(f"  {bps:>2}bps: {round(sharpe(_net(periods, bps)),3)}")
-    print(f"--- per-year (3bps) ---  " + " ".join(f"{y}:{v:+.1f}" for y, v in _per_year(times, ret3).items()))
+    print("--- per-year (3bps) ---  " + " ".join(f"{y}:{v:+.1f}" for y, v in _per_year(times, ret3).items()))
 
 
 if __name__ == "__main__":

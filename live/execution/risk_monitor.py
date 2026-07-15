@@ -1,5 +1,5 @@
 """仓位/回撤风险监控(Stage 1.5)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §9。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §9。
 
 分两级(与 `live/governance/mandate.py` 分级授权同一哲学——安全响应可以自动,但新的下单
 触发必须由人另外签署授权才激活):
@@ -21,6 +21,8 @@ from typing import List, Mapping, Optional, Tuple
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.trading import OrderSide
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.pre_trade.kill_switch_runtime import arm_and_record
+from services.risk.pre_trade.kill_switch_store import KillSwitchStateConflict
 
 _RISK_MONITOR_ACTOR = Actor(actor_id="risk_monitor", kind=ActorKind.SYSTEM)
 
@@ -111,6 +113,33 @@ def respond_to_breach(*, kill_switch: KillSwitch, breach: RiskBreach, at: int,
     state = kill_switch.arm(_RISK_MONITOR_ACTOR, f"risk_monitor: {','.join(breach.reasons)}",
                             at=at, audit_sink=audit_sink)
     return {"action": "kill_switch_armed", "breach": breach, "incident_id": state.incident_id}
+
+
+def respond_to_breach_persisted(*, store, breach: RiskBreach, at: int) -> dict:
+    """Atomically latch the authoritative state and activation event on a breach."""
+    if not breach.breached:
+        return {"action": "none", "breach": breach}
+    try:
+        state = arm_and_record(
+            store,
+            _RISK_MONITOR_ACTOR,
+            f"risk_monitor: {','.join(breach.reasons)}",
+            at=at,
+        )
+    except KillSwitchStateConflict:
+        current = store.load_state()
+        if not current.tripped:
+            raise
+        return {
+            "action": "already_tripped",
+            "breach": breach,
+            "incident_id": current.incident_id,
+        }
+    return {
+        "action": "kill_switch_armed",
+        "breach": breach,
+        "incident_id": state.incident_id,
+    }
 
 
 def compute_flatten_orders(positions: Mapping[str, float], prices: Mapping[str, float], *,

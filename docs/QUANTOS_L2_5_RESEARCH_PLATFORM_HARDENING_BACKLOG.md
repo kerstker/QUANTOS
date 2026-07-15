@@ -198,7 +198,7 @@ flowchart TD
 ```powershell
 rtk npm run typecheck
 rtk npm run build
-rtk proxy python -m pytest services/research/console_api/tests/test_console_api.py -q
+rtk proxy python -m pytest services/console/api/tests/test_console_api.py -q
 rtk proxy python scripts\run_paper_to_live_governance_check.py
 rtk proxy python scripts\run_dry_run_adapter_integration_gate.py
 ```
@@ -253,4 +253,3 @@ L2.5 完成时，必须满足：
 5. 创建 `docs/security/AUDIT_LEDGER_DESIGN.md`
 6. 创建 `docs/security/RBAC_POLICY.md`
 7. 开发 Monitoring & Drift 页面和后端 snapshot
-

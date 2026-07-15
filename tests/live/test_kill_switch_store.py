@@ -2,13 +2,21 @@
 发现:`KillSwitch()` 此前每次驱动器运行都全新构造,上一轮/哨兵触发的闩锁在下一次调用里
 完全不存在——"halt 直到人工复位"这个latch 的核心承诺,在跨进程/跨调度场景下从未真正生效。
 """
-import json
+import os
+import sqlite3
 
 import pytest
 
-from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
+from live.governance.kill_switch_store import (
+    kill_switch_db_path,
+    load_kill_switch_state,
+    open_authoritative_kill_switch_store,
+    save_kill_switch_state,
+)
 from quantos.contracts.killswitch import KillSwitchState
+from quantos.contracts.events import EVENT_KILL_SWITCH_ACTIVATED
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.pre_trade.kill_switch_store import KillSwitchStateConflict
 
 
 def test_missing_file_loads_untripped_default(tmp_path):
@@ -26,6 +34,69 @@ def test_save_then_load_round_trips(tmp_path):
     assert loaded.tripped is True
     assert loaded.incident_id == ks.state.incident_id
     assert loaded.reason == "test breach"
+    assert os.path.exists(kill_switch_db_path(path))
+
+
+def test_authoritative_db_wins_when_json_mirror_is_stale_or_corrupt(tmp_path):
+    path = str(tmp_path / "ks.json")
+    from quantos.contracts.alpha import Actor, ActorKind
+
+    ks = KillSwitch()
+    ks.arm(Actor(actor_id="sentinel", kind=ActorKind.SYSTEM), "breach", at=1000)
+    save_kill_switch_state(path, ks.state)
+    open(path, "w", encoding="utf-8").write("{corrupt mirror")
+
+    assert load_kill_switch_state(path) == ks.state
+
+
+def test_legacy_json_is_migrated_once_into_authoritative_store(tmp_path):
+    path = str(tmp_path / "legacy.json")
+    from quantos.contracts.alpha import Actor, ActorKind
+
+    ks = KillSwitch()
+    ks.arm(Actor(actor_id="sentinel", kind=ActorKind.SYSTEM), "legacy", at=1000)
+    open(path, "w", encoding="utf-8").write(ks.state.model_dump_json())
+
+    store = open_authoritative_kill_switch_store(path)
+    try:
+        assert store.load_state() == ks.state
+        pending = store.pending_event_outbox()
+        assert len(pending) == 1
+        assert pending[0]["event"].event_type == EVENT_KILL_SWITCH_ACTIVATED
+        assert pending[0]["correlation_id"] == ks.state.incident_id
+    finally:
+        store.close()
+    assert load_kill_switch_state(path) == ks.state
+
+
+def test_corrupt_authoritative_db_fails_closed_even_when_json_is_valid(tmp_path):
+    path = str(tmp_path / "ks.json")
+    from quantos.contracts.alpha import Actor, ActorKind
+
+    ks = KillSwitch()
+    ks.arm(Actor(actor_id="sentinel", kind=ActorKind.SYSTEM), "breach", at=1000)
+    save_kill_switch_state(path, ks.state)
+    connection = sqlite3.connect(kill_switch_db_path(path))
+    connection.execute("DROP TRIGGER kill_switch_transitions_no_update")
+    connection.execute("UPDATE kill_switch_transitions SET state_hash='evil'")
+    connection.commit()
+    connection.close()
+
+    loaded = load_kill_switch_state(path)
+    assert loaded.tripped is True
+    assert loaded.incident_id == "corrupt-state-fail-closed"
+
+
+def test_legacy_save_cannot_overwrite_existing_authoritative_state(tmp_path):
+    path = str(tmp_path / "ks.json")
+    from quantos.contracts.alpha import Actor, ActorKind
+
+    ks = KillSwitch()
+    ks.arm(Actor(actor_id="sentinel", kind=ActorKind.SYSTEM), "breach", at=1000)
+    save_kill_switch_state(path, ks.state)
+
+    with pytest.raises(KillSwitchStateConflict, match="refusing legacy overwrite"):
+        save_kill_switch_state(path, KillSwitchState())
 
 
 def test_corrupt_file_fails_closed_as_tripped(tmp_path):

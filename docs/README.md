@@ -7,6 +7,8 @@
 | 文档 | 是什么 |
 |---|---|
 | [`CLAUDE.md`](../CLAUDE.md)(根目录) | **唯一的地面真相**。"系统实际有什么"的权威描述,每次重大变更都应同步更新。任何其它文档与它冲突,以它为准。 |
+| [`docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`](QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md) | 当前顶级能力机器评估；成熟度、红线与下一步的唯一计分源。 |
+| [`docs/PROJECT_STATE.md`](PROJECT_STATE.md) | 最新工作进度与会话交接，包含最近门禁结果。 |
 | [`docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md`](audit/2026-07-07-live-readiness-top-tier-gap-audit.md) | 最新一轮全维度审计(9 维度独立打分 + 跨维度结构性差距 + 有序阻塞清单)。想知道"现在到底差什么"看这份。 |
 | [`docs/audit/RISK_REGISTER.md`](audit/RISK_REGISTER.md) | 活文档,逐条风险 P0/P1/P2 + 修复状态,change 后应同步更新(历史上出现过顶部日志与详述条目不同步的问题,已修复两处,以后改动请同时改两处)。 |
 | [`docs/PHASE_3A_GO_NO_GO_CHECKLIST.md`](PHASE_3A_GO_NO_GO_CHECKLIST.md) | 走向首笔实盘的人工签字清单,唯一权威版本(`docs/_archive/phase3a-day1-boilerplate/` 那批同名早期文档已废弃,见下)。 |
@@ -24,16 +26,17 @@ docs/
 ├── research/       研究结论(因子发现、证伪过程等)
 ├── runbooks/        权威:运维 playbook
 ├── reports/         自动生成:每日 Go/No-Go 证据报告(schtasks 产出,追加式)
-├── superpowers/
-│   ├── specs/       历史:TDD "先写设计"记录(57 份,按日期命名)
-│   └── plans/       历史:TDD "再写实施计划"记录(25 份,按日期命名)
+├── engineering/
+│   ├── specs/       历史:TDD "先写设计"记录(64 份,按日期命名)
+│   └── plans/       历史:TDD "再写实施计划"记录(32 份,按日期命名)
 └── _archive/        已废弃/被取代,保留仅供历史参考,不要按其内容行动
     ├── phase3a-day1-boilerplate/   2026-06-23 建仓当天的传统期货 broker 上线脚手架,与实际
     │                               加密货币方向无关,从未更新过——见其 README.md
     └── stale-snapshots/            审阅了不完整代码快照、结论已过时的旧审计文档
 ```
 
-`docs/superpowers/{specs,plans}` 是这个项目的开发范式本身(spec → plan → TDD 实现,同一条工作
+`docs/engineering/{specs,plans}` 是项目自有的开发记录，不依赖任何外部技能或插件。它保留
+spec → plan → TDD 实现的完整链路，同一条工作
 在这里能看到从设计意图到落地代码的完整链路),**不是待清理的杂物**——历史上曾有一次因为
 master 分支指针滞后,被误判成"两条独立开发线互不知情的重复劳动",后来用 `git merge-base
 --is-ancestor` 核实其实是同一条线性提交链,只是文档没有回头补一行"已被取代"的指针。教训:

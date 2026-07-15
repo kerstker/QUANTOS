@@ -1,5 +1,5 @@
 """Gate 账户上下文构造(2026-07-05,机构审计 P1)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md 补充。
 
 纯函数、无网络/无 IO。把真实账本仓位折算成 `services/risk/pre_trade/context.py::
 AccountRiskState.positions` 认识的 `Position` 序列——修复"gate 账户级检查(仓位限额/
@@ -13,9 +13,18 @@ AccountRiskState.positions` 认识的 `Position` 序列——修复"gate 账户�
 """
 from __future__ import annotations
 
-from typing import Mapping, Tuple
+from dataclasses import dataclass
+from typing import Mapping, Sequence, Tuple
 
 from quantos.contracts.portfolio import Position
+from services.risk.pre_trade.context import order_fingerprint
+
+
+@dataclass(frozen=True)
+class RecentOrderGateInputs:
+    timestamps: Tuple[int, ...]
+    fingerprints: Tuple[str, ...]
+    statuses: Tuple[str, ...]
 
 
 def build_gate_positions(current_positions: Mapping[str, float], prices: Mapping[str, float],
@@ -33,3 +42,60 @@ def build_gate_positions(current_positions: Mapping[str, float], prices: Mapping
         out.append(Position(instrument_id=inst, quantity=int(round(qty * unit_scale)),
                             avg_cost=0.0, market_value=market_value))
     return tuple(out)
+
+
+def build_recent_order_gate_inputs(
+    orders: Sequence[Mapping[str, object]],
+    *,
+    now: int,
+    rate_window_ms: int,
+    duplicate_window_ms: int,
+    unit_scale: int,
+) -> RecentOrderGateInputs:
+    """Build rate, duplicate, and cancel-rate inputs from one durable ledger snapshot."""
+    if rate_window_ms <= 0:
+        raise ValueError("rate_window_ms must be positive")
+    if duplicate_window_ms <= 0 or duplicate_window_ms > rate_window_ms:
+        raise ValueError("duplicate_window_ms must be positive and no larger than rate_window_ms")
+    if unit_scale <= 0:
+        raise ValueError("unit_scale must be positive")
+
+    rate_cutoff = now - rate_window_ms
+    duplicate_cutoff = now - duplicate_window_ms
+    timestamps = []
+    statuses = []
+    fingerprints = []
+
+    for order in orders:
+        submitted_at = int(order["submitted_at"])
+        if submitted_at > now:
+            raise ValueError("future submitted_at in live order ledger")
+        if submitted_at < rate_cutoff:
+            continue
+
+        timestamps.append(submitted_at)
+        statuses.append(str(order["status"]).upper())
+        if submitted_at < duplicate_cutoff:
+            continue
+
+        quantity = int(round(float(order["quantity"]) * unit_scale))
+        if quantity <= 0:
+            raise ValueError("non-positive quantity in live order ledger")
+        stored_limit = order.get("limit_price")
+        limit_prices = [None]
+        if stored_limit is not None:
+            limit_prices.append(float(stored_limit))
+        for limit_price in limit_prices:
+            fingerprints.append(order_fingerprint(
+                instrument_id=str(order["instrument_id"]),
+                side=str(order["side"]),
+                quantity=quantity,
+                limit_price=limit_price,
+                strategy_id=str(order["strategy_id"]),
+            ))
+
+    return RecentOrderGateInputs(
+        timestamps=tuple(timestamps),
+        fingerprints=tuple(dict.fromkeys(fingerprints)),
+        statuses=tuple(statuses),
+    )

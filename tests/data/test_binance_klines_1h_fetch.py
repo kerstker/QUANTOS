@@ -3,6 +3,7 @@ knowledge_lag=收盘(防日内 as_of=开盘纳入未收盘 bar 的前视)。cade
 import os
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.raw_archive import summarize_archive
 from tools.binance_klines_1h_fetch import (BN1H_SPEC, fetch_hourly_rows, parse_klines_1h)
 
 _H = 3_600_000
@@ -41,6 +42,25 @@ def test_fetch_discards_the_live_unclosed_hour():
     ets = {r["event_time"] for r in rows}
     assert _BASE not in ets                                       # 活小时 bar 被丢弃(无前视)
     assert (_BASE - 2 * _H) in ets and (_BASE - _H) in ets
+
+
+def test_hourly_fetch_archives_source_page(tmp_path):
+    now = _BASE
+    batch = [_kline(_BASE - 2 * _H, 1, 2, 0.5, 1.5, 100)]
+
+    rows = fetch_hourly_rows(
+        "BTC",
+        hours=10,
+        http_get=_fake_http(batch),
+        now_ms=now,
+        archive_root=str(tmp_path),
+        observed_at_ms=now,
+    )
+
+    assert len(rows) == 1
+    lineage = summarize_archive(str(tmp_path))
+    assert lineage["status"] == "PASS"
+    assert lineage["datasets"] == {"spot_klines_1h": 1}
 
 
 def test_normalized_rows_have_close_knowledge_time():

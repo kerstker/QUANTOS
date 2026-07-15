@@ -7,6 +7,7 @@ import os
 import pytest
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.raw_archive import summarize_archive
 from tools.binance_klines_1m_fetch import (BN1M_SPEC, _parse_args, fetch_minute_rows,
                                            parse_klines_1m)
 
@@ -108,6 +109,25 @@ def test_fetch_stitches_multiple_pages_correctly():
     assert ets == sorted(set(ets))                                  # 无重复 bucket
     assert ets[0] == start_open and ets[-1] == _BASE - _MIN
     assert len(http.calls) >= 2                                     # 确实分了至少两页,不是单页凑巧对上
+
+
+def test_minute_fetch_archives_source_page(tmp_path):
+    batch = [_kline(_BASE - 2 * _MIN, 1, 2, 0.5, 1.5, 100)]
+
+    rows = fetch_minute_rows(
+        "BTC",
+        start_ms=_BASE - 10 * _MIN,
+        end_ms=_BASE - 1,
+        http_get=_fake_http(batch),
+        now_ms=_BASE,
+        archive_root=str(tmp_path),
+        observed_at_ms=_BASE,
+    )
+
+    assert len(rows) == 1
+    lineage = summarize_archive(str(tmp_path))
+    assert lineage["status"] == "PASS"
+    assert lineage["datasets"] == {"spot_klines_1m": 1}
 
 
 # ---------------------------------------------------------------------------

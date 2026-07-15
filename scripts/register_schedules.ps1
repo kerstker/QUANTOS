@@ -1,83 +1,177 @@
-# QUANTOS 调度注册(2026-07-05 首版,2026-07-06 补充自动回测/研究挖掘两条)。运行一次即
-# 注册全套常驻任务;每条都可单独删除:schtasks /delete /f /tn "QUANTOS_<name>"
+# QUANTOS L2_DRY_RUN_ONLY schedule registration.
 #
-# 注册的授权含义(运行本脚本 = 你签署以下常驻自动化):
-#   1. 每周日 20:00 自动因子挖掘(loop-until-dry 正交边挖掘,MAX_ROUNDS=8 自终止,纯研究——
-#      不写 AlphaCatalog/不驱动晋级,auto_approved 恒 0,只落 data/cache/ 快照供人工查看);
-#   2. 每周日 20:30 IC 面板诊断刷新(逐候选因子截面 IC + 多持有期,同样纯诊断非门禁);
-#   3. 每周一 09:00 前向证据钟推进(纸面,零订单);
-#   3b. 每周一 09:05 alpha 维护 sweep(Phase 5 item 1):经审计 manager(非人)把衰退 alpha 降级/
-#      退役,落只读快照 data/cache/alpha_maintenance_status.json;live 驱动器读到本策略 RETIRED/PAUSED
-#      即**停止新增敞口**(现有仓位原样不动,绝不自动减仓——减仓目标数字 + full-flatten 需人签)。
-#      纯研究状态 sweep + 停止加仓联动,不驱动任何自动晋级、不碰 order 路径。排在 09:00 证据推进之后、
-#      09:10 真实调仓之前,故当轮降级能挡下同一早上的加仓。无 backtest 参照/无证据时 fail-closed 空跑。
-#   4. 每周一 09:10/09:20 双所真实提交调仓(--submit;mandate fail-closed 限额内自动,
-#      超限自动升级人工,mandate 删除即全停);
-#   5. 每小时风险哨兵 --act:越限时走独立 reduce-only 紧急通道自动减仓
-#      (结构上只能减仓;纯数据质量问题绝不自动交易);
-#   6. 登录时自启交易台 ops API(:8440,仅本机);
-#   7. 每小时死人开关:检查以上任务是否按预期节奏运行,静默失败会大声告警;
-#   8. 每日灾备:业务数据+mandate 配置备份到 data/backup/(不含 API 密钥,见
-#      tools/live_backup.py 模块说明——密钥备份是你自己的安全实践)。tools/live_backup.py
-#      2026-07-08 起 fail-closed:没配 QUANTOS_BACKUP_PASSPHRASE 就拒绝执行(不再静默明文)。
-#      本脚本注册这条任务前,若当前 shell 已设置该变量,会用 setx 持久化进当前用户的环境块,
-#      让不继承交互式 shell 的计划任务子进程也能看到它;若未设置,本脚本会打印醒目警告并
-#      跳过注册这一条任务,不会留一条此后每天静默失败的计划任务。另见 tools/watchdog.py
-#      新增的 backup 新鲜度检查(死人开关兜底,防止这条任务日后又静默失效而无人发现)。
-#   9. 每日 23:00 盘后 GoNoGo 证据报告(Phase 5 item 3):聚合前向证据 + 逐 venue PnL/成本归因 +
-#      事故台账,落 data/cache/gonogo_report.json + docs/reports/gonogo-<date>.md。**纯只读报告**——
-#      不下 Go/No-Go 结论(结论是 Phase 3A 人工评审)、不驱动任何自动化、不碰 order 路径。console
-#      /api/v1/console/gonogo 只读该快照展示。
-#
-# 诚实边界:①②是"自动跑研究/回测",产出落数据快照供人工在前端/console 查看——不等于
-# "自动晋级/自动上线新策略"。任何新因子从这里跑出来之后,能不能进 paper-track/干跑/真实
-# 执行,仍然要走战线①的晋级闭环(多方批准)或你亲自拍板,代码不会替你自动把新东西接进
-# ③④的真实调仓循环。
+# Running this script authorizes only research, paper evidence, maintenance,
+# domain-event operations, and read-only reporting jobs. It never registers a
+# venue submission, emergency trading action, credential-bearing API, or live
+# monitoring process. Legacy tasks with those capabilities are disabled (not
+# deleted) before the L2 jobs are registered.
 param()
 
-$py = "H:\miniconda\python.exe"
-$wd = "H:\code\QUANTOS"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-schtasks /create /f /tn "QUANTOS_factory_loop" `
-  /tr "cmd /c cd /d $wd && $py -m tools.crypto_factory_loop" /sc WEEKLY /d SUN /st 20:00
-schtasks /create /f /tn "QUANTOS_ic_panel_refresh" `
-  /tr "cmd /c cd /d $wd && $py -m tools.ic_panel_research" /sc WEEKLY /d SUN /st 20:30
-schtasks /create /f /tn "QUANTOS_forward_track" `
-  /tr "cmd /c cd /d $wd && $py -m tools.forward_track_advance" /sc WEEKLY /d MON /st 09:00
-schtasks /create /f /tn "QUANTOS_alpha_maintenance" `
-  /tr "cmd /c cd /d $wd && $py -m tools.alpha_maintenance_sweep" /sc WEEKLY /d MON /st 09:05
-schtasks /create /f /tn "QUANTOS_live_track_binance" `
-  /tr "cmd /c cd /d $wd && $py -m tools.live_track_advance --submit" /sc WEEKLY /d MON /st 09:10
-schtasks /create /f /tn "QUANTOS_live_track_bybit_demo" `
-  /tr "cmd /c cd /d $wd && $py -m tools.live_track_advance --venue bybit_demo --submit" /sc WEEKLY /d MON /st 09:20
-schtasks /create /f /tn "QUANTOS_risk_sentinel" `
-  /tr "cmd /c cd /d $wd && $py -m tools.live_risk_sentinel --act" /sc HOURLY
-schtasks /create /f /tn "QUANTOS_ops_api" `
-  /tr "cmd /c cd /d $wd && $py -m uvicorn tools.live_ops_api:app --host 127.0.0.1 --port 8440" /sc ONLOGON
-schtasks /create /f /tn "QUANTOS_watchdog" `
-  /tr "cmd /c cd /d $wd && $py -m tools.watchdog" /sc HOURLY
-# 2026-07-08 code review 修复:tools/live_backup.py 的 fail-closed 密码闸门("没配
-# QUANTOS_BACKUP_PASSPHRASE 就拒绝执行,不静默退化成明文")上线后,若这里继续像其余任务一样
-# 直接注册、不传密码,QUANTOS_backup 会从此每天在触碰文件系统前以 SystemExit 拒绝执行——静默、
-# 无监控、无日志。这里改为:有密码就 setx 持久化 + 正常注册(并把 stdout/stderr 落日志,此前
-# 完全没有);没配置就大声警告 + 不注册,不留一条注定天天失败的计划任务给未来的自己发现。
-$backupPassphrase = $env:QUANTOS_BACKUP_PASSPHRASE
-if ($backupPassphrase) {
-  # setx 把当前用户的环境变量持久化进注册表——之后任何以同一用户身份启动的新进程(含 Task
-  # Scheduler 为计划任务重新构建的进程环境)都能看到它,不依赖这个交互式 shell 存活。
-  setx QUANTOS_BACKUP_PASSPHRASE $backupPassphrase | Out-Null
-  schtasks /create /f /tn "QUANTOS_backup" `
-    /tr "cmd /c cd /d $wd && $py -m tools.live_backup >> data\cache\quantos_backup_task.log 2>&1" `
-    /sc DAILY /st 03:00
-  Write-Host "QUANTOS_backup: passphrase persisted (setx) + task registered (encrypted daily backup)."
-} else {
-  Write-Warning "QUANTOS_BACKUP_PASSPHRASE not set in this shell -- QUANTOS_backup task was NOT registered."
-  Write-Warning "  tools/live_backup.py now refuses to run without it (fail-closed, no plaintext fallback)."
-  Write-Warning '  Fix: $env:QUANTOS_BACKUP_PASSPHRASE = "<passphrase>"; then re-run this script.'
-  Write-Warning "  (or knowingly accept unencrypted backups by adding --allow-plaintext to this block)."
+$wd = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$pythonCommand = Get-Command python -ErrorAction Stop
+$py = $pythonCommand.Source
+
+function Disable-TaskIfPresent {
+  param([Parameter(Mandatory = $true)][string]$Name)
+
+  $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+  if ($null -eq $task) {
+    Write-Host "${Name}: not present"
+    return
+  }
+  Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+  Write-Host "${Name}: disabled before L2 registration"
 }
-schtasks /create /f /tn "QUANTOS_gonogo_report" `
-  /tr "cmd /c cd /d $wd && $py -m tools.gonogo_report" /sc DAILY /st 23:00
 
-schtasks /query /fo CSV | Select-String "QUANTOS"
-Write-Host "`n全部注册完成。删除单条: schtasks /delete /f /tn QUANTOS_<name>"
+function Get-UserOrMachineEnvironmentValue {
+  param([Parameter(Mandatory = $true)][string]$Name)
+
+  $value = [Environment]::GetEnvironmentVariable($Name, "User")
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = [Environment]::GetEnvironmentVariable($Name, "Machine")
+  }
+  return $value
+}
+
+function Get-L2BackupReadiness {
+  $passphrase = Get-UserOrMachineEnvironmentValue -Name "QUANTOS_BACKUP_PASSPHRASE"
+  if ([string]::IsNullOrWhiteSpace($passphrase) -or $passphrase.Trim().Length -lt 12) {
+    return [pscustomobject]@{ Ready = $false; Reason = "backup passphrase is missing or shorter than 12 characters" }
+  }
+  $destination = Get-UserOrMachineEnvironmentValue -Name "QUANTOS_BACKUP_DEST"
+  if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
+    return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_BACKUP_DEST is missing or not absolute" }
+  }
+  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $destinationRoot = [IO.Path]::GetPathRoot($destination)
+  $isUnc = $destination.StartsWith("\\")
+  if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
+    return [pscustomobject]@{ Ready = $false; Reason = "backup destination is on the workspace volume" }
+  }
+  return [pscustomobject]@{ Ready = $true; Reason = "strong passphrase and external destination are configured" }
+}
+
+function Get-ExternalHeartbeatReadiness {
+  $endpoint = Get-UserOrMachineEnvironmentValue -Name "QUANTOS_HEARTBEAT_URL"
+  $uri = $null
+  if (
+    [string]::IsNullOrWhiteSpace($endpoint) -or
+    -not [Uri]::TryCreate($endpoint, [UriKind]::Absolute, [ref]$uri) -or
+    $uri.Scheme -ne "https" -or
+    $uri.IsLoopback -or
+    -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+    -not [string]::IsNullOrEmpty($uri.Fragment)
+  ) {
+    return [pscustomobject]@{ Ready = $false; Reason = "operator-owned HTTPS heartbeat endpoint is not configured" }
+  }
+  return [pscustomobject]@{ Ready = $true; Reason = "HTTPS heartbeat endpoint is configured" }
+}
+
+function Get-EventSealReadiness {
+  $destination = Get-UserOrMachineEnvironmentValue -Name "QUANTOS_EVENT_SEAL_DEST"
+  if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
+    return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_EVENT_SEAL_DEST is missing or not absolute" }
+  }
+  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $destinationRoot = [IO.Path]::GetPathRoot($destination)
+  $isUnc = $destination.StartsWith("\\")
+  if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
+    return [pscustomobject]@{ Ready = $false; Reason = "event seal destination is on the workspace volume" }
+  }
+  return [pscustomobject]@{ Ready = $true; Reason = "external event seal destination is configured" }
+}
+
+function Register-L2Task {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Module,
+    [Parameter(Mandatory = $true)]$Trigger
+  )
+
+  $action = New-ScheduledTaskAction -Execute $py `
+    -Argument "-m tools.$Module" -WorkingDirectory $wd
+  $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
+    -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
+  Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
+    -Settings $settings -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
+    -Force | Out-Null
+  Write-Host "${Name}: registered tools.$Module"
+}
+
+$legacyLiveTasks = @(
+  "QUANTOS_live_track_binance",
+  "QUANTOS_live_track_bybit_demo",
+  "QUANTOS_risk_sentinel",
+  "QUANTOS_ops_api",
+  "QUANTOS_watchdog",
+  "QUANTOS_backup",
+  "QUANTOS_external_heartbeat",
+  "QUANTOS_domain_event_seal"
+)
+foreach ($taskName in $legacyLiveTasks) {
+  Disable-TaskIfPresent -Name $taskName
+}
+
+$factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Sunday -At "20:00"
+$icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Sunday -At "20:30"
+$forwardTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Monday -At "09:00"
+$maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Monday -At "09:05"
+$eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Hours 1)
+$schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+  -RepetitionInterval (New-TimeSpan -Minutes 15)
+$externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
+$backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
+$gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
+
+Register-L2Task -Name "QUANTOS_factory_loop" -Module "crypto_factory_loop" `
+  -Trigger $factoryTrigger
+Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
+  -Trigger $icTrigger
+Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
+  -Trigger $forwardTrigger
+Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
+  -Trigger $maintenanceTrigger
+Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
+  -Trigger $eventOpsTrigger
+Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdog" `
+  -Trigger $schedulerWatchdogTrigger
+Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
+  -Trigger $gonogoTrigger
+
+$backupReadiness = Get-L2BackupReadiness
+if ($backupReadiness.Ready) {
+  Register-L2Task -Name "QUANTOS_backup" -Module "l2_backup" `
+    -Trigger $backupTrigger
+} else {
+  Write-Warning "QUANTOS_backup remains disabled: $($backupReadiness.Reason)"
+}
+
+$heartbeatReadiness = Get-ExternalHeartbeatReadiness
+if ($heartbeatReadiness.Ready) {
+  Register-L2Task -Name "QUANTOS_external_heartbeat" -Module "external_heartbeat" `
+    -Trigger $externalHeartbeatTrigger
+} else {
+  Write-Warning "QUANTOS_external_heartbeat remains disabled: $($heartbeatReadiness.Reason)"
+}
+
+$eventSealReadiness = Get-EventSealReadiness
+if ($eventSealReadiness.Ready) {
+  Register-L2Task -Name "QUANTOS_domain_event_seal" -Module "domain_event_seal" `
+    -Trigger $eventSealTrigger
+} else {
+  Write-Warning "QUANTOS_domain_event_seal remains disabled: $($eventSealReadiness.Reason)"
+}
+
+Write-Host ""
+Write-Host "L2_DRY_RUN_ONLY schedules registered from $wd using $py"
+Write-Host "No live submission or broker-capable task was registered."

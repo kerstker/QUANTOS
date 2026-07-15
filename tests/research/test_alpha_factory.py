@@ -6,10 +6,15 @@ is scored on real economic (carry) return, so it evolves TOWARD the funding carr
 import math
 
 import services.research.alpha_expression as ax
-from services.research.alpha_factory import run_alpha_factory
+from services.research.alpha_factory import run_alpha_factory as _run_alpha_factory
 
 FIELDS = ["close", "funding"]
 WINDOWS = [3, 5, 7, 14]
+
+
+def run_alpha_factory(*args, **kwargs):
+    kwargs["ephemeral"] = True
+    return _run_alpha_factory(*args, **kwargs)
 
 
 def _panel():
@@ -117,11 +122,11 @@ def test_no_rng_or_wallclock_import():
 
 # ---- catalog= threading + full-population trial registration (2026-07-10, gap audit rank #6) --
 
-def test_default_catalog_none_is_unchanged_pipeline_behavior():
-    """catalog=None (default) must be byte-identical to pre-fix behavior."""
+def test_explicit_ephemeral_catalog_counts_the_full_population_in_memory():
+    """Explicit test-only runs still count every scored candidate before selection."""
     out = run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=2, population_size=12, elite_k=5,
                             dataset_version="dv", timestamp=1)
-    assert out["pipeline"]["catalog"].global_trial_count() == 5   # only the elite set, a fresh catalog
+    assert out["pipeline"]["catalog"].global_trial_count() == out["n_evaluated"]
 
 
 def test_supplied_catalog_registers_the_full_scored_population_not_just_the_elite():

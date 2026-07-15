@@ -37,7 +37,7 @@
 | 组合/风险 | `services/portfolio/{construction,risk_model,optimizer,attribution}.py`、`services/risk/research_risk/`(9 引擎)、`capacity`、`crowding` |
 | Paper Trading | `services/research/paper_trading/`(模型真实,PnL 占位) |
 | 前端 | `apps/research-console/src/`(26 页,mock-first) |
-| API | `services/research/console_api/main.py`(只读快照) |
+| API | `services/console/api/main.py`(只读快照) |
 | 测试 | `tests/`(104 文件 / 741 test_ 函数,按子系统);门禁 `scripts/validate.py`;CI `.github/workflows/validate.yml` |
 
 ---

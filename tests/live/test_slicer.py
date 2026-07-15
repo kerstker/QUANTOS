@@ -1,5 +1,5 @@
 """live/execution/slicer.py —— TWAP 切单(2026-07-05)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §⑥。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §⑥。
 
 诚实定位:$3-5k 周度调仓单子极小,现阶段默认不启用(`submit_live_batch(slicer=None)`);
 这是为规模化预留的**已测试**机制,不是摆设代码。关键性质:
@@ -15,11 +15,11 @@ from live.contracts import LiveOrderRequest
 from live.execution.position_ledger import LiveLedger
 from live.execution.slicer import plan_slices
 from live.governance.mandate import AUTO
-from live.pipeline import submit_live_batch
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 
-from test_pipeline import _PRICES, _FakeVenue, _WIDE_MANDATE, _ctx_factory, _gate
+from .test_pipeline import (_PRICES, _FakeVenue, _WIDE_MANDATE, _ctx_factory, _gate,
+                           submit_live_batch)
 
 _NOW = 1_700_000_000_000
 
@@ -99,7 +99,7 @@ def test_pipeline_with_slicer_submits_children_and_books_all_fills(ledger):
 
 def test_pipeline_without_slicer_behavior_unchanged(ledger):
     venue = _FakeVenue()
-    result = submit_live_batch(
+    submit_live_batch(
         weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
         gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
         ledger=ledger, audit=GlobalAuditLog(), strategy_id="crowd_contra",

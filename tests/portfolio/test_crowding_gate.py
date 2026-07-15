@@ -245,4 +245,5 @@ def test_calibrated_defaults_match_signature_and_documented():
     sig = inspect.signature(evaluate_crowding_gate)
     for k in ("threshold", "warn_threshold", "min_coverage", "max_name_weight", "max_exit_days"):
         assert sig.parameters[k].default == CALIBRATED_DEFAULTS[k], f"{k} drifted from CALIBRATED_DEFAULTS"
-    assert CALIBRATED_DEFAULTS["provenance"].startswith("SENSITIVITY_SCANNED")   # 扫描已做、发现记录在案
+    assert CALIBRATED_DEFAULTS["provenance"] == \
+        "LEGACY_GENERIC_DEFAULTS_SCANNED_NOT_PRODUCTION_CALIBRATED"

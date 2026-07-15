@@ -46,6 +46,7 @@ from services.execution.dry_run_store import DryRunStore
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
 from tools.crypto_oi_research import build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 # _crowding_rank 是纯排名数学(零 _legs()/实盘耦合)——直接复用基准驱动器的实现,避免两份
 # 逻辑漂移;两个驱动器的对照实验唯一变量应只是分仓方法本身。
 from tools.dry_run_crowd_contra_multi import _crowding_rank
@@ -142,11 +143,13 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id=_STRATEGY_ID, approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id=_STRATEGY_ID, aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
     crowding = summarize_gate_decisions(gate_decisions)
     run.detail["crowding_gate"] = crowding
@@ -156,7 +159,9 @@ def main() -> None:
     risk["series"] = "vol_target"
     risk["config_provenance"] = "RISK_CONFIG_DEFAULTS_UNCALIBRATED_FOR_WEEKLY"
     run.detail["research_risk"] = risk
-    DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"
           f"/BLOCK {crowding['n_block']} · 最差分 {crowding['worst_score']}", flush=True)

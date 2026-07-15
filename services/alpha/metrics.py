@@ -1,6 +1,6 @@
 """Series-level alpha metrics (Phase 6, build step 3).
 
-`factor_engine.compute_ic` gives ONE cross-section's IC; this module derives the
+`services.validation.factor_statistics.compute_ic` gives ONE cross-section's IC; this module derives the
 SERIES statistics it lacks and gets right — the **correct ICIR** = mean/std of a
 SERIES of per-period ICs (not factor_engine's single-cross-section pair-product
 figure), plus the IC t-stat, two-sided p-value, hit rate, lag-1 autocorrelation,

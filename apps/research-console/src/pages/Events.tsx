@@ -1,7 +1,7 @@
 import React from 'react';
 import { fetchEventsSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { EventsPayload, EventRecord } from '@/lib/types/research';
+import type { EventBusHealth, EventsPayload, EventRecord } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
@@ -18,6 +18,30 @@ const fallbackEvents: EventRecord[] = Array.from({ length: 10 }, (_, index) => (
   correlation_id: `corr-${2000 + index}`,
   payload: { read_only: true, fallback: true },
 }));
+
+const fallbackBusHealth: EventBusHealth = {
+  schema_version: 1,
+  verdict: 'UNAVAILABLE',
+  checked_at_ms: 0,
+  group_id: 'domain-event-projection-v1',
+  consumer_mode: 'SINGLE_NODE_LEASED_PARTITIONS',
+  integrity: {
+    event_chain_valid: null,
+    consumer_chain_valid: null,
+    coordination_chain_valid: null,
+  },
+  active_workers: [],
+  partition_count: 0,
+  pending_events: null,
+  oldest_pending_age_ms: null,
+  dead_letter_count: null,
+  event_records: null,
+  consumer_journal_records: null,
+  coordination_journal_records: null,
+  allocated_bytes: null,
+  retention_mode: 'APPEND_ONLY_ALERT_ONLY',
+  alerts: [],
+};
 
 /** Last token of a dotted event type → terminal-style short label (deterministic). */
 const leaf = (t: string): string => {
@@ -46,6 +70,11 @@ export default function Events() {
     useConsoleSnapshot<EventsPayload>(s => fetchEventsSnapshot(s));
 
   const events = usingBackend && payload ? payload.events : fallbackEvents;
+  const busHealth = usingBackend && payload?.event_bus_health
+    ? payload.event_bus_health
+    : fallbackBusHealth;
+  const busIntegrityOk = Object.values(busHealth.integrity).every(value => value === true);
+  const busVerdictOk = busHealth.verdict === 'PASS' || busHealth.verdict === 'WARN';
 
   // --- deterministic aggregates (no Math.random / Date.now) -----------------
   const typeCounts = new Map<string, number>();
@@ -117,7 +146,7 @@ export default function Events() {
         subtitle={bi('只读审计事件快照 · 跨智能体、纸面与风险服务的事件总线', 'Read-only audit event snapshot across the agent, paper, and risk bus')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
 
-      <KpiStrip cols={5}>
+      <KpiStrip cols={6}>
         <StatTile label={bi('事件总数', 'Total Events')} value={num(events.length)} accent />
         <StatTile label={bi('事件类型', 'Distinct Types')} value={num(typeCounts.size)} tone="info" />
         <StatTile label={bi('来源服务', 'Sources')} value={num(sourceCounts.size)} />
@@ -126,6 +155,12 @@ export default function Events() {
           tone={corrCoverage >= 1 ? 'pos' : 'warn'} />
         <StatTile label={bi('时间跨度', 'Time Span')} value={num(spanMin)} unit={bi('分', 'min')}
           sub={spanMin ? stamp(minTs) : undefined} />
+        <StatTile label={bi('总线健康', 'Bus Health')} value={busHealth.verdict}
+          sub={bi(
+            `积压 ${busHealth.pending_events ?? '-'} · 死信 ${busHealth.dead_letter_count ?? '-'}`,
+            `lag ${busHealth.pending_events ?? '-'} · DLQ ${busHealth.dead_letter_count ?? '-'}`,
+          )}
+          tone={statusTone(busHealth.verdict)} />
       </KpiStrip>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -186,6 +221,15 @@ export default function Events() {
             <div className="flex items-center justify-between rounded-lg border border-line bg-inset/40 px-3 py-2.5">
               <span className="text-xs text-muted">{bi('合成演示数据标记', 'Synthetic-data marker')}</span>
               <GateDot ok label={bi('诚实', 'HONEST')} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-line bg-inset/40 px-3 py-2.5">
+              <span className="text-xs text-muted">{bi('事件链完整性', 'Event-chain integrity')}</span>
+              <GateDot ok={busIntegrityOk} label={busIntegrityOk ? 'VERIFIED' : 'UNVERIFIED'} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-line bg-inset/40 px-3 py-2.5">
+              <span className="text-xs text-muted">{bi('保留策略', 'Retention policy')}</span>
+              <GateDot ok={busVerdictOk}
+                label={busHealth.retention_mode === 'APPEND_ONLY_ALERT_ONLY' ? 'ALERT ONLY' : busHealth.verdict} />
             </div>
           </div>
         </Panel>

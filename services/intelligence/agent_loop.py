@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 
 from services.alpha.config import AlphaFactoryConfig
@@ -19,6 +20,7 @@ from services.alpha.evaluator import AlphaEvaluator
 from services.alpha.factory import batch_pbo
 from services.alpha.lifecycle import AlphaLifecycleManager
 from services.research.backtest_engine.costs import CostModel
+from services.research.ports.persistence import TrialPersistenceError
 
 from .guardrails import AgentAction, assert_action_allowed
 
@@ -26,17 +28,20 @@ from .guardrails import AgentAction, assert_action_allowed
 class ResearchAgentLoop:
     def __init__(self, catalog: Optional[AlphaCatalog] = None,
                  config: Optional[AlphaFactoryConfig] = None,
-                 evaluator=None, manager=None, actor: Optional[Actor] = None):
+                 evaluator=None, manager=None, actor: Optional[Actor] = None,
+                 runtime=None):
         self.config = config or AlphaFactoryConfig()
         self.catalog = catalog or AlphaCatalog()
         self.evaluator = evaluator or AlphaEvaluator(self.catalog, self.config)
         self.manager = manager or AlphaLifecycleManager(self.catalog, self.config)
         self.actor = actor or Actor(actor_id="research-agent", kind=ActorKind.AGENT)
+        self.runtime = runtime
         if self.actor.is_human:
             raise ValueError("the autonomous research loop must run as a non-human actor")
 
     def run(self, candidates: Sequence[tuple], *, timestamp: int = 0,
-            evidence: Optional[dict] = None) -> dict:
+            evidence: Optional[dict] = None,
+            runtime_context: Optional[dict] = None) -> dict:
         """candidates: (AlphaDefinition, periods). Returns a report + the human
         review queue (PAPER_TRADING alphas awaiting a human approval token).
 
@@ -53,21 +58,58 @@ class ResearchAgentLoop:
         Each candidate is isolated: an error (evaluation failure, guardrail) is
         recorded and the loop continues — it never propagates uncaught nor orphans
         the others, and an errored alpha is NOT advanced (fail-closed, review P1)."""
+        candidate_pool = tuple(candidates)
+        # Persist the complete batch before the selection-level PBO performs
+        # any backtest. Provider-driven searches also record before provider
+        # evaluation, making this an idempotent second line of defense.
+        for definition, _periods in candidate_pool:
+            self.catalog.register_trial(definition.definition_hash)
+
         report, review_queue = {}, []
         evidence = evidence or {}
         pbo_batch = batch_pbo(
-            candidates, cost=getattr(self.evaluator, "cost", CostModel()),
+            candidate_pool, cost=getattr(self.evaluator, "cost", CostModel()),
             quantile=getattr(self.evaluator, "quantile", 0.2),
             target_aum=getattr(self.evaluator, "target_aum", 1e7))
-        for defn, periods in candidates:
+        for defn, periods in candidate_pool:
             try:
                 assert_action_allowed(self.actor, AgentAction.EVALUATE)
                 self.catalog.register(defn)
                 ev_in = evidence.get(defn.alpha_id, {})
-                ev = self.evaluator.evaluate(
-                    defn.alpha_id, periods, as_of=timestamp, pbo=pbo_batch,
-                    leakage_ok=ev_in.get("leakage_ok"),
-                    regime_profitable_frac=ev_in.get("regime_profitable_frac"))
+                evaluation_args = {
+                    "as_of": timestamp,
+                    "pbo": pbo_batch,
+                    "leakage_ok": ev_in.get("leakage_ok"),
+                    "regime_profitable_frac": ev_in.get("regime_profitable_frac"),
+                }
+                if self.runtime is None:
+                    ev = self.evaluator.evaluate(
+                        defn.alpha_id, periods, **evaluation_args)
+                else:
+                    if not isinstance(runtime_context, dict) or not runtime_context:
+                        raise ValueError(
+                            "a configured model runtime requires explicit runtime_context"
+                        )
+                    runtime_input = {
+                        "alpha_id": defn.alpha_id,
+                        "timestamp": timestamp,
+                        "evidence_sha256": stable_hash(ev_in),
+                        "runtime_context": runtime_context,
+                    }
+                    invocation_id = (
+                        f"alpha-evaluation:{defn.alpha_id}:"
+                        f"{stable_hash(runtime_input)[:16]}"
+                    )
+                    runtime_result = self.runtime.invoke(
+                        invocation_id=invocation_id,
+                        action="EVALUATE",
+                        input_payload=runtime_input,
+                        execute=lambda _payload: self.evaluator.evaluate(
+                            defn.alpha_id, periods, **evaluation_args
+                        ),
+                        recorded_at=timestamp,
+                    )
+                    ev = runtime_result.value
                 assert_action_allowed(self.actor, AgentAction.ADVANCE_TESTING)
                 self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor, timestamp=timestamp, evaluation=ev)
                 if ev.verdict == ValidationVerdict.PASS:
@@ -81,6 +123,8 @@ class ResearchAgentLoop:
                     self.manager.advance(defn.alpha_id, AlphaState.REJECTED, self.actor, timestamp=timestamp)
                 report[defn.alpha_id] = {"verdict": ev.verdict.value, "state": self._state_of(defn.alpha_id),
                                          "evaluation": ev}
+            except TrialPersistenceError:
+                raise
             except Exception as e:                       # isolate: record, do NOT advance, continue
                 report[defn.alpha_id] = {"error": type(e).__name__, "state": self._state_of(defn.alpha_id)}
         return {"report": report, "human_review_queue": review_queue}

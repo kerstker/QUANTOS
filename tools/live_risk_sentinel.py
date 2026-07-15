@@ -30,12 +30,20 @@ from typing import Dict, List, Optional
 
 from live.execution.anomaly import detect_equity_anomaly
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.equity_state import (append_equity_observation,
+                                         record_and_validate_peak_equity)
 from live.execution.position_ledger import LiveLedger
-from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
-from live.governance.kill_switch_store import (load_kill_switch_state,
-                                               save_kill_switch_state_if_tripped)
+from live.execution.risk_monitor import (
+    RiskBreach,
+    compute_flatten_orders,
+    evaluate_risk_state,
+    respond_to_breach_persisted,
+)
+from live.governance.kill_switch_store import (
+    open_authoritative_kill_switch_store,
+    write_kill_switch_json_mirror,
+)
 from live.governance.mandate_store import MandateLoadError, load_mandate
-from services.risk.pre_trade.kill_switch import KillSwitch
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.firm_aggregation import aggregate_firm_books
 from services.portfolio.firm_gate import evaluate_firm_gate
@@ -44,8 +52,8 @@ from services.risk.research_risk.domain.risk_modules import (ConcentrationRiskEn
                                                               MarketRiskEngine)
 from tools.alert_sink import emit
 from tools.live_snapshot import binance_position_rows, bybit_position_rows, portfolio_summary
-from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equity,
-                                      _save_peak_equity, _venue_paths)
+from tools.kill_switch_events import dispatch_and_project_kill_switch_events
+from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
 
 _MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
 # 盘中权益跳变告警阈值(Phase 5 item 2):两轮之间 |权益跳变| 超过它就**告警一次**(仅告警,绝不
@@ -71,8 +79,7 @@ def _equity_path(suffix: str) -> str:
 
 
 def append_equity_point(path: str, point: dict) -> None:
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(point) + "\n")
+    append_equity_observation(path, point)
 
 
 def _last_equity_point(path: str) -> Optional[float]:
@@ -206,6 +213,53 @@ def sentinel_caps(mandate) -> dict:
             "source": "no_mandate_drawdown_only"}
 
 
+def persist_kill_switch_breach(
+    *,
+    state_path: str,
+    breach: RiskBreach,
+    at: int,
+    worker_id: str = "risk-sentinel-kill-switch-event-projection",
+) -> dict:
+    """Commit a breach transition, refresh its mirror, and drain its outbox.
+
+    Authority failures propagate to the caller so the exposure-increasing path can
+    fail closed. Mirror and delivery failures are reported separately because the
+    committed transition remains authoritative and the outbox remains recoverable.
+    """
+    store = open_authoritative_kill_switch_store(state_path)
+    try:
+        response = respond_to_breach_persisted(store=store, breach=breach, at=at)
+        state = store.load_state()
+
+        mirror_error = None
+        try:
+            write_kill_switch_json_mirror(state_path, state)
+        except Exception as exc:
+            mirror_error = type(exc).__name__
+
+        delivery = None
+        delivery_error = None
+        try:
+            delivery = dispatch_and_project_kill_switch_events(
+                store,
+                state_path=state_path,
+                now=at,
+                worker_id=worker_id,
+            )
+        except Exception as exc:
+            delivery_error = type(exc).__name__
+
+        return {
+            "response": response,
+            "state": state,
+            "mirror_error": mirror_error,
+            "delivery": delivery,
+            "delivery_error": delivery_error,
+        }
+    finally:
+        store.close()
+
+
 def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     cfg = _VENUES[venue_name]
     paths = _venue_paths(cfg["suffix"])
@@ -228,13 +282,19 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
 
     # 盘中权益异常(Phase 5 item 2):读**上一轮**基线(须在 append 当前点之前,否则基线=自己 -> 跳变 0)
     prior_equity = _last_equity_point(_equity_path(cfg["suffix"]))
-    point = {"ts": now, "equity": equity, "available": aum, **summary}
-    append_equity_point(_equity_path(cfg["suffix"]), point)
     anomaly = detect_equity_anomaly(prior_equity=prior_equity, current_equity=equity,
                                     max_jump_pct=_EQUITY_JUMP_ALERT_PCT)
-
-    peak = max(_load_peak_equity(paths["risk_state"], equity), equity)
-    _save_peak_equity(paths["risk_state"], peak)
+    point = {"ts": now, "equity": equity, "available": aum,
+             "source": "risk_sentinel", **summary}
+    peak_state = record_and_validate_peak_equity(
+        state_path=paths["risk_state"], history_path=paths["equity"], observation=point)
+    peak = peak_state.peak_equity
+    if not peak_state.valid:
+        emit([
+            f"SENTINEL PEAK EQUITY STATE INVALID [{venue_name}]: {peak_state.reason} "
+            f"(observed_max={peak_state.observed_max_equity}) — hard stop; drawdown "
+            "auto-flatten disabled until state is reviewed"
+        ], context="risk_sentinel", now_ms=now)
 
     mandate = None
     try:
@@ -258,6 +318,11 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
            "reasons": list(breach.reasons), "acted": False,
+           "peak_equity_state": {
+               "valid": peak_state.valid,
+               "reason": peak_state.reason,
+               "observed_max_equity": peak_state.observed_max_equity,
+           },
            # 这一轮的时钟同步结果(None=适配器不支持/binance;True/False=bybit 的实际结果)——
            # 与上面的 log_clock_sync_status 告警互补:这个字段是"这一轮状态快照"的一部分,
            # 落进 risk_sentinel_status.json,即便这一轮没有触发告警也能回头核对。
@@ -290,13 +355,33 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
               f"(drawdown={breach.drawdown_pct:.2%}, gross=${breach.gross_exposure:.2f}, "
               f"net=${breach.net_exposure:.2f})"]
 
-    # 跨进程闩锁(2026-07-05):哨兵触发的越限必须让下一次调度的驱动器也"看得到",不然
-    # halt 的承诺只在哨兵自己这次心跳内有效。与驱动器共享同一个 kill_switch 状态文件。
-    kill_switch = KillSwitch(state=load_kill_switch_state(paths["kill_switch"]))
-    kill_switch_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
-    # 2026-07-05 安全审查 CRITICAL 修复(与驱动器同款):只在 tripped 时才写盘,untripped
-    # 绝不覆盖磁盘——见 save_kill_switch_state_if_tripped 文档。
-    save_kill_switch_state_if_tripped(paths["kill_switch"], kill_switch.state)
+    # The SQLite transition and redacted event share one transaction. JSON is a
+    # compatibility mirror only; delivery failures leave a durable pending outbox.
+    try:
+        persistence = persist_kill_switch_breach(
+            state_path=paths["kill_switch"],
+            breach=breach,
+            at=now,
+        )
+        kill_switch_response = persistence["response"]
+        if persistence["mirror_error"] is not None:
+            alerts.append(
+                f"KILL-SWITCH JSON MIRROR FAILED [{venue_name}]: "
+                f"{persistence['mirror_error']}; SQLite authority remains active"
+            )
+        if persistence["delivery"] is not None:
+            out["kill_switch_event_delivery"] = persistence["delivery"]
+        if persistence["delivery_error"] is not None:
+            alerts.append(
+                f"KILL-SWITCH EVENT DELIVERY PENDING [{venue_name}]: "
+                f"{persistence['delivery_error']}; transition remains durable"
+            )
+    except Exception as exc:
+        kill_switch_response = {"action": "state_store_unavailable"}
+        alerts.append(
+            f"KILL-SWITCH AUTHORITY FAILED [{venue_name}]: {type(exc).__name__}; "
+            "failing closed for exposure-increasing paths"
+        )
     out["kill_switch_action"] = kill_switch_response["action"]
 
     if act:

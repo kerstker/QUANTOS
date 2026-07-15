@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from services.research.backtest_engine.costs import CostModel
+from quantos.contracts.cost import CostModel
 
 
 @dataclass(frozen=True)

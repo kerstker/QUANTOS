@@ -3,8 +3,8 @@
 The daily lead (dist_from_high_14) passed OOS / cost / within-sample regime, but every test so far
 sat inside the 2024-25 BULL. This driver closes the last gap: it fetches MULTI-YEAR daily OHLCV
 (CryptoCompare histoday — a neutral DATA aggregator, free key) for a cross-section of coins that
-traded THROUGH the 2022 bear, ingests to data/cache/crypto_history.db, evaluates the factor through
-the UNCHANGED contained loop, and — the whole point — breaks the headline factor's net Sharpe down
+traded THROUGH the 2022 bear, ingests to data/cache/crypto_history.db, evaluates the complete factor
+pool through the durable registered-candidate composition, then breaks the headline factor's net Sharpe down
 BY CALENDAR YEAR so 2022 is explicit. If dist_from_high_14 survives 2022, the lead is regime-robust
 for real; if it craters, we've found its weakness. Plus a long-sample no-peek OOS (many more folds).
 
@@ -24,6 +24,7 @@ from collections import defaultdict
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
+from services.data.research_adapter import adapt_research_market_data
 from services.research.signals import SIGNAL_OPS
 from services.research.leakage_evidence import signal_leakage_ok
 from services.research.backtest_engine.metrics import sharpe
@@ -31,11 +32,18 @@ from services.research.backtest_engine.costs import CostModel
 from services.research.regime import label_regimes_by_vol, regime_conditional_stats
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
+from services.research.experiment_registry.registry import ExperimentRegistry
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from tools.cryptocompare_fetch import fetch_daily_rows
+from tools.search_trial_registry import (
+    make_search_id,
+    production_experiment_registry,
+)
 
 # established coins that traded THROUGH the 2022 bear (CryptoCompare uses bare tickers).
 # newer launches (SUI/APT/ARB/OP/INJ) are excluded — they have no 2022 data for the bear test.
@@ -49,6 +57,8 @@ HEADLINE = ("dist_from_high", 14)
 COST_LEVELS = (3, 10, 20, 30, 40, 50)
 _DB = os.path.join("data", "cache", "crypto_history.db")
 _SNAP = os.path.join("data", "cache", "crypto_history_snapshot.json")
+_SEARCH_KIND = "CRYPTO_HISTORY_FACTOR_RESEARCH"
+_SEARCH_SOURCE = "tools.crypto_history_research"
 
 
 def _periods_with_times(store, instruments, ets, op, window):
@@ -108,7 +118,111 @@ def _regime(periods, ret):
             "by_trend": _b(regime_conditional_stats(ret, trend), tn)}
 
 
-def main() -> None:
+def _history_dataset_version(store, instruments, event_times) -> str:
+    bar_version = adapt_research_market_data(store).dataset_version(
+        tuple(instruments),
+        tuple(event_times),
+    )
+    if not bar_version:
+        raise ValueError("history research inputs contain no versionable bars")
+    return stable_hash(
+        {
+            "bars": bar_version,
+            "event_times": tuple(event_times),
+            "forward_horizon": FWD_HORIZON,
+            "instruments": tuple(instruments),
+        }
+    )
+
+
+def _run_registered_history_pool(
+    store,
+    instruments,
+    event_times,
+    *,
+    registry: ExperimentRegistry,
+    recorded_at: int,
+) -> dict:
+    pool_periods = {}
+    candidates = []
+    for op, window in POOL:
+        periods, _times = _periods_with_times(
+            store,
+            instruments,
+            event_times,
+            op,
+            window,
+        )
+        pool_periods[(op, window)] = tuple(periods)
+        definition = AlphaDefinition(
+            alpha_id=f"h_{op}_{window}",
+            name=f"{op}({window})",
+            factor_ids=("close",),
+            params={"operator": op, "window": str(window), "family": "price"},
+        )
+        candidates.append((definition, tuple(periods)))
+        print(f"  built h_{op}_{window}: {len(periods)} periods", flush=True)
+
+    leakage_times = event_times[-80:] if len(event_times) > 80 else event_times
+    leakage_bars = [
+        bar
+        for instrument in sorted(instruments)
+        for bar in store.as_of(instrument, leakage_times[-1])
+        if bar.event_time >= leakage_times[0]
+    ]
+    test_times = leakage_times[
+        len(leakage_times) // 2 : len(leakage_times) // 2 + 3
+    ]
+    evidence = {
+        f"h_{op}_{window}": {
+            "leakage_ok": signal_leakage_ok(
+                op,
+                window,
+                leakage_bars,
+                test_times,
+            )
+        }
+        for op, window in POOL
+    }
+    leakage_ok_count = sum(
+        1 for item in evidence.values() if item["leakage_ok"] is True
+    )
+    print(
+        f"  leakage evidence: {leakage_ok_count}/{len(evidence)} factors "
+        "PIT-verified leak-free",
+        flush=True,
+    )
+
+    dataset_version = _history_dataset_version(store, instruments, event_times)
+    batch_result = run_registered_candidate_batch(
+        tuple(candidates),
+        registry=registry,
+        search_id=make_search_id(
+            source=_SEARCH_SOURCE,
+            search_kind=_SEARCH_KIND,
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            params={
+                "candidate_count": len(candidates),
+                "forward_horizon": FWD_HORIZON,
+            },
+        ),
+        search_kind=_SEARCH_KIND,
+        search_source=_SEARCH_SOURCE,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+        evidence=evidence,
+    )
+    return {
+        "batch_result": batch_result,
+        "dataset_version": dataset_version,
+        "evidence": evidence,
+        "pool_periods": pool_periods,
+    }
+
+
+def _main(registry: ExperimentRegistry) -> None:
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
     n = int(sys.argv[2]) if len(sys.argv) > 2 else len(COINS)
     universe = COINS[:max(2, n)]
@@ -142,31 +256,21 @@ def main() -> None:
     print(f"\nMULTI-YEAR: {len(instruments)} coins x {len(event_times)} daily periods", flush=True)
 
     # contained evaluation of the focused price-factor pool (no re-discovery; we TEST the known lead)
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
-    pool_periods, candidates = {}, []
-    for op, w in POOL:
-        per, _ = _periods_with_times(store, instruments, event_times, op, w)
-        pool_periods[(op, w)] = per
-        defn = AlphaDefinition(alpha_id=f"h_{op}_{w}", name=f"{op}({w})", factor_ids=("close",),
-                               params={"operator": op, "window": str(w), "family": "price"})
-        candidates.append((defn, per))
-        print(f"  built h_{op}_{w}: {len(per)} periods", flush=True)
+    registered = _run_registered_history_pool(
+        store,
+        instruments,
+        event_times,
+        registry=registry,
+        recorded_at=now_ms,
+    )
+    pool_periods = registered["pool_periods"]
+    report = registered["batch_result"]["report"]
 
     # 断点1 (方案A): compute the REAL leakage_ok evidence HERE — the driver has the raw PIT bars + the
     # factor's compute, which the agent loop (PanelPeriods only) does not. Run detect_leakage on a bounded
     # recent slice (leakage is a structural property; a representative slice suffices and stays cheap), then
     # feed it as evidence so the evaluator's leakage gate participates with a real verdict instead of None.
     # regime is self-computed by the evaluator (compute_regime_evidence=True above); PBO by the loop.
-    lk_ets = event_times[-80:] if len(event_times) > 80 else event_times
-    lk_bars = [b for inst in sorted(instruments)
-               for b in store.as_of(inst, lk_ets[-1]) if b.event_time >= lk_ets[0]]
-    lk_times = lk_ets[len(lk_ets) // 2: len(lk_ets) // 2 + 3]
-    evidence = {f"h_{op}_{w}": {"leakage_ok": signal_leakage_ok(op, w, lk_bars, lk_times)} for op, w in POOL}
-    lk_ok = sum(1 for e in evidence.values() if e["leakage_ok"] is True)
-    print(f"  leakage evidence: {lk_ok}/{len(evidence)} factors PIT-verified leak-free", flush=True)
-    report = loop.run(candidates, timestamp=now_ms, evidence=evidence)["report"]
-
     # headline: per-CALENDAR-YEAR net Sharpe (the 2022-bear test)
     hp = pool_periods[HEADLINE]
     ht = _periods_with_times(store, instruments, event_times, *HEADLINE)[1]
@@ -234,6 +338,11 @@ def main() -> None:
     print(f"--- cost breakeven ~{breakeven}bps;  regime by_trend "
           f"{[(b['label'], b['sharpe']) for b in regime['by_trend']]} ---")
     print(f"-> wrote {_SNAP}")
+
+
+def main() -> None:
+    with production_experiment_registry() as registry:
+        _main(registry)
 
 
 if __name__ == "__main__":

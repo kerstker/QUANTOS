@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from services.research.ports.persistence import TrialPersistenceError
+
 from .agent_loop import ResearchAgentLoop
 from .evidence import provider_leakage_evidence
 from .guardrails import AgentAction, assert_action_allowed
@@ -37,6 +39,8 @@ class GuidedSearchLoop:
             for h in hyps:
                 try:
                     candidates.append((defns[h], periods_provider(defns[h])))
+                except TrialPersistenceError:
+                    raise
                 except Exception as exc:
                     failed.append(h)
                     self.strategy.update(h, 0.0)

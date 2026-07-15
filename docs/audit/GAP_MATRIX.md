@@ -4,6 +4,10 @@
 > 事实基线:1329 个 `.py`、241 个测试文件、`python scripts/validate.py` = **1564 passed / exit 0**、
 > 治理扫描器 223 文件 **0 违规**、`services/`+`quantos/` 内 **0 个券商/网络 SDK import**。
 > 就绪度:**L2_DRY_RUN_ONLY**(仅研究 + 干跑 + 交易所 testnet/demo 沙盒,零真实资本)。
+>
+> **2026-07-14 增量说明**:本表仍是 2026-07-06 的 15 维审计快照；当前顶级能力机器真源是
+> `evidence/top_tier_assessment.json`(`NOT_TOP_TIER`,15/22 PASS)。备份要求已改用运营证据 checker，
+> 不据此重打其余历史分数。
 
 ## 评分标准
 
@@ -24,16 +28,16 @@
 | # | 维度 | 当前状态 | 分 | 主要证据(file:line) | 核心缺口 | 最高风险 | 优先级 |
 |---|---|---|:-:|---|---|:-:|:-:|
 | 1 | 总体架构 | 真契约领域模型 + fail-closed 环境隔离 + live/ 单向边界;但无事件总线、无服务注册表、包级循环依赖、god-module | **3** | `quantos/contracts/config.py:17`、`deployment/gate.py:43`、`console_api/main.py:5288`(5288 行) | 无运行时事件总线/服务发现;research↔alpha 循环依赖;99 空 DDD 目录 | P2/LATENT | P2 |
-| 2 | 数据层 | PIT/宇宙/复权/日历/泄漏检测生产级;但质量门 computed-not-enforced、乱序死检查、无实时 | **4** | `data/pit_store.py:32`、`persistent_store.py:41`、`file_ingest.py:66`(乱序死检查) | 质量不阻断接入;`check_volume_units` 未接线;无流式接入 | P1/LATENT | P1 |
-| 3 | Alpha Factory | 全库最成熟;真 DSL + 确定性生成器 + fail-closed 证据门 + 10 态审计生命周期 | **4** | `alpha_expression.py:329`、`evaluator.py:140`、`alpha.py:186` | lineage 未接线;富 AlphaAsset 无持久层;衰退→退休无调度器 | P1/LATENT | P2 |
+| 2 | 数据层 | PIT/宇宙/复权/日历/泄漏检测 + strict/atomic/cadence + content-addressed raw archive;perp mark 定价;前向 quality/lineage 双门 fail-closed;完整准入 evidence 与 redacted event 同事务;显式 volume unit/semantics | **4** | `services/data/{adapters,quality,file_ingest,persistent_store,panel_quality,raw_archive,refresh_history,admission_store}.py`、`tools/{live_data_refresh,data_quality_admission,raw_data_lineage_backfill,data_refresh_slo_evidence}.py` | mark/OI 最近窗口 lineage PASS；funding quality/lineage/SLO BLOCK；仅 2/30 轮历史；历史 backfill、外部 WORM/异地副本、流式接入及 FX/宏观/股票等价准入契约仍缺 | P1/LATENT | P1 |
+| 3 | Alpha Factory | 真 DSL + 确定性生成器 + fail-closed 证据门 + 10 态审计生命周期；AlphaAsset sqlite/育种 lineage；周度维护 sweep | **4** | `alpha_expression.py`、`evaluator.py`、`asset_store.py`、`maintenance.py`、`tools/alpha_maintenance_sweep.py` | 自动衰退已联动停止新增；实际减仓比例/退休全平待人工授权；GP/evolutionary 仍缺统一 asset 挂载点 | P1/PARTIAL | P2 |
 | 4 | 回测引擎 | 事件驱动 + 向量化 + 成本模型 + PnL 对账恒等式;确定性可复现(无 RNG/墙钟只在边界) | **4** | `execution/dry_run_pipeline.py`、`experiment_registry/store.py:73`、`evaluator.py:166` | 无撮合/限价簿模拟;容量系数未校准;冲击 stub | P2/LATENT | P2 |
-| 5 | Validation Gate | 真 DSR/PBO/CPCV/walk-forward/泄漏检测,fail-closed,自主路径接成 chokepoint | **4** | `validation/gate.py:51`、`deflated_sharpe.py:41`、`cpcv.py:86` | **验证门不是 live 部署的结构性前置**;是 metrics arbiter | P1/LATENT | **P1** |
-| 6 | 组合层 | 真约束优化器 + 风险平衡 + 多因子风险模型(真 PSD 校验)+ 三套归因 | **4** | `constrained_optimizer.py:136`、`factor_risk.py:35`、`firm_aggregation.py:8` | 优化器不在实盘 sizing 路径;firm 聚合只诊断不阻断;多 alpha 失效无自动 de-risk | P1/LATENT | P1 |
+| 5 | Validation Gate | 真 DSR/PBO/CPCV/walk-forward/泄漏检测,fail-closed;driver + `submit_live_batch` 双层必填 attestation | **4** | `validation/gate.py:51`、`live/governance/validation_attestation.py`、`live/pipeline.py` | 结构门已闭合；PASS hash 尚未解析到不可变 ValidationResult，override 身份/签名仍依赖外部权威 | P0/P1 EXTERNAL | P1 |
+| 6 | 组合层 | 真约束优化器 + 风险平衡 + 多因子风险模型 + firm 硬门 + crowd_contra 签署 z-score 拥挤门 | **4** | `constrained_optimizer.py:136`、`factor_risk.py:35`、`firm_gate.py`、`crowding_calibration.py` | 单策略下 sleeve 优化恒等；多策略子限额/自动 de-risk 待授权；通用拥挤/退出天数默认值缺生产微观结构校准 | P1/PARTIAL | P1 |
 | 7 | 交易边界 | 全库最成熟安全维度;双状态机 + 非人不可达 APPROVED + 多方三人批准 + 分级 mandate | **4** | `alpha.py:186`、`guardrails.py:36`、`approval.py:137`、`mandate.py:45` | Phase 14 进程隔离未实现;promotion_api 自报标签;mandate 只算当批 | P0/LATENT | **P1** |
-| 8 | Pre-Trade Risk Gate | 真 fail-closed 门(23 检查,异常必拒、审计失败必拒、永不 error-approve)+ 闩锁 kill-switch | **4** | `gate.py:56-92`、`kill_switch.py:41`、`checks.py:207` | 流动性/波动/重复/频率引擎在 live ctx 被占位符架空;无撤单率检查 | P1/LATENT | **P1** |
-| 9 | OMS/EMS/Gateway | 真 testnet 执行栈(确认轮询/撤单/超时/崩溃恢复/双所);工程良好的原型 | **3** | `live/pipeline.py:349`、`pipeline.py:104`(不信 ACK)、`resolve_unconfirmed` | client_order_id 同数量碰撞;place-后-未落库孤儿窗口;无主备/FIX | P1/LATENT | **P1** |
+| 8 | Pre-Trade Risk Gate | 真 fail-closed 门(24 检查,异常必拒、审计失败必拒、永不 error-approve)+ 闩锁 kill-switch；live ADV/波动/去重/限频/撤单率承重 | **4** | `gate.py:56-92`、`kill_switch.py:41`、`checks.py`、`gate_context.py` | P1-5 代码闭合；参与率/波动/撤单率仍是 L2 工程基线，缺授权生产微观结构样本校准 | P2/EVIDENCE | **P2** |
+| 9 | OMS/EMS/Gateway | 真 testnet 执行栈(确认轮询/撤单/超时/崩溃恢复/双所);订单身份含前仓，账本冲突显式拒绝；pre-journal fail-closed | **3** | `live/pipeline.py`、`live/execution/{filters,position_ledger}.py`、`resolve_unconfirmed` | P1-3/P1-4 已闭合；仍为 SQLite 单写者，无主备/FIX/drop-copy | P1/LATENT | **P1** |
 | 10 | 交易中/后风控 | risk_monitor + reconciliation(drift 硬停)+ parity + TCA + sentinel + GoNoGo | **3** | `reconciliation.py:41`、`risk_monitor.py:84`、`live/execution/parity.py` | 无实时盘中监控(周/小时级);无保证金细粒度监控;周度对账 | P1/LATENT | P1 |
-| 11 | Kill Switch/降级/恢复 | 闩锁 + 跨进程持久化 + 只加不减防竞态 + human-only 三方复位 + fail-closed | **4** | `kill_switch.py:41-49`、`kill_switch_store.py:39`、`emergency.py:47` | 紧急全平依赖峰值权益持久化正确;无品种/账户级细分开关 | P2/LATENT | P2 |
+| 11 | Kill Switch/降级/恢复 | 闩锁 + 跨进程持久化 + 峰值权益历史上界验证 + human-only 三方复位 + fail-closed | **4** | `kill_switch.py:41-49`、`kill_switch_store.py:39`、`equity_state.py`、`emergency.py:47` | P2-3 孤立坏峰值误全平已闭合；上游权益异常、现金流/account identity 调整 high-water mark 与品种/账户级细分开关仍缺 | P2/PARTIAL | P2 |
 | 12 | 审计/回放/事件溯源 | 哈希链 GlobalAuditLog + DurableAuditLog + append-only 账本 + 不可变实验制品 | **3** | `monitoring/audit_log.py:26`、`experiment_registry/registry.py:112`、`position_ledger.py:30` | 无统一事件总线;无跨服务 correlation/causation ID;无事件级回放 | P2/LATENT | P2 |
 | 13 | AI Agent/治理 | guardrail 非人研究 loop;结构性到不了 APPROVED;能力白名单;逐候选错误隔离 | **4** | `agent_loop.py:34`、`guardrails.py:36`、`alpha.py:192` | promotion_api 把绕过面变 runtime;mandate 可被 agent 改(无签名) | P0/LATENT | **P1** |
 | 14 | 前端/控制台 | 真只读 console(42 GET 端点)+ MOCK_MODE 标识 + 危险按钮经治理 CLI 子进程 | **4** | `console_api/main.py`(0 变更端点)、`routes.tsx`、`live_ops_api.py:73` | 真/合成同端点混杂;无统一 auth/RBAC(per-service token) | P3/ACTIVE | P3 |
@@ -62,12 +66,12 @@
 ### 部分实现 / 已建已测但未接线 / 诊断非门禁(PARTIAL)
 - 验证门禁真实但**未盖在 live 部署路径上**(dim5)
 - 组合优化器真实但**不在实盘 sizing 关键路径**(dim6)
-- firm 跨 venue 敞口聚合真实但**只诊断不阻断**(dim6)
-- 衰退/退休/维护 sweep 已建已测但**无调度器、无自动指标喂入**(dim3/dim6)
-- alpha lineage(`make_child_asset`)已测但**零非测试调用方**(dim3)
+- firm 跨 venue 敞口已有独立硬门；残留是越限自动按比例减仓(dim6)
+- 衰退/退休维护已有周度调度、paper 指标和停止新增联动；残留是减仓比例/全平授权(dim3/dim6)
+- AlphaAsset sqlite + cs_genome 育种 lineage 已接；GP/evolutionary 统一挂载点仍缺(dim3)
 - 现实主义冲击/容量引擎真实但**系数 UNCALIBRATED**(dim4/dim5)
-- 实盘流动性/波动/重复/频率引擎存在但**被占位符数据 + 无限阈值架空**(dim8)
-- `check_volume_units` 单位守卫已测但**只接在一个研究诊断工具**(dim2)
+- 实盘 ADV/波动/重复/频率/撤单率已承重；阈值仍是 L2 工程基线、待授权生产样本校准(dim8)
+- P2-2 已更正并闭合:数据库 quote USD 单位一致，错误来自容量消费端二次乘价；极差现只作 dispersion guard(dim2)
 
 ### Mock / 合成(诚实标注,非伪造)
 - console_api 缺失子系统回退 `math.sin/cos` 合成因子,一律打 `SYNTHETIC_DETERMINISTIC` 标(dim1/dim14)
@@ -87,11 +91,13 @@
 
 ## 优先级排序(放行小资金实盘前必须收口)
 
-1. **P1 — 验证门禁作为 live 部署结构性前置**(dim5):live 驱动器 preflight 强制要求 PASS ValidationResult/APPROVED 或可审计人工 override。
-2. **P1 — mandate 账户级敞口聚合 + 多策略硬停**(dim7/dim8):evaluate_mandate 按账户级 gross/net 投影;多策略共享未分块 mandate → 硬降 NEEDS_HUMAN_REVIEW。
-3. **P1 — client_order_id 同数量碰撞修复**(dim9):加 per-batch 序号/nonce,消除静默记账吞没。
-4. **P1 — place-后-未落库孤儿窗口**(dim9):place 前先写 pending 账本行,让崩溃恢复看得见。
-5. **P1 — 实盘 ctx 回填历史指纹/时间戳 + 撤单率引擎**(dim8):让重复/频率引擎在 live 承重。
-6. **P1 — firm 级敞口硬门**(dim6):跨 venue 净/毛/单名集中上限,越限阻断/减仓。
-7. **P2 — 数据质量接入强制 + 乱序死检查修复 + volume 单位守卫接线**(dim2)。
-8. **P0(放行日转正)— mandate 完整性 + Phase 14 出进程签名/真身份认证**(dim7/dim13):这是真钱与自签限额之间的唯一门,必须在接真实 venue 前升级为密码学保护。
+1. **已完成本地结构闭合 — 验证 attestation 是 driver 与 `submit_live_batch` 双层必填前置**(dim5)；剩余是外部身份/签名与不可变 ValidationResult 解析，不以本地自签关闭。
+2. **已完成 — mandate 账户级敞口聚合 + 多策略硬停**(dim7/dim8)。
+3. **已完成 — client_order_id 前仓身份 + 账本 compare-on-conflict**(dim9)：同 delta 不同状态不碰撞，未知碰撞整批 venue 前拒绝。
+4. **已完成 — place-后孤儿窗口**(dim9):pre-journal fail-closed，place 后写失败进入恢复对账。
+5. **已完成 — live 历史指纹/时间戳 + 撤单率**(dim8):24 个检查承重，阈值校准另列外部证据。
+6. **已完成机制 — firm 级敞口硬门**(dim6):跨 venue 越限阻断新增；自动减仓比例待人工授权。
+7. **P2 — 数据质量 + raw archive 双门与刷新 SLO 机制已承重;P2-2 volume 语义/双乘已闭合；funding lineage/SLO、30 轮运营历史和 off-host archive 仍 open**(dim2)。
+8. **已完成当前价路径 — P2-6 同点跨源核价**(dim8/dim9):venue 盘口与 CoinGecko 均携带源时间戳，缺失/陈旧/错时/偏离逐标的冻结；7 天信号新鲜度与阈值校准仍 open。
+9. **已完成单机可靠半区 — P2-5 持久事件链**(dim10/dim15):六条同库 outbox、统一 recovery drain、authority immutable preflight 与 L2-only hourly ops 已承重；三份 legacy owner DB 已 staged migration，5 条 refresh events 已 publish/ack/project，pending/DLQ=0。当前三个启用 owner PASS、三个未启用 authority UNAVAILABLE。独立 scheduler watchdog 已承重；L2 backup 有 online snapshot/加密 manifest/隔离 restore。三链 commitment + extension verifier、create-once external anchor seam 和 HTTPS heartbeat sender 已实现并有真实 authority 诊断，但当前 backup/heartbeat/seal 配置均缺，现场 6 PASS/1 PARTIAL/3 UNAVAILABLE/0 BREACH。Catalog 仍为 11 types/16 definitions/18 bindings。更广 producer、真实 external backup、missed-heartbeat receipt、WORM/object lock、外部签名、跨主机 HA 与强 worker identity 仍 open。
+10. **P0(放行日转正)— mandate 完整性 + Phase 14 出进程签名/真身份认证**(dim7/dim13):这是真钱与自签限额之间的唯一门,必须在接真实 venue 前升级为密码学保护。

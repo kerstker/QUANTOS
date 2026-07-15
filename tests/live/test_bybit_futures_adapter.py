@@ -1,5 +1,5 @@
 """BybitFuturesAdapter(live/exchange/bybit_futures.py):V5 统一账户签名 REST 客户端。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.3 延伸(§10 Bybit 补充)。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.3 延伸(§10 Bybit 补充)。
 
 全部注入假 http transport——零真网络。诚实标注:响应字段名/端点路径依 Bybit V5 公开文档研究
 假设,**尚未对真测试网响应验证**(与 binance_futures.py 首版同样的诚实边界;这次带着"同步 ACK
@@ -564,9 +564,20 @@ def test_bybit_book_ticker_envelope():
         "time": 1700000000000}
     c, t = _client({"/v5/market/tickers": (200, resp)})
     book = c.book_ticker("BTC")
-    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20)}
+    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20),
+                    "as_of_ms": 1700000000000}
     headers = t.calls[0]["headers"] or {}
     assert "X-BAPI-SIGN" not in headers                # 公开端点,不签名
+
+
+def test_bybit_book_ticker_without_source_time_remains_usable_for_limit_anchor():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": [
+        {"symbol": "BTCUSDT", "bid1Price": "59990.10", "ask1Price": "60010.20"}]}}
+    c, _ = _client({"/v5/market/tickers": (200, resp)})
+    assert c.book_ticker("BTC") == {
+        "bid": pytest.approx(59990.10),
+        "ask": pytest.approx(60010.20),
+    }
 
 
 def test_bybit_book_ticker_nonzero_retcode_fails_soft_returns_none():

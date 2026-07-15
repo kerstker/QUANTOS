@@ -10,6 +10,10 @@ live/
 *.secret.yaml
 node_modules
 __pycache__/
+**/__pycache__/
+**/*.pyc
+**/*.pyc.*
+**/*.pyo
 .pytest_cache/
 .git/
 apps/

@@ -1,51 +1,164 @@
-"""kill-switch 跨进程持久化(2026-07-05,机构审计发现)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+"""Compatibility adapter for authoritative kill-switch persistence.
 
-**发现的缺口(比审计原文更根本):** `tools/live_track_advance.py`/`tools/live_risk_sentinel.py`
-此前每次运行都 `KillSwitch()` 全新构造——latch 的核心承诺"halt 直到人工复位"在跨进程场景下
-从未真正生效:本轮触发的闩锁,下一次调度(下周的驱动器、下小时的哨兵)完全看不到,自动
-恢复成"未触发"。这个模块把 `KillSwitchState`(既有 pydantic 契约,原生 JSON 可序列化)
-存成文件,让驱动器/哨兵在同一个 venue 上共享同一份闩锁真相。
-
-fail-closed:文件损坏/无法解析 -> 读成已触发(安全状态损坏绝不能被解读为"安全",镜像
-`KillSwitch.is_active()` 自身的同款哲学)。
+SQLite is the authority. The historical JSON path remains an atomic mirror for
+older read-only tooling and is imported once when no authority database exists.
+Corrupt authority always reads as a tripped fail-closed state.
 """
 from __future__ import annotations
 
-import json
 import os
+import tempfile
 
 from quantos.contracts.killswitch import KillSwitchState
+from quantos.contracts.events import EventOutboxMessage
+from services.risk.pre_trade.events import kill_switch_activated_event
+from services.risk.pre_trade.kill_switch_store import (
+    KillSwitchStateConflict,
+    KillSwitchStateStore,
+    kill_switch_authority_path,
+)
+
+
+def kill_switch_db_path(path: str) -> str:
+    """Compatibility name for the risk-owned authority-path convention."""
+    return kill_switch_authority_path(path)
+
+
+def _fail_closed_state() -> KillSwitchState:
+    return KillSwitchState(
+        tripped=True,
+        incident_id="corrupt-state-fail-closed",
+        reason="kill-switch authoritative state unreadable/corrupt - failing closed",
+    )
+
+
+def _load_legacy_json(path: str) -> KillSwitchState:
+    if not os.path.exists(path):
+        return KillSwitchState()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return KillSwitchState.model_validate_json(handle.read())
+    except Exception:
+        return _fail_closed_state()
+
+
+def _legacy_activation_outbox(
+    state: KillSwitchState,
+) -> EventOutboxMessage | None:
+    """Rebuild an activation only when the legacy state contains complete facts."""
+    if (
+        not state.tripped
+        or state.armed_by is None
+        or state.trip_count < 1
+        or not state.incident_id
+        or state.reset_at > state.armed_at
+    ):
+        return None
+    event = kill_switch_activated_event(
+        state,
+        actor=state.armed_by,
+        reason=state.reason,
+        at_ms=state.armed_at,
+    )
+    return EventOutboxMessage(
+        event=event,
+        correlation_id=state.incident_id,
+    )
+
+
+def _write_json_mirror(path: str, state: KillSwitchState) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".tmp",
+        dir=parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(state.model_dump_json())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def write_kill_switch_json_mirror(path: str, state: KillSwitchState) -> None:
+    """Refresh the compatibility mirror after an authoritative transaction."""
+    if not isinstance(state, KillSwitchState):
+        raise TypeError("state must be a KillSwitchState")
+    _write_json_mirror(path, state)
+
+
+def open_authoritative_kill_switch_store(path: str) -> KillSwitchStateStore:
+    """Open the SQLite authority, importing a legacy JSON state exactly once."""
+    database = kill_switch_db_path(path)
+    existed = os.path.exists(database)
+    store = KillSwitchStateStore(database, create=True)
+    if not existed and os.path.exists(path):
+        legacy = _load_legacy_json(path)
+        store.bootstrap(
+            legacy,
+            recorded_at=max(legacy.armed_at, legacy.reset_at),
+            event_outbox=_legacy_activation_outbox(legacy),
+        )
+        _write_json_mirror(path, legacy)
+    return store
 
 
 def load_kill_switch_state(path: str) -> KillSwitchState:
-    if not os.path.exists(path):
-        return KillSwitchState()                        # 从未触发过,合法的默认起点
-    try:
-        return KillSwitchState.model_validate_json(open(path, encoding="utf-8").read())
-    except Exception:
-        return KillSwitchState(tripped=True, incident_id="corrupt-state-fail-closed",
-                               reason="kill-switch state file unreadable/corrupt — failing closed")
+    database = kill_switch_db_path(path)
+    if os.path.exists(database):
+        store = None
+        try:
+            store = KillSwitchStateStore(database, create=False)
+            return store.load_state()
+        except Exception:
+            return _fail_closed_state()
+        finally:
+            if store is not None:
+                store.close()
+    return _load_legacy_json(path)
 
 
 def save_kill_switch_state(path: str, state: KillSwitchState) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(state.model_dump_json())
+    """Bootstrap or mirror an exact state; never overwrite authority with a new one."""
+    if not isinstance(state, KillSwitchState):
+        raise TypeError("state must be a KillSwitchState")
+    store = open_authoritative_kill_switch_store(path)
+    try:
+        current = store.load_state()
+        if store.transition_count() == 0:
+            store.bootstrap(
+                state,
+                recorded_at=max(state.armed_at, state.reset_at),
+                event_outbox=_legacy_activation_outbox(state),
+            )
+        elif current != state:
+            raise KillSwitchStateConflict(
+                "refusing legacy overwrite of existing authoritative state"
+            )
+        _write_json_mirror(path, state)
+    finally:
+        store.close()
 
 
 def save_kill_switch_state_if_tripped(path: str, state: KillSwitchState) -> None:
-    """**2026-07-05 安全审查 CRITICAL 修复**:driver 与哨兵共享同一个 kill-switch 状态文件、
-    各自独立进程运行、彼此之间无锁——纯粹的读-改-写竞态:进程 A 读到 untripped,进程 B
-    并发把文件写成 tripped(真实越限),A 自己这一轮评估也是 untripped,若无条件写回会用
-    A 内存里的旧 untripped 值覆盖 B 刚落盘的真实熔断,静默撤销刚触发的保护——恰好发生在
-    最需要保护生效的时刻(市场剧烈波动时哨兵和驱动器最可能同时活跃)。
-
-    修复用"只加不减"语义:只在**这次评估后状态确实是 tripped** 时才写盘;untripped 从不
-    写盘(磁盘没有文件本身就是"从未触发"的合法默认状态,见 `load_kill_switch_state`)。
-    这样任何进程都不可能用自己的 untripped 视角覆盖别的进程刚写入的 tripped——复位只能
-    通过专门的 `tools/live_kill_switch_reset.py`(强制三方审批)显式进行。"""
+    """Legacy monotonic helper: an untripped caller can never clear authority."""
     if state.tripped:
         save_kill_switch_state(path, state)
+
+
+__all__ = [
+    "kill_switch_db_path",
+    "load_kill_switch_state",
+    "open_authoritative_kill_switch_store",
+    "save_kill_switch_state",
+    "save_kill_switch_state_if_tripped",
+    "write_kill_switch_json_mirror",
+]

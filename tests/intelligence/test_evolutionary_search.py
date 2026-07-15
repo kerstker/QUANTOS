@@ -9,6 +9,7 @@ from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.evolutionary_search import (
     genome_to_definition, mutate, crossover, make_evolution_provider, EvolutionarySearchLoop,
     DEFAULT_VOCAB)
+from services.research.ports.persistence import TrialPersistenceError
 
 DATES = list(range(24))
 INSTS = [f"i{k}" for k in range(6)]
@@ -123,6 +124,22 @@ def test_provider_error_isolated():
     assert rewards[("F", "eps", "raw")] == 0.0
     assert ("P", "momentum", "5") in rewards
     assert any(h["genome"] == ("F", "eps", "raw") and h.get("error") for h in out["history"])
+
+
+def test_evolutionary_trial_persistence_error_is_batch_fatal():
+    def unavailable(_definition):
+        raise TrialPersistenceError("ledger unavailable")
+
+    with pytest.raises(TrialPersistenceError, match="ledger unavailable"):
+        EvolutionarySearchLoop(
+            unavailable,
+            inner_loop=ResearchAgentLoop(),
+        ).run(
+            [("P", "momentum", "5")],
+            generations=0,
+            population_size=1,
+            elite_k=1,
+        )
 
 
 # ---------- GP expression-tree ("T") genome integration ---------------------
@@ -253,13 +270,14 @@ def test_overfit_default_off_matches_plain_run():
 
 
 def test_gp_session_mode_smoke():
-    from services.research.session import run_research_session
+    from services.intelligence.research_session import run_research_session
     from services.intelligence.search_space import HypothesisSpace
     space = HypothesisSpace(factors=("close",), operators=("momentum", "zscore", "volatility"),
                             windows=(3, 5))
     out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
                                rounds=1, batch_size=1, timestamp=10, gp=True,
-                               evo_generations=2, evo_population=8, evo_elite=3)
+                               evo_generations=2, evo_population=8, evo_elite=3,
+                               ephemeral=True)
     assert out["mode"] == "gp" and out["n_evaluated"] > 0
     # every machine-discovered tree id is a GP id; nothing auto-approved
     assert all(aid.startswith("hgp_") for aid in out["report"])
@@ -267,7 +285,7 @@ def test_gp_session_mode_smoke():
 
 def test_oos_validate_closes_the_factory_loop():
     # the pipeline validates its OWN discovered factors via no-peek OOS (no external script)
-    from services.research.session import run_research_session
+    from services.intelligence.research_session import run_research_session
     from services.intelligence.search_space import HypothesisSpace
     st = SqlitePITStore(":memory:", create=True)
     dates = list(range(60))
@@ -280,18 +298,20 @@ def test_oos_validate_closes_the_factory_loop():
                             windows=(3, 5))
     out = run_research_session(st, INSTS, event_times=dates, fwd_horizon=1, space=space,
                                rounds=1, batch_size=1, timestamp=10, evolutionary=True,
-                               evo_generations=2, evo_population=6, evo_elite=3, oos_validate=True)
+                               evo_generations=2, evo_population=6, evo_elite=3,
+                               oos_validate=True, ephemeral=True)
     assert "oos" in out and out["oos"] is not None
     assert "folds" in out["oos"] and out["oos"]["n_folds"] >= 1                    # real OOS folds
     assert out["oos"]["mean_oos_sharpe"] is not None                              # IS-vs-OOS computed
 
 
 def test_mcts_session_mode_smoke():
-    from services.research.session import run_research_session
+    from services.intelligence.research_session import run_research_session
     from services.intelligence.search_space import HypothesisSpace
     space = HypothesisSpace(factors=("close",), operators=("momentum", "zscore", "volatility"),
                             windows=(3, 5))
     out = run_research_session(_price(), INSTS, event_times=DATES, fwd_horizon=1, space=space,
-                               rounds=1, batch_size=1, timestamp=10, mcts=True, mcts_iterations=12)
+                               rounds=1, batch_size=1, timestamp=10, mcts=True,
+                               mcts_iterations=12, ephemeral=True)
     assert out["mode"] == "mcts" and out["n_evaluated"] > 0
     assert "synergistic_set" in out and all(aid.startswith("h_") for aid in out["report"])

@@ -17,13 +17,13 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
-from services.research.realism.impact import AlmgrenChrissImpact
-from services.research.realism.impact_calibration import default_crypto_impact_calibration, scenario_impact
+from services.execution.impact_calibration import default_crypto_impact_calibration, scenario_impact
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
 from tools.crypto_carry_stress import _slip_bps
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _MAX_PARTICIPATION = 0.10       # Rank #11: realistic participation cap (was a 1e7 placeholder)
 
@@ -123,15 +123,19 @@ def main() -> None:
     # Rank #11: charge participation-driven Almgren-Chriss impact (base calibration) instead of flat bps;
     # names lacking ADV fall back to cost_bps per-name. TCA-lite band lands in run detail.
     impact = scenario_impact(default_crypto_impact_calibration().base)
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=_AUM,
         cost_bps=cost_bps, cash_flow_fn=cash_flow_fn, impact=impact, adv_by_period=adv_by_period,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
     if os.path.exists(_OUT):
         os.remove(_OUT)
-    DryRunStore(_OUT, create=True).save_run(run)
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     print(f"=== CARRY 周度滚动干跑 · 流动 {len(liquid)} 币 · {p['n_periods']} 周 · 成本 {cost_bps:.1f}bps ===", flush=True)
     print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)

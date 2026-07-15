@@ -1,19 +1,15 @@
-"""TDD for tools/register_alpha_catalog.py (audit P0 fix: wire the real deployed carry_composite/
-crowd_contra edges into AlphaCatalog). Pure-function pieces (build_candidates/register_new_candidates)
-are tested here against synthetic data (fast, CI-safe, no dependency on real cached market data) —
-mirroring tests/alpha/test_factory.py's stub-evaluator pattern for the orchestration piece. The real,
-end-to-end run against actual cached data happens by invoking main() manually (see module docstring),
-not in this suite.
-"""
+"""Contract tests for the durable carry/crowd catalog registration driver."""
 from __future__ import annotations
 
 import pytest
 
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
-from quantos.contracts.research import AlphaState, ValidationVerdict
+from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.catalog import AlphaCatalog
 from services.research.alpha_expression import FieldPanel
-from tools.register_alpha_catalog import build_candidates, register_new_candidates
+from tools.register_alpha_catalog import (
+    build_candidates,
+    registration_dataset_version,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -68,97 +64,65 @@ def test_build_candidates_fwd_horizon_changes_period_count():
     assert len(c7[0][1]) < len(c1[0][1])
 
 
-# ---------------------------------------------------------------------------
-# register_new_candidates — orchestration + idempotency (stub evaluator, mirrors test_factory.py)
-# ---------------------------------------------------------------------------
+def test_registration_dataset_version_binds_panel_contents_and_cadence():
+    panel = _synthetic_panel()
+    baseline = registration_dataset_version(panel)
+    assert baseline == registration_dataset_version(panel)
 
-class _StubEvaluator:
-    def __init__(self, catalog, verdict):
-        self.catalog = catalog
-        self.verdict = verdict
-        self.calls = []
-
-    def evaluate(self, alpha_id, periods, **kw):
-        self.calls.append(alpha_id)
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
-        return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(),
-                               marginal_ir=0.5)
+    changed = _synthetic_panel()
+    changed.matrices["close"][0][0] += 1.0
+    assert registration_dataset_version(changed) != baseline
 
 
-def _defn_periods(alpha_id: str):
-    # periods=[] (real AlphaEvaluator handles this gracefully -> THIN_COVERAGE ->
-    # REQUIRES_HUMAN_REVIEW; verified directly against the real, non-stubbed evaluator) — these
-    # orchestration tests care about registration/idempotency/containment, not evaluation numerics.
-    return (AlphaDefinition(alpha_id=alpha_id, name=alpha_id, factor_ids=("f",)), [])
+def test_main_uses_fail_closed_registry_and_weekly_registered_batch(
+    monkeypatch,
+    capsys,
+):
+    from tools import crypto_oi_research
+    from tools import register_alpha_catalog as driver
 
+    panel = _synthetic_panel()
+    captured = {}
 
-def test_register_new_candidates_registers_and_evaluates_both_never_reaching_approved():
-    cat = AlphaCatalog()
-    candidates = [_defn_periods("carry_composite"), _defn_periods("crowd_contra")]
-    evidence = {"carry_composite": {"leakage_ok": True}, "crowd_contra": {"leakage_ok": True}}
-    actor = Actor(actor_id="test-actor", kind=ActorKind.SYSTEM)
+    class FakeRegistry:
+        @staticmethod
+        def load_into(_catalog):
+            raise AssertionError("existing lifecycle state must not turn a real rerun into a no-op")
 
-    report = register_new_candidates(cat, candidates, evidence, actor=actor, timestamp=0)
-    # real evaluator (not stubbed) -- with object() as periods this will fail evaluation and route
-    # to REQUIRES_HUMAN_REVIEW / parked in TESTING; assert the ORCHESTRATION invariant instead of a
-    # specific verdict: both alphas got registered and evaluated exactly once, never reached APPROVED.
-    assert set(cat.all_ids()) == {"carry_composite", "crowd_contra"}
-    assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
-    assert set(report) == {"carry_composite", "crowd_contra"}
+    class RegistryContext:
+        def __enter__(self):
+            captured["registry_opened"] = True
+            return FakeRegistry()
 
+        @staticmethod
+        def __exit__(_exc_type, _exc, _traceback):
+            return False
 
-def test_register_new_candidates_is_idempotent_on_rerun():
-    cat = AlphaCatalog()
-    candidates = [_defn_periods("carry_composite"), _defn_periods("crowd_contra")]
-    evidence = {"carry_composite": {"leakage_ok": True}, "crowd_contra": {"leakage_ok": True}}
-    actor = Actor(actor_id="test-actor", kind=ActorKind.SYSTEM)
+    def fake_batch(candidates, **kwargs):
+        captured["candidates"] = tuple(candidates)
+        captured["kwargs"] = kwargs
+        return {
+            "report": {
+                definition.alpha_id: {"error": "TEST_STUB", "state": None}
+                for definition, _periods in candidates
+            }
+        }
 
-    first = register_new_candidates(cat, candidates, evidence, actor=actor, timestamp=0)
-    assert set(first) == {"carry_composite", "crowd_contra"}
+    monkeypatch.setattr(crypto_oi_research, "build_panel", lambda: (panel, panel.instruments))
+    monkeypatch.setattr(driver, "production_experiment_registry", RegistryContext)
+    monkeypatch.setattr(driver, "run_registered_candidate_batch", fake_batch)
+    monkeypatch.setattr(driver.time, "time_ns", lambda: 123_456_789_000_000)
 
-    # second call: both already registered -> no-op, no ValueError (AlphaCatalog.register() would
-    # raise "alpha already registered" if this weren't guarded)
-    second = register_new_candidates(cat, candidates, evidence, actor=actor, timestamp=1)
-    assert second == {}
-    assert len(cat.all_ids()) == 2   # unchanged, not duplicated
+    search_id = driver.main()
 
-
-def test_register_new_candidates_registers_only_the_missing_one():
-    cat = AlphaCatalog()
-    actor = Actor(actor_id="test-actor", kind=ActorKind.SYSTEM)
-    # pre-register carry_composite via a prior partial run
-    register_new_candidates(cat, [_defn_periods("carry_composite")],
-                            {"carry_composite": {"leakage_ok": True}}, actor=actor, timestamp=0)
-    assert set(cat.all_ids()) == {"carry_composite"}
-
-    candidates = [_defn_periods("carry_composite"), _defn_periods("crowd_contra")]
-    evidence = {"carry_composite": {"leakage_ok": True}, "crowd_contra": {"leakage_ok": True}}
-    report = register_new_candidates(cat, candidates, evidence, actor=actor, timestamp=1)
-    assert set(report) == {"crowd_contra"}          # only the missing one was run
-    assert set(cat.all_ids()) == {"carry_composite", "crowd_contra"}
-
-
-def test_register_new_candidates_with_stub_evaluator_reaches_paper_trading_on_pass():
-    """End-to-end orchestration proof (stubbed evaluator = deterministic PASS), mirroring
-    tests/alpha/test_factory.py's safety-invariant test: real evidence flowing through
-    register_new_candidates can advance to PAPER_TRADING but never further without a human."""
-    from services.alpha.factory import AlphaFactory
-
-    class _FactoryWithStub(AlphaFactory):
-        def __init__(self, *a, **kw):
-            super().__init__(*a, **kw)
-            self.evaluator = _StubEvaluator(self.catalog, ValidationVerdict.PASS)
-
-    cat = AlphaCatalog()
-    candidates = [_defn_periods("crowd_contra")]
-    evidence = {"crowd_contra": {"leakage_ok": True}}
-    actor = Actor(actor_id="test-actor", kind=ActorKind.SYSTEM)
-
-    already = set(cat.all_ids())
-    fresh = [(d, p) for d, p in candidates if d.alpha_id not in already]
-    factory = _FactoryWithStub(catalog=cat, actor=actor)
-    report = factory.run(fresh, timestamp=0, evidence=evidence)
-
-    assert report["crowd_contra"]["state"] == AlphaState.PAPER_TRADING
-    assert cat.state("crowd_contra") != AlphaState.APPROVED
+    assert captured["registry_opened"] is True
+    assert len(captured["candidates"]) == 2
+    kwargs = captured["kwargs"]
+    assert kwargs["periods_per_year"] == 52
+    assert kwargs["dataset_version"] == registration_dataset_version(panel)
+    assert kwargs["search_kind"] == "ALPHA_CATALOG_REGISTRATION"
+    assert kwargs["search_source"] == "tools.register_alpha_catalog"
+    assert kwargs["recorded_at"] == 123_456_789
+    assert kwargs["config"].compute_regime_evidence is True
+    assert kwargs["search_id"] == search_id
+    assert f"search_id={search_id}" in capsys.readouterr().out

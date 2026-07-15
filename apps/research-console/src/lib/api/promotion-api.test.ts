@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// promotion_api 双头认证:每个 mutating 调用都必须带 X-Gov-Token(本机共享密钥,
-// sessionStorage-only)+ X-Operator(自报问责标签,非认证);GET 数据端点也要 token
-// (后端全端点认证)。镜像 research-runner-api.test.ts 的写法。
+// Strong identity: every request carries a short-lived OIDC bearer token. The
+// actor comes from verified claims; the client must never send an operator label.
 describe('promotion-api headers', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -16,61 +15,70 @@ describe('promotion-api headers', () => {
     sessionStorage.clear();
   });
 
-  it('getGovToken/setGovToken round-trip via sessionStorage (session-only, own key)', async () => {
-    const { getGovToken, setGovToken } = await import('./promotion-api');
-    expect(getGovToken()).toBe('');
-    setGovToken('gov-secret');
-    expect(getGovToken()).toBe('gov-secret');
-    expect(sessionStorage.getItem('quantos-gov-token')).toBe('gov-secret');
+  it('governance access token is memory-only', async () => {
+    const {
+      clearGovernanceAccessToken,
+      getGovernanceAccessToken,
+      setGovernanceAccessToken,
+    } = await import('./promotion-api');
+    expect(getGovernanceAccessToken()).toBe('');
+    setGovernanceAccessToken('signed-oidc-token');
+    expect(getGovernanceAccessToken()).toBe('signed-oidc-token');
+    expect(sessionStorage.length).toBe(0);
+    expect(setGovernanceAccessToken.toString()).not.toContain('localStorage');
+    expect(setGovernanceAccessToken.toString()).not.toContain('sessionStorage');
+    clearGovernanceAccessToken();
+    expect(getGovernanceAccessToken()).toBe('');
   });
 
-  it('openPromotionRequest sends BOTH X-Gov-Token and X-Operator', async () => {
+  it('openPromotionRequest sends only standard Bearer identity', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ request_id: 'promo-1', subject_id: 's', state: 'REQUESTED' }),
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { openPromotionRequest, setGovToken } = await import('./promotion-api');
-    setGovToken('gov-secret');
+    const { openPromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
+    setGovernanceAccessToken('signed-oidc-token');
 
     await openPromotionRequest('a1', 'note');
 
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const headers = init.headers as Record<string, string>;
-    expect(headers['X-Gov-Token']).toBe('gov-secret');
-    expect(headers['X-Operator']).toBeTruthy();
+    expect(headers.Authorization).toBe('Bearer signed-oidc-token');
+    expect(headers['X-Gov-Token']).toBeUndefined();
+    expect(headers['X-Operator']).toBeUndefined();
     expect(init.method).toBe('POST');
   });
 
-  it('executePromotionRequest sends BOTH headers', async () => {
+  it('executePromotionRequest sends the same verified identity protocol', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true, request_id: 'promo-1', alpha_id: 'a1', dst: 'APPROVED', burned: true, reasons: [], audit_ok: true, evidence_notes: [] }),
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { executePromotionRequest, setGovToken } = await import('./promotion-api');
-    setGovToken('gov-secret');
+    const { executePromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
+    setGovernanceAccessToken('signed-oidc-token');
 
     await executePromotionRequest('promo-1');
 
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers['X-Gov-Token']).toBe('gov-secret');
-    expect(headers['X-Operator']).toBeTruthy();
+    expect(headers.Authorization).toBe('Bearer signed-oidc-token');
+    expect(headers['X-Operator']).toBeUndefined();
   });
 
-  it('GET endpoints also carry X-Gov-Token (backend authenticates queue/detail reads too)', async () => {
+  it('GET endpoints also carry Bearer identity', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ requests: [] }),
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { fetchPromotionRequests, setGovToken } = await import('./promotion-api');
-    setGovToken('gov-secret');
+    const { fetchPromotionRequests, setGovernanceAccessToken } = await import('./promotion-api');
+    setGovernanceAccessToken('signed-oidc-token');
 
     await fetchPromotionRequests();
 
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers['X-Gov-Token']).toBe('gov-secret');
+    expect(headers.Authorization).toBe('Bearer signed-oidc-token');
   });
 
   it('surfaces the backend detail message on non-2xx', async () => {
@@ -79,9 +87,18 @@ describe('promotion-api headers', () => {
       json: async () => ({ detail: 'reviewer must differ from the requester' }),
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { reviewPromotionRequest } = await import('./promotion-api');
+    const { reviewPromotionRequest, setGovernanceAccessToken } = await import('./promotion-api');
+    setGovernanceAccessToken('signed-oidc-token');
 
     await expect(reviewPromotionRequest('promo-1')).rejects.toThrow('reviewer must differ');
+  });
+
+  it('fails before fetch when no OIDC access token is present', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { fetchPromotionRequests } = await import('./promotion-api');
+    await expect(fetchPromotionRequests()).rejects.toThrow('OIDC access token');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('throws when VITE_GOVERNANCE_URL is not configured (service is off by default)', async () => {

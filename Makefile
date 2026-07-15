@@ -21,7 +21,7 @@ frontend:
 	cd apps/research-console && npm ci && npm run typecheck && npm run build && npm test
 
 api:
-	python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+	python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
 
 hooks:
 	sh scripts/install-hooks.sh

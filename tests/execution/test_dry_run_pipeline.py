@@ -1,9 +1,16 @@
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.events import (
+    EVENT_DRY_RUN_COMPLETED,
+    EVENT_DRY_RUN_STARTED,
+    EVENT_PRETRADE_APPROVED,
+    EVENT_PRETRADE_REJECTED,
+)
 
 from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
                                                  plan_target_quantities, reconcile_run, run_dry_run_pipeline,
                                                  run_multi_period_dry_run, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
+from services.monitoring.event_bus import DurableEventBus
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
@@ -94,12 +101,12 @@ def test_reconcile_run_returns_pnl_summary():
     assert pnl["total_pnl"] == 10.0 and pnl["residual"] < 1e-6 and pnl["positions"] == {"BTC": 10}
 
 
-def _pipeline(ks=None):
+def _pipeline(ks=None, event_bus=None):
     return run_dry_run_pipeline(
         weights={"BTC": 0.5, "ETH": -0.5}, prices={"BTC": 100.0, "ETH": 50.0}, current_positions={},
         aum=1e6, gate=_gate(kill_switch=ks), ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
         adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
-        marks={"BTC": 101.0, "ETH": 49.0})
+        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
 
 
 def test_end_to_end_benign_produces_run():
@@ -122,6 +129,94 @@ def test_deterministic_same_input_same_run():
     a, b = _pipeline(), _pipeline()
     assert (a.run_id, a.n_intents, a.n_approved, a.n_rejected, a.audit_root, a.pnl, a.detail) == \
            (b.run_id, b.n_intents, b.n_approved, b.n_rejected, b.audit_root, b.pnl, b.detail)
+
+
+def test_single_period_pipeline_publishes_causal_pretrade_and_completion_events():
+    bus = DurableEventBus(":memory:")
+    run = _pipeline(event_bus=bus)
+    records = bus.records(correlation_id=run.run_id)
+    event_types = [record["event"].event_type for record in records]
+    assert event_types == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    start_id = records[0]["event"].event_id
+    assert all(record["causation_id"] == start_id for record in records[1:])
+    assert records[-1]["event"].payload["n_fills"] == 2
+
+
+def test_pipeline_can_defer_completion_to_transactional_outbox():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5, "ETH": -0.5},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        event_bus=bus,
+        publish_completion_event=False,
+    )
+
+    event_types = [
+        record["event"].event_type
+        for record in bus.records(correlation_id=run.run_id)
+    ]
+    assert event_types == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+    ]
+
+
+def test_rejected_intent_is_published_before_zero_fill_completion():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5}, prices={"BTC": 100.0}, current_positions={}, aum=1e6,
+        gate=_armed_gate(), ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
+        event_bus=bus,
+    )
+    events = [record["event"] for record in bus.records(correlation_id=run.run_id)]
+    assert [event.event_type for event in events] == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_REJECTED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    assert events[1].payload["reasons"]
+    assert events[-1].payload["n_fills"] == 0
+
+
+def test_deterministic_pipeline_rerun_is_event_idempotent():
+    bus = DurableEventBus(":memory:")
+    first = _pipeline(event_bus=bus)
+    count = bus.count()
+    second = _pipeline(event_bus=bus)
+    assert second.run_id == first.run_id
+    assert bus.count() == count
+
+
+def test_pipeline_event_history_survives_bus_restart(tmp_path):
+    path = str(tmp_path / "domain_events.db")
+    bus = DurableEventBus(path)
+    run = _pipeline(event_bus=bus)
+    expected_ids = [record["event"].event_id for record in bus.records()]
+    expected_head = bus.head_hash
+    bus.close()
+
+    reopened = DurableEventBus(path)
+    assert reopened.chain_valid()
+    assert reopened.head_hash == expected_head
+    assert [
+        record["event"].event_id
+        for record in reopened.records(correlation_id=run.run_id)
+    ] == expected_ids
 
 
 def test_target_quantities_round_and_skip_bad_price():
@@ -207,11 +302,12 @@ _W = {1: {"BTC": 0.5, "ETH": -0.5}, 2: {"BTC": 0.5, "ETH": -0.5}, 3: {"BTC": 0.4
 _PX = {1: {"BTC": 100.0, "ETH": 50.0}, 2: {"BTC": 110.0, "ETH": 48.0}, 3: {"BTC": 105.0, "ETH": 52.0}}
 
 
-def _mp(gate=None, cash_flow_fn=None, vol_target=None):
+def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None):
     return run_multi_period_dry_run(
         periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=gate or _gate(),
         ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
-        cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target)
+        cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target,
+        event_bus=event_bus)
 
 
 def test_multi_period_benign_curve():
@@ -221,6 +317,18 @@ def test_multi_period_benign_curve():
     assert r.pnl["residual"] < 1e-6                       # price-leg reconciliation identity holds
     assert r.pnl["final_equity"] == r.detail["equity_curve"][-1]["equity"]
     assert r.n_approved > 0 and r.audit_root
+
+
+def test_multi_period_pipeline_events_replay_as_one_causal_run():
+    bus = DurableEventBus(":memory:")
+    run = _mp(event_bus=bus)
+    records = bus.records(correlation_id=run.run_id)
+    assert records[0]["event"].event_type == EVENT_DRY_RUN_STARTED
+    assert records[-1]["event"].event_type == EVENT_DRY_RUN_COMPLETED
+    assert sum(
+        record["event"].event_type == EVENT_PRETRADE_APPROVED for record in records
+    ) == run.n_approved
+    assert len({record["correlation_id"] for record in records}) == 1
 
 
 def test_multi_period_kill_switch_latched_zero_fills():

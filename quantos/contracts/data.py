@@ -21,6 +21,18 @@ class AssetClass(str, Enum):
     INDEX = "INDEX"
 
 
+class VolumeUnit(str, Enum):
+    BASE_ASSET = "BASE_ASSET"
+    QUOTE_USD = "QUOTE_USD"
+    SHARES = "SHARES"
+    CONTRACTS = "CONTRACTS"
+
+
+class VolumeSemantics(str, Enum):
+    PER_BAR = "PER_BAR"
+    ROLLING_24H = "ROLLING_24H"
+
+
 class CorporateActionType(str, Enum):
     SPLIT = "SPLIT"
     DIVIDEND = "DIVIDEND"

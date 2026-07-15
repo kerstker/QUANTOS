@@ -14,8 +14,11 @@ registry lets the platform enumerate which sources are configured.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+import math
 from typing import Optional, Sequence
+
+from quantos.contracts.data import VolumeSemantics, VolumeUnit
 
 # canonical bar fields a SourceSpec.field_map MUST cover (volume optional -> defaults to 0)
 _REQUIRED = ("event_time", "open", "high", "low", "close")
@@ -35,6 +38,8 @@ class SourceSpec:
     field_map: dict
     knowledge_lag: int = 0
     instrument_id: Optional[str] = None
+    volume_unit: Optional[VolumeUnit] = None
+    volume_semantics: Optional[VolumeSemantics] = None
 
     def __post_init__(self):
         missing = [k for k in _REQUIRED if k not in self.field_map]
@@ -44,6 +49,28 @@ class SourceSpec:
             raise ValueError("SourceSpec needs an instrument_id field_map entry OR a fixed instrument_id")
         if self.knowledge_lag < 0:
             raise ValueError("knowledge_lag must be >= 0")
+        has_volume = "volume" in self.field_map
+        if has_volume and self.volume_unit is None:
+            raise ValueError("SourceSpec with volume must declare volume_unit")
+        if has_volume and self.volume_semantics is None:
+            raise ValueError("SourceSpec with volume must declare volume_semantics")
+        if not has_volume and (self.volume_unit is not None or self.volume_semantics is not None):
+            raise ValueError("SourceSpec without volume cannot declare volume semantics")
+
+
+def quote_notional_volume(*, close: float, volume: float, volume_unit: VolumeUnit) -> float:
+    """Convert declared volume to quote/USD notional without double scaling."""
+    close = float(close)
+    volume = float(volume)
+    if not math.isfinite(close) or close <= 0:
+        raise ValueError("close must be finite and positive")
+    if not math.isfinite(volume) or volume < 0:
+        raise ValueError("volume must be finite and non-negative")
+    if volume_unit == VolumeUnit.BASE_ASSET:
+        return close * volume
+    if volume_unit == VolumeUnit.QUOTE_USD:
+        return volume
+    raise ValueError(f"cannot convert {volume_unit.value} volume to quote notional without metadata")
 
 
 def normalize_records(raw_records: Sequence[dict], spec: SourceSpec) -> list:

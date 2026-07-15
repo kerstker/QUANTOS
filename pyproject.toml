@@ -16,20 +16,21 @@ description = "QUANTOS - AI quantitative trading research platform (L2_DRY_RUN_O
 requires-python = ">=3.11"   # minimum; the pinned dev/CI interpreter is 3.12 (.python-version) — Rank #28
 
 # Runtime dependencies actually imported by the currently-runnable code
-# (services/research/console_api). Pinned to the versions validated locally.
+# (services/console/api). Pinned to the versions validated locally.
 dependencies = [
-    "fastapi==0.128.0",
-    "starlette==0.50.0",
+    "fastapi==0.139.0",
+    "starlette==1.3.1",
     "uvicorn==0.40.0",
     "pydantic==2.12.5",
+    "PyJWT==2.13.0",
 ]
 
 [project.optional-dependencies]
 # Imported only by the QUARANTINED pre_trade_risk service; required when it is
 # rebuilt in Phase 8 (Risk Layer). Not needed for the current test gate.
 pre_trade_risk = [
-    "aiokafka",
-    "prometheus_client",
+    "aiokafka==0.13.0",
+    "prometheus_client==0.21.1",
 ]
 # research ML layer (services/research/ml): deterministic stacking over existing factor signals.
 # Non-network, used deterministically (fixed random_state, single-thread). Not needed by console_api.
@@ -41,11 +42,15 @@ research-ml = [
 # undeclared (only "happened to be installed" via unrelated tools) even though the
 # fail-closed passphrase gate makes every scheduled backup depend on it being real.
 live-backup = [
-    "cryptography==46.0.7",
+    "cryptography==49.0.0",
+]
+supply-chain = [
+    "pip-audit==2.10.1",
+    "sigstore==4.4.0",
 ]
 dev = [
     "pytest==9.1.1",
-    "pytest-asyncio",
+    "pytest-asyncio==0.23.8",
     "httpx==0.27.0",
 ]
 

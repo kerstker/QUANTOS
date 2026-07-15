@@ -1,5 +1,5 @@
 """交易所过滤器 + 冪等 client_order_id(live/execution/filters.py)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.4。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.4。"""
 import pytest
 
 from live.contracts import ExchangeFilters

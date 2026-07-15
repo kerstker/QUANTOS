@@ -32,8 +32,8 @@ _TOOLS = os.path.join(_ROOT, "tools")
 _SERVICES_WHITELIST = {
     "services/data/caching_store.py",
     "services/data/calendar_store.py",
-    "services/research/console_api/main.py",
-    "services/research/session.py",
+    "services/console/data_console.py",
+    "services/data/research_adapter.py",
 }
 
 # tools/ 门外研究驱动器的存量裸读调用点总数(AST 计数)。只减不增:新增即红;迁移后下调此数。

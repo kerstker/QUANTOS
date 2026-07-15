@@ -4,7 +4,7 @@ research session knows the horizon; the evaluator applies the embargo. This pins
 WIRED into the contained loop's evaluator (it was previously hard-coded to 0), and that horizon=1
 is unchanged (embargo 0) so no existing single-horizon result moves."""
 from services.alpha.catalog import AlphaCatalog
-from services.research import session
+from services.intelligence import research_session as session
 
 
 def test_inner_loop_embargo_derives_from_horizon():

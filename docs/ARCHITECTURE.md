@@ -36,7 +36,7 @@
 | — | 监控 (Monitoring) | `services/monitoring/`(3 文件) | **【已建】** | audit_log、health。测试:`tests/monitoring/*` |
 | — | 部署门 (Deployment) | `services/deployment/`(2 文件) | **【已建】** | gate(读取安全标志)。测试:`tests/deployment/test_deployment_gate.py` |
 | — | 实验注册表 | `services/research/experiment_registry/`(3 文件) | **【已建】** | stdlib `sqlite3` 持久化(store、registry),跨进程保留试验计数以做可复现 DSR 计账。测试:`tests/research/test_experiment_*` |
-| — | 控制台 API | `services/research/console_api/main.py`(~3796 LOC) | **【部分】** | FastAPI **只读** 计算/合成快照生成器(供前端),非真实研究后端。测试:`console_api/tests/`、`tests/research/test_console_api_contract.py` |
+| — | 控制台 API | `services/console/main.py` + `services/console/api/main.py` | **【部分】** | FastAPI **只读** 组合根 + 计算/合成快照 HTTP 展示层(供前端),非真实研究后端。测试:`services/console/api/tests/`、`tests/research/test_console_api_contract.py` |
 | — | 网关 (Gateway) | `services/gateway/` | **【计划】** | 仅 `__init__.py` |
 | — | 学习 (Learning) | `services/learning/` | **【计划】** | 0 个 py 文件 |
 | — | 基础设施占位 | `platform/`、`schemas/`、`proto/` | **【计划】** | `platform/` 有 kubernetes/terraform/observability 等配置树但无 Python;`schemas/` 3 个 JSON-Schema(events/risk/trading)+ avro/protobuf 子目录;`proto/` 仅 README |

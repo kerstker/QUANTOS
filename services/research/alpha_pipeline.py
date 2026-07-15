@@ -31,7 +31,7 @@ from services.alpha.lineage import make_child_asset
 from services.alpha.registry import AlphaAssetRegistry
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 
-from services.research.backtest_engine.metrics import sharpe
+from services.validation.performance import sharpe
 
 from . import alpha_expression as ax
 from .carry_pnl import economic_return_series

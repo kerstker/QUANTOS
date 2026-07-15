@@ -1,5 +1,5 @@
 """mandate 文件加载器(live/governance/mandate_store.py)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6 延伸。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.6 延伸。
 
 真实数字由用户自己创建文件签署——镜像 API 密钥的处理方式(key/binance_test_key.json),
 这里不代填任何"看起来合理"的默认数字,避免 AI 变相给自己发通行证。fail-closed:

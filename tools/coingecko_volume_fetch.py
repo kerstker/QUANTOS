@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import time
 
-from services.data.adapters import SourceSpec, normalize_records
+from services.data.adapters import (SourceSpec, VolumeSemantics, VolumeUnit,
+                                    normalize_records)
 from tools.coingecko_fetch import DEMO_BASE, _read_key, _http_get_json
 
 # market_chart -> canonical bars: price becomes o/h/l/c, total_volume becomes volume.
@@ -28,6 +29,8 @@ MC_SPEC = SourceSpec(
     field_map={"instrument_id": "sym", "event_time": "ts", "open": "px", "high": "px",
                "low": "px", "close": "px", "volume": "vol"},
     knowledge_lag=0,
+    volume_unit=VolumeUnit.QUOTE_USD,
+    volume_semantics=VolumeSemantics.ROLLING_24H,
 )
 
 

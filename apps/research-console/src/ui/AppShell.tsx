@@ -37,19 +37,21 @@ export function AppShell({ nav, children }: { nav: ReadonlyArray<NavGroup>; chil
   return (
     <div className="flex min-h-screen flex-col text-ink">
       {/* ---- top command bar: brand + persistent safety cluster (glass) ---- */}
-      <header className="glass sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line px-5">
+      <header className="glass sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line px-3 sm:px-5">
         <div className="flex items-center gap-2.5">
           <span className="grid h-8 w-8 place-items-center rounded-xl text-[15px] font-black text-ink"
             style={{ background: 'var(--grad)', boxShadow: 'var(--glow-accent)' }}>Q</span>
           <div className="leading-none">
             <div className="text-[15px] font-bold tracking-tight text-ink">QUANTOS</div>
-            <div className="mt-0.5 text-2xs text-faint">{bi('量化研究指挥中心', 'Research Command Center')}</div>
+            <div className="mt-0.5 hidden text-2xs text-faint sm:block">{bi('量化研究指挥中心', 'Research Command Center')}</div>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <Chip label="L2_DRY_RUN_ONLY" tone="info" />
-          <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
-          <Chip label={bi('实盘禁用', 'LIVE_DISALLOWED')} tone="neg" />
+        <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-1.5">
+          <span className="sm:hidden"><Chip label="L2" tone="info" /></span>
+          <span className="hidden sm:inline-flex"><Chip label="L2_DRY_RUN_ONLY" tone="info" /></span>
+          <span className="hidden sm:inline-flex"><Chip label={bi('只读', 'READ_ONLY')} tone="info" /></span>
+          <span className="sm:hidden"><Chip label="LIVE OFF" tone="neg" /></span>
+          <span className="hidden sm:inline-flex"><Chip label={bi('实盘禁用', 'LIVE_DISALLOWED')} tone="neg" /></span>
           <Chip label={mode} tone={mode === 'MOCK' ? 'warn' : 'pos'} />
         </div>
       </header>

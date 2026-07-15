@@ -27,6 +27,11 @@ from services.alpha.orthogonalize import orthogonalize
 
 from tools.crypto_oi_research import build_panel, CARRY
 from tools.crypto_oi_verify import _streams, _per_year
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
 FIELDS = ("close", "volume", "funding", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
@@ -41,9 +46,12 @@ ELITE = 16
 
 
 def main(generations: int = GENERATIONS, population: int = POP) -> None:
+    recorded_at = time.time_ns() // 1_000_000
     elite = max(4, min(ELITE, population // 4))     # keep elite sane relative to a tuned population
     panel, instruments = build_panel()
-    px = panel.matrices["close"]; fm = panel.matrices["funding"]
+    dataset_version = field_panel_dataset_version(panel)
+    px = panel.matrices["close"]
+    fm = panel.matrices["funding"]
     # KNOWN-edge basis as aligned ECONOMIC streams (same construction the engine scores with)
     basis = {"carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
              "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
@@ -51,9 +59,30 @@ def main(generations: int = GENERATIONS, population: int = POP) -> None:
     print(f"basis: carry SR {sharpe(basis['carry']):.2f}, crowd_contra SR {sharpe(basis['crowd_contra']):.2f}")
     print(f"search: {generations} gen x pop {population}, reward = incremental IR orthogonal to basis")
 
-    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=generations,
-                            population_size=population, elite_k=elite, quantile=QUANTILE,
-                            basis_returns=basis, basis_min_overlap=200, dataset_version="oi8d", timestamp=0)
+    with production_experiment_registry() as registry:
+        out = run_alpha_factory(
+            panel,
+            list(FIELDS),
+            list(WINDOWS),
+            generations=generations,
+            population_size=population,
+            elite_k=elite,
+            quantile=QUANTILE,
+            basis_returns=basis,
+            basis_min_overlap=200,
+            dataset_version=dataset_version,
+            timestamp=recorded_at,
+            search_registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_factory_orthogonal",
+                search_kind="ALPHA_FACTORY_ORTHOGONAL",
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                params={"generations": generations, "population": population},
+            ),
+            search_kind="ALPHA_FACTORY_ORTHOGONAL",
+            search_source="tools.crypto_factory_orthogonal",
+        )
     assert out["scored_by"] == "orthogonal_incremental_ir"
     print(f"engine evaluated {out['n_evaluated']} cross-dimensional alphas; elite {len(out['best'])}")
 
@@ -73,7 +102,8 @@ def main(generations: int = GENERATIONS, population: int = POP) -> None:
         print(f"{b['score']:6.2f} {sharpe(r):6.2f} {str(r2):>8} {str(b['leakage_ok']):5} {','.join(flds):<22} {b['expr'][:70]}")
 
     # no-peek selection OOS: basis + discoveries
-    streams = dict(basis); streams.update(dict(list(disc_streams.items())[:8]))
+    streams = dict(basis)
+    streams.update(dict(list(disc_streams.items())[:8]))
     T = len(basis["carry"])
     oos = walk_forward_selection_oos(streams, train_size=max(252, T // 4), test_size=max(120, T // 8),
                                      embargo=2, top_k=1)
@@ -86,7 +116,9 @@ def main(generations: int = GENERATIONS, population: int = POP) -> None:
              and abs(r["raw_econ_sharpe"]) > 0.5]
     rc = None
     if novel:
-        top = novel[0]; e = ax.deserialize(top["expr"]); sig = ax.evaluate(e, panel)
+        top = novel[0]
+        e = ax.deserialize(top["expr"])
+        sig = ax.evaluate(e, panel)
         pr, _ec, tr = _streams(sig, px, fm, q=QUANTILE)
         lags = {L: round(sharpe(_streams(sig, px, fm, q=QUANTILE, lag=L)[0]), 3) for L in (0, 1, 2)}
         net = {f: round(sharpe([p - t * f / 1e4 for p, t in zip(pr, tr)]), 3) for f in (5, 10, 20)}

@@ -1,18 +1,16 @@
 """Forward paper-track persistence (断点2). Append-only sqlite ledger of an alpha's REAL out-of-sample
 paper P&L / IC, one row per period (immutable), plus a recomputed per-alpha summary. Mirrors the
 experiment_registry store pattern. Pure stdlib, deterministic (no RNG / no wall-clock here)."""
+
 from __future__ import annotations
 
 import sqlite3
 import statistics
 from typing import Optional, Sequence
 
-from services.research.backtest_engine.metrics import sharpe
+from services.validation.performance import sharpe
 from services.research.paper_trading.domain.consistency import performance_gap
-
-
-class PaperTrackStoreError(RuntimeError):
-    pass
+from services.research.ports.persistence import PaperTrackStoreError
 
 
 _SCHEMA = """
@@ -56,14 +54,19 @@ class PaperTrackStore:
         self._conn.executemany(
             "INSERT OR IGNORE INTO paper_periods(alpha_id, as_of_ts, realized_return, realized_ic, source) "
             "VALUES (?,?,?,?,?)",
-            [(alpha_id, int(ts), float(r), (None if ic is None else float(ic)), str(src))
-             for ts, r, ic, src in rows])
+            [(alpha_id, int(ts), float(r), (None if ic is None else float(ic)), str(src)) for ts, r, ic, src in rows],
+        )
         self._conn.commit()
 
     def periods(self, alpha_id: str) -> list:
-        return [dict(r) for r in self._conn.execute(
-            "SELECT as_of_ts, realized_return, realized_ic, source FROM paper_periods "
-            "WHERE alpha_id=? ORDER BY as_of_ts", (alpha_id,))]
+        return [
+            dict(r)
+            for r in self._conn.execute(
+                "SELECT as_of_ts, realized_return, realized_ic, source FROM paper_periods "
+                "WHERE alpha_id=? ORDER BY as_of_ts",
+                (alpha_id,),
+            )
+        ]
 
     def recompute_summary(self, alpha_id: str, *, backtest_sharpe: Optional[float] = None) -> None:
         ps = self.periods(alpha_id)
@@ -73,16 +76,25 @@ class PaperTrackStore:
         ics = [p["realized_ic"] for p in ps if p["realized_ic"] is not None]
         cum = 1.0
         for r in rets:
-            cum *= (1.0 + r)
+            cum *= 1.0 + r
         psharpe = sharpe(rets)
         pic = statistics.fmean(ics) if ics else None
         gap = performance_gap(backtest_sharpe, psharpe)
         self._conn.execute(
             "INSERT OR REPLACE INTO paper_track(alpha_id, start_ts, last_ts, n_periods, cum_return, "
             "paper_sharpe, paper_ic, backtest_sharpe, perf_gap) VALUES (?,?,?,?,?,?,?,?,?)",
-            (alpha_id, ps[0]["as_of_ts"], ps[-1]["as_of_ts"], len(ps), round(cum - 1.0, 6),
-             round(psharpe, 4), (None if pic is None else round(pic, 4)), backtest_sharpe,
-             (None if gap is None else round(gap, 4))))
+            (
+                alpha_id,
+                ps[0]["as_of_ts"],
+                ps[-1]["as_of_ts"],
+                len(ps),
+                round(cum - 1.0, 6),
+                round(psharpe, 4),
+                (None if pic is None else round(pic, 4)),
+                backtest_sharpe,
+                (None if gap is None else round(gap, 4)),
+            ),
+        )
         self._conn.commit()
 
     def track(self, alpha_id: str) -> Optional[dict]:

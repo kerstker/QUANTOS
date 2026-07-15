@@ -1,6 +1,6 @@
 """本地账本 vs 交易所仓位对账(Stage 1)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5;账户级口径裁定:
-docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md §2。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.5;账户级口径裁定:
+docs/engineering/specs/2026-07-06-strategy-position-isolation-design.md §2。
 
 纯函数——只报告 drift,**不自动修正**。drift 是留给人/ops 流程处理的信号(核对成交回报是否
 漏记、是否有账外仓位变动),不是本层的决策权;`live/pipeline.py` 从不据此自动下单调整仓位。

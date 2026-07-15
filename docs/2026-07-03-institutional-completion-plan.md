@@ -71,7 +71,7 @@
 | **23 ✓** | 企业行动总收益序列(backtest 侧组装) | Ⅰ | P2/S | — | 已落地(bdd2a79):`corporate_actions.total_return_series` 把拆股调整价 + PIT 分红再投资组装成总收益序列(分红收益率对前价 scale-free,无需 ex-date 参考价——补上 adjusted_close 推迟的 Phase-4 缺口);只用可知行动(无前视),5 测。价值/低波/股息因子可用总收益价 |
 | **25 ◑** | 跨 book 公司级汇总(read-only 诊断) | Ⅲ | P2/S | #10 | 5 本书总 gross/net/因子暴露一页可见 primitive 已落地(45ffb5e):`firm_aggregation.aggregate_firm_books` 真实合并暴露 + 重叠检测(2007-Aug 拥挤模式),9 测,fail-closed。剩 driver 喂真干跑持仓(dry_run.db 不存逐符号权重,需重构)+ console 页。 |
 | **17** | 股票+基本面数据拓宽(治理收编后的 yahoo + 历史成分 + ALFRED) | Ⅰ | P1/L | #21 #22 | 股票宇宙 survivorship-free;经济数据 vintage-correct |
-| **16 ✓(spec)** | ML 引导候选提议器(spec 先行,同一验证门) | Ⅱ | P1/L | #12 | 提议器产物过同一 fail-closed 门;诚实 null 预期 spec 已落地(41151a0):`docs/superpowers/specs/2026-07-03-ml-guided-proposer-spec.md` — 三变体按风险排序、硬容器化护栏、trial-count 承重、诚实 null 预期。实现按变体 1→2→(3 独立 spec)排期(spec-先行的当前交付)。 |
+| **16 ✓(spec)** | ML 引导候选提议器(spec 先行,同一验证门) | Ⅱ | P1/L | #12 | 提议器产物过同一 fail-closed 门;诚实 null 预期 spec 已落地(41151a0):`docs/engineering/specs/2026-07-03-ml-guided-proposer-spec.md` — 三变体按风险排序、硬容器化护栏、trial-count 承重、诚实 null 预期。实现按变体 1→2→(3 独立 spec)排期(spec-先行的当前交付)。 |
 | **26 ✓** | 观测性升真(health 快照上 HTTP + 请求日志) | Ⅴ | P2/S | — | system-health 100% 真源;两服务有结构化请求日志 已落地(bb8afb8):system-health 加真 `monitoring` 块(build_snapshot 验 #20 durable 审计链 + kill-switch)+ 诚实标注延迟为 ILLUSTRATIVE;活验 chain_valid True/healthy True。 |
 | **27 ✓** | 事故账本 + kill-switch 演练 | Ⅴ | P2/S | #20 | 事故页升真(append-only);演练 runbook + 端到端测试 已落地(272fd71):`IncidentLedger`(append-only sqlite,opened-once/resolve,fail-closed)+ 端到端 kill-switch 演练测试(arm→全拒→多方复位→审计链留痕→干净恢复)+ `docs/KILL_SWITCH_DRILL.md`。14 测。 |
 | **28 ◑** | CI/环境机构化(lockfile + python pin + coverage + 依赖审计) | Ⅵ | P2/M | — | CI 有 coverage 阈值与 pip-audit/npm audit;解释器统一 解释器 pin 已落地(7d2e035):`.python-version`=3.12 消解 3.11/3.12/3.13 漂移。剩 lockfile + coverage 阈值 + pip-audit = CI workflow 改动(需 CI 迭代验证,不红门)= 待做。 |
@@ -154,6 +154,10 @@ CLAUDE.md 计数刷新(endpoints 31→41、pages 37→42、portfolio 57→124、
 - **tests-first**:strict 摄入对坏批次 raise;量纲断言正/负控制;回填后 spread 检查 <1e6;trend 容量快照带新 provenance。
 - **DoD**:承重数据集质量强制;daily 宇宙 ADV 可用;trend 容量结论出炉(诚实标注)。
 - **工作量/依赖**:M;网络仅在 tools/(回填一次性)。
+
+> **2026-07-13 完成更正**:严格质量门已承重；volume 问题最终定位为 quote USD volume 在容量消费端
+> 被二次乘价，并非数据库混单位。SourceSpec 现强制声明 unit/semantics，scenario 已按 quote notional
+> 重算，dispersion guard 不再冒充单位证据。旧 daily 请求级 raw lineage 仍由 P1-8 跟踪。
 
 ### 第三批「溯源与持久」(全 M)
 

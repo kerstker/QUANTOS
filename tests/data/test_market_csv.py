@@ -1,14 +1,30 @@
 """真实市场数据离线 CSV 适配器:列映射/日期→event_time/失败关闭 + 端到端方法论。"""
 import csv
+import itertools
 import pytest
 from quantos.contracts.research import AlphaState
 from services.data.persistent_store import SqlitePITStore
-from services.data.market_csv import ingest_market_csv, DEFAULT_COLUMN_MAP
+from services.data.market_csv import ingest_market_csv
 from services.alpha.catalog import AlphaCatalog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.intelligence.search_space import HypothesisSpace
-from services.research.session import run_research_session
+from services.intelligence.research_session import (
+    run_research_session as _run_research_session,
+)
+
+
+_SEARCH_SEQUENCE = itertools.count()
+
+
+def run_research_session(*args, **kwargs):
+    if kwargs.get("registry") is None:
+        kwargs["ephemeral"] = True
+    else:
+        kwargs.setdefault("search_id", f"test-market-csv-{next(_SEARCH_SEQUENCE)}")
+        kwargs.setdefault("search_kind", "TEST_MARKET_CSV_SESSION")
+        kwargs.setdefault("search_source", "tests.data.test_market_csv")
+    return _run_research_session(*args, **kwargs)
 
 
 def _write(path, header, rows):

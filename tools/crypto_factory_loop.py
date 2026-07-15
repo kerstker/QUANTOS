@@ -28,6 +28,11 @@ from services.alpha.orthogonalize import orthogonalize
 
 from tools.crypto_oi_research import build_panel, CARRY
 from tools.crypto_oi_verify import _streams, _per_year
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
 FIELDS = ("close", "volume", "funding", "basis", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
@@ -84,7 +89,9 @@ def _nodes(t, path=()):
 
 
 def main() -> None:
+    invocation_at = time.time_ns() // 1_000_000
     panel, instruments = build_panel(add_basis=True)
+    dataset_version = field_panel_dataset_version(panel)
     print(f"=== loop-until-dry orthogonal mining ({len(instruments)} coins, {len(FIELDS)} dims) ===")
     known = {"carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
              "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
@@ -94,9 +101,32 @@ def main() -> None:
     chain, dry, rnd = [], 0, 0
     while dry < DRY_LIMIT and rnd < MAX_ROUNDS:
         rnd += 1
-        out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=5, population_size=48,
-                                elite_k=14, quantile=QUANTILE, basis_returns=known, basis_min_overlap=200,
-                                dataset_version=f"loop{rnd}", timestamp=rnd, max_workers=MAX_WORKERS)
+        recorded_at = invocation_at + rnd
+        with production_experiment_registry() as registry:
+            out = run_alpha_factory(
+                panel,
+                list(FIELDS),
+                list(WINDOWS),
+                generations=5,
+                population_size=48,
+                elite_k=14,
+                quantile=QUANTILE,
+                basis_returns=known,
+                basis_min_overlap=200,
+                dataset_version=dataset_version,
+                timestamp=recorded_at,
+                max_workers=MAX_WORKERS,
+                search_registry=registry,
+                search_id=make_search_id(
+                    source="tools.crypto_factory_loop",
+                    search_kind="ALPHA_FACTORY_LOOP",
+                    dataset_version=dataset_version,
+                    recorded_at=recorded_at,
+                    params={"round": rnd, "generations": 5, "population": 48},
+                ),
+                search_kind="ALPHA_FACTORY_LOOP",
+                search_source="tools.crypto_factory_loop",
+            )
         found = None
         for b in out["best"]:
             e = ax.deserialize(b["expr"])

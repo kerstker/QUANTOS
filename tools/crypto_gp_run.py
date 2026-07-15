@@ -17,9 +17,14 @@ import os
 import time
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.research_adapter import adapt_research_market_data
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.evolutionary_search import genome_to_definition
-from services.research.session import run_research_session
+from services.intelligence.research_session import run_research_session
+from tools.search_trial_registry import (
+    make_search_id,
+    production_experiment_registry,
+)
 
 OPERATORS = ("momentum", "ts_mean", "zscore", "volatility", "ts_rank",
              "ema_ratio", "dist_from_high", "accel")
@@ -49,12 +54,27 @@ def main() -> None:
 
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
     now_ms = int(time.time() * 1000)
-    res = run_research_session(
-        store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON, space=space,
-        rounds=1, batch_size=1, timestamp=now_ms, gp=True,
-        evo_generations=GENERATIONS, evo_population=POPULATION, evo_elite=ELITE,
-        parsimony_lambda=PARSIMONY_LAMBDA, parsimony_mu=PARSIMONY_MU,
-        redundancy_lambda=REDUNDANCY_LAMBDA)
+    research_store = adapt_research_market_data(store)
+    dataset_version = research_store.dataset_version(instruments, event_times)
+    with production_experiment_registry() as registry:
+        res = run_research_session(
+            research_store, instruments, event_times=event_times,
+            fwd_horizon=FWD_HORIZON, space=space, rounds=1, batch_size=1,
+            timestamp=now_ms, dataset_version=dataset_version, registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_gp_run",
+                search_kind="RESEARCH_SESSION_GP",
+                dataset_version=dataset_version,
+                recorded_at=now_ms,
+                params={"generations": GENERATIONS, "population": POPULATION},
+            ),
+            search_kind="RESEARCH_SESSION_GP",
+            search_source="tools.crypto_gp_run",
+            gp=True, evo_generations=GENERATIONS, evo_population=POPULATION,
+            evo_elite=ELITE, parsimony_lambda=PARSIMONY_LAMBDA,
+            parsimony_mu=PARSIMONY_MU,
+            redundancy_lambda=REDUNDANCY_LAMBDA,
+        )
 
     # readable canonical expression per discovered tree (from the evaluated genomes)
     expr = {}

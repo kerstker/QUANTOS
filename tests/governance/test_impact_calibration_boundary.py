@@ -9,7 +9,7 @@ import pytest
 
 
 _ROOT = Path(__file__).resolve().parents[2]
-_TARGET = Path("services/research/realism/impact_calibration.py")
+_TARGET = Path("services/execution/impact_calibration.py")
 
 _FORBIDDEN_IMPORT_ROOTS = {
     "aiohttp",
@@ -53,7 +53,7 @@ _SENSITIVE_SOURCE_TERMS = {
 
 _FORBIDDEN_IMPORT_PREFIXES = (
     "services.trading",
-    "services.execution",
+    "services.research",
     "services.risk.pre_trade",
     "tools",
 )

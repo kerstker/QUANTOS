@@ -1,5 +1,5 @@
 """成交质量分析(TCA,2026-07-05)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §③。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §③。
 
 纯函数、无 IO/网络/墙钟。每笔确认成交的滑点 = 实际成交均价相对决策价的带方向偏离
 (bps;买贵/卖贱为正 = 成本,负 = 价格改善)。周度调仓节奏下"决策价"用

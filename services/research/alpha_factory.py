@@ -23,18 +23,18 @@ from __future__ import annotations
 
 import contextlib
 from concurrent.futures import ProcessPoolExecutor
-from typing import Mapping, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.catalog import AlphaCatalog
-from services.research.backtest_engine.metrics import sharpe, generalization_gap
+from services.alpha.factor_set import incremental_ir
+from services.validation.performance import generalization_gap, sharpe
 
 from . import alpha_expression as ax
 from . import cs_genome
 from .alpha_pipeline import _fields, run_alpha_asset_pipeline
 from .carry_pnl import economic_return_series
 from .expression_leakage import compute_leakage_ok
-from .factor_set import incremental_ir
 
 _NEG_INF = float("-inf")
 
@@ -81,14 +81,170 @@ def _score_expr_in_worker(expr) -> float:
                        overfit_lambda)
 
 
-def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequence[int], *,
-                      generations: int = 3, population_size: int = 20, elite_k: int = 8,
-                      fwd_horizon: int = 1, quantile: float = 0.2, use_funding: Optional[bool] = None,
-                      basis_returns: Optional[Mapping[str, Sequence[float]]] = None,
-                      basis_min_overlap: int = 60, overfit_lambda: float = 0.0,
-                      dataset_version: str = "", timestamp: int = 0,
-                      max_workers: Optional[int] = None,
-                      catalog: Optional[AlphaCatalog] = None) -> dict:
+def run_alpha_factory(
+    panel: ax.FieldPanel,
+    fields: Sequence[str],
+    windows: Sequence[int],
+    *,
+    generations: int = 3,
+    population_size: int = 20,
+    elite_k: int = 8,
+    fwd_horizon: int = 1,
+    quantile: float = 0.2,
+    use_funding: Optional[bool] = None,
+    basis_returns: Optional[Mapping[str, Sequence[float]]] = None,
+    basis_min_overlap: int = 60,
+    overfit_lambda: float = 0.0,
+    dataset_version: str = "",
+    timestamp: int = 0,
+    max_workers: Optional[int] = None,
+    catalog: Optional[AlphaCatalog] = None,
+    search_registry=None,
+    search_id: Optional[str] = None,
+    search_kind: Optional[str] = None,
+    search_source: Optional[str] = None,
+    ephemeral: bool = False,
+) -> dict:
+    """Run a selection-bearing factory search with durable trial provenance.
+
+    Production callers must provide an experiment registry and explicit search
+    identity. Tests may opt into a process-local run with ``ephemeral=True``;
+    omission is never interpreted as permission to discard the trial population.
+    """
+    if search_registry is None:
+        if not ephemeral:
+            raise ValueError(
+                "search_registry is required unless test-only ephemeral=True is explicit"
+            )
+        if any(value is not None for value in (search_id, search_kind, search_source)):
+            raise ValueError("ephemeral search must not declare persistent search identity")
+        effective_catalog = catalog if catalog is not None else AlphaCatalog()
+        return _run_alpha_factory_impl(
+            panel,
+            fields,
+            windows,
+            generations=generations,
+            population_size=population_size,
+            elite_k=elite_k,
+            fwd_horizon=fwd_horizon,
+            quantile=quantile,
+            use_funding=use_funding,
+            basis_returns=basis_returns,
+            basis_min_overlap=basis_min_overlap,
+            overfit_lambda=overfit_lambda,
+            dataset_version=dataset_version,
+            timestamp=timestamp,
+            max_workers=max_workers,
+            catalog=effective_catalog,
+        )
+    if ephemeral:
+        raise ValueError("ephemeral=True cannot be combined with search_registry")
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (search_id, search_kind, search_source, dataset_version)
+    ):
+        raise ValueError(
+            "persistent search requires search_id, search_kind, search_source, and dataset_version"
+        )
+
+    effective_catalog = catalog if catalog is not None else AlphaCatalog()
+    search_registry.load_for_evaluation(effective_catalog)
+    search_registry.begin_search_attempt(
+        search_id=search_id,
+        search_kind=search_kind,
+        source=search_source,
+        dataset_version=dataset_version,
+        recorded_at=timestamp,
+    )
+
+    def persist_candidates(config_hashes: Sequence[str]) -> None:
+        search_registry.register_search_candidates(
+            search_id,
+            config_hashes,
+            registered_at=timestamp,
+        )
+
+    try:
+        result = _run_alpha_factory_impl(
+            panel,
+            fields,
+            windows,
+            generations=generations,
+            population_size=population_size,
+            elite_k=elite_k,
+            fwd_horizon=fwd_horizon,
+            quantile=quantile,
+            use_funding=use_funding,
+            basis_returns=basis_returns,
+            basis_min_overlap=basis_min_overlap,
+            overfit_lambda=overfit_lambda,
+            dataset_version=dataset_version,
+            timestamp=timestamp,
+            max_workers=max_workers,
+            catalog=effective_catalog,
+            candidate_recorder=persist_candidates,
+        )
+        recorded_run_ids = []
+        for asset in result["pipeline"]["registry"].all_latest():
+            if asset.evaluation is None:
+                continue
+            if asset.evaluation.alpha_id != asset.alpha_id:
+                raise ValueError(
+                    "factory evaluation alpha_id does not match its alpha asset"
+                )
+            recorded_run_ids.append(
+                search_registry.record_evaluation(
+                    asset.evaluation,
+                    dataset_version=dataset_version,
+                    recorded_ts=timestamp,
+                    search_id=search_id,
+                    config_hash=effective_catalog.get(
+                        asset.alpha_id
+                    ).definition_hash,
+                )
+            )
+        result["recorded_run_ids"] = recorded_run_ids
+        search_registry.save_evaluation_context(effective_catalog, now=timestamp)
+        search_registry.finish_search_attempt(
+            search_id,
+            status="COMPLETED",
+            recorded_at=timestamp,
+        )
+        return result
+    except BaseException as original:
+        try:
+            search_registry.finish_search_attempt(
+                search_id,
+                status="FAILED",
+                recorded_at=timestamp,
+            )
+        except BaseException as terminal_error:
+            original.add_note(
+                f"failed to persist FAILED search terminal: {terminal_error}"
+            )
+        raise
+
+
+def _run_alpha_factory_impl(
+    panel: ax.FieldPanel,
+    fields: Sequence[str],
+    windows: Sequence[int],
+    *,
+    generations: int,
+    population_size: int,
+    elite_k: int,
+    fwd_horizon: int,
+    quantile: float,
+    use_funding: Optional[bool],
+    basis_returns: Optional[Mapping[str, Sequence[float]]],
+    basis_min_overlap: int,
+    overfit_lambda: float,
+    dataset_version: str,
+    timestamp: int,
+    max_workers: Optional[int],
+    catalog: AlphaCatalog,
+    candidate_recorder: Optional[Callable[[Sequence[str]], None]] = None,
+) -> dict:
     """Evolve cs-alphas scored by economic L/S Sharpe, then run the full pipeline over the elite set.
     `use_funding` defaults to True when the panel carries a 'funding' matrix (score = carry economic
     return); else the price-only L/S Sharpe.
@@ -110,23 +266,25 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
     bit-identical results (see tests/research/test_alpha_factory_parallel.py). `max_workers=1` behaves
     like None (no pool is spun up).
 
-    `catalog` (2026-07-10, gap audit rank #6): None (default) is byte-identical to the pre-existing
-    behavior -- run_alpha_asset_pipeline still gets a fresh in-memory catalog for the elite set, and
-    NOTHING from the wider scored population is registered anywhere. When the caller supplies a
-    persistent catalog instead, TWO things change: (1) register_trial() is called for EVERY
-    genuinely-scored candidate this run (the full `scored` population, not just the elite_k passed to
-    the pipeline) -- so global_trial_count() reflects the search's TRUE breadth, closing the gap where
-    only the persistent in-gate ResearchAgentLoop path's trials were ever honestly counted; (2) that
-    same catalog is passed through to run_alpha_asset_pipeline, so the elite set's full evaluations
-    also accumulate into it rather than a disposable one. This function still performs NO IO itself --
-    persisting the catalog (if desired) is entirely the caller's responsibility, exactly like every
-    other catalog-accepting function in this codebase (AlphaFactory, tools/register_alpha_catalog.py)."""
+    Every pending candidate is registered in the catalog, and through the optional
+    durable recorder, before its score is computed. A failed scorer therefore cannot
+    erase an attempted trial from the multiple-testing population."""
     if generations < 1 or population_size < 1 or elite_k < 1:
         raise ValueError("generations / population_size / elite_k must be >= 1")
     with_funding = ("funding" in panel.matrices) if use_funding is None else use_funding
     basis = dict(basis_returns) if basis_returns else None
 
     scored: dict = {}                                   # alpha_id -> (score, expr)
+
+    def _candidate_definition(expr) -> AlphaDefinition:
+        alpha_id = ax.alpha_id(expr)
+        return AlphaDefinition(
+            alpha_id=alpha_id,
+            name=alpha_id,
+            factor_ids=tuple(sorted(_fields(expr))),
+            universe="cs",
+            params={"expr": ax.serialize(expr)},
+        )
 
     def _pending(exprs):
         """First-occurrence-order (alpha_id, expr) pairs not yet in `scored` -- mirrors the original
@@ -146,6 +304,12 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
         todo = _pending(exprs)
         if not todo:
             return
+        definitions = [_candidate_definition(expr) for _alpha_id, expr in todo]
+        config_hashes = [definition.definition_hash for definition in definitions]
+        if candidate_recorder is not None:
+            candidate_recorder(config_hashes)
+        for config_hash in config_hashes:
+            catalog.register_trial(config_hash)
         if executor is None:
             results = [_score_expr(e, panel, fwd_horizon, quantile, with_funding, basis,
                                    basis_min_overlap, overfit_lambda) for _aid, e in todo]
@@ -201,23 +365,6 @@ def run_alpha_factory(panel: ax.FieldPanel, fields: Sequence[str], windows: Sequ
                     pop.append(e)
                 if len(pop) >= population_size:
                     break
-
-    if catalog is not None:
-        # 2026-07-10 (gap audit rank #6): register a trial for EVERY genuinely-scored candidate
-        # (not just the elite_k passed to the pipeline below) -- the definition_hash construction
-        # mirrors alpha_pipeline.py's own (factor_ids=sorted field deps, universe="cs",
-        # params={"expr": serialized expression}) EXACTLY, so a candidate that reaches both this
-        # loop and the full pipeline evaluation hashes IDENTICALLY and is never double-counted
-        # (register_trial is itself idempotent by content hash). The serialized expression in
-        # params is load-bearing, not decorative: without it, distinct expressions sharing the
-        # same field dependencies collide to the same hash and silently undercount trials (see
-        # alpha_pipeline.py's matching comment for the empirical confirmation of this bug).
-        for _score, e in scored.values():
-            deps = tuple(sorted(_fields(e)))
-            catalog.register_trial(AlphaDefinition(
-                alpha_id=ax.alpha_id(e), name=ax.alpha_id(e), factor_ids=deps, universe="cs",
-                params={"expr": ax.serialize(e)}
-            ).definition_hash)
 
     best = sorted(scored.values(), key=lambda sv: (-sv[0], ax.serialize(sv[1])))[:elite_k]
     best_exprs = [e for _s, e in best]

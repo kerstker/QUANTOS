@@ -1,5 +1,5 @@
 """reconcile_positions(live/execution/reconciliation.py):纯函数,只报告 drift 不自动修正。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.5。"""
 import pytest
 
 from live.execution.reconciliation import reconcile_positions

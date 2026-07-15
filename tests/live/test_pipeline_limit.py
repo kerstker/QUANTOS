@@ -1,5 +1,5 @@
 """live/pipeline.py::submit_live_batch —— LIMIT 限价单执行路径(2026-07-06 战线②)。设计:
-docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §5;
+docs/engineering/specs/2026-07-06-limit-order-execution-design.md §5;
 批判修正(2026-07-06):preview+LIMIT 短路轮询、MARKET 继续尊重调用方 max_confirm_polls、
 book_ticker 退化响应回退、mandate 保守名义额口径,均在此文件与 test_mandate.py/test_pricing.py
 分别覆盖。
@@ -9,11 +9,12 @@ MARKET 路径的既有性质(缩放往返/gate拒绝隔离/mandate零提交/记�
 """
 import pytest
 
-from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult
+from live.contracts import ExchangeFilters, VenueOrderResult
 from live.execution.position_ledger import LiveLedger
 from live.execution.pricing import LimitPricing
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate
-from live.pipeline import resolve_unconfirmed_orders, submit_live_batch
+from live.governance.validation_attestation import HUMAN_OVERRIDE, ValidationAttestation
+from live.pipeline import resolve_unconfirmed_orders, submit_live_batch as _submit_live_batch
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.config import RiskLimits
@@ -30,6 +31,15 @@ _FILTERS = {
                            tick_size=0.01),
 }
 _TERMINAL = frozenset({"FILLED", "CANCELED", "REJECTED", "EXPIRED"})
+
+
+def submit_live_batch(**kwargs):
+    if "validation_attestation" not in kwargs:
+        kwargs["validation_attestation"] = ValidationAttestation(
+            strategy_id=kwargs["strategy_id"], kind=HUMAN_OVERRIDE,
+            attested_by="alice", attested_at=_NOW, reason="test fixture",
+        )
+    return _submit_live_batch(**kwargs)
 
 
 def _wide_open_limits(allowed=frozenset({"BTC", "ETH"})):

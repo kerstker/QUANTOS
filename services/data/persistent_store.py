@@ -66,6 +66,38 @@ class SqlitePITStore:
     def add_many(self, key: str, bars) -> int:
         return sum(1 for b in bars if self.add(key, b))
 
+    def add_batch_atomic(self, bars) -> int:
+        """Insert a normalized batch in one SQLite transaction.
+
+        This is the load-bearing writer for strict ingestion: serialization or
+        database failure rolls the entire batch back, while primary-key repeats
+        remain idempotent no-ops.
+        """
+        self._require_schema()
+        batch = tuple(bars)
+        try:
+            rows = [
+                (
+                    bar.instrument_id,
+                    bar.event_time,
+                    bar.knowledge_time,
+                    json.dumps(bar.model_dump(mode="json"), sort_keys=True),
+                )
+                for bar in batch
+            ]
+            before = self._conn.total_changes
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO bars(key, event_time, knowledge_time, payload_json) "
+                "VALUES (?,?,?,?)",
+                rows,
+            )
+            inserted = self._conn.total_changes - before
+            self._conn.commit()
+            return inserted
+        except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            self._conn.rollback()
+            raise DataStoreError(f"atomic batch insert failed: {exc}") from exc
+
     def _query(self, key, as_of_time, event_time_max):
         self._require_schema()
         sql = "SELECT payload_json FROM bars WHERE key=? AND knowledge_time<=?"

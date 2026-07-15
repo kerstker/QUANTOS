@@ -1,20 +1,489 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-15 顶级续审与恢复证据纠偏:** 当前机器权威仍是
+> `config/top_tier_requirements.json` + `services/governance/top_tier_assessment.py` +
+> 两个生成制品；07-07 手工审计只作历史快照。制品准入已推进到 V4 的双 registry-head
+> 事务 CAS，强身份已推进到本地 M3 的应用授权 authority，L2 backup 已推进到 v2 精确
+> source contract（10 required + 6 optional，含 approvals/identity/restore-history authority）。续审发现并关闭
+> `OPS.RESTORE.DRILL` 假绿：旧 generic live/testnet restore JSON 不再参与顶级计分，单次
+> `l2_backup_latest.json` 固定封顶 M3。恢复红线现消费 STARTED/OUTCOME append-only history，
+> 动态检查 30 天 cadence/freshness/失败窗口，并要求 exact current-head Ed25519 external checkpoint；
+> 默认 trust registry 为空，故不会本地制造 M4。最终完整门禁实跑：backend 2571 passed / 1 skipped，
+> 仅 service-graph 与 supply-chain tracked evidence 两项漂移失败；live/trading/tools 986 passed；
+> frontend 68 tests + typecheck/build；治理扫描 318 files / 0 violations。
+> strong-identity、service graph、supply-chain 与 assessment/matrix 制品仍待获准重生成，禁止沿用旧
+> `15/22` 作为当前结论。详见
+> `docs/audit/2026-07-15-top-tier-continuation-review.md`。
+
+> **2026-07-15 制品准入 V3 增量:** 软件供应链准入已从调用方自报 policy hash
+> 升级为仓库治理的空策略注册表 + 严格 policy v3；稳定 policy 现钉住外部
+> receipt authority/key ID/Ed25519 public-key SHA-256，短命动态 receipt 可独立轮换并验签，
+> 无需改 policy/registry。新鲜度/撤销/证书有效期/运行时
+> verifier/重复 JSON 键/签名载荷空白/时钟回拨均失败关闭。CLI 固定使用
+> `data/cache/artifact_admission.db`，policy 决策必须先写入 WAL/FULL、不可更新删除、
+> 哈希链 SQLite 权威后才输出；该生产库当前未配置，注册表也无 ACTIVE policy，故真实
+> 环境仍为零 `ALLOW`；receipt-authority registry 同样为空。诚实边界不变：尚无真实
+> 外部 authority/签名 receipt，source-native checkpoint/revocation proof 未验证，
+> 仅支持 Rekor v1 `integratedTime`，无真实有效 bundle 集成夹具，SQLite 非 WORM 且无
+> 外部链头封存，也无跨主机复现或独立 admission 部署。详见
+> `docs/audit/2026-07-15-artifact-admission-v3-review.md`。最终统一门禁 18/18 全绿：
+> 主套件 2420 passed / 1 skipped，live/trading/tools 972 passed，前端 68 tests +
+> typecheck/build，治理扫描 313 files / 0 violations；Catalog 12 types/17 definitions，
+> 服务图 16 domains/36 edges/0 cycles，供应链 320 components。机器结论保持
+> `NOT_TOP_TIER`：15/22 PASS、5 PARTIAL、2 MANUAL、0 FAILED。
+
+> **2026-07-15 event worker assurance 增量:** consumer-group 与 delivery journal 中的新
+> worker 不再是无标签字符串，而使用保留内部 ID 并固定标
+> `PROCESS_DECLARED_UNAUTHENTICATED`，该值进入既有 coordination/consumer SHA-256 链；
+> public status 解码可读名并显式展示 assurance。旧行不重写且标 `LEGACY_UNLABELED`；同名旧活跃
+> member 会先追加合法 `LEFT` 再切换，避免双占分区。真实 authority 演练链有效、health PASS，
+> external heartbeat 只允许上报固定弱保证枚举，不发送 worker 名。此增量防止把进程名误报成强身份，
+> 并不提供外部认证；OIDC/mTLS workload identity、密钥生命周期与 caller-injected lease clock 仍开放。
+> 详见 `docs/engineering/specs/2026-07-15-process-declared-worker-assurance.md`。
+> 两个 2026-07-15 增量最终统一门禁 18/18 全绿：主套件 2353 passed / 1 skipped，
+> live/trading/tools 971 passed，前端 68 tests + typecheck/build，治理扫描 312 files / 0 violations；
+> schema Catalog 12 types/17 definitions，服务图 16 domains/36 edges/0 cycles，供应链 320 components。
+> 机器结论保持 `NOT_TOP_TIER`：15/22 PASS、5 PARTIAL、2 MANUAL、0 FAILED。
+
+> **2026-07-15 数据质量准入权威增量:** `data_quality_admission.json` 不再只是可覆盖文件。
+> 新 `DataQualityAdmissionStore` 将完整 canonical evidence、独立 evidence/decision SHA-256、
+> 追加式决策链与 redacted `data.quality.admission.decided` outbox 在同一 SQLite 事务提交；
+> publish-before-ack 可幂等恢复，恢复 drain 现覆盖 7 个 owner，console 只显示 ID/verdict/count/hash
+> 白名单字段。`forward_track_advance` 已把该权威 verdict 作为记录/兑现的必要条件，authority 故障或
+> `BLOCK` 均暂停证据钟；新库也进入 L2 加密备份必需源。真实本地运行仍诚实为
+> `quality=BLOCK / lineage=BLOCK`，ID `data-admission-8bb26fcafd7e6672ec8d66ceb6fcfff5`，
+> 已 publish/ack/project 且 pending=0。它只关闭本地双写/旁路缺口，不关闭 funding、外部 WORM、
+> 强 worker identity、跨主机 HA 或任何 live 红线。详见
+> `docs/engineering/specs/2026-07-15-data-quality-admission-authority.md`。
+
 > **2026-07-10 权威覆盖层:** 顶级系统目标、成熟度和缺口不再使用手工完成度百分比。
 > 当前机器真源为 `docs/QUANTOS_TOP_TIER_STANDARD.md`、
 > `config/top_tier_requirements.json`、`evidence/top_tier_assessment.json` 和
 > `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md`。运行
 > `python scripts/assess_top_tier.py --check` 可检测证据漂移；`python scripts/validate.py`
-> 已先执行该检查。当前基线: `NOT_TOP_TIER`, 22 项要求中 13 项 PASS、1 项 PARTIAL、
-> 8 项需人工/外部证据、3 条红线未关闭。控制台 `/research/system-completeness`
+> 已先执行该检查。当前基线: `NOT_TOP_TIER`, 22 项要求中 15 项 PASS、5 项 PARTIAL、
+> 0 项 FAILED、2 项需人工/外部证据、2 条红线未关闭。控制台 `/research/system-completeness`
 > 已直接渲染同一证据源，不再生成 `completion_score` 或虚构模块。
 > `OPS.RESTORE.DRILL` 已于 2026-07-10 用一次性进程内密钥完成真实加密备份与隔离恢复演练:
 > 24 个文件逐字节 SHA-256 校验，RTO 773ms / 300000ms，RPO 2ms / 86400000ms；
 > 证据在 `evidence/restore_drill_latest.json`，恢复目标从不覆盖活动状态。当前基线升至
 > `NOT_TOP_TIER`, 14/22 PASS。
 > `PLATFORM.CI.UNIFIED_GATE` 已升级为 M4:同一个 `python scripts/validate.py` 现在按顺序覆盖
-> 能力证据漂移、治理扫描、全部后端测试、live 执行栈、前端 typecheck、前端 59 项测试和
+> 能力证据漂移、治理扫描、全部后端测试、live 执行栈、前端 typecheck、前端 68 项测试和
 > 前端生产构建；任一失败整体非零退出。当前基线升至 `NOT_TOP_TIER`, 15/22 PASS。
+> `RISK.RECOVERY.DRILL` 已于 2026-07-12 完成隔离离线重启演练：持久化 kill-switch、
+> pre-trade gate 熔断拒绝、SQLite 账本重建、审计链承诺、损坏状态 fail-closed 与审计篡改
+> 检测全部通过，最近一次完整门禁 RTO 55ms / 300000ms；证据在
+> `evidence/risk_recovery_drill_latest.json`。当前基线升至 `NOT_TOP_TIER`, 16/22 PASS；
+> 剩余红线为 `GOV.IDENTITY.STRONG_AUTH` 与 `PLATFORM.SUPPLY_CHAIN`。
+> `PLATFORM.SUPPLY_CHAIN` 已于 2026-07-12 建立确定性 CycloneDX SBOM、Python 直接依赖
+> 固定、npm integrity 覆盖、GitHub Action 提交 SHA 固定与输入 manifest 摘要校验，平台工程
+> 从 M1 升至 M3。真实 npm Registry 审计先发现 5 项（critical 1 / high 1 / moderate 3），已将
+> `vitest` 从 2.1.9 升级并精确固定为 4.1.10，复扫为 0；保留证据在
+> `evidence/vulnerability/npm_audit_latest.json`，统一门禁首关校验报告、lockfile 与 package manifest
+> 一致。Python 初次审计先暴露 `pytest 9.1.1` / `pytest-asyncio 0.23.8` 不可重建冲突，修复后发现
+> Starlette/PyJWT/cryptography 共 19 条 advisory；已升级到 FastAPI 0.139.0、Starlette 1.3.1、
+> PyJWT 2.13.0、cryptography 49.0.0、pytest-asyncio 1.4.0、httpx2 2.5.0，复扫为 0，证据在
+> `evidence/vulnerability/python_audit_latest.json`。三个 GitHub Actions 固定提交已逐一通过 OSV commit
+> 查询并保留 0-known 证据。容器侧固定并校验 Trivy 0.72.0 官方归档：原 `python:3.12-slim`
+> 扫出 2 critical / 18 high，不能采用；最终改为摘要固定的官方 Python 3.12 Alpine 多阶段构建，
+> builder 编译科学计算依赖、runtime 移除 pip 并以 UID 65532 非 root 运行。基础层 5 条 medium/low
+> 在最终镜像全部清零，最终 Trivy 结果为 0，且只读根文件系统下正式 API、安全原语与 promotion 组合导入冒烟通过；
+> 证据在 `evidence/vulnerability/{actions_osv_latest,container_trivy_latest}.json`。同一固定输入已完成
+> 两次 `--no-cache` OCI 构建，BuildKit `v0.26.2` 重写时间戳后两份归档逐字节一致：共同归档 SHA-256
+> `d1bdd50a483da77a9124d4f67b4bc8ed589c04b592543007626d6fcdf3dddd9a`，共同 manifest
+> `sha256:4fce371aee715f289891b965068e52e7bf7ce6cfc7fc67932f294ff658e134e9`；正式证据与篡改校验在
+> `evidence/reproducibility/container_build_latest.json`，且已接入统一门禁。供应链继续补上只验不签的离线 admission
+> 边界：固定 `sigstore==4.4.0`，调用方必须提供摘要钉死的 policy 与 trusted root，精确匹配 OIDC issuer/identity，
+> 并由 Sigstore 验证 Fulcio 证书链、SCT、Rekor inclusion proof、DSSE 签名及 SLSA subject/builder/buildType/source；
+> 任何缺失、漂移或歧义均 `DENY`，且不产生部署/执行/交易权限。诚实边界仍是同主机/同 builder、
+> **不是当前源码制品 attestation**，尚无跨主机复现、
+> QUANTOS 的真实外部身份签名 bundle、独立 admission 部署或刷新/吊销监控，因此该项仍为 M3/PARTIAL，红线不关闭。
+> `AI.MODEL.REGISTRY.REDTEAM` 与 `VALIDATION.CHALLENGER.MODEL_RISK` 已于 2026-07-12
+> 从手工不可核验的 M1 升至机器可复算的 M2：新增冻结模型/提示词/工具/评估/红队/挑战者契约、
+> append-only SQLite 注册表、真实 `ResearchAgentLoop` 四案边界攻击、注册 prompt/tool 的离线 runtime
+> action 边界、敏感输出拒绝与哈希链调用历史，以及基于真实 FX walk-forward 快照的 3 份离线评估。
+> 证据在 `evidence/model_risk_baseline.json`。真实结果仍是
+> `REFUTED_NO_EDGE`（Ridge -0.4035、GBM -1.1173、单因子 -2.0389），两个挑战者均因绝对
+> Sharpe 小于 0 被拒；当前 18 个可交易 FX 标的的 126,113 行 PIT 评估子集已作为确定性 gzip JSONL
+> bundle + manifest 纳入版本证据并逐行/哈希验证；现已保留两次真实修订和两条允许调用事件，但没有外部模型提供方、审查身份仅进程角色，
+> 因此两项保持 M2/PARTIAL，不虚报 M3。
+> `evidence/model_risk_history.json` 已从首条基线追加到第二条真实修订：v1 的 12 个制品与调用事件保持不变，
+> v2 真实执行 action override、敏感输出和禁用工具动作三类 runtime 攻击，新增第 2 份红队报告与第 2 条允许调用。
+> 同版本改内容、丢弃旧制品、复用调用 ID 改写负载、丢弃/重排旧调用、历史回滚、链篡改或尾部落后当前证据均失败关闭；
+> `scripts/validate.py` 首关强制 `model-risk-history:current`。当前为 `revision_count=2 / MULTI_REVISION_HISTORY`，
+> `LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED` 已按真实证据移除；外部 provider、强审阅身份与负 OOS 结果仍使成熟度停在 M2。
+> `GOV.IDENTITY.STRONG_AUTH` 已于 2026-07-12 从共享 `X-Gov-Token` + 自报
+> `X-Operator` 的 M1 路径升级为承重的 M2 强身份边界：promotion API 删除本地共享 token，
+> 只接受 allowlist 非对称算法签名的 OIDC access token，强制 issuer/audience/时效/MFA、
+> RFC 8705 `cnf.x5t#S256` mTLS 证书绑定及读取/申请/复核/批准/执行 RBAC；actor/audit ID
+> 只能来自 `issuer|subject`。浏览器已接入 Authorization Code + PKCE S256：Web Crypto 生成
+> state/nonce/verifier，10 分钟版本化一次性事务仅存 sessionStorage，access token 仅驻内存，
+> 回调先清理并消费事务再换 token。13 个攻击案例与三方 subject 分离证据在
+> `evidence/strong_identity_baseline.json`。外部 IdP 运营、可信 TLS 终止器、密钥托管轮换、
+> 身份生命周期/撤销/访问复核及 AI 无法人类化的运维证据仍缺，因此该红线保持 M2/PARTIAL，不虚报 M4。
+> 本增量完整门禁结果：治理扫描 244 文件零违规；后端 2003 passed / 1 skipped；
+> live/trading/tools 844 passed；前端 typecheck、68 tests、production build 全部通过。
+> `P1-8/P2-1` 数据质量对抗复核于 2026-07-13 完成代码收口：strict 接入改为写前全批校验 +
+> SQLite 原子批写，承重日/1h/1m 驱动器强制 cadence，funding 原始观测与日缓存 fail-closed，
+> JSON 缓存原子发布；前向 `record_decision/realize_due` 均要求本轮质量证据，失败 ticker 留 pending，
+> `--no-refresh` 不再推进证据钟。随后完成真实四源刷新、永续 mark-price 经济口径修正与
+> `evidence/data_quality_admission.json`：固定 24 币前向宇宙中 mark 24/24 PASS、OI 24/24 PASS，
+> funding 24/24 BLOCK；全 115 ticker funding 请求均为结构化 `URLError` / `WinError 10060` /
+> `TRANSIENT`，没有半份发布或跨 venue 静默替代。perp mark 默认尝试 16 日覆盖，已有两条 pending
+> 决策的 14/14 起点/后续定价已补齐；`forward_track_advance --no-refresh` 实跑前后仍各 1 pending、
+> 0 realized、0 forward period。随后落地 `services/data/raw_archive.py`(SHA-256 object + immutable
+> observation sidecar + parser 计数 + 篡改/schema 校验)，接入 daily/1h/1m/mark/OI/funding 与批量研究入口；
+> `raw_data_lineage_backfill` 三轮真实重取最近 8 日，最终 mark 192/192(全 refetch)、OI 192/192
+> (112 refetch + 80 verified archive replay，vendor transient 保留 warning)；384 unique objects /
+> 1065 observations、0 invalid。evidence 绑定当前三 cache SHA、scope、days 与 archive aggregate。
+> funding 0/192 且无 observation，因此 admission schema v2 的
+> quality / lineage 双门均 BLOCK，前向驱动器也结构性拒绝缺 lineage 的证据。唯一外部根因仍是 funding
+> 源不可达。四源刷新现已具备独立 spawn 进程、source/global 硬 deadline、哈希链历史、覆盖率 SLO 与连续
+> 失败告警；两轮真实运行均约 635.5 秒，链完整，但仅积累 2/30 轮且 funding 水位 5 天使 SLO 为
+> `BREACH`。历史/spot/1h/1m 旧缓存 backfill、外部 WORM/异地副本仍 open；`crypto_daily.db`
+> volume 双乘根因已于 2026-07-13 闭合。详见
+> `docs/engineering/plans/2026-07-13-data-quality-enforcement.md`。本增量完整门禁：治理扫描
+> 246 文件零违规；后端 2080 passed / 1 skipped；live/trading/tools 856 passed；前端 typecheck、
+> 68 tests、production build 全部通过。顶级能力结论不变：`NOT_TOP_TIER`,16/22 PASS。
+> `P2-3` 峰值权益状态误全平风险于 2026-07-13 完成无需新阈值的代码收口：新增
+> `live/execution/equity_state.py`，把账户级 append-only `live_equity*.jsonl` 最大有效权益作为
+> `live_risk_state*.json` 的证据上界；周度驱动器和小时哨兵均已承重。状态损坏、非有限、非正或
+> 高于历史时返回 `peak_equity_unknown`，常规执行硬停、kill-switch 闩锁并告警，但纯数据质量
+> breach 不进入紧急全平，异常原文件保留取证。现有 Binance/Bybit demo 峰值均与各自全历史最大值
+> 精确一致；无历史的未配置 Bybit 状态 fail-closed。未修改 20% 回撤阈值、90% 敞口回撤目标或真实
+> 回撤全平语义。剩余边界：本地 JSONL 非 WORM/哈希链，上游异常高权益若同时进入历史仍需 15%
+> 跳变告警人工核查，现金流/account identity 调整 high-water mark 与真实回撤确认/延迟策略未实现。P2-3 聚焦
+> 243 tests、完整 `tests/live` 764 tests 全绿；最终统一门禁主套件 2102 passed / 1 skipped、
+> live/trading/tools 882 passed、前端 68 tests + typecheck/build、治理扫描 246 文件零违规。
+> 顶级结论仍为 `NOT_TOP_TIER`,16/22 PASS。
+> `P2-7` 拥挤门审计漂移于 2026-07-13 收口：旧风险登记仍称全部阈值 `ACTIVE/UNCALIBRATED`，
+> 但代码现实是用户早已签署 crowd_contra `average_warn_only + short-leg z*=3.0`，live 与两条干跑均已承重。
+> 本轮把手工 233 周说明升级为 234 周机器证据：确定性冻结 bundle/manifest 绑定四个原始制品哈希，
+> `evidence/crowding_gate_calibration.json` 重放真实 gate、绑定实现哈希和三处签署常数，并进入统一门禁。
+> `z*=3.0` 阻断 21/234=8.9744%；2.0/2.5/3.0/3.5/4.0 阻断 61/38/21/9/5 周；live/dry
+> 阻断周逐项一致。新证据同时纠正旧概括：dry-run rank average 恒 0.500，live extremity-rank average
+> 为 0.500–0.655；两者均 WARN-only，BLOCK 权威仍只来自共同 z-score。诚实边界：通用
+> 0.60/0.45/0.25/5天默认值仍未获生产微观结构校准，L2 无 order-book/强平标签/生产成交样本。
+> 本增量最终统一门禁：主套件 2110 passed / 1 skipped，live/trading/tools 882 passed，前端
+> 68 tests + typecheck/build，治理扫描 247 文件零违规；机器评估仍为 `NOT_TOP_TIER`,16/22 PASS。
+> `P2-6` 的 3–7 天跨源核价空窗于 2026-07-13 完成当前价路径收口：删除按 `decided_ts`
+> 年龄跳过与按日放宽偏差，周度驱动器每轮改取真实 venue `book_ticker` 的 bid/ask/source time，
+> 对 CoinGecko `price + last_updated_at` 做 midpoint 偏差、最大年龄与跨源时间偏差检查。缺盘口、
+> 交叉盘、无源时间、独立源缺失、陈旧或错时均逐标的冻结；整源异常冻结全部目标，现有仓位不动。
+> Binance/Bybit 无时间戳盘口仍可供旧 LIMIT anchor 使用，但不能通过新核价；旧
+> `fetch_simple_prices` API 不变。5% 偏差与 5 分钟年龄/错时上限明确为 `UNCALIBRATED` L2 工程基线。
+> `_MAX_STALENESS_MS=7 天` 仍服务周频信号，收紧必须先确认 cadence；逐请求 REST 非原子快照且尚无
+> 长期观测校准集。P2-6 聚焦 157 tests、Ruff、diff check 全绿；驱动器实现哈希变化后拥挤证据已重生成并
+> 重放通过（234 周、21 个 signed-z blocks）。顶级能力结论不因本项改变，仍为
+> `NOT_TOP_TIER`,16/22 PASS。最终统一门禁：主套件 2113 passed / 1 skipped，
+> live/trading/tools 901 passed，前端 68 tests + typecheck/build，治理扫描 247 文件零违规。
+> 同轮机器评估发现供应链基线因 `scripts/validate.py` 摘要漂移短暂落为唯一 `FAILED`；本轮没有只做
+> 一次性重生成，而是给 `scripts/generate_supply_chain_evidence.py` 增加确定性 `--check`，同时逐字节校验
+> 320 组件 CycloneDX SBOM 与绑定 manifest 的 baseline，当前/篡改测试钉死 fail-closed，并在统一门禁中
+> 排在 top-tier assessment 之前。重生成后 `PLATFORM.SUPPLY_CHAIN` 恢复 M3/PARTIAL，矩阵为
+> `16 PASS / 0 FAILED / 4 PARTIAL / 2 manual-external`。M4 仍严格开放：跨主机复现、真实外部身份
+> Sigstore bundle、独立 admission 部署及 freshness/revocation 证据均未提供，本地 current 门不替代它们。
+> `P2-5` 于 2026-07-13 从“总线本体有测试、零真实 producer”推进到关键事件承重：
+> `DurableEventBus` 现在以 canonical Event + correlation/causation + 前序摘要形成 SHA-256 追加链，
+> 支持旧库迁移、跨连接串行追加、同内容幂等重跑和跨重启因果回放；更新/删除触发器阻断普通篡改，
+> 即使绕过触发器修改元数据或删除中间行，全链校验也会拒绝回放和继续发布。干跑单期/多期 pipeline
+> 在纸面 fill 前持久化 started + 每意图 pretrade approved/rejected，完成后写 completed；七个正式
+> dry-run driver 共用 `data/cache/domain_events.db`。alpha maintenance 的 DEGRADED/PAUSED/RETIRED
+> 同样以结构化事件进入该库。两个 service 域实际 import `Event`，聚焦 162 tests + Ruff/diff 全绿。
+> 诚实边界：同步调用仍是权威业务路径，总线是证据旁路；kill-switch/live pre-trade/promotion 尚未接，
+> 也没有跨进程 consumer、outbox、schema registry、死信或 HA broker，不能称全面事件驱动架构。
+> 本增量最终统一门禁：主套件 2129 passed / 1 skipped，live/trading/tools 902 passed，
+> 前端 68 tests + typecheck/build，治理扫描 249 文件零违规；机器评估仍为
+> `NOT_TOP_TIER`,16/22 PASS。
+> `P2-4` 于 2026-07-13 完成第一条真实反向依赖拆除：`services/research/session.py`
+> 只保留确定性会话核心与 `ResearchSearchRuntime` 注入契约，不再 import
+> `services.intelligence`；正式入口迁到
+> `services/intelligence/research_session.py::run_research_session`，由 intelligence
+> 固定组装 `ResearchAgentLoop`、guided/evolutionary/MCTS 搜索组件，并拒绝调用方覆盖
+> `search_runtime`。仓库内正式工具与端到端测试均已迁移，治理测试逐个 AST 扫描
+> `services/research/**/*.py`，禁止该反向边回归。Ruff 全绿，相关 research/intelligence/data/
+> governance 套件 752 passed / 1 skipped。诚实边界：这只消掉 research→intelligence；
+> research↔alpha/portfolio/risk/execution 等其余环、research 巨型域和 4,934 行
+> `console_api/main.py` 仍开放，因此 P2-4 仍是 PARTIAL，不宣称全域无环。
+> `P2-4` 第二增量于 2026-07-13 把上述“其余环”从文字债务升级为机器事实：
+> `services/governance/service_import_graph.py` 对生产 `services/**/*.py` 建确定性 AST 图，解析
+> 绝对/相对/`from services import ...`/字面量动态 import，排除测试目录，任何语法错误失败关闭；
+> 两处非字面量动态工具加载按路径/行号/函数显式登记。`config/service_import_policy.json` 必须与
+> 当前循环边和动态点完全一致，新增循环、图快照漂移、制品篡改和已拆边的陈旧权限均拒绝。
+> `evidence/service_import_graph.json` 已进入 `scripts/validate.py`，并被 320 组件供应链 manifest
+> 绑定及 `PLATFORM.CI.UNIFIED_GATE` 机器要求。初始事实为 12 域/26 边/一个 6 域 SCC/14 循环边；
+> 随后把共享 `CostModel` 上移到 `quantos/contracts/cost.py`，研究侧兼容重导出，删除唯一的
+> portfolio→research 生产依赖。当前为 12 域/25 边/一个 5 域 SCC/12 循环边，portfolio 与
+> intelligence 均已退出 SCC。聚焦架构/供应链/顶级评估/成本与组合套件 76 tests 全绿；
+> 仍开放的 SCC 是 alpha/execution/governance/research/risk，下一条按图拆 execution→research。
+> `P2-4` 第三增量已继续兑现该排序：`PaperFill/OrderSide/FillMethod` 上移
+> `quantos/contracts/paper.py`；平均成本对账与 Almgren–Chriss impact/calibration 正本移到
+> `services/execution/`，research 原路径仅兼容重导出，类/函数身份与对账恒等式均由测试锁定；
+> 正式干跑和 carry driver 改用 execution 正本。execution→research 零命中并由域边界测试钉死。
+> 图门先拒绝两条陈旧循环权限，收紧 policy 后当前为 12 域/24 边/一个 4 域 SCC/10 循环边，
+> execution 与此前的 intelligence/portfolio 均已退出。新增正本、契约与测试进入供应链 manifest；
+> 聚焦 contracts/execution/research/governance/供应链套件 200 tests 全绿。剩余 SCC 为
+> alpha/governance/research/risk；下一条高杠杆回边是 research→risk（仅 console 风险诊断消费）。
+> `P2-4` 第四增量把 console 风险诊断改为一次性 `RiskConsolePort` 注入：research console
+> 未配置时失败关闭且禁止运行时替换，真实 risk/safety 组合上移到 `services/console`，正式入口改为
+> `services.console.main:app`。research→risk 零命中，risk 退出 SCC；契约、kill-switch 与 API
+> 聚焦 65 tests 全绿。图更新为 13 域/26 边/alpha-governance-research 三域 SCC/6 循环边。
+> `P2-4` 第五增量把 mutating promotion HTTP 组合根从 governance 内迁到独立
+> `services/promotion_api`；治理域只保留审批、强身份与策略原语，对 alpha/research 零 import。
+> OIDC+mTLS+MFA+RBAC、三方审批状态机、审计和全部 L2 安全语义未变。旧 policy 先按预期拒绝
+> 4 条陈旧循环权限，再收紧为 alpha↔research 两条。当前机器事实为 **14 域/27 跨域边/
+> 唯一 alpha-research 双域 SCC/2 条循环边**；governance、risk、execution、portfolio、intelligence
+> 均已退出 SCC。P2-4 仍是 PARTIAL：下一刀是归位 alpha/research 双向消费的 metrics/validation/
+> regime、panel/backtest 与 catalog 生命周期 contracts/ports，然后清零最后一个 SCC；约 4,900 行
+> console API router 拆分仍在其后。
+> 本增量最终统一门禁：主套件 2153 passed / 1 skipped，live/trading/tools 902 passed，前端
+> 68 tests + typecheck/build，治理扫描 260 文件零违规；机器评估仍诚实为
+> `NOT_TOP_TIER`,16/22 PASS。
+> `P2-4` 第六增量清零最后一个循环：性能指标、IC、regime、DSR 与验证门的无状态正本抽到
+> `services/validation`，该域对其他 service 域零依赖；research 原路径保留对象身份一致的兼容重导出。
+> `factor_set` 归回 alpha，四处 CostModel 改用 `quantos/contracts/cost.py` 正本，alpha 对 research
+> 零 import。旧 policy 先按预期拒绝 alpha↔research 两条陈旧权限，再收紧为 `known_cycle_edges=[]`。
+> 当前生产 service 图为 **15 域/29 跨域边/0 SCC/0 循环边**，聚焦统计/验证/alpha/治理回归
+> 185 tests 全绿。循环依赖半区已经机器闭合；P2-4 仍未整体完成，因为 `services/research` 仍过大且
+> `console_api/main.py` 仍约 4,900 行，下一步按只读 router 拆到单模块 <800 行。
+> 本增量最终统一门禁：主套件 2157 passed / 1 skipped，live/trading/tools 902 passed，前端
+> 68 tests + typecheck/build，治理扫描 268 文件零违规；机器评估仍诚实为
+> `NOT_TOP_TIER`,16/22 PASS。
+> `P2-4` 第七增量开始拆 console god-module：新增 374 行
+> `services/console/api/artifact_snapshots.py`，承接 FX、carry、dry-run、IC、研究发现、
+> 1 分钟策略复核、前向/测试网状态与 GoNoGo 共 8 个只读 GET 路由；模块不 import `live/`、`tools/`
+> 或 risk，所有缺失/损坏制品继续诚实 fail-closed。FastAPI 0.139 的延迟 router 组合使旧的
+> `app.routes` 平铺假设失效，契约守卫改以 OpenAPI 实际 GET paths 为准，payload/provenance/read-only
+> 校验一项未放宽。`main.py` **4,875→4,498 行**，新 router <800；架构边界测试锁定 URL、GET-only、
+> 行数和实现已移出 composition root。相邻回归 110 tests 全绿，生产图仍为 **15 域/29 边/0 SCC/
+> 0 循环边**。最终统一门禁：主套件 2158 passed / 1 skipped，live/trading/tools 902 passed，
+> 前端 68 tests + typecheck/build，治理扫描 269 文件零违规。P2-4 仍未关闭：余下 4,498 行继续
+> 按生命周期/数据、验证/回测、治理诊断、系统/运行态 router 分批拆到各模块 <800 行。
+> `P2-4` 第八增量完成 console god-module 收口：15 个按业务簇划分的只读 router 模块承接全部
+> 44 个 OpenAPI paths（含 `/health`），每个模块均 <800 行；`console_api/main.py` 从最初 4,875 行
+> 降至 **772 行**，且不再包含任何 route implementation。FastAPI runtime 依赖均由 composition root
+> 一次性注入，正式 `services.console.main` 仍提供真实 risk/safety port；治理测试现锁定 URL 集、GET-only、
+> 模块与主文件行数、实现移出和 port fail-closed。PIT 裸读白名单随真实 owner 从 `main.py` 精确迁到
+> `data_catalog.py`，旧条目同步删除，没有扩大权限。最终统一门禁：主套件 **2174 passed / 1 skipped**，
+> live/trading/tools **902 passed**，前端 **68 tests + typecheck/build**，治理扫描 **284 文件零违规**；
+> service 图仍为 **15 域/29 边/0 SCC/0 循环边**。机器评估仍诚实为 `NOT_TOP_TIER`：
+> **16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。P2-4 仍是 PARTIAL：console 半区
+> 已闭合，下一步是收窄 oversized `services/research` 的 ports/adapters 与 backtest/validation/api 边界。
+> `P2-4` 第九增量关闭第一条 research 数据所有权穿透：新增 research-owned
+> `PointInTimeMarketDataPort/VersionedMarketDataPort`，data-owned
+> `PITResearchDataAdapter` 保留原 PIT 查询与同一 raw-bar 内容哈希；正式 intelligence 组合层负责适配，
+> research session 不再调用 `fetch_bars` 或 import data versioning。console 的真实数据目录枚举上移
+> `services/console/data_console.py`，研究侧通过一次性 `DataCatalogRuntime` 消费，未配置失败关闭且不可热替换。
+> volume-dispersion 纯检查归入 `quantos/contracts/quality.py`，data 保留同对象兼容导出。由此
+> **`services/research` 对 `services.data` 零 import、research→data 边清零**；服务图变为
+> **15 域/30 边/0 SCC/0 循环边**。边数 +1 是一条隐藏 research→data 被两条真实组合边
+> `intelligence→data`、`console→data` 取代，不是新增反向耦合。最终统一门禁：主套件
+> **2184 passed / 1 skipped**，live/trading/tools **902 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **290 文件零违规**。机器评估保持 `NOT_TOP_TIER,16/22 PASS`；下一步收窄
+> experiment/run/paper registry 的 persistence ports，再继续 backtest/validation/api 子域边界。
+> `P2-4` 第十增量完成 registry persistence 隔离：`services/research/ports/persistence.py` 提供
+> runtime-checkable `ExperimentStorePort`、`RunStorePort`、`PaperTrackStorePort` 与
+> `ForwardLedgerPort`，并承载稳定的 fail-closed persistence errors。ExperimentRegistry、
+> RunRegistry、paper advance/health/realize 领域核不再 import concrete store；原本和兑现逻辑混在一起的
+> SQLite `ForwardLedger` 已迁到 `paper_trading/forward_store.py`。整个 research 域的 `sqlite3`
+> import 精确收敛到四个 adapter owner：experiment/run/paper/forward stores，治理测试禁止回流。
+> 旧 `ExperimentStoreError/PaperTrackStoreError` 导入仍与 port 正本对象身份一致；工具、live parity、
+> promotion API 和 console 组合调用均已迁移并回归。Crowding calibration 因源码摘要变化曾正确拒绝，
+> 重新生成后 policy/summary 逐字段不变（234 周、signed z=3.0、21 个阻断期），未改阈值。
+> 最终统一门禁：主套件 **2190 passed / 1 skipped**，live/trading/tools **902 passed**，前端
+> **68 tests + typecheck/build**，治理扫描 **292 文件零违规**；服务图仍为
+> **15 域/30 边/0 SCC/0 循环边**，机器评估仍为 `NOT_TOP_TIER,16/22 PASS`。
+> 下一步分离 backtest engine、validation orchestration 与 API adapters 的内部依赖。
+> `P2-4` 第十一增量完成上述内部边界切片。验证流水线不再直连具体
+> `backtest_engine.engine`：新增 runtime-checkable `BacktestExecutionPort`、不可变且拒绝空/非有限证据的
+> `BacktestOutcome` 与 `DeterministicBacktestAdapter`；端口为必填依赖，返回类型或 OOS equity 长度不合约即
+> 失败关闭。walk-forward 与 CPCV 纯正本迁入中立 `services/validation`，research 旧路径仅保留对象身份一致
+> 的兼容导出。mutating runner 整体上移独立 `services/research_runner` adapter 域，read-only FastAPI
+> router 整体上移 `services/console/api`；不保留会制造回环的旧 shim，`services/research` 生产代码对
+> FastAPI/uvicorn/tools/data 均为零 import。15 个 router、44 个 GET-only OpenAPI paths、772 行无 route
+> implementation 的 API root 与所有 payload/provenance/fail-closed 语义不变。服务图现为
+> **16 域/36 边/0 SCC/0 循环边**；新增域是独立 runner，边数增加来自 console adapter 显式暴露其真实
+> 依赖，不是反向环。Python advisory 重新扫描为 0 漏洞，供应链仍为 320 组件。最终统一门禁：主套件
+> **2204 passed / 1 skipped**，live/trading/tools **902 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **296 文件零违规**；机器评估仍诚实为 `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、
+> 2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。P2-4 的本轮排定切片已闭合，下一本地优先级转到 P2-5
+> consumer/outbox/offset/DLQ；research 的进一步模块化仍是长期开放项，不等于 Phase 14 进程隔离。
+> `P2-5` 第二增量完成单机可靠消费基线。`DurableEventBus` 新增独立 SHA-256 追加式 consumer journal：
+> 稳定 consumer/worker identity、caller-supplied 时间租约、跨连接排他 claim、租约过期重领、owner/lease
+> 校验 ack、持久 offset、失败次数与只存类型+SHA-256 指纹的错误证据；达到上限进入不可变 DLQ 并高声抛错，
+> poison event 隔离后后续事件可继续。语义明确为 **at-least-once**，不冒充 exactly-once。
+> `DomainEventProjection` 是 WAL/FULL、全链校验、同 seq+ID+内容幂等的真实 read model；7 个 dry-run
+> driver 与 maintenance sweep 均推进同一 consumer。console `/events` 首选只读 projection，只公开 5 类
+> L2 事件和 payload 字段白名单，缺失/损坏回退 run registry，再无数据才用诚实标注 synthetic。
+> dry-run `completed` 进一步采用真 transactional outbox：`DryRunRun` 与 completion event 在同一个
+> `dry_run.db BEGIN IMMEDIATE` 事务写入，outbox/dispatch ack 各自为不可变哈希链；dispatcher 先
+> `publish_once` 再追加 ack，因此 bus 已提交/ack 前崩溃可安全重放。started/pretrade 仍保持动作前先落事件的
+> fail-closed 语义。maintenance JSON 快照跨库 outbox、kill-switch/live pretrade/promotion/deployment
+> producers、schema registry、consumer heartbeat/partition 与跨主机 HA 仍开放。拥挤证据因 7 driver 摘要
+> 变化先正确拒绝，重生成后仍为 234 周、signed z=3.0、21 个阻断期。最终统一门禁：主套件
+> **2225 passed / 1 skipped**，live/trading/tools **905 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **297 文件零违规**；服务图仍 **16 域/36 边/0 SCC/0 循环边**，供应链 320 组件，
+> 机器评估仍为 `NOT_TOP_TIER,16/22 PASS`。
+> `P2-5` 第三增量收口 schema、生产端与跨存储诚实边界。新增不可变
+> `EventSchemaRegistry`，对 type/version、payload、source/domain/criticality 与显式 consumer
+> compatibility 严格失败关闭；`dry_run.completed` 升至 1.1 并绑定完整 `DryRunRun` SHA-256，1.1
+> consumer 仍可读取登记过的 1.0 历史。event bus 旧库迁移改为 `BEGIN IMMEDIATE`，并发首次打开的
+> WAL lock 竞态已有回归。除 dry-run outbox 外，human-only promotion 的 `APPROVED` catalog snapshot
+> 与 promotion event 现同写 `experiment_registry.db`；maintenance snapshot + transitions 同写新的
+> `alpha_maintenance.db` 追加记录，JSON 只作事务后镜像，live consumer 优先权威库且损坏/空库停止新增敞口。
+> 三条 dispatcher 均为 publish-then-ack at-least-once，publish/ack 崩溃可幂等恢复。kill-switch arm/reset
+> 与 deployment decision 也有严格事件 hook；reset 在清闩前写事件，写失败保持停机。诚实边界仍保留：
+> 当时 kill-switch JSON 状态与事件并非同库事务（已由下述第四增量关闭）；deployment event 不是实际 deployment state，真实 live
+> pre-trade producer、consumer partition/rebalance、跨主机 broker/复制/HA 均未完成；approval consume、
+> catalog/outbox、audit 仍是多库 saga。源码绑定证据已重建并复核：服务图 16 域/36 边/0 SCC，供应链
+> 320 components，拥挤证据 234 周/21 blocks，评估仍 `NOT_TOP_TIER,16/22 PASS`。最终统一门禁：
+> 主套件 **2250 passed / 1 skipped**，live/trading/tools **908 passed**，前端 **68 tests +
+> typecheck/build**，治理扫描 **303 文件零违规**。
+> `P2-5` 第四增量关闭 kill-switch 状态/事件原子性缺口。新增 risk-owned、WAL/FULL 的 append-only
+> `KillSwitchStateStore`：ARM/RESET transition、完整状态、严格版本事件、correlation/causation 与前序摘要在
+> 同一个 `BEGIN IMMEDIATE` 事务提交，transition 与 dispatch ack 各有不可变 SHA-256 链；CAS 拒绝陈旧写入，
+> 并发哨兵只保留一个获胜 incident，不能二次 ARM 改写或虚增 `trip_count`。事件必须与 actor、scope、原因指纹、
+> 时间和 RESET 的 activation causation 精确一致。`live_track_advance`、`live_risk_sentinel` 与三方 reset CLI
+> 均已迁入该权威库；JSON 降为原子兼容镜像，console 在 DB 存在时绝不回退镜像，DB 损坏即显示 TRIPPED。
+> 完整 legacy TRIPPED 状态迁移时会同事务重建可验证 activation outbox，信息不足时只 fail-closed、不伪造历史。
+> `risk_recovery_drill` 升为 schema v2，重启验证 `kill_switch.db` 哈希、pending ARM outbox、门禁拒绝、有效 JSON+
+> 损坏/篡改 DB 故障，实测 RTO 128ms。聚焦回归 180 tests、风险/live/monitoring/关键治理 1009 tests 全绿；
+> 服务图仍 16 域/36 边/0 SCC，拥挤证据仍 234 周/21 blocks，供应链仍 320 components。机器评估保持
+> `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。仍开放：真实 live
+> pre-trade producer、deployment 实际状态 outbox、consumer heartbeat/partition/rebalance、跨主机 broker/复制/HA，
+> 以及 approval/catalog/audit 多库 saga；单机 SQLite 不冒充跨主机事件平台。最终统一门禁：主套件
+> **2265 passed / 1 skipped**，live/trading/tools **916 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **305 files / 0 violations**，全部 fail-closed gate 通过。
+> `P2-5` 第五增量关闭事件时间单位歧义并把 schema 演进变成正式制品。canonical 最新版本统一为
+> Unix epoch microseconds；历史上实际写入 milliseconds 的 kill-switch、alpha promotion、deployment
+> v1.0 继续按登记单位解释，新 producer 升至 v1.1 microseconds。projection/console 只依据
+> `(event_type,event_version)` 归一化，禁止按数值量级猜测，因此混合历史不会再把旧事件显示到 1970 年附近。
+> 新增确定性 `evidence/event_schema_catalog.json`：覆盖 9 个 event types、14 个 schema definitions，逐版本
+> 固定 timestamp unit、显式 consumer compatibility、payload JSON Schema + SHA-256，并绑定 12 个实现文件；
+> `--check`、`scripts/validate.py` 与 320-component supply-chain manifest 会拒绝缺失、陈旧或篡改制品。
+> 受影响 producer/consumer/legacy replay/console projection 聚焦 **172 tests** 与 Ruff 全绿；Catalog/供应链
+> 陈旧性检查均通过。机器评估仍诚实为 `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、
+> 2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。当时下一本地增量是 consumer heartbeat/partition/rebalance、
+> deployment state outbox 与更多 data/risk producer；跨主机 broker/复制/HA 仍不得由单机 mock 冒充。
+> `P2-5` 第六增量完成诚实的单机 consumer-group 协调。新增
+> `services/monitoring/consumer_group.py` 与同库 append-only coordination hash chain：group 的
+> partition count/session timeout 创建后不可漂移；heartbeat 维护 membership，活成员按排序做确定性 eager
+> rebalance，每次 assignment 变化递增 generation 并 fence 旧 claim/ack。partition key 优先使用
+> `correlation_id`，否则使用 `event_id` 的稳定 SHA-256；内部 offset identity 使用保留前缀 + group hash，
+> 不与用户 group 名碰撞。partition offset、retry/DLQ 和 publish/projection 仍复用原权威日志并跨重启恢复。
+> 正式 `domain-event-projection-v1` 固定 1 partition 保护全序和旧 offset，处理前 heartbeat、正常退出 leave，
+> 崩溃才等待 session timeout 接管；时间回拨、旧 generation、非 owner、过期 membership、逆序 ack、配置漂移、
+> 双连接竞态、legacy DB 迁移和协调链篡改均失败关闭。聚焦 **234 tests** + Ruff + service graph/Catalog/
+> supply-chain checks 全绿，仍是 16 域/36 边/0 SCC、320 components，机器评估保持
+> `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。
+> 诚实边界：这是 caller-clock、进程内 worker identity、单 SQLite authority 的协调，不是跨主机 consensus；
+> 协调日志 retention/lag alert、跨主机 broker/复制/HA 仍开放。下一本地项转为 deployment state outbox 与
+> 更多 data/risk producer。最终统一门禁：主套件 **2287 passed / 1 skipped**，live/trading/tools
+> **916 passed**，前端 **68 tests + typecheck/build**，治理扫描 **306 files / 0 violations**，18 阶段全绿。
+> `P2-5` 第七增量把 deployment 从可选同步 event hook 升为 L2 权威 evaluation ledger + 第五条
+> transactional outbox。新增 `DeploymentDecisionStore`：evaluation 与 canonical v1.1 event 在同一个
+> `BEGIN IMMEDIATE` 写入，evaluation/dispatch 各有 append-only SHA-256 链、UPDATE/DELETE trigger、
+> 精确幂等和同 subject/environment 时间单调约束。状态枚举只有 `DENIED` 与
+> `ELIGIBLE_NOT_APPLIED`，代码/表约束均不存在 `DEPLOYED`；LIVE 在 L2 只会记录 DENIED。
+> 正式 `evaluate_and_record_deployment` 先走纯 gate，再原子落状态/outbox；authority 不可用时原本允许的
+> PAPER 决策降为 `DEPLOYMENT_STATE_ERROR` 拒绝。事件 ID 绑定 actor/裁决/原因/版本/时间，同毫秒不同裁决
+> 不冲突；grant/approval ID 进入 causation。`tools/deployment_events.py` 只做 publish-then-ack + projection，
+> publish 后/ack 前崩溃可安全重放，不接受申请也不执行部署。console `/events` 仅白名单展示安全字段。
+> 聚焦 **209 tests** + Ruff + service graph/Catalog/supply-chain checks 全绿，机器结论仍为
+> `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。
+> 诚实边界：本轮关闭的是 deployment evaluation state，不是实际 APPLIED/DEPLOYED 状态；真实部署执行器、
+> staging/prod 隔离、live pre-trade/data producer 仍开放。下一本地项转为更多 data/risk producer 与
+> consumer lag/retention 告警。最终统一门禁：主套件 **2305 passed / 1 skipped**，live/trading/tools
+> **917 passed**，前端 **68 tests + typecheck/build**，治理扫描 **308 files / 0 violations**，18 阶段全绿。
+> `P2-5` 第八增量补齐首个真实 data producer、第二类 risk producer 与单机事件健康告警。
+> `data.market.refresh.recorded` 现在和防篡改 `RefreshHistoryStore` 的主记录、规范化 source 行在同一
+> `BEGIN IMMEDIATE` 提交；第六条 outbox/dispatch 双追加链支持 publish-before-ack 崩溃重放，旧库仅在
+> outbox 表完全不存在且原主链可验证时确定性回填，部分迁移或篡改拒绝修复。事件只含 run/outcome/counts/
+> duration 与两条 SHA-256，不复制自由文本源错误。`research.risk.dry_run.evaluated` 则与精确
+> `DryRunRun.reproducibility_hash` 和 run 内 `REAL_RESEARCH_RISK_SUBSET` 逐字段相等后，和 completed event
+> 共用既有 dry-run 事务 outbox；它仍是 4 个诚实输入引擎、5 个显式 skipped 的诊断，不是晋级许可。
+> Catalog 升为 **11 types / 16 definitions / 18 implementation bindings**。`DurableEventBus.operational_snapshot`
+> 按真实 partition 分配统计 pending（不拿全局 seq 差冒充 lag），按版本 schema 归一化事件年龄，并汇总
+> group DLQ、三条 journal 行数和 SQLite allocated bytes。`EventBusHealthPolicy` 输出 PASS/WARN/BREACH；
+> console `/events` 与可调度的 `tools/domain_event_health.py` 分别只读展示和复用 alert sink 投递。
+> retention 明确为 `APPEND_ONLY_ALERT_ONLY`，不自动 DELETE/VACUUM。自动归档/外部 seal、独立告警 SLA、
+> 强 worker identity、真实 live pre-trade、跨主机 broker/复制/HA 仍开放，SQLite 仍不冒充 Kafka。
+> 最终统一门禁：主套件 **2321 passed / 1 skipped**，live/trading/tools **920 passed**，前端
+> **68 tests + typecheck/build**，治理扫描 **311 files / 0 violations**，18 阶段全绿；机器结论仍为
+> `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。
+> `P2-5` 第九增量补上独立 outbox recovery drain。`tools/domain_event_outbox_drain.py`
+> 以固定顺序覆盖 dry-run、experiment/promotion、maintenance、kill-switch、deployment、data-refresh
+> 六个 owner store，全部 `create=False`；缺库标 `UNAVAILABLE`，部分存在只报 `PARTIAL`，损坏只保留异常类型且
+> 不阻断其他独立 source，event authority 打不开也会原子落 `BREACH` 快照。所有 dispatch 完成后只推进一次
+> shared projection；若所有 source 与 event authority 都不存在，不创建空数据库。该工具只搬运 event + 追加 ack，
+> 不评估策略、不改 domain state、不 reset kill-switch、不部署、不下单、不清理历史。调度注册与外部告警 SLA 仍是
+> 独立运维工作，单机恢复 drain 不冒充 broker/分布式事务/exactly-once。
+> 新恢复工具 7 项聚焦测试、跨 outbox/治理 77 项回归与 Ruff/diff 均通过。最终统一门禁：主套件
+> **2322 passed / 1 skipped**，live/trading/tools **927 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **311 files / 0 violations**，18 阶段全绿；Catalog 仍为 11 types/16 definitions/18 bindings，
+> 服务图仍为 16 域/36 边/0 cycles，供应链仍为 320 components。机器结论保持 `NOT_TOP_TIER`：
+> **16/22 PASS、4 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。
+> `P2-5` 第十增量从一次现场安全冲突开始：本机两条 `--submit`、一条 `--act`、ops API 与其
+> live watchdog 仍为 Enabled，且 `live/` 路径不消费 canonical `SafetyConfig`。五个任务已可逆禁用并逐项
+> 复核 Disabled；`register_schedules.ps1` 重写为 L2-only module allowlist，运行时解析 Python/workspace，
+> 用独立 executable/arguments/working-directory + `IgnoreNew` 注册六条 research/paper/maintenance/event-ops/report
+> 任务，治理测试禁止 live module/action flag/硬编码路径/shell action。新 `domain_event_ops.py` 每小时固定
+> drain→health，任一失败不阻断另一半，只留异常类型，写统一状态/本地告警并以 0/1/2 表达结果。首轮计划任务
+> 按时运行并返回 1：projection/health PASS，dry-run/experiment/data-refresh 三 owner store BREACH，另三库
+> UNAVAILABLE，未伪装成绿。首次手工探针同时抓到 shared authority 仍用 `create=True` 的缺陷：一个 4 KiB
+> 无 `event_log` SQLite 被初始化为空 authority；未猜测回滚用户文件。现存 authority 现先经只读三表 preflight
+> 再 `create=False`，drain/health 两条反例钉死缺 schema 文件逐字节不变。独立外部告警 SLA、安全归档/seal、
+> scheduler watchdog 与工作的备份仍开放；单独 `QUANTOS_backup` 最近运行失败。
+> 聚焦验证为 event/monitoring **79 passed**、governance/supply-chain **76 passed**，Ruff、PowerShell parse、
+> Catalog/service graph/supply-chain checks 全绿。最终统一门禁：主套件 **2327 passed / 1 skipped**，
+> live/trading/tools **938 passed**，前端 **68 tests + typecheck/build**，治理扫描 **311 files / 0 violations**，
+> 18 阶段全绿；Catalog 仍为 11 types/16 definitions/18 bindings，服务图仍为 16 域/36 边/0 cycles，
+> 供应链仍为 320 components。机器结论保持 `NOT_TOP_TIER`：**16/22 PASS、4 PARTIAL、
+> 2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。
+> `P2-5` 第十一增量关闭首轮 scheduler 暴露的三份 legacy owner-store BREACH。新增
+> `tools/domain_event_owner_migration.py`，plan/apply 明确分离：拒 WAL/SHM，immutable SQLite + integrity check，
+> 对 protected tables 的 schema/有序逐行摘要，SQLite logical backup，同目录 staging 上调用 owner migration，
+> target chain + protected digest 双验证，替换前再验源 SHA，最后 atomic replace/失败 rollback；一个坏源不阻断
+> 独立好源，异常只留类型。真实维护窗口先禁用 event task，三库均迁移 PASS：dry-run 7 行、experiment
+> 2 trials/2 alphas/8 evaluations、refresh 5 history/20 source rows 的 protected digest 前后完全一致，三份本地
+> rollback DB 保留。dry-run/experiment 不伪造历史；refresh 依既有 legacy contract 回填 5 条事件，全部
+> publish/ack/project，pending=0、DLQ=0。`RefreshHistoryStore(create=False)` 也修为缺 outbox schema 时在 WAL 前
+> immutable preflight，失败不再制造 sidecar。计划任务已恢复并现场返回 **2/PARTIAL**：三 migrated owners PASS，
+> alpha-maintenance/kill-switch/deployment 三个未启用 authority 仍 UNAVAILABLE，未为空绿而造库。同机 migration
+> backup 不冒充 off-host 灾备；失败的 `QUANTOS_backup` 与独立 scheduler watchdog 仍是下一优先级。
+> `P2-5` 第十二增量关闭了“失败任务继续静默跑”和“备份源码存在即 PASS”两处运营假绿。旧
+> `QUANTOS_backup` 的现场根因是用户级口令只有 11 字符，低于 12 字符 fail-closed 下限，且没有
+> `QUANTOS_BACKUP_DEST`；旧任务现已禁用。新 `tools/l2_backup.py` 明确覆盖 10 个必需 L2 authority store，
+> 对活动 SQLite 使用 online backup API，逐制品 AES-GCM 加密，生成加密 manifest，原子发布前执行隔离恢复、
+> SHA-256 与 SQLite integrity_check；默认只接受 UNC/不同卷目标，key/ 与 broker credentials 不在 allowlist。
+> `QUANTOS_scheduler_watchdog` 已每 15 分钟注册并真实运行，不 import 被监控 worker，校验 task state、精确 module
+> action、working directory、last result 与 cadence。现场结果为 **PARTIAL/2：6 PASS、1 PARTIAL、1 UNAVAILABLE、
+> 0 BREACH**；event ops 的 2 是已知未启用 authority，backup 因配置不完整保持 UNAVAILABLE。成熟度 checker
+> 已从 `paths_exist` 升为 operational evidence，当前机器结论因此诚实回落为 `NOT_TOP_TIER`：
+> **15/22 PASS、5 PARTIAL、2 MANUAL_EVIDENCE_REQUIRED、0 FAILED**。下一步需人工从受控 secret source 配置
+> 12+ 字符口令及 off-host/不同卷目标并保留首份证据；本机 watchdog 仍不能发现整机/Task Scheduler 同时失联，
+> 外部 heartbeat/WORM retention 继续开放。
+> 本增量最终统一门禁 **18/18 阶段全绿**：主套件 **2334 passed / 1 skipped**，live/trading/tools
+> **954 passed**，前端 **68 tests + typecheck/build**，治理扫描 **311 files / 0 violations**；Catalog
+> **11 types/16 definitions**，服务图 **16 domains/36 edges/0 cycles**，供应链 **320 components**。
+> `P2-5` 第十三增量补上带外失联与链截断防护接缝。`EventAuthorityCommitment` 统一承诺 event、
+> delivery journal、consumer-group coordination 三条已验证链的 count/max-seq/head，并以 overall SHA-256
+> 封装；`extends_authority_commitment` 允许正常追加，但对截断、整体替换、锚点位置 hash/行数漂移失败。
+> `tools/domain_event_seal.py` 经 read-only SQLite snapshot 生成 content-addressed、create-once 锚点，已存在
+> 同名不同内容时拒绝覆盖；明确标 `PARTIAL_EXTERNAL_WORM_UNVERIFIED`，不删除/VACUUM authority。真实诊断
+> 锚定 5 event / 10 delivery / 33 coordination rows，随后 extension verify PASS，临时锚已清理。
+> `tools/external_heartbeat.py` 只向 operator-owned HTTPS 端点发送白名单健康摘要，拒绝 userinfo、fragment、
+> loopback 与 redirect，endpoint 只留 SHA-256 指纹；当前无 endpoint，手工运行诚实写 `UNAVAILABLE` 且未发网。
+> 两项均为配置存在才注册；首次 reconciliation 暴露 `schtasks /query` 在 missing task 上被 PowerShell Stop
+> 提前中止，现改原生 `Get-ScheduledTask`/`Disable-ScheduledTask` 并真实重跑成功。watchdog 当前为
+> **6 PASS / 1 PARTIAL / 3 UNAVAILABLE / 0 BREACH**：backup、external heartbeat、event seal 均未配置，
+> 不能冒充 off-host/WORM/带外 SLA 已完成。
+> 本增量首次全门禁发现 `test_source_process_deadline...` 在 Windows 全负载 spawn 冷启动下把健康 worker
+> 的 2 秒非目标预算耗尽；隔离复跑通过，生产 hard deadline 逻辑未改。测试把健康/global 预算调到 5 秒，
+> 故意 hang 源仍为 200ms，四路并发压力 4/4 通过。最终统一门禁 **18/18 全绿**：主套件
+> **2338 passed / 1 skipped**，live/trading/tools **969 passed**，前端 **68 tests + typecheck/build**，
+> 治理扫描 **311 files / 0 violations**。机器评估保持诚实：**15/22 PASS、5 PARTIAL、2 MANUAL、0 FAILED**。
 >
 > `docs/QUANTOS_TOPTIER_REMEDIATION_ROADMAP.md` 与旧机构补全计划保留为历史研究输入；
 > 新开发排序必须以能力矩阵中的 `classification`、`red_line`、目标成熟度和
@@ -71,7 +540,8 @@ PIT 面板上组合时序算子 + 截面算子 rank/scale/demean/zscore + 逐元
 (flat P/F/X + GP 'T';opt-in 奖励:`parsimony_lambda/mu`、`redundancy_lambda`(增量去冗余)、
 `diversity_lambda`(**频繁子树规避**))、**`mcts_search.py`(MCTS/UCT 导航)**、`guided_search`(UCB)、
 `search_space`、`interaction_factors`、`fundamental_factors`。
-**主线编排**:`research/session.py::run_research_session` —— 模式 `evolutionary/gp/mcts`(+guided);
+**主线编排**:`intelligence/research_session.py::run_research_session`（固定受控搜索 runtime；
+`research/session.py` 只保留可注入的确定性核心）——模式 `evolutionary/gp/mcts`(+guided);
 搜后 `synergistic_set`(去冗余协同集);**`oos_validate=True` 自验证(对自己挖的因子跑无窥视 OOS)**;
 `regime_evidence`。
 **验证/诚实**:`oos_validation.py`(**无窥视滚动选择 OOS**)、`validation/`(deflated_sharpe/walk_forward/
@@ -134,8 +604,8 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   拉过真实危机(2021-05/LUNA/FTX/2023-03 银行)+ 尾部量化。**诚实发现:① 美元中性预判证实——崩盘 beta 极低(下尾依赖
   carry 0.13 / crowd 0.0),crowd_contra 在 LUNA(+10.6%)/FTX(+6.5%)崩盘里反赚——尾部风险是*截面价差击穿*非市场 beta;
   ② 真尾部内生(carry 最差 19% 在 2020-11 牛市,非崩盘;干跑 77% 是 vol-target 加杠杆口径);③ 尾偏肥 Hill ~2.4–2.7;
-  ④ 逮到 `crypto_daily.db` volume 单位跨币不一致 bug(EOS $20k vs BTC $3.7Q,诚实标 UNRELIABLE、已 spawn 修复)。** RE-2
-  剩 Copula 全拟合 + trend 容量(待 daily volume 修复)。
+  ④ **2026-07-13 更正**:`crypto_daily.db` 是统一 quote USD volume，`$3.7Q/$20k` 来自容量消费端二次乘价；
+  已加显式 volume semantics 并修复，trend 容量重算约 `$47.9K`(短样本/未校准)。** RE-2 剩 Copula 全拟合。
 - **FRED 宏观数据方向第一增量(2026-07-01,`tools/fred_fetch.py` + `services/research/macro_regime.py`)**:股票免费源本环境被墙
   (Stooq bot-wall / Yahoo 429,不绕过)→ 转 FRED(可达)。抓 6 条市场型日频序列(VIX/DGS10/T10Y2Y/HY-OAS/DXY/DFII10,39271 行)
   填进已建但从未填的 `fundamental_store`(PIT kt=et)。**关键发现:carry 与 crowd_contra 宏观 regime 画像相反、互补**——carry
@@ -235,7 +705,8 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
   (显式收敛+fail-closed)。**10c**(0d14bb7/32d7755)优化器加 Rockafellar-Uryasev CVaR 尾部惩罚选项(尾部次梯度,
   非光滑路径取最优可行迭代;光滑路径字节等价)+ 经 allocator `cvar_penalty` 接进 riskparity(尾部感知 sleeve 定权,
   carry 0.47/crowd 0.53)。**52 新测试;三条既有 book(carry/crowd/trend/combo)未动,riskparity 按设计变(allocator 驱动)。**
-  诚实边界:拥挤阈值未校准(R-1);carry/combo 拥挤接线待 crowding 证据覆盖其宇宙(#22/#17)。**下一步 S2**:#11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
+  历史当时边界为拥挤阈值未校准；2026-07-13 已补 crowd_contra 签署 z-gate 的机器重放证据，
+  但通用默认与 carry/combo 宇宙仍 open。**下一步 S2**:#11 冲击成本进干跑 → #13 风控门承重 → #22 质量强制。
 - **机构级路线图 S1「守卫与留痕」sprint 全做完(2026-07-03,活路线 `docs/2026-07-03-institutional-completion-plan.md`)**:
   4 项 P1/S 全落地、每项 tests-first + `validate.py` 绿。**Rank #8**(6ca7d92)PIT 裸读机器守卫:
   `tests/governance/test_pit_read_boundary.py` AST 钉死 services/ 白名单外 0 裸 `fetch_bars` + tools/ 计数棘轮
@@ -331,7 +802,7 @@ $1M↔$100M 规模不变,故回撤是 **L/S 截面价差本身**、非净市场�
 
 ## 7. 提交锚点(resume 时 `git log --oneline -1` 对一下)
 **★★★ 系统排查审计 + 完善路线图(2026-06-29,用户指令 "先排查整个系统→再完善功能→最后做前端")**:
-9 智能体全量取证审计(`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`)。
+9 智能体全量取证审计(`docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md`)。
 **核心结论:后端比文档真实得多,缺口是"接线"不是"造引擎"**(~1014 测试过,`services/{alpha,data,
 portfolio,intelligence,validation,...}` 全真且测过;CLAUDE.md "~10% built" 已陈旧并纠正)。36 界面真实度:
 REAL 7 / PARTIAL 6 / MOCK 17 / NONE 6 / BROKEN 1。`l2_ok=true`(全绿,仅 1 个 P2 已修)。
@@ -401,7 +872,7 @@ Agents+LifecycleMonitor 接 services/{intelligence,alpha} 真运行态——这�
 
 
 HEAD 在研究操作台 Task 1-7(`run_registry`/`research_runner`/前端研究中心)附近;`main==master`(rtk 下 `git branch -f main master`);后端 `validate.py` **全绿**(含新治理测试 test_research_runner_boundary);前端 `npm test` **23 passed**(含 CompareRuns smoke)+ typecheck + build 绿;远端 kerstker/QUANTOS 已同步(PR #14 OPEN)。
-**★★★ 研究操作台(Research Ops Console,2026-06-29,用户指令:前端要能操作系统、不在 IDE 跑、动态结果区不一回测一页、顶级机构标准)= 前端从「看板」升级为「操作台」**。brainstorm→spec(`docs/superpowers/specs/2026-06-29-research-ops-console-design.md`)→plan(`docs/superpowers/plans/2026-06-29-research-ops-console.md`)→7 任务 TDD 全绿。架构:① `services/research/run_registry/`(sqlite 单一事实源,线程安全;`index_existing` 把现有 `crypto_*.json` 结果灌入→历史第一天全可见);② 查看只读=console_api GET `/research-runs[?kind=]`+`/research-run?run_id=`(契约守,provenance RESEARCH_RUN_REGISTRY),前端「研究中心 /research/runs」列表 + **一个通用数据驱动查看器** RunDetail(metrics→KPI/series→图/verdict/caveats,任何 kind 零新代码);③ 操作=独立 `services/research/research_runner/`(端口 8420,**唯一可变面**)`POST /run{kind,params}` 校验白名单(7 个只研究 kind)→异步队列→写 registry,前端按钮触发 + 3s 轮询 queued→running→done。**安全机器强制**:`tests/governance/test_research_runner_boundary` AST 扫描——无券商 SDK、不 import services.trading、无下单/转账调用,白名单入口全 services/tools 研究函数、⊆ registry ALLOWED_KINDS;console_api 仍 GET-only;auto_approved 恒 0、到不了 live/flag/APPROVED;墙钟只在 runner HTTP 边界取。**端到端实测**:前端点「双因子组合」→ 真算 combo(SR 1.503)→ registry done → 列表 7→9。启动见 CLAUDE.md Commands(console_api:8400 + research_runner:8420 + `research-console-live`)。记忆 [[research-ops-console]]。
+**★★★ 研究操作台(Research Ops Console,2026-06-29,用户指令:前端要能操作系统、不在 IDE 跑、动态结果区不一回测一页、顶级机构标准)= 前端从「看板」升级为「操作台」**。brainstorm→spec(`docs/engineering/specs/2026-06-29-research-ops-console-design.md`)→plan(`docs/engineering/plans/2026-06-29-research-ops-console.md`)→7 任务 TDD 全绿。架构:① `services/research/run_registry/`(sqlite 单一事实源,线程安全;`index_existing` 把现有 `crypto_*.json` 结果灌入→历史第一天全可见);② 查看只读=console_api GET `/research-runs[?kind=]`+`/research-run?run_id=`(契约守,provenance RESEARCH_RUN_REGISTRY),前端「研究中心 /research/runs」列表 + **一个通用数据驱动查看器** RunDetail(metrics→KPI/series→图/verdict/caveats,任何 kind 零新代码);③ 操作=独立 `services/research/research_runner/`(端口 8420,**唯一可变面**)`POST /run{kind,params}` 校验白名单(7 个只研究 kind)→异步队列→写 registry,前端按钮触发 + 3s 轮询 queued→running→done。**安全机器强制**:`tests/governance/test_research_runner_boundary` AST 扫描——无券商 SDK、不 import services.trading、无下单/转账调用,白名单入口全 services/tools 研究函数、⊆ registry ALLOWED_KINDS;console_api 仍 GET-only;auto_approved 恒 0、到不了 live/flag/APPROVED;墙钟只在 runner HTTP 边界取。**端到端实测**:前端点「双因子组合」→ 真算 combo(SR 1.503)→ registry done → 列表 7→9。启动见 CLAUDE.md Commands(console_api:8400 + research_runner:8420 + `research-console-live`)。记忆 [[research-ops-console]]。
 **★★★ 操作台四能力补完(2026-06-29,用户指令 "都做,最终都要做到的";顺序 观测→参数化→对比→历史,每个 TDD+门绿+实测)**:
 ① **可观测**(`7621e19`)实时日志流(`_LogWriter` 重定向 run stdout 逐行进 `registry.append_log`,RunDetail 2.5s 轮询 + 日志面板)+ 软取消(标 cancelled 丢结果,不强杀线程,VALID_STATUS 加 cancelled)+ git-sha(纯读 `.git/HEAD` 无子进程)。
 ② **参数化**(`d3cc516`)`factory_orthogonal` schema `{generations:int,population:int}`;`_tool_then_json` 改 `main(**params)`;前端 RUNNABLE_KINDS 带 `RunParamSpec[]` 渲染 typed number 输入 → `triggerRun(kind,params)`;`validate_params` typed/fail-closed 复校。
@@ -467,7 +938,9 @@ OOS 噪声大(2 折负、被 +2.57 一折拉高)、**近年衰减**(2020-21 大�
 (decay/mean 各窗口,价/量一个没进),DSR ~0.98-1.0、6-7/7 年正;最稳 `rank_neg_decay14_funding` **7/7 年正**。
 **但对全 261 的选择 OOS 是负的(−0.45)** —— 盲目"best-of-N"过拟合,机器诚实地拦了。结论:carry 真实且跨~10 种平滑稳健,
 但要靠**经济先验 + 稳健平滑**用,**不能靠盲搜**(选择 OOS 已证盲搜过拟合)。这是"先验+诚实机器 > 蛮力"的教科书案例。
-资金费已缓存 data/cache/crypto_funding_rates.json。免费 OI/多空比仅 30 天 → 更多多年 alt-data 要付费/链上。
+资金费历史已缓存 `data/cache/crypto_funding_rates.json`；2026-07-13 真实重刷时 Binance funding 公共端点
+115/115 返回 `TRANSIENT` 超时，正式准入 manifest 因 24/24 前向 ticker 尾部不完整而 BLOCK；恢复外部源并
+由同一 manifest 通过前不可新增前向证据。免费 OI/多空比仅 30 天 → 更多多年 alt-data 要付费/链上。
 **★★ 真实损益 = carry 回测里真赚钱(`tools/crypto_carry_strategy.py`):** 之前只算价格;perp carry 还**实收资金费**
 (多空两腿都收)。净 = 价格 + 收到的资金费 − 手续费,去冗余 carry 组合,115 永续×2186 持仓日:只价 1.39 → **+资金费 2.25
 → 净@5bps 2.03 → @20bps 1.36**;日均收资金费 **5.43bps**、换手 0.28;**7/7 年全正含 2022**(净@5bps:20+4.4/21+2.5/22+1.2/
@@ -530,7 +1003,7 @@ backtest 夏普当 backtest "return" 去和累积收益比(单位错配)→ 伪 
 **本轮(2026-06-30)新增 —— 端到端干跑流水线**:`services/execution/{dry_run_pipeline,dry_run_store}` +
 驱动器 `tools/dry_run_carry.py`(见 §3「执行/干跑」)。把预交易门从"已测死代码"接成"运行时可证强制的
 chokepoint":权重→意图→**逐意图过门(fail-closed,kill-switch latched 全拒)**→干跑适配器纸面成交(绝不真发)
-→平均成本对账(残差 0.0)→哈希链审计→可复现 `DryRunRun`。spec/plan:`docs/superpowers/{specs,plans}/
+→平均成本对账(残差 0.0)→哈希链审计→可复现 `DryRunRun`。spec/plan:`docs/engineering/{specs,plans}/
 2026-06-30-dry-run-pipeline*`。11 新测试 + 全门绿(1093 passed)。这是用户"系统要能用、最终通往实盘"
 战略判断的落地;实盘永远 = 同接口换真券商适配器 + 人工批准(非目标)。
 

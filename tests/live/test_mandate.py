@@ -1,6 +1,6 @@
 """分级授权 mandate(live/governance/mandate.py):PreTradeRiskGate 批准之后的第二层——
 限额内 AUTO(机械执行),否则 NEEDS_HUMAN_REVIEW。fail-closed 到底,绝不默认 AUTO。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.6。"""
 import pytest
 
 from live.contracts import LiveOrderRequest

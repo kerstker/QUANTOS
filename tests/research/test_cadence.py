@@ -24,8 +24,13 @@ def test_weekly_matches_current_hardcoded_values():
     assert WEEKLY.vol_lookback_bars == 8
     # forward.py:DEFAULT_EXTREME_ABS_RETURN = 0.20
     assert WEEKLY.extreme_abs_return == 0.20
-    # tools/live_data_refresh.py:STALE_LIMITS = {prices:3, funding:3, oi_metrics:5} (days -> bars, 日频 1bar=1day)
-    assert dict(WEEKLY.stale_limit_bars) == {"prices": 3, "funding": 3, "oi_metrics": 5}
+    # tools/live_data_refresh.py:STALE_LIMITS (days -> bars, 日频 1bar=1day)
+    assert dict(WEEKLY.stale_limit_bars) == {
+        "prices": 3,
+        "funding": 3,
+        "oi_metrics": 5,
+        "perp_mark_prices": 3,
+    }
     assert WEEKLY.bar_interval_ms == _DAY_MS
     assert WEEKLY.rebalance_interval_ms == 7 * _DAY_MS
     assert WEEKLY.name == "weekly"

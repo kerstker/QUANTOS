@@ -48,7 +48,8 @@ WEEKLY = CadenceConfig(
     signal_lookback_bars=7,                # live_track_advance.py _SIGNAL_MAX_LOOKBACK_ROWS
     vol_lookback_bars=8,                   # dry_run vol_target lookback
     extreme_abs_return=0.20,               # forward.py DEFAULT_EXTREME_ABS_RETURN
-    stale_limit_bars={"prices": 3, "funding": 3, "oi_metrics": 5},  # live_data_refresh.py STALE_LIMITS(天=日频bar)
+    stale_limit_bars={"prices": 3, "funding": 3, "oi_metrics": 5,
+                      "perp_mark_prices": 3},  # live_data_refresh.py STALE_LIMITS(天=日频bar)
 )
 
 # HOURLY_1H:1H 数值(默认不启用;数据/研究/前置门就绪且用户拍板前不接进 live 执行路径)。
@@ -64,7 +65,8 @@ HOURLY_1H = CadenceConfig(
     signal_lookback_bars=24,               # 1 天的小时数
     vol_lookback_bars=48,                  # 2 天
     extreme_abs_return=0.05,               # 1H 收益量级(工程占位,真实使用前需按 1H 波动校准)
-    stale_limit_bars={"prices": 2, "funding": 2, "oi_metrics": 3},
+    stale_limit_bars={"prices": 2, "funding": 2, "oi_metrics": 3,
+                      "perp_mark_prices": 2},
 )
 
 _REGISTRY = {c.name: c for c in (WEEKLY, HOURLY_1H)}

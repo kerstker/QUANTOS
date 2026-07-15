@@ -33,16 +33,21 @@ import time
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.data.research_adapter import adapt_research_market_data
 from services.data.market_provider import ingest_provider_rows
 from services.intelligence.search_space import HypothesisSpace
-from services.intelligence.evolutionary_search import make_evolution_provider, genome_to_definition
-from services.research.session import run_research_session
+from services.intelligence.evolutionary_search import genome_to_definition
+from services.intelligence.research_session import run_research_session
+from tools.search_trial_registry import (
+    make_search_id,
+    production_experiment_registry,
+)
 from services.research.panel_builder import make_data_periods_provider, build_panel_periods
 from services.research.signals import SIGNAL_OPS
 from services.research.regime import label_regimes_by_vol, regime_conditional_stats
 from services.research.backtest_engine.metrics import sharpe
 from services.research.backtest_engine.costs import CostModel
-from services.research.validation.walk_forward import walk_forward_splits
+from services.validation.walk_forward import walk_forward_splits
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import run_panel_backtest
 from tools.coingecko_volume_fetch import fetch_market_chart, parse_market_chart
@@ -272,11 +277,29 @@ def main() -> None:
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
     print(f"\nDAILY periods={len(event_times)} instruments={len(instruments)} "
           f"-> evolutionary search + no-peek OOS ...", flush=True)
-    result = run_research_session(
-        store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON,
-        space=space, rounds=1, batch_size=1, timestamp=now_ms,
-        evolutionary=True, evo_generations=EVO_GENERATIONS,
-        evo_population=EVO_POPULATION, evo_elite=EVO_ELITE, synergistic_k=8)
+    research_store = adapt_research_market_data(store)
+    dataset_version = research_store.dataset_version(instruments, event_times)
+    with production_experiment_registry() as registry:
+        result = run_research_session(
+            research_store, instruments, event_times=event_times,
+            fwd_horizon=FWD_HORIZON, space=space, rounds=1, batch_size=1,
+            timestamp=now_ms, dataset_version=dataset_version, registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_daily_research",
+                search_kind="RESEARCH_SESSION_DAILY_EVOLUTIONARY",
+                dataset_version=dataset_version,
+                recorded_at=now_ms,
+                params={
+                    "generations": EVO_GENERATIONS,
+                    "population": EVO_POPULATION,
+                },
+            ),
+            search_kind="RESEARCH_SESSION_DAILY_EVOLUTIONARY",
+            search_source="tools.crypto_daily_research",
+            evolutionary=True, evo_generations=EVO_GENERATIONS,
+            evo_population=EVO_POPULATION, evo_elite=EVO_ELITE,
+            synergistic_k=8,
+        )
 
     factors = _build_factors(result["report"])
     oos = _no_peek_oos(store, instruments) if len(instruments) >= 2 else None

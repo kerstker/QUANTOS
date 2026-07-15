@@ -5,8 +5,10 @@ import pytest
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.intelligence import agent_loop as agent_loop_module
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guardrails import ForbiddenAgentAction
+from services.research.ports.persistence import TrialPersistenceError
 
 
 class _StubEval:
@@ -76,6 +78,47 @@ def test_loop_isolates_a_failing_candidate():
     assert cat.state("a0") == AlphaState.PAPER_TRADING     # a0 still fully processed (not orphaned)
     assert "a0" in out["human_review_queue"]
     assert cat.state("a1") != AlphaState.APPROVED          # failed alpha never advanced (fail-closed)
+
+
+def test_complete_batch_is_recorded_before_selection_pbo(monkeypatch):
+    recorded = []
+    cat = AlphaCatalog(trial_recorder=recorded.append)
+    loop = ResearchAgentLoop(
+        catalog=cat,
+        evaluator=_StubEval(cat, ValidationVerdict.REQUIRES_HUMAN_REVIEW),
+    )
+    candidates = _cands(2)
+
+    def assert_recorded_before_backtest(received, **_kwargs):
+        assert tuple(received) == tuple(candidates)
+        assert recorded == [definition.definition_hash for definition, _ in candidates]
+        assert cat.global_trial_count() == len(candidates)
+        return None
+
+    monkeypatch.setattr(agent_loop_module, "batch_pbo", assert_recorded_before_backtest)
+    loop.run(candidates)
+
+
+def test_trial_persistence_failure_prevents_selection_pbo(monkeypatch):
+    pbo_called = False
+
+    def fail_recording(_config_hash):
+        raise TrialPersistenceError("ledger unavailable")
+
+    def observe_pbo(*_args, **_kwargs):
+        nonlocal pbo_called
+        pbo_called = True
+
+    cat = AlphaCatalog(trial_recorder=fail_recording)
+    loop = ResearchAgentLoop(
+        catalog=cat,
+        evaluator=_StubEval(cat, ValidationVerdict.REQUIRES_HUMAN_REVIEW),
+    )
+    monkeypatch.setattr(agent_loop_module, "batch_pbo", observe_pbo)
+
+    with pytest.raises(TrialPersistenceError, match="ledger unavailable"):
+        loop.run(_cands(1))
+    assert pbo_called is False
 
 
 def test_loop_must_run_as_non_human():

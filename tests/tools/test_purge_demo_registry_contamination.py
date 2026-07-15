@@ -11,8 +11,26 @@ from services.research.experiment_registry.store import SqliteExperimentStore
 from tools.purge_demo_registry_contamination import apply_purge, plan_purge
 
 
-def _seed(db_path: str, *, legacy_ids=("h_a", "h_b", "hx_c"), real_ids=("carry_composite",)):
+def _legacy_store(db_path: str):
+    """Model the pre-provenance database for which the one-off purge existed."""
     store = SqliteExperimentStore(db_path, create=True)
+    store._conn.executescript(
+        """
+        DROP TRIGGER trials_no_update;
+        DROP TRIGGER trials_no_delete;
+        DROP TRIGGER evaluations_no_update;
+        DROP TRIGGER evaluations_no_delete;
+        DROP TABLE search_candidates;
+        DROP TABLE search_attempt_events;
+        PRAGMA user_version = 0;
+        """
+    )
+    store._conn.commit()
+    return store
+
+
+def _seed(db_path: str, *, legacy_ids=("h_a", "h_b", "hx_c"), real_ids=("carry_composite",)):
+    store = _legacy_store(db_path)
     now = 0
     # distinct `params` per legacy alpha (mirrors the real h_momentum_3/h_momentum_5/... rows,
     # which differ by window) so each gets its own definition_hash, like production.
@@ -59,7 +77,7 @@ def test_apply_purge_never_deletes_a_trial_hash_shared_with_a_real_alpha(tmp_pat
     definition_hash would fail plan_purge's collision check before any deletion happens — this
     test constructs that exact collision and asserts the whole operation refuses to proceed."""
     db = str(tmp_path / "reg.db")
-    store = SqliteExperimentStore(db, create=True)
+    store = _legacy_store(db)
     shared = AlphaDefinition(alpha_id="h_shared", name="x", factor_ids=("close",), universe="cs_majors")
     real_same_hash = AlphaDefinition(alpha_id="carry_composite", name="y",
                                      factor_ids=shared.factor_ids, universe=shared.universe,
@@ -75,7 +93,7 @@ def test_apply_purge_never_deletes_a_trial_hash_shared_with_a_real_alpha(tmp_pat
 
 def test_apply_purge_deletes_evaluation_artifacts_for_legacy_alphas(tmp_path):
     db = str(tmp_path / "reg.db")
-    store = _seed(db)
+    _seed(db)
     conn = sqlite3.connect(db)
     conn.execute("INSERT INTO evaluations(run_id, alpha_id, dataset_version, recorded_ts, verdict, "
                 "content_hash, evaluation_json) VALUES ('r1','h_a','v1',0,'FAIL','ch','{}')")
@@ -106,7 +124,7 @@ def test_plan_purge_refuses_when_an_orphan_trial_shares_a_legacy_hash(tmp_path):
     alpha's definition_hash must not be silently swept up. plan_purge must fail closed rather than
     risk deleting a real orphan trial's hash just because it coincides with a legacy one."""
     db = str(tmp_path / "reg.db")
-    store = SqliteExperimentStore(db, create=True)
+    store = _legacy_store(db)
     legacy = AlphaDefinition(alpha_id="h_a", name="h_a", factor_ids=("close",), universe="",
                              params={"window": "3"})
     store.upsert_alpha("h_a", json.dumps(legacy.model_dump()), "TESTING", "[]", None, None)
@@ -127,3 +145,11 @@ def test_plan_purge_succeeds_when_every_trial_hash_is_explained_by_alpha_state(t
     legacy_ids, real_ids, legacy_only_hashes = plan_purge(db)
     assert legacy_ids == ["h_a", "h_b", "hx_c"]
     assert len(legacy_only_hashes) == 3
+
+
+def test_plan_purge_is_retired_after_search_provenance_migration(tmp_path):
+    db = str(tmp_path / "reg.db")
+    SqliteExperimentStore(db, create=True).close()
+
+    with pytest.raises(ValueError, match="append-only search provenance"):
+        plan_purge(db)

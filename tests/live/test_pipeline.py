@@ -1,5 +1,5 @@
 """live/pipeline.py::submit_live_batch —— 端到端编排(复用真实 PreTradeRiskGate,非假门,证明
-真整合)。设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.7。
+真整合)。设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.7。
 
 关键要证明的性质:① 缩放整数(喂 gate)<->真实浮点(喂 venue)往返正确;② gate 拒绝的从不到
 mandate/venue;③ 过滤器丢弃的从不到 mandate/venue;④ mandate NEEDS_HUMAN_REVIEW 时零提交;
@@ -14,9 +14,12 @@ mandate/venue;③ 过滤器丢弃的从不到 mandate/venue;④ mandate NEEDS_HU
 import pytest
 
 from live.contracts import ExchangeFilters, VenueOrderResult
+from live.execution.filters import client_order_id
 from live.execution.position_ledger import LiveLedger
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate
-from live.pipeline import UNIT_SCALE, plan_scaled_targets, resolve_unconfirmed_orders, submit_live_batch
+from live.governance.validation_attestation import HUMAN_OVERRIDE, ValidationAttestation
+from live.pipeline import (UNIT_SCALE, plan_scaled_targets, resolve_unconfirmed_orders,
+                           submit_live_batch as _submit_live_batch)
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.config import RiskLimits
@@ -30,6 +33,15 @@ _FILTERS = {
     "BTC": ExchangeFilters(instrument_id="BTC", step_size=0.0001, min_qty=0.0001, min_notional=5.0),
     "ETH": ExchangeFilters(instrument_id="ETH", step_size=0.001, min_qty=0.001, min_notional=5.0),
 }
+
+
+def submit_live_batch(**kwargs):
+    if "validation_attestation" not in kwargs:
+        kwargs["validation_attestation"] = ValidationAttestation(
+            strategy_id=kwargs["strategy_id"], kind=HUMAN_OVERRIDE,
+            attested_by="alice", attested_at=_NOW, reason="test fixture",
+        )
+    return _submit_live_batch(**kwargs)
 
 
 def _wide_open_limits(allowed=frozenset({"BTC", "ETH"})):
@@ -189,6 +201,31 @@ class _LedgerThatBreaksOn:
             raise RuntimeError("simulated database is locked")
         return self._inner.record_submission(client_order_id, instrument_id, side, quantity, **kw)
 
+    def update_status(self, *a, **kw):
+        return self._inner.update_status(*a, **kw)
+
+    def record_fill(self, *a, **kw):
+        return self._inner.record_fill(*a, **kw)
+
+    def position(self, instrument_id):
+        return self._inner.position(instrument_id)
+
+    def all_positions(self):
+        return self._inner.all_positions()
+
+
+class _LedgerThatBreaksAfterPlace:
+    """Allow pre-journaling, then fail the post-place status update."""
+
+    def __init__(self, inner: LiveLedger):
+        self._inner = inner
+
+    def record_submission(self, *a, **kw):
+        return self._inner.record_submission(*a, **kw)
+
+    def update_status(self, *a, **kw):
+        raise RuntimeError("simulated post-place database failure")
+
     def record_fill(self, *a, **kw):
         return self._inner.record_fill(*a, **kw)
 
@@ -243,6 +280,34 @@ def test_full_batch_auto_submits_with_correct_real_quantities(ledger):
     assert "LIVE_BATCH_START" in actions
     assert actions.count("LIVE_ORDER_SUBMITTED") == 2
     assert audit.chain_valid()
+
+
+@pytest.mark.parametrize("attestation", [
+    None,
+    ValidationAttestation(
+        strategy_id="other",
+        kind=HUMAN_OVERRIDE,
+        attested_by="alice",
+        attested_at=_NOW,
+        reason="wrong strategy",
+    ),
+])
+def test_pipeline_rejects_missing_or_mismatched_validation_before_venue_call(ledger, attestation):
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0,
+        current_positions={}, gate=_gate(), ctx_factory=_ctx_factory(), venue=venue,
+        mandate=_WIDE_MANDATE, validation_attestation=attestation,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra",
+        decided_ts=_NOW, now=_NOW,
+    )
+
+    assert result.tier == NEEDS_HUMAN_REVIEW
+    assert result.mandate_reasons[0].startswith("validation_attestation:")
+    assert venue.calls == []
+    assert venue.get_order_calls == []
+    assert any(event.action == "LIVE_VALIDATION_ATTESTATION_DECISION" for event in audit.events)
 
 
 def test_already_at_target_generates_no_intents(ledger):
@@ -461,28 +526,76 @@ def test_venue_call_error_recovers_via_get_order_when_order_actually_exists(ledg
     assert "LIVE_ORDER_SUBMIT_FAILED" not in actions
 
 
-# --- 记账失败 ≠ 下单失败:真实成功的订单绝不能被误记成失败(发现 #2) ---
+# --- 下单前记账 fail-closed；下单后记账失败仍如实算已提交 ---
 
-def test_ledger_write_failure_still_counts_order_as_submitted_not_failed(ledger):
+def test_prejournal_failure_blocks_batch_before_venue_call(ledger):
     broken_ledger = _LedgerThatBreaksOn(ledger, break_for={"BTC"})
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5, "ETH": -0.5}, prices=_PRICES,
+        aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=broken_ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
+    assert result.tier == AUTO
+    assert venue.calls == []
+    assert result.submitted == ()
+    assert result.submission_errors == ()
+    assert len(result.ledger_write_errors) == 1
+    assert result.ledger_write_errors[0][0].instrument_id == "BTC"
+    actions = [e.action for e in audit.events]
+    assert "LIVE_PREJOURNAL_FAILED" in actions
+    assert "LIVE_ORDER_SUBMIT_FAILED" not in actions
+    assert "LIVE_ORDER_SUBMITTED" not in actions
+
+
+def test_postplace_ledger_failure_still_counts_order_as_submitted(ledger):
+    broken_ledger = _LedgerThatBreaksAfterPlace(ledger)
     venue = _FakeVenue()
     audit = GlobalAuditLog()
     result = submit_live_batch(
         weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
         gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
-        ledger=broken_ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)
-    assert result.tier == AUTO
-    assert result.submission_errors == ()                         # 绝不能算成"下单失败"
+        ledger=broken_ledger, audit=audit, strategy_id="crowd_contra",
+        decided_ts=_NOW, now=_NOW,
+    )
+
+    assert len(venue.calls) == 1
+    assert result.submission_errors == ()
     assert len(result.submitted) == 1 and result.submitted[0].status == "FILLED"
     assert len(result.ledger_write_errors) == 1
-    assert result.ledger_write_errors[0][0].instrument_id == "BTC"
     actions = [e.action for e in audit.events]
     assert "LIVE_LEDGER_WRITE_FAILED" in actions
+    assert "LIVE_ORDER_SUBMITTED" in actions
     assert "LIVE_ORDER_SUBMIT_FAILED" not in actions
-    assert "LIVE_ORDER_SUBMITTED" in actions                      # 仍然记为已提交
 
 
 # --- resolve_unconfirmed_orders:崩溃恢复(驱动器启动时核对未知状态订单,发现 #11 的一部分) ---
+
+def test_ledger_id_collision_blocks_order_before_venue_call(ledger):
+    cid = client_order_id(
+        "crowd_contra", _NOW, "BTC", OrderSide.BUY, 5.0, prior_qty=0.0,
+    )
+    ledger.record_submission(
+        cid, "BTC", OrderSide.BUY, 9.0, strategy_id="crowd_contra",
+        submitted_at=_NOW,
+    )
+    venue = _FakeVenue()
+    audit = GlobalAuditLog()
+    result = submit_live_batch(
+        weights={"BTC": 0.5, "ETH": -0.5}, prices=_PRICES,
+        aum=600_000.0, current_positions={},
+        gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
+        ledger=ledger, audit=audit, strategy_id="crowd_contra",
+        decided_ts=_NOW, now=_NOW,
+    )
+
+    assert venue.calls == []
+    assert result.submitted == ()
+    assert len(result.ledger_write_errors) == 1
+    assert "LiveLedgerConflictError" in result.ledger_write_errors[0][1]
+    assert any(event.action == "LIVE_LEDGER_ID_CONFLICT" for event in audit.events)
+
 
 def test_resolve_unconfirmed_orders_no_unresolved_orders_is_a_noop(ledger):
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
@@ -602,7 +715,7 @@ def test_resize_batch_same_decided_ts_books_both_batches(ledger):
     venue = _FakeVenue()
     audit = GlobalAuditLog()
     # 第一批:目标 0.5 权重
-    r1 = submit_live_batch(
+    submit_live_batch(
         weights={"BTC": 0.5}, prices=_PRICES, aum=600_000.0, current_positions={},
         gate=_gate(), ctx_factory=_ctx_factory(), venue=venue, mandate=_WIDE_MANDATE,
         ledger=ledger, audit=audit, strategy_id="crowd_contra", decided_ts=_NOW, now=_NOW)

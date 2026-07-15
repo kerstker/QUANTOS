@@ -17,7 +17,8 @@ from __future__ import annotations
 import os
 import time
 
-from services.data.adapters import SourceSpec, normalize_records
+from services.data.adapters import (SourceSpec, VolumeSemantics, VolumeUnit,
+                                    normalize_records)
 from tools.coingecko_fetch import _http_get_json
 
 _CC_HOST = "https://min-api.cryptocompare.com"
@@ -31,6 +32,8 @@ CC_SPEC = SourceSpec(
     field_map={"instrument_id": "sym", "event_time": "ts", "open": "o", "high": "h",
                "low": "l", "close": "c", "volume": "v"},
     knowledge_lag=0,
+    volume_unit=VolumeUnit.QUOTE_USD,
+    volume_semantics=VolumeSemantics.PER_BAR,
 )
 
 

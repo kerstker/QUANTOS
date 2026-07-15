@@ -4,8 +4,13 @@ Proves: (1) a metrics ZIP parses to its END-OF-DAY (last) row's kept fields; (2)
 collapses days correctly, skips already-cached days, tolerates missing (404) days; (3) it is
 deterministic for fixed inputs. The fetcher is out-of-gate but this pins its parse/aggregate contract."""
 import io
+import json
 import zipfile
+from urllib.error import URLError
 
+import pytest
+
+from services.data.raw_archive import summarize_archive
 from tools import binance_oi_metrics_fetch as f
 
 _DAY = f._DAY_MS
@@ -60,6 +65,57 @@ def test_fetch_skips_present_and_missing_days():
     assert out2 == out
 
 
+def test_fetch_archives_exact_metrics_zip_with_parse_outcome(tmp_path):
+    base = 1_700_000_000_000 // _DAY * _DAY
+
+    out = f.fetch_ticker_days(
+        "BTC",
+        base,
+        base + _DAY,
+        present=set(),
+        http_get_bytes=lambda _url: _zip_for(base),
+        max_workers=1,
+        archive_root=str(tmp_path),
+        observed_at_ms=base + _DAY,
+    )
+
+    assert set(out) == {base}
+    lineage = summarize_archive(str(tmp_path))
+    assert lineage["status"] == "PASS"
+    assert lineage["datasets"] == {"oi_metrics": 1}
+    assert lineage["representations"] == ["HTTP_BODY_BYTES"]
+    observation = json.loads(next(tmp_path.glob("observations/sha256/*/*.json")).read_text())
+    assert observation["parse_diagnostics"]["status"] == "ACCEPTED"
+    assert observation["parse_diagnostics"]["accepted_rows"] == 1
+
+
+def test_fetch_classifies_missing_and_transient_days():
+    base = 1_700_000_000_000 // _DAY * _DAY
+    missing, transient = base, base + _DAY
+    failures = []
+
+    def stub(url: str) -> bytes:
+        if f._day_str(missing) in url:
+            raise RuntimeError("404")
+        raise URLError("connection reset")
+
+    out = f.fetch_ticker_days(
+        "BTC",
+        missing,
+        transient + _DAY,
+        present=set(),
+        http_get_bytes=stub,
+        max_workers=1,
+        failure_sink=failures,
+    )
+
+    assert out == {}
+    assert [(item["day_ms"], item["kind"]) for item in failures] == [
+        (missing, "NOT_FOUND"),
+        (transient, "TRANSIENT"),
+    ]
+
+
 def test_find_start_returns_first_available():
     base = f._PROBE_FLOOR_MS // _DAY * _DAY
     first = base + 90 * _DAY  # archive begins ~3 months after the floor
@@ -75,6 +131,17 @@ def test_find_start_returns_first_available():
     got = f.find_start_ms("BTC", http_get_bytes=stub, now_ms=first + 400 * _DAY)
     # month-step scan lands within the same month window as `first`
     assert got is not None and 0 <= (got - base) <= 120 * _DAY
+
+
+def test_find_start_does_not_treat_transient_failure_as_missing_archive():
+    with pytest.raises(URLError, match="connection reset"):
+        f.find_start_ms(
+            "BTC",
+            http_get_bytes=lambda _url: (_ for _ in ()).throw(
+                URLError("connection reset")
+            ),
+            now_ms=f._PROBE_FLOOR_MS + 90 * _DAY,
+        )
 
 
 def test_parse_intraday_features_from_full_day():

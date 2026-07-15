@@ -1,7 +1,7 @@
 """tools/live_track_advance.py 里可离线测的纯逻辑(gate_limits/make_ctx_factory/PreviewVenue)。
 main() 本身是薄胶水(数据刷新+真实 venue I/O),不单测——同 tools/forward_track_advance.py 的
 既有惯例(核心逻辑在被测模块里,驱动器用真实运行验证)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §0 延伸。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §0 延伸。"""
 import pytest
 
 from live.contracts import LiveOrderRequest, VenueOrderResult
@@ -66,6 +66,18 @@ def test_make_ctx_factory_threads_recent_timestamps():
     prices, kw = _factory_kwargs()
     ctx = make_ctx_factory(prices, recent_timestamps=(111, 222, 333), **kw)(_FakeIntent("BTC"))
     assert ctx.recent_timestamps == (111, 222, 333)
+
+
+def test_make_ctx_factory_threads_recent_fingerprints_and_statuses():
+    prices, kw = _factory_kwargs()
+    ctx = make_ctx_factory(
+        prices,
+        recent_order_fingerprints=("fp1", "fp2"),
+        recent_order_statuses=("FILLED", "CANCELED"),
+        **kw,
+    )(_FakeIntent("BTC"))
+    assert ctx.recent_order_fingerprints == ("fp1", "fp2")
+    assert ctx.recent_order_statuses == ("FILLED", "CANCELED")
 
 
 def test_make_ctx_factory_recent_timestamps_default_empty_keeps_old_behavior():
@@ -472,6 +484,49 @@ def test_maintenance_skip_degraded_does_not_stop(tmp_path):
     p = tmp_path / "m.json"
     json.dump({"strategies": {"crowd_contra": {"state": "DEGRADED", "reasons": ["ic"]}}}, open(p, "w"))
     assert maintenance_skip("crowd_contra", path=str(p)) is None
+
+
+def test_maintenance_skip_prefers_authoritative_store_over_stale_json(tmp_path):
+    import json
+
+    from services.alpha.maintenance_store import MaintenanceStore
+    from tools.live_track_advance import maintenance_skip
+
+    status = tmp_path / "alpha_maintenance_status.json"
+    database = tmp_path / "alpha_maintenance.db"
+    json.dump({"strategies": {}}, open(status, "w"))
+    snapshot = {
+        "generated_at": 1000,
+        "strategies": {"crowd_contra": {"state": "RETIRED", "reasons": ["decay"]}},
+    }
+    store = MaintenanceStore(str(database), create=True)
+    store.save_snapshot(snapshot)
+    store.close()
+
+    assert maintenance_skip(
+        "crowd_contra",
+        path=str(status),
+        db_path=str(database),
+    ).startswith("maintenance_retired:")
+
+
+def test_maintenance_skip_fails_closed_when_authoritative_store_is_corrupt(tmp_path):
+    from services.alpha.maintenance_store import MaintenanceStore
+    from tools.live_track_advance import maintenance_skip
+
+    database = tmp_path / "alpha_maintenance.db"
+    store = MaintenanceStore(str(database), create=True)
+    store.save_snapshot({"generated_at": 1000, "strategies": {}})
+    store._conn.execute("DROP TRIGGER maintenance_records_no_update")
+    store._conn.execute("UPDATE maintenance_records SET snapshot_hash='evil'")
+    store._conn.commit()
+    store.close()
+
+    assert maintenance_skip(
+        "crowd_contra",
+        path=str(tmp_path / "absent.json"),
+        db_path=str(database),
+    ) == "maintenance_state_invalid"
 
 
 def test_binance_margin_extracts_balance_and_maint():

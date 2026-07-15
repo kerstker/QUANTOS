@@ -1,9 +1,32 @@
+import hashlib
+from datetime import datetime, timezone
+import gzip
+import io
 import json
 from pathlib import Path
+import sqlite3
+import tarfile
 
 import pytest
 
+from quantos.contracts.hashing import stable_hash
+from scripts.generate_model_risk_evidence import build_model_risk_evidence
+from scripts.generate_model_risk_dataset import generate_bundle
+from scripts.generate_strong_identity_evidence import build_strong_identity_evidence
+from services.governance.model_risk_history import append_model_risk_revision
+from services.governance.reproducibility_evidence import (
+    build_container_reproducibility_evidence,
+)
 from services.governance.top_tier_assessment import RegistryError, assess_repository, load_requirements
+from services.research.experiment_registry.store import SqliteExperimentStore
+from services.governance.vulnerability_evidence import (
+    build_actions_audit_evidence,
+    build_container_audit_evidence,
+    build_npm_audit_evidence,
+    build_python_audit_evidence,
+)
+from services.intelligence.runtime import RESEARCH_EVALUATION_TEMPLATE
+from tools import search_trial_ledger_history
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,9 +63,14 @@ def test_registry_rejects_duplicate_ids(tmp_path):
 
 
 def test_red_line_failure_forces_not_top_tier(tmp_path):
-    path = _write_registry(tmp_path, [_requirement(
-        "PLATFORM.MISSING", checker="paths_exist",
-        checker_args={"paths": ["missing.file"]}, red_line=True)])
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.MISSING", checker="paths_exist", checker_args={"paths": ["missing.file"]}, red_line=True
+            )
+        ],
+    )
     report = assess_repository(tmp_path, path)
     assert report["verdict"] == "NOT_TOP_TIER"
     assert report["summary"]["red_lines_failed"] == 1
@@ -52,20 +80,32 @@ def test_red_line_failure_forces_not_top_tier(tmp_path):
 def test_committed_registry_covers_all_eleven_domains():
     requirements = load_requirements(REGISTRY)
     assert {item["domain"] for item in requirements} == {
-        "data_moat", "alpha_research", "validation_model_risk",
-        "portfolio_construction", "risk_management", "execution_microstructure",
-        "ai_agents", "governance_security", "platform_engineering",
-        "reliability_operations", "frontend_console",
+        "data_moat",
+        "alpha_research",
+        "validation_model_risk",
+        "portfolio_construction",
+        "risk_management",
+        "execution_microstructure",
+        "ai_agents",
+        "governance_security",
+        "platform_engineering",
+        "reliability_operations",
+        "frontend_console",
     }
     assert len(requirements) >= 22
 
 
-@pytest.mark.parametrize(("field", "value"), [
-    ("domain", "unknown"), ("tier", "C"), ("target_maturity", "M9"),
-    ("classification", "MAGIC"),
-    ("required_evidence", ["implementation", "hope"]),
-    ("checker", "unknown_checker"),
-])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("domain", "unknown"),
+        ("tier", "C"),
+        ("target_maturity", "M9"),
+        ("classification", "MAGIC"),
+        ("required_evidence", ["implementation", "hope"]),
+        ("checker", "unknown_checker"),
+    ],
+)
 def test_registry_rejects_invalid_enums(tmp_path, field, value):
     path = _write_registry(tmp_path, [_requirement("BAD", **{field: value})])
     with pytest.raises(RegistryError, match=field):
@@ -73,11 +113,15 @@ def test_registry_rejects_invalid_enums(tmp_path, field, value):
 
 
 def test_manual_and_external_requirements_never_auto_pass(tmp_path):
-    path = _write_registry(tmp_path, [
-        _requirement("GOV.IDENTITY.STRONG_AUTH", checker="manual_evidence", red_line=True),
-        _requirement("DATA.VENDOR.TICK", checker="paths_exist", checker_args={"paths": []},
-                     classification="NEEDS_EXTERNAL"),
-    ])
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement("GOV.IDENTITY.STRONG_AUTH", checker="manual_evidence", red_line=True),
+            _requirement(
+                "DATA.VENDOR.TICK", checker="paths_exist", checker_args={"paths": []}, classification="NEEDS_EXTERNAL"
+            ),
+        ],
+    )
     report = assess_repository(tmp_path, path)
     statuses = {item["id"]: item["status"] for item in report["requirements"]}
     assert statuses == {
@@ -89,9 +133,17 @@ def test_manual_and_external_requirements_never_auto_pass(tmp_path):
 
 def test_all_tier_a_targets_can_reach_top_tier_research(tmp_path):
     (tmp_path / "proof.txt").write_text("real evidence", encoding="utf-8")
-    path = _write_registry(tmp_path, [_requirement(
-        "PLATFORM.PROOF", checker="paths_exist",
-        checker_args={"paths": ["proof.txt"], "pass_maturity": "M3"}, red_line=True)])
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.PROOF",
+                checker="paths_exist",
+                checker_args={"paths": ["proof.txt"], "pass_maturity": "M3"},
+                red_line=True,
+            )
+        ],
+    )
     report = assess_repository(tmp_path, path)
     assert report["verdict"] == "TOP_TIER_RESEARCH"
     assert report["requirements"][0]["status"] == "PASS"
@@ -100,42 +152,2264 @@ def test_all_tier_a_targets_can_reach_top_tier_research(tmp_path):
 
 def test_assessment_is_deterministic(tmp_path):
     (tmp_path / "proof.txt").write_text("proof", encoding="utf-8")
-    path = _write_registry(tmp_path, [_requirement(
-        "PLATFORM.PROOF", checker="paths_exist", checker_args={"paths": ["proof.txt"]})])
+    path = _write_registry(
+        tmp_path, [_requirement("PLATFORM.PROOF", checker="paths_exist", checker_args={"paths": ["proof.txt"]})]
+    )
     assert assess_repository(tmp_path, path) == assess_repository(tmp_path, path)
+
+
+def test_assessment_context_accepts_fixed_as_of_and_rejects_invalid_time(tmp_path):
+    (tmp_path / "proof.txt").write_text("proof", encoding="utf-8")
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.PROOF",
+                checker="paths_exist",
+                checker_args={"paths": ["proof.txt"]},
+            )
+        ],
+    )
+
+    first = assess_repository(tmp_path, path, as_of_ms=1_784_044_800_000)
+    second = assess_repository(tmp_path, path, as_of_ms=1_784_044_800_000)
+
+    assert first == second
+    with pytest.raises(ValueError, match="as_of_ms"):
+        assess_repository(tmp_path, path, as_of_ms=True)
+    with pytest.raises(ValueError, match="as_of_ms"):
+        assess_repository(tmp_path, path, as_of_ms=-1)
 
 
 def test_checker_pass_below_target_is_partial_and_red_line_remains_open(tmp_path):
     (tmp_path / "proof.txt").write_text("proof", encoding="utf-8")
-    path = _write_registry(tmp_path, [_requirement(
-        "PLATFORM.PARTIAL", target_maturity="M4", red_line=True,
-        checker="paths_exist", checker_args={"paths": ["proof.txt"], "pass_maturity": "M2"})])
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.PARTIAL",
+                target_maturity="M4",
+                red_line=True,
+                checker="paths_exist",
+                checker_args={"paths": ["proof.txt"], "pass_maturity": "M2"},
+            )
+        ],
+    )
     report = assess_repository(tmp_path, path)
     assert report["requirements"][0]["status"] == "PARTIAL"
     assert report["summary"]["red_lines_failed"] == 1
     assert report["verdict"] == "NOT_TOP_TIER"
 
 
-def test_restore_drill_checker_requires_encrypted_integrity_rpo_and_rto_evidence(tmp_path):
-    evidence = tmp_path / "restore.json"
-    registry = _write_registry(tmp_path, [_requirement(
-        "OPS.RESTORE.DRILL", domain="reliability_operations", tier="B",
-        target_maturity="M4", red_line=True, checker="restore_drill_evidence",
-        checker_args={"path": "restore.json", "max_rpo_ms": 86_400_000, "pass_maturity": "M4"},
-    )])
+def _l2_source_contract() -> dict:
+    return {
+        "version": 2,
+        "sources": [
+            {
+                "relative_path": "data/cache/approvals.db",
+                "required": False,
+                "role": "approval_authority",
+            },
+            {
+                "relative_path": "data/cache/domain_events.db",
+                "required": True,
+                "role": "domain_event_authority",
+            },
+        ],
+    }
 
-    evidence.write_text(json.dumps({
-        "schema_version": 1, "verdict": "PASS", "mode": "PLAINTEXT",
-        "integrity_verified": True, "rto_met": True, "rpo_met": True,
-        "file_count": 1, "elapsed_ms": 10, "rto_ms": 100,
-        "source_age_ms": 10, "max_rpo_ms": 86_400_000,
-    }), encoding="utf-8")
+
+def _l2_source_contract_sha256(contract: dict) -> str:
+    canonical = json.dumps(contract, sort_keys=True, separators=(",", ":")) + "\n"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _valid_l2_backup_evidence(*, external: bool = True) -> dict:
+    contract = _l2_source_contract()
+    required_source = contract["sources"][1]
+    return {
+        "schema_version": 1,
+        "verdict": "PASS",
+        "mode": "L2_AUTHORITY_STATE",
+        "encrypted": True,
+        "manifest_verified": True,
+        "source_contract": contract,
+        "source_contract_sha256": _l2_source_contract_sha256(contract),
+        "source_contract_verified": True,
+        "backed_up_sources": [required_source],
+        "missing_optional_sources": ["data/cache/approvals.db"],
+        "restore_verified": True,
+        "sqlite_integrity_verified": True,
+        "restore_history_verified": True,
+        "rto_met": True,
+        "rpo_met": True,
+        "observed_at_ms": 1,
+        "file_count": 1,
+        "required_source_count": 1,
+        "restore_elapsed_ms": 10,
+        "rto_ms": 100,
+        "source_age_ms": 10,
+        "max_rpo_ms": 100,
+        "backup_elapsed_ms": 20,
+        "external_destination_verified": external,
+        "destination_class": "SEPARATE_VOLUME" if external else "LOCAL_ONLY",
+    }
+
+
+def _l2_checker_args(path: str, *, pass_maturity: str) -> dict:
+    return {
+        "path": path,
+        "implementation_paths": [],
+        "expected_source_contract": _l2_source_contract(),
+        "max_rpo_ms": 100,
+        "max_rto_ms": 100,
+        "pass_maturity": pass_maturity,
+    }
+
+
+def test_restore_drill_red_line_rejects_legacy_generic_restore_evidence(tmp_path):
+    evidence = tmp_path / "restore.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.RESTORE.DRILL",
+                domain="reliability_operations",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="l2_backup_evidence",
+                checker_args=_l2_checker_args("restore.json", pass_maturity="M4"),
+            )
+        ],
+    )
+
+    evidence.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "verdict": "PASS",
+                "mode": "ENCRYPTED",
+                "integrity_verified": True,
+                "rto_met": True,
+                "rpo_met": True,
+                "file_count": 1,
+                "elapsed_ms": 10,
+                "rto_ms": 100,
+                "source_age_ms": 10,
+                "max_rpo_ms": 86_400_000,
+            }
+        ),
+        encoding="utf-8",
+    )
     report = assess_repository(tmp_path, registry)
     assert report["requirements"][0]["status"] == "FAILED"
 
-    payload = json.loads(evidence.read_text(encoding="utf-8"))
-    payload["mode"] = "ENCRYPTED"
+    evidence.write_text(json.dumps(_valid_l2_backup_evidence()), encoding="utf-8")
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "PARTIAL"
+    assert report["requirements"][0]["current_maturity"] == "M3"
+
+
+def test_l2_backup_checker_requires_external_encrypted_restore_verified_evidence(tmp_path):
+    for relative in ("tools/l2_backup.py", "tools/l2_scheduler_watchdog.py"):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("implementation", encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                domain="reliability_operations",
+                target_maturity="M3",
+                checker="l2_backup_evidence",
+                checker_args={
+                    "path": "evidence/l2_backup_latest.json",
+                    "implementation_paths": [
+                        "tools/l2_backup.py",
+                        "tools/l2_scheduler_watchdog.py",
+                    ],
+                    "expected_source_contract": _l2_source_contract(),
+                    "max_rpo_ms": 100,
+                    "max_rto_ms": 100,
+                    "pass_maturity": "M3",
+                },
+            )
+        ],
+    )
+
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "PARTIAL"
+
+    evidence = tmp_path / "evidence" / "l2_backup_latest.json"
+    evidence.parent.mkdir()
+    payload = _valid_l2_backup_evidence(external=False)
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+    report = assess_repository(tmp_path, registry)
+    assert report["requirements"][0]["status"] == "PARTIAL"
+
+    payload["external_destination_verified"] = True
+    payload["destination_class"] = "SEPARATE_VOLUME"
     evidence.write_text(json.dumps(payload), encoding="utf-8")
     report = assess_repository(tmp_path, registry)
     assert report["requirements"][0]["status"] == "PASS"
-    assert report["requirements"][0]["current_maturity"] == "M4"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_contract_verified", False),
+        ("source_contract_sha256", "0" * 64),
+        ("backed_up_sources", []),
+        ("missing_optional_sources", []),
+        ("manifest_verified", False),
+        ("sqlite_integrity_verified", False),
+        ("restore_history_verified", False),
+        ("file_count", True),
+        ("required_source_count", 0),
+        ("rto_ms", 101),
+        ("max_rpo_ms", 101),
+    ],
+)
+def test_l2_backup_checker_rejects_contract_partition_and_threshold_drift(
+    tmp_path, field, value
+):
+    evidence = tmp_path / "evidence.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=_l2_checker_args("evidence.json", pass_maturity="M3"),
+            )
+        ],
+    )
+    payload = _valid_l2_backup_evidence()
+    payload[field] = value
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+
+
+def test_l2_backup_checker_rejects_same_count_source_contract_drift(tmp_path):
+    evidence = tmp_path / "evidence.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=_l2_checker_args("evidence.json", pass_maturity="M3"),
+            )
+        ],
+    )
+    payload = _valid_l2_backup_evidence()
+    payload["source_contract"]["sources"][1]["role"] = "wrong_authority"
+    payload["source_contract_sha256"] = _l2_source_contract_sha256(
+        payload["source_contract"]
+    )
+    payload["backed_up_sources"] = [payload["source_contract"]["sources"][1]]
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+
+
+def test_l2_backup_checker_rejects_duplicate_json_members(tmp_path):
+    evidence = tmp_path / "evidence.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "OPS.BACKUP.ENCRYPTED",
+                checker="l2_backup_evidence",
+                checker_args=_l2_checker_args("evidence.json", pass_maturity="M3"),
+            )
+        ],
+    )
+    content = json.dumps(_valid_l2_backup_evidence())
+    evidence.write_text(
+        content.replace(
+            '"verdict": "PASS"',
+            '"verdict": "FAILED", "verdict": "PASS"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "duplicate JSON key" in result["detail"]
+
+
+def _valid_risk_recovery_evidence():
+    hashes = {
+        "audit.db": "a" * 64,
+        "kill_switch.db": "b" * 64,
+        "kill_switch.json": "c" * 64,
+        "ledger.db": "d" * 64,
+    }
+    ledger = {
+        "orders": [{"client_order_id": "drill-order-1"}],
+        "fills": [{"fill_id": "drill-fill-1"}],
+        "positions": {"AAA": 2.0},
+    }
+    return {
+        "schema_version": 2,
+        "verdict": "PASS",
+        "drill_mode": "ISOLATED_OFFLINE",
+        "observed_at_ms": 1_783_734_400_000,
+        "elapsed_ms": 10,
+        "rto_ms": 100,
+        "rto_met": True,
+        "artifact_names": [
+            "audit.db",
+            "kill_switch.db",
+            "kill_switch.json",
+            "ledger.db",
+        ],
+        "recovered_state_count": 4,
+        "pre_restart_sha256": hashes,
+        "post_restart_sha256": hashes,
+        "ledger_before": ledger,
+        "ledger_after": ledger,
+        "kill_switch_persisted": True,
+        "kill_switch_chain_verified": True,
+        "kill_switch_event_recoverable": True,
+        "kill_switch_outbox_pending_count": 1,
+        "gate_rejected_while_tripped": True,
+        "gate_rejection_code": "KILL_SWITCH_ACTIVE",
+        "ledger_recovered": True,
+        "audit_chain_verified": True,
+        "corrupt_kill_switch_failed_closed": True,
+        "tampered_kill_switch_detected": True,
+        "tampered_audit_detected": True,
+        "active_state_untouched": True,
+    }
+
+
+def test_risk_recovery_checker_requires_all_recovery_and_fault_invariants(tmp_path):
+    evidence = tmp_path / "risk-recovery.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "RISK.RECOVERY.DRILL",
+                domain="risk_management",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="risk_recovery_evidence",
+                checker_args={"path": "risk-recovery.json", "pass_maturity": "M4"},
+            )
+        ],
+    )
+    payload = _valid_risk_recovery_evidence()
+    payload["tampered_audit_detected"] = False
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+    assert assess_repository(tmp_path, registry)["requirements"][0]["status"] == "FAILED"
+
+    evidence.write_text(json.dumps(_valid_risk_recovery_evidence()), encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PASS"
+    assert result["current_maturity"] == "M4"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("verdict", "FAILED"),
+        ("rto_met", False),
+        ("elapsed_ms", 101),
+        ("observed_at_ms", True),
+        ("artifact_names", ["ledger.db"]),
+    ],
+)
+def test_risk_recovery_checker_rejects_invalid_evidence_fields(tmp_path, field, value):
+    evidence = tmp_path / "risk-recovery.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "RISK.RECOVERY.DRILL",
+                domain="risk_management",
+                tier="B",
+                target_maturity="M4",
+                checker="risk_recovery_evidence",
+                checker_args={"path": "risk-recovery.json", "pass_maturity": "M4"},
+            )
+        ],
+    )
+    payload = _valid_risk_recovery_evidence()
+    payload[field] = value
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+
+
+def test_risk_recovery_checker_rejects_digest_and_ledger_mismatch(tmp_path):
+    evidence = tmp_path / "risk-recovery.json"
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "RISK.RECOVERY.DRILL",
+                domain="risk_management",
+                tier="B",
+                target_maturity="M4",
+                checker="risk_recovery_evidence",
+                checker_args={"path": "risk-recovery.json", "pass_maturity": "M4"},
+            )
+        ],
+    )
+    payload = _valid_risk_recovery_evidence()
+    payload["post_restart_sha256"] = {
+        **payload["post_restart_sha256"],
+        "ledger.db": "e" * 64,
+    }
+    payload["ledger_after"] = {
+        **payload["ledger_after"],
+        "positions": {"AAA": 1.0},
+    }
+    evidence.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "ledger_summary" in result["detail"]
+    assert "state_digests" in result["detail"]
+
+
+def test_risk_recovery_checker_requires_declared_cadence_markers(tmp_path):
+    evidence = tmp_path / "risk-recovery.json"
+    evidence.write_text(json.dumps(_valid_risk_recovery_evidence()), encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    workflows = tmp_path / ".github" / "workflows"
+    scripts.mkdir()
+    workflows.mkdir(parents=True)
+    gate = scripts / "validate.py"
+    schedule = workflows / "validate.yml"
+    gate.write_text("missing cadence", encoding="utf-8")
+    schedule.write_text("schedule:\n  - cron: weekly\n", encoding="utf-8")
+    cadence = {
+        "scripts/validate.py": ["risk-recovery-drill:fresh"],
+        ".github/workflows/validate.yml": ["schedule:", "cron:"],
+    }
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "RISK.RECOVERY.DRILL",
+                domain="risk_management",
+                tier="B",
+                target_maturity="M4",
+                checker="risk_recovery_evidence",
+                checker_args={
+                    "path": "risk-recovery.json",
+                    "pass_maturity": "M4",
+                    "continuous_markers": cadence,
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "continuous_marker" in result["detail"]
+
+    gate.write_text("risk-recovery-drill:fresh", encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PASS"
+    assert set(result["evidence"]) == {
+        "risk-recovery.json",
+        "scripts/validate.py",
+        ".github/workflows/validate.yml",
+    }
+
+
+def _write_reproducibility_oci(path: Path, epoch: int) -> None:
+    created = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def encoded(value: object) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def digest(content: bytes) -> str:
+        return "sha256:" + hashlib.sha256(content).hexdigest()
+
+    layer_content = b"fixture-layer\n"
+    layer = gzip.compress(layer_content, mtime=0)
+    layer_digest = digest(layer)
+    config = encoded(
+        {
+            "architecture": "amd64",
+            "created": created,
+            "os": "linux",
+            "rootfs": {"type": "layers", "diff_ids": [digest(layer_content)]},
+        }
+    )
+    config_digest = digest(config)
+    manifest = encoded(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": config_digest,
+                "size": len(config),
+            },
+            "layers": [
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                    "digest": layer_digest,
+                    "size": len(layer),
+                    "annotations": {"buildkit/rewritten-timestamp": str(epoch)},
+                }
+            ],
+        }
+    )
+    manifest_digest = digest(manifest)
+    index = encoded(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "manifests": [
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": manifest_digest,
+                    "size": len(manifest),
+                    "annotations": {"org.opencontainers.image.created": created},
+                    "platform": {"architecture": "amd64", "os": "linux"},
+                }
+            ],
+        }
+    )
+    members = {
+        "oci-layout": encoded({"imageLayoutVersion": "1.0.0"}),
+        "index.json": index,
+        "blobs/sha256/" + manifest_digest.split(":", 1)[1]: manifest,
+        "blobs/sha256/" + config_digest.split(":", 1)[1]: config,
+        "blobs/sha256/" + layer_digest.split(":", 1)[1]: layer,
+    }
+    with tarfile.open(path, mode="w") as archive:
+        for name, content in members.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            member.mtime = epoch
+            member.mode = 0o644
+            archive.addfile(member, io.BytesIO(content))
+
+
+def _write_valid_supply_chain_evidence(tmp_path):
+    sbom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "version": 1,
+        "components": [{"type": "library", "name": "demo", "version": "1.0"}],
+    }
+    sbom_text = json.dumps(sbom, indent=2, sort_keys=True) + "\n"
+    (tmp_path / "sbom.json").write_bytes(sbom_text.encode("utf-8"))
+    manifest = tmp_path / "requirements.txt"
+    manifest.write_bytes(b"demo==1.0\n")
+    workflow = tmp_path / ".github/workflows/validate.yml"
+    workflow.parent.mkdir(parents=True)
+    checkout_sha = "a" * 40
+    workflow.write_text(
+        f"jobs:\n  test:\n    steps:\n      - uses: actions/checkout@{checkout_sha}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements-dev.txt").write_text(
+        "-r requirements.txt\npip-audit==2.10.1\nsigstore==4.4.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies = ["demo==1.0"]\n'
+        "[project.optional-dependencies]\n"
+        'supply-chain = ["pip-audit==2.10.1", "sigstore==4.4.0"]\n',
+        encoding="utf-8",
+    )
+    admission_sources = {
+        "services/governance/artifact_admission.py": (
+            "MAX_ARTIFACT_AGE_MS max_verification_age_ms "
+            "max_checkpoint_age_ms max_revocation_age_ms CERTIFICATE_REVOKED "
+            "REVOCATION_STATUS_UNKNOWN load_json_without_duplicate_keys "
+            "VERIFIER_RUNTIME_MISMATCH required_receipt_authority_id "
+            "required_receipt_public_key_sha256 "
+            "RECEIPT_AUTHENTICATION_REQUIRED\n"
+            "def evaluate_verified_provenance(): pass\n"
+        ),
+        "services/governance/artifact_admission_store.py": (
+            "ArtifactAdmissionStore BEGIN IMMEDIATE PRAGMA journal_mode=WAL "
+            "PRAGMA synchronous=FULL append-only "
+            "ArtifactAdmissionStoreClockRollback "
+            "ArtifactAdmissionStoreRegistryRollback "
+            "ArtifactAdmissionStoreRegistryConflict "
+            "artifact_admission_authority_events append_registry_snapshot "
+            "ArtifactAdmissionStoreRegistryHeadChanged "
+            "_validate_allow_registry_binding "
+            "ARTIFACT_ADMISSION_MAX_FUTURE_SKEW_MS "
+            "_local_authority_clock_ms _read_verified_locked "
+            "authority_time_floor\n"
+        ),
+        "services/governance/artifact_receipt_auth.py": (
+            "Ed25519PublicKey SignedArtifactVerificationReceipt "
+            "artifact_receipt_signing_payload verify_signed_artifact_receipt "
+            "RECEIPT_SIGNATURE_INVALID\n"
+        ),
+        "tools/verify_artifact_admission.py": (
+            "TrustedRoot.from_file Verifier(trusted_root= Identity( "
+            "verify_dsse POLICY_REGISTRY_PATH _policy_registry_decision "
+            "--verification-receipt POLICY_NOT_TRUSTED POLICY_REVOKED "
+            "DECISION_STORE_PATH ArtifactAdmissionStore create=False "
+            "_persist_and_emit _runtime_verifier_id "
+            "RECEIPT_AUTHORITY_REGISTRY_PATH "
+            "_receipt_authority_registry_decision verify_signed_artifact_receipt "
+            "POLICY_REGISTRY_CHANGED_DURING_ADMISSION "
+            "RECEIPT_AUTHORITY_REGISTRY_CHANGED_DURING_ADMISSION "
+            "expected_policy_registry_head "
+            "expected_receipt_authority_registry_head "
+            "_registry_mirror_reason "
+            "denied_admission_decision\n"
+        ),
+        "tests/governance/test_artifact_admission.py": "def test_core(): pass\n",
+        "tests/governance/test_artifact_admission_cli.py": "def test_cli(): pass\n",
+        "tests/governance/test_artifact_admission_store.py": ("def test_store(): pass\n"),
+        "tests/governance/test_artifact_receipt_auth.py": ("def test_receipt_auth(): pass\n"),
+    }
+    for relative, content in admission_sources.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    policy_registry_path = tmp_path / "config/artifact_admission_policy_registry.json"
+    policy_registry_path.parent.mkdir(parents=True, exist_ok=True)
+    policy_registry_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "readiness": "L2_DRY_RUN_ONLY",
+                "generation": 0,
+                "policies": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    receipt_authority_registry_path = tmp_path / "config/artifact_receipt_authority_registry.json"
+    receipt_authority_registry_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "readiness": "L2_DRY_RUN_ONLY",
+                "generation": 0,
+                "keys": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    console = tmp_path / "apps/research-console"
+    console.mkdir(parents=True)
+    (console / "package.json").write_text(json.dumps({"name": "fixture"}), encoding="utf-8")
+    (console / "package-lock.json").write_text(
+        json.dumps({"name": "fixture", "lockfileVersion": 3, "packages": {}}),
+        encoding="utf-8",
+    )
+    audit_report = {
+        "auditReportVersion": 2,
+        "vulnerabilities": {},
+        "metadata": {
+            "vulnerabilities": {
+                "info": 0,
+                "low": 0,
+                "moderate": 0,
+                "high": 0,
+                "critical": 0,
+                "total": 0,
+            },
+            "dependencies": {
+                "prod": 0,
+                "dev": 0,
+                "optional": 0,
+                "peer": 0,
+                "peerOptional": 0,
+                "total": 0,
+            },
+        },
+    }
+    npm_audit = build_npm_audit_evidence(tmp_path, report=audit_report, npm_version="11.8.0", observed_at=1)
+    npm_audit_path = tmp_path / "npm-audit.json"
+    npm_audit_path.write_text(json.dumps(npm_audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    python_report = {
+        "dependencies": [
+            {"name": "demo", "version": "1.0", "vulns": []},
+            {"name": "pip-audit", "version": "2.10.1", "vulns": []},
+            {"name": "sigstore", "version": "4.4.0", "vulns": []},
+        ],
+        "fixes": [],
+    }
+    python_audit = build_python_audit_evidence(
+        tmp_path,
+        report=python_report,
+        scanner_version="2.10.1",
+        observed_at=1,
+    )
+    python_audit_path = tmp_path / "python-audit.json"
+    python_audit_path.write_text(
+        json.dumps(python_audit, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    actions_audit = build_actions_audit_evidence(tmp_path, responses={checkout_sha: {}}, observed_at=1)
+    actions_audit_path = tmp_path / "actions-audit.json"
+    actions_audit_path.write_text(
+        json.dumps(actions_audit, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    base_digest = "sha256:" + "a" * 64
+    base_id = "sha256:" + "b" * 64
+    runtime_digest = "sha256:" + "c" * 64
+    base_ref = f"public.ecr.aws/docker/library/python@{base_digest}"
+    dockerfile = tmp_path / "deploy/console.Dockerfile"
+    dockerfile.parent.mkdir(parents=True)
+    dockerfile.write_text(
+        f"ARG PYTHON_IMAGE={base_ref}\nARG SOURCE_DATE_EPOCH=1\nFROM ${{PYTHON_IMAGE}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".dockerignore").write_text(".git/\n", encoding="utf-8")
+
+    def container_report(
+        artifact: str,
+        image_id: str,
+        vulnerabilities: list[dict[str, str]] | None,
+    ) -> dict[str, object]:
+        repo_digest = artifact if "@" in artifact else f"quantos-console@{image_id}"
+        return {
+            "SchemaVersion": 2,
+            "CreatedAt": "1970-01-01T00:00:01Z",
+            "ArtifactName": artifact,
+            "ArtifactType": "container_image",
+            "Metadata": {
+                "ImageID": image_id,
+                "RepoDigests": [repo_digest],
+                "OS": {"Family": "alpine", "Name": "3.24.1"},
+            },
+            "Results": [
+                {
+                    "Target": f"{artifact} (alpine 3.24.1)",
+                    "Class": "os-pkgs",
+                    "Type": "alpine",
+                    "Vulnerabilities": vulnerabilities,
+                }
+            ],
+        }
+
+    container_audit = build_container_audit_evidence(
+        tmp_path,
+        base_report=container_report(
+            base_ref,
+            base_id,
+            [
+                {
+                    "VulnerabilityID": "CVE-REMEDIATED",
+                    "PkgName": "pip",
+                    "InstalledVersion": "1.0",
+                    "FixedVersion": "2.0",
+                    "Status": "fixed",
+                    "Severity": "MEDIUM",
+                }
+            ],
+        ),
+        runtime_report=container_report("quantos-console:hardened", runtime_digest, None),
+        observed_at=1,
+        database_updated_at="1970-01-01T00:00:00Z",
+        database_next_update="1970-01-02T00:00:00Z",
+        database_downloaded_at="1970-01-01T00:00:00Z",
+    )
+    container_audit_path = tmp_path / "container-audit.json"
+    container_audit_path.write_text(
+        json.dumps(container_audit, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    first_oci = tmp_path / "first.oci.tar"
+    second_oci = tmp_path / "second.oci.tar"
+    _write_reproducibility_oci(first_oci, 1)
+    second_oci.write_bytes(first_oci.read_bytes())
+    reproducibility = build_container_reproducibility_evidence(
+        tmp_path,
+        archive_a=first_oci,
+        archive_b=second_oci,
+        observed_at=1,
+        build_tool={
+            "builder_name": "desktop-linux",
+            "builder_driver": "docker",
+            "buildx_version": ("github.com/docker/buildx v0.30.1-desktop.1 " + "d" * 40),
+            "buildkit_version": "v0.26.2",
+            "docker_client_version": "29.1.3",
+            "docker_server_version": "29.1.3",
+        },
+    )
+    reproducibility_path = tmp_path / "reproducibility.json"
+    reproducibility_path.write_text(
+        json.dumps(reproducibility, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    evidence = {
+        "schema_version": 1,
+        "verdict": "PARTIAL",
+        "mode": "OFFLINE_REPOSITORY_BASELINE",
+        "sbom_format": "CycloneDX",
+        "sbom_spec_version": "1.6",
+        "sbom_path": "sbom.json",
+        "sbom_sha256": hashlib.sha256(sbom_text.encode("utf-8")).hexdigest(),
+        "component_count": 1,
+        "python_component_count": 1,
+        "python_requirements_all_pinned": True,
+        "unresolved_python_optional_dependencies": [],
+        "npm_lockfile_version": 3,
+        "npm_locked_components": 1,
+        "npm_integrity_components": 1,
+        "actions": [
+            {
+                "workflow": ".github/workflows/validate.yml",
+                "reference": "actions/checkout@" + checkout_sha,
+                "sha_pinned": True,
+            }
+        ],
+        "actions_all_sha_pinned": True,
+        "manifest_sha256": {"requirements.txt": hashlib.sha256(b"demo==1.0\n").hexdigest()},
+        "sast_gate_wired": True,
+        "reproducible_inputs": True,
+        "vulnerability_scan_status": ("PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"),
+        "npm_vulnerability_evidence_status": "VERIFIED_EXTERNAL_ZERO_KNOWN",
+        "npm_vulnerability_evidence_ref": "npm-audit.json",
+        "npm_vulnerability_evidence_sha256": hashlib.sha256(npm_audit_path.read_bytes()).hexdigest(),
+        "npm_vulnerability_observed_at": 1,
+        "npm_vulnerability_count": 0,
+        "python_vulnerability_evidence_status": "VERIFIED_EXTERNAL_ZERO_KNOWN",
+        "python_vulnerability_evidence_ref": "python-audit.json",
+        "python_vulnerability_evidence_sha256": hashlib.sha256(python_audit_path.read_bytes()).hexdigest(),
+        "python_vulnerability_observed_at": 1,
+        "python_vulnerability_count": 0,
+        "actions_vulnerability_evidence_status": "VERIFIED_EXTERNAL_ZERO_KNOWN",
+        "actions_vulnerability_evidence_ref": "actions-audit.json",
+        "actions_vulnerability_evidence_sha256": hashlib.sha256(actions_audit_path.read_bytes()).hexdigest(),
+        "actions_vulnerability_observed_at": 1,
+        "actions_vulnerability_count": 0,
+        "container_vulnerability_evidence_status": ("VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"),
+        "container_vulnerability_evidence_ref": "container-audit.json",
+        "container_vulnerability_evidence_sha256": hashlib.sha256(container_audit_path.read_bytes()).hexdigest(),
+        "container_vulnerability_observed_at": 1,
+        "container_base_vulnerability_count": 1,
+        "container_runtime_vulnerability_count": 0,
+        "container_runtime_image_digest": runtime_digest,
+        "container_reproducibility_evidence_status": ("VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"),
+        "container_reproducibility_evidence_ref": "reproducibility.json",
+        "container_reproducibility_evidence_sha256": hashlib.sha256(reproducibility_path.read_bytes()).hexdigest(),
+        "container_reproducibility_observed_at": 1,
+        "container_reproducible_archive_sha256": reproducibility["builds"][0]["archive_sha256"],
+        "container_reproducible_manifest_digest": reproducibility["image"]["manifest_digest"],
+        "container_reproducibility_buildkit_version": "v0.26.2",
+        "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+        "artifact_admission_verifier_status": (
+            "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+        ),
+        "artifact_admission_contract_versions": {
+            "policy": 3,
+            "decision": 4,
+            "verification_receipt": 1,
+            "signed_receipt_envelope": 1,
+            "policy_registry": 2,
+            "receipt_authority_registry": 2,
+            "decision_store": 4,
+        },
+        "artifact_admission_policy_registry_ref": ("config/artifact_admission_policy_registry.json"),
+        "artifact_admission_policy_registry_sha256": hashlib.sha256(policy_registry_path.read_bytes()).hexdigest(),
+        "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
+        "artifact_admission_policy_registry_generation": 0,
+        "artifact_admission_active_policy_count": 0,
+        "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
+        "artifact_admission_receipt_authority_registry_sha256": hashlib.sha256(
+            receipt_authority_registry_path.read_bytes()
+        ).hexdigest(),
+        "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
+        "artifact_admission_receipt_authority_registry_generation": 0,
+        "artifact_admission_active_receipt_key_count": 0,
+        "artifact_admission_library": "sigstore",
+        "artifact_admission_library_version": "4.4.0",
+        "artifact_admission_trusted_root_mode": "CALLER_SUPPLIED_SHA256_PINNED",
+        "artifact_admission_identity_policy": "EXACT_OIDC_ISSUER_AND_SUBJECT",
+        "artifact_admission_transparency_verification": (
+            "SIGSTORE_SCT_REKOR_V1_INCLUSION_SIGNED_RECEIPT_ATTESTS_CHECKPOINT_TIME"
+        ),
+        "artifact_admission_freshness_revocation_status": (
+            "LOCAL_FAIL_CLOSED_ED25519_SIGNED_RECEIPT_ENFORCED_SOURCE_NATIVE_PROOFS_NOT_VERIFIED"
+        ),
+        "artifact_admission_receipt_authenticity_status": (
+            "VERIFY_ONLY_ED25519_AUTHORITY_REGISTRY_EMPTY_NO_EXTERNAL_RECEIPT"
+        ),
+        "artifact_admission_decision_store_status": ("WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"),
+        "artifact_admission_decision_store_path": ("data/cache/artifact_admission.db"),
+        "artifact_admission_decision_store_provisioning_status": "NOT_PROVIDED",
+        "artifact_admission_decision_history_external_seal_status": ("NOT_PROVIDED"),
+        "artifact_admission_decision_store_worm_status": ("NOT_WORM_LOCAL_FILE_REPLACEABLE"),
+        "artifact_admission_registry_history_status": (
+            "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
+        ),
+        "artifact_admission_registry_mirror_mode": (
+            "REPOSITORY_JSON_EXPLICIT_PROVISIONING_MIRROR_NOT_RUNTIME_AUTHORITY"
+        ),
+        "artifact_admission_allow_cas_status": ("EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED"),
+        "artifact_admission_authority_clock_status": (
+            "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
+        ),
+        "artifact_admission_read_consistency_status": ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT"),
+        "artifact_admission_valid_bundle_fixture_status": "NOT_PROVIDED",
+        "artifact_admission_signing_capability_present": False,
+        "artifact_admission_external_bundle_status": "NOT_PROVIDED",
+        "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
+        "artifact_admission_implementation_sha256": {
+            relative: hashlib.sha256((tmp_path / relative).read_bytes()).hexdigest()
+            for relative in (
+                "services/governance/artifact_admission.py",
+                "services/governance/artifact_admission_store.py",
+                "services/governance/artifact_receipt_auth.py",
+                "tools/verify_artifact_admission.py",
+            )
+        },
+        "artifact_admission_verification_paths": [
+            "tests/governance/test_artifact_admission.py",
+            "tests/governance/test_artifact_admission_cli.py",
+            "tests/governance/test_artifact_admission_store.py",
+            "tests/governance/test_artifact_receipt_auth.py",
+        ],
+        "m4_blockers": [
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
+            "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
+            "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+            "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
+            "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
+            "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
+            "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
+        ],
+    }
+    path = tmp_path / "supply-chain.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    return path
+
+
+def test_supply_chain_checker_verifies_baseline_but_keeps_m4_red_line_open(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+
+    (tmp_path / "requirements.txt").write_text("tampered\n", encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "manifest_digest" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_tampered_npm_audit_evidence(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    audit = tmp_path / "npm-audit.json"
+    audit.write_text(audit.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "npm_vulnerability_evidence" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_tampered_python_audit_evidence(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    audit = tmp_path / "python-audit.json"
+    audit.write_text(audit.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "python_vulnerability_evidence" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_tampered_actions_audit_evidence(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    audit = tmp_path / "actions-audit.json"
+    audit.write_text(audit.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "actions_vulnerability_evidence" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_tampered_container_audit_evidence(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    audit = tmp_path / "container-audit.json"
+    audit.write_text(audit.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "container_vulnerability_evidence" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_tampered_reproducibility_evidence(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    retained = tmp_path / "reproducibility.json"
+    retained.write_text(retained.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "container_reproducibility_evidence" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_admission_verifier_tamper(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    (tmp_path / "tools/verify_artifact_admission.py").write_text("tampered\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "artifact_admission_implementation_digest" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_policy_registry_tamper(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    policy_registry = tmp_path / "config/artifact_admission_policy_registry.json"
+    policy_registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "readiness": "L2_DRY_RUN_ONLY",
+                "generation": 0,
+                "policies": {"unreviewed": {"status": "ACTIVE"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "artifact_admission_policy_registry" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_receipt_authority_registry_tamper(
+    tmp_path,
+):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    authority_registry = tmp_path / "config/artifact_receipt_authority_registry.json"
+    authority_registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "readiness": "L2_DRY_RUN_ONLY",
+                "generation": 0,
+                "keys": {"unreviewed": {"status": "ACTIVE"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "artifact_admission_receipt_authority_registry" in result["detail"]
+
+
+def test_supply_chain_checker_rejects_missing_store_verification(tmp_path):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    (tmp_path / "tests/governance/test_artifact_admission_store.py").unlink()
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "artifact_admission_verification_missing" in result["detail"]
+
+
+@pytest.mark.parametrize(
+    ("field", "overclaim"),
+    [
+        (
+            "artifact_admission_receipt_authenticity_status",
+            "EXTERNALLY_AUTHENTICATED",
+        ),
+        ("artifact_admission_decision_store_worm_status", "EXTERNAL_WORM"),
+    ],
+)
+def test_supply_chain_checker_rejects_external_assurance_overclaims(
+    tmp_path,
+    field,
+    overclaim,
+):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document[field] = overclaim
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+
+
+def _write_valid_model_risk_evidence(
+    tmp_path: Path,
+    *,
+    with_bundle: bool = False,
+    longitudinal_v2: bool = False,
+) -> Path:
+    for relative, content in {
+        "services/intelligence/agent_loop.py": b"agent-loop-fixture\n",
+        "services/intelligence/guardrails.py": b"guardrails-fixture\n",
+        "services/intelligence/runtime.py": (
+            f"RESEARCH_EVALUATION_TEMPLATE = {RESEARCH_EVALUATION_TEMPLATE!r}\n"
+        ).encode("utf-8"),
+        "services/research/ml/stacker.py": b"stacker-fixture\n",
+        "tools/ml_stack_research.py": b"driver-fixture\n",
+        "quantos/contracts/model_risk.py": b"contracts-fixture\n",
+        "services/governance/model_risk.py": b"decisions-fixture\n",
+        "services/governance/model_risk_dataset.py": b"dataset-fixture\n",
+        "services/governance/model_risk_history.py": b"history-fixture\n",
+        "services/governance/model_risk_registry.py": b"registry-fixture\n",
+        "scripts/generate_model_risk_dataset.py": b"dataset-generator-fixture\n",
+        "scripts/generate_model_risk_evidence.py": b"generator-fixture\n",
+        "scripts/update_model_risk_history.py": b"history-generator-fixture\n",
+    }.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    snapshot = {
+        "asset": "fx",
+        "cost_bps": 5.0,
+        "factors": ["momentum_120"],
+        "feature_rows": 123882,
+        "fwd_horizon": 5,
+        "single_best_name": "momentum_120",
+        "single_best_oos_sharpe": -2.0389,
+        "stack_gbm_folds": 24,
+        "stack_gbm_oos_sharpe": -1.1173,
+        "stack_ridge_folds": 24,
+        "stack_ridge_oos_sharpe": -0.4035,
+        "trials": 8,
+        "universe_size": 18,
+        "verdict": "REFUTED_NO_EDGE",
+    }
+    snapshot_path = tmp_path / "data/cache/ml_stack_snapshot.json"
+    snapshot_path.parent.mkdir(parents=True)
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    dataset_path = tmp_path / "data/cache/fx.db"
+    connection = sqlite3.connect(dataset_path)
+    connection.execute(
+        "CREATE TABLE bars (key TEXT NOT NULL, event_time INTEGER NOT NULL, "
+        "knowledge_time INTEGER NOT NULL, payload_json TEXT NOT NULL, "
+        "PRIMARY KEY (key, event_time, knowledge_time))"
+    )
+    connection.executemany(
+        "INSERT INTO bars VALUES (?, ?, ?, ?)",
+        [
+            ("AUD", 1, 1, '{"close":1}'),
+            ("AUD", 2, 2, '{"close":2}'),
+            ("EUR", 1, 1, '{"close":3}'),
+        ],
+    )
+    connection.commit()
+    connection.close()
+    verification = tmp_path / "tests/governance/test_model_risk_registry.py"
+    verification.parent.mkdir(parents=True, exist_ok=True)
+    verification.write_text("def test_model_risk(): pass\n", encoding="utf-8")
+    bundle_path = tmp_path / "evidence/datasets/fx.jsonl.gz"
+    manifest_path = tmp_path / "evidence/datasets/fx.manifest.json"
+    if with_bundle:
+        generate_bundle(
+            dataset_path,
+            bundle_path,
+            manifest_path,
+            keys=("AUD", "EUR"),
+            repo_root=tmp_path,
+        )
+    evidence = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        dataset_bundle_path=bundle_path,
+        dataset_manifest_path=manifest_path,
+        baseline_recorded_at=1,
+        recorded_at=2,
+        include_longitudinal_v2=longitudinal_v2,
+    )
+    path = tmp_path / "model-risk.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    return path
+
+
+def _model_risk_history_for_current(tmp_path: Path, current: dict[str, object]) -> dict[str, object]:
+    baseline = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=tmp_path / "data/cache/ml_stack_snapshot.json",
+        dataset_path=tmp_path / "data/cache/fx.db",
+        dataset_bundle_path=tmp_path / "evidence/datasets/fx.jsonl.gz",
+        dataset_manifest_path=tmp_path / "evidence/datasets/fx.manifest.json",
+        baseline_recorded_at=1,
+        recorded_at=2,
+        include_longitudinal_v2=False,
+    )
+    history, _ = append_model_risk_revision(None, baseline)
+    history, _ = append_model_risk_revision(history, current)
+    return history
+
+
+def test_model_risk_checker_verifies_baseline_but_keeps_m3_open(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "pass_maturity": "M2",
+                    "verification_paths": ["tests/governance/test_model_risk_registry.py"],
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M2"
+    assert "negative OOS" in result["detail"]
+
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["artifacts"][0]["payload"]["reviewer_group"] = "tampered"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "artifact_hash" in result["detail"]
+
+
+def test_model_risk_checker_recomputes_implementation_hashes(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    (tmp_path / "services/research/ml/stacker.py").write_text("tampered\n", encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "implementation_digest" in result["detail"]
+
+
+def test_model_risk_checker_rejects_runtime_history_tamper(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["runtime_events"][0]["event_hash"] = "0" * 64
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "runtime_event_hash" in result["detail"]
+
+
+def test_model_risk_checker_verifies_versioned_dataset_bundle(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "evidence/datasets/fx.jsonl.gz" in result["evidence"]
+    assert "versioned PIT evaluation subset" in result["detail"]
+    assert "raw-data retention" not in result["detail"]
+    bundle = tmp_path / "evidence/datasets/fx.jsonl.gz"
+    bundle.write_bytes(bundle.read_bytes() + b"tamper")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "dataset_bundle_verification" in result["detail"]
+
+
+def test_model_risk_checker_requires_current_revision_history_when_declared(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    history, _ = append_model_risk_revision(None, document)
+    history_path = tmp_path / "model-risk-history.json"
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "history_path": history_path.name,
+                    "pass_maturity": "M2",
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert history_path.name in result["evidence"]
+    assert "single-revision history" in result["detail"]
+
+    history["revisions"][0]["entry_hash"] = "0" * 64
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "revision_history" in result["detail"]
+
+
+def test_model_risk_checker_requires_real_multi_revision_history_for_v2(tmp_path):
+    evidence = _write_valid_model_risk_evidence(
+        tmp_path,
+        with_bundle=True,
+        longitudinal_v2=True,
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    history = _model_risk_history_for_current(tmp_path, document)
+    history_path = tmp_path / "model-risk-history.json"
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "history_path": history_path.name,
+                    "pass_maturity": "M2",
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M2"
+    assert "multi-revision history" in result["detail"]
+
+    single_revision, _ = append_model_risk_revision(None, document)
+    history_path.write_text(json.dumps(single_revision), encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "revision_history_longitudinal" in result["detail"]
+
+
+def test_model_risk_checker_requires_all_v2_runtime_red_team_cases(tmp_path):
+    evidence = _write_valid_model_risk_evidence(
+        tmp_path,
+        with_bundle=True,
+        longitudinal_v2=True,
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    active_report = next(
+        record
+        for record in document["artifacts"]
+        if record["artifact_id"] == "red-team-report:research-agent-runtime-boundary-v2"
+    )
+    payload = active_report["payload"]
+    payload["required_case_ids"] = [
+        case_id for case_id in payload["required_case_ids"] if case_id != "runtime-sensitive-output"
+    ]
+    payload["cases"] = [case for case in payload["cases"] if case["case_id"] != "runtime-sensitive-output"]
+    active_report["content_hash"] = stable_hash(payload)
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    history = _model_risk_history_for_current(tmp_path, document)
+    history_path = tmp_path / "model-risk-history.json"
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "history_path": history_path.name,
+                    "pass_maturity": "M2",
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "red_team_cases" in result["detail"]
+
+
+def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
+    sources = {
+        "quantos/contracts/identity.py": "identity contract\n",
+        "services/governance/strong_identity.py": (
+            "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values\n"
+        ),
+        "services/governance/identity_authorization.py": (
+            "evaluate_authorization tokens_valid_after_ms "
+            "access_review_expires_at_ms WORKLOAD_HUMAN_ACTION_FORBIDDEN "
+            "TOKEN_ROLE_REQUIRED\n"
+        ),
+        "services/governance/identity_authorization_store.py": (
+            "BEGIN IMMEDIATE append_registry_snapshot expected_registry_head identity_authorization_events\n"
+        ),
+        "config/identity_authorization_registry.json": (
+            '{"schema_version":1,"readiness":"L2_DRY_RUN_ONLY","generation":0,"principals":{}}\n'
+        ),
+        "services/promotion_api/main.py": (
+            "Authorization extract_verified_client_certificate PROMOTION_APPROVER "
+            "PROMOTION_EXECUTOR evaluate_authorization "
+            "IdentityAuthorizationStore\n"
+        ),
+        "apps/research-console/src/lib/api/promotion-api.ts": "Authorization Bearer\n",
+        "apps/research-console/src/lib/api/governance-pkce.ts": (
+            "code_challenge_method S256 getRandomValues subtle.digest response_type "
+            "state nonce PKCE_TRANSACTION_STORAGE_KEY MAX_TRANSACTION_AGE_MS "
+            "storage.removeItem response = await runtime.fetch access token memory only\n"
+        ),
+        "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
+        "scripts/generate_strong_identity_evidence.py": "generator\n",
+        "tests/governance/test_strong_identity.py": "tests\n",
+        "tests/governance/test_identity_authorization.py": "tests\n",
+        "tests/governance/test_identity_authorization_store.py": "tests\n",
+        "tests/governance/test_promotion_api_boundary.py": "tests\n",
+        "tests/governance/test_promotion_api_endpoints.py": "tests\n",
+        "apps/research-console/src/lib/api/governance-pkce.test.ts": "tests\n",
+    }
+    for relative, content in sources.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("PyJWT==2.13.0\ncryptography==49.0.0\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        'dependencies = ["PyJWT==2.13.0", "cryptography==49.0.0"]\n',
+        encoding="utf-8",
+    )
+    evidence = build_strong_identity_evidence(tmp_path, recorded_at=1)
+    path = tmp_path / "strong-identity.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    return path
+
+
+def test_strong_identity_checker_verifies_m3_but_keeps_m4_red_line_open(tmp_path):
+    evidence = _write_valid_strong_identity_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "GOV.IDENTITY.STRONG_AUTH",
+                domain="governance_security",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="strong_identity_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+
+    report = assess_repository(tmp_path, registry)
+    result = report["requirements"][0]
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+    assert report["summary"]["red_lines_failed"] == 1
+    assert "external OIDC" in result["detail"]
+    assert "PKCE S256" in result["detail"]
+
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["attack_cases"][0]["passed"] = False
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "attack_case" in result["detail"]
+
+
+def test_strong_identity_checker_recomputes_load_bearing_source_hashes(tmp_path):
+    evidence = _write_valid_strong_identity_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "GOV.IDENTITY.STRONG_AUTH",
+                domain="governance_security",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="strong_identity_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    (tmp_path / "services/governance/strong_identity.py").write_text("tampered\n", encoding="utf-8")
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "implementation_digest" in result["detail"]
+
+
+def test_strong_identity_checker_rejects_pkce_invariant_removal_with_updated_hash(tmp_path):
+    evidence = _write_valid_strong_identity_evidence(tmp_path)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "GOV.IDENTITY.STRONG_AUTH",
+                domain="governance_security",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="strong_identity_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+    pkce_path = tmp_path / "apps/research-console/src/lib/api/governance-pkce.ts"
+    pkce_path.write_text(
+        pkce_path.read_text(encoding="utf-8").replace("storage.removeItem", "storage.keepItem"),
+        encoding="utf-8",
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["implementation_sha256"]["apps/research-console/src/lib/api/governance-pkce.ts"] = hashlib.sha256(
+        pkce_path.read_bytes()
+    ).hexdigest()
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+    assert result["status"] == "FAILED"
+    assert "pkce_one_time_transaction" in result["detail"]
+
+
+def _write_alpha_trial_wiring(
+    tmp_path: Path,
+    *,
+    omit_session_save: bool = False,
+    omit_factory_recorder: bool = False,
+    omit_factory_tool_identity: bool = False,
+    factory_helper_create: bool = False,
+    omit_factory_helper_guard: bool = False,
+    legacy_evaluation_api: bool = False,
+    omit_exact_evaluation_binding: bool = False,
+) -> dict:
+    factory_tools = [
+        "tools/crypto_factory_intraday.py",
+        "tools/crypto_factory_loop.py",
+        "tools/crypto_factory_orthogonal.py",
+        "tools/crypto_factory_overfit_ab.py",
+        "tools/crypto_factory_run.py",
+    ]
+    load_evaluation = "load_into" if legacy_evaluation_api else "load_for_evaluation"
+    save_evaluation = "save" if legacy_evaluation_api else "save_evaluation_context"
+    session_save_call = (
+        ""
+        if omit_session_save
+        else f"registry.{save_evaluation}(catalog, now=timestamp)"
+    )
+    helper_guard = (
+        ""
+        if omit_factory_helper_guard
+        else "if not os.path.isfile(PRODUCTION_EXPERIMENT_DB):\n"
+        "        raise ExperimentStoreError('missing')"
+    )
+    registry_evaluation_methods = (
+        """
+    def save(self, catalog):
+        self._store.save_catalog_snapshot(config_hashes=())
+
+    def load_into(self, catalog):
+        self._store.all_trial_hashes()
+"""
+        if legacy_evaluation_api
+        else """
+    def save_evaluation_context(self, catalog):
+        self._store.save_evaluation_catalog_snapshot(config_hashes=())
+
+    def load_for_evaluation(self, catalog):
+        self._store.all_trial_hashes()
+        self._store.all_alphas()
+        catalog.restore_evaluation_context()
+"""
+    )
+    store_evaluation_method = (
+        ""
+        if legacy_evaluation_api
+        else """
+
+def save_evaluation_catalog_snapshot(self):
+    pass
+"""
+    )
+    port_evaluation_method = (
+        ""
+        if legacy_evaluation_api
+        else """
+    def save_evaluation_catalog_snapshot(self): ...
+"""
+    )
+    exact_search_argument = (
+        ""
+        if omit_exact_evaluation_binding
+        else ", search_id='search-1', config_hash='1111111111111111111111111111111111111111111111111111111111111111'"
+    )
+    sources = {
+        "services/intelligence/research_session.py": """
+def run_research_session(*args, **kwargs):
+    return _run_research_session_core(*args, **kwargs)
+""",
+        "services/research/session.py": f"""
+def run_research_session(registry=None):
+    registry.{load_evaluation}(catalog)
+    registry.record_evaluation(evaluation, dataset_version=dataset_version, recorded_ts=timestamp)
+    {session_save_call}
+
+def _record_report(registry):
+    registry.record_evaluation(evaluation, dataset_version=dataset_version, recorded_ts=timestamp)
+
+def _run_evolutionary(registry):
+    registry.{save_evaluation}(catalog, now=timestamp)
+
+def _run_mcts(registry):
+    registry.{save_evaluation}(catalog, now=timestamp)
+""",
+        "services/research/experiment_registry/registry.py": f"""
+class ExperimentRegistry:
+    def begin_search_attempt(self):
+        return self._store.begin_search_attempt()
+
+    def register_search_candidates(self):
+        return self._store.register_search_candidates()
+
+    def finish_search_attempt(self):
+        return self._store.finish_search_attempt()
+
+    def search_evaluations(self):
+        return self._store.search_evaluations()
+
+    def search_history_valid(self):
+        return self._store.search_history_valid()
+
+    {registry_evaluation_methods}
+
+    def record_evaluation(self, evaluation):
+        self._store.insert_evaluation(run_id='run'{exact_search_argument})
+
+    def verify_evaluation(self, run_id):
+        return stable_hash(self._store.get_evaluation(run_id))
+""",
+        "services/research/experiment_registry/store.py": f"""
+TRIAL_INSERT = "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)"
+IMMUTABLE_COLLISION = "ImmutableArtifactError"
+EVALUATION_DIGEST = "content_hash"
+SEARCH_EVALUATION_SCHEMA = "CREATE TABLE IF NOT EXISTS search_evaluations UNIQUE(search_id, run_id)"
+
+def _search_evaluation_hash(*, config_hash):
+    return {{"config_hash": config_hash}}
+
+def register_search_candidates(self):
+    self._conn.execute("BEGIN IMMEDIATE")
+    self._conn.execute("INSERT INTO search_candidates")
+    self._conn.execute("INSERT OR IGNORE INTO trials")
+    self._conn.commit()
+
+def insert_evaluation(self):
+    self._conn.execute("BEGIN IMMEDIATE")
+    self._conn.execute("SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?")
+    self._conn.execute("INSERT INTO evaluations")
+    self._conn.execute("INSERT INTO search_evaluations")
+    self._conn.commit()
+{store_evaluation_method}
+""",
+        "services/research/ports/persistence.py": f"""
+class ExperimentStorePort(Protocol):
+    def save_catalog_snapshot(self): ...
+{port_evaluation_method}
+""",
+        "services/research/alpha_factory.py": f"""
+def run_alpha_factory(search_registry):
+    search_registry.{load_evaluation}(catalog)
+    search_registry.begin_search_attempt()
+    result = _run_alpha_factory_impl(candidate_recorder=persist_candidates)
+    search_registry.{save_evaluation}(catalog)
+    search_registry.finish_search_attempt()
+    return result
+
+def _run_alpha_factory_impl(candidate_recorder=None):
+    {'candidate_recorder(config_hashes)' if not omit_factory_recorder else ''}
+    direct = _score_expr(candidate)
+    parallel = executor.map(_score_expr_in_worker, candidates)
+    return direct, parallel
+""",
+        "tools/search_trial_registry.py": f"""
+PRODUCTION_EXPERIMENT_DB = 'data/cache/experiment_registry.db'
+
+def make_search_id():
+    return 'search-1'
+
+@contextmanager
+def production_experiment_registry():
+    {helper_guard}
+    store = SqliteExperimentStore(PRODUCTION_EXPERIMENT_DB, create={factory_helper_create})
+    try:
+        store.trial_count()
+        yield ExperimentRegistry(store)
+    finally:
+        store.close()
+""",
+        "tests/research/test_session.py": "session persistence coverage\n",
+        "tests/research/test_experiment_registry.py": "ledger integrity coverage\n",
+        "tests/research/test_experiment_store.py": "evaluation definition conflict coverage\n",
+        "tests/research/test_search_trial_provenance.py": "factory provenance coverage\n",
+        "tests/intelligence/test_registered_candidate_batch.py": "lifecycle preservation coverage\n",
+    }
+    for index, relative in enumerate(factory_tools):
+        search_id_keyword = (
+            "" if omit_factory_tool_identity and index == 0
+            else "search_id=make_search_id(),"
+        )
+        sources[relative] = f"""
+from tools.search_trial_registry import make_search_id, production_experiment_registry
+
+def main():
+    with production_experiment_registry() as registry:
+        return run_alpha_factory(
+            panel,
+            search_registry=registry,
+            {search_id_keyword}
+            search_kind='ALPHA_FACTORY',
+            search_source='{relative}',
+            dataset_version='dataset-v1',
+            timestamp=1,
+        )
+"""
+    for relative, content in sources.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return {
+        "evidence_path": "evidence/alpha_trial_ledger_history.json",
+        "ledger_path": "data/cache/experiment_registry.db",
+        "entrypoint_path": "services/intelligence/research_session.py",
+        "session_path": "services/research/session.py",
+        "factory_path": "services/research/alpha_factory.py",
+        "factory_registry_helper_path": "tools/search_trial_registry.py",
+        "registry_path": "services/research/experiment_registry/registry.py",
+        "persistence_port_path": "services/research/ports/persistence.py",
+        "store_path": "services/research/experiment_registry/store.py",
+        "official_factory_paths": factory_tools,
+        "verification_paths": [
+            "tests/research/test_session.py",
+            "tests/research/test_experiment_registry.py",
+            "tests/research/test_experiment_store.py",
+            "tests/research/test_search_trial_provenance.py",
+            "tests/intelligence/test_registered_candidate_batch.py",
+        ],
+        "pass_maturity": "M4",
+    }
+
+
+def _alpha_trial_requirement(checker_args: dict) -> dict:
+    return _requirement(
+        "ALPHA.TRIAL.GLOBAL_LEDGER",
+        domain="alpha_research",
+        target_maturity="M4",
+        red_line=True,
+        checker="alpha_trial_ledger_evidence",
+        checker_args=checker_args,
+    )
+
+
+def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path:
+    ledger_path = tmp_path / checker_args["ledger_path"]
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    SqliteExperimentStore(str(ledger_path), create=True).close()
+    evidence_path = tmp_path / checker_args["evidence_path"]
+    for index, timestamp in ((1, 10), (2, 200)):
+        dataset_version = f"dataset-v{index}"
+        evaluation = {"alpha_id": f"alpha-{index}", "catalog_trial_count": index}
+        content_hash = stable_hash(
+            {"evaluation": evaluation, "dataset_version": dataset_version}
+        )
+        search_id = f"session-{index}"
+        store = SqliteExperimentStore(str(ledger_path), create=False)
+        try:
+            store.begin_search_attempt(
+                search_id=search_id,
+                search_kind="TEST_SELECTION_SEARCH",
+                source="tests.governance.test_top_tier_assessment",
+                dataset_version=dataset_version,
+                recorded_at=timestamp,
+            )
+            store.register_search_candidates(
+                search_id,
+                [str(index) * 64],
+                registered_at=timestamp,
+            )
+            store.insert_evaluation(
+                run_id=f"run-{index}",
+                alpha_id=f"alpha-{index}",
+                dataset_version=dataset_version,
+                recorded_ts=timestamp,
+                verdict="REQUIRES_HUMAN_REVIEW",
+                content_hash=content_hash,
+                evaluation_json=json.dumps(evaluation, sort_keys=True),
+                search_id=search_id,
+                config_hash=str(index) * 64,
+            )
+            store.finish_search_attempt(
+                search_id,
+                status="COMPLETED",
+                recorded_at=timestamp,
+            )
+        finally:
+            store.close()
+        search_trial_ledger_history.capture_history(
+            session_id=search_id,
+            ledger_path=ledger_path,
+            history_path=evidence_path,
+            ledger_path_label=checker_args["ledger_path"],
+            recorded_at_ms=100 if index == 1 else 300,
+        )
+    return evidence_path
+
+
+def test_alpha_trial_ledger_checker_missing_history_is_m3_partial(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL"
+    assert result["current_maturity"] == "M3"
+    assert "history" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_present_invalid_history_without_ledger(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    evidence_path = tmp_path / checker_args["evidence_path"]
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text("{}", encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "history contract" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_persistent_session_save(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path, omit_session_save=True)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "run_research_session" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_legacy_only_evaluation_persistence_api(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        legacy_evaluation_api=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert "load_for_evaluation" in result["detail"]
+    assert "save_evaluation_context" in result["detail"]
+    assert "save_evaluation_catalog_snapshot" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_exact_search_evaluation_binding(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        omit_exact_evaluation_binding=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "exact_search_candidate_binding" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_candidate_recorder_before_score(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path, omit_factory_recorder=True)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "candidate_recorder" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_factory_tool_search_identity(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path, omit_factory_tool_identity=True
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "factory tool coverage incomplete" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_fail_closed_factory_registry_helper(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path, factory_helper_create=True)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "factory registry helper" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_missing_file_guard_before_sqlite(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path, omit_factory_helper_guard=True
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "missing_file_guard_before_connect" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_verifies_append_only_history_and_live_store(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PASS", result["detail"]
+    assert result["current_maturity"] == "M4"
+    assert "two-session" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_store(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    evidence_path = _write_valid_alpha_trial_history(tmp_path, checker_args)
+    document = json.loads(evidence_path.read_text(encoding="utf-8"))
+    final = document["records"][-1]
+    final["evaluations"][-1]["content_hash"] = "f" * 64
+    final_without_hash = {key: value for key, value in final.items() if key != "record_hash"}
+    final["record_hash"] = hashlib.sha256(
+        json.dumps(final_without_hash, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    evidence_path.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "session_evaluation_snapshot" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_self_reported_session_label(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    evidence_path = _write_valid_alpha_trial_history(tmp_path, checker_args)
+    document = json.loads(evidence_path.read_text(encoding="utf-8"))
+    final = document["records"][-1]
+    final["session_id"] = "operator-invented-session"
+    final["record_hash"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in final.items() if key != "record_hash"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    evidence_path.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "history_session:operator-invented-session" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_cross_session_candidate_link(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    evidence_path = _write_valid_alpha_trial_history(tmp_path, checker_args)
+    document = json.loads(evidence_path.read_text(encoding="utf-8"))
+    final = document["records"][-1]
+    final["session_provenance"]["evaluation_links"][0]["config_hash"] = "1" * 64
+    final["record_hash"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in final.items() if key != "record_hash"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    evidence_path.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "record_2_session_evaluation_link" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_database_append_only_guards(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    ledger_path = tmp_path / checker_args["ledger_path"]
+    connection = sqlite3.connect(ledger_path)
+    connection.execute("DROP TRIGGER evaluations_no_delete")
+    connection.commit()
+    connection.close()
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "evaluations_no_delete_trigger" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_requires_exact_link_append_only_guard(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    ledger_path = tmp_path / checker_args["ledger_path"]
+    connection = sqlite3.connect(ledger_path)
+    connection.execute("DROP TRIGGER search_evaluations_no_delete")
+    connection.commit()
+    connection.close()
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "search_evaluations_no_delete_trigger" in result["detail"]
+
+
+def test_committed_alpha_trial_requirement_uses_semantic_checker():
+    requirement = next(
+        item for item in load_requirements(REGISTRY)
+        if item["id"] == "ALPHA.TRIAL.GLOBAL_LEDGER"
+    )
+
+    assert requirement["checker"] == "alpha_trial_ledger_evidence"
+    assert requirement["checker_args"]["evidence_path"] == (
+        "evidence/alpha_trial_ledger_history.json"
+    )
+    assert requirement["checker_args"]["persistence_port_path"] == (
+        "services/research/ports/persistence.py"
+    )
+    assert {
+        "tests/research/test_experiment_store.py",
+        "tests/intelligence/test_registered_candidate_batch.py",
+    } <= set(requirement["checker_args"]["verification_paths"])
+
+
+def test_committed_alpha_trial_requirement_is_partial_without_history(tmp_path):
+    requirement = next(
+        item for item in load_requirements(REGISTRY)
+        if item["id"] == "ALPHA.TRIAL.GLOBAL_LEDGER"
+    )
+    registry = _write_registry(tmp_path, [requirement])
+
+    result = assess_repository(ROOT, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL"
+    assert result["current_maturity"] == "M3"
+    assert "factory persistence wiring is verified" in result["detail"]

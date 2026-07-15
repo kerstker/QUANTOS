@@ -19,12 +19,12 @@ import statistics
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import ValidationVerdict
-from services.research.backtest_engine.costs import CostModel
-from services.research.backtest_engine.metrics import sharpe
-from services.research.factor_engine.domain.model import compute_ic
-from services.research.validation.gate import ValidationGate
+from services.validation.factor_statistics import compute_ic
+from services.validation.gate import ValidationGate
+from services.validation.performance import sharpe
 
 from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
@@ -60,7 +60,7 @@ class AlphaEvaluator:
         self.config = config or AlphaFactoryConfig()
         self.gate = gate or ValidationGate()
         # 2026-07-10 (gap audit rank #5): default impact_coef=10.0 (the UNCALIBRATED_PRINCIPLED
-        # band's own class default, services/research/realism/impact.py::AlmgrenChrissImpact,
+        # band's own class default, services/execution/impact.py::AlmgrenChrissImpact,
         # also the midpoint of tools/capacity_research.py's swept (5.0, 20.0) coefficient band) —
         # was 0.0 (impact disabled), which made services/alpha/capacity.py's impact-budget branch
         # dead code for every real caller (capacity.py's own docstring promises consistency with
@@ -87,7 +87,7 @@ class AlphaEvaluator:
         """Fraction of volatility regimes in which the factor's net returns are profitable,
         using a market proxy built from the panel itself. None (fail-closed) if it cannot be
         honestly labelled/assessed."""
-        from services.research.regime import label_regimes_by_vol, regime_profitable_frac
+        from services.validation.regime import label_regimes_by_vol, regime_profitable_frac
         prices = _panel_market_prices(periods)
         if len(prices) != len(net):
             return None

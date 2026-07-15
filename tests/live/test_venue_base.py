@@ -1,5 +1,5 @@
 """VenueAdapter Protocol(live/exchange/base.py):runtime_checkable 结构鸭子类型验证。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.2。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.2。"""
 from live.contracts import VenueOrderResult
 from live.exchange.base import VenueAdapter
 

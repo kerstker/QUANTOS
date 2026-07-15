@@ -15,6 +15,7 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_1h_fetch.py"),   # 1H 小时线抓取器(2026-07-07)
              os.path.join(_ROOT, "tools", "binance_klines_1m_fetch.py"),   # 1m 分钟线抓取器(2026-07-09)
+             os.path.join(_ROOT, "tools", "binance_perp_mark_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
@@ -61,6 +62,13 @@ _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "con
 # 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
 # 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
 _EXTRA_ALLOWED_BY_FILE = {
+    # 纯 stdlib 有限数校验；只用于拒绝 NaN/Inf 源观测，不增加网络/交易/凭证能力。
+    "coingecko_fetch.py": {"math"},
+    "binance_funding_fetch.py": {"math"},
+    "binance_perp_mark_fetch.py": {"math"},
+    # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
+    # terminates it on deadline. Both imports are stdlib and add no network/trade capability.
+    "live_data_refresh.py": {"math", "multiprocessing", "queue"},
     # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
     "fred_fetch.py": {"csv", "quantos"},
     "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要

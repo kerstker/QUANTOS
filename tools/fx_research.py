@@ -2,7 +2,8 @@
 genuinely DIFFERENT asset class + regime from crypto, ~30 currencies back to 1999 (GFC / 2015 CHF / COVID /
 2022 hikes). Reuses the SAME offline engines as crypto: PIT panel builder (+ wired leakage_ok), the contained
 ResearchAgentLoop gate (regime self-computed, PBO self-computed, leakage evidence supplied), and the no-peek
-walk-forward selection OOS. Deterministic; reads the local store only (no network). Writes a snapshot.
+walk-forward selection OOS. Deterministic; reads the local store only (no network). Writes a snapshot
+and durable trial/evaluation provenance, but performs no promotion.
 
 HONESTY: this REPORTS what the gate finds; it does not assume an edge. Cross-sectional FX momentum/reversal is
 a studied space — the no-peek OOS is the arbiter, exactly as for crypto.
@@ -11,23 +12,28 @@ from __future__ import annotations
 
 import json
 import os
-import statistics
-import sys
 import time
 from collections import defaultdict
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
+from services.data.research_adapter import adapt_research_market_data
 from services.research.panel_builder import make_data_periods_provider
-from services.research.leakage_evidence import signal_leakage_ok
 from services.research.backtest_engine.metrics import sharpe
 from services.research.backtest_engine.costs import CostModel
 from services.alpha.panel_backtest import run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
+from services.research.experiment_registry.registry import ExperimentRegistry
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
+from tools.search_trial_registry import (
+    make_search_id,
+    production_experiment_registry,
+)
 
 _DB = os.path.join("data", "cache", "fx.db")
 _SNAP = os.path.join("data", "cache", "fx_research_snapshot.json")
@@ -51,23 +57,55 @@ def _net(periods, bps=2.0):
     return list(run_panel_backtest(periods, CostModel(fee_bps=0.0, slippage_bps=float(bps))).period_returns)
 
 
-def main() -> None:
-    if not os.path.exists(_DB):
-        print("no data/cache/fx.db — run tools.frankfurter_fetch first")
-        return
-    insts, ets = _instruments_and_times(_DB)
-    if len(insts) < 5 or len(ets) < 400:
-        print(f"too little FX data ({len(insts)} ccy x {len(ets)} days)")
-        return
+def _run_registered_pool(
+    candidates,
+    *,
+    registry: ExperimentRegistry,
+    search_id: str,
+    dataset_version: str,
+    recorded_at: int,
+    evidence=None,
+):
+    return run_registered_candidate_batch(
+        candidates,
+        registry=registry,
+        search_id=search_id,
+        search_kind="FX_CURATED_FACTOR_SEARCH",
+        search_source="tools.fx_research",
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+        evidence=evidence,
+    )
+
+
+def _fx_dataset_version(store, insts, ets) -> str:
+    versioned = (
+        store
+        if callable(getattr(store, "dataset_version", None))
+        else adapt_research_market_data(store)
+    )
+    return stable_hash(
+        {
+            "bar_content_version": versioned.dataset_version(insts, ets),
+            "event_times": tuple(ets),
+            "forward_horizon": FWD,
+            "instruments": tuple(insts),
+            "pool": tuple(POOL),
+            "source": "Frankfurter ECB daily reference rates",
+        }
+    )
+
+
+def _run_research(registry: ExperimentRegistry, insts, ets) -> None:
+    recorded_at = int(time.time() * 1000)
     print(f"FX: {len(insts)} currencies x {len(ets)} daily periods "
           f"{time.strftime('%Y-%m', time.gmtime(ets[0] / 1000))}..{time.strftime('%Y-%m', time.gmtime(ets[-1] / 1000))}",
           flush=True)
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     provider = make_data_periods_provider(store, insts, event_times=ets, fwd_horizon=FWD)
 
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
-    candidates, factor_ret, evidence = [], {}, {}
+    candidates, evidence = [], {}
     for op, w in POOL:
         aid = f"fx_{op}_{w}"
         defn = AlphaDefinition(alpha_id=aid, name=f"{op}({w})", factor_ids=("close",),
@@ -77,15 +115,37 @@ def main() -> None:
             print(f"  skip {aid}: only {len(periods)} periods", flush=True)
             continue
         candidates.append((defn, periods))
-        factor_ret[aid] = _net(periods)
         evidence[aid] = {"leakage_ok": provider.leakage_ok(defn)}
         print(f"  built {aid}: {len(periods)} periods | leakage_ok={evidence[aid]['leakage_ok']}", flush=True)
 
-    report = loop.run(candidates, timestamp=int(ets[-1]), evidence=evidence)["report"]
+    dataset_version = _fx_dataset_version(store, insts, ets)
+    batch_result = _run_registered_pool(
+        tuple((definition, tuple(periods)) for definition, periods in candidates),
+        registry=registry,
+        search_id=make_search_id(
+            source="tools.fx_research",
+            search_kind="FX_CURATED_FACTOR_SEARCH",
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            params={
+                "candidate_count": len(candidates),
+                "forward_horizon": FWD,
+            },
+        ),
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        evidence=evidence,
+    )
+    report = batch_result["report"]
     verdicts = {aid: r.get("verdict") for aid, r in report.items()}
     leak_true = sum(1 for e in evidence.values() if e["leakage_ok"] is True)
     print(f"\nleakage: {leak_true}/{len(evidence)} factors PIT-verified leak-free", flush=True)
     print("verdicts:", verdicts, flush=True)
+
+    factor_ret = {
+        definition.alpha_id: _net(periods)
+        for definition, periods in candidates
+    }
 
     # no-peek walk-forward selection OOS over the pool (the arbiter). Longer windows drop more LEADING
     # periods, so series differ in length but all END on the same date -> align on the common recent tail.
@@ -126,6 +186,18 @@ def main() -> None:
     os.makedirs(os.path.dirname(_SNAP), exist_ok=True)
     json.dump(snap, open(_SNAP, "w", encoding="utf-8"), indent=2, sort_keys=True)
     print(f"\nsnapshot -> {_SNAP}", flush=True)
+
+
+def main() -> None:
+    if not os.path.exists(_DB):
+        print("no data/cache/fx.db — run tools.frankfurter_fetch first")
+        return
+    insts, ets = _instruments_and_times(_DB)
+    if len(insts) < 5 or len(ets) < 400:
+        print(f"too little FX data ({len(insts)} ccy x {len(ets)} days)")
+        return
+    with production_experiment_registry() as registry:
+        _run_research(registry, insts, ets)
 
 
 if __name__ == "__main__":

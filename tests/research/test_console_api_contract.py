@@ -17,7 +17,7 @@ type in the same commit — that is the point.
 """
 from fastapi.testclient import TestClient
 
-from services.research.console_api.main import app
+from services.console.main import app
 
 client = TestClient(app)
 
@@ -29,7 +29,7 @@ BASE_MARKERS = ("source", "read_only", "api_version")
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/overview": ("", ("stats", "funnel", "agents")),
     "/api/v1/console/agents": ("", ("summary", "agents")),
-    "/api/v1/console/events": ("", ("events",)),
+    "/api/v1/console/events": ("", ("events", "event_bus_health")),
     "/api/v1/console/phase-3a-readiness": ("", ("readiness",)),
     "/api/v1/console/architecture": ("", (
         "current_level", "target_level", "phase3a_decision", "implementation_authorized",
@@ -176,7 +176,11 @@ REAL_DATA_PROVENANCE = {
     # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
-    "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
+    "/api/v1/console/events": {
+        "SYNTHETIC_DETERMINISTIC",
+        "RESEARCH_RUN_REGISTRY",
+        "DOMAIN_EVENT_PROJECTION",
+    },
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
     "/api/v1/console/experiments": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     "/api/v1/console/evidence-ledger": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
@@ -192,9 +196,14 @@ REAL_DATA_PROVENANCE = {
 
 def test_every_frontend_payload_type_has_an_endpoint():
     # if a *Payload type ever maps to a route not under contract, this fails loudly
-    routed = {r.path for r in app.routes if getattr(r, "methods", None) and "GET" in r.methods}
+    routed = {path for path, operations in app.openapi()["paths"].items() if "get" in operations}
     routed = {p for p in routed if p.startswith("/api/v1/console/")}
     assert routed == set(CONTRACT), f"contract/route mismatch: {routed ^ set(CONTRACT)}"
+
+
+def test_architecture_inventory_counts_included_router_endpoints():
+    body = client.get("/api/v1/console/architecture").json()
+    assert body["inventory"]["n_console_endpoints"] == len(CONTRACT)
 
 
 def test_health_endpoint_is_read_only():
@@ -258,7 +267,7 @@ def test_ic_panel_by_period_schema_v2_consistency():
 
     import pytest as _pytest
 
-    from services.research.console_api.main import _IC_PANEL_SNAPSHOT
+    from services.console.api.main import _IC_PANEL_SNAPSHOT
     if not _os.path.exists(_IC_PANEL_SNAPSHOT):
         _pytest.skip("no ic_panel snapshot (CI/fresh checkout)")
     snap = _json.load(open(_IC_PANEL_SNAPSHOT, encoding="utf-8"))

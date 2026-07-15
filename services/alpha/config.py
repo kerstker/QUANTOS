@@ -8,7 +8,7 @@ PRE-FILTER ahead of MANDATORY human review, not a standalone significance claim.
 backstops that make 0.60 safe: (a) a non-human actor's ceiling is PAPER_TRADING, never APPROVED,
 regardless of how confidently it passes this gate (quantos/contracts/alpha.py::AGENT_REACHABLE
 structurally excludes APPROVED); (b) the catalog-wide trial-count/human-review-trials mechanism
-(services/research/validation/gate.py::ValidationConfig.human_review_trials/marginal_review_trials)
+(services/validation/gate.py::ValidationConfig.human_review_trials/marginal_review_trials)
 independently forces human review as the catalog grows, regardless of how high DSR reads; (c) a
 human reviewing "DSR PASS" at 0.60 is a WEAKER signal than the literature's own 0.95 convention would
 suggest, and should read it that way — 0.60 filters out the OBVIOUSLY-noise candidates before they

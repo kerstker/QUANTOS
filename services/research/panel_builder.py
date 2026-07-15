@@ -9,10 +9,11 @@ GuidedSearchLoop / AlphaFactory run on the real persisted data substrate."""
 from __future__ import annotations
 
 from datetime import date as _date
-from typing import Callable, Optional, Sequence
+from typing import Callable, Sequence
 
 from services.alpha.panel_backtest import PanelPeriod
 from .leakage_evidence import signal_leakage_ok, volume_leakage_ok
+from .ports.market_data import PointInTimeMarketDataPort
 from .signals import SIGNAL_OPS
 
 
@@ -28,7 +29,7 @@ def _iso(event_time: int) -> str:
     return f"{y:04d}-{m:02d}-{d:02d}"
 
 
-def build_panel_periods(store, instruments: Sequence[str], *, event_times: Sequence[int],
+def build_panel_periods(store: PointInTimeMarketDataPort, instruments: Sequence[str], *, event_times: Sequence[int],
                         fwd_horizon: int, signal_fn: Callable = None, universe=None,
                         volume_signal_fn: Callable = None) -> list:
     if fwd_horizon < 1:
@@ -83,7 +84,7 @@ def build_panel_periods(store, instruments: Sequence[str], *, event_times: Seque
     return periods
 
 
-def make_data_periods_provider(store, instruments: Sequence[str], *,
+def make_data_periods_provider(store: PointInTimeMarketDataPort, instruments: Sequence[str], *,
                                event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
     """Adapt an AlphaDefinition (params operator/window) to a periods provider that
     builds PanelPeriods from the persisted store — pass to GuidedSearchLoop.search.
@@ -113,7 +114,7 @@ def make_data_periods_provider(store, instruments: Sequence[str], *,
     return provider
 
 
-def make_volume_periods_provider(store, instruments: Sequence[str], *,
+def make_volume_periods_provider(store: PointInTimeMarketDataPort, instruments: Sequence[str], *,
                                  event_times: Sequence[int], fwd_horizon: int, universe=None) -> Callable:
     """Volume/liquidity factor provider: an AlphaDefinition (params operator/window, family
     'volume') -> PanelPeriods whose signal is a VOLUME_OPS operator over the per-instrument
@@ -142,7 +143,11 @@ def make_volume_periods_provider(store, instruments: Sequence[str], *,
     return provider
 
 
-def universe_data_gaps(store, universe, event_times: Sequence[int]) -> dict:
+def universe_data_gaps(
+    store: PointInTimeMarketDataPort,
+    universe,
+    event_times: Sequence[int],
+) -> dict:
     """诚实度信号:对每个交易日,统计"当日属 universe 成员但无 bar"的标的数。
     返回 {"total_gaps": int, "by_date": {iso: count}}。成员当日缺数据 = 数据缺口。"""
     by_date: dict = {}

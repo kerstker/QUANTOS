@@ -22,6 +22,7 @@ from services.execution.dry_run_store import DryRunStore
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
 from tools.crypto_oi_research import build_panel, _legs, QUANTILE
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
@@ -29,7 +30,7 @@ _COST_BPS = 10.0            # 平 10bps:大币偏保守,对上证伪里 net@10bp
 _WEEK_MS = 7 * 24 * 3600 * 1000
 
 
-# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准见 docs/superpowers/specs/
+# 绝对拥挤 z-score BLOCK 阈值(**用户 2026-07-07 签署**,校准见 docs/engineering/specs/
 # 2026-07-07-crowding-gate-calibration.md):被 short 名字的 global_ls 时序 z > 3.0 -> BLOCK(挤压风险)。
 # 实证:short-leg MAX z 在 -0.5..5.87 变化,p90≈2.9,z*=3.0 flag 最拥挤的 ~10% 周。
 _MAX_CROWDING_Z = 3.0
@@ -131,11 +132,13 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id="crowd_contra", approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="crowd_contra", aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
     # Rank #10a: surface the crowding-gate profile read-only in the run detail (-> console dry-run page)
     crowding = summarize_gate_decisions(gate_decisions)
@@ -153,7 +156,9 @@ def main() -> None:
     # honestly, 5 engines SKIPPED not faked); promotion enforcement (guard_to_paper) is a follow-up.
     risk["config_provenance"] = "RISK_CONFIG_DEFAULTS_UNCALIBRATED_FOR_WEEKLY"
     run.detail["research_risk"] = risk
-    DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # append alongside carry + trend
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"
           f"/BLOCK {crowding['n_block']} · 最差分 {crowding['worst_score']}", flush=True)

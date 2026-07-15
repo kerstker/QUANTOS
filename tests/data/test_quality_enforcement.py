@@ -1,58 +1,58 @@
-"""Rank #22 — data quality is now machine-ENFORCED (was computed-but-never-checked).
+"""Data quality enforcement, including conservative cross-instrument volume dispersion.
 
 Two mechanisms: (1) an opt-in `strict=` ingestion gate that fail-closed raises when a
-single-instrument dataset's quality report does not pass; (2) a cross-instrument volume-unit
-consistency check that formalizes the scenario-research heuristic (the crypto_daily.db bug:
-EOS ~$20k vs BTC ~$3.7Q, ~17 orders of magnitude) into a reusable, tested guard."""
+single-instrument dataset's quality report does not pass; (2) a dispersion guard that withholds
+capacity estimates when liquidity inputs span an implausibly broad range. Dispersion alone does
+not prove mixed units; explicit SourceSpec volume semantics own that contract."""
 import os
 
 import pytest
 
 from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
 from services.data.persistent_store import SqlitePITStore
-from services.data.quality import VolumeUnitsError, assert_volume_units, check_volume_units
+from services.data.quality import (VolumeDispersionError, assert_volume_dispersion,
+                                   check_volume_dispersion)
 
 
-# ---- (2) cross-instrument volume-unit consistency ----
+# ---- (2) cross-instrument volume dispersion ----
 
-def test_consistent_volume_units_pass():
-    check = check_volume_units({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
+def test_moderate_volume_dispersion_passes():
+    check = check_volume_dispersion({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
     assert check.passed is True
 
 
-def test_mixed_volume_units_fail():
-    # BTC $3.7Q vs EOS $20k -> ratio ~1.8e14 >> 1e6 -> UNRELIABLE (the crypto_daily.db bug)
-    check = check_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+def test_extreme_volume_dispersion_fails_without_claiming_unit_mismatch():
+    check = check_volume_dispersion({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
     assert check.passed is False
+    assert check.name == "volume_dispersion"
     assert "ratio" in check.detail
 
 
-def test_volume_units_ignore_nonpositive_and_thin_cross_section():
-    assert check_volume_units({"BTC": 3e9, "ZERO": 0.0}, max_ratio=1e6).passed is True   # 0 ignored
-    assert check_volume_units({"BTC": 3e9}, max_ratio=1e6).passed is True                # <2 -> trivially ok
+def test_volume_dispersion_ignores_nonpositive_and_thin_cross_section():
+    assert check_volume_dispersion({"BTC": 3e9, "ZERO": 0.0}, max_ratio=1e6).passed is True
+    assert check_volume_dispersion({"BTC": 3e9}, max_ratio=1e6).passed is True
 
 
-# ---- (2b) assert_volume_units: fail-closed 版(承重容量/ADV 消费点用,P2-2 接线) ----
+# ---- (2b) fail-closed dispersion assertion for capacity/ADV consumers ----
 
-def test_assert_volume_units_passes_consistent():
-    check = assert_volume_units({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
-    assert check.passed is True and check.name == "volume_units"
-
-
-def test_assert_volume_units_raises_on_mixed():
-    # 复刻 crypto_daily.db bug:BTC $3.7Q vs EOS $20k → ratio ~1.8e11 >> 1e6 → 硬拒
-    with pytest.raises(VolumeUnitsError):
-        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+def test_assert_volume_dispersion_passes_moderate_values():
+    check = assert_volume_dispersion({"BTC": 3.0e9, "ETH": 1.2e9, "SOL": 4.0e8}, max_ratio=1e6)
+    assert check.passed is True and check.name == "volume_dispersion"
 
 
-def test_assert_volume_units_thin_cross_section_and_zero_ok():
-    assert_volume_units({"BTC": 3e9}, max_ratio=1e6)               # <2 名 → 平凡通过(单标的零回归)
-    assert_volume_units({"BTC": 3e9, "Z": 0.0}, max_ratio=1e6)     # 0 被忽略
+def test_assert_volume_dispersion_raises_on_extreme_values():
+    with pytest.raises(VolumeDispersionError):
+        assert_volume_dispersion({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
 
 
-def test_assert_volume_units_error_carries_ratio():
-    with pytest.raises(VolumeUnitsError) as exc:
-        assert_volume_units({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
+def test_assert_volume_dispersion_thin_cross_section_and_zero_ok():
+    assert_volume_dispersion({"BTC": 3e9}, max_ratio=1e6)
+    assert_volume_dispersion({"BTC": 3e9, "Z": 0.0}, max_ratio=1e6)
+
+
+def test_assert_volume_dispersion_error_carries_ratio():
+    with pytest.raises(VolumeDispersionError) as exc:
+        assert_volume_dispersion({"BTC": 3.7e15, "EOS": 2.0e4}, max_ratio=1e6)
     assert "ratio" in str(exc.value)
 
 
@@ -79,6 +79,7 @@ def test_strict_ingestion_raises_on_bad_quality(tmp_path):
     store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
     with pytest.raises(FatalIngestionError):
         ingest_bars_csv(_csv(tmp_path, _DUP), store, dataset_id="BTC", strict=True)
+    assert store.as_of("BTC", as_of_time=99999999) == []
 
 
 def test_non_strict_default_does_not_raise(tmp_path):
@@ -110,3 +111,4 @@ def test_strict_ingestion_raises_on_out_of_order(tmp_path):
     store = SqlitePITStore(os.path.join(str(tmp_path), "s.db"), create=True)
     with pytest.raises(FatalIngestionError):
         ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC", strict=True)
+    assert store.as_of("BTC", as_of_time=99999999) == []

@@ -29,6 +29,10 @@ experiment_registry.db (e.g. the roadmap item "route out-of-gate search trials i
 trial count"), re-running this script would incorrectly delete real trials sharing the same prefix
 convention. Before ever re-running this script, re-verify (as this docstring's authors did) which
 real writers currently touch the target db and confirm none of them use h_/hx_ ids.
+
+The tool is permanently retired for any database that has migrated to the
+append-only search-provenance schema. Such a database has authority trials that
+must never be deleted; cleanup had to complete before its first provenance write.
 """
 from __future__ import annotations
 
@@ -65,6 +69,17 @@ def plan_purge(db_path: str) -> Tuple[list, list, set]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        tables = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        if "search_attempt_events" in tables or "search_candidates" in tables:
+            raise ValueError(
+                "refusing to purge: database has append-only search provenance; "
+                "the legacy cleanup tool is retired after this migration"
+            )
         rows = conn.execute("SELECT alpha_id, definition_json FROM alpha_state").fetchall()
         all_trial_hashes = {r["config_hash"] for r in conn.execute("SELECT config_hash FROM trials")}
     finally:

@@ -145,6 +145,11 @@ RISK_REGISTER.md 在**同一份文件的不同条目上**两个方向都错过:P
 差距后果:依赖该库算 ADV/容量的结论($1-72M 容量带)对非头部币不可信;$3-5k 规模本身不需要容量结论,但后续放量决策若引用会被误导。
 修补:重拉中小市值币 volume 并统一单位,或让消费端强制排除未过检的标的。工作量:小-中。
 
+> **2026-07-13 后续根因更正**:本段“数据库混单位”的判断被生产链取证推翻。CoinGecko
+> `total_volumes` 与 CryptoCompare `volumeto` 均为 quote/USD volume；真正 bug 是
+> `scenario_tail_research` 对 quote volume 再乘 close，才生成 BTC `$Q` vs EOS `$K` 的假极差。
+> 已增加 `VolumeUnit/VolumeSemantics` 强契约、修复双乘并重算；原始发现保留作为审计历史，不再作为 ACTIVE 缺口。
+
 **[P1] F4 · 数据质量门在接入路径 computed-but-not-enforced,乱序检测结构性恒为 0**
 证据 [已核实]:`services/data/market_provider.py:45` `strict` 默认 `False`;唯一显式 `strict=True` 调用方是不在 crypto 实盘路径的 `yahoo_equity_fetch.py`。`RISK_REGISTER.md:142-145` P2-1:`file_ingest.py:66` 用已排序序列喂乱序检测,数学上不可能失败;`missing_sessions` 未传参恒为 0。
 差距后果:脏/乱序/单位错数据理论上可无声进入前向证据时钟或 live 决策面板;live 与研究复用同一套抓取模块,弱点两条路径共享。

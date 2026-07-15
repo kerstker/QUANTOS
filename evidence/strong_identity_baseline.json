@@ -1,0 +1,181 @@
+{
+  "actor_source": "OIDC_ISSUER_AND_IMMUTABLE_SUBJECT",
+  "ai_human_identity_exclusion_status": "NOT_EXTERNALLY_PROVEN",
+  "all_attack_cases_passed": true,
+  "allowed_algorithms": [
+    "EdDSA",
+    "RS256"
+  ],
+  "attack_cases": [
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-signature",
+      "error_code": "INVALID_SIGNATURE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "symmetric-algorithm-confusion",
+      "error_code": "ALGORITHM_NOT_ALLOWED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-issuer",
+      "error_code": "INVALID_ISSUER",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-audience",
+      "error_code": "INVALID_AUDIENCE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "expired-token",
+      "error_code": "TOKEN_EXPIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "stale-authentication",
+      "error_code": "STALE_AUTHENTICATION",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "missing-mfa",
+      "error_code": "AMR_REQUIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-certificate-binding",
+      "error_code": "CERTIFICATE_BINDING_MISMATCH",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "reader-role-escalation",
+      "error_code": "ROLE_REQUIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "untrusted-certificate-header",
+      "error_code": "MISSING_VERIFIED_CLIENT_CERTIFICATE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "legacy-shared-secret",
+      "error_code": "MALFORMED_TOKEN",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-token-type",
+      "error_code": "INVALID_TOKEN_TYPE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "duplicate-human-subject",
+      "error_code": "",
+      "exception": "ApprovalViolation",
+      "expected_outcome": "DENIED",
+      "passed": true
+    }
+  ],
+  "authentication_profile": "OIDC_ASYMMETRIC_MTLS_MFA",
+  "browser_access_token_storage": "IN_MEMORY_ONLY",
+  "browser_pkce_client_secret_present": false,
+  "browser_pkce_invariants_verified": true,
+  "browser_pkce_max_transaction_age_seconds": 600,
+  "browser_pkce_one_time_state_nonce": true,
+  "browser_pkce_or_bff_status": "AUTHORIZATION_CODE_PKCE_S256_IMPLEMENTED_EXTERNAL_IDP_NOT_PROVIDED",
+  "browser_pkce_transaction_storage": "VERSIONED_SESSION_STORAGE_NO_ACCESS_TOKEN",
+  "credential_authority_granted": false,
+  "current_maturity": "M2",
+  "dependency_versions": {
+    "PyJWT": "2.13.0",
+    "cryptography": "49.0.0"
+  },
+  "external_key_custody_status": "NOT_PROVIDED",
+  "external_oidc_deployment_status": "NOT_PROVIDED",
+  "governance_roles": [
+    "PROMOTION_READER",
+    "PROMOTION_REQUESTER",
+    "PROMOTION_REVIEWER",
+    "PROMOTION_APPROVER",
+    "PROMOTION_EXECUTOR"
+  ],
+  "identity_lifecycle_evidence_status": "NOT_PROVIDED",
+  "implementation_sha256": {
+    "apps/research-console/src/lib/api/governance-pkce.ts": "60f42677fc8033a629c439913d43a3e7d0023ee2db9abd1d2c394877667dc751",
+    "apps/research-console/src/lib/api/promotion-api.ts": "73df1b8d57b82887c28432d88fa78e3b944e07d3fe1ae6f50230c53058992d68",
+    "apps/research-console/src/pages/PromotionQueue.tsx": "98e8566f6e6d7ae4062d2bdf69237d644886d39eb7ff1d192130afddfbad60f8",
+    "quantos/contracts/identity.py": "de7fc42afc941a27af125d6bbf31624de4bb2b30bdc6c0e3a2dbea653ad9f23d",
+    "scripts/generate_strong_identity_evidence.py": "a61306976e1c8425129e3389ab7f5863f1754f07007446503e50abe9713b78d7",
+    "services/governance/strong_identity.py": "53c7a37affd8364f1cdf954098576e1fdabdf63cb81426c87b35ebfc48e8f320",
+    "services/promotion_api/main.py": "d9c52033a0fc25b863f1bb974101c5858e7295008ce26d115a3bfe9acb447893"
+  },
+  "legacy_shared_token_accepted": false,
+  "live_trading_authority_granted": false,
+  "m4_blockers": [
+    "EXTERNAL_OIDC_ISSUER_OPERATIONAL_EVIDENCE_MISSING",
+    "TRUSTED_MTLS_TERMINATOR_DEPLOYMENT_EVIDENCE_MISSING",
+    "EXTERNAL_SIGNING_KEY_CUSTODY_AND_ROTATION_EVIDENCE_MISSING",
+    "IDENTITY_LIFECYCLE_REVOCATION_AND_ACCESS_REVIEW_EVIDENCE_MISSING",
+    "AI_WORKLOAD_HUMAN_IDENTITY_EXCLUSION_NOT_EXTERNALLY_PROVEN"
+  ],
+  "mode": "OFFLINE_STRONG_IDENTITY_BASELINE",
+  "order_submission_authority_granted": false,
+  "recorded_at": 1783814400,
+  "schema_version": 1,
+  "self_asserted_operator_accepted": false,
+  "three_party_case": {
+    "actual_outcome": "ALLOWED",
+    "case_id": "three-distinct-human-subjects",
+    "error_code": "",
+    "exception": "",
+    "expected_outcome": "ALLOWED",
+    "passed": true
+  },
+  "three_party_identity_separation_passed": true,
+  "token_binding_standard": "RFC8705_CNF_X5T_S256",
+  "trusted_mtls_deployment_status": "NOT_PROVIDED",
+  "valid_identity_path_passed": true,
+  "verdict": "PARTIAL",
+  "verification_paths": [
+    "tests/governance/test_strong_identity.py",
+    "tests/governance/test_promotion_api_boundary.py",
+    "tests/governance/test_promotion_api_endpoints.py",
+    "apps/research-console/src/lib/api/governance-pkce.test.ts"
+  ]
+}

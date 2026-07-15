@@ -1,5 +1,6 @@
 """多资产摄取接缝 + CoinGecko 只读抓取:全离线(桩 http_get、env 测试 key,绝不连网)。"""
 import pytest
+from services.data.file_ingest import FatalIngestionError
 from services.data.persistent_store import SqlitePITStore
 from services.data.market_provider import ingest_provider_rows, MarketDataProvider
 from tools.coingecko_fetch import parse_ohlc, fetch_ohlc, fetch_btc_rows, _read_key
@@ -27,6 +28,62 @@ def test_ingest_rejects_bad_ohlc_not_crash():
             _row("BTC", 1700001800000, 100, 90, 99, 100.5, kt=1700001800000 + 1800000)]  # high<low
     rep = ingest_provider_rows(rows, store)
     assert rep.bars_ingested == 1 and len(rep.rejected) == 1     # 失败关闭,不崩
+
+
+def test_strict_rejected_row_fails_before_any_store_mutation():
+    store = SqlitePITStore(":memory:", create=True)
+    rows = [_row("BTC", 1700000000000, 100, 101, 99, 100.5),
+            _row("BTC", 1700001800000, 100, 90, 99, 100.5)]
+    with pytest.raises(FatalIngestionError, match="valid_rows"):
+        ingest_provider_rows(rows, store, strict=True)
+    assert store.as_of("BTC", as_of_time=9_999_999_999_999) == []
+
+
+def test_strict_empty_batch_fails_closed():
+    store = SqlitePITStore(":memory:", create=True)
+    with pytest.raises(FatalIngestionError, match="nonempty_rows"):
+        ingest_provider_rows([], store, strict=True)
+    assert store.keys() == []
+
+
+def test_strict_expected_interval_rejects_internal_gap_without_writing():
+    store = SqlitePITStore(":memory:", create=True)
+    day = 86_400_000
+    t0 = 1_700_006_400_000
+    rows = [_row("BTC", t0, 100, 101, 99, 100.5),
+            _row("BTC", t0 + 2 * day, 101, 102, 100, 101.5)]
+    with pytest.raises(FatalIngestionError, match="completeness"):
+        ingest_provider_rows(
+            rows,
+            store,
+            strict=True,
+            expected_interval=day,
+            time_unit="ms",
+        )
+    assert store.as_of("BTC", as_of_time=9_999_999_999_999) == []
+
+
+def test_strict_multi_instrument_batch_checks_each_series_independently():
+    store = SqlitePITStore(":memory:", create=True)
+    step = 1_800_000
+    t0 = 1_700_000_000_000
+    rows = [
+        _row("BTC", t0, 100, 101, 99, 100.5),
+        _row("ETH", t0, 10, 11, 9, 10.5),
+        _row("BTC", t0 + step, 101, 102, 100, 101.5),
+        _row("ETH", t0 + step, 11, 12, 10, 11.5),
+    ]
+    rep = ingest_provider_rows(
+        rows,
+        store,
+        strict=True,
+        expected_interval=step,
+        time_unit="ms",
+    )
+    assert rep.quality.passed is True
+    assert rep.bars_ingested == 4
+    assert len(store.as_of("BTC", as_of_time=9_999_999_999_999)) == 2
+    assert len(store.as_of("ETH", as_of_time=9_999_999_999_999)) == 2
 
 
 def test_ingest_idempotent_same_hash():

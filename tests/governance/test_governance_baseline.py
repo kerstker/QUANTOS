@@ -44,7 +44,7 @@ def test_scanner_covers_safety_critical_trees():
     only running service (console_api) and the real factor engine, which the
     previous granular allow-list silently omitted (audit P1)."""
     for r in ("services/risk", "services/research/paper_trading", "services/trading",
-              "services/research/console_api", "services/research/factor_engine",
+              "services/console/api", "services/research/factor_engine",
               "quantos/contracts"):
         assert _covered(os.path.join(REPO, *r.split("/"))), f"not in scan scope: {r}"
 

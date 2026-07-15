@@ -2,17 +2,26 @@
 """Advance an alpha's forward paper track by the held-out tail [boundary:] of its realized returns/IC.
 The held-out segment is the genuinely out-of-sample paper region (the driver evaluates on [:boundary]).
 Idempotent (INSERT OR IGNORE in the store). Pure, deterministic."""
+
 from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from .store import PaperTrackStore
+from services.research.ports.persistence import PaperTrackStorePort
 
 
-def advance_paper_track(store: PaperTrackStore, alpha_id: str, returns: Sequence[float],
-                        ic_series: Optional[Sequence[float]], *, boundary: int,
-                        source: str = "OOS_TAIL", ts0: int = 0, dt: int = 86_400_000,
-                        backtest_sharpe: Optional[float] = None) -> int:
+def advance_paper_track(
+    store: PaperTrackStorePort,
+    alpha_id: str,
+    returns: Sequence[float],
+    ic_series: Optional[Sequence[float]],
+    *,
+    boundary: int,
+    source: str = "OOS_TAIL",
+    ts0: int = 0,
+    dt: int = 86_400_000,
+    backtest_sharpe: Optional[float] = None,
+) -> int:
     paper_r = list(returns)[boundary:]
     paper_ic = list(ic_series)[boundary:] if ic_series else [None] * len(paper_r)
     existing = {p["as_of_ts"] for p in store.periods(alpha_id)}

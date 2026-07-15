@@ -1,6 +1,6 @@
 from services.research.realism.impact import AlmgrenChrissImpact
 from services.research.realism.capacity_curve import (capacity_band, capacity_curve,
-                                                      critical_aum, net_return_series_at_aum,
+                                                      net_return_series_at_aum,
                                                       participation_cap_aum)
 
 # 4 期毛收益,每期一名换手 frac=0.5,ADV=$1e6
@@ -56,35 +56,33 @@ def test_execution_horizon_scales_capacity_linearly():
     assert participation_cap_aum(_TURN, max_participation=0.20, execution_horizon=1) == c1 * 2
 
 
-# --- volume-units fail-closed 守卫(P2-2 接线):混单位则拒绝出容量数 ---
+# --- volume-dispersion fail-closed guard: extreme liquidity spread withholds capacity ---
 
 _GRID = [1e5, 1e6, 1e7, 1e8, 1e9]
 
 
 def test_capacity_band_default_has_no_volume_guard_and_new_key():
-    # 不传 volume_units_max_ratio -> 旧行为(provenance UNCALIBRATED)+ 新键 data_quality=='OK' 恒存在
     band = capacity_band(_GROSS, _TURN, _GRID, (5, 20))
     assert band["provenance"] == "UNCALIBRATED_PRINCIPLED"
     assert band["data_quality"] == "OK"
 
 
-def test_capacity_band_guard_passes_consistent_units():
+def test_capacity_band_guard_passes_moderate_dispersion():
     turnover = [[(0.5, 1e6)], [(0.5, 3e6)]]
-    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_dispersion_max_ratio=1e6)
     assert band["data_quality"] == "OK"
 
 
-def test_capacity_band_guard_fail_closed_on_mixed_units():
-    # BTC $3.7Q vs EOS $20k 混单位 -> fail-closed:拒绝出容量数(全 None)
+def test_capacity_band_guard_fail_closed_on_extreme_dispersion():
     turnover = [[(0.5, 3.7e15)], [(0.5, 2.0e4)]]
-    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
-    assert band["provenance"] == "UNRELIABLE_VOLUME_UNITS"
-    assert band["data_quality"] == "UNRELIABLE_VOLUME_UNITS"
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_dispersion_max_ratio=1e6)
+    assert band["provenance"] == "EXTREME_VOLUME_DISPERSION"
+    assert band["data_quality"] == "EXTREME_VOLUME_DISPERSION"
     assert band["aum_low"] is None and band["aum_high"] is None
     assert band["participation_cap_aum"] is None
 
 
 def test_capacity_band_guard_ignores_zero_adv():
-    turnover = [[(0.5, 1e6), (0.5, 0.0)], [(0.5, 3e6)]]      # 0 adv 被忽略(同 check_volume_units)
-    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_units_max_ratio=1e6)
+    turnover = [[(0.5, 1e6), (0.5, 0.0)], [(0.5, 3e6)]]
+    band = capacity_band(_GROSS, turnover, _GRID, (5, 20), volume_dispersion_max_ratio=1e6)
     assert band["data_quality"] == "OK"

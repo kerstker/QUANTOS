@@ -162,7 +162,10 @@ def main() -> None:
     parser.add_argument("--rto-ms", type=int, default=300_000)
     parser.add_argument("--max-rpo-ms", type=int, default=86_400_000)
     parser.add_argument("--allow-plaintext", action="store_true")
-    parser.add_argument("--evidence", default=os.path.join("evidence", "restore_drill_latest.json"))
+    parser.add_argument(
+        "--evidence",
+        default=os.path.join("evidence", "generic_restore_drill_latest.json"),
+    )
     args = parser.parse_args()
     result = run_restore_drill(
         batch_dir=args.batch_dir,

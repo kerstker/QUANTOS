@@ -4,6 +4,7 @@ from quantos.contracts.research import AlphaState
 from services.alpha.panel_backtest import PanelPeriod
 from services.intelligence.search_space import HypothesisSpace
 from services.intelligence.guided_search import GuidedSearchLoop
+from services.research.ports.persistence import TrialPersistenceError
 
 GOOD_WINDOW = 60
 BAD_WINDOW = 10
@@ -60,6 +61,18 @@ def test_provider_error_is_isolated_and_search_continues():
     assert ("window", str(GOOD_WINDOW)) in out["arm_means"]     # good arm still learned
     cat = loop.inner_loop.catalog
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
+
+
+def test_trial_persistence_error_from_provider_is_batch_fatal():
+    def unavailable(_definition):
+        raise TrialPersistenceError("ledger unavailable")
+
+    with pytest.raises(TrialPersistenceError, match="ledger unavailable"):
+        GuidedSearchLoop(_space()).search(
+            rounds=1,
+            batch_size=1,
+            periods_provider=unavailable,
+        )
 
 
 def test_search_is_deterministic():

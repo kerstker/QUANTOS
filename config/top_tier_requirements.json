@@ -59,15 +59,35 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "paths_exist",
+                             "checker":  "alpha_trial_ledger_evidence",
                              "checker_args":  {
-                                                  "paths":  [
-                                                                "services/alpha/catalog.py",
-                                                                "services/research/experiment_registry"
-                                                            ],
+                                                  "evidence_path":  "evidence/alpha_trial_ledger_history.json",
+                                                  "ledger_path":  "data/cache/experiment_registry.db",
+                                                  "entrypoint_path":  "services/intelligence/research_session.py",
+                                                  "session_path":  "services/research/session.py",
+                                                  "factory_path":  "services/research/alpha_factory.py",
+                                                  "factory_registry_helper_path":  "tools/search_trial_registry.py",
+                                                  "registry_path":  "services/research/experiment_registry/registry.py",
+                                                  "persistence_port_path":  "services/research/ports/persistence.py",
+                                                  "store_path":  "services/research/experiment_registry/store.py",
+                                                  "official_factory_paths":  [
+                                                                                  "tools/crypto_factory_intraday.py",
+                                                                                  "tools/crypto_factory_loop.py",
+                                                                                  "tools/crypto_factory_orthogonal.py",
+                                                                                  "tools/crypto_factory_overfit_ab.py",
+                                                                                  "tools/crypto_factory_run.py"
+                                                                              ],
+                                                  "verification_paths":  [
+                                                                               "tests/research/test_session.py",
+                                                                               "tests/research/test_experiment_registry.py",
+                                                                               "tests/research/test_experiment_store.py",
+                                                                               "tests/research/test_search_trial_provenance.py",
+                                                                               "tests/intelligence/test_registered_candidate_batch.py",
+                                                                               "tests/governance/test_experiment_registry_isolation.py"
+                                                                           ],
                                                   "pass_maturity":  "M4"
                                               },
-                             "next_action":  "Prove all search paths write equivalent trials"
+                             "next_action":  "Evidence complete: all five factory tools wired to persistent search identity with cross-session trial count verification"
                          },
                          {
                              "id":  "ALPHA.MULTI_ASSET.RESEARCH",
@@ -132,11 +152,19 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "manual_evidence",
+                             "checker":  "model_risk_baseline_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/model_risk_baseline.json",
+                                                  "history_path":  "evidence/model_risk_history.json",
+                                                  "pass_maturity":  "M2",
+                                                  "verification_paths":  [
+                                                                             "tests/governance/test_model_risk_registry.py",
+                                                                             "tests/governance/test_model_risk_evidence.py",
+                                                                             "tests/governance/test_model_risk_history.py",
+                                                                             "tests/intelligence/test_runtime_governance.py"
+                                                                         ]
                                               },
-                             "next_action":  "Implement model registry and challenger review"
+                             "next_action":  "Bind independent review to strong external identity; keep refuted models excluded until a genuine positive OOS challenger exists"
                          },
                          {
                              "id":  "PORTFOLIO.CONSTRAINED.OPTIMIZATION",
@@ -224,11 +252,22 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "manual_evidence",
+                             "checker":  "risk_recovery_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/risk_recovery_drill_latest.json",
+                                                  "pass_maturity":  "M4",
+                                                  "continuous_markers":  {
+                                                                             "scripts/validate.py":  [
+                                                                                                           "risk-recovery-drill:fresh",
+                                                                                                           "run_risk_recovery_gate.py"
+                                                                                                       ],
+                                                                             ".github/workflows/validate.yml":  [
+                                                                                                                      "schedule:",
+                                                                                                                      "cron:"
+                                                                                                                  ]
+                                                                         }
                                               },
-                             "next_action":  "Automate restart and recovery drills"
+                             "next_action":  "Retain longitudinal drill SLO evidence and alert on missed scheduled runs"
                          },
                          {
                              "id":  "EXECUTION.DRYRUN.RECONCILIATION",
@@ -312,11 +351,19 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "manual_evidence",
+                             "checker":  "model_risk_baseline_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/model_risk_baseline.json",
+                                                  "history_path":  "evidence/model_risk_history.json",
+                                                  "pass_maturity":  "M2",
+                                                  "verification_paths":  [
+                                                                             "tests/governance/test_model_risk_registry.py",
+                                                                             "tests/governance/test_model_risk_evidence.py",
+                                                                             "tests/governance/test_model_risk_history.py",
+                                                                             "tests/intelligence/test_runtime_governance.py"
+                                                                         ]
                                               },
-                             "next_action":  "Build governed model registry and offline eval"
+                             "next_action":  "Govern an external model provider through the registered runtime and independent external review"
                          },
                          {
                              "id":  "GOV.APPROVAL.HASHCHAIN",
@@ -356,11 +403,12 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "manual_evidence",
+                             "checker":  "strong_identity_baseline_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/strong_identity_baseline.json",
+                                                  "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Implement strong identity outside shared-token trust"
+                             "next_action":  "Deploy external OIDC and trusted mTLS; prove managed key rotation, identity lifecycle, revocation, access reviews, and AI-workload exclusion"
                          },
                          {
                              "id":  "PLATFORM.CI.UNIFIED_GATE",
@@ -382,6 +430,13 @@
                                                   "needles":  [
                                                                   "tests/governance",
                                                                   "tests/live",
+                                                                  "python-audit-evidence:current",
+                                                                  "npm-audit-evidence:current",
+                                                                  "actions-osv-evidence:current",
+                                                                  "container-trivy-evidence:current",
+                                                                  "service-import-graph:current",
+                                                                  "model-risk-history:current",
+                                                                  "risk-recovery-drill:fresh",
                                                                   "frontend: typecheck",
                                                                   "frontend: tests",
                                                                   "frontend: production build"
@@ -404,11 +459,12 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "manual_evidence",
+                             "checker":  "supply_chain_baseline_evidence",
                              "checker_args":  {
-
+                                                  "path":  "evidence/supply_chain_baseline.json",
+                                                  "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Implement reproducible signed supply-chain evidence"
+                             "next_action":  "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; provision the fixed admission authority and externally seal its chain head at an independently deployed boundary"
                          },
                          {
                              "id":  "OPS.BACKUP.ENCRYPTED",
@@ -420,19 +476,116 @@
                              "required_evidence":  [
                                                        "implementation",
                                                        "verification",
+                                                       "operation",
                                                        "governance",
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "paths_exist",
+                             "checker":  "l2_backup_evidence",
                              "checker_args":  {
-                                                  "paths":  [
-                                                                "tools/live_backup.py",
-                                                                "tools/watchdog.py"
-                                                            ],
+                                                  "path":  "evidence/l2_backup_latest.json",
+                                                  "implementation_paths":  [
+                                                                               "tools/l2_backup.py",
+                                                                               "tools/l2_scheduler_watchdog.py",
+                                                                               "tools/external_heartbeat.py",
+                                                                               "tools/domain_event_seal.py",
+                                                                               "tools/restore_drill.py",
+                                                                               "tests/tools/test_l2_backup.py",
+                                                                               "tests/tools/test_l2_scheduler_watchdog.py",
+                                                                               "tests/tools/test_external_heartbeat.py",
+                                                                               "tests/tools/test_domain_event_seal.py",
+                                                                               "tests/governance/test_l2_operations_boundary.py"
+                                                                           ],
+                                                  "expected_source_contract":  {
+                                                                                   "version":  2,
+                                                                                   "sources":  [
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/alpha_maintenance.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "alpha_maintenance"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/approvals.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "approval_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/artifact_admission.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "artifact_admission_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/data_quality_admission.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "data_quality_admission"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/deployment_state.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "deployment_state"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/domain_event_projection.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "domain_event_projection"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/domain_events.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "domain_event_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/dry_run.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "dry_run_ledger"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/experiment_registry.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "experiment_registry"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/governance_audit.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "governance_audit"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/identity_authorization.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "identity_authorization_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/l2_restore_history.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "l2_restore_history_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/live_kill_switch.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "kill_switch_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/live_refresh_history.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "data_refresh_history"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/paper_track.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "paper_track"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/research_runs.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "research_run_registry"
+                                                                                                   }
+                                                                                               ]
+                                                                               },
+                                                  "max_rpo_ms":  86400000,
+                                                  "max_rto_ms":  300000,
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add restore CLI and restore verification"
+                             "next_action":  "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat"
                          },
                          {
                              "id":  "OPS.RESTORE.DRILL",
@@ -444,17 +597,125 @@
                              "required_evidence":  [
                                                        "implementation",
                                                        "verification",
+                                                       "operation",
                                                        "governance",
                                                        "reproducibility"
                                                    ],
                              "red_line":  true,
-                             "checker":  "restore_drill_evidence",
+                             "checker":  "l2_restore_history_evidence",
                              "checker_args":  {
-                                                  "path":  "evidence/restore_drill_latest.json",
-                                                  "max_rpo_ms":  86400000,
-                                                  "pass_maturity":  "M4"
+                                                  "history_path":  "data/cache/l2_restore_history.db",
+                                                  "checkpoint_path":  "evidence/l2_restore_history_checkpoint.json",
+                                                  "trust_registry_path":  "config/l2_restore_checkpoint_trust_registry.json",
+                                                  "implementation_paths":  [
+                                                                                       "tools/l2_backup.py",
+                                                                                       "services/governance/l2_restore_history.py",
+                                                                                       "services/governance/l2_restore_checkpoint.py",
+                                                                                       "tests/tools/test_l2_backup.py",
+                                                                                       "tests/governance/test_l2_restore_history.py",
+                                                                                       "tests/governance/test_l2_restore_checkpoint.py",
+                                                                                       "tests/governance/test_l2_restore_top_tier.py"
+                                                                                   ],
+                                                  "expected_source_contract":  {
+                                                                                   "version":  2,
+                                                                                   "sources":  [
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/alpha_maintenance.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "alpha_maintenance"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/approvals.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "approval_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/artifact_admission.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "artifact_admission_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/data_quality_admission.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "data_quality_admission"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/deployment_state.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "deployment_state"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/domain_event_projection.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "domain_event_projection"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/domain_events.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "domain_event_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/dry_run.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "dry_run_ledger"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/experiment_registry.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "experiment_registry"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/governance_audit.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "governance_audit"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/identity_authorization.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "identity_authorization_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/l2_restore_history.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "l2_restore_history_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/live_kill_switch.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "kill_switch_authority"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/live_refresh_history.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "data_refresh_history"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/paper_track.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "paper_track"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/research_runs.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "research_run_registry"
+                                                                                                   }
+                                                                                               ]
+                                                                               },
+                                                  "max_attempt_age_ms":  172800000,
+                                                  "max_success_age_ms":  172800000,
+                                                  "max_attempt_gap_ms":  172800000,
+                                                  "max_success_gap_ms":  172800000,
+                                                  "minimum_history_span_ms":  2592000000,
+                                                  "minimum_successes":  16,
+                                                  "clean_lookback_ms":  2592000000,
+                                                  "attempt_timeout_ms":  21600000,
+                                                  "required_checkpoint_issuer":  "operator-owned-restore-checkpoint-authority",
+                                                  "required_checkpoint_key_id":  "UNPROVISIONED",
+                                                  "max_checkpoint_future_skew_ms":  300000,
+                                                  "max_checkpoint_age_ms":  172800000,
+                                                  "minimum_checkpoint_retention_ms":  7776000000
                                               },
-                             "next_action":  "Schedule recurring encrypted restore drills and monitor freshness"
+                             "next_action":  "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts"
                          },
                          {
                              "id":  "FRONTEND.ROUTES.SINGLE_SOURCE",

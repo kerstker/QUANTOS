@@ -30,7 +30,15 @@ from concurrent.futures import ProcessPoolExecutor
 
 import services.research.alpha_expression as ax
 import services.research.cs_genome as cs_genome
-from services.research.alpha_factory import _score_expr, run_alpha_factory
+from services.research.alpha_factory import (
+    _score_expr,
+    run_alpha_factory as _run_alpha_factory,
+)
+
+
+def run_alpha_factory(*args, **kwargs):
+    kwargs["ephemeral"] = True
+    return _run_alpha_factory(*args, **kwargs)
 from services.research.carry_pnl import economic_return_series
 
 FIELDS = ["close", "funding"]

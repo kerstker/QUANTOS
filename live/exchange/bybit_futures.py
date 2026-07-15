@@ -1,5 +1,5 @@
 """Bybit V5 统一账户(USDT 永续,linear category)签名 REST 客户端(Stage 1.5)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §10。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §10。
 
 纯 stdlib(urllib/hmac/hashlib/json/time)——绝不 import 交易所 SDK(pybit 等)。与
 `binance_futures.py` 满足同一个 `VenueAdapter` Protocol,但底层协议有真实差异(2026-07-04 研究
@@ -281,7 +281,17 @@ class BybitFuturesAdapter:
             if not items:
                 return None
             item = items[0]
-            return {"bid": float(item["bid1Price"]), "ask": float(item["ask1Price"])}
+            book = {"bid": float(item["bid1Price"]), "ask": float(item["ask1Price"])}
+            raw_timestamp = data.get("time")
+            if not isinstance(raw_timestamp, bool):
+                try:
+                    as_of_ms = int(raw_timestamp)
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                else:
+                    if as_of_ms > 0:
+                        book["as_of_ms"] = as_of_ms
+            return book
         except Exception:
             return None
 

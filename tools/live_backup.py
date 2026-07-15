@@ -22,7 +22,7 @@ PBKDF2-HMAC-SHA256(200,000 轮,标准库 `hashlib`)派生密钥,逐文件独立 
 恰好装在这台机器的 conda 环境里(因 anaconda-auth/Scrapy/pyOpenSSL 等无关工具间接需要)——换一台
 干净部署机器会在这个 fail-closed 密码闸门通过后、`encrypt_file` 内部才发现装不了,同样导致整次
 备份失败退出。现已作为显式依赖声明在 `requirements.txt` / `pyproject.toml`(`live-backup` 可选组)
-的 `cryptography==46.0.7`。本模块**从不静默降级成明文**:
+的 `cryptography==49.0.0`。本模块**从不静默降级成明文**:
 没装 `cryptography` 时 `encrypt_bytes`/`decrypt_bytes` 清晰报错(`BackupEncryptionUnavailable`),
 不会假装加密成功。密码来源只认环境变量 `QUANTOS_BACKUP_PASSPHRASE`(不硬编码、不发明新的
 密钥管理机制);未设置该变量时默认**拒绝执行**(fail-closed),除非显式传 `--allow-plaintext`

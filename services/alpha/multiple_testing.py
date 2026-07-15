@@ -14,7 +14,7 @@ from __future__ import annotations
 from statistics import NormalDist
 from typing import Optional, Sequence
 
-from services.research.validation.deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
+from services.validation.deflated_sharpe import deflated_sharpe_ratio, expected_max_sharpe
 
 _N = NormalDist()
 

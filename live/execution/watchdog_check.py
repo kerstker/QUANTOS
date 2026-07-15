@@ -1,5 +1,5 @@
 """死人开关(dead-man's switch)判断(2026-07-05,机构审计 P0)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md 补充。
 
 纯函数、无 IO。schtasks 调度静默失败(机器休眠/任务被系统重启打断)不会有任何人知道——
 8 周前向证据钟可能因此永久丢失一整周而没人发现。这里只判断"是否过期未运行",不负责

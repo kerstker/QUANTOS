@@ -66,6 +66,153 @@ def test_services_data_does_not_import_other_service_domains():
     assert not offenders, "services/data must not import other service domains:\n" + "\n".join(offenders)
 
 
+def test_services_research_does_not_import_intelligence():
+    # 搜索策略/agent runtime 属于 intelligence；research 只能声明并消费注入接口。
+    # 反向由 intelligence 组合 research 数据/评估原语，保持单向依赖。
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "research")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.intelligence"
+            or module.startswith("services.intelligence.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/research must not import services/intelligence:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_research_does_not_import_data():
+    # Research consumes an explicit PIT/version port. Concrete stores, version
+    # builders, and catalog enumeration remain owned by data/composition.
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "research")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.data" or module.startswith("services.data.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/research must not import services/data:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_portfolio_does_not_import_research():
+    # Shared portfolio inputs belong in quantos/contracts or portfolio-owned ports.
+    # Importing a research implementation recreates the research<->portfolio cycle.
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "portfolio")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.research"
+            or module.startswith("services.research.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/portfolio must not import services/research:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_execution_does_not_import_research():
+    # Paper fills, reconciliation, and impact are execution-owned primitives.
+    # Research may consume/re-export them; execution must never point back.
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "execution")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.research"
+            or module.startswith("services.research.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/execution must not import services/research:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_research_does_not_import_risk():
+    # Risk implementations are supplied by the neutral console composition root.
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "research")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.risk" or module.startswith("services.risk.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/research must not import services/risk:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_governance_does_not_import_alpha_or_research():
+    # Governance owns policy primitives. Cross-domain HTTP composition belongs in
+    # services/promotion_api so the governed domains do not point back into callers.
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "governance")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.alpha"
+            or module.startswith("services.alpha.")
+            or module == "services.research"
+            or module.startswith("services.research.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/governance must not import services/alpha or services/research:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_alpha_does_not_import_research():
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "alpha")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module == "services.research"
+            or module.startswith("services.research.")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/alpha must not import services/research:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_services_validation_is_domain_neutral():
+    offenders = []
+    for path in _all_py_files(os.path.join(_ROOT, "services", "validation")):
+        bad = {
+            module
+            for module in _import_modules(path)
+            if module.startswith("services.")
+            and not module.startswith("services.validation")
+        }
+        if bad:
+            offenders.append(f"{_rel(path)}: {sorted(bad)}")
+    assert not offenders, (
+        "services/validation must not import another service domain:\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_live_does_not_import_tools():
     # live/ 是执行栈,tools/ 是驱动器层(可 import 两边);live/ 反向 import tools/ 会倒挂依赖
     offenders = []

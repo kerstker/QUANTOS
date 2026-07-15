@@ -9,6 +9,7 @@ import pytest
 
 import services.alpha.promotion as promotion_mod
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
+from quantos.contracts.events import EVENT_ALPHA_PROMOTED
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.guards import promotion_subject
@@ -107,6 +108,7 @@ def test_gather_evidence_rejects_tampered_artifact(env):
     row = conn.execute("SELECT run_id, evaluation_json FROM evaluations").fetchone()
     payload = json.loads(row["evaluation_json"])
     payload["net_sharpe"] = 99.0
+    conn.execute("DROP TRIGGER evaluations_no_update")
     conn.execute("UPDATE evaluations SET evaluation_json=? WHERE run_id=?",
                  (json.dumps(payload, sort_keys=True, default=str), row["run_id"]))
     conn.commit()
@@ -274,6 +276,11 @@ def test_execute_promotion_happy_path_persists_catalog(env):
     fresh = AlphaCatalog()
     env["registry"].load_into(fresh)
     assert fresh.state("a1") == S.APPROVED
+    pending = env["registry"].pending_event_outbox()
+    assert len(pending) == 1
+    assert pending[0]["outbox_id"] == outcome.event_outbox_id
+    assert pending[0]["event"].event_type == EVENT_ALPHA_PROMOTED
+    assert pending[0]["event"].payload["alpha_id"] == "a1"
     # grant 已烧
     assert env["store"].load("req-1").state == ApprovalState.CONSUMED
     # 审计落链且链自洽

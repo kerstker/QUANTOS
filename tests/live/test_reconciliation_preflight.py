@@ -1,7 +1,7 @@
 """preflight_check(live/execution/reconciliation.py):调仓前置检查——drift 超容忍度就 HARD_STOP,
 不在已知不一致的账本基础上继续计算/提交新调仓。2026-07-04 对抗式审查发现 #7:reconcile_positions
 此前零调用方,drift 永远不会被发现。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5 延伸。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.5 延伸。"""
 import pytest
 
 from live.execution.reconciliation import preflight_check

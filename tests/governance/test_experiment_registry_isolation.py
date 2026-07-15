@@ -1,6 +1,6 @@
 """Regression lock for the 2026-07-09 contamination bug: tools/crypto_research_offline.py's
 demo-panel regenerator used to share data/cache/experiment_registry.db — the SAME file the real
-AlphaCatalog persists to and services/governance/promotion_api reads for actual human promotion
+AlphaCatalog persists to and services/promotion_api reads for actual human promotion
 decisions — and its full-rebuild behavior silently wrote 60 unrelated demo/UI-fixture trials into
 it, contaminating global_trial_count()/catalog_var_sr() for the real registered alphas (confirmed:
 this flipped crowd_contra's recorded DSR from an honest 1.0000 to a contaminated 0.6087). Fixed
@@ -27,10 +27,17 @@ def test_demo_regenerator_does_not_reference_the_production_registry_path():
 
 
 _ALLOWED_PRODUCTION_PATH_REFS = frozenset({
-    "register_alpha_catalog.py",              # the real registration driver — writes real evaluations
+    "search_trial_registry.py",               # fail-closed shared composition for selection-bearing tools
     "purge_demo_registry_contamination.py",   # the 2026-07-09 one-off contamination-purge tool;
                                                # its default target IS the production path by design
 })
+
+
+def test_catalog_registration_uses_the_shared_fail_closed_registry_helper():
+    source = Path("tools/register_alpha_catalog.py").read_text(encoding="utf-8")
+    assert "production_experiment_registry" in source
+    assert "run_registered_candidate_batch" in source
+    assert "SqliteExperimentStore" not in source
 
 
 def test_only_known_tools_write_the_production_registry_path():

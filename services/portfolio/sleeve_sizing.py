@@ -1,6 +1,6 @@
 """策略 sleeve 级 sizing —— 组合优化器接 live sizing 的**诚实**形态(Phase 3 子项2,P1-6 相关)。
 
-诚实裁定(见 docs/superpowers/specs/2026-07-07-portfolio-optimizer-live-sizing.md):组合优化器
+诚实裁定(见 docs/engineering/specs/2026-07-07-phase3-optimizer-and-crowding.md):组合优化器
 (`services/portfolio/optimizer.py`)是**跨 alpha sleeve(策略)**的风险预算分配器("sizes RISK across
 streams"),每条 alpha 内部已美元中性。**单策略 live 下 sleeve 集合退化为 1,风险平衡是恒等空操作**;
 把 1×1 优化器硬塞进 live sizing 只会造死代码/假 chokepoint、改变已被干跑验证的等权 `_legs` book 口径引

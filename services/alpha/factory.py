@@ -12,9 +12,9 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
+from quantos.contracts.cost import CostModel
 from quantos.contracts.research import AlphaState, ValidationVerdict
-from services.research.backtest_engine.costs import CostModel
-from services.research.validation.deflated_sharpe import pbo_cscv
+from services.validation.deflated_sharpe import pbo_cscv
 
 from .catalog import AlphaCatalog
 from .config import AlphaFactoryConfig

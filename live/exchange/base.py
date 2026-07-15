@@ -1,5 +1,5 @@
 """VenueAdapter 协议(Stage 1)—— venue-agnostic 执行接缝。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.2。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.2。
 
 Binance 是本阶段唯一实现(`binance_futures.py`);Bybit/Hyperliquid 后续实现同一协议
 (用户已拍板"venue 可插拔")。这是执行侧的协议,与 `services/trading/broker_adapter.py::

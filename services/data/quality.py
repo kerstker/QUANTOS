@@ -9,31 +9,33 @@ from __future__ import annotations
 from typing import Iterable, Mapping, Optional, Sequence
 
 from quantos.contracts.data import DataQualityCheck, DataQualityReport
+from quantos.contracts.quality import check_volume_dispersion
 
 
-def check_volume_units(volume_by_instrument: Mapping[str, float], max_ratio: float = 1e6) -> DataQualityCheck:
-    """Rank #22 — cross-instrument volume-unit consistency. A dataset whose per-instrument (typically
-    median) volume spans more than `max_ratio` cannot be on one honest unit — the crypto_daily.db bug
-    (EOS ~$20k vs BTC ~$3.7Q, ~17 orders of magnitude) would make every ADV/capacity number meaningless.
-    Formalizes the scenario-research heuristic into a reusable guard. Non-positive values and a <2-name
-    cross-section are ignored (nothing to compare)."""
-    vals = [float(v) for v in volume_by_instrument.values() if isinstance(v, (int, float)) and float(v) > 0.0]
-    if len(vals) < 2:
-        return DataQualityCheck(name="volume_units", passed=True, detail="insufficient cross-section")
-    ratio = max(vals) / min(vals)
-    return DataQualityCheck(name="volume_units", passed=ratio <= max_ratio,
-                            detail=f"max/min volume ratio {ratio:.3e} vs max {max_ratio:.0e}")
+class VolumeDispersionError(ValueError):
+    """Capacity inputs are too dispersed to support a defensible estimate."""
 
 
-class VolumeUnitsError(ValueError):
-    """跨标的 volume 单位不一致(容量/ADV 承重消费点用):数据本应干净、一旦坏了绝不能出数。"""
+def assert_volume_dispersion(volume_by_instrument, max_ratio: float = 1e6):
+    check = check_volume_dispersion(volume_by_instrument, max_ratio=max_ratio)
+    if not check.passed:
+        raise VolumeDispersionError(check.detail)
+    return check
+
+
+# Backward-compatible aliases. New production code must use the dispersion names because a
+# numeric ratio cannot establish unit provenance.
+class VolumeUnitsError(VolumeDispersionError):
+    pass
+
+
+def check_volume_units(volume_by_instrument: Mapping[str, float],
+                       max_ratio: float = 1e6) -> DataQualityCheck:
+    check = check_volume_dispersion(volume_by_instrument, max_ratio=max_ratio)
+    return check.model_copy(update={"name": "volume_units"})
 
 
 def assert_volume_units(volume_by_instrument, max_ratio: float = 1e6):
-    """`check_volume_units` 的 fail-closed 版(P2-2 接线):复用同一判据,不过即 raise
-    `VolumeUnitsError`(拒绝出容量数),过则返回该 `DataQualityCheck` 供调用方留证。
-    check_volume_units 保留原样作 LABEL(scenario 研究对已知混单位 trend 的诚实残缺报告),二者
-    posture 不同、都诚实、刻意不合并——见 docs/audit/IMPLEMENTATION_ROADMAP.md Phase 2。"""
     check = check_volume_units(volume_by_instrument, max_ratio=max_ratio)
     if not check.passed:
         raise VolumeUnitsError(check.detail)
@@ -62,6 +64,105 @@ def missing_sessions(expected_days: Iterable[str], present_days: Iterable[str]) 
 def count_future(times: Sequence[int], as_of: int) -> int:
     """Records claiming an event_time after the as-of/now boundary."""
     return sum(1 for t in times if t > as_of)
+
+
+def build_ingestion_report(
+    dataset_id: str,
+    event_times_by_instrument: Mapping[str, Sequence[int]],
+    *,
+    rejected_count: int = 0,
+    as_of: Optional[int] = None,
+    expected_interval: Optional[int] = None,
+    expected_start: Optional[int] = None,
+    expected_end: Optional[int] = None,
+    version: str = "",
+) -> DataQualityReport:
+    """Build an ingestion report without conflating independent instruments.
+
+    Arrival ordering and duplicate checks are evaluated inside each instrument.
+    When ``expected_interval`` is supplied, completeness is checked over the
+    explicit boundary if provided, otherwise over each instrument's observed
+    span. This is the strict ingestion path; no store mutation happens here.
+    """
+    if expected_interval is not None:
+        if isinstance(expected_interval, bool) or not isinstance(expected_interval, int) \
+                or expected_interval <= 0:
+            raise ValueError("expected_interval must be a positive integer")
+    elif expected_start is not None or expected_end is not None:
+        raise ValueError("expected_start/expected_end require expected_interval")
+    if expected_start is not None and expected_end is not None and expected_start > expected_end:
+        raise ValueError("expected_start must not exceed expected_end")
+
+    series = {str(key): tuple(int(t) for t in times)
+              for key, times in event_times_by_instrument.items()}
+    row_count = sum(len(times) for times in series.values())
+    duplicate_count = sum(count_duplicate_event_times(times) for times in series.values())
+    out_of_order_count = sum(count_out_of_order(times) for times in series.values())
+    future_count = sum(count_future(times, as_of) for times in series.values()) \
+        if as_of is not None else 0
+    missing_count = 0
+    off_grid_count = 0
+    if expected_interval is not None:
+        for times in series.values():
+            if not times:
+                continue
+            present = set(times)
+            start = expected_start if expected_start is not None else min(present)
+            end = expected_end if expected_end is not None else max(present)
+            if start <= end:
+                expected = set(range(start, end + 1, expected_interval))
+                missing_count += len(expected - present)
+                off_grid_count += sum(
+                    1 for value in present if (value - start) % expected_interval != 0
+                )
+
+    checks = [
+        DataQualityCheck(
+            name="valid_rows",
+            passed=rejected_count == 0,
+            detail=f"{rejected_count} rejected row(s)",
+        ),
+        DataQualityCheck(
+            name="nonempty_rows",
+            passed=row_count > 0,
+            detail=f"{row_count} valid row(s)",
+        ),
+        DataQualityCheck(
+            name="duplicate_timestamps",
+            passed=duplicate_count == 0,
+            detail=f"{duplicate_count} duplicate(s) within instrument",
+        ),
+        DataQualityCheck(
+            name="ordering",
+            passed=out_of_order_count == 0,
+            detail=f"{out_of_order_count} out-of-order within instrument",
+        ),
+        DataQualityCheck(
+            name="completeness",
+            passed=missing_count == 0,
+            detail=f"{missing_count} missing expected session(s)",
+        ),
+    ]
+    if expected_interval is not None:
+        checks.append(DataQualityCheck(
+            name="cadence_alignment",
+            passed=off_grid_count == 0,
+            detail=f"{off_grid_count} off-grid timestamp(s)",
+        ))
+    if as_of is not None:
+        checks.append(DataQualityCheck(
+            name="no_future_timestamps",
+            passed=future_count == 0,
+            detail=f"{future_count} future record(s)",
+        ))
+    return DataQualityReport(
+        dataset_id=dataset_id,
+        version=version,
+        missing_count=missing_count,
+        duplicate_count=duplicate_count,
+        out_of_order_count=out_of_order_count,
+        checks=tuple(checks),
+    )
 
 
 def build_report(

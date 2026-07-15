@@ -1,5 +1,5 @@
 """live/execution/pricing.py:LIMIT 定价——盘口锚 + 工程容忍带 + 按 tick 取整。设计:
-docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §2;
+docs/engineering/specs/2026-07-06-limit-order-execution-design.md §2;
 批判修正(2026-07-06):锚校验必须防"成功但退化"的响应,不只防网络失败。
 
 纯函数、无网络/墙钟——全部输入通过参数注入。"""

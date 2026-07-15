@@ -27,6 +27,7 @@ from tools.dry_run_combo_multi import _add_global_ls
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE, QUANTILE as CARRY_Q, _legs as carry_legs_fn
 from tools.crypto_oi_research import _legs as oi_legs_fn, QUANTILE as OI_Q
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
@@ -135,14 +136,18 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id="carry_crowd_risk_parity", approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry_crowd_risk_parity", aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
     run.detail["sleeve_allocator"] = {**alloc_source, "provenance": "REAL_CAPITAL_ALLOCATOR"}
-    DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # 第 5 条策略,与前 4 并列
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     avg_sc = sum(a for a, _ in sleeve_wlog) / len(sleeve_wlog) if sleeve_wlog else 0.0
     avg_sq = sum(b for _, b in sleeve_wlog) / len(sleeve_wlog) if sleeve_wlog else 0.0

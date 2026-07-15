@@ -1,5 +1,5 @@
 """交易所过滤器 + 冪等 client_order_id(Stage 1)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.4。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.4。
 
 纯函数、无网络、无墙钟——输入输出皆为真实浮点数量(见 contracts.py 顶部关于两级下单类型的
 说明)。`apply_exchange_filters` 是唯一把"策略想要的数量"折算成"交易所肯接受的数量"的地方:

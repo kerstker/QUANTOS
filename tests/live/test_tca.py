@@ -1,5 +1,5 @@
 """live/execution/tca.py —— 成交质量分析(TCA,2026-07-05)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §③。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §③。
 
 每笔确认成交记录"决策价 vs 实际成交均价"的带方向滑点(bps,买贵/卖贱为正=成本),
 append-only 进账本 tca 表;纯函数汇总对照回测的成本假设(10bps)——"执行现实校验回测假设"
@@ -8,14 +8,14 @@ append-only 进账本 tca 表;纯函数汇总对照回测的成本假设(10bps)�
 import pytest
 
 from live.contracts import VenueOrderResult
-from live.execution.position_ledger import LiveLedger
+from live.execution.position_ledger import LiveLedger, LiveLedgerConflictError
 from live.execution.tca import slippage_bps, tca_summary
 from live.governance.mandate import AUTO
-from live.pipeline import submit_live_batch
 from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 
-from test_pipeline import _PRICES, _FakeVenue, _WIDE_MANDATE, _ctx_factory, _gate
+from .test_pipeline import (_PRICES, _FakeVenue, _WIDE_MANDATE, _ctx_factory, _gate,
+                            submit_live_batch)
 
 _NOW = 1_700_000_000_000
 
@@ -56,14 +56,28 @@ def test_record_tca_round_trip_and_idempotent(ledger):
                       decision_price=60000.0, fill_price=60060.0, quantity=0.01,
                       strategy_id="crowd_contra", recorded_at=_NOW)
     ledger.record_tca("f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.BUY,
-                      decision_price=1.0, fill_price=2.0, quantity=9.9,
-                      strategy_id="crowd_contra", recorded_at=_NOW)  # 重复写忽略
+                      decision_price=60000.0, fill_price=60060.0, quantity=0.01,
+                      strategy_id="crowd_contra", recorded_at=_NOW + 1)
     rows = ledger.tca_records()
     assert len(rows) == 1
     assert rows[0]["fill_id"] == "f1"
     assert rows[0]["decision_price"] == pytest.approx(60000.0)
     assert rows[0]["fill_price"] == pytest.approx(60060.0)
     assert rows[0]["slippage_bps"] == pytest.approx(10.0)      # (60060-60000)/60000*1e4
+
+
+def test_record_tca_same_fill_id_different_payload_raises(ledger):
+    ledger.record_tca(
+        "f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.BUY,
+        decision_price=60000.0, fill_price=60060.0, quantity=0.01,
+        strategy_id="crowd_contra", recorded_at=_NOW,
+    )
+    with pytest.raises(LiveLedgerConflictError, match="TCA fill_id collision"):
+        ledger.record_tca(
+            "f1", client_order_id="c1", instrument_id="BTC", side=OrderSide.BUY,
+            decision_price=1.0, fill_price=2.0, quantity=9.9,
+            strategy_id="crowd_contra", recorded_at=_NOW + 1,
+        )
 
 
 def test_tca_records_on_legacy_ledger_without_table_is_empty_and_lazy_creates(tmp_path):

@@ -1,59 +1,34 @@
-"""Register carry_composite/crowd_contra into the real AlphaCatalog (audit P0 fix, 2026-07-09).
+"""Re-evaluate carry_composite and crowd_contra through the durable search ledger.
 
-The 26-module/185-test lifecycle/catalog/promotion machinery
-(services/alpha/{catalog,lifecycle,evaluator,promotion}.py) has never processed a single real
-candidate: the alphas actually running in dry-run / forward paper-track / live testnet
-(CARRY/CROWD_CONTRA, tools/crypto_oi_research.py + tools/crypto_oi_verify.py) are raw Python
-expression-tuple constants, invisible to AlphaCatalog — `grep services.alpha.{catalog,lifecycle,
-promotion,registry}` across the tools/ drivers that actually run them returns zero hits.
-services/alpha/promotion.py::gather_promotion_evidence already correctly reads real evaluation/
-paper-track artifacts once an alpha IS in the catalog; this was the one missing step —
-catalog.register() had simply never been called for them.
+The complete two-candidate pool is registered before scoring through
+``run_registered_candidate_batch``. Each invocation creates an exact search attempt, binds the
+real cached panel into the dataset version, preserves weekly annualization, and records immutable
+evaluation links. Existing alpha state is never overwritten and a non-human research actor cannot
+reach APPROVED.
 
-Runs as a non-human AGENT actor via the existing, tested services/alpha/factory.py::AlphaFactory
-orchestrator (register -> evaluate -> advance as far as the evidence allows). Structurally CANNOT
-reach APPROVED: AlphaFactory.run() only ever calls advance() up to PAPER_TRADING or REJECTED, and
-that ceiling is independently enforced by services/alpha/lifecycle.py's assert_alpha_transition
-(a non-human actor -> UnauthorizedPromotion) regardless of anything in this script. This script
-computes REAL evidence (leakage via services.research.expression_leakage.compute_leakage_ok on the
-actual expression + panel; overfitting-probability via CSCV over the two real candidates' net
-returns, services.alpha.factory.batch_pbo; regime evidence self-computed by the evaluator from the
-panel's own market state, AlphaFactoryConfig(compute_regime_evidence=True)) and lets the real
-evaluation gate decide the outcome — it does not pre-select or bias the target state.
-
-Idempotent / safely re-runnable: loads existing catalog state first and skips any alpha_id already
-registered (AlphaCatalog.register() raises ValueError on a duplicate id — re-evaluating an
-already-registered alpha with fresh evidence is AlphaLifecycleManager.advance()'s job, a distinct,
-separately-invoked operation, not this one-time backfill driver's).
-
-Persists to data/cache/experiment_registry.db — the real, durable catalog store that
-services/governance/promotion_api/main.py reads for actual human promotion decisions. Kept safe
-from tools/crypto_research_offline.py's destructive demo-panel rebuild by a 2026-07-09 fix that
-gave that regenerator its own dedicated file (crypto_research_demo_registry.db) — before that fix,
-re-running the demo regenerator would have silently wiped any real registration made here.
-
-No network, no broker/SDK, no order/credential — reads only the already-cached local PIT store
-(data/cache/crypto_binance.db et al, via tools.crypto_oi_research.build_panel).
+The production registry is opened fail-closed with ``create=False`` by the shared helper. This tool
+uses only cached research data and has no network, broker, credential, order, or live-trading path.
 """
 from __future__ import annotations
 
-import os
 import time
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Tuple
 
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
-from services.alpha.catalog import AlphaCatalog
+from quantos.contracts.alpha import AlphaDefinition
 from services.alpha.config import AlphaFactoryConfig
-from services.alpha.evaluator import AlphaEvaluator
-from services.alpha.factory import AlphaFactory
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
 from services.research import alpha_expression as ax
-from services.research.experiment_registry.registry import ExperimentRegistry
-from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.expression_leakage import compute_leakage_ok
 from tools.crypto_oi_research import CARRY
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
-_EXP_DB = os.path.join("data", "cache", "experiment_registry.db")
 _FWD_HORIZON = 7   # weekly-forward returns on the daily panel — matches the deployed weekly-
                    # rebalanced dry-run/forward-paper-track book's real cadence (tools/dry_run_
                    # {carry,crowd_contra}_multi.py), not the original daily-discovery-time IC.
@@ -63,18 +38,12 @@ _PERIODS_PER_YEAR = 52   # weekly cadence (52wk/yr), matching services/execution
                          # periods' docstring): daily-stride overlapping periods fed to sharpe()
                          # under a 252 annualization overstated net_sharpe ~1.9-2.2x (confirmed on
                          # real crowd_contra data, recorded 3.35 vs honest ~1.8 non-overlapping).
-_DATASET_VERSION = "carry_crowd_registration_v3_nonoverlap_fix"   # v2's evaluations predate the
-                                                                  # 2026-07-09 non-overlapping-
-                                                                  # period + weekly-annualization
-                                                                  # fix (top-tier gap audit finding
-                                                                  # #1); bumped so this run's
-                                                                  # evaluation artifacts get a fresh
-                                                                  # run_id rather than colliding
-                                                                  # with the stale v2 artifact under
-                                                                  # the write-once immutability
-                                                                  # check (correct behavior: the
-                                                                  # code changed, this is honestly a
-                                                                  # new evaluation lineage).
+_DATASET_CONTRACT = {
+    "driver": "register_alpha_catalog.v4",
+    "fwd_horizon": _FWD_HORIZON,
+    "non_overlapping": True,
+    "periods_per_year": _PERIODS_PER_YEAR,
+}
 
 # (alpha_id, name, expression, factor_ids) — the two real, currently-deployed edges (CLAUDE.md:
 # crowd_contra is the sole "deployable" book; carry is a real-but-weaker supplementary edge).
@@ -117,52 +86,54 @@ def build_candidates(panel, candidates=None, *, fwd_horizon: int = _FWD_HORIZON
     return out, evidence
 
 
-def register_new_candidates(catalog: AlphaCatalog, candidates: Sequence[tuple], evidence: dict, *,
-                            config: Optional[AlphaFactoryConfig] = None,
-                            actor: Optional[Actor] = None, timestamp: int = 0,
-                            evaluator: Optional[AlphaEvaluator] = None) -> dict:
-    """Runs AlphaFactory only on candidates whose alpha_id is NOT already in `catalog` (idempotent
-    re-run: AlphaCatalog.register() raises on a duplicate id, and re-scoring an already-registered
-    alpha belongs to AlphaLifecycleManager.advance(), not here). Returns {} (no-op) when every
-    candidate is already registered. `evaluator` lets the caller supply a periods_per_year matching
-    this driver's weekly (non-overlapping) cadence — see main()."""
-    already = set(catalog.all_ids())
-    fresh = [(defn, periods) for defn, periods in candidates if defn.alpha_id not in already]
-    if not fresh:
-        return {}
-    factory = AlphaFactory(catalog=catalog, config=config, actor=actor, evaluator=evaluator)
-    return factory.run(fresh, timestamp=timestamp, evidence=evidence)
+def registration_dataset_version(panel) -> str:
+    """Bind the registration run to the exact panel and evaluation cadence."""
+    return field_panel_dataset_version(
+        panel,
+        source_versions=_DATASET_CONTRACT,
+    )
 
 
-def main() -> None:
-    now = int(time.time() * 1000)
+def main() -> str:
+    recorded_at = time.time_ns() // 1_000_000
     from tools.crypto_oi_research import build_panel   # deferred: touches real cached data files
     panel, _instruments = build_panel()
     candidates, evidence = build_candidates(panel)
+    dataset_version = registration_dataset_version(panel)
+    search_id = make_search_id(
+        source="tools.register_alpha_catalog",
+        search_kind="ALPHA_CATALOG_REGISTRATION",
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        params=_DATASET_CONTRACT,
+    )
 
-    os.makedirs(os.path.dirname(_EXP_DB), exist_ok=True)
-    store = SqliteExperimentStore(_EXP_DB, create=True)
-    registry = ExperimentRegistry(store)
-    catalog = AlphaCatalog()
-    registry.load_into(catalog)   # no-op (empty) on a freshly-created store; never raises on empty
+    with production_experiment_registry() as registry:
+        result = run_registered_candidate_batch(
+            candidates,
+            registry=registry,
+            search_id=search_id,
+            search_kind="ALPHA_CATALOG_REGISTRATION",
+            search_source="tools.register_alpha_catalog",
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            periods_per_year=_PERIODS_PER_YEAR,
+            config=AlphaFactoryConfig(compute_regime_evidence=True),
+            evidence=evidence,
+        )
+    report = result["report"]
 
-    config = AlphaFactoryConfig(compute_regime_evidence=True)
-    actor = Actor(actor_id="register-alpha-catalog", kind=ActorKind.SYSTEM)
-    evaluator = AlphaEvaluator(catalog, config, periods_per_year=_PERIODS_PER_YEAR)
-    report = register_new_candidates(catalog, candidates, evidence, config=config, actor=actor,
-                                     timestamp=now, evaluator=evaluator)
-
-    if not report:
-        print(f"no new candidates to register (already present in {_EXP_DB})")
-        return
     for alpha_id, r in report.items():
-        ev = r["evaluation"]
-        registry.record_evaluation(ev, dataset_version=_DATASET_VERSION, recorded_ts=now)
-        print(f"{alpha_id}: verdict={ev.verdict.value} state={r['state'].value} "
+        ev = r.get("evaluation")
+        if ev is None:
+            print(f"{alpha_id}: evaluation_error={r.get('error', 'UNKNOWN')}")
+            continue
+        print(f"{alpha_id}: verdict={ev.verdict.value} state={r['state']} "
               f"net_sharpe={ev.net_sharpe:.3f} dsr={ev.deflated_sharpe:.3f} pbo={ev.pbo:.3f} "
               f"reasons={ev.reasons}")
-    registry.save(catalog, now=now)
-    print(f"saved catalog snapshot -> {_EXP_DB}")
+    print("saved catalog snapshot -> data/cache/experiment_registry.db")
+    print(f"search_id={search_id}")
+    return search_id
 
 
 if __name__ == "__main__":

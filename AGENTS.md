@@ -39,7 +39,7 @@ catalog access is for human-controlled workflows and is not an agent API.
 ## What actually exists (verified 2026-06-29 by full-system audit)
 
 Authoritative reality map + completion roadmap:
-[`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md).
+[`docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md).
 **The backend is substantially built and tested (~1047 tests pass). The console-wiring
 gap is now largely closed: the four ALPHA-pipeline breaks are all wired + tested — 断点1
 关卡证据回喂 evaluator (real `detect_leakage`/regime/PBO evidence through every search loop),
@@ -56,7 +56,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   no-peek selection OOS.
 - `services/research/{alpha_factory,alpha_expression,cs_genome,gp_tree,factor_set,
   session}.py` — real evolutionary/GP search, cross-sectional DSL, synergistic
-  de-redundant set selection, reproducible orchestrator.
+  de-redundant set selection, and the deterministic research-session core.
+  The supported orchestrator entry point is
+  `services/intelligence/research_session.py::run_research_session`, which fixes
+  the guardrailed search runtime and keeps `services/research` from importing
+  `services/intelligence`.
 - `services/research/ic_panel.py` — **截面 IC 诊断面板**核心(泛化自 `tools/crypto_oi_research.py::
   _rank_ic`):`compute_period_ic_series`(逐期截面 Spearman rank IC 序列)+ `aggregate_ic_series`
   (mean/ICIR/hit-rate/t-stat/逐年,n<10 全 None)+ `signal_from_window_op`/`signal_composite`(窗口算子
@@ -88,7 +92,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   judged no-peek OOS. Driver `tools/ml_stack_research.py`. Honest finding: NO tradable edge (crypto combination
   hurts/GBM overfits; FX +0.21 is gross + contaminated-universe) — bottleneck is data/signal-class, not modeling.
   numpy/sklearn are non-network so `services/` no-network-import is still machine-enforced.
-- `services/research/realism/{impact,capacity_curve}.py` — **现实主义引擎 RE-1(市场冲击 + 容量)**:把回测/干跑的
+- `services/execution/{impact,impact_calibration}.py` + `services/research/realism/capacity_curve.py` — **现实主义引擎 RE-1(市场冲击 + 容量)**:把回测/干跑的
   成本现实从「未校准、默认关闭的 sqrt stub」升到 **Almgren-Chriss 冲击**(临时平方根 + 永久线性,参与率驱动,纯函数)
   + **容量衰减带**(扫 AUM → 净冲击后夏普 → `critical_aum`;冲击系数无法校准 → 扫 5–20bps 给**区间带**、标
   `UNCALIBRATED_PRINCIPLED`,不报假单点)。**诚实容量 = min(冲击-夏普容量, 参与率上限10%)**——两约束里更紧那个。
@@ -103,9 +107,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (`REAL_HISTORICAL_REPLAY`)。**诚实发现:① 美元中性预判证实——carry/crowd 崩盘 beta 极低(下尾依赖 0.13/0.0),
   crowd_contra 在 LUNA(+10.6%)/FTX(+6.5%)崩盘里反而赚——这些边的尾部风险是*截面价差击穿*,不是市场 beta;② 真尾部
   内生——carry 最差回撤 19%(gross 无杠杆)发生在 2020-11 牛市而非任何崩盘;注:干跑报 77% 是 vol-target 加杠杆后的口径,
-  两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ trend 容量把 `crypto_daily.db` 的 volume 单位跨币
-  不一致 bug 逮出来(EOS ~$20k vs BTC ~$3.7Q,~17 数量级不可能真实)——诚实标 `UNRELIABLE_VOLUME_UNITS` 不报假数,已
-  spawn 独立修复任务。** 诊断非门禁。crowd 2021-05 窗口无数据(早期 OI global_ls 稀疏,诚实标注)。
+  两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ **2026-07-13 根因更正**:`crypto_daily.db`
+  的 CoinGecko volume 本来就是统一的 USD 24h rolling notional，错误在 trend 容量消费端又乘一次 close，制造了
+  BTC ~$3.7Q vs EOS ~$20k 的假“单位混乱”。现以 `VolumeUnit/VolumeSemantics` 机器约束并修复双乘；真实中位 ADV
+  BTC ~$43.5B/EOS ~$119.6K，trend 短样本容量约 $47.9K(参与率绑定、未校准诊断)。** crowd 2021-05 窗口无数据
+  (早期 OI global_ls 稀疏,诚实标注)。
 - `services/research/macro_regime.py` + `tools/{fred_fetch,macro_regime_research}.py` — **FRED 宏观数据方向(第一增量)**:
   股票免费源本环境被墙(Stooq bot-wall / Yahoo 429,不绕过),**FRED `fredgraph.csv` 可达**。`fred_fetch.py`(网络在 tools/
   出 gate)抓 6 条**市场型日频序列**(VIX/DGS10/T10Y2Y/HY-OAS/DXY/DFII10,39271 行)填进**已建但从未填的** `fundamental_store`
@@ -138,8 +144,9 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/risk/research_risk/` — 9-engine fail-closed gate, **now tested**
   (`tests/risk/test_research_risk_gate.py`). `services/risk/pre_trade/` — real
   fail-closed pre-trade gate + latched `KillSwitch` (the successor to the
-  quarantined `trading/pre_trade_risk`); tested but **not yet surfaced** in any
-  endpoint/page.
+  quarantined `trading/pre_trade_risk`). The kill-switch now has an append-only
+  SQLite authority: ARM/RESET state and canonical event outbox commit together,
+  official live drivers use CAS, and the console reads the authority fail-closed.
 - `services/alpha/` (26 modules / 185 tests) — catalog, lifecycle SM, evaluator,
   BH-FDR ranker, population_optimizer, decay, crowding/capacity, correlation/
   cluster, orthogonalize, zoo, alpha_graph, lineage, degradation_monitor.
@@ -152,6 +159,41 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/{features,execution,monitoring,deployment}/` — leakage detector +
   feature registry; execution boundary + intent builder; hash-chained audit log +
   health; fail-closed deployment/version-pin gate. All tested.
+- `quantos/contracts/event_schemas.py` +
+  `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
+  versioned strict event schemas, a single-node durable Event log, append-only
+  consumer journal (leases, offsets, retries, DLQ), an idempotent read projection,
+  and a load-bearing single-node consumer-group coordinator. Group topology is
+  immutable; heartbeat membership, correlation-stable partitioning, deterministic
+  eager rebalance, generation fencing, and cross-restart partition offsets are
+  tamper-evident. The official projection deliberately stays at one partition to
+  preserve total order, heartbeats before processing, and leaves on clean exit.
+  Latest schemas use Unix epoch microseconds; the affected historical
+  kill-switch/promotion/deployment v1.0 records retain an explicit millisecond
+  interpretation and v1.1 moves those types to microseconds without magnitude
+  guessing. `evidence/event_schema_catalog.json` publishes 11 event types / 16
+  definitions with compatibility policy, timestamp units, payload JSON Schemas,
+  hashes, and implementation bindings; stale or tampered catalogs fail the unified
+  gate and supply-chain manifest. Real same-store transactional outboxes now bind dry-run completion
+  plus its exact research-risk subset decision
+  to `DryRunRun`, alpha promotion to the experiment catalog snapshot, alpha
+  maintenance transitions to the authoritative maintenance snapshot, and
+  kill-switch ARM/RESET to its authoritative state chain. A fifth outbox binds
+  deployment evaluation state to its canonical event; L2 state is restricted to
+  `DENIED` or `ELIGIBLE_NOT_APPLIED`, never `DEPLOYED`. A sixth outbox commits each
+  tamper-evident market-data refresh record with a redacted canonical data event.
+  Verified per-partition lag/age, group DLQ counts, and append-only storage
+  thresholds are surfaced by the console and a schedulable alert driver; retention
+  remains alert-only and never deletes audit history. Dispatch is
+  publish-then-ack and explicitly at-least-once. A separate schedulable recovery
+  drain opens all six owner stores with `create=False`, redacts failures, drains
+  independent sources, and advances the shared projection once; source processes
+  no longer need to rerun after a commit-before-publish crash. JSON is only an atomic
+  compatibility mirror. Actual deployment application/execution and real live
+  pre-trade producers remain open. Cross-host membership/consensus, broker/replication/HA,
+  strong worker identity, automatic externally sealed archival, and independent
+  alert-delivery SLA remain open;
+  the SQLite coordinator is not represented as a distributed event platform.
 - `services/trading/dry_run_adapters/` — real, tested, fail-closed dry-run
   adapters (no broker SDK).
 - `services/trading/broker_adapter.py` — **broker adapter 接缝(轨道3 子项目1)**:把"实盘=换适配器+
@@ -174,6 +216,15 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `ApprovalRecord` 路径一字不动;LIVE 仍被 readiness pin + LIVE flags 结构性挡死(grant 合法也不解锁 LIVE)。治理
   `tests/governance/test_multi_party_approval_boundary.py` 钉死"无 SDK/网络 import + 非人到不了 APPROVED"。诚实边界:
   强化的是*批准的构造路径*,单进程内挡不住受信代码凑三个 HUMAN Actor 绕过(那是子项目3)。
+- `quantos/contracts/identity.py` + `services/governance/strong_identity.py` +
+  `services/promotion_api/main.py` — **强身份 M2 基线(2026-07-12)**:晋级 API 已删除共享
+  gov token 与自报操作者，承重入口只接受 allowlist 非对称签名 OIDC access token，强制
+  issuer/audience/时效/MFA、RFC 8705 `cnf.x5t#S256` mTLS 绑定与动作 RBAC；actor/audit ID 只来自
+  `issuer|subject`，缺外部策略或可信 TLS scope 即拒。浏览器端已实现 Authorization Code + PKCE S256:
+  Web Crypto 生成 state/nonce/verifier，版本化 sessionStorage 只存一次性事务，access token 只驻内存。
+  13 个攻击案例 + 三方 subject 分离证据在 `evidence/strong_identity_baseline.json`。诚实边界:外部 IdP
+  运营、可信 TLS、密钥托管轮换、身份生命周期/撤销/访问复核及 AI workload 排除证据未提供，因此
+  只到 M2/PARTIAL，`GOV.IDENTITY.STRONG_AUTH` 红线不关闭，绝不授权 live。
 - `services/governance/signing.py` + `docs/PHASE_14_PROCESS_ISOLATION.md` — **出进程签名权威接缝(轨道3 子项目3,
   收口)**:全代码库反复出现的同一句诚实注脚——「单进程内挡不住受信代码」(`verify_ref` 无密钥哈希、直接凑三个
   `HUMAN` Actor、直接调 manager/catalog、重算 broker 守卫)——本子项目一次性回答它:真防御只能在进程外。
@@ -209,7 +260,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   与它 IC t-stat 4.32、过 4/5 证伪一致。诚实边界:这是对**已知历史**的执行现实回测(整手+门+成本+换手,残差≈0 恒等式成立),
   **非前向/实盘**;宇宙仅 14 大币;证伪已过≠前向必赚——是否送前向 paper-track/加仓位是另一独立决策。
   实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
-- `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
+- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
   `research-run` (run_registry sqlite), `crypto-live` (CoinGecko offline snapshot),
@@ -262,7 +313,7 @@ cd apps/research-console && npm ci && npm run typecheck && npm run build && npm 
 
 # Frontend against the REAL read-only backend (Phase 12 wiring)
 #   1) start the console API (read-only computed snapshots, no broker/OMS):
-python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
 #   2) point the console at it and disable mock mode (CORS allows :3100 only):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
 
@@ -270,7 +321,7 @@ cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=fa
 #   research_runner is the ONLY mutating surface — POST /run triggers a WHITELISTED research kind
 #   (backtest/search/data refresh) async into the run_registry; it touches NO order/broker/credential
 #   path (machine-enforced by tests/governance/test_research_runner_boundary.py). console_api stays GET-only.
-python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --port 8420
+python -m uvicorn services.research_runner.main:app --host 127.0.0.1 --port 8420
 #   then run the frontend with both URLs (the `research-console-live` launch.json config sets these):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_RUNNER_URL=http://127.0.0.1:8420 \
   VITE_MOCK_MODE=false npm run dev   # → /research/runs lists every run; buttons trigger new ones

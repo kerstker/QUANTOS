@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -12,7 +13,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from services.governance.top_tier_assessment import RegistryError, assess_repository
+from services.governance.top_tier_assessment import (  # noqa: E402
+    RegistryError,
+    assess_repository,
+)
 
 
 DEFAULT_REGISTRY = REPO / "config" / "top_tier_requirements.json"
@@ -65,10 +69,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--requirements", default=str(DEFAULT_REGISTRY))
     parser.add_argument("--json-out", default=str(DEFAULT_JSON))
     parser.add_argument("--matrix-out", default=str(DEFAULT_MATRIX))
+    parser.add_argument("--as-of-ms", type=int)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     try:
-        report = assess_repository(Path(args.repo_root), Path(args.requirements))
+        as_of_ms = (
+            time.time_ns() // 1_000_000
+            if args.as_of_ms is None
+            else args.as_of_ms
+        )
+        report = assess_repository(
+            Path(args.repo_root),
+            Path(args.requirements),
+            as_of_ms=as_of_ms,
+        )
         json_path, matrix_path = Path(args.json_out), Path(args.matrix_out)
         if args.check:
             expected_json = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

@@ -1,5 +1,5 @@
 """live-paper 偏差自动升级(2026-07-05,机构审计 P1 quick win)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md 补充。
 
 纯函数、无 IO。此前 parity gap/TCA 滑点只是记录,从未按阈值区分"日常噪音"与"真正该有人
 看一眼的偏差"——真实数据里出现过 gap≈7% AUM、滑点 942bps 都被淹没在普通 info alert 里。

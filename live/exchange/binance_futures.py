@@ -1,5 +1,5 @@
 """Binance USDT-M 合约签名 REST 客户端(Stage 1)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.3。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.3。
 
 纯 stdlib(urllib/hmac/hashlib/json/time)——绝不 import 交易所 SDK(ccxt/python-binance 等)。
 `http_request` 可注入(测试用假 transport,零真网络;生产默认走内置 urllib 实现)。
@@ -214,7 +214,17 @@ class BinanceFuturesAdapter:
                                      {"symbol": instrument_id + "USDT"}, signed=False)
             if not (200 <= status < 300):
                 return None
-            return {"bid": float(data["bidPrice"]), "ask": float(data["askPrice"])}
+            book = {"bid": float(data["bidPrice"]), "ask": float(data["askPrice"])}
+            raw_timestamp = data.get("time")
+            if not isinstance(raw_timestamp, bool):
+                try:
+                    as_of_ms = int(raw_timestamp)
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                else:
+                    if as_of_ms > 0:
+                        book["as_of_ms"] = as_of_ms
+            return book
         except Exception:
             return None
 

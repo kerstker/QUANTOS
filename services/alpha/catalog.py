@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState
@@ -42,14 +42,21 @@ class CatalogSnapshot:
 
 
 class AlphaCatalog:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        trial_recorder: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self._defs: dict[str, AlphaDefinition] = {}
         self._state: dict[str, AlphaState] = {}
         self._returns: dict[str, tuple[float, ...]] = {}
         self._sharpes: dict[str, float] = {}
         self._pvalues: dict[str, float] = {}
+        self._historical_sharpes: dict[str, float] = {}
+        self._historical_pvalues: dict[str, float] = {}
         self._seen_configs: set[str] = set()
         self._trial_count: int = 0
+        self._trial_recorder = trial_recorder
 
     # --- registration & multiple-testing accounting --------------------------
 
@@ -60,12 +67,14 @@ class AlphaCatalog:
         aid = definition.alpha_id
         if aid in self._defs:
             raise ValueError(f"alpha already registered: {aid}")
+        self.register_trial(definition.definition_hash)
         self._defs[aid] = definition
         self._state[aid] = AlphaState.DRAFT
-        self.register_trial(definition.definition_hash)
 
     def register_trial(self, config_hash: str) -> None:
         """Count a never-seen config exactly once; monotonic, never decremented."""
+        if self._trial_recorder is not None:
+            self._trial_recorder(config_hash)
         if config_hash not in self._seen_configs:
             self._seen_configs.add(config_hash)
             self._trial_count += 1
@@ -81,7 +90,7 @@ class AlphaCatalog:
         UN-deflate Deflated Sharpe and let a noise alpha pass (review P0). The
         caller must route to human review instead of fabricating a tiny var_sr.
         """
-        vals = list(self._sharpes.values())
+        vals = list({**self._historical_sharpes, **self._sharpes}.values())
         if len(vals) < 2:
             return None
         return max(statistics.pstdev(vals) ** 2, _VAR_SR_FLOOR)
@@ -107,8 +116,9 @@ class AlphaCatalog:
         """Alpha ids whose IC p-value survives catalog-wide Benjamini-Hochberg FDR
         at level q. The second, independent edge lens (alongside DSR)."""
         from .multiple_testing import benjamini_hochberg
-        ids = sorted(self._pvalues)
-        survivors = benjamini_hochberg([self._pvalues[a] for a in ids], q=q)
+        pvalues = {**self._historical_pvalues, **self._pvalues}
+        ids = sorted(pvalues)
+        survivors = benjamini_hochberg([pvalues[a] for a in ids], q=q)
         return {ids[i] for i in survivors}
 
     def bhy_fdr_survivors(self, q: float = 0.10) -> set[str]:
@@ -117,8 +127,9 @@ class AlphaCatalog:
         when the catalog's edges are correlated (which they are). Wired into the VALIDATED guard
         (Rank #12); BHY was implemented but unused before."""
         from .multiple_testing import benjamini_hochberg_yekutieli
-        ids = sorted(self._pvalues)
-        survivors = benjamini_hochberg_yekutieli([self._pvalues[a] for a in ids], q=q)
+        pvalues = {**self._historical_pvalues, **self._pvalues}
+        ids = sorted(pvalues)
+        survivors = benjamini_hochberg_yekutieli([pvalues[a] for a in ids], q=q)
         return {ids[i] for i in survivors}
 
     # --- state (low-level; the lifecycle manager is the validated chokepoint) -
@@ -173,6 +184,8 @@ class AlphaCatalog:
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
+        self._historical_sharpes = {}
+        self._historical_pvalues = {}
         self._seen_configs = set(snap.trials)
         self._trial_count = len(self._seen_configs)
         for row in snap.alphas:
@@ -182,3 +195,37 @@ class AlphaCatalog:
                 self.set_returns(row.alpha_id, row.returns)   # recomputes _sharpes
             if row.pvalue is not None:
                 self._pvalues[row.alpha_id] = float(row.pvalue)
+
+    def restore_evaluation_context(
+        self,
+        *,
+        trials: Sequence[str],
+        historical_returns: Mapping[str, Sequence[float]],
+        historical_pvalues: Mapping[str, float],
+    ) -> None:
+        """Restore multiple-testing state without stale lifecycle identities.
+
+        A new dataset must re-evaluate the same canonical alpha IDs, while DSR and
+        FDR still see prior trials and statistics. Historical rows remain
+        statistical context only; current evaluations replace their value by ID.
+        """
+        self._defs = {}
+        self._state = {}
+        self._returns = {}
+        self._sharpes = {}
+        self._pvalues = {}
+        self._seen_configs = set(trials)
+        self._trial_count = len(self._seen_configs)
+        self._historical_sharpes = {}
+        for alpha_id, values in historical_returns.items():
+            returns = tuple(float(value) for value in values)
+            if len(returns) > 1:
+                standard_deviation = statistics.pstdev(returns)
+                if standard_deviation > 0:
+                    self._historical_sharpes[alpha_id] = (
+                        statistics.fmean(returns) / standard_deviation
+                    )
+        self._historical_pvalues = {
+            alpha_id: float(value)
+            for alpha_id, value in historical_pvalues.items()
+        }
