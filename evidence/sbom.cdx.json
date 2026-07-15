@@ -7214,6 +7214,24 @@
       "version": "3.18"
     },
     {
+      "bom-ref": "pypi:import-linter@2.2.0",
+      "name": "import-linter",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "pypi"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "requirements-dev.txt"
+        }
+      ],
+      "purl": "pkg:pypi/import-linter@2.2.0",
+      "scope": "optional",
+      "type": "library",
+      "version": "2.2.0"
+    },
+    {
       "bom-ref": "pypi:joblib@1.5.3",
       "name": "joblib",
       "properties": [

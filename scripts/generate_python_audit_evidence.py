@@ -56,12 +56,20 @@ def _run_external_audit(repo_root: Path) -> dict[str, Any]:
         ],
         cwd=repo_root,
         capture_output=True,
-        text=True,
         check=False,
     )
+    # pip-audit mixes progress indicators into stdout before the JSON object;
+    # on Windows the system encoding may also be non-UTF-8, so operate in binary
+    # mode and locate the JSON start explicitly.
+    raw = process.stdout
+    json_start = raw.find(b"{")
+    if json_start < 0:
+        raise PythonAuditEvidenceError(
+            "pip-audit did not return a JSON advisory report"
+        )
     try:
-        report = json.loads(process.stdout)
-    except json.JSONDecodeError as exc:
+        report = json.loads(raw[json_start:].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise PythonAuditEvidenceError(
             "pip-audit did not return a JSON advisory report"
         ) from exc
