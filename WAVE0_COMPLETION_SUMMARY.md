@@ -89,7 +89,7 @@
   - CLAUDE.md/PROJECT_STATE.md等核心文档
   - 42+审计文档更新
   - config/top_tier_requirements.json成熟度提升
-- **删除**: 100个文件 (旧superpowers plans/specs清理)
+- **删除**: 100个文件 (旧engineering plans/specs清理)
 
 ### 测试覆盖
 - **测试文件**: 376个 (`tests/**/test_*.py`)
