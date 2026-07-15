@@ -8,7 +8,8 @@
 
 ## ✅ 验证门最终状态: PASS
 
-**Pytest主套件**: 1032 passed in 25.35s ✅  
+**Pytest主套件**: 2820 passed in ~12min ✅  
+**核心测试**: 35 passed (promotion + model_card + trial_ledger + legacy_check) ✅  
 **测试收集**: 3649个可收集测试  
 **治理扫描**: 320文件扫描，0违规 ✅
 
