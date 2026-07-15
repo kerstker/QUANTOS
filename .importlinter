@@ -1,0 +1,44 @@
+[importlinter]
+root_packages =
+    quantos
+    services
+    live
+include_external_packages = False
+
+[importlinter:contract:research-alpha-independence]
+name = Research should not import from Alpha
+type = forbidden
+source_modules =
+    services.research
+forbidden_modules =
+    services.alpha
+
+[importlinter:contract:live-unidirectional]
+name = Live can import but cannot be imported
+type = forbidden
+source_modules =
+    quantos
+    services.research
+    services.alpha
+    services.portfolio
+    services.risk
+    services.data
+forbidden_modules =
+    live
+
+[importlinter:contract:quantos-contracts-clean]
+name = Contracts should not import from services
+type = forbidden
+source_modules =
+    quantos.contracts
+forbidden_modules =
+    services
+    live
+
+[importlinter:contract:research-alpha-no-circular]
+name = Research and Alpha should avoid circular dependency
+type = forbidden
+source_modules =
+    services.research
+forbidden_modules =
+    services.alpha

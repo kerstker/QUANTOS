@@ -5,3 +5,4 @@ pytest-asyncio==1.4.0
 httpx2==2.5.0
 pip-audit==2.10.1
 sigstore==4.4.0
+import-linter==2.2.0
