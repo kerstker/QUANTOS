@@ -341,7 +341,7 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     `{instrument_id: (step_size, min_qty, min_notional)}`,原样透传给每期的 `plan_target_quantities`
     (见其 docstring)。默认 None -> 每期目标手数计算与改动前逐字节相同(回归测试钉死)。这轮只交付
     管线本身有能力做量化——真实 Binance/Bybit exchangeInfo 数据接进具体驱动器是后续独立工作。"""
-    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]))
+    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:]))
     start_event_id = ""
     if event_bus is not None:
         start_event = dry_run_started_event(
