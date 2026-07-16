@@ -39,15 +39,15 @@
       "data/cache/crypto_oi_metrics.json": "2647c72cba025517ed859d7b07904f610a76abce178fa724918e912534fc5767"
     }
   },
-  "evidence_sha256": "205ae70483a629a837ebb007fef38196b808ddc5be9851d45440508b73788afa",
+  "evidence_sha256": "465bef964b28970a0357f50089399e6a343d44d4f2c91f102cb4843fdea8f612",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "a4e9bfc80ad9755ba0c4d6fb13aa427a212024f1d0cbfdc9862bfb4a08e9ee82",
-    "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
-    "services/portfolio/crowding_gate.py": "253610728109c6f4e05075306b8609a3570354954d8968b02f946775379f85d9",
-    "tools/crowding_metric_research.py": "8cdc16a64fc88738e11888c020cea13fa3a9aa77f10413618187808f67d241d1",
-    "tools/dry_run_crowd_contra_multi.py": "85802aaaa8e7c839045a9c1feb63a6067480573052fd036b1be52fed95845483",
-    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "486fc7c56fa2cf00b4f892c3b1c0d2edd14e1ae9b5c762d3804baf59e73a26bb",
-    "tools/live_track_advance.py": "9fdf449fdb80b269028f1cc048834d2817bbe6da564e0d549b4172da90774659"
+    "services/portfolio/crowding_calibration.py": "b221b2e446625e7faf4aaf2e2137e8e3887357497ad20fee6a65034ad43d288b",
+    "services/portfolio/crowding_gate.py": "420e8656ff8b592f8d37b64e8405e602c8dca22007d36dd6177b93fb4d2945d3",
+    "tools/crowding_metric_research.py": "a5b1ea02eead9c67f779b80d4bd3537bcc5f854ac4c49e7c4f7dc4a50142cc8e",
+    "tools/dry_run_crowd_contra_multi.py": "ceb6b297a551f04df1b95c6787651b4fb5daa24c4f1955014fd2a15ecd195fc5",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "fe5067658c9e025c74c695ba702e95b805b9735eff4b2c97551830af409774bf",
+    "tools/live_track_advance.py": "010c7d43474495e08505fdc1ba414b56898e51c586f6dd256500ccd9555d099e"
   },
   "limitations": [
     "Sensitivity replay is historical and not causal proof of loss prevention.",
