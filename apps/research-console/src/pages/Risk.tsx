@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { fetchRiskDashboardSnapshot, fetchSafetyPrimitivesSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React, { useState } from 'react';
+import { fetchRiskDashboardSnapshot, fetchSafetyPrimitivesSnapshot } from '@/lib/api/research-console-api';
 import { mockRiskReports } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
-import type { ComputationRiskReport, RiskDashboardPayload, RiskReport, SafetyPrimitivesPayload } from '@/lib/types/research';
-import { useConsoleSnapshot, type ConsoleApiState } from '@/ui/useConsoleSnapshot';
+import type { CalculationLineageItem, ComputationRiskReport, RiskDashboardPayload, RiskReport, SafetyPrimitivesPayload } from '@/lib/types/research';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
   StatusChip, GateDot, ProgressBar, KeyValue, Chip, type Column,
@@ -31,48 +31,19 @@ const gateLabel = (g: string) => gateLabels[g] ?? g.replace(/_/g, ' ');
 
 export default function Risk() {
   const [selectedAlpha, setSelectedAlpha] = useState('alpha-1');
-  const [payload, setPayload] = useState<RiskDashboardPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
-
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchRiskDashboardSnapshot(selectedAlpha, controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
-
-    return () => controller.abort();
-  }, [apiEnabled, selectedAlpha]);
+  const { payload, apiState, error: apiError, usingBackend } = useConsoleSnapshot<RiskDashboardPayload>(
+    s => fetchRiskDashboardSnapshot(selectedAlpha, s),
+    [selectedAlpha],
+  );
 
   // The REAL kill-switch / pre-trade gate / SafetyConfig status (read-only — never armed/reset here).
   const sp = useConsoleSnapshot<SafetyPrimitivesPayload>(s => fetchSafetyPrimitivesSnapshot(s));
   const safety = sp.payload;
 
-  const usingBackend = apiState === 'connected' && payload !== null;
-  const primaryReport: AnyRiskReport = usingBackend ? payload.primary_report : mockRiskReports[0];
-  const reports: AnyRiskReport[] = usingBackend ? payload.reports : mockRiskReports;
-  const alpha = usingBackend ? payload.alpha : undefined;
-  const selectedAlphaId = usingBackend ? payload.selected_alpha_id : selectedAlpha;
+  const primaryReport: AnyRiskReport = usingBackend ? payload!.primary_report : mockRiskReports[0];
+  const reports: AnyRiskReport[] = usingBackend ? payload!.reports : mockRiskReports;
+  const alpha = usingBackend ? payload!.alpha : undefined;
+  const selectedAlphaId = usingBackend ? payload!.selected_alpha_id : selectedAlpha;
 
   const gateEntries = Object.entries(primaryReport.gate_results);
   const passed = primaryReport.gates_passed;
@@ -258,11 +229,11 @@ export default function Risk() {
         )}
       </Panel>
 
-      {usingBackend && payload.lineage.length > 0 && (
+      {usingBackend && payload!.lineage.length > 0 && (
         <Panel eyebrow={bi('血缘', 'Lineage')} title={bi('计算血缘', 'Calculation Lineage')}>
           <DataTable
             dense
-            rows={payload.lineage}
+            rows={payload!.lineage}
             getKey={l => l.id}
             columns={[
               { key: 'id', header: 'ID', mono: true, render: l => l.id },
@@ -270,7 +241,7 @@ export default function Risk() {
               { key: 'formula', header: bi('公式', 'Formula'), mono: true, render: l => l.formula },
               { key: 'backend', header: bi('后端', 'Backend'), mono: true, render: l => l.backend },
               { key: 'output', header: bi('输出', 'Output'), mono: true, render: l => l.output },
-            ] as Column<typeof payload.lineage[number]>[]}
+            ] as Column<CalculationLineageItem>[]}
           />
         </Panel>
       )}

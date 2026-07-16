@@ -6,6 +6,10 @@ import {
 } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
+import type {
+  ResearchRunsPayload, OverviewPayload, CryptoLivePayload,
+  SafetyPrimitivesPayload, PopulationOptimizerPayload,
+} from '@/lib/types/research';
 import { PageShell, PageHeader, Panel, StatusChip, Chip } from '@/ui/primitives';
 
 /**
@@ -34,10 +38,11 @@ function Metric({ label, value, tone = 'ink' }: { label: string; value: React.Re
 }
 
 function RunsTile() {
-  const { payload, usingBackend } = useConsoleSnapshot<any>(s => fetchResearchRuns(s));
+  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<ResearchRunsPayload>(s => fetchResearchRuns(s));
   const runs = usingBackend ? (payload?.runs ?? []) : [];
-  const done = runs.filter((r: any) => r.status === 'done').length;
-  const active = runs.filter((r: any) => r.status === 'queued' || r.status === 'running').length;
+  const done = runs.filter(r => r.status === 'done').length;
+  const active = runs.filter(r => r.status === 'queued' || r.status === 'running').length;
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
     <div className="flex flex-wrap items-end gap-5">
       <Metric label={bi('运行总数', 'Total runs')} value={runs.length || '—'} tone="accent" />
@@ -49,31 +54,34 @@ function RunsTile() {
 }
 
 function OverviewTile() {
-  const { payload, usingBackend } = useConsoleSnapshot<any>(s => fetchOverviewSnapshot(s));
+  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<OverviewPayload>(s => fetchOverviewSnapshot(s));
   const f = usingBackend ? (payload?.funnel ?? []) : [];
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
     <div className="flex flex-wrap items-end gap-4">
-      {f.length ? f.map((x: any) => <Metric key={x.id} label={x.label} value={x.value} />)
+      {f.length ? f.map(x => <Metric key={x.id} label={x.label} value={x.value} />)
         : <span className="text-2xs text-faint">{bi('未连后端', 'backend offline')}</span>}
     </div>
   );
 }
 
 function CryptoTile() {
-  const { payload, usingBackend } = useConsoleSnapshot<any>(s => fetchCryptoLiveSnapshot(s));
+  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<CryptoLivePayload>(s => fetchCryptoLiveSnapshot(s));
   const factors = usingBackend ? (payload?.factors ?? []) : [];
-  const top = [...factors].sort((a: any, b: any) => (b.net_sharpe ?? -9) - (a.net_sharpe ?? -9))[0];
+  const top = [...factors].sort((a, b) => (b.net_sharpe ?? -9) - (a.net_sharpe ?? -9))[0];
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
     <div className="flex flex-wrap items-end gap-5">
       <Metric label={bi('真实因子', 'Real factors')} value={factors.length || '—'} tone="cyan" />
-      {top && <Metric label={bi('最佳净夏普', 'Top net SR')} value={top.net_sharpe?.toFixed?.(2) ?? '—'} tone="pos" />}
+      {top && <Metric label={bi('最佳净夏普', 'Top net SR')} value={top.net_sharpe?.toFixed(2) ?? '—'} tone="pos" />}
       {top && <div className="text-2xs text-muted">{top.name ?? top.alpha_id}</div>}
     </div>
   );
 }
 
 function SafetyTile() {
-  const { payload } = useConsoleSnapshot<any>(s => fetchSafetyPrimitivesSnapshot(s));
+  const { payload, apiState, error } = useConsoleSnapshot<SafetyPrimitivesPayload>(s => fetchSafetyPrimitivesSnapshot(s));
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   if (!payload) return <span className="text-2xs text-faint">{bi('载入中…', 'loading…')}</span>;
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -87,8 +95,9 @@ function SafetyTile() {
 }
 
 function OptimizerTile() {
-  const { payload, usingBackend } = useConsoleSnapshot<any>(s => fetchPopulationOptimizerSnapshot(s));
+  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<PopulationOptimizerPayload>(s => fetchPopulationOptimizerSnapshot(s));
   const d = usingBackend ? payload : null;
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
     <div className="flex flex-wrap items-end gap-5">
       <Metric label={bi('已选', 'Selected')} value={d?.selected?.length ?? '—'} tone="pos" />
