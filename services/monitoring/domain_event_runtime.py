@@ -5,6 +5,7 @@ from dataclasses import asdict
 import os
 from pathlib import Path
 import sqlite3
+import time
 
 from quantos.contracts.event_schemas import (
     CANONICAL_EVENT_SCHEMAS,
@@ -241,10 +242,13 @@ def project_pending_domain_events(
         }
     finally:
         projection.close()
+        # Use current wall-clock so concurrent writers' later HEARTBEATs don't
+        # break the monotonic-time invariant when this process tries to leave.
+        leave_ms = max(now_ms, int(time.time() * 1000))
         event_bus.leave_consumer_group(
             DOMAIN_EVENT_PROJECTION_CONSUMER,
             worker_id=worker_id,
-            now_ms=now_ms,
+            now_ms=leave_ms,
         )
 
 

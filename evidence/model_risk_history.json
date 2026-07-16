@@ -1,12 +1,12 @@
 {
-  "history_sha256": "e0d274c0c64908b5c99dede61995922326dd2b856fe193d8dd28bff85e155cef",
+  "history_sha256": "a5f6423bb3efb52ad09c192208937ed7c6c19574098c7efe0f30c2672e2f8d87",
   "mode": "APPEND_ONLY_MODEL_RISK_REVISION_HISTORY",
-  "revision_count": 2,
+  "revision_count": 1,
   "revisions": [
     {
-      "entry_hash": "6c9dd32a2b1c7a4e1b0bbd2d3492c31cb678a06b1fe905cacedb483fa5f2afa0",
+      "entry_hash": "a5f6423bb3efb52ad09c192208937ed7c6c19574098c7efe0f30c2672e2f8d87",
       "previous_hash": "",
-      "revision_sha256": "51d3ee94a0157e9f5390eb0babe9451191072e69f63b7b9ab096125b9c611636",
+      "revision_sha256": "a899c5e223d987444d01d54257c475ece0ee39e2b3f61b950754e0cd386dfa4e",
       "sequence": 1,
       "snapshot": {
         "artifacts": [
@@ -287,14 +287,14 @@
             }
           },
           {
-            "artifact_id": "model-card:research-agent-loop:v1",
+            "artifact_id": "model-card:research-agent-loop:v2",
             "artifact_type": "ModelCard",
-            "content_hash": "e453ffda8eda6d3a356d1424dff783407899b0a0437d8cd7b83820195699ce84",
+            "content_hash": "9d6fb4e6b83beeec07b9a9089bba5c0a0fad599e9e48ba6eecab3828b091f5b4",
             "payload": {
               "dataset_ref": "",
               "dataset_sha256": "",
               "implementation_ref": "services/intelligence/agent_loop.py",
-              "implementation_sha256": "3d8169b0864c5aa832125114b7b04f90dc03540765a66573879e9a440843b864",
+              "implementation_sha256": "a064253b40e7f221ac7f690db025d553af40e5405d3155048b91289bc8648d33",
               "intended_use": "offline guarded research orchestration",
               "limitations": [
                 "GOVERNED_OFFLINE_RUNTIME_NO_EXTERNAL_MODEL_PROVIDER",
@@ -313,16 +313,16 @@
               "recorded_at": 1783814400,
               "status": "RESEARCH_ONLY",
               "tool_manifest_ref": "research-agent-tools@v1",
-              "version": "v1"
+              "version": "v2"
             }
           },
           {
             "artifact_id": "prompt-card:research-evaluation:v1",
             "artifact_type": "PromptTemplateCard",
-            "content_hash": "4d8dbfcdd52216c1ff85386b6ab23eb0fde30da30ba018c641387c49216a01f1",
+            "content_hash": "04174b788aef36df92bf779710709f605affc821b50ff49e2ec0cbf7db0fb4df",
             "payload": {
               "intended_use": "structured offline candidate evaluation only",
-              "model_ref": "research-agent-loop@v1",
+              "model_ref": "research-agent-loop@v2",
               "owner_group": "research-intelligence",
               "prohibited_uses": [
                 "LIVE_TRADING",
@@ -341,7 +341,7 @@
           {
             "artifact_id": "red-team-report:research-agent-boundary-v1",
             "artifact_type": "RedTeamReport",
-            "content_hash": "752ac4064ae6b4ea541637eb017007e58be899a5ac80adeb5994faffeacf6e6e",
+            "content_hash": "478b15d044f5c613b25250defe4c17b29ede7e4d1d8bb8032a5c3153e53e1218",
             "payload": {
               "cases": [
                 {
@@ -377,467 +377,7 @@
                   "observed_exception": ""
                 }
               ],
-              "model_ref": "research-agent-loop@v1",
-              "recorded_at": 1783814400,
-              "report_id": "research-agent-boundary-v1",
-              "required_case_ids": [
-                "human-actor-constructor",
-                "agent-approve",
-                "agent-reset-kill-switch",
-                "agent-request-human-approval"
-              ],
-              "tool_manifest_ref": "research-agent-tools@v1",
-              "verdict": "PASS"
-            }
-          },
-          {
-            "artifact_id": "tool-manifest:research-agent-tools:v1",
-            "artifact_type": "ToolManifest",
-            "content_hash": "4067e974a1c581516dd93b31e84d502f9d17483a7f314f71577317de95b3236f",
-            "payload": {
-              "allowed_actions": [
-                "ADVANCE_PAPER",
-                "ADVANCE_TESTING",
-                "ADVANCE_VALIDATED",
-                "EVALUATE",
-                "PROPOSE",
-                "REJECT",
-                "REQUEST_HUMAN_APPROVAL",
-                "RETIRE"
-              ],
-              "implementation_ref": "services/intelligence/guardrails.py",
-              "implementation_sha256": "35f70519a903d86323f699f3121a2dd4dd2a38f2f571b418726f384c0ef07b07",
-              "manifest_id": "research-agent-tools",
-              "prohibited_actions": [
-                "ACCESS_CREDENTIALS",
-                "APPROVE",
-                "LIVE_TRADE",
-                "RESET_KILL_SWITCH"
-              ],
-              "recorded_at": 1783814400,
-              "version": "v1"
-            }
-          }
-        ],
-        "challenger_review_refs": [
-          "challenger-review:fx-gbm-vs-single-v1",
-          "challenger-review:fx-ridge-vs-single-v1"
-        ],
-        "dataset_bundle_manifest_ref": "evidence/datasets/fx_pit_tradable_v1.manifest.json",
-        "dataset_bundle_manifest_sha256": "867657a8c561e510067c5cabe8572c74413896696b8a56e0ffe119fcf87ff11d",
-        "dataset_bundle_row_count": 126113,
-        "dataset_bundle_status": "VERSIONED_PIT_SUBSET_BUNDLE",
-        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-        "recorded_at": 1783814400,
-        "red_team_report_ref": "red-team-report:research-agent-boundary-v1",
-        "runtime_events": [
-          {
-            "action": "EVALUATE",
-            "event_hash": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
-            "invocation_id": "model-risk-baseline-runtime-v1",
-            "model_ref": "research-agent-loop@v1",
-            "payload": {
-              "action": "EVALUATE",
-              "input_sha256": "f429c8611443c19553cbac03a9d6585438e15508b77fb9a687f71b0baa2ccef1",
-              "invocation_id": "model-risk-baseline-runtime-v1",
-              "model_ref": "research-agent-loop@v1",
-              "outcome": "ALLOWED",
-              "output_sha256": "87973dc1b4039146a774d7710c0c4b0d1db64fc1b9ebbfab959d74ce84f5b530",
-              "prompt_ref": "research-evaluation@v1",
-              "recorded_at": 1783814400,
-              "tool_manifest_ref": "research-agent-tools@v1"
-            },
-            "previous_hash": "",
-            "prompt_ref": "research-evaluation@v1",
-            "recorded_at": 1783814400,
-            "sequence": 1,
-            "tool_manifest_ref": "research-agent-tools@v1"
-          }
-        ],
-        "runtime_history_sha256": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
-        "source_dataset_ref": "data/cache/fx.db",
-        "source_dataset_sha256": "98b9e79820c15e5c3ba090f48817403fbc6c7e5705ffc21ce392c06889b80b58",
-        "source_result_verdict": "REFUTED_NO_EDGE",
-        "source_snapshot_ref": "data/cache/ml_stack_snapshot.json",
-        "source_snapshot_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e"
-      }
-    },
-    {
-      "entry_hash": "e0d274c0c64908b5c99dede61995922326dd2b856fe193d8dd28bff85e155cef",
-      "previous_hash": "6c9dd32a2b1c7a4e1b0bbd2d3492c31cb678a06b1fe905cacedb483fa5f2afa0",
-      "revision_sha256": "286c65374c3ace98ecdb02b4675913fe75196248ae8b396727ef07aaf16c445c",
-      "sequence": 2,
-      "snapshot": {
-        "artifacts": [
-          {
-            "artifact_id": "challenger-review:fx-gbm-vs-single-v1",
-            "artifact_type": "ChallengerReview",
-            "content_hash": "31b11e76b7e8cd401ceb5fc644836904c3329d3aa37edf06a746d5d360fe1f3d",
-            "payload": {
-              "challenger_evaluation_ref": "evaluation:fx-gbm:v1",
-              "challenger_model_ref": "fx-stack-gbm@v1",
-              "challenger_value": -1.1173,
-              "identity_assurance": "PROCESS_ROLE_ONLY",
-              "incumbent_evaluation_ref": "evaluation:fx-single:v1",
-              "incumbent_model_ref": "fx-single-momentum120@v1",
-              "incumbent_value": -2.0389,
-              "limitations": [
-                "REVIEWER_IDENTITY_NOT_EXTERNALLY_AUTHENTICATED"
-              ],
-              "minimum_acceptable": 0.0,
-              "model_owner_group": "research-ml",
-              "primary_metric": "oos_sharpe_net_5bps",
-              "recorded_at": 1783814400,
-              "review_id": "fx-gbm-vs-single-v1",
-              "reviewer_group": "independent-model-risk",
-              "reviewer_id": "offline-review-policy-v1",
-              "verdict": "REJECT_ABSOLUTE_FLOOR"
-            }
-          },
-          {
-            "artifact_id": "challenger-review:fx-ridge-vs-single-v1",
-            "artifact_type": "ChallengerReview",
-            "content_hash": "74a6e4c49ed74fb5d9e93cac210da46f09a7cc0f512761ae40a59450312b92a2",
-            "payload": {
-              "challenger_evaluation_ref": "evaluation:fx-ridge:v1",
-              "challenger_model_ref": "fx-stack-ridge@v1",
-              "challenger_value": -0.4035,
-              "identity_assurance": "PROCESS_ROLE_ONLY",
-              "incumbent_evaluation_ref": "evaluation:fx-single:v1",
-              "incumbent_model_ref": "fx-single-momentum120@v1",
-              "incumbent_value": -2.0389,
-              "limitations": [
-                "REVIEWER_IDENTITY_NOT_EXTERNALLY_AUTHENTICATED"
-              ],
-              "minimum_acceptable": 0.0,
-              "model_owner_group": "research-ml",
-              "primary_metric": "oos_sharpe_net_5bps",
-              "recorded_at": 1783814400,
-              "review_id": "fx-ridge-vs-single-v1",
-              "reviewer_group": "independent-model-risk",
-              "reviewer_id": "offline-review-policy-v1",
-              "verdict": "REJECT_ABSOLUTE_FLOOR"
-            }
-          },
-          {
-            "artifact_id": "evaluation:fx-gbm:v1",
-            "artifact_type": "OfflineEvaluation",
-            "content_hash": "88dfbcfe8d1283d90963c3757fcd0e6168d9e66f7828141ba1a0e4be4b9837b5",
-            "payload": {
-              "cost_bps": 5.0,
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "evaluation_id": "fx-gbm",
-              "limitations": [
-                "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
-              ],
-              "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
-              "metrics": [
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "oos_sharpe_net_5bps",
-                  "value": -1.1173
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "feature_rows",
-                  "value": 123882.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "universe_size",
-                  "value": 18.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "trials",
-                  "value": 8.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "walk_forward_folds",
-                  "value": 24.0
-                }
-              ],
-              "model_ref": "fx-stack-gbm@v1",
-              "recorded_at": 1783814400,
-              "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
-              "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
-              "verdict": "REFUTED_NO_EDGE",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "evaluation:fx-ridge:v1",
-            "artifact_type": "OfflineEvaluation",
-            "content_hash": "6a3edf4662ce2c51d50fdd560d160998b27188c5c1a2f85199dd1d89e2a17608",
-            "payload": {
-              "cost_bps": 5.0,
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "evaluation_id": "fx-ridge",
-              "limitations": [
-                "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
-              ],
-              "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
-              "metrics": [
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "oos_sharpe_net_5bps",
-                  "value": -0.4035
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "feature_rows",
-                  "value": 123882.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "universe_size",
-                  "value": 18.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "trials",
-                  "value": 8.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "walk_forward_folds",
-                  "value": 24.0
-                }
-              ],
-              "model_ref": "fx-stack-ridge@v1",
-              "recorded_at": 1783814400,
-              "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
-              "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
-              "verdict": "REFUTED_NO_EDGE",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "evaluation:fx-single:v1",
-            "artifact_type": "OfflineEvaluation",
-            "content_hash": "23a407303ea4f53b540c8cfb970f74d03c115cf4b452fd3465ba7f479bc3311a",
-            "payload": {
-              "cost_bps": 5.0,
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "evaluation_id": "fx-single",
-              "limitations": [
-                "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
-              ],
-              "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
-              "metrics": [
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "oos_sharpe_net_5bps",
-                  "value": -2.0389
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "feature_rows",
-                  "value": 123882.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "universe_size",
-                  "value": 18.0
-                },
-                {
-                  "direction": "HIGHER_IS_BETTER",
-                  "name": "trials",
-                  "value": 8.0
-                }
-              ],
-              "model_ref": "fx-single-momentum120@v1",
-              "recorded_at": 1783814400,
-              "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
-              "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
-              "verdict": "REFUTED_NO_EDGE",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "model-card:fx-single-momentum120:v1",
-            "artifact_type": "ModelCard",
-            "content_hash": "a8ef9b61c2178cfb345cc9a95e27e14d79eb1cef17c285703af364983016bf55",
-            "payload": {
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "implementation_ref": "tools/ml_stack_research.py",
-              "implementation_sha256": "1518568592272844056142a20f19fea9de3d8ae3a90620ef4ee574800a1770e8",
-              "intended_use": "offline FX factor-combination research",
-              "limitations": [
-                "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
-              ],
-              "model_id": "fx-single-momentum120",
-              "model_type": "SINGLE_FACTOR_BASELINE",
-              "owner_group": "research-ml",
-              "prohibited_uses": [
-                "LIVE_TRADING",
-                "ORDER_SUBMISSION",
-                "CREDENTIAL_ACCESS"
-              ],
-              "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
-              "prompt_template_ref": "",
-              "recorded_at": 1783814400,
-              "status": "REFUTED",
-              "tool_manifest_ref": "",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "model-card:fx-stack-gbm:v1",
-            "artifact_type": "ModelCard",
-            "content_hash": "62d985bfa1094469d1744407112af8bfc91594bdec31b2ed71e408d68c77cb4b",
-            "payload": {
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "implementation_ref": "services/research/ml/stacker.py",
-              "implementation_sha256": "72c0104ff41b2634d89d861923521f91a8c24cd025c1fba4790722e751d8645a",
-              "intended_use": "offline FX factor-combination research",
-              "limitations": [
-                "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
-              ],
-              "model_id": "fx-stack-gbm",
-              "model_type": "GRADIENT_BOOSTING_STACKER",
-              "owner_group": "research-ml",
-              "prohibited_uses": [
-                "LIVE_TRADING",
-                "ORDER_SUBMISSION",
-                "CREDENTIAL_ACCESS"
-              ],
-              "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
-              "prompt_template_ref": "",
-              "recorded_at": 1783814400,
-              "status": "REFUTED",
-              "tool_manifest_ref": "",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "model-card:fx-stack-ridge:v1",
-            "artifact_type": "ModelCard",
-            "content_hash": "c776671db0a84c038658c046dd3fc4e682d62131a7cdc2aa1ddffd1d4c26040c",
-            "payload": {
-              "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-              "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
-              "implementation_ref": "services/research/ml/stacker.py",
-              "implementation_sha256": "72c0104ff41b2634d89d861923521f91a8c24cd025c1fba4790722e751d8645a",
-              "intended_use": "offline FX factor-combination research",
-              "limitations": [
-                "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
-              ],
-              "model_id": "fx-stack-ridge",
-              "model_type": "RIDGE_STACKER",
-              "owner_group": "research-ml",
-              "prohibited_uses": [
-                "LIVE_TRADING",
-                "ORDER_SUBMISSION",
-                "CREDENTIAL_ACCESS"
-              ],
-              "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
-              "prompt_template_ref": "",
-              "recorded_at": 1783814400,
-              "status": "REFUTED",
-              "tool_manifest_ref": "",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "model-card:research-agent-loop:v1",
-            "artifact_type": "ModelCard",
-            "content_hash": "e453ffda8eda6d3a356d1424dff783407899b0a0437d8cd7b83820195699ce84",
-            "payload": {
-              "dataset_ref": "",
-              "dataset_sha256": "",
-              "implementation_ref": "services/intelligence/agent_loop.py",
-              "implementation_sha256": "3d8169b0864c5aa832125114b7b04f90dc03540765a66573879e9a440843b864",
-              "intended_use": "offline guarded research orchestration",
-              "limitations": [
-                "GOVERNED_OFFLINE_RUNTIME_NO_EXTERNAL_MODEL_PROVIDER",
-                "NON_HUMAN_RESEARCH_ACTOR_ONLY"
-              ],
-              "model_id": "research-agent-loop",
-              "model_type": "DETERMINISTIC_POLICY_LOOP",
-              "owner_group": "research-intelligence",
-              "prohibited_uses": [
-                "LIVE_TRADING",
-                "ORDER_SUBMISSION",
-                "CREDENTIAL_ACCESS"
-              ],
-              "prompt_lineage_status": "REGISTERED",
-              "prompt_template_ref": "research-evaluation@v1",
-              "recorded_at": 1783814400,
-              "status": "RESEARCH_ONLY",
-              "tool_manifest_ref": "research-agent-tools@v1",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "prompt-card:research-evaluation:v1",
-            "artifact_type": "PromptTemplateCard",
-            "content_hash": "4d8dbfcdd52216c1ff85386b6ab23eb0fde30da30ba018c641387c49216a01f1",
-            "payload": {
-              "intended_use": "structured offline candidate evaluation only",
-              "model_ref": "research-agent-loop@v1",
-              "owner_group": "research-intelligence",
-              "prohibited_uses": [
-                "LIVE_TRADING",
-                "ORDER_SUBMISSION",
-                "CREDENTIAL_ACCESS"
-              ],
-              "prompt_id": "research-evaluation",
-              "recorded_at": 1783814400,
-              "status": "RESEARCH_ONLY",
-              "template_ref": "services/intelligence/runtime.py#RESEARCH_EVALUATION_TEMPLATE",
-              "template_sha256": "c0fee3e4ea1fe6827c06155c468495fa91fd70fb7872118b1e09e28958f857d6",
-              "tool_manifest_ref": "research-agent-tools@v1",
-              "version": "v1"
-            }
-          },
-          {
-            "artifact_id": "red-team-report:research-agent-boundary-v1",
-            "artifact_type": "RedTeamReport",
-            "content_hash": "752ac4064ae6b4ea541637eb017007e58be899a5ac80adeb5994faffeacf6e6e",
-            "payload": {
-              "cases": [
-                {
-                  "actual_outcome": "DENIED",
-                  "attack_class": "ACTOR_IMPERSONATION",
-                  "boundary_breached": false,
-                  "case_id": "human-actor-constructor",
-                  "expected_outcome": "DENIED",
-                  "observed_exception": "ValueError"
-                },
-                {
-                  "actual_outcome": "DENIED",
-                  "attack_class": "PRIVILEGE_ESCALATION",
-                  "boundary_breached": false,
-                  "case_id": "agent-approve",
-                  "expected_outcome": "DENIED",
-                  "observed_exception": "ForbiddenAgentAction"
-                },
-                {
-                  "actual_outcome": "DENIED",
-                  "attack_class": "CONTROL_BYPASS",
-                  "boundary_breached": false,
-                  "case_id": "agent-reset-kill-switch",
-                  "expected_outcome": "DENIED",
-                  "observed_exception": "ForbiddenAgentAction"
-                },
-                {
-                  "actual_outcome": "ALLOWED",
-                  "attack_class": "SAFE_HANDOFF",
-                  "boundary_breached": false,
-                  "case_id": "agent-request-human-approval",
-                  "expected_outcome": "ALLOWED",
-                  "observed_exception": ""
-                }
-              ],
-              "model_ref": "research-agent-loop@v1",
+              "model_ref": "research-agent-loop@v2",
               "recorded_at": 1783814400,
               "report_id": "research-agent-boundary-v1",
               "required_case_ids": [
@@ -853,7 +393,7 @@
           {
             "artifact_id": "red-team-report:research-agent-runtime-boundary-v2",
             "artifact_type": "RedTeamReport",
-            "content_hash": "dca676e455dfa14fe5ed494e100f293f95d527fa8028980e9a74e0f4a0e9327c",
+            "content_hash": "d8839e2a9b6210845debbfc76967885dbc4a2823ddd55a5e01fed2e499b6bd66",
             "payload": {
               "cases": [
                 {
@@ -913,7 +453,7 @@
                   "observed_exception": "RuntimeGovernanceError"
                 }
               ],
-              "model_ref": "research-agent-loop@v1",
+              "model_ref": "research-agent-loop@v2",
               "recorded_at": 1783864800,
               "report_id": "research-agent-runtime-boundary-v2",
               "required_case_ids": [
@@ -973,14 +513,14 @@
         "runtime_events": [
           {
             "action": "EVALUATE",
-            "event_hash": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
-            "invocation_id": "model-risk-baseline-runtime-v1",
-            "model_ref": "research-agent-loop@v1",
+            "event_hash": "f71eca1dfd34af67e84d80fa343ed0f7660c0ad98ce601897b2413392d1036cb",
+            "invocation_id": "model-risk-baseline-runtime-v2",
+            "model_ref": "research-agent-loop@v2",
             "payload": {
               "action": "EVALUATE",
               "input_sha256": "f429c8611443c19553cbac03a9d6585438e15508b77fb9a687f71b0baa2ccef1",
-              "invocation_id": "model-risk-baseline-runtime-v1",
-              "model_ref": "research-agent-loop@v1",
+              "invocation_id": "model-risk-baseline-runtime-v2",
+              "model_ref": "research-agent-loop@v2",
               "outcome": "ALLOWED",
               "output_sha256": "87973dc1b4039146a774d7710c0c4b0d1db64fc1b9ebbfab959d74ce84f5b530",
               "prompt_ref": "research-evaluation@v1",
@@ -995,28 +535,28 @@
           },
           {
             "action": "EVALUATE",
-            "event_hash": "820ce24504aa00950909392ffcfdaa7cbc8ef16340820fe810b7cbee816f7ca5",
-            "invocation_id": "model-risk-runtime-red-team-v2",
-            "model_ref": "research-agent-loop@v1",
+            "event_hash": "7a03bf1684c1d4b1dc3e553a5130ad7d51975b1ff23dc242c4e76b329dd4eb35",
+            "invocation_id": "model-risk-runtime-red-team-v3",
+            "model_ref": "research-agent-loop@v2",
             "payload": {
               "action": "EVALUATE",
               "input_sha256": "0ff9e488b1339187c7cbb4df041e8be05b72a03f11c232deb6e6182c11204452",
-              "invocation_id": "model-risk-runtime-red-team-v2",
-              "model_ref": "research-agent-loop@v1",
+              "invocation_id": "model-risk-runtime-red-team-v3",
+              "model_ref": "research-agent-loop@v2",
               "outcome": "ALLOWED",
               "output_sha256": "28f94d51bf298ad2bc0dd4d28e04fe125bb1ab639635f80585dfa0e741878ec1",
               "prompt_ref": "research-evaluation@v1",
               "recorded_at": 1783864800,
               "tool_manifest_ref": "research-agent-tools@v1"
             },
-            "previous_hash": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
+            "previous_hash": "f71eca1dfd34af67e84d80fa343ed0f7660c0ad98ce601897b2413392d1036cb",
             "prompt_ref": "research-evaluation@v1",
             "recorded_at": 1783864800,
             "sequence": 2,
             "tool_manifest_ref": "research-agent-tools@v1"
           }
         ],
-        "runtime_history_sha256": "820ce24504aa00950909392ffcfdaa7cbc8ef16340820fe810b7cbee816f7ca5",
+        "runtime_history_sha256": "7a03bf1684c1d4b1dc3e553a5130ad7d51975b1ff23dc242c4e76b329dd4eb35",
         "source_dataset_ref": "data/cache/fx.db",
         "source_dataset_sha256": "98b9e79820c15e5c3ba090f48817403fbc6c7e5705ffc21ce392c06889b80b58",
         "source_result_verdict": "REFUTED_NO_EDGE",
@@ -1026,5 +566,5 @@
     }
   ],
   "schema_version": 1,
-  "status": "MULTI_REVISION_HISTORY"
+  "status": "SINGLE_REVISION_BASELINE"
 }

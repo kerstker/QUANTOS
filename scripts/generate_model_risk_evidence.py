@@ -236,7 +236,7 @@ def execute_agent_boundary_red_team(*, recorded_at: int) -> RedTeamReport:
         )
     return assess_red_team(
         report_id="research-agent-boundary-v1",
-        model_ref="research-agent-loop@v1",
+        model_ref="research-agent-loop@v2",
         tool_manifest_ref="research-agent-tools@v1",
         cases=tuple(cases),
         required_case_ids=_REQUIRED_RED_TEAM_CASES,
@@ -259,7 +259,7 @@ def execute_runtime_boundary_red_team(
                     )
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref="research-agent-loop@v1",
+                model_ref="research-agent-loop@v2",
                 prompt_ref="research-evaluation@v1",
                 tool_manifest_ref="research-agent-tools@v1",
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
@@ -312,7 +312,7 @@ def execute_runtime_boundary_red_team(
             store.close()
     return assess_red_team(
         report_id="research-agent-runtime-boundary-v2",
-        model_ref="research-agent-loop@v1",
+        model_ref="research-agent-loop@v2",
         tool_manifest_ref="research-agent-tools@v1",
         cases=tuple(cases),
         required_case_ids=(*_REQUIRED_RED_TEAM_CASES, *_RUNTIME_RED_TEAM_CASES),
@@ -374,7 +374,7 @@ def _model_artifacts(
         template_sha256=hashlib.sha256(
             RESEARCH_EVALUATION_TEMPLATE.encode("utf-8")
         ).hexdigest(),
-        model_ref="research-agent-loop@v1",
+        model_ref="research-agent-loop@v2",
         intended_use="structured offline candidate evaluation only",
         prohibited_uses=("LIVE_TRADING", "ORDER_SUBMISSION", "CREDENTIAL_ACCESS"),
         tool_manifest_ref=tool_manifest.manifest_ref,
@@ -384,7 +384,7 @@ def _model_artifacts(
     common_prohibited = ("LIVE_TRADING", "ORDER_SUBMISSION", "CREDENTIAL_ACCESS")
     agent_card = ModelCard(
         model_id="research-agent-loop",
-        version="v1",
+        version="v2",
         owner_group="research-intelligence",
         model_type="DETERMINISTIC_POLICY_LOOP",
         implementation_ref=_AGENT_LOOP,
@@ -537,13 +537,13 @@ def _registry_snapshot(
             verified = registry.verify_all()
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref="research-agent-loop@v1",
+                model_ref="research-agent-loop@v2",
                 prompt_ref="research-evaluation@v1",
                 tool_manifest_ref="research-agent-tools@v1",
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             runtime.invoke(
-                invocation_id="model-risk-baseline-runtime-v1",
+                invocation_id="model-risk-baseline-runtime-v2",
                 action="EVALUATE",
                 input_payload={
                     "artifact_count": baseline_artifact_count,
@@ -563,7 +563,7 @@ def _registry_snapshot(
                     and artifact.report_id == "research-agent-runtime-boundary-v2"
                 )
                 runtime.invoke(
-                    invocation_id="model-risk-runtime-red-team-v2",
+                    invocation_id="model-risk-runtime-red-team-v3",
                     action="EVALUATE",
                     input_payload={
                         "artifact_count": len(artifacts),

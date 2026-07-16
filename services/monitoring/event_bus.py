@@ -313,7 +313,7 @@ class DurableEventBus:
             parent = os.path.dirname(db_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self._c = sqlite3.connect(db_path, check_same_thread=False)
+        self._c = sqlite3.connect(db_path, check_same_thread=False, timeout=5.0)
         self._consumer_groups = ConsumerGroupCoordinator(self._c)
         self._lock = threading.Lock()
         self._subscribers: List[Callable[[Event], None]] = []

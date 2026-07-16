@@ -67,7 +67,7 @@ function toneCls(v: unknown, good: string): string {
 
 function verdictColor(v: string | undefined): string {
   return v === 'PASS' ? 'var(--pos)' : v === 'FAIL' ? 'var(--neg)'
-    : v === 'WARN' ? 'var(--warn)' : 'var(--text-muted)';
+    : v === 'WARN' ? 'var(--warn)' : 'var(--muted)';
 }
 
 const numOf = (v: unknown): number => (typeof v === 'number' ? v : NaN);
@@ -117,10 +117,10 @@ function DimScatter({ rows, dimByKey, x, y, openId, onPick }: {
       ))}
       <text x={(padL + W - padR) / 2} y={H - 8} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{dx?.zh} / {dx?.en}</text>
       <text x={16} y={(padT + H - padB) / 2} textAnchor="middle" fontSize="11" fill="var(--text-secondary)" transform={`rotate(-90 16 ${(padT + H - padB) / 2})`}>{dy?.zh} / {dy?.en}</text>
-      <text x={padL} y={H - padB + 14} fontSize="10" fill="var(--text-muted)">{fmtDim(xlo, dx?.fmt ?? '')}</text>
-      <text x={W - padR} y={H - padB + 14} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(xhi, dx?.fmt ?? '')}</text>
-      <text x={padL - 5} y={H - padB} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(ylo, dy?.fmt ?? '')}</text>
-      <text x={padL - 5} y={padT + 8} textAnchor="end" fontSize="10" fill="var(--text-muted)">{fmtDim(yhi, dy?.fmt ?? '')}</text>
+      <text x={padL} y={H - padB + 14} fontSize="10" fill="var(--muted)">{fmtDim(xlo, dx?.fmt ?? '')}</text>
+      <text x={W - padR} y={H - padB + 14} textAnchor="end" fontSize="10" fill="var(--muted)">{fmtDim(xhi, dx?.fmt ?? '')}</text>
+      <text x={padL - 5} y={H - padB} textAnchor="end" fontSize="10" fill="var(--muted)">{fmtDim(ylo, dy?.fmt ?? '')}</text>
+      <text x={padL - 5} y={padT + 8} textAnchor="end" fontSize="10" fill="var(--muted)">{fmtDim(yhi, dy?.fmt ?? '')}</text>
     </svg>
   );
 }
@@ -228,7 +228,7 @@ export default function AlphaZoo() {
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--pos)' }} />PASS</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--warn)' }} />WARN</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--neg)' }} />FAIL</span>
-          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--text-muted)' }} />{bi('待人工复核', 'review')}</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: 'var(--muted)' }} />{bi('待人工复核', 'review')}</span>
           <span>· {bi('虚线 = 中位数,把因子分到四象限;点一个点钻取', 'dashed = medians (quadrants); click a point to drill in')}</span>
         </div>
       </Panel>

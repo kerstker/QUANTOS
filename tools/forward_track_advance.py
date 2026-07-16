@@ -39,6 +39,8 @@ from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
+_LOCK_STALE_S = 600  # assume dead if lock held > 10 minutes
 _DAY_MS = 86_400_000
 _WEEK_MS = 7 * _DAY_MS
 _DECISION_DUE_MS = _WEEK_MS - 12 * 3600 * 1000      # 7 天 − 12h 容差(数据网格抖动)
@@ -166,7 +168,39 @@ def _reference_sharpe(sig, rows, ev, insts, prices, funding_sum, *, before_ts) -
     return (sharpe(rets) if len(rets) >= 10 else None), len(rets)
 
 
+def _try_acquire_lock() -> bool:
+    """Atomically acquire the single-run lock; return False if another run is active."""
+    try:
+        if time.time() - os.path.getmtime(_LOCK_FILE) > _LOCK_STALE_S:
+            os.unlink(_LOCK_FILE)  # stale lock from a crashed previous run
+    except (FileNotFoundError, OSError):
+        pass
+    try:
+        fd = os.open(_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except (FileExistsError, OSError):
+        return False
+
+
+def _release_lock() -> None:
+    try:
+        os.unlink(_LOCK_FILE)
+    except (FileNotFoundError, OSError):
+        pass
+
+
 def main() -> None:
+    if not _try_acquire_lock():
+        sys.exit("forward_track_advance: another run is active, exiting to avoid consumer-group race")
+    try:
+        _run()
+    finally:
+        _release_lock()
+
+
+def _run() -> None:
     now_ms = int(time.time() * 1000)
     alerts: list = []
     do_refresh = "--no-refresh" not in sys.argv
@@ -337,4 +371,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pragma: no cover

@@ -10,8 +10,8 @@
     {
       "current_maturity": "M3",
       "domain": "alpha_research",
-      "passed": 1,
-      "red_lines_failed": 1,
+      "passed": 2,
+      "red_lines_failed": 0,
       "requirements": 2
     },
     {
@@ -43,7 +43,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "domain": "platform_engineering",
       "passed": 1,
       "red_lines_failed": 1,
@@ -127,7 +127,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Model prompt tools evaluation and red-team lineage",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: non_runtime_prompt_lineage, prompt_lineage, revision_history_longitudinal, runtime_event_lineage",
       "domain": "ai_agents",
       "evidence": [
         "evidence/model_risk_baseline.json",
@@ -228,9 +228,9 @@
         ]
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M4",
       "description": "Global trial ledger survives sessions",
-      "detail": "official guided/evolutionary/GP/MCTS and factory persistence wiring is verified, but versioned append-only trial-ledger history is not retained",
+      "detail": "official guided/evolutionary/GP/MCTS and factory recorder wiring, a versioned two-session monotonic history chain with exact completed-search evaluation bindings, database-enforced append-only trial/evaluation/search tables, and the exact current ledger contents are verified",
       "domain": "alpha_research",
       "evidence": [
         "services/intelligence/research_session.py",
@@ -250,10 +250,12 @@
         "tests/research/test_experiment_store.py",
         "tests/research/test_search_trial_provenance.py",
         "tests/intelligence/test_registered_candidate_batch.py",
-        "tests/governance/test_experiment_registry_isolation.py"
+        "tests/governance/test_experiment_registry_isolation.py",
+        "evidence/alpha_trial_ledger_history.json",
+        "data/cache/experiment_registry.db"
       ],
       "id": "ALPHA.TRIAL.GLOBAL_LEDGER",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Evidence complete: all five factory tools wired to persistent search identity with cross-session trial count verification",
       "red_line": true,
       "required_evidence": [
@@ -262,7 +264,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -832,9 +834,9 @@
         "path": "evidence/supply_chain_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed but unprovisioned local decision store; no retained valid bundle or external signed receipt exercises the real verifier path, source-native checkpoint/revocation proofs are not verified, and cross-host reproducibility, an externally signed artifact, authenticated receipts, independent deployment, and an external history seal remain open; evidence does not meet target maturity",
+      "detail": "supply-chain baseline failed: manifest_digest:apps/research-console/package-lock.json, manifest_digest:apps/research-console/package.json, npm_vulnerability_evidence",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
@@ -1015,7 +1017,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1205,7 +1207,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Independent challenger and model cards exist",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: non_runtime_prompt_lineage, prompt_lineage, revision_history_longitudinal, runtime_event_lineage",
       "domain": "validation_model_risk",
       "evidence": [
         "evidence/model_risk_baseline.json",
@@ -1247,11 +1249,11 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 4,
+    "failed": 5,
     "manual_evidence_required": 2,
-    "partial": 2,
-    "passed": 14,
-    "red_lines_failed": 4,
+    "partial": 0,
+    "passed": 15,
+    "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
   },
