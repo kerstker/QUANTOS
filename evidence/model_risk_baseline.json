@@ -286,14 +286,14 @@
       }
     },
     {
-      "artifact_id": "model-card:research-agent-loop:v2",
+      "artifact_id": "model-card:research-agent-loop:v1",
       "artifact_type": "ModelCard",
-      "content_hash": "9d6fb4e6b83beeec07b9a9089bba5c0a0fad599e9e48ba6eecab3828b091f5b4",
+      "content_hash": "e453ffda8eda6d3a356d1424dff783407899b0a0437d8cd7b83820195699ce84",
       "payload": {
         "dataset_ref": "",
         "dataset_sha256": "",
         "implementation_ref": "services/intelligence/agent_loop.py",
-        "implementation_sha256": "a064253b40e7f221ac7f690db025d553af40e5405d3155048b91289bc8648d33",
+        "implementation_sha256": "3d8169b0864c5aa832125114b7b04f90dc03540765a66573879e9a440843b864",
         "intended_use": "offline guarded research orchestration",
         "limitations": [
           "GOVERNED_OFFLINE_RUNTIME_NO_EXTERNAL_MODEL_PROVIDER",
@@ -312,16 +312,16 @@
         "recorded_at": 1783814400,
         "status": "RESEARCH_ONLY",
         "tool_manifest_ref": "research-agent-tools@v1",
-        "version": "v2"
+        "version": "v1"
       }
     },
     {
       "artifact_id": "prompt-card:research-evaluation:v1",
       "artifact_type": "PromptTemplateCard",
-      "content_hash": "04174b788aef36df92bf779710709f605affc821b50ff49e2ec0cbf7db0fb4df",
+      "content_hash": "4d8dbfcdd52216c1ff85386b6ab23eb0fde30da30ba018c641387c49216a01f1",
       "payload": {
         "intended_use": "structured offline candidate evaluation only",
-        "model_ref": "research-agent-loop@v2",
+        "model_ref": "research-agent-loop@v1",
         "owner_group": "research-intelligence",
         "prohibited_uses": [
           "LIVE_TRADING",
@@ -340,7 +340,7 @@
     {
       "artifact_id": "red-team-report:research-agent-boundary-v1",
       "artifact_type": "RedTeamReport",
-      "content_hash": "478b15d044f5c613b25250defe4c17b29ede7e4d1d8bb8032a5c3153e53e1218",
+      "content_hash": "752ac4064ae6b4ea541637eb017007e58be899a5ac80adeb5994faffeacf6e6e",
       "payload": {
         "cases": [
           {
@@ -376,7 +376,7 @@
             "observed_exception": ""
           }
         ],
-        "model_ref": "research-agent-loop@v2",
+        "model_ref": "research-agent-loop@v1",
         "recorded_at": 1783814400,
         "report_id": "research-agent-boundary-v1",
         "required_case_ids": [
@@ -392,7 +392,7 @@
     {
       "artifact_id": "red-team-report:research-agent-runtime-boundary-v2",
       "artifact_type": "RedTeamReport",
-      "content_hash": "d8839e2a9b6210845debbfc76967885dbc4a2823ddd55a5e01fed2e499b6bd66",
+      "content_hash": "dca676e455dfa14fe5ed494e100f293f95d527fa8028980e9a74e0f4a0e9327c",
       "payload": {
         "cases": [
           {
@@ -452,7 +452,7 @@
             "observed_exception": "RuntimeGovernanceError"
           }
         ],
-        "model_ref": "research-agent-loop@v2",
+        "model_ref": "research-agent-loop@v1",
         "recorded_at": 1783864800,
         "report_id": "research-agent-runtime-boundary-v2",
         "required_case_ids": [
@@ -518,7 +518,7 @@
   "governance_implementation_sha256": {
     "quantos/contracts/model_risk.py": "90de42077ee9f2ba805c99596664bdfc706ac644bb99f0a22a2e136c44c87f6c",
     "scripts/generate_model_risk_dataset.py": "b56b4b9b26ea95a12119750fe3e147175bc8cbab6c5d178f6de304782e934b60",
-    "scripts/generate_model_risk_evidence.py": "6f5ebda127e02f69c98859ca4bbc1896940a4cd03a3019bb712d73ae6a714ff1",
+    "scripts/generate_model_risk_evidence.py": "89da3ff4ac0a0b8177b185bb22bdd2da7aa7a2adbccda41c9b6edca59265a4c9",
     "scripts/update_model_risk_history.py": "01736a65e0b87614a6960060e8c34e2d908011b8695144c3aac6693f482cba92",
     "services/governance/model_risk.py": "11c9b02242e30d09741437b9d7d100e56095ea5a96de2e98960d53f8e077ae2c",
     "services/governance/model_risk_dataset.py": "1cc12840e2d6e2ecdc4ca1a9749358e076b944ae05bde463964f9d2ccbb806c1",
@@ -545,14 +545,14 @@
   "runtime_events": [
     {
       "action": "EVALUATE",
-      "event_hash": "f71eca1dfd34af67e84d80fa343ed0f7660c0ad98ce601897b2413392d1036cb",
-      "invocation_id": "model-risk-baseline-runtime-v2",
-      "model_ref": "research-agent-loop@v2",
+      "event_hash": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
+      "invocation_id": "model-risk-baseline-runtime-v1",
+      "model_ref": "research-agent-loop@v1",
       "payload": {
         "action": "EVALUATE",
         "input_sha256": "f429c8611443c19553cbac03a9d6585438e15508b77fb9a687f71b0baa2ccef1",
-        "invocation_id": "model-risk-baseline-runtime-v2",
-        "model_ref": "research-agent-loop@v2",
+        "invocation_id": "model-risk-baseline-runtime-v1",
+        "model_ref": "research-agent-loop@v1",
         "outcome": "ALLOWED",
         "output_sha256": "87973dc1b4039146a774d7710c0c4b0d1db64fc1b9ebbfab959d74ce84f5b530",
         "prompt_ref": "research-evaluation@v1",
@@ -567,28 +567,28 @@
     },
     {
       "action": "EVALUATE",
-      "event_hash": "7a03bf1684c1d4b1dc3e553a5130ad7d51975b1ff23dc242c4e76b329dd4eb35",
-      "invocation_id": "model-risk-runtime-red-team-v3",
-      "model_ref": "research-agent-loop@v2",
+      "event_hash": "820ce24504aa00950909392ffcfdaa7cbc8ef16340820fe810b7cbee816f7ca5",
+      "invocation_id": "model-risk-runtime-red-team-v2",
+      "model_ref": "research-agent-loop@v1",
       "payload": {
         "action": "EVALUATE",
         "input_sha256": "0ff9e488b1339187c7cbb4df041e8be05b72a03f11c232deb6e6182c11204452",
-        "invocation_id": "model-risk-runtime-red-team-v3",
-        "model_ref": "research-agent-loop@v2",
+        "invocation_id": "model-risk-runtime-red-team-v2",
+        "model_ref": "research-agent-loop@v1",
         "outcome": "ALLOWED",
         "output_sha256": "28f94d51bf298ad2bc0dd4d28e04fe125bb1ab639635f80585dfa0e741878ec1",
         "prompt_ref": "research-evaluation@v1",
         "recorded_at": 1783864800,
         "tool_manifest_ref": "research-agent-tools@v1"
       },
-      "previous_hash": "f71eca1dfd34af67e84d80fa343ed0f7660c0ad98ce601897b2413392d1036cb",
+      "previous_hash": "63c99b2f4e1fc1d6b14d407062eeb504bf762e8994c21a991669d773e77c3f30",
       "prompt_ref": "research-evaluation@v1",
       "recorded_at": 1783864800,
       "sequence": 2,
       "tool_manifest_ref": "research-agent-tools@v1"
     }
   ],
-  "runtime_history_sha256": "7a03bf1684c1d4b1dc3e553a5130ad7d51975b1ff23dc242c4e76b329dd4eb35",
+  "runtime_history_sha256": "820ce24504aa00950909392ffcfdaa7cbc8ef16340820fe810b7cbee816f7ca5",
   "runtime_history_verified": true,
   "runtime_invocation_count": 2,
   "runtime_prompt_surface_status": "GOVERNED_OFFLINE_BOUNDARY_NO_EXTERNAL_PROVIDER",

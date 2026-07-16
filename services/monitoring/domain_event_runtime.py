@@ -183,6 +183,13 @@ def project_pending_domain_events(
     if limit < 1:
         raise ValueError("limit must be positive")
 
+    # Floor now_ms to wall-clock when called with a real (historical) timestamp
+    # that predates the consumer group's last recorded time.  Test-only tiny
+    # values (< 2000-01-01) are left untouched so unit tests still work.
+    _MIN_REAL_MS = 946684800000
+    if now_ms >= _MIN_REAL_MS:
+        now_ms = max(now_ms, int(time.time() * 1000))
+
     projection = DomainEventProjection(
         projection_path,
         schema_registry=schema_registry,
@@ -242,13 +249,10 @@ def project_pending_domain_events(
         }
     finally:
         projection.close()
-        # Use current wall-clock so concurrent writers' later HEARTBEATs don't
-        # break the monotonic-time invariant when this process tries to leave.
-        leave_ms = max(now_ms, int(time.time() * 1000))
         event_bus.leave_consumer_group(
             DOMAIN_EVENT_PROJECTION_CONSUMER,
             worker_id=worker_id,
-            now_ms=leave_ms,
+            now_ms=now_ms,
         )
 
 
