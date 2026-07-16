@@ -13,9 +13,9 @@ import {
 } from '@/lib/api/governance-pkce';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  Chip, EmptyState, KpiStrip, PageHeader, PageShell, Panel, StatTile, StatusChip,
+  Button, Chip, EmptyState, KpiStrip, PageHeader, PageShell, Panel, StatTile, StatusChip,
 } from '@/ui/primitives';
-import { stamp } from '@/ui/format';
+import { fixed, stamp } from '@/ui/format';
 
 /**
  * PromotionQueue — 研究晋级(→APPROVED)的多方批准操作台(战线①,2026-07-06)。
@@ -24,10 +24,6 @@ import { stamp } from '@/ui/format';
  */
 
 const OPEN_STATES = new Set(['REQUESTED', 'REVIEWED', 'APPROVED']);
-
-function fmtSharpe(v: number | null): string {
-  return v == null ? '—' : v.toFixed(2);
-}
 
 export default function PromotionQueue() {
   const enabled = governanceEnabled();
@@ -161,22 +157,17 @@ export default function PromotionQueue() {
         )}
         <div className="flex flex-wrap items-center gap-2 text-2xs text-faint">
           {!authenticated ? (
-            <button onClick={() => void onSignIn()} disabled={!enabled || !pkceEnabled || busy}
-              className={`rounded-md border px-2.5 py-1 text-2xs transition ${enabled && pkceEnabled && !busy
-                ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+            <Button onClick={() => void onSignIn()} disabled={!enabled || !pkceEnabled || busy} variant="accent">
               {bi('OIDC 登录', 'OIDC sign in')}
-            </button>
+            </Button>
           ) : (
-            <button onClick={onSignOut}
-              className="rounded-md border border-line px-2.5 py-1 text-2xs text-muted transition hover:bg-inset">
+            <Button onClick={onSignOut} variant="muted">
               {bi('退出', 'Sign out')}
-            </button>
+            </Button>
           )}
-          <button onClick={() => void reload()} disabled={!ready || busy}
-            className={`rounded-md border px-2.5 py-1 text-2xs transition ${ready && !busy
-              ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+          <Button onClick={() => void reload()} disabled={!ready || busy} variant="accent">
             {busy ? bi('加载中…', 'loading…') : bi('刷新', 'Refresh')}
-          </button>
+          </Button>
         </div>
         {loadError && <div className="mt-2 text-2xs text-neg">{loadError}</div>}
         {msg && <div className={`mt-2 text-2xs ${({ pos: 'text-pos', neg: 'text-neg', info: 'text-info' } as const)[msg.tone]}`}>{msg.text}</div>}
@@ -197,7 +188,7 @@ export default function PromotionQueue() {
                   <StatusChip value={c.state} />
                 </div>
                 <div className="mt-1 font-mono text-2xs text-muted">
-                  backtest_sharpe {fmtSharpe(c.evidence.backtest_sharpe)} · paper_sharpe {fmtSharpe(c.evidence.paper_sharpe)}
+                  backtest_sharpe {fixed(c.evidence.backtest_sharpe)} · paper_sharpe {fixed(c.evidence.paper_sharpe)}
                   {' · '}trials {c.evidence.eval_trial_count ?? '—'}
                 </div>
                 {c.precheck_hints.length > 0 && (
@@ -205,12 +196,10 @@ export default function PromotionQueue() {
                     ⚠ {c.precheck_hints.join(' · ')}
                   </div>
                 )}
-                <button onClick={() => void act(bi(`发起 ${c.alpha_id} 晋级申请`, `request ${c.alpha_id}`), () => openPromotionRequest(c.alpha_id))}
-                  disabled={!ready}
-                  className={`mt-2 rounded-md border px-2.5 py-1 text-2xs transition ${ready
-                    ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                <Button onClick={() => void act(bi(`发起 ${c.alpha_id} 晋级申请`, `request ${c.alpha_id}`), () => openPromotionRequest(c.alpha_id))}
+                  disabled={!ready} variant="accent" className="mt-2">
                   {bi('发起晋级申请 → APPROVED', 'Request promotion → APPROVED')}
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -244,43 +233,33 @@ export default function PromotionQueue() {
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {r.state === 'REQUESTED' && (
                   <>
-                    <button onClick={() => void act(bi('复核', 'review'), () => reviewPromotionRequest(r.request_id))}
-                      disabled={!ready}
-                      className={`rounded-md border px-2.5 py-1 text-2xs ${ready
-                        ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                    <Button onClick={() => void act(bi('复核', 'review'), () => reviewPromotionRequest(r.request_id))}
+                      disabled={!ready} variant="accent">
                       {bi('复核通过', 'Review OK')}
-                    </button>
-                    <button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
-                      disabled={!ready}
-                      className={`rounded-md border px-2.5 py-1 text-2xs ${ready
-                        ? 'border-neg/50 text-neg hover:bg-neg/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                    </Button>
+                    <Button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
+                      disabled={!ready} variant="neg">
                       {bi('否决', 'Reject')}
-                    </button>
+                    </Button>
                   </>
                 )}
                 {r.state === 'REVIEWED' && (
                   <>
-                    <button onClick={() => void act(bi('批准', 'approve'), () => approvePromotionRequest(r.request_id))}
-                      disabled={!ready}
-                      className={`rounded-md border px-2.5 py-1 text-2xs ${ready
-                        ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                    <Button onClick={() => void act(bi('批准', 'approve'), () => approvePromotionRequest(r.request_id))}
+                      disabled={!ready} variant="accent">
                       {bi('批准(第三人)', 'Approve (3rd human)')}
-                    </button>
-                    <button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
-                      disabled={!ready}
-                      className={`rounded-md border px-2.5 py-1 text-2xs ${ready
-                        ? 'border-neg/50 text-neg hover:bg-neg/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                    </Button>
+                    <Button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
+                      disabled={!ready} variant="neg">
                       {bi('否决', 'Reject')}
-                    </button>
+                    </Button>
                   </>
                 )}
                 {r.state === 'APPROVED' && (
-                  <button onClick={() => void onExecute(r.request_id)}
-                    disabled={!ready}
-                    className={`rounded-md border px-2.5 py-1 text-2xs ${ready
-                      ? 'border-pos/50 text-pos hover:bg-pos/10' : 'cursor-not-allowed border-line text-faint'}`}>
+                  <Button onClick={() => void onExecute(r.request_id)}
+                    disabled={!ready} variant="pos">
                     {bi('执行晋级(烧毁 grant,一次性)', 'Execute (burns the grant, one-way)')}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>

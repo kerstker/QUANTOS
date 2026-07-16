@@ -228,6 +228,25 @@ export function ProvenanceRibbon({ usingBackend, apiState, source, error, realDa
   );
 }
 
+/* ---------- Button --------------------------------------------------------- */
+const _BTN_ACTIVE: Record<string, string> = {
+  accent: 'border-accent/50 text-accent hover:bg-accent/10',
+  neg: 'border-neg/50 text-neg hover:bg-neg/10',
+  pos: 'border-pos/50 text-pos hover:bg-pos/10',
+  muted: 'border-line text-muted hover:bg-inset',
+};
+export function Button({ onClick, disabled = false, variant = 'accent', children, className = '' }:
+  { onClick?: () => void; disabled?: boolean; variant?: 'accent' | 'neg' | 'pos' | 'muted';
+    children: React.ReactNode; className?: string }) {
+  const cls = disabled ? 'cursor-not-allowed border-line text-faint' : (_BTN_ACTIVE[variant] ?? _BTN_ACTIVE.accent);
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`rounded-md border px-2.5 py-1 text-2xs transition ${cls} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
 /* ---------- Layout helpers ------------------------------------------------- */
 export function Grid({ children, min = 320, className = '' }: { children: React.ReactNode; min?: number; className?: string }) {
   return <div className={`grid gap-4 ${className}`} style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))` }}>{children}</div>;
