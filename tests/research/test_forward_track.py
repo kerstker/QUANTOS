@@ -184,6 +184,38 @@ def test_bogus_matching_binding_is_not_an_attested_pending_decision(db):
         ledger.attested_pending("bogus")
 
 
+def _deny_commit(action, arg1, _arg2, _database, _source):
+    if action == sqlite3.SQLITE_TRANSACTION and arg1 == "COMMIT":
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
+def test_record_decision_rolls_back_its_transaction_when_commit_is_denied(db):
+    _, ledger = db
+    ledger._conn.set_authorizer(_deny_commit)
+    try:
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            ledger.record_decision(
+                "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+            )
+    finally:
+        ledger._conn.set_authorizer(None)
+
+    assert ledger._conn.in_transaction is False
+
+
+def test_attested_pending_rolls_back_its_transaction_when_commit_is_denied(db):
+    _, ledger = db
+    ledger._conn.set_authorizer(_deny_commit)
+    try:
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            ledger.attested_pending("a")
+    finally:
+        ledger._conn.set_authorizer(None)
+
+    assert ledger._conn.in_transaction is False
+
+
 def test_record_decision_rejects_weight_outside_admitted_scope(db):
     _, ledger = db
 

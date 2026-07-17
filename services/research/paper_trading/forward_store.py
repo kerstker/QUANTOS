@@ -189,11 +189,14 @@ class ForwardLedger:
         self._conn.execute("BEGIN IMMEDIATE")
         try:
             yield
-        except Exception:
-            self._conn.rollback()
-            raise
-        else:
             self._conn.commit()
+        except BaseException:
+            try:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+            except BaseException as rollback_error:
+                raise ForwardLedgerError("forward ledger write transaction cleanup failed") from rollback_error
+            raise
 
     @contextmanager
     def _read_snapshot(self):
@@ -202,11 +205,14 @@ class ForwardLedger:
         self._conn.execute("BEGIN")
         try:
             yield
-        except Exception:
-            self._conn.rollback()
-            raise
-        else:
             self._conn.commit()
+        except BaseException:
+            try:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+            except BaseException as rollback_error:
+                raise ForwardLedgerError("forward ledger read transaction cleanup failed") from rollback_error
+            raise
 
     @staticmethod
     def _binding_column_names() -> tuple[str, ...]:
