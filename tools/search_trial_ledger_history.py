@@ -40,6 +40,18 @@ _PORTABLE_APPLICATION_TABLES = {
     "search_evaluations",
 }
 _PORTABLE_ALLOWED_TABLES = _PORTABLE_APPLICATION_TABLES | {"sqlite_sequence"}
+_PORTABLE_APPEND_ONLY_TRIGGER_GUARDS = {
+    "trials_no_update": ("trials", "UPDATE"),
+    "trials_no_delete": ("trials", "DELETE"),
+    "evaluations_no_update": ("evaluations", "UPDATE"),
+    "evaluations_no_delete": ("evaluations", "DELETE"),
+    "search_attempt_events_no_update": ("search_attempt_events", "UPDATE"),
+    "search_attempt_events_no_delete": ("search_attempt_events", "DELETE"),
+    "search_candidates_no_update": ("search_candidates", "UPDATE"),
+    "search_candidates_no_delete": ("search_candidates", "DELETE"),
+    "search_evaluations_no_update": ("search_evaluations", "UPDATE"),
+    "search_evaluations_no_delete": ("search_evaluations", "DELETE"),
+}
 _SEAL_FIELDS = {
     "schema_version",
     "mode",
@@ -1074,6 +1086,27 @@ def _portable_tables(connection: sqlite3.Connection) -> set[str]:
     }
 
 
+def _canonical_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql).strip().rstrip(";").upper()
+
+
+def _validate_portable_append_only_triggers(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        "SELECT name,tbl_name,sql FROM sqlite_master WHERE type='trigger'"
+    ).fetchall()
+    triggers = {str(name): (str(table), sql) for name, table, sql in rows}
+    if set(triggers) != set(_PORTABLE_APPEND_ONLY_TRIGGER_GUARDS):
+        raise TrialLedgerHistoryError("portable snapshot trigger allowlist failed")
+    for name, (table, operation) in _PORTABLE_APPEND_ONLY_TRIGGER_GUARDS.items():
+        actual_table, sql = triggers[name]
+        expected_sql = (
+            f"CREATE TRIGGER {name} BEFORE {operation} ON {table} "
+            f"BEGIN SELECT RAISE(ABORT, '{table} is append-only'); END"
+        )
+        if actual_table != table or not isinstance(sql, str) or _canonical_sql(sql) != _canonical_sql(expected_sql):
+            raise TrialLedgerHistoryError(f"portable snapshot trigger definition failed: {name}")
+
+
 def _build_portable_snapshot(source: Path, destination: Path) -> None:
     source_connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
     destination_connection = sqlite3.connect(destination)
@@ -1166,6 +1199,7 @@ def check_snapshot(
     try:
         if _portable_tables(connection) != _PORTABLE_ALLOWED_TABLES:
             raise TrialLedgerHistoryError("portable snapshot table allowlist failed")
+        _validate_portable_append_only_triggers(connection)
     finally:
         connection.close()
     expected_values = {

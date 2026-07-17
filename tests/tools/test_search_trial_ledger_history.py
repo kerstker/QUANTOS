@@ -1046,3 +1046,79 @@ def test_seal_publish_failure_leaves_detectable_mismatch(
             history_path_label="evidence/alpha_trial_ledger_history.json",
             snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
         )
+
+
+def test_portable_bundle_rejects_extra_trigger_with_recomputed_hash(tmp_path: Path) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    connection = sqlite3.connect(snapshot)
+    connection.execute(
+        "CREATE TRIGGER unexpected_guard BEFORE UPDATE ON trials BEGIN SELECT 1; END"
+    )
+    connection.commit()
+    connection.close()
+    document = json.loads(seal.read_text(encoding="utf-8"))
+    document["snapshot_sha256"] = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    seal.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(history.TrialLedgerHistoryError, match="trigger allowlist"):
+        history.check_snapshot(
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        )
+
+
+def test_portable_bundle_rejects_noop_guard_with_recomputed_hash(tmp_path: Path) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    connection = sqlite3.connect(snapshot)
+    connection.executescript(
+        """
+        DROP TRIGGER trials_no_update;
+        CREATE TRIGGER trials_no_update BEFORE UPDATE ON trials
+        BEGIN SELECT 1; END;
+        """
+    )
+    connection.commit()
+    connection.close()
+    document = json.loads(seal.read_text(encoding="utf-8"))
+    document["snapshot_sha256"] = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    seal.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(history.TrialLedgerHistoryError, match="trigger definition"):
+        history.check_snapshot(
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        )
