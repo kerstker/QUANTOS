@@ -10,8 +10,8 @@
     {
       "current_maturity": "M3",
       "domain": "alpha_research",
-      "passed": 1,
-      "red_lines_failed": 1,
+      "passed": 2,
+      "red_lines_failed": 0,
       "requirements": 2
     },
     {
@@ -214,7 +214,9 @@
         "pass_maturity": "M4",
         "persistence_port_path": "services/research/ports/persistence.py",
         "registry_path": "services/research/experiment_registry/registry.py",
+        "seal_path": "evidence/alpha_trial_ledger_snapshot_seal.json",
         "session_path": "services/research/session.py",
+        "snapshot_path": "evidence/alpha_trial_ledger_snapshot.db",
         "store_path": "services/research/experiment_registry/store.py",
         "verification_paths": [
           "tests/research/test_session.py",
@@ -226,9 +228,9 @@
         ]
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M4",
       "description": "Global trial ledger survives sessions",
-      "detail": "official guided/evolutionary/GP/MCTS and factory persistence wiring is verified, but versioned append-only trial-ledger history is not retained",
+      "detail": "official guided/evolutionary/GP/MCTS and factory recorder wiring, a portable sealed snapshot, a versioned two-session monotonic history chain with exact completed-search evaluation bindings, and database-enforced append-only trial/evaluation/search guards are verified",
       "domain": "alpha_research",
       "evidence": [
         "services/intelligence/research_session.py",
@@ -248,10 +250,13 @@
         "tests/research/test_experiment_store.py",
         "tests/research/test_search_trial_provenance.py",
         "tests/intelligence/test_registered_candidate_batch.py",
-        "tests/governance/test_experiment_registry_isolation.py"
+        "tests/governance/test_experiment_registry_isolation.py",
+        "evidence/alpha_trial_ledger_history.json",
+        "evidence/alpha_trial_ledger_snapshot.db",
+        "evidence/alpha_trial_ledger_snapshot_seal.json"
       ],
       "id": "ALPHA.TRIAL.GLOBAL_LEDGER",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Evidence complete: all five factory tools wired to persistent search identity with cross-session trial count verification",
       "red_line": true,
       "required_evidence": [
@@ -260,7 +265,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "PASS",
       "target_maturity": "M4",
       "tier": "A"
     },
@@ -1243,9 +1248,9 @@
   "summary": {
     "failed": 4,
     "manual_evidence_required": 2,
-    "partial": 2,
-    "passed": 14,
-    "red_lines_failed": 4,
+    "partial": 1,
+    "passed": 15,
+    "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
   },

@@ -2640,3 +2640,25 @@ def test_committed_alpha_trial_requirement_passes_with_portable_snapshot(tmp_pat
     assert result["current_maturity"] == "M4"
     assert requirement["checker_args"]["snapshot_path"] in result["evidence"]
     assert requirement["checker_args"]["seal_path"] in result["evidence"]
+
+
+def test_committed_alpha_trial_snapshot_has_minimal_table_surface():
+    snapshot = ROOT / "evidence/alpha_trial_ledger_snapshot.db"
+    connection = sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    finally:
+        connection.close()
+    assert tables == {
+        "sqlite_sequence",
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+    }
