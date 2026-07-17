@@ -1,6 +1,6 @@
 # L2 Forward Evidence Clock Integrity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Execute this plan task-by-task with the project-approved subagent-driven workflow (recommended) or inline TDD workflow. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build an authority-bound, append-only and transactionally atomic L2 forward paper-evidence clock that never treats legacy or backfilled observations as attested forward evidence.
 
