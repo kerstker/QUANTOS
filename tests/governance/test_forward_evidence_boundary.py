@@ -33,6 +33,11 @@ def test_forward_services_are_offline_and_l2_only():
     assert imports.isdisjoint(forbidden)
 
 
+def test_forward_research_port_does_not_import_data_implementations():
+    source = _source("services/research/paper_trading/forward_evidence.py")
+    assert "services.data" not in source
+
+
 def test_official_forward_path_cannot_count_legacy_or_boolean_admission():
     driver = _source("tools/forward_track_advance.py")
     status = _source("tools/forward_evidence_status.py")

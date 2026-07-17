@@ -1,13 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Collection
-
-from services.data.admission_store import DataQualityAdmissionStore
+from typing import Collection, Iterable, Protocol
 
 
 class ForwardEvidenceError(RuntimeError):
     """Forward evidence is missing, conflicting, blocked, or unverifiable."""
+
+
+class _AdmissionDecision(Protocol):
+    admission_id: str
+    evidence_sha256: str
+    decision_hash: str
+    readiness: str
+    purpose: str
+    verdict: str
+    quality_verdict: str
+    lineage_verdict: str
+    price_basis: str
+    instrument_scope: Collection[str]
+    recorded_at_ms: int
+
+
+class _AdmissionAuthority(Protocol):
+    def chain_valid(self) -> bool: ...
+
+    def decisions(self) -> Iterable[_AdmissionDecision]: ...
 
 
 FORWARD_L2_DECISION_SOURCE = "FORWARD_L2_ATTESTED_DECISION"
@@ -25,7 +43,7 @@ class ForwardAdmissionRef:
 
 
 def load_forward_admission_ref(
-    store: DataQualityAdmissionStore,
+    store: _AdmissionAuthority,
     *,
     admission_id: str,
     evidence_sha256: str,
