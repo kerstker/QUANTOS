@@ -253,6 +253,10 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _canonical_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql).strip().rstrip(";").upper()
+
+
 def _alpha_trial_ledger_evidence(
     repo_root: Path,
     args: dict[str, Any],
@@ -1130,9 +1134,19 @@ def _alpha_trial_ledger_evidence(
         if type(seal.get(key)) is not int or seal[key] < 0:
             seal_failures.append(key)
     if not seal_failures:
-        if _sha256_file(evidence_path) != seal["history_sha256"]:
+        try:
+            history_sha256 = _sha256_file(evidence_path)
+            snapshot_sha256 = _sha256_file(snapshot_path)
+        except OSError as exc:
+            return _result(
+                "FAILED",
+                "M2",
+                evidence,
+                f"alpha trial-ledger portable seal failed: {exc}",
+            )
+        if history_sha256 != seal["history_sha256"]:
             seal_failures.append("history_sha256")
-        if _sha256_file(snapshot_path) != seal["snapshot_sha256"]:
+        if snapshot_sha256 != seal["snapshot_sha256"]:
             seal_failures.append("snapshot_sha256")
         expected_counts = {
             "history_head_hash": previous_record_hash,
@@ -1168,9 +1182,12 @@ def _alpha_trial_ledger_evidence(
         ).fetchall()
         tables = {row["name"] for row in table_rows}
         trigger_rows = connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL"
+            "SELECT name,tbl_name,sql FROM sqlite_master WHERE type='trigger'"
         ).fetchall()
-        trigger_sql = [re.sub(r"\s+", " ", row["sql"].upper()) for row in trigger_rows]
+        triggers = {
+            row["name"]: (row["tbl_name"], row["sql"])
+            for row in trigger_rows
+        }
         live_trials = sorted(
             row["config_hash"]
             for row in connection.execute(
@@ -1210,7 +1227,7 @@ def _alpha_trial_ledger_evidence(
     ledger_failures: list[str] = []
     if integrity != "ok":
         ledger_failures.append("sqlite_integrity")
-    if schema_version < 2:
+    if schema_version != 2:
         ledger_failures.append("ledger_schema_version")
     if tables != {
         "sqlite_sequence",
@@ -1221,19 +1238,32 @@ def _alpha_trial_ledger_evidence(
         "search_evaluations",
     }:
         ledger_failures.append("ledger_tables")
-    for table in (
-        "trials",
-        "evaluations",
-        "search_attempt_events",
-        "search_candidates",
-        "search_evaluations",
-    ):
-        for operation in ("UPDATE", "DELETE"):
-            pattern = re.compile(
-                rf"BEFORE {operation} ON [\"`\[]?{table.upper()}(?:[\"`\]]|\s)"
-            )
-            if not any(pattern.search(sql) for sql in trigger_sql):
-                ledger_failures.append(f"{table.lower()}_no_{operation.lower()}_trigger")
+    expected_triggers = {
+        f"{table}_no_{operation.lower()}": (table, operation)
+        for table in (
+            "trials",
+            "evaluations",
+            "search_attempt_events",
+            "search_candidates",
+            "search_evaluations",
+        )
+        for operation in ("UPDATE", "DELETE")
+    }
+    if set(triggers) != set(expected_triggers):
+        ledger_failures.append("append_only_trigger_names")
+    for name, (table, operation) in expected_triggers.items():
+        actual = triggers.get(name)
+        expected_sql = (
+            f"CREATE TRIGGER {name} BEFORE {operation} ON {table} "
+            f"BEGIN SELECT RAISE(ABORT, '{table} is append-only'); END"
+        )
+        if (
+            actual is None
+            or actual[0] != table
+            or not isinstance(actual[1], str)
+            or _canonical_sql(actual[1]) != _canonical_sql(expected_sql)
+        ):
+            ledger_failures.append(f"{name}_trigger")
     if live_trials != final_trials:
         ledger_failures.append("current_trials")
 

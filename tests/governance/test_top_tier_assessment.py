@@ -2176,6 +2176,27 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
     return evidence_path
 
 
+_ALPHA_TRIAL_PORTABLE_TRIGGERS = [
+    (f"{table}_no_{operation.lower()}", table, operation)
+    for table in (
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+    )
+    for operation in ("UPDATE", "DELETE")
+]
+
+
+def _refresh_alpha_trial_snapshot_hash(tmp_path: Path, checker_args: dict) -> None:
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
+
+
 def test_alpha_trial_ledger_checker_missing_history_is_m3_partial(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
@@ -2367,6 +2388,110 @@ def test_alpha_trial_ledger_checker_rejects_nonminimal_or_mutable_snapshot(
     assert result["status"] == "FAILED"
     assert result["current_maturity"] == "M2"
     assert detail in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "trigger_name,table,operation",
+    _ALPHA_TRIAL_PORTABLE_TRIGGERS,
+)
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "no_op_body",
+        "raise_ignore",
+        "raise_fail",
+        "wrong_name",
+        "wrong_target",
+        "extra_trigger",
+    ],
+)
+def test_alpha_trial_ledger_checker_rejects_noncanonical_append_only_trigger(
+    tmp_path,
+    trigger_name,
+    table,
+    operation,
+    mutation,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    if mutation == "extra_trigger":
+        connection.execute(
+            f"CREATE TRIGGER unexpected_{trigger_name} BEFORE {operation} ON {table} "
+            f"BEGIN SELECT RAISE(ABORT, '{table} is append-only'); END"
+        )
+    else:
+        connection.execute(f"DROP TRIGGER {trigger_name}")
+        actual_name = (
+            f"{trigger_name}_renamed" if mutation == "wrong_name" else trigger_name
+        )
+        actual_table = (
+            ("evaluations" if table != "evaluations" else "trials")
+            if mutation == "wrong_target"
+            else table
+        )
+        body = {
+            "no_op_body": "SELECT 1;",
+            "raise_ignore": "SELECT RAISE(IGNORE);",
+            "raise_fail": f"SELECT RAISE(FAIL, '{table} is append-only');",
+            "wrong_name": f"SELECT RAISE(ABORT, '{table} is append-only');",
+            "wrong_target": f"SELECT RAISE(ABORT, '{table} is append-only');",
+        }[mutation]
+        connection.execute(
+            f"CREATE TRIGGER {actual_name} BEFORE {operation} ON {actual_table} "
+            f"BEGIN {body} END"
+        )
+    connection.commit()
+    connection.close()
+    _refresh_alpha_trial_snapshot_hash(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED", (trigger_name, mutation, result["detail"])
+    assert result["current_maturity"] == "M2"
+    assert "trigger" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_unknown_portable_schema_version(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    connection.execute("PRAGMA user_version=3")
+    connection.close()
+    _refresh_alpha_trial_snapshot_hash(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert "ledger_schema_version" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_fails_closed_when_digest_read_fails(
+    tmp_path,
+    monkeypatch,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    def fail_digest_read(_path):
+        raise OSError("portable digest unavailable")
+
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment._sha256_file",
+        fail_digest_read,
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert result["detail"].startswith("alpha trial-ledger portable seal failed:")
 
 
 def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_store(tmp_path):
