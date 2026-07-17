@@ -1,8 +1,8 @@
 # 论文方法与 QUANTOS 差距审查
 
-日期：2026-07-17  
+日期：2026-07-18（按最终 full gate 更新）  
 对照对象：[量化交易高价值论文与自动化方法研究报告.docx](I:/qqFILE/量化交易高价值论文与自动化方法研究报告.docx)  
-代码基线：隔离分支 `codex/l2-forward-evidence`，Task 1–3 收口提交 `d1cb6b3`  
+代码基线：隔离分支 `codex/l2-forward-evidence`，Task 1–8、full-gate 热修复与确定性证据刷新截至 `408038c`  
 安全基线：`L2_DRY_RUN_ONLY`，不允许实盘、券商、真实凭据或 AI 直接下单。
 
 ## 1. 阅读范围与总判断
@@ -18,7 +18,7 @@
 
 结论：QUANTOS 已经是一个高强度的安全研究与 dry-run 平台，但还不是论文报告所描述的“全方法栈顶级 AI 量化系统”。当前最主要的差距不是再加一个模型，而是：
 
-- 没有真实、连续、可审计的前向证据时钟；
+- 前向证据时钟的 authority、原子账本、driver、baseline、Go/No-Go 和 console 已闭环，但自然到达的认证周数仍为 0/8，当前 data admission 不可用或 BLOCK 时保持停钟；
 - 数据宇宙仍以 crypto/FX/宏观为主，缺 PIT 基本面、新闻和 LOB 数据层；
 - 只有第一层确定性 ML stacking，缺 IPCA/RP-PCA/autoencoder/Deep Momentum/DeepLOB 等可复现研究模块；
 - 缺事件/NLP 与微结构/TCA 生产研究链；
@@ -37,10 +37,10 @@
 | 风险底盘：FF5/q-factor/IPCA、目标波动率、相关性、回撤、换手 | 有约束 optimizer、PSD factor risk、risk parity、target-vol、attribution、scenario/tail/macro 诊断 | 强部分满足 | 风险模型仍不是论文式可解释因子底盘；部分 regime/容量结果仍是诊断而非门禁 | P1 |
 | 执行：Almgren–Chriss、VWAP/TWAP、动态 spread/OFI、库存控制 | 有 Almgren–Chriss 冲击、容量曲线、dry-run adapters、intent/pre-trade gate、paper fills | 部分满足 | 没有执行曲线/分段调度、LOB/TCA、成交概率、队列位置和真实 post-trade attribution；真实 broker 按 L2 有意禁用 | P2 |
 | 验证：PIT、purged/embargo、OOS、成本、DSR/PBO、多重检验 | 有 PIT/quality/leakage、Deflated-Sharpe、CPCV、purged walk-forward、OOS selection、BH-FDR、成本/容量/尾部诊断 | 强部分满足 | 缺全局 trial ledger、White Reality Check/SPA、发表偏差证据、研究自由度的统一审计；当前 data admission 仍可能 BLOCK | P0/P1 |
-| Forward paper 与 drift | Task 1–3 已完成准入引用、append-only decision/realization/event、原子 paper period、legacy 隔离和严格数值校验 | 结构完成、证据未完成 | 当前真实连续 forward weeks 仍为 0；Task 4–7 尚需把 domain、官方 driver、evidence、Go/No-Go/console 接通；不能把历史回测算成 8 周 | P0 |
+| Forward paper 与 drift | Task 1–8 已完成准入引用、append-only decision/realization/event、原子 paper period、legacy 隔离、官方 driver、确定性 baseline、Go/No-Go/API/UI 同源展示和治理边界 | 结构闭环、自然证据未完成 | 当前认证前向为 0/8 周；authority 缺失/BLOCK/STALE 时 `eligible=false`、`actions_allowed=false`，历史回测和 legacy 记录永不计入门槛 | P0（运营时间） |
 | 数据基础：PIT 基本面、公司行动、新闻、LOB、多市场制度 | 有 PIT store、质量/版本/存活宇宙、crypto/FX/ECB/FRED 方向、准入 authority | 部分满足 | 没有报告推荐的股票/ETF/期货基本面与公告层；数据质量 admission 不是 PASS 时不得启动前向时钟 | P0/P1 |
-| 生产运维：drift、审计、身份、灾备、供应链 | 有哈希链 audit/event、degradation monitor、strong identity M2 基线、multi-party approval、process-isolation 设计 | 部分满足 | 外部 IdP/mTLS 运营、restore history、HA/跨主机、自动封存、独立告警 SLA、供应链基线仍缺 | P1（平台） |
-| 可复现性与安全边界 | 约 1000+ backend tests、frontend contract tests、governance scanner、L2 五开关、无 broker/credential import | 强 | full gate 仍有 container/supply-chain/model-risk/generated evidence 稳定化工作；当前 Task 4–8 仍未完成 | P0 |
+| 生产运维：drift、审计、身份、灾备、供应链 | 有哈希链 audit/event、degradation monitor、strong identity M2 基线、multi-party approval、process-isolation 设计 | 部分满足 | 外部 IdP/mTLS 运营、restore history、HA/跨主机、自动封存、独立告警 SLA 仍缺；供应链当前被新 Dockerfile 对应的真实双构建/Trivy 输入阻断 | P1（平台） |
+| 可复现性与安全边界 | 1049 个 live/trading/tools 测试通过，前向聚焦 105 个通过；frontend tests/typecheck/build、治理扫描、恢复演练均通过；L2 五开关和无 broker/credential import 保持 | 强但未全绿 | canonical full gate 19 项中 15 项通过；4 项失败全部收敛到 container audit、container reproducibility、supply-chain baseline 及其 3 个 fail-closed 测试。Docker daemon 未运行、Trivy 未安装、当前 recipe 的两份 OCI archive/新扫描未取得，不能靠改 JSON 造绿 | P0（外部构建证据） |
 
 ## 3. 论文结论与当前系统的错位
 
@@ -61,13 +61,12 @@
 
 ## 4. 缺口优先级与落地顺序
 
-### P0：先完成当前可信度闭环
+### P0：可信度闭环当前状态
 
-1. Task 4：让 `realize_due` 只消费 attested pending，并只调用原子 `commit_realization`；
-2. Task 5：官方 driver 每次重新打开 admission authority，BLOCK 时不写/不兑现，分别统计 attested/legacy；
-3. Task 6：生成确定性 forward evidence baseline，真实周数只来自 v2 realization；
-4. Task 7：Go/No-Go 与 console 消费同一 evidence，缺失/过期/链损坏显示 BLOCKED/STALE；
-5. Task 8：刷新模型风险、容器复现、供应链和全量门禁证据。
+1. Task 4–7 已完成：`realize_due`、官方 authority driver、确定性 baseline、Go/No-Go/API/UI 已共用同一认证状态；
+2. Task 8 的前向治理、Python audit、event schema、service import graph 和 top-tier 评估已完成并通过各自 verifier；
+3. 当前 P0 剩余两类不是代码占位：自然累计 8 个认证前向周，以及在真实 Docker/BuildKit/Trivy 环境重建当前 recipe 的容器与供应链证据；
+4. 最新机器结论为 `NOT_TOP_TIER — 14/22 pass`，不得在这两类证据到位前提升评级。
 
 ### P1：让论文的中低频方法真正可研究
 
@@ -90,7 +89,7 @@
 
 ## 5. 当前轮结论
 
-Task 1–3 解决的是“前向证据能否成为可信事实”的存储与原子性底座，不等于已经拥有前向业绩。论文对照确认下一条最有价值的路线不是立即接 RL/LOB，而是先完成 P0 的 Task 4–8，并同步推进 P1 的数据 admission、因子底盘与全局试验账本。
+Task 1–8 已把“前向证据能否成为可信事实”从存储底座贯通到官方 driver、只读证据、Go/No-Go 与 console；这仍不等于已经拥有前向业绩。当前系统层次可概括为：**M3 级安全研究/dry-run 平台，局部治理与执行骨架达到 M4，但整体仍是 `L2_DRY_RUN_ONLY`，机器评估 `NOT_TOP_TIER — 14/22 pass`**。论文对照确认下一条最有价值的路线不是立即接 RL/LOB，而是：先取得自然前向与真实容器供应链证据，同时推进 P1 的 PIT 多资产数据、因子/IPCA 底盘、全局试验账本与事件/NLP 层。
 
 审查时必须继续保留：
 
@@ -101,4 +100,3 @@ Task 1–3 解决的是“前向证据能否成为可信事实”的存储与原
 - `REQUIRE_HUMAN_APPROVAL=true`
 
 本报告是方法差距审查，不将论文中的历史收益数字当作 QUANTOS 的可交易承诺，也不把论文结论直接当作晋级或下单证据。
-
