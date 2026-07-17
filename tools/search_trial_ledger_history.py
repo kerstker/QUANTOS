@@ -24,9 +24,130 @@ from quantos.contracts.hashing import stable_hash
 
 DEFAULT_LEDGER_PATH = "data/cache/experiment_registry.db"
 DEFAULT_HISTORY_PATH = "evidence/alpha_trial_ledger_history.json"
+DEFAULT_SNAPSHOT_PATH = "evidence/alpha_trial_ledger_snapshot.db"
+DEFAULT_SEAL_PATH = "evidence/alpha_trial_ledger_snapshot_seal.json"
 HISTORY_MODE = "ALPHA_TRIAL_LEDGER_APPEND_ONLY_HISTORY"
 HISTORY_SCHEMA_VERSION = 2
 LEDGER_CONTRACT_VERSION = 2
+PORTABLE_SEAL_MODE = "ALPHA_TRIAL_LEDGER_PORTABLE_SEAL"
+PORTABLE_SEAL_SCHEMA_VERSION = 1
+
+_PORTABLE_APPLICATION_TABLES = {
+    "trials",
+    "evaluations",
+    "search_attempt_events",
+    "search_candidates",
+    "search_evaluations",
+}
+_PORTABLE_ALLOWED_TABLES = _PORTABLE_APPLICATION_TABLES | {"sqlite_sequence"}
+_SEAL_FIELDS = {
+    "schema_version",
+    "mode",
+    "ledger_path",
+    "history_path",
+    "snapshot_path",
+    "history_sha256",
+    "snapshot_sha256",
+    "history_head_hash",
+    "record_count",
+    "trial_count",
+    "evaluation_count",
+    "sealed_at_ms",
+}
+
+_PORTABLE_SCHEMA = """
+CREATE TABLE trials (
+    config_hash TEXT PRIMARY KEY,
+    first_seen_ts INTEGER NOT NULL
+);
+CREATE TABLE evaluations (
+    run_id TEXT PRIMARY KEY,
+    alpha_id TEXT NOT NULL,
+    dataset_version TEXT NOT NULL,
+    recorded_ts INTEGER NOT NULL,
+    verdict TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    evaluation_json TEXT NOT NULL
+);
+CREATE TABLE search_attempt_events (
+    event_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id TEXT NOT NULL,
+    search_kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    dataset_version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('STARTED', 'FAILED', 'COMPLETED')),
+    recorded_at INTEGER NOT NULL CHECK(recorded_at >= 0),
+    prev_event_hash TEXT NOT NULL,
+    event_hash TEXT UNIQUE NOT NULL
+);
+CREATE INDEX search_attempt_events_by_search
+ON search_attempt_events(search_id, event_seq);
+CREATE TABLE search_candidates (
+    candidate_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'REGISTERED'),
+    registered_at INTEGER NOT NULL CHECK(registered_at >= 0),
+    prev_candidate_hash TEXT NOT NULL,
+    candidate_hash TEXT UNIQUE NOT NULL,
+    UNIQUE(search_id, config_hash)
+);
+CREATE INDEX search_candidates_by_search
+ON search_candidates(search_id, candidate_seq);
+CREATE TABLE search_evaluations (
+    link_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    recorded_at INTEGER NOT NULL CHECK(recorded_at >= 0),
+    evaluation_content_hash TEXT NOT NULL,
+    prev_link_hash TEXT NOT NULL,
+    link_hash TEXT UNIQUE NOT NULL,
+    UNIQUE(search_id, run_id)
+);
+CREATE INDEX search_evaluations_by_search
+ON search_evaluations(search_id, link_seq);
+CREATE TRIGGER trials_no_update BEFORE UPDATE ON trials
+BEGIN SELECT RAISE(ABORT, 'trials is append-only'); END;
+CREATE TRIGGER trials_no_delete BEFORE DELETE ON trials
+BEGIN SELECT RAISE(ABORT, 'trials is append-only'); END;
+CREATE TRIGGER evaluations_no_update BEFORE UPDATE ON evaluations
+BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;
+CREATE TRIGGER evaluations_no_delete BEFORE DELETE ON evaluations
+BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;
+CREATE TRIGGER search_attempt_events_no_update BEFORE UPDATE ON search_attempt_events
+BEGIN SELECT RAISE(ABORT, 'search_attempt_events is append-only'); END;
+CREATE TRIGGER search_attempt_events_no_delete BEFORE DELETE ON search_attempt_events
+BEGIN SELECT RAISE(ABORT, 'search_attempt_events is append-only'); END;
+CREATE TRIGGER search_candidates_no_update BEFORE UPDATE ON search_candidates
+BEGIN SELECT RAISE(ABORT, 'search_candidates is append-only'); END;
+CREATE TRIGGER search_candidates_no_delete BEFORE DELETE ON search_candidates
+BEGIN SELECT RAISE(ABORT, 'search_candidates is append-only'); END;
+CREATE TRIGGER search_evaluations_no_update BEFORE UPDATE ON search_evaluations
+BEGIN SELECT RAISE(ABORT, 'search_evaluations is append-only'); END;
+CREATE TRIGGER search_evaluations_no_delete BEFORE DELETE ON search_evaluations
+BEGIN SELECT RAISE(ABORT, 'search_evaluations is append-only'); END;
+"""
+
+_PORTABLE_COPY_COLUMNS = {
+    "trials": ("config_hash", "first_seen_ts"),
+    "evaluations": (
+        "run_id", "alpha_id", "dataset_version", "recorded_ts", "verdict",
+        "content_hash", "evaluation_json",
+    ),
+    "search_attempt_events": (
+        "event_seq", "search_id", "search_kind", "source", "dataset_version",
+        "status", "recorded_at", "prev_event_hash", "event_hash",
+    ),
+    "search_candidates": (
+        "candidate_seq", "search_id", "config_hash", "status",
+        "registered_at", "prev_candidate_hash", "candidate_hash",
+    ),
+    "search_evaluations": (
+        "link_seq", "search_id", "config_hash", "run_id", "recorded_at",
+        "evaluation_content_hash", "prev_link_hash", "link_hash",
+    ),
+}
 
 _DOCUMENT_FIELDS = {
     "schema_version",
@@ -934,6 +1055,233 @@ def check_history(
     if _read_stable_ledger(ledger) != snapshot:
         raise TrialLedgerHistoryError("ledger changed during read-only verification")
     return document
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _portable_tables(connection: sqlite3.Connection) -> set[str]:
+    return {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+
+
+def _build_portable_snapshot(source: Path, destination: Path) -> None:
+    source_connection = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
+    destination_connection = sqlite3.connect(destination)
+    try:
+        source_connection.execute("BEGIN")
+        destination_connection.executescript(_PORTABLE_SCHEMA)
+        for table, columns in _PORTABLE_COPY_COLUMNS.items():
+            column_sql = ",".join(columns)
+            rows = source_connection.execute(
+                f"SELECT {column_sql} FROM {table} ORDER BY 1"
+            ).fetchall()
+            placeholders = ",".join("?" for _ in columns)
+            destination_connection.executemany(
+                f"INSERT INTO {table}({column_sql}) VALUES ({placeholders})",
+                rows,
+            )
+        destination_connection.execute(f"PRAGMA user_version={LEDGER_CONTRACT_VERSION}")
+        destination_connection.commit()
+        integrity = destination_connection.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok" or _portable_tables(destination_connection) != _PORTABLE_ALLOWED_TABLES:
+            raise TrialLedgerHistoryError("portable snapshot contract failed")
+    except sqlite3.DatabaseError as exc:
+        raise TrialLedgerHistoryError(f"portable snapshot cannot be built: {exc}") from exc
+    finally:
+        source_connection.close()
+        destination_connection.close()
+
+
+def _validate_seal_document(
+    document: Any,
+    *,
+    ledger_path_label: str,
+    history_path_label: str,
+    snapshot_path_label: str,
+) -> dict[str, Any]:
+    if not isinstance(document, dict) or set(document) != _SEAL_FIELDS:
+        raise TrialLedgerHistoryError("portable seal fields are invalid")
+    expected = {
+        "schema_version": PORTABLE_SEAL_SCHEMA_VERSION,
+        "mode": PORTABLE_SEAL_MODE,
+        "ledger_path": ledger_path_label,
+        "history_path": history_path_label,
+        "snapshot_path": snapshot_path_label,
+    }
+    if any(document.get(key) != value for key, value in expected.items()):
+        raise TrialLedgerHistoryError("portable seal contract is invalid")
+    if any(_DIGEST.fullmatch(document.get(key, "")) is None for key in (
+        "history_sha256", "snapshot_sha256", "history_head_hash"
+    )):
+        raise TrialLedgerHistoryError("portable seal digest is invalid")
+    for key in ("record_count", "trial_count", "evaluation_count", "sealed_at_ms"):
+        if type(document.get(key)) is not int or document[key] < 0:
+            raise TrialLedgerHistoryError(f"portable seal {key} is invalid")
+    return document
+
+
+def check_snapshot(
+    *,
+    history_path: str | Path = DEFAULT_HISTORY_PATH,
+    snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
+    seal_path: str | Path = DEFAULT_SEAL_PATH,
+    ledger_path_label: str = DEFAULT_LEDGER_PATH,
+    history_path_label: str = DEFAULT_HISTORY_PATH,
+    snapshot_path_label: str = DEFAULT_SNAPSHOT_PATH,
+) -> dict[str, Any]:
+    history_file, snapshot_file, seal_file = map(Path, (history_path, snapshot_path, seal_path))
+    try:
+        seal = _validate_seal_document(
+            _load_json(seal_file.read_bytes()),
+            ledger_path_label=ledger_path_label,
+            history_path_label=history_path_label,
+            snapshot_path_label=snapshot_path_label,
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise TrialLedgerHistoryError(f"portable seal cannot be read: {exc}") from exc
+    try:
+        if _file_sha256(history_file) != seal["history_sha256"]:
+            raise TrialLedgerHistoryError("portable seal history hash mismatch")
+        if _file_sha256(snapshot_file) != seal["snapshot_sha256"]:
+            raise TrialLedgerHistoryError("portable seal snapshot hash mismatch")
+    except OSError as exc:
+        raise TrialLedgerHistoryError(f"portable bundle file is unavailable: {exc}") from exc
+    history_document = check_history(
+        ledger_path=snapshot_file,
+        history_path=history_file,
+        ledger_path_label=ledger_path_label,
+    )
+    final = history_document["records"][-1]
+    connection = sqlite3.connect(snapshot_file.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        if _portable_tables(connection) != _PORTABLE_ALLOWED_TABLES:
+            raise TrialLedgerHistoryError("portable snapshot table allowlist failed")
+    finally:
+        connection.close()
+    expected_values = {
+        "history_head_hash": final["record_hash"],
+        "record_count": len(history_document["records"]),
+        "trial_count": len(final["trials"]),
+        "evaluation_count": len(final["evaluations"]),
+    }
+    if any(seal[key] != value for key, value in expected_values.items()):
+        raise TrialLedgerHistoryError("portable seal counts or history head mismatch")
+    if seal["sealed_at_ms"] < final["recorded_at_ms"]:
+        raise TrialLedgerHistoryError("portable seal predates final history record")
+    return seal
+
+
+def seal_snapshot(
+    *,
+    ledger_path: str | Path = DEFAULT_LEDGER_PATH,
+    history_path: str | Path = DEFAULT_HISTORY_PATH,
+    snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
+    seal_path: str | Path = DEFAULT_SEAL_PATH,
+    ledger_path_label: str = DEFAULT_LEDGER_PATH,
+    history_path_label: str = DEFAULT_HISTORY_PATH,
+    snapshot_path_label: str = DEFAULT_SNAPSHOT_PATH,
+    sealed_at_ms: int | None = None,
+) -> dict[str, Any]:
+    ledger_file = Path(ledger_path)
+    history_file = Path(history_path)
+    snapshot_file = Path(snapshot_path)
+    seal_file = Path(seal_path)
+    snapshot_file.parent.mkdir(parents=True, exist_ok=True)
+    seal_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary_snapshot: Path | None = None
+    with _exclusive_output_lock(history_file):
+        history_bytes = _history_bytes(history_file)
+        if history_bytes is None:
+            raise TrialLedgerHistoryError("history does not exist for portable sealing")
+        document = check_history(
+            ledger_path=ledger_file,
+            history_path=history_file,
+            ledger_path_label=ledger_path_label,
+        )
+        live_snapshot = _read_stable_ledger(ledger_file)
+        final = document["records"][-1]
+        timestamp = time.time_ns() // 1_000_000 if sealed_at_ms is None else sealed_at_ms
+        if type(timestamp) is not int or timestamp < final["recorded_at_ms"]:
+            raise TrialLedgerHistoryError("portable seal predates final history record")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{snapshot_file.name}.",
+            suffix=".tmp",
+            dir=snapshot_file.parent,
+        )
+        os.close(descriptor)
+        temporary_snapshot = Path(temporary_name)
+        try:
+            _build_portable_snapshot(ledger_file, temporary_snapshot)
+            check_history(
+                ledger_path=temporary_snapshot,
+                history_path=history_file,
+                ledger_path_label=ledger_path_label,
+            )
+            if _history_bytes(history_file) != history_bytes:
+                raise TrialLedgerHistoryError("history changed during portable sealing")
+            if _read_stable_ledger(ledger_file) != live_snapshot:
+                raise TrialLedgerHistoryError("live ledger changed during portable sealing")
+            seal = {
+                "schema_version": PORTABLE_SEAL_SCHEMA_VERSION,
+                "mode": PORTABLE_SEAL_MODE,
+                "ledger_path": ledger_path_label,
+                "history_path": history_path_label,
+                "snapshot_path": snapshot_path_label,
+                "history_sha256": hashlib.sha256(history_bytes).hexdigest(),
+                "snapshot_sha256": _file_sha256(temporary_snapshot),
+                "history_head_hash": final["record_hash"],
+                "record_count": len(document["records"]),
+                "trial_count": len(final["trials"]),
+                "evaluation_count": len(final["evaluations"]),
+                "sealed_at_ms": timestamp,
+            }
+            _validate_seal_document(
+                seal,
+                ledger_path_label=ledger_path_label,
+                history_path_label=history_path_label,
+                snapshot_path_label=snapshot_path_label,
+            )
+            previous_seal = _history_bytes(seal_file)
+            os.replace(temporary_snapshot, snapshot_file)
+
+            def verify_inputs_unchanged() -> None:
+                if _history_bytes(history_file) != history_bytes:
+                    raise TrialLedgerHistoryError("history changed before seal publish")
+                if _read_stable_ledger(ledger_file) != live_snapshot:
+                    raise TrialLedgerHistoryError("live ledger changed before seal publish")
+                if _file_sha256(snapshot_file) != seal["snapshot_sha256"]:
+                    raise TrialLedgerHistoryError("snapshot changed before seal publish")
+
+            _atomic_publish(
+                seal_file,
+                seal,
+                expected_previous=previous_seal,
+                before_replace=verify_inputs_unchanged,
+            )
+            return check_snapshot(
+                history_path=history_file,
+                snapshot_path=snapshot_file,
+                seal_path=seal_file,
+                ledger_path_label=ledger_path_label,
+                history_path_label=history_path_label,
+                snapshot_path_label=snapshot_path_label,
+            )
+        finally:
+            if temporary_snapshot is not None:
+                try:
+                    temporary_snapshot.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def _parser() -> argparse.ArgumentParser:

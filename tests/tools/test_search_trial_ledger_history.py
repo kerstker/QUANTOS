@@ -794,3 +794,108 @@ def test_cli_inspection_is_read_only_and_rejects_mode_conflicts(
     assert not Path(history.DEFAULT_HISTORY_PATH).exists()
     assert history.main(["--inspect-ledger", "--session-id", "forbidden"]) == 2
     assert history.main(["--inspect-ledger", "--check"]) == 2
+
+
+def _capture_two_sessions(ledger: Path, output: Path, label: str) -> None:
+    _create_ledger(ledger)
+    history.capture_history(
+        session_id="real-session-1",
+        ledger_path=ledger,
+        history_path=output,
+        ledger_path_label=label,
+        recorded_at_ms=100,
+    )
+    _append_session(ledger, 2, recorded_at=200)
+    history.capture_history(
+        session_id="real-session-2",
+        ledger_path=ledger,
+        history_path=output,
+        ledger_path_label=label,
+        recorded_at_ms=300,
+    )
+
+
+def test_seal_snapshot_is_portable_and_data_minimized(tmp_path: Path) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+
+    document = history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    ledger.unlink()
+    verified = history.check_snapshot(
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+    )
+
+    assert verified == document
+    connection = sqlite3.connect(snapshot)
+    tables = {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    connection.close()
+    assert tables == {
+        "sqlite_sequence",
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+    }
+    assert document["record_count"] == 2
+    assert document["trial_count"] == 2
+    assert document["evaluation_count"] == 2
+
+
+def test_portable_snapshot_does_not_change_when_live_ledger_advances(
+    tmp_path: Path,
+) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    before = snapshot.read_bytes()
+
+    _append_session(ledger, 3, recorded_at=500)
+
+    assert snapshot.read_bytes() == before
+    assert history.check_snapshot(
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+    )["record_count"] == 2
+    with pytest.raises(history.TrialLedgerHistoryError, match="history does not match"):
+        history.check_history(
+            ledger_path=ledger,
+            history_path=output,
+            ledger_path_label=label,
+        )
