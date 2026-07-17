@@ -269,12 +269,12 @@ def _run() -> None:
             if lineage_block is not None:
                 refresh_evidence_available = False
                 alerts.append(lineage_block)
-                admission_ref, admission_status, admission_alerts = (
-                    authoritative_admission_status(now_ms=now_ms)
-                )
-                if refresh_evidence_available is not True:
-                    admission_ref = None
-                alerts.extend(admission_alerts)
+            admission_ref, admission_status, admission_alerts = (
+                authoritative_admission_status(now_ms=now_ms)
+            )
+            if refresh_evidence_available is not True:
+                admission_ref = None
+            alerts.extend(admission_alerts)
         except Exception as exc:
             emit([f"refresh CRASHED: {exc}"], context="forward_track", now_ms=now_ms)
             raise
