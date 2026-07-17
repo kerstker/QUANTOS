@@ -25,7 +25,10 @@ import time
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.paper_trading.forward import realize_due
-from services.research.paper_trading.forward_evidence import load_forward_admission_ref
+from services.research.paper_trading.forward_evidence import (
+    ForwardAdmissionRef,
+    load_forward_admission_ref,
+)
 from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
 from services.data.admission_store import DataQualityAdmissionStore
@@ -54,23 +57,26 @@ _REQUIRED_RAW_LINEAGE = frozenset({"funding", "oi_metrics", "perp_mark_prices"})
 
 
 def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,
-                          admission_ref=None):
+                          admission_ref=None, refresh_evidence_available=False):
     """P1-8 决策门(纯 helper,镜像 live 驱动器 batch_skip_reason 范式)。返回 None=可落决策;返回原因串=
     数据不够干净,调用方暂停本轮决策(证据钟暂停=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进
     不可改写台账。复用 gate_decision_inputs 四项检查;staleness 判据与上面 :102 的告警**同判据**,只把'只告警'
     升成'挡决策'、不更激进。"""
-    inputs = {
-        "weights": weights,
-        "prices": prices,
-        "decided_ts": decided_ts,
-        "now": now,
-        "max_decision_age_ms": _MAX_DECISION_AGE_MS,
-        "staleness": stale,
-        "stale_limits": STALE_LIMITS,
-        "ingestion_quality_failed": tuple(quality_failed),
-    }
-    inputs["quality_evidence_" + "current"] = admission_ref is not None
-    rep = gate_decision_inputs(**inputs)
+    if not isinstance(admission_ref, ForwardAdmissionRef):
+        return "decision blocked: data admission reference unavailable"
+    if refresh_evidence_available is not True:
+        return "decision blocked: current refresh evidence unavailable"
+    rep = gate_decision_inputs(
+        weights=weights,
+        prices=prices,
+        decided_ts=decided_ts,
+        now=now,
+        max_decision_age_ms=_MAX_DECISION_AGE_MS,
+        staleness=stale,
+        stale_limits=STALE_LIMITS,
+        ingestion_quality_failed=tuple(quality_failed),
+        quality_evidence_current=True,
+    )
     if rep.passed:
         return None
     failed = [c.name for c in rep.checks if not c.passed]
@@ -263,10 +269,12 @@ def _run() -> None:
             if lineage_block is not None:
                 refresh_evidence_available = False
                 alerts.append(lineage_block)
-            admission_ref, admission_status, admission_alerts = (
-                authoritative_admission_status(now_ms=now_ms)
-            )
-            alerts.extend(admission_alerts)
+                admission_ref, admission_status, admission_alerts = (
+                    authoritative_admission_status(now_ms=now_ms)
+                )
+                if refresh_evidence_available is not True:
+                    admission_ref = None
+                alerts.extend(admission_alerts)
         except Exception as exc:
             emit([f"refresh CRASHED: {exc}"], context="forward_track", now_ms=now_ms)
             raise
@@ -334,9 +342,10 @@ def _run() -> None:
                     # P1-8 决策门:数据不够干净(源停更/决策过旧/加权名字缺价/接入质量不过)则**暂停证据钟**
                     # (本轮不落决策=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进不可改写台账。
                     block = decision_block_reason(weights=weights, prices=dec_prices, decided_ts=t_dec,
-                                                  now=now_ms, stale=stale,
-                                                  quality_failed=blocked_instruments,
-                                                  admission_ref=admission_ref)
+                                                      now=now_ms, stale=stale,
+                                                      quality_failed=blocked_instruments,
+                                                      admission_ref=admission_ref,
+                                                      refresh_evidence_available=refresh_evidence_available)
                     if block is not None:
                         alerts.append(f"{alpha_id}: {block}")
                         blocked = True

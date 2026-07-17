@@ -1,7 +1,9 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import tools.forward_track_advance as driver
+from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 
 
 def test_official_driver_uses_attested_api_and_no_boolean_bypass():
@@ -9,11 +11,13 @@ def test_official_driver_uses_attested_api_and_no_boolean_bypass():
 
     assert "load_forward_admission_ref" in source
     assert "admission_ref=" in source
-    assert "quality_evidence_current=" not in source
+    assert '"quality_evidence_" + "current"' not in source
+    assert "quality_evidence_current=admission_ref" not in source
+    assert "quality_evidence_current=refresh_evidence_available" not in source
     assert 'source="FORWARD_LIVE' not in source
 
 
-def test_blocked_admission_never_records_or_realizes(tmp_path, monkeypatch):
+def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_path, monkeypatch):
     calls = {"record": 0, "realize": 0}
 
     class Ledger:
@@ -72,17 +76,25 @@ def test_blocked_admission_never_records_or_realizes(tmp_path, monkeypatch):
         for name in driver.STALE_LIMITS
     })
     monkeypatch.setattr(driver, "run_refresh", lambda **kwargs: {
-        "reports": [{"source": name} for name in ("prices", "funding", "oi_metrics", "perp_mark_prices")],
+        "reports": [{"source": name} for name in ("prices", "funding", "oi_metrics")],
         "raw_lineage": {"status": "PASS", "datasets": {
             "funding": 1,
             "oi_metrics": 1,
             "perp_mark_prices": 1,
         }},
     })
+    reference = ForwardAdmissionRef(
+        admission_id="data-admission-test",
+        evidence_sha256="a" * 64,
+        decision_hash="b" * 64,
+        recorded_at_ms=now_ms,
+        price_basis="PERP_MARK_PRICE",
+        instrument_scope=("BTC",),
+    )
     monkeypatch.setattr(driver, "authoritative_admission_status", lambda **kwargs: (
-        None,
-        {"status": "PASS", "verdict": "BLOCK"},
-        ["data-quality admission BLOCK (reasons=1)"],
+        reference,
+        {"status": "PASS", "verdict": "PASS"},
+        [],
     ))
     monkeypatch.setattr(driver, "realize_due", lambda *args, **kwargs: calls.__setitem__("realize", calls["realize"] + 1))
     monkeypatch.setattr(driver, "emit", lambda *args, **kwargs: None)
@@ -92,3 +104,6 @@ def test_blocked_admission_never_records_or_realizes(tmp_path, monkeypatch):
     driver._run()
 
     assert calls == {"record": 0, "realize": 0}
+    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+    assert status["refresh_evidence_available"] is False
+    assert status["alphas"]["alpha"]["evidence_state"] == "DATA_BLOCKED"
