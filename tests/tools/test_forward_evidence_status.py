@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import tools.forward_evidence_status as status_tool
 from services.data.admission_store import DataQualityAdmissionStore
 from services.research.paper_trading.forward_evidence import load_forward_admission_ref
 from services.research.paper_trading.forward_store import ForwardLedger
@@ -105,6 +106,47 @@ def _copy_implementation(root: Path):
         shutil.copyfile(source_root / relative, target)
 
 
+def _add_attested_weeks(root: Path, ref, *, count: int = 7):
+    path = root / "data" / "cache" / "paper_track.db"
+    store = PaperTrackStore(str(path), create=False)
+    ledger = ForwardLedger(str(path), create=False)
+    for index in range(count):
+        decided_ts = (index + 2) * 10 * _DAY_MS
+        assert ledger.record_decision(
+            "alpha",
+            decided_ts,
+            recorded_at=decided_ts,
+            weights={"BTC": 1.0},
+            admission_ref=ref,
+        )
+        assert ledger.commit_realization(
+            "alpha",
+            decided_ts,
+            as_of_ts=decided_ts + 7 * _DAY_MS,
+            realized_return=0.01,
+            realized_ic=0.2,
+            source="FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING",
+            inputs={"BTC": {"weight": 1.0, "price_return": 0.01, "funding": 0.0}},
+            admission_ref=ref,
+            committed_at_ms=decided_ts + 1,
+        )
+    ledger._conn.close()
+    store._conn.close()
+
+
+def _attested_gate_root(root: Path):
+    _copy_implementation(root)
+    authority_path, ref = _make_authority(root)
+    paper_path = root / "data" / "cache" / "paper_track.db"
+    paper_path.parent.mkdir(parents=True, exist_ok=True)
+    store = PaperTrackStore(str(paper_path), create=True)
+    ledger = ForwardLedger(str(paper_path), create=True)
+    ledger._conn.close()
+    store._conn.close()
+    _add_attested_weeks(root, ref, count=8)
+    return authority_path
+
+
 @pytest.fixture()
 def evidence_root(tmp_path):
     _copy_implementation(tmp_path)
@@ -179,6 +221,29 @@ def test_stale_admission_is_explicitly_stale(evidence_root):
 
     assert document["data_admission"]["status"] == "STALE"
     assert document["alphas"][0]["status"] == "STALE"
+
+
+@pytest.mark.parametrize("admission_state", ["UNAVAILABLE", "BLOCKED", "STALE"])
+def test_evidence_gate_requires_current_admission_after_eight_attested_weeks(
+    evidence_root,
+    admission_state,
+):
+    root = evidence_root / admission_state.lower()
+    authority_path = _attested_gate_root(root)
+    kwargs = {"observed_at_ms": 500}
+    if admission_state == "UNAVAILABLE":
+        kwargs["admission_database"] = root / "missing-admission.db"
+    elif admission_state == "BLOCKED":
+        _make_authority(root, verdict="BLOCK")
+    else:
+        kwargs["observed_at_ms"] = 110 + 172_800_001
+
+    document = build_forward_evidence(root, **kwargs)
+
+    assert authority_path.is_file()
+    assert document["alphas"][0]["attested_weeks"] == 8
+    assert document["data_admission"]["status"] == admission_state
+    assert document["evidence_gate"]["eligible"] is False
 
 
 def test_invalid_attested_as_of_week_cannot_be_counted(evidence_root):
@@ -264,3 +329,15 @@ def test_check_is_read_only(evidence_root):
     ]) == 0
 
     assert {path: (path.read_bytes(), os.stat(path).st_mtime_ns) for path in before} == before
+
+
+def test_check_never_reads_wall_clock(evidence_root, monkeypatch):
+    output = evidence_root / "evidence" / "forward_evidence_baseline.json"
+    assert main([
+        "--repo-root", str(evidence_root), "--observed-at-ms", "500", "--output", str(output),
+    ]) == 0
+    monkeypatch.setattr(status_tool.time, "time", lambda: pytest.fail("--check read wall clock"))
+
+    assert status_tool.main([
+        "--repo-root", str(evidence_root), "--output", str(output), "--check",
+    ]) == 0

@@ -285,7 +285,13 @@ def _build_document(
         "implementation": dict(implementation),
         "evidence_gate": {
             "minimum_weeks": _MINIMUM_WEEKS,
-            "eligible": bool(alphas) and all(row["attested_weeks"] >= _MINIMUM_WEEKS for row in alphas),
+            "eligible": (
+                decision_chain_valid
+                and realization_chain_valid
+                and admission_summary["status"] == "CURRENT"
+                and bool(alphas)
+                and all(row["attested_weeks"] >= _MINIMUM_WEEKS for row in alphas)
+            ),
         },
         "honesty_note": "Only v2 authority-bound realizations count; legacy and backfilled rows never count.",
     }
@@ -364,9 +370,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     root = Path(args.repo_root).resolve()
     output = Path(args.output).resolve() if args.output else root / "evidence" / "forward_evidence_baseline.json"
-    observed_at_ms = args.observed_at_ms
-    if observed_at_ms is None:
-        observed_at_ms = int(time.time() * 1000)
     try:
         if args.check:
             if not output.is_file():
@@ -380,6 +383,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print("forward evidence: VERIFIED")
         else:
+            observed_at_ms = args.observed_at_ms
+            if observed_at_ms is None:
+                observed_at_ms = int(time.time() * 1000)
             document = build_forward_evidence(
                 root,
                 observed_at_ms=observed_at_ms,
