@@ -2080,6 +2080,8 @@ def main():
     return {
         "evidence_path": "evidence/alpha_trial_ledger_history.json",
         "ledger_path": "data/cache/experiment_registry.db",
+        "snapshot_path": "evidence/alpha_trial_ledger_snapshot.db",
+        "seal_path": "evidence/alpha_trial_ledger_snapshot_seal.json",
         "entrypoint_path": "services/intelligence/research_session.py",
         "session_path": "services/research/session.py",
         "factory_path": "services/research/alpha_factory.py",
@@ -2161,6 +2163,16 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
             ledger_path_label=checker_args["ledger_path"],
             recorded_at_ms=100 if index == 1 else 300,
         )
+    search_trial_ledger_history.seal_snapshot(
+        ledger_path=ledger_path,
+        history_path=evidence_path,
+        snapshot_path=tmp_path / checker_args["snapshot_path"],
+        seal_path=tmp_path / checker_args["seal_path"],
+        ledger_path_label=checker_args["ledger_path"],
+        history_path_label=checker_args["evidence_path"],
+        snapshot_path_label=checker_args["snapshot_path"],
+        sealed_at_ms=400,
+    )
     return evidence_path
 
 
@@ -2275,16 +2287,86 @@ def test_alpha_trial_ledger_checker_requires_missing_file_guard_before_sqlite(tm
     assert "missing_file_guard_before_connect" in result["detail"]
 
 
-def test_alpha_trial_ledger_checker_verifies_append_only_history_and_live_store(tmp_path):
+def test_alpha_trial_ledger_checker_passes_from_portable_bundle_without_live_store(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
+    (tmp_path / checker_args["ledger_path"]).unlink()
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
 
     assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
-    assert "two-session" in result["detail"]
+    assert checker_args["snapshot_path"] in result["evidence"]
+    assert checker_args["seal_path"] in result["evidence"]
+
+
+@pytest.mark.parametrize("missing_key", ["snapshot_path", "seal_path"])
+def test_alpha_trial_ledger_checker_is_partial_without_portable_bundle_file(
+    tmp_path,
+    missing_key,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    (tmp_path / checker_args[missing_key]).unlink()
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL"
+    assert result["current_maturity"] == "M3"
+    assert "portable snapshot evidence is unavailable" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_bad_portable_seal_hash(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = "0" * 64
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert "portable seal failed" in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "mutation,detail",
+    [
+        ("extra_table", "ledger_tables"),
+        ("missing_trigger", "evaluations_no_delete_trigger"),
+    ],
+)
+def test_alpha_trial_ledger_checker_rejects_nonminimal_or_mutable_snapshot(
+    tmp_path,
+    mutation,
+    detail,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    if mutation == "extra_table":
+        connection.execute("CREATE TABLE forbidden_runtime_state(value TEXT)")
+    else:
+        connection.execute("DROP TRIGGER evaluations_no_delete")
+    connection.commit()
+    connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert detail in result["detail"]
 
 
 def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_store(tmp_path):
@@ -2320,6 +2402,11 @@ def test_alpha_trial_ledger_checker_rejects_self_reported_session_label(tmp_path
         ).encode("utf-8")
     ).hexdigest()
     evidence_path.write_text(json.dumps(document), encoding="utf-8")
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["history_sha256"] = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    seal["history_head_hash"] = final["record_hash"]
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2353,11 +2440,15 @@ def test_alpha_trial_ledger_checker_rejects_cross_session_candidate_link(tmp_pat
 def test_alpha_trial_ledger_checker_requires_database_append_only_guards(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
-    ledger_path = tmp_path / checker_args["ledger_path"]
-    connection = sqlite3.connect(ledger_path)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
     connection.execute("DROP TRIGGER evaluations_no_delete")
     connection.commit()
     connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2369,11 +2460,15 @@ def test_alpha_trial_ledger_checker_requires_database_append_only_guards(tmp_pat
 def test_alpha_trial_ledger_checker_requires_exact_link_append_only_guard(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
-    ledger_path = tmp_path / checker_args["ledger_path"]
-    connection = sqlite3.connect(ledger_path)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
     connection.execute("DROP TRIGGER search_evaluations_no_delete")
     connection.commit()
     connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2392,6 +2487,12 @@ def test_committed_alpha_trial_requirement_uses_semantic_checker():
     assert requirement["checker_args"]["evidence_path"] == (
         "evidence/alpha_trial_ledger_history.json"
     )
+    assert requirement["checker_args"]["snapshot_path"] == (
+        "evidence/alpha_trial_ledger_snapshot.db"
+    )
+    assert requirement["checker_args"]["seal_path"] == (
+        "evidence/alpha_trial_ledger_snapshot_seal.json"
+    )
     assert requirement["checker_args"]["persistence_port_path"] == (
         "services/research/ports/persistence.py"
     )
@@ -2401,7 +2502,7 @@ def test_committed_alpha_trial_requirement_uses_semantic_checker():
     } <= set(requirement["checker_args"]["verification_paths"])
 
 
-def test_committed_alpha_trial_requirement_is_partial_without_history(tmp_path):
+def test_committed_alpha_trial_requirement_passes_with_portable_snapshot(tmp_path):
     requirement = next(
         item for item in load_requirements(REGISTRY)
         if item["id"] == "ALPHA.TRIAL.GLOBAL_LEDGER"
@@ -2410,6 +2511,7 @@ def test_committed_alpha_trial_requirement_is_partial_without_history(tmp_path):
 
     result = assess_repository(ROOT, registry)["requirements"][0]
 
-    assert result["status"] == "PARTIAL"
-    assert result["current_maturity"] == "M3"
-    assert "factory persistence wiring is verified" in result["detail"]
+    assert result["status"] == "PASS"
+    assert result["current_maturity"] == "M4"
+    assert requirement["checker_args"]["snapshot_path"] in result["evidence"]
+    assert requirement["checker_args"]["seal_path"] in result["evidence"]

@@ -245,6 +245,14 @@ def _alpha_trial_search_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _alpha_trial_ledger_evidence(
     repo_root: Path,
     args: dict[str, Any],
@@ -254,6 +262,8 @@ def _alpha_trial_ledger_evidence(
     path_fields = (
         "evidence_path",
         "ledger_path",
+        "snapshot_path",
+        "seal_path",
         "entrypoint_path",
         "session_path",
         "factory_path",
@@ -736,7 +746,6 @@ def _alpha_trial_ledger_evidence(
         )
 
     evidence_path = repo_root / paths["evidence_path"]
-    ledger_path = repo_root / paths["ledger_path"]
     if not evidence_path.is_file():
         return _result(
             "PARTIAL",
@@ -1060,14 +1069,91 @@ def _alpha_trial_ledger_evidence(
             + ", ".join(sorted(set(history_failures))),
         )
 
-    if not ledger_path.is_file():
+    snapshot_path = repo_root / paths["snapshot_path"]
+    seal_path = repo_root / paths["seal_path"]
+    if not snapshot_path.is_file() or not seal_path.is_file():
         return _result(
             "PARTIAL",
             "M3",
             evidence,
-            "versioned trial-ledger history is valid, but the bound current ledger is unavailable",
+            "versioned trial-ledger history is valid, but portable snapshot evidence is unavailable",
         )
-    evidence.append(paths["ledger_path"])
+    evidence.extend([paths["snapshot_path"], paths["seal_path"]])
+
+    seal_failures: list[str] = []
+    try:
+        seal = load_json_without_duplicate_keys(seal_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        return _result(
+            "FAILED",
+            "M2",
+            evidence,
+            f"alpha trial-ledger portable seal failed: {exc}",
+        )
+    seal_fields = {
+        "schema_version",
+        "mode",
+        "ledger_path",
+        "history_path",
+        "snapshot_path",
+        "history_sha256",
+        "snapshot_sha256",
+        "history_head_hash",
+        "record_count",
+        "trial_count",
+        "evaluation_count",
+        "sealed_at_ms",
+    }
+    if not isinstance(seal, dict) or set(seal) != seal_fields:
+        return _result(
+            "FAILED",
+            "M2",
+            evidence,
+            "alpha trial-ledger portable seal failed: seal_fields",
+        )
+    expected_seal_header = {
+        "schema_version": 1,
+        "mode": "ALPHA_TRIAL_LEDGER_PORTABLE_SEAL",
+        "ledger_path": paths["ledger_path"],
+        "history_path": paths["evidence_path"],
+        "snapshot_path": paths["snapshot_path"],
+    }
+    if any(seal.get(key) != value for key, value in expected_seal_header.items()):
+        seal_failures.append("seal_header")
+    for key in ("history_sha256", "snapshot_sha256", "history_head_hash"):
+        if (
+            not isinstance(seal.get(key), str)
+            or digest_pattern.fullmatch(seal[key]) is None
+        ):
+            seal_failures.append(key)
+    for key in ("record_count", "trial_count", "evaluation_count", "sealed_at_ms"):
+        if type(seal.get(key)) is not int or seal[key] < 0:
+            seal_failures.append(key)
+    if not seal_failures:
+        if _sha256_file(evidence_path) != seal["history_sha256"]:
+            seal_failures.append("history_sha256")
+        if _sha256_file(snapshot_path) != seal["snapshot_sha256"]:
+            seal_failures.append("snapshot_sha256")
+        expected_counts = {
+            "history_head_hash": previous_record_hash,
+            "record_count": len(records),
+            "trial_count": len(final_trials),
+            "evaluation_count": len(final_evaluations),
+        }
+        if any(seal[key] != value for key, value in expected_counts.items()):
+            seal_failures.append("seal_counts_or_head")
+        if seal["sealed_at_ms"] < records[-1]["recorded_at_ms"]:
+            seal_failures.append("sealed_at_ms")
+    if seal_failures:
+        return _result(
+            "FAILED",
+            "M2",
+            evidence,
+            "alpha trial-ledger portable seal failed: "
+            + ", ".join(sorted(set(seal_failures))),
+        )
+
+    ledger_path = snapshot_path
 
     try:
         connection = sqlite3.connect(
@@ -1115,7 +1201,7 @@ def _alpha_trial_ledger_evidence(
             "FAILED",
             "M2",
             evidence,
-            f"current alpha trial ledger cannot be verified: {exc}",
+            f"portable alpha trial ledger cannot be verified: {exc}",
         )
     finally:
         if "connection" in locals():
@@ -1126,13 +1212,14 @@ def _alpha_trial_ledger_evidence(
         ledger_failures.append("sqlite_integrity")
     if schema_version < 2:
         ledger_failures.append("ledger_schema_version")
-    if not {
+    if tables != {
+        "sqlite_sequence",
         "trials",
         "evaluations",
         "search_attempt_events",
         "search_candidates",
         "search_evaluations",
-    } <= tables:
+    }:
         ledger_failures.append("ledger_tables")
     for table in (
         "trials",
@@ -1353,7 +1440,7 @@ def _alpha_trial_ledger_evidence(
             "FAILED",
             "M2",
             evidence,
-            "append-only history does not match the current ledger: "
+            "append-only history does not match the portable snapshot: "
             + ", ".join(sorted(set(ledger_failures))),
         )
 
@@ -1362,10 +1449,10 @@ def _alpha_trial_ledger_evidence(
         "PASS",
         maturity,
         evidence,
-        "official guided/evolutionary/GP/MCTS and factory recorder wiring, a versioned "
-        "two-session monotonic history chain with exact completed-search evaluation bindings, "
-        "database-enforced append-only trial/evaluation/search tables, and the exact current "
-        "ledger contents are verified",
+        "official guided/evolutionary/GP/MCTS and factory recorder wiring, a portable sealed "
+        "snapshot, a versioned two-session monotonic history chain with exact completed-search "
+        "evaluation bindings, and database-enforced append-only trial/evaluation/search guards "
+        "are verified",
     )
 
 

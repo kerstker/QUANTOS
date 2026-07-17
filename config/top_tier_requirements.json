@@ -63,6 +63,8 @@
                              "checker_args":  {
                                                   "evidence_path":  "evidence/alpha_trial_ledger_history.json",
                                                   "ledger_path":  "data/cache/experiment_registry.db",
+                                                  "snapshot_path":  "evidence/alpha_trial_ledger_snapshot.db",
+                                                  "seal_path":  "evidence/alpha_trial_ledger_snapshot_seal.json",
                                                   "entrypoint_path":  "services/intelligence/research_session.py",
                                                   "session_path":  "services/research/session.py",
                                                   "factory_path":  "services/research/alpha_factory.py",
