@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -898,4 +899,150 @@ def test_portable_snapshot_does_not_change_when_live_ledger_advances(
             ledger_path=ledger,
             history_path=output,
             ledger_path_label=label,
+        )
+
+
+def test_cli_seals_and_checks_without_live_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    monkeypatch.chdir(tmp_path)
+
+    assert history.main(["--seal-snapshot"]) == 0
+    ledger.unlink()
+    assert history.main(["--check-snapshot"]) == 0
+    assert history.main(["--check", "--check-snapshot"]) == 2
+    assert snapshot.exists()
+    assert seal.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        ("history_hash", "history hash mismatch"),
+        ("snapshot_hash", "snapshot hash mismatch"),
+        ("count", "counts or history head mismatch"),
+        ("extra_table", "table allowlist"),
+        ("missing_trigger", "append-only trigger"),
+    ],
+)
+def test_portable_bundle_tampering_fails_closed(
+    tmp_path: Path,
+    mutation: str,
+    match: str,
+) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    document = json.loads(seal.read_text(encoding="utf-8"))
+    if mutation == "history_hash":
+        document["history_sha256"] = "0" * 64
+        seal.write_text(json.dumps(document), encoding="utf-8")
+    elif mutation == "snapshot_hash":
+        document["snapshot_sha256"] = "0" * 64
+        seal.write_text(json.dumps(document), encoding="utf-8")
+    elif mutation == "count":
+        document["trial_count"] += 1
+        seal.write_text(json.dumps(document), encoding="utf-8")
+    else:
+        connection = sqlite3.connect(snapshot)
+        if mutation == "extra_table":
+            connection.execute("CREATE TABLE forbidden_runtime_state(value TEXT)")
+        else:
+            connection.execute("DROP TRIGGER evaluations_no_delete")
+        connection.commit()
+        connection.close()
+        document["snapshot_sha256"] = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+        seal.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(history.TrialLedgerHistoryError, match=match):
+        history.check_snapshot(
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        )
+
+
+def test_seal_publish_failure_leaves_detectable_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    old_seal = seal.read_bytes()
+    old_snapshot = snapshot.read_bytes()
+    _append_session(ledger, 3, recorded_at=500)
+    history.capture_history(
+        session_id="real-session-3",
+        ledger_path=ledger,
+        history_path=output,
+        ledger_path_label=label,
+        recorded_at_ms=600,
+    )
+    original = history._atomic_publish
+
+    def reject_seal(path, document, *, expected_previous, before_replace):
+        if Path(path) == seal:
+            before_replace()
+            raise OSError("simulated seal replace failure")
+        return original(
+            path,
+            document,
+            expected_previous=expected_previous,
+            before_replace=before_replace,
+        )
+
+    monkeypatch.setattr(history, "_atomic_publish", reject_seal)
+    with pytest.raises(OSError, match="simulated seal replace failure"):
+        history.seal_snapshot(
+            ledger_path=ledger,
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+            sealed_at_ms=700,
+        )
+
+    assert seal.read_bytes() == old_seal
+    assert snapshot.exists()
+    assert old_snapshot != b""
+    with pytest.raises(history.TrialLedgerHistoryError, match="hash mismatch"):
+        history.check_snapshot(
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
         )

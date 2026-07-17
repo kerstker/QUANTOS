@@ -451,7 +451,7 @@ def _required_append_only_triggers(connection: sqlite3.Connection) -> None:
             if not any(pattern.search(sql) for sql in trigger_sql):
                 missing.append(f"{table.lower()}_no_{operation.lower()}_trigger")
     if missing:
-        raise TrialLedgerHistoryError("ledger append-only guards are incomplete: " + ", ".join(missing))
+        raise TrialLedgerHistoryError("ledger append-only trigger guards are incomplete: " + ", ".join(missing))
 
 
 def _read_verified_ledger_once(
@@ -1285,46 +1285,58 @@ def seal_snapshot(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Append or verify the production alpha trial-ledger history")
-    parser.add_argument("--check", action="store_true", help="verify without writing")
-    parser.add_argument(
-        "--inspect-ledger",
-        action="store_true",
-        help="inspect capture readiness without writing or migrating",
+    parser = argparse.ArgumentParser(
+        description="Append, seal, or verify the production alpha trial-ledger history"
     )
-    parser.add_argument(
-        "--session-id",
-        help="unique ID of the completed research session being retained",
-    )
+    parser.add_argument("--check", action="store_true", help="verify against the live authority")
+    parser.add_argument("--inspect-ledger", action="store_true", help="inspect live capture readiness")
+    parser.add_argument("--seal-snapshot", action="store_true", help="publish portable snapshot evidence")
+    parser.add_argument("--check-snapshot", action="store_true", help="verify portable evidence only")
+    parser.add_argument("--session-id", help="completed search ID to retain")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.check and args.inspect_ledger:
-        print("--check cannot be combined with --inspect-ledger", file=sys.stderr)
-        return 2
-    if (args.check or args.inspect_ledger) and args.session_id is not None:
-        print(
-            "--session-id cannot be combined with a read-only mode",
-            file=sys.stderr,
+    selected_mode_count = sum(
+        int(value)
+        for value in (
+            args.check,
+            args.inspect_ledger,
+            args.seal_snapshot,
+            args.check_snapshot,
         )
+    )
+    if selected_mode_count > 1:
+        print("only one mode may be selected", file=sys.stderr)
         return 2
-    if not args.check and not args.inspect_ledger and args.session_id is None:
-        print(
-            "--session-id is required unless a read-only mode is used",
-            file=sys.stderr,
-        )
+    if selected_mode_count and args.session_id is not None:
+        print("--session-id cannot be combined with a mode", file=sys.stderr)
+        return 2
+    if selected_mode_count == 0 and args.session_id is None:
+        print("--session-id is required unless a mode is used", file=sys.stderr)
         return 2
     try:
         if args.inspect_ledger:
-            inspection = inspect_ledger()
-            print(json.dumps(inspection, ensure_ascii=True, sort_keys=True))
+            result = inspect_ledger()
+            print(json.dumps(result, ensure_ascii=True, sort_keys=True))
             return 0
         if args.check:
-            document = check_history(ledger_path_label=DEFAULT_LEDGER_PATH)
+            result = check_history(ledger_path_label=DEFAULT_LEDGER_PATH)
+        elif args.seal_snapshot:
+            result = seal_snapshot(
+                ledger_path_label=DEFAULT_LEDGER_PATH,
+                history_path_label=DEFAULT_HISTORY_PATH,
+                snapshot_path_label=DEFAULT_SNAPSHOT_PATH,
+            )
+        elif args.check_snapshot:
+            result = check_snapshot(
+                ledger_path_label=DEFAULT_LEDGER_PATH,
+                history_path_label=DEFAULT_HISTORY_PATH,
+                snapshot_path_label=DEFAULT_SNAPSHOT_PATH,
+            )
         else:
-            document = capture_history(
+            result = capture_history(
                 session_id=args.session_id,
                 ledger_path_label=DEFAULT_LEDGER_PATH,
             )
@@ -1333,7 +1345,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         json.dumps(
-            {"status": "verified", "record_count": len(document["records"])},
+            {
+                "status": "verified",
+                "record_count": result.get("record_count", len(result.get("records", []))),
+            },
             sort_keys=True,
         )
     )
