@@ -43,7 +43,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "domain": "platform_engineering",
       "passed": 1,
       "red_lines_failed": 1,
@@ -127,12 +127,10 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Model prompt tools evaluation and red-team lineage",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: dataset_bundle_verification, governance_implementation_digest:quantos/contracts/model_risk.py, governance_implementation_digest:scripts/generate_model_risk_dataset.py, governance_implementation_digest:scripts/generate_model_risk_evidence.py, governance_implementation_digest:scripts/update_model_risk_history.py, governance_implementation_digest:services/governance/model_risk.py, governance_implementation_digest:services/governance/model_risk_dataset.py, governance_implementation_digest:services/governance/model_risk_history.py, governance_implementation_digest:services/governance/model_risk_registry.py, governance_implementation_digest:services/intelligence/runtime.py, implementation_digest:services/intelligence/agent_loop.py, implementation_digest:services/intelligence/guardrails.py, implementation_digest:services/research/ml/stacker.py, implementation_digest:tools/ml_stack_research.py",
       "domain": "ai_agents",
       "evidence": [
         "evidence/model_risk_baseline.json",
-        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
         "evidence/model_risk_history.json",
         "tests/governance/test_model_risk_registry.py",
         "tests/governance/test_model_risk_evidence.py",
@@ -756,7 +754,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -779,7 +777,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -832,14 +830,12 @@
         "path": "evidence/supply_chain_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed but unprovisioned local decision store; no retained valid bundle or external signed receipt exercises the real verifier path, source-native checkpoint/revocation proofs are not verified, and cross-host reproducibility, an externally signed artifact, authenticated receipts, independent deployment, and an external history seal remain open; evidence does not meet target maturity",
+      "detail": "supply-chain baseline failed: artifact_admission_implementation_digest:services/governance/artifact_admission.py, artifact_admission_implementation_digest:services/governance/artifact_admission_store.py, artifact_admission_implementation_digest:services/governance/artifact_receipt_auth.py, artifact_admission_implementation_digest:tools/verify_artifact_admission.py, artifact_admission_policy_registry, artifact_admission_receipt_authority_registry, container_reproducibility_evidence, container_vulnerability_evidence, manifest_digest:.github/workflows/validate.yml, manifest_digest:config/artifact_admission_policy_registry.json, manifest_digest:config/artifact_receipt_authority_registry.json, manifest_digest:config/identity_authorization_registry.json, manifest_digest:config/service_import_policy.json, manifest_digest:config/top_tier_requirements.json, manifest_digest:deploy/console.Dockerfile, manifest_digest:evidence/event_schema_catalog.json, manifest_digest:evidence/service_import_graph.json, manifest_digest:live/execution/risk_monitor.py, manifest_digest:live/governance/kill_switch_store.py, manifest_digest:pyproject.toml, manifest_digest:quantos/contracts/event_schemas.py, manifest_digest:quantos/contracts/events.py, manifest_digest:quantos/contracts/identity.py, manifest_digest:quantos/contracts/paper.py, manifest_digest:requirements-dev.txt, manifest_digest:requirements.txt, manifest_digest:scripts/generate_actions_audit_evidence.py, manifest_digest:scripts/generate_container_audit_evidence.py, manifest_digest:scripts/generate_container_reproducibility_evidence.py, manifest_digest:scripts/generate_event_schema_catalog.py, manifest_digest:scripts/generate_npm_audit_evidence.py, manifest_digest:scripts/generate_python_audit_evidence.py, manifest_digest:scripts/generate_service_import_graph.py, manifest_digest:scripts/generate_strong_identity_evidence.py, manifest_digest:scripts/generate_supply_chain_evidence.py, manifest_digest:scripts/register_schedules.ps1, manifest_digest:scripts/validate.py, manifest_digest:services/alpha/events.py, manifest_digest:services/alpha/maintenance_events.py, manifest_digest:services/alpha/maintenance_store.py, manifest_digest:services/console/api/risk_port.py, manifest_digest:services/console/api/system_views.py, manifest_digest:services/console/main.py, manifest_digest:services/console/risk_console.py, manifest_digest:services/data/events.py, manifest_digest:services/data/refresh_history.py, manifest_digest:services/deployment/events.py, manifest_digest:services/deployment/gate.py, manifest_digest:services/deployment/runtime.py, manifest_digest:services/deployment/store.py, manifest_digest:services/execution/dry_run_store.py, manifest_digest:services/execution/events.py, manifest_digest:services/execution/impact.py, manifest_digest:services/execution/impact_calibration.py, manifest_digest:services/execution/paper_reconciliation.py, manifest_digest:services/governance/artifact_admission.py, manifest_digest:services/governance/artifact_admission_store.py, manifest_digest:services/governance/artifact_receipt_auth.py, manifest_digest:services/governance/identity_authorization.py, manifest_digest:services/governance/identity_authorization_store.py, manifest_digest:services/governance/reproducibility_evidence.py, manifest_digest:services/governance/service_import_graph.py, manifest_digest:services/governance/strong_identity.py, manifest_digest:services/governance/top_tier_assessment.py, manifest_digest:services/governance/vulnerability_evidence.py, manifest_digest:services/monitoring/consumer_group.py, manifest_digest:services/monitoring/domain_event_runtime.py, manifest_digest:services/monitoring/event_bus.py, manifest_digest:services/monitoring/event_health.py, manifest_digest:services/monitoring/event_projection.py, manifest_digest:services/promotion_api/main.py, manifest_digest:services/research/experiment_registry/registry.py, manifest_digest:services/research/experiment_registry/store.py, manifest_digest:services/research/ports/persistence.py, manifest_digest:services/risk/pre_trade/events.py, manifest_digest:services/risk/pre_trade/kill_switch.py, manifest_digest:services/risk/pre_trade/kill_switch_runtime.py, manifest_digest:services/risk/pre_trade/kill_switch_store.py, manifest_digest:services/risk/research_risk/events.py, manifest_digest:tests/alpha/test_maintenance_store.py, manifest_digest:tests/contracts/test_event_schema_registry.py, manifest_digest:tests/contracts/test_paper_execution_contract.py, manifest_digest:tests/data/test_refresh_event_outbox.py, manifest_digest:tests/deployment/test_deployment_store.py, manifest_digest:tests/execution/test_dry_run_store.py, manifest_digest:tests/execution/test_impact_ownership.py, manifest_digest:tests/governance/test_artifact_admission.py, manifest_digest:tests/governance/test_artifact_admission_cli.py, manifest_digest:tests/governance/test_artifact_admission_store.py, manifest_digest:tests/governance/test_artifact_receipt_auth.py, manifest_digest:tests/governance/test_console_composition_boundary.py, manifest_digest:tests/governance/test_event_bus_wiring.py, manifest_digest:tests/governance/test_event_schema_catalog.py, manifest_digest:tests/governance/test_external_operations_boundary.py, manifest_digest:tests/governance/test_identity_authorization.py, manifest_digest:tests/governance/test_identity_authorization_store.py, manifest_digest:tests/governance/test_l2_operations_boundary.py, manifest_digest:tests/governance/test_l2_schedule_boundary.py, manifest_digest:tests/governance/test_promotion_api_endpoints.py, manifest_digest:tests/governance/test_risk_recovery_drill_boundary.py, manifest_digest:tests/governance/test_service_import_graph.py, manifest_digest:tests/governance/test_strong_identity.py, manifest_digest:tests/governance/test_strong_identity_evidence.py, manifest_digest:tests/governance/test_supply_chain_evidence.py, manifest_digest:tests/governance/test_top_tier_assessment.py, manifest_digest:tests/live/test_kill_switch_reset_cli.py, manifest_digest:tests/live/test_live_risk_sentinel.py, manifest_digest:tests/live/test_risk_recovery_drill.py, manifest_digest:tests/monitoring/test_event_bus_health.py, manifest_digest:tests/monitoring/test_event_consumer.py, manifest_digest:tests/monitoring/test_event_consumer_group.py, manifest_digest:tests/monitoring/test_event_projection.py, manifest_digest:tests/monitoring/test_governance_decision_audit.py, manifest_digest:tests/research/test_console_event_projection.py, manifest_digest:tests/research/test_experiment_event_outbox.py, manifest_digest:tests/risk/test_kill_switch_state_store.py, manifest_digest:tests/risk/test_research_risk_events.py, manifest_digest:tests/tools/test_alpha_maintenance_sweep.py, manifest_digest:tests/tools/test_deployment_events.py, manifest_digest:tests/tools/test_domain_event_bus.py, manifest_digest:tests/tools/test_domain_event_health.py, manifest_digest:tests/tools/test_domain_event_ops.py, manifest_digest:tests/tools/test_domain_event_outbox_drain.py, manifest_digest:tests/tools/test_domain_event_owner_migration.py, manifest_digest:tests/tools/test_domain_event_seal.py, manifest_digest:tests/tools/test_external_heartbeat.py, manifest_digest:tests/tools/test_l2_backup.py, manifest_digest:tests/tools/test_l2_scheduler_watchdog.py, manifest_digest:tools/alpha_maintenance_sweep.py, manifest_digest:tools/deployment_events.py, manifest_digest:tools/domain_event_bus.py, manifest_digest:tools/domain_event_health.py, manifest_digest:tools/domain_event_ops.py, manifest_digest:tools/domain_event_outbox_drain.py, manifest_digest:tools/domain_event_owner_migration.py, manifest_digest:tools/domain_event_seal.py, manifest_digest:tools/external_heartbeat.py, manifest_digest:tools/kill_switch_events.py, manifest_digest:tools/l2_backup.py, manifest_digest:tools/l2_scheduler_watchdog.py, manifest_digest:tools/live_backup.py, manifest_digest:tools/live_data_refresh.py, manifest_digest:tools/live_kill_switch_reset.py, manifest_digest:tools/live_risk_sentinel.py, manifest_digest:tools/live_track_advance.py, manifest_digest:tools/restore_drill.py, manifest_digest:tools/risk_recovery_drill.py, manifest_digest:tools/verify_artifact_admission.py, python_vulnerability_evidence, sbom_digest",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
-        "config/artifact_admission_policy_registry.json",
-        "config/artifact_receipt_authority_registry.json",
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
@@ -1015,7 +1011,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1205,12 +1201,10 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Independent challenger and model cards exist",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: dataset_bundle_verification, governance_implementation_digest:quantos/contracts/model_risk.py, governance_implementation_digest:scripts/generate_model_risk_dataset.py, governance_implementation_digest:scripts/generate_model_risk_evidence.py, governance_implementation_digest:scripts/update_model_risk_history.py, governance_implementation_digest:services/governance/model_risk.py, governance_implementation_digest:services/governance/model_risk_dataset.py, governance_implementation_digest:services/governance/model_risk_history.py, governance_implementation_digest:services/governance/model_risk_registry.py, governance_implementation_digest:services/intelligence/runtime.py, implementation_digest:services/intelligence/agent_loop.py, implementation_digest:services/intelligence/guardrails.py, implementation_digest:services/research/ml/stacker.py, implementation_digest:tools/ml_stack_research.py",
       "domain": "validation_model_risk",
       "evidence": [
         "evidence/model_risk_baseline.json",
-        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
-        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
         "evidence/model_risk_history.json",
         "tests/governance/test_model_risk_registry.py",
         "tests/governance/test_model_risk_evidence.py",
