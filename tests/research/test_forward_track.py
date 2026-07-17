@@ -7,7 +7,6 @@ docs/engineering/specs/2026-07-04-forward-track-live-design.md。
 
 import json
 import sqlite3
-from dataclasses import replace
 
 import pytest
 
@@ -30,13 +29,21 @@ def db(tmp_path):
     return store, ledger
 
 
-def _ref(scope=("BTC", "ETH")):
+def _ref(
+    scope=("BTC", "ETH"),
+    *,
+    admission_id="admission-1",
+    evidence_sha256="a" * 64,
+    decision_hash="b" * 64,
+    recorded_at_ms=_T0 - 1,
+    price_basis="PERP_MARK_PRICE",
+):
     return ForwardAdmissionRef(
-        admission_id="admission-1",
-        evidence_sha256="a" * 64,
-        decision_hash="b" * 64,
-        recorded_at_ms=_T0 - 1,
-        price_basis="PERP_MARK_PRICE",
+        admission_id=admission_id,
+        evidence_sha256=evidence_sha256,
+        decision_hash=decision_hash,
+        recorded_at_ms=recorded_at_ms,
+        price_basis=price_basis,
         instrument_scope=tuple(sorted(scope)),
     )
 
@@ -51,13 +58,20 @@ def _realize_with_evidence(ledger, store, alpha_id, **kwargs):
     )
 
 
-def _commit(ledger, *, realized_return=0.01, inputs=None, admission_ref=None):
+def _commit(
+    ledger,
+    *,
+    realized_return=0.01,
+    realized_ic=0.5,
+    inputs=None,
+    admission_ref=None,
+):
     return ledger.commit_realization(
         "a",
         _T0,
         as_of_ts=_T0 + _WEEK,
         realized_return=realized_return,
-        realized_ic=0.5,
+        realized_ic=realized_ic,
         source="FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING",
         inputs=inputs
         or {
@@ -188,21 +202,116 @@ def test_realization_event_and_period_tables_reject_update_and_delete(db, table,
     assert ledger.realization_chain_valid()
 
 
-def test_realization_admission_and_input_scope_must_match_attested_decision(db):
+def test_realization_uses_fresh_admission_while_retaining_historical_decision_binding(db):
     store, ledger = db
-    ref = _ref(("BTC",))
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=ref)
+    old_ref = _ref(
+        ("BTC",),
+        admission_id="old-pass",
+        evidence_sha256="1" * 64,
+        decision_hash="2" * 64,
+        recorded_at_ms=_T0 - 10,
+    )
+    new_ref = _ref(
+        ("BTC",),
+        admission_id="new-pass",
+        evidence_sha256="3" * 64,
+        decision_hash="4" * 64,
+        recorded_at_ms=_T0 + _WEEK,
+    )
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=old_ref
+    )
 
-    with pytest.raises(Exception, match="admission"):
-        _commit(ledger, admission_ref=replace(ref, admission_id="different"))
-    with pytest.raises(Exception, match="outside the admitted"):
+    assert _commit(ledger, admission_ref=new_ref) is True
+
+    realization = ledger.attested_realizations("a")[0]
+    assert realization["admission_id"] == "new-pass"
+    assert realization["admission_evidence_sha256"] == "3" * 64
+    assert realization["admission_decision_hash"] == "4" * 64
+    payload = json.loads(
+        ledger._conn.execute("SELECT payload_json FROM forward_local_events").fetchone()[0]
+    )
+    assert payload["admission_id"] == "new-pass"
+    assert len(store.periods("a")) == 1
+    assert ledger.realization_chain_valid()
+
+
+@pytest.mark.parametrize(
+    ("old_scope", "new_scope", "old_basis", "new_basis"),
+    [
+        (("BTC",), ("BTC", "ETH"), "PERP_MARK_PRICE", "PERP_MARK_PRICE"),
+        (("BTC", "ETH"), ("BTC",), "PERP_MARK_PRICE", "PERP_MARK_PRICE"),
+        (("BTC", "ETH"), ("BTC", "ETH"), "INDEX_PRICE", "PERP_MARK_PRICE"),
+        (("BTC", "ETH"), ("BTC", "ETH"), "PERP_MARK_PRICE", "INDEX_PRICE"),
+    ],
+)
+def test_realization_requires_both_admission_scopes_and_perp_mark_basis(
+    db, old_scope, new_scope, old_basis, new_basis
+):
+    store, ledger = db
+    old_ref = _ref(old_scope, admission_id="old", price_basis=old_basis)
+    new_ref = _ref(
+        new_scope,
+        admission_id="new",
+        evidence_sha256="3" * 64,
+        decision_hash="4" * 64,
+        price_basis=new_basis,
+    )
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=old_ref
+    )
+
+    with pytest.raises(ForwardLedgerError, match="admission"):
         _commit(
             ledger,
-            inputs={"ETH": {"weight": 1.0, "price_return": 0.01, "funding": 0.0}},
+            admission_ref=new_ref,
+            inputs={"ETH": {"weight": 0.0, "price_return": 0.01, "funding": 0.0}},
         )
 
-    assert ledger.attested_realizations("a") == []
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_realizations").fetchone()[0] == 0
     assert store.periods("a") == []
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 0
+    assert len(ledger.attested_pending("a")) == 1
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("location", ["realized_return", "realized_ic", "nested_input"])
+def test_nonfinite_realization_evidence_fails_closed_without_writes(db, location, value):
+    store, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    kwargs = {}
+    if location == "realized_return":
+        kwargs["realized_return"] = value
+    elif location == "realized_ic":
+        kwargs["realized_ic"] = value
+    else:
+        kwargs["inputs"] = {
+            "BTC": {"weight": 1.0, "price_return": value, "funding": 0.0}
+        }
+
+    with pytest.raises(ForwardLedgerError, match="invalid realization evidence"):
+        _commit(ledger, **kwargs)
+
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_realizations").fetchone()[0] == 0
+    assert store.periods("a") == []
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 0
+    assert len(ledger.attested_pending("a")) == 1
+
+
+def test_unserializable_realization_input_fails_closed_without_sensitive_error(db):
+    store, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+
+    with pytest.raises(ForwardLedgerError, match="^invalid realization evidence$"):
+        _commit(ledger, inputs={"BTC": {"private": object()}})
+
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_realizations").fetchone()[0] == 0
+    assert store.periods("a") == []
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 0
     assert len(ledger.attested_pending("a")) == 1
 
 

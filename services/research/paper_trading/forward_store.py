@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import json
+import math
 import sqlite3
 from typing import Mapping, Optional
 
@@ -106,6 +107,26 @@ def _canonical(value: object) -> str:
 
 def _sha256(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _strict_canonical(value: object) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+
+
+def _all_numbers_finite(value: object) -> bool:
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, Mapping):
+        return all(_all_numbers_finite(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return all(_all_numbers_finite(item) for item in value)
+    return True
 
 
 class ForwardLedger:
@@ -241,19 +262,30 @@ class ForwardLedger:
         admission_ref: ForwardAdmissionRef,
         committed_at_ms: int,
     ) -> bool:
-        normalized_inputs = {str(key): value for key, value in sorted(inputs.items())}
-        if not normalized_inputs:
-            raise ForwardLedgerError("refusing to commit a realization without retained inputs")
-        if len(normalized_inputs) != len(inputs):
-            raise ForwardLedgerError("realization input identities are ambiguous")
+        try:
+            normalized_items = [(str(key), value) for key, value in inputs.items()]
+            normalized_inputs = dict(sorted(normalized_items))
+            if not normalized_inputs or len(normalized_inputs) != len(normalized_items):
+                raise ValueError
+            normalized_return = float(realized_return)
+            normalized_ic = None if realized_ic is None else float(realized_ic)
+            if (
+                not math.isfinite(normalized_return)
+                or (normalized_ic is not None and not math.isfinite(normalized_ic))
+                or not _all_numbers_finite(normalized_inputs)
+            ):
+                raise ValueError
+            inputs_json = _strict_canonical(normalized_inputs)
+        except (TypeError, ValueError, OverflowError):
+            raise ForwardLedgerError("invalid realization evidence") from None
         realization = {
             "alpha_id": str(alpha_id),
             "decided_ts": int(decided_ts),
             "as_of_ts": int(as_of_ts),
-            "realized_return": float(realized_return),
-            "realized_ic": None if realized_ic is None else float(realized_ic),
+            "realized_return": normalized_return,
+            "realized_ic": normalized_ic,
             "source": str(source),
-            "inputs_json": _canonical(normalized_inputs),
+            "inputs_json": inputs_json,
             "inputs_sha256": _sha256(normalized_inputs),
             "committed_at_ms": int(committed_at_ms),
         }
@@ -281,14 +313,17 @@ class ForwardLedger:
                 ).fetchone()
                 if decision is None or decision["decision_payload_sha256"] is None:
                     raise ForwardLedgerError("attested forward decision not found for realization")
-                if not self._admission_matches_binding(decision, admission_ref):
+                decision_scope = set(json.loads(decision["instrument_scope_json"]))
+                realization_scope = set(admission_ref.instrument_scope)
+                input_scope = set(normalized_inputs)
+                if (
+                    decision["price_basis"] != "PERP_MARK_PRICE"
+                    or admission_ref.price_basis != "PERP_MARK_PRICE"
+                    or not input_scope.issubset(decision_scope)
+                    or not input_scope.issubset(realization_scope)
+                ):
                     raise ForwardLedgerError(
-                        "realization admission reference does not match the attested decision"
-                    )
-                admitted_scope = set(json.loads(decision["instrument_scope_json"]))
-                if not set(normalized_inputs).issubset(admitted_scope):
-                    raise ForwardLedgerError(
-                        "realization inputs are outside the admitted instrument scope"
+                        "realization admission does not authorize the retained inputs"
                     )
 
                 existing = self._conn.execute(
@@ -407,21 +442,6 @@ class ForwardLedger:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_periods'"
         ).fetchone()
         return row is not None
-
-    @staticmethod
-    def _admission_matches_binding(
-        binding: sqlite3.Row,
-        admission_ref: ForwardAdmissionRef,
-    ) -> bool:
-        return (
-            binding["admission_id"] == admission_ref.admission_id
-            and binding["admission_evidence_sha256"] == admission_ref.evidence_sha256
-            and binding["admission_decision_hash"] == admission_ref.decision_hash
-            and int(binding["admission_recorded_at_ms"]) == int(admission_ref.recorded_at_ms)
-            and binding["price_basis"] == admission_ref.price_basis
-            and binding["instrument_scope_json"]
-            == _canonical(sorted(admission_ref.instrument_scope))
-        )
 
     @staticmethod
     def _realization_column_names() -> tuple[str, ...]:
@@ -734,9 +754,8 @@ class ForwardLedger:
                 "SELECT r.*,d.recorded_at,d.weights_json,d.signals_json,"
                 "d.source AS decision_source,d.realized AS decision_realized,"
                 "b.decision_payload_sha256 AS bound_decision_payload_sha256,"
-                "b.admission_id AS bound_admission_id,"
-                "b.admission_evidence_sha256 AS bound_admission_evidence_sha256,"
-                "b.admission_decision_hash AS bound_admission_decision_hash,"
+                "b.price_basis AS bound_price_basis,"
+                "b.instrument_scope_json AS bound_instrument_scope_json,"
                 "p.realized_return AS period_realized_return,"
                 "p.realized_ic AS period_realized_ic,p.source AS period_source "
                 "FROM forward_realizations AS r "
@@ -755,8 +774,17 @@ class ForwardLedger:
                     return False
                 if row["prev_hash"] != previous_hash:
                     return False
+                if not math.isfinite(float(row["realized_return"])) or (
+                    row["realized_ic"] is not None
+                    and not math.isfinite(float(row["realized_ic"]))
+                ):
+                    return False
                 inputs = json.loads(row["inputs_json"])
-                if not isinstance(inputs, dict) or row["inputs_json"] != _canonical(inputs):
+                if (
+                    not isinstance(inputs, dict)
+                    or not _all_numbers_finite(inputs)
+                    or row["inputs_json"] != _strict_canonical(inputs)
+                ):
                     return False
                 if row["inputs_sha256"] != _sha256(inputs):
                     return False
@@ -784,11 +812,10 @@ class ForwardLedger:
                 if (
                     row["decision_payload_sha256"] != decision_digest
                     or row["bound_decision_payload_sha256"] != decision_digest
-                    or row["admission_id"] != row["bound_admission_id"]
-                    or row["admission_evidence_sha256"]
-                    != row["bound_admission_evidence_sha256"]
-                    or row["admission_decision_hash"]
-                    != row["bound_admission_decision_hash"]
+                    or row["bound_price_basis"] != "PERP_MARK_PRICE"
+                    or not set(inputs).issubset(
+                        set(json.loads(row["bound_instrument_scope_json"]))
+                    )
                 ):
                     return False
                 if (
