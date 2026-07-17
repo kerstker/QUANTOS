@@ -1,7 +1,7 @@
 """Go/No-Go 证据包生成器(2026-07-05,Phase 3A 人工评审的标准材料)。
 
 聚合已有的真实产物(全部只读,不生成新数据、不下任何结论——**结论是人工评审的事**):
-1. 前向证据钟(forward_track_status.json):各 alpha 已积累周数/paper sharpe/IC/距 8 周门槛;
+1. 前向证据基线(forward_evidence_baseline.json):认证前向周数/认证待兑现/历史未认证/距 8 周门槛;
 2. live-paper 对账历史(live_parity*.jsonl):逐周缺口趋势、账外仓位事件数;
 3. TCA 累计(各 venue 账本):加权滑点 vs 回测 10bps 假设;
 4. 权益曲线(live_equity*.jsonl,哨兵心跳):live 权益统计;
