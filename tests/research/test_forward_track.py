@@ -6,10 +6,12 @@ docs/engineering/specs/2026-07-04-forward-track-live-design.md。
 """
 
 import json
+import sqlite3
 
 import pytest
 
 from services.research.paper_trading.forward import realize_due
+from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
 
@@ -26,6 +28,17 @@ def db(tmp_path):
     return store, ledger
 
 
+def _ref(scope=("BTC", "ETH")):
+    return ForwardAdmissionRef(
+        admission_id="admission-1",
+        evidence_sha256="a" * 64,
+        decision_hash="b" * 64,
+        recorded_at_ms=_T0 - 1,
+        price_basis="PERP_MARK_PRICE",
+        instrument_scope=tuple(sorted(scope)),
+    )
+
+
 def _realize_with_evidence(ledger, store, alpha_id, **kwargs):
     return realize_due(
         ledger,
@@ -36,24 +49,106 @@ def _realize_with_evidence(ledger, store, alpha_id, **kwargs):
     )
 
 
-def test_record_decision_is_idempotent_and_append_only(db):
+def test_record_decision_is_idempotent_but_conflict_fails_closed(db):
     _, ledger = db
     w = {"BTC": 0.5, "ETH": -0.5}
-    assert ledger.record_decision("crowd_contra", _T0, recorded_at=_T0 + 3600_000, weights=w) is True
+    kwargs = dict(recorded_at=_T0, weights=w, admission_ref=_ref())
+    assert ledger.record_decision("crowd_contra", _T0, **kwargs) is True
     # 同 decided_ts 重录:忽略,不覆盖(即便权重不同——决策不可改写)
-    assert ledger.record_decision("crowd_contra", _T0, recorded_at=_T0 + 7200_000, weights={"BTC": 1.0}) is False
+    assert ledger.record_decision("crowd_contra", _T0, **kwargs) is False
+    with pytest.raises(Exception, match="identity reused"):
+        ledger.record_decision(
+            "crowd_contra",
+            _T0,
+            recorded_at=_T0,
+            weights={"BTC": 1.0},
+            admission_ref=_ref(),
+        )
     decs = ledger.decisions("crowd_contra")
     assert len(decs) == 1
     assert json.loads(decs[0]["weights_json"]) == w  # 原始决策原样保留
-    assert decs[0]["recorded_at"] == _T0 + 3600_000
+    assert decs[0]["recorded_at"] == _T0
     assert decs[0]["realized"] == 0
+    assert ledger.decision_chain_valid()
+
+
+def test_unbound_v1_decision_is_legacy_and_never_attested_pending(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions"
+        "(alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized) "
+        "VALUES (?,?,?,?,?,?,0)",
+        ("legacy", _T0, _T0, '{\"BTC\":1.0}', None, "FORWARD_LIVE"),
+    )
+    ledger._conn.commit()
+    assert [row["alpha_id"] for row in ledger.legacy_decisions()] == ["legacy"]
+    assert ledger.attested_pending("legacy") == []
+
+
+def test_v1_migration_preserves_original_row_and_classifies_it_legacy(tmp_path):
+    path = str(tmp_path / "v1-forward.db")
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE forward_decisions ("
+        "alpha_id TEXT NOT NULL, decided_ts INTEGER NOT NULL, recorded_at INTEGER NOT NULL, "
+        "weights_json TEXT NOT NULL, signals_json TEXT, source TEXT NOT NULL, "
+        "realized INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (alpha_id, decided_ts))"
+    )
+    original = ("legacy", _T0, _T0 + 1, '{\"BTC\":1.0}', None, "FORWARD_LIVE", 0)
+    connection.execute("INSERT INTO forward_decisions VALUES (?,?,?,?,?,?,?)", original)
+    connection.commit()
+    connection.close()
+
+    ledger = ForwardLedger(path, create=True)
+
+    row = ledger._conn.execute(
+        "SELECT alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized "
+        "FROM forward_decisions"
+    ).fetchone()
+    assert tuple(row) == original
+    assert [decision["alpha_id"] for decision in ledger.legacy_decisions()] == ["legacy"]
+
+
+def test_binding_and_decision_identity_tables_reject_tampering(db):
+    _, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        ledger._conn.execute("DELETE FROM forward_decision_bindings")
+    with pytest.raises(sqlite3.DatabaseError, match="identity is immutable"):
+        ledger._conn.execute("UPDATE forward_decisions SET weights_json='{}'")
+
+
+def test_record_decision_rejects_weight_outside_admitted_scope(db):
+    _, ledger = db
+
+    with pytest.raises(Exception, match="outside the admitted"):
+        ledger.record_decision(
+            "a", _T0, recorded_at=_T0, weights={"ETH": 1.0}, admission_ref=_ref(("BTC",))
+        )
+
+
+def test_mark_realized_requires_one_pending_decision(db):
+    _, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+
+    ledger.mark_realized("a", _T0)
+
+    with pytest.raises(Exception, match="pending forward decision not found"):
+        ledger.mark_realized("a", _T0)
+    with pytest.raises(Exception, match="pending forward decision not found"):
+        ledger.mark_realized("missing", _T0)
 
 
 def test_realize_math_long_short_plus_funding(db):
     store, ledger = db
     # L/S 各半:BTC +0.5(涨 10%),ETH -0.5(涨 4%) -> 价差 0.5*0.10 - 0.5*0.04 = +0.03
     w = {"BTC": 0.5, "ETH": -0.5}
-    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights=w)
+    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights=w, admission_ref=_ref())
     t1 = _T0 + _WEEK
     prices = {_T0: {"BTC": 100.0, "ETH": 50.0}, t1: {"BTC": 110.0, "ETH": 52.0}}
 
@@ -79,7 +174,7 @@ def test_realize_math_long_short_plus_funding(db):
 
 def test_no_lookahead_within_min_gap(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
     t_early = _T0 + 2 * _DAY  # 仅 2 天后——低于 min_gap
     prices = {_T0: {"BTC": 100.0}, t_early: {"BTC": 130.0}}
     out = _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t_early], prices=prices)
@@ -91,7 +186,7 @@ def test_no_lookahead_within_min_gap(db):
 def test_coverage_fail_closed_leaves_pending_with_alert(db):
     store, ledger = db
     w = {"BTC": 0.4, "ETH": -0.4, "SOL": 0.2}
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w)
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, admission_ref=_ref(tuple(w)))
     t1 = _T0 + _WEEK
     prices = {_T0: {"BTC": 100.0, "ETH": 50.0, "SOL": 20.0}, t1: {"BTC": 105.0}}  # 覆盖率 1/3 < 0.8
     out = _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -103,7 +198,7 @@ def test_coverage_fail_closed_leaves_pending_with_alert(db):
 
 def test_quality_failed_weighted_ticker_leaves_due_decision_pending(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 0.5, "ETH": -0.5})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 0.5, "ETH": -0.5}, admission_ref=_ref())
     t1 = _T0 + _WEEK
     prices = {
         _T0: {"BTC": 100.0, "ETH": 50.0},
@@ -128,7 +223,7 @@ def test_quality_failed_weighted_ticker_leaves_due_decision_pending(db):
 
 def test_unrelated_quality_failure_does_not_block_realization(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
     t1 = _T0 + _WEEK
 
     out = _realize_with_evidence(
@@ -146,7 +241,7 @@ def test_unrelated_quality_failure_does_not_block_realization(db):
 
 def test_missing_current_quality_evidence_blocks_all_realization_by_default(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
     t1 = _T0 + _WEEK
 
     out = realize_due(
@@ -169,7 +264,7 @@ def test_realized_ic_spearman_against_hand_computation(db):
     # 4 个名字(IC 的最小截面),信号与实现收益完全同序 -> Spearman = +1
     w = {"A": 0.5, "B": 0.25, "C": -0.25, "D": -0.5}
     sig = {"A": 2.0, "B": 1.0, "C": -1.0, "D": -2.0}
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals=sig)
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals=sig, admission_ref=_ref(tuple(w)))
     t1 = _T0 + _WEEK
     prices = {_T0: {n: 100.0 for n in w}, t1: {"A": 108.0, "B": 104.0, "C": 98.0, "D": 96.0}}  # 收益同信号排序
     _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -180,7 +275,7 @@ def test_realized_ic_spearman_against_hand_computation(db):
 def test_ic_none_when_cross_section_too_thin(db):
     store, ledger = db
     w = {"A": 0.5, "B": -0.5}  # 2 名 < 最小截面 4
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals={"A": 1.0, "B": -1.0})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals={"A": 1.0, "B": -1.0}, admission_ref=_ref(tuple(w)))
     t1 = _T0 + _WEEK
     prices = {_T0: {"A": 100.0, "B": 100.0}, t1: {"A": 101.0, "B": 99.0}}
     _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -191,7 +286,7 @@ def test_multi_decision_catchup_realizes_in_order(db):
     store, ledger = db
     # 错过两周后一次 catch-up:两条 pending 决策都应按各自的下一周截面兑现
     for k in range(2):
-        ledger.record_decision("a", _T0 + k * _WEEK, recorded_at=_T0 + k * _WEEK, weights={"BTC": 1.0})
+        ledger.record_decision("a", _T0 + k * _WEEK, recorded_at=_T0 + k * _WEEK, weights={"BTC": 1.0}, admission_ref=_ref())
     ts = [_T0, _T0 + _WEEK, _T0 + 2 * _WEEK]
     prices = {ts[0]: {"BTC": 100.0}, ts[1]: {"BTC": 110.0}, ts[2]: {"BTC": 99.0}}
     out = _realize_with_evidence(ledger, store, "a", timestamps=ts, prices=prices)
@@ -204,7 +299,7 @@ def test_multi_decision_catchup_realizes_in_order(db):
 
 def test_extreme_return_realizes_but_alerts(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
     t1 = _T0 + _WEEK
     prices = {_T0: {"BTC": 100.0}, t1: {"BTC": 130.0}}  # +30% 周 —— 异常但真实
     out = _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -218,7 +313,7 @@ def test_coexists_with_legacy_paper_track_tables(db):
     store.append_periods("legacy_alpha", [(1000, 0.01, None, "OOS_TAIL")])
     store.recompute_summary("legacy_alpha")
     # 前向流写入后,老 track 原样,新 track 用真实时间戳并列
-    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
     t1 = _T0 + _WEEK
     _realize_with_evidence(
         ledger, store, "crowd_contra", timestamps=[_T0, t1], prices={_T0: {"BTC": 100.0}, t1: {"BTC": 101.0}}

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 from quantos.contracts.events import EventOutboxMessage
+
+if TYPE_CHECKING:
+    from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 
 
 class ExperimentStoreError(Exception):
@@ -261,12 +264,19 @@ class ForwardLedgerPort(Protocol):
         *,
         recorded_at: int,
         weights: Mapping[str, float],
+        admission_ref: ForwardAdmissionRef,
         signals: Optional[Mapping[str, float]] = None,
-        source: str = "FORWARD_LIVE",
+        source: str = "FORWARD_L2_ATTESTED_DECISION",
     ) -> bool: ...
 
     def decisions(self, alpha_id: str) -> list[dict]: ...
 
     def pending(self, alpha_id: str) -> list[dict]: ...
+
+    def attested_pending(self, alpha_id: str) -> list[dict]: ...
+
+    def legacy_decisions(self) -> list[dict]: ...
+
+    def decision_chain_valid(self) -> bool: ...
 
     def mark_realized(self, alpha_id: str, decided_ts: int) -> None: ...
