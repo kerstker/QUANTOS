@@ -591,9 +591,7 @@ def test_cli_seals_and_checks_without_live_ledger(tmp_path: Path, monkeypatch) -
     assert history.main(["--seal-snapshot"]) == 0
     ledger.unlink()
     assert history.main(["--check-snapshot"]) == 0
-    with pytest.raises(SystemExit) as conflict:
-        history.main(["--check", "--check-snapshot"])
-    assert conflict.value.code == 2
+    assert history.main(["--check", "--check-snapshot"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -746,19 +744,40 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Append, seal, or verify the production alpha trial-ledger history"
     )
-    modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--check", action="store_true", help="verify against the live authority")
-    modes.add_argument("--inspect-ledger", action="store_true", help="inspect live capture readiness")
-    modes.add_argument("--seal-snapshot", action="store_true", help="publish portable snapshot evidence")
-    modes.add_argument("--check-snapshot", action="store_true", help="verify portable evidence only")
+    parser.add_argument("--check", action="store_true", help="verify against the live authority")
+    parser.add_argument("--inspect-ledger", action="store_true", help="inspect live capture readiness")
+    parser.add_argument("--seal-snapshot", action="store_true", help="publish portable snapshot evidence")
+    parser.add_argument("--check-snapshot", action="store_true", help="verify portable evidence only")
     parser.add_argument("--session-id", help="completed search ID to retain")
     return parser
 ```
 
-In `main()`, reject a `session_id` combined with any mode and require it when no
-mode is selected. Dispatch in this exact order:
+In `main()`, count the four mode booleans and return `2` (without raising
+`SystemExit`) when more than one mode is selected. This preserves the existing
+programmatic `main([...])` contract. Also return `2` for a `session_id` combined
+with any mode, and require `session_id` when no mode is selected. Dispatch in
+this exact order:
 
 ```python
+selected_mode_count = sum(
+    int(value)
+    for value in (
+        args.check,
+        args.inspect_ledger,
+        args.seal_snapshot,
+        args.check_snapshot,
+    )
+)
+if selected_mode_count > 1:
+    print("only one mode may be selected", file=sys.stderr)
+    return 2
+if selected_mode_count and args.session_id is not None:
+    print("--session-id cannot be combined with a mode", file=sys.stderr)
+    return 2
+if selected_mode_count == 0 and args.session_id is None:
+    print("--session-id is required unless a mode is used", file=sys.stderr)
+    return 2
+
 if args.inspect_ledger:
     result = inspect_ledger()
 elif args.check:
