@@ -14,6 +14,7 @@ from services.research.paper_trading.forward import realize_due
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
+from services.research.ports.persistence import ForwardLedgerError
 
 _DAY = 86_400_000
 _WEEK = 7 * _DAY
@@ -119,6 +120,68 @@ def test_binding_and_decision_identity_tables_reject_tampering(db):
         ledger._conn.execute("DELETE FROM forward_decision_bindings")
     with pytest.raises(sqlite3.DatabaseError, match="identity is immutable"):
         ledger._conn.execute("UPDATE forward_decisions SET weights_json='{}'")
+
+
+def test_orphan_binding_invalidates_chain_and_attested_reads(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_decision_bindings("
+        "alpha_id,decided_ts,decision_payload_sha256,admission_id,"
+        "admission_evidence_sha256,admission_decision_hash,admission_recorded_at_ms,"
+        "price_basis,instrument_scope_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "orphan",
+            _T0,
+            "c" * 64,
+            "admission-orphan",
+            "a" * 64,
+            "b" * 64,
+            _T0 - 1,
+            "PERP_MARK_PRICE",
+            '["BTC"]',
+            "0" * 64,
+            "d" * 64,
+        ),
+    )
+    ledger._conn.commit()
+
+    assert ledger.decision_chain_valid() is False
+    with pytest.raises(ForwardLedgerError, match="invalid forward decision binding chain"):
+        ledger.attested_pending("orphan")
+
+
+def test_bogus_matching_binding_is_not_an_attested_pending_decision(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions"
+        "(alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized) "
+        "VALUES (?,?,?,?,?,?,0)",
+        ("bogus", _T0, _T0, '{\"BTC\":1.0}', None, "FORWARD_LIVE"),
+    )
+    ledger._conn.execute(
+        "INSERT INTO forward_decision_bindings("
+        "alpha_id,decided_ts,decision_payload_sha256,admission_id,"
+        "admission_evidence_sha256,admission_decision_hash,admission_recorded_at_ms,"
+        "price_basis,instrument_scope_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "bogus",
+            _T0,
+            "c" * 64,
+            "admission-bogus",
+            "a" * 64,
+            "b" * 64,
+            _T0 - 1,
+            "PERP_MARK_PRICE",
+            '["BTC"]',
+            "0" * 64,
+            "d" * 64,
+        ),
+    )
+    ledger._conn.commit()
+
+    assert ledger.decision_chain_valid() is False
+    with pytest.raises(ForwardLedgerError, match="invalid forward decision binding chain"):
+        ledger.attested_pending("bogus")
 
 
 def test_record_decision_rejects_weight_outside_admitted_scope(db):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import sqlite3
@@ -118,7 +119,9 @@ class ForwardLedger:
         weights_json = _canonical(normalized_weights)
         signals_json = None if normalized_signals is None else _canonical(normalized_signals)
 
-        with self._conn:
+        with self._immediate_transaction():
+            if not self._decision_chain_valid():
+                raise ForwardLedgerError("invalid forward decision binding chain")
             existing = self._conn.execute(
                 "SELECT recorded_at,weights_json,signals_json,source FROM forward_decisions "
                 "WHERE alpha_id=? AND decided_ts=?",
@@ -178,6 +181,32 @@ class ForwardLedger:
                 tuple(binding_values[name] for name in self._binding_column_names()),
             )
         return True
+
+    @contextmanager
+    def _immediate_transaction(self):
+        if self._conn.in_transaction:
+            raise ForwardLedgerError("forward ledger write requires no active transaction")
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except Exception:
+            self._conn.rollback()
+            raise
+        else:
+            self._conn.commit()
+
+    @contextmanager
+    def _read_snapshot(self):
+        if self._conn.in_transaction:
+            raise ForwardLedgerError("forward ledger read requires no active transaction")
+        self._conn.execute("BEGIN")
+        try:
+            yield
+        except Exception:
+            self._conn.rollback()
+            raise
+        else:
+            self._conn.commit()
 
     @staticmethod
     def _binding_column_names() -> tuple[str, ...]:
@@ -261,16 +290,19 @@ class ForwardLedger:
         return [decision for decision in self.decisions(alpha_id) if not decision["realized"]]
 
     def attested_pending(self, alpha_id: str) -> list[dict]:
-        return [
-            dict(row)
-            for row in self._conn.execute(
-                "SELECT d.decided_ts,d.recorded_at,d.weights_json,d.signals_json,d.source,d.realized "
-                "FROM forward_decisions AS d INNER JOIN forward_decision_bindings AS b "
-                "ON b.alpha_id=d.alpha_id AND b.decided_ts=d.decided_ts "
-                "WHERE d.alpha_id=? AND d.realized=0 ORDER BY d.decided_ts",
-                (alpha_id,),
-            )
-        ]
+        with self._read_snapshot():
+            if not self._decision_chain_valid():
+                raise ForwardLedgerError("invalid forward decision binding chain")
+            return [
+                dict(row)
+                for row in self._conn.execute(
+                    "SELECT d.decided_ts,d.recorded_at,d.weights_json,d.signals_json,d.source,d.realized "
+                    "FROM forward_decisions AS d INNER JOIN forward_decision_bindings AS b "
+                    "ON b.alpha_id=d.alpha_id AND b.decided_ts=d.decided_ts "
+                    "WHERE d.alpha_id=? AND d.realized=0 ORDER BY d.decided_ts",
+                    (alpha_id,),
+                )
+            ]
 
     def legacy_decisions(self) -> list[dict]:
         return [
@@ -285,18 +317,30 @@ class ForwardLedger:
         ]
 
     def decision_chain_valid(self) -> bool:
+        return self._decision_chain_valid()
+
+    def _decision_chain_valid(self) -> bool:
         try:
+            counts = self._conn.execute(
+                "SELECT COUNT(*) AS bindings, COUNT(d.alpha_id) AS matched "
+                "FROM forward_decision_bindings AS b LEFT JOIN forward_decisions AS d "
+                "ON d.alpha_id=b.alpha_id AND d.decided_ts=b.decided_ts"
+            ).fetchone()
+            if counts["bindings"] != counts["matched"]:
+                return False
             rows = self._conn.execute(
                 "SELECT b.binding_seq,b.alpha_id,b.decided_ts,b.decision_payload_sha256,"
                 "b.admission_id,b.admission_evidence_sha256,b.admission_decision_hash,"
                 "b.admission_recorded_at_ms,b.price_basis,b.instrument_scope_json,b.prev_hash,"
                 "b.row_hash,d.recorded_at,d.weights_json,d.signals_json,d.source "
-                "FROM forward_decision_bindings AS b INNER JOIN forward_decisions AS d "
+                "FROM forward_decision_bindings AS b LEFT JOIN forward_decisions AS d "
                 "ON d.alpha_id=b.alpha_id AND d.decided_ts=b.decided_ts "
                 "ORDER BY b.binding_seq"
             ).fetchall()
             previous_hash = _GENESIS_HASH
             for row in rows:
+                if row["recorded_at"] is None:
+                    return False
                 if row["prev_hash"] != previous_hash:
                     return False
                 scope = json.loads(row["instrument_scope_json"])
