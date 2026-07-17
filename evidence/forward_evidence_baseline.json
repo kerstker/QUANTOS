@@ -1,0 +1,50 @@
+{
+  "alphas": [],
+  "counts": {
+    "attested_decisions": 0,
+    "attested_pending": 0,
+    "attested_realizations": 0,
+    "legacy_unattested_decisions": 0
+  },
+  "data_admission": {
+    "current_admission_ref": null,
+    "expires_at_ms": null,
+    "price_basis": null,
+    "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+    "status": "UNAVAILABLE"
+  },
+  "decision_chain_valid": false,
+  "evidence_gate": {
+    "eligible": false,
+    "minimum_weeks": 8
+  },
+  "honesty_note": "Only v2 authority-bound realizations count; legacy and backfilled rows never count.",
+  "implementation": {
+    "files": {
+      "services/research/paper_trading/forward.py": {
+        "sha256": "da41920d942d7685a9d50cec07473f6afc02505a7fdd8f027b2fb0843e7ba66d",
+        "size": 6342
+      },
+      "services/research/paper_trading/forward_evidence.py": {
+        "sha256": "147167fdee8229348a206964da64117b59ca973fb1e92bf37046f381d04f180a",
+        "size": 2322
+      },
+      "services/research/paper_trading/forward_store.py": {
+        "sha256": "4975e8461d54a9e23604734806d5b744e3ce1ea26ca128b3a755ce9d378eb47d",
+        "size": 40086
+      },
+      "tools/forward_track_advance.py": {
+        "sha256": "13ffc8727eae73d4616dd5cdbf27c79721646cc859d33ad5ae5e7b9f434156e9",
+        "size": 20937
+      }
+    },
+    "sha256": "0de5c11d8d2412d924533d97a89f1a5fa9d9830aa5b19ac8be3d524f981733e9"
+  },
+  "max_age_ms": 172800000,
+  "observed_at_ms": 1784296800000,
+  "price_basis": "PERP_MARK_PRICE",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "realization_chain_valid": false,
+  "schema_version": 1,
+  "source_database": "data/cache/paper_track.db"
+}
