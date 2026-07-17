@@ -279,4 +279,22 @@ class ForwardLedgerPort(Protocol):
 
     def decision_chain_valid(self) -> bool: ...
 
+    def commit_realization(
+        self,
+        alpha_id: str,
+        decided_ts: int,
+        *,
+        as_of_ts: int,
+        realized_return: float,
+        realized_ic: Optional[float],
+        source: str,
+        inputs: Mapping[str, object],
+        admission_ref: ForwardAdmissionRef,
+        committed_at_ms: int,
+    ) -> bool: ...
+
+    def attested_realizations(self, alpha_id: str | None = None) -> list[dict]: ...
+
+    def realization_chain_valid(self) -> bool: ...
+
     def mark_realized(self, alpha_id: str, decided_ts: int) -> None: ...

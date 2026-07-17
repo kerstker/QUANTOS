@@ -7,6 +7,7 @@ docs/engineering/specs/2026-07-04-forward-track-live-design.md。
 
 import json
 import sqlite3
+from dataclasses import replace
 
 import pytest
 
@@ -50,6 +51,23 @@ def _realize_with_evidence(ledger, store, alpha_id, **kwargs):
     )
 
 
+def _commit(ledger, *, realized_return=0.01, inputs=None, admission_ref=None):
+    return ledger.commit_realization(
+        "a",
+        _T0,
+        as_of_ts=_T0 + _WEEK,
+        realized_return=realized_return,
+        realized_ic=0.5,
+        source="FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING",
+        inputs=inputs
+        or {
+            "BTC": {"weight": 1.0, "price_return": 0.011, "funding": 0.001},
+        },
+        admission_ref=admission_ref or _ref(scope=("BTC",)),
+        committed_at_ms=_T0 + _WEEK + 1,
+    )
+
+
 def test_record_decision_is_idempotent_but_conflict_fails_closed(db):
     _, ledger = db
     w = {"BTC": 0.5, "ETH": -0.5}
@@ -71,6 +89,180 @@ def test_record_decision_is_idempotent_but_conflict_fails_closed(db):
     assert decs[0]["recorded_at"] == _T0
     assert decs[0]["realized"] == 0
     assert ledger.decision_chain_valid()
+
+
+def test_paper_period_replay_is_idempotent_but_conflict_fails_closed(db):
+    store, _ = db
+    row = (_T0, 0.01, 0.2, "FORWARD_LIVE")
+
+    store.append_periods("a", [row])
+    store.append_periods("a", [row])
+
+    assert len(store.periods("a")) == 1
+    with pytest.raises(Exception, match="reused with different content"):
+        store.append_periods("a", [(_T0, 0.02, 0.2, "FORWARD_LIVE")])
+    assert store.periods("a")[0]["realized_return"] == pytest.approx(0.01)
+
+
+def test_realization_and_period_commit_atomically_and_replay_idempotently(db):
+    store, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+
+    assert _commit(ledger) is True
+    assert _commit(ledger) is False
+
+    realizations = ledger.attested_realizations("a")
+    assert len(realizations) == 1
+    assert realizations[0]["realized_return"] == pytest.approx(0.01)
+    assert len(store.periods("a")) == 1
+    assert ledger.decisions("a")[0]["realized"] == 1
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 1
+    assert ledger.realization_chain_valid()
+
+
+def test_realization_identity_conflict_rolls_back(db):
+    store, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    _commit(ledger)
+
+    with pytest.raises(Exception, match="realization identity reused"):
+        _commit(ledger, realized_return=0.02)
+
+    assert len(ledger.attested_realizations("a")) == 1
+    assert len(store.periods("a")) == 1
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    "target_table",
+    ["forward_realizations", "paper_periods", "forward_local_events"],
+)
+def test_realization_commit_rolls_back_every_authoritative_write_on_insert_failure(
+    db, target_table
+):
+    store, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    ledger._conn.execute(
+        f"CREATE TEMP TRIGGER fail_{target_table} BEFORE INSERT ON {target_table} "
+        "BEGIN SELECT RAISE(ABORT, 'injected'); END"
+    )
+    ledger._conn.commit()
+
+    with pytest.raises(Exception, match="forward realization commit failed"):
+        _commit(ledger)
+
+    assert ledger.attested_realizations("a") == []
+    assert store.periods("a") == []
+    assert len(ledger.attested_pending("a")) == 1
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_local_events").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(
+    ("table", "update_sql"),
+    [
+        ("forward_realizations", "UPDATE forward_realizations SET realized_return=9"),
+        ("forward_local_events", "UPDATE forward_local_events SET payload_json='{}'"),
+        ("paper_periods", "UPDATE paper_periods SET realized_return=9"),
+    ],
+)
+def test_realization_event_and_period_tables_reject_update_and_delete(db, table, update_sql):
+    _, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    _commit(ledger)
+
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        ledger._conn.execute(update_sql)
+    ledger._conn.rollback()
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        ledger._conn.execute(f"DELETE FROM {table}")
+    ledger._conn.rollback()
+
+    assert ledger.realization_chain_valid()
+
+
+def test_realization_admission_and_input_scope_must_match_attested_decision(db):
+    store, ledger = db
+    ref = _ref(("BTC",))
+    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=ref)
+
+    with pytest.raises(Exception, match="admission"):
+        _commit(ledger, admission_ref=replace(ref, admission_id="different"))
+    with pytest.raises(Exception, match="outside the admitted"):
+        _commit(
+            ledger,
+            inputs={"ETH": {"weight": 1.0, "price_return": 0.01, "funding": 0.0}},
+        )
+
+    assert ledger.attested_realizations("a") == []
+    assert store.periods("a") == []
+    assert len(ledger.attested_pending("a")) == 1
+
+
+def test_bogus_realization_row_invalidates_chain_and_attested_reads(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_realizations("
+        "alpha_id,decided_ts,as_of_ts,decision_payload_sha256,realized_return,realized_ic,"
+        "source,inputs_json,inputs_sha256,admission_id,admission_evidence_sha256,"
+        "admission_decision_hash,committed_at_ms,prev_hash,row_hash) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "bogus", _T0, _T0 + _WEEK, "c" * 64, 0.01, None,
+            "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING", '{}', "d" * 64,
+            "bogus-admission", "a" * 64, "b" * 64, _T0 + _WEEK + 1,
+            "0" * 64, "e" * 64,
+        ),
+    )
+    ledger._conn.commit()
+
+    assert ledger.realization_chain_valid() is False
+    with pytest.raises(ForwardLedgerError, match="invalid forward realization chain"):
+        ledger.attested_realizations()
+
+
+def test_bogus_local_event_invalidates_realization_chain_and_attested_reads(db):
+    _, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    _commit(ledger)
+    previous = ledger._conn.execute(
+        "SELECT row_hash FROM forward_local_events ORDER BY event_seq DESC LIMIT 1"
+    ).fetchone()[0]
+    ledger._conn.execute(
+        "INSERT INTO forward_local_events"
+        "(event_type,alpha_id,decided_ts,payload_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?)",
+        ("BOGUS", "a", _T0 + 1, '{}', previous, "f" * 64),
+    )
+    ledger._conn.commit()
+
+    assert ledger.realization_chain_valid() is False
+    with pytest.raises(ForwardLedgerError, match="invalid forward realization chain"):
+        ledger.attested_realizations("a")
+
+
+def test_standalone_forward_ledger_without_paper_periods_rejects_realization(tmp_path):
+    path = str(tmp_path / "standalone-forward.db")
+    ledger = ForwardLedger(path, create=True)
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+
+    with pytest.raises(ForwardLedgerError, match="paper_periods"):
+        _commit(ledger)
+
+    assert ledger._conn.execute("SELECT COUNT(*) FROM forward_realizations").fetchone()[0] == 0
+    with pytest.raises(ForwardLedgerError, match="invalid forward realization chain"):
+        ledger.attested_realizations("a")
+    assert len(ledger.attested_pending("a")) == 1
 
 
 def test_unbound_v1_decision_is_legacy_and_never_attested_pending(db):
