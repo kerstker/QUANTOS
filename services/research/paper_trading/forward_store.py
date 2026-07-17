@@ -750,6 +750,24 @@ class ForwardLedger:
         try:
             if not self._paper_periods_exists() or not self._decision_chain_valid():
                 return False
+            projection_counts = self._conn.execute(
+                "SELECT "
+                "SUM(CASE WHEN d.realized NOT IN (0,1) THEN 1 ELSE 0 END) AS invalid,"
+                "SUM(CASE WHEN d.realized=1 THEN 1 ELSE 0 END) AS expected,"
+                "SUM(CASE WHEN d.realized=1 AND r.realization_seq IS NOT NULL "
+                "THEN 1 ELSE 0 END) AS matched "
+                "FROM forward_decision_bindings AS b "
+                "INNER JOIN forward_decisions AS d "
+                "ON d.alpha_id=b.alpha_id AND d.decided_ts=b.decided_ts "
+                "LEFT JOIN forward_realizations AS r "
+                "ON r.alpha_id=d.alpha_id AND r.decided_ts=d.decided_ts"
+            ).fetchone()
+            if (
+                int(projection_counts["invalid"] or 0) != 0
+                or int(projection_counts["expected"] or 0)
+                != int(projection_counts["matched"] or 0)
+            ):
+                return False
             rows = self._conn.execute(
                 "SELECT r.*,d.recorded_at,d.weights_json,d.signals_json,"
                 "d.source AS decision_source,d.realized AS decision_realized,"
@@ -884,14 +902,25 @@ class ForwardLedger:
             return False
 
     def mark_realized(self, alpha_id: str, decided_ts: int) -> None:
-        cursor = self._conn.execute(
-            "UPDATE forward_decisions SET realized=1 "
-            "WHERE alpha_id=? AND decided_ts=? AND realized=0",
-            (alpha_id, int(decided_ts)),
-        )
-        if cursor.rowcount != 1:
-            self._conn.rollback()
-            raise ForwardLedgerError(
-                f"pending forward decision not found: {alpha_id}@{int(decided_ts)}"
+        identity = (str(alpha_id), int(decided_ts))
+        with self._immediate_transaction():
+            row = self._conn.execute(
+                "SELECT d.realized,b.binding_seq FROM forward_decisions AS d "
+                "LEFT JOIN forward_decision_bindings AS b "
+                "ON b.alpha_id=d.alpha_id AND b.decided_ts=d.decided_ts "
+                "WHERE d.alpha_id=? AND d.decided_ts=?",
+                identity,
+            ).fetchone()
+            if row is not None and row["binding_seq"] is not None:
+                raise ForwardLedgerError(
+                    "attested forward decision requires commit_realization"
+                )
+            cursor = self._conn.execute(
+                "UPDATE forward_decisions SET realized=1 "
+                "WHERE alpha_id=? AND decided_ts=? AND realized=0",
+                identity,
             )
-        self._conn.commit()
+            if cursor.rowcount != 1:
+                raise ForwardLedgerError(
+                    f"pending forward decision not found: {identity[0]}@{identity[1]}"
+                )

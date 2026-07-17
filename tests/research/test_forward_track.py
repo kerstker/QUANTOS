@@ -58,6 +58,34 @@ def _realize_with_evidence(ledger, store, alpha_id, **kwargs):
     )
 
 
+def _record_legacy_decision(
+    ledger,
+    alpha_id,
+    decided_ts,
+    *,
+    weights,
+    signals=None,
+):
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions"
+        "(alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized) "
+        "VALUES (?,?,?,?,?,?,0)",
+        (
+            alpha_id,
+            decided_ts,
+            decided_ts,
+            json.dumps(weights, sort_keys=True, separators=(",", ":")),
+            (
+                None
+                if signals is None
+                else json.dumps(signals, sort_keys=True, separators=(",", ":"))
+            ),
+            "FORWARD_LIVE",
+        ),
+    )
+    ledger._conn.commit()
+
+
 def _commit(
     ledger,
     *,
@@ -526,16 +554,50 @@ def test_record_decision_rejects_weight_outside_admitted_scope(db):
         )
 
 
-def test_mark_realized_requires_one_pending_decision(db):
+def test_mark_realized_rejects_attested_decision_and_leaves_it_pending(db):
     _, ledger = db
     ledger.record_decision(
         "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
     )
 
-    ledger.mark_realized("a", _T0)
-
-    with pytest.raises(Exception, match="pending forward decision not found"):
+    with pytest.raises(ForwardLedgerError, match="attested.*commit_realization"):
         ledger.mark_realized("a", _T0)
+
+    assert len(ledger.attested_pending("a")) == 1
+    assert ledger.decisions("a")[0]["realized"] == 0
+
+
+def test_direct_attested_realized_projection_without_realization_invalidates_authority(db):
+    _, ledger = db
+    ledger.record_decision(
+        "a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref(("BTC",))
+    )
+    ledger._conn.execute(
+        "UPDATE forward_decisions SET realized=1 WHERE alpha_id=? AND decided_ts=?",
+        ("a", _T0),
+    )
+    ledger._conn.commit()
+
+    assert ledger.realization_chain_valid() is False
+    with pytest.raises(ForwardLedgerError, match="invalid forward realization chain"):
+        ledger.attested_realizations("a")
+
+
+def test_mark_realized_preserves_single_pending_legacy_compatibility(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions"
+        "(alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized) "
+        "VALUES (?,?,?,?,?,?,0)",
+        ("legacy", _T0, _T0, '{"BTC":1.0}', None, "FORWARD_LIVE"),
+    )
+    ledger._conn.commit()
+
+    ledger.mark_realized("legacy", _T0)
+
+    assert ledger.decisions("legacy")[0]["realized"] == 1
+    with pytest.raises(Exception, match="pending forward decision not found"):
+        ledger.mark_realized("legacy", _T0)
     with pytest.raises(Exception, match="pending forward decision not found"):
         ledger.mark_realized("missing", _T0)
 
@@ -544,7 +606,7 @@ def test_realize_math_long_short_plus_funding(db):
     store, ledger = db
     # L/S 各半:BTC +0.5(涨 10%),ETH -0.5(涨 4%) -> 价差 0.5*0.10 - 0.5*0.04 = +0.03
     w = {"BTC": 0.5, "ETH": -0.5}
-    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights=w, admission_ref=_ref())
+    _record_legacy_decision(ledger, "crowd_contra", _T0, weights=w)
     t1 = _T0 + _WEEK
     prices = {_T0: {"BTC": 100.0, "ETH": 50.0}, t1: {"BTC": 110.0, "ETH": 52.0}}
 
@@ -570,7 +632,7 @@ def test_realize_math_long_short_plus_funding(db):
 
 def test_no_lookahead_within_min_gap(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
+    _record_legacy_decision(ledger, "a", _T0, weights={"BTC": 1.0})
     t_early = _T0 + 2 * _DAY  # 仅 2 天后——低于 min_gap
     prices = {_T0: {"BTC": 100.0}, t_early: {"BTC": 130.0}}
     out = _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t_early], prices=prices)
@@ -619,7 +681,7 @@ def test_quality_failed_weighted_ticker_leaves_due_decision_pending(db):
 
 def test_unrelated_quality_failure_does_not_block_realization(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
+    _record_legacy_decision(ledger, "a", _T0, weights={"BTC": 1.0})
     t1 = _T0 + _WEEK
 
     out = _realize_with_evidence(
@@ -660,7 +722,7 @@ def test_realized_ic_spearman_against_hand_computation(db):
     # 4 个名字(IC 的最小截面),信号与实现收益完全同序 -> Spearman = +1
     w = {"A": 0.5, "B": 0.25, "C": -0.25, "D": -0.5}
     sig = {"A": 2.0, "B": 1.0, "C": -1.0, "D": -2.0}
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals=sig, admission_ref=_ref(tuple(w)))
+    _record_legacy_decision(ledger, "a", _T0, weights=w, signals=sig)
     t1 = _T0 + _WEEK
     prices = {_T0: {n: 100.0 for n in w}, t1: {"A": 108.0, "B": 104.0, "C": 98.0, "D": 96.0}}  # 收益同信号排序
     _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -671,7 +733,13 @@ def test_realized_ic_spearman_against_hand_computation(db):
 def test_ic_none_when_cross_section_too_thin(db):
     store, ledger = db
     w = {"A": 0.5, "B": -0.5}  # 2 名 < 最小截面 4
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights=w, signals={"A": 1.0, "B": -1.0}, admission_ref=_ref(tuple(w)))
+    _record_legacy_decision(
+        ledger,
+        "a",
+        _T0,
+        weights=w,
+        signals={"A": 1.0, "B": -1.0},
+    )
     t1 = _T0 + _WEEK
     prices = {_T0: {"A": 100.0, "B": 100.0}, t1: {"A": 101.0, "B": 99.0}}
     _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -682,7 +750,12 @@ def test_multi_decision_catchup_realizes_in_order(db):
     store, ledger = db
     # 错过两周后一次 catch-up:两条 pending 决策都应按各自的下一周截面兑现
     for k in range(2):
-        ledger.record_decision("a", _T0 + k * _WEEK, recorded_at=_T0 + k * _WEEK, weights={"BTC": 1.0}, admission_ref=_ref())
+        _record_legacy_decision(
+            ledger,
+            "a",
+            _T0 + k * _WEEK,
+            weights={"BTC": 1.0},
+        )
     ts = [_T0, _T0 + _WEEK, _T0 + 2 * _WEEK]
     prices = {ts[0]: {"BTC": 100.0}, ts[1]: {"BTC": 110.0}, ts[2]: {"BTC": 99.0}}
     out = _realize_with_evidence(ledger, store, "a", timestamps=ts, prices=prices)
@@ -695,7 +768,7 @@ def test_multi_decision_catchup_realizes_in_order(db):
 
 def test_extreme_return_realizes_but_alerts(db):
     store, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
+    _record_legacy_decision(ledger, "a", _T0, weights={"BTC": 1.0})
     t1 = _T0 + _WEEK
     prices = {_T0: {"BTC": 100.0}, t1: {"BTC": 130.0}}  # +30% 周 —— 异常但真实
     out = _realize_with_evidence(ledger, store, "a", timestamps=[_T0, t1], prices=prices)
@@ -709,7 +782,12 @@ def test_coexists_with_legacy_paper_track_tables(db):
     store.append_periods("legacy_alpha", [(1000, 0.01, None, "OOS_TAIL")])
     store.recompute_summary("legacy_alpha")
     # 前向流写入后,老 track 原样,新 track 用真实时间戳并列
-    ledger.record_decision("crowd_contra", _T0, recorded_at=_T0, weights={"BTC": 1.0}, admission_ref=_ref())
+    _record_legacy_decision(
+        ledger,
+        "crowd_contra",
+        _T0,
+        weights={"BTC": 1.0},
+    )
     t1 = _T0 + _WEEK
     _realize_with_evidence(
         ledger, store, "crowd_contra", timestamps=[_T0, t1], prices={_T0: {"BTC": 100.0}, t1: {"BTC": 101.0}}
