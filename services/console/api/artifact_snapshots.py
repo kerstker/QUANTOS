@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any, Dict
 
 from fastapi import APIRouter
@@ -26,7 +27,7 @@ _CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "capacity_snapsho
 _MACRO_REGIME_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "macro_regime_snapshot.json")
 _COMBO_BOOK_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "combo_book_snapshot.json")
 _LANCE_1M_VALIDATION_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "lance_1m_validation.json")
-_FORWARD_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "forward_track_status.json")
+_FORWARD_EVIDENCE_BASELINE = os.path.join(_REPO_ROOT, "evidence", "forward_evidence_baseline.json")
 _LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
 _LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
 _GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
@@ -260,41 +261,67 @@ async def lance_1m_validation() -> Dict:
     return _lance_1m_validation_payload()
 
 
-def _live_trading_payload() -> Dict:
+def _nonnegative_int(mapping: Dict, key: str) -> int | None:
+    value = mapping.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _forward_track_from_evidence(now_ms: int) -> Dict:
+    """Expose only the attested baseline; never fall back to the legacy status cache."""
+    evidence = _load_json_object(_FORWARD_EVIDENCE_BASELINE)
+    unavailable = {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
+    if evidence is None:
+        return unavailable
+    counts = evidence.get("counts")
+    gate = evidence.get("evidence_gate")
+    admission = evidence.get("data_admission")
+    observed_at_ms = _nonnegative_int(evidence, "observed_at_ms")
+    max_age_ms = _nonnegative_int(evidence, "max_age_ms")
+    if (
+        not isinstance(counts, dict)
+        or not isinstance(gate, dict)
+        or not isinstance(admission, dict)
+        or observed_at_ms is None
+        or max_age_ms is None
+        or not isinstance(gate.get("minimum_weeks"), int)
+        or isinstance(gate.get("minimum_weeks"), bool)
+        or not isinstance(gate.get("eligible"), bool)
+    ):
+        return unavailable
+    parsed_counts = {key: _nonnegative_int(counts, key) for key in (
+        "attested_realizations", "attested_pending", "legacy_unattested_decisions",
+    )}
+    if any(value is None for value in parsed_counts.values()):
+        return unavailable
+    state = (
+        "STALE" if now_ms - observed_at_ms > max_age_ms
+        else "ATTESTED" if admission.get("status") == "CURRENT"
+        else "DATA_BLOCKED"
+    )
+    return {
+        "present": True,
+        "evidence_state": state,
+        "attested_realizations": parsed_counts["attested_realizations"],
+        "attested_pending": parsed_counts["attested_pending"],
+        "legacy_unattested_decisions": parsed_counts["legacy_unattested_decisions"],
+        "evidence_gate_weeks": gate["minimum_weeks"],
+        "evidence_gate_eligible": gate["eligible"],
+        "data_admission": admission,
+        "actions_allowed": False,
+    }
+
+
+def _live_trading_payload(now_ms: int | None = None) -> Dict:
     """Aggregate forward-paper and testnet status as read-only diagnostics."""
-    ft = _load_json_snapshot(_FORWARD_TRACK_STATUS)
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    forward_track = _forward_track_from_evidence(now)
     lt = _load_json_snapshot(_LIVE_TRACK_STATUS)
     risk = _load_json_snapshot(_LIVE_RISK_STATE)
-    present = bool(ft or lt)
-
-    forward_track: Dict = {"present": False}
-    if ft:
-        alphas = ft.get("alphas", {}) or {}
-        forward_track = {
-            "present": True,
-            "ran_at": ft.get("ran_at"),
-            "staleness_days": ft.get("staleness_days", {}),
-            "evidence_gate_weeks": _EVIDENCE_GATE_WEEKS,
-            "alphas": [
-                {
-                    "alpha_id": aid,
-                    "n_forward_periods": a.get("n_forward_periods"),
-                    "weeks_to_go_no_go": max(
-                        0,
-                        _EVIDENCE_GATE_WEEKS - (a.get("n_forward_periods") or 0),
-                    ),
-                    "paper_sharpe": a.get("paper_sharpe"),
-                    "paper_ic": a.get("paper_ic"),
-                    "cum_return": a.get("cum_return"),
-                    "backtest_reference_sharpe": a.get("backtest_reference_sharpe"),
-                    "reference_weeks": a.get("reference_weeks"),
-                    "pending_decisions": a.get("pending_decisions"),
-                    "last_decision_ts": a.get("last_decision_ts"),
-                }
-                for aid, a in alphas.items()
-            ],
-            "alerts": ft.get("alerts", []),
-        }
+    present = bool(forward_track["present"] or lt)
 
     execution_stack: Dict = {"present": False}
     if lt:

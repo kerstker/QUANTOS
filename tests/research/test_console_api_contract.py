@@ -15,9 +15,12 @@ destructures. Backend drift away from the frontend contract turns the gate RED.
 If you change a payload's top-level shape, change BOTH this contract and the TS
 type in the same commit — that is the point.
 """
+import json
+
 from fastapi.testclient import TestClient
 
 from services.console.main import app
+from services.console.api import artifact_snapshots
 
 client = TestClient(app)
 
@@ -236,6 +239,63 @@ def test_every_endpoint_satisfies_the_frontend_contract():
             if key not in body:
                 failures.append(f"{path}: missing contract key '{key}'")
     assert not failures, "frontend contract drift:\n" + "\n".join(failures)
+
+
+def test_live_trading_forward_track_fails_closed_to_attested_baseline(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 0,
+            "attested_pending": 0,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "BLOCKED"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    payload = artifact_snapshots._live_trading_payload(now_ms=1000)
+
+    assert payload["forward_track"]["evidence_state"] == "DATA_BLOCKED"
+    assert payload["forward_track"]["attested_realizations"] == 0
+    assert payload["forward_track"]["legacy_unattested_decisions"] == 2
+    assert payload["forward_track"]["actions_allowed"] is False
+
+
+def test_live_trading_forward_track_marks_missing_invalid_and_stale_evidence_fail_closed(tmp_path, monkeypatch):
+    missing = tmp_path / "missing.json"
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(missing), raising=False)
+    unavailable = artifact_snapshots._live_trading_payload(now_ms=1000)["forward_track"]
+    assert unavailable == {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(invalid), raising=False)
+    assert artifact_snapshots._live_trading_payload(now_ms=1000)["forward_track"] == unavailable
+
+    stale = tmp_path / "stale.json"
+    stale.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 7,
+            "attested_pending": 1,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "CURRENT"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(stale), raising=False)
+    stale_payload = artifact_snapshots._live_trading_payload(now_ms=172_801_001)["forward_track"]
+    assert stale_payload["present"] is True
+    assert stale_payload["evidence_state"] == "STALE"
+    assert stale_payload["actions_allowed"] is False
 
 
 def test_query_bound_endpoints_echo_the_requested_alpha():

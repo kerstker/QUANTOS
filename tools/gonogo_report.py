@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 from tools.live_track_advance import _VENUES, _venue_paths
 
-_FORWARD_STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_FORWARD_EVIDENCE_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _ALERTS = os.path.join("data", "cache", "alerts.jsonl")
 _OUT_JSON = os.path.join("data", "cache", "gonogo_report.json")
 # 审计 §4.4 [P1-R2]:哨兵(tools/live_risk_sentinel.py)每小时算好的 VaR/CVaR/HHI 只读快照——
@@ -49,7 +49,7 @@ def _load(path: str):
         return None
     try:
         return json.load(open(path, encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeError):
         return None
 
 
@@ -92,24 +92,57 @@ def assemble_pnl_attribution(equity_points, tca) -> dict:
     }
 
 
-def _forward_evidence() -> dict:
-    ft = _load(_FORWARD_STATUS)
-    if not ft:
-        return {"present": False}
-    alphas = {}
-    for aid, a in (ft.get("alphas") or {}).items():
-        n = a.get("n_forward_periods") or 0
-        alphas[aid] = {
-            "weeks_accumulated": n,
-            "weeks_to_gate": max(0, _EVIDENCE_GATE_WEEKS - n),
-            "paper_sharpe": a.get("paper_sharpe"),
-            "paper_ic": a.get("paper_ic"),
-            "cum_return": a.get("cum_return"),
-            "backtest_reference_sharpe": a.get("backtest_reference_sharpe"),
-            "pending_decisions": a.get("pending_decisions"),
-        }
-    return {"present": True, "ran_at": ft.get("ran_at"), "gate_weeks": _EVIDENCE_GATE_WEEKS,
-            "alphas": alphas}
+def _nonnegative_int(mapping: dict, key: str) -> int | None:
+    value = mapping.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _forward_evidence(now_ms: int | None = None) -> dict:
+    """Read only the attested baseline; malformed or stale evidence never borrows legacy cache counts."""
+    document = _load(_FORWARD_EVIDENCE_BASELINE)
+    if not isinstance(document, dict):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    counts = document.get("counts")
+    gate = document.get("evidence_gate")
+    admission = document.get("data_admission")
+    observed_at_ms = _nonnegative_int(document, "observed_at_ms")
+    max_age_ms = _nonnegative_int(document, "max_age_ms")
+    if (
+        not isinstance(counts, dict)
+        or not isinstance(gate, dict)
+        or not isinstance(admission, dict)
+        or observed_at_ms is None
+        or max_age_ms is None
+        or not isinstance(gate.get("minimum_weeks"), int)
+        or isinstance(gate.get("minimum_weeks"), bool)
+        or not isinstance(gate.get("eligible"), bool)
+    ):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    parsed_counts = {key: _nonnegative_int(counts, key) for key in (
+        "attested_realizations", "attested_pending", "legacy_unattested_decisions",
+    )}
+    if any(value is None for value in parsed_counts.values()):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    if now - observed_at_ms > max_age_ms:
+        state = "STALE"
+    elif admission.get("status") == "CURRENT":
+        state = "ATTESTED"
+    else:
+        state = "DATA_BLOCKED"
+    return {
+        "present": True,
+        "evidence_state": state,
+        "attested_realizations": parsed_counts["attested_realizations"],
+        "attested_pending": parsed_counts["attested_pending"],
+        "legacy_unattested_decisions": parsed_counts["legacy_unattested_decisions"],
+        "evidence_gate_weeks": gate["minimum_weeks"],
+        "evidence_gate_eligible": gate["eligible"],
+        "data_admission": admission,
+        "actions_allowed": False,
+    }
 
 
 def _venue_risk_snapshot(sentinel_status, venue_name: str):
@@ -210,7 +243,7 @@ def assemble_report(*, forward_evidence: dict, execution_evidence: dict, inciden
 def build_report(now_ms: int) -> dict:
     """驱动器边界:加载所有真实产物(IO)再交给纯 assemble_report 装配。"""
     return assemble_report(
-        forward_evidence=_forward_evidence(),
+        forward_evidence=_forward_evidence(now_ms=now_ms),
         execution_evidence={name: _venue_evidence(name) for name in _VENUES
                             if os.path.exists(_VENUES[name]["key_file"])},
         incidents=_incidents(),
@@ -224,7 +257,12 @@ def render_markdown(rep: dict) -> str:
              "", f"readiness: **{rep['readiness']}**", "", rep["honesty_note"], "",
              "## 前向证据钟(Stage 0)", ""]
     fe = rep["forward_evidence"]
-    if fe.get("present"):
+    if fe.get("present") and "attested_realizations" in fe:
+        gate_weeks = fe["evidence_gate_weeks"]
+        lines.append(f"- 认证前向 {fe['attested_realizations']}/{gate_weeks} 周")
+        lines.append(f"- 认证待兑现 {fe['attested_pending']};历史未认证 {fe['legacy_unattested_decisions']}（不计入门槛）")
+        lines.append(f"- 证据状态 {fe['evidence_state']};门槛资格 {fe['evidence_gate_eligible']};只读 actions_allowed={fe['actions_allowed']}")
+    elif fe.get("present"):
         lines.append("| alpha | 已积累周数 | 距 8 周门槛 | paper Sharpe | paper IC | 累计收益 | 回测参照 |")
         lines.append("|---|---|---|---|---|---|---|")
         for aid, a in fe["alphas"].items():
