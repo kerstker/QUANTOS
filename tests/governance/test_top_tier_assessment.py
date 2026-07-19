@@ -9,7 +9,7 @@ import tarfile
 
 import pytest
 
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import short_hash, stable_hash
 from scripts.generate_model_risk_evidence import build_model_risk_evidence
 from scripts.generate_model_risk_dataset import generate_bundle
 from scripts.generate_strong_identity_evidence import build_strong_identity_evidence
@@ -517,7 +517,7 @@ def test_risk_recovery_checker_requires_all_recovery_and_fault_invariants(tmp_pa
 
     evidence.write_text(json.dumps(_valid_risk_recovery_evidence()), encoding="utf-8")
     result = assess_repository(tmp_path, registry)["requirements"][0]
-    assert result["status"] == "PASS"
+    assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
 
 
@@ -1688,7 +1688,7 @@ def test_model_risk_checker_requires_real_multi_revision_history_for_v2(tmp_path
     assert "revision_history_longitudinal" in result["detail"]
 
 
-def test_model_risk_checker_requires_all_v2_runtime_red_team_cases(tmp_path):
+def test_model_risk_checker_requires_all_current_runtime_red_team_cases(tmp_path):
     evidence = _write_valid_model_risk_evidence(
         tmp_path,
         with_bundle=True,
@@ -1698,7 +1698,8 @@ def test_model_risk_checker_requires_all_v2_runtime_red_team_cases(tmp_path):
     active_report = next(
         record
         for record in document["artifacts"]
-        if record["artifact_id"] == "red-team-report:research-agent-runtime-boundary-v2"
+        if record["artifact_id"]
+        == "red-team-report:research-agent-runtime-boundary-v4"
     )
     payload = active_report["payload"]
     payload["required_case_ids"] = [
@@ -1872,6 +1873,146 @@ def test_strong_identity_checker_rejects_pkce_invariant_removal_with_updated_has
     assert "pkce_one_time_transaction" in result["detail"]
 
 
+def _alpha_trial_store_wiring_source(
+    *,
+    include_evaluation_context: bool,
+    split_evaluation_connection: bool,
+    split_evaluation_commit: bool,
+    omit_registered_candidate_check: bool,
+    omit_locked_helper_lease_guard: bool,
+    bypass_locked_helper: bool,
+) -> str:
+    helper_connection = "self._other_conn" if split_evaluation_connection else "conn"
+    helper_lease_guard = (
+        ""
+        if omit_locked_helper_lease_guard
+        else "    self._require_write_lock(conn, lease)\n"
+    )
+    candidate_check = (
+        ""
+        if omit_registered_candidate_check
+        else """
+    candidate = conn.execute(
+        "SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?"
+    ).fetchone()
+    if candidate is None:
+        raise ExperimentStoreError("unregistered candidate")
+"""
+    )
+    split_commit = "    conn.commit()\n" if split_evaluation_commit else ""
+    wrapper_body = (
+        """
+        self._require_write_lock(conn, lease)
+        candidate = conn.execute(
+            "SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?"
+        ).fetchone()
+        if candidate is None:
+            raise ExperimentStoreError("unregistered candidate")
+        conn.execute("INSERT INTO evaluations")
+        conn.execute("INSERT INTO search_evaluations")
+        conn.execute("INSERT INTO evaluation_audit_outbox")
+        return True
+"""
+        if bypass_locked_helper
+        else f"""
+        return self._insert_evaluation_locked(
+            {helper_connection},
+            lease,
+            write,
+            search_id=search_id,
+            config_hash=config_hash,
+        )
+"""
+    )
+    save_evaluation_context = (
+        """
+
+def save_evaluation_catalog_snapshot(self):
+    pass
+"""
+        if include_evaluation_context
+        else ""
+    )
+    return f"""
+TRIAL_INSERT = "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)"
+IMMUTABLE_COLLISION = "ImmutableArtifactError"
+EVALUATION_DIGEST = "content_hash"
+SEARCH_EVALUATION_SCHEMA = "CREATE TABLE IF NOT EXISTS search_evaluations UNIQUE(search_id, run_id)"
+
+class _WriteLease:
+    def __init__(self, *, connection, generation, owner_thread):
+        self.connection = connection
+        self.generation = generation
+        self.owner_thread = owner_thread
+
+def _search_evaluation_hash(*, config_hash):
+    return {{"config_hash": config_hash}}
+
+@contextmanager
+def _immediate_transaction(self):
+    self._reject_write_ownership_conflict()
+    if self._active_write_lease is not None or self._conn.in_transaction:
+        raise ExperimentStoreError("nested store-owned transaction")
+    self._conn.execute("BEGIN IMMEDIATE")
+    lease = _WriteLease(
+        connection=self._conn,
+        generation=self._write_generation,
+        owner_thread=get_ident(),
+    )
+    self._active_write_lease = lease
+    try:
+        yield self._conn, lease
+        self._conn.commit()
+    except BaseException:
+        if self._conn.in_transaction:
+            self._conn.rollback()
+        raise
+    finally:
+        self._active_write_lease = None
+
+def _require_write_lock(self, conn, lease):
+    if not isinstance(lease, _WriteLease):
+        raise ExperimentStoreError("forged write lease")
+    if lease.owner_thread != get_ident():
+        raise ExperimentStoreError("wrong write-lease thread")
+    if (
+        conn is not self._conn
+        or lease is not self._active_write_lease
+        or lease.connection is not conn
+        or lease.generation != self._write_generation
+        or not conn.in_transaction
+    ):
+        raise ExperimentStoreError("invalid write lease")
+
+def register_search_candidates(self):
+    with self._immediate_transaction() as (conn, lease):
+        self._require_write_lock(conn, lease)
+        conn.execute("INSERT INTO search_candidates")
+        conn.execute("INSERT OR IGNORE INTO trials")
+
+def insert_evaluation(self):
+    write = EvaluationArtifactWrite()
+    search_id = "search-1"
+    config_hash = "1" * 64
+    with self._immediate_transaction() as (conn, lease):
+{wrapper_body}
+
+def _insert_evaluation_locked(
+    self,
+    conn,
+    lease,
+    write,
+    search_id=None,
+    config_hash=None,
+):
+{helper_lease_guard}{candidate_check}    conn.execute("INSERT INTO evaluations")
+{split_commit}    conn.execute("INSERT INTO search_evaluations")
+    conn.execute("INSERT INTO evaluation_audit_outbox")
+    return True
+{save_evaluation_context}
+"""
+
+
 def _write_alpha_trial_wiring(
     tmp_path: Path,
     *,
@@ -1882,6 +2023,11 @@ def _write_alpha_trial_wiring(
     omit_factory_helper_guard: bool = False,
     legacy_evaluation_api: bool = False,
     omit_exact_evaluation_binding: bool = False,
+    split_evaluation_connection: bool = False,
+    split_evaluation_commit: bool = False,
+    omit_registered_candidate_check: bool = False,
+    omit_locked_helper_lease_guard: bool = False,
+    bypass_locked_helper: bool = False,
 ) -> dict:
     factory_tools = [
         "tools/crypto_factory_intraday.py",
@@ -1920,15 +2066,6 @@ def _write_alpha_trial_wiring(
         self._store.all_trial_hashes()
         self._store.all_alphas()
         catalog.restore_evaluation_context()
-"""
-    )
-    store_evaluation_method = (
-        ""
-        if legacy_evaluation_api
-        else """
-
-def save_evaluation_catalog_snapshot(self):
-    pass
 """
     )
     port_evaluation_method = (
@@ -1988,29 +2125,14 @@ class ExperimentRegistry:
     def verify_evaluation(self, run_id):
         return stable_hash(self._store.get_evaluation(run_id))
 """,
-        "services/research/experiment_registry/store.py": f"""
-TRIAL_INSERT = "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)"
-IMMUTABLE_COLLISION = "ImmutableArtifactError"
-EVALUATION_DIGEST = "content_hash"
-SEARCH_EVALUATION_SCHEMA = "CREATE TABLE IF NOT EXISTS search_evaluations UNIQUE(search_id, run_id)"
-
-def _search_evaluation_hash(*, config_hash):
-    return {{"config_hash": config_hash}}
-
-def register_search_candidates(self):
-    self._conn.execute("BEGIN IMMEDIATE")
-    self._conn.execute("INSERT INTO search_candidates")
-    self._conn.execute("INSERT OR IGNORE INTO trials")
-    self._conn.commit()
-
-def insert_evaluation(self):
-    self._conn.execute("BEGIN IMMEDIATE")
-    self._conn.execute("SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?")
-    self._conn.execute("INSERT INTO evaluations")
-    self._conn.execute("INSERT INTO search_evaluations")
-    self._conn.commit()
-{store_evaluation_method}
-""",
+        "services/research/experiment_registry/store.py": _alpha_trial_store_wiring_source(
+            include_evaluation_context=not legacy_evaluation_api,
+            split_evaluation_connection=split_evaluation_connection,
+            split_evaluation_commit=split_evaluation_commit,
+            omit_registered_candidate_check=omit_registered_candidate_check,
+            omit_locked_helper_lease_guard=omit_locked_helper_lease_guard,
+            bypass_locked_helper=bypass_locked_helper,
+        ),
         "services/research/ports/persistence.py": f"""
 class ExperimentStorePort(Protocol):
     def save_catalog_snapshot(self): ...
@@ -2050,6 +2172,7 @@ def production_experiment_registry():
         "tests/research/test_session.py": "session persistence coverage\n",
         "tests/research/test_experiment_registry.py": "ledger integrity coverage\n",
         "tests/research/test_experiment_store.py": "evaluation definition conflict coverage\n",
+        "tests/research/test_experiment_store_locked_primitives.py": "lease and atomicity coverage\n",
         "tests/research/test_search_trial_provenance.py": "factory provenance coverage\n",
         "tests/intelligence/test_registered_candidate_batch.py": "lifecycle preservation coverage\n",
     }
@@ -2094,6 +2217,7 @@ def main():
             "tests/research/test_session.py",
             "tests/research/test_experiment_registry.py",
             "tests/research/test_experiment_store.py",
+            "tests/research/test_experiment_store_locked_primitives.py",
             "tests/research/test_search_trial_provenance.py",
             "tests/intelligence/test_registered_candidate_batch.py",
         ],
@@ -2119,9 +2243,21 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
     evidence_path = tmp_path / checker_args["evidence_path"]
     for index, timestamp in ((1, 10), (2, 200)):
         dataset_version = f"dataset-v{index}"
-        evaluation = {"alpha_id": f"alpha-{index}", "catalog_trial_count": index}
+        evaluation = {
+            "alpha_id": f"alpha-{index}",
+            "catalog_trial_count": index,
+            "reproducibility_hash": str(index) * 64,
+            "verdict": "REQUIRES_HUMAN_REVIEW",
+        }
         content_hash = stable_hash(
             {"evaluation": evaluation, "dataset_version": dataset_version}
+        )
+        run_id = short_hash(
+            {
+                "alpha_id": evaluation["alpha_id"],
+                "repro": evaluation["reproducibility_hash"],
+                "dataset_version": dataset_version,
+            }
         )
         search_id = f"session-{index}"
         store = SqliteExperimentStore(str(ledger_path), create=False)
@@ -2139,7 +2275,7 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
                 registered_at=timestamp,
             )
             store.insert_evaluation(
-                run_id=f"run-{index}",
+                run_id=run_id,
                 alpha_id=f"alpha-{index}",
                 dataset_version=dataset_version,
                 recorded_ts=timestamp,
@@ -2262,6 +2398,87 @@ def test_alpha_trial_ledger_checker_requires_exact_search_evaluation_binding(
 
     assert result["status"] == "FAILED"
     assert "exact_search_candidate_binding" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_accepts_owned_transaction_locked_helper_graph(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+
+
+def test_alpha_trial_ledger_checker_rejects_split_evaluation_connection(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        split_evaluation_connection=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "same_connection_and_lease" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_split_evaluation_commit(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        split_evaluation_commit=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "split_commit" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_unregistered_candidate_path(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        omit_registered_candidate_check=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "registered_candidate_binding" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_helper_without_valid_lease_guard(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        omit_locked_helper_lease_guard=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "valid_lease_guard" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_wrapper_bypassing_locked_helper(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        bypass_locked_helper=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "locked_helper_delegation" in result["detail"]
 
 
 def test_alpha_trial_ledger_checker_requires_candidate_recorder_before_score(tmp_path):
@@ -2499,7 +2716,14 @@ def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_sto
     evidence_path = _write_valid_alpha_trial_history(tmp_path, checker_args)
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
     final = document["records"][-1]
-    final["evaluations"][-1]["content_hash"] = "f" * 64
+    final_session_run_id = final["session_provenance"]["evaluation_links"][0][
+        "run_id"
+    ]
+    next(
+        evaluation
+        for evaluation in final["evaluations"]
+        if evaluation["run_id"] == final_session_run_id
+    )["content_hash"] = "f" * 64
     final_without_hash = {key: value for key, value in final.items() if key != "record_hash"}
     final["record_hash"] = hashlib.sha256(
         json.dumps(final_without_hash, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -2636,7 +2860,7 @@ def test_committed_alpha_trial_requirement_passes_with_portable_snapshot(tmp_pat
 
     result = assess_repository(ROOT, registry)["requirements"][0]
 
-    assert result["status"] == "PASS"
+    assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
     assert requirement["checker_args"]["snapshot_path"] in result["evidence"]
     assert requirement["checker_args"]["seal_path"] in result["evidence"]

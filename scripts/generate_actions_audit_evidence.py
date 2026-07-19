@@ -38,9 +38,10 @@ def _read_object(path: Path) -> dict[str, Any]:
 def _write(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(
-        json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    temporary.write_bytes(
+        (json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode(
+            "utf-8"
+        )
     )
     temporary.replace(path)
 

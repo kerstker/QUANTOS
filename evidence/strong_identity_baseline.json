@@ -1,11 +1,19 @@
 {
   "actor_source": "OIDC_ISSUER_AND_IMMUTABLE_SUBJECT",
-  "ai_human_identity_exclusion_status": "NOT_EXTERNALLY_PROVEN",
+  "ai_human_identity_exclusion_status": "LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN",
   "all_attack_cases_passed": true,
   "allowed_algorithms": [
     "EdDSA",
     "RS256"
   ],
+  "application_authorization_decision_authority_status": "LOCAL_SINGLE_SQLITE_REGISTRY_DECISION_CAS_UNSEALED",
+  "application_authorization_principal_classes": [
+    "HUMAN",
+    "WORKLOAD"
+  ],
+  "application_authorization_registry_status": "EMPTY_DEFAULT_FAIL_CLOSED_GENERATION_0",
+  "application_authorization_token_role_mode": "TOKEN_AND_APPLICATION_GRANT_INTERSECTION",
+  "application_authorization_valid_path_passed": true,
   "attack_cases": [
     {
       "actual_outcome": "DENIED",
@@ -81,6 +89,54 @@
     },
     {
       "actual_outcome": "DENIED",
+      "case_id": "token-role-self-enrollment",
+      "error_code": "PRINCIPAL_NOT_REGISTERED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "token-role-self-escalation",
+      "error_code": "ROLE_NOT_GRANTED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "revoked-application-principal",
+      "error_code": "PRINCIPAL_REVOKED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "expired-application-access-review",
+      "error_code": "ACCESS_REVIEW_EXPIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "token-before-application-epoch",
+      "error_code": "TOKEN_ISSUED_BEFORE_AUTHORIZATION",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "workload-human-governance-action",
+      "error_code": "WORKLOAD_HUMAN_ACTION_FORBIDDEN",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
       "case_id": "untrusted-certificate-header",
       "error_code": "MISSING_VERIFIED_CLIENT_CERTIFICATE",
       "exception": "StrongIdentityError",
@@ -121,7 +177,7 @@
   "browser_pkce_or_bff_status": "AUTHORIZATION_CODE_PKCE_S256_IMPLEMENTED_EXTERNAL_IDP_NOT_PROVIDED",
   "browser_pkce_transaction_storage": "VERSIONED_SESSION_STORAGE_NO_ACCESS_TOKEN",
   "credential_authority_granted": false,
-  "current_maturity": "M2",
+  "current_maturity": "M3",
   "dependency_versions": {
     "PyJWT": "2.13.0",
     "cryptography": "49.0.0"
@@ -135,15 +191,18 @@
     "PROMOTION_APPROVER",
     "PROMOTION_EXECUTOR"
   ],
-  "identity_lifecycle_evidence_status": "NOT_PROVIDED",
+  "identity_lifecycle_evidence_status": "LOCAL_REVOCATION_TOKEN_EPOCH_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED",
   "implementation_sha256": {
-    "apps/research-console/src/lib/api/governance-pkce.ts": "60f42677fc8033a629c439913d43a3e7d0023ee2db9abd1d2c394877667dc751",
-    "apps/research-console/src/lib/api/promotion-api.ts": "73df1b8d57b82887c28432d88fa78e3b944e07d3fe1ae6f50230c53058992d68",
-    "apps/research-console/src/pages/PromotionQueue.tsx": "98e8566f6e6d7ae4062d2bdf69237d644886d39eb7ff1d192130afddfbad60f8",
+    "apps/research-console/src/lib/api/governance-pkce.ts": "0c019dace2fecdf3196123d93378067f54ab96fd8618f370ebfdfcfd733dc267",
+    "apps/research-console/src/lib/api/promotion-api.ts": "750ee71a20f3e72f5112427143a5827df64cb44aaccafa238ece43a38411fcf3",
+    "apps/research-console/src/pages/PromotionQueue.tsx": "43d0b63acb2024030dbd487b8ce1d9883fcce97e2684df80b2f0f2868219511d",
+    "config/identity_authorization_registry.json": "13df7ad56fd2076aa46c681dfe1bd19237909e2b3e760d0e0b3f6454c42f6256",
     "quantos/contracts/identity.py": "de7fc42afc941a27af125d6bbf31624de4bb2b30bdc6c0e3a2dbea653ad9f23d",
-    "scripts/generate_strong_identity_evidence.py": "a61306976e1c8425129e3389ab7f5863f1754f07007446503e50abe9713b78d7",
+    "scripts/generate_strong_identity_evidence.py": "1fb7b09bc90af21bad0dbf3137a5a1938e19b02b2b844ca94f5fd7a2ab3874e2",
+    "services/governance/identity_authorization.py": "43fac24d630ae91dc4360a939ebf17940d4cf822603f451f13746fbc441e7a2b",
+    "services/governance/identity_authorization_store.py": "768a73e1833e93e7bb5f0ad8204faa90857c87e5b91d27e9ad449cb3dc2f6890",
     "services/governance/strong_identity.py": "53c7a37affd8364f1cdf954098576e1fdabdf63cb81426c87b35ebfc48e8f320",
-    "services/promotion_api/main.py": "d9c52033a0fc25b863f1bb974101c5858e7295008ce26d115a3bfe9acb447893"
+    "services/promotion_api/main.py": "68c69b463571971a158923a472f5a5315eff4b3ffe8c723b12914f8bddf55e85"
   },
   "legacy_shared_token_accepted": false,
   "live_trading_authority_granted": false,
@@ -151,7 +210,7 @@
     "EXTERNAL_OIDC_ISSUER_OPERATIONAL_EVIDENCE_MISSING",
     "TRUSTED_MTLS_TERMINATOR_DEPLOYMENT_EVIDENCE_MISSING",
     "EXTERNAL_SIGNING_KEY_CUSTODY_AND_ROTATION_EVIDENCE_MISSING",
-    "IDENTITY_LIFECYCLE_REVOCATION_AND_ACCESS_REVIEW_EVIDENCE_MISSING",
+    "EXTERNAL_IDENTITY_LIFECYCLE_AND_ACCESS_REVIEW_EVIDENCE_MISSING",
     "AI_WORKLOAD_HUMAN_IDENTITY_EXCLUSION_NOT_EXTERNALLY_PROVEN"
   ],
   "mode": "OFFLINE_STRONG_IDENTITY_BASELINE",
@@ -174,6 +233,8 @@
   "verdict": "PARTIAL",
   "verification_paths": [
     "tests/governance/test_strong_identity.py",
+    "tests/governance/test_identity_authorization.py",
+    "tests/governance/test_identity_authorization_store.py",
     "tests/governance/test_promotion_api_boundary.py",
     "tests/governance/test_promotion_api_endpoints.py",
     "apps/research-console/src/lib/api/governance-pkce.test.ts"

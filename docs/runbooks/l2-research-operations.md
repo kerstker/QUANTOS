@@ -36,14 +36,50 @@ Preflight the production authority without creating or migrating it:
 rtk python -m tools.search_trial_ledger_history --inspect-ledger
 ```
 
+### Portable history capture and repository seal
+
+The live SQLite registry and the tracked portable evidence have separate
+responsibilities. An operator inspects and captures the live registry; capture
+changes that history by recording a selected completed session. The seal then
+publishes the resulting minimal repository evidence and binds the exact history
+and snapshot bytes. CI verifies the committed bundle, so a fresh checkout does not need
+`data/cache`. Operators must still independently check the live registry; a
+repository seal is not an assertion that the live database remains current.
+
+Use this exact capture, live-check, seal, and portable-check sequence:
+
+```powershell
+rtk python -m tools.search_trial_ledger_history --inspect-ledger
+$sessionId = Read-Host 'Paste one CAPTURABLE search_id from the inspection output'
+if ([string]::IsNullOrWhiteSpace($sessionId)) { throw 'search_id is required' }
+rtk python -m tools.search_trial_ledger_history --session-id $sessionId
+rtk python -m tools.search_trial_ledger_history --check
+rtk python -m tools.search_trial_ledger_history --seal-snapshot
+rtk python -m tools.search_trial_ledger_history --check-snapshot
+```
+
+Do not substitute `--check-snapshot` for the live `--check`: the first validates
+the published, data-minimized snapshot and the strict seal fields that hash the
+exact history/snapshot bytes, while the second validates the current
+operational authority. Never hand-edit any bundle artifact. A changed history
+or snapshot byte must fail. A malformed, inconsistent, or hash-mismatched seal
+must fail, but the seal JSON is not signed or self-digested: whitespace-only
+changes or a still-valid `sealed_at_ms` can pass semantic verification. Git
+review/provenance is the seal's current trust anchor.
+
 The 2026-07-15 read-only preflight found `user_version=0`, 2 retained trials,
 8 immutable evaluations, and no search-attempt or exact-link tables. It is
 honestly `capture_ready: false`; none of those legacy rows proves a completed
 selection session. The first supported real session will invoke the store's
 tested atomic v2 migration before it writes search provenance.
 
-Proceed only when the output reports schema v2, valid event/candidate/evaluation
-link chains, and `capture_ready: true`. Each capturable attempt must be
+Proceed only when the live-authority output reports its actual schema as v2 or
+later, separately reports v2 as the minimum required contract, verifies the v2
+event/candidate/evaluation-link subset, and reports `capture_ready: true`. A
+portable repository snapshot must remain exactly schema v2. A live v3 result
+does not prove that v3-only family-authority tables are healthy; those tables
+require their own exact verifier when the separately reviewed White/SPA Phase A
+is implemented. The current live-v3 check authorizes only the v2 subset. Each capturable attempt must be
 `COMPLETED`, have at least one registered candidate, and have at least one
 immutable evaluation linked to its exact `search_id` and registered candidate
 `config_hash` in the same registry transaction. `search_id`, dataset version,

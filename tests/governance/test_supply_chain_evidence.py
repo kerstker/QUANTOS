@@ -15,6 +15,15 @@ def test_ci_actions_are_immutable_sha_pinned():
     assert all(_SHA_PIN.fullmatch(action) for action in actions), actions
 
 
+def test_supply_chain_manifest_self_binds_exact_byte_portability_controls():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        ".gitattributes",
+        "tests/governance/test_evidence_checkout_portability.py",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 

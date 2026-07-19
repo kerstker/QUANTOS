@@ -11,6 +11,7 @@ from scripts.generate_model_risk_evidence import (
     execute_agent_boundary_red_team,
 )
 from scripts.generate_model_risk_dataset import generate_bundle
+from services.governance.model_risk_history import build_model_risk_revision
 from services.intelligence.runtime import RESEARCH_EVALUATION_TEMPLATE
 
 
@@ -78,7 +79,7 @@ def _write_fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
 def test_real_agent_boundary_red_team_denies_privilege_and_allows_handoff():
     report = execute_agent_boundary_red_team(recorded_at=1)
     assert report.verdict.value == "PASS"
-    assert report.tool_manifest_ref == "research-agent-tools@v1"
+    assert report.tool_manifest_ref == "research-agent-tools@v3"
     assert {case.case_id for case in report.cases} == set(report.required_case_ids)
     assert all(not case.boundary_breached for case in report.cases)
     exceptions = {case.case_id: case.observed_exception for case in report.cases}
@@ -124,7 +125,7 @@ def test_evidence_is_deterministic_honest_and_hash_verified(tmp_path):
     assert [event["sequence"] for event in first["runtime_events"]] == [1, 2]
     assert first["artifact_type_counts"]["RedTeamReport"] == 2
     assert first["red_team_report_ref"] == (
-        "red-team-report:research-agent-runtime-boundary-v2"
+        "red-team-report:research-agent-runtime-boundary-v4"
     )
     active_report = next(
         record
@@ -231,6 +232,57 @@ def test_single_revision_mode_remains_reconstructable(tmp_path):
     assert baseline["runtime_invocation_count"] == 1
     assert baseline["artifact_type_counts"]["RedTeamReport"] == 1
     assert baseline["red_team_report_ref"] == (
-        "red-team-report:research-agent-boundary-v1"
+        "red-team-report:research-agent-boundary-v3"
     )
     assert "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED" in baseline["m3_blockers"]
+
+
+def test_new_release_appends_prior_artifacts_and_runtime_events(tmp_path):
+    snapshot_path, dataset_path = _write_fixture_repo(tmp_path)
+    first = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        baseline_recorded_at=1,
+        recorded_at=2,
+        release_version="v1",
+    )
+    prior = build_model_risk_revision(first)["snapshot"]
+    guardrails = tmp_path / "services/intelligence/guardrails.py"
+    guardrails.write_bytes(guardrails.read_bytes() + b"release-two\n")
+
+    second = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        baseline_recorded_at=3,
+        recorded_at=4,
+        prior_snapshot=prior,
+        release_version="v2",
+    )
+
+    assert second["artifact_count"] == first["artifact_count"] * 2
+    assert second["runtime_invocation_count"] == 4
+    assert second["runtime_events"][:2] == first["runtime_events"]
+    assert [event["sequence"] for event in second["runtime_events"]] == [1, 2, 3, 4]
+    assert second["runtime_events"][-1]["invocation_id"] == (
+        "model-risk-runtime-red-team-v3"
+    )
+    assert second["red_team_report_ref"] == (
+        "red-team-report:research-agent-runtime-boundary-v3"
+    )
+    artifact_ids = {record["artifact_id"] for record in second["artifacts"]}
+    assert "model-card:research-agent-loop:v1" in artifact_ids
+    assert "model-card:research-agent-loop:v2" in artifact_ids
+
+    current = build_model_risk_revision(second)["snapshot"]
+    repeated = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=snapshot_path,
+        dataset_path=dataset_path,
+        baseline_recorded_at=3,
+        recorded_at=4,
+        prior_snapshot=current,
+        release_version="v2",
+    )
+    assert repeated == second

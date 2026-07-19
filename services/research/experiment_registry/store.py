@@ -8,15 +8,49 @@ would un-deflate Deflated Sharpe)."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
-from dataclasses import replace
-from typing import Iterable, Mapping, Optional, Sequence
+import threading
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+from typing import Iterable, Iterator, Mapping, Optional, Sequence
 
-from quantos.contracts.events import Event, EventOutboxMessage
+from quantos.contracts.events import EventOutboxMessage
 
+from services.research.experiment_registry.evaluation_artifact import (
+    validate_evaluation_artifact_write,
+)
+from services.research.experiment_registry.family_schema_v2_activation import (
+    verify_exact_v2_search_writer_source,
+)
+from services.research.experiment_registry.family_schema_v2_semantics import (
+    canonical_hash,
+    dispatch_hash as _dispatch_hash,
+    evaluation_audit_dispatch_hash as _evaluation_audit_dispatch_hash,
+    evaluation_audit_hash as _evaluation_audit_hash,
+    evaluation_audit_intent_from_row as _v2_evaluation_audit_intent_from_row,
+    event_json as _event_json,
+    message_from_row as _v2_message_from_row,
+    outbox_hash as _outbox_hash,
+    search_candidate_hash as _search_candidate_hash,
+    search_evaluation_hash as _search_evaluation_hash,
+    search_event_hash as _search_event_hash,
+    search_heartbeat_hash as _search_heartbeat_hash,
+    search_recovery_hash as _search_recovery_hash,
+    verify_dispatch_rows as _v2_verify_dispatch_rows,
+    verify_evaluation_audit_state,
+    verify_event_outbox_state,
+    verify_outbox_rows as _v2_verify_outbox_rows,
+    verify_search_state,
+)
+from services.research.experiment_registry.family_schema_v3_verifier import (
+    FamilyAuthorityExternalProviders,
+    FamilyAuthorityVerificationError,
+    FamilyAuthorityVerificationEvidence,
+    verify_family_authority,
+)
 from services.research.ports.persistence import (
+    EvaluationArtifactWrite,
     EvaluationAuditIntent,
     ExperimentStoreError,
     ImmutableArtifactError,
@@ -253,210 +287,143 @@ BEGIN SELECT RAISE(ABORT, 'evaluation_audit_dispatch is append-only'); END;
 
 
 def _canonical_hash(payload: Mapping[str, object]) -> str:
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    """Compatibility alias for historical private tests and repair tooling."""
+    return canonical_hash(payload)
 
 
-def _search_event_hash(
-    *,
-    search_id: str,
-    search_kind: str,
-    source: str,
-    dataset_version: str,
-    status: str,
-    recorded_at: int,
-    prev_event_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "dataset_version": dataset_version,
-            "prev_event_hash": prev_event_hash,
-            "recorded_at": recorded_at,
-            "search_id": search_id,
-            "search_kind": search_kind,
-            "source": source,
-            "status": status,
-        }
-    )
+@dataclass(frozen=True, slots=True)
+class _WriteLease:
+    """Opaque capability for one exact store-owned SQLite transaction."""
 
-
-def _search_candidate_hash(
-    *,
-    search_id: str,
-    config_hash: str,
-    status: str,
-    registered_at: int,
-    prev_candidate_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "config_hash": config_hash,
-            "prev_candidate_hash": prev_candidate_hash,
-            "registered_at": registered_at,
-            "search_id": search_id,
-            "status": status,
-        }
-    )
-
-
-def _search_heartbeat_hash(
-    *,
-    search_id: str,
-    recorded_at: int,
-    prev_heartbeat_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "prev_heartbeat_hash": prev_heartbeat_hash,
-            "recorded_at": recorded_at,
-            "search_id": search_id,
-        }
-    )
-
-
-def _search_recovery_hash(
-    *,
-    search_id: str,
-    reason: str,
-    timeout_ms: int,
-    last_activity_at: int,
-    recovered_at: int,
-    terminal_event_hash: str,
-    prev_recovery_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "last_activity_at": last_activity_at,
-            "prev_recovery_hash": prev_recovery_hash,
-            "reason": reason,
-            "recovered_at": recovered_at,
-            "search_id": search_id,
-            "terminal_event_hash": terminal_event_hash,
-            "timeout_ms": timeout_ms,
-        }
-    )
-
-
-def _search_evaluation_hash(
-    *,
-    search_id: str,
-    config_hash: str,
-    run_id: str,
-    recorded_at: int,
-    evaluation_content_hash: str,
-    prev_link_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "config_hash": config_hash,
-            "evaluation_content_hash": evaluation_content_hash,
-            "prev_link_hash": prev_link_hash,
-            "recorded_at": recorded_at,
-            "run_id": run_id,
-            "search_id": search_id,
-        }
-    )
-
-
-def _evaluation_audit_hash(
-    *,
-    run_id: str,
-    intent: EvaluationAuditIntent,
-    evaluation_content_hash: str,
-    prev_record_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "action": intent.action,
-            "actor": intent.actor,
-            "evaluation_content_hash": evaluation_content_hash,
-            "event_id": intent.event_id,
-            "metadata": dict(intent.metadata),
-            "prev_record_hash": prev_record_hash,
-            "run_id": run_id,
-            "target": intent.target,
-            "timestamp": intent.timestamp,
-        }
-    )
-
-
-def _evaluation_audit_dispatch_hash(
-    *,
-    event_id: str,
-    dispatched_at: int,
-    audit_entry_hash: str,
-    prev_record_hash: str,
-) -> str:
-    return _canonical_hash(
-        {
-            "audit_entry_hash": audit_entry_hash,
-            "dispatched_at": dispatched_at,
-            "event_id": event_id,
-            "prev_record_hash": prev_record_hash,
-        }
-    )
-
-
-def _event_json(event: Event) -> str:
-    return json.dumps(
-        event.model_dump(mode="json"),
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _outbox_hash(message: EventOutboxMessage, prev_record_hash: str) -> str:
-    canonical = json.dumps(
-        {
-            "causation_id": message.causation_id,
-            "correlation_id": message.correlation_id,
-            "event": message.event.model_dump(mode="json"),
-            "outbox_id": message.outbox_id,
-            "prev_record_hash": prev_record_hash,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
-
-
-def _dispatch_hash(
-    *,
-    outbox_id: str,
-    dispatched_at: int,
-    event_repro_hash: str,
-    prev_record_hash: str,
-) -> str:
-    canonical = json.dumps(
-        {
-            "dispatched_at": dispatched_at,
-            "event_repro_hash": event_repro_hash,
-            "outbox_id": outbox_id,
-            "prev_record_hash": prev_record_hash,
-        },
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    connection: sqlite3.Connection
+    generation: int
+    owner_thread: int
 
 
 class SqliteExperimentStore:
-    def __init__(self, path: str, *, create: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        create: bool = False,
+        expected_authority_instance_id: str | None = None,
+        external_providers: FamilyAuthorityExternalProviders | None = None,
+    ) -> None:
         self._conn = sqlite3.connect(path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        if self._conn.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+            self._conn.close()
+            raise ExperimentStoreError("experiment store requires foreign_keys=ON")
+        self._expected_authority_instance_id = expected_authority_instance_id
+        self._external_providers = external_providers
+        self._write_generation = 0
+        self._active_write_lease: _WriteLease | None = None
+        self._connection_invalidated = False
         if create:
             self._conn.executescript(_SCHEMA)
             self._conn.executescript(_SEARCH_SCHEMA)
             self._conn.execute(f"PRAGMA user_version = {_SEARCH_SCHEMA_VERSION}")
             self._conn.commit()
+
+    def _reject_write_ownership_conflict(self) -> None:
+        """Reject external/reentrant ownership before schema or transaction work."""
+        if self._connection_invalidated:
+            raise ExperimentStoreError("experiment store connection is invalidated")
+        if self._active_write_lease is not None:
+            raise ExperimentStoreError("active store write lease forbids reentrant mutation")
+        if self._conn.in_transaction:
+            raise ExperimentStoreError("caller-owned transaction forbids store mutation")
+
+    def _commit_owned_transaction(self, conn: sqlite3.Connection) -> None:
+        conn.commit()
+
+    def _rollback_owned_transaction(self, conn: sqlite3.Connection) -> None:
+        conn.rollback()
+
+    def _write_lease_checkpoint(self, stage: str) -> None:
+        """Test seam covering the post-BEGIN, pre-lease rollback boundary."""
+        del stage
+
+    def _invalidate_connection(self, detail: str, cause: BaseException) -> None:
+        self._connection_invalidated = True
+        self._active_write_lease = None
+        try:
+            self._conn.close()
+        except BaseException:
+            pass
+        raise ExperimentStoreError(f"store-owned transaction {detail}; connection invalidated") from cause
+
+    @contextmanager
+    def _immediate_transaction(
+        self,
+    ) -> Iterator[tuple[sqlite3.Connection, _WriteLease]]:
+        """Own one exact transaction and expose only its opaque lease capability."""
+        self._reject_write_ownership_conflict()
+        conn = self._conn
+        conn.execute("BEGIN IMMEDIATE")
+        lease: _WriteLease | None = None
+        try:
+            self._write_lease_checkpoint("after_begin")
+            self._require_search_write_permission(self._schema_version())
+            self._write_generation += 1
+            lease = _WriteLease(
+                connection=conn,
+                generation=self._write_generation,
+                owner_thread=threading.get_ident(),
+            )
+            self._active_write_lease = lease
+        except BaseException as setup_exc:
+            if not conn.in_transaction:
+                self._invalidate_connection("lost its active transaction during lease setup", setup_exc)
+            try:
+                self._rollback_owned_transaction(conn)
+            except BaseException as rollback_exc:
+                self._invalidate_connection("rollback failed", rollback_exc)
+            raise
+        try:
+            yield conn, lease
+        except BaseException as exc:
+            if not conn.in_transaction:
+                self._invalidate_connection("lost its active transaction before rollback", exc)
+            try:
+                self._rollback_owned_transaction(conn)
+            except BaseException as rollback_exc:
+                self._invalidate_connection("rollback failed", rollback_exc)
+            raise
+        else:
+            if not conn.in_transaction:
+                self._invalidate_connection(
+                    "lost its active transaction before commit",
+                    ExperimentStoreError("owned transaction is inactive"),
+                )
+            try:
+                self._commit_owned_transaction(conn)
+            except BaseException as commit_exc:
+                self._invalidate_connection("commit failed", commit_exc)
+        finally:
+            if lease is not None and self._active_write_lease is lease:
+                self._active_write_lease = None
+
+    def _require_write_lock(
+        self,
+        conn: sqlite3.Connection,
+        lease: object,
+    ) -> None:
+        if conn is not self._conn:
+            raise ExperimentStoreError("locked primitive received a foreign connection")
+        if not isinstance(lease, _WriteLease):
+            raise ExperimentStoreError("locked primitive received a forged write lease")
+        if lease.owner_thread != threading.get_ident():
+            raise ExperimentStoreError("write lease used from the wrong thread")
+        if (
+            self._active_write_lease is not lease
+            or lease.connection is not conn
+            or lease.generation != self._write_generation
+        ):
+            raise ExperimentStoreError("locked primitive received a stale write lease")
+        if not conn.in_transaction:
+            raise ExperimentStoreError("locked primitive requires a store-owned write transaction")
 
     def _require_schema(self) -> None:
         try:
@@ -468,39 +435,80 @@ class SqliteExperimentStore:
         if missing:
             raise ExperimentStoreError(f"store uninitialized; missing tables: {missing}")
 
+    def _schema_version(self) -> int:
+        try:
+            row = self._conn.execute("PRAGMA user_version").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise ExperimentStoreError(f"store unreadable: {exc}") from exc
+        if row is None or len(row) != 1 or type(row[0]) is not int:
+            raise ExperimentStoreError("experiment store user_version is unreadable")
+        return int(row[0])
+
+    def _require_family_schema_v3(self) -> FamilyAuthorityVerificationEvidence:
+        """Verify exact v3 without migration, writes, or transaction control."""
+
+        version = self._schema_version()
+        if version != 3:
+            raise ExperimentStoreError(f"family authority requires exact user_version 3, found {version}")
+        expected = self._expected_authority_instance_id
+        if type(expected) is not str or not expected:
+            raise ExperimentStoreError("family authority expected authority_instance_id is not configured")
+        try:
+            return verify_family_authority(
+                self._conn,
+                expected_authority_instance_id=expected,
+                external_providers=self._external_providers,
+            )
+        except (FamilyAuthorityVerificationError, TypeError, sqlite3.DatabaseError) as exc:
+            raise ExperimentStoreError(f"family authority verification failed: {exc}") from exc
+
+    def _require_search_write_permission(self, version: int) -> None:
+        if version not in (2, 3):
+            raise ExperimentStoreError(f"unsupported experiment store user_version: {version}")
+        if version == 2:
+            verify_exact_v2_search_writer_source(self._conn)
+            return
+        self._require_search_schema(allow_v3=True)
+        verify_search_state(self._conn)
+        self._require_family_schema_v3()
+
+    def _require_runtime_mutation_schema(self) -> None:
+        """Gate legacy mutators on known Phase-A versions before ``BEGIN``."""
+
+        self._ensure_search_schema()
+
     def _ensure_search_schema(self) -> None:
         """Migrate only an already-valid experiment store on the first search write."""
-        if self._conn.in_transaction:
-            self._conn.rollback()
+        self._reject_write_ownership_conflict()
         self._require_schema()
+        migration_started = False
         try:
-            current_version = int(
-                self._conn.execute("PRAGMA user_version").fetchone()[0]
-            )
-            if current_version > _SEARCH_SCHEMA_VERSION:
-                raise ExperimentStoreError(
-                    f"unsupported experiment store user_version: {current_version}"
-                )
-            if current_version == _SEARCH_SCHEMA_VERSION:
-                self._require_search_schema()
+            current_version = self._schema_version()
+            if current_version > 3:
+                raise ExperimentStoreError(f"unsupported experiment store user_version: {current_version}")
+            if current_version in (_SEARCH_SCHEMA_VERSION, 3):
+                self._require_search_write_permission(current_version)
                 return
 
             self._conn.execute("BEGIN IMMEDIATE")
-            locked_version = int(
-                self._conn.execute("PRAGMA user_version").fetchone()[0]
-            )
-            if locked_version == _SEARCH_SCHEMA_VERSION:
-                self._conn.commit()
-                self._require_search_schema()
+            migration_started = True
+            locked_version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+            if locked_version in (_SEARCH_SCHEMA_VERSION, 3):
+                self._require_search_write_permission(locked_version)
+                try:
+                    self._commit_owned_transaction(self._conn)
+                except BaseException as commit_exc:
+                    migration_started = False
+                    self._invalidate_connection("migration commit failed", commit_exc)
+                migration_started = False
+                self._require_search_write_permission(locked_version)
                 return
-            if locked_version > _SEARCH_SCHEMA_VERSION:
-                raise ExperimentStoreError(
-                    f"unsupported experiment store user_version: {locked_version}"
-                )
+            if locked_version > 3:
+                raise ExperimentStoreError(f"unsupported experiment store user_version: {locked_version}")
 
             statement = ""
             statement_index = 0
-            for line in _SEARCH_SCHEMA.splitlines():
+            for line in f"{_SCHEMA}\n{_SEARCH_SCHEMA}".splitlines():
                 statement = f"{statement}{line}\n"
                 if not sqlite3.complete_statement(statement):
                     continue
@@ -512,54 +520,49 @@ class SqliteExperimentStore:
                 statement_index += 1
                 self._migration_checkpoint(f"statement:{statement_index}")
             if statement.strip():
-                raise ExperimentStoreError(
-                    "search provenance schema contains an incomplete statement"
-                )
+                raise ExperimentStoreError("search provenance schema contains an incomplete statement")
             self._conn.execute(f"PRAGMA user_version = {_SEARCH_SCHEMA_VERSION}")
             self._migration_checkpoint("before_commit")
-            self._require_search_schema()
-            self._conn.commit()
-        except ExperimentStoreError:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
-        except Exception as exc:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise ExperimentStoreError(
-                f"search provenance schema migration failed: {exc}"
-            ) from exc
+            self._require_search_write_permission(_SEARCH_SCHEMA_VERSION)
+            try:
+                self._commit_owned_transaction(self._conn)
+            except BaseException as commit_exc:
+                migration_started = False
+                self._invalidate_connection("migration commit failed", commit_exc)
+            migration_started = False
+        except BaseException as exc:
+            if migration_started and self._conn.in_transaction:
+                try:
+                    self._rollback_owned_transaction(self._conn)
+                except BaseException as rollback_exc:
+                    self._invalidate_connection("migration rollback failed", rollback_exc)
+            if isinstance(exc, ExperimentStoreError):
+                raise
+            if not isinstance(exc, Exception):
+                raise
+            raise ExperimentStoreError(f"search provenance schema migration failed: {exc}") from exc
 
     def _migration_checkpoint(self, stage: str) -> None:
         """Test seam for proving that every partial migration rolls back."""
         del stage
 
-    def _require_search_schema(self) -> None:
+    def _require_search_schema(self, *, allow_v3: bool = False) -> int:
         self._require_schema()
         try:
-            rows = self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         except sqlite3.DatabaseError as exc:
             raise ExperimentStoreError(f"store unreadable: {exc}") from exc
         present = {row["name"] for row in rows}
-        required_tables = (
-            _SEARCH_TABLES + _SEARCH_ACTIVITY_TABLES + _EVALUATION_AUDIT_TABLES
-        )
+        required_tables = _SEARCH_TABLES + _SEARCH_ACTIVITY_TABLES + _EVALUATION_AUDIT_TABLES
         missing = [table for table in required_tables if table not in present]
         if missing:
-            raise ExperimentStoreError(
-                f"search provenance unavailable; missing tables: {missing}"
-            )
+            raise ExperimentStoreError(f"search provenance unavailable; missing tables: {missing}")
         version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
-        if version < _SEARCH_SCHEMA_VERSION:
-            raise ExperimentStoreError(
-                f"search provenance user_version is stale: {version}"
-            )
-        link_columns = {
-            row["name"]
-            for row in self._conn.execute("PRAGMA table_info(search_evaluations)")
-        }
+        allowed_versions = (_SEARCH_SCHEMA_VERSION, 3) if allow_v3 else (_SEARCH_SCHEMA_VERSION,)
+        if version not in allowed_versions:
+            expected = "2 or 3" if allow_v3 else "2"
+            raise ExperimentStoreError(f"search provenance requires exact user_version {expected}, found {version}")
+        link_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(search_evaluations)")}
         required_link_columns = {
             "link_seq",
             "search_id",
@@ -573,24 +576,17 @@ class SqliteExperimentStore:
         missing_link_columns = sorted(required_link_columns - link_columns)
         if missing_link_columns:
             raise ExperimentStoreError(
-                "search evaluation binding schema is stale; missing columns: "
-                f"{missing_link_columns}"
+                f"search evaluation binding schema is stale; missing columns: {missing_link_columns}"
             )
         triggers = {
             row["name"]: (row["sql"] or "").lower()
-            for row in self._conn.execute(
-                "SELECT name,sql FROM sqlite_master WHERE type='trigger'"
-            )
+            for row in self._conn.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")
         }
         for name, (table, action) in _SEARCH_APPEND_ONLY_TRIGGERS.items():
             sql = triggers.get(name, "")
-            if (
-                f"before {action} on {table}" not in " ".join(sql.split())
-                or "raise" not in sql
-            ):
-                raise ExperimentStoreError(
-                    f"append-only trigger missing or invalid: {name}"
-                )
+            if f"before {action} on {table}" not in " ".join(sql.split()) or "raise" not in sql:
+                raise ExperimentStoreError(f"append-only trigger missing or invalid: {name}")
+        return version
 
     @staticmethod
     def _require_text(value: object, field: str) -> str:
@@ -641,259 +637,19 @@ class SqliteExperimentStore:
     def _verified_search_state(
         self,
     ) -> tuple[str, str, dict[str, dict[str, object]]]:
-        self._require_search_schema()
-        event_head = ""
-        search_start_high_water = -1
-        attempts: dict[str, dict[str, object]] = {}
-        for row in self._search_event_rows():
-            if row["prev_event_hash"] != event_head:
-                raise ExperimentStoreError(
-                    f"search event {row['event_seq']} previous hash mismatch"
-                )
-            expected = _search_event_hash(
-                search_id=row["search_id"],
-                search_kind=row["search_kind"],
-                source=row["source"],
-                dataset_version=row["dataset_version"],
-                status=row["status"],
-                recorded_at=row["recorded_at"],
-                prev_event_hash=event_head,
-            )
-            if row["event_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"search event {row['event_seq']} hash mismatch"
-                )
-            search_id = row["search_id"]
-            metadata = (
-                row["search_kind"],
-                row["source"],
-                row["dataset_version"],
-            )
-            prior = attempts.get(search_id)
-            if row["status"] == "STARTED":
-                if prior is not None or row["recorded_at"] < search_start_high_water:
-                    raise ExperimentStoreError(
-                        f"search attempt {search_id} has invalid STARTED provenance"
-                    )
-                attempts[search_id] = {
-                    "metadata": metadata,
-                    "status": "STARTED",
-                    "started_at": row["recorded_at"],
-                    "last_activity_at": row["recorded_at"],
-                    "terminal_at": None,
-                    "terminal_event_hash": None,
-                }
-                search_start_high_water = row["recorded_at"]
-            elif (
-                prior is None
-                or prior["status"] != "STARTED"
-                or prior["metadata"] != metadata
-                or row["recorded_at"] < prior["started_at"]
-            ):
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} has an invalid terminal transition"
-                )
-            else:
-                prior["status"] = row["status"]
-                prior["terminal_at"] = row["recorded_at"]
-                prior["terminal_event_hash"] = expected
-            event_head = expected
-
-        candidate_head = ""
-        seen_candidates: set[tuple[str, str]] = set()
-        latest_candidate_times: dict[str, int] = {}
-        trial_hashes = {
-            row["config_hash"]
-            for row in self._conn.execute("SELECT config_hash FROM trials")
-        }
-        for row in self._search_candidate_rows():
-            if row["prev_candidate_hash"] != candidate_head:
-                raise ExperimentStoreError(
-                    f"search candidate {row['candidate_seq']} previous hash mismatch"
-                )
-            expected = _search_candidate_hash(
-                search_id=row["search_id"],
-                config_hash=row["config_hash"],
-                status=row["status"],
-                registered_at=row["registered_at"],
-                prev_candidate_hash=candidate_head,
-            )
-            if row["candidate_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"search candidate {row['candidate_seq']} hash mismatch"
-                )
-            attempt = attempts.get(row["search_id"])
-            identity = (row["search_id"], row["config_hash"])
-            prior_candidate_time = latest_candidate_times.get(row["search_id"], -1)
-            if (
-                attempt is None
-                or identity in seen_candidates
-                or row["config_hash"] not in trial_hashes
-                or row["registered_at"] < attempt["started_at"]
-                or row["registered_at"] < prior_candidate_time
-                or (
-                    attempt["terminal_at"] is not None
-                    and row["registered_at"] > attempt["terminal_at"]
-                )
-            ):
-                raise ExperimentStoreError(
-                    f"search candidate {row['candidate_seq']} has invalid provenance"
-                )
-            seen_candidates.add(identity)
-            latest_candidate_times[row["search_id"]] = row["registered_at"]
-            attempt["last_activity_at"] = max(
-                int(attempt["last_activity_at"]), row["registered_at"]
-            )
-            candidate_head = expected
-
-        heartbeat_head = ""
-        latest_heartbeat_times: dict[str, int] = {}
-        for row in self._search_heartbeat_rows():
-            if row["prev_heartbeat_hash"] != heartbeat_head:
-                raise ExperimentStoreError(
-                    f"search heartbeat {row['heartbeat_seq']} previous hash mismatch"
-                )
-            expected = _search_heartbeat_hash(
-                search_id=row["search_id"],
-                recorded_at=row["recorded_at"],
-                prev_heartbeat_hash=heartbeat_head,
-            )
-            if row["heartbeat_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"search heartbeat {row['heartbeat_seq']} hash mismatch"
-                )
-            attempt = attempts.get(row["search_id"])
-            previous_at = latest_heartbeat_times.get(row["search_id"], -1)
-            if (
-                attempt is None
-                or row["recorded_at"] < attempt["started_at"]
-                or row["recorded_at"] < previous_at
-                or (
-                    attempt["terminal_at"] is not None
-                    and row["recorded_at"] > attempt["terminal_at"]
-                )
-            ):
-                raise ExperimentStoreError(
-                    f"search heartbeat {row['heartbeat_seq']} has invalid provenance"
-                )
-            latest_heartbeat_times[row["search_id"]] = row["recorded_at"]
-            attempt["last_activity_at"] = max(
-                int(attempt["last_activity_at"]), row["recorded_at"]
-            )
-            heartbeat_head = expected
-
-        recovery_head = ""
-        recovery_records: list[sqlite3.Row] = []
-        for row in self._search_recovery_rows():
-            if row["prev_recovery_hash"] != recovery_head:
-                raise ExperimentStoreError(
-                    f"search recovery {row['recovery_seq']} previous hash mismatch"
-                )
-            expected = _search_recovery_hash(
-                search_id=row["search_id"],
-                reason=row["reason"],
-                timeout_ms=row["timeout_ms"],
-                last_activity_at=row["last_activity_at"],
-                recovered_at=row["recovered_at"],
-                terminal_event_hash=row["terminal_event_hash"],
-                prev_recovery_hash=recovery_head,
-            )
-            if row["recovery_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"search recovery {row['recovery_seq']} hash mismatch"
-                )
-            recovery_records.append(row)
-            recovery_head = expected
-
-        link_head = ""
-        latest_link_times: dict[str, int] = {}
-        registered_candidates = {
-            (row["search_id"], row["config_hash"])
-            for row in self._conn.execute(
-                "SELECT search_id,config_hash FROM search_candidates"
-            )
-        }
-        evaluations = {
-            row["run_id"]: row
-            for row in self._conn.execute(
-                "SELECT run_id,dataset_version,recorded_ts,content_hash FROM evaluations"
-            )
-        }
-        seen_links: set[tuple[str, str]] = set()
-        for row in self._search_evaluation_rows():
-            if row["prev_link_hash"] != link_head:
-                raise ExperimentStoreError(
-                    f"search evaluation link {row['link_seq']} previous hash mismatch"
-                )
-            expected = _search_evaluation_hash(
-                search_id=row["search_id"],
-                config_hash=row["config_hash"],
-                run_id=row["run_id"],
-                recorded_at=row["recorded_at"],
-                evaluation_content_hash=row["evaluation_content_hash"],
-                prev_link_hash=link_head,
-            )
-            if row["link_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"search evaluation link {row['link_seq']} hash mismatch"
-                )
-            attempt = attempts.get(row["search_id"])
-            evaluation = evaluations.get(row["run_id"])
-            prior_link_time = latest_link_times.get(row["search_id"], -1)
-            link_identity = (row["search_id"], row["run_id"])
-            if (
-                attempt is None
-                or link_identity in seen_links
-                or (row["search_id"], row["config_hash"])
-                not in registered_candidates
-                or evaluation is None
-                or evaluation["dataset_version"] != attempt["metadata"][2]
-                or evaluation["content_hash"] != row["evaluation_content_hash"]
-                or row["recorded_at"] < attempt["started_at"]
-                or row["recorded_at"] < prior_link_time
-                or (
-                    attempt["terminal_at"] is not None
-                    and row["recorded_at"] > attempt["terminal_at"]
-                )
-            ):
-                raise ExperimentStoreError(
-                    f"search evaluation link {row['link_seq']} has invalid provenance"
-                )
-            attempt["last_activity_at"] = max(
-                int(attempt["last_activity_at"]), row["recorded_at"]
-            )
-            seen_links.add(link_identity)
-            link_head = expected
-            latest_link_times[row["search_id"]] = row["recorded_at"]
-
-        for row in recovery_records:
-            attempt = attempts.get(row["search_id"])
-            if (
-                attempt is None
-                or attempt["status"] != "FAILED"
-                or row["reason"] != _SEARCH_RECOVERY_REASON
-                or row["last_activity_at"] != attempt["last_activity_at"]
-                or row["recovered_at"] != attempt["terminal_at"]
-                or row["terminal_event_hash"] != attempt["terminal_event_hash"]
-                or row["timeout_ms"] <= 0
-                or row["last_activity_at"] + row["timeout_ms"] > row["recovered_at"]
-            ):
-                raise ExperimentStoreError(
-                    f"search recovery {row['recovery_seq']} has invalid provenance"
-                )
-        return event_head, candidate_head, attempts
+        version = self._require_search_schema(allow_v3=True)
+        verified = verify_search_state(self._conn)
+        if version == 3:
+            self._require_family_schema_v3()
+        return verified.event_head, verified.candidate_head, verified.attempts
 
     def _require_search_start_clock(self, recorded_at: int) -> None:
         row = self._conn.execute(
-            "SELECT MAX(recorded_at) AS latest FROM search_attempt_events"
-            " WHERE status='STARTED'"
+            "SELECT MAX(recorded_at) AS latest FROM search_attempt_events WHERE status='STARTED'"
         ).fetchone()
         latest = row["latest"]
         if latest is not None and recorded_at < latest:
-            raise ExperimentStoreError(
-                "search STARTED clock rollback: "
-                f"recorded_at={recorded_at} latest={latest}"
-            )
+            raise ExperimentStoreError(f"search STARTED clock rollback: recorded_at={recorded_at} latest={latest}")
 
     def _append_search_terminal_event(
         self,
@@ -932,15 +688,11 @@ class SqliteExperimentStore:
         return event_hash
 
     def _require_outbox_schema(self) -> None:
-        rows = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         present = {row["name"] for row in rows}
         missing = [table for table in _OUTBOX_TABLES if table not in present]
         if missing:
-            raise ExperimentStoreError(
-                f"experiment event outbox unavailable; missing tables: {missing}"
-            )
+            raise ExperimentStoreError(f"experiment event outbox unavailable; missing tables: {missing}")
 
     def _outbox_rows(self) -> list[sqlite3.Row]:
         return self._conn.execute(
@@ -958,89 +710,71 @@ class SqliteExperimentStore:
 
     @staticmethod
     def _message_from_row(row: sqlite3.Row) -> EventOutboxMessage:
-        try:
-            event = Event.model_validate_json(row["event_json"])
-        except Exception as exc:
-            raise ExperimentStoreError(
-                f"experiment outbox event {row['outbox_id']} cannot be reconstructed"
-            ) from exc
-        if event.reproducibility_hash != row["repro_hash"]:
-            raise ExperimentStoreError(
-                f"experiment outbox event {row['outbox_id']} payload hash mismatch"
-            )
-        message = EventOutboxMessage(
-            event=event,
-            correlation_id=row["correlation_id"],
-            causation_id=row["causation_id"],
-        )
-        if message.outbox_id != row["outbox_id"]:
-            raise ExperimentStoreError(
-                f"experiment outbox event {row['outbox_id']} id mismatch"
-            )
-        return message
+        return _v2_message_from_row(row)
 
     @classmethod
-    def _verify_outbox_rows(
-        cls, rows: Sequence[sqlite3.Row]
-    ) -> tuple[str, dict[str, EventOutboxMessage]]:
-        previous = ""
-        messages: dict[str, EventOutboxMessage] = {}
-        for row in rows:
-            message = cls._message_from_row(row)
-            if row["prev_record_hash"] != previous:
-                raise ExperimentStoreError(
-                    f"experiment outbox row {row['outbox_seq']} previous hash mismatch"
-                )
-            expected = _outbox_hash(message, previous)
-            if row["record_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"experiment outbox row {row['outbox_seq']} record hash mismatch"
-                )
-            previous = expected
-            messages[message.outbox_id] = message
-        return previous, messages
+    def _verify_outbox_rows(cls, rows: Sequence[sqlite3.Row]) -> tuple[str, dict[str, EventOutboxMessage]]:
+        del cls
+        return _v2_verify_outbox_rows(rows)
 
     @staticmethod
     def _verify_dispatch_rows(
         rows: Sequence[sqlite3.Row],
         messages: Mapping[str, EventOutboxMessage],
     ) -> str:
-        previous = ""
-        for row in rows:
-            message = messages.get(row["outbox_id"])
-            if (
-                message is None
-                or message.event.reproducibility_hash != row["event_repro_hash"]
-            ):
-                raise ExperimentStoreError(
-                    f"experiment dispatch row {row['dispatch_seq']} reference mismatch"
-                )
-            if row["prev_record_hash"] != previous:
-                raise ExperimentStoreError(
-                    f"experiment dispatch row {row['dispatch_seq']} previous hash mismatch"
-                )
-            expected = _dispatch_hash(
-                outbox_id=row["outbox_id"],
-                dispatched_at=row["dispatched_at"],
-                event_repro_hash=row["event_repro_hash"],
-                prev_record_hash=previous,
-            )
-            if row["record_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"experiment dispatch row {row['dispatch_seq']} record hash mismatch"
-                )
-            previous = expected
-        return previous
+        return _v2_verify_dispatch_rows(rows, messages)
 
     def _verified_outbox_state(
         self,
     ) -> tuple[str, dict[str, EventOutboxMessage], str]:
         self._require_outbox_schema()
-        outbox_head, messages = self._verify_outbox_rows(self._outbox_rows())
-        dispatch_head = self._verify_dispatch_rows(
-            self._dispatch_rows(), messages
+        verified = verify_event_outbox_state(self._conn)
+        return (
+            verified.outbox_head,
+            verified.messages,
+            verified.dispatch_head,
         )
-        return outbox_head, messages, dispatch_head
+
+    def _append_event_outbox_locked(
+        self,
+        conn: sqlite3.Connection,
+        lease: object,
+        messages: Sequence[EventOutboxMessage],
+    ) -> None:
+        self._require_write_lock(conn, lease)
+        outbox_head, _, _ = self._verified_outbox_state()
+        for message in messages:
+            existing = conn.execute(
+                "SELECT outbox_seq,outbox_id,event_json,correlation_id,"
+                " causation_id,repro_hash,prev_record_hash,record_hash"
+                " FROM experiment_event_outbox WHERE outbox_id=?",
+                (message.outbox_id,),
+            ).fetchone()
+            if existing is not None:
+                if self._message_from_row(existing) != message:
+                    raise ImmutableArtifactError(f"experiment outbox event conflict: {message.outbox_id}")
+                continue
+            digest = _outbox_hash(message, outbox_head)
+            conn.execute(
+                "INSERT INTO experiment_event_outbox"
+                " (outbox_id,event_json,correlation_id,causation_id,repro_hash,"
+                " prev_record_hash,record_hash) VALUES (?,?,?,?,?,?,?)",
+                (
+                    message.outbox_id,
+                    _event_json(message.event),
+                    message.correlation_id,
+                    message.causation_id,
+                    message.event.reproducibility_hash,
+                    outbox_head,
+                    digest,
+                ),
+            )
+            outbox_head = digest
+            self._event_outbox_write_checkpoint("after_outbox")
+
+    def _event_outbox_write_checkpoint(self, stage: str) -> None:
+        """Test seam proving catalog state and event intent cannot split."""
+        del stage
 
     def _evaluation_audit_rows(self) -> list[sqlite3.Row]:
         return self._conn.execute(
@@ -1060,89 +794,26 @@ class SqliteExperimentStore:
     def _evaluation_audit_intent_from_row(
         row: sqlite3.Row,
     ) -> EvaluationAuditIntent:
-        try:
-            metadata = json.loads(row["metadata_json"])
-        except Exception as exc:
-            raise ExperimentStoreError(
-                f"evaluation audit {row['event_id']} metadata is corrupt"
-            ) from exc
-        if not isinstance(metadata, dict):
-            raise ExperimentStoreError(
-                f"evaluation audit {row['event_id']} metadata is not an object"
-            )
-        return EvaluationAuditIntent(
-            event_id=row["event_id"],
-            actor=row["actor"],
-            action=row["action"],
-            timestamp=row["timestamp"],
-            target=row["target"],
-            metadata=metadata,
-        )
+        return _v2_evaluation_audit_intent_from_row(row)
 
     def _verified_evaluation_audit_state(
         self,
     ) -> tuple[str, dict[str, tuple[str, EvaluationAuditIntent]], str]:
-        self._require_search_schema()
-        previous = ""
-        intents: dict[str, tuple[str, EvaluationAuditIntent]] = {}
-        evaluations = {
-            row["run_id"]: row["content_hash"]
-            for row in self._conn.execute(
-                "SELECT run_id,content_hash FROM evaluations"
-            )
-        }
-        for row in self._evaluation_audit_rows():
-            intent = self._evaluation_audit_intent_from_row(row)
-            if (
-                row["prev_record_hash"] != previous
-                or evaluations.get(row["run_id"])
-                != row["evaluation_content_hash"]
-            ):
-                raise ExperimentStoreError(
-                    f"evaluation audit row {row['audit_seq']} has invalid provenance"
-                )
-            expected = _evaluation_audit_hash(
-                run_id=row["run_id"],
-                intent=intent,
-                evaluation_content_hash=row["evaluation_content_hash"],
-                prev_record_hash=previous,
-            )
-            if row["record_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"evaluation audit row {row['audit_seq']} hash mismatch"
-                )
-            intents[intent.event_id] = (row["run_id"], intent)
-            previous = expected
-
-        dispatch_head = ""
-        for row in self._evaluation_audit_dispatch_rows():
-            if (
-                row["event_id"] not in intents
-                or row["prev_record_hash"] != dispatch_head
-            ):
-                raise ExperimentStoreError(
-                    f"evaluation audit dispatch {row['dispatch_seq']} has invalid provenance"
-                )
-            expected = _evaluation_audit_dispatch_hash(
-                event_id=row["event_id"],
-                dispatched_at=row["dispatched_at"],
-                audit_entry_hash=row["audit_entry_hash"],
-                prev_record_hash=dispatch_head,
-            )
-            if row["record_hash"] != expected:
-                raise ExperimentStoreError(
-                    f"evaluation audit dispatch {row['dispatch_seq']} hash mismatch"
-                )
-            dispatch_head = expected
-        return previous, intents, dispatch_head
+        version = self._require_search_schema(allow_v3=True)
+        if version == 3:
+            verify_search_state(self._conn)
+            self._require_family_schema_v3()
+        verified = verify_evaluation_audit_state(self._conn)
+        return verified.audit_head, verified.intents, verified.dispatch_head
 
     def add_trials(self, config_hashes: Iterable[str], *, first_seen_ts: int) -> None:
-        self._require_schema()
-        self._conn.executemany(
-            "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
-            [(h, first_seen_ts) for h in config_hashes],
-        )
-        self._conn.commit()
+        self._reject_write_ownership_conflict()
+        self._require_runtime_mutation_schema()
+        with self._immediate_transaction() as (conn, _lease):
+            conn.executemany(
+                "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
+                [(h, first_seen_ts) for h in config_hashes],
+            )
 
     def begin_search_attempt(
         self,
@@ -1153,20 +824,18 @@ class SqliteExperimentStore:
         dataset_version: str,
         recorded_at: int,
     ) -> bool:
+        self._reject_write_ownership_conflict()
         search_id = self._require_text(search_id, "search_id")
         search_kind = self._require_text(search_kind, "search_kind")
         source = self._require_text(source, "source")
         dataset_version = self._require_text(dataset_version, "dataset_version")
         recorded_at = self._require_time(recorded_at, "recorded_at")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction() as (conn, _lease):
             event_head, _, attempts = self._verified_search_state()
             self._require_search_start_clock(recorded_at)
             if search_id in attempts:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} already exists"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} already exists")
             event_hash = _search_event_hash(
                 search_id=search_id,
                 search_kind=search_kind,
@@ -1176,7 +845,7 @@ class SqliteExperimentStore:
                 recorded_at=recorded_at,
                 prev_event_hash=event_head,
             )
-            self._conn.execute(
+            conn.execute(
                 "INSERT INTO search_attempt_events"
                 " (search_id,search_kind,source,dataset_version,status,recorded_at,"
                 " prev_event_hash,event_hash) VALUES (?,?,?,?,?,?,?,?)",
@@ -1191,12 +860,7 @@ class SqliteExperimentStore:
                     event_hash,
                 ),
             )
-            self._conn.commit()
             return True
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def register_search_candidates(
         self,
@@ -1205,6 +869,7 @@ class SqliteExperimentStore:
         *,
         registered_at: int,
     ) -> int:
+        self._reject_write_ownership_conflict()
         search_id = self._require_text(search_id, "search_id")
         registered_at = self._require_time(registered_at, "registered_at")
         ordered_hashes: list[str] = []
@@ -1217,26 +882,17 @@ class SqliteExperimentStore:
         if not ordered_hashes:
             raise ValueError("config_hashes must contain at least one candidate")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction() as (conn, _lease):
             _, candidate_head, attempts = self._verified_search_state()
             attempt = attempts.get(search_id)
             if attempt is None:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} has not STARTED"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} has not STARTED")
             if attempt["status"] in _SEARCH_TERMINAL_STATUSES:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} is terminal"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} is terminal")
             if registered_at < attempt["started_at"]:
-                raise ExperimentStoreError(
-                    f"candidate time precedes search attempt {search_id}"
-                )
+                raise ExperimentStoreError(f"candidate time precedes search attempt {search_id}")
             if registered_at < attempt["last_activity_at"]:
-                raise ExperimentStoreError(
-                    f"candidate clock rollback for search attempt {search_id}"
-                )
+                raise ExperimentStoreError(f"candidate clock rollback for search attempt {search_id}")
 
             existing = {
                 row["config_hash"]
@@ -1256,7 +912,7 @@ class SqliteExperimentStore:
                     registered_at=registered_at,
                     prev_candidate_hash=candidate_head,
                 )
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO search_candidates"
                     " (search_id,config_hash,status,registered_at,prev_candidate_hash,"
                     " candidate_hash) VALUES (?,?,?,?,?,?)",
@@ -1269,18 +925,13 @@ class SqliteExperimentStore:
                         digest,
                     ),
                 )
-                self._conn.execute(
+                conn.execute(
                     "INSERT OR IGNORE INTO trials(config_hash,first_seen_ts) VALUES (?,?)",
                     (config_hash, registered_at),
                 )
                 candidate_head = digest
                 inserted += 1
-            self._conn.commit()
             return inserted
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def heartbeat_search_attempt(
         self,
@@ -1293,36 +944,27 @@ class SqliteExperimentStore:
         This local ledger does not authenticate a worker or grant a lease. A
         production operator must establish ownership outside this SQLite process.
         """
+        self._reject_write_ownership_conflict()
         search_id = self._require_text(search_id, "search_id")
         recorded_at = self._require_time(recorded_at, "recorded_at")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction() as (conn, _lease):
             attempts = self._verified_search_state()[2]
             attempt = attempts.get(search_id)
             if attempt is None:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} has not STARTED"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} has not STARTED")
             if attempt["status"] in _SEARCH_TERMINAL_STATUSES:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} is terminal"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} is terminal")
             if recorded_at < attempt["last_activity_at"]:
-                raise ExperimentStoreError(
-                    f"heartbeat clock rollback for search attempt {search_id}"
-                )
+                raise ExperimentStoreError(f"heartbeat clock rollback for search attempt {search_id}")
             existing = self._conn.execute(
-                "SELECT heartbeat_hash FROM search_attempt_heartbeats"
-                " WHERE search_id=? AND recorded_at=?",
+                "SELECT heartbeat_hash FROM search_attempt_heartbeats WHERE search_id=? AND recorded_at=?",
                 (search_id, recorded_at),
             ).fetchone()
             if existing is not None:
-                self._conn.rollback()
                 return False
             head_row = self._conn.execute(
-                "SELECT heartbeat_hash FROM search_attempt_heartbeats"
-                " ORDER BY heartbeat_seq DESC LIMIT 1"
+                "SELECT heartbeat_hash FROM search_attempt_heartbeats ORDER BY heartbeat_seq DESC LIMIT 1"
             ).fetchone()
             heartbeat_head = "" if head_row is None else head_row["heartbeat_hash"]
             digest = _search_heartbeat_hash(
@@ -1330,18 +972,13 @@ class SqliteExperimentStore:
                 recorded_at=recorded_at,
                 prev_heartbeat_hash=heartbeat_head,
             )
-            self._conn.execute(
+            conn.execute(
                 "INSERT INTO search_attempt_heartbeats"
                 " (search_id,recorded_at,prev_heartbeat_hash,heartbeat_hash)"
                 " VALUES (?,?,?,?)",
                 (search_id, recorded_at, heartbeat_head, digest),
             )
-            self._conn.commit()
             return True
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def finish_search_attempt(
         self,
@@ -1350,27 +987,21 @@ class SqliteExperimentStore:
         status: str,
         recorded_at: int,
     ) -> bool:
+        self._reject_write_ownership_conflict()
         search_id = self._require_text(search_id, "search_id")
         if status not in _SEARCH_TERMINAL_STATUSES:
             raise ValueError("status must be FAILED or COMPLETED")
         recorded_at = self._require_time(recorded_at, "recorded_at")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction():
             event_head, _, attempts = self._verified_search_state()
             attempt = attempts.get(search_id)
             if attempt is None:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} has not STARTED"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} has not STARTED")
             if attempt["status"] in _SEARCH_TERMINAL_STATUSES:
-                raise ExperimentStoreError(
-                    f"search attempt {search_id} is already terminal"
-                )
+                raise ExperimentStoreError(f"search attempt {search_id} is already terminal")
             if recorded_at < attempt["last_activity_at"]:
-                raise ExperimentStoreError(
-                    f"terminal time precedes search attempt {search_id} provenance"
-                )
+                raise ExperimentStoreError(f"terminal time precedes search attempt {search_id} provenance")
             self._append_search_terminal_event(
                 search_id=search_id,
                 attempt=attempt,
@@ -1378,12 +1009,7 @@ class SqliteExperimentStore:
                 recorded_at=recorded_at,
                 event_head=event_head,
             )
-            self._conn.commit()
             return True
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def recover_stale_search_attempts(
         self,
@@ -1397,21 +1023,20 @@ class SqliteExperimentStore:
         Callers must establish that recovery is operationally authorized; the
         transaction only proves the observed timeout and makes replay idempotent.
         """
+        self._reject_write_ownership_conflict()
         recorded_at = self._require_time(recorded_at, "recorded_at")
         timeout_ms = self._require_time(timeout_ms, "timeout_ms")
         if timeout_ms == 0:
             raise ValueError("timeout_ms must be positive")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction() as (conn, _lease):
             event_head, _, attempts = self._verified_search_state()
             cutoff = recorded_at - timeout_ms
             stale = sorted(
                 (
                     search_id
                     for search_id, attempt in attempts.items()
-                    if attempt["status"] == "STARTED"
-                    and int(attempt["last_activity_at"]) <= cutoff
+                    if attempt["status"] == "STARTED" and int(attempt["last_activity_at"]) <= cutoff
                 ),
                 key=lambda search_id: (
                     int(attempts[search_id]["last_activity_at"]),
@@ -1419,12 +1044,9 @@ class SqliteExperimentStore:
                 ),
             )
             recovery_head_row = self._conn.execute(
-                "SELECT recovery_hash FROM search_attempt_recoveries"
-                " ORDER BY recovery_seq DESC LIMIT 1"
+                "SELECT recovery_hash FROM search_attempt_recoveries ORDER BY recovery_seq DESC LIMIT 1"
             ).fetchone()
-            recovery_head = (
-                "" if recovery_head_row is None else recovery_head_row["recovery_hash"]
-            )
+            recovery_head = "" if recovery_head_row is None else recovery_head_row["recovery_hash"]
             for search_id in stale:
                 attempt = attempts[search_id]
                 terminal_event_hash = self._append_search_terminal_event(
@@ -1445,7 +1067,7 @@ class SqliteExperimentStore:
                     terminal_event_hash=terminal_event_hash,
                     prev_recovery_hash=recovery_head,
                 )
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO search_attempt_recoveries"
                     " (search_id,reason,timeout_ms,last_activity_at,recovered_at,"
                     " terminal_event_hash,prev_recovery_hash,recovery_hash)"
@@ -1463,12 +1085,7 @@ class SqliteExperimentStore:
                 )
                 recovery_head = recovery_hash
             self._recovery_checkpoint("before_commit")
-            self._conn.commit()
             return tuple(stale)
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def _recovery_checkpoint(self, stage: str) -> None:
         """Test seam proving terminal and timeout evidence cannot split."""
@@ -1547,7 +1164,8 @@ class SqliteExperimentStore:
         event_outbox: Sequence[EventOutboxMessage] = (),
     ) -> None:
         """Atomically persist the catalog snapshot and any causally-bound events."""
-        self._require_schema()
+        self._reject_write_ownership_conflict()
+        self._require_runtime_mutation_schema()
         self._require_outbox_schema()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
@@ -1555,15 +1173,13 @@ class SqliteExperimentStore:
         if any(not isinstance(message, EventOutboxMessage) for message in messages):
             raise TypeError("event_outbox must contain EventOutboxMessage values")
 
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
-            outbox_head, _, _ = self._verified_outbox_state()
-            self._conn.executemany(
+        with self._immediate_transaction() as (conn, lease):
+            conn.executemany(
                 "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
                 trial_rows,
             )
             for row in alpha_rows:
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO alpha_state(alpha_id, definition_json, state, "
                     "returns_json, sharpe, pvalue) VALUES (?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(alpha_id) DO UPDATE SET "
@@ -1579,40 +1195,7 @@ class SqliteExperimentStore:
                         row.get("pvalue"),
                     ),
                 )
-            for message in messages:
-                existing = self._conn.execute(
-                    "SELECT outbox_seq,outbox_id,event_json,correlation_id,"
-                    " causation_id,repro_hash,prev_record_hash,record_hash"
-                    " FROM experiment_event_outbox WHERE outbox_id=?",
-                    (message.outbox_id,),
-                ).fetchone()
-                if existing is not None:
-                    if self._message_from_row(existing) != message:
-                        raise ImmutableArtifactError(
-                            f"experiment outbox event conflict: {message.outbox_id}"
-                        )
-                    continue
-                digest = _outbox_hash(message, outbox_head)
-                self._conn.execute(
-                    "INSERT INTO experiment_event_outbox"
-                    " (outbox_id,event_json,correlation_id,causation_id,repro_hash,"
-                    " prev_record_hash,record_hash) VALUES (?,?,?,?,?,?,?)",
-                    (
-                        message.outbox_id,
-                        _event_json(message.event),
-                        message.correlation_id,
-                        message.causation_id,
-                        message.event.reproducibility_hash,
-                        outbox_head,
-                        digest,
-                    ),
-                )
-                outbox_head = digest
-            self._conn.commit()
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
+            self._append_event_outbox_locked(conn, lease, messages)
 
     def save_evaluation_catalog_snapshot(
         self,
@@ -1622,27 +1205,25 @@ class SqliteExperimentStore:
         first_seen_ts: int,
     ) -> None:
         """Add new evaluation rows without mutating existing lifecycle state."""
-        self._require_schema()
+        self._reject_write_ownership_conflict()
+        self._require_runtime_mutation_schema()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
-            self._conn.executemany(
+        with self._immediate_transaction() as (conn, _lease):
+            conn.executemany(
                 "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
                 trial_rows,
             )
             for row in alpha_rows:
-                existing = self._conn.execute(
+                existing = conn.execute(
                     "SELECT definition_json FROM alpha_state WHERE alpha_id=?",
                     (row["alpha_id"],),
                 ).fetchone()
                 if existing is not None:
                     if existing["definition_json"] != row["definition_json"]:
-                        raise ImmutableArtifactError(
-                            f"alpha_id {row['alpha_id']} already has a different definition"
-                        )
+                        raise ImmutableArtifactError(f"alpha_id {row['alpha_id']} already has a different definition")
                     continue
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO alpha_state(alpha_id,definition_json,state,returns_json,"
                     " sharpe,pvalue) VALUES (?,?,?,?,?,?)",
                     (
@@ -1654,11 +1235,6 @@ class SqliteExperimentStore:
                         row.get("pvalue"),
                     ),
                 )
-            self._conn.commit()
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def pending_event_outbox(self, *, limit: int = 1_000) -> tuple[dict, ...]:
         if isinstance(limit, bool) or not isinstance(limit, int):
@@ -1691,27 +1267,19 @@ class SqliteExperimentStore:
         dispatched_at: int,
         event_repro_hash: str,
     ) -> bool:
+        self._reject_write_ownership_conflict()
         if not isinstance(outbox_id, str) or not outbox_id:
             raise ValueError("outbox_id must be non-empty")
-        if (
-            isinstance(dispatched_at, bool)
-            or not isinstance(dispatched_at, int)
-            or dispatched_at < 0
-        ):
+        if isinstance(dispatched_at, bool) or not isinstance(dispatched_at, int) or dispatched_at < 0:
             raise ValueError("dispatched_at must be a non-negative integer")
         if not isinstance(event_repro_hash, str) or not event_repro_hash:
             raise ValueError("event_repro_hash must be non-empty")
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        self._require_runtime_mutation_schema()
+        with self._immediate_transaction() as (conn, _lease):
             _, messages, dispatch_head = self._verified_outbox_state()
             message = messages.get(outbox_id)
-            if (
-                message is None
-                or message.event.reproducibility_hash != event_repro_hash
-            ):
-                raise ExperimentStoreError(
-                    "experiment outbox dispatch reference mismatch"
-                )
+            if message is None or message.event.reproducibility_hash != event_repro_hash:
+                raise ExperimentStoreError("experiment outbox dispatch reference mismatch")
             existing = self._conn.execute(
                 "SELECT dispatch_seq,outbox_id,dispatched_at,event_repro_hash,"
                 " prev_record_hash,record_hash"
@@ -1719,22 +1287,16 @@ class SqliteExperimentStore:
                 (outbox_id,),
             ).fetchone()
             if existing is not None:
-                if (
-                    existing["dispatched_at"] == dispatched_at
-                    and existing["event_repro_hash"] == event_repro_hash
-                ):
-                    self._conn.rollback()
+                if existing["dispatched_at"] == dispatched_at and existing["event_repro_hash"] == event_repro_hash:
                     return False
-                raise ExperimentStoreError(
-                    "experiment outbox dispatch acknowledgement conflict"
-                )
+                raise ExperimentStoreError("experiment outbox dispatch acknowledgement conflict")
             digest = _dispatch_hash(
                 outbox_id=outbox_id,
                 dispatched_at=dispatched_at,
                 event_repro_hash=event_repro_hash,
                 prev_record_hash=dispatch_head,
             )
-            self._conn.execute(
+            conn.execute(
                 "INSERT INTO experiment_event_dispatch"
                 " (outbox_id,dispatched_at,event_repro_hash,prev_record_hash,record_hash)"
                 " VALUES (?,?,?,?,?)",
@@ -1746,12 +1308,7 @@ class SqliteExperimentStore:
                     digest,
                 ),
             )
-            self._conn.commit()
             return True
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def event_outbox_chain_valid(self) -> bool:
         try:
@@ -1777,16 +1334,17 @@ class SqliteExperimentStore:
         sharpe: Optional[float],
         pvalue: Optional[float],
     ) -> None:
-        self._require_schema()
-        self._conn.execute(
-            "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, sharpe, pvalue) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(alpha_id) DO UPDATE SET definition_json=excluded.definition_json, "
-            "state=excluded.state, returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-            "pvalue=excluded.pvalue",
-            (alpha_id, definition_json, state, returns_json, sharpe, pvalue),
-        )
-        self._conn.commit()
+        self._reject_write_ownership_conflict()
+        self._require_runtime_mutation_schema()
+        with self._immediate_transaction() as (conn, _lease):
+            conn.execute(
+                "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, sharpe, pvalue) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(alpha_id) DO UPDATE SET definition_json=excluded.definition_json, "
+                "state=excluded.state, returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
+                "pvalue=excluded.pvalue",
+                (alpha_id, definition_json, state, returns_json, sharpe, pvalue),
+            )
 
     def all_alphas(self) -> list[dict]:
         self._require_schema()
@@ -1799,20 +1357,25 @@ class SqliteExperimentStore:
         ]
 
     def save_bandit(self, snapshot_json: str) -> None:
-        self._require_schema()
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS bandit_state "
-            "(id INTEGER PRIMARY KEY CHECK (id = 1), snapshot_json TEXT NOT NULL)"
-        )
-        self._conn.execute("INSERT OR REPLACE INTO bandit_state(id, snapshot_json) VALUES (1, ?)", (snapshot_json,))
-        self._conn.commit()
+        self._reject_write_ownership_conflict()
+        self._require_runtime_mutation_schema()
+        with self._immediate_transaction() as (conn, _lease):
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS bandit_state "
+                "(id INTEGER PRIMARY KEY CHECK (id = 1), snapshot_json TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO bandit_state(id, snapshot_json) VALUES (1, ?)",
+                (snapshot_json,),
+            )
 
     def load_bandit(self):
         self._require_schema()
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS bandit_state "
-            "(id INTEGER PRIMARY KEY CHECK (id = 1), snapshot_json TEXT NOT NULL)"
-        )
+        present = self._conn.execute(
+            "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='bandit_state'"
+        ).fetchone()
+        if present is None:
+            return None
         row = self._conn.execute("SELECT snapshot_json FROM bandit_state WHERE id = 1").fetchone()
         return row["snapshot_json"] if row is not None else None
 
@@ -1832,6 +1395,7 @@ class SqliteExperimentStore:
     ) -> bool:
         """Returns True if a new row was inserted, False on an idempotent no-op
         re-record. Evaluation, exact search link, and audit intent commit together."""
+        self._reject_write_ownership_conflict()
         run_id = self._require_text(run_id, "run_id")
         alpha_id = self._require_text(alpha_id, "alpha_id")
         dataset_version = self._require_text(dataset_version, "dataset_version")
@@ -1844,9 +1408,7 @@ class SqliteExperimentStore:
         if config_hash is not None:
             config_hash = self._require_text(config_hash, "config_hash")
         if (search_id is None) != (config_hash is None):
-            raise ValueError(
-                "search_id and config_hash must be supplied together for exact binding"
-            )
+            raise ValueError("search_id and config_hash must be supplied together for exact binding")
         if audit_intent is not None:
             if not isinstance(audit_intent, EvaluationAuditIntent):
                 raise TypeError("audit_intent must be an EvaluationAuditIntent or None")
@@ -1866,158 +1428,169 @@ class SqliteExperimentStore:
             except Exception as exc:
                 raise ValueError("audit intent metadata must be canonical JSON") from exc
 
+        write = EvaluationArtifactWrite(
+            run_id=run_id,
+            alpha_id=alpha_id,
+            dataset_version=dataset_version,
+            recorded_ts=recorded_ts,
+            verdict=verdict,
+            content_hash=content_hash,
+            evaluation_json=evaluation_json,
+            audit_intent=audit_intent,
+        )
+        validate_evaluation_artifact_write(write)
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
-            _, _, attempts = self._verified_search_state()
-            audit_head, audit_intents, _ = self._verified_evaluation_audit_state()
-            existing = self._conn.execute(
-                "SELECT * FROM evaluations WHERE run_id=?", (run_id,)
-            ).fetchone()
-            inserted = existing is None
-            if existing is not None and existing["content_hash"] != content_hash:
-                raise ImmutableArtifactError(
-                    f"run_id {run_id} already recorded with a different content_hash"
-                )
-            if inserted:
-                self._conn.execute(
-                    "INSERT INTO evaluations(run_id,alpha_id,dataset_version,recorded_ts,"
-                    " verdict,content_hash,evaluation_json) VALUES (?,?,?,?,?,?,?)",
-                    (
-                        run_id,
-                        alpha_id,
-                        dataset_version,
-                        recorded_ts,
-                        verdict,
-                        content_hash,
-                        evaluation_json,
-                    ),
-                )
-
-            # The immutable artifact timestamp is selected while holding the same
-            # write lock that decides insertion. Concurrent retries may propose
-            # different timestamps, but the audit record always inherits the
-            # timestamp of the transaction that first committed the artifact.
-            effective_audit_intent = (
-                None
-                if audit_intent is None
-                else replace(
-                    audit_intent,
-                    timestamp=(
-                        recorded_ts if inserted else int(existing["recorded_ts"])
-                    ),
-                )
+        with self._immediate_transaction() as (conn, lease):
+            return self._insert_evaluation_locked(
+                conn,
+                lease,
+                write,
+                search_id=search_id,
+                config_hash=config_hash,
             )
 
-            if search_id is not None:
-                attempt = attempts.get(search_id)
-                candidate = self._conn.execute(
-                    "SELECT config_hash FROM search_candidates"
-                    " WHERE search_id=? AND config_hash=?",
-                    (search_id, config_hash),
-                ).fetchone()
-                if (
-                    attempt is None
-                    or attempt["status"] != "STARTED"
-                    or candidate is None
-                    or attempt["metadata"][2] != dataset_version
-                    or recorded_ts < attempt["started_at"]
-                    or recorded_ts < attempt["last_activity_at"]
-                ):
-                    raise ExperimentStoreError(
-                        f"evaluation cannot bind to search attempt {search_id}"
-                    )
-                existing_link = self._conn.execute(
-                    "SELECT search_id,config_hash,evaluation_content_hash"
-                    " FROM search_evaluations"
-                    " WHERE search_id=? AND run_id=?",
-                    (search_id, run_id),
-                ).fetchone()
-                if existing_link is not None:
-                    if (
-                        existing_link["config_hash"] != config_hash
-                        or existing_link["evaluation_content_hash"] != content_hash
-                    ):
-                        raise ImmutableArtifactError(
-                            f"evaluation run {run_id} already has a different search binding"
-                        )
-                else:
-                    link_head_row = self._conn.execute(
-                        "SELECT link_hash FROM search_evaluations"
-                        " ORDER BY link_seq DESC LIMIT 1"
-                    ).fetchone()
-                    link_head = (
-                        "" if link_head_row is None else link_head_row["link_hash"]
-                    )
-                    link_hash = _search_evaluation_hash(
-                        search_id=search_id,
-                        config_hash=config_hash,
-                        run_id=run_id,
-                        recorded_at=recorded_ts,
-                        evaluation_content_hash=content_hash,
-                        prev_link_hash=link_head,
-                    )
-                    self._conn.execute(
-                        "INSERT INTO search_evaluations"
-                        " (search_id,config_hash,run_id,recorded_at,"
-                        " evaluation_content_hash,prev_link_hash,link_hash)"
-                        " VALUES (?,?,?,?,?,?,?)",
-                        (
-                            search_id,
-                            config_hash,
-                            run_id,
-                            recorded_ts,
-                            content_hash,
-                            link_head,
-                            link_hash,
-                        ),
-                    )
+    def _insert_evaluation_locked(
+        self,
+        conn: sqlite3.Connection,
+        lease: object,
+        write: EvaluationArtifactWrite,
+        search_id: str | None = None,
+        config_hash: str | None = None,
+    ) -> bool:
+        self._require_write_lock(conn, lease)
+        validate_evaluation_artifact_write(write)
+        _, _, attempts = self._verified_search_state()
+        audit_head, audit_intents, _ = self._verified_evaluation_audit_state()
+        existing = conn.execute("SELECT * FROM evaluations WHERE run_id=?", (write.run_id,)).fetchone()
+        inserted = existing is None
+        if existing is not None and existing["content_hash"] != write.content_hash:
+            raise ImmutableArtifactError(f"run_id {write.run_id} already recorded with a different content_hash")
+        if inserted:
+            conn.execute(
+                "INSERT INTO evaluations(run_id,alpha_id,dataset_version,recorded_ts,"
+                " verdict,content_hash,evaluation_json) VALUES (?,?,?,?,?,?,?)",
+                (
+                    write.run_id,
+                    write.alpha_id,
+                    write.dataset_version,
+                    write.recorded_ts,
+                    write.verdict,
+                    write.content_hash,
+                    write.evaluation_json,
+                ),
+            )
+            self._evaluation_write_checkpoint("after_evaluation")
 
-            if effective_audit_intent is not None:
-                existing_audit = audit_intents.get(effective_audit_intent.event_id)
-                if existing_audit is not None:
-                    if existing_audit != (run_id, effective_audit_intent):
-                        raise ImmutableArtifactError(
-                            "evaluation audit event conflict: "
-                            f"{effective_audit_intent.event_id}"
-                        )
-                else:
-                    audit_hash = _evaluation_audit_hash(
-                        run_id=run_id,
-                        intent=effective_audit_intent,
-                        evaluation_content_hash=content_hash,
-                        prev_record_hash=audit_head,
+        # The immutable artifact timestamp is selected while holding the same
+        # write lock that decides insertion. Concurrent retries may propose
+        # different timestamps, but the audit record always inherits the
+        # timestamp of the transaction that first committed the artifact.
+        effective_audit_intent = (
+            None
+            if write.audit_intent is None
+            else replace(
+                write.audit_intent,
+                timestamp=(write.recorded_ts if inserted else int(existing["recorded_ts"])),
+            )
+        )
+
+        if search_id is not None:
+            attempt = attempts.get(search_id)
+            candidate = conn.execute(
+                "SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?",
+                (search_id, config_hash),
+            ).fetchone()
+            if (
+                attempt is None
+                or attempt["status"] != "STARTED"
+                or candidate is None
+                or attempt["metadata"][2] != write.dataset_version
+                or write.recorded_ts < attempt["started_at"]
+                or write.recorded_ts < attempt["last_activity_at"]
+            ):
+                raise ExperimentStoreError(f"evaluation cannot bind to search attempt {search_id}")
+            existing_link = conn.execute(
+                "SELECT search_id,config_hash,evaluation_content_hash"
+                " FROM search_evaluations"
+                " WHERE search_id=? AND run_id=?",
+                (search_id, write.run_id),
+            ).fetchone()
+            if existing_link is not None:
+                if (
+                    existing_link["config_hash"] != config_hash
+                    or existing_link["evaluation_content_hash"] != write.content_hash
+                ):
+                    raise ImmutableArtifactError(
+                        f"evaluation run {write.run_id} already has a different search binding"
                     )
-                    self._conn.execute(
-                        "INSERT INTO evaluation_audit_outbox"
-                        " (run_id,event_id,actor,action,timestamp,target,metadata_json,"
-                        " evaluation_content_hash,prev_record_hash,record_hash)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            run_id,
-                            effective_audit_intent.event_id,
-                            effective_audit_intent.actor,
-                            effective_audit_intent.action,
-                            effective_audit_intent.timestamp,
-                            effective_audit_intent.target,
-                            json.dumps(
-                                dict(effective_audit_intent.metadata),
-                                ensure_ascii=True,
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
-                            content_hash,
-                            audit_head,
-                            audit_hash,
+            else:
+                link_head_row = conn.execute(
+                    "SELECT link_hash FROM search_evaluations ORDER BY link_seq DESC LIMIT 1"
+                ).fetchone()
+                link_head = "" if link_head_row is None else link_head_row["link_hash"]
+                link_hash = _search_evaluation_hash(
+                    search_id=search_id,
+                    config_hash=config_hash,
+                    run_id=write.run_id,
+                    recorded_at=write.recorded_ts,
+                    evaluation_content_hash=write.content_hash,
+                    prev_link_hash=link_head,
+                )
+                conn.execute(
+                    "INSERT INTO search_evaluations"
+                    " (search_id,config_hash,run_id,recorded_at,"
+                    " evaluation_content_hash,prev_link_hash,link_hash)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (
+                        search_id,
+                        config_hash,
+                        write.run_id,
+                        write.recorded_ts,
+                        write.content_hash,
+                        link_head,
+                        link_hash,
+                    ),
+                )
+                self._evaluation_write_checkpoint("after_link")
+
+        if effective_audit_intent is not None:
+            existing_audit = audit_intents.get(effective_audit_intent.event_id)
+            if existing_audit is not None:
+                if existing_audit != (write.run_id, effective_audit_intent):
+                    raise ImmutableArtifactError(f"evaluation audit event conflict: {effective_audit_intent.event_id}")
+            else:
+                audit_hash = _evaluation_audit_hash(
+                    run_id=write.run_id,
+                    intent=effective_audit_intent,
+                    evaluation_content_hash=write.content_hash,
+                    prev_record_hash=audit_head,
+                )
+                conn.execute(
+                    "INSERT INTO evaluation_audit_outbox"
+                    " (run_id,event_id,actor,action,timestamp,target,metadata_json,"
+                    " evaluation_content_hash,prev_record_hash,record_hash)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        write.run_id,
+                        effective_audit_intent.event_id,
+                        effective_audit_intent.actor,
+                        effective_audit_intent.action,
+                        effective_audit_intent.timestamp,
+                        effective_audit_intent.target,
+                        json.dumps(
+                            dict(effective_audit_intent.metadata),
+                            ensure_ascii=True,
+                            sort_keys=True,
+                            separators=(",", ":"),
                         ),
-                    )
-            self._evaluation_write_checkpoint("before_commit")
-            self._conn.commit()
-            return inserted
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
+                        write.content_hash,
+                        audit_head,
+                        audit_hash,
+                    ),
+                )
+                self._evaluation_write_checkpoint("after_audit")
+        self._evaluation_write_checkpoint("before_commit")
+        return inserted
 
     def _evaluation_write_checkpoint(self, stage: str) -> None:
         """Test seam for evaluation, search-link, and audit-intent atomicity."""
@@ -2049,7 +1622,6 @@ class SqliteExperimentStore:
             raise ValueError("limit must be positive")
         if run_id is not None:
             run_id = self._require_text(run_id, "run_id")
-        self._ensure_search_schema()
         self._verified_evaluation_audit_state()
         where = " WHERE d.event_id IS NULL"
         parameters: list[object] = []
@@ -2086,41 +1658,30 @@ class SqliteExperimentStore:
         dispatched_at: int,
         audit_entry_hash: str,
     ) -> bool:
+        self._reject_write_ownership_conflict()
         event_id = self._require_text(event_id, "event_id")
         dispatched_at = self._require_time(dispatched_at, "dispatched_at")
-        audit_entry_hash = self._require_text(
-            audit_entry_hash, "audit_entry_hash"
-        )
+        audit_entry_hash = self._require_text(audit_entry_hash, "audit_entry_hash")
         self._ensure_search_schema()
-        try:
-            self._conn.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction() as (conn, _lease):
             _, intents, dispatch_head = self._verified_evaluation_audit_state()
             if event_id not in intents:
-                raise ExperimentStoreError(
-                    f"unknown evaluation audit event: {event_id}"
-                )
+                raise ExperimentStoreError(f"unknown evaluation audit event: {event_id}")
             existing = self._conn.execute(
-                "SELECT dispatched_at,audit_entry_hash FROM evaluation_audit_dispatch"
-                " WHERE event_id=?",
+                "SELECT dispatched_at,audit_entry_hash FROM evaluation_audit_dispatch WHERE event_id=?",
                 (event_id,),
             ).fetchone()
             if existing is not None:
-                if (
-                    existing["dispatched_at"] == dispatched_at
-                    and existing["audit_entry_hash"] == audit_entry_hash
-                ):
-                    self._conn.rollback()
+                if existing["dispatched_at"] == dispatched_at and existing["audit_entry_hash"] == audit_entry_hash:
                     return False
-                raise ExperimentStoreError(
-                    "evaluation audit dispatch acknowledgement conflict"
-                )
+                raise ExperimentStoreError("evaluation audit dispatch acknowledgement conflict")
             digest = _evaluation_audit_dispatch_hash(
                 event_id=event_id,
                 dispatched_at=dispatched_at,
                 audit_entry_hash=audit_entry_hash,
                 prev_record_hash=dispatch_head,
             )
-            self._conn.execute(
+            conn.execute(
                 "INSERT INTO evaluation_audit_dispatch"
                 " (event_id,dispatched_at,audit_entry_hash,prev_record_hash,record_hash)"
                 " VALUES (?,?,?,?,?)",
@@ -2132,16 +1693,10 @@ class SqliteExperimentStore:
                     digest,
                 ),
             )
-            self._conn.commit()
             return True
-        except Exception:
-            if self._conn.in_transaction:
-                self._conn.rollback()
-            raise
 
     def evaluation_audit_chain_valid(self) -> bool:
         try:
-            self._ensure_search_schema()
             self._verified_evaluation_audit_state()
             return True
         except (ExperimentStoreError, sqlite3.DatabaseError):

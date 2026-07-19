@@ -19,16 +19,27 @@ def _evaluation_row(
 ) -> tuple[object, ...]:
     timestamp = index * 10 if recorded_at is None else recorded_at
     dataset_version = f"dataset-v{index}"
+    reproducibility_hash = f"repro-{index}"
+    verdict = "REQUIRES_HUMAN_REVIEW"
     evaluation = {
         "alpha_id": f"alpha-{index}",
         "catalog_trial_count": index,
+        "reproducibility_hash": reproducibility_hash,
+        "verdict": verdict,
     }
+    run_id = stable_hash(
+        {
+            "alpha_id": evaluation["alpha_id"],
+            "repro": reproducibility_hash,
+            "dataset_version": dataset_version,
+        }
+    )[:16]
     return (
-        f"run-{index}",
+        run_id,
         f"alpha-{index}",
         dataset_version,
         timestamp,
-        "REQUIRES_HUMAN_REVIEW",
+        verdict,
         stable_hash({"evaluation": evaluation, "dataset_version": dataset_version}),
         json.dumps(evaluation, sort_keys=True),
     )
@@ -188,6 +199,23 @@ def test_inspect_lists_only_exactly_bound_completed_sessions_read_only(
     ]
     assert ledger.read_bytes() == before
     assert not output.exists()
+
+
+def test_inspect_reports_actual_forward_compatible_schema_version(
+    tmp_path: Path,
+) -> None:
+    ledger, _output, _label = _paths(tmp_path)
+    _create_ledger(ledger)
+    connection = sqlite3.connect(ledger)
+    connection.execute("PRAGMA user_version=3")
+    connection.close()
+
+    inspection = history.inspect_ledger(ledger_path=ledger)
+
+    assert inspection["status"] == "verified"
+    assert inspection["ledger_contract_version"] == 3
+    assert inspection["required_ledger_contract_version"] == 2
+    assert inspection["capture_ready"] is True
 
 
 def test_inspect_accepts_global_chain_order_with_per_session_activity_clocks(
@@ -589,14 +617,14 @@ def test_tampered_evaluation_content_hash_is_recomputed_and_rejected(
     ledger, output, label = _paths(tmp_path)
     _create_ledger(ledger)
     connection = sqlite3.connect(ledger)
+    connection.execute("DROP TRIGGER evaluations_no_update")
+    connection.execute(
+        "UPDATE evaluations SET evaluation_json=? WHERE run_id=?",
+        ('{"alpha_id":"tampered"}', str(_evaluation_row(1)[0])),
+    )
     connection.executescript(
-        """
-        DROP TRIGGER evaluations_no_update;
-        UPDATE evaluations SET evaluation_json = '{"alpha_id":"tampered"}'
-        WHERE run_id = 'run-1';
-        CREATE TRIGGER evaluations_no_update BEFORE UPDATE ON evaluations
-        BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;
-        """
+        "CREATE TRIGGER evaluations_no_update BEFORE UPDATE ON evaluations "
+        "BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;"
     )
     connection.commit()
     connection.close()
@@ -918,6 +946,58 @@ def test_cli_seals_and_checks_without_live_ledger(
     assert history.main(["--check", "--check-snapshot"]) == 2
     assert snapshot.exists()
     assert seal.exists()
+
+
+def test_check_snapshot_rejects_rehashed_unknown_portable_schema_version(
+    tmp_path: Path,
+) -> None:
+    ledger, output, label = _paths(tmp_path)
+    snapshot = tmp_path / "evidence" / "alpha_trial_ledger_snapshot.db"
+    seal = tmp_path / "evidence" / "alpha_trial_ledger_snapshot_seal.json"
+    _capture_two_sessions(ledger, output, label)
+    history.seal_snapshot(
+        ledger_path=ledger,
+        history_path=output,
+        snapshot_path=snapshot,
+        seal_path=seal,
+        ledger_path_label=label,
+        history_path_label="evidence/alpha_trial_ledger_history.json",
+        snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        sealed_at_ms=400,
+    )
+    connection = sqlite3.connect(snapshot)
+    connection.execute("PRAGMA user_version=3")
+    connection.close()
+    document = json.loads(seal.read_text(encoding="utf-8"))
+    document["snapshot_sha256"] = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+    seal.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(
+        history.TrialLedgerHistoryError,
+        match="portable snapshot schema version",
+    ):
+        history.check_snapshot(
+            history_path=output,
+            snapshot_path=snapshot,
+            seal_path=seal,
+            ledger_path_label=label,
+            history_path_label="evidence/alpha_trial_ledger_history.json",
+            snapshot_path_label="evidence/alpha_trial_ledger_snapshot.db",
+        )
+
+
+def test_cli_check_keeps_live_forward_compatible_schema_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger, output, _label = _paths(tmp_path)
+    _capture_two_sessions(ledger, output, history.DEFAULT_LEDGER_PATH)
+    connection = sqlite3.connect(ledger)
+    connection.execute("PRAGMA user_version=3")
+    connection.close()
+    monkeypatch.chdir(tmp_path)
+
+    assert history.main(["--check"]) == 0
 
 
 @pytest.mark.parametrize(

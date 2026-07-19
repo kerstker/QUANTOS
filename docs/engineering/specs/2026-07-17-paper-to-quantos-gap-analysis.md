@@ -2,7 +2,7 @@
 
 日期：2026-07-18（按最终 full gate 更新）  
 对照对象：[量化交易高价值论文与自动化方法研究报告.docx](I:/qqFILE/量化交易高价值论文与自动化方法研究报告.docx)  
-代码基线：隔离分支 `codex/l2-forward-evidence`，Task 1–8、full-gate 热修复与确定性证据刷新截至 `408038c`  
+代码基线：隔离分支 `codex/l2-forward-evidence`；Task 1–8、full-gate 热修复、确定性证据刷新及全局试验账本闭环截至提交 `a38c8d5`（`98df8cb` 仅是更早的论文差距审计提交）
 安全基线：`L2_DRY_RUN_ONLY`，不允许实盘、券商、真实凭据或 AI 直接下单。
 
 ## 1. 阅读范围与总判断
@@ -22,7 +22,7 @@
 - 数据宇宙仍以 crypto/FX/宏观为主，缺 PIT 基本面、新闻和 LOB 数据层；
 - 只有第一层确定性 ML stacking，缺 IPCA/RP-PCA/autoencoder/Deep Momentum/DeepLOB 等可复现研究模块；
 - 缺事件/NLP 与微结构/TCA 生产研究链；
-- 研究试验全局账本、White/SPA/发表偏差和外部信任/灾备仍未闭环。
+- 研究试验全局账本的本轮闭环是一个**两会话 portable sealed authority snapshot（40 trials / 10 immutable evaluations）**。它是捕获时刻发布到仓库的、可独立核验的最小证据，不是一个永远当前的 live database；实时 registry 仍须由运营者以独立的 `--check` 检查。White/SPA、发表偏差和外部信任/灾备仍未闭环。
 
 ## 2. 分层对照
 
@@ -36,11 +36,11 @@
 | RL 用于执行/做市/库存 | 没有 RL 环境或策略 | 有意延后 | 不是当前 L2 缺陷；论文自身建议先做 alpha→目标库存→RL 执行，必须先有真实 replay/simulator 和隔离执行权限 | P3 |
 | 风险底盘：FF5/q-factor/IPCA、目标波动率、相关性、回撤、换手 | 有约束 optimizer、PSD factor risk、risk parity、target-vol、attribution、scenario/tail/macro 诊断 | 强部分满足 | 风险模型仍不是论文式可解释因子底盘；部分 regime/容量结果仍是诊断而非门禁 | P1 |
 | 执行：Almgren–Chriss、VWAP/TWAP、动态 spread/OFI、库存控制 | 有 Almgren–Chriss 冲击、容量曲线、dry-run adapters、intent/pre-trade gate、paper fills | 部分满足 | 没有执行曲线/分段调度、LOB/TCA、成交概率、队列位置和真实 post-trade attribution；真实 broker 按 L2 有意禁用 | P2 |
-| 验证：PIT、purged/embargo、OOS、成本、DSR/PBO、多重检验 | 有 PIT/quality/leakage、Deflated-Sharpe、CPCV、purged walk-forward、OOS selection、BH-FDR、成本/容量/尾部诊断 | 强部分满足 | 缺全局 trial ledger、White Reality Check/SPA、发表偏差证据、研究自由度的统一审计；当前 data admission 仍可能 BLOCK | P0/P1 |
+| 验证：PIT、purged/embargo、OOS、成本、DSR/PBO、多重检验 | 有 PIT/quality/leakage、Deflated-Sharpe、CPCV、purged walk-forward、OOS selection、BH-FDR、两会话 portable sealed authority snapshot（40 trials / 10 immutable evaluations）、成本/容量/尾部诊断 | 强部分满足 | 缺 White Reality Check/SPA、发表偏差证据，以及非官方/人工研究路径的研究自由度统一审计；当前 data admission 仍可能 BLOCK | P1 |
 | Forward paper 与 drift | Task 1–8 已完成准入引用、append-only decision/realization/event、原子 paper period、legacy 隔离、官方 driver、确定性 baseline、Go/No-Go/API/UI 同源展示和治理边界 | 结构闭环、自然证据未完成 | 当前认证前向为 0/8 周；authority 缺失/BLOCK/STALE 时 `eligible=false`、`actions_allowed=false`，历史回测和 legacy 记录永不计入门槛 | P0（运营时间） |
 | 数据基础：PIT 基本面、公司行动、新闻、LOB、多市场制度 | 有 PIT store、质量/版本/存活宇宙、crypto/FX/ECB/FRED 方向、准入 authority | 部分满足 | 没有报告推荐的股票/ETF/期货基本面与公告层；数据质量 admission 不是 PASS 时不得启动前向时钟 | P0/P1 |
-| 生产运维：drift、审计、身份、灾备、供应链 | 有哈希链 audit/event、degradation monitor、strong identity M2 基线、multi-party approval、process-isolation 设计 | 部分满足 | 外部 IdP/mTLS 运营、restore history、HA/跨主机、自动封存、独立告警 SLA 仍缺；供应链当前被新 Dockerfile 对应的真实双构建/Trivy 输入阻断 | P1（平台） |
-| 可复现性与安全边界 | 1049 个 live/trading/tools 测试通过，前向聚焦 105 个通过；frontend tests/typecheck/build、治理扫描、恢复演练均通过；L2 五开关和无 broker/credential import 保持 | 强但未全绿 | canonical full gate 19 项中 15 项通过；4 项失败全部收敛到 container audit、container reproducibility、supply-chain baseline 及其 3 个 fail-closed 测试。Docker daemon 未运行、Trivy 未安装、当前 recipe 的两份 OCI archive/新扫描未取得，不能靠改 JSON 造绿 | P0（外部构建证据） |
+| 生产运维：drift、审计、身份、灾备、供应链 | 有哈希链 audit/event、degradation monitor、strong identity M2 基线、multi-party approval、process-isolation 设计 | 部分满足 | 外部 IdP/mTLS 运营、restore history、HA/跨主机、自动封存、独立告警 SLA 仍缺；本轮 LF 迁移使 npm/Python 审计绑定、容器双构建/Trivy 及派生 baseline 都需按新字节合同重新取得/生成 | P1（平台） |
+| 可复现性与安全边界 | 最近一次 canonical full gate 中 live/trading/tools 1060 个测试通过；frontend tests/typecheck/build、治理扫描、恢复演练均通过；L2 五开关和无 broker/credential import 保持 | 强但未全绿 | **最近一次完整权威实测仍为 14/19 通过、5 项失败**：container audit、container reproducibility、supply-chain baseline、all-suites pytest 组，以及超过 48 小时的外部备份证据。该记录早于本轮 LF 迁移，不能当成当前工作树的新 full-gate 结果。当前聚焦复查额外确认 npm/Python audit 因 LF manifest digest 漂移而失败；Actions OSV 独立检查仍通过；3 个 all-suites supply-chain 测试继续失败，但首个级联点现为 npm manifest binding。没有复现到独立的 legacy-path 失败。备份刷新仍须用户明确授权写入已配置外部目的地。完成真实 npm/Python 重审计、Docker/BuildKit/Trivy 双冷构建与扫描、派生 baseline/SBOM 重建及外部备份刷新后，必须重新跑完整 19 组门禁才可确认新的通过数；不能把预期改善写成当前事实 | P0（外部证据） |
 
 ## 3. 论文结论与当前系统的错位
 
@@ -57,22 +57,23 @@
 - 论文推荐的股票/ETF/期货因子底盘与当前 crypto/FX 研究宇宙不一致；这不是简单换 ticker，而是数据、制度、基本面发布时间和成本模型都要重建。
 - ML 只有确定性 stacking，尚未形成“线性基线 → GBDT → 表示学习/时序模型”的可比较实验矩阵。
 - 没有新闻/公告事件层，也没有 LOB/OFI/队列回放；因此无法覆盖论文中事件交易和高频执行两大方法簇。
-- 多重检验已有 BH-FDR/DSR/PBO 等强组件，但没有把每次搜索、试验数、候选淘汰、研究者自由度统一写入不可变全局账本；这仍是顶级可信度红线。
+- 多重检验已有 BH-FDR/DSR/PBO 等强组件；官方 guided/evolutionary/GP/MCTS 与五个 factory 入口现已写入两会话 portable sealed authority snapshot，并由 seal 对精确字节和 evaluation binding 做独立核验。该快照不是对 live registry 永久新鲜度的声明；运营者仍须独立执行 live `--check`。尚缺的是 White Reality Check/SPA、发表偏差证据，以及非官方/人工研究路径的研究自由度统一审计。
 
 ## 4. 缺口优先级与落地顺序
 
 ### P0：可信度闭环当前状态
 
 1. Task 4–7 已完成：`realize_due`、官方 authority driver、确定性 baseline、Go/No-Go/API/UI 已共用同一认证状态；
-2. Task 8 的前向治理、Python audit、event schema、service import graph 和 top-tier 评估已完成并通过各自 verifier；
-3. 当前 P0 剩余两类不是代码占位：自然累计 8 个认证前向周，以及在真实 Docker/BuildKit/Trivy 环境重建当前 recipe 的容器与供应链证据；
-4. 最新机器结论为 `NOT_TOP_TIER — 14/22 pass`，不得在这两类证据到位前提升评级。
+2. Task 8 的前向治理和两会话 portable sealed authority snapshot（封存时 40 trials / 10 immutable evaluations）已完成；`--check-snapshot` 当前通过，它是可移植历史证据而不是 live database 的持续性断言；
+3. `a38c8d5` 基线时 Python audit、event schema、service import graph 和 top-tier 制品曾各自通过；当前 LF 迁移工作树已本地重算并再次通过 event-schema catalog、service-import graph 和 top-tier `15/22` 制品自检，但 Python/npm manifest binding 仍须真实重审计，不能只改哈希；
+4. 当前 P0 不只两项：自然累计 8 个认证前向周、真实 npm/Python advisory audit、Docker/BuildKit/Trivy 双冷构建与扫描、派生 baseline/SBOM，以及超过 48 小时的外部备份证据；
+5. 最近可重算的能力结论仍为 `NOT_TOP_TIER — 15/22 pass`；全局 trial ledger 红线已关闭，但完整 19 组门禁未在当前工作树重跑，不得报告新的通过数或提升整体评级。
 
 ### P1：让论文的中低频方法真正可研究
 
 1. 建立 PIT 股票/ETF/期货基础面与制度数据 admission；
 2. 实现 FF5/q-factor 与 IPCA/RP-PCA 风险/因子底盘，接入残差 alpha、行业/主题中性化和风险归因；
-3. 建立全局 trial ledger，并补 White/SPA、发表偏差/研究自由度证据；
+3. 在已完成的全局 trial ledger 上补 White/SPA、发表偏差与非官方研究自由度证据；
 4. 建立新闻/公告事件 schema、stale/novelty/surprise 特征和事件窗口 OOS 评估；
 5. 完成跨市场制度层：停牌、涨跌停、主连、夜盘、合约换月和本地交易日历。
 
@@ -89,7 +90,7 @@
 
 ## 5. 当前轮结论
 
-Task 1–8 已把“前向证据能否成为可信事实”从存储底座贯通到官方 driver、只读证据、Go/No-Go 与 console；这仍不等于已经拥有前向业绩。当前系统层次可概括为：**M3 级安全研究/dry-run 平台，局部治理与执行骨架达到 M4，但整体仍是 `L2_DRY_RUN_ONLY`，机器评估 `NOT_TOP_TIER — 14/22 pass`**。论文对照确认下一条最有价值的路线不是立即接 RL/LOB，而是：先取得自然前向与真实容器供应链证据，同时推进 P1 的 PIT 多资产数据、因子/IPCA 底盘、全局试验账本与事件/NLP 层。
+Task 1–8 已把“前向证据能否成为可信事实”从存储底座贯通到官方 driver、只读证据、Go/No-Go 与 console；这仍不等于已经拥有前向业绩。全局 trial ledger 的本轮证据是一个两会话 portable sealed authority snapshot（40 trials / 10 immutable evaluations）；它可在干净 checkout 中核验，但不是一个永远当前的 live database。当前系统层次可概括为：**M3 级安全研究/dry-run 平台，局部治理、试验审计与执行骨架达到 M4，但整体仍是 `L2_DRY_RUN_ONLY`，机器评估 `NOT_TOP_TIER — 15/22 pass`**。论文对照确认下一条最有价值的路线不是立即接 RL/LOB，而是：先取得自然前向与真实容器供应链证据，同时推进 P1 的 PIT 多资产数据、因子/IPCA 底盘、White/SPA 与事件/NLP 层。
 
 审查时必须继续保留：
 

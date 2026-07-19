@@ -1,7 +1,7 @@
 # Portable Alpha Trial-Ledger Evidence Design
 
-Date: 2026-07-18  
-Status: proposed for implementation  
+Date: 2026-07-18
+Status: implemented and verified at closure commit `a38c8d5`; byte-portability hardening in progress
 Safety level: `L2_DRY_RUN_ONLY`
 
 ## 1. Context
@@ -15,11 +15,13 @@ trials and 10 immutable evaluations, and
 `tools.search_trial_ledger_history --check` verifies two retained cross-session
 history records.
 
-That evidence is not yet repository-portable. `data/cache/` is intentionally
-Git-ignored, so a fresh checkout does not receive the live SQLite authority.
-The repository can therefore report `M4/PASS` on the originating workstation
-but only `M3/PARTIAL` in CI. A top-tier evidence claim must not depend on an
-untracked workstation cache.
+That evidence is now repository-portable through the tracked, data-minimized
+snapshot and strict seal described below. `--check-snapshot` verifies two
+retained history records representing 40 trials and 10 immutable evaluations at
+the time of sealing without requiring `data/cache/`; those counts are a closed
+historical snapshot, not a claim that the mutable live authority remains
+current. The originating live authority still requires its independent
+`--check`.
 
 ## 2. Decision
 
@@ -111,7 +113,8 @@ the files; they are never trusted as declarations.
 
 ### 4.3 Git treatment
 
-`.gitignore` remains unchanged so `data/cache/` stays excluded.
+The obsolete legacy-workflow marker is removed from `.gitignore`, while
+`data/cache/` remains excluded. Governed JSON is pinned to LF checkout bytes and
 `.gitattributes` marks `evidence/alpha_trial_ledger_snapshot.db` as binary. The
 snapshot is small, contains only the allowlisted research-ledger tables, and is
 reviewed through its verifier and manifest rather than a textual binary diff.
@@ -247,8 +250,11 @@ The work is complete only when all of the following are true:
 - the originating workstation's live `--check` still passes independently;
 - the portable snapshot contains exactly the allowed evidence surface and no
   runtime-only tables;
-- changing any history, snapshot, seal, trigger, chain, count, or evaluation
-  payload causes a deterministic failure;
+- changing any history/snapshot byte, trigger, chain, count, evaluation payload,
+  or load-bearing seal field causes deterministic failure; the seal JSON itself
+  is strict and Git-reviewed but not signed/self-digested, so formatting-only or
+  otherwise semantically valid metadata edits are outside the cryptographic
+  exact-byte claim;
 - the committed capability matrix reports 15/22 and three red lines without
   environment-dependent tests;
 - all L2 safety flags remain false, no broker or credential path is added, and

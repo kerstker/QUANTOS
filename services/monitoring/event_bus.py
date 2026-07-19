@@ -32,6 +32,48 @@ class EventBusIntegrityError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class VerifiedFrontier:
+    """Ephemeral trust anchor for one completely verified append-only chain."""
+
+    chain_name: str
+    last_sequence: int
+    row_count: int
+    last_record_hash: str
+    state: str = "ACTIVE"
+
+    def invalidated(self) -> "VerifiedFrontier":
+        return VerifiedFrontier(
+            chain_name=self.chain_name,
+            last_sequence=self.last_sequence,
+            row_count=self.row_count,
+            last_record_hash=self.last_record_hash,
+            state="INVALID",
+        )
+
+
+@dataclass(frozen=True)
+class ConnectionEpoch:
+    """Connection-global freshness facts associated with all owned frontiers."""
+
+    connection_id: int
+    owner_generation: int
+    total_changes: int
+    data_version: int
+    schema_version: int
+    state: str = "ACTIVE"
+
+    def invalidated(self) -> "ConnectionEpoch":
+        return ConnectionEpoch(
+            connection_id=self.connection_id,
+            owner_generation=self.owner_generation,
+            total_changes=self.total_changes,
+            data_version=self.data_version,
+            schema_version=self.schema_version,
+            state="INVALID",
+        )
+
+
+@dataclass(frozen=True)
 class EventAuthorityCommitment:
     """Portable commitment to all three verified append-only authority chains."""
 
@@ -302,6 +344,32 @@ def _consumer_record_hash(
 class DurableEventBus:
     """Thread/process-safe append-only event history with deterministic replay."""
 
+    _PARTITION_FETCH_CHUNK_SIZE = 256
+    _CHAIN_SPECS = {
+        "event": ("event_log", "seq"),
+        "consumer": ("event_consumer_journal", "journal_seq"),
+        "consumer_group": (
+            "event_consumer_group_journal",
+            "coordination_seq",
+        ),
+    }
+    _REQUIRED_TRIGGERS = frozenset(
+        {
+            "event_log_no_update",
+            "event_log_no_delete",
+            "event_consumer_journal_no_update",
+            "event_consumer_journal_no_delete",
+            "event_consumer_group_journal_no_update",
+            "event_consumer_group_journal_no_delete",
+        }
+    )
+    _REQUIRED_INDEXES = frozenset(
+        {
+            "event_consumer_journal_lookup",
+            "event_consumer_group_lookup",
+        }
+    )
+
     def __init__(
         self,
         db_path: str,
@@ -321,6 +389,9 @@ class DurableEventBus:
         self._consumer_head_hash = ""
         self._known_total_changes = 0
         self._known_data_version = 0
+        self._epoch: ConnectionEpoch | None = None
+        self._frontiers: dict[str, VerifiedFrontier] = {}
+        self._failed_closed_reason = ""
         self._schema_registry = schema_registry
         with self._lock:
             self._c.execute("PRAGMA busy_timeout=5000")
@@ -337,10 +408,7 @@ class DurableEventBus:
             self._c.execute("PRAGMA synchronous=FULL")
             if create:
                 self._create_or_migrate_locked()
-            self._head_hash = self._verify_rows(self._raw_rows_locked())
-            self._consumer_head_hash = self._verify_consumer_rows_locked()
-            self._consumer_groups.verify_locked()
-            self._record_connection_state_locked()
+            self._full_verify_all_locked()
 
     def _create_or_migrate_locked(self) -> None:
         try:
@@ -539,31 +607,396 @@ class DurableEventBus:
         return previous
 
     def _record_connection_state_locked(self) -> None:
+        """Retain legacy diagnostics without advancing trusted frontiers."""
         self._known_total_changes = self._c.total_changes
         self._known_data_version = int(
             self._c.execute("PRAGMA data_version").fetchone()[0]
         )
 
-    def _refresh_integrity_locked(self, *, force: bool = False) -> None:
-        data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
-        db_head_row = self._c.execute(
-            "SELECT record_hash FROM event_log ORDER BY seq DESC LIMIT 1"
+    def _verify_required_schema_locked(self) -> None:
+        required_columns = {
+            "event_log": {
+                "seq",
+                "event_id",
+                "event_type",
+                "event_version",
+                "timestamp",
+                "source",
+                "domain",
+                "criticality",
+                "correlation_id",
+                "causation_id",
+                "payload_json",
+                "repro_hash",
+                "prev_record_hash",
+                "record_hash",
+            },
+            "event_consumer_journal": {
+                "journal_seq",
+                "consumer_id",
+                "event_seq",
+                "event_id",
+                "action",
+                "attempt",
+                "worker_id",
+                "at_ms",
+                "lease_until_ms",
+                "error_type",
+                "error_fingerprint",
+                "prev_record_hash",
+                "record_hash",
+            },
+            "event_consumer_group_journal": {
+                "coordination_seq",
+                "group_id",
+                "action",
+                "worker_id",
+                "at_ms",
+                "partition_count",
+                "session_timeout_ms",
+                "generation",
+                "assignments_json",
+                "prev_record_hash",
+                "record_hash",
+            },
+        }
+        for table, expected in required_columns.items():
+            actual = {
+                str(row[1])
+                for row in self._c.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if not expected.issubset(actual):
+                raise EventBusIntegrityError(
+                    f"event authority schema is missing required columns for {table}"
+                )
+
+        schema_rows = self._c.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master "
+            "WHERE type IN ('trigger','index')"
+        ).fetchall()
+        triggers = {
+            str(row[1]): (str(row[2]), " ".join(str(row[3] or "").upper().split()))
+            for row in schema_rows
+            if row[0] == "trigger"
+        }
+        indexes = {str(row[1]) for row in schema_rows if row[0] == "index"}
+        expected_trigger_shape = {
+            "event_log_no_update": ("event_log", "BEFORE UPDATE"),
+            "event_log_no_delete": ("event_log", "BEFORE DELETE"),
+            "event_consumer_journal_no_update": (
+                "event_consumer_journal",
+                "BEFORE UPDATE",
+            ),
+            "event_consumer_journal_no_delete": (
+                "event_consumer_journal",
+                "BEFORE DELETE",
+            ),
+            "event_consumer_group_journal_no_update": (
+                "event_consumer_group_journal",
+                "BEFORE UPDATE",
+            ),
+            "event_consumer_group_journal_no_delete": (
+                "event_consumer_group_journal",
+                "BEFORE DELETE",
+            ),
+        }
+        for name, (table, operation) in expected_trigger_shape.items():
+            actual = triggers.get(name)
+            if (
+                actual is None
+                or actual[0] != table
+                or operation not in actual[1]
+                or "RAISE(ABORT" not in actual[1]
+            ):
+                error_class = (
+                    EventConsumerGroupIntegrityError
+                    if name.startswith("event_consumer_group_")
+                    else EventBusIntegrityError
+                )
+                raise error_class(
+                    f"event authority append-only trigger is missing or drifted: {name}"
+                )
+        if not self._REQUIRED_INDEXES.issubset(indexes):
+            raise EventBusIntegrityError("event authority lookup indexes are incomplete")
+
+    def _chain_tail_locked(self, chain_name: str) -> tuple[int, str]:
+        table, sequence_column = self._CHAIN_SPECS[chain_name]
+        row = self._c.execute(
+            f"SELECT {sequence_column},record_hash FROM {table} "
+            f"ORDER BY {sequence_column} DESC LIMIT 1"
         ).fetchone()
-        db_head = db_head_row[0] if db_head_row else ""
-        changed = (
-            self._c.total_changes != self._known_total_changes
-            or data_version != self._known_data_version
-            or db_head != self._head_hash
+        return (int(row[0]), str(row[1])) if row is not None else (0, "")
+
+    def _sentinel_locked(
+        self,
+    ) -> tuple[int, int, int, dict[str, tuple[int, str]]]:
+        data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
+        schema_version = int(self._c.execute("PRAGMA schema_version").fetchone()[0])
+        tails = {
+            chain_name: self._chain_tail_locked(chain_name)
+            for chain_name in self._CHAIN_SPECS
+        }
+        return self._c.total_changes, data_version, schema_version, tails
+
+    def _invalidate_frontiers_locked(self) -> None:
+        if self._epoch is not None:
+            self._epoch = self._epoch.invalidated()
+        self._frontiers = {
+            name: frontier.invalidated()
+            for name, frontier in self._frontiers.items()
+        }
+        self._consumer_groups.discard_staged_locked()
+
+    def _assert_monotonic_extension_locked(
+        self,
+        chain_name: str,
+        current: VerifiedFrontier,
+    ) -> None:
+        anchor = self._frontiers.get(chain_name)
+        if anchor is None:
+            return
+        if (
+            current.row_count < anchor.row_count
+            or current.last_sequence < anchor.last_sequence
+        ):
+            raise EventBusIntegrityError(
+                f"{chain_name} history no longer extends its verified frontier"
+            )
+        if anchor.row_count == 0:
+            return
+        table, sequence_column = self._CHAIN_SPECS[chain_name]
+        prefix_count = int(
+            self._c.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {sequence_column}<=?",
+                (anchor.last_sequence,),
+            ).fetchone()[0]
         )
-        if force or changed:
-            self._head_hash = self._verify_rows(self._raw_rows_locked())
-            self._record_connection_state_locked()
+        anchor_row = self._c.execute(
+            f"SELECT record_hash FROM {table} WHERE {sequence_column}=?",
+            (anchor.last_sequence,),
+        ).fetchone()
+        if (
+            prefix_count != anchor.row_count
+            or anchor_row is None
+            or str(anchor_row[0]) != anchor.last_record_hash
+        ):
+            raise EventBusIntegrityError(
+                f"{chain_name} history replaced its verified prefix"
+            )
+
+    def _full_verify_all_locked(self) -> None:
+        """Completely verify every owned chain and atomically re-anchor it."""
+        if self._failed_closed_reason:
+            raise EventBusIntegrityError(self._failed_closed_reason)
+        try:
+            self._verify_required_schema_locked()
+            event_rows = self._raw_rows_locked()
+            event_head = self._verify_rows(event_rows)
+            consumer_head = self._verify_consumer_rows_locked()
+            consumer_count, consumer_max = self._c.execute(
+                "SELECT COUNT(*),COALESCE(MAX(journal_seq),0) "
+                "FROM event_consumer_journal"
+            ).fetchone()
+            self._consumer_groups.verify_locked()
+            current = {
+                "event": VerifiedFrontier(
+                    "event",
+                    int(event_rows[-1][0]) if event_rows else 0,
+                    len(event_rows),
+                    event_head,
+                ),
+                "consumer": VerifiedFrontier(
+                    "consumer",
+                    int(consumer_max),
+                    int(consumer_count),
+                    consumer_head,
+                ),
+                "consumer_group": VerifiedFrontier(
+                    "consumer_group",
+                    self._consumer_groups.last_sequence,
+                    self._consumer_groups.row_count,
+                    self._consumer_groups.head_hash,
+                ),
+            }
+            for name, frontier in current.items():
+                self._assert_monotonic_extension_locked(name, frontier)
+            total_changes, data_version, schema_version, tails = self._sentinel_locked()
+            if any(
+                tails[name]
+                != (frontier.last_sequence, frontier.last_record_hash)
+                for name, frontier in current.items()
+            ):
+                raise EventBusIntegrityError(
+                    "event authority changed during complete verification"
+                )
+        except BaseException as exc:
+            self._invalidate_frontiers_locked()
+            if isinstance(exc, EventBusIntegrityError) and (
+                "verified frontier" in str(exc) or "verified prefix" in str(exc)
+            ):
+                self._failed_closed_reason = str(exc)
+            raise
+
+        generation = 1 if self._epoch is None else self._epoch.owner_generation + 1
+        self._frontiers = current
+        self._head_hash = current["event"].last_record_hash
+        self._consumer_head_hash = current["consumer"].last_record_hash
+        self._epoch = ConnectionEpoch(
+            connection_id=id(self._c),
+            owner_generation=generation,
+            total_changes=total_changes,
+            data_version=data_version,
+            schema_version=schema_version,
+        )
+        self._known_total_changes = total_changes
+        self._known_data_version = data_version
+
+    def _ensure_fresh_locked(self) -> None:
+        if self._failed_closed_reason:
+            raise EventBusIntegrityError(self._failed_closed_reason)
+        if self._epoch is None or len(self._frontiers) != len(self._CHAIN_SPECS):
+            self._full_verify_all_locked()
+            return
+        try:
+            total_changes, data_version, schema_version, tails = self._sentinel_locked()
+        except sqlite3.DatabaseError as exc:
+            self._invalidate_frontiers_locked()
+            raise EventBusIntegrityError(
+                f"event authority freshness sentinel failed: {exc}"
+            ) from exc
+        epoch = self._epoch
+        warm = (
+            epoch.state == "ACTIVE"
+            and epoch.connection_id == id(self._c)
+            and epoch.total_changes == total_changes
+            and epoch.data_version == data_version
+            and epoch.schema_version == schema_version
+            and all(
+                frontier.state == "ACTIVE"
+                and tails[name]
+                == (frontier.last_sequence, frontier.last_record_hash)
+                for name, frontier in self._frontiers.items()
+            )
+        )
+        if warm:
+            return
+        self._invalidate_frontiers_locked()
+        self._full_verify_all_locked()
+
+    def _refresh_integrity_locked(self, *, force: bool = False) -> None:
+        # ``force`` remains a compatibility argument; explicit audit APIs call
+        # the complete verifier directly. Runtime operations always use the
+        # constant-size freshness sentinel.
+        del force
+        self._ensure_fresh_locked()
 
     def _refresh_consumer_integrity_locked(self) -> None:
-        self._consumer_head_hash = self._verify_consumer_rows_locked()
+        # Event-bus freshness is connection-global and verifies all three chains.
+        return None
 
     def _refresh_group_integrity_locked(self) -> None:
-        self._consumer_groups.verify_locked()
+        # Event-bus freshness is connection-global and verifies all three chains.
+        return None
+
+    def _stage_frontier_locked(
+        self,
+        chain_name: str,
+        *,
+        last_sequence: int,
+        last_record_hash: str,
+        row_increment: int,
+    ) -> VerifiedFrontier:
+        frontier = self._frontiers[chain_name]
+        if frontier.state != "ACTIVE" or self._epoch is None or self._epoch.state != "ACTIVE":
+            raise EventBusIntegrityError("cannot append against an invalid frontier")
+        if row_increment < 0 or last_sequence < frontier.last_sequence:
+            raise EventBusIntegrityError("tentative frontier moves backwards")
+        return VerifiedFrontier(
+            chain_name=chain_name,
+            last_sequence=last_sequence,
+            row_count=frontier.row_count + row_increment,
+            last_record_hash=last_record_hash,
+        )
+
+    def _commit_connection_locked(self) -> None:
+        """Commit seam kept small so failure-path tests can inject uncertainty."""
+        self._c.commit()
+
+    def _commit_staged_locked(
+        self,
+        staged: dict[str, VerifiedFrontier],
+        *,
+        promote_group: bool = False,
+    ) -> None:
+        epoch = self._epoch
+        if epoch is None or epoch.state != "ACTIVE":
+            raise EventBusIntegrityError("cannot commit against an invalid epoch")
+        expected = dict(self._frontiers)
+        expected.update(staged)
+        logical_inserts = sum(
+            expected[name].row_count - self._frontiers[name].row_count
+            for name in expected
+        )
+        expected_total_changes = epoch.total_changes + logical_inserts
+        if self._c.total_changes != expected_total_changes:
+            raise EventBusIntegrityError(
+                "unexpected same-connection changes preceded event authority commit"
+            )
+        try:
+            self._commit_connection_locked()
+        except BaseException as exc:
+            self._failed_closed_reason = (
+                "event authority commit outcome is uncertain; reopen is required"
+            )
+            self._invalidate_frontiers_locked()
+            try:
+                if self._c.in_transaction:
+                    self._c.rollback()
+            except BaseException:
+                pass
+            raise EventBusIntegrityError(self._failed_closed_reason) from exc
+
+        total_changes, data_version, schema_version, tails = self._sentinel_locked()
+        postcommit_matches = (
+            total_changes == expected_total_changes
+            and data_version == epoch.data_version
+            and schema_version == epoch.schema_version
+            and all(
+                tails[name]
+                == (frontier.last_sequence, frontier.last_record_hash)
+                for name, frontier in expected.items()
+            )
+        )
+        if not postcommit_matches:
+            self._invalidate_frontiers_locked()
+            self._full_verify_all_locked()
+            return
+
+        self._frontiers = expected
+        self._head_hash = expected["event"].last_record_hash
+        self._consumer_head_hash = expected["consumer"].last_record_hash
+        if promote_group:
+            self._consumer_groups.promote_staged_locked()
+        self._epoch = ConnectionEpoch(
+            connection_id=id(self._c),
+            owner_generation=epoch.owner_generation + 1,
+            total_changes=total_changes,
+            data_version=data_version,
+            schema_version=schema_version,
+        )
+        self._known_total_changes = total_changes
+        self._known_data_version = data_version
+
+    def _abort_transaction_locked(self) -> None:
+        try:
+            if self._c.in_transaction:
+                self._c.rollback()
+        except BaseException:
+            self._failed_closed_reason = (
+                "event authority rollback outcome is uncertain; reopen is required"
+            )
+        finally:
+            self._invalidate_frontiers_locked()
 
     @staticmethod
     def _require_identity(value: object, *, name: str) -> str:
@@ -602,7 +1035,8 @@ class DurableEventBus:
         lease_until_ms: int,
         error_type: str = "",
         error_fingerprint: str = "",
-    ) -> int:
+    ) -> tuple[int, str]:
+        frontier = self._frontiers["consumer"]
         digest = _consumer_record_hash(
             consumer_id=consumer_id,
             event_seq=event_seq,
@@ -614,7 +1048,7 @@ class DurableEventBus:
             lease_until_ms=lease_until_ms,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
-            prev_record_hash=self._consumer_head_hash,
+            prev_record_hash=frontier.last_record_hash,
         )
         cursor = self._c.execute(
             "INSERT INTO event_consumer_journal"
@@ -632,12 +1066,11 @@ class DurableEventBus:
                 lease_until_ms,
                 error_type,
                 error_fingerprint,
-                self._consumer_head_hash,
+                frontier.last_record_hash,
                 digest,
             ),
         )
-        self._consumer_head_hash = digest
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid), digest
 
     def _consumer_offset_locked(self, consumer_id: str) -> int:
         row = self._c.execute(
@@ -732,17 +1165,17 @@ class DurableEventBus:
                         raise ValueError(
                             f"event_id conflict with retained content: {event.event_id}"
                         )
-                    self._c.rollback()
-                    self._record_connection_state_locked()
+                    self._commit_staged_locked({})
                     return retained
 
+                event_frontier = self._frontiers["event"]
                 digest = _record_hash(
                     event,
                     correlation_id=correlation_id,
                     causation_id=causation_id,
-                    prev_record_hash=self._head_hash,
+                    prev_record_hash=event_frontier.last_record_hash,
                 )
-                self._c.execute(
+                cursor = self._c.execute(
                     "INSERT INTO event_log (event_id, event_type, event_version, timestamp,"
                     " source, domain, criticality, correlation_id, causation_id, payload_json,"
                     " repro_hash, prev_record_hash, record_hash)"
@@ -759,17 +1192,20 @@ class DurableEventBus:
                         causation_id,
                         json.dumps(event.payload, sort_keys=True, separators=(",", ":")),
                         event.reproducibility_hash,
-                        self._head_hash,
+                        event_frontier.last_record_hash,
                         digest,
                     ),
                 )
-                self._c.commit()
-                self._head_hash = digest
-                self._record_connection_state_locked()
+                staged = self._stage_frontier_locked(
+                    "event",
+                    last_sequence=int(cursor.lastrowid),
+                    last_record_hash=digest,
+                    row_increment=1,
+                )
+                self._commit_staged_locked({"event": staged})
                 subscribers = tuple(self._subscribers)
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
         for handler in subscribers:
@@ -862,12 +1298,25 @@ class DurableEventBus:
                     partition_count=partition_count,
                     session_timeout_ms=session_timeout_ms,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
+                tentative = self._consumer_groups.tentative_frontier_locked()
+                if tentative is None:
+                    raise EventBusIntegrityError(
+                        "consumer-group heartbeat did not stage a frontier"
+                    )
+                sequence, row_count, head_hash = tentative
+                group_frontier = self._frontiers["consumer_group"]
+                staged = self._stage_frontier_locked(
+                    "consumer_group",
+                    last_sequence=sequence,
+                    last_record_hash=head_hash,
+                    row_increment=row_count - group_frontier.row_count,
+                )
+                self._commit_staged_locked(
+                    {"consumer_group": staged}, promote_group=True
+                )
                 return assignment
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
     def leave_consumer_group(
@@ -889,12 +1338,25 @@ class DurableEventBus:
                     worker_id=worker_id,
                     now_ms=now_ms,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
+                tentative = self._consumer_groups.tentative_frontier_locked()
+                if tentative is None:
+                    raise EventBusIntegrityError(
+                        "consumer-group leave did not stage a frontier"
+                    )
+                sequence, row_count, head_hash = tentative
+                group_frontier = self._frontiers["consumer_group"]
+                staged = self._stage_frontier_locked(
+                    "consumer_group",
+                    last_sequence=sequence,
+                    last_record_hash=head_hash,
+                    row_increment=row_count - group_frontier.row_count,
+                )
+                self._commit_staged_locked(
+                    {"consumer_group": staged}, promote_group=True
+                )
                 return status
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
     def consumer_group_status(self, group_id: str, *, now_ms: int) -> dict:
@@ -934,21 +1396,34 @@ class DurableEventBus:
         partition_id: int,
         partition_count: int,
     ) -> Optional[tuple]:
-        rows = self._c.execute(
+        if partition_count == 1:
+            return self._c.execute(
+                "SELECT seq, event_id, event_type, event_version, timestamp, source,"
+                " domain, criticality, correlation_id, causation_id, payload_json,"
+                " repro_hash, prev_record_hash, record_hash FROM event_log"
+                " WHERE seq>? ORDER BY seq LIMIT 1",
+                (offset,),
+            ).fetchone()
+
+        cursor = self._c.execute(
             "SELECT seq, event_id, event_type, event_version, timestamp, source,"
             " domain, criticality, correlation_id, causation_id, payload_json,"
             " repro_hash, prev_record_hash, record_hash FROM event_log"
             " WHERE seq>? ORDER BY seq",
             (offset,),
-        ).fetchall()
-        for row in rows:
-            assigned = self._consumer_groups.event_partition(
-                event_id=str(row[1]),
-                correlation_id=str(row[8]),
-                partition_count=partition_count,
-            )
-            if assigned == partition_id:
-                return row
+        )
+        while True:
+            rows = cursor.fetchmany(self._PARTITION_FETCH_CHUNK_SIZE)
+            if not rows:
+                break
+            for row in rows:
+                assigned = self._consumer_groups.event_partition(
+                    event_id=str(row[1]),
+                    correlation_id=str(row[8]),
+                    partition_count=partition_count,
+                )
+                if assigned == partition_id:
+                    return row
         return None
 
     def claim_next(
@@ -970,13 +1445,11 @@ class DurableEventBus:
         claim_journal_seq = 0
         attempt = 0
         with self._lock:
-            previous_consumer_head = self._consumer_head_hash
             try:
                 self._c.execute("BEGIN IMMEDIATE")
                 self._refresh_integrity_locked(force=True)
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
-                previous_consumer_head = self._consumer_head_hash
                 offset = self._consumer_offset_locked(consumer_id)
                 event_row = self._c.execute(
                     "SELECT seq, event_id, event_type, event_version, timestamp, source,"
@@ -986,8 +1459,7 @@ class DurableEventBus:
                     (offset,),
                 ).fetchone()
                 if event_row is None:
-                    self._c.rollback()
-                    self._record_connection_state_locked()
+                    self._commit_staged_locked({})
                     return None
 
                 latest = self._latest_consumer_record_locked(
@@ -1006,7 +1478,7 @@ class DurableEventBus:
                         f"consumer event has invalid latest action: {latest[4]}"
                     )
                 attempt = 1 if latest is None else int(latest[5]) + 1
-                claim_journal_seq = self._append_consumer_record_locked(
+                claim_journal_seq, consumer_head = self._append_consumer_record_locked(
                     consumer_id=consumer_id,
                     event_seq=int(event_row[0]),
                     event_id=str(event_row[1]),
@@ -1016,12 +1488,15 @@ class DurableEventBus:
                     at_ms=now_ms,
                     lease_until_ms=lease_until_ms,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
-                self._consumer_head_hash = previous_consumer_head
+                staged = self._stage_frontier_locked(
+                    "consumer",
+                    last_sequence=claim_journal_seq,
+                    last_record_hash=consumer_head,
+                    row_increment=1,
+                )
+                self._commit_staged_locked({"consumer": staged})
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
         assert event_row is not None
@@ -1065,13 +1540,11 @@ class DurableEventBus:
         claim_journal_seq = 0
         attempt = 0
         with self._lock:
-            previous_consumer_head = self._consumer_head_hash
             try:
                 self._c.execute("BEGIN IMMEDIATE")
                 self._refresh_integrity_locked(force=True)
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
-                previous_consumer_head = self._consumer_head_hash
                 self._consumer_groups.require_ownership_locked(
                     assignment,
                     partition_id=partition_id,
@@ -1084,8 +1557,7 @@ class DurableEventBus:
                     partition_count=assignment.partition_count,
                 )
                 if event_row is None:
-                    self._c.rollback()
-                    self._record_connection_state_locked()
+                    self._commit_staged_locked({})
                     return None
 
                 latest = self._latest_consumer_record_locked(
@@ -1104,7 +1576,7 @@ class DurableEventBus:
                         f"consumer event has invalid latest action: {latest[4]}"
                     )
                 attempt = 1 if latest is None else int(latest[5]) + 1
-                claim_journal_seq = self._append_consumer_record_locked(
+                claim_journal_seq, consumer_head = self._append_consumer_record_locked(
                     consumer_id=consumer_id,
                     event_seq=int(event_row[0]),
                     event_id=str(event_row[1]),
@@ -1114,12 +1586,15 @@ class DurableEventBus:
                     at_ms=now_ms,
                     lease_until_ms=lease_until_ms,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
-                self._consumer_head_hash = previous_consumer_head
+                staged = self._stage_frontier_locked(
+                    "consumer",
+                    last_sequence=claim_journal_seq,
+                    last_record_hash=consumer_head,
+                    row_increment=1,
+                )
+                self._commit_staged_locked({"consumer": staged})
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
         assert event_row is not None
@@ -1146,15 +1621,13 @@ class DurableEventBus:
             raise TypeError("delivery must be an EventDelivery")
         at_ms = self._require_non_negative_int(at_ms, name="at_ms")
         with self._lock:
-            previous_consumer_head = self._consumer_head_hash
             try:
                 self._c.execute("BEGIN IMMEDIATE")
                 self._refresh_integrity_locked(force=True)
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
-                previous_consumer_head = self._consumer_head_hash
                 self._require_active_delivery_locked(delivery, at_ms=at_ms)
-                self._append_consumer_record_locked(
+                consumer_sequence, consumer_head = self._append_consumer_record_locked(
                     consumer_id=delivery.consumer_id,
                     event_seq=delivery.event_seq,
                     event_id=delivery.event.event_id,
@@ -1164,12 +1637,15 @@ class DurableEventBus:
                     at_ms=at_ms,
                     lease_until_ms=delivery.lease_until_ms,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
-                self._consumer_head_hash = previous_consumer_head
+                staged = self._stage_frontier_locked(
+                    "consumer",
+                    last_sequence=consumer_sequence,
+                    last_record_hash=consumer_head,
+                    row_increment=1,
+                )
+                self._commit_staged_locked({"consumer": staged})
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
         return delivery
 
@@ -1200,15 +1676,13 @@ class DurableEventBus:
         dead_lettered = delivery.attempt >= max_attempts
 
         with self._lock:
-            previous_consumer_head = self._consumer_head_hash
             try:
                 self._c.execute("BEGIN IMMEDIATE")
                 self._refresh_integrity_locked(force=True)
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
-                previous_consumer_head = self._consumer_head_hash
                 self._require_active_delivery_locked(delivery, at_ms=at_ms)
-                self._append_consumer_record_locked(
+                consumer_sequence, consumer_head = self._append_consumer_record_locked(
                     consumer_id=delivery.consumer_id,
                     event_seq=delivery.event_seq,
                     event_id=delivery.event.event_id,
@@ -1220,12 +1694,15 @@ class DurableEventBus:
                     error_type=error_type,
                     error_fingerprint=error_fingerprint,
                 )
-                self._c.commit()
-                self._record_connection_state_locked()
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
-                self._consumer_head_hash = previous_consumer_head
+                staged = self._stage_frontier_locked(
+                    "consumer",
+                    last_sequence=consumer_sequence,
+                    last_record_hash=consumer_head,
+                    row_increment=1,
+                )
+                self._commit_staged_locked({"consumer": staged})
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
         error_class = EventDeadLetteredError if dead_lettered else EventDeliveryError
@@ -1387,9 +1864,7 @@ class DurableEventBus:
     def authority_commitment(self) -> EventAuthorityCommitment:
         """Verify and commit to event, delivery, and coordination chain heads."""
         with self._lock:
-            self._refresh_integrity_locked(force=True)
-            self._refresh_consumer_integrity_locked()
-            self._refresh_group_integrity_locked()
+            self._full_verify_all_locked()
 
             def _count_and_max(table: str, column: str) -> tuple[int, int]:
                 row = self._c.execute(
@@ -1426,9 +1901,7 @@ class DurableEventBus:
             raise TypeError("commitment must be an EventAuthorityCommitment")
         with self._lock:
             try:
-                self._refresh_integrity_locked(force=True)
-                self._refresh_consumer_integrity_locked()
-                self._refresh_group_integrity_locked()
+                self._full_verify_all_locked()
 
                 def _extends(
                     table: str,
@@ -1512,10 +1985,7 @@ class DurableEventBus:
     def chain_valid(self) -> bool:
         with self._lock:
             try:
-                self._head_hash = self._verify_rows(self._raw_rows_locked())
-                self._consumer_head_hash = self._verify_consumer_rows_locked()
-                self._consumer_groups.verify_locked()
-                self._record_connection_state_locked()
+                self._full_verify_all_locked()
                 return True
             except (
                 EventBusIntegrityError,
@@ -1527,10 +1997,7 @@ class DurableEventBus:
     def consumer_chain_valid(self) -> bool:
         with self._lock:
             try:
-                self._head_hash = self._verify_rows(self._raw_rows_locked())
-                self._consumer_head_hash = self._verify_consumer_rows_locked()
-                self._consumer_groups.verify_locked()
-                self._record_connection_state_locked()
+                self._full_verify_all_locked()
                 return True
             except (
                 EventBusIntegrityError,
@@ -1542,10 +2009,7 @@ class DurableEventBus:
     def consumer_group_chain_valid(self) -> bool:
         with self._lock:
             try:
-                self._head_hash = self._verify_rows(self._raw_rows_locked())
-                self._consumer_head_hash = self._verify_consumer_rows_locked()
-                self._consumer_groups.verify_locked()
-                self._record_connection_state_locked()
+                self._full_verify_all_locked()
                 return True
             except (
                 EventBusIntegrityError,

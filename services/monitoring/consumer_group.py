@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from copy import deepcopy
 from dataclasses import dataclass
 
 
@@ -58,6 +59,16 @@ class _GroupState:
     assignments: tuple[str, ...]
     members: dict[str, tuple[str, int]]
     last_at_ms: int
+
+
+@dataclass
+class _GroupStage:
+    """Transaction-local coordination state; promoted only after owner commit."""
+
+    states: dict[str, _GroupState]
+    head_hash: str
+    row_count: int
+    last_sequence: int
 
 
 _ACTIONS = {"GROUP_CREATED", "HEARTBEAT", "LEFT", "REBALANCED"}
@@ -151,7 +162,10 @@ class ConsumerGroupCoordinator:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._c = connection
         self.head_hash = ""
+        self.row_count = 0
+        self.last_sequence = 0
         self._states: dict[str, _GroupState] = {}
+        self._tentative: _GroupStage | None = None
 
     @staticmethod
     def _identity(value: object, *, name: str) -> str:
@@ -248,101 +262,204 @@ class ConsumerGroupCoordinator:
             )
         return assignments
 
+    @classmethod
+    def _reduce_row(
+        cls,
+        states: dict[str, _GroupState],
+        row: tuple,
+        *,
+        previous: str,
+    ) -> str:
+        """Validate and reduce one row for both full replay and staged appends."""
+        assignments = cls._parse_assignments(row)
+        expected_hash = _coordination_hash(
+            group_id=row[1],
+            action=row[2],
+            worker_id=row[3],
+            at_ms=row[4],
+            partition_count=row[5],
+            session_timeout_ms=row[6],
+            generation=row[7],
+            assignments_json=row[8],
+            prev_record_hash=previous,
+        )
+        if row[9] != previous:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} previous hash mismatch"
+            )
+        if row[10] != expected_hash:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} record hash mismatch"
+            )
+        if row[2] not in _ACTIONS:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} action is invalid"
+            )
+
+        state = states.get(row[1])
+        if row[2] == "GROUP_CREATED":
+            if state is not None or row[3] or row[7] != 0 or any(assignments):
+                raise EventConsumerGroupIntegrityError(
+                    f"consumer-group row {row[0]} creation is invalid"
+                )
+            states[row[1]] = _GroupState(
+                partition_count=row[5],
+                session_timeout_ms=row[6],
+                generation=0,
+                assignments=assignments,
+                members={},
+                last_at_ms=row[4],
+            )
+            return expected_hash
+
+        if state is None:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} precedes group creation"
+            )
+        if row[5] != state.partition_count or row[6] != state.session_timeout_ms:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} changes immutable configuration"
+            )
+        if row[4] < state.last_at_ms:
+            raise EventConsumerGroupIntegrityError(
+                f"consumer-group row {row[0]} moves time backwards"
+            )
+
+        if row[2] in {"HEARTBEAT", "LEFT"}:
+            if (
+                not row[3]
+                or row[7] != state.generation
+                or assignments != state.assignments
+            ):
+                raise EventConsumerGroupIntegrityError(
+                    f"consumer-group row {row[0]} membership is invalid"
+                )
+            state.members[row[3]] = (row[2], row[4])
+        else:
+            if not row[3] or row[7] != state.generation + 1:
+                raise EventConsumerGroupIntegrityError(
+                    f"consumer-group row {row[0]} generation is invalid"
+                )
+            desired = _desired_assignments(state, row[4])
+            if assignments != desired:
+                raise EventConsumerGroupIntegrityError(
+                    f"consumer-group row {row[0]} rebalance is not deterministic"
+                )
+            state.generation = row[7]
+            state.assignments = assignments
+        state.last_at_ms = row[4]
+        return expected_hash
+
     def verify_locked(self) -> str:
         previous = ""
         states: dict[str, _GroupState] = {}
-        for row in self._rows_locked():
-            assignments = self._parse_assignments(row)
-            expected_hash = _coordination_hash(
-                group_id=row[1],
-                action=row[2],
-                worker_id=row[3],
-                at_ms=row[4],
-                partition_count=row[5],
-                session_timeout_ms=row[6],
-                generation=row[7],
-                assignments_json=row[8],
-                prev_record_hash=previous,
-            )
-            if row[9] != previous:
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} previous hash mismatch"
-                )
-            if row[10] != expected_hash:
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} record hash mismatch"
-                )
-            if row[2] not in _ACTIONS:
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} action is invalid"
-                )
-
-            state = states.get(row[1])
-            if row[2] == "GROUP_CREATED":
-                if (
-                    state is not None
-                    or row[3]
-                    or row[7] != 0
-                    or any(assignments)
-                ):
-                    raise EventConsumerGroupIntegrityError(
-                        f"consumer-group row {row[0]} creation is invalid"
-                    )
-                states[row[1]] = _GroupState(
-                    partition_count=row[5],
-                    session_timeout_ms=row[6],
-                    generation=0,
-                    assignments=assignments,
-                    members={},
-                    last_at_ms=row[4],
-                )
-                previous = expected_hash
-                continue
-
-            if state is None:
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} precedes group creation"
-                )
-            if (
-                row[5] != state.partition_count
-                or row[6] != state.session_timeout_ms
-            ):
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} changes immutable configuration"
-                )
-            if row[4] < state.last_at_ms:
-                raise EventConsumerGroupIntegrityError(
-                    f"consumer-group row {row[0]} moves time backwards"
-                )
-
-            if row[2] in {"HEARTBEAT", "LEFT"}:
-                if (
-                    not row[3]
-                    or row[7] != state.generation
-                    or assignments != state.assignments
-                ):
-                    raise EventConsumerGroupIntegrityError(
-                        f"consumer-group row {row[0]} membership is invalid"
-                    )
-                state.members[row[3]] = (row[2], row[4])
-            else:
-                if not row[3] or row[7] != state.generation + 1:
-                    raise EventConsumerGroupIntegrityError(
-                        f"consumer-group row {row[0]} generation is invalid"
-                    )
-                desired = _desired_assignments(state, row[4])
-                if assignments != desired:
-                    raise EventConsumerGroupIntegrityError(
-                        f"consumer-group row {row[0]} rebalance is not deterministic"
-                    )
-                state.generation = row[7]
-                state.assignments = assignments
-            state.last_at_ms = row[4]
-            previous = expected_hash
+        rows = self._rows_locked()
+        for row in rows:
+            previous = self._reduce_row(states, row, previous=previous)
 
         self.head_hash = previous
+        self.row_count = len(rows)
+        self.last_sequence = int(rows[-1][0]) if rows else 0
         self._states = states
+        self._tentative = None
         return previous
+
+    def begin_staged_locked(self) -> _GroupStage:
+        if self._tentative is not None:
+            raise EventConsumerGroupIntegrityError(
+                "consumer-group transaction already has staged state"
+            )
+        return _GroupStage(
+            states=deepcopy(self._states),
+            head_hash=self.head_hash,
+            row_count=self.row_count,
+            last_sequence=self.last_sequence,
+        )
+
+    def _append_staged_locked(
+        self,
+        stage: _GroupStage,
+        *,
+        group_id: str,
+        action: str,
+        worker_id: str,
+        at_ms: int,
+        partition_count: int,
+        session_timeout_ms: int,
+        generation: int,
+        assignments: tuple[str, ...],
+    ) -> None:
+        assignments_json = _canonical_assignments(assignments)
+        digest = _coordination_hash(
+            group_id=group_id,
+            action=action,
+            worker_id=worker_id,
+            at_ms=at_ms,
+            partition_count=partition_count,
+            session_timeout_ms=session_timeout_ms,
+            generation=generation,
+            assignments_json=assignments_json,
+            prev_record_hash=stage.head_hash,
+        )
+        cursor = self._c.execute(
+            "INSERT INTO event_consumer_group_journal"
+            " (group_id,action,worker_id,at_ms,partition_count,session_timeout_ms,"
+            " generation,assignments_json,prev_record_hash,record_hash)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                group_id,
+                action,
+                worker_id,
+                at_ms,
+                partition_count,
+                session_timeout_ms,
+                generation,
+                assignments_json,
+                stage.head_hash,
+                digest,
+            ),
+        )
+        row = (
+            int(cursor.lastrowid),
+            group_id,
+            action,
+            worker_id,
+            at_ms,
+            partition_count,
+            session_timeout_ms,
+            generation,
+            assignments_json,
+            stage.head_hash,
+            digest,
+        )
+        stage.head_hash = self._reduce_row(
+            stage.states,
+            row,
+            previous=stage.head_hash,
+        )
+        stage.row_count += 1
+        stage.last_sequence = int(cursor.lastrowid)
+
+    def tentative_frontier_locked(self) -> tuple[int, int, str] | None:
+        if self._tentative is None:
+            return None
+        return (
+            self._tentative.last_sequence,
+            self._tentative.row_count,
+            self._tentative.head_hash,
+        )
+
+    def promote_staged_locked(self) -> None:
+        if self._tentative is None:
+            return
+        self._states = self._tentative.states
+        self.head_hash = self._tentative.head_hash
+        self.row_count = self._tentative.row_count
+        self.last_sequence = self._tentative.last_sequence
+        self._tentative = None
+
+    def discard_staged_locked(self) -> None:
+        self._tentative = None
 
     def _append_locked(
         self,
@@ -419,90 +536,96 @@ class ConsumerGroupCoordinator:
         session_timeout_ms = self._positive_int(
             session_timeout_ms, name="session_timeout_ms"
         )
-        self.verify_locked()
-        state = self._states.get(group_id)
-        if state is None:
-            self._append_locked(
-                group_id=group_id,
-                action="GROUP_CREATED",
-                worker_id="",
-                at_ms=now_ms,
+        stage = self.begin_staged_locked()
+        try:
+            state = stage.states.get(group_id)
+            if state is None:
+                self._append_staged_locked(
+                    stage,
+                    group_id=group_id,
+                    action="GROUP_CREATED",
+                    worker_id="",
+                    at_ms=now_ms,
+                    partition_count=partition_count,
+                    session_timeout_ms=session_timeout_ms,
+                    generation=0,
+                    assignments=("",) * partition_count,
+                )
+                state = stage.states[group_id]
+            elif not self._configuration_matches(
+                state,
                 partition_count=partition_count,
                 session_timeout_ms=session_timeout_ms,
-                generation=0,
-                assignments=("",) * partition_count,
-            )
-            self.verify_locked()
-            state = self._states[group_id]
-        elif not self._configuration_matches(
-            state,
-            partition_count=partition_count,
-            session_timeout_ms=session_timeout_ms,
-        ):
-            raise EventConsumerGroupConfigurationError(
-                "consumer-group partition_count and session_timeout_ms are immutable"
-            )
-        if now_ms < state.last_at_ms:
-            raise ValueError("consumer-group time must be monotonic")
+            ):
+                raise EventConsumerGroupConfigurationError(
+                    "consumer-group partition_count and session_timeout_ms are immutable"
+                )
+            if now_ms < state.last_at_ms:
+                raise ValueError("consumer-group time must be monotonic")
 
-        legacy_member = state.members.get(declared_worker_id)
-        if (
-            legacy_member is not None
-            and legacy_member[0] == "HEARTBEAT"
-            and now_ms <= legacy_member[1] + state.session_timeout_ms
-        ):
-            self._append_locked(
+            legacy_member = state.members.get(declared_worker_id)
+            if (
+                legacy_member is not None
+                and legacy_member[0] == "HEARTBEAT"
+                and now_ms <= legacy_member[1] + state.session_timeout_ms
+            ):
+                self._append_staged_locked(
+                    stage,
+                    group_id=group_id,
+                    action="LEFT",
+                    worker_id=declared_worker_id,
+                    at_ms=now_ms,
+                    partition_count=state.partition_count,
+                    session_timeout_ms=state.session_timeout_ms,
+                    generation=state.generation,
+                    assignments=state.assignments,
+                )
+                state = stage.states[group_id]
+
+            self._append_staged_locked(
+                stage,
                 group_id=group_id,
-                action="LEFT",
-                worker_id=declared_worker_id,
+                action="HEARTBEAT",
+                worker_id=worker_id,
                 at_ms=now_ms,
                 partition_count=state.partition_count,
                 session_timeout_ms=state.session_timeout_ms,
                 generation=state.generation,
                 assignments=state.assignments,
             )
-            self.verify_locked()
-            state = self._states[group_id]
-
-        self._append_locked(
-            group_id=group_id,
-            action="HEARTBEAT",
-            worker_id=worker_id,
-            at_ms=now_ms,
-            partition_count=state.partition_count,
-            session_timeout_ms=state.session_timeout_ms,
-            generation=state.generation,
-            assignments=state.assignments,
-        )
-        self.verify_locked()
-        state = self._states[group_id]
-        desired = _desired_assignments(state, now_ms)
-        if desired != state.assignments:
-            self._append_locked(
+            state = stage.states[group_id]
+            desired = _desired_assignments(state, now_ms)
+            if desired != state.assignments:
+                self._append_staged_locked(
+                    stage,
+                    group_id=group_id,
+                    action="REBALANCED",
+                    worker_id=worker_id,
+                    at_ms=now_ms,
+                    partition_count=state.partition_count,
+                    session_timeout_ms=state.session_timeout_ms,
+                    generation=state.generation + 1,
+                    assignments=desired,
+                )
+                state = stage.states[group_id]
+            assignment = EventConsumerGroupAssignment(
                 group_id=group_id,
-                action="REBALANCED",
                 worker_id=worker_id,
-                at_ms=now_ms,
+                generation=state.generation,
                 partition_count=state.partition_count,
-                session_timeout_ms=state.session_timeout_ms,
-                generation=state.generation + 1,
-                assignments=desired,
+                partitions=tuple(
+                    index
+                    for index, owner in enumerate(state.assignments)
+                    if owner == worker_id
+                ),
+                heartbeat_at_ms=now_ms,
+                expires_at_ms=now_ms + state.session_timeout_ms,
             )
-            self.verify_locked()
-            state = self._states[group_id]
-        return EventConsumerGroupAssignment(
-            group_id=group_id,
-            worker_id=worker_id,
-            generation=state.generation,
-            partition_count=state.partition_count,
-            partitions=tuple(
-                index
-                for index, owner in enumerate(state.assignments)
-                if owner == worker_id
-            ),
-            heartbeat_at_ms=now_ms,
-            expires_at_ms=now_ms + state.session_timeout_ms,
-        )
+            self._tentative = stage
+            return assignment
+        except BaseException:
+            self.discard_staged_locked()
+            raise
 
     def leave_locked(
         self,
@@ -515,56 +638,61 @@ class ConsumerGroupCoordinator:
         declared_worker_id = self._identity(worker_id, name="worker_id")
         worker_id = _coordination_worker_id(declared_worker_id)
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
-        state = self._states.get(group_id)
-        if state is None:
-            raise EventConsumerGroupConfigurationError(
-                f"consumer group is not registered: {group_id}"
-            )
-        if now_ms < state.last_at_ms:
-            raise ValueError("consumer-group time must be monotonic")
-        latest = state.members.get(worker_id)
-        if latest is None:
-            legacy = state.members.get(declared_worker_id)
-            if legacy is not None and legacy[0] == "HEARTBEAT":
-                worker_id = declared_worker_id
-                latest = legacy
-        if latest is None or latest[0] != "HEARTBEAT":
-            raise EventConsumerGroupFencedError(
-                f"worker is not an active group member: {worker_id}"
-            )
-        self._append_locked(
-            group_id=group_id,
-            action="LEFT",
-            worker_id=worker_id,
-            at_ms=now_ms,
-            partition_count=state.partition_count,
-            session_timeout_ms=state.session_timeout_ms,
-            generation=state.generation,
-            assignments=state.assignments,
-        )
-        self.verify_locked()
-        state = self._states[group_id]
-        desired = _desired_assignments(state, now_ms)
-        if desired != state.assignments:
-            self._append_locked(
+        stage = self.begin_staged_locked()
+        try:
+            state = stage.states.get(group_id)
+            if state is None:
+                raise EventConsumerGroupConfigurationError(
+                    f"consumer group is not registered: {group_id}"
+                )
+            if now_ms < state.last_at_ms:
+                raise ValueError("consumer-group time must be monotonic")
+            latest = state.members.get(worker_id)
+            if latest is None:
+                legacy = state.members.get(declared_worker_id)
+                if legacy is not None and legacy[0] == "HEARTBEAT":
+                    worker_id = declared_worker_id
+                    latest = legacy
+            if latest is None or latest[0] != "HEARTBEAT":
+                raise EventConsumerGroupFencedError(
+                    f"worker is not an active group member: {worker_id}"
+                )
+            self._append_staged_locked(
+                stage,
                 group_id=group_id,
-                action="REBALANCED",
+                action="LEFT",
                 worker_id=worker_id,
                 at_ms=now_ms,
                 partition_count=state.partition_count,
                 session_timeout_ms=state.session_timeout_ms,
-                generation=state.generation + 1,
-                assignments=desired,
+                generation=state.generation,
+                assignments=state.assignments,
             )
-            self.verify_locked()
-        return self.status_locked(group_id, now_ms=now_ms)
+            state = stage.states[group_id]
+            desired = _desired_assignments(state, now_ms)
+            if desired != state.assignments:
+                self._append_staged_locked(
+                    stage,
+                    group_id=group_id,
+                    action="REBALANCED",
+                    worker_id=worker_id,
+                    at_ms=now_ms,
+                    partition_count=state.partition_count,
+                    session_timeout_ms=state.session_timeout_ms,
+                    generation=state.generation + 1,
+                    assignments=desired,
+                )
+            self._tentative = stage
+            return self.status_locked(group_id, now_ms=now_ms)
+        except BaseException:
+            self.discard_staged_locked()
+            raise
 
     def status_locked(self, group_id: str, *, now_ms: int) -> dict:
         group_id = self._group_identity(group_id)
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
-        state = self._states.get(group_id)
+        states = self._tentative.states if self._tentative is not None else self._states
+        state = states.get(group_id)
         if state is None:
             raise EventConsumerGroupConfigurationError(
                 f"consumer group is not registered: {group_id}"
@@ -608,7 +736,6 @@ class ConsumerGroupCoordinator:
             raise TypeError("assignment must be an EventConsumerGroupAssignment")
         partition_id = self._non_negative_int(partition_id, name="partition_id")
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
         state = self._states.get(assignment.group_id)
         if state is None:
             raise EventConsumerGroupFencedError("consumer group is unavailable")
@@ -635,7 +762,6 @@ class ConsumerGroupCoordinator:
 
     def partition_count_locked(self, group_id: str) -> int:
         group_id = self._group_identity(group_id)
-        self.verify_locked()
         state = self._states.get(group_id)
         if state is None:
             raise EventConsumerGroupConfigurationError(

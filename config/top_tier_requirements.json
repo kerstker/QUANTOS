@@ -83,6 +83,7 @@
                                                                                "tests/research/test_session.py",
                                                                                "tests/research/test_experiment_registry.py",
                                                                                "tests/research/test_experiment_store.py",
+                                                                               "tests/research/test_experiment_store_locked_primitives.py",
                                                                                "tests/research/test_search_trial_provenance.py",
                                                                                "tests/intelligence/test_registered_candidate_batch.py",
                                                                                "tests/governance/test_experiment_registry_isolation.py"

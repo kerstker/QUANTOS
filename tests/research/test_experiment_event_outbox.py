@@ -63,15 +63,15 @@ def test_catalog_snapshot_and_promotion_outbox_commit_atomically():
     assert registry.event_outbox_chain_valid()
 
 
-def test_outbox_failure_rolls_back_alpha_state_in_same_transaction():
+def test_outbox_failure_rolls_back_alpha_state_in_same_transaction(monkeypatch):
     store = SqliteExperimentStore(":memory:", create=True)
     registry = ExperimentRegistry(store)
     registry.save(_catalog(AlphaState.PAPER_TRADING), now=10)
-    store._conn.execute(
-        "CREATE TRIGGER reject_experiment_outbox "
-        "BEFORE INSERT ON experiment_event_outbox "
-        "BEGIN SELECT RAISE(ABORT, 'reject experiment outbox'); END"
-    )
+    def reject_experiment_outbox(stage: str) -> None:
+        if stage == "after_outbox":
+            raise sqlite3.DatabaseError("reject experiment outbox")
+
+    monkeypatch.setattr(store, "_event_outbox_write_checkpoint", reject_experiment_outbox)
 
     with pytest.raises(sqlite3.DatabaseError, match="reject experiment outbox"):
         registry.save(

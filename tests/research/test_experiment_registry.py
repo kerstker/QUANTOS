@@ -1,15 +1,20 @@
 """Audit roadmap P0 — durable experiment registry: cross-session DSR trial
 counting, reproducible immutable evaluation artifacts, fail-closed load."""
 from concurrent.futures import ThreadPoolExecutor
+import json
 from threading import Event
 
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.monitoring.audit_log import GlobalAuditLog
-from services.research.experiment_registry.registry import ExperimentRegistry
+from services.research.experiment_registry.registry import (
+    ExperimentRegistry,
+    prepare_evaluation_artifact,
+)
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError,
 )
@@ -80,6 +85,36 @@ def _evaluation():
     return AlphaEvaluation(alpha_id="a1", verdict=ValidationVerdict.PASS,
                            deflated_sharpe=0.8, pbo=0.1, catalog_trial_count=3,
                            reproducibility_hash="repro-1")
+
+
+def test_prepare_evaluation_artifact_preserves_exact_legacy_bytes_and_hashes():
+    evaluation = _evaluation()
+    payload = evaluation.model_dump()
+    expected_json = json.dumps(payload, sort_keys=True, default=str)
+    expected_content_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": "v1"}
+    )
+    expected_run_id = short_hash(
+        {
+            "alpha_id": evaluation.alpha_id,
+            "repro": evaluation.reproducibility_hash,
+            "dataset_version": "v1",
+        }
+    )
+
+    write = prepare_evaluation_artifact(evaluation, "v1", 10)
+
+    assert write.run_id == expected_run_id
+    assert write.content_hash == expected_content_hash
+    assert write.evaluation_json.encode("utf-8") == expected_json.encode("utf-8")
+    assert write.audit_intent is not None
+    assert write.audit_intent.event_id == f"exp-{expected_run_id}"
+    assert write.audit_intent.timestamp == 10
+    assert dict(write.audit_intent.metadata) == {
+        "run_id": expected_run_id,
+        "content_hash": expected_content_hash,
+        "verdict": "PASS",
+    }
 
 
 def test_record_evaluation_is_reproducible_and_immutable():

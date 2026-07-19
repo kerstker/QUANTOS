@@ -865,7 +865,7 @@ def inspect_ledger(
     attempts.sort(key=lambda item: (item["completed_at"], item["search_id"]))
     return {
         "status": "verified",
-        "ledger_contract_version": LEDGER_CONTRACT_VERSION,
+        "ledger_contract_version": first["schema_version"],
         "required_ledger_contract_version": LEDGER_CONTRACT_VERSION,
         "capture_ready": any(item["capture_status"] == "CAPTURABLE" for item in attempts),
         "reason": None,
@@ -1197,6 +1197,9 @@ def check_snapshot(
     final = history_document["records"][-1]
     connection = sqlite3.connect(snapshot_file.resolve().as_uri() + "?mode=ro", uri=True)
     try:
+        schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if schema_version != LEDGER_CONTRACT_VERSION:
+            raise TrialLedgerHistoryError("portable snapshot schema version is unsupported")
         if _portable_tables(connection) != _PORTABLE_ALLOWED_TABLES:
             raise TrialLedgerHistoryError("portable snapshot table allowlist failed")
         _validate_portable_append_only_triggers(connection)

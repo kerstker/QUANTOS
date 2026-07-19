@@ -13,11 +13,13 @@ from typing import Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.events import EventOutboxMessage
-from quantos.contracts.hashing import short_hash, stable_hash
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
+from services.research.experiment_registry.evaluation_artifact import (
+    prepare_evaluation_artifact,
+)
 from services.research.ports.persistence import (
-    EvaluationAuditIntent,
     ExperimentStoreError,
     ExperimentStorePort,
 )
@@ -250,54 +252,30 @@ class ExperimentRegistry:
         config_hash: str | None = None,
         audit_log=None,
     ) -> str:
-        # run_id identity is derived from reproducibility_hash; an empty one (the
-        # contract default) would collide DISTINCT evaluations of the same alpha+
-        # dataset to one id and silently drop the later artifact (review ER-2).
-        if not evaluation.reproducibility_hash:
-            raise ValueError("evaluation.reproducibility_hash is empty; cannot form a unique run_id")
-        payload = evaluation.model_dump()
-        content_hash = stable_hash({"evaluation": payload, "dataset_version": dataset_version})
-        run_id = short_hash(
-            {
-                "alpha_id": evaluation.alpha_id,
-                "repro": evaluation.reproducibility_hash,
-                "dataset_version": dataset_version,
-            }
-        )
-        audit_intent = EvaluationAuditIntent(
-            event_id=f"exp-{run_id}",
-            actor="experiment-registry",
-            action="EXPERIMENT_RECORDED",
-            # The store replaces this proposal with the immutable artifact's
-            # timestamp under BEGIN IMMEDIATE. It is intentionally not decided
-            # by a transaction-external read here.
-            timestamp=recorded_ts,
-            target=evaluation.alpha_id,
-            metadata={
-                "run_id": run_id,
-                "content_hash": content_hash,
-                "verdict": evaluation.verdict.value,
-            },
+        write = prepare_evaluation_artifact(
+            evaluation,
+            dataset_version,
+            recorded_ts,
         )
         self._store.insert_evaluation(
-            run_id=run_id,
-            alpha_id=evaluation.alpha_id,
-            dataset_version=dataset_version,
-            recorded_ts=recorded_ts,
-            verdict=evaluation.verdict.value,
-            content_hash=content_hash,
-            evaluation_json=json.dumps(payload, sort_keys=True, default=str),
+            run_id=write.run_id,
+            alpha_id=write.alpha_id,
+            dataset_version=write.dataset_version,
+            recorded_ts=write.recorded_ts,
+            verdict=write.verdict,
+            content_hash=write.content_hash,
+            evaluation_json=write.evaluation_json,
             search_id=search_id,
             config_hash=config_hash,
-            audit_intent=audit_intent,
+            audit_intent=write.audit_intent,
         )
         if audit_log is not None:
             self.recover_evaluation_audits(
                 audit_log,
                 dispatched_at=recorded_ts,
-                run_id=run_id,
+                run_id=write.run_id,
             )
-        return run_id
+        return write.run_id
 
     def pending_evaluation_audits(
         self,

@@ -257,6 +257,607 @@ def _canonical_sql(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip().rstrip(";").upper()
 
 
+def _ast_function(
+    tree: ast.AST,
+    name: str,
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    return next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == name
+        ),
+        None,
+    )
+
+
+def _ast_call_name(call: ast.Call) -> str:
+    return _dotted_ast_name(call.func) or ""
+
+
+def _ast_calls_named(node: ast.AST, name: str) -> list[ast.Call]:
+    return [
+        candidate
+        for candidate in ast.walk(node)
+        if isinstance(candidate, ast.Call)
+        and (
+            _ast_call_name(candidate) == name
+            or _ast_call_name(candidate).endswith(f".{name}")
+        )
+    ]
+
+
+def _ast_call_argument(
+    call: ast.Call,
+    position: int,
+    keyword_name: str,
+) -> ast.AST | None:
+    if len(call.args) > position:
+        return call.args[position]
+    return next(
+        (
+            keyword.value
+            for keyword in call.keywords
+            if keyword.arg == keyword_name
+        ),
+        None,
+    )
+
+
+def _ast_function_parameters(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> set[str]:
+    return {
+        argument.arg
+        for argument in (
+            *function.args.posonlyargs,
+            *function.args.args,
+            *function.args.kwonlyargs,
+        )
+    }
+
+
+def _ast_name_is(node: ast.AST | None, name: str) -> bool:
+    return node is not None and _dotted_ast_name(node) == name
+
+
+def _ast_mentions_name(node: ast.AST, name: str) -> bool:
+    return any(
+        isinstance(candidate, ast.Name) and candidate.id == name
+        for candidate in ast.walk(node)
+    )
+
+
+def _owned_transaction_binding(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.With, str, str] | None:
+    transaction_calls = _ast_calls_named(function, "_immediate_transaction")
+    matches: list[tuple[ast.With, ast.withitem]] = []
+    for with_node in (
+        node for node in ast.walk(function) if isinstance(node, ast.With)
+    ):
+        for item in with_node.items:
+            if (
+                isinstance(item.context_expr, ast.Call)
+                and _ast_call_name(item.context_expr).endswith(
+                    "._immediate_transaction"
+                )
+            ):
+                matches.append((with_node, item))
+    if len(transaction_calls) != 1 or len(matches) != 1:
+        return None
+    with_node, item = matches[0]
+    target = item.optional_vars
+    if not isinstance(target, (ast.Tuple, ast.List)) or len(target.elts) != 2:
+        return None
+    connection_name = _dotted_ast_name(target.elts[0])
+    lease_name = _dotted_ast_name(target.elts[1])
+    if (
+        not connection_name
+        or not lease_name
+        or connection_name == lease_name
+        or "." in connection_name
+        or "." in lease_name
+    ):
+        return None
+    return with_node, connection_name, lease_name
+
+
+def _sql_calls(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Call]:
+    return [
+        call
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+        and _ast_call_name(call).rsplit(".", maxsplit=1)[-1]
+        in {"execute", "executemany", "executescript"}
+    ]
+
+
+def _transaction_control_calls(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.Call]:
+    return [
+        call
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+        and _ast_call_name(call).rsplit(".", maxsplit=1)[-1]
+        in {
+            "commit",
+            "rollback",
+            "_commit_owned_transaction",
+            "_rollback_owned_transaction",
+        }
+    ]
+
+
+def _call_source(source: str, call: ast.Call) -> str:
+    return (ast.get_source_segment(source, call) or "").upper()
+
+
+def _has_sql_transaction_control(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    source: str,
+) -> bool:
+    return any(
+        any(marker in _call_source(source, call) for marker in ("BEGIN ", "COMMIT", "ROLLBACK"))
+        for call in _sql_calls(function)
+    )
+
+
+def _owned_terminal_control_calls(
+    tree: ast.AST,
+    transaction: ast.FunctionDef | ast.AsyncFunctionDef,
+    connection_name: str,
+    action: str,
+) -> list[ast.Call] | None:
+    direct = [
+        call
+        for call in ast.walk(transaction)
+        if isinstance(call, ast.Call)
+        and _ast_call_name(call) == f"{connection_name}.{action}"
+    ]
+    delegated_name = f"_{action}_owned_transaction"
+    delegated = _ast_calls_named(transaction, delegated_name)
+    if not direct and not delegated:
+        return None
+    if any(
+        not _ast_name_is(_ast_call_argument(call, 0, "conn"), connection_name)
+        for call in delegated
+    ):
+        return None
+    if delegated:
+        owner = _ast_function(tree, delegated_name)
+        if owner is None or "conn" not in _ast_function_parameters(owner):
+            return None
+        terminal_calls = [
+            candidate
+            for candidate in ast.walk(owner)
+            if isinstance(candidate, ast.Call)
+            and _ast_call_name(candidate) == f"conn.{action}"
+        ]
+        if len(terminal_calls) != 1 or len(_transaction_control_calls(owner)) != 1:
+            return None
+    return [*direct, *delegated]
+
+
+def _alpha_trial_transaction_semantic_failures(
+    store_tree: ast.AST,
+    store_source: str,
+) -> list[str]:
+    """Verify the reviewed wrapper -> transaction -> locked-helper call graph.
+
+    SQL is intentionally inspected only inside the store-owned transaction and
+    locked primitive. Public wrappers are allowed to be thin and therefore do
+    not need to repeat transaction or SQL literals.
+    """
+
+    failures: list[str] = []
+    immediate = _ast_function(store_tree, "_immediate_transaction")
+    require_lock = _ast_function(store_tree, "_require_write_lock")
+    register = _ast_function(store_tree, "register_search_candidates")
+    wrapper = _ast_function(store_tree, "insert_evaluation")
+    helper = _ast_function(store_tree, "_insert_evaluation_locked")
+
+    if immediate is None:
+        failures.append("store_path:_immediate_transaction:missing")
+    else:
+        yields = [
+            node for node in ast.walk(immediate) if isinstance(node, ast.Yield)
+        ]
+        yield_value = yields[0].value if len(yields) == 1 else None
+        valid_yield = (
+            isinstance(yield_value, ast.Tuple)
+            and len(yield_value.elts) == 2
+            and _dotted_ast_name(yield_value.elts[0]) is not None
+            and isinstance(yield_value.elts[1], ast.Name)
+        )
+        connection_name = (
+            _dotted_ast_name(yield_value.elts[0]) if valid_yield else ""
+        )
+        lease_name = (
+            yield_value.elts[1].id
+            if valid_yield and isinstance(yield_value.elts[1], ast.Name)
+            else ""
+        )
+        connection_assignments = [
+            assignment
+            for assignment in ast.walk(immediate)
+            if isinstance(assignment, (ast.Assign, ast.AnnAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == connection_name
+                for target in (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else [assignment.target]
+                )
+            )
+            and _ast_name_is(assignment.value, "self._conn")
+        ]
+        connection_assignment = connection_name == "self._conn" or any(
+            assignment.lineno < yields[0].lineno
+            for assignment in connection_assignments
+        )
+        lease_assignments = [
+            assignment
+            for assignment in ast.walk(immediate)
+            if isinstance(assignment, (ast.Assign, ast.AnnAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == lease_name
+                for target in (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else [assignment.target]
+                )
+            )
+            and isinstance(assignment.value, ast.Call)
+            and _ast_call_name(assignment.value).endswith("._WriteLease")
+        ]
+        if not lease_assignments:
+            lease_assignments = [
+                assignment
+                for assignment in ast.walk(immediate)
+                if isinstance(assignment, (ast.Assign, ast.AnnAssign))
+                and any(
+                    isinstance(target, ast.Name) and target.id == lease_name
+                    for target in (
+                        assignment.targets
+                        if isinstance(assignment, ast.Assign)
+                        else [assignment.target]
+                    )
+                )
+                and isinstance(assignment.value, ast.Call)
+                and _ast_call_name(assignment.value) == "_WriteLease"
+            ]
+        lease_call = lease_assignments[0].value if len(lease_assignments) == 1 else None
+        lease_generation = (
+            _ast_call_argument(lease_call, 1, "generation")
+            if isinstance(lease_call, ast.Call)
+            else None
+        )
+        lease_owner_thread = (
+            _ast_call_argument(lease_call, 2, "owner_thread")
+            if isinstance(lease_call, ast.Call)
+            else None
+        )
+        valid_lease_creation = (
+            isinstance(lease_call, ast.Call)
+            and _ast_name_is(
+                _ast_call_argument(lease_call, 0, "connection"), connection_name
+            )
+            and isinstance(lease_generation, ast.Attribute)
+            and (_dotted_ast_name(lease_generation) or "").startswith("self.")
+            and "generation" in (_dotted_ast_name(lease_generation) or "").lower()
+            and isinstance(lease_owner_thread, ast.Call)
+            and _ast_call_name(lease_owner_thread).endswith("get_ident")
+            and lease_assignments[0].lineno < yields[0].lineno
+        )
+        active_lease_assignments = [
+            assignment
+            for assignment in ast.walk(immediate)
+            if isinstance(assignment, (ast.Assign, ast.AnnAssign))
+            and any(
+                (target_name := _dotted_ast_name(target)) is not None
+                and target_name.startswith("self.")
+                and "lease" in target_name.lower()
+                for target in (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else [assignment.target]
+                )
+            )
+            and _ast_name_is(assignment.value, lease_name)
+            and assignment.lineno < yields[0].lineno
+        ]
+        lease_cleanup = any(
+            isinstance(assignment, (ast.Assign, ast.AnnAssign))
+            and any(
+                (target_name := _dotted_ast_name(target)) is not None
+                and target_name.startswith("self.")
+                and "lease" in target_name.lower()
+                for target in (
+                    assignment.targets
+                    if isinstance(assignment, ast.Assign)
+                    else [assignment.target]
+                )
+            )
+            and isinstance(assignment.value, ast.Constant)
+            and assignment.value.value is None
+            and assignment.lineno > yields[0].lineno
+            for assignment in ast.walk(immediate)
+        )
+        begin_calls = [
+            call
+            for call in _sql_calls(immediate)
+            if _ast_call_name(call) == f"{connection_name}.execute"
+            and "BEGIN IMMEDIATE" in _call_source(store_source, call)
+        ]
+        commit_calls = (
+            None
+            if not connection_name
+            else _owned_terminal_control_calls(
+                store_tree,
+                immediate,
+                connection_name,
+                "commit",
+            )
+        )
+        rollback_calls = (
+            None
+            if not connection_name
+            else _owned_terminal_control_calls(
+                store_tree,
+                immediate,
+                connection_name,
+                "rollback",
+            )
+        )
+        ownership_guards = _ast_calls_named(
+            immediate, "_reject_write_ownership_conflict"
+        )
+        if (
+            len(begin_calls) != 1
+            or not valid_yield
+            or not connection_assignment
+            or not valid_lease_creation
+            or len(active_lease_assignments) != 1
+            or not lease_cleanup
+            or len(ownership_guards) != 1
+            or (
+                begin_calls
+                and ownership_guards
+                and ownership_guards[0].lineno >= begin_calls[0].lineno
+            )
+            or commit_calls is None
+            or len(commit_calls) != 1
+            or rollback_calls is None
+            or (commit_calls and commit_calls[0].lineno <= yields[0].lineno)
+            or (
+                rollback_calls
+                and not any(call.lineno > yields[0].lineno for call in rollback_calls)
+            )
+        ):
+            failures.append("store_path:_immediate_transaction:owned_transaction")
+
+    if require_lock is None:
+        failures.append("store_path:_require_write_lock:missing")
+    else:
+        parameters = _ast_function_parameters(require_lock)
+        comparison_names = {
+            _dotted_ast_name(candidate)
+            for comparison in ast.walk(require_lock)
+            if isinstance(comparison, ast.Compare)
+            for candidate in (comparison.left, *comparison.comparators)
+        }
+        referenced_names = {
+            _dotted_ast_name(candidate)
+            for candidate in ast.walk(require_lock)
+            if isinstance(candidate, (ast.Name, ast.Attribute))
+        }
+        has_raise = any(
+            isinstance(node, ast.Raise) for node in ast.walk(require_lock)
+        )
+        has_active_lease_check = any(
+            isinstance(name, str)
+            and name.startswith("self.")
+            and "lease" in name.lower()
+            for name in comparison_names
+        )
+        has_generation_check = any(
+            isinstance(name, str)
+            and name.startswith("self.")
+            and "generation" in name.lower()
+            for name in comparison_names
+        )
+        has_lease_type_check = any(
+            _ast_name_is(_ast_call_argument(call, 0, "object"), "lease")
+            and _ast_name_is(_ast_call_argument(call, 1, "class_or_tuple"), "_WriteLease")
+            for call in _ast_calls_named(require_lock, "isinstance")
+        )
+        has_thread_check = any(
+            _ast_call_name(call).endswith("get_ident")
+            for call in ast.walk(require_lock)
+            if isinstance(call, ast.Call)
+        )
+        if (
+            not {"conn", "lease"} <= parameters
+            or not {
+                "conn",
+                "self._conn",
+                "lease",
+                "lease.connection",
+                "lease.generation",
+                "lease.owner_thread",
+            }
+            <= comparison_names
+            or not has_active_lease_check
+            or not has_generation_check
+            or not has_lease_type_check
+            or not has_thread_check
+            or "conn.in_transaction" not in referenced_names
+            or not has_raise
+        ):
+            failures.append(
+                "store_path:_require_write_lock:connection_lease_binding"
+            )
+
+    wrapper_binding = None if wrapper is None else _owned_transaction_binding(wrapper)
+    if wrapper is None or wrapper_binding is None:
+        failures.append("store_path:insert_evaluation:owned_transaction")
+    else:
+        with_node, connection_name, lease_name = wrapper_binding
+        helper_calls = _ast_calls_named(wrapper, "_insert_evaluation_locked")
+        helper_calls_in_transaction = _ast_calls_named(
+            with_node, "_insert_evaluation_locked"
+        )
+        if len(helper_calls) != 1 or helper_calls != helper_calls_in_transaction:
+            failures.append(
+                "store_path:insert_evaluation:locked_helper_delegation"
+            )
+        else:
+            helper_call = helper_calls[0]
+            connection_argument = _ast_call_argument(helper_call, 0, "conn")
+            lease_argument = _ast_call_argument(helper_call, 1, "lease")
+            if (
+                not _ast_name_is(connection_argument, connection_name)
+                or not _ast_name_is(lease_argument, lease_name)
+            ):
+                failures.append(
+                    "store_path:insert_evaluation:same_connection_and_lease"
+                )
+        if _sql_calls(wrapper):
+            failures.append("store_path:insert_evaluation:wrapper_bypass_locked_helper")
+        if _transaction_control_calls(wrapper) or _has_sql_transaction_control(
+            wrapper, store_source
+        ):
+            failures.append("store_path:insert_evaluation:split_commit")
+
+    if helper is None:
+        failures.append("store_path:_insert_evaluation_locked:missing")
+    else:
+        parameters = _ast_function_parameters(helper)
+        lock_calls = _ast_calls_named(helper, "_require_write_lock")
+        sql_calls = _sql_calls(helper)
+        valid_lock_call = False
+        if len(lock_calls) == 1:
+            connection_argument = _ast_call_argument(lock_calls[0], 0, "conn")
+            lease_argument = _ast_call_argument(lock_calls[0], 1, "lease")
+            valid_lock_call = (
+                _ast_name_is(connection_argument, "conn")
+                and _ast_name_is(lease_argument, "lease")
+                and (
+                    not sql_calls
+                    or lock_calls[0].lineno < min(call.lineno for call in sql_calls)
+                )
+            )
+        if not {"conn", "lease"} <= parameters or not valid_lock_call:
+            failures.append(
+                "store_path:_insert_evaluation_locked:valid_lease_guard"
+            )
+        if any(
+            not _ast_call_name(call).startswith("conn.") for call in sql_calls
+        ):
+            failures.append(
+                "store_path:_insert_evaluation_locked:same_connection_sql"
+            )
+        if _transaction_control_calls(helper) or _has_sql_transaction_control(
+            helper, store_source
+        ):
+            failures.append("store_path:_insert_evaluation_locked:split_commit")
+
+        marker_calls = {
+            marker: [
+                call
+                for call in sql_calls
+                if marker in _call_source(store_source, call)
+            ]
+            for marker in (
+                "SELECT CONFIG_HASH FROM SEARCH_CANDIDATES",
+                "INSERT INTO EVALUATIONS",
+                "INSERT INTO SEARCH_EVALUATIONS",
+                "INSERT INTO EVALUATION_AUDIT_OUTBOX",
+            )
+        }
+        candidate_calls = marker_calls[
+            "SELECT CONFIG_HASH FROM SEARCH_CANDIDATES"
+        ]
+        candidate_names: set[str] = set()
+        for assignment in ast.walk(helper):
+            if not isinstance(assignment, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = assignment.value
+            if value is None or not any(
+                candidate in set(ast.walk(value)) for candidate in candidate_calls
+            ):
+                continue
+            targets = (
+                assignment.targets
+                if isinstance(assignment, ast.Assign)
+                else [assignment.target]
+            )
+            candidate_names.update(
+                target.id for target in targets if isinstance(target, ast.Name)
+            )
+        candidate_rejected = any(
+            any(_ast_mentions_name(if_node.test, name) for name in candidate_names)
+            and any(isinstance(node, ast.Raise) for node in ast.walk(if_node))
+            for if_node in ast.walk(helper)
+            if isinstance(if_node, ast.If)
+        )
+        if not candidate_calls or not candidate_names or not candidate_rejected:
+            failures.append(
+                "store_path:_insert_evaluation_locked:registered_candidate_binding"
+            )
+        if any(
+            not marker_calls[marker]
+            for marker in (
+                "INSERT INTO EVALUATIONS",
+                "INSERT INTO SEARCH_EVALUATIONS",
+                "INSERT INTO EVALUATION_AUDIT_OUTBOX",
+            )
+        ):
+            failures.append(
+                "store_path:_insert_evaluation_locked:atomic_evaluation_link_outbox"
+            )
+
+    register_binding = None if register is None else _owned_transaction_binding(register)
+    if register is None or register_binding is None:
+        failures.append(
+            "store_path:register_search_candidates:transactional_trial_registration"
+        )
+    else:
+        with_node, connection_name, _lease_name = register_binding
+        sql_calls = _sql_calls(register)
+        with_sql_calls = set(_sql_calls(with_node))
+        required_write_calls = {
+            marker: [
+                call
+                for call in sql_calls
+                if marker in _call_source(store_source, call)
+            ]
+            for marker in (
+                "INSERT INTO SEARCH_CANDIDATES",
+                "INSERT OR IGNORE INTO TRIALS",
+            )
+        }
+        if (
+            any(not calls for calls in required_write_calls.values())
+            or any(
+                call not in with_sql_calls
+                or not _ast_call_name(call).startswith(f"{connection_name}.")
+                for calls in required_write_calls.values()
+                for call in calls
+            )
+            or _transaction_control_calls(register)
+            or _has_sql_transaction_control(register, store_source)
+        ):
+            failures.append(
+                "store_path:register_search_candidates:transactional_trial_registration"
+            )
+
+    return list(dict.fromkeys(failures))
+
+
 def _alpha_trial_ledger_evidence(
     repo_root: Path,
     args: dict[str, Any],
@@ -296,6 +897,7 @@ def _alpha_trial_ledger_evidence(
         )
     required_evaluation_verification_paths = {
         "tests/research/test_experiment_store.py",
+        "tests/research/test_experiment_store_locked_primitives.py",
         "tests/intelligence/test_registered_candidate_batch.py",
     }
     missing_evaluation_verification = sorted(
@@ -610,42 +1212,7 @@ def _alpha_trial_ledger_evidence(
         wiring_failures.append(
             "factory registry helper:" + ",".join(helper_failures)
         )
-    try:
-        store_tree = ast.parse(store_source)
-        store_function = next(
-            node
-            for node in ast.walk(store_tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == "register_search_candidates"
-        )
-        store_segment = ast.get_source_segment(store_source, store_function) or ""
-    except (StopIteration, SyntaxError):
-        store_segment = ""
-    transaction_markers = (
-        "BEGIN IMMEDIATE",
-        "INSERT INTO search_candidates",
-        "INSERT OR IGNORE INTO trials",
-        ".commit(",
-    )
-    marker_positions = [store_segment.find(marker) for marker in transaction_markers]
-    if any(position < 0 for position in marker_positions) or marker_positions != sorted(
-        marker_positions
-    ):
-        wiring_failures.append(
-            "store_path:register_search_candidates:transactional_trial_registration"
-        )
-    try:
-        insert_evaluation_function = next(
-            node
-            for node in ast.walk(store_tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == "insert_evaluation"
-        )
-        insert_evaluation_segment = (
-            ast.get_source_segment(store_source, insert_evaluation_function) or ""
-        )
-    except StopIteration:
-        insert_evaluation_segment = ""
+    store_tree = trees["store_path"]
     search_evaluation_hash_function = next(
         (
             node
@@ -655,10 +1222,51 @@ def _alpha_trial_ledger_evidence(
         ),
         None,
     )
+    search_evaluation_hash_source = store_source
+    if search_evaluation_hash_function is None:
+        semantics_module = (
+            "services.research.experiment_registry.family_schema_v2_semantics"
+        )
+        imports_canonical_semantics = any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == semantics_module
+            and any(
+                alias.name == "search_evaluation_hash"
+                and alias.asname == "_search_evaluation_hash"
+                for alias in node.names
+            )
+            for node in ast.walk(store_tree)
+        )
+        if imports_canonical_semantics:
+            semantics_relative = semantics_module.replace(".", "/") + ".py"
+            semantics_path = repo_root / semantics_relative
+            try:
+                search_evaluation_hash_source = semantics_path.read_text(
+                    encoding="utf-8"
+                )
+                semantics_tree = ast.parse(search_evaluation_hash_source)
+            except (OSError, UnicodeError, SyntaxError):
+                search_evaluation_hash_function = None
+            else:
+                search_evaluation_hash_function = next(
+                    (
+                        node
+                        for node in ast.walk(semantics_tree)
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and node.name == "search_evaluation_hash"
+                    ),
+                    None,
+                )
+                if semantics_relative not in evidence:
+                    evidence.append(semantics_relative)
     search_evaluation_hash_segment = (
         ""
         if search_evaluation_hash_function is None
-        else ast.get_source_segment(store_source, search_evaluation_hash_function) or ""
+        else ast.get_source_segment(
+            search_evaluation_hash_source,
+            search_evaluation_hash_function,
+        )
+        or ""
     )
     if (
         search_evaluation_hash_function is None
@@ -676,26 +1284,9 @@ def _alpha_trial_ledger_evidence(
         wiring_failures.append(
             "store_path:_search_evaluation_hash:config_hash_binding"
         )
-    evaluation_transaction_markers = (
-        "BEGIN IMMEDIATE",
-        "INSERT INTO evaluations",
-        "INSERT INTO search_evaluations",
-        ".commit(",
+    wiring_failures.extend(
+        _alpha_trial_transaction_semantic_failures(store_tree, store_source)
     )
-    evaluation_marker_positions = [
-        insert_evaluation_segment.find(marker)
-        for marker in evaluation_transaction_markers
-    ]
-    if any(position < 0 for position in evaluation_marker_positions) or (
-        evaluation_marker_positions != sorted(evaluation_marker_positions)
-    ):
-        wiring_failures.append(
-            "store_path:insert_evaluation:transactional_search_binding"
-        )
-    if "WHERE search_id=? AND config_hash=?" not in insert_evaluation_segment:
-        wiring_failures.append(
-            "store_path:insert_evaluation:registered_candidate_binding"
-        )
     if wiring_failures:
         return _result(
             "FAILED",
@@ -2715,13 +3306,21 @@ def _model_risk_baseline_evidence(
         return _result("FAILED", "M1", [path], "model-risk evidence must be an object")
 
     failures: list[str] = []
-    v1_red_team_ref = "red-team-report:research-agent-boundary-v1"
-    v2_red_team_ref = "red-team-report:research-agent-runtime-boundary-v2"
+    current_release_version = "v3"
+    current_runtime_report_version = "v4"
+    current_agent_red_team_ref = (
+        "red-team-report:research-agent-boundary-v3"
+    )
+    current_runtime_red_team_ref = (
+        "red-team-report:research-agent-runtime-boundary-v4"
+    )
     active_red_team_ref = document.get("red_team_report_ref")
-    is_longitudinal_v2 = active_red_team_ref == v2_red_team_ref
-    if active_red_team_ref not in {v1_red_team_ref, v2_red_team_ref}:
+    is_longitudinal_v2 = active_red_team_ref == current_runtime_red_team_ref
+    if active_red_team_ref not in {
+        current_agent_red_team_ref,
+        current_runtime_red_team_ref,
+    }:
         failures.append("red_team_report_ref")
-    expected_runtime_invocations = 2 if is_longitudinal_v2 else 1
     required = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -2733,7 +3332,6 @@ def _model_risk_baseline_evidence(
         "review_identity_assurance": "PROCESS_ROLE_ONLY",
         "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
         "registry_verified": True,
-        "runtime_invocation_count": expected_runtime_invocations,
         "runtime_history_verified": True,
         "red_team_verdict": "PASS",
         "execution_authority_granted": False,
@@ -2929,6 +3527,10 @@ def _model_risk_baseline_evidence(
         loaded.append(artifact)
         if isinstance(artifact, (ModelCard, ToolManifest)):
             implementation_paths.add(artifact.implementation_ref)
+        if (
+            isinstance(artifact, (ModelCard, ToolManifest))
+            and artifact.version == current_release_version
+        ):
             candidate = Path(artifact.implementation_ref)
             if candidate.is_absolute() or ".." in candidate.parts:
                 failures.append(f"implementation_path:{artifact_id}")
@@ -2949,15 +3551,7 @@ def _model_risk_baseline_evidence(
         if isinstance(record, dict) and isinstance(record.get("artifact_type"), str):
             artifact_type = record["artifact_type"]
             actual_counts[artifact_type] = actual_counts.get(artifact_type, 0) + 1
-    expected_counts = {
-        "ChallengerReview": 2,
-        "ModelCard": 4,
-        "OfflineEvaluation": 3,
-        "RedTeamReport": 2 if is_longitudinal_v2 else 1,
-        "PromptTemplateCard": 1,
-        "ToolManifest": 1,
-    }
-    if actual_counts != expected_counts or document.get("artifact_type_counts") != expected_counts:
+    if document.get("artifact_type_counts") != actual_counts:
         failures.append("artifact_type_counts")
 
     model_cards = [item for item in loaded if isinstance(item, ModelCard)]
@@ -2966,15 +3560,60 @@ def _model_risk_baseline_evidence(
     evaluations = [item for item in loaded if isinstance(item, OfflineEvaluation)]
     red_team_reports = [item for item in loaded if isinstance(item, RedTeamReport)]
     challenger_reviews = [item for item in loaded if isinstance(item, ChallengerReview)]
-    runtime_models = [card for card in model_cards if card.model_ref == "research-agent-loop@v1"]
-    non_runtime_models = [card for card in model_cards if card.model_ref != "research-agent-loop@v1"]
-    if len(prompt_cards) != 1 or len(runtime_models) != 1:
+    allowed_release_versions = {"v1", "v2", current_release_version}
+    if any(
+        artifact.version not in allowed_release_versions
+        for artifact in (*model_cards, *prompt_cards, *tool_manifests, *evaluations)
+    ):
+        failures.append("unknown_artifact_release")
+    active_model_cards = [
+        card for card in model_cards if card.version == current_release_version
+    ]
+    active_prompt_cards = [
+        prompt for prompt in prompt_cards if prompt.version == current_release_version
+    ]
+    active_tool_manifests = [
+        manifest
+        for manifest in tool_manifests
+        if manifest.version == current_release_version
+    ]
+    active_evaluations = [
+        evaluation
+        for evaluation in evaluations
+        if evaluation.version == current_release_version
+    ]
+    active_challenger_reviews = [
+        review
+        for review in challenger_reviews
+        if review.review_id.endswith(f"-{current_release_version}")
+    ]
+    runtime_models = [
+        card
+        for card in active_model_cards
+        if card.model_ref == f"research-agent-loop@{current_release_version}"
+    ]
+    non_runtime_models = [
+        card
+        for card in active_model_cards
+        if card.model_ref != f"research-agent-loop@{current_release_version}"
+    ]
+    if (
+        len(active_model_cards) != 4
+        or len(active_prompt_cards) != 1
+        or len(active_tool_manifests) != 1
+        or len(active_evaluations) != 3
+        or len(active_challenger_reviews) != 2
+        or len(runtime_models) != 1
+    ):
+        failures.append("active_release_artifact_counts")
+    if len(active_prompt_cards) != 1 or len(runtime_models) != 1:
         failures.append("prompt_lineage")
     else:
-        prompt = prompt_cards[0]
+        prompt = active_prompt_cards[0]
         runtime_model = runtime_models[0]
         if (
-            prompt.prompt_ref != "research-evaluation@v1"
+            prompt.prompt_ref
+            != f"research-evaluation@{current_release_version}"
             or prompt.model_ref != runtime_model.model_ref
             or runtime_model.prompt_lineage_status.value != "REGISTERED"
             or runtime_model.prompt_template_ref != prompt.prompt_ref
@@ -3009,10 +3648,10 @@ def _model_risk_baseline_evidence(
         for card in non_runtime_models
     ):
         failures.append("non_runtime_prompt_lineage")
-    if len(tool_manifests) != 1:
+    if len(active_tool_manifests) != 1:
         failures.append("tool_manifest_count")
     else:
-        prohibited = set(tool_manifests[0].prohibited_actions)
+        prohibited = set(active_tool_manifests[0].prohibited_actions)
         if (
             not {
                 "APPROVE",
@@ -3026,12 +3665,72 @@ def _model_risk_baseline_evidence(
 
     runtime_events = document.get("runtime_events")
     previous_event_hash = ""
-    expected_runtime_ids = ["model-risk-baseline-runtime-v1"]
+    current_baseline_invocation = (
+        f"model-risk-baseline-runtime-{current_release_version}"
+    )
+    current_runtime_invocation = (
+        f"model-risk-runtime-red-team-{current_runtime_report_version}"
+    )
+    current_profile = [current_baseline_invocation]
     if is_longitudinal_v2:
-        expected_runtime_ids.append("model-risk-runtime-red-team-v2")
-    if not isinstance(runtime_events, list) or len(runtime_events) != expected_runtime_invocations:
+        current_profile.append(current_runtime_invocation)
+    cumulative_profile = [
+        "model-risk-baseline-runtime-v1",
+        "model-risk-runtime-red-team-v2",
+        "model-risk-baseline-runtime-v2",
+        "model-risk-runtime-red-team-v3",
+        *current_profile,
+    ]
+    allowed_profiles = [current_profile]
+    if is_longitudinal_v2:
+        allowed_profiles.append(cumulative_profile)
+    runtime_ids = (
+        [event.get("invocation_id") for event in runtime_events]
+        if isinstance(runtime_events, list)
+        and all(isinstance(event, dict) for event in runtime_events)
+        else []
+    )
+    if runtime_ids not in allowed_profiles:
+        failures.append("runtime_event_profile")
+    expected_runtime_invocations = len(runtime_ids)
+    if (
+        not isinstance(runtime_events, list)
+        or document.get("runtime_invocation_count") != expected_runtime_invocations
+    ):
         failures.append("runtime_events")
         runtime_events = []
+    lineage_by_invocation = {
+        "model-risk-baseline-runtime-v1": (
+            "research-agent-loop@v1",
+            "research-evaluation@v1",
+            "research-agent-tools@v1",
+        ),
+        "model-risk-runtime-red-team-v2": (
+            "research-agent-loop@v1",
+            "research-evaluation@v1",
+            "research-agent-tools@v1",
+        ),
+        "model-risk-baseline-runtime-v2": (
+            "research-agent-loop@v2",
+            "research-evaluation@v2",
+            "research-agent-tools@v2",
+        ),
+        "model-risk-runtime-red-team-v3": (
+            "research-agent-loop@v2",
+            "research-evaluation@v2",
+            "research-agent-tools@v2",
+        ),
+        current_baseline_invocation: (
+            f"research-agent-loop@{current_release_version}",
+            f"research-evaluation@{current_release_version}",
+            f"research-agent-tools@{current_release_version}",
+        ),
+        current_runtime_invocation: (
+            f"research-agent-loop@{current_release_version}",
+            f"research-evaluation@{current_release_version}",
+            f"research-agent-tools@{current_release_version}",
+        ),
+    }
     seen_runtime_ids: set[str] = set()
     for expected_sequence, event in enumerate(runtime_events, start=1):
         if not isinstance(event, dict) or not isinstance(event.get("payload"), dict):
@@ -3046,10 +3745,10 @@ def _model_risk_baseline_evidence(
         if invocation.invocation_id in seen_runtime_ids:
             failures.append("runtime_event_duplicate_identity")
         seen_runtime_ids.add(invocation.invocation_id)
+        expected_lineage = lineage_by_invocation.get(invocation.invocation_id)
         if (
             event.get("sequence") != expected_sequence
             or event.get("invocation_id") != invocation.invocation_id
-            or invocation.invocation_id != expected_runtime_ids[expected_sequence - 1]
             or event.get("recorded_at") != invocation.recorded_at
             or event.get("model_ref") != invocation.model_ref
             or event.get("prompt_ref") != invocation.prompt_ref
@@ -3057,9 +3756,13 @@ def _model_risk_baseline_evidence(
             or event.get("action") != invocation.action
             or event.get("previous_hash") != previous_event_hash
             or invocation.outcome != RuntimeInvocationOutcome.ALLOWED
-            or invocation.model_ref != "research-agent-loop@v1"
-            or invocation.prompt_ref != "research-evaluation@v1"
-            or invocation.tool_manifest_ref != "research-agent-tools@v1"
+            or expected_lineage is None
+            or (
+                invocation.model_ref,
+                invocation.prompt_ref,
+                invocation.tool_manifest_ref,
+            )
+            != expected_lineage
             or invocation.action != "EVALUATE"
         ):
             failures.append("runtime_event_lineage")
@@ -3073,7 +3776,7 @@ def _model_risk_baseline_evidence(
     evaluation_refs = {evaluation.evaluation_ref for evaluation in evaluations}
     model_refs = {card.model_ref for card in model_cards}
     primary_values: list[float] = []
-    for evaluation in evaluations:
+    for evaluation in active_evaluations:
         metrics = {metric.name: metric.value for metric in evaluation.metrics}
         value = metrics.get("oos_sharpe_net_5bps")
         if value is None or value >= 0:
@@ -3097,39 +3800,82 @@ def _model_risk_baseline_evidence(
         "agent-reset-kill-switch",
         "agent-request-human-approval",
     }
-    expected_red_team_cases = {v1_red_team_ref: v1_required_cases}
-    if is_longitudinal_v2:
-        expected_red_team_cases[v2_red_team_ref] = {
-            *v1_required_cases,
-            "runtime-action-override",
-            "runtime-sensitive-output",
-            "runtime-forbidden-tool-action",
-        }
+    runtime_required_cases = {
+        *v1_required_cases,
+        "runtime-action-override",
+        "runtime-sensitive-output",
+        "runtime-forbidden-tool-action",
+    }
+    expected_red_team_cases = {
+        "red-team-report:research-agent-boundary-v1": v1_required_cases,
+        "red-team-report:research-agent-runtime-boundary-v2": (
+            runtime_required_cases
+        ),
+        "red-team-report:research-agent-boundary-v2": v1_required_cases,
+        "red-team-report:research-agent-runtime-boundary-v3": (
+            runtime_required_cases
+        ),
+        current_agent_red_team_ref: v1_required_cases,
+        current_runtime_red_team_ref: runtime_required_cases,
+    }
+    expected_red_team_lineage = {
+        "red-team-report:research-agent-boundary-v1": (
+            "research-agent-loop@v1",
+            "research-agent-tools@v1",
+        ),
+        "red-team-report:research-agent-runtime-boundary-v2": (
+            "research-agent-loop@v1",
+            "research-agent-tools@v1",
+        ),
+        "red-team-report:research-agent-boundary-v2": (
+            "research-agent-loop@v2",
+            "research-agent-tools@v2",
+        ),
+        "red-team-report:research-agent-runtime-boundary-v3": (
+            "research-agent-loop@v2",
+            "research-agent-tools@v2",
+        ),
+        current_agent_red_team_ref: (
+            f"research-agent-loop@{current_release_version}",
+            f"research-agent-tools@{current_release_version}",
+        ),
+        current_runtime_red_team_ref: (
+            f"research-agent-loop@{current_release_version}",
+            f"research-agent-tools@{current_release_version}",
+        ),
+    }
     reports_by_id = {report.artifact_id: report for report in red_team_reports}
-    if set(reports_by_id) != set(expected_red_team_cases):
+    required_current_reports = {current_agent_red_team_ref}
+    if is_longitudinal_v2:
+        required_current_reports.add(current_runtime_red_team_ref)
+    if (
+        not required_current_reports <= set(reports_by_id)
+        or not set(reports_by_id) <= set(expected_red_team_cases)
+    ):
         failures.append("red_team_report_count")
-    for report_ref, required_cases in expected_red_team_cases.items():
-        report = reports_by_id.get(report_ref)
-        if report is None:
-            continue
+    for report_ref, report in reports_by_id.items():
+        required_cases = expected_red_team_cases.get(report_ref, set())
+        expected_lineage = expected_red_team_lineage.get(report_ref)
         if (
             report.verdict != RedTeamVerdict.PASS
             or set(report.required_case_ids) != required_cases
             or {case.case_id for case in report.cases} != required_cases
             or any(case.boundary_breached for case in report.cases)
+            or expected_lineage is None
+            or (report.model_ref, report.tool_manifest_ref) != expected_lineage
         ):
             failures.append("red_team_cases")
 
     expected_review_refs = sorted(review.artifact_id for review in challenger_reviews)
     if expected_review_refs != document.get("challenger_review_refs"):
         failures.append("challenger_review_refs")
-    if len(challenger_reviews) != 2 or any(
+    if len(active_challenger_reviews) != 2 or any(
         review.verdict != ChallengerVerdict.REJECT_ABSOLUTE_FLOOR
         or review.identity_assurance != ReviewIdentityAssurance.PROCESS_ROLE_ONLY
         or review.model_owner_group == review.reviewer_group
         or review.incumbent_evaluation_ref not in evaluation_refs
         or review.challenger_evaluation_ref not in evaluation_refs
-        for review in challenger_reviews
+        for review in active_challenger_reviews
     ):
         failures.append("challenger_reviews")
     if document.get("challenger_verdicts") != [

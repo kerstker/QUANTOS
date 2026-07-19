@@ -24,7 +24,6 @@ coverage/
 .benchmarks/
 .claude/worktrees/
 .worktrees/
-.superpowers/
 
 # Logs & temp
 logs/

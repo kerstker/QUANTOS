@@ -14,7 +14,11 @@ from quantos.contracts.event_schemas import (
     EventSchemaRegistry,
 )
 from quantos.contracts.events import Event
-from services.monitoring.event_bus import EventDelivery
+from services.monitoring.event_bus import (
+    ConnectionEpoch,
+    EventDelivery,
+    VerifiedFrontier,
+)
 
 
 class EventProjectionIntegrityError(RuntimeError):
@@ -93,6 +97,9 @@ class DomainEventProjection:
         self._c = sqlite3.connect(db_path, check_same_thread=False)
         self._lock = threading.Lock()
         self._head_hash = ""
+        self._epoch: ConnectionEpoch | None = None
+        self._frontier: VerifiedFrontier | None = None
+        self._failed_closed_reason = ""
         self._read_only = not create
         self._schema_registry = schema_registry
         self._consumer_versions = (
@@ -108,7 +115,7 @@ class DomainEventProjection:
                 self._c.commit()
             else:
                 self._c.execute("PRAGMA query_only=ON")
-            self._head_hash = self._verify_rows(self._rows_locked())
+            self._full_verify_locked()
 
     def _rows_locked(self) -> list[tuple]:
         try:
@@ -187,6 +194,241 @@ class DomainEventProjection:
             previous = expected
         return previous
 
+    def _verify_required_schema_locked(self) -> None:
+        required = {
+            "projection_seq",
+            "event_seq",
+            "event_id",
+            "event_type",
+            "event_version",
+            "timestamp",
+            "source",
+            "domain",
+            "criticality",
+            "correlation_id",
+            "causation_id",
+            "payload_json",
+            "repro_hash",
+            "prev_record_hash",
+            "record_hash",
+        }
+        columns = {
+            str(row[1])
+            for row in self._c.execute(
+                "PRAGMA table_info(projected_events)"
+            ).fetchall()
+        }
+        if not required.issubset(columns):
+            raise EventProjectionIntegrityError(
+                "domain event projection schema is incomplete"
+            )
+        trigger_rows = self._c.execute(
+            "SELECT name,tbl_name,sql FROM sqlite_master WHERE type='trigger'"
+        ).fetchall()
+        triggers = {
+            str(row[0]): (str(row[1]), " ".join(str(row[2] or "").upper().split()))
+            for row in trigger_rows
+        }
+        for name, operation in (
+            ("projected_events_no_update", "BEFORE UPDATE"),
+            ("projected_events_no_delete", "BEFORE DELETE"),
+        ):
+            actual = triggers.get(name)
+            if (
+                actual is None
+                or actual[0] != "projected_events"
+                or operation not in actual[1]
+                or "RAISE(ABORT" not in actual[1]
+            ):
+                raise EventProjectionIntegrityError(
+                    f"projection append-only trigger is missing or drifted: {name}"
+                )
+
+    def _tail_locked(self) -> tuple[int, str]:
+        row = self._c.execute(
+            "SELECT projection_seq,record_hash FROM projected_events "
+            "ORDER BY projection_seq DESC LIMIT 1"
+        ).fetchone()
+        return (int(row[0]), str(row[1])) if row is not None else (0, "")
+
+    def _sentinel_locked(self) -> tuple[int, int, int, tuple[int, str]]:
+        data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
+        schema_version = int(self._c.execute("PRAGMA schema_version").fetchone()[0])
+        return self._c.total_changes, data_version, schema_version, self._tail_locked()
+
+    def _invalidate_locked(self) -> None:
+        if self._epoch is not None:
+            self._epoch = self._epoch.invalidated()
+        if self._frontier is not None:
+            self._frontier = self._frontier.invalidated()
+
+    def _assert_monotonic_extension_locked(
+        self, current: VerifiedFrontier
+    ) -> None:
+        anchor = self._frontier
+        if anchor is None:
+            return
+        if (
+            current.row_count < anchor.row_count
+            or current.last_sequence < anchor.last_sequence
+        ):
+            raise EventProjectionIntegrityError(
+                "projection history no longer extends its verified frontier"
+            )
+        if anchor.row_count == 0:
+            return
+        prefix_count = int(
+            self._c.execute(
+                "SELECT COUNT(*) FROM projected_events WHERE projection_seq<=?",
+                (anchor.last_sequence,),
+            ).fetchone()[0]
+        )
+        anchor_row = self._c.execute(
+            "SELECT record_hash FROM projected_events WHERE projection_seq=?",
+            (anchor.last_sequence,),
+        ).fetchone()
+        if (
+            prefix_count != anchor.row_count
+            or anchor_row is None
+            or str(anchor_row[0]) != anchor.last_record_hash
+        ):
+            raise EventProjectionIntegrityError(
+                "projection history replaced its verified prefix"
+            )
+
+    def _full_verify_locked(self) -> None:
+        if self._failed_closed_reason:
+            raise EventProjectionIntegrityError(self._failed_closed_reason)
+        try:
+            self._verify_required_schema_locked()
+            rows = self._rows_locked()
+            head = self._verify_rows(rows)
+            current = VerifiedFrontier(
+                chain_name="projection",
+                last_sequence=int(rows[-1][0]) if rows else 0,
+                row_count=len(rows),
+                last_record_hash=head,
+            )
+            self._assert_monotonic_extension_locked(current)
+            total_changes, data_version, schema_version, tail = self._sentinel_locked()
+            if tail != (current.last_sequence, current.last_record_hash):
+                raise EventProjectionIntegrityError(
+                    "projection changed during complete verification"
+                )
+        except BaseException as exc:
+            self._invalidate_locked()
+            if isinstance(exc, EventProjectionIntegrityError) and (
+                "verified frontier" in str(exc) or "verified prefix" in str(exc)
+            ):
+                self._failed_closed_reason = str(exc)
+            raise
+
+        generation = 1 if self._epoch is None else self._epoch.owner_generation + 1
+        self._frontier = current
+        self._head_hash = current.last_record_hash
+        self._epoch = ConnectionEpoch(
+            connection_id=id(self._c),
+            owner_generation=generation,
+            total_changes=total_changes,
+            data_version=data_version,
+            schema_version=schema_version,
+        )
+
+    def _ensure_fresh_locked(self) -> None:
+        if self._failed_closed_reason:
+            raise EventProjectionIntegrityError(self._failed_closed_reason)
+        if self._epoch is None or self._frontier is None:
+            self._full_verify_locked()
+            return
+        try:
+            total_changes, data_version, schema_version, tail = self._sentinel_locked()
+        except sqlite3.DatabaseError as exc:
+            self._invalidate_locked()
+            raise EventProjectionIntegrityError(
+                f"projection freshness sentinel failed: {exc}"
+            ) from exc
+        epoch = self._epoch
+        frontier = self._frontier
+        if (
+            epoch.state == "ACTIVE"
+            and frontier.state == "ACTIVE"
+            and epoch.connection_id == id(self._c)
+            and epoch.total_changes == total_changes
+            and epoch.data_version == data_version
+            and epoch.schema_version == schema_version
+            and tail == (frontier.last_sequence, frontier.last_record_hash)
+        ):
+            return
+        self._invalidate_locked()
+        self._full_verify_locked()
+
+    def _commit_connection_locked(self) -> None:
+        self._c.commit()
+
+    def _commit_staged_locked(self, tentative: VerifiedFrontier) -> None:
+        epoch = self._epoch
+        frontier = self._frontier
+        if (
+            epoch is None
+            or frontier is None
+            or epoch.state != "ACTIVE"
+            or frontier.state != "ACTIVE"
+        ):
+            raise EventProjectionIntegrityError(
+                "cannot commit projection against an invalid frontier"
+            )
+        expected_total_changes = (
+            epoch.total_changes + tentative.row_count - frontier.row_count
+        )
+        if self._c.total_changes != expected_total_changes:
+            raise EventProjectionIntegrityError(
+                "unexpected same-connection changes preceded projection commit"
+            )
+        try:
+            self._commit_connection_locked()
+        except BaseException as exc:
+            self._failed_closed_reason = (
+                "projection commit outcome is uncertain; reopen is required"
+            )
+            self._invalidate_locked()
+            try:
+                if self._c.in_transaction:
+                    self._c.rollback()
+            except BaseException:
+                pass
+            raise EventProjectionIntegrityError(self._failed_closed_reason) from exc
+
+        total_changes, data_version, schema_version, tail = self._sentinel_locked()
+        if (
+            total_changes != expected_total_changes
+            or data_version != epoch.data_version
+            or schema_version != epoch.schema_version
+            or tail != (tentative.last_sequence, tentative.last_record_hash)
+        ):
+            self._invalidate_locked()
+            self._full_verify_locked()
+            return
+        self._frontier = tentative
+        self._head_hash = tentative.last_record_hash
+        self._epoch = ConnectionEpoch(
+            connection_id=id(self._c),
+            owner_generation=epoch.owner_generation + 1,
+            total_changes=total_changes,
+            data_version=data_version,
+            schema_version=schema_version,
+        )
+
+    def _abort_transaction_locked(self) -> None:
+        try:
+            if self._c.in_transaction:
+                self._c.rollback()
+        except BaseException:
+            self._failed_closed_reason = (
+                "projection rollback outcome is uncertain; reopen is required"
+            )
+        finally:
+            self._invalidate_locked()
+
     @classmethod
     def _matches(cls, row: tuple, delivery: EventDelivery) -> bool:
         return (
@@ -204,10 +446,9 @@ class DomainEventProjection:
         if self._read_only:
             raise PermissionError("read-only domain event projection cannot apply events")
         with self._lock:
-            previous_head = self._head_hash
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._head_hash = self._verify_rows(self._rows_locked())
+                self._ensure_fresh_locked()
                 existing = self._c.execute(
                     "SELECT projection_seq,event_seq,event_id,event_type,event_version,"
                     " timestamp,source,domain,criticality,correlation_id,causation_id,"
@@ -218,21 +459,27 @@ class DomainEventProjection:
                 ).fetchall()
                 if existing:
                     if len(existing) == 1 and self._matches(existing[0], delivery):
-                        self._c.rollback()
+                        assert self._frontier is not None
+                        self._commit_staged_locked(self._frontier)
                         return False
                     raise EventProjectionIntegrityError(
                         "projected event id or sequence conflict"
                     )
 
+                frontier = self._frontier
+                if frontier is None:
+                    raise EventProjectionIntegrityError(
+                        "projection frontier is unavailable"
+                    )
                 digest = _projection_hash(
                     event_seq=delivery.event_seq,
                     event=delivery.event,
                     correlation_id=delivery.correlation_id,
                     causation_id=delivery.causation_id,
-                    prev_record_hash=self._head_hash,
+                    prev_record_hash=frontier.last_record_hash,
                 )
                 event = delivery.event
-                self._c.execute(
+                cursor = self._c.execute(
                     "INSERT INTO projected_events"
                     " (event_seq,event_id,event_type,event_version,timestamp,source,domain,"
                     " criticality,correlation_id,causation_id,payload_json,repro_hash,"
@@ -250,17 +497,20 @@ class DomainEventProjection:
                         delivery.causation_id,
                         json.dumps(event.payload, sort_keys=True, separators=(",", ":")),
                         event.reproducibility_hash,
-                        self._head_hash,
+                        frontier.last_record_hash,
                         digest,
                     ),
                 )
-                self._c.commit()
-                self._head_hash = digest
+                tentative = VerifiedFrontier(
+                    chain_name="projection",
+                    last_sequence=int(cursor.lastrowid),
+                    row_count=frontier.row_count + 1,
+                    last_record_hash=digest,
+                )
+                self._commit_staged_locked(tentative)
                 return True
-            except Exception:
-                if self._c.in_transaction:
-                    self._c.rollback()
-                self._head_hash = previous_head
+            except BaseException:
+                self._abort_transaction_locked()
                 raise
 
     def records(self, *, limit: Optional[int] = None) -> Tuple[dict, ...]:
@@ -270,8 +520,8 @@ class DomainEventProjection:
             if limit < 1:
                 raise ValueError("limit must be positive")
         with self._lock:
+            self._full_verify_locked()
             rows = self._rows_locked()
-            self._head_hash = self._verify_rows(rows)
             if limit is not None:
                 rows = rows[-limit:]
             return tuple(
@@ -294,7 +544,7 @@ class DomainEventProjection:
     def chain_valid(self) -> bool:
         with self._lock:
             try:
-                self._head_hash = self._verify_rows(self._rows_locked())
+                self._full_verify_locked()
                 return True
             except (EventProjectionIntegrityError, sqlite3.DatabaseError):
                 return False

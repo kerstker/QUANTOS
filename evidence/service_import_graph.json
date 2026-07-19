@@ -771,6 +771,11 @@
           "path": "services/research/backtest_engine/metrics.py"
         },
         {
+          "line": 33,
+          "module": "services.validation.reality_check",
+          "path": "services/research/experiment_registry/family_schema_named_verifiers_c8.py"
+        },
+        {
           "line": 14,
           "module": "services.validation.factor_statistics",
           "path": "services/research/factor_engine/domain/model.py"
@@ -834,6 +839,11 @@
           "line": 29,
           "module": "services.validation.walk_forward",
           "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 3,
+          "module": "services.validation.reality_check",
+          "path": "services/research/validation/reality_check.py"
         },
         {
           "line": 3,
@@ -926,7 +936,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "5149c8a0fdcfba43f76164c1898f32ae47e7745b36463a95eda990a9640dd9d4",
+  "graph_sha256": "6ce98e1b2cb938704cf79c41d0afc4ab9d9cf163b8bdd382f2f86cf53b140b47",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -957,10 +967,10 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "55dc2cad3872fa1fe76963b12ff3ece154d334c8cb346f0fc2e918b247e680b9",
+  "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 295,
+  "source_file_count": 322,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

@@ -1,5 +1,34 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-19 Pass M 精确家族证据收口 + 供应链实证刷新:** 便携 ALPHA 试验账本的
+> exact-v3 家族模式已落地为 33 张家族表 / 401 个 SQL 对象 / 124 个命名绑定 /
+> 228 条结构规则 / 9 个受控 UDF；静态实现封印为
+> `c1a61a41daa67f58e0d7ede45dff0fe127fc36dba3a8ab3bc4a22657bab98f07`。
+> 运行时只允许 17 条精确状态迁移，未列明调用一律拒绝；v2→v3 激活覆盖 405 个故障注入点，
+> 13 张继承表非空迁移保持字节/逻辑不变，7 个已填充回滚点在关闭重开后仍精确恢复，33 张新表的
+> UPDATE/DELETE 不可变性已做真实 SQLite 验收。C5 已拆为 proposal registration + 唯一 terminal parse
+> result，消除二次链与未终结解析歧义；调用方 UDF 残留、伪造 owner token、同连接重入和双连接竞态均
+> fail-closed。当前持久激活仍禁止，`CodeManifestEvidence` 只证明哈希绑定，不冒充外部批准或来源证明。
+
+> 同轮修复了模型风险证据“实现已变但复用 artifact version”的真实治理缺口：生成器现在保留历史制品与
+> runtime event 前缀，并通过新 release 追加；当前证据为 39 个制品、6 条运行事件、4 个哈希链修订，
+> 模型/挑战者仍诚实停在 M2（负 OOS、无外部模型提供方/强审阅身份）。强身份本地基线重算为 M3。
+> 供应链已用 Trivy 0.72.0 官方 SHA-256 校验包、2026-07-19 新数据库、两次真实 `--no-cache`
+> OCI 构建重做：归档字节一致（SHA-256
+> `b68047311e3bd33da45cc8880917ed2b70e819b664f4f82c4663461c9dee7fba`），最终运行镜像
+> 0 漏洞，基础镜像 5 项中低风险记录，534-component SBOM/基线检查通过；只读、无网络、UID 65532
+> L2 冒烟通过。Docker Desktop 与临时扫描/归档文件已回收。
+
+> 最终统一门禁实跑 **18/19 阶段通过**：主后端 4227 passed / 5 skipped；live/trading/tools
+> 独立套件通过；前端 typecheck/tests/production build 全通过；治理扫描 351 文件 / 0 违规；漏洞、事件
+> schema、服务图、供应链、模型风险历史、拥挤校准、顶级评估和风险恢复演练全部通过。唯一非绿项是
+> `backup-evidence:current`：证据 95.2 小时，超过 48 小时门槛；这是运营授权/新鲜度阻塞，不是代码回归。
+
+> 当前机器结论仍为 **`NOT_TOP_TIER`：15/22 PASS，0 FAILED，2 项需外部/人工证据，3 条红线开放**。
+> 未完成项不是代码伪绿：外部模型提供方与独立强身份审阅、真实 OIDC/TLS/密钥与身份生命周期、30 天恢复
+> 历史 + 外部 Ed25519/WORM、跨主机可复现及外部签名/收据、持牌数据深度、post-L2 多场所执行；本机
+> L2 backup 证据也已超过 48 小时新鲜度，必须由获授权的真实备份运行刷新。Phase S 与持久部署激活仍开放。
+
 > **2026-07-16 Wave0后P2质量改进:** import-linter依赖治理已引入（4个合约，检测到
 > research↔alpha 16处循环依赖，live/隔离与contracts清洁度已验证）；147个空DDD目录
 > 已用PLANNED.md标记为架构占位；console_api已验证为按router拆分（7548行分布多视图）；

@@ -40,6 +40,7 @@ _PINNED_REQUIREMENT = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9][A-Za-z0-9_.+
 _ACTION = re.compile(r"uses:\s*([^\s#]+)")
 _ACTION_SHA = re.compile(r"^([^@]+)@([0-9a-f]{40})$")
 _MANIFESTS = (
+    ".gitattributes",
     ".github/workflows/validate.yml",
     "apps/research-console/package-lock.json",
     "apps/research-console/package.json",
@@ -156,6 +157,7 @@ _MANIFESTS = (
     "tests/governance/test_l2_operations_boundary.py",
     "tests/governance/test_top_tier_assessment.py",
     "tests/governance/test_supply_chain_evidence.py",
+    "tests/governance/test_evidence_checkout_portability.py",
     "tests/contracts/test_paper_execution_contract.py",
     "tests/contracts/test_event_schema_registry.py",
     "tests/alpha/test_maintenance_store.py",

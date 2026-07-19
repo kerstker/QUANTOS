@@ -43,6 +43,20 @@ class EvaluationAuditIntent:
     metadata: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class EvaluationArtifactWrite:
+    """Prepared immutable evaluation payload for one store-owned transaction."""
+
+    run_id: str
+    alpha_id: str
+    dataset_version: str
+    recorded_ts: int
+    verdict: str
+    content_hash: str
+    evaluation_json: str
+    audit_intent: EvaluationAuditIntent | None = None
+
+
 @runtime_checkable
 class ExperimentStorePort(Protocol):
     def begin_search_attempt(

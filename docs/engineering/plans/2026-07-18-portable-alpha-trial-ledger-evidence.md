@@ -1,6 +1,6 @@
 # Portable Alpha Trial-Ledger Evidence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use the repository's subagent-driven implementation workflow (or its plan-execution alternative) task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `ALPHA.TRIAL.GLOBAL_LEDGER` verifiably `M4/PASS` in both the originating worktree and a fresh checkout without committing the mutable production registry.
 
