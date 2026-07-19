@@ -19,15 +19,17 @@
 > 0 漏洞，基础镜像 5 项中低风险记录，534-component SBOM/基线检查通过；只读、无网络、UID 65532
 > L2 冒烟通过。Docker Desktop 与临时扫描/归档文件已回收。
 
-> 最终统一门禁实跑 **18/19 阶段通过**：主后端 4227 passed / 5 skipped；live/trading/tools
-> 独立套件通过；前端 typecheck/tests/production build 全通过；治理扫描 351 文件 / 0 违规；漏洞、事件
-> schema、服务图、供应链、模型风险历史、拥挤校准、顶级评估和风险恢复演练全部通过。唯一非绿项是
-> `backup-evidence:current`：证据 95.2 小时，超过 48 小时门槛；这是运营授权/新鲜度阻塞，不是代码回归。
+> 2026-07-20 03:00 的已注册 `QUANTOS_backup` 任务在正式运营根完成真实加密备份并返回 0；10 个
+> required authority store 均已备份到独立卷、隔离恢复、摘要与 SQLite 完整性复验通过，权威恢复历史
+> 追加到 event seq 26。该真实证据已同步进发布工作树，`backup-evidence:current` 恢复 PASS。
+> 合并后最终统一门禁实跑 **19/19 阶段通过**：主后端 4227 passed / 5 skipped；live/trading/tools
+> 1063 passed；前端 69 tests + typecheck/production build 全通过；治理扫描 351 文件 / 0 违规；漏洞、事件
+> schema、服务图、供应链、模型风险历史、拥挤校准、顶级评估、备份新鲜度和风险恢复演练全部通过。
 
 > 当前机器结论仍为 **`NOT_TOP_TIER`：15/22 PASS，0 FAILED，2 项需外部/人工证据，3 条红线开放**。
 > 未完成项不是代码伪绿：外部模型提供方与独立强身份审阅、真实 OIDC/TLS/密钥与身份生命周期、30 天恢复
-> 历史 + 外部 Ed25519/WORM、跨主机可复现及外部签名/收据、持牌数据深度、post-L2 多场所执行；本机
-> L2 backup 证据也已超过 48 小时新鲜度，必须由获授权的真实备份运行刷新。Phase S 与持久部署激活仍开放。
+> 历史 + 外部 Ed25519/WORM、跨主机可复现及外部签名/收据、持牌数据深度、post-L2 多场所执行。单次
+> L2 backup 已新鲜且真实，但不冒充 30 天运营历史或外部检查点；Phase S 与持久部署激活仍开放。
 
 > **2026-07-16 Wave0后P2质量改进:** import-linter依赖治理已引入（4个合约，检测到
 > research↔alpha 16处循环依赖，live/隔离与contracts清洁度已验证）；147个空DDD目录
