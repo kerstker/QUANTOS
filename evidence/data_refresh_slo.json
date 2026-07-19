@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "generated_at_ms": 1783892398206,
+  "provenance": "REAL_REFRESH_HISTORY",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "decision": "BLOCK",
+  "history": {
+    "path": "data\\cache\\live_refresh_history.db",
+    "run_count": 2,
+    "chain_valid": true,
+    "head_hash": "60e065a624bafe1c32808de8514f9106752807aaf08dd98ea14a7062441a88e0"
+  },
+  "slo": {
+    "schema_version": 1,
+    "evaluated_at_ms": 1783892398206,
+    "verdict": "BREACH",
+    "chain_valid": true,
+    "latest_run_id": "refresh-1783891544698",
+    "latest_duration_ms": 635490,
+    "window_runs": 30,
+    "minimum_runs": 30,
+    "minimum_success_rate": 0.99,
+    "minimum_instrument_coverage": 0.99,
+    "max_consecutive_failures": 3,
+    "max_global_duration_ms": 1800000,
+    "sources": {
+      "prices": {
+        "sample_count": 2,
+        "success_rate": 1.0,
+        "instrument_coverage": 0.991304347826087,
+        "consecutive_failures": 0,
+        "latest_outcome": "FAILED",
+        "latest_meets_slo": true,
+        "latest_instrument_coverage": 0.991304347826087,
+        "latest_duration_ms": 834,
+        "latest_failed_count": 1,
+        "latest_watermark_after": 1708387200000,
+        "latest_freshest_days": 1,
+        "latest_n_stale": 1,
+        "latest_n_total": 115
+      },
+      "funding": {
+        "sample_count": 2,
+        "success_rate": 0.0,
+        "instrument_coverage": 0.0,
+        "consecutive_failures": 2,
+        "latest_outcome": "FAILED",
+        "latest_meets_slo": false,
+        "latest_instrument_coverage": 0.0,
+        "latest_duration_ms": 634128,
+        "latest_failed_count": 115,
+        "latest_watermark_after": 1783382400000,
+        "latest_freshest_days": 5,
+        "latest_n_stale": 115,
+        "latest_n_total": 115
+      },
+      "perp_mark_prices": {
+        "sample_count": 2,
+        "success_rate": 1.0,
+        "instrument_coverage": 1.0,
+        "consecutive_failures": 0,
+        "latest_outcome": "PASS",
+        "latest_meets_slo": true,
+        "latest_instrument_coverage": 1.0,
+        "latest_duration_ms": 25450,
+        "latest_failed_count": 0,
+        "latest_watermark_after": null,
+        "latest_freshest_days": 1,
+        "latest_n_stale": 0,
+        "latest_n_total": 24
+      },
+      "oi_metrics": {
+        "sample_count": 2,
+        "success_rate": 1.0,
+        "instrument_coverage": 1.0,
+        "consecutive_failures": 0,
+        "latest_outcome": "PASS",
+        "latest_meets_slo": true,
+        "latest_instrument_coverage": 1.0,
+        "latest_duration_ms": 10199,
+        "latest_failed_count": 0,
+        "latest_watermark_after": 1783728000000,
+        "latest_freshest_days": 1,
+        "latest_n_stale": 17,
+        "latest_n_total": 41
+      }
+    },
+    "violations": [
+      {
+        "code": "SOURCE_STALE",
+        "source": "funding",
+        "observed": 5,
+        "threshold": 3
+      }
+    ]
+  },
+  "watermark_history": {
+    "prices": [
+      {
+        "ran_at_ms": 1783890763312,
+        "outcome": "FAILED",
+        "watermark_after": 1708387200000,
+        "freshest_days": 1,
+        "n_stale": 1,
+        "n_total": 115
+      },
+      {
+        "ran_at_ms": 1783891544698,
+        "outcome": "FAILED",
+        "watermark_after": 1708387200000,
+        "freshest_days": 1,
+        "n_stale": 1,
+        "n_total": 115
+      }
+    ],
+    "funding": [
+      {
+        "ran_at_ms": 1783890763312,
+        "outcome": "FAILED",
+        "watermark_after": 1783382400000,
+        "freshest_days": 5,
+        "n_stale": 115,
+        "n_total": 115
+      },
+      {
+        "ran_at_ms": 1783891544698,
+        "outcome": "FAILED",
+        "watermark_after": 1783382400000,
+        "freshest_days": 5,
+        "n_stale": 115,
+        "n_total": 115
+      }
+    ],
+    "perp_mark_prices": [
+      {
+        "ran_at_ms": 1783890763312,
+        "outcome": "FAILED",
+        "watermark_after": null,
+        "freshest_days": 1,
+        "n_stale": 0,
+        "n_total": 24
+      },
+      {
+        "ran_at_ms": 1783891544698,
+        "outcome": "PASS",
+        "watermark_after": null,
+        "freshest_days": 1,
+        "n_stale": 0,
+        "n_total": 24
+      }
+    ],
+    "oi_metrics": [
+      {
+        "ran_at_ms": 1783890763312,
+        "outcome": "FAILED",
+        "watermark_after": 1783728000000,
+        "freshest_days": 1,
+        "n_stale": 17,
+        "n_total": 41
+      },
+      {
+        "ran_at_ms": 1783891544698,
+        "outcome": "PASS",
+        "watermark_after": 1783728000000,
+        "freshest_days": 1,
+        "n_stale": 17,
+        "n_total": 41
+      }
+    ]
+  },
+  "limitations": [
+    "Local SQLite hash chaining does not replace external WORM/object-lock retention.",
+    "PASS requires the configured minimum number of real scheduled refresh runs.",
+    "This evidence does not enable live trading or broker connectivity."
+  ]
+}

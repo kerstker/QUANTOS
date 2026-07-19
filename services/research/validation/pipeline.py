@@ -19,26 +19,30 @@ from __future__ import annotations
 import statistics
 from typing import Optional, Sequence
 
+from quantos.contracts.cost import CostModel
 from quantos.contracts.data import Bar
 from quantos.contracts.research import ValidationResult
-from services.research.backtest_engine.costs import CostModel
-from services.research.backtest_engine.engine import run_backtest
-from services.research.backtest_engine.metrics import returns_from_equity, sharpe
-from services.research.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
-from services.research.validation.gate import ValidationGate
-from services.research.validation.walk_forward import walk_forward_splits
+from services.research.ports.backtest import BacktestExecutionPort, BacktestOutcome
+from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
+from services.validation.gate import ValidationGate
+from services.validation.performance import returns_from_equity, sharpe
+from services.validation.walk_forward import walk_forward_splits
 
 _VAR_SR_FLOOR = 1e-4
 
 
-def _oos(bars, targets, splits, cost):
+def _oos(backtest, bars, targets, splits, cost):
     """Per-bar OOS returns (concatenated across test windows) and per-fold return."""
     per_bar: list[float] = []
     per_fold: list[float] = []
     for _train, test in splits:
         tb = [bars[i] for i in test]
         tt = [targets[i] for i in test]
-        res = run_backtest(tb, tt, cost=cost)
+        res = backtest.run(tb, tt, cost=cost)
+        if not isinstance(res, BacktestOutcome):
+            raise TypeError("backtest must return BacktestOutcome")
+        if len(res.equity_curve) != len(tb):
+            raise ValueError("backtest equity_curve must align with OOS bars")
         per_bar.extend(returns_from_equity(res.equity_curve))
         per_fold.append(res.total_pnl / res.initial_capital)
     return per_bar, per_fold
@@ -56,6 +60,7 @@ def run_research_validation(
     bars: Sequence[Bar],
     candidate_targets: Sequence[Sequence[int]],
     *,
+    backtest: BacktestExecutionPort,
     train_size: int,
     test_size: int,
     cost: CostModel = CostModel(),
@@ -70,11 +75,14 @@ def run_research_validation(
     `services.research.expression_leakage.compute_leakage_ok` — rather than letting a silent True wave
     a leaking strategy through (audit fix: this was the one non-fail-closed leakage input).
 
-    `n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
+    `backtest` is a required port so validation cannot silently select a concrete
+    execution engine. `n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
     catalog) inject the CATALOG-WIDE trial count and Sharpe-variance estimate, so
     Deflated Sharpe corrects for every alpha ever tried — not just the local
     candidate batch. Both must come from the same (catalog) source."""
     gate = gate or ValidationGate()
+    if not isinstance(backtest, BacktestExecutionPort):
+        raise TypeError("backtest must implement BacktestExecutionPort")
     if not candidate_targets:
         raise ValueError("need at least one candidate strategy")
     splits = walk_forward_splits(len(bars), train_size, test_size)
@@ -86,7 +94,7 @@ def run_research_validation(
     for targets in candidate_targets:
         if len(targets) != len(bars):
             raise ValueError("each candidate's targets must align with bars")
-        pb, pf = _oos(bars, targets, splits, cost)
+        pb, pf = _oos(backtest, bars, targets, splits, cost)
         cand_per_bar.append(pb)
         cand_per_fold.append(pf)
 

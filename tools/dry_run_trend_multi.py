@@ -24,6 +24,7 @@ from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _DAILY_DB = os.path.join("data", "cache", "crypto_daily.db")
 _SNAP = os.path.join("data", "cache", "crypto_research_snapshot.json")
@@ -109,13 +110,17 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id="trend", approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="trend", aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=None,  # trend = price edge, NO funding cash flow
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
-    DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)  # append alongside carry
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     print(f"=== TREND(日线 dist_from_high+momentum 复合)周度滚动干跑 · {len(instruments)} 币 · "
           f"{p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)

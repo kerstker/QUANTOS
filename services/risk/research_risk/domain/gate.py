@@ -6,6 +6,7 @@ import time, hashlib, json
 from typing import Dict, List
 from .models import *
 from .risk_modules import *
+from services.alpha.cluster import cluster_alphas
 
 
 class RiskApprovalGate:
@@ -38,6 +39,23 @@ class RiskApprovalGate:
         config = run.config or self.config
         gate_results = {}
 
+        # 2026-07-09 (gap audit rank #3): real complete-linkage clustering over the SAME
+        # alpha_returns this gate already receives, reusing max_pairwise_correlation as the
+        # cluster threshold (no new config field — semantically the same "too correlated" bar
+        # CorrelationRiskEngine already applies pairwise, just extended transitively via complete
+        # linkage). Empty/degenerate alpha_returns -> cluster_alphas returns [] -> the
+        # concentration engine's existing max_single fallback is unaffected. Wrapped fail-closed
+        # (clusters=None on any error) rather than letting an exception here escape the per-engine
+        # try/except loop below and crash the WHOLE decision — this call happens BEFORE that loop,
+        # so an uncaught error here would be a regression from "one engine fails closed" to "the
+        # entire risk decision throws," inconsistent with this gate's own stated discipline.
+        try:
+            clusters = cluster_alphas(
+                {aid: tuple(rets) for aid, rets in (alpha_returns or {}).items()},
+                rho_cut=config.max_pairwise_correlation)
+        except Exception:
+            clusters = None
+
         # Run ALL engines, collect ALL results. Any engine that RAISES is treated
         # as a FAILED gate (never a silent pass and never an uncaught crash that
         # leaves no decision) — the same fail-closed, run-all-collect-all discipline
@@ -49,7 +67,7 @@ class RiskApprovalGate:
              lambda r: f"Market risk: vol={r.volatility:.3f}, VaR={r.var_95:.4f}, CVaR={r.cvar_95:.4f}"),
             ("liquidity", lambda: self._engines["liquidity"].evaluate(weights, capacity_cny, daily_volume_cny, config),
              lambda r: f"Liquidity: usage={r.avg_daily_volume_usage:.4f}, liq_days={r.liquidation_days}"),
-            ("concentration", lambda: self._engines["concentration"].evaluate(weights, None, config),
+            ("concentration", lambda: self._engines["concentration"].evaluate(weights, clusters, config),
              lambda r: f"Concentration: HHI={r.hhi:.4f}, max_single={r.max_single_alpha:.3f}"),
             ("correlation", lambda: self._engines["correlation"].evaluate(alpha_returns, config),
              lambda r: f"Correlation: avg={r.avg_correlation:.3f}, max={r.max_pairwise:.3f}"),

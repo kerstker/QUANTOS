@@ -16,12 +16,24 @@ _EVIDENCE = os.path.join(_ROOT, "evidence")
 def _digests():
     if not os.path.isdir(_EVIDENCE):
         return []
-    return [os.path.join(_EVIDENCE, f) for f in sorted(os.listdir(_EVIDENCE)) if f.endswith(".json")]
+    digests = []
+    for filename in sorted(os.listdir(_EVIDENCE)):
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(_EVIDENCE, filename)
+        document = json.load(open(path, encoding="utf-8-sig"))
+        if isinstance(document, dict) and {"artifact", "kind"} <= document.keys():
+            digests.append(path)
+    return digests
 
 
 def test_evidence_dir_is_committed_and_nonempty():
     # the whole point of Rank #19 is that these digests live IN the repo (not just gitignored cache)
     assert _digests(), "no committed evidence/*.json digests found"
+
+
+def test_non_digest_evidence_documents_are_not_discovered():
+    assert os.path.join(_EVIDENCE, "top_tier_assessment.json") not in _digests()
 
 
 @pytest.mark.parametrize("digest_path", _digests(), ids=lambda p: os.path.basename(p))

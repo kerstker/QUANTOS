@@ -1,4 +1,4 @@
-"""管线编排(Stage 1)。设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.7。
+"""管线编排(Stage 1)。设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.7。
 
 决策(权重)→ 缩放整数 intents → `PreTradeRiskGate`(复用既有 9 引擎风控,零重造)→ 交易所过滤器 →
 mandate 分级 → AUTO 提交 venue / NEEDS_HUMAN_REVIEW 留存不提交 → ledger 记录 → 审计
@@ -30,14 +30,18 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, Mapping, Optional, Tuple
 
 from live.contracts import LiveOrderRequest, VenueOrderResult
 from live.exchange.base import VenueAdapter
 from live.execution.filters import apply_exchange_filters
-from live.execution.position_ledger import LiveLedger
+from live.execution.position_ledger import LiveLedger, LiveLedgerConflictError
 from live.execution.pricing import LimitPricing, resolve_anchor, to_limit_orders
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
+from live.governance.validation_attestation import (
+    ValidationAttestation,
+    require_validation_attestation,
+)
 from quantos.contracts.trading import OrderSide
 from services.execution.dry_run_pipeline import screen_intents
 from services.execution.intent_builder import build_intents
@@ -209,7 +213,8 @@ def _record_tca_failsoft(ledger: LiveLedger, audit: GlobalAuditLog, order: LiveO
 
 def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, float], aum: float,
                       current_positions: Mapping[str, float], gate, ctx_factory: Callable,
-                      venue: VenueAdapter, mandate: Optional[Mandate], ledger: LiveLedger,
+                      venue: VenueAdapter, mandate: Optional[Mandate],
+                      validation_attestation: Optional[ValidationAttestation], ledger: LiveLedger,
                       audit: GlobalAuditLog, strategy_id: str, decided_ts: int, now: int,
                       account_positions: Optional[Mapping[str, float]] = None,
                       unit_scale: int = UNIT_SCALE,
@@ -241,6 +246,28 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
     audit.append(event_id=_det_id("live_start", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
                 metadata={"aum": str(aum), "n_weights": str(len(weights))})
+
+    attestation_map = (
+        {strategy_id: validation_attestation}
+        if validation_attestation is not None else None
+    )
+    attestation_reason = require_validation_attestation(strategy_id, attestation_map)
+    audit.append(
+        event_id=_det_id("live_validation_attestation", run_id),
+        actor=f"live:{strategy_id}",
+        action="LIVE_VALIDATION_ATTESTATION_DECISION",
+        timestamp=now,
+        target=strategy_id,
+        metadata={
+            "verdict": "PASS" if attestation_reason is None else "BLOCK",
+            "reason": attestation_reason or "",
+        },
+    )
+    if attestation_reason is not None:
+        return LiveBatchResult(
+            tier=NEEDS_HUMAN_REVIEW,
+            mandate_reasons=(f"validation_attestation:{attestation_reason}",),
+        )
 
     # 冻结语义(2026-07-06,空权重根因调查修复③):被跨源核价等数据质量检查剔除的标的,必须
     # 从 targets 与 current 两侧同时排除——只从 weights 剔除的话,凡有持仓的名字会被
@@ -335,6 +362,7 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             mandate_reasons=decision.reasons)
 
     submitted, errors, ledger_errors = [], [], []
+    abort_batch = False
     for parent in adjusted:
         # 切单(2026-07-05,§⑥):slicer 缺省 None = 不切,行为与之前完全一致。子单序列内
         # 任一片真失败/未干净成交 -> 中止剩余子单(执行环境已明显异常,盲目继续只会放大问题;
@@ -346,20 +374,53 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             result = None
             recovered = False
             genuine_error = False
-            # pre-journal(审计 P1-4):在下单**之前**先落一条 PENDING_NEW 意图行,这样进程若在
-            # place_order 与下面的确认/记账之间被杀,resolve_unconfirmed_orders(只遍历 ledger.orders())
-            # 也能发现这笔"已在交易所、账本却没记"的孤儿并回查对账。best-effort:pre-journal 写失败
-            # **不**跳过下单——保留"记账失败 ≠ 下单失败、不能让真实订单被误当失败"的既有不变量
-            # (那笔的孤儿风险与改动前一样,不因加了这道 journal 而变差);下面的确认后写入会兜住它。
-            journaled = False
+            # Pre-journal before touching the venue. A missing PENDING_NEW row makes a
+            # crash-created exchange order undiscoverable, so any pre-journal failure
+            # aborts the remaining batch. Failures after place_order follow the separate
+            # submitted-but-needs-reconciliation path below.
             try:
                 ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
                                          strategy_id=strategy_id, submitted_at=now,
                                          status="PENDING_NEW", order_type=o.order_type,
                                          limit_price=o.limit_price)
-                journaled = True
-            except Exception:
-                pass                                  # 无法 journal 也要下单(既有不变量);确认后写入会再试
+            except LiveLedgerConflictError as exc:
+                abort_batch = True
+                ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
+                audit.append(
+                    event_id=_det_id("live_ledger_conflict", run_id, o.client_order_id),
+                    actor=f"live:{strategy_id}", action="LIVE_LEDGER_ID_CONFLICT",
+                    timestamp=now, target=o.instrument_id,
+                    metadata={"error": type(exc).__name__,
+                              "client_order_id": o.client_order_id},
+                )
+                if is_sliced and has_more:
+                    audit.append(
+                        event_id=_det_id("live_slice_abort", run_id, o.client_order_id),
+                        actor=f"live:{strategy_id}", action="LIVE_SLICING_ABORTED",
+                        timestamp=now, target=o.instrument_id,
+                        metadata={"failed_child": o.client_order_id,
+                                  "children_skipped": str(len(children) - child_idx)},
+                    )
+                break
+            except Exception as exc:
+                abort_batch = True
+                ledger_errors.append((o, f"{type(exc).__name__}: {exc}"))
+                audit.append(
+                    event_id=_det_id("live_prejournal_err", run_id, o.client_order_id),
+                    actor=f"live:{strategy_id}", action="LIVE_PREJOURNAL_FAILED",
+                    timestamp=now, target=o.instrument_id,
+                    metadata={"error": type(exc).__name__,
+                              "client_order_id": o.client_order_id},
+                )
+                if is_sliced and has_more:
+                    audit.append(
+                        event_id=_det_id("live_slice_abort", run_id, o.client_order_id),
+                        actor=f"live:{strategy_id}", action="LIVE_SLICING_ABORTED",
+                        timestamp=now, target=o.instrument_id,
+                        metadata={"failed_child": o.client_order_id,
+                                  "children_skipped": str(len(children) - child_idx)},
+                    )
+                break
             try:
                 result = venue.place_order(o)
             except Exception as exc:
@@ -411,17 +472,10 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                                        "filled_qty": str(confirmed.filled_qty),
                                        "order_type": o.order_type})
             try:
-                # 确认后落最终状态:pre-journal 成功 -> UPDATE 那条 PENDING_NEW 行到终态;pre-journal
-                # 失败(如账本坏)-> 退回原来的 INSERT,让这一次写失败仍被下面 except 记成 ledger 错误。
-                if journaled:
-                    ledger.update_status(o.client_order_id, confirmed.status,
-                                         venue_order_id=confirmed.venue_order_id)
-                else:
-                    ledger.record_submission(o.client_order_id, o.instrument_id, o.side, o.quantity,
-                                             strategy_id=strategy_id, submitted_at=now,
-                                             venue_order_id=confirmed.venue_order_id,
-                                             status=confirmed.status, order_type=o.order_type,
-                                             limit_price=o.limit_price)
+                # The venue has accepted the order. Post-place ledger failures are
+                # recorded for reconciliation but cannot retroactively make it unsubmitted.
+                ledger.update_status(o.client_order_id, confirmed.status,
+                                     venue_order_id=confirmed.venue_order_id)
                 if confirmed.filled_qty > 0:
                     ledger.record_fill(_det_id("live_fill", o.client_order_id), o.client_order_id,
                                        o.instrument_id, o.side, confirmed.filled_qty,
@@ -458,6 +512,9 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                              metadata={"failed_child": o.client_order_id, "status": confirmed.status,
                                        "children_skipped": str(len(children) - 1 - child_idx)})
                 break
+
+        if abort_batch:
+            break
 
     return LiveBatchResult(
         tier=AUTO, submitted=tuple(submitted), rejected_by_gate=tuple(screened["rejected"]),

@@ -25,7 +25,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
-from services.research.backtest_engine.costs import CostModel
+from quantos.contracts.cost import CostModel
 
 _EPS = 1e-12
 

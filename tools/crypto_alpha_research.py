@@ -4,14 +4,14 @@ Uses the new alpha-expression engine (services.research.alpha_expression) to eva
 REAL cross-sectional alphas — Alpha101-style compositions of time-series + cross-sectional operators
 that the old per-instrument SIGNAL_OPS could NOT express — over the already-ingested 5.5-year crypto
 panel (data/cache/crypto_history.db; CachingPITStore -> fast). For each alpha: the contained
-ResearchAgentLoop verdict (DSR/IC, agent can never reach APPROVED) + full-sample net Sharpe + the
+guardrailed evaluator verdict (DSR/IC, agent can never reach APPROVED) + full-sample net Sharpe + the
 per-CALENDAR-YEAR net Sharpe (the cross-regime test incl. the 2022 bear). Answers: do RICHER factors
-find a cross-regime edge the simple 8 could not? Records/promotes/fetches nothing.
+find a cross-regime edge the simple 8 could not? Persists trial/evaluation provenance; promotes and
+fetches nothing.
 """
 from __future__ import annotations
 
 import math
-import statistics
 import time
 from collections import defaultdict
 
@@ -20,14 +20,23 @@ from services.data.caching_store import CachingPITStore
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.alpha.panel_backtest import run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
+from services.research.experiment_registry.registry import ExperimentRegistry
 from quantos.contracts.alpha import AlphaDefinition
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 import os
 _DB = os.path.join("data", "cache", "crypto_history.db")
 FWD = 1
+_SEARCH_KIND = "CRYPTO_CURATED_ALPHA_RESEARCH"
+_SEARCH_SOURCE = "tools.crypto_alpha_research"
 
 C = ("field", "close")
 V = ("field", "volume")
@@ -69,7 +78,8 @@ def _periods_timed(alpha, panel):
             fwds.append(p1 / p0 - 1.0)
         if len(insts) >= 2:
             from services.alpha.panel_backtest import PanelPeriod
-            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds)))
+            periods.append(PanelPeriod(tuple(insts), tuple(sigs), tuple(fwds),
+                                       event_time=int(panel.event_times[r])))
             times.append(panel.event_times[r])
     return periods, times
 
@@ -81,7 +91,60 @@ def _per_year(times, ret):
     return {y: round(sharpe(by[y]), 2) for y in sorted(by) if len(by[y]) > 1}
 
 
-def main() -> None:
+def _panel_dataset_version(panel) -> str:
+    return field_panel_dataset_version(
+        panel,
+        source_versions={"forward_horizon": FWD},
+    )
+
+
+def _run_registered_panel(
+    panel,
+    *,
+    registry: ExperimentRegistry,
+    recorded_at: int,
+):
+    candidate_rows = []
+    for name, expr in ALPHAS.items():
+        alpha = ax.evaluate(expr, panel)
+        periods, times = _periods_timed(alpha, panel)
+        if len(periods) < 24:
+            print(f"{name:15s} too few periods")
+            continue
+        definition = AlphaDefinition(
+            alpha_id=ax.alpha_id(expr),
+            name=name,
+            factor_ids=("close",),
+            params={"family": "cs_alpha", "expr": ax.serialize(expr)},
+        )
+        candidate_rows.append(
+            (name, expr, tuple(periods), tuple(times), definition)
+        )
+
+    dataset_version = _panel_dataset_version(panel)
+    batch_result = run_registered_candidate_batch(
+        tuple(
+            (definition, periods)
+            for _name, _expr, periods, _times, definition in candidate_rows
+        ),
+        registry=registry,
+        search_id=make_search_id(
+            source=_SEARCH_SOURCE,
+            search_kind=_SEARCH_KIND,
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            params={"candidate_count": len(candidate_rows), "forward_horizon": FWD},
+        ),
+        search_kind=_SEARCH_KIND,
+        search_source=_SEARCH_SOURCE,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+    )
+    return tuple(candidate_rows), batch_result, dataset_version
+
+
+def _main(registry: ExperimentRegistry) -> None:
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     instruments = store.keys()
     event_times = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, -10**18, 10**18)})
@@ -90,27 +153,24 @@ def main() -> None:
     panel = ax.build_field_panel(store, instruments, event_times, ("close", "volume"))
     print(f"field panel built in {time.perf_counter()-t0:.1f}s\n")
 
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
+    candidate_rows, batch_result, _dataset_version = _run_registered_panel(
+        panel,
+        registry=registry,
+        recorded_at=int(time.time() * 1000),
+    )
+    report = batch_result["report"]
     rows = []
-    for name, expr in ALPHAS.items():
-        alpha = ax.evaluate(expr, panel)
-        periods, times = _periods_timed(alpha, panel)
-        if len(periods) < 24:
-            print(f"{name:15s} too few periods"); continue
+    for name, _expr, periods, times, definition in candidate_rows:
         ret = list(run_panel_backtest(periods).period_returns)
         full = round(sharpe(ret), 3)
         py = _per_year(times, ret)
         pos_years = sum(1 for v in py.values() if v > 0)
-        defn = AlphaDefinition(alpha_id=ax.alpha_id(expr), name=name, factor_ids=("close",),
-                               params={"family": "cs_alpha", "expr": ax.serialize(expr)})
-        out = loop.run([(defn, periods)], timestamp=0)
-        ev = next(iter(out["report"].values())).get("evaluation")
+        ev = report.get(definition.alpha_id, {}).get("evaluation")
         rows.append((name, full, ev.deflated_sharpe if ev else None, ev.ic_mean if ev else None,
                      pos_years, len(py), py, ev.verdict.value if ev else "n/a"))
 
     rows.sort(key=lambda r: r[1], reverse=True)
-    auto = sum(1 for aid in catalog.all_ids() if str(catalog.state(aid).value) == "APPROVED")
+    auto = sum(1 for entry in report.values() if entry.get("state") == "APPROVED")
     print(f"=== {len(rows)} cross-sectional alphas (full 5.5y) · auto_approved={auto} (must be 0) ===")
     print(f"{'alpha':15s} {'fullSR':>7} {'DSR':>7} {'IC':>8} {'+yrs':>6}   per-year")
     for name, full, dsr, ic, posy, ny, py, verdict in rows:
@@ -121,6 +181,11 @@ def main() -> None:
     survivors = [r for r in rows if r[4] >= max(1, r[5] - 1) and r[1] > 0]   # +ve in all-but-one year
     print(f"\ncross-regime survivors (full-sample +ve AND positive in all-but-one year): "
           f"{[r[0] for r in survivors] or 'NONE — richer factors still found no cross-regime edge'}")
+
+
+def main() -> None:
+    with production_experiment_registry() as registry:
+        _main(registry)
 
 
 if __name__ == "__main__":

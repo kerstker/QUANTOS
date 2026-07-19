@@ -3,10 +3,20 @@ import sys
 
 import pytest
 
-from live.governance.kill_switch_store import load_kill_switch_state, save_kill_switch_state
+from live.governance.kill_switch_store import (
+    kill_switch_db_path,
+    load_kill_switch_state,
+    save_kill_switch_state,
+)
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.events import (
+    EVENT_KILL_SWITCH_ACTIVATED,
+    EVENT_KILL_SWITCH_RESET,
+)
 from quantos.contracts.killswitch import KillSwitchState
+from services.monitoring.domain_event_runtime import open_domain_event_bus
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.pre_trade.kill_switch_store import KillSwitchStateStore
 from tools import live_kill_switch_reset as reset_tool
 
 
@@ -53,6 +63,26 @@ def test_reset_succeeds_with_three_distinct_people_and_matching_incident(tmp_pat
     result = load_kill_switch_state(path)
     assert result.tripped is False
     assert result.reset_by.actor_id == "carol"          # executor 默认同 approver
+
+    store = KillSwitchStateStore(kill_switch_db_path(path), create=False)
+    try:
+        assert store.load_state() == result
+        assert store.pending_event_outbox() == ()
+        assert store.chain_valid()
+    finally:
+        store.close()
+
+    bus = open_domain_event_bus(str(tmp_path / "domain_events.db"))
+    try:
+        records = bus.records()
+        assert [row["event"].event_type for row in records] == [
+            EVENT_KILL_SWITCH_ACTIVATED,
+            EVENT_KILL_SWITCH_RESET,
+        ]
+        assert records[1]["causation_id"] == records[0]["event"].event_id
+        assert bus.chain_valid()
+    finally:
+        bus.close()
 
 
 def test_reset_is_a_noop_when_not_tripped(tmp_path, monkeypatch, capsys):

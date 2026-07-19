@@ -15,20 +15,17 @@ GateStatus = Literal["PASS", "WARN", "BLOCK"]
 _EPS = 1e-12
 _SEVERITY = {"PASS": 0, "WARN": 1, "BLOCK": 2}
 
-# 拥挤门阈值来源(Phase 3 子项3,P2-7):2026-07-07 敏感性扫描(233 周真 global_ls)记录在案,详见
-# docs/superpowers/specs/2026-07-07-crowding-gate-calibration.md。**关键实测发现**:crowd_contra 这类美元
-# 中性 fade-the-crowd book 的 rank-based 统计量**全部结构性恒定**(gross 加权平均拥挤分恒 ≈0.500、max 恒 1.0、
-# 短腿恒 ≈0.77、max 单名权重 ≈0.07 从不触发集中度)——cross-sectional rank 只测"本周相对排位"、不测绝对拥挤,
-# 任何 rank 阈值都不是有效的绝对拥挤门。**用户 2026-07-07 拍板(WARN-only + z-score 门@3.0)**:平均分路径由
-# 调用方传 `average_warn_only=True` 封顶 WARN(诊断非门禁);真正的 BLOCK 由**绝对 z-score 判据**给出(被 short
-# 名字的 global_ls 时序 z > `max_crowding_z`,正确统计量,实测 short MAX z 变化 -0.5..5.87、p90≈2.9)。crowd_contra
-# 干跑驱动器已接线(z*=3.0,233 周 BLOCK 21/~9%,校准文档)。**下方默认值逐字保持现状(字节不变,为不传新参的
-# 旧调用方保留旧行为——net-directional book 平均分仍有信息可 BLOCK);新参默认 False/None 亦字节等价。** 契约
-# 测试(tests/portfolio/test_crowding_gate.py)钉死这组默认不因无声改动而漂移。
+# 拥挤门阈值来源(Phase 3 子项3,P2-7):2026-07-13 正式证据重放 234 周真实 global_ls，见
+# evidence/crowding_gate_calibration.json。干跑 trailing-rank 平均分恒 0.500；live extremity-rank 平均分
+# 0.500..0.655，两种 rank 语义均由调用方传 `average_warn_only=True` 封顶 WARN，绝不取得 BLOCK 权威。
+# 真正的 BLOCK 由**绝对 z-score 判据**给出：被 short 名字的 global_ls 时序 z > `max_crowding_z`。
+# 用户 2026-07-07 签署 z*=3.0；冻结输入重放结果 live/dry 阻断周逐项一致，234 周 BLOCK 21(8.97%)，
+# 2.0/2.5/3.0/3.5/4.0 的阻断数为 61/38/21/9/5。下方通用默认值只为旧调用方保留字节兼容，
+# **不因 z-gate 已校准而冒充通用生产阈值**；契约测试钉死它们不无声漂移。
 CALIBRATED_DEFAULTS = {
     "threshold": 0.60, "warn_threshold": 0.45, "min_coverage": 0.80,
     "max_name_weight": 0.25, "max_exit_days": 5.0,
-    "provenance": "SENSITIVITY_SCANNED_2026_07_07_DEFAULTS_PENDING_RECALIBRATION",
+    "provenance": "LEGACY_GENERIC_DEFAULTS_SCANNED_NOT_PRODUCTION_CALIBRATED",
 }
 
 
@@ -102,7 +99,7 @@ def evaluate_crowding_gate(
     """Evaluate a long-short book against supplied crowding evidence.
 
     Beyond the gross-weighted average crowding score, two Rank #10a criteria (thresholds sensitivity-
-    scanned 2026-07-07 — see CALIBRATED_DEFAULTS above + docs/superpowers/specs/2026-07-07-crowding-gate-
+    scanned 2026-07-07 — see CALIBRATED_DEFAULTS above + docs/engineering/specs/2026-07-07-crowding-gate-
     calibration.md; the average score is low-information for dollar-neutral fade books, so lean on
     concentration) evaluate independently so a few extreme names cannot hide behind the average:
     - concentration: a name that is BOTH concentrated (abs_weight/gross > max_name_weight) AND
@@ -167,7 +164,7 @@ def evaluate_crowding_gate(
     score = weighted_score / covered_gross
 
     # base verdict from the gross-weighted average. **average_warn_only**(用户 2026-07-07 签署,见
-    # docs/superpowers/specs/2026-07-07-crowding-gate-calibration.md):对称 L/S fade book 的 gross 加权
+    # docs/engineering/specs/2026-07-07-crowding-gate-calibration.md):对称 L/S fade book 的 gross 加权
     # 平均拥挤分是**结构性常数**(实测恒 0.500,cross-sectional rank 天然),把它当 BLOCK 门是把数学常数
     # 当风险信号。True -> 平均分路径封顶 WARN(诊断,永不 BLOCK);默认 False 保留旧行为(对 net-directional
     # book 平均分仍有信息,可 BLOCK)。真正的 BLOCK 交给下方绝对 z-score 判据。

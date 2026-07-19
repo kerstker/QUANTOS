@@ -97,7 +97,7 @@ QUANTOS 是一个**安全关键的 AI 量化【研究】平台**。当前仍是�
 | 实验注册表 | `services/research/experiment_registry/` | 真实 —— stdlib sqlite3 持久化(跨进程的 Deflated-Sharpe 试验计数,失败关闭) |
 | 纸面交易 | `services/research/paper_trading/domain/` | 模型真实;PnL 为**占位**(`notional*0.001`,真实对账是 Phase 9) |
 | Dry-run 适配器 | `services/trading/dry_run_adapters/` | 真实、有测试、失败关闭(无券商 SDK) |
-| 控制台 API | `services/research/console_api/main.py` | 真实 FastAPI,但提供**只读计算 / 合成快照**(非真实研究) |
+| 控制台 API | `services/console/main.py`（组合根）+ `services/console/api/main.py`（HTTP 展示层） | 真实 FastAPI,但提供**只读计算 / 合成快照**(非真实研究) |
 | 前端 | `apps/research-console/src/` | React 18 + Vite 6 + TS(strict)+ Tailwind;26 页,mock-first |
 | **隔离 / 损坏** | `services/trading/pre_trade_risk/main.py` | **非功能**(`QUANTOS_QUARANTINED_NON_FUNCTIONAL`),为 Phase 8 重建保留,门禁排除。**勿接线** |
 | **计划(空)** | `services/gateway/`、`services/learning/`、`platform/`、`schemas/`(仅 JSON)、`proto/` | 脚手架占位,尚无 Python |
@@ -142,7 +142,7 @@ cd apps/research-console && npm ci && npm run typecheck && npm run build && npm 
 cd apps/research-console && npm run dev
 
 # 前端对接真实只读后端(Phase 12 wiring;CORS 仅放行 :3100)
-python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
 ```
 
@@ -174,7 +174,7 @@ apps/research-console/     # 前端(React 18 + Vite 6 + TS strict);frontend-only
 tests/                     # contracts/data/features/research/alpha/portfolio/risk/
                            # execution/intelligence/monitoring/deployment/governance/integration
 scripts/validate.py        # 单一失败关闭门禁入口
-docs/                      # 蓝图/计划/状态/研究结论/phase3a/superpowers
+docs/                      # 蓝图/计划/状态/研究结论/phase3a/engineering
 schemas/ proto/ platform/  # 计划占位(JSON schema / infra 配置)
 ```
 

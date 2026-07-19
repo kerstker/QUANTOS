@@ -4,6 +4,7 @@
 (抓字段篡改),prev_hash→entry_hash 链(抓重排),seal/verify_against(抓截断/整体替换/擦除)。
 时间由调用方注入(店内无墙钟),确定性。"""
 import os
+import sqlite3
 
 import pytest
 
@@ -12,6 +13,15 @@ from services.monitoring.audit_store import DurableAuditLog
 
 def _log(tmp_path, name="audit.db"):
     return DurableAuditLog(os.path.join(str(tmp_path), name))
+
+
+def test_close_releases_durable_audit_connection(tmp_path):
+    log = _log(tmp_path)
+    log.append(event_id="e1", actor="risk-drill", action="start", timestamp=1)
+    log.close()
+    log.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        _ = log.events
 
 
 def test_append_persists_and_reloads_chain(tmp_path):

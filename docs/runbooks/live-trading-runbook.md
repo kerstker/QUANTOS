@@ -1,12 +1,17 @@
 # 实盘路线运维手册(Live Trading Runbook)
 
-适用范围:Stage 0(前向证据钟)+ Stage 1(测试网执行栈)。最后更新 2026-07-05。
-设计文档:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`、
-`docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md`。
+> **POST-L2 设计参考，当前禁止执行。** 当前 readiness 是 `L2_DRY_RUN_ONLY`，本机所有
+> live-capable 计划任务已禁用，`scripts/register_schedules.ps1` 只注册研究/纸面任务。当前运维请使用
+> `docs/runbooks/l2-research-operations.md`。Stage 1 的命令与流程仅供未来完成 Phase 14、独立人工批准和
+> 外部 Go/No-Go 后重新评审，不能作为当前操作指令。
 
-**边界(先读这段):** readiness 仍是 L2_DRY_RUN_ONLY。测试网是交易所官方沙盒、零真实资本;
-真钱 Go/No-Go 需 ≥8 周前向证据 + Phase 3A 人工评审。mainnet 适配器在 L2 下结构性不可实例化。
-本手册所有操作都在这个边界之内。
+适用范围:Stage 0(前向证据钟)+ post-L2 Stage 1 设计参考。最后更新 2026-07-14。
+设计文档:`docs/engineering/specs/2026-07-04-live-execution-stack-design.md`、
+`docs/engineering/specs/2026-07-05-institutional-live-stack-design.md`。
+
+**边界(先读这段):** readiness 仍是 L2_DRY_RUN_ONLY。当前不运行测试网/demo venue，不加载
+broker credentials，也不允许任何订单提交。真钱 Go/No-Go 需 ≥8 周前向证据 + Phase 3A 人工评审；
+mainnet 适配器在 L2 下结构性不可实例化。以下 Stage 1 内容不是当前运行授权。
 
 ---
 
@@ -44,7 +49,7 @@ false、`n_submission_errors=0`、`alerts` 无红色项。
 
 ## 1.5 LIMIT 限价单(2026-07-06,默认不启用)
 
-设计文档:`docs/superpowers/specs/2026-07-06-limit-order-execution-design.md`。默认路径
+设计文档:`docs/engineering/specs/2026-07-06-limit-order-execution-design.md`。默认路径
 (不带 `--order-type`)一字节不变——本节只在显式启用 LIMIT 时适用。
 
 ```bash
@@ -158,9 +163,10 @@ python -m tools.live_track_advance --venue binance --order-type limit --submit  
 
 ## 7. 调度
 
-Windows 计划任务(人工注册,错过自动 catch-up):每周一 09:00 依次跑两个驱动器。
-查看:`schtasks /query /tn QUANTOS_forward_track`(及 live_track)。驱动器幂等
-(决策不可改写 + client_order_id 确定性),手工补跑安全。
+当前 Windows 计划任务只运行 L2 研究/纸面驱动。查看:
+`schtasks /query /tn QUANTOS_forward_track` 与
+`schtasks /query /tn QUANTOS_domain_event_ops`。任何 live task 必须保持 Disabled；详见
+`docs/runbooks/l2-research-operations.md`。
 
 ## 8. 交易台(LiveDesk,2026-07-05)
 
@@ -194,12 +200,15 @@ testnet 只换主机)。key 必须在主站切到 Demo Trading 后创建(真实�
 逐 venue 查真实权益/仓位,落权益曲线点(`data/cache/live_equity*.jsonl`,交易台净值曲线的
 数据源),用与驱动器同一套 `evaluate_risk_state` 评估(回撤 0.20 + mandate 派生敞口限额)。
 默认只告警;`--act` 越限时走独立紧急减仓通道(与驱动器 breach 分支同一策略)。峰值权益与
-驱动器共用同一文件(同一回撤口径)。建议每小时调度。
+驱动器共用同一文件(同一回撤口径)。两者都会先把本轮权益追加到同一 `live_equity*.jsonl`，再验证
+`live_risk_state*.json` 峰值不高于历史最大有效观测。状态损坏、非有限、非正或虚高时会闩锁并硬停，
+但不会基于坏峰值自动全平；原状态保留供取证。恢复时先保存两份文件、核对 venue 账户与权益历史，
+由真人确认 high-water mark 后再修复状态，禁止直接删除后静默重置。建议每小时调度。
 
 **Go/No-Go 证据包**(`python -m tools.gonogo_report`):聚合前向证据钟/对账历史/TCA/权益
 曲线/事故台账 → `data/cache/gonogo_report.json` + `docs/reports/gonogo-<date>.md`。只聚合
 不下结论——结论是 Phase 3A 人工评审的事。评审前跑一次即可。
 
-**调度注册**:`scripts/register_schedules.ps1` 一次注册全套(周一双所批 + 每小时哨兵 +
-ops API 自启)——**运行它 = 签署常驻自动化授权**,脚本头部列明了每条的含义;单条删除
-`schtasks /delete /f /tn QUANTOS_<name>`。
+**当前调度注册**:`scripts/register_schedules.ps1` 只注册 L2 研究、纸面证据、维护、事件运维和
+只读报告，并可逆禁用遗留 live tasks。它不再注册双所批、主动风险哨兵或 ops API。未来 live 调度必须
+在 post-L2 重新设计和独立批准，不能通过恢复旧脚本或手工启用遗留任务完成。

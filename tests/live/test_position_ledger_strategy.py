@@ -1,5 +1,5 @@
 """strategy_id 仓位隔离——账本分账维度(2026-07-06 战线③,commit 1)。设计:
-docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md。
+docs/engineering/specs/2026-07-06-strategy-position-isolation-design.md。
 
 核心裁定:strategy_id 只是**本地账本内部的分账维度**;venue/对账/风控/紧急减仓全部维持
 账户级。结构性不变量:Σ_s all_positions(strategy_id=s) 逐标的恒等于 all_positions()

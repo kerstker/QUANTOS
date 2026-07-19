@@ -9,7 +9,10 @@ It NEVER drives a lifecycle transition (no APPROVED risk) — it produces evalua
 brief. Research / dry-run only, deterministic."""
 import math
 
+import pytest
+
 import services.research.alpha_expression as ax
+from services.alpha.catalog import AlphaCatalog
 from services.research.alpha_pipeline import run_alpha_asset_pipeline
 
 
@@ -84,3 +87,71 @@ def test_no_rng_or_wallclock_import():
     import services.research.alpha_pipeline as p
     src = inspect.getsource(p)
     assert "import random" not in src and "import time" not in src and "Random" not in src
+
+
+# ---- catalog= threading (2026-07-10, gap audit rank #6) ----------------------------------------
+
+def test_default_catalog_is_a_fresh_one_per_call_unchanged():
+    """catalog=None (the default) must be byte-identical to pre-fix behavior: every call gets a
+    fresh, empty catalog — confirmed via the returned catalog's own trial count."""
+    out = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1", timestamp=1)
+    assert out["catalog"].global_trial_count() == 3
+    # a second, independent call starts from zero again — no shared state leaked between calls
+    out2 = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1", timestamp=1)
+    assert out2["catalog"].global_trial_count() == 3
+    assert out["catalog"] is not out2["catalog"]
+
+
+def test_supplied_catalog_accumulates_trials_across_calls():
+    """The whole point of rank #6: a caller-supplied persistent catalog's trial count must genuinely
+    accumulate — this run's real evaluations join whatever the catalog already knew about."""
+    cat = AlphaCatalog()
+    cat.register_trial("pre-existing-hash-from-a-different-search")
+    assert cat.global_trial_count() == 1
+
+    out = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1",
+                                   timestamp=1, catalog=cat)
+    assert out["catalog"] is cat                       # same instance, not a fresh copy
+    assert cat.global_trial_count() == 1 + 3            # pre-existing + this run's 3 genuinely new
+
+
+def test_rerunning_the_same_exprs_against_a_persistent_catalog_is_idempotent_not_a_crash():
+    """AlphaCatalog.register() raises on a duplicate alpha_id — re-running the SAME search against
+    the SAME persistent catalog (e.g. a scheduled daily re-run discovering the same candidates)
+    must skip already-known alpha_ids cleanly, not crash."""
+    cat = AlphaCatalog()
+    out1 = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1",
+                                    timestamp=1, catalog=cat)
+    assert out1["n_evaluated"] == 3
+    trial_count_after_first = cat.global_trial_count()
+
+    out2 = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1",
+                                    timestamp=2, catalog=cat)   # must NOT raise
+    assert out2["n_evaluated"] == 0                     # every candidate already known -> nothing new
+    assert cat.global_trial_count() == trial_count_after_first   # unchanged, not double-counted
+
+
+def test_persistent_catalog_with_a_genuinely_new_candidate_only_registers_the_new_one():
+    cat = AlphaCatalog()
+    run_alpha_asset_pipeline(_panel(), EXPRS[:2], fwd_horizon=1, dataset_version="dv1",
+                             timestamp=1, catalog=cat)
+    assert cat.global_trial_count() == 2
+
+    out = run_alpha_asset_pipeline(_panel(), EXPRS, fwd_horizon=1, dataset_version="dv1",
+                                   timestamp=2, catalog=cat)   # EXPRS[:2] already known, [2] is new
+    assert out["n_evaluated"] == 1
+    assert cat.global_trial_count() == 3
+
+
+def test_distinct_expressions_sharing_field_dependencies_are_not_undercounted():
+    """2026-07-10 regression lock: a real bug found while extending trial registration — two
+    STRUCTURALLY DIFFERENT expressions that happen to depend on the same field(s) used to collide
+    to the identical definition_hash (AlphaDefinition.definition_hash hashes only factor_ids/
+    universe/params, and the pre-fix construction never set params) — silently undercounting
+    global_trial_count() by orders of magnitude in a small field universe. Two different close-only
+    expressions here must count as 2 distinct trials, not 1."""
+    a = ("cs_rank", ("ts_delta", ("field", "close"), 3))
+    b = ("cs_zscore", ("ts_mean", ("field", "close"), 7))   # different op AND window, same field dep
+    out = run_alpha_asset_pipeline(_panel(), [a, b], fwd_horizon=1, dataset_version="dv1", timestamp=1)
+    assert out["n_evaluated"] == 2
+    assert out["catalog"].global_trial_count() == 2          # NOT 1 (the pre-fix collision)

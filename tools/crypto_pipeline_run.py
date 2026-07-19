@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import json
 import os
-import statistics
 
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.research import alpha_expression as ax
 from services.research.alpha_pipeline import run_alpha_asset_pipeline
-from services.research.backtest_engine.metrics import sharpe
-from services.research.validation.cpcv import cpcv_summary
+from services.validation.cpcv import cpcv_summary
 
 _DB = os.path.join("data", "cache", "crypto_funding.db")
 _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
@@ -63,7 +61,7 @@ def main() -> None:
                                    timestamp=0, max_k=6)
     label_by_id = {ax.alpha_id(e): _label(e) for e in EXPRS}
 
-    print(f"\n--- per-alpha (leakage COMPUTED; price-only net SR vs ECONOMIC SR = price + funding) ---")
+    print("\n--- per-alpha (leakage COMPUTED; price-only net SR vs ECONOMIC SR = price + funding) ---")
     print(f"{'expression':48s} {'leak_ok':>8} {'price_SR':>9} {'eco_SR':>8}  verdict")
     for a in out["assets"]:
         sr, eco = a["net_sharpe"], a.get("economic_sharpe")
@@ -71,7 +69,7 @@ def main() -> None:
               f"{('' if sr is None else f'{sr:8.3f}'):>9} {('' if eco is None else f'{eco:7.3f}'):>8}  {a['verdict']}")
     print(f"leakage summary: {out['leakage_summary']}")
 
-    print(f"\n--- population optimizer (P4): de-redundant set + weights ---")
+    print("\n--- population optimizer (P4): de-redundant set + weights ---")
     for k in out["portfolio"]["selected_ids"]:
         print(f"  {label_by_id.get(k, k):48s} w={out['portfolio']['weights'].get(k, 0):.3f}")
 
@@ -91,11 +89,11 @@ def main() -> None:
         else:
             print("  (not assessable)")
 
-    print(f"\n--- Signal->Portfolio target book (P5, latest cross-section) ---")
+    print("\n--- Signal->Portfolio target book (P5, latest cross-section) ---")
     tb = out["target_book"]
     print(f"  gross={tb['gross']} net={round(tb['net'], 6)} n_positions={tb['n_positions']}")
 
-    print(f"\n--- auto research brief (P7) ---")
+    print("\n--- auto research brief (P7) ---")
     print(f"  {out['brief']['summary']}")
     for act in out["brief"]["next_actions"][:3]:
         print(f"  next: {act}")

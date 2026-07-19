@@ -1,0 +1,274 @@
+{
+  "dataset": {
+    "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
+    "bundle_sha256": "372b1a1901d72a4d3688fe6f0bcd5ad51a24d36b9d4fbe0a01dba68b9b6e01d2",
+    "instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "ETH",
+      "FIL",
+      "ICP",
+      "INJ",
+      "LINK",
+      "LTC",
+      "NEAR",
+      "OP",
+      "SOL",
+      "TRX",
+      "UNI",
+      "XLM",
+      "XRP"
+    ],
+    "manifest_sha256": "3ae12ad39bf8761c403f1e0b67e8b8ba1e7af4790f9b0d1a787a84ee7b70eb48",
+    "max_period": 1783555200000,
+    "min_period": 1642636800000,
+    "row_count": 234,
+    "source_sha256": {
+      "data/cache/crypto_funding.db": "c12b700d238499ece8f8fc251d89a69eff8d98e262d60f68a27ee3a1fdb5f2ab",
+      "data/cache/crypto_funding_rates.json": "e7e327867feb02116142d725f073c935615c5c4264193e65a933e7fa1554a10b",
+      "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
+      "data/cache/crypto_oi_metrics.json": "2647c72cba025517ed859d7b07904f610a76abce178fa724918e912534fc5767"
+    }
+  },
+  "evidence_sha256": "8ee21a2e1ff83497b66efd034c047cabab505ae2d0d321bb50dda7959ec6b824",
+  "implementation_sha256": {
+    "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
+    "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
+    "services/portfolio/crowding_gate.py": "28d09e42404ffb51f552af4b7b0c9602b6058fc6f059b9305d1077f3e066d0cf",
+    "tools/crowding_metric_research.py": "d11dffcb8c6e4ea73518f2f23b7035d7b3fa19caf058bf87d0f513b6db17b089",
+    "tools/dry_run_crowd_contra_multi.py": "851c5abcf1f423180936e664206b7e0b6b8b24ae6fcf7acda00d290bbbc30648",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "486fc7c56fa2cf00b4f892c3b1c0d2edd14e1ae9b5c762d3804baf59e73a26bb",
+    "tools/live_track_advance.py": "322f0bb1fbf4992cd6c40d24ba1f7826855950e04a0a7d3e7acaf085eb4b6a0b"
+  },
+  "limitations": [
+    "Sensitivity replay is historical and not causal proof of loss prevention.",
+    "No venue order-book, liquidation, or production-fill sample is available at L2.",
+    "Generic average/concentration/exit-day defaults are not promoted to calibrated production limits."
+  ],
+  "policy": {
+    "average_rank_path": "WARN_ONLY",
+    "entrypoint_assignments": {
+      "dry_run": 3.0,
+      "live": 3.0,
+      "signal_adapter_dry_run": 3.0
+    },
+    "signed_max_crowding_z": 3.0,
+    "signed_on": "2026-07-07"
+  },
+  "rank_semantics": {
+    "block_authority": "SHORT_LEG_OWN_HISTORY_GLOBAL_LS_ZSCORE",
+    "dry_run": "TRAILING_GLOBAL_LS_CROSS_SECTIONAL_RANK",
+    "live": "CURRENT_ABS_GLOBAL_LS_MINUS_ONE_CROSS_SECTIONAL_RANK"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "schema_version": 1,
+  "status": "SENSITIVITY_EVIDENCE_COMPLETE_SIGNED_Z_GATE",
+  "summary": {
+    "absolute_statistics": {
+      "short_max_z": {
+        "max": 5.870804,
+        "mean": 1.499687,
+        "min": -0.501008,
+        "n": 233,
+        "p10": 0.214209,
+        "p50": 1.388896,
+        "p90": 2.905214
+      },
+      "short_mean_z": {
+        "max": 3.775822,
+        "mean": 0.405931,
+        "min": -1.078983,
+        "n": 233,
+        "p10": -0.435172,
+        "p50": 0.304006,
+        "p90": 1.344697
+      },
+      "short_raw_gls": {
+        "max": 6.583925,
+        "mean": 3.293372,
+        "min": 1.987949,
+        "n": 234,
+        "p10": 2.509293,
+        "p50": 3.2415,
+        "p90": 4.150884
+      }
+    },
+    "gate_at_signed_threshold": {
+      "block_periods_equal": true,
+      "dry_run": {
+        "block_periods": [
+          1677715200000,
+          1681948800000,
+          1683158400000,
+          1684972800000,
+          1685577600000,
+          1686182400000,
+          1707350400000,
+          1707955200000,
+          1708560000000,
+          1709164800000,
+          1709769600000,
+          1710374400000,
+          1711584000000,
+          1712188800000,
+          1712793600000,
+          1715817600000,
+          1720051200000,
+          1733356800000,
+          1734566400000,
+          1736380800000,
+          1763596800000
+        ],
+        "block_rate": 0.089744,
+        "n_block": 21,
+        "n_pass": 0,
+        "n_warn": 213
+      },
+      "live": {
+        "block_periods": [
+          1677715200000,
+          1681948800000,
+          1683158400000,
+          1684972800000,
+          1685577600000,
+          1686182400000,
+          1707350400000,
+          1707955200000,
+          1708560000000,
+          1709164800000,
+          1709769600000,
+          1710374400000,
+          1711584000000,
+          1712188800000,
+          1712793600000,
+          1715817600000,
+          1720051200000,
+          1733356800000,
+          1734566400000,
+          1736380800000,
+          1763596800000
+        ],
+        "block_rate": 0.089744,
+        "n_block": 21,
+        "n_pass": 0,
+        "n_warn": 213
+      }
+    },
+    "max_name_weight": {
+      "max": 0.083333,
+      "mean": 0.073006,
+      "min": 0.071429,
+      "n": 234,
+      "p10": 0.071429,
+      "p50": 0.071429,
+      "p90": 0.083333
+    },
+    "max_period": 1783555200000,
+    "min_period": 1642636800000,
+    "n_periods": 234,
+    "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
+    "rank_statistics": {
+      "dry_run_average": {
+        "max": 0.5,
+        "mean": 0.5,
+        "min": 0.5,
+        "n": 234,
+        "p10": 0.5,
+        "p50": 0.5,
+        "p90": 0.5
+      },
+      "dry_run_long": {
+        "max": 0.307692,
+        "mean": 0.23148,
+        "min": 0.227273,
+        "n": 234,
+        "p10": 0.227273,
+        "p50": 0.230769,
+        "p90": 0.230769
+      },
+      "dry_run_short": {
+        "max": 0.772727,
+        "mean": 0.76852,
+        "min": 0.692308,
+        "n": 234,
+        "p10": 0.769231,
+        "p50": 0.769231,
+        "p90": 0.772727
+      },
+      "live_average": {
+        "max": 0.65528,
+        "mean": 0.502804,
+        "min": 0.5,
+        "n": 234,
+        "p10": 0.5,
+        "p50": 0.5,
+        "p90": 0.503106
+      },
+      "live_long": {
+        "max": 0.440994,
+        "mean": 0.136419,
+        "min": 0.125,
+        "n": 234,
+        "p10": 0.130435,
+        "p50": 0.130435,
+        "p90": 0.142857
+      },
+      "live_short": {
+        "max": 0.875,
+        "mean": 0.869189,
+        "min": 0.857143,
+        "n": 234,
+        "p10": 0.868421,
+        "p50": 0.869565,
+        "p90": 0.869565
+      }
+    },
+    "signed_max_crowding_z": 3.0,
+    "z_threshold_sensitivity": {
+      "2.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.260684,
+        "dry_n_block": 61,
+        "live_n_block": 61,
+        "n_block": 61
+      },
+      "2.5": {
+        "block_periods_equal": true,
+        "block_rate": 0.162393,
+        "dry_n_block": 38,
+        "live_n_block": 38,
+        "n_block": 38
+      },
+      "3.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.089744,
+        "dry_n_block": 21,
+        "live_n_block": 21,
+        "n_block": 21
+      },
+      "3.5": {
+        "block_periods_equal": true,
+        "block_rate": 0.038462,
+        "dry_n_block": 9,
+        "live_n_block": 9,
+        "n_block": 9
+      },
+      "4.0": {
+        "block_periods_equal": true,
+        "block_rate": 0.021368,
+        "dry_n_block": 5,
+        "live_n_block": 5,
+        "n_block": 5
+      }
+    }
+  }
+}

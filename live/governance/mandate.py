@@ -1,4 +1,4 @@
-"""分级授权 mandate(Stage 1)。设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6。
+"""分级授权 mandate(Stage 1)。设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.6。
 
 `PreTradeRiskGate`(风险**权限**)批准之后的第二层——只有已获风控许可的订单才会进入这里评估;
 mandate 从不越过 gate 直接放行任何东西,它回答的是"这批已获许可的订单,机械执行需要多少人工

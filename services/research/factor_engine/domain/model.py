@@ -11,6 +11,8 @@ import ast
 import math
 import operator as _operator
 
+from services.validation.factor_statistics import compute_ic as compute_ic
+
 
 class UnsafeExpressionError(ValueError):
     """Raised when a factor expression is rejected by the restricted compiler.
@@ -337,38 +339,6 @@ class FactorEvaluated:
     event_id: str = field(default_factory=lambda: str(uuid4()))
 
 
-def compute_ic(factor_values: List[float], forward_returns: List[float]) -> Dict[str, Optional[float]]:
-    n = min(len(factor_values), len(forward_returns))
-    if n < 10:
-        return {"ic_mean": None, "rank_ic": None, "icir": None, "ic_std": None}
-
-    import statistics
-    # Pearson IC
-    mean_f = sum(factor_values[:n]) / n
-    mean_r = sum(forward_returns[:n]) / n
-    cov = sum((factor_values[i] - mean_f) * (forward_returns[i] - mean_r) for i in range(n)) / n
-    std_f = (sum((f - mean_f) ** 2 for f in factor_values[:n]) / n) ** 0.5
-    std_r = (sum((r - mean_r) ** 2 for r in forward_returns[:n]) / n) ** 0.5
-
-    ic = cov / (std_f * std_r) if std_f > 0 and std_r > 0 else None
-
-    # Rank IC (Spearman)
-    ranked_f = _rank(factor_values[:n])
-    ranked_r = _rank(forward_returns[:n])
-    mean_rf = sum(ranked_f) / n
-    mean_rr = sum(ranked_r) / n
-    cov_r = sum((ranked_f[i] - mean_rf) * (ranked_r[i] - mean_rr) for i in range(n)) / n
-    std_rf = (sum((r - mean_rf) ** 2 for r in ranked_f) / n) ** 0.5
-    std_rr = (sum((r - mean_rr) ** 2 for r in ranked_r) / n) ** 0.5
-    rank_ic = cov_r / (std_rf * std_rr) if std_rf > 0 and std_rr > 0 else None
-
-    ic_std = statistics.stdev([(factor_values[i] - mean_f) * (forward_returns[i] - mean_r) / (std_f * std_r)
-                                for i in range(n)]) if ic else None
-    icir = ic / ic_std if ic and ic_std and ic_std > 0 else None
-
-    return {"ic_mean": ic, "rank_ic": rank_ic, "icir": icir, "ic_std": ic_std}
-
-
 def compute_sharpe(returns: List[float]) -> Optional[float]:
     if len(returns) < 2:
         return None
@@ -390,11 +360,3 @@ def compute_max_drawdown(cumulative: List[float]) -> Optional[float]:
         if dd > max_dd:
             max_dd = dd
     return max_dd
-
-
-def _rank(values: List[float]) -> List[float]:
-    sorted_pairs = sorted(enumerate(values), key=lambda x: x[1])
-    ranks = [0.0] * len(values)
-    for rank, (idx, _) in enumerate(sorted_pairs):
-        ranks[idx] = float(rank) / (len(values) - 1) if len(values) > 1 else 0.5
-    return ranks

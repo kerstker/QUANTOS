@@ -13,6 +13,11 @@ from quantos.contracts.alpha import Actor
 from quantos.contracts.governance import ApprovalRecord
 from quantos.contracts.killswitch import KillSwitchScope, KillSwitchState
 from services.governance.approval import ApprovalRequest, verify_multi_party_grant
+from services.risk.pre_trade.events import (
+    kill_switch_activated_event,
+    kill_switch_activation_event_id,
+    kill_switch_reset_event,
+)
 
 
 class UnauthorizedReset(PermissionError):
@@ -50,7 +55,8 @@ class KillSwitch:
 
     def arm(self, actor: Actor, reason: str, *, at: int,
             scope: KillSwitchScope = KillSwitchScope.GLOBAL, scope_value: str = "",
-            incident_id: str = "", audit_sink: object = None) -> KillSwitchState:
+            incident_id: str = "", audit_sink: object = None,
+            event_sink: object = None) -> KillSwitchState:
         if not isinstance(self._state, KillSwitchState):   # corrupt state -> still arm (fail-closed)
             self._state = KillSwitchState()
         n = self._state.trip_count + 1
@@ -64,10 +70,20 @@ class KillSwitch:
               action="kill_switch.arm", at=at, target=self._state.incident_id,
               metadata={"reason": reason, "scope": scope.value if hasattr(scope, "value") else str(scope),
                         "scope_value": scope_value, "trip_count": str(n)})
+        if event_sink is not None:
+            event_sink.publish_once(
+                kill_switch_activated_event(
+                    self._state,
+                    actor=actor,
+                    reason=reason,
+                    at_ms=at,
+                ),
+                correlation_id=self._state.incident_id,
+            )
         return self._state
 
     def reset(self, actor: Optional[Actor], approval: Optional[ApprovalRecord], *, at: int,
-              audit_sink: object = None) -> KillSwitchState:
+              audit_sink: object = None, event_sink: object = None) -> KillSwitchState:
         s = self._state
         if not s.tripped:
             return s
@@ -83,11 +99,23 @@ class KillSwitch:
         _emit(audit_sink, event_id=f"ks.reset.{s.incident_id}.{at}", actor=actor,
               action="kill_switch.reset", at=at, target=s.incident_id,
               metadata={"reset_via": "single"})
+        if event_sink is not None:
+            event_sink.publish_once(
+                kill_switch_reset_event(
+                    s,
+                    actor=actor,
+                    reset_via="single",
+                    at_ms=at,
+                ),
+                correlation_id=s.incident_id,
+                causation_id=kill_switch_activation_event_id(s),
+            )
         self._state = s.model_copy(update={"tripped": False, "reset_by": actor, "reset_at": at})
         return self._state
 
     def reset_with_grant(self, actor: Optional[Actor], grant: ApprovalRequest, *, at: int,
-                         audit_sink: object = None) -> KillSwitchState:
+                         audit_sink: object = None,
+                         event_sink: object = None) -> KillSwitchState:
         """复位(多方路径):要 HUMAN actor + 绑定到本事件的、已 CONSUMED 的三方 grant。fail-closed。
         旧 reset(单 ApprovalRecord)不变;这是更严的加法入口。"""
         s = self._state
@@ -100,5 +128,16 @@ class KillSwitch:
         _emit(audit_sink, event_id=f"ks.reset.{s.incident_id}.{at}", actor=actor,
               action="kill_switch.reset", at=at, target=s.incident_id,
               metadata={"reset_via": "multi_party"})
+        if event_sink is not None:
+            event_sink.publish_once(
+                kill_switch_reset_event(
+                    s,
+                    actor=actor,
+                    reset_via="multi_party",
+                    at_ms=at,
+                ),
+                correlation_id=s.incident_id,
+                causation_id=kill_switch_activation_event_id(s),
+            )
         self._state = s.model_copy(update={"tripped": False, "reset_by": actor, "reset_at": at})
         return self._state

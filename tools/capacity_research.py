@@ -103,13 +103,11 @@ _HORIZON_GRID = [1, 5]                    # 周度调仓铺开执行天数
 
 def _band_for(name, gross, turnover):
     band = capacity_band(gross, turnover, _AUM_GRID, _COEF_LO_HI, ppy=52, sharpe_floor=0.3,
-                         max_participation=0.10, volume_units_max_ratio=1e6)   # P2-2:混单位 fail-closed
-    if band.get("data_quality") == "UNRELIABLE_VOLUME_UNITS":
-        # 混单位(如 crypto_daily.db EOS $20k vs BTC $3.7Q)-> 拒绝出容量数,不跑敏感性网格
-        # (band["curves"]={} 也无法算)。carry/crowd 用干净的 crypto_funding.db,实测永不走这里。
+                         max_participation=0.10, volume_dispersion_max_ratio=1e6)
+    if band.get("data_quality") == "EXTREME_VOLUME_DISPERSION":
         return {"aum_low": None, "aum_high": None, "impact_aum_low": None, "impact_aum_high": None,
                 "participation_cap_aum": None, "n_periods": len(gross),
-                "data_quality": "UNRELIABLE_VOLUME_UNITS"}
+                "data_quality": "EXTREME_VOLUME_DISPERSION"}
     # 校准:参与率 × 执行铺开天数 敏感性网格 → honest binding 容量随假设怎么动
     sens = {}
     for p in _PARTICIP_GRID:
@@ -156,16 +154,15 @@ def main() -> None:
     json.dump(snap, open(_OUT, "w", encoding="utf-8"), indent=2, default=str)
     print("=== 容量带(honest binding = min(冲击-夏普, 参与率上限);系数 5–20bps;UNCALIBRATED_PRINCIPLED)===", flush=True)
     for name, b in snap["books"].items():
-        if b.get("data_quality") == "UNRELIABLE_VOLUME_UNITS":
-            # 混单位 fail-closed:诚实打印 UNRELIABLE,绝不让 _fmt(None) 把'不可靠'误印成'> grid'(=容量无上限)
-            print(f"  {name:14s} 容量 UNRELIABLE_VOLUME_UNITS(跨标的 volume 单位不一致,拒绝出容量数)· "
+        if b.get("data_quality") == "EXTREME_VOLUME_DISPERSION":
+            print(f"  {name:14s} capacity EXTREME_VOLUME_DISPERSION (estimate withheld) · "
                   f"{b['n_periods']} 周", flush=True)
             continue
         cr = b["calibrated_range"]
         print(f"  {name:14s} 校准区间 {_fmt(cr['low'])} – {_fmt(cr['high'])}(参与率 5–20% × 执行铺开 1–5 天)· "
               f"绑定={b['binding']} · 毛夏普 {b['gross_sharpe']} · {b['n_periods']} 周", flush=True)
         print(f"    {'':14s} 敏感性: " + " ".join(f"{k}={_fmt(v)}" for k, v in b["sensitivity_particip_horizon"].items()), flush=True)
-    print(f"  trend: 本轮未算(PIT as_of 无 volume 矩阵,边最弱)——RE-1 后续。", flush=True)
+    print("  trend: 本轮未算(PIT as_of 无 volume 矩阵,边最弱)——RE-1 后续。", flush=True)
     print(f"-> wrote {_OUT}", flush=True)
 
 

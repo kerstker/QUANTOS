@@ -12,6 +12,7 @@ from services.data.persistent_store import SqlitePITStore
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.evolutionary_search import make_evolution_provider
 from services.intelligence.mcts_search import MCTSAlphaSearch
+from services.research.ports.persistence import TrialPersistenceError
 
 DATES = list(range(24))
 INSTS = [f"i{k}" for k in range(6)]
@@ -61,3 +62,16 @@ def test_mcts_fail_closed_on_bad_args():
         MCTSAlphaSearch(_provider()).run([], iterations=5)            # empty seed
     with pytest.raises(ValueError):
         MCTSAlphaSearch(_provider()).run([("P", "momentum", "5")], iterations=0)
+
+
+def test_mcts_trial_persistence_error_is_batch_fatal():
+    import pytest
+
+    def unavailable(_definition):
+        raise TrialPersistenceError("ledger unavailable")
+
+    with pytest.raises(TrialPersistenceError, match="ledger unavailable"):
+        MCTSAlphaSearch(unavailable).run(
+            [("P", "momentum", "5")],
+            iterations=1,
+        )

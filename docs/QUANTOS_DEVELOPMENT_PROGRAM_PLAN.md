@@ -33,7 +33,7 @@ production-ready** (enforced at gates G4–G7).
 | C — trading/risk/execution | 8 → {9 ‖ 11} → 10 | `services/risk`, `services/trading`, `paper_trading` |
 | D — frontend | 12 (mock-first from the start) | `apps/research-console/src` |
 
-Shared hotspot: `services/research/console_api/main.py` is edited by many
+Shared hotspot: `services/console/api/main.py` is edited by many
 phases — consider decomposing it into per-domain routers in Phase 1.
 
 ## 3. Phases

@@ -1,5 +1,5 @@
 """BinanceFuturesAdapter(live/exchange/binance_futures.py):签名 REST 客户端。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.3。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.3。
 
 全部注入假 http transport——零真网络。诚实标注:响应 JSON 形状依公开文档规格假设,
 未对真测试网响应验证(见 spec §0);这里只验证"给定假设的响应形状,解析/签名逻辑正确"。
@@ -417,11 +417,22 @@ def test_binance_limit_post_only_uses_gtx_time_in_force():
 
 
 def test_binance_book_ticker_parses_and_fails_soft():
-    resp = {"symbol": "BTCUSDT", "bidPrice": "59990.10", "askPrice": "60010.20"}
+    resp = {"symbol": "BTCUSDT", "bidPrice": "59990.10", "askPrice": "60010.20",
+            "time": 1700000000000}
     c, t = _client({"/fapi/v1/ticker/bookTicker": (200, resp)})
     book = c.book_ticker("BTC")
-    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20)}
+    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20),
+                    "as_of_ms": 1700000000000}
     assert "signature" not in t.calls[0]["url"]           # 公开端点,不签名
+
+
+def test_binance_book_ticker_without_source_time_remains_usable_for_limit_anchor():
+    resp = {"symbol": "BTCUSDT", "bidPrice": "59990.10", "askPrice": "60010.20"}
+    c, _ = _client({"/fapi/v1/ticker/bookTicker": (200, resp)})
+    assert c.book_ticker("BTC") == {
+        "bid": pytest.approx(59990.10),
+        "ask": pytest.approx(60010.20),
+    }
 
 
 def test_binance_book_ticker_non_2xx_fails_soft_returns_none():

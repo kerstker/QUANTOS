@@ -1,5 +1,5 @@
 """紧急减仓独立通道(2026-07-05,用户拍板"独立紧急通道"方案)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §②。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §②。
 
 **为什么独立:** kill switch 一旦触发,共用 `PreTradeRiskGate.check_kill_switch` 会挡下包括
 reduce-only 在内的所有意图——越紧急越送不出去。机构标准是"紧急去风险不能被'禁止开新仓'的

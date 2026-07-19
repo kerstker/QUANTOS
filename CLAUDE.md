@@ -40,18 +40,18 @@ governed by code review, the governance scanner, and (Phase 14) deployment/proce
 isolation. The autonomous agent path holds only a non-human actor and reaches the
 state machine/gate only through the hardened `ResearchAgentLoop`; direct manager/
 catalog access is for human-controlled workflows and is not an agent API.
-**2026-07-06 战线①注:`promotion_api`(端口 8460,默认不启动、不进任何自启/调度)把上述
-build-time 绕过面变成了 runtime HTTP 能力——持 `key/governance_token.txt` 的任何本机进程
-(含 AI agent)可用三个自报 X-Operator 标签走完三方批准并执行晋级。X-Operator 是问责标签、
-非身份认证;启动前必读 `services/governance/promotion_api/main.py` docstring 与设计文档
-(`docs/superpowers/specs/2026-07-06-promotion-closed-loop-design.md` §7);agent 运行环境
-不得持有 gov token;真身份认证/出进程签名 = Phase 14。APPROVED ≠ 真钱:LIVE 仍被
+**2026-07-12 强身份注:`promotion_api` 已删除本地共享治理 token 与自报操作者标签。
+承重入口只接受 allowlist 非对称算法签名的 OIDC access token，强制 issuer/audience/时效/MFA、
+RFC 8705 mTLS 证书绑定和动作 RBAC；actor/audit ID 只来自不可变 `issuer|subject`。浏览器已实现
+Authorization Code + PKCE S256，一次性事务仅存 sessionStorage，access token 仅驻内存。缺外部
+IdP 公钥策略或可信 TLS scope 即 fail-closed。当前证据只到 M2；外部 IdP 运营、可信 TLS、密钥托管、
+撤销/访问复核及 AI workload 无法人类化的运营证据仍是 M4 红线。APPROVED ≠ 真钱:LIVE 仍被
 readiness pin + 五旗帜结构性挡死。**
 
 ## What actually exists (verified 2026-06-29 by full-system audit)
 
 Authoritative reality map + completion roadmap:
-[`docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/superpowers/specs/2026-06-29-system-audit-and-completion-roadmap.md).
+[`docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md).
 **The backend is substantially built and tested (~1047 tests pass). The console-wiring
 gap is now largely closed: the four ALPHA-pipeline breaks are all wired + tested — 断点1
 关卡证据回喂 evaluator (real `detect_leakage`/regime/PBO evidence through every search loop),
@@ -68,7 +68,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   no-peek selection OOS.
 - `services/research/{alpha_factory,alpha_expression,cs_genome,gp_tree,factor_set,
   session}.py` — real evolutionary/GP search, cross-sectional DSL, synergistic
-  de-redundant set selection, reproducible orchestrator.
+  de-redundant set selection, and the deterministic research-session core.
+  The supported orchestrator entry point is
+  `services/intelligence/research_session.py::run_research_session`, which fixes
+  the guardrailed search runtime and keeps `services/research` from importing
+  `services/intelligence`.
 - `services/research/ic_panel.py` — **截面 IC 诊断面板**核心(泛化自 `tools/crypto_oi_research.py::
   _rank_ic`):`compute_period_ic_series`(逐期截面 Spearman rank IC 序列)+ `aggregate_ic_series`
   (mean/ICIR/hit-rate/t-stat/逐年,n<10 全 None)+ `signal_from_window_op`/`signal_composite`(窗口算子
@@ -153,7 +157,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   switch 后②想走同一个 gate 送减仓单会被同一个 kill switch 挡下,越紧急越送不出去;解法(改
   共用 gate 认识 reduce-only 语义 / 给紧急减仓开独立安全路径)都是需要人工拍板的架构决定,不是
   该由代码悄悄选一个的,留白记录在设计文档 §9。**125 tests(117 单元 + 8 治理边界)全绿**。
-  设计:`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md` §7/§9。撤单/改单、
+  设计:`docs/engineering/specs/2026-07-04-live-execution-stack-design.md` §7/§9。撤单/改单、
   Bybit/Hyperliquid 具体实现(协议已留口子)、console 页面、减仓自动提交(见上)= 非目标(留后续)。
   **venue 可插拔第二个实现 + 运维硬化 + 崩溃恢复已落地**(2026-07-05,同一条 Stage 1 树):
   `live/exchange/bybit_futures.py`(Bybit V5 统一账户,同一 `VenueAdapter` Protocol;与 Binance
@@ -173,7 +177,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   Hyperliquid(msgpack+Keccak+secp256k1 签名,依赖模型与 HMAC 系彻底不同)是需要人工拍板的
   依赖决定,写了决策文档不建假实现(§11)。
   **机构级补全 9 包已全部落地**(2026-07-05 第二批,9 commits,live/+治理测试 178→267,全量
-  门禁 1437 全绿;设计+实施结果 = `docs/superpowers/specs/2026-07-05-institutional-live-stack-
+  门禁 1437 全绿;设计+实施结果 = `docs/engineering/specs/2026-07-05-institutional-live-stack-
   design.md`;运维手册 = `docs/runbooks/live-trading-runbook.md`):① OMS 撤单(两所
   `cancel_order`)+ 超时策略(轮询打满→撤单→**回查权威状态**记账——撤单/成交赛跑与部分成交
   都按交易所真实量入账;崩溃恢复对遗留开单也主动撤,防止与本轮订单叠加)+ **Bybit 状态归一化**
@@ -252,7 +256,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   继续有效)。真实 Binance 测试网 preview 联调跑通(13 腿全部拿到真实盘口锚定价,零
   anchor-fallback 告警)。**真实 `--submit` LIMIT 下单待用户单独放行**。band_pct/挂单时长/
   偏离容忍度均为工程占位数字,真实使用前需用户确认或改数。设计:
-  `docs/superpowers/specs/2026-07-06-limit-order-execution-design.md`。
+  `docs/engineering/specs/2026-07-06-limit-order-execution-design.md`。
   **strategy_id 仓位隔离已落地**(2026-07-06 战线③):核心裁定 = strategy_id 只是**本地账本
   分区维度**;venue/保证金/风控/对账/紧急减仓全部维持账户级(交易所不知道策略;per-strategy
   vs venue 对账 = 拿本地分解自己对自己、伪造独立性,reconciliation.py 明令禁止)。结构性
@@ -269,7 +273,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   只 status 分策略)、第二策略共享 mandate 首跑落单前即告警。真实账本已迁移并逐行比对备份
   (binance 25 fills / bybit_demo 20 fills 全 crowd_contra;备份
   `data/backup/pre-strategy-isolation-20260706/`)。+40 tests,全量门禁 1559 绿。设计:
-  `docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md`。
+  `docs/engineering/specs/2026-07-06-strategy-position-isolation-design.md`。
 - `services/research/paper_trading/{store,advance,health}.py` — 断点2 forward paper-track
   persistence (append-only `data/cache/paper_track.db` of held-out OOS paper P&L/IC, honest
   train/paper split). `services/research/leakage_evidence.py` + `services/intelligence/
@@ -283,7 +287,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   judged no-peek OOS. Driver `tools/ml_stack_research.py`. Honest finding: NO tradable edge (crypto combination
   hurts/GBM overfits; FX +0.21 is gross + contaminated-universe) — bottleneck is data/signal-class, not modeling.
   numpy/sklearn are non-network so `services/` no-network-import is still machine-enforced.
-- `services/research/realism/{impact,capacity_curve}.py` — **现实主义引擎 RE-1(市场冲击 + 容量)**:把回测/干跑的
+- `services/execution/{impact,impact_calibration}.py` + `services/research/realism/capacity_curve.py` — **现实主义引擎 RE-1(市场冲击 + 容量)**:把回测/干跑的
   成本现实从「未校准、默认关闭的 sqrt stub」升到 **Almgren-Chriss 冲击**(临时平方根 + 永久线性,参与率驱动,纯函数)
   + **容量衰减带**(扫 AUM → 净冲击后夏普 → `critical_aum`;冲击系数无法校准 → 扫 5–20bps 给**区间带**、标
   `UNCALIBRATED_PRINCIPLED`,不报假单点)。**诚实容量 = min(冲击-夏普容量, 参与率上限10%)**——两约束里更紧那个。
@@ -298,9 +302,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (`REAL_HISTORICAL_REPLAY`)。**诚实发现:① 美元中性预判证实——carry/crowd 崩盘 beta 极低(下尾依赖 0.13/0.0),
   crowd_contra 在 LUNA(+10.6%)/FTX(+6.5%)崩盘里反而赚——这些边的尾部风险是*截面价差击穿*,不是市场 beta;② 真尾部
   内生——carry 最差回撤 19%(gross 无杠杆)发生在 2020-11 牛市而非任何崩盘;注:干跑报 77% 是 vol-target 加杠杆后的口径,
-  两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ trend 容量把 `crypto_daily.db` 的 volume 单位跨币
-  不一致 bug 逮出来(EOS ~$20k vs BTC ~$3.7Q,~17 数量级不可能真实)——诚实标 `UNRELIABLE_VOLUME_UNITS` 不报假数,已
-  spawn 独立修复任务。** 诊断非门禁。crowd 2021-05 窗口无数据(早期 OI global_ls 稀疏,诚实标注)。
+  两个都对、不同度量;③ 尾偏肥(Hill 尾指数 ~2.4–2.7,类 t 分布);④ **2026-07-13 根因更正**:`crypto_daily.db`
+  的 CoinGecko volume 本来就是统一的 USD 24h rolling notional，错误在 trend 容量消费端又乘一次 close，制造了
+  BTC ~$3.7Q vs EOS ~$20k 的假“单位混乱”。现以 `VolumeUnit/VolumeSemantics` 机器约束并修复双乘；真实中位 ADV
+  BTC ~$43.5B/EOS ~$119.6K，trend 短样本容量约 $47.9K(参与率绑定、未校准诊断)。** crowd 2021-05 窗口无数据
+  (早期 OI global_ls 稀疏,诚实标注)。
 - `services/research/macro_regime.py` + `tools/{fred_fetch,macro_regime_research}.py` — **FRED 宏观数据方向(第一增量)**:
   股票免费源本环境被墙(Stooq bot-wall / Yahoo 429,不绕过),**FRED `fredgraph.csv` 可达**。`fred_fetch.py`(网络在 tools/
   出 gate)抓 6 条**市场型日频序列**(VIX/DGS10/T10Y2Y/HY-OAS/DXY/DFII10,39271 行)填进**已建但从未填的** `fundamental_store`
@@ -385,12 +391,12 @@ Real, tested backend engines (`*_TESTED` in the audit):
   绝不留可复花 grant)→ 烧后全路径落 `DurableAuditLog`;证据只来自 evaluation artifact 的
   `net_sharpe`/`catalog_trial_count` + paper_track.db,artifact 被篡改经 `verify_evaluation`
   判废,任一缺失 guard fail-closed 拒绝——grant 路径比旧单人路径**更严**:eval_trial_count
-  取不到即拒,不像旧路径 None 静默跳过)+ 独立 mutating 服务 promotion_api(X-Gov-Token +
-  X-Operator,GET 也认证,CORS 仅 3100,**默认不启动**——威胁模型扩张见上方 Threat model 注)
-  + 前端 `PromotionQueue.tsx`(候选证据卡/步骤时间线/历史,威胁模型横幅常驻)。
+  取不到即拒,不像旧路径 None 静默跳过)+ 独立 mutating 服务 promotion_api(OIDC 非对称验签 +
+  MFA + RFC 8705 mTLS token binding + 动作 RBAC,GET 也认证,CORS 仅 3100,默认不启动且缺外部
+  身份策略即拒)+ 前端 `PromotionQueue.tsx`(Bearer 身份、候选证据卡/步骤时间线/历史)。
   `AlphaLifecycleManager.advance(grant=, eval_trial_count=)` 纯加法入口,旧 ApprovalRecord
   路径一字不动;grant.request_id 记进 approval_id/evidence_hash(转换链与三方批准相连)。
-  62 tests(后端 56 + 前端 6)。设计+评审对照:`docs/superpowers/specs/
+  62 tests(后端 56 + 前端 6)。设计+评审对照:`docs/engineering/specs/
   2026-07-06-promotion-closed-loop-design.md`。
 - `services/governance/signing.py` + `docs/PHASE_14_PROCESS_ISOLATION.md` — **出进程签名权威接缝(轨道3 子项目3,
   收口)**:全代码库反复出现的同一句诚实注脚——「单进程内挡不住受信代码」(`verify_ref` 无密钥哈希、直接凑三个
@@ -427,7 +433,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   与它 IC t-stat 4.32、过 4/5 证伪一致。诚实边界:这是对**已知历史**的执行现实回测(整手+门+成本+换手,残差≈0 恒等式成立),
   **非前向/实盘**;宇宙仅 14 大币;证伪已过≠前向必赚——是否送前向 paper-track/加仓位是另一独立决策。
   实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
-- `services/research/console_api/main.py` — FastAPI **read-only** API (~31 GET
+- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (~31 GET
   endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
   `research-run` (run_registry sqlite), `crypto-live` (CoinGecko offline snapshot),
@@ -480,7 +486,7 @@ cd apps/research-console && npm ci && npm run typecheck && npm run build && npm 
 
 # Frontend against the REAL read-only backend (Phase 12 wiring)
 #   1) start the console API (read-only computed snapshots, no broker/OMS):
-python -m uvicorn services.research.console_api.main:app --host 127.0.0.1 --port 8400
+python -m uvicorn services.console.main:app --host 127.0.0.1 --port 8400
 #   2) point the console at it and disable mock mode (CORS allows :3100 only):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev
 
@@ -488,7 +494,7 @@ cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=fa
 #   research_runner is the ONLY mutating surface — POST /run triggers a WHITELISTED research kind
 #   (backtest/search/data refresh) async into the run_registry; it touches NO order/broker/credential
 #   path (machine-enforced by tests/governance/test_research_runner_boundary.py). console_api stays GET-only.
-python -m uvicorn services.research.research_runner.main:app --host 127.0.0.1 --port 8420
+python -m uvicorn services.research_runner.main:app --host 127.0.0.1 --port 8420
 #   then run the frontend with both URLs (the `research-console-live` launch.json config sets these):
 cd apps/research-console && VITE_API_URL=http://127.0.0.1:8400 VITE_RUNNER_URL=http://127.0.0.1:8420 \
   VITE_MOCK_MODE=false npm run dev   # → /research/runs lists every run; buttons trigger new ones

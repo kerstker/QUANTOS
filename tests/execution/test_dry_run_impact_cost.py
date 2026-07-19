@@ -8,8 +8,8 @@ import pytest
 
 from services.execution.dry_run_pipeline import (
     reconcile_run, run_multi_period_dry_run, simulate_fills)
+from services.execution.impact import AlmgrenChrissImpact
 from services.execution.intent_builder import build_intents
-from services.research.realism.impact import AlmgrenChrissImpact
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)

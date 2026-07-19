@@ -1,12 +1,20 @@
 """Audit roadmap P0 — durable experiment registry: cross-session DSR trial
 counting, reproducible immutable evaluation artifacts, fail-closed load."""
+from concurrent.futures import ThreadPoolExecutor
+import json
+from threading import Event
+
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.monitoring.audit_log import GlobalAuditLog
-from services.research.experiment_registry.registry import ExperimentRegistry
+from services.research.experiment_registry.registry import (
+    ExperimentRegistry,
+    prepare_evaluation_artifact,
+)
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError,
 )
@@ -79,6 +87,36 @@ def _evaluation():
                            reproducibility_hash="repro-1")
 
 
+def test_prepare_evaluation_artifact_preserves_exact_legacy_bytes_and_hashes():
+    evaluation = _evaluation()
+    payload = evaluation.model_dump()
+    expected_json = json.dumps(payload, sort_keys=True, default=str)
+    expected_content_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": "v1"}
+    )
+    expected_run_id = short_hash(
+        {
+            "alpha_id": evaluation.alpha_id,
+            "repro": evaluation.reproducibility_hash,
+            "dataset_version": "v1",
+        }
+    )
+
+    write = prepare_evaluation_artifact(evaluation, "v1", 10)
+
+    assert write.run_id == expected_run_id
+    assert write.content_hash == expected_content_hash
+    assert write.evaluation_json.encode("utf-8") == expected_json.encode("utf-8")
+    assert write.audit_intent is not None
+    assert write.audit_intent.event_id == f"exp-{expected_run_id}"
+    assert write.audit_intent.timestamp == 10
+    assert dict(write.audit_intent.metadata) == {
+        "run_id": expected_run_id,
+        "content_hash": expected_content_hash,
+        "verdict": "PASS",
+    }
+
+
 def test_record_evaluation_is_reproducible_and_immutable():
     reg = _reg()
     rid1 = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
@@ -107,6 +145,173 @@ def test_rerecord_with_audit_log_is_idempotent_noop():
     rid2 = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10, audit_log=log)
     assert rid1 == rid2
     assert len(log.events) == 1 and log.chain_valid()       # only the first insert audited
+
+
+def test_evaluation_audit_intent_is_durable_until_explicit_recovery():
+    reg = _reg()
+    rid = reg.record_evaluation(
+        _evaluation(), dataset_version="v1", recorded_ts=10
+    )
+    assert reg.pending_evaluation_audits(run_id=rid)
+
+    log = GlobalAuditLog()
+    assert reg.recover_evaluation_audits(
+        log, dispatched_at=11, run_id=rid
+    ) == 1
+    assert reg.pending_evaluation_audits(run_id=rid) == ()
+    assert len(log.events) == 1 and log.chain_valid()
+    assert reg.evaluation_audit_chain_valid()
+
+
+def test_evaluation_audit_publish_before_ack_is_idempotently_replayed(monkeypatch):
+    reg = _reg()
+    log = GlobalAuditLog()
+
+    def crash_after_publish(stage):
+        if stage == "after_publish":
+            raise RuntimeError("injected publish-before-ack crash")
+
+    monkeypatch.setattr(reg, "_audit_dispatch_checkpoint", crash_after_publish)
+    with pytest.raises(RuntimeError, match="publish-before-ack"):
+        reg.record_evaluation(
+            _evaluation(),
+            dataset_version="v1",
+            recorded_ts=10,
+            audit_log=log,
+        )
+    assert len(log.events) == 1
+    assert reg.pending_evaluation_audits()
+
+    monkeypatch.setattr(reg, "_audit_dispatch_checkpoint", lambda _stage: None)
+    assert reg.recover_evaluation_audits(log, dispatched_at=10) == 1
+    assert len(log.events) == 1
+    assert reg.pending_evaluation_audits() == ()
+
+
+def test_evaluation_audit_replay_rejects_conflicting_sink_event():
+    reg = _reg()
+    rid = reg.record_evaluation(
+        _evaluation(), dataset_version="v1", recorded_ts=10
+    )
+    log = GlobalAuditLog()
+    log.append(
+        event_id=f"exp-{rid}",
+        actor="attacker",
+        action="EXPERIMENT_RECORDED",
+        timestamp=10,
+    )
+    with pytest.raises(ExperimentStoreError, match="audit sink event conflict"):
+        reg.recover_evaluation_audits(log, dispatched_at=10)
+    assert reg.pending_evaluation_audits(run_id=rid)
+
+
+def test_same_immutable_evaluation_links_to_each_real_search_session():
+    reg = _reg()
+    run_ids = []
+    for search_id, timestamp in (("session-one", 10), ("session-two", 20)):
+        reg.begin_search_attempt(
+            search_id=search_id,
+            search_kind="TEST",
+            source="tests.research",
+            dataset_version="v1",
+            recorded_at=timestamp,
+        )
+        reg.register_search_candidates(
+            search_id,
+            ["same-candidate"],
+            registered_at=timestamp,
+        )
+        run_ids.append(
+            reg.record_evaluation(
+                _evaluation(),
+                dataset_version="v1",
+                recorded_ts=timestamp,
+                search_id=search_id,
+                config_hash="same-candidate",
+            )
+        )
+        reg.finish_search_attempt(
+            search_id,
+            status="COMPLETED",
+            recorded_at=timestamp,
+        )
+
+    assert run_ids[0] == run_ids[1]
+    assert len(reg.list_evaluations("a1")) == 1
+    assert [row["run_id"] for row in reg.search_evaluations("session-one")] == [
+        run_ids[0]
+    ]
+    assert [row["run_id"] for row in reg.search_evaluations("session-two")] == [
+        run_ids[0]
+    ]
+    assert len(reg.pending_evaluation_audits()) == 1
+    assert reg.search_history_valid()
+
+
+def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
+    path = tmp_path / "concurrent-evaluation.db"
+    setup = ExperimentRegistry(SqliteExperimentStore(str(path), create=True))
+    for search_id, timestamp in (("first-search", 100), ("second-search", 200)):
+        setup.begin_search_attempt(
+            search_id=search_id,
+            search_kind="TEST",
+            source="tests.research",
+            dataset_version="v1",
+            recorded_at=timestamp,
+        )
+        setup.register_search_candidates(
+            search_id,
+            ["same-candidate"],
+            registered_at=timestamp,
+        )
+
+    first_holds_lock = Event()
+    release_first = Event()
+    second_started = Event()
+
+    def record(search_id: str, timestamp: int, *, hold_lock: bool) -> str:
+        store = SqliteExperimentStore(str(path), create=False)
+        registry = ExperimentRegistry(store)
+        if hold_lock:
+
+            def pause_before_commit(_stage: str) -> None:
+                first_holds_lock.set()
+                assert release_first.wait(timeout=5)
+
+            store._evaluation_write_checkpoint = pause_before_commit
+        else:
+            second_started.set()
+        try:
+            return registry.record_evaluation(
+                _evaluation(),
+                dataset_version="v1",
+                recorded_ts=timestamp,
+                search_id=search_id,
+                config_hash="same-candidate",
+            )
+        finally:
+            store.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(record, "first-search", 100, hold_lock=True)
+        assert first_holds_lock.wait(timeout=5)
+        second = executor.submit(record, "second-search", 200, hold_lock=False)
+        assert second_started.wait(timeout=5)
+        release_first.set()
+        run_ids = (first.result(timeout=5), second.result(timeout=5))
+
+    assert run_ids[0] == run_ids[1]
+    assert setup.get_evaluation(run_ids[0])["recorded_ts"] == 100
+    audit = setup.pending_evaluation_audits(run_id=run_ids[0])
+    assert len(audit) == 1
+    assert audit[0]["timestamp"] == 100
+    assert setup.search_evaluations("first-search")[0]["recorded_at"] == 100
+    assert setup.search_evaluations("second-search")[0]["recorded_at"] == 200
+    assert {
+        setup.search_evaluations(search_id)[0]["config_hash"]
+        for search_id in ("first-search", "second-search")
+    } == {"same-candidate"}
+    assert setup.search_history_valid()
 
 
 def test_empty_reproducibility_hash_rejected():
@@ -139,6 +344,7 @@ def test_verify_evaluation_detects_a_tampered_metric():
     row = reg.get_evaluation(rid)
     tampered = row["evaluation_json"].replace('"verdict": "PASS"', '"verdict": "FAIL"')
     assert tampered != row["evaluation_json"]                 # the edit actually landed
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
     reg._store._conn.execute("UPDATE evaluations SET evaluation_json=? WHERE run_id=?", (tampered, rid))
     reg._store._conn.commit()
     assert reg.verify_evaluation(rid) is False                # recomputed hash != stored hash
@@ -147,6 +353,7 @@ def test_verify_evaluation_detects_a_tampered_metric():
 def test_verify_evaluation_detects_a_tampered_content_hash():
     reg = _reg()
     rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
     reg._store._conn.execute("UPDATE evaluations SET content_hash='deadbeef' WHERE run_id=?", (rid,))
     reg._store._conn.commit()
     assert reg.verify_evaluation(rid) is False

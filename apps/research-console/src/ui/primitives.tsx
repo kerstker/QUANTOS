@@ -185,20 +185,26 @@ export function PageHeader({ title, titleZh, subtitle, actions }:
  * SYNTHETIC snapshots. Labelled explicitly so a synthetic Sharpe / PnL / quality
  * figure is never mistaken for measured alpha (audit P1). Read-only always.
  */
-export function ProvenanceRibbon({ usingBackend, apiState, source, error, realData = false }:
+export function ProvenanceRibbon({ usingBackend, apiState, source, error, realData = false, evidenceData = false }:
   { usingBackend: boolean; apiState: ConsoleApiState; source?: string; error?: string | null;
-    realData?: boolean }) {
+    realData?: boolean; evidenceData?: boolean }) {
   const apiTone: Tone = apiState === 'connected' ? 'pos' : apiState === 'error' ? 'neg' : apiState === 'loading' ? 'info' : 'muted';
   const apiLabel = apiState === 'connected' ? bi('已连接', 'CONNECTED') : apiState === 'error' ? bi('错误', 'ERROR')
     : apiState === 'loading' ? bi('加载中', 'LOADING') : bi('未连接', 'NOT_CONNECTED');
   // realData=true: these are REAL observed research results (the run_registry), not synthetic fixtures —
   // honesty demands an accurate label (still read-only; historical backtest != future returns).
+  const evidence = evidenceData && usingBackend;
   const real = realData && usingBackend;
   const tint = real ? 'var(--pos)' : 'var(--warn)';
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
       style={{ background: `color-mix(in srgb, ${tint} 7%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tint} 28%, transparent)` }}>
-      {real ? (
+      {evidence ? (
+        <span className="text-2xs font-medium text-pos">
+          ✓ {bi('机器可验证的仓库证据 · 非收益或实盘就绪声明',
+            'Machine-verifiable repository evidence · not a PnL or live-readiness claim')}
+        </span>
+      ) : real ? (
         <span className="text-2xs font-medium text-pos">
           ✓ {bi('真实研究结果(登记表观察值) · 历史回测,非未来收益承诺',
             'Real research results (observed, from the registry) · historical backtest, NOT a promise of future returns')}
@@ -210,7 +216,7 @@ export function ProvenanceRibbon({ usingBackend, apiState, source, error, realDa
         </span>
       )}
       <span className="mx-1 h-3 w-px bg-line-strong" />
-      <Chip label={real ? 'REAL_RESULTS' : usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
+      <Chip label={evidence ? 'VERIFIED_EVIDENCE' : real ? 'REAL_RESULTS' : usingBackend ? 'BACKEND_COMPUTED' : 'MOCK_MODE'} tone={usingBackend ? 'pos' : 'warn'} />
       <Chip label={apiLabel} tone={apiTone} />
       <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
       <span className="ml-auto text-2xs text-faint">
@@ -219,6 +225,25 @@ export function ProvenanceRibbon({ usingBackend, apiState, source, error, realDa
             {'  ·  API: '}<span className="mono">{RESEARCH_CONSOLE_API_BASE || bi('未启用', 'disabled')}</span></>}
       </span>
     </div>
+  );
+}
+
+/* ---------- Button --------------------------------------------------------- */
+const _BTN_ACTIVE: Record<string, string> = {
+  accent: 'border-accent/50 text-accent hover:bg-accent/10',
+  neg: 'border-neg/50 text-neg hover:bg-neg/10',
+  pos: 'border-pos/50 text-pos hover:bg-pos/10',
+  muted: 'border-line text-muted hover:bg-inset',
+};
+export function Button({ onClick, disabled = false, variant = 'accent', children, className = '' }:
+  { onClick?: () => void; disabled?: boolean; variant?: 'accent' | 'neg' | 'pos' | 'muted';
+    children: React.ReactNode; className?: string }) {
+  const cls = disabled ? 'cursor-not-allowed border-line text-faint' : (_BTN_ACTIVE[variant] ?? _BTN_ACTIVE.accent);
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className={`rounded-md border px-2.5 py-1 text-2xs transition ${cls} ${className}`}>
+      {children}
+    </button>
   );
 }
 

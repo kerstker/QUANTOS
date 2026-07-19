@@ -27,9 +27,14 @@ import time
 import sys
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.research_adapter import adapt_research_market_data
 from services.data.market_provider import ingest_provider_rows
 from services.intelligence.search_space import HypothesisSpace
-from services.research.session import run_research_session
+from services.intelligence.research_session import run_research_session
+from tools.search_trial_registry import (
+    make_search_id,
+    production_experiment_registry,
+)
 from tools.coingecko_fetch import fetch_ohlc, parse_ohlc, _INTERVAL_MS
 
 # (coingecko id, ticker) — a wide liquid cross-section. On the DEMO tier days=30 (4h)
@@ -125,11 +130,28 @@ def main() -> None:
     event_times = sorted(all_event_times)
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
     print(f"\nperiods={len(event_times)} instruments={len(instruments)} -> evolutionary search ...")
-    result = run_research_session(
-        store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON,
-        space=space, rounds=1, batch_size=1, timestamp=now_ms,
-        evolutionary=True, evo_generations=EVO_GENERATIONS,
-        evo_population=EVO_POPULATION, evo_elite=EVO_ELITE)
+    research_store = adapt_research_market_data(store)
+    dataset_version = research_store.dataset_version(instruments, event_times)
+    with production_experiment_registry() as registry:
+        result = run_research_session(
+            research_store, instruments, event_times=event_times,
+            fwd_horizon=FWD_HORIZON, space=space, rounds=1, batch_size=1,
+            timestamp=now_ms, dataset_version=dataset_version, registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_research_run",
+                search_kind="RESEARCH_SESSION_EVOLUTIONARY",
+                dataset_version=dataset_version,
+                recorded_at=now_ms,
+                params={
+                    "generations": EVO_GENERATIONS,
+                    "population": EVO_POPULATION,
+                },
+            ),
+            search_kind="RESEARCH_SESSION_EVOLUTIONARY",
+            search_source="tools.crypto_research_run",
+            evolutionary=True, evo_generations=EVO_GENERATIONS,
+            evo_population=EVO_POPULATION, evo_elite=EVO_ELITE,
+        )
 
     factors = _build_factors(result["report"])
     review_queue = set(result.get("human_review_queue", []))

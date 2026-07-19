@@ -20,7 +20,7 @@ def _panel():
 
 def _run():
     return run_alpha_factory(_panel(), FIELDS, WINDOWS, generations=3, population_size=14, elite_k=6,
-                             dataset_version="dv", timestamp=1)
+                             dataset_version="dv", timestamp=1, ephemeral=True)
 
 
 def test_factory_records_bred_lineage():

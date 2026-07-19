@@ -12,15 +12,53 @@ fail-closed, no new authority. (validation/pipeline.py is a separate single-
 instrument validation tool, not consolidated here.)"""
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from dataclasses import dataclass
+from typing import Callable, Optional, Sequence
 
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.data.versioning import content_hash_of
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.alpha.factor_set import select_synergistic_set
+
+from .fundamental_factors import make_combined_periods_provider
+from .panel_builder import make_data_periods_provider, universe_data_gaps
+from .ports.market_data import VersionedMarketDataPort
 
 
-def _inner_loop(catalog, regime_evidence: bool, fwd_horizon: int = 1):
+@dataclass(frozen=True)
+class ResearchSearchRuntime:
+    """Concrete search components injected by the intelligence composition layer."""
+
+    agent_loop: Callable
+    guided_search_loop: Callable
+    combined_hypothesis_space: Callable
+    evolutionary_search_loop: Callable
+    make_evolution_provider: Callable
+    mcts_alpha_search: Callable
+
+
+class _TrialRecordingProvider:
+    """Record a definition before the wrapped provider can inspect market data."""
+
+    def __init__(self, provider: Callable, catalog: AlphaCatalog) -> None:
+        self._provider = provider
+        self._catalog = catalog
+
+    def __call__(self, definition):
+        self._catalog.register_trial(definition.definition_hash)
+        return self._provider(definition)
+
+    def __getattr__(self, name: str):
+        # Provider evidence hooks (notably leakage_ok) remain visible.
+        return getattr(self._provider, name)
+
+
+def _inner_loop(
+    catalog,
+    regime_evidence: bool,
+    fwd_horizon: int = 1,
+    *,
+    search_runtime: ResearchSearchRuntime,
+):
     """The contained ResearchAgentLoop. The forward-label horizon sets the walk-forward EMBARGO
     (overlapping-label purge = horizon-1, Lopez de Prado): when labels look ahead h periods, a
     fold's opening points share their label window with the prior fold, so they are purged before
@@ -28,15 +66,7 @@ def _inner_loop(catalog, regime_evidence: bool, fwd_horizon: int = 1):
     flows to the evaluator the same way."""
     cfg = AlphaFactoryConfig(compute_regime_evidence=regime_evidence,
                              wf_embargo=max(0, int(fwd_horizon) - 1))
-    return ResearchAgentLoop(catalog=catalog, config=cfg)
-from services.intelligence.guided_search import GuidedSearchLoop
-from services.intelligence.search_space import CombinedHypothesisSpace
-from services.intelligence.evolutionary_search import EvolutionarySearchLoop, make_evolution_provider
-from services.intelligence.mcts_search import MCTSAlphaSearch
-
-from .panel_builder import make_data_periods_provider, universe_data_gaps
-from .fundamental_factors import make_combined_periods_provider
-from .factor_set import select_synergistic_set
+    return search_runtime.agent_loop(catalog=catalog, config=cfg)
 
 
 def _synergistic_set(catalog, k: int) -> dict:
@@ -83,7 +113,7 @@ def _cpcv_validate(catalog, *, embargo: int = 1, n_groups: int = 6, k_test: int 
     returns, aligned on common trailing length) — a richer companion to _oos_validate's single no-peek
     path: it exposes selection-overfit as a distribution of OOS Sharpes across all C(n_groups, k_test)
     splits. Read-only over the catalog; None when < 2 factors or too short (fail-closed)."""
-    from services.research.validation.cpcv import cpcv_summary
+    from services.validation.cpcv import cpcv_summary
     rbi = {aid: catalog.returns(aid) for aid in catalog.all_ids() if len(catalog.returns(aid)) >= 2}
     if len(rbi) < 2:
         return None
@@ -94,15 +124,15 @@ def _cpcv_validate(catalog, *, embargo: int = 1, n_groups: int = 6, k_test: int 
     return cpcv_summary(aligned, n_groups=n_groups, k_test=k_test, embargo=embargo)
 
 
-def _derive_dataset_version(store, instruments: Sequence[str], event_times: Sequence[int]) -> str:
-    if not event_times:
-        return ""
-    lo, hi = min(event_times), max(event_times)
-    bars = [b for inst in instruments for b in store.fetch_bars(inst, lo, hi)]
-    return content_hash_of(bars) if bars else ""
+def _derive_dataset_version(
+    store: VersionedMarketDataPort,
+    instruments: Sequence[str],
+    event_times: Sequence[int],
+) -> str:
+    return store.dataset_version(instruments, event_times)
 
 
-def run_research_session(store, instruments: Sequence[str], *, event_times: Sequence[int],
+def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[str], *, event_times: Sequence[int],
                          fwd_horizon: int, space, rounds: int, batch_size: int,
                          timestamp: int = 0, registry=None,
                          dataset_version: Optional[str] = None, audit_log=None, universe=None,
@@ -114,13 +144,22 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
                          redundancy_lambda: float = 0.0, regime_evidence: bool = False,
                          mcts: bool = False, mcts_iterations: int = 60,
                          diversity_lambda: float = 0.0,
-                         oos_validate: bool = False, oos_embargo: int = 1) -> dict:
+                         oos_validate: bool = False, oos_embargo: int = 1,
+                         trial_recorder=None,
+                         search_id: Optional[str] = None,
+                         search_runtime: ResearchSearchRuntime) -> dict:
     if dataset_version is None:
         dataset_version = _derive_dataset_version(store, instruments, event_times)
+    if registry is not None and (
+        not isinstance(search_id, str) or not search_id.strip()
+    ):
+        raise ValueError("persistent research session requires an exact search_id")
+    if registry is None and search_id is not None:
+        raise ValueError("search_id requires a persistent experiment registry")
 
-    catalog = AlphaCatalog()
+    catalog = AlphaCatalog(trial_recorder=trial_recorder)
     if registry is not None:
-        registry.load_into(catalog)          # cross-session trial count + var_sr (fail-closed)
+        registry.load_for_evaluation(catalog)  # trials + historical stats, no stale lifecycle state
 
     if mcts:
         return _run_mcts(
@@ -129,7 +168,9 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             catalog=catalog, registry=registry, dataset_version=dataset_version,
             timestamp=timestamp, audit_log=audit_log, iterations=mcts_iterations, gp=gp,
             synergistic_k=synergistic_k, regime_evidence=regime_evidence,
-            oos_validate=oos_validate, oos_embargo=oos_embargo)
+            oos_validate=oos_validate, oos_embargo=oos_embargo,
+            search_id=search_id,
+            search_runtime=search_runtime)
 
     if evolutionary or gp:
         return _run_evolutionary(
@@ -141,12 +182,16 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
             gp=gp, parsimony_lambda=parsimony_lambda, parsimony_mu=parsimony_mu,
             synergistic_k=synergistic_k, redundancy_lambda=redundancy_lambda,
             regime_evidence=regime_evidence, diversity_lambda=diversity_lambda,
-            oos_validate=oos_validate, oos_embargo=oos_embargo)
+            oos_validate=oos_validate, oos_embargo=oos_embargo,
+            search_id=search_id,
+            search_runtime=search_runtime)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
     # price factors AND fundamental value factors (E/P, B/M). Otherwise price-only (unchanged).
     if fund_store is not None and metrics:
-        effective_space = CombinedHypothesisSpace(space, tuple(metrics), tuple(modes))
+        effective_space = search_runtime.combined_hypothesis_space(
+            space, tuple(metrics), tuple(modes)
+        )
         provider = make_combined_periods_provider(store, fund_store, instruments,
                                                   event_times=event_times, fwd_horizon=fwd_horizon,
                                                   universe=universe)
@@ -154,10 +199,22 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
         effective_space = space
         provider = make_data_periods_provider(store, instruments, event_times=event_times,
                                               fwd_horizon=fwd_horizon, universe=universe)
+    provider = _TrialRecordingProvider(provider, catalog)
 
-    loop = GuidedSearchLoop(effective_space, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon))
+    loop = search_runtime.guided_search_loop(
+        effective_space,
+        inner_loop=_inner_loop(
+            catalog,
+            regime_evidence,
+            fwd_horizon,
+            search_runtime=search_runtime,
+        ),
+    )
     if registry is not None:
-        registry.load_bandit_into(loop.strategy)   # the agent's learning accumulates across sessions
+        registry.load_bandit_into(
+            loop.strategy,
+            dataset_version=dataset_version,
+        )
     out = loop.search(rounds, batch_size, provider, timestamp=timestamp)
 
     # honesty signal: members with no bar on a trading day (survivorship-free run only)
@@ -166,13 +223,23 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
 
     recorded = []
     if registry is not None:
-        for _alpha_id, entry in sorted(out["report"].items()):
+        for alpha_id, entry in sorted(out["report"].items()):
             ev = entry.get("evaluation")
             if ev is not None:
+                if getattr(ev, "alpha_id", None) != alpha_id:
+                    raise ValueError(
+                        "guided-search evaluation alpha_id does not match its report key"
+                    )
                 recorded.append(registry.record_evaluation(
-                    ev, dataset_version=dataset_version, recorded_ts=timestamp, audit_log=audit_log))
-        registry.save(catalog, now=timestamp)
-        registry.save_bandit(loop.strategy)         # persist the learned arm statistics
+                    ev, dataset_version=dataset_version, recorded_ts=timestamp,
+                    search_id=search_id,
+                    config_hash=catalog.get(alpha_id).definition_hash,
+                    audit_log=audit_log))
+        registry.save_evaluation_context(catalog, now=timestamp)
+        registry.save_bandit(
+            loop.strategy,
+            dataset_version=dataset_version,
+        )
 
     return {
         "dataset_version": dataset_version,
@@ -190,17 +257,25 @@ def run_research_session(store, instruments: Sequence[str], *, event_times: Sequ
     }
 
 
-def _record_report(registry, report, *, dataset_version, timestamp, audit_log) -> list:
+def _record_report(registry, report, *, catalog, dataset_version, timestamp,
+                   search_id, audit_log) -> list:
     """Record every report entry that carries an evaluation as an immutable registry
     artifact. Deterministic order. Returns the recorded run ids."""
     recorded = []
     if registry is None:
         return recorded
-    for _alpha_id, entry in sorted(report.items()):
+    for alpha_id, entry in sorted(report.items()):
         ev = entry.get("evaluation")
         if ev is not None:
+            if getattr(ev, "alpha_id", None) != alpha_id:
+                raise ValueError(
+                    "search evaluation alpha_id does not match its report key"
+                )
             recorded.append(registry.record_evaluation(
-                ev, dataset_version=dataset_version, recorded_ts=timestamp, audit_log=audit_log))
+                ev, dataset_version=dataset_version, recorded_ts=timestamp,
+                search_id=search_id,
+                config_hash=catalog.get(alpha_id).definition_hash,
+                audit_log=audit_log))
     return recorded
 
 
@@ -209,7 +284,9 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                       audit_log, generations, population_size, elite_k,
                       gp=False, parsimony_lambda=0.0, parsimony_mu=0.0, synergistic_k=8,
                       redundancy_lambda=0.0, regime_evidence=False, diversity_lambda=0.0,
-                      oos_validate=False, oos_embargo=1) -> dict:
+                      oos_validate=False, oos_embargo=1,
+                      search_id=None,
+                      search_runtime: ResearchSearchRuntime = None) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
       - flat (default): price/value atoms + crossover-into-2-leg-interaction genomes;
@@ -218,8 +295,17 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         depth; an opt-in parsimony penalty biases the SEARCH reward toward smaller trees
         (the recorded evaluation stays honest). Containment + multiple-testing honesty are
         identical (each distinct canonical tree = one catalog trial). No bandit -> no save_bandit."""
-    provider = make_evolution_provider(store, fund_store, instruments,
-                                       event_times=event_times, fwd_horizon=fwd_horizon, universe=universe)
+    if search_runtime is None:
+        raise ValueError("search_runtime is required")
+    provider = search_runtime.make_evolution_provider(
+        store,
+        fund_store,
+        instruments,
+        event_times=event_times,
+        fwd_horizon=fwd_horizon,
+        universe=universe,
+    )
+    provider = _TrialRecordingProvider(provider, catalog)
     if gp:
         ops = tuple(space.operators)
         windows = tuple(str(w) for w in space.windows)
@@ -243,17 +329,28 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
             "combines": ("sum", "product"),
             "redundancy_lambda": redundancy_lambda,
         }
-    loop = EvolutionarySearchLoop(provider, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon), vocab=vocab)
+    loop = search_runtime.evolutionary_search_loop(
+        provider,
+        inner_loop=_inner_loop(
+            catalog,
+            regime_evidence,
+            fwd_horizon,
+            search_runtime=search_runtime,
+        ),
+        vocab=vocab,
+    )
     out = loop.run(seed, generations=generations, population_size=population_size,
                    elite_k=elite_k, timestamp=timestamp)
 
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
         else {"total_gaps": 0, "by_date": {}}
     review_queue = [aid for aid, e in sorted(out["report"].items()) if e.get("state") == "PAPER_TRADING"]
-    recorded = _record_report(registry, out["report"], dataset_version=dataset_version,
-                              timestamp=timestamp, audit_log=audit_log)
+    recorded = _record_report(registry, out["report"], catalog=catalog,
+                              dataset_version=dataset_version,
+                              timestamp=timestamp, search_id=search_id,
+                              audit_log=audit_log)
     if registry is not None:
-        registry.save(catalog, now=timestamp)        # no save_bandit: evolution has no UCB bandit
+        registry.save_evaluation_context(catalog, now=timestamp)
     return {
         "dataset_version": dataset_version,
         "mode": "gp" if gp else "evolutionary",
@@ -273,12 +370,23 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
 def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, modes,
               fund_store, universe, catalog, registry, dataset_version, timestamp, audit_log,
               iterations, gp=False, synergistic_k=8, regime_evidence=False,
-              oos_validate=False, oos_embargo=1) -> dict:
+              oos_validate=False, oos_embargo=1,
+              search_id=None,
+              search_runtime: ResearchSearchRuntime = None) -> dict:
     """MCTS/UCT mode: navigate the formula-tree space with UCT instead of generational GP.
     Same contained ResearchAgentLoop + multiple-testing honesty; seeds match the evolutionary
     mode (GP-tree leaves + depth-1 binaries when gp, else price/value atoms)."""
-    provider = make_evolution_provider(store, fund_store, instruments,
-                                       event_times=event_times, fwd_horizon=fwd_horizon, universe=universe)
+    if search_runtime is None:
+        raise ValueError("search_runtime is required")
+    provider = search_runtime.make_evolution_provider(
+        store,
+        fund_store,
+        instruments,
+        event_times=event_times,
+        fwd_horizon=fwd_horizon,
+        universe=universe,
+    )
+    provider = _TrialRecordingProvider(provider, catalog)
     if gp:
         ops = tuple(space.operators)
         windows = tuple(str(w) for w in space.windows)
@@ -293,16 +401,27 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
             seed += [("F", m, mode) for m in metrics for mode in modes]
         vocab = {"operators": tuple(space.operators), "windows": tuple(str(w) for w in space.windows),
                  "metrics": tuple(metrics) or ("eps",), "modes": tuple(modes), "combines": ("sum", "product")}
-    search = MCTSAlphaSearch(provider, inner_loop=_inner_loop(catalog, regime_evidence, fwd_horizon), vocab=vocab)
+    search = search_runtime.mcts_alpha_search(
+        provider,
+        inner_loop=_inner_loop(
+            catalog,
+            regime_evidence,
+            fwd_horizon,
+            search_runtime=search_runtime,
+        ),
+        vocab=vocab,
+    )
     out = search.run(seed, iterations=iterations, timestamp=timestamp)
 
     data_gaps = universe_data_gaps(store, universe, event_times) if universe is not None \
         else {"total_gaps": 0, "by_date": {}}
     review_queue = [aid for aid, e in sorted(out["report"].items()) if e.get("state") == "PAPER_TRADING"]
-    recorded = _record_report(registry, out["report"], dataset_version=dataset_version,
-                              timestamp=timestamp, audit_log=audit_log)
+    recorded = _record_report(registry, out["report"], catalog=catalog,
+                              dataset_version=dataset_version,
+                              timestamp=timestamp, search_id=search_id,
+                              audit_log=audit_log)
     if registry is not None:
-        registry.save(catalog, now=timestamp)
+        registry.save_evaluation_context(catalog, now=timestamp)
     return {
         "dataset_version": dataset_version,
         "mode": "mcts",

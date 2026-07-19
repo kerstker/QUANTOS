@@ -1,9 +1,16 @@
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.events import (
+    EVENT_DRY_RUN_COMPLETED,
+    EVENT_DRY_RUN_STARTED,
+    EVENT_PRETRADE_APPROVED,
+    EVENT_PRETRADE_REJECTED,
+)
 
-from services.execution.dry_run_pipeline import (_vol_target_returns, plan_target_quantities, reconcile_run,
-                                                 run_dry_run_pipeline, run_multi_period_dry_run,
-                                                 screen_intents, simulate_fills)
+from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
+                                                 plan_target_quantities, reconcile_run, run_dry_run_pipeline,
+                                                 run_multi_period_dry_run, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
+from services.monitoring.event_bus import DurableEventBus
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
@@ -94,12 +101,12 @@ def test_reconcile_run_returns_pnl_summary():
     assert pnl["total_pnl"] == 10.0 and pnl["residual"] < 1e-6 and pnl["positions"] == {"BTC": 10}
 
 
-def _pipeline(ks=None):
+def _pipeline(ks=None, event_bus=None):
     return run_dry_run_pipeline(
         weights={"BTC": 0.5, "ETH": -0.5}, prices={"BTC": 100.0, "ETH": 50.0}, current_positions={},
         aum=1e6, gate=_gate(kill_switch=ks), ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
         adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
-        marks={"BTC": 101.0, "ETH": 49.0})
+        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
 
 
 def test_end_to_end_benign_produces_run():
@@ -124,6 +131,94 @@ def test_deterministic_same_input_same_run():
            (b.run_id, b.n_intents, b.n_approved, b.n_rejected, b.audit_root, b.pnl, b.detail)
 
 
+def test_single_period_pipeline_publishes_causal_pretrade_and_completion_events():
+    bus = DurableEventBus(":memory:")
+    run = _pipeline(event_bus=bus)
+    records = bus.records(correlation_id=run.run_id)
+    event_types = [record["event"].event_type for record in records]
+    assert event_types == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    start_id = records[0]["event"].event_id
+    assert all(record["causation_id"] == start_id for record in records[1:])
+    assert records[-1]["event"].payload["n_fills"] == 2
+
+
+def test_pipeline_can_defer_completion_to_transactional_outbox():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5, "ETH": -0.5},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        event_bus=bus,
+        publish_completion_event=False,
+    )
+
+    event_types = [
+        record["event"].event_type
+        for record in bus.records(correlation_id=run.run_id)
+    ]
+    assert event_types == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+    ]
+
+
+def test_rejected_intent_is_published_before_zero_fill_completion():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5}, prices={"BTC": 100.0}, current_positions={}, aum=1e6,
+        gate=_armed_gate(), ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
+        event_bus=bus,
+    )
+    events = [record["event"] for record in bus.records(correlation_id=run.run_id)]
+    assert [event.event_type for event in events] == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_REJECTED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    assert events[1].payload["reasons"]
+    assert events[-1].payload["n_fills"] == 0
+
+
+def test_deterministic_pipeline_rerun_is_event_idempotent():
+    bus = DurableEventBus(":memory:")
+    first = _pipeline(event_bus=bus)
+    count = bus.count()
+    second = _pipeline(event_bus=bus)
+    assert second.run_id == first.run_id
+    assert bus.count() == count
+
+
+def test_pipeline_event_history_survives_bus_restart(tmp_path):
+    path = str(tmp_path / "domain_events.db")
+    bus = DurableEventBus(path)
+    run = _pipeline(event_bus=bus)
+    expected_ids = [record["event"].event_id for record in bus.records()]
+    expected_head = bus.head_hash
+    bus.close()
+
+    reopened = DurableEventBus(path)
+    assert reopened.chain_valid()
+    assert reopened.head_hash == expected_head
+    assert [
+        record["event"].event_id
+        for record in reopened.records(correlation_id=run.run_id)
+    ] == expected_ids
+
+
 def test_target_quantities_round_and_skip_bad_price():
     w = {"BTC": 0.5, "ETH": -0.5, "DOGE": 0.1}
     px = {"BTC": 100.0, "ETH": 50.0, "DOGE": 0.0}  # DOGE price 0 -> skipped
@@ -136,6 +231,57 @@ def test_target_quantities_drops_zero_and_missing_price():
     px = {"BTC": 100.0, "ETH": 50.0}  # XRP price missing
     q = plan_target_quantities(w, px, aum=1000.0)
     assert q == {"ETH": 10}  # BTC rounds to 0 -> dropped ; XRP missing -> dropped
+
+
+# --- plan_target_quantities filters (F10 audit: exchange step/min-qty/min-notional) ----------
+
+def test_target_quantities_filters_none_matches_unfiltered_baseline():
+    """filters=None (default) must reproduce the exact pre-existing behavior -- the head-line
+    acceptance bar for this optional addition."""
+    w = {"BTC": 0.5, "ETH": -0.5, "DOGE": 0.1}
+    px = {"BTC": 100.0, "ETH": 50.0, "DOGE": 0.0}
+    implicit = plan_target_quantities(w, px, aum=10000.0)
+    explicit = plan_target_quantities(w, px, aum=10000.0, filters=None)
+    assert implicit == explicit == {"BTC": 50, "ETH": -100}
+
+
+def test_target_quantities_filters_rounds_to_step():
+    """A step_size that doesn't evenly divide the raw quantity must actually change the result
+    (floor to the grid), not pass the raw rounded value through untouched."""
+    unfiltered = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0)
+    assert unfiltered == {"BTC": 53}                          # baseline: plain round(), no step
+
+    filters = {"BTC": (10.0, 0.0, 0.0)}                       # step_size=10, no min_qty/min_notional
+    filtered = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0, filters=filters)
+    assert filtered == {"BTC": 50}                             # 53 -> floor to nearest 10 -> 50
+
+
+def test_target_quantities_filters_drops_below_min_notional():
+    """A leg whose rounded quantity*price falls below min_notional is excluded THIS PERIOD ONLY
+    (fail-soft) -- other legs, including ones with no filter entry, proceed normally."""
+    filters = {"BTC": (1.0, 0.0, 1e6)}                         # impossibly high min_notional -> BTC dropped
+    w = {"BTC": 0.1, "ETH": 0.5}
+    px = {"BTC": 100.0, "ETH": 50.0}
+    q = plan_target_quantities(w, px, aum=10000.0, filters=filters)
+    assert "BTC" not in q
+    assert q["ETH"] == 100                                     # unaffected: no filter entry for ETH
+
+
+def test_target_quantities_filters_drops_below_min_qty():
+    filters = {"BTC": (1.0, 100.0, 0.0)}                       # min_qty=100 but raw qty ~53
+    q = plan_target_quantities({"BTC": 0.53}, {"BTC": 100.0}, aum=10000.0, filters=filters)
+    assert "BTC" not in q
+
+
+def test_target_quantities_filters_missing_instrument_passthrough():
+    """Missing filter data for an instrument must NOT block quantization of the others -- and must
+    NOT itself be quantized (honest 'data incomplete, don't apply' stance)."""
+    filters = {"ETH": (10.0, 0.0, 0.0)}                        # only ETH has filter data
+    w = {"BTC": 0.53, "ETH": 0.53}
+    px = {"BTC": 100.0, "ETH": 100.0}
+    q = plan_target_quantities(w, px, aum=10000.0, filters=filters)
+    assert q["BTC"] == 53                                      # no filter for BTC -> untouched passthrough
+    assert q["ETH"] == 50                                      # ETH quantized via step_size=10
 
 
 # --- Multi-period rolling dry-run --------------------------------------------
@@ -156,11 +302,12 @@ _W = {1: {"BTC": 0.5, "ETH": -0.5}, 2: {"BTC": 0.5, "ETH": -0.5}, 3: {"BTC": 0.4
 _PX = {1: {"BTC": 100.0, "ETH": 50.0}, 2: {"BTC": 110.0, "ETH": 48.0}, 3: {"BTC": 105.0, "ETH": 52.0}}
 
 
-def _mp(gate=None, cash_flow_fn=None, vol_target=None):
+def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None):
     return run_multi_period_dry_run(
         periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=gate or _gate(),
         ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
-        cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target)
+        cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target,
+        event_bus=event_bus)
 
 
 def test_multi_period_benign_curve():
@@ -170,6 +317,18 @@ def test_multi_period_benign_curve():
     assert r.pnl["residual"] < 1e-6                       # price-leg reconciliation identity holds
     assert r.pnl["final_equity"] == r.detail["equity_curve"][-1]["equity"]
     assert r.n_approved > 0 and r.audit_root
+
+
+def test_multi_period_pipeline_events_replay_as_one_causal_run():
+    bus = DurableEventBus(":memory:")
+    run = _mp(event_bus=bus)
+    records = bus.records(correlation_id=run.run_id)
+    assert records[0]["event"].event_type == EVENT_DRY_RUN_STARTED
+    assert records[-1]["event"].event_type == EVENT_DRY_RUN_COMPLETED
+    assert sum(
+        record["event"].event_type == EVENT_PRETRADE_APPROVED for record in records
+    ) == run.n_approved
+    assert len({record["correlation_id"] for record in records}) == 1
 
 
 def test_multi_period_kill_switch_latched_zero_fills():
@@ -205,12 +364,112 @@ def test_multi_period_vol_target_curve_present():
     assert len(r.detail["equity_curve_vt"]) == len(r.detail["equity_curve"]) == 3
 
 
+def test_multi_period_vol_target_sharpe_and_drawdown_computed():
+    """sharpe_vt/max_drawdown_vt are the same pure helpers applied to the vt-curve's OWN `ret` series
+    (not the raw returns) -- reproducibility of the "RAW -> VT" figures quoted in docs."""
+    vt = {"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52}
+    r = _mp(vol_target=vt)
+    vt_returns = [p["ret"] for p in r.detail["equity_curve_vt"]]
+    assert r.pnl["sharpe_vt"] == _ann_sharpe(vt_returns)
+    assert r.pnl["max_drawdown_vt"] == _max_drawdown_from_returns(vt_returns)
+    # sanity: vol-target actually reshaped the series here (lookback=1 << n periods=3), else this test
+    # wouldn't distinguish "computed from vt curve" from "computed from raw curve"
+    raw_returns = [p["ret"] for p in r.detail["equity_curve"]]
+    assert vt_returns != raw_returns
+
+
+def test_multi_period_vol_target_passthrough_matches_raw_exactly():
+    """lookback (10) >> n periods (3) -> _vol_target_returns is pure passthrough, so the vt curve is
+    IDENTICAL to the raw curve and sharpe_vt/max_drawdown_vt must equal the raw fields exactly."""
+    vt = {"target_ann": 0.10, "lookback": 10, "lev_cap": 3.0, "ppy": 52}
+    r = _mp(vol_target=vt)
+    assert r.pnl["sharpe_vt"] == r.pnl["sharpe"]
+    assert r.pnl["max_drawdown_vt"] == r.pnl["max_drawdown"]
+
+
+def test_multi_period_no_vol_target_sharpe_vt_is_none():
+    """vol_target=None must NOT silently omit the keys or coerce to 0 -- callers need to tell "not computed"
+    apart from "computed as zero"."""
+    r = _mp(vol_target=None)
+    assert r.detail["equity_curve_vt"] == []
+    assert "sharpe_vt" in r.pnl and "max_drawdown_vt" in r.pnl
+    assert r.pnl["sharpe_vt"] is None
+    assert r.pnl["max_drawdown_vt"] is None
+
+
+def test_multi_period_vol_target_single_period_matches_raw_edge_behavior():
+    """Single-period run: _ann_sharpe defines len(returns)<2 -> 0.0 for RAW (insufficient sample);
+    sharpe_vt must follow the identical edge behavior. lookback(1) >= n returns(1) means
+    _vol_target_returns is pure passthrough, so max_drawdown_vt must equal the raw max_drawdown
+    exactly (not invent a new edge semantic) -- _max_drawdown_from_returns has NO len<2 special case."""
+    r = run_multi_period_dry_run(
+        periods=[1], weights_by_period={1: {"BTC": 0.5}}, prices_by_period={1: {"BTC": 100.0}},
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
+    assert r.pnl["sharpe"] == 0.0
+    assert r.pnl["sharpe_vt"] == 0.0
+    assert r.pnl["max_drawdown_vt"] == r.pnl["max_drawdown"]
+
+
+def test_multi_period_vol_target_empty_periods_no_crash():
+    """periods=[] boundary: RAW already reduces to 0.0/0.0 (empty returns); vt must not crash and must
+    mirror the same edge behavior (equity_curve_vt also stays empty)."""
+    r = run_multi_period_dry_run(
+        periods=[], weights_by_period={}, prices_by_period={}, gate=_gate(), ctx_factory=_mp_ctx,
+        adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6, cost_bps=5.0,
+        vol_target={"target_ann": 0.10, "lookback": 1, "lev_cap": 3.0, "ppy": 52})
+    assert r.detail["equity_curve_vt"] == []
+    assert r.pnl["sharpe_vt"] == 0.0 and r.pnl["max_drawdown_vt"] == 0.0
+
+
 def test_multi_period_records_net_exposure():
     r = _mp()
     assert all("net" in p and "gross" in p for p in r.detail["equity_curve"])
     # period 1: BTC +5000@100 / ETH -10000@50 = +500k -500k = 0 (dollar-neutral at clean-lot entry)
     assert abs(r.detail["equity_curve"][0]["net"]) < 1.0
     assert "avg_net_exposure_pct" in r.pnl and r.pnl["avg_net_exposure_pct"] >= 0.0
+
+
+# --- run_multi_period_dry_run `filters` (F10 audit: exchange-quantization plumbed end-to-end) --
+
+def test_multi_period_filters_none_matches_unfiltered_exactly():
+    """filters=None (default) must produce byte-identical output to the call that omits the
+    parameter entirely -- the head-line acceptance bar for this optional addition."""
+    baseline = _mp()
+    explicit_none = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=_gate(),
+        ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, filters=None)
+    assert (baseline.run_id, baseline.audit_root, baseline.pnl, baseline.detail) == \
+           (explicit_none.run_id, explicit_none.audit_root, explicit_none.pnl, explicit_none.detail)
+
+
+def test_multi_period_filters_changes_quantities_end_to_end():
+    """Passing filters through the full pipeline (not just plan_target_quantities in isolation)
+    must actually change the traded quantities -- proven via the recorded gross notional, which
+    is a direct function of the (now step-quantized) fill quantities."""
+    filters = {"BTC": (7.0, 0.0, 0.0), "ETH": (7.0, 0.0, 0.0)}
+    unfiltered = _mp()
+    filtered = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=_gate(),
+        ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
+        cost_bps=5.0, filters=filters)
+    # t=1: BTC raw target 5000 -> step 7 floors to 4998 ; ETH raw target -10000 -> floors to -9996
+    # gross notional therefore differs from the unfiltered (exact round-number) baseline.
+    assert unfiltered.detail["equity_curve"][0]["gross"] != filtered.detail["equity_curve"][0]["gross"]
+    assert filtered.detail["equity_curve"][0]["gross"] == 4998 * 100 + 9996 * 50
+
+
+def test_multi_period_filters_min_notional_drops_only_affected_leg():
+    """A leg whose quantized size falls below min_notional is excluded fail-soft (this leg only,
+    this period only) -- it must NOT fail or block the other leg's fill."""
+    filters = {"BTC": (1.0, 0.0, 1e15)}  # BTC always below min_notional -> dropped
+    r = run_multi_period_dry_run(
+        periods=[1], weights_by_period={1: {"BTC": 0.5, "ETH": -0.5}},
+        prices_by_period={1: {"BTC": 100.0, "ETH": 50.0}},
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry",
+        aum=1e6, cost_bps=5.0, filters=filters)
+    assert r.detail["equity_curve"][0]["fills"] == 1  # only ETH fills; BTC excluded fail-soft
 
 
 # --- broker adapter seam guard (轨道3 子项目1) ---------------------------------

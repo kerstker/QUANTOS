@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { fetchValidationSnapshot } from '@/lib/api/research-console-api';
 import { mockValidationReports } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
@@ -9,7 +9,7 @@ import {
   StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
 } from '@/ui/primitives';
 import { RadialGauge, Histogram } from '@/ui/charts';
-import { fixed, signed, shortHash, statusTone, type Tone } from '@/ui/format';
+import { fixed, signed, num, shortHash, statusTone, type Tone } from '@/ui/format';
 
 /** The six discriminating leakage/robustness gates surfaced per report. */
 const gateDefs: Array<{ key: string; zh: string; en: string; get: (r: ValidationReport) => boolean }> = [
@@ -28,6 +28,16 @@ export default function Validation() {
   const reports: ValidationReport[] = usingBackend ? payload!.reports : mockValidationReports;
   const r: ValidationReport = usingBackend ? payload!.selected_report : mockValidationReports[0];
   const lineage: CalculationLineageItem[] = usingBackend ? (payload?.lineage ?? []) : [];
+
+  // What-if 成本/压力滑杆(2026-07-09 从已并入的 ComputationLab 页迁移而来,改造成基于本页
+  // 真实 net_sharpe 的本地估算——不是 ComputationLab 那套合成情景曲线,是纯前端估算工具,
+  // 不产生新的后端调用,仅供"这个已选因子在更高成本/更大压力下大概会怎样"的直觉参考,不是
+  // 权威结论(权威口径仍是 costs/decay 两道真实门禁本身)。
+  const [whatIfCostBps, setWhatIfCostBps] = useState(0);
+  const [whatIfStress, setWhatIfStress] = useState(1.0);
+  const costDrag = whatIfCostBps / 100;
+  const stressPenalty = Math.max(0, whatIfStress - 1) * 0.18;
+  const whatIfNetSharpe = r.net_sharpe - costDrag - stressPenalty;
 
   const gates = gateDefs.map(g => ({ ...g, pass: g.get(r) }));
   const decisionTone: Tone = statusTone(r.decision);
@@ -121,6 +131,37 @@ export default function Validation() {
           )}
         </Panel>
       </div>
+
+      <Panel eyebrow={bi('What-if · 成本/压力', 'WHAT-IF · COST/STRESS')}
+        title={bi(`成本/压力敏感性估算(基于 ${r.alpha_id} 真实净夏普 ${fixed(r.net_sharpe)})`,
+          `cost/stress sensitivity estimate (off ${r.alpha_id}'s real net Sharpe ${fixed(r.net_sharpe)})`)}
+        right={<Chip label={bi('本地估算,非新后端调用', 'local estimate, no new backend call')} tone="muted" />}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <label className="block sm:col-span-1">
+            <div className="flex items-center justify-between text-2xs uppercase tracking-wide text-faint">
+              <span>{bi('额外成本拖累', 'Extra Cost Drag')}</span>
+              <span className="tnum font-semibold text-ink">{whatIfCostBps} bps</span>
+            </div>
+            <input className="mt-2 w-full accent-[var(--accent)]" type="range" min={0} max={80}
+              value={whatIfCostBps} onChange={e => setWhatIfCostBps(Number(e.target.value))} />
+          </label>
+          <label className="block sm:col-span-1">
+            <div className="flex items-center justify-between text-2xs uppercase tracking-wide text-faint">
+              <span>{bi('压力倍数', 'Stress Multiplier')}</span>
+              <span className="tnum font-semibold text-ink">{whatIfStress.toFixed(1)}×</span>
+            </div>
+            <input className="mt-2 w-full accent-[var(--accent)]" type="range" min={1} max={2.5} step={0.1}
+              value={whatIfStress} onChange={e => setWhatIfStress(Number(e.target.value))} />
+          </label>
+          <div className="flex flex-col justify-center sm:col-span-1">
+            <div className="text-2xs uppercase tracking-wide text-faint">{bi('估算净夏普', 'Estimated Net Sharpe')}</div>
+            <div className={`tnum text-lg font-semibold ${whatIfNetSharpe >= 0.5 ? 'text-pos' : whatIfNetSharpe > 0 ? 'text-warn' : 'text-neg'}`}>
+              {fixed(whatIfNetSharpe)}
+            </div>
+            <div className="text-2xs text-faint">{bi('原始', 'gross')} {fixed(r.net_sharpe)} − {bi('成本', 'cost')} {num(costDrag, 3)} − {bi('压力', 'stress')} {num(stressPenalty, 3)}</div>
+          </div>
+        </div>
+      </Panel>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2" eyebrow={bi('队列', 'Cohort')} title={bi('全部验证报告', 'All Validation Reports')}

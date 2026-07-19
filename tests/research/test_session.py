@@ -1,14 +1,35 @@
 """#2 remainder — reproducible research session: persisted data -> guided search ->
 registry persistence, in one deterministic call; contained + cross-session."""
+import itertools
+
 import pytest
+from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.data import Bar
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.data.persistent_store import SqlitePITStore
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.ports.persistence import ExperimentStoreError
 from services.intelligence.search_space import HypothesisSpace
-from services.research.session import run_research_session
+from services.intelligence.research_session import (
+    run_research_session as _run_research_session,
+)
+from services.research import session as session_core
+
+
+_SEARCH_SEQUENCE = itertools.count()
+
+
+def run_research_session(*args, **kwargs):
+    """Every test states durable versus intentionally process-local execution."""
+    if kwargs.get("registry") is None:
+        kwargs["ephemeral"] = True
+    else:
+        kwargs.setdefault("search_id", f"test-session-{next(_SEARCH_SEQUENCE)}")
+        kwargs.setdefault("search_kind", "TEST_RESEARCH_SESSION")
+        kwargs.setdefault("search_source", "tests.research.test_session")
+    return _run_research_session(*args, **kwargs)
 
 
 def _bar(inst, t, close):
@@ -38,14 +59,37 @@ def _kw():
 
 def test_session_runs_persists_and_is_contained():
     store, reg = _store(), _reg()
-    out = run_research_session(store, registry=reg, **_kw())
+    out = run_research_session(
+        store,
+        registry=reg,
+        search_id="session-main",
+        **_kw(),
+    )
     assert out["dataset_version"]                         # derived from data content
     assert out["recorded_run_ids"]                       # evaluations persisted
     for rid in out["recorded_run_ids"]:
         assert reg.get_evaluation(rid) is not None        # retrievable artifact
+    assert {row["run_id"] for row in reg.search_evaluations("session-main")} == set(
+        out["recorded_run_ids"]
+    )
     cat = AlphaCatalog()
     reg.load_into(cat)
+    for link in reg.search_evaluations("session-main"):
+        evaluation_row = reg.get_evaluation(link["run_id"])
+        assert (
+            link["config_hash"]
+            == cat.get(evaluation_row["alpha_id"]).definition_hash
+        )
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())   # contained
+    assert [row["status"] for row in reg.search_attempt_events("session-main")] == [
+        "STARTED",
+        "COMPLETED",
+    ]
+    candidates = reg.search_candidates("session-main")
+    assert candidates
+    assert {row["config_hash"] for row in candidates} <= set(
+        reg._store.all_trial_hashes()
+    )
 
 
 def test_session_exposes_real_factor_returns():
@@ -75,9 +119,170 @@ def test_session_persists_trial_count_across_sessions():
     assert cat.global_trial_count() >= 1                  # trials survived the session
 
 
+def test_session_re_evaluates_same_candidates_on_a_new_dataset_version():
+    store, reg = _store(), _reg()
+    first = run_research_session(
+        store,
+        registry=reg,
+        search_id="dataset-v1-search",
+        dataset_version="dataset-v1",
+        **_kw(),
+    )
+    canonical_rows = reg._store._conn.execute(
+        "SELECT alpha_id FROM alpha_state ORDER BY alpha_id LIMIT 2"
+    ).fetchall()
+    assert len(canonical_rows) == 2
+    for row, state in zip(canonical_rows, ("PAPER_TRADING", "REJECTED")):
+        reg._store._conn.execute(
+            "UPDATE alpha_state SET state=? WHERE alpha_id=?",
+            (state, row["alpha_id"]),
+        )
+    reg._store._conn.commit()
+    before = {
+        row["alpha_id"]: tuple(row)
+        for row in reg._store._conn.execute(
+            "SELECT alpha_id,definition_json,state,returns_json,sharpe,pvalue "
+            "FROM alpha_state ORDER BY alpha_id"
+        )
+    }
+    second = run_research_session(
+        store,
+        registry=reg,
+        search_id="dataset-v2-search",
+        dataset_version="dataset-v2",
+        **_kw(),
+    )
+
+    assert first["recorded_run_ids"]
+    assert second["recorded_run_ids"], second["report"]
+    assert set(first["recorded_run_ids"]).isdisjoint(second["recorded_run_ids"])
+    assert [row["status"] for row in reg.search_attempt_events("dataset-v2-search")] == [
+        "STARTED",
+        "COMPLETED",
+    ]
+    assert reg.search_candidates("dataset-v2-search")
+    after = {
+        row["alpha_id"]: tuple(row)
+        for row in reg._store._conn.execute(
+            "SELECT alpha_id,definition_json,state,returns_json,sharpe,pvalue "
+            "FROM alpha_state ORDER BY alpha_id"
+        )
+    }
+    for alpha_id, canonical in before.items():
+        assert after[alpha_id] == canonical
+
+
+def test_trial_recorder_failure_is_batch_fatal_and_retained(monkeypatch):
+    store, reg = _store(), _reg()
+
+    def fail_candidates(*_args, **_kwargs):
+        raise ExperimentStoreError("candidate persistence unavailable")
+
+    monkeypatch.setattr(reg, "register_search_candidates", fail_candidates)
+    with pytest.raises(ExperimentStoreError, match="candidate persistence"):
+        run_research_session(
+            store,
+            registry=reg,
+            search_id="recorder-failed-search",
+            dataset_version="dataset-v1",
+            **_kw(),
+        )
+
+    assert [
+        row["status"]
+        for row in reg.search_attempt_events("recorder-failed-search")
+    ] == ["STARTED", "FAILED"]
+
+
+def test_trial_recording_provider_records_before_call_and_preserves_evidence_hook():
+    order = []
+    catalog = AlphaCatalog(
+        trial_recorder=lambda config_hash: order.append(("record", config_hash))
+    )
+    definition = AlphaDefinition(
+        alpha_id="candidate",
+        name="Candidate",
+        factor_ids=("close",),
+    )
+
+    class FailingProvider:
+        def __call__(self, received):
+            order.append(("provider", received.definition_hash))
+            raise RuntimeError("provider failed")
+
+        @staticmethod
+        def leakage_ok(_received):
+            return True
+
+    provider = session_core._TrialRecordingProvider(FailingProvider(), catalog)
+    assert provider.leakage_ok(definition) is True
+    with pytest.raises(RuntimeError, match="provider failed"):
+        provider(definition)
+
+    assert order == [
+        ("record", definition.definition_hash),
+        ("provider", definition.definition_hash),
+    ]
+    assert catalog.global_trial_count() == 1
+
+
+def test_guided_session_persists_provider_failure_before_isolating_it(
+    monkeypatch,
+):
+    store, registry = _store(), _reg()
+    original_factory = session_core.make_data_periods_provider
+    failed_hashes = []
+
+    def probing_factory(*args, **kwargs):
+        delegate = original_factory(*args, **kwargs)
+
+        class Probe:
+            def __call__(self, definition):
+                rows = registry.search_candidates("provider-failure-search")
+                assert definition.definition_hash in {
+                    row["config_hash"] for row in rows
+                }
+                if not failed_hashes:
+                    failed_hashes.append(definition.definition_hash)
+                    raise RuntimeError("provider failed after durable registration")
+                return delegate(definition)
+
+            def __getattr__(self, name):
+                return getattr(delegate, name)
+
+        return Probe()
+
+    monkeypatch.setattr(session_core, "make_data_periods_provider", probing_factory)
+    params = {**_kw(), "rounds": 1, "batch_size": 2}
+    result = run_research_session(
+        store,
+        registry=registry,
+        search_id="provider-failure-search",
+        **params,
+    )
+
+    registered = {
+        row["config_hash"]
+        for row in registry.search_candidates("provider-failure-search")
+    }
+    assert set(failed_hashes) <= registered
+    assert len(registered) > len(result["report"])
+    assert [
+        row["status"]
+        for row in registry.search_attempt_events("provider-failure-search")
+    ] == ["STARTED", "COMPLETED"]
+
+
 def test_session_works_without_registry():
     out = run_research_session(_store(), registry=None, **_kw())
     assert out["dataset_version"] and out["recorded_run_ids"] == []   # ran, nothing persisted
+
+
+def test_intelligence_composition_rejects_runtime_override():
+    with pytest.raises(TypeError, match="fixed by the intelligence composition boundary"):
+        run_research_session(
+            _store(), registry=None, search_runtime=object(), **_kw()
+        )
 
 
 def _fund_store():

@@ -2,10 +2,11 @@
 """QUANTOS fail-closed validation entrypoint (Phase 0.5).
 
 Single command CI and humans run. Orchestrates, in order:
-  1. the paper-to-live governance scanner (no broker SDK / secrets / live APIs),
-  2. the research-side pytest suites (run from the repo root), and
-  3. the trading-side pytest suites (run from apps/research-console, whose own
-     `services` package tree differs from the repo-root one).
+  1. generated evidence and architecture drift checks,
+  2. a fresh isolated risk-state recovery drill,
+  3. the paper-to-live governance scanner,
+  4. backend and live-stack pytest suites, and
+  5. frontend typecheck, tests, and production build.
 
 Each suite group is run as a separate subprocess with the correct working
 directory, because the two `services` package trees collide in one process
@@ -15,17 +16,133 @@ directly (not via the shell), so it is unaffected by any shell command hooks.
 Exit code is non-zero if ANY check fails (fail-closed).
 """
 import os
+import shutil
 import subprocess
 import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 APPS = os.path.join(REPO, "apps", "research-console")
 SCANNER = os.path.join(APPS, "scripts", "run_paper_to_live_governance_check.py")
+NPM = shutil.which("npm") or "npm"
 
 # (name, argv, cwd)
 # Since Phase 1 unified the two service trees under the repo root, all Python
 # test suites resolve from a single rootdir and run in one pytest invocation.
 CHECKS = [
+    (
+        "python-audit-evidence:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_python_audit_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "npm-audit-evidence:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_npm_audit_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "actions-osv-evidence:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_actions_audit_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "container-trivy-evidence:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_container_audit_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "container-reproducibility-evidence:current",
+        [
+            sys.executable,
+            os.path.join(
+                REPO,
+                "scripts",
+                "generate_container_reproducibility_evidence.py",
+            ),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "event-schema-catalog:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_event_schema_catalog.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "service-import-graph:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_service_import_graph.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "supply-chain-baseline:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "generate_supply_chain_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "model-risk-history:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "update_model_risk_history.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "crowding-calibration-evidence:current",
+        [
+            sys.executable,
+            "-m",
+            "tools.crowding_metric_research",
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "top-tier-assessment-artifacts",
+        [sys.executable, os.path.join(REPO, "scripts", "assess_top_tier.py"), "--check"],
+        REPO,
+    ),
+    (
+        "backup-evidence:current",
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "check_backup_evidence.py"),
+            "--check",
+        ],
+        REPO,
+    ),
+    (
+        "risk-recovery-drill:fresh",
+        [sys.executable, os.path.join(REPO, "scripts", "run_risk_recovery_gate.py")],
+        REPO,
+    ),
     (
         "governance-scanner",
         [sys.executable, SCANNER],
@@ -51,7 +168,7 @@ CHECKS = [
             # 重生成),该 reproducibility 门现纳入 CI——本地有 data/cache/ artifact 时校验数字不漂移,
             # CI 无 artifact 时诚实 skip(绝不当作 passed)。
             "tests/reproducibility",
-            "services/research/console_api/tests/test_console_api.py",
+            "services/console/api/tests/test_console_api.py",
             "services/research/factor_engine/tests/test_model_compile.py",
             "services/trading/dry_run_adapters/tests/test_dry_run.py",
             "tests/integration/test_dry_run_all.py",
@@ -72,6 +189,21 @@ CHECKS = [
             "tests/tools",
         ],
         REPO,
+    ),
+    (
+        "frontend: typecheck",
+        [NPM, "run", "typecheck"],
+        APPS,
+    ),
+    (
+        "frontend: tests",
+        [NPM, "test"],
+        APPS,
+    ),
+    (
+        "frontend: production build",
+        [NPM, "run", "build"],
+        APPS,
     ),
 ]
 

@@ -1,7 +1,7 @@
 """Go/No-Go 证据包生成器(2026-07-05,Phase 3A 人工评审的标准材料)。
 
 聚合已有的真实产物(全部只读,不生成新数据、不下任何结论——**结论是人工评审的事**):
-1. 前向证据钟(forward_track_status.json):各 alpha 已积累周数/paper sharpe/IC/距 8 周门槛;
+1. 前向证据基线(forward_evidence_baseline.json):认证前向周数/认证待兑现/历史未认证/距 8 周门槛;
 2. live-paper 对账历史(live_parity*.jsonl):逐周缺口趋势、账外仓位事件数;
 3. TCA 累计(各 venue 账本):加权滑点 vs 回测 10bps 假设;
 4. 权益曲线(live_equity*.jsonl,哨兵心跳):live 权益统计;
@@ -21,9 +21,12 @@ from datetime import datetime, timezone
 
 from tools.live_track_advance import _VENUES, _venue_paths
 
-_FORWARD_STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_FORWARD_EVIDENCE_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _ALERTS = os.path.join("data", "cache", "alerts.jsonl")
 _OUT_JSON = os.path.join("data", "cache", "gonogo_report.json")
+# 审计 §4.4 [P1-R2]:哨兵(tools/live_risk_sentinel.py)每小时算好的 VaR/CVaR/HHI 只读快照——
+# gonogo 直接读这里,不重算(同一份计算,避免两处口径不一致)。
+_RISK_SENTINEL_STATUS = os.path.join("data", "cache", "risk_sentinel_status.json")
 _EVIDENCE_GATE_WEEKS = 8
 
 
@@ -46,7 +49,7 @@ def _load(path: str):
         return None
     try:
         return json.load(open(path, encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeError):
         return None
 
 
@@ -89,24 +92,70 @@ def assemble_pnl_attribution(equity_points, tca) -> dict:
     }
 
 
-def _forward_evidence() -> dict:
-    ft = _load(_FORWARD_STATUS)
-    if not ft:
-        return {"present": False}
-    alphas = {}
-    for aid, a in (ft.get("alphas") or {}).items():
-        n = a.get("n_forward_periods") or 0
-        alphas[aid] = {
-            "weeks_accumulated": n,
-            "weeks_to_gate": max(0, _EVIDENCE_GATE_WEEKS - n),
-            "paper_sharpe": a.get("paper_sharpe"),
-            "paper_ic": a.get("paper_ic"),
-            "cum_return": a.get("cum_return"),
-            "backtest_reference_sharpe": a.get("backtest_reference_sharpe"),
-            "pending_decisions": a.get("pending_decisions"),
-        }
-    return {"present": True, "ran_at": ft.get("ran_at"), "gate_weeks": _EVIDENCE_GATE_WEEKS,
-            "alphas": alphas}
+def _nonnegative_int(mapping: dict, key: str) -> int | None:
+    value = mapping.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _forward_evidence(now_ms: int | None = None) -> dict:
+    """Read only the attested baseline; malformed or stale evidence never borrows legacy cache counts."""
+    document = _load(_FORWARD_EVIDENCE_BASELINE)
+    if not isinstance(document, dict):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    counts = document.get("counts")
+    gate = document.get("evidence_gate")
+    admission = document.get("data_admission")
+    observed_at_ms = _nonnegative_int(document, "observed_at_ms")
+    max_age_ms = _nonnegative_int(document, "max_age_ms")
+    if (
+        not isinstance(counts, dict)
+        or not isinstance(gate, dict)
+        or not isinstance(admission, dict)
+        or observed_at_ms is None
+        or max_age_ms is None
+        or not isinstance(gate.get("minimum_weeks"), int)
+        or isinstance(gate.get("minimum_weeks"), bool)
+        or not isinstance(gate.get("eligible"), bool)
+    ):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    parsed_counts = {key: _nonnegative_int(counts, key) for key in (
+        "attested_realizations", "attested_pending", "legacy_unattested_decisions",
+    )}
+    if any(value is None for value in parsed_counts.values()):
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+        return {"present": False, "evidence_state": "UNAVAILABLE", "actions_allowed": False}
+    if now - observed_at_ms > max_age_ms:
+        state = "STALE"
+    elif admission.get("status") == "CURRENT":
+        state = "ATTESTED"
+    else:
+        state = "DATA_BLOCKED"
+    return {
+        "present": True,
+        "evidence_state": state,
+        "attested_realizations": parsed_counts["attested_realizations"],
+        "attested_pending": parsed_counts["attested_pending"],
+        "legacy_unattested_decisions": parsed_counts["legacy_unattested_decisions"],
+        "evidence_gate_weeks": gate["minimum_weeks"],
+        "evidence_gate_eligible": gate["eligible"],
+        "data_admission": admission,
+        "actions_allowed": False,
+    }
+
+
+def _venue_risk_snapshot(sentinel_status, venue_name: str):
+    """从哨兵状态快照(risk_sentinel_status.json,已由 live_risk_sentinel.py 算好)摘取某 venue
+    的只读 VaR/CVaR/HHI 展示——不重算,同一份计算避免两处口径不一致(审计 §4.4 [P1-R2])。
+    哨兵还没跑过 / 该 venue 本轮查询出错(结果里只有 error 键,没有 risk_snapshot)-> 诚实
+    None,不是 0(不能把"没算"和"算出来是低风险"混为一谈)。"""
+    if not sentinel_status:
+        return None
+    for r in sentinel_status.get("results") or []:
+        if r.get("venue") == venue_name:
+            return r.get("risk_snapshot")
+    return None
 
 
 def _venue_evidence(name: str) -> dict:
@@ -156,6 +205,8 @@ def _venue_evidence(name: str) -> dict:
         }
     # PnL/成本归因(Phase 5 item 3):从真实权益曲线 + 完整 TCA 算(纯函数,含未实现/敞口/执行成本估计)
     out["pnl"] = assemble_pnl_attribution(eq, t_full)
+    # 只读风险展示(审计 §4.4 [P1-R2]):读哨兵已经算好的 VaR/CVaR/HHI,不重算、不参与任何结论。
+    out["risk_snapshot"] = _venue_risk_snapshot(_load(_RISK_SENTINEL_STATUS), name)
     return out
 
 
@@ -192,7 +243,7 @@ def assemble_report(*, forward_evidence: dict, execution_evidence: dict, inciden
 def build_report(now_ms: int) -> dict:
     """驱动器边界:加载所有真实产物(IO)再交给纯 assemble_report 装配。"""
     return assemble_report(
-        forward_evidence=_forward_evidence(),
+        forward_evidence=_forward_evidence(now_ms=now_ms),
         execution_evidence={name: _venue_evidence(name) for name in _VENUES
                             if os.path.exists(_VENUES[name]["key_file"])},
         incidents=_incidents(),
@@ -206,7 +257,12 @@ def render_markdown(rep: dict) -> str:
              "", f"readiness: **{rep['readiness']}**", "", rep["honesty_note"], "",
              "## 前向证据钟(Stage 0)", ""]
     fe = rep["forward_evidence"]
-    if fe.get("present"):
+    if fe.get("present") and "attested_realizations" in fe:
+        gate_weeks = fe["evidence_gate_weeks"]
+        lines.append(f"- 认证前向 {fe['attested_realizations']}/{gate_weeks} 周")
+        lines.append(f"- 认证待兑现 {fe['attested_pending']};历史未认证 {fe['legacy_unattested_decisions']}（不计入门槛）")
+        lines.append(f"- 证据状态 {fe['evidence_state']};门槛资格 {fe['evidence_gate_eligible']};只读 actions_allowed={fe['actions_allowed']}")
+    elif fe.get("present"):
         lines.append("| alpha | 已积累周数 | 距 8 周门槛 | paper Sharpe | paper IC | 累计收益 | 回测参照 |")
         lines.append("|---|---|---|---|---|---|---|")
         for aid, a in fe["alphas"].items():
@@ -237,6 +293,11 @@ def render_markdown(rep: dict) -> str:
                          f"(变动 {pn['total_equity_change']:+.2f});最新未实现 {pn['latest_unrealized_pnl']};"
                          f"最新 gross/net {pn['latest_gross_notional']}/{pn['latest_net_notional']};"
                          f"执行成本估计 {pn['execution_cost_estimate']}")
+        if v.get("risk_snapshot"):
+            rs = v["risk_snapshot"]
+            lines.append(f"- 风险展示(只读,非门禁,审计 §4.4):VaR95={rs.get('var_95')} "
+                         f"CVaR95={rs.get('cvar_95')} HHI={rs.get('hhi')}"
+                         f"(日频收益点数={rs.get('n_daily_returns')},持仓数={rs.get('n_positions')})")
         lines.append("")
     inc = rep["incidents"]
     lines += ["## 事故台账", "",

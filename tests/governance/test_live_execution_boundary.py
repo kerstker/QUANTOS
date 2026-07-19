@@ -1,6 +1,6 @@
 """治理:机器钉死 live/ 执行栈(Stage 1,实盘路线)的 L2 安全边界。镜像
 test_broker_adapter_boundary.py / test_signing_boundary.py 的 AST 检查风格,应用到整棵 live/ 树。
-设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §4/§10。
+设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §4/§10。
 
 1) 仅 live/exchange/{binance,bybit}_futures.py 可含网络 import;live/ 其余文件一律不许;
 2) live/ 全树无交易所/券商 SDK import;
@@ -131,6 +131,76 @@ def test_services_tree_does_not_import_live():
                           + "\n".join(offenders)
 
 
+def test_every_production_live_batch_call_requires_validation_attestation():
+    pipeline_path = os.path.join(_LIVE, "pipeline.py")
+    pipeline_tree = ast.parse(open(pipeline_path, encoding="utf-8").read())
+    submit_def = next(
+        node for node in pipeline_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "submit_live_batch"
+    )
+    keyword_names = [arg.arg for arg in submit_def.args.kwonlyargs]
+    index = keyword_names.index("validation_attestation")
+    assert submit_def.args.kw_defaults[index] is None, \
+        "validation_attestation must be a required keyword-only pipeline argument"
+
+    call_sites = []
+    offenders = []
+    for root in (os.path.join(_ROOT, "live"), os.path.join(_ROOT, "services"),
+                 os.path.join(_ROOT, "tools")):
+        for path in _all_py_files(root):
+            tree = ast.parse(open(path, encoding="utf-8").read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = node.func.id if isinstance(node.func, ast.Name) else (
+                    node.func.attr if isinstance(node.func, ast.Attribute) else ""
+                )
+                if name != "submit_live_batch":
+                    continue
+                relative = os.path.relpath(path, _ROOT)
+                call_sites.append(f"{relative}:{node.lineno}")
+                if not any(keyword.arg == "validation_attestation" for keyword in node.keywords):
+                    offenders.append(f"{relative}:{node.lineno}")
+    assert call_sites, "expected at least one production submit_live_batch caller"
+    assert not offenders, \
+        f"production submit_live_batch call missing validation_attestation: {offenders}"
+
+
+def test_live_ledger_never_silently_ignores_id_conflicts():
+    path = os.path.join(_LIVE, "execution", "position_ledger.py")
+    source = open(path, encoding="utf-8").read()
+    for table in ("live_orders", "live_fills", "live_tca"):
+        assert f"INSERT OR IGNORE INTO {table}" not in source, \
+            f"{table} must compare duplicate payloads and reject ID collisions"
+    assert "class LiveLedgerConflictError" in source
+
+
+def test_live_pipeline_prejournal_failure_is_fail_closed():
+    path = os.path.join(_LIVE, "pipeline.py")
+    source = open(path, encoding="utf-8").read()
+    assert "action=\"LIVE_PREJOURNAL_FAILED\"" in source
+
+    tree = ast.parse(source)
+    submit_def = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "submit_live_batch"
+    )
+    record_line = min(
+        node.lineno for node in ast.walk(submit_def)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "record_submission"
+    )
+    place_line = min(
+        node.lineno for node in ast.walk(submit_def)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "place_order"
+    )
+    assert record_line < place_line, "PENDING_NEW journal must precede venue placement"
+
+
 def test_emergency_channel_is_structurally_independent_of_the_shared_gate():
     """紧急减仓通道(live/execution/emergency.py)的存在意义 = 不被 kill-switch 挡住,
     它的安全性因此**必须**来自结构约束而非共用 gate——机器钉死两点:
@@ -204,3 +274,27 @@ def test_evaluate_mandate_fails_closed_without_valid_mandate():
                     max_single_order_notional=1e9, max_gross_notional=1e9, max_net_notional=1e9)
     assert evaluate_mandate([order], prices, valid, venue="bybit_testnet", exchange="binance", now=1).tier \
         == NEEDS_HUMAN_REVIEW
+
+
+def test_all_live_risk_entrypoints_validate_peak_equity_against_history():
+    entrypoints = (
+        (os.path.join(_ROOT, "tools", "live_track_advance.py"), "main"),
+        (os.path.join(_ROOT, "tools", "live_risk_sentinel.py"), "check_venue"),
+    )
+    for path, function_name in entrypoints:
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == function_name
+        )
+        calls = {
+            node.func.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "record_and_validate_peak_equity" in calls, \
+            f"{os.path.relpath(path, _ROOT)} must validate persisted peak state"
+        assert "_load_peak_equity" not in calls, \
+            f"{os.path.relpath(path, _ROOT)} must not trust the legacy scalar loader"
+        assert "_save_peak_equity" not in calls, \
+            f"{os.path.relpath(path, _ROOT)} must not bypass observation-backed validation"

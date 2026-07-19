@@ -1,5 +1,5 @@
 """仓位/回撤风险监控(live/execution/risk_monitor.py)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §9。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §9。
 
 分两级(与 mandate 分级授权同一哲学):① 越限即 arm KillSwitch——用既有、已测试、"任何 actor
 皆可触发"的安全机制,零新风险(halt 只会让系统更保守);② 减仓订单的**计算**(compute_flatten_orders)
@@ -8,11 +8,17 @@ PreTradeRiskGate 会挡下所有意图,包括 reduce-only——见 spec §9 讨�
 """
 import pytest
 
-from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
-from quantos.contracts.alpha import Actor, ActorKind
+from live.execution.risk_monitor import (
+    compute_flatten_orders,
+    evaluate_risk_state,
+    respond_to_breach,
+    respond_to_breach_persisted,
+)
+from quantos.contracts.alpha import ActorKind
 from quantos.contracts.killswitch import KillSwitchScope
 from quantos.contracts.trading import OrderSide
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.pre_trade.kill_switch_store import KillSwitchStateStore
 
 
 # --- evaluate_risk_state ---
@@ -154,6 +160,95 @@ def test_already_tripped_kill_switch_is_idempotent_no_double_arm():
     trip_count_1 = ks.state.trip_count
     respond_to_breach(kill_switch=ks, breach=r, at=2000)      # 再次越限,不该重复 arm 制造噪音
     assert ks.state.trip_count == trip_count_1
+
+
+def test_persisted_breach_atomically_arms_authoritative_store():
+    store = KillSwitchStateStore(":memory:", create=True)
+    breach = evaluate_risk_state(
+        equity=50_000.0,
+        peak_equity=100_000.0,
+        positions={},
+        prices={},
+        max_drawdown_pct=0.1,
+        max_gross_exposure=1e9,
+        max_net_exposure=1e9,
+    )
+
+    result = respond_to_breach_persisted(store=store, breach=breach, at=1000)
+
+    assert result["action"] == "kill_switch_armed"
+    assert store.load_state().tripped is True
+    assert len(store.pending_event_outbox()) == 1
+
+
+def test_persisted_breach_does_not_double_arm_existing_incident():
+    store = KillSwitchStateStore(":memory:", create=True)
+    breach = evaluate_risk_state(
+        equity=50_000.0,
+        peak_equity=100_000.0,
+        positions={},
+        prices={},
+        max_drawdown_pct=0.1,
+        max_gross_exposure=1e9,
+        max_net_exposure=1e9,
+    )
+    respond_to_breach_persisted(store=store, breach=breach, at=1000)
+
+    result = respond_to_breach_persisted(store=store, breach=breach, at=2000)
+
+    assert result["action"] == "already_tripped"
+    assert store.load_state().trip_count == 1
+    assert len(store.pending_event_outbox()) == 1
+
+
+def test_concurrent_persisted_breach_adopts_the_winning_trip(tmp_path, monkeypatch):
+    from live.execution import risk_monitor as monitor
+    from services.risk.pre_trade.kill_switch_runtime import arm_and_record as real_arm
+
+    path = str(tmp_path / "kill_switch.db")
+    primary = KillSwitchStateStore(path, create=True)
+    competitor = KillSwitchStateStore(path, create=True)
+    breach = evaluate_risk_state(
+        equity=50_000.0,
+        peak_equity=100_000.0,
+        positions={},
+        prices={},
+        max_drawdown_pct=0.1,
+        max_gross_exposure=1e9,
+        max_net_exposure=1e9,
+    )
+    original = monitor.arm_and_record
+    raced = False
+
+    def arm_after_competitor(store, actor, reason, *, at):
+        nonlocal raced
+        if not raced:
+            raced = True
+            real_arm(
+                competitor,
+                actor,
+                "competing monitor breach",
+                at=at,
+                incident_id="winning-incident",
+            )
+        return original(store, actor, reason, at=at)
+
+    monkeypatch.setattr(monitor, "arm_and_record", arm_after_competitor)
+    try:
+        result = monitor.respond_to_breach_persisted(
+            store=primary,
+            breach=breach,
+            at=1000,
+        )
+
+        assert result["action"] == "already_tripped"
+        assert result["incident_id"] == "winning-incident"
+        assert primary.load_state().incident_id == "winning-incident"
+        assert primary.load_state().trip_count == 1
+        assert len(primary.pending_event_outbox()) == 1
+    finally:
+        primary.close()
+        competitor.close()
 
 
 # --- compute_flatten_orders(纯计算,未接自动提交——见 spec §9) ---

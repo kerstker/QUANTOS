@@ -1,4 +1,6 @@
 """无幸存者偏差面板构建 + 日历缺口 + session 接入。"""
+import itertools
+
 import pytest
 from quantos.contracts.data import Bar
 from quantos.contracts.research import AlphaState
@@ -9,7 +11,22 @@ from services.alpha.catalog import AlphaCatalog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.intelligence.search_space import HypothesisSpace
-from services.research.session import run_research_session
+from services.intelligence.research_session import (
+    run_research_session as _run_research_session,
+)
+
+
+_SEARCH_SEQUENCE = itertools.count()
+
+
+def run_research_session(*args, **kwargs):
+    if kwargs.get("registry") is None:
+        kwargs["ephemeral"] = True
+    else:
+        kwargs.setdefault("search_id", f"test-panel-universe-{next(_SEARCH_SEQUENCE)}")
+        kwargs.setdefault("search_kind", "TEST_PANEL_UNIVERSE_SESSION")
+        kwargs.setdefault("search_source", "tests.research.test_panel_universe")
+    return _run_research_session(*args, **kwargs)
 
 
 DATES = [20240102, 20240103, 20240104, 20240105, 20240106]

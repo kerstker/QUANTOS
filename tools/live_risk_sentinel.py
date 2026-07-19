@@ -25,23 +25,35 @@ import math
 import os
 import sys
 import time
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 from live.execution.anomaly import detect_equity_anomaly
 from live.execution.emergency import flatten_target_for_breach, submit_emergency_flatten
+from live.execution.equity_state import (append_equity_observation,
+                                         record_and_validate_peak_equity)
 from live.execution.position_ledger import LiveLedger
-from live.execution.risk_monitor import compute_flatten_orders, evaluate_risk_state, respond_to_breach
-from live.governance.kill_switch_store import (load_kill_switch_state,
-                                               save_kill_switch_state_if_tripped)
+from live.execution.risk_monitor import (
+    RiskBreach,
+    compute_flatten_orders,
+    evaluate_risk_state,
+    respond_to_breach_persisted,
+)
+from live.governance.kill_switch_store import (
+    open_authoritative_kill_switch_store,
+    write_kill_switch_json_mirror,
+)
 from live.governance.mandate_store import MandateLoadError, load_mandate
-from services.risk.pre_trade.kill_switch import KillSwitch
 from services.monitoring.audit_store import DurableAuditLog
 from services.portfolio.firm_aggregation import aggregate_firm_books
 from services.portfolio.firm_gate import evaluate_firm_gate
+from services.risk.research_risk.domain.models import RiskConfig
+from services.risk.research_risk.domain.risk_modules import (ConcentrationRiskEngine,
+                                                              MarketRiskEngine)
 from tools.alert_sink import emit
 from tools.live_snapshot import binance_position_rows, bybit_position_rows, portfolio_summary
-from tools.live_track_advance import (_VENUES, _load_credentials, _load_peak_equity,
-                                      _save_peak_equity, _venue_paths)
+from tools.kill_switch_events import dispatch_and_project_kill_switch_events
+from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
 
 _MAX_DRAWDOWN_PCT = 0.20        # 与周度驱动器同一工程默认(非业务风险容忍度)
 # 盘中权益跳变告警阈值(Phase 5 item 2):两轮之间 |权益跳变| 超过它就**告警一次**(仅告警,绝不
@@ -67,8 +79,7 @@ def _equity_path(suffix: str) -> str:
 
 
 def append_equity_point(path: str, point: dict) -> None:
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(point) + "\n")
+    append_equity_observation(path, point)
 
 
 def _last_equity_point(path: str) -> Optional[float]:
@@ -94,6 +105,104 @@ def _last_equity_point(path: str) -> Optional[float]:
     return last
 
 
+# ---------------------------------------------------------------------------
+# 审计 §4.4 [P1-R2](2026-07-08):VaR/CVaR/HHI 只读展示。research_risk 的三个引擎
+# (MarketRiskEngine/ConcentrationRiskEngine)早就建好测过,但此前零 live 消费——哨兵是"当前
+# 持仓"的唯一真实来源,这里把它们接进 check_venue 的状态输出。**绝不进 breach/kill-switch/
+# 紧急减仓判断**,只是多写一个字段给签字人看;gonogo_report.py 直接读这里算好的结果,不重算。
+# ---------------------------------------------------------------------------
+
+def _daily_equity_closes(path: str) -> List[float]:
+    """把权益曲线 jsonl(哨兵按小时心跳 append)降采样成日频"收盘"——每个 UTC 日历日只留最后
+    一条有效正 equity。MarketRiskEngine.volatility 按 sqrt(252) 年化,隐含假设输入是日频收益;
+    直接喂原始小时收益会让年化值失真,所以先按日归并。过滤规则与 `_last_equity_point` 一致
+    (JSON 损坏/equity 非数字非正/ts 缺失或非数字的行跳过)。假设文件按写入顺序追加(哨兵的
+    实际写法),同一天内后写的点覆盖先写的点。"""
+    if not os.path.exists(path):
+        return []
+    by_day: Dict[str, float] = {}
+    try:
+        for line in open(path, encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            eq = obj.get("equity")
+            ts = obj.get("ts")
+            if not (isinstance(eq, (int, float)) and not isinstance(eq, bool)
+                    and math.isfinite(eq) and eq > 0):
+                continue
+            if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+                continue
+            day = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            by_day[day] = float(eq)
+    except OSError:
+        return []
+    return list(by_day.values())
+
+
+def _returns_from_series(values: List[float]) -> List[float]:
+    """相邻同频点位间的简单收益率:(v[i]-v[i-1])/v[i-1]。<2 个有效点 -> []。"""
+    return [(curr - prev) / prev for prev, curr in zip(values, values[1:]) if prev]
+
+
+def _position_weights_from_notional(notional_by_instrument: Dict[str, float],
+                                    gross_notional: float) -> Dict[str, float]:
+    """把带符号美元名义额换成占 gross 的权重(ConcentrationRiskEngine 要的输入形状——绝对值
+    权重、和≈1 才是有意义的 HHI)。gross_notional<=0(无仓/数据异常)-> 空字典,引擎自身对空
+    输入 fail-closed,不在这里另造特判。"""
+    if not gross_notional:
+        return {}
+    return {key: value / gross_notional for key, value in notional_by_instrument.items()}
+
+
+def compute_risk_snapshot(returns: List[float], weights: Dict[str, float],
+                          config: Optional[RiskConfig] = None) -> dict:
+    """只读风险展示:调用已建好测过的 research_risk 引擎(不重新发明计算逻辑),摘出
+    var_95/cvar_95/hhi 给签字人看。**不参与任何门禁/批准/breach 判断**——调用方只把返回值
+    写进状态文件的新字段,从不读它的 `passed`。
+
+    returns = 日频收益率序列(`_daily_equity_closes` -> `_returns_from_series`);
+    weights = 当前持仓名义额占 gross 的比例(`_position_weights_from_notional`,绝对值口径)。
+    空输入时两个引擎各自 fail-closed 到 0.0 默认值——这里如实透传,不臆造数字。"""
+    cfg = config or RiskConfig()
+    market = MarketRiskEngine().evaluate(list(returns), cfg)
+    concentration = ConcentrationRiskEngine().evaluate(dict(weights), None, cfg)
+    return {
+        "var_95": market.var_95,
+        "cvar_95": market.cvar_95,
+        "volatility": market.volatility,
+        "hhi": concentration.hhi,
+        "effective_n": concentration.effective_n,
+        "n_daily_returns": len(returns),
+        "n_positions": len(weights),
+        "provenance": "REAL_RESEARCH_RISK_ENGINE_READ_ONLY_DISPLAY",
+    }
+
+
+def log_clock_sync_status(venue_name: str, venue, *, now: int) -> None:
+    """诊断 `docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md` §有序阻塞清单 #4
+    (2026-07-09):一次现场检查 bybit_demo 撞到交易所 retCode 10002(签名时间戳偏差超
+    recv_window),但 `sync_clock()` 的 fail-soft 吞掉的失败当时没留下任何记录——运维只能等
+    下一层签名请求被拒才后知后觉。venue 适配器现在暴露 `last_clock_sync_ok`/
+    `last_clock_sync_error`(见 `live/exchange/bybit_futures.py::sync_clock`);这里把"这次同步
+    失败了"这个事实写进哨兵本来就在维护的告警台账(`tools/alert_sink.py::emit` ->
+    `data/cache/alerts.jsonl`),不新开外部告警通道。**只在失败时写**(与其它哨兵告警的惯例
+    一致,成功是常态不需要噪音)。`last_clock_sync_ok` 为 `True` 或 `None`(适配器不支持这个
+    属性,如当前的 binance 适配器——本次加固刻意只动 bybit,不越界改 binance)都不告警,只有
+    显式 `False` 才算数——绝不因为属性缺失而误报。"""
+    if getattr(venue, "last_clock_sync_ok", None) is not False:
+        return
+    reason = getattr(venue, "last_clock_sync_error", None) or "unknown reason"
+    emit([f"SENTINEL CLOCK SYNC FAILED [{venue_name}]: {reason} — falling back to previous "
+          f"clock offset (fail-soft); signed requests may be rejected if local clock has since "
+          f"drifted beyond the exchange recv_window"],
+         context="risk_sentinel", now_ms=now)
+
+
 def sentinel_caps(mandate) -> dict:
     """敞口限额从 mandate 派生(业务授权即风险预算);mandate 缺失时 fail-closed 用 0 敞口
     上限没有意义(会永远告警)——改用"只看回撤"口径,敞口限额设为无穷并在结果里如实标注。"""
@@ -104,12 +213,62 @@ def sentinel_caps(mandate) -> dict:
             "source": "no_mandate_drawdown_only"}
 
 
+def persist_kill_switch_breach(
+    *,
+    state_path: str,
+    breach: RiskBreach,
+    at: int,
+    worker_id: str = "risk-sentinel-kill-switch-event-projection",
+) -> dict:
+    """Commit a breach transition, refresh its mirror, and drain its outbox.
+
+    Authority failures propagate to the caller so the exposure-increasing path can
+    fail closed. Mirror and delivery failures are reported separately because the
+    committed transition remains authoritative and the outbox remains recoverable.
+    """
+    store = open_authoritative_kill_switch_store(state_path)
+    try:
+        response = respond_to_breach_persisted(store=store, breach=breach, at=at)
+        state = store.load_state()
+
+        mirror_error = None
+        try:
+            write_kill_switch_json_mirror(state_path, state)
+        except Exception as exc:
+            mirror_error = type(exc).__name__
+
+        delivery = None
+        delivery_error = None
+        try:
+            delivery = dispatch_and_project_kill_switch_events(
+                store,
+                state_path=state_path,
+                now=at,
+                worker_id=worker_id,
+            )
+        except Exception as exc:
+            delivery_error = type(exc).__name__
+
+        return {
+            "response": response,
+            "state": state,
+            "mirror_error": mirror_error,
+            "delivery": delivery,
+            "delivery_error": delivery_error,
+        }
+    finally:
+        store.close()
+
+
 def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     cfg = _VENUES[venue_name]
     paths = _venue_paths(cfg["suffix"])
     api_key, api_secret = _load_credentials(cfg, venue_name)
     venue = cfg["adapter"](api_key=api_key, api_secret=api_secret, base_url=cfg["base_url"])
     venue.sync_clock()
+    # 时钟同步可见性(2026-07-09):在下一次调用(account())可能因时间戳偏差被交易所拒之前就
+    # 把这次同步的结果记下来——即便 account() 随即抛出异常,这条告警也已经落盘。
+    log_clock_sync_status(venue_name, venue, now=now)
 
     acct = venue.account()
     aum, equity = cfg["balances"](acct)
@@ -123,13 +282,19 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
 
     # 盘中权益异常(Phase 5 item 2):读**上一轮**基线(须在 append 当前点之前,否则基线=自己 -> 跳变 0)
     prior_equity = _last_equity_point(_equity_path(cfg["suffix"]))
-    point = {"ts": now, "equity": equity, "available": aum, **summary}
-    append_equity_point(_equity_path(cfg["suffix"]), point)
     anomaly = detect_equity_anomaly(prior_equity=prior_equity, current_equity=equity,
                                     max_jump_pct=_EQUITY_JUMP_ALERT_PCT)
-
-    peak = max(_load_peak_equity(paths["risk_state"], equity), equity)
-    _save_peak_equity(paths["risk_state"], peak)
+    point = {"ts": now, "equity": equity, "available": aum,
+             "source": "risk_sentinel", **summary}
+    peak_state = record_and_validate_peak_equity(
+        state_path=paths["risk_state"], history_path=paths["equity"], observation=point)
+    peak = peak_state.peak_equity
+    if not peak_state.valid:
+        emit([
+            f"SENTINEL PEAK EQUITY STATE INVALID [{venue_name}]: {peak_state.reason} "
+            f"(observed_max={peak_state.observed_max_equity}) — hard stop; drawdown "
+            "auto-flatten disabled until state is reviewed"
+        ], context="risk_sentinel", now_ms=now)
 
     mandate = None
     try:
@@ -153,11 +318,28 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
     out = {"venue": venue_name, "equity": equity, "peak_equity": peak, **summary,
            "caps_source": caps["source"], "breached": breach.breached,
            "reasons": list(breach.reasons), "acted": False,
+           "peak_equity_state": {
+               "valid": peak_state.valid,
+               "reason": peak_state.reason,
+               "observed_max_equity": peak_state.observed_max_equity,
+           },
+           # 这一轮的时钟同步结果(None=适配器不支持/binance;True/False=bybit 的实际结果)——
+           # 与上面的 log_clock_sync_status 告警互补:这个字段是"这一轮状态快照"的一部分,
+           # 落进 risk_sentinel_status.json,即便这一轮没有触发告警也能回头核对。
+           "clock_sync_ok": getattr(venue, "last_clock_sync_ok", None),
            "anomaly": {"anomalous": anomaly.anomalous, "reasons": list(anomaly.reasons),
                        "jump_pct": anomaly.jump_pct},
            # firm 级聚合(main() 用)——按标的的真实美元名义额(带符号),不是权重
            "notional_by_instrument": {r["instrument_id"]: r["qty"] * r["mark_price"]
                                       for r in rows if r["mark_price"] > 0}}
+
+    # 只读风险展示(审计 §4.4 [P1-R2])——绝不参与上面已经做完的 breach 判断,只是多加一个
+    # 字段。weights 用本轮真实持仓名义额占 gross 的比例;returns 用哨兵自己持久化的权益曲线
+    # (含刚刚 append 的这一条)降采样成日频后的收益率,与驱动器共用同一份历史,不另起口径。
+    position_weights = _position_weights_from_notional(
+        out["notional_by_instrument"], out.get("gross_notional") or 0.0)
+    daily_returns = _returns_from_series(_daily_equity_closes(_equity_path(cfg["suffix"])))
+    out["risk_snapshot"] = compute_risk_snapshot(daily_returns, position_weights)
 
     # 异常告警**独立于** breach 路径(权益跳变可能仍在静态限内)——只告警,绝不 arm/减仓/下单。
     # 检测器默认关闭(_EQUITY_JUMP_ALERT_PCT=None)时 anomalous 恒 False -> 无告警 -> 行为字节等价。
@@ -173,13 +355,33 @@ def check_venue(venue_name: str, *, act: bool, now: int) -> dict:
               f"(drawdown={breach.drawdown_pct:.2%}, gross=${breach.gross_exposure:.2f}, "
               f"net=${breach.net_exposure:.2f})"]
 
-    # 跨进程闩锁(2026-07-05):哨兵触发的越限必须让下一次调度的驱动器也"看得到",不然
-    # halt 的承诺只在哨兵自己这次心跳内有效。与驱动器共享同一个 kill_switch 状态文件。
-    kill_switch = KillSwitch(state=load_kill_switch_state(paths["kill_switch"]))
-    kill_switch_response = respond_to_breach(kill_switch=kill_switch, breach=breach, at=now)
-    # 2026-07-05 安全审查 CRITICAL 修复(与驱动器同款):只在 tripped 时才写盘,untripped
-    # 绝不覆盖磁盘——见 save_kill_switch_state_if_tripped 文档。
-    save_kill_switch_state_if_tripped(paths["kill_switch"], kill_switch.state)
+    # The SQLite transition and redacted event share one transaction. JSON is a
+    # compatibility mirror only; delivery failures leave a durable pending outbox.
+    try:
+        persistence = persist_kill_switch_breach(
+            state_path=paths["kill_switch"],
+            breach=breach,
+            at=now,
+        )
+        kill_switch_response = persistence["response"]
+        if persistence["mirror_error"] is not None:
+            alerts.append(
+                f"KILL-SWITCH JSON MIRROR FAILED [{venue_name}]: "
+                f"{persistence['mirror_error']}; SQLite authority remains active"
+            )
+        if persistence["delivery"] is not None:
+            out["kill_switch_event_delivery"] = persistence["delivery"]
+        if persistence["delivery_error"] is not None:
+            alerts.append(
+                f"KILL-SWITCH EVENT DELIVERY PENDING [{venue_name}]: "
+                f"{persistence['delivery_error']}; transition remains durable"
+            )
+    except Exception as exc:
+        kill_switch_response = {"action": "state_store_unavailable"}
+        alerts.append(
+            f"KILL-SWITCH AUTHORITY FAILED [{venue_name}]: {type(exc).__name__}; "
+            "failing closed for exposure-increasing paths"
+        )
     out["kill_switch_action"] = kill_switch_response["action"]
 
     if act:

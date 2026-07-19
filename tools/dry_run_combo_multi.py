@@ -11,10 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-import statistics
 
-from services.data.persistent_store import SqlitePITStore
-from services.data.caching_store import CachingPITStore
 from services.research import alpha_expression as ax
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
@@ -28,6 +25,7 @@ from tools.capacity_research import _carry_panel, _weekly_rows
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE, QUANTILE as CARRY_Q, _legs as carry_legs
 from tools.crypto_oi_research import _legs as oi_legs, QUANTILE as OI_Q
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
@@ -96,13 +94,17 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id="carry_crowd_combo", approved=True, approval_id="research-dry-run"),
             now=period, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_multi_period_dry_run(
         periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry_crowd_combo", aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52})
+        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+        event_bus=event_bus, publish_completion_event=False)
 
-    DryRunStore(_OUT, create=not os.path.exists(_OUT)).save_run(run)   # append alongside carry/trend/crowd
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
     p = run.pnl
     print(f"=== CARRY+CROWD 组合统一 book 周度滚动干跑 · {len(held_names)} 币 · {p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)
     print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)

@@ -12,7 +12,7 @@ of the target AUM the alpha can carry.
 """
 from __future__ import annotations
 
-from services.research.backtest_engine.costs import CostModel
+from quantos.contracts.cost import CostModel
 
 
 def participation_capacity(adv_notional: float, max_participation: float = 0.10) -> float:

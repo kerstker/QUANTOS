@@ -1,9 +1,9 @@
 """治理:机器钉死 QUANTOS 容器镜像的 L2 安全不变量(Phase 6 item 3,dim15 的 clean-additive 半区)。
 
-诚实边界:本机 Docker daemon 不可用,`docker build`/冒烟测试**不可在此验证**(NOT_VERIFIABLE_HERE);
-staging/prod 隔离 + 配置管理 + 监控告警/灾备 = post-L2 部署环境工作。**唯一此处可验证的证据** = 这个纯文本
-扫描测试:它证明 `deploy/console.Dockerfile` + `.dockerignore` 结构上**不可能**把凭证/券商 SDK 烤进镜像、
-且保留五旗帜——**不是**证明镜像能 build。镜像文件本身在 header 里明确标注 UNBUILT/UNVERIFIED。
+诚实边界:本测试只负责静态结构不变量;真实双冷构建、只读/非 root 冒烟和 Trivy 结果由
+`evidence/reproducibility/container_build_latest.json` 与
+`evidence/vulnerability/container_trivy_latest.json` 独立保留。现有复现证据仅覆盖同主机/同 BuildKit,
+不等于跨主机复现、身份签名或 staging/prod 部署证明。
 
 镜像不变量:①不 COPY key//data//live/、无凭证字面量;②pip 层无券商/交易所 SDK;③五旗帜 env 默认关死实盘;
 ④.dockerignore 排除凭证/数据/执行栈;⑤只读 console 镜像不暴露 mutating 的 research_runner 端口(8420)。
@@ -84,5 +84,57 @@ def test_dockerignore_excludes_secrets_and_data():
     assert os.path.isfile(_DOCKERIGNORE), ".dockerignore must exist"
     ignored = {l.strip().rstrip("/") for l in open(_DOCKERIGNORE, encoding="utf-8")
                if l.strip() and not l.strip().startswith("#")}
-    for needed in ("key", "data", "live", ".env", "*.db", "*.secret.yaml", "node_modules"):
+    for needed in (
+        "key",
+        "data",
+        "live",
+        ".env",
+        "*.db",
+        "*.secret.yaml",
+        "node_modules",
+        "**/__pycache__",
+        "**/*.pyc",
+        "**/*.pyc.*",
+        "**/*.pyo",
+    ):
         assert needed.rstrip("/") in ignored, f".dockerignore must exclude {needed}"
+
+
+def test_base_image_is_immutable_amd64_manifest_and_build_is_multistage():
+    text = _dockerfile_text()
+    match = re.search(
+        r"^ARG PYTHON_IMAGE=(public\.ecr\.aws/docker/library/python@sha256:[0-9a-f]{64})$",
+        text,
+        re.MULTILINE,
+    )
+    assert match, "Python base image must be an immutable official-image digest"
+    assert len(re.findall(r"^FROM \$\{PYTHON_IMAGE\}", text, re.MULTILINE)) == 2
+    assert re.search(r"^FROM \$\{PYTHON_IMAGE\} AS builder$", text, re.MULTILINE)
+
+
+def test_runtime_is_non_root_and_does_not_retain_pip_or_build_toolchain():
+    text = _dockerfile_text()
+    runtime = text.split("FROM ${PYTHON_IMAGE}", 2)[-1]
+    assert "COPY --from=builder /install/ /usr/local/" in runtime
+    assert "python -m pip uninstall --yes pip" in runtime
+    assert "rm -f /var/log/apk.log" in runtime
+    assert "USER 65532:65532" in runtime
+    for build_dependency in ("build-base", "gfortran", "linux-headers", "openblas-dev"):
+        assert build_dependency not in runtime
+
+
+def test_container_build_tool_versions_are_exact_pinned():
+    text = _dockerfile_text()
+    assert re.search(r"^ARG PIP_VERSION=[0-9]+(?:\.[0-9]+){2}$", text, re.MULTILINE)
+    assert '"pip==${PIP_VERSION}"' in text
+    for requirement in (
+        "meson-python==0.18.0",
+        "Cython==3.2.8",
+        "numpy==2.3.5",
+        "scipy==1.16.3",
+        "meson==1.11.2",
+        "ninja==1.13.0",
+        "packaging==26.2",
+        "pyproject-metadata==0.12.1",
+    ):
+        assert requirement in text, f"container build dependency must be exact pinned: {requirement}"

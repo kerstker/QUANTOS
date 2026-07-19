@@ -1,5 +1,5 @@
 """NEEDS_HUMAN_REVIEW 持久化队列(2026-07-05,机构审计 P1)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md 补充。
 
 append-only sqlite,镜像 `live/execution/position_ledger.py` 的既有模式。**只做持久化 +
 记录人工决定,不做"批准后自动重新提交"**——见模块顶部的诚实边界说明(那是需要独立设计的

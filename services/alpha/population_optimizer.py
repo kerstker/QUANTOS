@@ -22,7 +22,7 @@ import math
 import statistics
 from typing import Mapping, Optional, Sequence
 
-from services.research.factor_set import select_synergistic_set
+from .factor_set import select_synergistic_set
 from .similarity import return_similarity
 
 _EPS = 1e-12

@@ -1,4 +1,4 @@
-"""告警接缝(Stage 0,实盘路线)。设计:docs/superpowers/specs/2026-07-04-forward-track-live-design.md §2.4。
+"""告警接缝(Stage 0,实盘路线)。设计:docs/engineering/specs/2026-07-04-forward-track-live-design.md §2.4。
 
 双通道:① 本地台账 data/cache/alerts.jsonl(append-only,永远生效——审计可回放);
 ② 可选 Telegram push:仅当 env 同时有 QUANTOS_TG_BOT_TOKEN + QUANTOS_TG_CHAT_ID 时启用

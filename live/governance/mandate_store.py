@@ -1,5 +1,5 @@
 """Mandate 文件加载器(Stage 1.5)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6 延伸。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.6 延伸。
 
 真实数字(限额/允许清单/签署人)由用户自己创建文件签署——镜像 API 密钥的处理方式
 (key/binance_test_key.json),这里不代填任何"看起来合理"的默认数字,避免 AI 变相给自己
@@ -26,7 +26,7 @@ def load_mandate(path: str) -> Mandate:
     if not os.path.exists(path):
         raise MandateLoadError(
             f"mandate file not found: {path} — create it yourself with real signed-off limits "
-            f"(see docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.6); "
+            f"(see docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.6); "
             f"no default is provided on purpose")
     try:
         with open(path, encoding="utf-8") as fh:

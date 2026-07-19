@@ -11,13 +11,13 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from services.research.console_api.main import app
+from services.console.main import app
 
 client = TestClient(app)
 
 
 def test_architecture_endpoint_offloads_payload_build_to_a_thread():
-    with patch("services.research.console_api.main.asyncio.to_thread",
+    with patch("services.console.api.architecture_views.asyncio.to_thread",
                new=AsyncMock(return_value={"inventory": {}})) as mocked:
         resp = client.get("/api/v1/console/architecture")
     assert resp.status_code == 200
@@ -25,7 +25,7 @@ def test_architecture_endpoint_offloads_payload_build_to_a_thread():
 
 
 def test_system_completeness_endpoint_offloads_payload_build_to_a_thread():
-    with patch("services.research.console_api.main.asyncio.to_thread",
+    with patch("services.console.api.architecture_views.asyncio.to_thread",
                new=AsyncMock(return_value={"inventory": {}})) as mocked:
         resp = client.get("/api/v1/console/system-completeness")
     assert resp.status_code == 200

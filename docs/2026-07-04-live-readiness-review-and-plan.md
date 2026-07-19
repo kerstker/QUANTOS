@@ -86,7 +86,7 @@ colocation、做市、毫秒级风控、监管报送。周度调仓 + 14 个高�
    仓位/回撤实时监控进程 + reduce-only flatten、mandate 文件的具体数字签署、Bybit/Hyperliquid
    具体实现(协议已留口子)、撤单/改单。
 共 71 tests(63 单元 + 8 治理边界)全绿,含端到端缩放往返 integration 测试。设计文档:
-`docs/superpowers/specs/2026-07-04-live-execution-stack-design.md`。
+`docs/engineering/specs/2026-07-04-live-execution-stack-design.md`。
 
 **门 1→2(Go/No-Go 评审,人工):** 前向 paper-track ≥8 周为正且与回测特征一致(见 Stage 0,证据钟
 已起走)+ testnet 真实联调连续 ≥2 次周度调仓全对账(残差≈0)+ 证据包填入 `docs/phase3a/` 追踪器 +

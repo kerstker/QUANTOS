@@ -13,14 +13,20 @@ from __future__ import annotations
 import hashlib
 import math
 import statistics
-from typing import Callable, Dict, Sequence
+from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from quantos.contracts.risk import RiskDecisionType
 from services.execution.dry_run_store import DryRunRun
+from services.execution.events import (
+    dry_run_completed_event,
+    dry_run_started_event,
+    pretrade_decision_event,
+)
 from services.execution.intent_builder import build_intents
+from services.execution.paper_reconciliation import reconcile
+from services.execution.quantization import meets_min_notional, round_to_step
 from services.monitoring.audit_log import GlobalAuditLog
-from services.research.paper_trading.domain.models import FillMethod, OrderSide as PaperSide, PaperFill
-from services.research.paper_trading.domain.reconciliation import reconcile
+from quantos.contracts.paper import FillMethod, OrderSide as PaperSide, PaperFill
 from services.trading.broker_adapter import assert_dry_run_adapter
 from services.trading.dry_run_adapters.domain.models import DryRunCommand
 
@@ -30,14 +36,33 @@ def _det_id(*parts) -> str:
     return hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()[:16]
 
 
-def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float) -> Dict[str, int]:
-    """权重 → 目标整数手数:round(w * aum / price)。价缺失/≤0 跳过(fail-soft);0 手不下意图。"""
+def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float,
+                           filters: Optional[Dict[str, Tuple[float, float, float]]] = None
+                           ) -> Dict[str, int]:
+    """权重 → 目标整数手数:round(w * aum / price)。价缺失/≤0 跳过(fail-soft);0 手不下意图。
+
+    `filters`(可选,F10 审计——小资金规模下交易所步长/最小名义额不可忽略近似):
+    `{instrument_id: (step_size, min_qty, min_notional)}`。传入且该标的有对应条目时,目标数量先
+    向下取整到 `step_size` 网格(`round_to_step`,绝不超发),再过 `min_qty`/`min_notional` 门槛;
+    不达标(含取整到 0)的标的这一期被诚实排除(不进 `out`)——与既有"价格缺失/≤0 -> 跳过"同一
+    fail-soft 语义,不因单一标的数据不全/量太小而中断整批。`filters` 里没有该标的的条目时直通、
+    不做任何量化(数据不全不阻塞)。`filters=None`(默认)-> 输出与改动前逐字节相同。"""
     out: Dict[str, int] = {}
     for inst, w in weights.items():
         px = prices.get(inst)
         if px is None or px <= 0:
             continue
-        q = int(round(w * aum / px))
+        raw = w * aum / px
+        filt = filters.get(inst) if filters else None
+        if filt is None:
+            q = int(round(raw))
+        else:
+            step_size, min_qty, min_notional = filt
+            sign = -1.0 if raw < 0 else 1.0
+            rounded_abs = round_to_step(abs(raw), step_size)
+            if rounded_abs <= 0 or rounded_abs < min_qty or not meets_min_notional(rounded_abs, px, min_notional):
+                continue
+            q = int(round(sign * rounded_abs))
         if q != 0:
             out[inst] = q
     return out
@@ -67,6 +92,41 @@ def screen_intents(intents: Sequence, *, gate, ctx_factory: Callable) -> dict:
         except Exception as exc:  # fail-closed:ctx 装配 / 评估异常 -> 拒绝,绝不放行
             rejected.append((intent, [f"GATE_ERROR:{type(exc).__name__}"]))
     return {"approved": approved, "rejected": rejected}
+
+
+def _publish_screening_events(
+    *, event_bus, screened: dict, run_id: str, strategy_id: str,
+    timestamp: int, scope: str, causation_id: str,
+) -> None:
+    for index, (intent, _) in enumerate(screened["approved"]):
+        event = pretrade_decision_event(
+            run_id=run_id,
+            strategy_id=strategy_id,
+            timestamp_ms=int(timestamp),
+            scope=f"{scope}:approved:{index}",
+            instrument_id=intent.instrument_id,
+            side=intent.side.value,
+            quantity=int(intent.quantity),
+            approved=True,
+        )
+        event_bus.publish_once(
+            event, correlation_id=run_id, causation_id=causation_id
+        )
+    for index, (intent, reasons) in enumerate(screened["rejected"]):
+        event = pretrade_decision_event(
+            run_id=run_id,
+            strategy_id=strategy_id,
+            timestamp_ms=int(timestamp),
+            scope=f"{scope}:rejected:{index}",
+            instrument_id=intent.instrument_id,
+            side=intent.side.value,
+            quantity=int(intent.quantity),
+            approved=False,
+            reasons=reasons,
+        )
+        event_bus.publish_once(
+            event, correlation_id=run_id, causation_id=causation_id
+        )
 
 
 def _to_command(intent, ref: str, price: float, *, idx: int, run_id: str) -> DryRunCommand:
@@ -141,11 +201,22 @@ def reconcile_run(fills, marks: Dict[str, float], initial_capital: float) -> dic
 def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                          current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
                          adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
-                         initial_capital: float = 1e7, cost_bps: float = 0.0) -> DryRunRun:
+                         initial_capital: float = 1e7, cost_bps: float = 0.0,
+                         event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
     """端到端干跑编排器(薄、确定性):权重→目标手数→意图→门 chokepoint(fail-closed)→干跑受理(不真发)
     →纸面成交→对账→哈希链审计→DryRunRun。墙钟/seed 在调用方边界(timestamp/adapter)注入;此函数无 RNG/墙钟。
     kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。"""
     run_id = _det_id(strategy_id, timestamp, tuple(sorted(weights.items())))
+    start_event_id = ""
+    if event_bus is not None:
+        start_event = dry_run_started_event(
+            run_id=run_id,
+            strategy_id=strategy_id,
+            timestamp_ms=int(timestamp),
+            mode="single_period",
+        )
+        event_bus.publish_once(start_event, correlation_id=run_id)
+        start_event_id = start_event.event_id
     audit = GlobalAuditLog()
     # AuditEvent.metadata is dict[str,str] — every value MUST be a string.
     audit.append(event_id=_det_id("start", run_id), actor=f"dry_run:{strategy_id}", action="PIPELINE_START",
@@ -155,6 +226,16 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
     targets = plan_target_quantities(weights, prices, aum)
     intents = build_intents(targets, current_positions, strategy_id=strategy_id)
     screened = screen_intents(intents, gate=gate, ctx_factory=ctx_factory)
+    if event_bus is not None:
+        _publish_screening_events(
+            event_bus=event_bus,
+            screened=screened,
+            run_id=run_id,
+            strategy_id=strategy_id,
+            timestamp=int(timestamp),
+            scope="single",
+            causation_id=start_event_id,
+        )
     for intent, reasons in screened["rejected"]:
         audit.append(event_id=_det_id("rej", run_id, intent.instrument_id), actor=f"dry_run:{strategy_id}",
                      action="INTENT_REJECTED", timestamp=timestamp, target=intent.instrument_id,
@@ -169,13 +250,30 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
     pnl = reconcile_run(filled["fills"], marks or prices, initial_capital)
     audit_root = audit.seal().head_hash
 
-    return DryRunRun(
+    result = DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=timestamp, n_intents=len(intents),
         n_approved=len(screened["approved"]), n_rejected=len(screened["rejected"]),
         rejected_reasons=[rr for _, rs in screened["rejected"] for rr in rs], pnl=pnl,
         audit_root=str(audit_root),
         detail={"n_fills": len(filled["fills"]), "targets": targets,
                 "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"])})
+    if event_bus is not None and publish_completion_event:
+        event_bus.publish_once(
+            dry_run_completed_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                timestamp_ms=int(timestamp),
+                n_intents=result.n_intents,
+                n_approved=result.n_approved,
+                n_rejected=result.n_rejected,
+                n_fills=len(filled["fills"]),
+                audit_root=result.audit_root,
+                run_repro_hash=result.reproducibility_hash,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
+    return result
 
 
 # --- Multi-period rolling dry-run (P&L curve) --------------------------------
@@ -217,7 +315,7 @@ def _tca_lite(impact, impact_trades) -> dict:
     """Rank #11 TCA-lite: recompute the impact cost across the calibration band (aggressive→lowest,
     conservative→highest) and check the charged total sits inside it. L2 has no real fills, so the
     calibration band is the only defensible 'assumed vs reference' cost check."""
-    from services.research.realism.impact_calibration import (
+    from services.execution.impact_calibration import (
         default_crypto_impact_calibration, scenario_impact)
     cal = default_crypto_impact_calibration()
 
@@ -232,11 +330,28 @@ def _tca_lite(impact, impact_trades) -> dict:
 
 def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, gate, ctx_factory, adapter,
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
-                             vol_target: dict = None, impact=None, adv_by_period: dict = None) -> DryRunRun:
+                             vol_target: dict = None, impact=None, adv_by_period: dict = None,
+                             filters: Optional[Dict[str, Tuple[float, float, float]]] = None,
+                             event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
     """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
     价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
-    ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。"""
-    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]))
+    ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。
+
+    `filters`(可选,F10 审计,2026-07-08——小资金规模下交易所步长/最小名义额不是可忽略的近似误差):
+    `{instrument_id: (step_size, min_qty, min_notional)}`,原样透传给每期的 `plan_target_quantities`
+    (见其 docstring)。默认 None -> 每期目标手数计算与改动前逐字节相同(回归测试钉死)。这轮只交付
+    管线本身有能力做量化——真实 Binance/Bybit exchangeInfo 数据接进具体驱动器是后续独立工作。"""
+    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:]))
+    start_event_id = ""
+    if event_bus is not None:
+        start_event = dry_run_started_event(
+            run_id=run_id,
+            strategy_id=strategy_id,
+            timestamp_ms=int(periods[0]) if periods else 0,
+            mode="multi_period",
+        )
+        event_bus.publish_once(start_event, correlation_id=run_id)
+        start_event_id = start_event.event_id
     audit = GlobalAuditLog()
     audit.append(event_id=_det_id("mstart", run_id), actor=f"dry_run:{strategy_id}", action="MULTI_START",
                  timestamp=int(periods[0]) if periods else 0, target=run_id,
@@ -253,10 +368,20 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     for t in periods:
         prices_t = prices_by_period[t]
         adv_t = adv_by_period.get(t) if adv_by_period else None
-        targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum)
+        targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum, filters=filters)
         intents = build_intents(targets, held, strategy_id=strategy_id)
         screened = screen_intents(intents, gate=gate,
                                   ctx_factory=lambda i, _p=prices_t, _t=t: ctx_factory(i, _p, _t))
+        if event_bus is not None:
+            _publish_screening_events(
+                event_bus=event_bus,
+                screened=screened,
+                run_id=run_id,
+                strategy_id=strategy_id,
+                timestamp=int(t),
+                scope=f"period:{t}",
+                causation_id=start_event_id,
+            )
         tot_appr += len(screened["approved"])
         tot_rej += len(screened["rejected"])
         filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
@@ -299,8 +424,16 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     final_equity = curve[-1]["equity"] if curve else aum
     residual = (reconcile(all_fills, marks=prices_by_period[periods[-1]], initial_capital=aum)
                 .reconciliation_residual()) if periods else 0.0
+    # sharpe_vt/max_drawdown_vt (审计发现 #10): same pure helpers applied to the VT curve's OWN `ret`
+    # series -- this is what makes the "RAW -> VT" figures quoted in docs reproducible from this function's
+    # output alone. vol_target=None -> honestly None (not 0, not omitted): callers must be able to tell
+    # "not computed" apart from "computed as zero".
+    vt_returns = [p["ret"] for p in vt_curve]
+    sharpe_vt = _ann_sharpe(vt_returns) if vol_target is not None else None
+    max_drawdown_vt = _max_drawdown_from_returns(vt_returns) if vol_target is not None else None
     pnl = {"total_return": round(final_equity / aum - 1.0, 6), "sharpe": _ann_sharpe(returns),
-           "max_drawdown": _max_drawdown_from_returns(returns), "final_equity": round(final_equity, 6),
+           "max_drawdown": _max_drawdown_from_returns(returns), "sharpe_vt": sharpe_vt,
+           "max_drawdown_vt": max_drawdown_vt, "final_equity": round(final_equity, 6),
            "total_funding": round(cum_cash, 6), "n_periods": len(periods), "total_rejected": tot_rej,
            "residual": round(residual, 9),
            "avg_net_exposure_pct": round(statistics.fmean([abs(p["net"]) / aum for p in curve]), 6)
@@ -312,9 +445,26 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             "cost_fills": {"impact": tot_impact, "flat": tot_flat}, "cost_bps": cost_bps}
     if used_impact:
         cost["tca"] = _tca_lite(impact, all_impact_trades)
-    return DryRunRun(
+    result = DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
         pnl=pnl, audit_root=str(audit.seal().head_hash),
         detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
-                "equity_curve": curve, "equity_curve_vt": vt_curve, **cost})
+                "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve, **cost})
+    if event_bus is not None and publish_completion_event:
+        event_bus.publish_once(
+            dry_run_completed_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                timestamp_ms=result.timestamp,
+                n_intents=result.n_intents,
+                n_approved=result.n_approved,
+                n_rejected=result.n_rejected,
+                n_fills=len(all_fills),
+                audit_root=result.audit_root,
+                run_repro_hash=result.reproducibility_hash,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
+    return result

@@ -1,6 +1,6 @@
 """live/contracts.py 值类型:frozen、字段完整性。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.1;
-LIMIT 扩展:docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §1。"""
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.1;
+LIMIT 扩展:docs/engineering/specs/2026-07-06-limit-order-execution-design.md §1。"""
 import math
 
 import pytest

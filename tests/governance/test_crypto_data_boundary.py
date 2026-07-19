@@ -14,6 +14,8 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "cryptocompare_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_klines_1h_fetch.py"),   # 1H 小时线抓取器(2026-07-07)
+             os.path.join(_ROOT, "tools", "binance_klines_1m_fetch.py"),   # 1m 分钟线抓取器(2026-07-09)
+             os.path.join(_ROOT, "tools", "binance_perp_mark_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
@@ -27,7 +29,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # 发现);alfred_fetch 是 vintage 抓取器(api.stlouisfed.org,key 只走 env / gitignored
              # key/ 目录,错误路径对 URL 脱敏)——同一条只读数据边界钉住两者
              os.path.join(_ROOT, "tools", "fred_fetch.py"),
-             os.path.join(_ROOT, "tools", "alfred_fetch.py")]
+             os.path.join(_ROOT, "tools", "alfred_fetch.py"),
+             # 密钥权限校验工具(2026-07-08,安全 P0):独立、手动调用,查询交易所 mainnet 账户的
+             # API key 权限位(提现是否禁用/IP 是否受限)。只读诊断,不接线(见其模块 docstring)——
+             # 但它确实发起真实签名网络请求,同一条只读数据边界必须钉住它。
+             os.path.join(_ROOT, "tools", "verify_key_permissions.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 _QUANTOS = os.path.join(_ROOT, "quantos")
 
@@ -56,9 +62,21 @@ _ALLOWED_FETCHER = {"json", "os", "time", "sys", "urllib", "io", "zipfile", "con
 # 测试无法区分"alfred_fetch 需要 quantos"与"任何抓取器都可以 import quantos"。按文件名精确
 # 授权,新增抓取器需要新 import 时必须显式在这里加一行,而不是搭其他抓取器已获批准的便车。
 _EXTRA_ALLOWED_BY_FILE = {
+    # 纯 stdlib 有限数校验；只用于拒绝 NaN/Inf 源观测，不增加网络/交易/凭证能力。
+    "coingecko_fetch.py": {"math"},
+    "binance_funding_fetch.py": {"math"},
+    "binance_perp_mark_fetch.py": {"math"},
+    # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
+    # terminates it on deadline. Both imports are stdlib and add no network/trade capability.
+    "live_data_refresh.py": {"math", "multiprocessing", "queue"},
     # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
     "fred_fetch.py": {"csv", "quantos"},
     "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要
+    # 密钥权限校验工具:HMAC 签名(hashlib/hmac,与既有 exchange adapter 同一算法的纯函数镜像)+
+    # argparse(手动 CLI)+ dataclasses/enum/typing(结构化 SAFE/UNSAFE/UNKNOWN 结果)+ `live`
+    # (复用 live/exchange/{binance,bybit}_futures.py 与 retry.py 里已导出的 ungated 辅助函数/常量,
+    # 见模块 docstring"设计决定"——不实例化任何 gated 类,不碰任何 LIVE 安全旗标)。
+    "verify_key_permissions.py": {"hashlib", "hmac", "argparse", "dataclasses", "enum", "typing", "live"},
 }
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",

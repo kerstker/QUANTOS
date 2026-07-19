@@ -29,14 +29,20 @@ from typing import Optional
 
 from live.execution.state_io import atomic_write_json
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
+from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS
+from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.lifecycle import AlphaLifecycleManager
 from services.alpha.live_linkage import strategy_status_from_report
 from services.alpha.maintenance import run_maintenance
+from services.alpha.maintenance_events import maintenance_transition_events
+from services.alpha.maintenance_store import MaintenanceStore
+from services.monitoring.domain_event_runtime import dispatch_maintenance_event_outbox
 from services.research.paper_trading.health import paper_health_by_alpha
 from services.research.paper_trading.store import PaperTrackStore
+from tools.domain_event_bus import open_domain_event_bus, project_pending_domain_events
 
 _SCHEMA_VERSION = 1
 _SWEEP_ACTOR = Actor(actor_id="alpha_maintenance_sweep", kind=ActorKind.AGENT)  # 恒非人(containment)
@@ -51,9 +57,14 @@ _HONESTY_NOTE = ("维护 sweep 只驱动 research catalog 的降级/退役(非�
                  "full-flatten 需用户签署 + 人工确认(spec §9)。")
 
 
-def build_status_snapshot(manager, actor: Actor, *, timestamp: int,
-                          health_by_alpha: Optional[dict] = None,
-                          decay_evidence_by_alpha: Optional[dict] = None) -> dict:
+def build_status_snapshot_with_events(
+    manager,
+    actor: Actor,
+    *,
+    timestamp: int,
+    health_by_alpha: Optional[dict] = None,
+    decay_evidence_by_alpha: Optional[dict] = None,
+) -> tuple[dict, tuple]:
     """跑一轮维护(经审计 manager,非人 actor)-> 每策略状态快照。核心逻辑无 IO/墙钟(timestamp 传入)。
 
     run_maintenance 对 human actor 抛 ValueError(维护是自动非人 pass)——本函数透传该 containment。
@@ -61,9 +72,14 @@ def build_status_snapshot(manager, actor: Actor, *, timestamp: int,
     report = run_maintenance(manager, actor, timestamp=timestamp,
                              health_by_alpha=health_by_alpha,
                              decay_evidence_by_alpha=decay_evidence_by_alpha)
+    events = maintenance_transition_events(
+        report,
+        actor_id=actor.actor_id,
+        timestamp_ms=int(timestamp),
+    )
     strategies = strategy_status_from_report(report)
     n_actions = sum(1 for s in strategies.values() if s.get("state") in _DOWNGRADE_STATES)
-    return {
+    snapshot = {
         "schema_version": _SCHEMA_VERSION,
         "generated_at": int(timestamp),
         "actor_kind": actor.kind.name,          # AGENT — 诚实标注非人来源
@@ -72,6 +88,20 @@ def build_status_snapshot(manager, actor: Actor, *, timestamp: int,
         "n_actions": n_actions,
         "honesty_note": _HONESTY_NOTE,
     }
+    return snapshot, events
+
+
+def build_status_snapshot(manager, actor: Actor, *, timestamp: int,
+                          health_by_alpha: Optional[dict] = None,
+                          decay_evidence_by_alpha: Optional[dict] = None) -> dict:
+    snapshot, _ = build_status_snapshot_with_events(
+        manager,
+        actor,
+        timestamp=timestamp,
+        health_by_alpha=health_by_alpha,
+        decay_evidence_by_alpha=decay_evidence_by_alpha,
+    )
+    return snapshot
 
 
 def _load_backtest_refs(path: str) -> dict:
@@ -98,7 +128,8 @@ def _seed_manager(alpha_ids) -> AlphaLifecycleManager:
 
 
 def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
-              backtest_refs: str = _BACKTEST_REFS, out: str = _SNAPSHOT_PATH) -> dict:
+              backtest_refs: str = _BACKTEST_REFS, out: str = _SNAPSHOT_PATH,
+              maintenance_db: Optional[str] = None, event_bus=None) -> dict:
     """驱动器边界:载 paper_track.db + backtest 参照 -> 算 health_by_alpha -> 播一次性 catalog ->
     跑维护 -> 落只读快照。任何缺失/损坏 -> fail-closed 空快照(零动作)。"""
     refs = _load_backtest_refs(backtest_refs)
@@ -109,15 +140,45 @@ def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
         health_by_alpha = {}
 
     manager = _seed_manager(sorted(health_by_alpha))
-    snap = build_status_snapshot(manager, _SWEEP_ACTOR, timestamp=now,
-                                 health_by_alpha=health_by_alpha)
-    atomic_write_json(out, snap)
+    snap, events = build_status_snapshot_with_events(
+        manager,
+        _SWEEP_ACTOR,
+        timestamp=now,
+        health_by_alpha=health_by_alpha,
+    )
+    messages = tuple(
+        EventOutboxMessage(
+            event=CANONICAL_EVENT_SCHEMAS.validate(event),
+            correlation_id=f"alpha-maintenance:{now}",
+        )
+        for event in events
+    )
+    store_path = maintenance_db or os.path.join(
+        os.path.dirname(out) or ".", "alpha_maintenance.db"
+    )
+    maintenance_store = MaintenanceStore(store_path, create=True)
+    try:
+        maintenance_store.save_snapshot(snap, messages)
+        atomic_write_json(out, snap)
+        if event_bus is not None:
+            dispatch_maintenance_event_outbox(
+                maintenance_store,
+                event_bus,
+                at_ms=now,
+            )
+    finally:
+        maintenance_store.close()
     return snap
 
 
 def main() -> None:
     now = int(time.time() * 1000)
-    snap = run_sweep(now=now)
+    event_bus = open_domain_event_bus()
+    try:
+        snap = run_sweep(now=now, event_bus=event_bus)
+        project_pending_domain_events(event_bus, now_ms=now)
+    finally:
+        event_bus.close()
     print(f"-> {_SNAPSHOT_PATH}  (n_actions={snap['n_actions']}, "
           f"strategies={list(snap['strategies'])})")
 

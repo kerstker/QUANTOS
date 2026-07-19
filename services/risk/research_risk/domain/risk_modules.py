@@ -16,6 +16,10 @@ from typing import Dict, Iterable, List, Optional, Sequence
 from services.research.realism.scenario import (
     CRYPTO_CRISES, iso_to_ms, max_drawdown_window, window_stats,
 )
+# Real complete-linkage clustering (2026-07-09, gap audit rank #3) — pure stdlib, no IO/RNG/
+# wall-clock. Was tested but never wired into ANY production risk decision; ConcentrationRiskEngine
+# previously always fell back to max_cluster=max_single regardless of the clusters argument.
+from quantos.contracts.alpha import AlphaCluster
 
 from .models import (
     CapacityRiskReport,
@@ -121,14 +125,27 @@ class LiquidityRiskEngine:
 
 
 class ConcentrationRiskEngine:
-    def evaluate(self, weights: Dict[str, float], clusters, config: RiskConfig) -> ConcentrationRiskReport:
+    def evaluate(self, weights: Dict[str, float], clusters: Optional[List[AlphaCluster]],
+                config: RiskConfig) -> ConcentrationRiskReport:
         if not weights:
             return ConcentrationRiskReport(passed=False)   # no book -> fail closed
         abs_weights = [abs(value) for value in weights.values()]
         hhi = sum(value * value for value in abs_weights)
         effective_n = 1 / hhi if hhi > 0 else 0.0
         max_single = max(abs_weights) if abs_weights else 0.0
-        max_cluster = max_single
+        # 2026-07-09 (gap audit rank #3): several correlated variants of "the same trade"
+        # clustering into an effective single bet must blow through max_cluster_weight even
+        # when no single alpha's own weight does — previously this ALWAYS degenerated to
+        # max_single (clusters was accepted but never read), making that scenario architecturally
+        # unenforceable. When the caller supplies real clusters, max_cluster is the largest
+        # summed |weight| across any one cluster's members; a member with no weight entry
+        # contributes 0 (fail-soft, never KeyErrors). Falls back to max_single when clusters is
+        # None/empty (no clustering evidence supplied — unchanged from pre-fix behavior).
+        if clusters:
+            cluster_sums = [sum(abs(weights.get(m, 0.0)) for m in c.member_ids) for c in clusters]
+            max_cluster = max(max_single, max(cluster_sums, default=0.0))
+        else:
+            max_cluster = max_single
         passed = (
             max_single <= config.max_single_alpha_weight
             and max_cluster <= config.max_cluster_weight

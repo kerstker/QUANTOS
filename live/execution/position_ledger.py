@@ -1,9 +1,9 @@
-"""本地仓位账本(Stage 1)。设计:docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5;
-strategy_id 分账维度:docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md。
+"""本地仓位账本(Stage 1)。设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.5;
+strategy_id 分账维度:docs/engineering/specs/2026-07-06-strategy-position-isolation-design.md。
 
-append-only SQLite,镜像 `services/research/paper_trading/forward.py::ForwardLedger` /
-`store.py::PaperTrackStore` 的模式:INSERT OR IGNORE 幂等(同一 client_order_id/fill_id 重复
-写入被忽略,不是覆盖——订单/成交记录一旦落库即不可篡改)。fill 自带 side(不依赖 join 回订单表),
+append-only SQLite；同一 client_order_id/fill_id + 同一不可变 payload 的重放幂等 no-op，
+同 ID 异 payload 抛 `LiveLedgerConflictError`，不再由 `INSERT OR IGNORE` 静默吞碰撞。
+订单/成交记录一旦落库即不可篡改。fill 自带 side(不依赖 join 回订单表),
 一笔成交本身就是自足的账本条目。
 
 **strategy_id(2026-07-06 战线③):只是本地账本内部的分账维度。** venue/保证金/风控/对账/紧急
@@ -83,6 +83,10 @@ _ORDER_TYPE_TABLE = "live_orders"
 
 class LiveLedgerError(RuntimeError):
     pass
+
+
+class LiveLedgerConflictError(LiveLedgerError):
+    """An idempotency key was reused for a different immutable ledger payload."""
 
 
 class LiveLedger:
@@ -177,12 +181,30 @@ class LiveLedger:
                           quantity: float, *, strategy_id: str, submitted_at: int,
                           venue_order_id: str = "", status: str = "NEW",
                           order_type: str = "MARKET", limit_price: Optional[float] = None) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO live_orders"
-            "(client_order_id, instrument_id, side, quantity, submitted_at, venue_order_id,"
-            " status, strategy_id, order_type, limit_price) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (client_order_id, instrument_id, side.value, float(quantity), int(submitted_at),
-             venue_order_id, status, strategy_id, order_type, limit_price))
+        immutable = (
+            instrument_id, side.value, float(quantity), strategy_id, order_type, limit_price,
+        )
+        try:
+            self._conn.execute(
+                "INSERT INTO live_orders"
+                "(client_order_id, instrument_id, side, quantity, submitted_at, venue_order_id,"
+                " status, strategy_id, order_type, limit_price) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (client_order_id, instrument_id, side.value, float(quantity), int(submitted_at),
+                 venue_order_id, status, strategy_id, order_type, limit_price))
+        except sqlite3.IntegrityError:
+            self._conn.rollback()
+            existing = self._conn.execute(
+                "SELECT instrument_id, side, quantity, strategy_id, order_type, limit_price"
+                " FROM live_orders WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if existing is None:
+                raise
+            if tuple(existing) != immutable:
+                raise LiveLedgerConflictError(
+                    f"client_order_id collision with different payload: {client_order_id}"
+                )
+            return
         self._conn.commit()
 
     def update_status(self, client_order_id: str, status: str, *,
@@ -199,30 +221,66 @@ class LiveLedger:
     def record_fill(self, fill_id: str, client_order_id: str, instrument_id: str,
                     side: OrderSide, quantity: float, price: float, *, strategy_id: str,
                     filled_at: int) -> None:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO live_fills"
-            "(fill_id, client_order_id, instrument_id, side, quantity, price, filled_at,"
-            " strategy_id) VALUES (?,?,?,?,?,?,?,?)",
-            (fill_id, client_order_id, instrument_id, side.value, float(quantity), float(price),
-             int(filled_at), strategy_id))
+        immutable = (
+            client_order_id, instrument_id, side.value, float(quantity), float(price), strategy_id,
+        )
+        try:
+            self._conn.execute(
+                "INSERT INTO live_fills"
+                "(fill_id, client_order_id, instrument_id, side, quantity, price, filled_at,"
+                " strategy_id) VALUES (?,?,?,?,?,?,?,?)",
+                (fill_id, client_order_id, instrument_id, side.value, float(quantity), float(price),
+                 int(filled_at), strategy_id))
+        except sqlite3.IntegrityError:
+            self._conn.rollback()
+            existing = self._conn.execute(
+                "SELECT client_order_id, instrument_id, side, quantity, price, strategy_id"
+                " FROM live_fills WHERE fill_id=?",
+                (fill_id,),
+            ).fetchone()
+            if existing is None:
+                raise
+            if tuple(existing) != immutable:
+                raise LiveLedgerConflictError(
+                    f"fill_id collision with different payload: {fill_id}"
+                )
+            return
         self._conn.commit()
 
     def record_tca(self, fill_id: str, *, client_order_id: str, instrument_id: str,
                    side: OrderSide, decision_price: float, fill_price: float, quantity: float,
                    strategy_id: str, recorded_at: int) -> None:
-        """成交质量记录(2026-07-05 TCA)。惰性建表(老账本平滑迁移);INSERT OR IGNORE 幂等。
+        """成交质量记录(2026-07-05 TCA)。惰性建表；同 ID 同 payload 幂等、异 payload 拒绝。
         slippage_bps 在写入时算好落库(带方向:买贵/卖贱为正=成本),读取端零重算。"""
         from live.execution.tca import slippage_bps
         self._conn.executescript(_TCA_SCHEMA)
         self._migrate_strategy_id()          # 老库 live_tca 可能建于加列之前(防御,幂等)
-        self._conn.execute(
-            "INSERT OR IGNORE INTO live_tca"
-            "(fill_id, client_order_id, instrument_id, side, decision_price, fill_price,"
-            " quantity, slippage_bps, recorded_at, strategy_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (fill_id, client_order_id, instrument_id, side.value, float(decision_price),
-             float(fill_price), float(quantity),
-             slippage_bps(side, decision_price=decision_price, fill_price=fill_price),
-             int(recorded_at), strategy_id))
+        slip = slippage_bps(side, decision_price=decision_price, fill_price=fill_price)
+        immutable = (
+            client_order_id, instrument_id, side.value, float(decision_price),
+            float(fill_price), float(quantity), slip, strategy_id,
+        )
+        try:
+            self._conn.execute(
+                "INSERT INTO live_tca"
+                "(fill_id, client_order_id, instrument_id, side, decision_price, fill_price,"
+                " quantity, slippage_bps, recorded_at, strategy_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (fill_id, client_order_id, instrument_id, side.value, float(decision_price),
+                 float(fill_price), float(quantity), slip, int(recorded_at), strategy_id))
+        except sqlite3.IntegrityError:
+            self._conn.rollback()
+            existing = self._conn.execute(
+                "SELECT client_order_id, instrument_id, side, decision_price, fill_price,"
+                " quantity, slippage_bps, strategy_id FROM live_tca WHERE fill_id=?",
+                (fill_id,),
+            ).fetchone()
+            if existing is None:
+                raise
+            if tuple(existing) != immutable:
+                raise LiveLedgerConflictError(
+                    f"TCA fill_id collision with different payload: {fill_id}"
+                )
+            return
         self._conn.commit()
 
     def tca_records(self) -> List[dict]:
@@ -232,6 +290,9 @@ class LiveLedger:
             return []                                          # 老账本无 TCA 表 -> 诚实空,不炸
         return [dict(r) for r in
                 self._conn.execute("SELECT * FROM live_tca ORDER BY recorded_at")]
+
+    def close(self) -> None:
+        self._conn.close()
 
     def orders(self, strategy_id: Optional[str] = None) -> List[dict]:
         if strategy_id is None:

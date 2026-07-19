@@ -96,7 +96,7 @@ function Instructions({ connected }: { connected: boolean }) {
           <li><span className="text-muted">{bi('抓取并跑研究(链下、只读):', 'Fetch + run research (off-gate, read-only):')}</span>
             <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">python tools/crypto_research_run.py</div></li>
           <li><span className="text-muted">{bi('启动只读 Console API:', 'Start the read-only Console API:')}</span>
-            <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">python -m uvicorn services.research.console_api.main:app --port 8400</div></li>
+            <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">python -m uvicorn services.console.main:app --port 8400</div></li>
           <li><span className="text-muted">{bi('连接前端(关闭 mock):', 'Point the console at it (mock off):')}</span>
             <div className="mono mt-1 rounded-lg border border-line bg-inset/60 px-3 py-1.5 text-2xs text-accent">VITE_API_URL=http://127.0.0.1:8400 VITE_MOCK_MODE=false npm run dev</div></li>
         </ol>

@@ -9,7 +9,10 @@
 """
 import pytest
 
-from live.execution.price_check import flag_divergent_instruments
+from live.execution.price_check import (
+    flag_divergent_instruments,
+    flag_noncontemporaneous_instruments,
+)
 
 
 def test_within_threshold_is_not_flagged():
@@ -64,3 +67,86 @@ def test_pure_function_has_no_timestamp_awareness_by_design():
     import inspect
     sig = inspect.signature(flag_divergent_instruments)
     assert "now" not in sig.parameters and "decided_ts" not in sig.parameters
+
+
+def _book(bid=99.0, ask=101.0, as_of_ms=1_000_000):
+    return {"bid": bid, "ask": ask, "as_of_ms": as_of_ms}
+
+
+def _secondary(price=100.0, as_of_ms=1_000_000):
+    return {"price": price, "as_of_ms": as_of_ms}
+
+
+def test_contemporaneous_cross_source_prices_pass():
+    out = flag_noncontemporaneous_instruments(
+        ["BTC"],
+        {"BTC": _book()},
+        {"BTC": _secondary()},
+        now_ms=1_060_000,
+        max_divergence_pct=0.05,
+        max_age_ms=300_000,
+        max_skew_ms=300_000,
+    )
+    assert out == {}
+
+
+@pytest.mark.parametrize(
+    ("books", "secondary", "reason"),
+    [
+        ({}, {"BTC": _secondary()}, "venue book"),
+        ({"BTC": {"bid": 101.0, "ask": 99.0, "as_of_ms": 1_000_000}},
+         {"BTC": _secondary()}, "venue book"),
+        ({"BTC": {"bid": 99.0, "ask": 101.0}}, {"BTC": _secondary()}, "venue book"),
+        ({"BTC": _book()}, {}, "secondary"),
+        ({"BTC": _book()}, {"BTC": {"price": 100.0}}, "secondary"),
+    ],
+)
+def test_missing_or_invalid_current_observation_is_flagged(books, secondary, reason):
+    out = flag_noncontemporaneous_instruments(
+        ["BTC"], books, secondary, now_ms=1_060_000,
+        max_divergence_pct=0.05, max_age_ms=300_000, max_skew_ms=300_000,
+    )
+    assert "BTC" in out
+    assert reason in out["BTC"]
+
+
+def test_whole_secondary_source_failure_flags_every_target():
+    books = {"BTC": _book(), "ETH": _book()}
+    out = flag_noncontemporaneous_instruments(
+        ["BTC", "ETH"], books, {}, now_ms=1_060_000,
+        max_divergence_pct=0.05, max_age_ms=300_000, max_skew_ms=300_000,
+    )
+    assert set(out) == {"BTC", "ETH"}
+    assert all("secondary" in reason for reason in out.values())
+
+
+def test_stale_or_time_skewed_observations_are_flagged():
+    stale = flag_noncontemporaneous_instruments(
+        ["BTC"], {"BTC": _book(as_of_ms=1)}, {"BTC": _secondary(as_of_ms=1)},
+        now_ms=1_000_000, max_divergence_pct=0.05, max_age_ms=300_000,
+        max_skew_ms=300_000,
+    )
+    skewed = flag_noncontemporaneous_instruments(
+        ["BTC"], {"BTC": _book(as_of_ms=1_000_000)},
+        {"BTC": _secondary(as_of_ms=600_000)}, now_ms=1_050_000,
+        max_divergence_pct=0.05, max_age_ms=500_000, max_skew_ms=300_000,
+    )
+    assert "stale" in stale["BTC"]
+    assert "timestamp skew" in skewed["BTC"]
+
+
+def test_current_price_divergence_is_measured_from_venue_midpoint():
+    out = flag_noncontemporaneous_instruments(
+        ["BTC"], {"BTC": _book(bid=99.0, ask=101.0)},
+        {"BTC": _secondary(price=110.0)}, now_ms=1_060_000,
+        max_divergence_pct=0.05, max_age_ms=300_000, max_skew_ms=300_000,
+    )
+    assert "diverges" in out["BTC"]
+    assert "venue_mid=100.0" in out["BTC"]
+
+
+def test_contemporaneous_check_has_no_decision_timestamp_escape_hatch():
+    import inspect
+
+    signature = inspect.signature(flag_noncontemporaneous_instruments)
+    assert "decided_ts" not in signature.parameters

@@ -1,5 +1,42 @@
 # QUANTOS 系统级审计报告
 
+> **2026-07-15 权威续审:** 新增续审见
+> `docs/audit/2026-07-15-top-tier-continuation-review.md`。本轮确认系统仍为
+> `NOT_TOP_TIER / L2_DRY_RUN_ONLY`，并关闭了 `OPS.RESTORE.DRILL` 使用旧通用 restore
+> 证据获得 M4 PASS 的假绿。单次 L2 authority-state 备份证据固定封顶 M3；M4 现要求
+> append-only STARTED/OUTCOME history、动态 cadence/freshness、失败保留和 exact current-head
+> Ed25519 external checkpoint，默认空 trust registry 使其失败关闭。全门禁的实现测试为
+> backend 2571 passed / 1 skipped（仅 2 个 tracked evidence drift 失败）、live/trading/tools
+> 986 passed、frontend 68 passed + typecheck/build、治理扫描 318/0。生成制品当前漂移，
+> 旧能力矩阵计数不得视为当前成熟度结论。
+
+> **2026-07-12 权威续审说明:** 本文主体保留 2026-07-01 只读审计的历史快照，不再作为当前
+> 成熟度计分源。当前权威结论由 `config/top_tier_requirements.json`、
+> `services/governance/top_tier_assessment.py`、`evidence/top_tier_assessment.json` 与
+> `docs/QUANTOS_TOP_TIER_CAPABILITY_MATRIX.md` 共同生成。当前为 `NOT_TOP_TIER`：22 项中
+> 16 PASS、4 PARTIAL、0 FAILED、2 项需人工/外部证据，2 条红线仍开。
+> 2026-07-12 新增的模型风险基线将真实 agent 边界红队与 FX 负 OOS 结果固化为
+> `evidence/model_risk_baseline.json`；18 个可交易 FX 标的的 126,113 行 PIT 评估子集已作为
+> 确定性 bundle + manifest 纳入版本证据。当前已有两次真实修订、两份红队报告与两条哈希链允许调用；外部模型与强审查身份仍缺，因此只达到
+> M2/PARTIAL；它没有授予任何晋级、执行或实盘权限。
+> `evidence/model_risk_history.json` 已保存 v1→v2 两条真实修订并接入统一门禁；跨版本制品和调用事件只能追加，
+> 调用 ID 改写、旧事件丢弃/重排、回滚、链篡改与证据尾部落后均失败关闭，纵向历史缺口已据此关闭。
+> 供应链外部 npm 审计曾发现 1 critical / 1 high / 3 moderate，升级并固定 `vitest 4.1.10`
+> 后复扫为 0。Python 审计修复不可重建测试依赖后发现 19 条 advisory，升级 FastAPI/Starlette/
+> PyJWT/cryptography/httpx2 后复扫为 0；两份证据均与当前清单绑定。三个 Actions 固定提交的 OSV
+> 查询为 0 known。容器对比扫描拒绝了含 2 critical / 18 high 的 Debian slim，改用摘要固定的
+> Python 3.12 Alpine 多阶段、非 root、无运行时 pip 镜像；基础层 5 条 medium/low 在最终 Trivy
+> 扫描中清零。两次同主机/同 BuildKit 的 `--no-cache` OCI 构建已逐字节一致并纳入门禁。新增固定版本的
+> Sigstore 离线 admission verifier：摘要钉死 policy/trusted root、精确 OIDC 身份、Fulcio/SCT/Rekor/DSSE
+> 与 SLSA payload 全链验证，且无签名/私钥/部署权限；跨主机复现、真实外部签名 bundle、独立部署和吊销监控仍未完成。
+> 晋级 API 的共享 token/自报操作者路径已由 OIDC 非对称验签、MFA、RFC 8705 mTLS
+> token binding 与动作 RBAC 取代；浏览器 Authorization Code + PKCE S256 已接入，一次性事务
+> 仅存 sessionStorage、access token 仅驻内存。证据在 `evidence/strong_identity_baseline.json`；因外部
+> IdP 运营、可信 TLS、密钥托管轮换、身份生命周期及 AI workload 排除证据未提供，
+> `GOV.IDENTITY.STRONG_AUTH` 仍是 M2 红线。
+> 最新完整门禁：后端 2003 passed / 1 skipped，live-stack 844 passed，前端 68 passed，生产构建通过；
+> 治理扫描 244 files / 0 violations，隔离风险恢复演练 RTO 55ms / 300000ms。
+
 > **审计类型:** 只读系统级审计(安全边界 / 架构一致性 / Phase 3A 越权 / 交付完整性 / 测试 / 文档 / EXPY 分离 / 演示能力)
 > **审计日期:** 2026-07-01
 > **审计方法:** 多代理并行取证(11 维只读扫描,Explore 代理,Grep/Glob/Read/Bash 只读)+ 3 个对抗性安全复核者(尝试证伪安全边界)+ 审计员独立地面核查(P0 关键项)。
@@ -107,7 +144,7 @@ QUANTOS 仓库当前状态**通过 L2 系统级安全审计**,零 P0、零 P1 �
 |---|---|---|
 | `services/trading/brokerless_simulation/` | ❌ NOT FOUND | `services/trading/dry_run_adapters/` + `services/execution/dry_run_pipeline.py` |
 | `tests/trading/brokerless_simulation/` | ❌ | `tests/execution/test_dry_run_pipeline.py`、`tests/integration/test_dry_run_all.py`、`tests/trading/test_broker_adapter.py` |
-| `evidence/phase2i/`、`docs/phase2i/` | ❌ | 内容分散于 CLAUDE.md、`docs/superpowers/specs/2026-06-30-dry-run-pipeline*.md` |
+| `evidence/phase2i/`、`docs/phase2i/` | ❌ | 内容分散于 CLAUDE.md、`docs/engineering/specs/2026-06-30-dry-run-pipeline*.md` |
 | `PHASE_2I_BROKERLESS_FULL_CHAIN_SIMULATION_REPORT.md` | ❌ | 无该命名报告 |
 | `PHASE_2I_1_BROKERLESS_SIMULATION_GATE_REPORT.md` | ❌ | 无该命名报告 |
 
@@ -242,7 +279,7 @@ QUANTOS 与 EXPY 在架构与运行时上**完全解耦**:`requirements.txt` 无
 文档一致、无误导实盘按钮、审计链/`event_refs`/`report_hash` 完整、Kill Switch/Rollback/DR 覆盖充分。
 
 ### P2 — 中风险(文档/交付对照,非安全)
-- **P2-1:** 模板期望的 Phase 2I/2J 交付物(`PHASE_2I_*.md`、`PHASE_2J_*.md`、`docs/phase2i/`、`docs/phase2j/`、`evidence/phase2i|2j/`)按名**不存在**;等价功能存在但分散在 CLAUDE.md / `docs/superpowers/specs/` / `tests/`,无按 Phase 2I/2J 命名的集中交付包与验收报告。
+- **P2-1:** 模板期望的 Phase 2I/2J 交付物(`PHASE_2I_*.md`、`PHASE_2J_*.md`、`docs/phase2i/`、`docs/phase2j/`、`evidence/phase2i|2j/`)按名**不存在**;等价功能存在但分散在 CLAUDE.md / `docs/engineering/specs/` / `tests/`,无按 Phase 2I/2J 命名的集中交付包与验收报告。
 - **P2-2:** 前端目录为 `apps/research-console/`(非模板 `frontend/apps/simulation-console/`);模块目录为 `services/trading/dry_run_adapters/`(非 `brokerless_simulation/`)。功能等价,命名不一致。
 - **P2-3:** 无正式**场景库编目**(SCENARIO enum/矩阵);部分成交、流动性压力、高滑点、延迟/未知订单状态等边缘场景缺显式测试(核心 fail-closed 路径已测)。
 

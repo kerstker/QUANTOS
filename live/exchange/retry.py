@@ -1,5 +1,5 @@
 """共享限流感知退避重试(Stage 1.5 运维硬化)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §12。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §12。
 
 回答 2026-07-04 对抗式审查记录在案的运维缺口:之前 `live/exchange/{binance,bybit}_futures.py`
 把非 2xx 响应(含限流 429/418)一视同仁转成通用 `RuntimeError`,没有退避、没有区分"限流"(应该

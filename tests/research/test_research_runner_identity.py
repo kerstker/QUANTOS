@@ -7,7 +7,7 @@ import os
 
 from fastapi.testclient import TestClient
 
-import services.research.research_runner.main as m
+import services.research_runner.main as m
 from services.monitoring.audit_store import DurableAuditLog
 from services.research.run_registry.contract import ResearchRun
 from services.research.run_registry.store import ResearchRunStore
@@ -18,8 +18,9 @@ class _StubQueue:
     def __init__(self):
         self.calls = []
 
-    def submit(self, kind, params, now, operator=None):
-        self.calls.append({"kind": kind, "params": params, "now": now, "operator": operator})
+    def submit(self, kind, params, now, operator=None, invocation_id=None):
+        self.calls.append({"kind": kind, "params": params, "now": now, "operator": operator,
+                           "invocation_id": invocation_id})
         return f"run_{kind}_{now}"
 
 

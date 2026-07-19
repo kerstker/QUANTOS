@@ -56,9 +56,11 @@
       `key/` 写权限 + 文件系统权限收紧。**诚实边界**:单进程内的签名校验是 theater(受信代码持同一把 key),
       真防御只能出进程(见 `services/governance/signing.py` 与 `docs/PHASE_14_PROCESS_ISOLATION.md`)。
       → 需真人 + 真部署环境,**agent 不可自行完成**。核签人 ____________
-- [ ] **P0-2** 出进程签名 + 真身份认证/RBAC = **Phase 14 + 部署基建**:真 `SigningAuthority` 独立进程签发/
-      验证、`verify_signed_ref` 接进执行路径、promotion_api 的 X-Operator 升为认证身份。拒绝式接缝 + 边界
-      测试已在(L2 结构性签不出/验不过);真实现 = post-L2。→ 需部署基建,**agent 不可自行完成**。核签人 ______
+- [ ] **P0-2** 出进程签名 + 强身份 M4 = **Phase 14 + 部署基建**:promotion_api 的 OIDC 非对称验签、
+      MFA、mTLS token binding、动作 RBAC 及浏览器 PKCE S256 已在 M2 承重并拒绝旧自报身份；仍需
+      真外部 IdP/TLS、密钥托管轮换、身份生命周期及 AI workload 排除证据，并实现独立
+      `SigningAuthority`、把 `verify_signed_ref` 接进执行路径。
+      → 需真人 + 真部署环境,**agent 不可自行完成**。核签人 ______
 - [ ] **P1-1..P1-10** 逐项核 `docs/audit/RISK_REGISTER.md`:P1-1/2/3/4/5/6/8/9/10 已收口(见 git log 与
       RISK_REGISTER 状态列);**P1-7**(维护调度 + 自动 de-risk)机制已上、自动减仓数字待签(见 B4)。
 - [ ] 端到端 `--submit` 自动提交路径演练(preview→--submit 检查清单,见 `docs/runbooks/live-trading-runbook.md`)
@@ -67,7 +69,8 @@
 ## E. 进程/部署隔离(Phase 14,需真实部署环境)
 - [ ] mutating 决策进程与研究/agent 进程隔离(独立进程/容器/主机;`key/` 文件系统 ACL 收紧)——
       单进程代码挡不住受信代码绕过,真隔离是部署环境的事(容器安全不变量已有测试 +
-      `deploy/console.Dockerfile` 标注 UNBUILT,见 `docs/superpowers/specs/2026-07-07-containerization-design.md`)。
+      `deploy/console.Dockerfile` 已有同主机双冷构建、只读冒烟和 Trivy 证据；但这仍不等于进程/主机隔离，
+      见 `evidence/reproducibility/container_build_latest.json`)。
 
 ## F. 最终 Go/No-Go 决定(纯人工)
 - [ ] A–E 全部核完、B/D 需签项全签、C/前向证据达标、无未收口 P0/P1。

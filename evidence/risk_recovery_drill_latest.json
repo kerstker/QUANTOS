@@ -1,0 +1,102 @@
+{
+  "active_state_untouched": true,
+  "artifact_names": [
+    "audit.db",
+    "kill_switch.db",
+    "kill_switch.json",
+    "ledger.db"
+  ],
+  "audit_chain_verified": true,
+  "corrupt_kill_switch_failed_closed": true,
+  "drill_mode": "ISOLATED_OFFLINE",
+  "elapsed_ms": 128,
+  "gate_rejected_while_tripped": true,
+  "gate_rejection_code": "KILL_SWITCH_ACTIVE",
+  "kill_switch_chain_verified": true,
+  "kill_switch_event_recoverable": true,
+  "kill_switch_outbox_pending_count": 1,
+  "kill_switch_persisted": true,
+  "ledger_after": {
+    "fills": [
+      {
+        "client_order_id": "drill-order-1",
+        "fill_id": "drill-fill-1",
+        "filled_at": 1784016513703,
+        "instrument_id": "AAA",
+        "price": 100.0,
+        "quantity": 2.0,
+        "side": "BUY",
+        "strategy_id": "risk-drill"
+      }
+    ],
+    "orders": [
+      {
+        "client_order_id": "drill-order-1",
+        "instrument_id": "AAA",
+        "limit_price": null,
+        "order_type": "MARKET",
+        "quantity": 2.0,
+        "side": "BUY",
+        "status": "NEW",
+        "strategy_id": "risk-drill",
+        "submitted_at": 1784016513702,
+        "venue_order_id": ""
+      }
+    ],
+    "positions": {
+      "AAA": 2.0
+    }
+  },
+  "ledger_before": {
+    "fills": [
+      {
+        "client_order_id": "drill-order-1",
+        "fill_id": "drill-fill-1",
+        "filled_at": 1784016513703,
+        "instrument_id": "AAA",
+        "price": 100.0,
+        "quantity": 2.0,
+        "side": "BUY",
+        "strategy_id": "risk-drill"
+      }
+    ],
+    "orders": [
+      {
+        "client_order_id": "drill-order-1",
+        "instrument_id": "AAA",
+        "limit_price": null,
+        "order_type": "MARKET",
+        "quantity": 2.0,
+        "side": "BUY",
+        "status": "NEW",
+        "strategy_id": "risk-drill",
+        "submitted_at": 1784016513702,
+        "venue_order_id": ""
+      }
+    ],
+    "positions": {
+      "AAA": 2.0
+    }
+  },
+  "ledger_recovered": true,
+  "observed_at_ms": 1784016513702,
+  "post_restart_sha256": {
+    "audit.db": "d3539fcf2da2080d24cff27811a01a723a0b4eb30bb598053ad03bdb85ffeff6",
+    "kill_switch.db": "ebb7fd86596ed28d4c5cf5bb441c1721dac0bb3ed4220b7a503ffe14cf88a338",
+    "kill_switch.json": "80edd57753e95982bf65471fb4802a92658eb13b1f78e3a52c34d2cdfd304ae2",
+    "ledger.db": "3a181006a74dcb389181adf00585cbc020f43a37dcebf1956b18d1b956bae010"
+  },
+  "pre_restart_sha256": {
+    "audit.db": "d3539fcf2da2080d24cff27811a01a723a0b4eb30bb598053ad03bdb85ffeff6",
+    "kill_switch.db": "ebb7fd86596ed28d4c5cf5bb441c1721dac0bb3ed4220b7a503ffe14cf88a338",
+    "kill_switch.json": "80edd57753e95982bf65471fb4802a92658eb13b1f78e3a52c34d2cdfd304ae2",
+    "ledger.db": "3a181006a74dcb389181adf00585cbc020f43a37dcebf1956b18d1b956bae010"
+  },
+  "recovered_state_count": 4,
+  "rto_met": true,
+  "rto_ms": 300000,
+  "schema_version": 2,
+  "tampered_audit_detected": true,
+  "tampered_kill_switch_detected": true,
+  "verdict": "PASS"
+}

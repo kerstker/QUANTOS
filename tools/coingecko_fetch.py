@@ -13,6 +13,7 @@ touches a trading credential. Do not add one — that would breach the L2 safety
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import urllib.request
@@ -86,6 +87,43 @@ def fetch_simple_prices(instrument_ids, *, vs_currency: str = "usd",
         price = (row or {}).get(vs_currency)
         if sym is not None and isinstance(price, (int, float)):
             out[sym] = float(price)
+    return out
+
+
+def fetch_simple_price_observations(instrument_ids, *, vs_currency: str = "usd",
+                                    http_get=_http_get_json) -> dict:
+    """Return current CoinGecko prices with provider-supplied observation times.
+
+    Rows without both a positive finite price and ``last_updated_at`` are omitted
+    so callers cannot confuse request time with source time.
+    """
+    ids = [SYMBOL_TO_COINGECKO_ID[i] for i in instrument_ids if i in SYMBOL_TO_COINGECKO_ID]
+    if not ids:
+        return {}
+    key = _read_key()
+    url = (f"{DEMO_BASE}/simple/price?ids={','.join(sorted(set(ids)))}"
+           f"&vs_currencies={vs_currency}&include_last_updated_at=true")
+    data = http_get(url, {"x-cg-demo-api-key": key, "accept": "application/json"})
+    if not isinstance(data, dict):
+        return {}
+    id_to_symbol = {v: k for k, v in SYMBOL_TO_COINGECKO_ID.items()}
+    out = {}
+    for cg_id, row in data.items():
+        if not isinstance(row, dict):
+            continue
+        symbol = id_to_symbol.get(cg_id)
+        price = row.get(vs_currency)
+        updated_at = row.get("last_updated_at")
+        if symbol is None or isinstance(price, bool) or isinstance(updated_at, bool):
+            continue
+        if not isinstance(price, (int, float)) or not isinstance(updated_at, (int, float)):
+            continue
+        price_value = float(price)
+        timestamp_seconds = float(updated_at)
+        if (not math.isfinite(price_value) or price_value <= 0
+                or not math.isfinite(timestamp_seconds) or timestamp_seconds <= 0):
+            continue
+        out[symbol] = {"price": price_value, "as_of_ms": int(timestamp_seconds * 1000)}
     return out
 
 

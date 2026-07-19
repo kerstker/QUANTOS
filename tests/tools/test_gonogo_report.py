@@ -1,9 +1,14 @@
 """Phase 5 item 3(dim10):自动日终 GoNoGo 报告 + PnL/成本归因。gonogo_report.py 此前零测试——
 先钉死既有装配骨架(assemble_report 纯核 + render_markdown),再加 PnL/成本归因块(从真实持久化
 权益曲线 + TCA 算,不造 fill-matching)。全只读/报告,无自动动作、无风险数字。"""
+import json
+
 import pytest
 
-from tools.gonogo_report import assemble_pnl_attribution, assemble_report, render_markdown
+import tools.gonogo_report as gonogo
+
+from tools.gonogo_report import (_venue_risk_snapshot, assemble_pnl_attribution,
+                                 assemble_report, render_markdown)
 
 _INCIDENTS = {"n_alert_batches": 0, "risk_breaches": 0, "reconciliation_hard_stops": 0,
               "emergency_flattens": 0, "sentinel_failures": 0}
@@ -78,3 +83,93 @@ def test_render_markdown_no_pnl_block_does_not_crash():
                           execution_evidence={"binance": {"venue": "binance"}},
                           incidents=_INCIDENTS, now_ms=1000)
     assert isinstance(render_markdown(rep), str)        # 无 pnl 键也不崩(向后兼容)
+
+
+def test_forward_evidence_uses_attested_baseline_not_legacy_cache(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 0,
+            "attested_pending": 0,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "BLOCKED"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(gonogo, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    evidence = gonogo._forward_evidence(now_ms=1000)
+    markdown = render_markdown(assemble_report(
+        forward_evidence=evidence, execution_evidence={}, incidents=_INCIDENTS, now_ms=1000,
+    ))
+
+    assert evidence["evidence_state"] == "DATA_BLOCKED"
+    assert evidence["attested_realizations"] == 0
+    assert evidence["legacy_unattested_decisions"] == 2
+    assert evidence["evidence_gate_eligible"] is False
+    assert "认证前向 0/8 周" in markdown
+    assert "历史未认证 2" in markdown
+    assert "gate passed" not in markdown.lower()
+
+
+def test_forward_evidence_invalid_bytes_fail_closed(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_bytes(b"\xff")
+    monkeypatch.setattr(gonogo, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    assert gonogo._forward_evidence(now_ms=1000) == {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 审计 §4.4 [P1-R2]:VaR/CVaR/HHI 只读展示——gonogo 读取哨兵已算好的 risk_snapshot,不重算
+# (同一份计算,避免两处口径不一致)。
+# ---------------------------------------------------------------------------
+
+def test_venue_risk_snapshot_extracts_matching_venue():
+    status = {"results": [
+        {"venue": "binance", "risk_snapshot": {"var_95": 0.02, "cvar_95": 0.03, "hhi": 0.3}},
+        {"venue": "bybit_demo", "error": "boom"},
+    ]}
+    assert _venue_risk_snapshot(status, "binance") == {"var_95": 0.02, "cvar_95": 0.03, "hhi": 0.3}
+
+
+def test_venue_risk_snapshot_missing_venue_is_none():
+    status = {"results": [{"venue": "binance", "risk_snapshot": {}}]}
+    assert _venue_risk_snapshot(status, "bybit_demo") is None
+
+
+def test_venue_risk_snapshot_venue_present_but_errored_is_none():
+    # 该 venue 本轮 check_venue 直接抛异常(main() 只记 error,没有 risk_snapshot 键)-> 诚实 None
+    status = {"results": [{"venue": "bybit_demo", "error": "boom"}]}
+    assert _venue_risk_snapshot(status, "bybit_demo") is None
+
+
+def test_venue_risk_snapshot_absent_status_is_none():
+    assert _venue_risk_snapshot(None, "binance") is None
+    assert _venue_risk_snapshot({}, "binance") is None
+
+
+def test_render_markdown_surfaces_risk_snapshot():
+    rep = assemble_report(
+        forward_evidence={"present": False},
+        execution_evidence={"binance": {"venue": "binance",
+            "risk_snapshot": {"var_95": 0.0212, "cvar_95": 0.0355, "hhi": 0.3, "volatility": 0.1,
+                              "effective_n": 3.33, "n_daily_returns": 12, "n_positions": 4,
+                              "provenance": "REAL_RESEARCH_RISK_ENGINE_READ_ONLY_DISPLAY"}}},
+        incidents=_INCIDENTS, now_ms=1000)
+    md = render_markdown(rep)
+    assert "VaR" in md and "0.0212" in md
+    assert "HHI" in md and "0.3" in md
+
+
+def test_render_markdown_no_risk_snapshot_does_not_crash():
+    rep = assemble_report(forward_evidence={"present": False},
+                          execution_evidence={"binance": {"venue": "binance"}},
+                          incidents=_INCIDENTS, now_ms=1000)
+    assert isinstance(render_markdown(rep), str)         # 无 risk_snapshot 键也不崩

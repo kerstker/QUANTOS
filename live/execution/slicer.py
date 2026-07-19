@@ -1,5 +1,5 @@
 """TWAP 切单(2026-07-05)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §⑥。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §⑥。
 
 诚实定位:$3-5k 周度调仓单子极小,**现阶段默认不启用**(`submit_live_batch(slicer=None)`);
 这是为规模化预留的已测试机制。纯函数、无墙钟——"T"WAP 的时间间隔由调用方在 `poll_sleep`/

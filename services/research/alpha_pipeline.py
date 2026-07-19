@@ -31,7 +31,7 @@ from services.alpha.lineage import make_child_asset
 from services.alpha.registry import AlphaAssetRegistry
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 
-from services.research.backtest_engine.metrics import sharpe
+from services.validation.performance import sharpe
 
 from . import alpha_expression as ax
 from .carry_pnl import economic_return_series
@@ -58,16 +58,29 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
                              dataset_version: str = "", timestamp: int = 0, generator: str = "cs_genome",
                              max_k: int = 8, min_periods: int = 2,
                              adapter_config: Optional[SignalAdapterConfig] = None,
-                             bred_by: Optional[Mapping[str, tuple]] = None) -> dict:
+                             bred_by: Optional[Mapping[str, tuple]] = None,
+                             catalog: Optional[AlphaCatalog] = None) -> dict:
     """Run the contained research-to-portfolio pipeline over `exprs` (nested-tuple cs alphas) on `panel`.
     Returns the evaluated assets (with COMPUTED leakage_ok), the populated registry + memory, the
-    optimized portfolio, the Signal->Portfolio target book, and the auto research brief."""
-    catalog = AlphaCatalog()
+    optimized portfolio, the Signal->Portfolio target book, and the auto research brief.
+
+    `catalog` (2026-07-10, gap audit rank #6): defaults to a FRESH in-memory AlphaCatalog (None ->
+    exactly the pre-existing behavior, byte-identical for every caller that doesn't pass one). A
+    caller MAY instead pass an already-populated catalog (e.g. loaded from a persistent
+    experiment_registry via services.research.experiment_registry.registry.ExperimentRegistry) so
+    this run's trials accumulate into that catalog's honest global_trial_count()/catalog_var_sr()
+    rather than starting from zero every call. Idempotent: an expr whose alpha_id is ALREADY
+    registered in the supplied catalog (from a prior run against the same persistent store) is
+    skipped exactly like an in-batch duplicate — never re-registered, never raises. The returned
+    `catalog` is also exposed in the result dict so the caller can persist it afterward; this
+    function itself never writes to any store — no IO here, same as before."""
+    catalog = catalog if catalog is not None else AlphaCatalog()
     evaluator = AlphaEvaluator(catalog)
     registry = AlphaAssetRegistry()
     memory = ResearchMemory()
     cfg = adapter_config or SignalAdapterConfig(max_position=0.5)
 
+    already_in_catalog = set(catalog.all_ids())
     has_funding = "funding" in panel.matrices
     expr_by_id: dict = {}
     asset_rows: list = []
@@ -76,8 +89,9 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
 
     for expr in exprs:
         aid = ax.alpha_id(expr)
-        if aid in expr_by_id:
-            continue                                   # dedup identical expressions
+        if aid in expr_by_id or aid in already_in_catalog:
+            continue                                   # dedup identical expressions (in-batch or
+                                                        # already-registered in a persistent catalog)
         leak_ok = compute_leakage_ok(expr, panel)      # P0 — True / False / None
         proven += leak_ok is True
         leaked += leak_ok is False
@@ -86,7 +100,16 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         matrix = ax.evaluate(expr, panel)
         periods = ax.panel_to_periods(matrix, panel, fwd_horizon=fwd_horizon)
         deps = tuple(sorted(_fields(expr)))
-        defn = AlphaDefinition(alpha_id=aid, name=aid, factor_ids=deps, universe="cs")
+        # 2026-07-10 (gap audit rank #6, discovered while extending trial registration to a full
+        # scored population): AlphaDefinition.definition_hash hashes ONLY factor_ids/universe/params
+        # -- WITHOUT params, two structurally DIFFERENT expressions sharing the same field
+        # dependencies (the common case in a small field universe, e.g. close+funding) collide to
+        # the IDENTICAL definition_hash, silently UNDERCOUNTING catalog.global_trial_count() (the
+        # multiple-testing correction denominator) by orders of magnitude — confirmed empirically:
+        # 17 genuinely distinct candidates collapsed to 2 trial entries before this fix. The
+        # canonicalized expression is the actual identity of a "trial" here, so it belongs in params.
+        defn = AlphaDefinition(alpha_id=aid, name=aid, factor_ids=deps, universe="cs",
+                               params={"expr": ax.serialize(expr)})
         catalog.register(defn)
 
         if len(periods) < min_periods:
@@ -148,6 +171,8 @@ def run_alpha_asset_pipeline(panel: ax.FieldPanel, exprs: Sequence, *, fwd_horiz
         "target_book": target_book,
         "brief": brief,
         "leakage_summary": {"proven": proven, "leaked": leaked, "unassessed": unassessed},
+        "catalog": catalog,   # 2026-07-10: the (possibly caller-supplied) catalog this run used —
+                              # exposed so a caller can persist it (this function performs no IO itself)
     }
 
 

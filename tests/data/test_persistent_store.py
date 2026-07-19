@@ -60,3 +60,18 @@ def test_uninitialized_store_fails_closed(tmp_path):
     sqlite3.connect(p).close()
     with pytest.raises(DataStoreError):
         SqlitePITStore(p, create=False).as_of("X", as_of_time=10)
+
+
+def test_atomic_batch_rolls_back_every_row_on_database_failure():
+    store = _store()
+    store._conn.execute(
+        "CREATE TRIGGER reject_bad BEFORE INSERT ON bars "
+        "WHEN NEW.key='BAD' BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+    )
+    with pytest.raises(DataStoreError, match="atomic batch insert failed"):
+        store.add_batch_atomic([
+            _bar("X", 10, 10, 100.0),
+            _bar("BAD", 20, 20, 101.0),
+        ])
+    assert store.as_of("X", as_of_time=60) == []
+    assert store.as_of("BAD", as_of_time=60) == []

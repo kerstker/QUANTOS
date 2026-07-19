@@ -3,7 +3,7 @@ there is NO sentinel meaning "unlimited" (review fail-closed requirement). Empty
 allow-lists reject everything until explicitly populated."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 from quantos.contracts.hashing import stable_hash
 
@@ -36,6 +36,8 @@ class RiskLimits:
     # 旧名 rate_window_s 是个陷阱:它被当 ms 从 ms 的 ctx.now 相减(check_rate_limit),"_s"名不副实,
     # 把它设成秒会让窗口塌成毫秒级、护栏失效。改名 rate_window_ms 消除这个未来必然误导的地雷。
     rate_window_ms: int = 60_000                             # 60s(dry-run 无害占位;live 由 gate_limits 覆盖)
+    max_cancel_rate: float = 0.80
+    min_cancel_rate_samples: int = 20
     # liquidity / volatility
     max_participation_rate: float = 0.10
     max_instrument_vol: float = 0.80
@@ -43,6 +45,10 @@ class RiskLimits:
     cash_buffer_pct: float = 0.0
 
     def __post_init__(self) -> None:
+        if not 0.0 <= self.max_cancel_rate <= 1.0:
+            raise ValueError("max_cancel_rate must be between 0 and 1")
+        if self.min_cancel_rate_samples < 1:
+            raise ValueError("min_cancel_rate_samples must be positive")
         seen = set()
         for inst, _cap in self.max_position_qty:
             if inst in seen:

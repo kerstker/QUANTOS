@@ -1,5 +1,5 @@
 """Bybit V5 统一账户(USDT 永续,linear category)签名 REST 客户端(Stage 1.5)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §10。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §10。
 
 纯 stdlib(urllib/hmac/hashlib/json/time)——绝不 import 交易所 SDK(pybit 等)。与
 `binance_futures.py` 满足同一个 `VenueAdapter` Protocol,但底层协议有真实差异(2026-07-04 研究
@@ -33,6 +33,28 @@ LiveBrokerAdapter` 对称。
 ("Too many visits!")都视为限流信号,`live/exchange/retry.py::call_with_backoff` 指数退避重试,
 耗尽仍限流才 `RateLimitedError`。`sync_clock()` 拉取 `/v5/market/time` 校正本机时钟偏移,
 fail-soft(失败保留旧偏移)。
+
+**时钟同步失败可见性 + 重试(2026-07-09,诊断
+`docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md` §有序阻塞清单 #4——一次现场
+`live_risk_sentinel` 检查 bybit_demo 撞到 retCode 10002 时间戳偏差,当时的 `sync_clock()` 失败
+现场没有留下任何记录,只能事后靠猜):此前失败被裸 `except Exception: pass` 完全吞掉,`last_
+clock_sync_ok`/`last_clock_sync_error` 不存在,运维只能等下一层签名请求被交易所拒才后知后觉。
+现在 `sync_clock()` 失败后立即短间隔重试一次(`_CLOCK_SYNC_RETRY_DELAY_S`,不是长 sleep/复杂退避
+框架——`/v5/market/time` 是轻量公开端点,一次快速重试足以应对偶发抖动);仍失败才按原有 fail-soft
+哲学保留旧偏移、不抛异常,但把结果记进公开只读属性 `last_clock_sync_ok`/`last_clock_sync_error`,
+供调用方(`tools/live_risk_sentinel.py::log_clock_sync_status`)写进既有告警台账
+(`tools/alert_sink.py`)——不新开告警通道。`_RECV_WINDOW` 数值本身未改动(不放宽交易所定的时间戳
+容忍度)。
+
+**已知的未记录复合最坏情况延迟(2026-07-09 对抗式审查发现,记录在案不修复,severity=low):**
+`_try_sync_clock_once` 内部经 `_get`→`call_with_backoff` 已经对限流(HTTP 429 / `retCode==10006`)
+做指数退避重试(默认 `max_retries=3`/`base_delay=1.0`,最坏约 7s);本节新加的外层重试
+(`sync_clock` 失败后 `_sleep(_CLOCK_SYNC_RETRY_DELAY_S)` 再试一次)在两次尝试都撞限流的最坏情况
+下会让单次 `sync_clock()` 调用阻塞到约 `2×7s + 0.5s ≈ 14.5s`——这是外层重试与内层退避复合出的
+真实存在的最坏情况延迟,此前的实现说明未提及。对按小时心跳跑的 `live_risk_sentinel` 影响有限
+(不阻塞下单路径,`sync_clock()` 只在驱动器/哨兵启动时调用),故不改动重试逻辑本身(例如让外层
+重试只在明确的"非限流失败"如 5xx/连接异常时触发、把限流场景完全交给内层退避处理)——只在此补
+记文档,供后续如需收紧再参考。
 """
 from __future__ import annotations
 
@@ -97,6 +119,8 @@ class BybitFuturesAdapter:
     MAINNET_BASE = "https://api.bybit.com"
     venue_name = "bybit"       # mandate 交易所域匹配(mandate.exchange 必须等于它,2026-07-05)
     _RECV_WINDOW = "5000"
+    # 时钟同步失败重试间隔(2026-07-09):短间隔,非长 sleep/复杂退避框架——见 sync_clock docstring。
+    _CLOCK_SYNC_RETRY_DELAY_S = 0.5
 
     def __init__(self, *, api_key: str, api_secret: str, base_url: str,
                 http_request: Optional[Callable] = None,
@@ -125,17 +149,41 @@ class BybitFuturesAdapter:
         self._retry_base_delay = retry_base_delay
         self._sleep = sleep or time.sleep
         self._clock_offset_ms = 0
+        # 时钟同步可见性(2026-07-09):None=从未同步过;True/False=最近一次尝试(含内部重试后)的结果。
+        self.last_clock_sync_ok: Optional[bool] = None
+        self.last_clock_sync_error: Optional[str] = None
 
     def sync_clock(self) -> int:
         """拉取 `/v5/market/time`(公开、不签名),计算本机时钟相对服务器的偏移(ms)——fail-soft,
-        失败保留旧偏移(默认 0),不打断流程。同 binance_futures.py 的同款硬化。"""
+        两次尝试都失败则保留旧偏移(默认 0 或上一次成功同步到的值),不打断流程、不抛异常。同
+        binance_futures.py 的同款硬化,2026-07-09 加固见模块 docstring。
+
+        失败后立即短间隔重试一次(`_CLOCK_SYNC_RETRY_DELAY_S`);仍失败则把结果记进
+        `last_clock_sync_ok`/`last_clock_sync_error`(公开只读属性)供调用方决定要不要告警——
+        绝不因为记录失败而抛异常打断整体 fail-soft 流程。返回值(int 偏移量)语义不变。
+
+        注(见模块 docstring"已知的未记录复合最坏情况延迟"):本重试是 `_get` 内层限流退避之外的
+        第二层,两次尝试都撞限流的最坏情况下单次调用可阻塞到约 14.5s——已知、记录在案,不修复。"""
+        error = self._try_sync_clock_once()
+        if error is not None:
+            self._sleep(self._CLOCK_SYNC_RETRY_DELAY_S)
+            error = self._try_sync_clock_once()
+        self.last_clock_sync_ok = error is None
+        self.last_clock_sync_error = error
+        return self._clock_offset_ms
+
+    def _try_sync_clock_once(self) -> Optional[str]:
+        """一次时钟同步尝试。成功更新 `self._clock_offset_ms` 并返回 `None`;失败**不抛异常**,
+        返回人类可读的失败原因字符串——调用方(`sync_clock`)据此决定要不要重试/记录,不必用
+        try/except 感知控制流。"""
         try:
             status, data = self._get("/v5/market/time", signed=False)
-            if 200 <= status < 300 and isinstance(data, dict) and "time" in data:
-                self._clock_offset_ms = int(data["time"]) - int(self._clock() * 1000)
-        except Exception:
-            pass
-        return self._clock_offset_ms
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+        if 200 <= status < 300 and isinstance(data, dict) and "time" in data:
+            self._clock_offset_ms = int(data["time"]) - int(self._clock() * 1000)
+            return None
+        return f"unexpected /v5/market/time response (status={status}, body={data!r})"
 
     # --- 签名核心(header-based,与 Binance 的 query-embedded 不同) ---
 
@@ -233,7 +281,17 @@ class BybitFuturesAdapter:
             if not items:
                 return None
             item = items[0]
-            return {"bid": float(item["bid1Price"]), "ask": float(item["ask1Price"])}
+            book = {"bid": float(item["bid1Price"]), "ask": float(item["ask1Price"])}
+            raw_timestamp = data.get("time")
+            if not isinstance(raw_timestamp, bool):
+                try:
+                    as_of_ms = int(raw_timestamp)
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                else:
+                    if as_of_ms > 0:
+                        book["as_of_ms"] = as_of_ms
+            return book
         except Exception:
             return None
 

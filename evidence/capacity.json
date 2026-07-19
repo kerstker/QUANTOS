@@ -1,6 +1,6 @@
 {
   "artifact": "data/cache/capacity_snapshot.json",
-  "code_version": "5f79f2884b66",
+  "code_version": "855d75dd0f94",
   "extractor": "capacity",
   "kind": "json_numbers",
   "numbers": {

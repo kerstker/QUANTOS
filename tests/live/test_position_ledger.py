@@ -1,12 +1,13 @@
 """LiveLedger(live/execution/position_ledger.py):append-only 本地仓位账本。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.5。镜像 ForwardLedger/
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.5。镜像 ForwardLedger/
 PaperTrackStore 的 append-only 模式(同一文件多表共存,幂等 INSERT OR IGNORE)。
-order_type/limit_price 惰性迁移:docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §6。"""
+order_type/limit_price 惰性迁移:docs/engineering/specs/2026-07-06-limit-order-execution-design.md §6。"""
 import sqlite3
 
 import pytest
 
-from live.execution.position_ledger import LiveLedger, LiveLedgerError
+from live.execution.position_ledger import (LiveLedger, LiveLedgerConflictError,
+                                            LiveLedgerError)
 from quantos.contracts.trading import OrderSide
 
 
@@ -20,11 +21,55 @@ def test_missing_db_fails_closed(tmp_path):
         LiveLedger(str(tmp_path / "nonexistent.db"), create=False)
 
 
+def test_close_releases_live_ledger_connection(tmp_path):
+    ledger = LiveLedger(str(tmp_path / "live.db"), create=True)
+    ledger.close()
+    ledger.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        ledger.orders()
+
+
 def test_record_submission_is_idempotent(ledger):
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra", submitted_at=1000)
     ledger.record_submission("c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra", submitted_at=1000)   # 重复提交
     orders = ledger.orders()
     assert len(orders) == 1
+
+
+def test_record_submission_replay_ignores_mutable_status_and_timestamp(ledger):
+    ledger.record_submission(
+        "c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+        submitted_at=1000, status="PENDING_NEW",
+    )
+    ledger.record_submission(
+        "c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+        submitted_at=2000, venue_order_id="v1", status="FILLED",
+    )
+    row = ledger.orders()[0]
+    assert row["submitted_at"] == 1000
+    assert row["status"] == "PENDING_NEW"
+
+
+@pytest.mark.parametrize("changed", ["instrument", "side", "quantity", "strategy", "order_type"])
+def test_record_submission_same_id_different_immutable_payload_raises(ledger, changed):
+    ledger.record_submission(
+        "c1", "BTC", OrderSide.BUY, 0.01, strategy_id="crowd_contra",
+        submitted_at=1000,
+    )
+    values = {
+        "instrument_id": "ETH" if changed == "instrument" else "BTC",
+        "side": OrderSide.SELL if changed == "side" else OrderSide.BUY,
+        "quantity": 0.02 if changed == "quantity" else 0.01,
+        "strategy_id": "other" if changed == "strategy" else "crowd_contra",
+        "order_type": "LIMIT" if changed == "order_type" else "MARKET",
+        "limit_price": 60_000.0 if changed == "order_type" else None,
+    }
+    with pytest.raises(LiveLedgerConflictError, match="client_order_id collision"):
+        ledger.record_submission(
+            "c1", values["instrument_id"], values["side"], values["quantity"],
+            strategy_id=values["strategy_id"], submitted_at=2000,
+            order_type=values["order_type"], limit_price=values["limit_price"],
+        )
 
 
 def test_update_status(ledger):
@@ -47,6 +92,18 @@ def test_record_fill_is_idempotent(ledger):
     ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0, strategy_id="crowd_contra", filled_at=1001)
     ledger.record_fill("f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0, strategy_id="crowd_contra", filled_at=1001)   # 重复回报
     assert ledger.position("BTC") == pytest.approx(0.01)
+
+
+def test_record_fill_same_id_different_payload_raises(ledger):
+    ledger.record_fill(
+        "f1", "c1", "BTC", OrderSide.BUY, 0.01, 60000.0,
+        strategy_id="crowd_contra", filled_at=1001,
+    )
+    with pytest.raises(LiveLedgerConflictError, match="fill_id collision"):
+        ledger.record_fill(
+            "f1", "c1", "BTC", OrderSide.BUY, 0.02, 60000.0,
+            strategy_id="crowd_contra", filled_at=2001,
+        )
 
 
 def test_position_zero_when_no_fills(ledger):

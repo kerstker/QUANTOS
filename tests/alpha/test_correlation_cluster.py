@@ -89,3 +89,32 @@ def test_orthogonalize_fails_closed_below_min_overlap():
     short = tuple(range(20))
     res = orthogonalize(short, {"u": tuple(range(20))}, min_overlap=60)
     assert res.ok is False and res.marginal_ir is None
+
+
+def test_periods_per_year_default_is_252_unchanged_for_existing_callers():
+    drift = tuple(0.01 + 0.005 * math.sin(i * 0.9) for i in range(80))
+    default = orthogonalize(drift, {}, min_overlap=10)
+    explicit = orthogonalize(drift, {}, min_overlap=10, periods_per_year=252)
+    assert default.marginal_ir == pytest.approx(explicit.marginal_ir, rel=1e-12)
+
+
+def test_periods_per_year_scales_marginal_ir_by_sqrt_ratio_empty_basis():
+    """2026-07-09: marginal_ir used to hardcode sqrt(252) regardless of the caller's actual
+    period cadence — verified live-data bug (crowd_contra's persisted marginal_ir was inflated
+    ~2.20x = sqrt(252/52) once AlphaEvaluator started using periods_per_year=52). This pins the
+    fix for the empty-approved-set branch (the exact branch that bug hit — a first-ever
+    registration has no approved set yet)."""
+    drift = tuple(0.01 + 0.005 * math.sin(i * 0.9) for i in range(80))
+    daily = orthogonalize(drift, {}, min_overlap=10, periods_per_year=252)
+    weekly = orthogonalize(drift, {}, min_overlap=10, periods_per_year=52)
+    assert weekly.marginal_ir != daily.marginal_ir
+    assert weekly.marginal_ir == pytest.approx(daily.marginal_ir * math.sqrt(52 / 252), rel=1e-9)
+
+
+def test_periods_per_year_scales_marginal_ir_by_sqrt_ratio_nonempty_basis():
+    """Same fix, the OTHER branch (real approved-set / Gram-Schmidt residual path)."""
+    drift = tuple(0.01 + 0.005 * math.sin(i * 0.9) for i in range(80))
+    u = _u()
+    daily = orthogonalize(drift, {"u": u}, min_overlap=10, periods_per_year=252)
+    weekly = orthogonalize(drift, {"u": u}, min_overlap=10, periods_per_year=52)
+    assert weekly.marginal_ir == pytest.approx(daily.marginal_ir * math.sqrt(52 / 252), rel=1e-9)

@@ -22,8 +22,11 @@ QUANTOS 是**安全关键**系统。这里的"安全"有两层含义:**信息安
 ## 密钥处理
 
 - API key 只从环境变量 `COINGECKO_API_KEY` 或被 gitignore 的 `key/coinkey.txt` 读取。
-- 密钥**绝不**打印、记录日志或提交。`key/` 目录与 `*coinkey*` 已被 `.gitignore` 排除,
-  本地 `pre-commit` 钩子还会再拦一道。
+- 密钥**绝不**打印、记录日志或提交。`key/` 目录与 `*coinkey*` 已被 `.gitignore` 排除;仓库自带版本化
+  git 钩子(`scripts/git-hooks/pre-commit`)会在暂存区出现 `key/` 路径文件或疑似 API key 模式时拒绝提交,
+  并顺带跑一次治理扫描器。**这是每台开发机需要各自主动装一次的本地机制**(git 本身不会在 clone 时
+  自动启用钩子):`bash scripts/install-hooks.sh`(同时装上 `pre-push`——推送前跑一次完整 `scripts/validate.py`
+  门禁)。装好后用 `git config --get core.hooksPath` 确认输出 `scripts/git-hooks`。
 
 ## 漏洞/安全问题上报
 

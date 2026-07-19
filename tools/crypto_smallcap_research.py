@@ -10,7 +10,7 @@ and a long-sample no-peek OOS. Honest caveat: small-caps carry large trading cos
 edge may not survive the cost model — which is exactly what we measure.
 
 Network lives in the fetcher (out of gate); the research core stays offline/deterministic. auto_approved
-must stay 0 (containment). Records/promotes nothing.
+must stay 0 (containment). Trial/evaluation provenance is durable; nothing is promoted.
 """
 from __future__ import annotations
 
@@ -18,8 +18,6 @@ import json
 import os
 import sys
 import time
-from collections import defaultdict
-
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.data.market_provider import ingest_provider_rows
@@ -27,12 +25,19 @@ from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos, full_sample_best
 from services.alpha.panel_backtest import run_panel_backtest
-from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
-from services.intelligence.agent_loop import ResearchAgentLoop
+from services.intelligence.registered_candidate_batch import (
+    run_registered_candidate_batch,
+)
+from services.research.experiment_registry.registry import ExperimentRegistry
 from quantos.contracts.alpha import AlphaDefinition
 from tools.cryptocompare_fetch import fetch_top_symbols, fetch_daily_rows
 from tools.crypto_alpha_research import ALPHAS, _periods_timed, _per_year
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 _DB = os.path.join("data", "cache", "crypto_smallcap.db")
 _SNAP = os.path.join("data", "cache", "crypto_smallcap_snapshot.json")
@@ -69,7 +74,43 @@ def _fetch_retry(tk, now_ms, tries=4):
     return None
 
 
-def main() -> None:
+def _run_registered_pool(
+    candidates,
+    *,
+    registry: ExperimentRegistry,
+    search_id: str,
+    dataset_version: str,
+    recorded_at: int,
+    evidence=None,
+):
+    return run_registered_candidate_batch(
+        candidates,
+        registry=registry,
+        search_id=search_id,
+        search_kind="CRYPTO_SMALLCAP_CURATED_SEARCH",
+        search_source="tools.crypto_smallcap_research",
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        config=AlphaFactoryConfig(compute_regime_evidence=True),
+        evidence=evidence,
+    )
+
+
+def _smallcap_dataset_version(panel, *, n_uni: int, drop_top: int) -> str:
+    return field_panel_dataset_version(
+        panel,
+        source_versions={
+            "provider": "CryptoCompare histoday",
+            "requested_market_cap_universe": n_uni,
+            "dropped_large_cap_head": drop_top,
+            "minimum_bars": _MIN_BARS,
+            "minimum_daily_volatility": _MIN_VOL,
+            "blocked_symbols": tuple(sorted(_BLOCK)),
+        },
+    )
+
+
+def _main(registry: ExperimentRegistry) -> None:
     n_uni = int(sys.argv[1]) if len(sys.argv) > 1 else 175      # top-by-mktcap to pull
     drop_top = int(sys.argv[2]) if len(sys.argv) > 2 else 25    # drop the large-cap head
     now_ms = int(time.time() * 1000)
@@ -106,21 +147,57 @@ def main() -> None:
     print(f"\n{len(instruments)} coins x {len(event_times)} daily periods (dropped {dropped}); "
           f"panel built in {time.perf_counter()-t0:.1f}s", flush=True)
 
-    catalog = AlphaCatalog()
-    loop = ResearchAgentLoop(catalog=catalog, config=AlphaFactoryConfig(compute_regime_evidence=True))
-    rows_out, pool_ret = [], {}
+    candidate_rows = []
     for name, expr in ALPHAS.items():
         alpha = ax.evaluate(expr, panel)
         periods, times = _periods_timed(alpha, panel)
         if len(periods) < 24:
             continue
+        definition = AlphaDefinition(
+            alpha_id=ax.alpha_id(expr),
+            name=name,
+            factor_ids=("close",),
+            params={"family": "cs_alpha", "expr": ax.serialize(expr)},
+        )
+        candidate_rows.append(
+            (name, tuple(periods), tuple(times), definition)
+        )
+
+    dataset_version = _smallcap_dataset_version(
+        panel,
+        n_uni=n_uni,
+        drop_top=drop_top,
+    )
+    batch_result = _run_registered_pool(
+        tuple(
+            (definition, periods)
+            for _name, periods, _times, definition in candidate_rows
+        ),
+        registry=registry,
+        search_id=make_search_id(
+            source="tools.crypto_smallcap_research",
+            search_kind="CRYPTO_SMALLCAP_CURATED_SEARCH",
+            dataset_version=dataset_version,
+            recorded_at=now_ms,
+            params={
+                "candidate_count": len(candidate_rows),
+                "drop_top": drop_top,
+                "n_uni": n_uni,
+            },
+        ),
+        dataset_version=dataset_version,
+        recorded_at=now_ms,
+        evidence={},
+    )
+    report = batch_result["report"]
+
+    rows_out, pool_ret = [], {}
+    for name, periods, times, definition in candidate_rows:
         ret = list(run_panel_backtest(periods).period_returns)
         pool_ret[name] = ret
         full = round(sharpe(ret), 3)
         py = _per_year(times, ret)
-        defn = AlphaDefinition(alpha_id=ax.alpha_id(expr), name=name, factor_ids=("close",),
-                               params={"family": "cs_alpha", "expr": ax.serialize(expr)})
-        ev = next(iter(loop.run([(defn, periods)], timestamp=0)["report"].values())).get("evaluation")
+        ev = report.get(definition.alpha_id, {}).get("evaluation")
         rows_out.append({"name": name, "full_sharpe": full,
                          "deflated": round(ev.deflated_sharpe, 4) if ev else None,
                          "ic": round(ev.ic_mean, 4) if ev else None,
@@ -139,7 +216,9 @@ def main() -> None:
         oos = {"n_aligned": L, "selection": sel, "naive_best": {"alpha_id": bid, "sharpe": round(bsr, 4)}}
 
     rows_out.sort(key=lambda r: r["full_sharpe"], reverse=True)
-    auto = sum(1 for aid in catalog.all_ids() if str(catalog.state(aid).value) == "APPROVED")
+    auto = sum(
+        1 for entry in report.values() if entry.get("state") == "APPROVED"
+    )
     snap = {"generated_at": now_ms // 1000, "provider": "CryptoCompare histoday (small/mid-cap)",
             "n_instruments": len(instruments), "n_periods": len(event_times), "instruments": instruments,
             "auto_approved": auto, "alphas": rows_out, "oos": oos}
@@ -161,6 +240,11 @@ def main() -> None:
     survivors = [r["name"] for r in rows_out if r["full_sharpe"] > 0 and r["pos_years"] >= max(1, r["n_years"] - 1)]
     print(f"cross-regime survivors: {survivors or 'NONE'}")
     print(f"-> wrote {_SNAP}")
+
+
+def main() -> None:
+    with production_experiment_registry() as registry:
+        _main(registry)
 
 
 if __name__ == "__main__":

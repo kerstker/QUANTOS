@@ -11,8 +11,10 @@ from .guardrails import (
     AgentAction, ForbiddenAgentAction, assert_action_allowed, AGENT_ALLOWED,
 )
 from .agent_loop import ResearchAgentLoop
+from .runtime import GovernedModelRuntime, RuntimeGovernanceError
 
 __all__ = [
     "AgentAction", "ForbiddenAgentAction", "assert_action_allowed", "AGENT_ALLOWED",
     "ResearchAgentLoop",
+    "GovernedModelRuntime", "RuntimeGovernanceError",
 ]

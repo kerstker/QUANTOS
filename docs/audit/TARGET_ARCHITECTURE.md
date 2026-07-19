@@ -42,14 +42,14 @@
 │  L1 数据层 Data         PIT 存储 ✅ · 宇宙/复权/日历 ✅ · 泄漏检测 ✅        │
 │                         质量强制门 🟡 · 实时/流式接入 🔴 · Feature Store ✅  │
 └──────────────────────────────────────────────────────────────────────────┘
-   [横切事件总线 EventBus 🔴]  贯穿所有层,承载 correlation/causation ID + 回放
+   [横切事件总线 EventBus 🟡]  严格 schema/单机 group/6 条 outbox/health/recovery 已承重;live + HA 待补
    [横切服务注册/配置 🔴]      统一 DI/服务发现 + 分环境配置
    [横切统一契约 quantos/contracts ✅]  frozen pydantic 领域模型,单一事实来源
 ```
 
 **关键补齐**:
-- 🔴 **EventBus**(横切):用已有 `quantos/contracts/events.py::Event` 信封实现持久事件总线,所有关键状态转换(pretrade approved/rejected、kill-switch、alpha promoted、order state、deployment)流经并携带 `correlation_id`/`causation_id`,支持回放。
-- 🔴 **出进程签名 + 真身份认证/RBAC**(L6,Phase 14):把 X-Operator 自报标签升为认证身份;mandate 变更/kill-switch reset/晋级须携带独立进程签发的 `SignedDecisionRef`。
+- 🟡 **EventBus**(横切):canonical Event + 严格 schema、三条追加链、单机 consumer group/DLQ、幂等 projection 和六条 transactional outbox 已承重；recovery drain + hourly ops 已闭合，三 owner PASS、三 authority UNAVAILABLE。独立 scheduler watchdog、L2 encrypted backup、三链 portable commitment/extension verifier、create-once external anchor seam 与 bounded HTTPS heartbeat sender 均已承重；当前外部配置缺失，故 6 PASS/1 PARTIAL/3 UNAVAILABLE，且锚点只证明 filesystem create-once、未证明 WORM/外部签名。仍需更广 producer、真实 off-host batch、operator-owned missed-heartbeat receipt、object lock、强 worker identity 与跨主机 broker/复制/HA。
+- 🔴 **出进程签名 + 真身份认证/RBAC**(L6,Phase 14):晋级 API 已有 OIDC+mTLS+MFA+RBAC M2 边界；仍需外部部署证据，并让 mandate 变更/kill-switch reset/晋级携带独立进程签发的 `SignedDecisionRef`。
 - 🔴 **实时盘中监控 + 容器化/环境隔离**(L5/L15):把周/小时级对账升级为实时;Docker + staging/prod 隔离。
 
 ---
@@ -63,7 +63,7 @@
   live/  ──单向──▶ services/（services/ 永不 import live/,已由治理测试机器钉死 ✅）
 ```
 
-**待修**:当前存在 research↔alpha/risk/portfolio/intelligence/execution 与 alpha↔governance 的包级循环(P2-4)。目标用 import-linter 钉死"禁止回指 research 的反向边",把 research 拆为 `backtest`/`validation`/`api` 子包。
+**进度 / 待修**:确定性 service import 图与精确循环/动态加载策略已进入统一门；全部已知反向边已消除。research 的市场数据消费通过 PIT/version port，research→data 为零；experiment/run/paper/forward persistence 同样通过四个 runtime-checkable ports，SQLite 只存在于四个 adapters。验证编排通过必填 backtest port/output contract，walk-forward/CPCV 正本位于中立 validation；mutating runner 与 read-only HTTP routers 分属 `services/research_runner`、`services/console/api`，research 对 FastAPI/uvicorn/tools/data 零 import。console 的 15 个 router/44 paths 与 772 行 root 均有界。事件总线已有严格 schema、单机 consumer group/offset/DLQ、幂等 projection、六条同库 outbox、统一 recovery drain、L2-only hourly ops 和 alert-only lag/retention health；遗留 live-capable tasks 已禁用。当前全图 16 域/36 边，`cyclic_sccs=[]`、`cyclic_edges=[]`。下一步是修复 owner-store BREACH、补安全归档/外部 seal、独立告警 SLA、备份/watchdog 与跨主机 HA；图无环和单机调度仍不等于 Phase 14 进程隔离或跨主机 HA 已完成。
 
 ---
 
@@ -90,7 +90,7 @@ Alpha 假设 ──▶ AlphaFactory ✅ ──▶ Evaluator+ValidationGate ✅ �
                                               ▼
                               对账 preflight(drift 硬停)✅ · parity · TCA ✅
                                               ▼
-           ┌────────────── 全程发事件到 EventBus 🔴(correlation/causation ID)──────────────┐
+           ┌────────────── 全程发事件到 EventBus 🟡(部分 producer 已承重)─────────────────┐
            │  每个节点:决策原因 + risk_snapshot + market_snapshot,append-only,可回放       │
            └───────────────────────────────────────────────────────────────────────────────┘
                                               ▼
@@ -162,14 +162,14 @@ Alpha 假设 ──▶ AlphaFactory ✅ ──▶ Evaluator+ValidationGate ✅ �
 ```
 **增强**:🔴 品种/账户级细分开关的独立运维工具;🔴 reset 须出进程签名(Phase 14)。
 
-## 十、Audit / Replay 架构(🟡 哈希链✅ 但无事件总线/回放)
+## 十、Audit / Replay 架构(🟡 哈希链 + 单机事件回放✅，跨主机 HA/外部 seal 未完成)
 
 ```
   当前 ✅:GlobalAuditLog(内存哈希链 seal/verify)+ DurableAuditLog(持久)
            + append-only position_ledger + 不可变 experiment_registry 制品(verify_evaluation 防篡改)
            + 确定性 reproducibility_hash(无墙钟/RNG)
 
-  目标 🔴:统一 EventBus,每事件带 {event_id, correlation_id, causation_id,
+  目标 🟡:统一 EventBus,单机可靠消费已承重;继续让每事件带 {event_id, correlation_id, causation_id,
            strategy_id, alpha_id, signal_id, intent_id, order_id,
            risk_snapshot, market_snapshot, decision_reason},append-only,
            支持:① 每笔交易"为什么发生"完整溯源;② 复现当时系统状态;

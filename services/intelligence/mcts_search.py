@@ -20,6 +20,8 @@ from __future__ import annotations
 import math
 from typing import Callable, Optional, Sequence
 
+from services.research.ports.persistence import TrialPersistenceError
+
 from .agent_loop import ResearchAgentLoop
 from .evidence import provider_leakage_evidence
 from .guardrails import AgentAction, assert_action_allowed
@@ -54,6 +56,8 @@ class MCTSAlphaSearch:
         try:
             defn = genome_to_definition(genome)
             periods = self.provider(defn)
+        except TrialPersistenceError:
+            raise
         except Exception:
             evaluated[genome] = 0.0                  # isolate: a bad genome scores 0
             return 0.0

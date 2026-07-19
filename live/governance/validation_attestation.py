@@ -51,6 +51,8 @@ def require_validation_attestation(strategy_id: str,
         att = attestations.get(strategy_id) if attestations else None
         if att is None:
             return f"no_validation_attestation:{strategy_id}"
+        if att.strategy_id != strategy_id:
+            return f"attestation_strategy_mismatch:{att.strategy_id}:{strategy_id}"
         if att.kind not in _KINDS:
             return f"unknown_attestation_kind:{att.kind}"
         if not att.attested_by:

@@ -4,8 +4,15 @@
 DurableAuditLog 做一次端到端持久化验证。"""
 import os
 
+import pytest
+
 from quantos.contracts.alpha import Actor, ActorKind
-from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS
+from quantos.contracts.events import (
+    EVENT_DEPLOYMENT_RECORDED,
+    EVENT_KILL_SWITCH_ACTIVATED,
+    EVENT_KILL_SWITCH_RESET,
+)
 from quantos.contracts.governance import (
     ApprovalRecord, ConfigVersion, Environment, StrategyVersion,
 )
@@ -13,6 +20,7 @@ from services.governance.approval import approve, consume, open_request, review
 from services.deployment.gate import evaluate_deployment
 from services.monitoring.audit_log import GlobalAuditLog
 from services.monitoring.audit_store import DurableAuditLog
+from services.monitoring.event_bus import DurableEventBus
 from services.risk.pre_trade.kill_switch import KillSwitch
 
 HUMAN = Actor(actor_id="alice", kind=ActorKind.HUMAN)
@@ -38,6 +46,27 @@ def test_arm_emits_auditable_event():
     assert evs[0].actor == "bot" and evs[0].target == ks.state.incident_id
     assert evs[0].metadata["reason"] == "anomaly"
     assert sink.chain_valid()
+
+
+def test_arm_emits_schema_valid_domain_event_without_raw_reason():
+    bus = DurableEventBus(":memory:", schema_registry=CANONICAL_EVENT_SCHEMAS)
+    ks = KillSwitch()
+    ks.arm(
+        AGENT,
+        "secret-token-must-not-be-retained",
+        at=10,
+        incident_id="incident-1",
+        event_sink=bus,
+    )
+
+    records = bus.records(correlation_id="incident-1")
+    assert len(records) == 1
+    event = records[0]["event"]
+    assert event.event_type == EVENT_KILL_SWITCH_ACTIVATED
+    assert event.event_version == "1.1.0"
+    assert event.timestamp == 10_000
+    assert len(event.payload["reason_fingerprint"]) == 64
+    assert "secret-token" not in repr(records)
 
 
 def test_reset_emits_auditable_event():
@@ -93,6 +122,92 @@ def test_deployment_decision_emits_auditable_event():
     assert evs[0].target == "PAPER:deploy-1"
     assert evs[0].metadata["allowed"] == "True"
     assert sink.chain_valid()
+
+
+def test_reset_domain_event_is_persisted_before_clearing_latch():
+    bus = DurableEventBus(":memory:", schema_registry=CANONICAL_EVENT_SCHEMAS)
+    ks = KillSwitch()
+    ks.arm(AGENT, "halt", at=1, incident_id="incident-reset")
+    approval = ApprovalRecord(
+        approval_id="ap",
+        subject_id="incident-reset",
+        approver="alice",
+        approved=True,
+        timestamp=2,
+    )
+
+    ks.reset(HUMAN, approval, at=4, event_sink=bus)
+
+    assert not ks.is_active()
+    records = bus.records(correlation_id="incident-reset")
+    assert len(records) == 1
+    assert records[0]["event"].event_type == EVENT_KILL_SWITCH_RESET
+    assert records[0]["event"].payload["reset_via"] == "single"
+
+
+def test_reset_event_failure_keeps_kill_switch_latched():
+    class FailingEventSink:
+        def publish_once(self, *args, **kwargs):
+            raise OSError("event store unavailable")
+
+    ks = KillSwitch()
+    ks.arm(AGENT, "halt", at=1, incident_id="incident-reset-fail")
+    approval = ApprovalRecord(
+        approval_id="ap",
+        subject_id="incident-reset-fail",
+        approver="alice",
+        approved=True,
+        timestamp=2,
+    )
+
+    with pytest.raises(OSError, match="event store unavailable"):
+        ks.reset(HUMAN, approval, at=4, event_sink=FailingEventSink())
+
+    assert ks.is_active()
+
+
+def test_deployment_decision_emits_schema_valid_domain_event():
+    bus = DurableEventBus(":memory:", schema_registry=CANONICAL_EVENT_SCHEMAS)
+    versions, pins = _pinned()
+    decision = evaluate_deployment(
+        Environment.PAPER,
+        subject="deploy-event-1",
+        grant=_grant("deploy-event-1"),
+        versions=versions,
+        approved_pins=pins,
+        event_sink=bus,
+        at=99,
+    )
+
+    assert decision.allowed is True
+    records = bus.records(correlation_id="deploy-event-1")
+    assert len(records) == 1
+    event = records[0]["event"]
+    assert event.event_type == EVENT_DEPLOYMENT_RECORDED
+    assert event.event_version == "1.1.0"
+    assert event.timestamp == 99_000
+    assert event.payload["allowed"] is True
+    assert event.payload["version_ids"] == ["cfg", "strat"]
+
+
+def test_deployment_event_failure_turns_an_allowed_decision_into_fail_closed_denial():
+    class FailingEventSink:
+        def publish_once(self, *args, **kwargs):
+            raise OSError("event store unavailable")
+
+    versions, pins = _pinned()
+    decision = evaluate_deployment(
+        Environment.PAPER,
+        subject="deploy-event-2",
+        grant=_grant("deploy-event-2"),
+        versions=versions,
+        approved_pins=pins,
+        event_sink=FailingEventSink(),
+        at=100,
+    )
+
+    assert decision.allowed is False
+    assert decision.reasons == ("DEPLOYMENT_ERROR",)
 
 
 def test_deployment_denial_is_audited_with_reasons():

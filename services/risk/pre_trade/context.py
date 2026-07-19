@@ -21,6 +21,19 @@ from quantos.contracts.trading import OrderIntent, OrderSide
 _FROZEN_FINITE = ConfigDict(frozen=True, allow_inf_nan=False)
 
 
+def order_fingerprint(*, instrument_id: str, side: OrderSide | str, quantity: int,
+                      limit_price: Optional[float], strategy_id: str) -> str:
+    """Canonical duplicate-order identity shared by the gate and ledger replay."""
+    side_value = side.value if isinstance(side, OrderSide) else str(side)
+    return stable_hash({
+        "instrument": instrument_id,
+        "side": side_value,
+        "quantity": quantity,
+        "limit_price": limit_price,
+        "strategy": strategy_id,
+    })
+
+
 class AccountRiskState(BaseModel):
     model_config = _FROZEN_FINITE
     account_id: str = ""
@@ -75,6 +88,7 @@ class RiskContext(BaseModel):
     max_staleness: int = 86_400
     recent_order_fingerprints: tuple[str, ...] = ()
     recent_timestamps: tuple[int, ...] = ()
+    recent_order_statuses: tuple[str, ...] = ()
     plan_turnover: float = 0.0
 
     def signed_delta(self, intent: OrderIntent) -> int:
@@ -91,11 +105,13 @@ class RiskContext(BaseModel):
         return abs(intent.quantity * p) if p is not None else None
 
     def fingerprint(self, intent: OrderIntent) -> str:
-        return stable_hash({
-            "instrument": intent.instrument_id, "side": intent.side.value,
-            "quantity": intent.quantity, "limit_price": intent.limit_price,
-            "strategy": intent.strategy_id,
-        })
+        return order_fingerprint(
+            instrument_id=intent.instrument_id,
+            side=intent.side,
+            quantity=intent.quantity,
+            limit_price=intent.limit_price,
+            strategy_id=intent.strategy_id,
+        )
 
     def request_hash(self, intent: OrderIntent) -> str:
         return stable_hash({

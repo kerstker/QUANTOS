@@ -35,7 +35,8 @@ def test_mutate_is_deterministic_and_valid():
             m1 = g.mutate(s, FIELDS, WINDOWS, step)
             m2 = g.mutate(s, FIELDS, WINDOWS, step)
             assert m1 == m2                          # deterministic: same (tree, step) -> same child
-            assert g.valid(m1, FIELDS) and m1[0] in g._CSO
+            # root is either a unary cs op OR the cs_residualize neutralization binary (2026-07-09)
+            assert g.valid(m1, FIELDS) and m1[0] in g._CS_ROOTS
             assert g._depth(m1) <= g._MAX_DEPTH
             ax.evaluate(m1, panel)                   # evaluable, no crash
 
@@ -64,7 +65,7 @@ def test_iterated_evolution_stays_valid():
             mate = cur[(i + 1) % len(cur)]
             child = g.crossover(child, mate, FIELDS, WINDOWS, gen)
             assert g.valid(child, FIELDS), child
-            assert child[0] in g._CSO and g._depth(child) <= g._MAX_DEPTH
+            assert child[0] in g._CS_ROOTS and g._depth(child) <= g._MAX_DEPTH
             ax.evaluate(child, panel)                # never produces a broken/look-ahead tree
             nxt.append(child)
         cur = nxt
@@ -100,3 +101,31 @@ def test_mutation_can_introduce_funding_and_interactions():
             if any(("(" + op + " ") in sm for op in g._E2):
                 inter_seen = True
     assert fund_seen and inter_seen
+
+
+def test_mutation_can_introduce_cs_residualize_neutralization():
+    """2026-07-09 (top-tier gap audit rank #2): before this fix, cs_residualize (the DSL's only
+    cross-sectional neutralization primitive) was implemented and tested but UNREACHABLE by any
+    automated search — cs_genome.py's mutate/crossover imported only the unary _CS ops, never
+    _CS2. This is the direct fix regression test: over the seed population x several mutation
+    steps, the genome must actually be ABLE to produce a cs_residualize-rooted (or -containing)
+    candidate — i.e. a machine-proposed, risk-neutralized alpha — not just accept one if a human
+    hand-wrote it."""
+    seeds = g.seed_alphas(FIELDS, WINDOWS)
+    residualize_seen_as_root = residualize_seen_anywhere = False
+    for s in seeds:
+        for step in range(12):
+            m = g.mutate(s, FIELDS, WINDOWS, step)
+            assert g.valid(m, FIELDS)   # every product must stay structurally valid regardless
+            if m[0] == "cs_residualize":
+                residualize_seen_as_root = True
+            if "cs_residualize" in ax.serialize(m):
+                residualize_seen_anywhere = True
+    assert residualize_seen_as_root and residualize_seen_anywhere
+
+
+def test_cs_residualize_root_does_not_get_needlessly_rewrapped():
+    """_ensure_cs must recognize cs_residualize as already cross-sectional (not force an extra
+    cs_rank(...) wrap around it) — mirrors the existing unary-cs-op behavior."""
+    t = ("cs_residualize", ("field", "close"), ("field", "volume"))
+    assert g._ensure_cs(t) == t

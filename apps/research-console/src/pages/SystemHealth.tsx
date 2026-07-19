@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { fetchSystemHealthSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import React from 'react';
+import { fetchSystemHealthSnapshot } from '@/lib/api/research-console-api';
 import { mockHealthServices } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
-import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
+import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import type { IntegrationGateStatus, ServiceHealth, SystemHealthPayload } from '@/lib/types/research';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
@@ -49,40 +49,10 @@ const statusDonutTone: Record<string, Tone> = {
 const gateOk = (s: string) => statusTone(s) === 'pos' || statusTone(s) === 'info';
 
 export default function SystemHealth() {
-  const [payload, setPayload] = useState<SystemHealthPayload | null>(null);
-  const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
-  const [apiError, setApiError] = useState<string | null>(null);
-  const apiEnabled = isResearchConsoleApiEnabled();
+  const { payload, apiState, error: apiError, usingBackend } = useConsoleSnapshot<SystemHealthPayload>(
+    s => fetchSystemHealthSnapshot(s),
+  );
 
-  useEffect(() => {
-    if (!apiEnabled) {
-      setPayload(null);
-      setApiState('disabled');
-      setApiError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setApiState('loading');
-    setApiError(null);
-    fetchSystemHealthSnapshot(controller.signal)
-      .then(nextPayload => {
-        setPayload(nextPayload);
-        setApiState('connected');
-      })
-      .catch(error => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setPayload(null);
-        setApiState('error');
-        setApiError(error instanceof Error ? error.message : String(error));
-      });
-
-    return () => controller.abort();
-  }, [apiEnabled]);
-
-  const usingBackend = apiState === 'connected' && payload !== null;
   const services: ServiceHealth[] = usingBackend ? payload!.services : mockHealthServices;
   const gates: IntegrationGateStatus[] = usingBackend ? payload!.gates : fallbackGates;
   const safetyChecks: string[] = usingBackend ? payload!.safety_checks : fallbackSafety;

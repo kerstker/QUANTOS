@@ -35,6 +35,11 @@ import time
 import urllib.request
 import zipfile
 
+from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
+                                       archive_response)
+from tools.cache_io import atomic_write_json
+from tools.source_failures import classify_source_failure, source_failure_detail
+
 _DAY_MS = 86_400_000
 _HOSTS = ["https://data.binance.vision"]
 _CACHE = os.path.join("data", "cache", "crypto_oi_metrics.json")
@@ -102,6 +107,21 @@ def parse_metrics_zip(raw: bytes) -> dict:
     return out
 
 
+def _metrics_input_rows(raw: bytes) -> int:
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+        names = [name for name in zf.namelist() if name.endswith(".csv")]
+        if len(names) != 1:
+            return 0
+        lines = [
+            line for line in zf.read(names[0]).decode("utf-8").splitlines()
+            if line.strip()
+        ]
+        return max(0, len(lines) - 1)
+    except (OSError, UnicodeError, zipfile.BadZipFile):
+        return 0
+
+
 def _csv_floats(text: str, idx: int) -> list:
     """All finite floats in column `idx` of the metrics CSV (skips header + bad cells)."""
     out = []
@@ -159,7 +179,9 @@ def find_start_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -
         try:
             http_get_bytes(metrics_url(ticker, day))
             return day
-        except Exception:
+        except Exception as exc:
+            if classify_source_failure(exc) != "NOT_FOUND":
+                raise
             day += 30 * _DAY_MS  # month-ish step until first hit
     return None
 
@@ -175,14 +197,17 @@ def find_end_ms(ticker: str, *, http_get_bytes=_http_get_bytes, now_ms=None) -> 
         try:
             http_get_bytes(metrics_url(ticker, day))
             return day
-        except Exception:
+        except Exception as exc:
+            if classify_source_failure(exc) != "NOT_FOUND":
+                raise
             day -= 30 * _DAY_MS
     return None
 
 
 def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
                       http_get_bytes=_http_get_bytes, sleep: float = 0.0, max_workers: int = 12,
-                      parse_fn=parse_metrics_zip) -> dict:
+                      parse_fn=parse_metrics_zip, failure_sink=None,
+                      archive_root=None, observed_at_ms=None) -> dict:
     """Fetch every UTC day in [start_ms, end_ms) not already in `present`. Skips missing (404) days.
     Returns {day_ms: {fields}}. PIT-safe: each day collapses to its eod snapshot.
 
@@ -190,20 +215,88 @@ def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
     CONCURRENTLY via a stdlib thread pool — `concurrent.futures` adds no network/trade/credential
     surface, it only overlaps the wait. Result is a dict, so worker ordering is irrelevant and the
     output is deterministic for fixed inputs. max_workers<=1 runs the serial path (used by tests)."""
+    if archive_root is not None and observed_at_ms is None:
+        raise ValueError("observed_at_ms is required when archive_root is set")
     days = [d for d in range(((start_ms // _DAY_MS) * _DAY_MS), ((end_ms // _DAY_MS) * _DAY_MS), _DAY_MS)
             if d not in present]
 
     def _one(day):
+        raw = None
+        path = metrics_url(ticker, day)
         try:
-            rec = parse_fn(http_get_bytes(metrics_url(ticker, day)))
-            return (day, rec or None)
-        except Exception:
-            return (day, None)  # missing day or transient; leave a gap (panel handles None)
+            raw = http_get_bytes(path)
+            rec = parse_fn(raw)
+            input_rows = _metrics_input_rows(raw)
+            if not rec:
+                exc = ValueError("metrics archive parsed to an empty record")
+                if archive_root is not None:
+                    archive_response(
+                        root=archive_root,
+                        payload=raw,
+                        source_uri=_HOSTS[0] + path,
+                        provider="Binance Data Vision USD-M futures metrics",
+                        dataset_id="oi_metrics",
+                        instrument_id=ticker,
+                        observed_at_ms=int(observed_at_ms),
+                        representation="HTTP_BODY_BYTES",
+                        parse_diagnostics={
+                            "status": "REJECTED", "input_rows": input_rows,
+                            "accepted_rows": 0,
+                            "rejected_rows": max(1, input_rows),
+                            "duplicate_rows": 0, "event_time_ms": day,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                return (day, None, source_failure_detail(
+                    ticker, exc, kind="QUALITY", day_ms=day, phase="parse"))
+            if archive_root is not None:
+                archive_response(
+                    root=archive_root,
+                    payload=raw,
+                    source_uri=_HOSTS[0] + path,
+                    provider="Binance Data Vision USD-M futures metrics",
+                    dataset_id="oi_metrics",
+                    instrument_id=ticker,
+                    observed_at_ms=int(observed_at_ms),
+                    representation="HTTP_BODY_BYTES",
+                    parse_diagnostics={
+                        "status": "ACCEPTED", "input_rows": input_rows,
+                        "accepted_rows": 1, "rejected_rows": 0,
+                        "duplicate_rows": 0, "event_time_ms": day,
+                    },
+                )
+            return (day, rec, None)
+        except Exception as exc:
+            if archive_root is not None and raw is not None:
+                try:
+                    archive_response(
+                        root=archive_root,
+                        payload=raw,
+                        source_uri=_HOSTS[0] + path,
+                        provider="Binance Data Vision USD-M futures metrics",
+                        dataset_id="oi_metrics",
+                        instrument_id=ticker,
+                        observed_at_ms=int(observed_at_ms),
+                        representation="HTTP_BODY_BYTES",
+                        parse_diagnostics={
+                            "status": "REJECTED",
+                            "input_rows": _metrics_input_rows(raw),
+                            "accepted_rows": 0, "rejected_rows": 1,
+                            "duplicate_rows": 0, "event_time_ms": day,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                except Exception as archive_exc:
+                    exc = archive_exc
+            return (day, None, source_failure_detail(
+                ticker, exc, day_ms=day, phase="fetch"))
 
     out = {}
     if max_workers <= 1:
         for day in days:
-            d, rec = _one(day)
+            d, rec, failure = _one(day)
+            if failure is not None and failure_sink is not None:
+                failure_sink.append(failure)
             if rec:
                 out[d] = rec
             if sleep:
@@ -211,7 +304,9 @@ def fetch_ticker_days(ticker: str, start_ms: int, end_ms: int, present: set, *,
     else:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            for d, rec in ex.map(_one, days):
+            for d, rec, failure in ex.map(_one, days):
+                if failure is not None and failure_sink is not None:
+                    failure_sink.append(failure)
                 if rec:
                     out[d] = rec
     return out
@@ -224,7 +319,9 @@ def _load_cache(path) -> dict:
 
 
 def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
-         parse_fn=parse_metrics_zip, cache_path=_CACHE, snap_path=_SNAP) -> None:
+         parse_fn=parse_metrics_zip, cache_path=_CACHE, snap_path=_SNAP,
+         http_get_bytes=_http_get_bytes, archive_root=None,
+         observed_at_ms=None) -> dict:
     """`bounded=True` probes each ticker's LAST available day (find_end_ms) and stops there — use it
     for DELISTED coins so we don't fetch thousands of post-delisting 404 days. Live coins are unaffected.
     `parse_fn`/`cache_path` select what to extract per day (eod fields vs intraday-derived features) and
@@ -234,43 +331,69 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
     cache = _load_cache(cache_path)
     meta, data = cache.setdefault("_meta", {}), cache.setdefault("data", {})
     now_ms = int(time.time() * 1000)
+    if archive_root is not None and observed_at_ms is None:
+        observed_at_ms = now_ms
     today_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
+    failure_details = []
 
     for ti, ticker in enumerate(tickers):
         sym_days = data.setdefault(ticker, {})
         present = {int(k) for k in sym_days}
         start = meta.get(ticker, {}).get("start")
         if start is None:
-            start = find_start_ms(ticker, now_ms=now_ms)
+            start = find_start_ms(ticker, http_get_bytes=http_get_bytes, now_ms=now_ms)
             if start is None:
                 print(f"[{ti+1}/{len(tickers)}] {ticker}: no metrics archive found")
                 meta[ticker] = {"start": None, "through": None}
+                failure_details.append({
+                    "ticker": ticker, "kind": "NOT_FOUND",
+                    "error_type": "ArchiveNotFound",
+                    "message": "no metrics archive found", "phase": "find_start",
+                })
                 continue
         end_ms = today_ms
         if bounded:  # delisted coin: bound the fetch to its last available day + a small buffer
-            last = find_end_ms(ticker, now_ms=now_ms)
+            last = find_end_ms(ticker, http_get_bytes=http_get_bytes, now_ms=now_ms)
             if last is not None:
                 end_ms = min(today_ms, last + 35 * _DAY_MS)
-        fresh = fetch_ticker_days(ticker, start, end_ms, present, sleep=sleep, parse_fn=parse_fn)
+        fresh = fetch_ticker_days(
+            ticker, start, end_ms, present, sleep=sleep, parse_fn=parse_fn,
+            http_get_bytes=http_get_bytes, failure_sink=failure_details,
+            archive_root=archive_root, observed_at_ms=observed_at_ms)
         for k, v in fresh.items():
             sym_days[str(k)] = v
         all_days = sorted(int(k) for k in sym_days)
         meta[ticker] = {"start": start, "through": all_days[-1] if all_days else None}
-        json.dump(cache, open(cache_path, "w", encoding="utf-8"))  # checkpoint each ticker (resumable)
+        atomic_write_json(cache_path, cache)  # checkpoint each ticker (resumable)
         print(f"[{ti+1}/{len(tickers)}] {ticker}: +{len(fresh)} new, {len(sym_days)} total days"
               f" ({_day_str(all_days[0])}..{_day_str(all_days[-1])})" if all_days else "")
 
     covered = {tk: len(d) for tk, d in data.items() if d}
-    json.dump({"generated_at": int(time.time()), "provider": "Binance Data Vision futures metrics (perp)",
-               "n_tickers": len(covered),
-               "days_per_ticker": covered}, open(snap_path, "w", encoding="utf-8"), indent=2)
+    atomic_write_json(
+        snap_path,
+        {"generated_at": int(time.time()), "provider": "Binance Data Vision futures metrics (perp)",
+         "n_tickers": len(covered), "days_per_ticker": covered},
+        indent=2,
+    )
     print(f"-> wrote {cache_path} ({len(covered)} tickers) and {snap_path}")
+    ordered = sorted(
+        failure_details,
+        key=lambda item: (str(item.get("ticker")), int(item.get("day_ms", -1)),
+                          str(item.get("kind"))),
+    )
+    return {
+        "failure_details": ordered,
+        "failed_tickers": sorted({
+            item["ticker"] for item in ordered if item.get("kind") != "NOT_FOUND"
+        }),
+    }
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args and args[0] == "--intraday":   # pull INTRADAY-derived daily features instead of eod fields
         main(args[1:] or None, parse_fn=parse_metrics_zip_intraday,
-             cache_path=_CACHE_INTRADAY, snap_path=_SNAP_INTRADAY)
+             cache_path=_CACHE_INTRADAY, snap_path=_SNAP_INTRADAY,
+             archive_root=DEFAULT_RAW_ARCHIVE)
     else:
-        main(args or None)
+        main(args or None, archive_root=DEFAULT_RAW_ARCHIVE)

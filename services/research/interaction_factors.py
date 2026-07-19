@@ -111,7 +111,8 @@ def build_interaction_periods(price_store, fund_store, instruments: Sequence[str
         else:                                       # product
             comp = [zA[k] * zB[k] for k in range(len(rows))]
         periods.append(PanelPeriod(instruments=tuple(r[0] for r in rows),
-                                   signals=tuple(comp), forward_returns=tuple(r[3] for r in rows)))
+                                   signals=tuple(comp), forward_returns=tuple(r[3] for r in rows),
+                                   event_time=int(t)))
     return periods
 
 

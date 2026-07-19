@@ -14,12 +14,14 @@ import os
 import time
 
 from services.data.persistent_store import SqlitePITStore
+from services.data.research_adapter import adapt_research_market_data
 from services.intelligence.search_space import HypothesisSpace
-from services.research.session import run_research_session
+from services.intelligence.research_session import run_research_session
+from tools.search_trial_registry import make_search_id
 
 from tools.crypto_research_run import (
     OPERATORS, WINDOWS, FWD_HORIZON, GRANULARITY, DAYS,
-    EVO_GENERATIONS, EVO_POPULATION, EVO_ELITE, _build_factors, _round, _SNAPSHOT_PATH,
+    EVO_GENERATIONS, EVO_POPULATION, EVO_ELITE, _build_factors, _SNAPSHOT_PATH,
 )
 
 _DB_PATH = os.path.join("data", "cache", "crypto.db")
@@ -68,22 +70,50 @@ def regenerate(now_ms: int) -> dict:
     instruments = instruments[:MAX_INSTRUMENTS]
     event_times = event_times[-RECENT_PERIODS:]
 
-    # Phase 3: persist real immutable evaluation artifacts (+ DSR trial count) into the experiment_registry
-    # so the Experiments / EvidenceLedger console pages read REAL recorded evidence, not synthetic. Fresh
-    # each regen for a deterministic snapshot (drop any prior db first).
+    # Phase 3: persist real immutable evaluation artifacts (+ DSR trial count) into a DEDICATED demo
+    # registry so the Experiments / Alpha Zoo console pages read REAL recorded evidence, not synthetic.
+    # Fresh each regen for a deterministic snapshot (drop any prior db first).
+    #
+    # 2026-07-09 (audit P0 fix, "AlphaCatalog governs zero real candidates"): this MUST be a file
+    # distinct from data/cache/experiment_registry.db. That file is the real, durable production
+    # AlphaCatalog (tools/register_alpha_catalog.py registers carry_composite/crowd_contra into it;
+    # services/promotion_api/main.py reads it for actual human promotion decisions) — before
+    # this fix, this function's own os.remove()+rebuild silently wiped ANY real registration the moment
+    # someone re-ran this demo-panel regenerator, with zero warning. Demo/exploration output and the real
+    # production catalog must never share physical storage.
     from services.research.experiment_registry.store import SqliteExperimentStore
     from services.research.experiment_registry.registry import ExperimentRegistry
-    exp_db = os.path.join("data", "cache", "experiment_registry.db")
+    exp_db = os.path.join("data", "cache", "crypto_research_demo_registry.db")
     if os.path.exists(exp_db):
         os.remove(exp_db)
-    registry = ExperimentRegistry(SqliteExperimentStore(exp_db, create=True))
+    experiment_store = SqliteExperimentStore(exp_db, create=True)
+    registry = ExperimentRegistry(experiment_store)
 
     space = HypothesisSpace(factors=("close",), operators=OPERATORS, windows=WINDOWS)
-    result = run_research_session(
-        store, instruments, event_times=event_times, fwd_horizon=FWD_HORIZON,
-        space=space, rounds=1, batch_size=1, timestamp=now_ms, registry=registry,
-        evolutionary=True, evo_generations=EVO_GENERATIONS,
-        evo_population=EVO_POPULATION, evo_elite=EVO_ELITE)
+    research_store = adapt_research_market_data(store)
+    dataset_version = research_store.dataset_version(instruments, event_times)
+    try:
+        result = run_research_session(
+            research_store, instruments, event_times=event_times,
+            fwd_horizon=FWD_HORIZON, space=space, rounds=1, batch_size=1,
+            timestamp=now_ms, dataset_version=dataset_version, registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_research_offline",
+                search_kind="RESEARCH_SESSION_DEMO_EVOLUTIONARY",
+                dataset_version=dataset_version,
+                recorded_at=now_ms,
+                params={
+                    "generations": EVO_GENERATIONS,
+                    "population": EVO_POPULATION,
+                },
+            ),
+            search_kind="RESEARCH_SESSION_DEMO_EVOLUTIONARY",
+            search_source="tools.crypto_research_offline",
+            evolutionary=True, evo_generations=EVO_GENERATIONS,
+            evo_population=EVO_POPULATION, evo_elite=EVO_ELITE,
+        )
+    finally:
+        experiment_store.close()
 
     factors = _build_factors(result["report"])
     factor_series = _factor_series(result, factors)

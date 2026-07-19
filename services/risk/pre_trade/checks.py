@@ -8,10 +8,8 @@ from __future__ import annotations
 import math
 
 from quantos.contracts.rejection import RejectionReason as R
-from quantos.contracts.trading import OrderIntent, OrderSide, OrderType
+from quantos.contracts.trading import OrderSide, OrderType
 
-from .config import RiskLimits
-from .context import RiskContext
 from .kill_switch import KillSwitch
 from quantos.contracts.killswitch import KillSwitchScope
 
@@ -210,6 +208,29 @@ def check_rate_limit(intent, ctx, limits):
     return (R.TURNOVER_LIMIT_EXCEEDED,) if recent >= limits.max_orders_per_window else ()
 
 
+_CANCELED_ORDER_STATUSES = frozenset({"CANCELED", "CANCELLED", "EXPIRED"})
+_KNOWN_ORDER_STATUSES = frozenset({
+    "PENDING_NEW", "NEW", "PARTIALLY_FILLED", "FILLED", "CANCELED", "CANCELLED",
+    "REJECTED", "EXPIRED", "PREVIEW_NOT_SUBMITTED",
+})
+
+
+def check_cancel_rate(intent, ctx, limits):
+    if _is_exposure_reducing(intent, ctx):
+        return ()
+    statuses = tuple(str(status).upper() for status in ctx.recent_order_statuses)
+    if len(statuses) < limits.min_cancel_rate_samples:
+        return ()
+    if any(status not in _KNOWN_ORDER_STATUSES for status in statuses):
+        return (R.TURNOVER_LIMIT_EXCEEDED,)
+    canceled = sum(1 for status in statuses if status in _CANCELED_ORDER_STATUSES)
+    return (
+        (R.TURNOVER_LIMIT_EXCEEDED,)
+        if canceled / len(statuses) > limits.max_cancel_rate
+        else ()
+    )
+
+
 def check_liquidity(intent, ctx, limits):
     # reduce-only 豁免:证明为纯降敞口的单永远应能过(退出/去风险),不被流动性 fail-closed 挡——见
     # _is_exposure_reducing。无仓/加仓/翻仓不豁免,故对既有空仓 caller 字节等价。
@@ -253,6 +274,7 @@ CHECK_REGISTRY = (
     ("drawdown", "B", check_drawdown),
     ("turnover", "B", check_turnover),
     ("rate_limit", "B", check_rate_limit),
+    ("cancel_rate", "B", check_cancel_rate),
     ("liquidity", "B", check_liquidity),
     ("volatility", "B", check_volatility),
 )

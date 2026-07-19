@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 import services.research.alpha_expression as ax
 from services.research.alpha_factory import run_alpha_factory
@@ -20,6 +21,11 @@ from services.research.backtest_engine.metrics import sharpe, generalization_gap
 from services.research.oos_validation import walk_forward_selection_oos
 
 from tools.crypto_oi_research import build_panel, CARRY
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
 FIELDS = ("close", "volume", "funding", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
@@ -29,10 +35,32 @@ GEN, POP, ELITE = 5, 32, 8
 _OUT = os.path.join("data", "cache", "crypto_factory_overfit_ab.json")
 
 
-def _arm(panel, basis, lam):
-    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=GEN, population_size=POP,
-                            elite_k=ELITE, quantile=QUANTILE, basis_returns=basis, basis_min_overlap=200,
-                            overfit_lambda=lam, dataset_version="ab", timestamp=0)
+def _arm(panel, basis, lam, *, dataset_version, recorded_at):
+    with production_experiment_registry() as registry:
+        out = run_alpha_factory(
+            panel,
+            list(FIELDS),
+            list(WINDOWS),
+            generations=GEN,
+            population_size=POP,
+            elite_k=ELITE,
+            quantile=QUANTILE,
+            basis_returns=basis,
+            basis_min_overlap=200,
+            overfit_lambda=lam,
+            dataset_version=dataset_version,
+            timestamp=recorded_at,
+            search_registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_factory_overfit_ab",
+                search_kind="ALPHA_FACTORY_OVERFIT_AB",
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                params={"overfit_lambda": lam},
+            ),
+            search_kind="ALPHA_FACTORY_OVERFIT_AB",
+            search_source="tools.crypto_factory_overfit_ab",
+        )
     rows, streams = [], dict(basis)
     for b in out["best"][:5]:
         expr = ax.deserialize(b["expr"]) if isinstance(b.get("expr"), str) else None
@@ -52,14 +80,28 @@ def _arm(panel, basis, lam):
 
 
 def main() -> None:
+    recorded_at = time.time_ns() // 1_000_000
     panel, instruments = build_panel()
+    dataset_version = field_panel_dataset_version(panel)
     basis = {"carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
              "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
     print(f"=== overfit-penalty A/B on real orthogonal search ({len(instruments)} coins, {len(FIELDS)} dims) ===")
     print(f"basis: carry SR {sharpe(basis['carry']):.2f}, crowd_contra SR {sharpe(basis['crowd_contra']):.2f}\n")
 
-    base = _arm(panel, basis, 0.0)
-    pen = _arm(panel, basis, 0.5)
+    base = _arm(
+        panel,
+        basis,
+        0.0,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+    )
+    pen = _arm(
+        panel,
+        basis,
+        0.5,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at + 1,
+    )
 
     for label, arm in (("overfit_lambda=0.0 (baseline)", base), ("overfit_lambda=0.5 (anti-overfit)", pen)):
         print(f"--- {label}: n_evaluated={arm['n_evaluated']}, "

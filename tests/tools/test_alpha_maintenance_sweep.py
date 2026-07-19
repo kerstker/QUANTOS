@@ -4,13 +4,20 @@
 import json
 
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
+from quantos.contracts.events import EVENT_ALPHA_MAINTENANCE_TRANSITION
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.lifecycle import AlphaLifecycleManager
+from services.alpha.maintenance_store import MaintenanceStore
+from services.monitoring.event_bus import DurableEventBus
 from services.research.paper_trading.store import PaperTrackStore
 
-from tools.alpha_maintenance_sweep import build_status_snapshot, run_sweep
+from tools.alpha_maintenance_sweep import (
+    build_status_snapshot,
+    build_status_snapshot_with_events,
+    run_sweep,
+)
 
 AGENT = Actor(actor_id="alpha_maintenance_sweep", kind=ActorKind.AGENT)
 
@@ -35,6 +42,32 @@ def test_snapshot_marks_degraded_strategy_and_counts_action():
     assert snap["actor_kind"] == "AGENT"                 # non-human
     assert set(snap) >= {"schema_version", "generated_at", "actor_kind",
                          "data_provenance", "strategies", "n_actions"}
+
+
+def test_snapshot_publishes_alpha_transition_with_causal_metadata():
+    mgr = _mgr({"crowd_contra": AlphaState.APPROVED})
+    snap, events = build_status_snapshot_with_events(
+        mgr,
+        AGENT,
+        timestamp=1000,
+        health_by_alpha={
+            "crowd_contra": {
+                "backtest": {"ic": 0.04, "return": 0.10},
+                "live": {"ic": 0.005, "return": 0.02},
+            }
+        },
+    )
+    assert snap["n_actions"] == 1
+    assert len(events) == 1
+    event = events[0]
+    assert event.event_type == EVENT_ALPHA_MAINTENANCE_TRANSITION
+    assert event.payload["action"] == "DEGRADED"
+    assert event.payload["actor_id"] == "alpha_maintenance_sweep"
+    assert event.payload["alpha_id"] == "crowd_contra"
+    assert {reason["metric"] for reason in event.payload["reasons"]} == {
+        "ic_retention",
+        "return",
+    }
 
 
 def test_snapshot_no_evidence_is_zero_action():
@@ -72,6 +105,32 @@ def test_run_sweep_end_to_end_degrades_from_real_paper_track(tmp_path):
     written = json.load(open(out, encoding="utf-8"))
     assert written["strategies"]["crowd_contra"]["state"] == "DEGRADED"
     assert written["actor_kind"] == "AGENT"
+    store = MaintenanceStore(str(tmp_path / "alpha_maintenance.db"), create=False)
+    assert store.latest_snapshot() == written
+    assert len(store.pending_event_outbox()) == 1
+
+
+def test_run_sweep_dispatches_transactional_outbox_when_bus_is_available(tmp_path):
+    db = str(tmp_path / "paper_track.db")
+    refs = str(tmp_path / "refs.json")
+    out = str(tmp_path / "status.json")
+    maintenance_db = str(tmp_path / "maintenance.db")
+    _seed_paper_track(db, "crowd_contra", ic=0.005, per_return=0.001, n=12)
+    json.dump({"crowd_contra": {"ic": 0.04, "return": 0.10}}, open(refs, "w"))
+    bus = DurableEventBus(":memory:")
+
+    run_sweep(
+        now=2100,
+        paper_track_db=db,
+        backtest_refs=refs,
+        out=out,
+        maintenance_db=maintenance_db,
+        event_bus=bus,
+    )
+
+    store = MaintenanceStore(maintenance_db, create=False)
+    assert store.pending_event_outbox() == ()
+    assert len(bus.records(correlation_id="alpha-maintenance:2100")) == 1
 
 
 def test_run_sweep_no_backtest_refs_is_failclosed_noop(tmp_path):

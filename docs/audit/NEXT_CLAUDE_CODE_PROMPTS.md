@@ -57,8 +57,8 @@
 读 docs/audit/RISK_REGISTER.md 的 P1-8/P2-2/P3-4。TDD 完成:
 1. 喂承重决策(前向证据钟、可部署 book)的单标的抓取器统一开 strict=True;前向兑现前加一道质量门,
    不过 fail-closed 留 pending 并告警。先验证开 strict 不破坏现有数据刷新(分抓取器灰度)。
-2. 把 services/data/quality.py::check_volume_units 接进多标的接入后的批量校验;修正 crypto_daily.db
-   volume 单位或在消费端强制该门;修好前禁止用该库出容量结论。
+2. [2026-07-13 已完成] volume 根因是 quote USD volume 在 scenario 容量端二次乘价；已用显式
+   `VolumeUnit/VolumeSemantics` + quote-notional helper 修复，极差检查更正为 dispersion guard。
 3. AlphaAssetRegistry 落 sqlite 持久化;在进化/cs_genome/gp 育种处调用 make_child_asset 记
    parent_ids/mutation_op,落持久注册表。测试:AlphaAsset 磁盘往返一致;育种子代带非空谱系。
 
@@ -89,7 +89,7 @@
 1. 接入真实逐标的 ADV/已实现波动喂 MarketContext,gate_limits 的 max_participation_rate/
    max_instrument_vol 设校准值,让 check_liquidity/check_volatility 在 live 承重。
 2. OMS/EMS 强化:主备连接/断线重连/交易日切换;撤单/改单完整;Bybit 真实联调收口(等 key)。
-3. 实盘新鲜度门按调仓频率收紧;用 venue book_ticker 同点跨源核价替代滞后决策价对比。
+3. 同点跨源核价已于 2026-07-13 完成：venue midpoint/CoinGecko 均用源时间戳，缺失或陈旧冻结且无 decided_ts 跳过。剩余只在用户确认 cadence 后收紧 7 天实盘新鲜度门，并积累 testnet/demo 观测校准 5%/5 分钟工程阈值。
 4. 紧急减仓对抗式属性/网格测试:证明任意(持仓,订单)输入下 submit_emergency_flatten 只减不增敞口。
 
 约束:见"通用约束"。触碰订单执行路径——每步过全量门禁 + testnet 联调,绝不在 mainnet 验证。
@@ -132,8 +132,9 @@
 ```
 读 docs/PHASE_14_PROCESS_ISOLATION.md、services/governance/signing.py、docs/audit/RISK_REGISTER.md 的 P0-1/P0-2。
 这是通往真钱的最后结构性前置,涉及大量人工签署环节——凡需人工决定的一律停下来交给用户,不代替。TDD 完成:
-1. 实现真 SigningAuthority(独立进程签发/验证 SignedDecisionRef);把 verify_signed_ref 接进 live 执行
-   路径与 kill-switch reset;promotion_api 的 X-Operator 升为认证身份。
+1. promotion_api 的 OIDC+mTLS+MFA+RBAC 与浏览器 PKCE S256 M2 身份边界已落地；继续部署外部 IdP/TLS、密钥轮换及身份生命周期，
+   实现真 SigningAuthority(独立进程签发/验证 SignedDecisionRef)，把 verify_signed_ref 接进 live 执行
+   路径与 kill-switch reset。
 2. mandate 密码学完整性:加载校验 detached 签名;agent 环境结构性无 key/ 写权限。
 3. 进程/部署隔离:mutating 决策与研究/agent 进程隔离。
 测试:进程内伪造 is_out_of_process=True 的权威仍验不过;篡改/无签名 mandate 被拒。

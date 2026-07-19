@@ -17,8 +17,8 @@ from __future__ import annotations
 import statistics
 from typing import Mapping, Optional, Sequence
 
-from services.research.backtest_engine.metrics import sharpe
-from services.research.validation.walk_forward import walk_forward_splits
+from services.validation.performance import sharpe
+from services.validation.walk_forward import walk_forward_splits
 
 
 def _slice(series: Sequence[float], idx: Sequence[int]) -> list[float]:

@@ -14,10 +14,10 @@ relying only on the post-hoc CPCV/no-peek-OOS gate to catch selection overfit la
 from __future__ import annotations
 
 from quantos.contracts.research import ValidationVerdict
-# generalization_gap lives with the other return-stream metrics (research/backtest_engine/metrics) so BOTH
+# generalization_gap lives with domain-neutral validation metrics so both
 # search engines — intelligence (here) and research/alpha_factory — share one impl without a circular import.
 # Re-exported here for the existing call sites (evolutionary_search + tests import it from reward).
-from services.research.backtest_engine.metrics import generalization_gap  # noqa: F401
+from services.validation.performance import generalization_gap  # noqa: F401
 
 _VERDICT_BONUS = {ValidationVerdict.PASS: 1.0, ValidationVerdict.WARN: 0.5}
 

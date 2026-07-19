@@ -1,6 +1,7 @@
 """CoinGecko market_chart volume fetcher — fully offline (injected http_get stub, no network)."""
 import pytest
-from tools.coingecko_volume_fetch import parse_market_chart, fetch_volume_rows
+from quantos.contracts.data import VolumeSemantics, VolumeUnit
+from tools.coingecko_volume_fetch import MC_SPEC, fetch_volume_rows, parse_market_chart
 
 
 # hour-aligned timestamps (multiples of 3_600_000) so bucketing is identity here
@@ -15,6 +16,11 @@ def test_parse_market_chart_maps_real_volume():
     assert rows[0]["instrument_id"] == "BTC" and rows[0]["close"] == 100.0
     assert rows[0]["volume"] == 1e9                        # REAL 24h volume carried through
     assert rows[0]["event_time"] == _T0                    # snapped to the hourly grid (lag 0)
+
+
+def test_market_chart_declares_quote_usd_rolling_volume_semantics():
+    assert MC_SPEC.volume_unit == VolumeUnit.QUOTE_USD
+    assert MC_SPEC.volume_semantics == VolumeSemantics.ROLLING_24H
 
 
 def test_offset_stamps_snap_to_common_grid():

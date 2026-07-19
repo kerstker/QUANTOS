@@ -33,6 +33,13 @@ def test_missing_strategy_rejects():
     assert r == "no_validation_attestation:crowd_contra"
 
 
+def test_attestation_object_for_different_strategy_rejects():
+    att = _override("other")
+    assert require_validation_attestation(
+        "crowd_contra", {"crowd_contra": att}
+    ) == "attestation_strategy_mismatch:other:crowd_contra"
+
+
 def test_valid_human_override_passes():
     assert require_validation_attestation("crowd_contra", {"crowd_contra": _override()}) is None
 

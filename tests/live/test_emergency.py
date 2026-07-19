@@ -1,5 +1,5 @@
 """live/execution/emergency.py —— 紧急减仓独立通道(2026-07-05,用户拍板"独立紧急通道")。
-设计:docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §②。
+设计:docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §②。
 
 关键性质:
 ① 结构上只可能减少敞口——方向必须与持仓相反、数量 ≤ |持仓|(减到零可以,反向开仓绝对不行)、
@@ -22,7 +22,7 @@ from quantos.contracts.trading import OrderSide
 from services.monitoring.audit_log import GlobalAuditLog
 from services.risk.pre_trade.kill_switch import KillSwitch
 
-from test_pipeline import _PRICES, _FakeVenue, _ExplodingFiltersVenue, _LedgerThatBreaksOn
+from .test_pipeline import _PRICES, _FakeVenue, _ExplodingFiltersVenue, _LedgerThatBreaksOn
 
 _NOW = 1_700_000_000_000
 

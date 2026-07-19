@@ -22,11 +22,15 @@ from services.research.alpha_factory import run_alpha_factory
 from services.research.carry_pnl import economic_return_series
 from services.research.backtest_engine.metrics import sharpe
 from services.research.expression_leakage import compute_leakage_ok
-from services.research.oos_validation import walk_forward_selection_oos
 from services.alpha.orthogonalize import orthogonalize
 
 from tools.crypto_oi_research import build_panel, CARRY, INTRADAY_FIELDS
 from tools.crypto_oi_verify import _streams, _per_year
+from tools.search_trial_registry import (
+    field_panel_dataset_version,
+    make_search_id,
+    production_experiment_registry,
+)
 
 CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
 TOP_LS_EDGE = ("cs_rank", ("sign", ("cs_rank", ("field", "top_ls"))))   # the loop's only survivor
@@ -69,7 +73,9 @@ def _nodes(t, path=()):
 
 
 def main() -> None:
+    recorded_at = time.time_ns() // 1_000_000
     panel, instruments = build_panel(add_basis=True, add_intraday=True)
+    dataset_version = field_panel_dataset_version(panel)
     have_intraday = [f for f in INTRADAY_FIELDS if f in panel.matrices]
     print(f"=== intraday-dimension orthogonal discovery ({len(instruments)} coins, {len(FIELDS)} dims) ===")
     print(f"intraday fields present: {have_intraday}")
@@ -77,9 +83,30 @@ def main() -> None:
              "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE),
              "top_ls_edge": economic_return_series(ax.evaluate(TOP_LS_EDGE, panel), panel, quantile=QUANTILE)}
 
-    out = run_alpha_factory(panel, list(FIELDS), list(WINDOWS), generations=8, population_size=64,
-                            elite_k=18, quantile=QUANTILE, basis_returns=known, basis_min_overlap=200,
-                            dataset_version="intraday", timestamp=0)
+    with production_experiment_registry() as registry:
+        out = run_alpha_factory(
+            panel,
+            list(FIELDS),
+            list(WINDOWS),
+            generations=8,
+            population_size=64,
+            elite_k=18,
+            quantile=QUANTILE,
+            basis_returns=known,
+            basis_min_overlap=200,
+            dataset_version=dataset_version,
+            timestamp=recorded_at,
+            search_registry=registry,
+            search_id=make_search_id(
+                source="tools.crypto_factory_intraday",
+                search_kind="ALPHA_FACTORY_INTRADAY",
+                dataset_version=dataset_version,
+                recorded_at=recorded_at,
+                params={"generations": 8, "population": 64},
+            ),
+            search_kind="ALPHA_FACTORY_INTRADAY",
+            search_source="tools.crypto_factory_intraday",
+        )
     print(f"engine evaluated {out['n_evaluated']} alphas over 15 dims")
 
     rows, intraday_survivors = [], []

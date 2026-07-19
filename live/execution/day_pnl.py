@@ -1,5 +1,5 @@
 """日内盈亏跟踪(2026-07-05,机构审计 P1)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md 补充。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md 补充。
 
 纯函数、无 IO(状态的文件读写在调用方边界完成,与 `_load_peak_equity`/`_save_peak_equity`
 同款模式)。`check_daily_loss` 门需要真实 day_pnl 才能生效——此前恒 0.0 意味着日内止损

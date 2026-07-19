@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
@@ -7,6 +7,17 @@ import { signed, fixed } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchLifecycleMonitorSnapshot } from '@/lib/api/research-console-api';
 import type { LifecycleMonitorPayload, LifecycleRow } from '@/lib/types/research';
+import { PaperTrackDetail } from './_shared/PaperTrackDetail';
+
+/** 2026-07-09 从已并入本页的独立页 PaperTrading.tsx 迁移而来:该页原来用不对应真实 ID 的通用
+ * "alpha-N" 马甲展示这 4 个真实 alpha 的纸面回放,核实后确认它们就是本页这张真实表格里的 4 行——
+ * 现在按行钻取,不再用马甲 ID,消除"同一批 alpha 在两个页面套两套 ID"的用户困惑。 */
+const PAPER_TRACK_SLOT: Record<string, string> = {
+  h_zscore_3: 'alpha-1',
+  h_zscore_5: 'alpha-2',
+  'hx_sum_price-zscore-3_price-momentum-10': 'alpha-3',
+  'hx_sum_price-zscore-3_price-dist_from_high-10': 'alpha-4',
+};
 
 /**
  * Alpha Lifecycle Monitor (Phase 6 surface). Reads the REAL experiment_registry: each alpha's lifecycle
@@ -47,6 +58,7 @@ export default function LifecycleMonitor() {
   const rows: LifecycleRow[] = usingBackend ? payload!.rows : mockRows;
   const summary = usingBackend ? payload!.summary : mockPayload;
   const stateEntries = Object.entries(summary.state_counts).sort((a, b) => b[1] - a[1]);
+  const [paperDetailAlphaId, setPaperDetailAlphaId] = useState<string | null>(null);
 
   const cols: Column<LifecycleRow>[] = [
     { key: 'alpha', header: bi('因子', 'Alpha'), render: r => <span className="mono text-ink">{r.alpha_id}</span> },
@@ -69,6 +81,18 @@ export default function LifecycleMonitor() {
           {r.live_ic === null ? '—' : signed(r.live_ic, 3)}
         </span>) },
     { key: 'rec', header: bi('建议', 'Recommendation'), render: r => <StatusChip value={r.recommendation} /> },
+    { key: 'paper_track', header: bi('纸面轨迹', 'Paper Track'), render: r => {
+      const slot = PAPER_TRACK_SLOT[r.alpha_id];
+      if (!slot) return <span className="text-faint">—</span>;
+      const active = paperDetailAlphaId === slot;
+      return (
+        <button onClick={() => setPaperDetailAlphaId(active ? null : slot)}
+          className={`rounded-md border px-2 py-0.5 text-2xs transition ${
+            active ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-ink'}`}>
+          {active ? bi('收起', 'hide') : bi('查看', 'view')}
+        </button>
+      );
+    } },
   ];
 
   return (
@@ -138,6 +162,13 @@ export default function LifecycleMonitor() {
           <DataTable columns={cols} rows={rows} getKey={r => r.alpha_id} />
         </Panel>
       </div>
+
+      {paperDetailAlphaId && (
+        <Panel eyebrow={bi('纸面回放钻取', 'Paper-Track Drill-Down')}
+          title={bi(`${paperDetailAlphaId} 的纸面回放详情`, `Paper-replay detail for ${paperDetailAlphaId}`)}>
+          <PaperTrackDetail alphaId={paperDetailAlphaId} />
+        </Panel>
+      )}
     </PageShell>
   );
 }

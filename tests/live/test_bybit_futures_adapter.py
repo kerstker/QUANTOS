@@ -1,5 +1,5 @@
 """BybitFuturesAdapter(live/exchange/bybit_futures.py):V5 统一账户签名 REST 客户端。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §3.3 延伸(§10 Bybit 补充)。
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.3 延伸(§10 Bybit 补充)。
 
 全部注入假 http transport——零真网络。诚实标注:响应字段名/端点路径依 Bybit V5 公开文档研究
 假设,**尚未对真测试网响应验证**(与 binance_futures.py 首版同样的诚实边界;这次带着"同步 ACK
@@ -376,14 +376,96 @@ def test_sync_clock_applies_offset_to_subsequent_signed_requests():
     })
     offset = c.sync_clock()
     assert offset == 10_000
+    assert c.last_clock_sync_ok is True
+    assert c.last_clock_sync_error is None
     c.account()
     assert t.calls[-1]["headers"]["X-BAPI-TIMESTAMP"] == "1700000010000"
 
 
 def test_sync_clock_failure_is_fail_soft_keeps_prior_offset():
-    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})})
+    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})},
+                   sleep=lambda s: None)
     offset = c.sync_clock()
     assert offset == 0
+
+
+# --- 2026-07-09 硬化(诊断 docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md §4):
+# sync_clock 失败此前被裸 except 完全吞掉、运维两眼一抹黑,只能等下一层签名请求被交易所拒
+# (retCode 10002 时间戳偏差)才后知后觉。现在:失败可见(last_clock_sync_ok/last_clock_sync_error)
+# + 失败后短间隔重试一次,仍失败才 fail-soft 保留旧偏移(不抛异常、不改变整体设计哲学)。
+
+def test_last_clock_sync_ok_initially_none_before_first_sync():
+    c, _ = _client()
+    assert c.last_clock_sync_ok is None
+    assert c.last_clock_sync_error is None
+
+
+def test_sync_clock_failure_sets_visible_failure_flag_and_reason():
+    c, _ = _client({"/v5/market/time": (500, {"retCode": 0, "retMsg": "unavailable"})},
+                   sleep=lambda s: None)
+    c.sync_clock()
+    assert c.last_clock_sync_ok is False
+    assert c.last_clock_sync_error is not None and "500" in c.last_clock_sync_error
+
+
+def test_sync_clock_retries_once_after_failure_then_succeeds():
+    sleeps = []
+    resp = {"/v5/market/time": [
+        (500, {"retCode": 0, "retMsg": "unavailable"}),
+        (200, {"retCode": 0, "retMsg": "OK", "result": {}, "time": 1_700_000_005_000}),
+    ]}
+    c, t = _client(resp, sleep=sleeps.append)
+    offset = c.sync_clock()
+    assert offset == 5_000
+    assert c.last_clock_sync_ok is True
+    assert c.last_clock_sync_error is None
+    assert len(t.calls) == 2                      # 首次失败 + 重试各打一次 /v5/market/time
+    assert len(sleeps) == 1                        # 只重试一次,短间隔非长 sleep/复杂退避框架
+
+
+def test_sync_clock_two_consecutive_failures_stays_fail_soft_and_does_not_raise():
+    resp = {"/v5/market/time": [
+        (500, {"retCode": 0, "retMsg": "unavailable"}),
+        (500, {"retCode": 0, "retMsg": "still unavailable"}),
+    ]}
+    c, t = _client(resp, sleep=lambda s: None)
+    offset = c.sync_clock()                        # 不抛异常
+    assert offset == 0
+    assert c.last_clock_sync_ok is False
+    assert c.last_clock_sync_error is not None
+    assert len(t.calls) == 2
+
+
+def test_sync_clock_failure_after_prior_success_keeps_prior_nonzero_offset():
+    responses = {"/v5/market/time": (200, {"retCode": 0, "retMsg": "OK", "result": {},
+                                           "time": 1_700_000_010_000})}
+    c, t = _client(responses, sleep=lambda s: None)
+    first = c.sync_clock()
+    assert first == 10_000
+    # 模拟之后网络持续抖动(两次尝试都失败)——旧的非零偏移必须原样保留,不被重置为 0
+    t.responses["/v5/market/time"] = [
+        (500, {"retCode": 0, "retMsg": "down"}),
+        (500, {"retCode": 0, "retMsg": "down"}),
+    ]
+    t._path_counts["/v5/market/time"] = 0
+    second = c.sync_clock()
+    assert second == 10_000
+    assert c.last_clock_sync_ok is False
+
+
+def test_sync_clock_transport_exception_is_caught_and_recorded():
+    # 真实根因场景之一:传输层直接抛异常(超时/连接失败),不是 HTTP 状态错误
+    def bad_transport(method, url, *, body=None, headers=None):
+        if "/v5/market/time" in url:
+            raise ConnectionError("boom")
+        return 200, b'{"retCode":0,"retMsg":"OK","result":{},"time":0}'
+    c = BybitFuturesAdapter(api_key=_KEY, api_secret=_SECRET, base_url=BybitFuturesAdapter.TESTNET_BASE,
+                            http_request=bad_transport, clock=lambda: 1_700_000_000.0,
+                            sleep=lambda s: None)
+    offset = c.sync_clock()
+    assert offset == 0
+    assert c.last_clock_sync_ok is False
+    assert "ConnectionError" in c.last_clock_sync_error
 
 
 def _order(inst, side, qty, cid):
@@ -482,9 +564,20 @@ def test_bybit_book_ticker_envelope():
         "time": 1700000000000}
     c, t = _client({"/v5/market/tickers": (200, resp)})
     book = c.book_ticker("BTC")
-    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20)}
+    assert book == {"bid": pytest.approx(59990.10), "ask": pytest.approx(60010.20),
+                    "as_of_ms": 1700000000000}
     headers = t.calls[0]["headers"] or {}
     assert "X-BAPI-SIGN" not in headers                # 公开端点,不签名
+
+
+def test_bybit_book_ticker_without_source_time_remains_usable_for_limit_anchor():
+    resp = {"retCode": 0, "retMsg": "OK", "result": {"list": [
+        {"symbol": "BTCUSDT", "bid1Price": "59990.10", "ask1Price": "60010.20"}]}}
+    c, _ = _client({"/v5/market/tickers": (200, resp)})
+    assert c.book_ticker("BTC") == {
+        "bid": pytest.approx(59990.10),
+        "ask": pytest.approx(60010.20),
+    }
 
 
 def test_bybit_book_ticker_nonzero_retcode_fails_soft_returns_none():

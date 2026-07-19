@@ -1,0 +1,1316 @@
+{
+  "canonical_latest_timestamp_unit": "unix_epoch_microseconds",
+  "event_type_count": 12,
+  "implementation_sha256": {
+    "quantos/contracts/event_schemas.py": "8951b7c9e8ade5471f411f467bf8d1acd62f419ba73b3eb2a79912695f107efa",
+    "quantos/contracts/events.py": "7460c157d3ea07bd47a860759f43c541f91367b1e36b2657c2d3d9fce520acd7",
+    "scripts/generate_event_schema_catalog.py": "2954466b6535522c058da77a54465a9951a456c59992e1fdddec35e23e66017b",
+    "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
+    "services/alpha/maintenance_events.py": "af29de4ea9f4bfbc1dea65d200f25449eb3d09fc057d9973f0fe5b30052e5217",
+    "services/console/api/system_views.py": "07ad5ff4f44f961c472a452735b418de9e0cd0a2dabd66bb66122782d84498de",
+    "services/data/admission_store.py": "56cf672826e7a9318c419552a5ed7387aed6a6ee56d77e81c016a6278178acaa",
+    "services/data/events.py": "61e7e140c6dcab0afeb9efcaabf7ab769e67e797b5644d5d4155a11d1def4804",
+    "services/data/refresh_history.py": "ca8bb6e0755c7041c61e4062dad3cd0ee2799dbe89a065717c6e72febd01c816",
+    "services/deployment/events.py": "51e27421aa686669cbf7c0aab9372847ac900c0023a678df3a1f477903f8d4c6",
+    "services/deployment/runtime.py": "be1cb970ae6867226067fe7f5595aa3ac75469d27d2b173b84a85775ef102adc",
+    "services/deployment/store.py": "aa4be3d957680063ee9968870c9380b0c557bb03ae875bf03a50f2975be1519f",
+    "services/execution/dry_run_store.py": "1ab72d9a9a0a9711144b3f75860d8495d38d3604ac7e59a0b648f2769b6d914b",
+    "services/execution/events.py": "8a7d63b2138e092d8e9a87c4eb315c8759c6774a943e044254ee5bf0b8ae1625",
+    "services/monitoring/domain_event_runtime.py": "37c16cdd3071e37243b9b6f48518177f3045cc25afac9c0ba1dca204fa18e566",
+    "services/monitoring/event_health.py": "7848de9e1ecc49248a5ba2b6a0e2fcbd8107e212a40be35b006b9e80d051a954",
+    "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
+    "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
+    "services/risk/research_risk/events.py": "f2fd56be0a9dc60b0306895ef7c76c2f09051e7acb76a92918c925d96a95d575",
+    "tools/data_quality_admission.py": "2dc0f0f8516695c1014a32b7e6ae0b25fc99e02b5ebfeeae15f823281960aa6b"
+  },
+  "latest_consumer_versions": {
+    "data.market.refresh.recorded": "1.0.0",
+    "data.quality.admission.decided": "1.0.0",
+    "execution.dry_run.completed": "1.1.0",
+    "execution.dry_run.started": "1.0.0",
+    "governance.deployment.recorded": "1.1.0",
+    "research.alpha.maintenance.transition": "1.0.0",
+    "research.alpha.promoted": "1.1.0",
+    "research.risk.dry_run.evaluated": "1.0.0",
+    "trading.risk.killswitch.activated": "1.1.0",
+    "trading.risk.killswitch.reset": "1.1.0",
+    "trading.risk.pretrade.approved": "1.0.0",
+    "trading.risk.pretrade.rejected": "1.0.0"
+  },
+  "latest_timestamp_units_all_canonical": true,
+  "legacy_timestamp_unit_versions": [
+    {
+      "event_type": "governance.deployment.recorded",
+      "timestamp_unit": "unix_epoch_milliseconds",
+      "version": "1.0.0"
+    },
+    {
+      "event_type": "research.alpha.promoted",
+      "timestamp_unit": "unix_epoch_milliseconds",
+      "version": "1.0.0"
+    },
+    {
+      "event_type": "trading.risk.killswitch.activated",
+      "timestamp_unit": "unix_epoch_milliseconds",
+      "version": "1.0.0"
+    },
+    {
+      "event_type": "trading.risk.killswitch.reset",
+      "timestamp_unit": "unix_epoch_milliseconds",
+      "version": "1.0.0"
+    }
+  ],
+  "mode": "VERSIONED_CANONICAL_EVENT_SCHEMA_CATALOG",
+  "schema_definition_count": 17,
+  "schema_version": 1,
+  "schemas": {
+    "data.market.refresh.recorded": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C1",
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "duration_ms": {
+                "minimum": 0,
+                "title": "Duration Ms",
+                "type": "integer"
+              },
+              "failed_instrument_count": {
+                "minimum": 0,
+                "title": "Failed Instrument Count",
+                "type": "integer"
+              },
+              "failed_source_count": {
+                "minimum": 0,
+                "title": "Failed Source Count",
+                "type": "integer"
+              },
+              "history_entry_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "History Entry Hash",
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "PASS",
+                  "FAILED"
+                ],
+                "title": "Outcome",
+                "type": "string"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "source_count": {
+                "minimum": 0,
+                "title": "Source Count",
+                "type": "integer"
+              },
+              "status_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Status Hash",
+                "type": "string"
+              }
+            },
+            "required": [
+              "duration_ms",
+              "failed_instrument_count",
+              "failed_source_count",
+              "history_entry_hash",
+              "outcome",
+              "run_id",
+              "source_count",
+              "status_hash"
+            ],
+            "title": "_DataRefreshRecordedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "247f38dcf9e4df5e5c9862b3ff49b8f697f0ba60ff1f79b4f8599cea6a4ef785",
+          "sources": [
+            "services.data.refresh_history"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "data",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "data.quality.admission.decided": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C1",
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "admission_id": {
+                "minLength": 1,
+                "title": "Admission Id",
+                "type": "string"
+              },
+              "block_reason_count": {
+                "minimum": 0,
+                "title": "Block Reason Count",
+                "type": "integer"
+              },
+              "decision_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Decision Hash",
+                "type": "string"
+              },
+              "evidence_schema_version": {
+                "minimum": 1,
+                "title": "Evidence Schema Version",
+                "type": "integer"
+              },
+              "evidence_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Evidence Sha256",
+                "type": "string"
+              },
+              "instrument_count": {
+                "minimum": 1,
+                "title": "Instrument Count",
+                "type": "integer"
+              },
+              "lineage_verdict": {
+                "enum": [
+                  "PASS",
+                  "BLOCK"
+                ],
+                "title": "Lineage Verdict",
+                "type": "string"
+              },
+              "price_basis": {
+                "minLength": 1,
+                "title": "Price Basis",
+                "type": "string"
+              },
+              "purpose": {
+                "const": "FORWARD_EVIDENCE_DATA_ADMISSION",
+                "title": "Purpose",
+                "type": "string"
+              },
+              "quality_verdict": {
+                "enum": [
+                  "PASS",
+                  "BLOCK"
+                ],
+                "title": "Quality Verdict",
+                "type": "string"
+              },
+              "readiness": {
+                "const": "L2_DRY_RUN_ONLY",
+                "title": "Readiness",
+                "type": "string"
+              },
+              "verdict": {
+                "enum": [
+                  "PASS",
+                  "BLOCK"
+                ],
+                "title": "Verdict",
+                "type": "string"
+              }
+            },
+            "required": [
+              "admission_id",
+              "block_reason_count",
+              "decision_hash",
+              "evidence_schema_version",
+              "evidence_sha256",
+              "instrument_count",
+              "lineage_verdict",
+              "price_basis",
+              "purpose",
+              "quality_verdict",
+              "readiness",
+              "verdict"
+            ],
+            "title": "_DataQualityAdmissionDecidedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "9204b8fd0163cc5c83a873401da6d1d3e303a897df20eb49a3897bc3de98913d",
+          "sources": [
+            "services.data.admission_store"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "data",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "execution.dry_run.completed": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "audit_root": {
+                "title": "Audit Root",
+                "type": "string"
+              },
+              "n_approved": {
+                "minimum": 0,
+                "title": "N Approved",
+                "type": "integer"
+              },
+              "n_fills": {
+                "minimum": 0,
+                "title": "N Fills",
+                "type": "integer"
+              },
+              "n_intents": {
+                "minimum": 0,
+                "title": "N Intents",
+                "type": "integer"
+              },
+              "n_rejected": {
+                "minimum": 0,
+                "title": "N Rejected",
+                "type": "integer"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "audit_root",
+              "n_approved",
+              "n_fills",
+              "n_intents",
+              "n_rejected",
+              "run_id",
+              "strategy_id"
+            ],
+            "title": "_DryRunCompletedV1Payload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "84fc832019064fd9b15de069dee4f93544f8438e66387eb7535ee9b121e5a5eb",
+          "sources": [
+            "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        },
+        {
+          "compatible_consumer_versions": [
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "audit_root": {
+                "title": "Audit Root",
+                "type": "string"
+              },
+              "n_approved": {
+                "minimum": 0,
+                "title": "N Approved",
+                "type": "integer"
+              },
+              "n_fills": {
+                "minimum": 0,
+                "title": "N Fills",
+                "type": "integer"
+              },
+              "n_intents": {
+                "minimum": 0,
+                "title": "N Intents",
+                "type": "integer"
+              },
+              "n_rejected": {
+                "minimum": 0,
+                "title": "N Rejected",
+                "type": "integer"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "run_repro_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Run Repro Hash",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "audit_root",
+              "n_approved",
+              "n_fills",
+              "n_intents",
+              "n_rejected",
+              "run_id",
+              "strategy_id",
+              "run_repro_hash"
+            ],
+            "title": "_DryRunCompletedV11Payload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "7c517d98d102bceffa2f9039f21b0dfce374a20dd141e02fc6b6a1039d17c0f6",
+          "sources": [
+            "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.1.0"
+        }
+      ],
+      "domain": "execution",
+      "latest_version": "1.1.0",
+      "versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "execution.dry_run.started": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "minLength": 1,
+                "title": "Mode",
+                "type": "string"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "run_id",
+              "strategy_id"
+            ],
+            "title": "_DryRunStartedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "cfe99421e94cf73a8e03949ca9510cce82e1bc02c91b10e636e65b379928e252",
+          "sources": [
+            "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "execution",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "governance.deployment.recorded": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0",
+            "C1"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "allowed": {
+                "title": "Allowed",
+                "type": "boolean"
+              },
+              "environment": {
+                "minLength": 1,
+                "title": "Environment",
+                "type": "string"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reasons",
+                "type": "array"
+              },
+              "subject": {
+                "title": "Subject",
+                "type": "string"
+              },
+              "version_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Version Ids",
+                "type": "array"
+              }
+            },
+            "required": [
+              "actor_id",
+              "allowed",
+              "environment",
+              "reasons",
+              "subject",
+              "version_ids"
+            ],
+            "title": "_DeploymentRecordedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "ea04e23a0afbc6100d92b8f71045e1668b7a8b82d6425f19d436054917ce4792",
+          "sources": [
+            "services.deployment.gate"
+          ],
+          "timestamp_unit": "unix_epoch_milliseconds",
+          "version": "1.0.0"
+        },
+        {
+          "compatible_consumer_versions": [
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0",
+            "C1"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "allowed": {
+                "title": "Allowed",
+                "type": "boolean"
+              },
+              "environment": {
+                "minLength": 1,
+                "title": "Environment",
+                "type": "string"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reasons",
+                "type": "array"
+              },
+              "subject": {
+                "title": "Subject",
+                "type": "string"
+              },
+              "version_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Version Ids",
+                "type": "array"
+              }
+            },
+            "required": [
+              "actor_id",
+              "allowed",
+              "environment",
+              "reasons",
+              "subject",
+              "version_ids"
+            ],
+            "title": "_DeploymentRecordedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "ea04e23a0afbc6100d92b8f71045e1668b7a8b82d6425f19d436054917ce4792",
+          "sources": [
+            "services.deployment.gate"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.1.0"
+        }
+      ],
+      "domain": "governance",
+      "latest_version": "1.1.0",
+      "versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "research.alpha.maintenance.transition": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C1",
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "DEGRADED",
+                  "PAUSED",
+                  "RETIRED"
+                ],
+                "title": "Action",
+                "type": "string"
+              },
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "alpha_id": {
+                "minLength": 1,
+                "title": "Alpha Id",
+                "type": "string"
+              },
+              "reasons": {
+                "items": {},
+                "title": "Reasons",
+                "type": "array"
+              }
+            },
+            "required": [
+              "action",
+              "actor_id",
+              "alpha_id",
+              "reasons"
+            ],
+            "title": "_AlphaMaintenancePayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "ddf5c173db1b59b849454ff3fba460cc100380e4c857ca1b9d5f57ffb2420597",
+          "sources": [
+            "services.alpha.maintenance"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "research",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "research.alpha.promoted": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C1"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "alpha_id": {
+                "minLength": 1,
+                "title": "Alpha Id",
+                "type": "string"
+              },
+              "dst": {
+                "minLength": 1,
+                "title": "Dst",
+                "type": "string"
+              },
+              "eval_run_id": {
+                "title": "Eval Run Id",
+                "type": "string"
+              },
+              "evidence_notes": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Evidence Notes",
+                "type": "array"
+              },
+              "grant_head_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Grant Head Hash",
+                "type": "string"
+              },
+              "request_id": {
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              },
+              "src": {
+                "minLength": 1,
+                "title": "Src",
+                "type": "string"
+              }
+            },
+            "required": [
+              "actor_id",
+              "alpha_id",
+              "dst",
+              "eval_run_id",
+              "evidence_notes",
+              "grant_head_hash",
+              "request_id",
+              "src"
+            ],
+            "title": "_AlphaPromotedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "805e658b7c502c758c1d5d72e83e18c10d3eaacbf71639e48d8d33e65610e072",
+          "sources": [
+            "services.alpha.promotion"
+          ],
+          "timestamp_unit": "unix_epoch_milliseconds",
+          "version": "1.0.0"
+        },
+        {
+          "compatible_consumer_versions": [
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C1"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "alpha_id": {
+                "minLength": 1,
+                "title": "Alpha Id",
+                "type": "string"
+              },
+              "dst": {
+                "minLength": 1,
+                "title": "Dst",
+                "type": "string"
+              },
+              "eval_run_id": {
+                "title": "Eval Run Id",
+                "type": "string"
+              },
+              "evidence_notes": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Evidence Notes",
+                "type": "array"
+              },
+              "grant_head_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Grant Head Hash",
+                "type": "string"
+              },
+              "request_id": {
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              },
+              "src": {
+                "minLength": 1,
+                "title": "Src",
+                "type": "string"
+              }
+            },
+            "required": [
+              "actor_id",
+              "alpha_id",
+              "dst",
+              "eval_run_id",
+              "evidence_notes",
+              "grant_head_hash",
+              "request_id",
+              "src"
+            ],
+            "title": "_AlphaPromotedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "805e658b7c502c758c1d5d72e83e18c10d3eaacbf71639e48d8d33e65610e072",
+          "sources": [
+            "services.alpha.promotion"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.1.0"
+        }
+      ],
+      "domain": "research",
+      "latest_version": "1.1.0",
+      "versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "research.risk.dry_run.evaluated": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C1",
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "config_provenance": {
+                "minLength": 1,
+                "title": "Config Provenance",
+                "type": "string"
+              },
+              "decision": {
+                "enum": [
+                  "RISK_APPROVED",
+                  "RISK_REJECTED"
+                ],
+                "title": "Decision",
+                "type": "string"
+              },
+              "engines_run": {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "title": "Engines Run",
+                "type": "object"
+              },
+              "engines_skipped": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Engines Skipped",
+                "type": "array"
+              },
+              "gates_passed": {
+                "minimum": 0,
+                "title": "Gates Passed",
+                "type": "integer"
+              },
+              "gates_run": {
+                "minimum": 1,
+                "title": "Gates Run",
+                "type": "integer"
+              },
+              "provenance": {
+                "const": "REAL_RESEARCH_RISK_SUBSET",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reasons",
+                "type": "array"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "run_repro_hash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Run Repro Hash",
+                "type": "string"
+              },
+              "series": {
+                "minLength": 1,
+                "title": "Series",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "config_provenance",
+              "decision",
+              "engines_run",
+              "engines_skipped",
+              "gates_passed",
+              "gates_run",
+              "provenance",
+              "reasons",
+              "run_id",
+              "run_repro_hash",
+              "series",
+              "strategy_id"
+            ],
+            "title": "_ResearchRiskEvaluatedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "c8bb4ff5b381126f407b4247c4cf5bd393fa6fbd553d6ac2b909f5bcb8860fac",
+          "sources": [
+            "services.risk.research_risk.dry_run_guard"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "risk",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "trading.risk.killswitch.activated": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "incident_id": {
+                "minLength": 1,
+                "title": "Incident Id",
+                "type": "string"
+              },
+              "reason_fingerprint": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Reason Fingerprint",
+                "type": "string"
+              },
+              "scope": {
+                "minLength": 1,
+                "title": "Scope",
+                "type": "string"
+              },
+              "scope_value": {
+                "title": "Scope Value",
+                "type": "string"
+              },
+              "trip_count": {
+                "minimum": 1,
+                "title": "Trip Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "actor_id",
+              "incident_id",
+              "reason_fingerprint",
+              "scope",
+              "scope_value",
+              "trip_count"
+            ],
+            "title": "_KillSwitchActivatedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "7fe5105d516862c00ee4f5c17d685182403c4a5be83c09e5afcf5d5e6afb2b31",
+          "sources": [
+            "services.risk.pre_trade.kill_switch"
+          ],
+          "timestamp_unit": "unix_epoch_milliseconds",
+          "version": "1.0.0"
+        },
+        {
+          "compatible_consumer_versions": [
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "incident_id": {
+                "minLength": 1,
+                "title": "Incident Id",
+                "type": "string"
+              },
+              "reason_fingerprint": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Reason Fingerprint",
+                "type": "string"
+              },
+              "scope": {
+                "minLength": 1,
+                "title": "Scope",
+                "type": "string"
+              },
+              "scope_value": {
+                "title": "Scope Value",
+                "type": "string"
+              },
+              "trip_count": {
+                "minimum": 1,
+                "title": "Trip Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "actor_id",
+              "incident_id",
+              "reason_fingerprint",
+              "scope",
+              "scope_value",
+              "trip_count"
+            ],
+            "title": "_KillSwitchActivatedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "7fe5105d516862c00ee4f5c17d685182403c4a5be83c09e5afcf5d5e6afb2b31",
+          "sources": [
+            "services.risk.pre_trade.kill_switch"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.1.0"
+        }
+      ],
+      "domain": "risk",
+      "latest_version": "1.1.0",
+      "versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "trading.risk.killswitch.reset": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0",
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "incident_id": {
+                "minLength": 1,
+                "title": "Incident Id",
+                "type": "string"
+              },
+              "reset_via": {
+                "enum": [
+                  "single",
+                  "multi_party"
+                ],
+                "title": "Reset Via",
+                "type": "string"
+              },
+              "trip_count": {
+                "minimum": 1,
+                "title": "Trip Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "actor_id",
+              "incident_id",
+              "reset_via",
+              "trip_count"
+            ],
+            "title": "_KillSwitchResetPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "73f1a82a930ac20ae4092f98eb275396e1e06dc59570d55244b268ab0cfef438",
+          "sources": [
+            "services.risk.pre_trade.kill_switch"
+          ],
+          "timestamp_unit": "unix_epoch_milliseconds",
+          "version": "1.0.0"
+        },
+        {
+          "compatible_consumer_versions": [
+            "1.1.0"
+          ],
+          "criticalities": [
+            "C0"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "actor_id": {
+                "minLength": 1,
+                "title": "Actor Id",
+                "type": "string"
+              },
+              "incident_id": {
+                "minLength": 1,
+                "title": "Incident Id",
+                "type": "string"
+              },
+              "reset_via": {
+                "enum": [
+                  "single",
+                  "multi_party"
+                ],
+                "title": "Reset Via",
+                "type": "string"
+              },
+              "trip_count": {
+                "minimum": 1,
+                "title": "Trip Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "actor_id",
+              "incident_id",
+              "reset_via",
+              "trip_count"
+            ],
+            "title": "_KillSwitchResetPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "73f1a82a930ac20ae4092f98eb275396e1e06dc59570d55244b268ab0cfef438",
+          "sources": [
+            "services.risk.pre_trade.kill_switch"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.1.0"
+        }
+      ],
+      "domain": "risk",
+      "latest_version": "1.1.0",
+      "versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "trading.risk.pretrade.approved": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "approved": {
+                "title": "Approved",
+                "type": "boolean"
+              },
+              "instrument_id": {
+                "minLength": 1,
+                "title": "Instrument Id",
+                "type": "string"
+              },
+              "quantity": {
+                "minimum": 0,
+                "title": "Quantity",
+                "type": "integer"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reasons",
+                "type": "array"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "side": {
+                "minLength": 1,
+                "title": "Side",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "approved",
+              "instrument_id",
+              "quantity",
+              "reasons",
+              "run_id",
+              "side",
+              "strategy_id"
+            ],
+            "title": "_PretradeDecisionPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "b9d9a761efbb7fe9b701756e76749c37a79eb9659c01316b2b081542a7483a01",
+          "sources": [
+            "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "risk",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "trading.risk.pretrade.rejected": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C1"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "approved": {
+                "title": "Approved",
+                "type": "boolean"
+              },
+              "instrument_id": {
+                "minLength": 1,
+                "title": "Instrument Id",
+                "type": "string"
+              },
+              "quantity": {
+                "minimum": 0,
+                "title": "Quantity",
+                "type": "integer"
+              },
+              "reasons": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reasons",
+                "type": "array"
+              },
+              "run_id": {
+                "minLength": 1,
+                "title": "Run Id",
+                "type": "string"
+              },
+              "side": {
+                "minLength": 1,
+                "title": "Side",
+                "type": "string"
+              },
+              "strategy_id": {
+                "minLength": 1,
+                "title": "Strategy Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "approved",
+              "instrument_id",
+              "quantity",
+              "reasons",
+              "run_id",
+              "side",
+              "strategy_id"
+            ],
+            "title": "_PretradeDecisionPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "b9d9a761efbb7fe9b701756e76749c37a79eb9659c01316b2b081542a7483a01",
+          "sources": [
+            "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "risk",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    }
+  },
+  "schemas_sha256": "e6b1d7b4f4e8a018a50e12080a4682f4dca407650da01d6d6b82f0670c5329fa",
+  "verdict": "PASS"
+}

@@ -18,7 +18,7 @@
 当前 QUANTOS 已经具备一个较完整的研究治理控制台雏形：
 
 - 前端: `apps/research-console`
-- 后端: `services/research/console_api`
+- 后端: `services/console/api`
 - 运行模式: `BACKEND_COMPUTED_SNAPSHOT`
 - 安全边界: `READ_ONLY` + `L2_DRY_RUN_ONLY`
 - 阶段准入: `Phase 3A = NO_GO`
@@ -611,7 +611,7 @@ flowchart TD
 ```powershell
 rtk npm run typecheck
 rtk npm run build
-rtk proxy python -m pytest services/research/console_api/tests/test_console_api.py -q
+rtk proxy python -m pytest services/console/api/tests/test_console_api.py -q
 rtk proxy python scripts\run_paper_to_live_governance_check.py
 rtk proxy python scripts\run_dry_run_adapter_integration_gate.py
 ```

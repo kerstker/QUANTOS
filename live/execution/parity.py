@@ -1,5 +1,5 @@
 """live-paper 对账(2026-07-05)。设计:
-docs/superpowers/specs/2026-07-05-institutional-live-stack-design.md §④。
+docs/engineering/specs/2026-07-05-institutional-live-stack-design.md §④。
 
 回答的问题:**测试网真实执行离 Stage 0 纸面决策有多远?** 纸面侧用前向台账里**记录在案**的
 目标权重(`forward_decisions.weights_json`,不是重算的信号——重算会掩盖两条路径间的信号

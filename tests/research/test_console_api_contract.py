@@ -15,9 +15,12 @@ destructures. Backend drift away from the frontend contract turns the gate RED.
 If you change a payload's top-level shape, change BOTH this contract and the TS
 type in the same commit — that is the point.
 """
+import json
+
 from fastapi.testclient import TestClient
 
-from services.research.console_api.main import app
+from services.console.main import app
+from services.console.api import artifact_snapshots
 
 client = TestClient(app)
 
@@ -29,7 +32,7 @@ BASE_MARKERS = ("source", "read_only", "api_version")
 CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/overview": ("", ("stats", "funnel", "agents")),
     "/api/v1/console/agents": ("", ("summary", "agents")),
-    "/api/v1/console/events": ("", ("events",)),
+    "/api/v1/console/events": ("", ("events", "event_bus_health")),
     "/api/v1/console/phase-3a-readiness": ("", ("readiness",)),
     "/api/v1/console/architecture": ("", (
         "current_level", "target_level", "phase3a_decision", "implementation_authorized",
@@ -90,8 +93,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/alpha-zoo": ("", ("rows", "dimensions")),
     "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
     "/api/v1/console/system-completeness": ("", (
-        "audit_mode", "current_level", "institutional_target", "readiness_score", "inventory", "summary",
-        "modules", "checks", "gaps", "roadmap", "safety_boundary")),
+        "assessment", "domains", "requirements", "red_lines", "inventory", "summary", "safety_boundary")),
     "/api/v1/console/system-health": ("", ("services", "gates", "safety_checks")),
     "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
         "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
@@ -118,6 +120,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
+    # lance 1m strategy validation: independent refutation of a user-supplied strategy's claimed Sharpe 5.01
+    "/api/v1/console/lance-1m-validation": ("", ("snapshot_present", "verdict", "fee_sweep",
+                                                 "rolling_window_stress_1bps", "rolling_window_stress_5bps",
+                                                 "parameter_sensitivity_5bps", "ohlc_ambiguity_comparison",
+                                                 "honesty_note")),
     # live trading route: Stage 0 forward paper-track evidence clock + Stage 1 testnet execution stack
     "/api/v1/console/live-trading": ("", ("snapshot_present", "verdict", "forward_track", "execution_stack", "honesty_note")),
     # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
@@ -143,11 +150,12 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/ic-panel": {"SYNTHETIC_DETERMINISTIC", "REAL_IC_PANEL_OFFLINE_SNAPSHOT"},
     "/api/v1/console/research-findings": {"SYNTHETIC_DETERMINISTIC", "REAL_RESEARCH_FINDINGS"},
+    "/api/v1/console/lance-1m-validation": {"SYNTHETIC_DETERMINISTIC", "REAL_LANCE_1M_VALIDATION"},
     # architecture: curated module/maturity roadmap + REAL repo introspection (`inventory`). REAL marker
     # when the live FS walk populated the inventory (always, outside FS errors), else honest synthetic.
     "/api/v1/console/architecture": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},
     # system-completeness: curated readiness map + REAL repo introspection (`inventory`); same marker rule.
-    "/api/v1/console/system-completeness": {"SYNTHETIC_DETERMINISTIC", "REAL_REPO_INVENTORY"},
+    "/api/v1/console/system-completeness": "TOP_TIER_EVIDENCE_ASSESSMENT",
     # Phase 1B: these run the REAL risk/PnL/validation engines on REAL crypto return series WHEN the
     # offline snapshot (factor_series) is present, else fall back to synthetic (CI / fresh checkout).
     # Both are honest — accept either marker.
@@ -171,7 +179,11 @@ REAL_DATA_PROVENANCE = {
     # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
-    "/api/v1/console/events": {"SYNTHETIC_DETERMINISTIC", "RESEARCH_RUN_REGISTRY"},
+    "/api/v1/console/events": {
+        "SYNTHETIC_DETERMINISTIC",
+        "RESEARCH_RUN_REGISTRY",
+        "DOMAIN_EVENT_PROJECTION",
+    },
     # Experiments + EvidenceLedger read the real experiment_registry (immutable artifacts) when present.
     "/api/v1/console/experiments": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
     "/api/v1/console/evidence-ledger": {"SYNTHETIC_DETERMINISTIC", "EXPERIMENT_REGISTRY"},
@@ -187,9 +199,14 @@ REAL_DATA_PROVENANCE = {
 
 def test_every_frontend_payload_type_has_an_endpoint():
     # if a *Payload type ever maps to a route not under contract, this fails loudly
-    routed = {r.path for r in app.routes if getattr(r, "methods", None) and "GET" in r.methods}
+    routed = {path for path, operations in app.openapi()["paths"].items() if "get" in operations}
     routed = {p for p in routed if p.startswith("/api/v1/console/")}
     assert routed == set(CONTRACT), f"contract/route mismatch: {routed ^ set(CONTRACT)}"
+
+
+def test_architecture_inventory_counts_included_router_endpoints():
+    body = client.get("/api/v1/console/architecture").json()
+    assert body["inventory"]["n_console_endpoints"] == len(CONTRACT)
 
 
 def test_health_endpoint_is_read_only():
@@ -224,6 +241,63 @@ def test_every_endpoint_satisfies_the_frontend_contract():
     assert not failures, "frontend contract drift:\n" + "\n".join(failures)
 
 
+def test_live_trading_forward_track_fails_closed_to_attested_baseline(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 0,
+            "attested_pending": 0,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "BLOCKED"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    payload = artifact_snapshots._live_trading_payload(now_ms=1000)
+
+    assert payload["forward_track"]["evidence_state"] == "DATA_BLOCKED"
+    assert payload["forward_track"]["attested_realizations"] == 0
+    assert payload["forward_track"]["legacy_unattested_decisions"] == 2
+    assert payload["forward_track"]["actions_allowed"] is False
+
+
+def test_live_trading_forward_track_marks_missing_invalid_and_stale_evidence_fail_closed(tmp_path, monkeypatch):
+    missing = tmp_path / "missing.json"
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(missing), raising=False)
+    unavailable = artifact_snapshots._live_trading_payload(now_ms=1000)["forward_track"]
+    assert unavailable == {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(invalid), raising=False)
+    assert artifact_snapshots._live_trading_payload(now_ms=1000)["forward_track"] == unavailable
+
+    stale = tmp_path / "stale.json"
+    stale.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 7,
+            "attested_pending": 1,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "CURRENT"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(artifact_snapshots, "_FORWARD_EVIDENCE_BASELINE", str(stale), raising=False)
+    stale_payload = artifact_snapshots._live_trading_payload(now_ms=172_801_001)["forward_track"]
+    assert stale_payload["present"] is True
+    assert stale_payload["evidence_state"] == "STALE"
+    assert stale_payload["actions_allowed"] is False
+
+
 def test_query_bound_endpoints_echo_the_requested_alpha():
     # the page binds its selector to the echoed selected_alpha_id; if a VALID id
     # were not echoed faithfully the page would render the wrong alpha's data
@@ -253,7 +327,7 @@ def test_ic_panel_by_period_schema_v2_consistency():
 
     import pytest as _pytest
 
-    from services.research.console_api.main import _IC_PANEL_SNAPSHOT
+    from services.console.api.main import _IC_PANEL_SNAPSHOT
     if not _os.path.exists(_IC_PANEL_SNAPSHOT):
         _pytest.skip("no ic_panel snapshot (CI/fresh checkout)")
     snap = _json.load(open(_IC_PANEL_SNAPSHOT, encoding="utf-8"))

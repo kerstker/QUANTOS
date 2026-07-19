@@ -1,6 +1,6 @@
 """策略 sleeve 级 sizing opt-in hook(services/portfolio/sleeve_sizing.py,Phase 3 子项2)。
 诚实裁定:组合优化器是**跨 sleeve**风险预算分配器,单策略 live 下退化为恒等(no-op)——这个 hook 证明该事实,
-且默认 off(live 默认路径永不调用,零回归),只备多策略上线时显式启用。设计:docs/superpowers/specs/2026-07-07-portfolio-optimizer-live-sizing.md。"""
+且默认 off(live 默认路径永不调用,零回归),只备多策略上线时显式启用。设计:docs/engineering/specs/2026-07-07-phase3-optimizer-and-crowding.md。"""
 import pytest
 
 from services.portfolio.sleeve_sizing import apply_sleeve_scalar, size_strategy_sleeves

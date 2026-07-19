@@ -176,6 +176,38 @@ export interface AgentsPayload extends ConsolePayloadBase {
 
 export interface EventsPayload extends ConsolePayloadBase {
   events: EventRecord[];
+  event_bus_health: EventBusHealth;
+}
+
+export interface EventBusHealthAlert {
+  code: string;
+  observed: number | null;
+  severity: string;
+  threshold: number | null;
+}
+
+export interface EventBusHealth {
+  schema_version: number;
+  verdict: string;
+  checked_at_ms: number;
+  group_id: string;
+  consumer_mode: string;
+  integrity: {
+    event_chain_valid: boolean | null;
+    consumer_chain_valid: boolean | null;
+    coordination_chain_valid: boolean | null;
+  };
+  active_workers: string[];
+  partition_count: number;
+  pending_events: number | null;
+  oldest_pending_age_ms: number | null;
+  dead_letter_count: number | null;
+  event_records: number | null;
+  consumer_journal_records: number | null;
+  coordination_journal_records: number | null;
+  allocated_bytes: number | null;
+  retention_mode: string;
+  alerts: EventBusHealthAlert[];
 }
 
 export interface ArchitectureModule {
@@ -1125,73 +1157,68 @@ export interface IntegrationGateStatus {
   s: string;
 }
 
-export interface SystemCompletenessModule {
-  id: string;
-  name: string;
-  name_zh: string;
-  route: string;
-  endpoint: string;
-  layer: string;
-  status: string;
-  backend_contract: string;
-  frontend_status: string;
-  completion_score: number;
-  gap: string;
-}
+export type TopTierRequirementStatus =
+  | "PASS"
+  | "PARTIAL"
+  | "FAILED"
+  | "UNVERIFIED"
+  | "MANUAL_EVIDENCE_REQUIRED";
 
-export interface SystemCompletenessGap {
+export interface TopTierRequirement {
   id: string;
-  area: string;
-  severity: string;
-  status: string;
-  impact: string;
+  domain: string;
+  tier: "A" | "B";
+  target_maturity: string;
+  current_maturity: string;
+  classification: "L2_SAFE_NOW" | "NEEDS_EXTERNAL" | "POST_L2";
+  description: string;
+  required_evidence: string[];
+  red_line: boolean;
+  checker: string;
   next_action: string;
+  status: TopTierRequirementStatus;
+  meets_target: boolean;
+  evidence: string[];
+  detail: string;
 }
 
-export interface SystemCompletenessCheck {
-  id: string;
-  name: string;
-  status: string;
-  evidence: string;
+export interface TopTierDomainAssessment {
+  domain: string;
+  current_maturity: string;
+  requirements: number;
+  passed: number;
+  red_lines_failed: number;
 }
 
 export interface SystemCompletenessPayload extends ConsolePayloadBase {
-  data_provenance?: "REAL_REPO_INVENTORY" | string;
-  audit_mode: string;
-  current_level: string;
-  institutional_target: string;
-  readiness_score: number;
-  inventory?: {
+  data_provenance?: "TOP_TIER_EVIDENCE_ASSESSMENT" | string;
+  assessment: {
+    schema_version: number;
+    verdict: string;
+  };
+  inventory: {
     domains: { domain: string; n_modules: number; loc: number }[];
     total_services_modules: number; total_services_loc: number;
     n_test_files: number; n_test_functions: number;
     n_console_pages: number; n_console_endpoints: number;
   };
   summary: {
-    frontend_routes: number;
-    api_endpoints: number;
-    backend_backed_modules: number;
-    backend_modules?: number;
-    test_functions?: number;
-    fully_operational_modules: number;
-    read_only_modules: number;
-    open_high_gaps: number;
-    live_trading_authorized: boolean;
+    total: number;
+    passed: number;
+    partial: number;
+    failed: number;
+    unverified: number;
+    manual_evidence_required: number;
+    red_lines_failed: number;
   };
-  modules: SystemCompletenessModule[];
-  checks: SystemCompletenessCheck[];
-  gaps: SystemCompletenessGap[];
-  roadmap: Array<{
-    phase: string;
-    objective: string;
-    exit_criteria: string;
-    status: string;
-  }>;
+  domains: TopTierDomainAssessment[];
+  requirements: TopTierRequirement[];
+  red_lines: TopTierRequirement[];
   safety_boundary: {
     read_only_console: boolean;
     execution_boundary: string;
     authorized_level: string;
-    blocked_until: string[];
+    live_trading_authorized: boolean;
   };
 }
 
@@ -1421,6 +1448,9 @@ export interface DryRunPnl {
   // multi-period summary (run_multi_period_dry_run)
   total_return?: number; sharpe?: number; max_drawdown?: number; final_equity?: number;
   total_funding?: number; n_periods?: number; total_rejected?: number; avg_net_exposure_pct?: number;
+  // vol-target curve summary stats (审计发现 #10): honestly null when vol_target wasn't requested —
+  // NOT 0 and NOT omitted, so callers can tell "not computed" apart from "computed as zero".
+  sharpe_vt?: number | null; max_drawdown_vt?: number | null;
 }
 
 export interface DryRunRunRow {
@@ -1512,25 +1542,60 @@ export interface ResearchFindingsPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
-export interface LiveTradingForwardAlpha {
-  alpha_id: string;
-  n_forward_periods: number | null;
-  weeks_to_go_no_go: number | null;
-  paper_sharpe: number | null;
-  paper_ic: number | null;
-  cum_return: number | null;
-  backtest_reference_sharpe: number | null;
-  reference_weeks: number | null;
-  pending_decisions: number | null;
-  last_decision_ts: number | null;
+export interface Lance1mFeeResult {
+  num_trades: number;
+  win_rate: number;
+  win_loss_ratio: number;
+  profit_factor: number;
+  total_return: number;
+  total_net_pnl: number;
+  total_cost: number;
+  sharpe: number;
+  max_drawdown: number;
+  avg_bars_held: number;
+  n_bars: number;
 }
+export interface Lance1mFeeSweepWindow {
+  label: string;
+  n_bars: number;
+  by_fee: Record<string, Lance1mFeeResult>;
+}
+export interface Lance1mRollingStress {
+  fee_bps?: number;
+  window_size?: number;
+  n_windows?: number;
+  pct_positive?: number;
+  mean_sharpe?: number;
+  median_sharpe?: number;
+  mean_alpha?: number;
+  median_alpha?: number;
+}
+export interface Lance1mValidationPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_LANCE_1M_VALIDATION" | string;
+  snapshot_present: boolean;
+  verdict: string;                // REFUTED | NO_SNAPSHOT
+  doc: string;
+  fee_sweep: Record<string, Lance1mFeeSweepWindow>;
+  rolling_window_stress_1bps: Lance1mRollingStress;
+  rolling_window_stress_5bps: Lance1mRollingStress;
+  parameter_sensitivity_5bps: Record<string, Record<string, number>>;
+  ohlc_ambiguity_comparison: {
+    conservative_ohlc_ambiguity?: Lance1mFeeResult;
+    doc_literal_no_override?: Lance1mFeeResult;
+  };
+  honesty_note: string;
+}
+
 export interface LiveTradingForwardTrack {
   present: boolean;
-  ran_at?: number;
-  staleness_days?: Record<string, { freshest_days: number | null; worst_days: number | null; n_stale: number | null; n_total: number }>;
+  evidence_state?: "ATTESTED" | "DATA_BLOCKED" | "STALE" | "UNAVAILABLE" | string;
+  attested_realizations?: number;
+  attested_pending?: number;
+  legacy_unattested_decisions?: number;
   evidence_gate_weeks?: number;
-  alphas?: LiveTradingForwardAlpha[];
-  alerts?: string[];
+  evidence_gate_eligible?: boolean;
+  data_admission?: Record<string, unknown>;
+  actions_allowed: false;
 }
 export interface LiveTradingReconciliation {
   drift?: Record<string, number>;

@@ -1,0 +1,58 @@
+﻿{
+    "backup_destination":  "I:\\QUANTOS_L2_BACKUPS",
+    "generated_at":  "2026-07-16T03:40:46.0446167+08:00",
+    "configuration":  {
+                          "workspace_volume":  "H:\\",
+                          "encrypted":  true,
+                          "destination_volume":  "I:\\",
+                          "external_destination":  true,
+                          "passphrase_length":  13
+                      },
+    "backup_count":  6,
+    "backup_snapshots":  [
+                             {
+                                 "size_kb":  1621.6,
+                                 "created":  "2026-07-16T03:37:12.5552967+08:00",
+                                 "timestamp":  "20260715T193712Z",
+                                 "file_count":  11
+                             },
+                             {
+                                 "size_kb":  1617.6,
+                                 "created":  "2026-07-16T03:36:59.7042264+08:00",
+                                 "timestamp":  "20260715T193659Z",
+                                 "file_count":  11
+                             },
+                             {
+                                 "size_kb":  1609.6,
+                                 "created":  "2026-07-16T03:36:56.7227828+08:00",
+                                 "timestamp":  "20260715T193656Z",
+                                 "file_count":  11
+                             },
+                             {
+                                 "size_kb":  1601.6,
+                                 "created":  "2026-07-16T03:36:53.7164101+08:00",
+                                 "timestamp":  "20260715T193653Z",
+                                 "file_count":  11
+                             },
+                             {
+                                 "size_kb":  1601.6,
+                                 "created":  "2026-07-16T03:36:50.7213210+08:00",
+                                 "timestamp":  "20260715T193650Z",
+                                 "file_count":  11
+                             },
+                             {
+                                 "size_kb":  1601.6,
+                                 "created":  "2026-07-16T03:36:35.8128664+08:00",
+                                 "timestamp":  "20260715T193635Z",
+                                 "file_count":  11
+                             }
+                         ],
+    "scheduled_task":  {
+                           "module":  "tools.l2_backup",
+                           "next_run":  "2026-07-16T03:00:00+08:00",
+                           "name":  "QUANTOS_backup",
+                           "cadence":  "daily at 03:47",
+                           "state":  3
+                       },
+    "latest_backup":  "20260715T193712Z"
+}

@@ -23,6 +23,7 @@ coverage/
 .vite/
 .benchmarks/
 .claude/worktrees/
+.worktrees/
 
 # Logs & temp
 logs/

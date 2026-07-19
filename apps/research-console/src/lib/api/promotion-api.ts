@@ -1,14 +1,13 @@
 /**
  * Client for the promotion_api (port 8460) — the multi-party promotion governance surface.
- * Three DISTINCT self-asserted operators walk REQUESTED→REVIEWED→APPROVED→CONSUMED; the approver
- * executes their own approval. Disabled unless VITE_GOVERNANCE_URL is configured, so the UI
- * degrades to an honest offline explanation when the service is not running (it is NOT started
- * by default — see the threat-model note in services/governance/promotion_api/main.py).
+ * Three externally verified OIDC subjects walk REQUESTED→REVIEWED→APPROVED→CONSUMED.
+ * The access token is RFC 8705-bound to a client certificate by the backend; JavaScript
+ * never reads or sends the certificate itself.
  *
- * 诚实边界(与后端 docstring 一字对齐):X-Operator 是自报问责标签、不是身份认证;持
- * gov token 的任何本机进程(含 AI agent)都能用三个自报标签走完三方批准。真身份认证 = Phase 14。
+ * Honest boundary: the short-lived access token is held in memory only. Authorization
+ * Code + PKCE is implemented in governance-pkce.ts; external IdP and mTLS deployment
+ * evidence remain M4 work.
  */
-import { getOperator } from './research-runner-api';
 
 export const GOVERNANCE_BASE = (import.meta.env.VITE_GOVERNANCE_URL || '').replace(/\/$/, '');
 
@@ -16,15 +15,15 @@ export function governanceEnabled(): boolean {
   return GOVERNANCE_BASE.length > 0;
 }
 
-// 本机共享密钥 X-Gov-Token(key/governance_token.txt,首次启动 promotion_api 时生成)。
-// 只存 sessionStorage(关标签页即清空),绝不进 localStorage/构建产物 —— 逐字镜像
-// research-runner-api 的 runner-token 模式,独立 key(交易台/runner/晋级三种权限分离)。
-const GOV_TOKEN_KEY = 'quantos-gov-token';
-export function getGovToken(): string {
-  try { return sessionStorage.getItem(GOV_TOKEN_KEY) || ''; } catch { return ''; }
+let governanceAccessToken = '';
+export function getGovernanceAccessToken(): string {
+  return governanceAccessToken;
 }
-export function setGovToken(token: string): void {
-  try { sessionStorage.setItem(GOV_TOKEN_KEY, token); } catch { /* private-mode etc */ }
+export function setGovernanceAccessToken(token: string): void {
+  governanceAccessToken = token.trim();
+}
+export function clearGovernanceAccessToken(): void {
+  governanceAccessToken = '';
 }
 
 export interface PromotionEvidenceSummary {
@@ -86,11 +85,11 @@ export interface PromotionExecuteOutcome {
 async function govFetch<T>(path: string, init?: { method?: 'GET' | 'POST'; body?: unknown }): Promise<T> {
   if (!GOVERNANCE_BASE) throw new Error('VITE_GOVERNANCE_URL is not configured');
   const method = init?.method ?? 'GET';
-  // GET 数据端点同样要求 X-Gov-Token(后端全端点认证);X-Operator 只在 mutating 调用上有意义。
-  const headers: Record<string, string> = { 'X-Gov-Token': getGovToken() };
+  const token = getGovernanceAccessToken().trim();
+  if (!token) throw new Error('OIDC access token is not configured');
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
   if (method === 'POST') {
     headers['Content-Type'] = 'application/json';
-    headers['X-Operator'] = getOperator();
   }
   const res = await fetch(new URL(path, GOVERNANCE_BASE), {
     method, headers,

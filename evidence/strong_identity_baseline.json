@@ -1,0 +1,242 @@
+{
+  "actor_source": "OIDC_ISSUER_AND_IMMUTABLE_SUBJECT",
+  "ai_human_identity_exclusion_status": "LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN",
+  "all_attack_cases_passed": true,
+  "allowed_algorithms": [
+    "EdDSA",
+    "RS256"
+  ],
+  "application_authorization_decision_authority_status": "LOCAL_SINGLE_SQLITE_REGISTRY_DECISION_CAS_UNSEALED",
+  "application_authorization_principal_classes": [
+    "HUMAN",
+    "WORKLOAD"
+  ],
+  "application_authorization_registry_status": "EMPTY_DEFAULT_FAIL_CLOSED_GENERATION_0",
+  "application_authorization_token_role_mode": "TOKEN_AND_APPLICATION_GRANT_INTERSECTION",
+  "application_authorization_valid_path_passed": true,
+  "attack_cases": [
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-signature",
+      "error_code": "INVALID_SIGNATURE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "symmetric-algorithm-confusion",
+      "error_code": "ALGORITHM_NOT_ALLOWED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-issuer",
+      "error_code": "INVALID_ISSUER",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-audience",
+      "error_code": "INVALID_AUDIENCE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "expired-token",
+      "error_code": "TOKEN_EXPIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "stale-authentication",
+      "error_code": "STALE_AUTHENTICATION",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "missing-mfa",
+      "error_code": "AMR_REQUIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-certificate-binding",
+      "error_code": "CERTIFICATE_BINDING_MISMATCH",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "reader-role-escalation",
+      "error_code": "ROLE_REQUIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "token-role-self-enrollment",
+      "error_code": "PRINCIPAL_NOT_REGISTERED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "token-role-self-escalation",
+      "error_code": "ROLE_NOT_GRANTED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "revoked-application-principal",
+      "error_code": "PRINCIPAL_REVOKED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "expired-application-access-review",
+      "error_code": "ACCESS_REVIEW_EXPIRED",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "token-before-application-epoch",
+      "error_code": "TOKEN_ISSUED_BEFORE_AUTHORIZATION",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "workload-human-governance-action",
+      "error_code": "WORKLOAD_HUMAN_ACTION_FORBIDDEN",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "untrusted-certificate-header",
+      "error_code": "MISSING_VERIFIED_CLIENT_CERTIFICATE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "legacy-shared-secret",
+      "error_code": "MALFORMED_TOKEN",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "wrong-token-type",
+      "error_code": "INVALID_TOKEN_TYPE",
+      "exception": "StrongIdentityError",
+      "expected_outcome": "DENIED",
+      "passed": true
+    },
+    {
+      "actual_outcome": "DENIED",
+      "case_id": "duplicate-human-subject",
+      "error_code": "",
+      "exception": "ApprovalViolation",
+      "expected_outcome": "DENIED",
+      "passed": true
+    }
+  ],
+  "authentication_profile": "OIDC_ASYMMETRIC_MTLS_MFA",
+  "browser_access_token_storage": "IN_MEMORY_ONLY",
+  "browser_pkce_client_secret_present": false,
+  "browser_pkce_invariants_verified": true,
+  "browser_pkce_max_transaction_age_seconds": 600,
+  "browser_pkce_one_time_state_nonce": true,
+  "browser_pkce_or_bff_status": "AUTHORIZATION_CODE_PKCE_S256_IMPLEMENTED_EXTERNAL_IDP_NOT_PROVIDED",
+  "browser_pkce_transaction_storage": "VERSIONED_SESSION_STORAGE_NO_ACCESS_TOKEN",
+  "credential_authority_granted": false,
+  "current_maturity": "M3",
+  "dependency_versions": {
+    "PyJWT": "2.13.0",
+    "cryptography": "49.0.0"
+  },
+  "external_key_custody_status": "NOT_PROVIDED",
+  "external_oidc_deployment_status": "NOT_PROVIDED",
+  "governance_roles": [
+    "PROMOTION_READER",
+    "PROMOTION_REQUESTER",
+    "PROMOTION_REVIEWER",
+    "PROMOTION_APPROVER",
+    "PROMOTION_EXECUTOR"
+  ],
+  "identity_lifecycle_evidence_status": "LOCAL_REVOCATION_TOKEN_EPOCH_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED",
+  "implementation_sha256": {
+    "apps/research-console/src/lib/api/governance-pkce.ts": "60f42677fc8033a629c439913d43a3e7d0023ee2db9abd1d2c394877667dc751",
+    "apps/research-console/src/lib/api/promotion-api.ts": "99d242cb850a4c86d2eb69e1b331642dd7ce4ea071d1a7005858053083e17631",
+    "apps/research-console/src/pages/PromotionQueue.tsx": "8fe9be0a3f42b6f6a75d60e363cddf3566f4b99da7c540cb0a93496966867787",
+    "config/identity_authorization_registry.json": "13df7ad56fd2076aa46c681dfe1bd19237909e2b3e760d0e0b3f6454c42f6256",
+    "quantos/contracts/identity.py": "de7fc42afc941a27af125d6bbf31624de4bb2b30bdc6c0e3a2dbea653ad9f23d",
+    "scripts/generate_strong_identity_evidence.py": "312d056ad706a5824d82e722d8ec0f1c8c2bda24bed0f7d8b269aa428097c2c2",
+    "services/governance/identity_authorization.py": "43fac24d630ae91dc4360a939ebf17940d4cf822603f451f13746fbc441e7a2b",
+    "services/governance/identity_authorization_store.py": "768a73e1833e93e7bb5f0ad8204faa90857c87e5b91d27e9ad449cb3dc2f6890",
+    "services/governance/strong_identity.py": "53c7a37affd8364f1cdf954098576e1fdabdf63cb81426c87b35ebfc48e8f320",
+    "services/promotion_api/main.py": "68c69b463571971a158923a472f5a5315eff4b3ffe8c723b12914f8bddf55e85"
+  },
+  "legacy_shared_token_accepted": false,
+  "live_trading_authority_granted": false,
+  "m4_blockers": [
+    "EXTERNAL_OIDC_ISSUER_OPERATIONAL_EVIDENCE_MISSING",
+    "TRUSTED_MTLS_TERMINATOR_DEPLOYMENT_EVIDENCE_MISSING",
+    "EXTERNAL_SIGNING_KEY_CUSTODY_AND_ROTATION_EVIDENCE_MISSING",
+    "EXTERNAL_IDENTITY_LIFECYCLE_AND_ACCESS_REVIEW_EVIDENCE_MISSING",
+    "AI_WORKLOAD_HUMAN_IDENTITY_EXCLUSION_NOT_EXTERNALLY_PROVEN"
+  ],
+  "mode": "OFFLINE_STRONG_IDENTITY_BASELINE",
+  "order_submission_authority_granted": false,
+  "recorded_at": 1783814400,
+  "schema_version": 1,
+  "self_asserted_operator_accepted": false,
+  "three_party_case": {
+    "actual_outcome": "ALLOWED",
+    "case_id": "three-distinct-human-subjects",
+    "error_code": "",
+    "exception": "",
+    "expected_outcome": "ALLOWED",
+    "passed": true
+  },
+  "three_party_identity_separation_passed": true,
+  "token_binding_standard": "RFC8705_CNF_X5T_S256",
+  "trusted_mtls_deployment_status": "NOT_PROVIDED",
+  "valid_identity_path_passed": true,
+  "verdict": "PARTIAL",
+  "verification_paths": [
+    "tests/governance/test_strong_identity.py",
+    "tests/governance/test_identity_authorization.py",
+    "tests/governance/test_identity_authorization_store.py",
+    "tests/governance/test_promotion_api_boundary.py",
+    "tests/governance/test_promotion_api_endpoints.py",
+    "apps/research-console/src/lib/api/governance-pkce.test.ts"
+  ]
+}

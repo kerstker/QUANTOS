@@ -28,7 +28,7 @@ from services.research.signals import SIGNAL_OPS
 from services.research.backtest_engine.costs import CostModel
 from services.research.backtest_engine.metrics import sharpe
 from services.research.regime import label_regimes_by_vol, regime_conditional_stats
-from services.research.validation.walk_forward import walk_forward_splits
+from services.validation.walk_forward import walk_forward_splits
 from services.research.oos_validation import walk_forward_selection_oos
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 

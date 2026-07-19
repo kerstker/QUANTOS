@@ -81,6 +81,9 @@ class DurableAuditLog:
         with self._lock:
             return tuple(self._event(r) for r in self._rows())
 
+    def close(self) -> None:
+        self._c.close()
+
     def chain_valid(self) -> bool:
         with self._lock:
             prev = ""

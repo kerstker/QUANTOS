@@ -14,7 +14,6 @@ import os
 import statistics
 import time
 
-from quantos.contracts.config import SafetyConfig
 from services.data.persistent_store import SqlitePITStore
 from services.data.caching_store import CachingPITStore
 from services.research import alpha_expression as ax
@@ -29,6 +28,7 @@ from services.execution.dry_run_store import DryRunStore
 from tools.crypto_carry_strategy import COMPOSITE, QUANTILE, _legs
 from tools.crypto_carry_stress import _run_carry, _slip_bps
 from tools.crypto_carry_voltarget import LEV_CAP, LOOKBACK, TARGET_ANN_VOL
+from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _DB = os.path.join("data", "cache", "crypto_funding.db")
 _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
@@ -101,14 +101,18 @@ def main() -> None:
             strategy=StrategyApproval(strategy_id="carry", approved=True, approval_id="research-dry-run"),
             now=now_ms, max_staleness=10 ** 15)
 
+    event_bus = open_domain_event_bus()
     run = run_dry_run_pipeline(
         weights=weights, prices=prices, current_positions={}, aum=_AUM, gate=gate,
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=now_ms,
-        marks=prices, initial_capital=_INITIAL_CAPITAL, cost_bps=cost_bps)
+        marks=prices, initial_capital=_INITIAL_CAPITAL, cost_bps=cost_bps,
+        event_bus=event_bus, publish_completion_event=False)
 
     if os.path.exists(_OUT):
         os.remove(_OUT)
-    DryRunStore(_OUT, create=True).save_run(run)
+    save_and_project_dry_run(
+        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+    )
 
     print(f"=== CARRY 端到端干跑 · 流动 {len(liquid)} 币 · vol-target 杠杆 {lev:.2f}x · 成本 {cost_bps:.1f}bps ===",
           flush=True)

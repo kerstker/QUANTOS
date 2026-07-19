@@ -82,15 +82,28 @@ def _analyze(name, gross, ts, btc):
     }
 
 
+def _median_quote_adv(bars, *, volume_unit):
+    from services.data.adapters import quote_notional_volume
+
+    notionals = [
+        quote_notional_volume(close=bar.close, volume=bar.volume, volume_unit=volume_unit)
+        for bar in bars
+        if bar.close > 0 and bar.volume > 0
+    ]
+    return statistics.median(notionals) if notionals else 0.0
+
+
 def _trend_capacity():
     """补 RE-1 欠的 trend 容量(daily 库取 volume 算 ADV;短样本 ~1 年,标注)。"""
+    from tools.coingecko_volume_fetch import MC_SPEC
     from tools.dry_run_trend_multi import _COMPOSITE, _DAILY_DB, _Q, _SNAP, _legs_and_prices  # noqa: F401
     instruments = sorted(c["instrument_id"] for c in json.load(open(_SNAP, encoding="utf-8")).get("meta", {}).get("coins", []))
     store = CachingPITStore(SqlitePITStore(_DAILY_DB, create=False))
     adv = {}
     for inst in instruments:
-        dv = [b.close * b.volume for b in store.fetch_bars(inst, 0, 10 ** 14) if b.close > 0 and b.volume > 0]
-        adv[inst] = statistics.median(dv) if dv else 0.0
+        adv[inst] = _median_quote_adv(
+            store.fetch_bars(inst, 0, 10 ** 14), volume_unit=MC_SPEC.volume_unit,
+        )
     event_times = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, 0, 10 ** 14)})
     weekly = event_times[::7]
     wk = []
@@ -113,20 +126,18 @@ def _trend_capacity():
         turnover.append([(abs(w.get(n, 0.0) - prevw.get(n, 0.0)), adv.get(n, 0.0)) for n in names])
         prevw = w
     band = capacity_band(gross, turnover, _AUM_GRID, _COEF_LO_HI, max_participation=0.10)
-    # data-quality guard (Rank #22): reuse the canonical cross-instrument volume-unit check — the
-    # crypto_daily.db bug (EOS ~$20k vs BTC ~$3.7Q, ~17 orders of magnitude) makes ADV/capacity
-    # meaningless. Honestly labelled UNRELIABLE, not faking $8k as a real capacity.
-    from services.data.quality import check_volume_units
+    # Supplement the explicit SourceSpec unit contract with a conservative dispersion guard.
+    from services.data.quality import check_volume_dispersion
     advs = [a for a in adv.values() if a > 0]
     spread = (max(advs) / min(advs)) if advs else 0.0
-    unreliable = not check_volume_units(adv, max_ratio=1e6).passed
+    extreme_dispersion = not check_volume_dispersion(adv, max_ratio=1e6).passed
     out = {"aum_low": band["aum_low"], "aum_high": band["aum_high"],
            "participation_cap_aum": band["participation_cap_aum"], "n_periods": len(gross),
            "adv_max_min_spread": spread,
-           "data_quality": "UNRELIABLE_VOLUME_UNITS" if unreliable else "OK"}
-    out["note"] = ("trend 容量不可靠:crypto_daily.db 的 volume 单位跨币不一致(ADV 极差 ~%.0e,不可能真实)——"
-                   "需先修 daily 库 volume 单位才能算 trend 容量。短样本(~1 年)。" % spread) if unreliable \
-        else "短样本(~1 年 daily);容量为参与率绑定,谨慎解读。"
+           "data_quality": "EXTREME_VOLUME_DISPERSION" if extreme_dispersion else "OK"}
+    out["note"] = ("trend capacity withheld: quote-volume semantics are consistent, but ADV "
+                   "dispersion %.0e exceeds the conservative guard." % spread) if extreme_dispersion \
+        else "Short daily sample (~1 year); quote-volume semantics verified; interpret cautiously."
     return out
 
 
@@ -173,8 +184,9 @@ def main() -> None:
         print(f"  尾部: CVaR95 {a['var_cvar_95']['cvar']*100:.1f}% · CVaR99 {a['var_cvar_99']['cvar']*100:.1f}% "
               f"· Hill尾指数 {a['hill_tail_index']} · 与BTC下尾依赖(崩盘beta) {a['lower_tail_dep_vs_btc']}", flush=True)
     tc = snap["trend_capacity"]
-    if tc["data_quality"] == "UNRELIABLE_VOLUME_UNITS":
-        print(f"\n[trend] 容量不可靠(data_quality=UNRELIABLE_VOLUME_UNITS):{tc['note']}", flush=True)
+    if tc["data_quality"] == "EXTREME_VOLUME_DISPERSION":
+        print(f"\n[trend] capacity withheld (EXTREME_VOLUME_DISPERSION): {tc['note']}",
+              flush=True)
     else:
         print(f"\n[trend] 容量带 {_fmt(tc['aum_low'])} – {_fmt(tc['aum_high'])} (参与率上限 {_fmt(tc['participation_cap_aum'])} · {tc['n_periods']}周,短样本)", flush=True)
     print(f"-> wrote {_OUT}", flush=True)

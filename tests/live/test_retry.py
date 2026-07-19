@@ -1,5 +1,5 @@
 """共享限流感知退避重试(live/exchange/retry.py)。设计:
-docs/superpowers/specs/2026-07-04-live-execution-stack-design.md §12。纯函数,sleep 可注入
+docs/engineering/specs/2026-07-04-live-execution-stack-design.md §12。纯函数,sleep 可注入
 (测试零真延迟)。回答 2026-07-04 对抗式审查记录在案的运维缺口:非 2xx 响应(含限流 429/418)
 之前被一视同仁转成通用 RuntimeError,没有退避、没有区分"限流"与"真错误"。"""
 import pytest

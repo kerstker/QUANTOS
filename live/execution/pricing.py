@@ -1,5 +1,5 @@
 """LIMIT 定价(2026-07-06 战线②)。设计:
-docs/superpowers/specs/2026-07-06-limit-order-execution-design.md §2。
+docs/engineering/specs/2026-07-06-limit-order-execution-design.md §2。
 
 纯函数、无网络/墙钟——anchor(盘口锚)由调用方(`live/pipeline.py`)装配好后传入,本文件
 不碰 `venue.book_ticker()`。

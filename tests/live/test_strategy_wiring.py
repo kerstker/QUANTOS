@@ -1,5 +1,5 @@
 """strategy_id 仓位隔离——驱动器/看门狗接线(2026-07-06 战线③,commit 3)。设计:
-docs/superpowers/specs/2026-07-06-strategy-position-isolation-design.md。
+docs/engineering/specs/2026-07-06-strategy-position-isolation-design.md。
 
 口径分离是本战线最大的实施风险(评审 risks #1):submit_live_batch 的 current_positions 必须
 是**策略级**(否则第二条策略会把第一条的持仓当自己的平掉),而 preflight/gate ctx/mandate 的
@@ -15,7 +15,7 @@ import pytest
 from live.execution.position_ledger import LiveLedger
 from quantos.contracts.trading import OrderSide
 from live.execution.emergency import EMERGENCY_STRATEGY_ID
-from tools.live_track_advance import (_STRATEGIES, _STRATEGY_ID, _VENUES, _venue_paths,
+from tools.live_track_advance import (_STRATEGIES, _STRATEGY_ID, _venue_paths,
                                       emergency_unreconciled_instruments, make_ctx_factory,
                                       multi_strategy_mandate_alert, position_scopes)
 
@@ -134,6 +134,14 @@ def test_driver_wires_live_crowding_z_gate():
     assert "average_warn_only=True" in _SRC
     assert "max_crowding_z=_MAX_CROWDING_Z" in _SRC
     assert "_MAX_CROWDING_Z = 3.0" in _SRC                     # 签署值 drift-lock(源码级)
+
+
+def test_driver_uses_contemporaneous_cross_source_prices_without_age_skip():
+    assert "flag_noncontemporaneous_instruments" in _SRC
+    assert "fetch_simple_price_observations" in _SRC
+    assert "real_venue.book_ticker" in _SRC
+    assert "_CROSS_CHECK_MAX_STALENESS_MS" not in _SRC
+    assert "cross-venue price check skipped" not in _SRC
     # signal 现返回五元组(evidence 携带 adv/vol/z),解包点必须同步
     assert "weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES" in _SRC
 
@@ -148,6 +156,12 @@ def test_driver_wires_real_adv_vol_now_that_exits_are_exempt():
     # 2026-07-07:reduce-only 豁免(gate)+ allowed_instruments 并入持仓(driver)让平仓单畅通后,真实
     # ADV/vol 已可安全接线(把结构性失效的流动性/波动门升为真实承重)。加仓单缺数据仍 fail-closed 拒。
     assert "adv_units=adv_units, inst_vol=inst_vol" in _SRC
+
+
+def test_driver_wires_persistent_order_history_into_duplicate_and_cancel_gates():
+    assert "build_recent_order_gate_inputs(" in _SRC
+    assert "recent_order_fingerprints=recent_orders.fingerprints" in _SRC
+    assert "recent_order_statuses=recent_orders.statuses" in _SRC
 
 
 # --- 紧急减仓陈旧基线防护(2026-07-06 对抗式复审 CONFIRMED 修复,front3-strategy 高危发现):
