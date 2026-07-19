@@ -12290,8 +12290,8 @@
       "version": "0.16.0"
     },
     {
-      "bom-ref": "pypi:httpx2@2.5.0",
-      "name": "httpx2",
+      "bom-ref": "pypi:httpx@0.28.1",
+      "name": "httpx",
       "properties": [
         {
           "name": "quantos:ecosystem",
@@ -12302,10 +12302,10 @@
           "value": "requirements-dev.txt"
         }
       ],
-      "purl": "pkg:pypi/httpx2@2.5.0",
+      "purl": "pkg:pypi/httpx@0.28.1",
       "scope": "optional",
       "type": "library",
-      "version": "2.5.0"
+      "version": "0.28.1"
     },
     {
       "bom-ref": "pypi:idna@3.18",
@@ -12416,7 +12416,7 @@
       "version": "3.0"
     },
     {
-      "bom-ref": "pypi:pydantic-core@2.41.5",
+      "bom-ref": "pypi:pydantic-core@2.46.4",
       "name": "pydantic-core",
       "properties": [
         {
@@ -12428,13 +12428,13 @@
           "value": "requirements.txt"
         }
       ],
-      "purl": "pkg:pypi/pydantic-core@2.41.5",
+      "purl": "pkg:pypi/pydantic-core@2.46.4",
       "scope": "required",
       "type": "library",
-      "version": "2.41.5"
+      "version": "2.46.4"
     },
     {
-      "bom-ref": "pypi:pydantic@2.12.5",
+      "bom-ref": "pypi:pydantic@2.13.4",
       "name": "pydantic",
       "properties": [
         {
@@ -12446,10 +12446,10 @@
           "value": "requirements.txt"
         }
       ],
-      "purl": "pkg:pypi/pydantic@2.12.5",
+      "purl": "pkg:pypi/pydantic@2.13.4",
       "scope": "required",
       "type": "library",
-      "version": "2.12.5"
+      "version": "2.13.4"
     },
     {
       "bom-ref": "pypi:pyjwt@2.13.0",

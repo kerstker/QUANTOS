@@ -13,20 +13,20 @@
   },
   "builds": [
     {
-      "archive_name": "quantos-console-repro-20260719-a.oci.tar",
-      "archive_sha256": "b68047311e3bd33da45cc8880917ed2b70e819b664f4f82c4663461c9dee7fba",
-      "archive_size": 129591808,
-      "config_digest": "sha256:983684e833ee87a010678e37fc5e48066f8827ea0f633d980e1962fbb2fab5ad",
+      "archive_name": "quantos-console-merge-a.oci.tar",
+      "archive_sha256": "1e584493f7d68e97dddd8842ef99179b49f01c840b4d387887d0c34a14897ade",
+      "archive_size": 129598976,
+      "config_digest": "sha256:8d42309b71be7dd2e4afcc0479ab768166747a1270e4b64ffe4014a4fabe47b6",
       "label": "A",
-      "manifest_digest": "sha256:6b051d3239c88858dacc0130ed17e5aef44868f636a17d316b187d55825f5997"
+      "manifest_digest": "sha256:d635f971463971f0014deb4d7529ad08a93e14fa24a48172ad8f0e64be51d418"
     },
     {
-      "archive_name": "quantos-console-repro-20260719-b.oci.tar",
-      "archive_sha256": "b68047311e3bd33da45cc8880917ed2b70e819b664f4f82c4663461c9dee7fba",
-      "archive_size": 129591808,
-      "config_digest": "sha256:983684e833ee87a010678e37fc5e48066f8827ea0f633d980e1962fbb2fab5ad",
+      "archive_name": "quantos-console-merge-b.oci.tar",
+      "archive_sha256": "1e584493f7d68e97dddd8842ef99179b49f01c840b4d387887d0c34a14897ade",
+      "archive_size": 129598976,
+      "config_digest": "sha256:8d42309b71be7dd2e4afcc0479ab768166747a1270e4b64ffe4014a4fabe47b6",
       "label": "B",
-      "manifest_digest": "sha256:6b051d3239c88858dacc0130ed17e5aef44868f636a17d316b187d55825f5997"
+      "manifest_digest": "sha256:d635f971463971f0014deb4d7529ad08a93e14fa24a48172ad8f0e64be51d418"
     }
   ],
   "dockerfile": {
@@ -42,7 +42,7 @@
   "exporter": "oci",
   "image": {
     "architecture": "amd64",
-    "config_digest": "sha256:983684e833ee87a010678e37fc5e48066f8827ea0f633d980e1962fbb2fab5ad",
+    "config_digest": "sha256:8d42309b71be7dd2e4afcc0479ab768166747a1270e4b64ffe4014a4fabe47b6",
     "config_size": 8094,
     "created": "2026-06-16T00:20:04Z",
     "diff_ids": [
@@ -52,7 +52,7 @@
       "sha256:8e5e9a87b99a1854e8092efc0af2e6705f903feee92924e884fe710add465b9d",
       "sha256:87b6fda826019af7ab903470268ca579ea2dfccaa3bc5b71a964b0f185e0f94c",
       "sha256:fc2984ce96dffa6729625973791f813d3081f6c2bc4959f242162eea4aa6a4aa",
-      "sha256:5a2aa8e17974948c2030b7ef6f8e3a18a42c2fb929f89c2a5a0b087a56e8f285",
+      "sha256:0ddcc4268974d382dcf5d033c9937b59fdd1797a583d0c247cc3c69b3b0d0c6e",
       "sha256:0ab260ff080ff59afabe51ea6c576bf63a73f98c1ea5ce5d64da8bb5d990a373",
       "sha256:66210a04bcadd8eb559f7349c5cc1fd0bfeeafcc75196a2ad984510508da223b",
       "sha256:30588034c97d93063268cca274af7db876a6222b40fb14d8e5e533328a610f4d",
@@ -90,9 +90,9 @@
         "size": 14141044
       },
       {
-        "digest": "sha256:1e433de385e2e4c3a20a786aa4e1bec6e6f1a89caed92d6102b9dfdf9a0ee090",
+        "digest": "sha256:236513fa43860e30f9187f1a2a5c6553713c7c4865a5cab836f4413421b79e92",
         "rewritten_timestamp": true,
-        "size": 94735094
+        "size": 94742512
       },
       {
         "digest": "sha256:f2881f93c831016d3517947fd4f3829537498f25b82c52fca583333e4b79075f",
@@ -115,7 +115,7 @@
         "size": 908
       }
     ],
-    "manifest_digest": "sha256:6b051d3239c88858dacc0130ed17e5aef44868f636a17d316b187d55825f5997",
+    "manifest_digest": "sha256:d635f971463971f0014deb4d7529ad08a93e14fa24a48172ad8f0e64be51d418",
     "manifest_size": 2982,
     "os": "linux",
     "rewritten_timestamp_layer_count": 7
@@ -127,11 +127,11 @@
   ],
   "mode": "LOCAL_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1784486461,
+  "observed_at": 1784489866,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
-    "sha256": "4bc57ee8eea18ba657005706117976bfddbe8cf5f0df50170ddbd0288051267a",
+    "sha256": "09288b373d8fc693203856c61f7bb23278c08eec878df19a009313bd11828e5a",
     "size": 1303
   },
   "rewrite_timestamp": true,

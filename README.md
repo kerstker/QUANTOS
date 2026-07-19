@@ -7,6 +7,19 @@
 [![readiness](https://img.shields.io/badge/readiness-L2__DRY__RUN__ONLY-orange)](#当前状态)
 [![live trading](https://img.shields.io/badge/live%20trading-disabled-critical)](#安全横幅)
 
+## Devpost / AI-assisted development
+
+**Repository:** [github.com/kerstker/QUANTOS](https://github.com/kerstker/QUANTOS)
+
+QUANTOS was developed with OpenAI Codex and GPT-5.6 as an AI-assisted engineering workflow, with human review and final control. The goal was not to ask an AI to invent a trading strategy and deploy it, but to use AI to build a reproducible research machine that can reject unsafe or unsupported conclusions.
+
+- **Codex as the engineering environment:** Codex was used to navigate the repository, follow `AGENTS.md` safety rules, turn the blueprint into small testable changes, edit backend and console code, inspect diffs, and run the repository's validation gates.
+- **GPT-5.6 for implementation and reasoning:** GPT-5.6 was used to design and review deterministic factor research, point-in-time data handling, leakage checks, purged/embargoed validation, fail-closed risk gates, dry-run execution, audit/event contracts, and the read-only research console. It also helped compare research findings against the safety boundary instead of treating backtest performance as permission to trade.
+- **Human-in-the-loop accountability:** The model never receives broker credentials, never imports a broker/CTP/FIX SDK, and cannot submit live orders or reach the `APPROVED` state. Human review remains required for governance decisions. Every change is checked with tests, governance scanning, and the single fail-closed entry point, `python scripts/validate.py`.
+- **Concrete AI-assisted outputs:** The repository contains the guarded `ResearchAgentLoop`, point-in-time research and validation engines, the dry-run pipeline, immutable evidence/audit artifacts, and a React console that exposes provenance and safety state rather than fabricating live-trading capability.
+
+
+
 ---
 
 ## 安全横幅
