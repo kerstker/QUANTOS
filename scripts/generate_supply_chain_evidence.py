@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from quantos.contracts.hashing import source_file_sha256  # noqa: E402
 from services.governance.vulnerability_evidence import (  # noqa: E402
     verify_actions_audit_evidence,
     verify_container_audit_evidence,
@@ -204,7 +205,7 @@ def _sha256_bytes(content: bytes) -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    return _sha256_bytes(path.read_bytes())
+    return source_file_sha256(path)
 
 
 def _requirement_entries(path: Path, seen: set[Path] | None = None) -> list[str]:

@@ -5,14 +5,14 @@
 
 **System verdict:** `NOT_TOP_TIER`
 
-**Requirements:** 22 total; 15 pass; 0 failed; 2 manual/external; 3 red lines open
+**Requirements:** 22 total; 14 pass; 1 failed; 2 manual/external; 3 red lines open
 
 ## Domain Summary
 
 | Domain | Maturity | Passed | Requirements | Red Lines Failed |
 |---|---:|---:|---:|---:|
 | `ai_agents` | M2 | 1 | 2 | 0 |
-| `alpha_research` | M3 | 2 | 2 | 0 |
+| `alpha_research` | M0 | 1 | 2 | 0 |
 | `data_moat` | M1 | 1 | 2 | 0 |
 | `execution_microstructure` | M1 | 1 | 2 | 0 |
 | `frontend_console` | M3 | 2 | 2 | 0 |
@@ -29,7 +29,7 @@
 |---|---|---:|---|---|---|---:|---|---|
 | `AI.AGENT.NONHUMAN.BOUNDARY` | `ai_agents` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `services/intelligence/guardrails.py`<br>`tests/intelligence` | all declared evidence paths exist Next: Add model and prompt registry |
 | `AI.MODEL.REGISTRY.REDTEAM` | `ai_agents` | A | L2_SAFE_NOW | M2 / M3 | PARTIAL | NO | `evidence/model_risk_baseline.json`<br>`evidence/datasets/fx_pit_tradable_v1.jsonl.gz`<br>`evidence/datasets/fx_pit_tradable_v1.manifest.json`<br>`evidence/model_risk_history.json`<br>`tests/governance/test_model_risk_registry.py`<br>`tests/governance/test_model_risk_evidence.py`<br>`tests/governance/test_model_risk_history.py`<br>`tests/intelligence/test_runtime_governance.py`<br>`services/intelligence/agent_loop.py`<br>`services/intelligence/guardrails.py`<br>`services/research/ml/stacker.py`<br>`tools/ml_stack_research.py`<br>`quantos/contracts/model_risk.py`<br>`scripts/generate_model_risk_dataset.py`<br>`scripts/generate_model_risk_evidence.py`<br>`scripts/update_model_risk_history.py`<br>`services/governance/model_risk.py`<br>`services/governance/model_risk_dataset.py`<br>`services/governance/model_risk_history.py`<br>`services/governance/model_risk_registry.py`<br>`services/intelligence/runtime.py` | immutable model/tool/evaluation lineage and real agent-boundary red-team evidence verified; both challengers have negative OOS Sharpe and fail the absolute floor; a registered offline prompt/tool runtime and tamper-evident invocation chain are verified; a deterministic versioned PIT evaluation subset is retained and verified; a current tamper-evident multi-revision history is verified; an external model provider and strong reviewer identity remain open; evidence does not meet target maturity Next: Govern an external model provider through the registered runtime and independent external review |
-| `ALPHA.MULTI_ASSET.RESEARCH` | `alpha_research` | A | L2_SAFE_NOW | M3 / M3 | PASS | NO | `tools/ic_panel_registry.py`<br>`data/cache/equity_universe_snapshot.json` | all declared evidence paths exist Next: Add stronger non-crypto PIT universes |
+| `ALPHA.MULTI_ASSET.RESEARCH` | `alpha_research` | A | L2_SAFE_NOW | M0 / M3 | FAILED | NO | `tools/ic_panel_registry.py`<br>`evidence/multi_asset_research_baseline.json` | missing: evidence/multi_asset_research_baseline.json Next: Retain a versioned non-crypto PIT bundle and replayable factor result |
 | `ALPHA.TRIAL.GLOBAL_LEDGER` | `alpha_research` | A | L2_SAFE_NOW | M4 / M4 | PASS | YES | `services/intelligence/research_session.py`<br>`services/research/session.py`<br>`services/research/alpha_factory.py`<br>`tools/search_trial_registry.py`<br>`services/research/experiment_registry/registry.py`<br>`services/research/ports/persistence.py`<br>`services/research/experiment_registry/store.py`<br>`tools/crypto_factory_intraday.py`<br>`tools/crypto_factory_loop.py`<br>`tools/crypto_factory_orthogonal.py`<br>`tools/crypto_factory_overfit_ab.py`<br>`tools/crypto_factory_run.py`<br>`tests/research/test_session.py`<br>`tests/research/test_experiment_registry.py`<br>`tests/research/test_experiment_store.py`<br>`tests/research/test_experiment_store_locked_primitives.py`<br>`tests/research/test_search_trial_provenance.py`<br>`tests/intelligence/test_registered_candidate_batch.py`<br>`tests/governance/test_experiment_registry_isolation.py`<br>`services/research/experiment_registry/family_schema_v2_semantics.py`<br>`evidence/alpha_trial_ledger_history.json`<br>`evidence/alpha_trial_ledger_snapshot.db`<br>`evidence/alpha_trial_ledger_snapshot_seal.json` | official guided/evolutionary/GP/MCTS and factory recorder wiring, a portable sealed snapshot, a versioned two-session monotonic history chain with exact completed-search evaluation bindings, and database-enforced append-only trial/evaluation/search guards are verified Next: Evidence complete: all five factory tools wired to persistent search identity with cross-session trial count verification |
 | `DATA.PIT.CONTRACT` | `data_moat` | A | L2_SAFE_NOW | M3 / M3 | PASS | YES | `quantos/contracts/data.py`<br>`tests/contracts/test_data_feature.py` | all declared evidence paths exist Next: Add cross-source quality and historical membership evidence |
 | `DATA.VENDOR.DEPTH` | `data_moat` | B | NEEDS_EXTERNAL | M1 / M4 | MANUAL_EVIDENCE_REQUIRED | NO | - | requires external or human-verified evidence Next: Acquire licensed source and record SLA evidence |

@@ -4,11 +4,11 @@
   "implementation_sha256": {
     "quantos/contracts/event_schemas.py": "8951b7c9e8ade5471f411f467bf8d1acd62f419ba73b3eb2a79912695f107efa",
     "quantos/contracts/events.py": "7460c157d3ea07bd47a860759f43c541f91367b1e36b2657c2d3d9fce520acd7",
-    "scripts/generate_event_schema_catalog.py": "0c5ba2e4e3d820fad535b03c9e9d9d0b0bafd5714703fc0434e7ecd482aa3bc2",
+    "scripts/generate_event_schema_catalog.py": "2954466b6535522c058da77a54465a9951a456c59992e1fdddec35e23e66017b",
     "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
     "services/alpha/maintenance_events.py": "af29de4ea9f4bfbc1dea65d200f25449eb3d09fc057d9973f0fe5b30052e5217",
     "services/console/api/system_views.py": "07ad5ff4f44f961c472a452735b418de9e0cd0a2dabd66bb66122782d84498de",
-    "services/data/admission_store.py": "550f22854bc7266d1e2e12a2d930ed9767d29a2664ee1d57638a229e59fad95b",
+    "services/data/admission_store.py": "56cf672826e7a9318c419552a5ed7387aed6a6ee56d77e81c016a6278178acaa",
     "services/data/events.py": "61e7e140c6dcab0afeb9efcaabf7ab769e67e797b5644d5d4155a11d1def4804",
     "services/data/refresh_history.py": "ca8bb6e0755c7041c61e4062dad3cd0ee2799dbe89a065717c6e72febd01c816",
     "services/deployment/events.py": "51e27421aa686669cbf7c0aab9372847ac900c0023a678df3a1f477903f8d4c6",
@@ -21,7 +21,7 @@
     "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
     "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
     "services/risk/research_risk/events.py": "f2fd56be0a9dc60b0306895ef7c76c2f09051e7acb76a92918c925d96a95d575",
-    "tools/data_quality_admission.py": "b2ddc64294449f9b6279978be162db73a54212ff2f9350b56cafac19ba52f27a"
+    "tools/data_quality_admission.py": "2dc0f0f8516695c1014a32b7e6ae0b25fc99e02b5ebfeeae15f823281960aa6b"
   },
   "latest_consumer_versions": {
     "data.market.refresh.recorded": "1.0.0",

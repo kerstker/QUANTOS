@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
+from quantos.contracts.hashing import source_file_sha256
 from services.portfolio.crowding_calibration import (
     SIGNED_MAX_CROWDING_Z,
     summarize_calibration_records,
@@ -275,7 +276,10 @@ def _numeric_assignment(path: Path, name: str) -> float:
 
 
 def _implementation_hashes(root: Path) -> dict[str, str]:
-    return {reference: _sha256_file(root / reference) for reference in _IMPLEMENTATION_REFS}
+    return {
+        reference: source_file_sha256(root / reference)
+        for reference in _IMPLEMENTATION_REFS
+    }
 
 
 def _signed_assignments(root: Path) -> dict[str, float]:

@@ -3,6 +3,8 @@ serialization round-trip)."""
 import pytest
 from pydantic import ValidationError
 
+from quantos.contracts.hashing import source_file_sha256
+
 from quantos.contracts import (
     RESEARCH_SAFE_DEFAULTS,
     OrderIntent,
@@ -200,3 +202,15 @@ def test_stable_hash_canonicalizes_floats():
 
 def test_short_hash_length():
     assert len(short_hash({"x": 1})) == 16
+
+
+def test_source_file_hash_is_checkout_newline_independent(tmp_path):
+    source = tmp_path / "source.py"
+    source.write_bytes(b"first = 1\r\nsecond = 2\r\n")
+    windows_digest = source_file_sha256(source)
+
+    source.write_bytes(b"first = 1\nsecond = 2\n")
+    assert source_file_sha256(source) == windows_digest
+
+    source.write_bytes(b"first = 1\nsecond = 3\n")
+    assert source_file_sha256(source) != windows_digest

@@ -8,9 +8,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "domain": "alpha_research",
-      "passed": 2,
+      "passed": 1,
       "red_lines_failed": 0,
       "requirements": 2
     },
@@ -172,21 +172,21 @@
         "pass_maturity": "M3",
         "paths": [
           "tools/ic_panel_registry.py",
-          "data/cache/equity_universe_snapshot.json"
+          "evidence/multi_asset_research_baseline.json"
         ]
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "Multi-asset factor research has real artifacts",
-      "detail": "all declared evidence paths exist",
+      "detail": "missing: evidence/multi_asset_research_baseline.json",
       "domain": "alpha_research",
       "evidence": [
         "tools/ic_panel_registry.py",
-        "data/cache/equity_universe_snapshot.json"
+        "evidence/multi_asset_research_baseline.json"
       ],
       "id": "ALPHA.MULTI_ASSET.RESEARCH",
-      "meets_target": true,
-      "next_action": "Add stronger non-crypto PIT universes",
+      "meets_target": false,
+      "next_action": "Retain a versioned non-crypto PIT bundle and replayable factor result",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -194,7 +194,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "FAILED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -1273,10 +1273,10 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 0,
+    "failed": 1,
     "manual_evidence_required": 2,
     "partial": 5,
-    "passed": 15,
+    "passed": 14,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0

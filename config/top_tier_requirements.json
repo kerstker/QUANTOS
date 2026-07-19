@@ -110,11 +110,11 @@
                              "checker_args":  {
                                                   "paths":  [
                                                                 "tools/ic_panel_registry.py",
-                                                                "data/cache/equity_universe_snapshot.json"
+                                                                "evidence/multi_asset_research_baseline.json"
                                                             ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add stronger non-crypto PIT universes"
+                             "next_action":  "Retain a versioned non-crypto PIT bundle and replayable factor result"
                          },
                          {
                              "id":  "VALIDATION.ANTIOVERFIT.GATE",

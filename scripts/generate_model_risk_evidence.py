@@ -23,7 +23,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.alpha import Actor, ActorKind
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import source_file_sha256, stable_hash
 from quantos.contracts.model_risk import (
     ChallengerReview,
     EvaluationMetric,
@@ -77,7 +77,7 @@ DEFAULT_HISTORY = REPO / "evidence" / "model_risk_history.json"
 BASELINE_RECORDED_AT = 1_784_476_800
 DEFAULT_RECORDED_AT = 1_784_480_400
 
-_CURRENT_RELEASE_VERSION = "v3"
+_CURRENT_RELEASE_VERSION = "v4"
 
 _AGENT_LOOP = "services/intelligence/agent_loop.py"
 _GUARDRAILS = "services/intelligence/guardrails.py"
@@ -408,7 +408,7 @@ def _model_artifacts(
     dataset_sha = _sha256_file(artifact_dataset)
     snapshot_sha = _sha256_file(snapshot_path)
     implementation_sha = {
-        path: _sha256_file(repo_root / path)
+        path: source_file_sha256(repo_root / path)
         for path in (_AGENT_LOOP, _GUARDRAILS, _STACKER, _ML_DRIVER)
     }
     tool_manifest = ToolManifest(
@@ -931,7 +931,7 @@ def build_model_risk_evidence(
         "runtime_history_sha256": runtime_hash,
         "runtime_events": runtime_events,
         "governance_implementation_sha256": {
-            path: _sha256_file(root / path)
+            path: source_file_sha256(root / path)
             for path in _GOVERNANCE_IMPLEMENTATIONS
         },
         "artifact_count": len(records),

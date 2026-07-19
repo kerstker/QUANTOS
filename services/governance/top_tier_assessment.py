@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import source_file_sha256, stable_hash
 from quantos.contracts.model_risk import (
     ChallengerReview,
     ChallengerVerdict,
@@ -2843,7 +2843,8 @@ def _supply_chain_baseline_evidence(
         else:
             admission_evidence_ref = str(registry_relative).replace("\\", "/")
             if (
-                hashlib.sha256(registry_bytes).hexdigest() != document.get("artifact_admission_policy_registry_sha256")
+                source_file_sha256(repo_root / registry_relative)
+                != document.get("artifact_admission_policy_registry_sha256")
                 or not isinstance(registry, dict)
                 or set(registry) != {"schema_version", "readiness", "generation", "policies"}
                 or registry.get("schema_version") != 2
@@ -2878,7 +2879,7 @@ def _supply_chain_baseline_evidence(
         else:
             normalized_ref = str(receipt_registry_relative).replace("\\", "/")
             if (
-                hashlib.sha256(receipt_registry_bytes).hexdigest()
+                source_file_sha256(repo_root / receipt_registry_relative)
                 != document.get("artifact_admission_receipt_authority_registry_sha256")
                 or not isinstance(receipt_registry, dict)
                 or set(receipt_registry) != {"schema_version", "readiness", "generation", "keys"}
@@ -2918,7 +2919,7 @@ def _supply_chain_baseline_evidence(
                 failures.append(f"artifact_admission_implementation_digest:{implementation_path}")
                 continue
             try:
-                actual_digest = hashlib.sha256((repo_root / implementation_path).read_bytes()).hexdigest()
+                actual_digest = source_file_sha256(repo_root / implementation_path)
             except OSError:
                 failures.append(f"artifact_admission_implementation_missing:{implementation_path}")
             else:
@@ -3250,7 +3251,7 @@ def _supply_chain_baseline_evidence(
                 failures.append(f"manifest_digest_shape:{manifest_path}")
                 continue
             try:
-                actual_digest = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
+                actual_digest = source_file_sha256(repo_root / candidate)
             except OSError:
                 failures.append(f"manifest_missing:{manifest_path}")
                 continue
@@ -3306,13 +3307,14 @@ def _model_risk_baseline_evidence(
         return _result("FAILED", "M1", [path], "model-risk evidence must be an object")
 
     failures: list[str] = []
-    current_release_version = "v3"
-    current_runtime_report_version = "v4"
+    current_release_version = "v4"
+    current_runtime_report_version = "v5"
+    current_release_number = int(current_release_version.removeprefix("v"))
     current_agent_red_team_ref = (
-        "red-team-report:research-agent-boundary-v3"
+        "red-team-report:research-agent-boundary-v4"
     )
     current_runtime_red_team_ref = (
-        "red-team-report:research-agent-runtime-boundary-v4"
+        "red-team-report:research-agent-runtime-boundary-v5"
     )
     active_red_team_ref = document.get("red_team_report_ref")
     is_longitudinal_v2 = active_red_team_ref == current_runtime_red_team_ref
@@ -3369,12 +3371,22 @@ def _model_risk_baseline_evidence(
         ):
             failures.append("dataset_bundle_fields")
         else:
+            source_candidate = Path(source_ref)
+            source_for_verification = (
+                source_ref
+                if (
+                    not source_candidate.is_absolute()
+                    and ".." not in source_candidate.parts
+                    and (repo_root / source_candidate).is_file()
+                )
+                else None
+            )
             try:
                 bundle_manifest = verify_pit_bundle(
                     bundle_ref,
                     manifest_ref,
                     repo_root=repo_root,
-                    source_db_path=source_ref,
+                    source_db_path=source_for_verification,
                 )
             except DatasetBundleError:
                 failures.append("dataset_bundle_verification")
@@ -3450,7 +3462,7 @@ def _model_risk_baseline_evidence(
                 failures.append(f"governance_implementation_path:{governance_path}")
                 continue
             try:
-                actual_digest = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
+                actual_digest = source_file_sha256(repo_root / candidate)
             except OSError:
                 failures.append(f"governance_implementation_missing:{governance_path}")
             else:
@@ -3536,7 +3548,7 @@ def _model_risk_baseline_evidence(
                 failures.append(f"implementation_path:{artifact_id}")
                 continue
             try:
-                actual = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
+                actual = source_file_sha256(repo_root / candidate)
             except OSError:
                 failures.append(f"implementation_missing:{artifact.implementation_ref}")
             else:
@@ -3560,7 +3572,7 @@ def _model_risk_baseline_evidence(
     evaluations = [item for item in loaded if isinstance(item, OfflineEvaluation)]
     red_team_reports = [item for item in loaded if isinstance(item, RedTeamReport)]
     challenger_reviews = [item for item in loaded if isinstance(item, ChallengerReview)]
-    allowed_release_versions = {"v1", "v2", current_release_version}
+    allowed_release_versions = {"v1", "v2", "v3", current_release_version}
     if any(
         artifact.version not in allowed_release_versions
         for artifact in (*model_cards, *prompt_cards, *tool_manifests, *evaluations)
@@ -3674,16 +3686,20 @@ def _model_risk_baseline_evidence(
     current_profile = [current_baseline_invocation]
     if is_longitudinal_v2:
         current_profile.append(current_runtime_invocation)
-    cumulative_profile = [
-        "model-risk-baseline-runtime-v1",
-        "model-risk-runtime-red-team-v2",
-        "model-risk-baseline-runtime-v2",
-        "model-risk-runtime-red-team-v3",
-        *current_profile,
-    ]
     allowed_profiles = [current_profile]
     if is_longitudinal_v2:
-        allowed_profiles.append(cumulative_profile)
+        allowed_profiles.extend(
+            [
+                invocation_id
+                for release_number in range(first_release, current_release_number)
+                for invocation_id in (
+                    f"model-risk-baseline-runtime-v{release_number}",
+                    f"model-risk-runtime-red-team-v{release_number + 1}",
+                )
+            ]
+            + current_profile
+            for first_release in range(1, current_release_number)
+        )
     runtime_ids = (
         [event.get("invocation_id") for event in runtime_events]
         if isinstance(runtime_events, list)
@@ -3699,38 +3715,18 @@ def _model_risk_baseline_evidence(
     ):
         failures.append("runtime_events")
         runtime_events = []
-    lineage_by_invocation = {
-        "model-risk-baseline-runtime-v1": (
-            "research-agent-loop@v1",
-            "research-evaluation@v1",
-            "research-agent-tools@v1",
-        ),
-        "model-risk-runtime-red-team-v2": (
-            "research-agent-loop@v1",
-            "research-evaluation@v1",
-            "research-agent-tools@v1",
-        ),
-        "model-risk-baseline-runtime-v2": (
-            "research-agent-loop@v2",
-            "research-evaluation@v2",
-            "research-agent-tools@v2",
-        ),
-        "model-risk-runtime-red-team-v3": (
-            "research-agent-loop@v2",
-            "research-evaluation@v2",
-            "research-agent-tools@v2",
-        ),
-        current_baseline_invocation: (
-            f"research-agent-loop@{current_release_version}",
-            f"research-evaluation@{current_release_version}",
-            f"research-agent-tools@{current_release_version}",
-        ),
-        current_runtime_invocation: (
-            f"research-agent-loop@{current_release_version}",
-            f"research-evaluation@{current_release_version}",
-            f"research-agent-tools@{current_release_version}",
-        ),
-    }
+    lineage_by_invocation = {}
+    for release_number in range(1, current_release_number + 1):
+        release = f"v{release_number}"
+        lineage = (
+            f"research-agent-loop@{release}",
+            f"research-evaluation@{release}",
+            f"research-agent-tools@{release}",
+        )
+        lineage_by_invocation[f"model-risk-baseline-runtime-{release}"] = lineage
+        lineage_by_invocation[
+            f"model-risk-runtime-red-team-v{release_number + 1}"
+        ] = lineage
     seen_runtime_ids: set[str] = set()
     for expected_sequence, event in enumerate(runtime_events, start=1):
         if not isinstance(event, dict) or not isinstance(event.get("payload"), dict):
@@ -3806,44 +3802,23 @@ def _model_risk_baseline_evidence(
         "runtime-sensitive-output",
         "runtime-forbidden-tool-action",
     }
-    expected_red_team_cases = {
-        "red-team-report:research-agent-boundary-v1": v1_required_cases,
-        "red-team-report:research-agent-runtime-boundary-v2": (
-            runtime_required_cases
-        ),
-        "red-team-report:research-agent-boundary-v2": v1_required_cases,
-        "red-team-report:research-agent-runtime-boundary-v3": (
-            runtime_required_cases
-        ),
-        current_agent_red_team_ref: v1_required_cases,
-        current_runtime_red_team_ref: runtime_required_cases,
-    }
-    expected_red_team_lineage = {
-        "red-team-report:research-agent-boundary-v1": (
-            "research-agent-loop@v1",
-            "research-agent-tools@v1",
-        ),
-        "red-team-report:research-agent-runtime-boundary-v2": (
-            "research-agent-loop@v1",
-            "research-agent-tools@v1",
-        ),
-        "red-team-report:research-agent-boundary-v2": (
-            "research-agent-loop@v2",
-            "research-agent-tools@v2",
-        ),
-        "red-team-report:research-agent-runtime-boundary-v3": (
-            "research-agent-loop@v2",
-            "research-agent-tools@v2",
-        ),
-        current_agent_red_team_ref: (
-            f"research-agent-loop@{current_release_version}",
-            f"research-agent-tools@{current_release_version}",
-        ),
-        current_runtime_red_team_ref: (
-            f"research-agent-loop@{current_release_version}",
-            f"research-agent-tools@{current_release_version}",
-        ),
-    }
+    expected_red_team_cases = {}
+    expected_red_team_lineage = {}
+    for release_number in range(1, current_release_number + 1):
+        release = f"v{release_number}"
+        boundary_ref = f"red-team-report:research-agent-boundary-{release}"
+        runtime_ref = (
+            "red-team-report:research-agent-runtime-boundary-"
+            f"v{release_number + 1}"
+        )
+        lineage = (
+            f"research-agent-loop@{release}",
+            f"research-agent-tools@{release}",
+        )
+        expected_red_team_cases[boundary_ref] = v1_required_cases
+        expected_red_team_cases[runtime_ref] = runtime_required_cases
+        expected_red_team_lineage[boundary_ref] = lineage
+        expected_red_team_lineage[runtime_ref] = lineage
     reports_by_id = {report.artifact_id: report for report in red_team_reports}
     required_current_reports = {current_agent_red_team_ref}
     if is_longitudinal_v2:
@@ -4173,7 +4148,7 @@ def _strong_identity_baseline_evidence(
                 failures.append(f"implementation_path:{implementation_path}")
                 continue
             try:
-                actual_digest = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
+                actual_digest = source_file_sha256(repo_root / candidate)
             except OSError:
                 failures.append(f"implementation_missing:{implementation_path}")
             else:

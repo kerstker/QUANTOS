@@ -21,6 +21,35 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 
 _CACHE = os.path.join("data", "cache")
 
+UNIVERSE_REQUIRED_FILES = {
+    "crypto_funding": (
+        "crypto_funding_snapshot.json",
+        "crypto_funding_rates.json",
+        "crypto_funding.db",
+    ),
+    "crypto_oi_majors": (
+        "crypto_oi_metrics.json",
+        "crypto_funding_snapshot.json",
+        "crypto_funding.db",
+    ),
+    "crypto_daily": ("crypto_research_snapshot.json", "crypto_daily.db"),
+    "crypto_binance_wide": (
+        "crypto_binance_snapshot.json",
+        "crypto_binance.db",
+    ),
+    "equity_daily": ("equity_universe_snapshot.json", "equity_daily.db"),
+}
+
+
+def missing_universe_artifacts(universe_name):
+    """Return absent local PIT artifacts without pretending they exist in CI."""
+
+    return tuple(
+        os.path.join(_CACHE, name)
+        for name in UNIVERSE_REQUIRED_FILES[universe_name]
+        if not os.path.isfile(os.path.join(_CACHE, name))
+    )
+
 
 def _load_json(name):
     with open(os.path.join(_CACHE, name), encoding="utf-8") as fh:

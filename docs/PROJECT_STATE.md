@@ -26,8 +26,12 @@
 > 1063 passed；前端 69 tests + typecheck/production build 全通过；治理扫描 351 文件 / 0 违规；漏洞、事件
 > schema、服务图、供应链、模型风险历史、拥挤校准、顶级评估、备份新鲜度和风险恢复演练全部通过。
 
-> 当前机器结论仍为 **`NOT_TOP_TIER`：15/22 PASS，0 FAILED，2 项需外部/人工证据，3 条红线开放**。
-> 未完成项不是代码伪绿：外部模型提供方与独立强身份审阅、真实 OIDC/TLS/密钥与身份生命周期、30 天恢复
+> **2026-07-20 干净 checkout 证据审计更正：** 当前机器结论为
+> **`NOT_TOP_TIER`：14/22 PASS，1 FAILED，5 PARTIAL，2 项需外部/人工证据，3 条红线开放**。
+> 唯一 FAILED 是 `ALPHA.MULTI_ASSET.RESEARCH`：此前仅凭未纳入版本控制的本地
+> `data/cache/equity_universe_snapshot.json` 判 PASS，GitHub/Linux 干净 checkout 无法重放；现已改为必须提供
+> `evidence/multi_asset_research_baseline.json`（版本化非加密 PIT bundle + 可重放因子结果），禁止本地缓存伪绿。
+> 其余未完成项不是代码伪绿：外部模型提供方与独立强身份审阅、真实 OIDC/TLS/密钥与身份生命周期、30 天恢复
 > 历史 + 外部 Ed25519/WORM、跨主机可复现及外部签名/收据、持牌数据深度、post-L2 多场所执行。单次
 > L2 backup 已新鲜且真实，但不冒充 30 天运营历史或外部检查点；Phase S 与持久部署激活仍开放。
 

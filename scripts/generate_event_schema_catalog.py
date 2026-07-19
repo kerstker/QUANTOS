@@ -18,6 +18,7 @@ from quantos.contracts.event_schemas import CANONICAL_EVENT_SCHEMAS  # noqa: E40
 from quantos.contracts.events import (  # noqa: E402
     EVENT_TIMESTAMP_UNIT_MICROSECONDS,
 )
+from quantos.contracts.hashing import source_file_sha256  # noqa: E402
 
 
 DEFAULT_OUTPUT = REPO / "evidence" / "event_schema_catalog.json"
@@ -52,7 +53,7 @@ def _canonical_bytes(document: dict[str, Any]) -> bytes:
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return source_file_sha256(path)
 
 
 def build_event_schema_catalog(repo_root: str | Path) -> dict[str, Any]:

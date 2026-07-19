@@ -9,11 +9,14 @@ import tarfile
 
 import pytest
 
-from quantos.contracts.hashing import short_hash, stable_hash
+from quantos.contracts.hashing import source_file_sha256, short_hash, stable_hash
 from scripts.generate_model_risk_evidence import build_model_risk_evidence
 from scripts.generate_model_risk_dataset import generate_bundle
 from scripts.generate_strong_identity_evidence import build_strong_identity_evidence
-from services.governance.model_risk_history import append_model_risk_revision
+from services.governance.model_risk_history import (
+    append_model_risk_revision,
+    build_model_risk_revision,
+)
 from services.governance.reproducibility_evidence import (
     build_container_reproducibility_evidence,
 )
@@ -93,6 +96,15 @@ def test_committed_registry_covers_all_eleven_domains():
         "frontend_console",
     }
     assert len(requirements) >= 22
+
+
+def test_paths_exist_requirements_never_pass_from_unversioned_local_cache():
+    requirements = load_requirements(REGISTRY)
+    for item in requirements:
+        if item["checker"] != "paths_exist":
+            continue
+        for path in item.get("checker_args", {}).get("paths", []):
+            assert not path.replace("\\", "/").startswith("data/cache/"), item["id"]
 
 
 @pytest.mark.parametrize(
@@ -978,7 +990,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             }
         ],
         "actions_all_sha_pinned": True,
-        "manifest_sha256": {"requirements.txt": hashlib.sha256(b"demo==1.0\n").hexdigest()},
+        "manifest_sha256": {"requirements.txt": source_file_sha256(manifest)},
         "sast_gate_wired": True,
         "reproducible_inputs": True,
         "vulnerability_scan_status": ("PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"),
@@ -1025,14 +1037,16 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "decision_store": 4,
         },
         "artifact_admission_policy_registry_ref": ("config/artifact_admission_policy_registry.json"),
-        "artifact_admission_policy_registry_sha256": hashlib.sha256(policy_registry_path.read_bytes()).hexdigest(),
+        "artifact_admission_policy_registry_sha256": source_file_sha256(
+            policy_registry_path
+        ),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
         "artifact_admission_policy_registry_generation": 0,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
-        "artifact_admission_receipt_authority_registry_sha256": hashlib.sha256(
-            receipt_authority_registry_path.read_bytes()
-        ).hexdigest(),
+        "artifact_admission_receipt_authority_registry_sha256": source_file_sha256(
+            receipt_authority_registry_path
+        ),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
         "artifact_admission_receipt_authority_registry_generation": 0,
         "artifact_admission_active_receipt_key_count": 0,
@@ -1070,7 +1084,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "artifact_admission_external_bundle_status": "NOT_PROVIDED",
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
         "artifact_admission_implementation_sha256": {
-            relative: hashlib.sha256((tmp_path / relative).read_bytes()).hexdigest()
+            relative: source_file_sha256(tmp_path / relative)
             for relative in (
                 "services/governance/artifact_admission.py",
                 "services/governance/artifact_admission_store.py",
@@ -1410,6 +1424,7 @@ def _write_valid_model_risk_evidence(
     *,
     with_bundle: bool = False,
     longitudinal_v2: bool = False,
+    release_version: str = "v4",
 ) -> Path:
     for relative, content in {
         "services/intelligence/agent_loop.py": b"agent-loop-fixture\n",
@@ -1489,6 +1504,7 @@ def _write_valid_model_risk_evidence(
         baseline_recorded_at=1,
         recorded_at=2,
         include_longitudinal_v2=longitudinal_v2,
+        release_version=release_version,
     )
     path = tmp_path / "model-risk.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
@@ -1614,6 +1630,82 @@ def test_model_risk_checker_verifies_versioned_dataset_bundle(tmp_path):
     assert "dataset_bundle_verification" in result["detail"]
 
 
+def test_model_risk_checker_accepts_retained_bundle_without_local_source_db(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["source_dataset_ref"] = "data/cache/source-not-retained.db"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "versioned PIT evaluation subset" in result["detail"]
+
+
+def test_model_risk_checker_accepts_all_retained_release_lineage(tmp_path):
+    evidence_path = _write_valid_model_risk_evidence(
+        tmp_path,
+        with_bundle=True,
+        longitudinal_v2=True,
+        release_version="v3",
+    )
+    previous = json.loads(evidence_path.read_text(encoding="utf-8"))
+    previous_snapshot = build_model_risk_revision(previous)["snapshot"]
+    (tmp_path / "services/intelligence/guardrails.py").write_text(
+        "guardrails-v4-fixture\n", encoding="utf-8"
+    )
+    current = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=tmp_path / "data/cache/ml_stack_snapshot.json",
+        dataset_path=tmp_path / "data/cache/fx.db",
+        dataset_bundle_path=tmp_path / "evidence/datasets/fx.jsonl.gz",
+        dataset_manifest_path=tmp_path / "evidence/datasets/fx.manifest.json",
+        baseline_recorded_at=3,
+        recorded_at=4,
+        include_longitudinal_v2=True,
+        prior_snapshot=previous_snapshot,
+        release_version="v4",
+    )
+    evidence_path.write_text(json.dumps(current), encoding="utf-8")
+    history, _ = append_model_risk_revision(None, previous)
+    history, _ = append_model_risk_revision(history, current)
+    history_path = tmp_path / "model-risk-history.json"
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence_path.name,
+                    "history_path": history_path.name,
+                    "pass_maturity": "M2",
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "multi-revision history" in result["detail"]
+
+
 def test_model_risk_checker_requires_current_revision_history_when_declared(tmp_path):
     evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
     document = json.loads(evidence.read_text(encoding="utf-8"))
@@ -1699,7 +1791,7 @@ def test_model_risk_checker_requires_all_current_runtime_red_team_cases(tmp_path
         record
         for record in document["artifacts"]
         if record["artifact_id"]
-        == "red-team-report:research-agent-runtime-boundary-v4"
+        == "red-team-report:research-agent-runtime-boundary-v5"
     )
     payload = active_report["payload"]
     payload["required_case_ids"] = [
