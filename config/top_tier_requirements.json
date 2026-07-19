@@ -102,19 +102,37 @@
                              "required_evidence":  [
                                                        "implementation",
                                                        "verification",
+                                                       "data",
                                                        "governance",
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "paths_exist",
+                             "checker":  "multi_asset_research_evidence",
                              "checker_args":  {
-                                                  "paths":  [
-                                                                "tools/ic_panel_registry.py",
-                                                                "evidence/multi_asset_research_baseline.json"
-                                                            ],
+                                                  "evidence_path":  "evidence/multi_asset_research_baseline.json",
+                                                  "bundle_path":  "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+                                                  "manifest_path":  "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+                                                  "implementation_paths":  [
+                                                                               "quantos/contracts/multi_asset.py",
+                                                                               "tools/fx_pit_bundle.py",
+                                                                               "tools/ic_panel_registry.py",
+                                                                               "tools/ic_panel_research.py",
+                                                                               "services/research/ic_panel.py",
+                                                                               "services/research/signals.py",
+                                                                               "services/governance/model_risk_dataset.py",
+                                                                               "services/governance/multi_asset_research_evidence.py",
+                                                                               "scripts/generate_multi_asset_research_evidence.py"
+                                                                           ],
+                                                  "verification_paths":  [
+                                                                             "tests/research/test_fx_pit_bundle.py",
+                                                                             "tests/research/test_ic_panel.py",
+                                                                             "tests/research/test_ic_panel_registry.py",
+                                                                             "tests/governance/test_multi_asset_research_evidence.py",
+                                                                             "tests/governance/test_multi_asset_research_boundary.py"
+                                                                         ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Retain a versioned non-crypto PIT bundle and replayable factor result"
+                             "next_action":  "Extend the retained PIT baseline to historically constituent-clean equities or futures without weakening the FX replay"
                          },
                          {
                              "id":  "VALIDATION.ANTIOVERFIT.GATE",

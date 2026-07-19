@@ -82,5 +82,14 @@ def test_equity_daily_universe_is_registered():
     assert {"equity_momentum_12_1", "equity_low_vol"} <= names
 
 
+def test_versioned_fx_universe_and_factors_are_registered():
+    """The non-crypto baseline must be runnable from committed evidence, not a
+    workstation-only cache."""
+    assert "fx_tradable" in UNIVERSE_REGISTRY
+    assert missing_universe_artifacts("fx_tradable") == ()
+    names = {e["name"] for e in FACTOR_REGISTRY if e["universe"] == "fx_tradable"}
+    assert {"fx_momentum_120", "fx_low_vol_60"} == names
+
+
 def test_every_registered_universe_declares_its_local_artifacts():
     assert set(UNIVERSE_REQUIRED_FILES) == set(UNIVERSE_REGISTRY)

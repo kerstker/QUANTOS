@@ -1,5 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-20 多资产研究证据从伪绿补成 M3 真基线:** `ALPHA.MULTI_ASSET.RESEARCH`
+> 不再读取未跟踪的本机 equity cache。现把已版本化的 Frankfurter/ECB FX PIT bundle
+> （18 个可交易货币、126,113 行、1999-01-04 至 2026-06-26）正式接入 `fx_tradable`
+> IC 宇宙；同一研究核重放 `fx_momentum_120` 与 `fx_low_vol_60` 在 1/5/20 日的非重叠
+> 截面 IC。治理侧不 import research/tools，而用独立 stdlib 实现逐行复核 PIT 身份、
+> `knowledge_time <= event_time`、bundle/manifest/实现/测试摘要、自摘要及全部统计结果；
+> 干净 checkout 无需网络或 `data/cache/fx.db` 即可复算。
+>
+> **研究结论仍诚实为 null:** momentum mean IC/t-stat 为 h1 `-0.0003/-0.0665`、
+> h5 `-0.0050/-0.5233`、h20 `-0.0094/-0.5035`；low-vol 为 h1
+> `-0.0049/-1.1136`、h5 `-0.0050/-0.5235`、h20 `-0.0063/-0.3351`。
+> 这次关闭的是“可版本化、可重放的非加密研究能力”缺口，不是发现了 FX alpha；证据固定
+> `DIAGNOSTIC_ONLY_NO_PROMOTION`，不触发晋级、部署或交易。机器矩阵由 **14/22、1 FAILED**
+> 恢复为 **15/22、0 FAILED、5 PARTIAL、2 项外部/人工证据、3 条红线开放**，总 verdict
+> 仍为 `NOT_TOP_TIER`。
+
 > **2026-07-19 Pass M 精确家族证据收口 + 供应链实证刷新:** 便携 ALPHA 试验账本的
 > exact-v3 家族模式已落地为 33 张家族表 / 401 个 SQL 对象 / 124 个命名绑定 /
 > 228 条结构规则 / 9 个受控 UDF；静态实现封印为
@@ -26,7 +42,7 @@
 > 1063 passed；前端 69 tests + typecheck/production build 全通过；治理扫描 351 文件 / 0 违规；漏洞、事件
 > schema、服务图、供应链、模型风险历史、拥挤校准、顶级评估、备份新鲜度和风险恢复演练全部通过。
 
-> **2026-07-20 干净 checkout 证据审计更正：** 当前机器结论为
+> **2026-07-20 干净 checkout 证据审计更正（本轮补齐前基线）：** 当时机器结论为
 > **`NOT_TOP_TIER`：14/22 PASS，1 FAILED，5 PARTIAL，2 项需外部/人工证据，3 条红线开放**。
 > 唯一 FAILED 是 `ALPHA.MULTI_ASSET.RESEARCH`：此前仅凭未纳入版本控制的本地
 > `data/cache/equity_universe_snapshot.json` 判 PASS，GitHub/Linux 干净 checkout 无法重放；现已改为必须提供
