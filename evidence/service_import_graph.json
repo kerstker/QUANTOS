@@ -103,7 +103,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 102,
+          "line": 122,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/monitoring_views.py"
         },
@@ -124,17 +124,22 @@
     {
       "references": [
         {
-          "line": 8,
+          "line": 19,
+          "module": "services.data.distribution_drift",
+          "path": "services/console/api/monitoring_views.py"
+        },
+        {
+          "line": 9,
           "module": "services.data.catalog",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 13,
+          "line": 14,
           "module": "services.data.persistent_store",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.data.versioning",
           "path": "services/console/data_console.py"
         }
@@ -991,7 +996,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "612493cf26d431f90fd732075031ca191cc4937daad4430dc4b182ca6af8b5da",
+  "graph_sha256": "bef1c0161c8a1cb9d97ed5a74ea9f4a876891240b791286b1948232e79f621d9",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -1025,7 +1030,7 @@
   "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 331,
+  "source_file_count": 332,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

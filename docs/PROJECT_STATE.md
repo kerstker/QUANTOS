@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-21 Rank #13 数据分布漂移诊断落地（部分升真）：** 新增纯函数
+> `services/data/distribution_drift.py`，用不重叠的 60 条基线/20 条近期窗口和 exclusive
+> `end_index` 计算两样本 KS 距离，非法策略、非有限输入、历史不足全部 BLOCK；默认 WARN=0.20、
+> BLOCK=0.35，明确标 `UNCALIBRATED_PRINCIPLED`，只读不改数据/权重/晋级。`DefaultDataConsolePort`
+> 从真实 bitemporal `crypto_daily.db` 提取 PIT close-to-close 序列，监控页在数据存在时新增
+> `DATA_DISTRIBUTION_DRIFT` 行；实证根数据 42 个序列，24 PASS / 18 WARN / 0 BLOCK（样本长度
+> 111 或 363）。无数据库时不伪造漂移行，旧 `FEATURE_DRIFT` 仍显式标 synthetic，直到特征值缓存
+> 真正填充。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、下单或 live 能力。
+
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
 > `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和
