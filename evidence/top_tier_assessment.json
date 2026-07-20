@@ -8,9 +8,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "domain": "alpha_research",
-      "passed": 1,
+      "passed": 2,
       "red_lines_failed": 0,
       "requirements": 2
     },
@@ -167,34 +167,67 @@
       "tier": "A"
     },
     {
-      "checker": "paths_exist",
+      "checker": "multi_asset_research_evidence",
       "checker_args": {
-        "pass_maturity": "M3",
-        "paths": [
+        "bundle_path": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence_path": "evidence/multi_asset_research_baseline.json",
+        "implementation_paths": [
+          "quantos/contracts/multi_asset.py",
+          "tools/fx_pit_bundle.py",
           "tools/ic_panel_registry.py",
-          "evidence/multi_asset_research_baseline.json"
+          "tools/ic_panel_research.py",
+          "services/research/ic_panel.py",
+          "services/research/signals.py",
+          "services/governance/model_risk_dataset.py",
+          "services/governance/multi_asset_research_evidence.py",
+          "scripts/generate_multi_asset_research_evidence.py"
+        ],
+        "manifest_path": "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "pass_maturity": "M3",
+        "verification_paths": [
+          "tests/research/test_fx_pit_bundle.py",
+          "tests/research/test_ic_panel.py",
+          "tests/research/test_ic_panel_registry.py",
+          "tests/governance/test_multi_asset_research_evidence.py",
+          "tests/governance/test_multi_asset_research_boundary.py"
         ]
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M0",
+      "current_maturity": "M3",
       "description": "Multi-asset factor research has real artifacts",
-      "detail": "missing: evidence/multi_asset_research_baseline.json",
+      "detail": "independently replayed 2 FX factors across 3 holding periods from 126113 versioned PIT rows / 18 currencies; bundle, code, tests, PIT identity, result digest, and L2 diagnostic-only boundary verified",
       "domain": "alpha_research",
       "evidence": [
+        "evidence/multi_asset_research_baseline.json",
+        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+        "quantos/contracts/multi_asset.py",
+        "tools/fx_pit_bundle.py",
         "tools/ic_panel_registry.py",
-        "evidence/multi_asset_research_baseline.json"
+        "tools/ic_panel_research.py",
+        "services/research/ic_panel.py",
+        "services/research/signals.py",
+        "services/governance/model_risk_dataset.py",
+        "services/governance/multi_asset_research_evidence.py",
+        "scripts/generate_multi_asset_research_evidence.py",
+        "tests/research/test_fx_pit_bundle.py",
+        "tests/research/test_ic_panel.py",
+        "tests/research/test_ic_panel_registry.py",
+        "tests/governance/test_multi_asset_research_evidence.py",
+        "tests/governance/test_multi_asset_research_boundary.py"
       ],
       "id": "ALPHA.MULTI_ASSET.RESEARCH",
-      "meets_target": false,
-      "next_action": "Retain a versioned non-crypto PIT bundle and replayable factor result",
+      "meets_target": true,
+      "next_action": "Extend the retained PIT baseline to historically constituent-clean equities or futures without weakening the FX replay",
       "red_line": false,
       "required_evidence": [
         "implementation",
         "verification",
+        "data",
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PASS",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -1273,10 +1306,10 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 1,
+    "failed": 0,
     "manual_evidence_required": 2,
     "partial": 5,
-    "passed": 14,
+    "passed": 15,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0

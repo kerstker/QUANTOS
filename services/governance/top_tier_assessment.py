@@ -38,6 +38,10 @@ from services.governance.model_risk_dataset import (
     DatasetBundleError,
     verify_pit_bundle,
 )
+from services.governance.multi_asset_research_evidence import (
+    MultiAssetResearchEvidenceError,
+    verify_multi_asset_research_evidence,
+)
 from services.governance.artifact_admission import (
     load_json_without_duplicate_keys,
 )
@@ -127,6 +131,66 @@ def _paths_exist(
         return _result("FAILED", "M0", paths, "missing: " + ", ".join(missing))
     maturity = args.get("pass_maturity", target)
     return _result("PASS", maturity, paths, "all declared evidence paths exist")
+
+
+def _multi_asset_research_evidence(
+    repo_root: Path,
+    args: dict[str, Any],
+    target: str,
+    _context: AssessmentContext,
+) -> dict[str, Any]:
+    evidence_path = args.get("evidence_path")
+    bundle_path = args.get("bundle_path")
+    manifest_path = args.get("manifest_path")
+    implementation_paths = args.get("implementation_paths")
+    verification_paths = args.get("verification_paths")
+    declared = [evidence_path, bundle_path, manifest_path]
+    if (
+        any(not isinstance(value, str) or not value for value in declared)
+        or not isinstance(implementation_paths, list)
+        or not implementation_paths
+        or any(not isinstance(value, str) or not value for value in implementation_paths)
+        or not isinstance(verification_paths, list)
+        or not verification_paths
+        or any(not isinstance(value, str) or not value for value in verification_paths)
+    ):
+        return _result(
+            "UNVERIFIED",
+            "M0",
+            [value for value in declared if isinstance(value, str)],
+            "multi-asset checker contract is invalid",
+        )
+    evidence = [*declared, *implementation_paths, *verification_paths]
+    try:
+        document = verify_multi_asset_research_evidence(
+            evidence_path,
+            repo_root=repo_root,
+            bundle_path=bundle_path,
+            manifest_path=manifest_path,
+            implementation_paths=tuple(implementation_paths),
+            verification_paths=tuple(verification_paths),
+        )
+    except (MultiAssetResearchEvidenceError, OSError, TypeError, ValueError) as exc:
+        return _result(
+            "FAILED",
+            "M0",
+            evidence,
+            f"multi-asset research evidence invalid: {exc}",
+        )
+    dataset = document["dataset"]
+    results = document["factor_results"]
+    maturity = args.get("pass_maturity", target)
+    return _result(
+        "PASS",
+        maturity,
+        evidence,
+        (
+            f"independently replayed {len(results)} FX factors across 3 holding "
+            f"periods from {dataset['row_count']} versioned PIT rows / "
+            f"{dataset['instrument_count']} currencies; bundle, code, tests, "
+            "PIT identity, result digest, and L2 diagnostic-only boundary verified"
+        ),
+    )
 
 
 def _text_contains_all(
@@ -4322,6 +4386,7 @@ CHECKERS: dict[
     Callable[[Path, dict[str, Any], str, AssessmentContext], dict[str, Any]],
 ] = {
     "paths_exist": _paths_exist,
+    "multi_asset_research_evidence": _multi_asset_research_evidence,
     "text_contains_all": _text_contains_all,
     "manual_evidence": _manual_evidence,
     "alpha_trial_ledger_evidence": _alpha_trial_ledger_evidence,

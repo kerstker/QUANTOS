@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
+from quantos.contracts.multi_asset import RETAINED_FX_FACTOR_SPECS
 from services.data.caching_store import CachingPITStore
 from services.data.persistent_store import SqlitePITStore
 from services.research import alpha_expression as ax
@@ -18,8 +20,10 @@ from services.research.ic_panel import signal_composite, signal_from_window_op
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE
 from tools.crypto_daily_composite import COMPOSITE as TREND_COMPOSITE
 from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.fx_pit_bundle import load_fx_pit_panel
 
 _CACHE = os.path.join("data", "cache")
+_REPO = Path(__file__).resolve().parents[1]
 
 UNIVERSE_REQUIRED_FILES = {
     "crypto_funding": (
@@ -38,17 +42,22 @@ UNIVERSE_REQUIRED_FILES = {
         "crypto_binance.db",
     ),
     "equity_daily": ("equity_universe_snapshot.json", "equity_daily.db"),
+    "fx_tradable": (
+        "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+    ),
 }
 
 
 def missing_universe_artifacts(universe_name):
     """Return absent local PIT artifacts without pretending they exist in CI."""
 
-    return tuple(
-        os.path.join(_CACHE, name)
-        for name in UNIVERSE_REQUIRED_FILES[universe_name]
-        if not os.path.isfile(os.path.join(_CACHE, name))
-    )
+    missing = []
+    for name in UNIVERSE_REQUIRED_FILES[universe_name]:
+        candidate = _REPO / name if name.startswith("evidence/") else _REPO / _CACHE / name
+        if not candidate.is_file():
+            missing.append(str(candidate))
+    return tuple(missing)
 
 
 def _load_json(name):
@@ -107,12 +116,31 @@ def _equity_daily_panel():
     return _build("equity_daily.db", instruments, fields=("close", "volume"))
 
 
+def _fx_tradable_panel():
+    """Versioned 18-currency Frankfurter/ECB PIT panel, replayable in a clean checkout."""
+
+    panel, _manifest = load_fx_pit_panel(repo_root=_REPO)
+    return panel
+
+
+def _retained_fx_signal(spec):
+    if spec.signal_kind == "momentum":
+        return lambda panel: signal_from_window_op(panel, "momentum", spec.window)
+    if spec.signal_kind == "negative_volatility":
+        return lambda panel: [
+            [-value if value is not None else None for value in row]
+            for row in signal_from_window_op(panel, "volatility", spec.window)
+        ]
+    raise ValueError(f"unsupported retained FX signal kind: {spec.signal_kind}")
+
+
 UNIVERSE_REGISTRY = {
     "crypto_funding": _crypto_funding_panel,
     "crypto_oi_majors": _crypto_oi_majors_panel,
     "crypto_daily": _crypto_daily_panel,
     "crypto_binance_wide": _crypto_binance_wide_panel,
     "equity_daily": _equity_daily_panel,
+    "fx_tradable": _fx_tradable_panel,
 }
 
 FACTOR_REGISTRY = [
@@ -167,4 +195,15 @@ FACTOR_REGISTRY = [
                "风险调整后是否系统性跑赢——镜像 crypto low_vol_wide 同一构造,换资产类别对照。",
      "signal_fn": lambda panel: [[-v if v is not None else None for v in row]
                                  for row in signal_from_window_op(panel, "volatility", 60)]},
+    # --- Versioned clean-checkout non-crypto baseline (2026-07-20) ---
+    *[
+        {
+            "name": spec.factor_id,
+            "holding_periods": list(spec.holding_periods),
+            "universe": "fx_tradable",
+            "thesis": spec.thesis,
+            "signal_fn": _retained_fx_signal(spec),
+        }
+        for spec in RETAINED_FX_FACTOR_SPECS
+    ],
 ]
