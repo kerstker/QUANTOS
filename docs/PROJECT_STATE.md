@@ -1144,3 +1144,10 @@ Makefile / 本地 git 钩子 / 远端手册)+ 已建私有远端并推送。
 前序新增:Crypto Live 前端 + 宽截面 + 无窥视 OOS + GP 树(+对抗评审硬化)+ 去冗余(协同集/增量奖励)+
 Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + 唯一性/择时/分数阶 +
 数据适配器 + 真实成交量 + 量能因子 + MCTS(+接主线)+ 频繁子树规避 + 工厂自验证闭环。
+> **2026-07-21 PIT feature-level drift diagnostic (L2 read-only increment):**
+> `services/data/distribution_drift.py` 复用既有 trailing-window KS 内核，新增
+> `evaluate_feature_distribution_drift` 对调用方提供的 PIT feature panel 做声明宇宙聚合。
+> 缺失/多余 feature、无效值和历史不足均 fail-closed；报告保留逐 feature 证据，明确
+> `PIT_FEATURE_TRAILING_KS_DRIFT_V1` / `UNCALIBRATED_PRINCIPLED`。它不读取数据库、不持久化告警、
+> 不改仓位/晋级/交易路径，故机器顶级判定仍诚实为 **15/22、NOT_TOP_TIER**；后续仍需填充真实
+> feature-value cache 并提供独立调度运营证据。
