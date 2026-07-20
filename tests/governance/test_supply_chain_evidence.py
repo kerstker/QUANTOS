@@ -42,6 +42,21 @@ def test_supply_chain_manifest_binds_external_model_provider_governance_surface(
     } <= set(_MANIFESTS)
 
 
+def test_supply_chain_manifest_binds_catalog_pbo_evidence_surface():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "quantos/contracts/alpha.py",
+        "services/alpha/evaluator.py",
+        "services/alpha/factory.py",
+        "services/alpha/guards.py",
+        "services/alpha/lifecycle.py",
+        "services/research/experiment_registry/registry.py",
+        "services/validation/pbo_evidence.py",
+        "tests/alpha/test_pbo_evidence.py",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 

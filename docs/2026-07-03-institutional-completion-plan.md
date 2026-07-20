@@ -169,6 +169,14 @@ CLAUDE.md 计数刷新(endpoints 31→41、pages 37→42、portfolio 57→124、
 - **工作量/依赖**:M;无。
 - **诚实边界**:这仍是**进程内**溯源(受信代码可绕过)——出进程签名是 Phase 14;文档措辞与 `signing.py` 对齐。
 
+> **2026-07-20 PBO 子项完成，Rank #12 仍为 PARTIAL：** 裸 `pbo` 已替换为版本化
+> `BatchPboEvidence`，保留并重放现有 CSCV 的精确输入矩阵；评估器、生命周期门和不可变实验
+> 制品验证均绑定证据哈希与完整 catalog trial-set 哈希，因此缺证据、数值/矩阵漂移、目录增长及
+> 同数量试验集合替换都会 fail-closed。工厂与智能体先持久化完整候选池再回测；console 仅展示
+> 脱敏 provenance 元数据。BHY 已是既有承重门。尚未完成的是本条原设计中更广义的
+> `CatalogEvidence`/DSR 输入封套、`effective_trials` 统一与独立 pipeline 路径收敛，所以不把
+> Rank #12 整项标为完成。
+
 #### Rank #15 — 特征注册表持久化 + PIT 特征物化
 - **为什么**:泄漏检测器真承重,但 `FeatureRegistry` 是**孤儿内存 dict**(`registry.py:9`,唯一消费方 `feature_set.py:11`;console 自认「no persisted FeatureRegistry yet」渲染合成特征,`main.py:1480,1510`);滚动特征每次从原始 bar 重算(`calculation.py:21`;驱动器 `ax.evaluate` 每 run 重算全面板)。
 - **接缝与设计**:① `SqliteFeatureRegistryStore` 镜像 `run_registry/store.py` 模式(lock、`CREATE TABLE IF NOT EXISTS`、`INSERT OR IGNORE` append-only 版本、店内无墙钟),facade API 不变;② 物化存储 `feature_values` **克隆 `fundamental_store` 双时点 schema**(`PRIMARY KEY(feature_id, feature_version, instrument_id, event_time, knowledge_time)` + as_of 索引;契约 `knowledge_time>=event_time` 已挡边界前视);写通道挂 `rolling_feature`/驱动器面板构建,读走 `latest_as_of`;③ **每特征版本带 `leakage_passed` 标志 + `code_version`**(镜像 run_registry `contract.py:41`)——缓存值可审计;④ console 特征/血缘页从合成升真(读新 store)。

@@ -16,8 +16,14 @@ class _StubEvaluator:
 
     def evaluate(self, alpha_id, periods, **kw):
         self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+        pbo_evidence = kw.get("pbo_evidence")
         return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(),
+                               pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
+                               pbo_evidence=pbo_evidence,
+                               pbo_evidence_hash=(pbo_evidence.evidence_hash
+                                                  if pbo_evidence is not None else ""),
+                               catalog_trial_count=self.catalog.global_trial_count(),
+                               catalog_trial_set_hash=self.catalog.trial_set_hash(),
                                marginal_ir=0.5)
 
 
@@ -33,8 +39,8 @@ def _cands(n=1):
 
 def test_pass_advances_to_paper_but_never_approved():
     fac, cat = _factory(ValidationVerdict.PASS)
-    report = fac.run(_cands(1))
-    assert report["a0"]["state"] == AlphaState.PAPER_TRADING
+    report = fac.run(_real_cands(2))
+    assert report["rc0"]["state"] == AlphaState.PAPER_TRADING
     # the safety invariant: nothing is APPROVED
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
 
@@ -59,14 +65,13 @@ def test_factory_must_run_as_non_human_actor():
 def test_factory_run_is_deterministic():
     r1, c1 = _factory(ValidationVerdict.PASS)
     r2, c2 = _factory(ValidationVerdict.PASS)
-    out1 = {k: v["state"] for k, v in r1.run(_cands(3)).items()}
-    out2 = {k: v["state"] for k, v in r2.run(_cands(3)).items()}
+    out1 = {k: v["state"] for k, v in r1.run(_real_cands(3)).items()}
+    out2 = {k: v["state"] for k, v in r2.run(_real_cands(3)).items()}
     assert out1 == out2 and all(s == AlphaState.PAPER_TRADING for s in out1.values())
 
 
 # --- real-evaluator integration: PBO wiring + fail-closed evidence (audit P0/P1) ---
 from services.alpha.panel_backtest import PanelPeriod
-from services.research.backtest_engine.costs import CostModel
 
 
 def _seeded_catalog():
@@ -112,3 +117,5 @@ def test_factory_computes_and_stamps_a_real_batch_pbo():
     assert len({round(p, 9) for p in pbos}) == 1          # one batch-level selection PBO, shared
     for aid in ("rc0", "rc1", "rc2"):                     # evidence present -> not parked for that
         assert all("NOT_ASSESSED" not in r for r in report[aid]["evaluation"].reasons)
+        assert report[aid]["evaluation"].pbo_evidence is not None
+        assert report[aid]["evaluation"].pbo_evidence_hash

@@ -11,10 +11,17 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
+from quantos.contracts.alpha import (
+    Actor,
+    ActorKind,
+    AlphaDefinition,
+    BatchPboEvidence,
+    PboAlignment,
+)
 from quantos.contracts.cost import CostModel
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
-from services.validation.deflated_sharpe import pbo_cscv
+from services.validation.pbo_evidence import create_batch_pbo_evidence
 
 from .catalog import AlphaCatalog
 from .config import AlphaFactoryConfig
@@ -25,9 +32,22 @@ from .panel_backtest import run_panel_backtest
 _MAX_CSCV_BLOCKS = 8   # keep C(blocks, blocks/2) small + deterministic
 
 
-def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float) -> Optional[float]:
-    """Real Probability of Backtest Overfitting for SELECTING the best of this
-    candidate batch, via CSCV over the candidates' net panel returns. Returns None
+def _candidate_definition_hash(candidate: object) -> str:
+    definition_hash = getattr(candidate, "definition_hash", None)
+    if isinstance(definition_hash, str) and len(definition_hash) == 64:
+        return definition_hash
+    if isinstance(candidate, str) and len(candidate) == 64:
+        return candidate
+    return stable_hash({"legacy_candidate": str(candidate)})
+
+
+def batch_pbo(
+    candidates, *, cost: CostModel, quantile: float, target_aum: float
+) -> Optional[BatchPboEvidence]:
+    """Replayable PBO evidence for selecting the best candidate in this batch.
+
+    Uses CSCV over the candidates' net panel returns and retains the exact
+    candidate-bound input matrix. Returns None
     (NOT a passing 0.0) when it cannot be honestly computed — a single candidate,
     too few periods, or malformed panels — so the evaluator fails closed to human
     review rather than treating an unmeasured selection as overfitting-free.
@@ -67,13 +87,15 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
     tools/crypto_daily_composite.py's two PanelPeriod sites are the one deliberate exception: that
     driver never touches AlphaFactory/ResearchAgentLoop/batch_pbo at all, so it is out of scope.
     """
+    candidate_hashes: list[str] = []
     series: list[list[float]] = []
     times: list[list[int]] = []
-    for _defn, periods in candidates:
+    for definition, periods in candidates:
         try:
             res = run_panel_backtest(periods, cost=cost, quantile=quantile, target_aum=target_aum)
         except Exception:
             return None
+        candidate_hashes.append(_candidate_definition_hash(definition))
         rets = list(res.period_returns)
         series.append(rets)
         times.append([p.event_time for p in periods])
@@ -83,13 +105,20 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
     all_timestamped = all(
         len(ts) == len(rs) and all(t is not None for t in ts) for ts, rs in zip(times, series))
     if all_timestamped:
+        if any(len(set(ts)) != len(ts) for ts in times):
+            return None
         common = set(times[0])
         for ts in times[1:]:
             common &= set(ts)
         common_sorted = sorted(common)
         by_time = [dict(zip(ts, rs)) for ts, rs in zip(times, series)]
         series = [[d[ct] for ct in common_sorted] for d in by_time]
+        alignment = PboAlignment.EVENT_TIME_INTERSECTION
+        aligned_event_times = common_sorted
     # else: legacy positional fallback — `series` is already the raw per-candidate return lists.
+    else:
+        alignment = PboAlignment.POSITIONAL_LEGACY
+        aligned_event_times = []
 
     t = min((len(s) for s in series), default=0)
     if t < 4:                                 # need >= 2 IS/OOS blocks
@@ -101,7 +130,13 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
         lo, hi = b * block, (t if b == n_blocks - 1 else (b + 1) * block)
         perf.append([sum(s[lo:hi]) for s in series])
     try:
-        return pbo_cscv(perf)
+        return create_batch_pbo_evidence(
+            candidate_definition_hashes=candidate_hashes,
+            performance_matrix=perf,
+            alignment=alignment,
+            aligned_period_count=t,
+            aligned_event_times=aligned_event_times,
+        )
     except Exception:
         return None
 
@@ -125,17 +160,21 @@ class AlphaFactory:
         TESTING for a human (fail-closed) rather than auto-advanced on a default.
         The overfitting (PBO) input is computed here for the whole batch via CSCV."""
         evidence = evidence or {}
-        # one selection-level PBO for the batch (None when not honestly computable)
+        candidate_pool = tuple(candidates)
+        # Register the complete selection population before any backtest so the
+        # retained candidate set is bound to the catalog trial ledger.
+        for definition, _periods in candidate_pool:
+            self.catalog.register(definition)
+        # one selection-level PBO evidence object for the batch
         pbo_batch = batch_pbo(
-            candidates, cost=getattr(self.evaluator, "cost", CostModel()),
+            candidate_pool, cost=getattr(self.evaluator, "cost", CostModel()),
             quantile=getattr(self.evaluator, "quantile", 0.2),
             target_aum=getattr(self.evaluator, "target_aum", 1e7))
         report: dict[str, dict] = {}
-        for defn, periods in candidates:
-            self.catalog.register(defn)
+        for defn, periods in candidate_pool:
             ev_in = evidence.get(defn.alpha_id, {})
             ev = self.evaluator.evaluate(
-                defn.alpha_id, periods, as_of=timestamp, pbo=pbo_batch,
+                defn.alpha_id, periods, as_of=timestamp, pbo_evidence=pbo_batch,
                 leakage_ok=ev_in.get("leakage_ok"),
                 regime_profitable_frac=ev_in.get("regime_profitable_frac"))
             self.manager.advance(defn.alpha_id, AlphaState.TESTING, self.actor,

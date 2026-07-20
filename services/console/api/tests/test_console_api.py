@@ -497,6 +497,14 @@ def test_alpha_zoo_is_multidimensional():
     for key in dims:
         assert key in row
     assert "generator" in row and "verdict" in row and isinstance(row["tags"], list)
+    assert {
+        "pbo_evidence_hash",
+        "pbo_alignment",
+        "pbo_candidate_count",
+        "catalog_trial_set_hash",
+    } <= set(row)
+    assert "pbo_evidence" not in row
+    assert "performance_matrix" not in row
 
 
 def test_alpha_zoo_has_paper_track_time_dimensions():

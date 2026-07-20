@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-20 目录绑定 PBO 证据链已收口，Rank #12 继续保持诚实的部分完成：**
+> `AlphaEvaluator` 不再接受调用方裸传 `pbo=<float>`；`batch_pbo` 现在保留候选定义哈希、
+> 对齐模式/日历摘要、精确 CSCV block×candidate 矩阵与可重放 PBO，形成冻结的
+> `BatchPboEvidence`。完整候选池必须先进入单调 trial ledger，再做回测；评估制品同时绑定
+> PBO 证据哈希与完整 catalog trial-set 哈希。`VALIDATED`、`PAPER_TRADING` 和最终人工晋级会
+> 独立复验 PBO，并拒绝缺证据、矩阵漂移、catalog 增长或“数量相同但集合被替换”的评估。
+> `ExperimentRegistry.verify_evaluation` 已从单层 content-hash 检查升级为解析制品并重放 PBO；
+> console 只公开证据哈希、对齐模式、候选数和 trial-set 哈希，不泄露保留矩阵。该增量不增加
+> 网络、凭据、券商、下单或 live 能力；机器顶级判定仍为 **15/22、NOT_TOP_TIER**。Rank #12
+> 尚余更广义 DSR/CatalogEvidence 与 `effective_trials` 统一，不能把本次 PBO 子项冒充整项完成。
+>
 > **2026-07-20 外部 AI provider 治理接缝已落地，但 live 凭据未通过：** 新增版本化
 > `config/model_provider_registry.json`，默认仍为 `offline_registered`，仅显式选择
 > `sushuo_gpt_5_6_sol` 才会访问固定的

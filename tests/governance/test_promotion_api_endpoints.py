@@ -11,18 +11,19 @@ import pytest
 from fastapi import Header, HTTPException
 from fastapi.testclient import TestClient
 
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
+from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
 from quantos.contracts.identity import (
     GovernanceRole,
     StrongIdentityAssurance,
     VerifiedIdentity,
 )
-from quantos.contracts.research import AlphaState, ValidationVerdict
+from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.lifecycle import AlphaLifecycleManager
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
+from tests.alpha.fixtures import bound_alpha_evaluation
 from services.governance.identity_authorization import (
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -40,14 +41,11 @@ ISSUER = "https://identity.example.test"
 ALL_ROLES = tuple(GovernanceRole)
 
 
-def _eval_report(alpha_id, trial_count, net_sharpe=1.2):
-    return AlphaEvaluation(
-        alpha_id=alpha_id,
-        verdict=ValidationVerdict.PASS,
-        deflated_sharpe=0.8,
-        pbo=0.1,
+def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2):
+    return bound_alpha_evaluation(
+        catalog,
+        alpha_id,
         catalog_trial_count=trial_count,
-        marginal_ir=0.5,
         net_sharpe=net_sharpe,
         reproducibility_hash="r1",
     )
@@ -60,10 +58,10 @@ def _seed(tmp_path):
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report("a1", cc))
-    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report("a1", cc))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(cat, "a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(cat, "a1", cc))
     registry.save(cat, now=3)
-    registry.record_evaluation(_eval_report("a1", cc), dataset_version="v1", recorded_ts=3)
+    registry.record_evaluation(_eval_report(cat, "a1", cc), dataset_version="v1", recorded_ts=3)
     paper = PaperTrackStore(str(tmp_path / "paper_track.db"), create=True)
     paper.append_periods("a1", [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
     paper.recompute_summary("a1", backtest_sharpe=1.2)

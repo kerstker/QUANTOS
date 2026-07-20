@@ -8,11 +8,11 @@ verifiable kind).
 """
 from __future__ import annotations
 
+import math
 from enum import Enum
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .hashing import stable_hash
 from .research import AlphaState, ValidationVerdict
@@ -56,6 +56,78 @@ class AlphaDefinition(BaseModel):
         })
 
 
+class PboAlignment(str, Enum):
+    EVENT_TIME_INTERSECTION = "EVENT_TIME_INTERSECTION"
+    POSITIONAL_LEGACY = "POSITIONAL_LEGACY"
+
+
+class BatchPboEvidence(BaseModel):
+    """Replayable CSCV input retained with each evaluated candidate.
+
+    The performance matrix is deliberately the exact input to the existing
+    ``pbo_cscv`` implementation: rows are time blocks and columns follow
+    ``candidate_definition_hashes``.  The model validates structure and calendar
+    binding; ``services.validation.pbo_evidence`` performs the mathematical replay.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    schema_version: Literal[1] = 1
+    algorithm: Literal["CSCV_V1"] = "CSCV_V1"
+    candidate_definition_hashes: tuple[str, ...]
+    performance_matrix: tuple[tuple[float, ...], ...]
+    alignment: PboAlignment
+    aligned_period_count: int = Field(ge=4)
+    aligned_event_times: tuple[int, ...] = ()
+    aligned_event_times_sha256: str = Field(min_length=64, max_length=64)
+    pbo: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_evidence_shape(self) -> "BatchPboEvidence":
+        hashes = self.candidate_definition_hashes
+        if len(hashes) < 2 or len(set(hashes)) != len(hashes):
+            raise ValueError("PBO evidence requires at least two distinct candidate definitions")
+        if any(
+            len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
+            for value in hashes
+        ):
+            raise ValueError("candidate definition hashes must be SHA-256 hex digests")
+        rows = self.performance_matrix
+        if not (2 <= len(rows) <= 8):
+            raise ValueError("PBO performance matrix must contain between 2 and 8 blocks")
+        if any(len(row) != len(hashes) for row in rows):
+            raise ValueError("PBO performance matrix must be rectangular and candidate-bound")
+        if any(not math.isfinite(value) for row in rows for value in row):
+            raise ValueError("PBO performance matrix must contain only finite values")
+        if len(rows) > self.aligned_period_count:
+            raise ValueError("PBO block count cannot exceed aligned period count")
+
+        if self.alignment == PboAlignment.EVENT_TIME_INTERSECTION:
+            times = self.aligned_event_times
+            if (
+                len(times) != self.aligned_period_count
+                or any(value < 0 for value in times)
+                or tuple(sorted(set(times))) != times
+            ):
+                raise ValueError("aligned event times must be exact, sorted, unique, and complete")
+            expected_calendar_hash = stable_hash(list(times))
+        else:
+            if self.aligned_event_times:
+                raise ValueError("positional legacy evidence cannot claim event-time alignment")
+            expected_calendar_hash = stable_hash(
+                {
+                    "alignment": self.alignment.value,
+                    "aligned_period_count": self.aligned_period_count,
+                }
+            )
+        if self.aligned_event_times_sha256 != expected_calendar_hash:
+            raise ValueError("aligned event-time digest mismatch")
+        return self
+
+    @property
+    def evidence_hash(self) -> str:
+        return stable_hash(self.model_dump(mode="json"))
+
+
 class AlphaEvaluation(BaseModel):
     """Frozen, reproducible evaluation report for one alpha. Proposes a verdict;
     promotion is the lifecycle manager's job, never this report's."""
@@ -85,11 +157,28 @@ class AlphaEvaluation(BaseModel):
     crowding_score: Optional[float] = None    # public-factor R^2 (None = unknown)
     deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
     pbo: float = Field(default=0.0, ge=0, le=1)
+    pbo_evidence: Optional[BatchPboEvidence] = None
+    pbo_evidence_hash: str = ""
     catalog_trial_count: int = Field(default=1, ge=1)
+    catalog_trial_set_hash: str = ""
     verdict: ValidationVerdict
     reasons: tuple[str, ...] = ()
     as_of: int = Field(default=0, ge=0)
     reproducibility_hash: str = ""
+
+    @model_validator(mode="after")
+    def _validate_bound_pbo_fields(self) -> "AlphaEvaluation":
+        if self.pbo_evidence is None:
+            if self.pbo_evidence_hash:
+                raise ValueError("PBO evidence hash cannot exist without retained evidence")
+            return self
+        if self.pbo_evidence_hash != self.pbo_evidence.evidence_hash:
+            raise ValueError("PBO evidence hash mismatch")
+        if not math.isclose(self.pbo, self.pbo_evidence.pbo, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("PBO scalar does not match retained evidence")
+        if len(self.catalog_trial_set_hash) != 64:
+            raise ValueError("bound PBO evaluation requires a catalog trial-set digest")
+        return self
 
 
 class AlphaCluster(BaseModel):

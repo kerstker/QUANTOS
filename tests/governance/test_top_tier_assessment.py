@@ -1424,7 +1424,7 @@ def _write_valid_model_risk_evidence(
     *,
     with_bundle: bool = False,
     longitudinal_v2: bool = False,
-    release_version: str = "v4",
+    release_version: str = "v5",
 ) -> Path:
     for relative, content in {
         "services/intelligence/agent_loop.py": b"agent-loop-fixture\n",
@@ -1756,12 +1756,12 @@ def test_model_risk_checker_accepts_all_retained_release_lineage(tmp_path):
         tmp_path,
         with_bundle=True,
         longitudinal_v2=True,
-        release_version="v3",
+        release_version="v4",
     )
     previous = json.loads(evidence_path.read_text(encoding="utf-8"))
     previous_snapshot = build_model_risk_revision(previous)["snapshot"]
     (tmp_path / "services/intelligence/guardrails.py").write_text(
-        "guardrails-v4-fixture\n", encoding="utf-8"
+        "guardrails-v5-fixture\n", encoding="utf-8"
     )
     current = build_model_risk_evidence(
         tmp_path,
@@ -1773,7 +1773,7 @@ def test_model_risk_checker_accepts_all_retained_release_lineage(tmp_path):
         recorded_at=4,
         include_longitudinal_v2=True,
         prior_snapshot=previous_snapshot,
-        release_version="v4",
+        release_version="v5",
     )
     evidence_path.write_text(json.dumps(current), encoding="utf-8")
     history, _ = append_model_risk_revision(None, previous)
@@ -1888,7 +1888,7 @@ def test_model_risk_checker_requires_all_current_runtime_red_team_cases(tmp_path
         record
         for record in document["artifacts"]
         if record["artifact_id"]
-        == "red-team-report:research-agent-runtime-boundary-v5"
+        == "red-team-report:research-agent-runtime-boundary-v6"
     )
     payload = active_report["payload"]
     payload["required_case_ids"] = [

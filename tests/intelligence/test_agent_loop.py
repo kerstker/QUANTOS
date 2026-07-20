@@ -5,6 +5,7 @@ import pytest
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.panel_backtest import PanelPeriod
 from services.intelligence import agent_loop as agent_loop_module
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guardrails import ForbiddenAgentAction
@@ -17,8 +18,15 @@ class _StubEval:
 
     def evaluate(self, alpha_id, periods, **k):
         self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+        pbo_evidence = k.get("pbo_evidence")
         return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(), marginal_ir=0.5)
+                               pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
+                               pbo_evidence=pbo_evidence,
+                               pbo_evidence_hash=(pbo_evidence.evidence_hash
+                                                  if pbo_evidence is not None else ""),
+                               catalog_trial_count=self.catalog.global_trial_count(),
+                               catalog_trial_set_hash=self.catalog.trial_set_hash(),
+                               marginal_ir=0.5)
 
 
 def _loop(verdict):
@@ -27,7 +35,21 @@ def _loop(verdict):
 
 
 def _cands(n=2):
-    return [(AlphaDefinition(alpha_id=f"a{i}", name=f"A{i}", factor_ids=(f"f{i}",)), object()) for i in range(n)]
+    candidates = []
+    for i in range(n):
+        periods = [
+            PanelPeriod(
+                instruments=("x", "y", "z", "w"),
+                signals=(1.0 + i, -1.0, 0.5, -0.5 - i),
+                forward_returns=(0.01 * ((t + i) % 3), -0.005, 0.002, -0.001),
+                event_time=t,
+            )
+            for t in range(12)
+        ]
+        candidates.append(
+            (AlphaDefinition(alpha_id=f"a{i}", name=f"A{i}", factor_ids=(f"f{i}",)), periods)
+        )
+    return candidates
 
 
 def test_loop_advances_pass_to_paper_and_queues_for_human():
@@ -46,7 +68,6 @@ def test_loop_rejects_fail():
 
 def test_agent_cannot_approve_or_reset_via_loop():
     loop = _loop(ValidationVerdict.PASS)
-    loop.run(_cands(1))
     with pytest.raises(ForbiddenAgentAction):
         loop.try_approve("a0")
     with pytest.raises(ForbiddenAgentAction):
@@ -69,8 +90,14 @@ def test_loop_isolates_a_failing_candidate():
             if alpha_id == "a1":
                 raise RuntimeError("boom")
             self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+            pbo_evidence = k.get("pbo_evidence")
             return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
-                                   pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(), marginal_ir=0.5)
+                                   pbo=pbo_evidence.pbo,
+                                   pbo_evidence=pbo_evidence,
+                                   pbo_evidence_hash=pbo_evidence.evidence_hash,
+                                   catalog_trial_count=self.catalog.global_trial_count(),
+                                   catalog_trial_set_hash=self.catalog.trial_set_hash(),
+                                   marginal_ir=0.5)
 
     loop = ResearchAgentLoop(catalog=cat, evaluator=_FlakyEval(cat))
     out = loop.run(_cands(2))                              # a0 ok, a1's eval raises
@@ -129,17 +156,31 @@ def test_loop_must_run_as_non_human():
 class _EvidenceEval:
     """Evaluator that PASSes only when real gauntlet evidence (leakage_ok=True) is supplied — exactly the
     evaluator's fail-closed contract: un-supplied leakage stays REQUIRES_HUMAN_REVIEW. Records the kwargs it
-    received so the test can assert the loop threads evidence (leakage/regime/pbo) into evaluate()."""
+    received so the test can assert the loop threads evidence (leakage/regime/PBO) into evaluate()."""
     def __init__(self, catalog):
         self.catalog, self.seen = catalog, {}
 
-    def evaluate(self, alpha_id, periods, *, leakage_ok=None, regime_profitable_frac=None, pbo=None, **k):
-        self.seen[alpha_id] = {"leakage_ok": leakage_ok, "regime": regime_profitable_frac, "pbo": pbo}
+    def evaluate(self, alpha_id, periods, *, leakage_ok=None, regime_profitable_frac=None,
+                 pbo_evidence=None, **k):
+        self.seen[alpha_id] = {
+            "leakage_ok": leakage_ok,
+            "regime": regime_profitable_frac,
+            "pbo_evidence": pbo_evidence,
+        }
         self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
         verdict = (ValidationVerdict.PASS if leakage_ok is True
                    else ValidationVerdict.REQUIRES_HUMAN_REVIEW)
-        return AlphaEvaluation(alpha_id=alpha_id, verdict=verdict, deflated_sharpe=0.8, pbo=0.1,
-                               catalog_trial_count=self.catalog.global_trial_count(), marginal_ir=0.5)
+        return AlphaEvaluation(
+            alpha_id=alpha_id,
+            verdict=verdict,
+            deflated_sharpe=0.8,
+            pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
+            pbo_evidence=pbo_evidence,
+            pbo_evidence_hash=(pbo_evidence.evidence_hash if pbo_evidence is not None else ""),
+            catalog_trial_count=self.catalog.global_trial_count(),
+            catalog_trial_set_hash=self.catalog.trial_set_hash(),
+            marginal_ir=0.5,
+        )
 
 
 def test_loop_advances_when_real_evidence_is_supplied():
@@ -148,10 +189,11 @@ def test_loop_advances_when_real_evidence_is_supplied():
     cat = AlphaCatalog()
     ev = _EvidenceEval(cat)
     loop = ResearchAgentLoop(catalog=cat, evaluator=ev)
-    out = loop.run(_cands(1), evidence={"a0": {"leakage_ok": True, "regime_profitable_frac": 0.8}})
+    out = loop.run(_cands(2), evidence={"a0": {"leakage_ok": True, "regime_profitable_frac": 0.8}})
     assert cat.state("a0") == AlphaState.PAPER_TRADING
     assert "a0" in out["human_review_queue"]
     assert ev.seen["a0"]["leakage_ok"] is True and ev.seen["a0"]["regime"] == 0.8  # evidence threaded
+    assert ev.seen["a0"]["pbo_evidence"] is not None
     assert cat.state("a0") != AlphaState.APPROVED                                  # containment intact
 
 
@@ -159,7 +201,7 @@ def test_loop_stays_fail_closed_without_evidence():
     # no evidence supplied -> leakage_ok None -> REQUIRES_HUMAN_REVIEW -> parked in TESTING (unchanged).
     cat = AlphaCatalog()
     loop = ResearchAgentLoop(catalog=cat, evaluator=_EvidenceEval(cat))
-    out = loop.run(_cands(1))
+    out = loop.run(_cands(2))
     assert cat.state("a0") == AlphaState.TESTING
     assert out["human_review_queue"] == []
     assert cat.state("a0") != AlphaState.APPROVED

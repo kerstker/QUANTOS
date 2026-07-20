@@ -18,6 +18,11 @@ from services.research.experiment_registry.registry import (
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError,
 )
+from tests.alpha.fixtures import bound_alpha_evaluation
+
+
+_EVALUATION_DEFINITION = AlphaDefinition(alpha_id="a1", name="a1", factor_ids=("f1",))
+_EVALUATION_CONFIG_HASH = _EVALUATION_DEFINITION.definition_hash
 
 
 def _populated():
@@ -82,9 +87,16 @@ def test_load_into_corrupt_alpha_row_fails_closed():
 
 
 def _evaluation():
-    return AlphaEvaluation(alpha_id="a1", verdict=ValidationVerdict.PASS,
-                           deflated_sharpe=0.8, pbo=0.1, catalog_trial_count=3,
-                           reproducibility_hash="repro-1")
+    catalog = AlphaCatalog()
+    catalog.register(_EVALUATION_DEFINITION)
+    catalog.register_trial(stable_hash({"test_support_candidate": "a1"}))
+    catalog.register_trial(stable_hash({"third_catalog_trial": True}))
+    return bound_alpha_evaluation(
+        catalog,
+        "a1",
+        catalog_trial_count=3,
+        reproducibility_hash="repro-1",
+    )
 
 
 def test_prepare_evaluation_artifact_preserves_exact_legacy_bytes_and_hashes():
@@ -218,7 +230,7 @@ def test_same_immutable_evaluation_links_to_each_real_search_session():
         )
         reg.register_search_candidates(
             search_id,
-            ["same-candidate"],
+            [_EVALUATION_CONFIG_HASH],
             registered_at=timestamp,
         )
         run_ids.append(
@@ -227,7 +239,7 @@ def test_same_immutable_evaluation_links_to_each_real_search_session():
                 dataset_version="v1",
                 recorded_ts=timestamp,
                 search_id=search_id,
-                config_hash="same-candidate",
+                config_hash=_EVALUATION_CONFIG_HASH,
             )
         )
         reg.finish_search_attempt(
@@ -261,7 +273,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
         )
         setup.register_search_candidates(
             search_id,
-            ["same-candidate"],
+            [_EVALUATION_CONFIG_HASH],
             registered_at=timestamp,
         )
 
@@ -287,7 +299,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
                 dataset_version="v1",
                 recorded_ts=timestamp,
                 search_id=search_id,
-                config_hash="same-candidate",
+                config_hash=_EVALUATION_CONFIG_HASH,
             )
         finally:
             store.close()
@@ -310,7 +322,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
     assert {
         setup.search_evaluations(search_id)[0]["config_hash"]
         for search_id in ("first-search", "second-search")
-    } == {"same-candidate"}
+    } == {_EVALUATION_CONFIG_HASH}
     assert setup.search_history_valid()
 
 
@@ -357,6 +369,34 @@ def test_verify_evaluation_detects_a_tampered_content_hash():
     reg._store._conn.execute("UPDATE evaluations SET content_hash='deadbeef' WHERE run_id=?", (rid,))
     reg._store._conn.commit()
     assert reg.verify_evaluation(rid) is False
+
+
+def test_verify_evaluation_replays_pbo_after_attacker_recomputes_row_hash():
+    reg = _reg()
+    rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    row = reg.get_evaluation(rid)
+    payload = json.loads(row["evaluation_json"])
+    payload["pbo_evidence"]["performance_matrix"][0][0] += 1.0
+    tampered_json = json.dumps(payload, sort_keys=True, default=str)
+    tampered_hash = stable_hash({"evaluation": payload, "dataset_version": "v1"})
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
+    reg._store._conn.execute(
+        "UPDATE evaluations SET evaluation_json=?, content_hash=? WHERE run_id=?",
+        (tampered_json, tampered_hash, rid),
+    )
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False
+
+
+def test_record_evaluation_rejects_foreign_search_candidate_binding():
+    reg = _reg()
+    with pytest.raises(ValueError, match="not bound"):
+        reg.record_evaluation(
+            _evaluation(),
+            dataset_version="v1",
+            recorded_ts=10,
+            config_hash="f" * 64,
+        )
 
 
 def test_verify_evaluation_unknown_run_id_fails_closed():

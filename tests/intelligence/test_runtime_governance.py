@@ -20,6 +20,7 @@ from quantos.contracts.model_risk import (
 )
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.panel_backtest import PanelPeriod
 from services.governance.model_risk_registry import GovernedModelRegistry, SqliteModelRiskStore
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.runtime import (
@@ -177,16 +178,50 @@ class _EvaluationStub:
     def __init__(self, catalog):
         self.catalog = catalog
 
-    def evaluate(self, alpha_id, periods, **_kwargs):
+    def evaluate(self, alpha_id, periods, **kwargs):
         self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
+        pbo_evidence = kwargs["pbo_evidence"]
         return AlphaEvaluation(
             alpha_id=alpha_id,
             verdict=ValidationVerdict.PASS,
             deflated_sharpe=0.8,
-            pbo=0.1,
+            pbo=pbo_evidence.pbo,
+            pbo_evidence=pbo_evidence,
+            pbo_evidence_hash=pbo_evidence.evidence_hash,
             catalog_trial_count=self.catalog.global_trial_count(),
+            catalog_trial_set_hash=self.catalog.trial_set_hash(),
             marginal_ir=0.5,
         )
+
+
+def _runtime_candidates():
+    candidates = []
+    for candidate_index in range(2):
+        periods = [
+            PanelPeriod(
+                instruments=("x", "y", "z", "w"),
+                signals=(1.0 + candidate_index, -1.0, 0.5, -0.5 - candidate_index),
+                forward_returns=(
+                    0.01 * ((period_index + candidate_index) % 3),
+                    -0.005,
+                    0.002,
+                    -0.001,
+                ),
+                event_time=period_index,
+            )
+            for period_index in range(12)
+        ]
+        candidates.append(
+            (
+                AlphaDefinition(
+                    alpha_id=f"a{candidate_index}",
+                    name=f"A{candidate_index}",
+                    factor_ids=(f"f{candidate_index}",),
+                ),
+                periods,
+            )
+        )
+    return candidates
 
 
 def test_agent_loop_uses_runtime_boundary_when_configured(tmp_path):
@@ -198,17 +233,16 @@ def test_agent_loop_uses_runtime_boundary_when_configured(tmp_path):
             evaluator=_EvaluationStub(catalog),
             runtime=runtime,
         )
-        definition = AlphaDefinition(alpha_id="a0", name="A0", factor_ids=("f0",))
         result = loop.run(
-            [(definition, object())],
+            _runtime_candidates(),
             timestamp=7,
             runtime_context={"dataset_version": "fixture-v1"},
         )
         assert catalog.state("a0") == AlphaState.PAPER_TRADING
-        assert result["human_review_queue"] == ["a0"]
+        assert result["human_review_queue"] == ["a0", "a1"]
         rows = registry.runtime_rows()
-        assert len(rows) == 1
-        assert rows[0]["action"] == "EVALUATE"
+        assert len(rows) == 2
+        assert all(row["action"] == "EVALUATE" for row in rows)
         assert registry.verify_runtime_history() is True
     finally:
         store.close()
@@ -223,8 +257,7 @@ def test_agent_loop_fails_closed_when_runtime_context_is_missing(tmp_path):
             evaluator=_EvaluationStub(catalog),
             runtime=runtime,
         )
-        definition = AlphaDefinition(alpha_id="a0", name="A0", factor_ids=("f0",))
-        result = loop.run([(definition, object())], timestamp=7)
+        result = loop.run(_runtime_candidates(), timestamp=7)
         assert result["human_review_queue"] == []
         assert result["report"]["a0"]["error"] == "ValueError"
         assert catalog.state("a0") != AlphaState.APPROVED

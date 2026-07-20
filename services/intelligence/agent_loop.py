@@ -78,7 +78,7 @@ class ResearchAgentLoop:
                 ev_in = evidence.get(defn.alpha_id, {})
                 evaluation_args = {
                     "as_of": timestamp,
-                    "pbo": pbo_batch,
+                    "pbo_evidence": pbo_batch,
                     "leakage_ok": ev_in.get("leakage_ok"),
                     "regime_profitable_frac": ev_in.get("regime_profitable_frac"),
                 }
