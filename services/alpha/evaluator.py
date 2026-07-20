@@ -18,13 +18,14 @@ import math
 import statistics
 from typing import Optional, Sequence
 
-from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.alpha import AlphaEvaluation, BatchPboEvidence
 from quantos.contracts.cost import CostModel
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import ValidationVerdict
 from services.validation.factor_statistics import compute_ic
 from services.validation.gate import ValidationGate
 from services.validation.performance import sharpe
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
 
 from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
@@ -102,17 +103,40 @@ class AlphaEvaluator:
         *,
         leakage_ok: Optional[bool] = None,
         regime_profitable_frac: Optional[float] = None,
-        pbo: Optional[float] = None,
+        pbo_evidence: Optional[BatchPboEvidence] = None,
         as_of: int = 0,
         dataset_version: str = "",
     ) -> AlphaEvaluation:
-        # Evidence is fail-CLOSED: leakage_ok / pbo / regime_profitable_frac default
+        # Evidence is fail-CLOSED: leakage_ok / pbo evidence / regime_profitable_frac default
         # to None (= NOT ASSESSED), not to a passing value. An alpha that would
         # otherwise PASS but whose overfitting / leakage / regime evidence was never
         # computed routes to REQUIRES_HUMAN_REVIEW below, so the autonomous factory
         # cannot advance an unscored alpha to PAPER_TRADING on a silent default
         # (audit P0/P1: the previous leakage_ok=True / pbo=0.0 / regime=1.0 defaults
         # made the leakage, overfitting and regime guards inert on the agent path).
+        bound_pbo_evidence: Optional[BatchPboEvidence] = None
+        pbo: Optional[float] = None
+        pbo_evidence_reason: Optional[str] = None
+        if pbo_evidence is None:
+            pbo_evidence_reason = "OVERFIT_NOT_ASSESSED"
+        elif not verify_batch_pbo_evidence(pbo_evidence):
+            pbo_evidence_reason = "OVERFIT_EVIDENCE_INVALID"
+        else:
+            try:
+                definition_hash = self.catalog.get(alpha_id).definition_hash
+                trial_hashes = set(self.catalog.snapshot().trials)
+            except (KeyError, TypeError, ValueError):
+                pbo_evidence_reason = "OVERFIT_EVIDENCE_SUBJECT_MISMATCH"
+            else:
+                evidence_hashes = set(pbo_evidence.candidate_definition_hashes)
+                if definition_hash not in evidence_hashes:
+                    pbo_evidence_reason = "OVERFIT_EVIDENCE_SUBJECT_MISMATCH"
+                elif not evidence_hashes <= trial_hashes:
+                    pbo_evidence_reason = "OVERFIT_EVIDENCE_TRIAL_SET_MISMATCH"
+                else:
+                    bound_pbo_evidence = pbo_evidence
+                    pbo = float(pbo_evidence.pbo)
+
         # 1) per-period cross-sectional IC series + breadth
         ic_series = [compute_ic(list(p.signals), list(p.forward_returns)).get("ic_mean") for p in periods]
         breadths = [len(p.instruments) for p in periods]
@@ -180,10 +204,14 @@ class AlphaEvaluator:
         elif dsr_raw is None:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("INSUFFICIENT_CATALOG_FOR_DSR",)
         elif (unassessed := tuple(
-            name for name, val in (("LEAKAGE_NOT_ASSESSED", leakage_ok),
-                                   ("OVERFIT_NOT_ASSESSED", pbo),
-                                   ("REGIME_NOT_ASSESSED", regime_profitable_frac))
-            if val is None)):
+            reason
+            for reason, assessed in (
+                ("LEAKAGE_NOT_ASSESSED", leakage_ok is not None),
+                (pbo_evidence_reason or "", pbo_evidence_reason is None),
+                ("REGIME_NOT_ASSESSED", regime_profitable_frac is not None),
+            )
+            if not assessed
+        )):
             # fail closed: never let an unscored alpha PASS on a silent default
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, unassessed
         elif approved_set_nonempty and not ortho.ok:
@@ -221,11 +249,18 @@ class AlphaEvaluator:
             )
             verdict, reasons = vr.verdict, vr.reasons
 
+        trial_set_hash = self.catalog.trial_set_hash()
+        pbo_evidence_hash = (
+            bound_pbo_evidence.evidence_hash if bound_pbo_evidence is not None else ""
+        )
         repro = stable_hash({
             "alpha_id": alpha_id,
             "battery": {k: m[k] for k in ("icir", "ic_tstat", "hit_rate", "n_periods")},
             "net_sharpe": round(net_sharpe, 10), "dsr": round(dsr, 10),
-            "trials": trial_count, "dataset_version": dataset_version,
+            "trials": trial_count,
+            "trial_set_hash": trial_set_hash,
+            "pbo_evidence_hash": pbo_evidence_hash,
+            "dataset_version": dataset_version,
         })
 
         return AlphaEvaluation(
@@ -237,6 +272,9 @@ class AlphaEvaluator:
             observed_sr=observed_sr, turnover=turnover, marginal_ir=marginal_ir,
             max_corr_vs_approved=max_corr_vs_approved,
             deflated_sharpe=dsr, pbo=_clamp01(pbo) if pbo is not None else 0.0,
+            pbo_evidence=bound_pbo_evidence,
+            pbo_evidence_hash=pbo_evidence_hash,
             catalog_trial_count=trial_count,
+            catalog_trial_set_hash=trial_set_hash,
             verdict=verdict, reasons=tuple(reasons), as_of=as_of, reproducibility_hash=repro,
         )

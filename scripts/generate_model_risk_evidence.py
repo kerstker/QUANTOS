@@ -77,7 +77,7 @@ DEFAULT_HISTORY = REPO / "evidence" / "model_risk_history.json"
 BASELINE_RECORDED_AT = 1_784_476_800
 DEFAULT_RECORDED_AT = 1_784_480_400
 
-_CURRENT_RELEASE_VERSION = "v4"
+_CURRENT_RELEASE_VERSION = "v5"
 
 _AGENT_LOOP = "services/intelligence/agent_loop.py"
 _GUARDRAILS = "services/intelligence/guardrails.py"

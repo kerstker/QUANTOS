@@ -6,14 +6,13 @@ evidence / eval trial count 缺失或过期 → 拒);合法三方 CONSUMED grant
 且转换记录 grant.request_id(评审 #2 可追溯);旧 ApprovalRecord 路径零回归(原测试文件原样跑)。"""
 import pytest
 
-from quantos.contracts.alpha import (
-    Actor, ActorKind, AlphaDefinition, AlphaEvaluation, UnauthorizedPromotion,
-)
-from quantos.contracts.research import AlphaState, ValidationVerdict
+from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, UnauthorizedPromotion
+from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.guards import parse_promotion_subject, promotion_subject
 from services.alpha.lifecycle import AlphaLifecycleManager, GuardRejected
 from services.governance.approval import approve, consume, open_request, review
+from tests.alpha.fixtures import bound_alpha_evaluation
 
 S = AlphaState
 ALICE = Actor(actor_id="alice", kind=ActorKind.HUMAN)
@@ -23,9 +22,8 @@ AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
 GOOD_PAPER = {"backtest_sharpe": 1.1, "paper_sharpe": 1.0}
 
 
-def _eval(alpha_id, trial_count):
-    return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
-                           pbo=0.1, catalog_trial_count=trial_count, marginal_ir=0.5)
+def _eval(catalog, alpha_id, trial_count):
+    return bound_alpha_evaluation(catalog, alpha_id, catalog_trial_count=trial_count)
 
 
 def _paper_mgr():
@@ -34,8 +32,8 @@ def _paper_mgr():
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", cc))
-    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval("a1", cc))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval(cat, "a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval(cat, "a1", cc))
     return mgr, cat
 
 

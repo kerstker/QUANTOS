@@ -2,13 +2,16 @@
 panel backtest + catalog-wide DSR -> AlphaEvaluation."""
 import math
 
-from quantos.contracts.alpha import AlphaDefinition
+import pytest
+
+from quantos.contracts.alpha import AlphaDefinition, PboAlignment
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.evaluator import AlphaEvaluator
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 from services.research.backtest_engine.costs import CostModel
+from services.validation.pbo_evidence import create_batch_pbo_evidence
 
 
 def _panel(n_periods=15, n_inst=12):
@@ -116,6 +119,26 @@ def _seeded_cat(extra_trials=0):
     return c
 
 
+def _bound_pbo(cat, alpha_id="a1"):
+    subject_hash = cat.get(alpha_id).definition_hash
+    trial_hashes = list(cat.snapshot().trials)
+    if len(trial_hashes) < 2:
+        extra_hash = "f" * 64 if subject_hash != "f" * 64 else "e" * 64
+        cat.register_trial(extra_hash)
+        trial_hashes = list(cat.snapshot().trials)
+    ordered = (subject_hash, *sorted(value for value in trial_hashes if value != subject_hash))
+    matrix = tuple(
+        tuple(base + column * 0.003 for column in range(len(ordered)))
+        for base in (0.04, -0.03, 0.05, -0.01)
+    )
+    return create_batch_pbo_evidence(
+        candidate_definition_hashes=ordered,
+        performance_matrix=matrix,
+        alignment=PboAlignment.POSITIONAL_LEGACY,
+        aligned_period_count=8,
+    )
+
+
 def test_catalog_wide_trial_count_deflates_dsr():
     r_small = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate("a1", _panel())
     r_big = AlphaEvaluator(_seeded_cat(400), cost=CostModel(0, 0)).evaluate("a1", _panel())
@@ -166,9 +189,49 @@ def test_partial_evidence_still_fails_closed_on_the_missing_piece():
 
 def test_fully_assessed_evidence_reaches_the_real_gate():
     # all three supplied -> gated on real thresholds, not parked for missing evidence
-    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    cat = _seeded_cat(0)
+    evidence = _bound_pbo(cat)
+    r = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=evidence, regime_profitable_frac=1.0)
     assert all("NOT_ASSESSED" not in reason for reason in r.reasons)
+    assert r.pbo == evidence.pbo
+    assert r.pbo_evidence == evidence
+    assert r.pbo_evidence_hash == evidence.evidence_hash
+    assert r.catalog_trial_set_hash == cat.trial_set_hash()
+
+
+def test_raw_pbo_scalar_is_no_longer_an_evaluator_api():
+    with pytest.raises(TypeError):
+        AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
+            "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0
+        )
+
+
+def test_foreign_candidate_pbo_evidence_fails_closed():
+    cat = _seeded_cat(0)
+    foreign = tuple(value for value in cat.snapshot().trials if value != cat.get("a1").definition_hash)
+    evidence = create_batch_pbo_evidence(
+        candidate_definition_hashes=foreign,
+        performance_matrix=((0.1, 0.0), (-0.1, 0.1), (0.2, -0.1), (-0.2, 0.2)),
+        alignment=PboAlignment.POSITIONAL_LEGACY,
+        aligned_period_count=8,
+    )
+    result = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=evidence, regime_profitable_frac=1.0
+    )
+    assert result.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "OVERFIT_EVIDENCE_SUBJECT_MISMATCH" in result.reasons
+
+
+def test_tampered_pbo_evidence_fails_closed():
+    cat = _seeded_cat(0)
+    evidence = _bound_pbo(cat)
+    tampered = evidence.model_copy(update={"pbo": 1.0 - evidence.pbo})
+    result = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=tampered, regime_profitable_frac=1.0
+    )
+    assert result.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
+    assert "OVERFIT_EVIDENCE_INVALID" in result.reasons
 
 
 def test_compute_regime_evidence_flag_assesses_regime_from_panel():
@@ -200,7 +263,7 @@ def test_candidate_duplicating_an_approved_alpha_routes_to_human_review():
     cat = _cat_with_approved(approved_returns=net)   # approved1's returns == a1's own net returns
     cfg = AlphaFactoryConfig(min_overlap=10)          # panel has 15 periods; default min_overlap=60
     r = AlphaEvaluator(cat, cfg, cost=cost).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
     assert "TOO_REDUNDANT_VS_APPROVED_SET" in r.reasons
     assert r.marginal_ir is not None and abs(r.marginal_ir) < cfg.min_marginal_ir_vs_approved
@@ -218,7 +281,7 @@ def test_candidate_genuinely_independent_of_approved_set_is_not_flagged_redundan
     cat = _cat_with_approved(approved_returns=unrelated)
     cfg = AlphaFactoryConfig(min_overlap=10)
     r = AlphaEvaluator(cat, cfg, cost=cost).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert "TOO_REDUNDANT_VS_APPROVED_SET" not in r.reasons
     assert r.marginal_ir is not None and abs(r.marginal_ir) >= cfg.min_marginal_ir_vs_approved
 
@@ -231,7 +294,7 @@ def test_insufficient_overlap_with_nonempty_approved_set_routes_to_human_review(
     net = run_panel_backtest(_panel(), cost=cost).period_returns
     cat = _cat_with_approved(approved_returns=net)   # default config: min_overlap=60 > 15 periods
     r = AlphaEvaluator(cat, cost=cost).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW
     assert "MARGINAL_IR_NOT_ASSESSED" in r.reasons
     assert r.marginal_ir is None
@@ -241,8 +304,9 @@ def test_empty_approved_set_never_triggers_the_redundancy_check():
     """No approved alpha exists yet (e.g. a catalog's first-ever registration) — there is nothing
     to be redundant AGAINST, so the new check must be a complete no-op, matching pre-fix
     behavior exactly (regression guard for the 2026-07-09 gap-audit rank #3 change)."""
-    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    cat = _seeded_cat(0)
+    r = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert "TOO_REDUNDANT_VS_APPROVED_SET" not in r.reasons
     assert "MARGINAL_IR_NOT_ASSESSED" not in r.reasons
 
@@ -274,7 +338,11 @@ def _evaluate_with_pinned_net(cat, cfg, net, *, evidence=None):
     real = ev_mod.run_panel_backtest
     ev_mod.run_panel_backtest = lambda periods, cost=None, quantile=None, target_aum=None: _FakeRes(net)
     try:
-        evidence = evidence or {"leakage_ok": True, "pbo": 0.1, "regime_profitable_frac": 1.0}
+        evidence = evidence or {
+            "leakage_ok": True,
+            "pbo_evidence": _bound_pbo(cat),
+            "regime_profitable_frac": 1.0,
+        }
         return AlphaEvaluator(cat, cfg, cost=CostModel(0, 0)).evaluate("a1", _panel(n_periods=15), **evidence)
     finally:
         ev_mod.run_panel_backtest = real
@@ -305,8 +373,9 @@ def test_candidate_with_low_correlation_is_not_flagged_by_the_pairwise_check():
 
 def test_pairwise_correlation_check_is_a_noop_on_empty_approved_set():
     """Regression guard: no approved alpha yet -> the new check must never fire."""
-    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    cat = _seeded_cat(0)
+    r = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert "TOO_CORRELATED_VS_APPROVED_SET" not in r.reasons
 
 
@@ -315,16 +384,19 @@ def test_pairwise_correlation_check_is_a_noop_on_empty_approved_set():
 def test_capacity_ratio_is_none_without_real_adv_data():
     """Every real production PanelPeriod-construction path today never populates adv_notional —
     capacity_ratio must stay None (not assessed), never defaulted to a passing/failing value."""
-    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0)).evaluate(
-        "a1", _panel(), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    cat = _seeded_cat(0)
+    r = AlphaEvaluator(cat, cost=CostModel(0, 0)).evaluate(
+        "a1", _panel(), leakage_ok=True, pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert not any("CAPACITY_BELOW_TARGET_AUM" in reason for reason in r.reasons)
 
 
 def test_thin_capacity_reaches_the_gate_as_a_warn():
     """With real ADV data present and a target_aum the alpha genuinely cannot carry, the new
     capacity_ratio wiring must reach ValidationGate and produce the CAPACITY WARN reason."""
-    r = AlphaEvaluator(_seeded_cat(0), cost=CostModel(0, 0), target_aum=1e12).evaluate(
-        "a1", _panel_with_adv(adv=1e5), leakage_ok=True, pbo=0.1, regime_profitable_frac=1.0)
+    cat = _seeded_cat(0)
+    r = AlphaEvaluator(cat, cost=CostModel(0, 0), target_aum=1e12).evaluate(
+        "a1", _panel_with_adv(adv=1e5), leakage_ok=True,
+        pbo_evidence=_bound_pbo(cat), regime_profitable_frac=1.0)
     assert any("CAPACITY_BELOW_TARGET_AUM" in reason for reason in r.reasons)
     assert r.verdict in (ValidationVerdict.WARN, ValidationVerdict.FAIL)
 

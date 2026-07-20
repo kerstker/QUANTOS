@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Optional, Sequence
 
-from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
 from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
@@ -23,6 +23,7 @@ from services.research.ports.persistence import (
     ExperimentStoreError,
     ExperimentStorePort,
 )
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
 
 
 class ExperimentRegistry:
@@ -252,8 +253,20 @@ class ExperimentRegistry:
         config_hash: str | None = None,
         audit_log=None,
     ) -> str:
+        raw_evaluation = (
+            evaluation.model_dump()
+            if hasattr(evaluation, "model_dump")
+            else evaluation
+        )
+        parsed = AlphaEvaluation.model_validate(raw_evaluation)
+        if (
+            config_hash is not None
+            and parsed.pbo_evidence is not None
+            and config_hash not in parsed.pbo_evidence.candidate_definition_hashes
+        ):
+            raise ValueError("evaluation PBO evidence is not bound to the search candidate")
         write = prepare_evaluation_artifact(
-            evaluation,
+            parsed,
             dataset_version,
             recorded_ts,
         )
@@ -402,9 +415,16 @@ class ExperimentRegistry:
             row = self._store.get_evaluation(run_id)
             if row is None:
                 return False
+            payload = json.loads(row["evaluation_json"])
             recomputed = stable_hash(
-                {"evaluation": json.loads(row["evaluation_json"]), "dataset_version": row["dataset_version"]}
+                {"evaluation": payload, "dataset_version": row["dataset_version"]}
             )
-            return recomputed == row["content_hash"]
+            if recomputed != row["content_hash"]:
+                return False
+            evaluation = AlphaEvaluation.model_validate(payload)
+            return (
+                evaluation.pbo_evidence is not None
+                and verify_batch_pbo_evidence(evaluation.pbo_evidence)
+            )
         except Exception:
             return False

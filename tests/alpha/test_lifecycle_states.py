@@ -7,10 +7,10 @@ import pytest
 from quantos.contracts.alpha import (Actor, ActorKind, AlphaDefinition, UnauthorizedPromotion,
                                       AGENT_REACHABLE, can_alpha_transition)
 from quantos.contracts.governance import ApprovalRecord
-from quantos.contracts.research import AlphaState, ValidationVerdict
-from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.lifecycle import AlphaLifecycleManager
+from tests.alpha.fixtures import bound_alpha_evaluation
 
 HUMAN = Actor(actor_id="alice", kind=ActorKind.HUMAN)
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
@@ -18,16 +18,15 @@ S = AlphaState
 GOOD_PAPER = {"backtest_sharpe": 1.1, "paper_sharpe": 1.0}
 
 
-def _eval(aid, tc):
-    return AlphaEvaluation(alpha_id=aid, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8, pbo=0.1,
-                           catalog_trial_count=tc, marginal_ir=0.5)
+def _eval(catalog, aid, tc):
+    return bound_alpha_evaluation(catalog, aid, catalog_trial_count=tc)
 
 
 def _to_paper(mgr, cat):
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", cc))
-    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval("a1", cc))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval(cat, "a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval(cat, "a1", cc))
 
 
 def _mgr():

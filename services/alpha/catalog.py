@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 
 _VAR_SR_FLOOR = 1e-4
@@ -81,6 +82,15 @@ class AlphaCatalog:
 
     def global_trial_count(self) -> int:
         return self._trial_count
+
+    def trial_set_hash(self) -> str:
+        """Digest the complete monotonic distinct-config population.
+
+        Count-only guards catch catalog growth but not a same-size substituted set.
+        The digest lets evaluation and lifecycle evidence bind the exact population.
+        """
+
+        return stable_hash(sorted(self._seen_configs))
 
     def catalog_var_sr(self) -> Optional[float]:
         """Population variance of per-observation Sharpe across the catalog.

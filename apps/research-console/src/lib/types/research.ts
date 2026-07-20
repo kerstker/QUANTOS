@@ -1856,6 +1856,8 @@ export interface AlphaZooRow {
   // full multi-dimensional evaluation (real persisted value or null when unassessed)
   ic?: number | null; icir?: number | null; ic_tstat?: number | null; hit_rate?: number | null;
   net_sharpe: number | null; deflated_sharpe: number | null; pbo?: number | null;
+  pbo_evidence_hash?: string | null; pbo_alignment?: string | null;
+  pbo_candidate_count?: number | null; catalog_trial_set_hash?: string | null;
   turnover?: number | null; marginal_ir?: number | null; crowding_score?: number | null;
   capacity_adj_sharpe?: number | null; mean_breadth?: number | null;
   // 时间/活体征: real forward paper-track summary (out-of-sample paper P&L / IC), or null when no track

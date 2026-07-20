@@ -59,7 +59,10 @@ def test_loop_forwards_the_computed_leakage_ok_to_the_gate():
     assert leak_ok is True                                       # computed by the detector, not hard-coded
     spy, _ = _run({"t_mom": {"leakage_ok": leak_ok}})
     assert spy.calls and spy.calls[0]["leakage_ok"] is True      # the SOURCE'd verdict reached the gate
-    assert spy.calls[0]["pbo"] is not None or "pbo" in spy.calls[0]   # PBO self-computed in the loop is forwarded too
+    # A one-candidate loop cannot honestly compute CSCV/PBO, but the bound
+    # evidence channel must still be forwarded explicitly.
+    assert "pbo_evidence" in spy.calls[0]
+    assert spy.calls[0]["pbo_evidence"] is None
 
 
 def test_loop_without_evidence_forwards_none_fail_closed():

@@ -6,12 +6,14 @@ state-machine check. De-risking transitions (REJECTED/RETIRED) need no guard.
 """
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from quantos.contracts.alpha import Actor, AlphaEvaluation
 from quantos.contracts.governance import ApprovalRecord
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.governance.approval import ApprovalRequest, ApprovalState, verify_multi_party_grant
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
 
 from .config import AlphaFactoryConfig
 
@@ -51,8 +53,28 @@ def guard_to_testing(evaluation, config, catalog_count) -> tuple[bool, Reasons]:
     return True, ()   # registration is enough to begin testing
 
 
+def _pbo_provenance_reasons(
+    evaluation: AlphaEvaluation,
+    catalog_trial_set_hash: str,
+) -> list[str]:
+    evidence = evaluation.pbo_evidence
+    if evidence is None:
+        return ["PBO_EVIDENCE_UNBOUND"]
+    reasons = []
+    if (
+        not verify_batch_pbo_evidence(evidence)
+        or evaluation.pbo_evidence_hash != evidence.evidence_hash
+        or not math.isclose(evaluation.pbo, evidence.pbo, rel_tol=0.0, abs_tol=1e-12)
+    ):
+        reasons.append("PBO_EVIDENCE_INVALID")
+    if evaluation.catalog_trial_set_hash != catalog_trial_set_hash:
+        reasons.append("TRIAL_SET_MISMATCH")
+    return reasons
+
+
 def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryConfig,
-                       catalog_count: int, bh_survived: bool = True) -> tuple[bool, Reasons]:
+                       catalog_count: int, catalog_trial_set_hash: str,
+                       bh_survived: bool = True) -> tuple[bool, Reasons]:
     if evaluation is None:
         return False, ("NO_EVALUATION",)
     reasons = []
@@ -62,6 +84,7 @@ def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFacto
         reasons.append("DEFLATED_SHARPE_BELOW_MIN")
     if evaluation.pbo > config.max_pbo:
         reasons.append("PBO_TOO_HIGH")
+    reasons.extend(_pbo_provenance_reasons(evaluation, catalog_trial_set_hash))
     # the DSR was computed against the catalog count at eval time; if the catalog
     # has since grown, the correction is understated -> reject (critique test #3)
     if evaluation.catalog_trial_count < catalog_count:
@@ -74,7 +97,7 @@ def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFacto
 
 
 def guard_to_paper(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryConfig,
-                   catalog_count: int) -> tuple[bool, Reasons]:
+                   catalog_count: int, catalog_trial_set_hash: str) -> tuple[bool, Reasons]:
     if evaluation is None:
         return False, ("NO_EVALUATION",)
     reasons = []
@@ -82,13 +105,16 @@ def guard_to_paper(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryCo
         reasons.append(f"VERDICT_{evaluation.verdict.value}")
     if evaluation.marginal_ir is not None and evaluation.marginal_ir <= 0.0:
         reasons.append("NO_MARGINAL_EDGE")
+    reasons.extend(_pbo_provenance_reasons(evaluation, catalog_trial_set_hash))
     return (not reasons, tuple(reasons))
 
 
 def guard_to_approved(alpha_id: str, approval: Optional[ApprovalRecord], actor: Actor,
                       paper_evidence: Optional[dict], config: AlphaFactoryConfig,
                       eval_trial_count: Optional[int] = None,
-                      catalog_count: Optional[int] = None) -> tuple[bool, Reasons]:
+                      catalog_count: Optional[int] = None,
+                      eval_trial_set_hash: Optional[str] = None,
+                      catalog_trial_set_hash: Optional[str] = None) -> tuple[bool, Reasons]:
     """APPROVED is human-only AND evidence-gated. The actor.kind is the verifiable
     human check the ApprovalRecord contract alone cannot provide (critique P0-3);
     the approver-identity check stops one human from spending another's token."""
@@ -108,6 +134,10 @@ def guard_to_approved(alpha_id: str, approval: Optional[ApprovalRecord], actor: 
     # understated; refuse approval on a stale trial count (review P1)
     if eval_trial_count is not None and catalog_count is not None and eval_trial_count < catalog_count:
         reasons.append("TRIAL_COUNT_UNDERSTATED_AT_APPROVAL")
+    if eval_trial_set_hash is None or catalog_trial_set_hash is None:
+        reasons.append("NO_EVALUATION_TRIAL_SET_HASH")
+    elif eval_trial_set_hash != catalog_trial_set_hash:
+        reasons.append("TRIAL_SET_MISMATCH_AT_APPROVAL")
     if paper_evidence is None:
         reasons.append("NO_PAPER_EVIDENCE")
     else:
@@ -122,7 +152,9 @@ def guard_to_approved(alpha_id: str, approval: Optional[ApprovalRecord], actor: 
 def guard_to_approved_with_grant(alpha_id: str, grant: Optional[ApprovalRequest], actor: Actor,
                                  paper_evidence: Optional[dict], config: AlphaFactoryConfig,
                                  eval_trial_count: Optional[int] = None,
-                                 catalog_count: Optional[int] = None) -> tuple[bool, Reasons]:
+                                 catalog_count: Optional[int] = None,
+                                 eval_trial_set_hash: Optional[str] = None,
+                                 catalog_trial_set_hash: Optional[str] = None) -> tuple[bool, Reasons]:
     """多方批准(三个不同真人 + 哈希链,approval.py)版的 APPROVED 证据门(战线①)。
 
     多方 grant 替代的只是单人 ApprovalRecord 那一项——其余证据门与 guard_to_approved 同强度,
@@ -145,6 +177,10 @@ def guard_to_approved_with_grant(alpha_id: str, grant: Optional[ApprovalRequest]
         reasons.append("NO_EVALUATION_TRIAL_COUNT")
     elif eval_trial_count < catalog_count:
         reasons.append("TRIAL_COUNT_UNDERSTATED_AT_APPROVAL")
+    if eval_trial_set_hash is None or catalog_trial_set_hash is None:
+        reasons.append("NO_EVALUATION_TRIAL_SET_HASH")
+    elif eval_trial_set_hash != catalog_trial_set_hash:
+        reasons.append("TRIAL_SET_MISMATCH_AT_APPROVAL")
     if paper_evidence is None:
         reasons.append("NO_PAPER_EVIDENCE")
     else:
