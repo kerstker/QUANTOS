@@ -22,10 +22,15 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Mapping, Optional, Sequence
 
 from quantos.contracts.cost import CostModel
+
+from .portfolio_constraints import (
+    PortfolioConstraintInputs,
+    enforce_portfolio_constraints,
+)
 
 _EPS = 1e-12
 
@@ -109,7 +114,8 @@ def signal_to_portfolio(signal: Mapping[str, Optional[float]], *,
                         neutralize_by: Optional[Mapping[str, float]] = None,
                         adv_notional: Optional[Mapping[str, float]] = None,
                         prev_weights: Optional[Mapping[str, float]] = None,
-                        stale_ids: Sequence[str] = ()) -> dict:
+                        stale_ids: Sequence[str] = (),
+                        portfolio_constraints: Optional[PortfolioConstraintInputs] = None) -> dict:
     """Map a cross-sectional signal to a target portfolio (see module docstring). Deterministic; never
     places an order."""
     cfg = config or SignalAdapterConfig()
@@ -146,6 +152,9 @@ def signal_to_portfolio(signal: Mapping[str, Optional[float]], *,
         neutralize_vals = [float(neutralize_by[k]) for k in ids]
 
     if not ids:
+        # An explicitly requested gate must see the empty target and reject it
+        # (rather than allowing an empty book to masquerade as a valid result).
+        enforce_portfolio_constraints({}, portfolio_constraints)
         return _empty(rejected)
 
     vals = _winsorize([surviving[k] for k in ids], cfg.winsorize_k)
@@ -194,7 +203,30 @@ def signal_to_portfolio(signal: Mapping[str, Optional[float]], *,
             capacity.append({"id": k, "participation": round(part, 6) if math.isfinite(part) else part,
                              "capacity_ok": part <= cfg.max_participation})
 
-    return {
+    # Capacity evidence is naturally available at this adapter boundary.  If
+    # the caller requested the unified capacity check but did not precompute
+    # position notionals, derive them from the final weights and configured AUM
+    # without inventing missing ADV data.
+    constraint_result = None
+    if portfolio_constraints is not None:
+        effective_constraints = portfolio_constraints
+        if (
+            portfolio_constraints.max_capacity_usage is not None
+            and portfolio_constraints.position_notional_by_symbol is None
+            and portfolio_constraints.capacity_by_symbol is None
+            and adv_notional is not None
+        ):
+            effective_constraints = replace(
+                portfolio_constraints,
+                position_notional_by_symbol={
+                    symbol: abs(weight) * aum
+                    for symbol, weight in weights.items()
+                },
+                capacity_by_symbol=dict(adv_notional),
+            )
+        constraint_result = enforce_portfolio_constraints(weights, effective_constraints)
+
+    result = {
         "weights": weights,
         "gross": round(gross, 8),
         "net": round(net, 8),
@@ -207,3 +239,6 @@ def signal_to_portfolio(signal: Mapping[str, Optional[float]], *,
         "n_positions": len(weights),
         "neutralized": neutralized,
     }
+    if constraint_result is not None:
+        result["portfolio_constraints"] = constraint_result.as_dict()
+    return result

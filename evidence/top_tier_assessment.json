@@ -1120,7 +1120,7 @@
       ],
       "id": "PORTFOLIO.CONSTRAINED.OPTIMIZATION",
       "meets_target": true,
-      "next_action": "Add portfolio-level tail budget",
+      "next_action": "Add calibrated firm-wide margin/funding and cross-book limits",
       "red_line": false,
       "required_evidence": [
         "implementation",

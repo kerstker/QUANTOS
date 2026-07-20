@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-21 组合级统一约束门落地（L2 可用增量）：** 新增纯函数
+> `services/portfolio/portfolio_constraints.py`，把经验 CVaR 尾部预算、firm gross/net 与单名集中、
+> 容量瓶颈、拥挤证据合并为带 provenance 的 `PASS/WARN/PENDING/BLOCK` 结果；缺少已请求证据为
+> `PENDING`，非法值、覆盖不足或超限为 `BLOCK`，只有 `PASS` 可作为运行时放行。门已在
+> constrained optimizer、post-rebalance construction、signal adapter 三个组合边界可选承重，
+> signal adapter 只用调用方提供的 AUM/ADV 推导名义，不伪造缺失 ADV。49 项聚焦组合/治理测试通过；
+> 仍是 L2 研究/干跑控制，不是 venue 校准的保证金或盘中风控服务，机器顶级判定保持 **15/22、
+> NOT_TOP_TIER**，不增加网络、凭据、券商、下单或 live 能力。
+
 > **2026-07-21 Rank #13 数据分布漂移诊断落地（部分升真）：** 新增纯函数
 > `services/data/distribution_drift.py`，用不重叠的 60 条基线/20 条近期窗口和 exclusive
 > `end_index` 计算两样本 KS 距离，非法策略、非有限输入、历史不足全部 BLOCK；默认 WARN=0.20、
