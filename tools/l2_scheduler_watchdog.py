@@ -14,6 +14,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -349,13 +350,33 @@ def event_seal_configuration_ready(
     return bool(repo_drive and destination_drive and repo_drive != destination_drive)
 
 
-def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path) -> bool:
+_LAUNCHER_ARGUMENTS = re.compile(
+    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+)$'
+)
+
+
+def _action_matches(
+    snapshot: TaskSnapshot,
+    spec: ExpectedTask,
+    state_root: Path,
+    code_root: Path,
+) -> bool:
     if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
         "python",
         "python.exe",
     }:
         return False
-    if (snapshot.arguments or "").strip() != f"-m tools.{spec.module}":
+    match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
+    if match is None or match.group("module") != spec.module:
+        return False
+    try:
+        launcher = Path(match.group("launcher")).resolve(strict=False)
+        expected_launcher = (
+            code_root / "tools" / "l2_schedule_entrypoint.py"
+        ).resolve(strict=False)
+    except OSError:
+        return False
+    if launcher != expected_launcher:
         return False
     if not snapshot.working_directory:
         return False
@@ -363,7 +384,7 @@ def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path)
         actual_working_directory = Path(snapshot.working_directory).resolve(strict=False)
     except OSError:
         return False
-    return actual_working_directory == repo_root.resolve()
+    return actual_working_directory == state_root.resolve()
 
 
 def _check_task(
@@ -373,6 +394,7 @@ def _check_task(
     spec: ExpectedTask,
     now_ms: int,
     repo_root: Path,
+    code_root: Path,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -383,7 +405,7 @@ def _check_task(
             "code": "NOT_ENABLED",
             "detail": f"task state is {snapshot.state}",
         }
-    if not _action_matches(snapshot, spec, repo_root):
+    if not _action_matches(snapshot, spec, repo_root, code_root):
         return {
             "task_name": name,
             "status": "BREACH",
@@ -485,6 +507,7 @@ def evaluate_schedule(
     *,
     now_ms: int,
     repo_root: str | Path,
+    code_root: str | Path | None = None,
     backup_ready: bool,
     backup_history_health: dict | None = None,
     heartbeat_ready: bool = False,
@@ -493,6 +516,7 @@ def evaluate_schedule(
     if now_ms < 0:
         raise ValueError("now_ms must be non-negative")
     root = Path(repo_root).resolve()
+    release_root = root if code_root is None else Path(code_root).resolve()
     by_name: dict[str, TaskSnapshot] = {}
     duplicates: set[str] = set()
     for snapshot in snapshots:
@@ -544,6 +568,7 @@ def evaluate_schedule(
             spec=spec,
             now_ms=now_ms,
             repo_root=root,
+            code_root=release_root,
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)
@@ -614,6 +639,7 @@ def _alert_signature(result: dict) -> str:
 def run_scheduler_watchdog(
     *,
     repo_root: str | Path,
+    code_root: str | Path | None = None,
     status_path: str | Path,
     now_ms: int | None = None,
     backup_ready: bool | None = None,
@@ -655,6 +681,7 @@ def run_scheduler_watchdog(
             snapshots,
             now_ms=observed_at_ms,
             repo_root=repo_root,
+            code_root=code_root,
             backup_ready=backup_ready,
             backup_history_health=history_health,
             heartbeat_ready=heartbeat_ready,
@@ -702,8 +729,10 @@ def run_scheduler_watchdog(
 
 def main() -> None:
     repo_root = Path.cwd()
+    code_root = Path(__file__).resolve().parents[1]
     result = run_scheduler_watchdog(
         repo_root=repo_root,
+        code_root=code_root,
         status_path=repo_root / "data" / "cache" / "scheduler_watchdog_status.json",
     )
     print(json.dumps(result, sort_keys=True))

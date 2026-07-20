@@ -7,8 +7,26 @@ order submission, emergency trading action, or a live operations API.
 
 ## Scheduled Jobs
 
-Run `powershell -ExecutionPolicy Bypass -File scripts/register_schedules.ps1`
-from the repository root to reconcile the L2 schedule set.
+Register from a clean, validated release checkout. For a single-root install,
+run `powershell -ExecutionPolicy Bypass -File scripts/register_schedules.ps1`
+from that checkout. When mutable operational state lives in a different root,
+keep the release checkout clean and pass the state root explicitly:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File H:\path\to\validated-release\scripts\register_schedules.ps1 `
+  -StateRoot H:\path\to\operational-state
+```
+
+The script location is the code root; it is never caller-selected. Each task
+executes the absolute `tools/l2_schedule_entrypoint.py` from that root, which
+allows only the modules in the table below and verifies the imported worker
+also came from the release. The Task Scheduler working directory remains the
+state root, preserving all `data/cache` contracts without importing Python from
+a dirty operational checkout. The independent watchdog pins the Python
+executable class, launcher path, module, and state root; legacy direct
+`-m tools.*` actions fail closed as `ACTION_DRIFT`. `QUANTOS_domain_event_ops`
+also has a five-minute execution limit and `IgnoreNew` overlap policy.
 
 | Task | Cadence | Module |
 |---|---|---|
