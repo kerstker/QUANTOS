@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unicodedata
 from enum import Enum
-from math import sqrt
+from math import isclose, sqrt
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,6 +22,7 @@ from .canonical import (
     load_canonical_json_bytes,
     parse_float64_hex,
 )
+from .validation import BatchPboEvidence, CatalogEvidence
 
 
 def _canonical_hex(value: object) -> str:
@@ -303,9 +304,53 @@ class ValidationResult(BaseModel):
     subject_id: str = Field(min_length=1)
     verdict: ValidationVerdict
     deflated_sharpe: float | None = None
+    catalog_evidence: CatalogEvidence | None = None
+    catalog_evidence_hash: str = ""
     pbo: float | None = Field(default=None, ge=0, le=1)
+    pbo_evidence: BatchPboEvidence | None = None
+    pbo_evidence_hash: str = ""
     trial_count: int = Field(default=1, ge=1)
     reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_bound_validation_evidence(self) -> "ValidationResult":
+        if self.catalog_evidence is None:
+            if self.catalog_evidence_hash:
+                raise ValueError("catalog evidence hash is unbound")
+        else:
+            evidence = self.catalog_evidence
+            if self.catalog_evidence_hash != evidence.evidence_hash:
+                raise ValueError("catalog evidence hash mismatch")
+            if evidence.subject_id != self.subject_id:
+                raise ValueError("catalog evidence subject mismatch")
+            if self.deflated_sharpe is None or not isclose(
+                self.deflated_sharpe,
+                evidence.deflated_sharpe,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise ValueError("Deflated Sharpe does not match catalog evidence")
+            if self.trial_count != evidence.trial_count:
+                raise ValueError("trial count does not match catalog evidence")
+
+        if self.pbo_evidence is None:
+            if self.pbo_evidence_hash:
+                raise ValueError("PBO evidence hash is unbound")
+        else:
+            evidence = self.pbo_evidence
+            if self.pbo_evidence_hash != evidence.evidence_hash:
+                raise ValueError("PBO evidence hash mismatch")
+            if self.pbo is None or not isclose(
+                self.pbo, evidence.pbo, rel_tol=0.0, abs_tol=1e-12
+            ):
+                raise ValueError("PBO does not match retained evidence")
+            if (
+                self.catalog_evidence is not None
+                and self.catalog_evidence.subject_definition_hash
+                not in evidence.candidate_definition_hashes
+            ):
+                raise ValueError("PBO evidence does not contain the subject")
+        return self
 
     @property
     def promotable(self) -> bool:

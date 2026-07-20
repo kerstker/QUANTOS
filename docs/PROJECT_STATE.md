@@ -1,15 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
-> **2026-07-20 目录绑定 PBO 证据链已收口，Rank #12 继续保持诚实的部分完成：**
-> `AlphaEvaluator` 不再接受调用方裸传 `pbo=<float>`；`batch_pbo` 现在保留候选定义哈希、
-> 对齐模式/日历摘要、精确 CSCV block×candidate 矩阵与可重放 PBO，形成冻结的
-> `BatchPboEvidence`。完整候选池必须先进入单调 trial ledger，再做回测；评估制品同时绑定
-> PBO 证据哈希与完整 catalog trial-set 哈希。`VALIDATED`、`PAPER_TRADING` 和最终人工晋级会
-> 独立复验 PBO，并拒绝缺证据、矩阵漂移、catalog 增长或“数量相同但集合被替换”的评估。
-> `ExperimentRegistry.verify_evaluation` 已从单层 content-hash 检查升级为解析制品并重放 PBO；
-> console 只公开证据哈希、对齐模式、候选数和 trial-set 哈希，不泄露保留矩阵。该增量不增加
-> 网络、凭据、券商、下单或 live 能力；机器顶级判定仍为 **15/22、NOT_TOP_TIER**。Rank #12
-> 尚余更广义 DSR/CatalogEvidence 与 `effective_trials` 统一，不能把本次 PBO 子项冒充整项完成。
+> **2026-07-20 Rank #12 验证 provenance 已完整收口：** 共享冻结契约
+> `CatalogEvidence` 与 `BatchPboEvidence` 现在分别保留 catalog 的精确收益序列/Sharpe 总体/
+> 可比较相关矩阵/有效试验数/DSR，以及 CSCV 的精确 block×candidate 矩阵/PBO。只有
+> `AlphaCatalog.evidence()` 能从完整试验账本铸造目录证据；无法比较的历史试验按一项一个独立试验
+> 保守计数，不会被少量相关序列间接折减。完整候选池必须先冻结并写入 catalog，再产生第一个裁决。
+> evaluator、严格验证门和 standalone pipeline 已删除裸 DSR/PBO/trial-count 信任路径；
+> `ExperimentRegistry.verify_evaluation` 会独立重放 DSR、PBO 与 exact-float reproducibility hash。
+> `VALIDATED`、`PAPER_TRADING` 和最终人工晋级均绑定完整 catalog snapshot，目录收益即使只变化
+> `1e-11` 也会使旧证据失效。console 只公开哈希、计数和相关性摘要，不泄露保留收益/矩阵。
+> 该增量不增加网络、凭据、券商、下单或 live 能力；机器顶级判定仍为
+> **15/22、NOT_TOP_TIER**，未把内部证据硬化冒充外部数据、身份或运营成熟度。
 >
 > **2026-07-20 外部 AI provider 治理接缝已落地，但 live 凭据未通过：** 新增版本化
 > `config/model_provider_registry.json`，默认仍为 `offline_registered`，仅显式选择

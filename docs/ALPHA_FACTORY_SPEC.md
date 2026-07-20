@@ -18,9 +18,11 @@ folded in (marked ⚑).**
 - AlphaCombiner/sizing **deferred to Phase 7**.
 
 ## ⚑ Critique fixes (must implement)
-- **P0-1/P0-2**: `run_research_validation` gains `n_trials_override` / `var_sr_override`;
-  the catalog owns BOTH (running `var_sr` over the whole candidate-Sharpe population)
-  and feeds them together. Without this the factory is a p-hacking machine.
+- **P0-1/P0-2 (complete)**: `run_research_validation` requires the shared catalog and
+  candidate IDs; there are no `n_trials_override` / `var_sr_override` escape hatches.
+  `AlphaCatalog.evidence()` exclusively mints replayable `CatalogEvidence` over the
+  frozen candidate-Sharpe population, including conservative effective-trial accounting.
+  The gate recomputes it instead of trusting caller-supplied DSR or trial counts.
 - **P0-3**: `ApprovalRecord.approver` has no actor-kind. Add `Actor(kind=HUMAN/AGENT/SYSTEM)`;
   the APPROVED guard checks the approval carries a verified HUMAN actor. Test: agent-actor
   approval rejected even with approved=True + matching subject_id.

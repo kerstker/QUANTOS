@@ -10,7 +10,7 @@ from quantos.contracts.governance import ApprovalRecord
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.lifecycle import AlphaLifecycleManager
-from tests.alpha.fixtures import bound_alpha_evaluation
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 HUMAN = Actor(actor_id="alice", kind=ActorKind.HUMAN)
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
@@ -32,6 +32,7 @@ def _to_paper(mgr, cat):
 def _mgr():
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, "a1")
     return AlphaLifecycleManager(cat), cat
 
 

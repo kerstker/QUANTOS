@@ -28,6 +28,9 @@ from quantos.contracts.alpha import (
 from quantos.contracts.governance import ApprovalRecord, AuditEvent
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
+from services.validation.catalog_evidence import (
+    verify_catalog_evidence_against_catalog,
+)
 
 from .config import AlphaFactoryConfig
 from . import guards
@@ -47,6 +50,7 @@ class AlphaLifecycleManager:
         self.audit: list[AuditEvent] = []
         self._eval_trial_count: dict[str, int] = {}   # last-seen eval trial count per alpha
         self._eval_trial_set_hash: dict[str, str] = {}
+        self._eval_catalog_evidence_hash: dict[str, str] = {}
 
     def advance(
         self,
@@ -62,6 +66,7 @@ class AlphaLifecycleManager:
         grant=None,                      # 多方批准聚合(services.governance.approval.ApprovalRequest)
         eval_trial_count: Optional[int] = None,   # grant 路径:来自 evaluation artifact 的 eval 期 trial count
         eval_trial_set_hash: Optional[str] = None,
+        eval_catalog_evidence_hash: Optional[str] = None,
     ) -> AlphaTransition:
         # 战线①(2026-07-06)加法入口:dst==APPROVED 且传入 grant 时走多方批准 guard
         # (guards.guard_to_approved_with_grant,镜像 KillSwitch.reset_with_grant /
@@ -74,7 +79,8 @@ class AlphaLifecycleManager:
         # 2) evidence guard
         ok, reasons = self._run_guard(alpha_id, dst, actor, evaluation, approval, paper_evidence,
                                       grant=grant, eval_trial_count=eval_trial_count,
-                                      eval_trial_set_hash=eval_trial_set_hash)
+                                      eval_trial_set_hash=eval_trial_set_hash,
+                                      eval_catalog_evidence_hash=eval_catalog_evidence_hash)
         if not ok:
             raise GuardRejected(reasons)
 
@@ -82,6 +88,9 @@ class AlphaLifecycleManager:
         if evaluation is not None:
             self._eval_trial_count[alpha_id] = evaluation.catalog_trial_count
             self._eval_trial_set_hash[alpha_id] = evaluation.catalog_trial_set_hash
+            self._eval_catalog_evidence_hash[alpha_id] = (
+                evaluation.catalog_evidence_hash
+            )
         self.catalog._set_state(alpha_id, dst)
         # grant 可追溯性(评审 #2):grant 路径下把 grant.request_id 记进 evidence_hash 与
         # AlphaTransition.approval_id,使 APPROVED 转换在转换链上与其三方批准连着;旧路径不变。
@@ -111,9 +120,26 @@ class AlphaLifecycleManager:
         return tr
 
     def _run_guard(self, alpha_id, dst, actor, evaluation, approval, paper_evidence,
-                   grant=None, eval_trial_count=None, eval_trial_set_hash=None):
+                   grant=None, eval_trial_count=None, eval_trial_set_hash=None,
+                   eval_catalog_evidence_hash=None):
         cc = self.catalog.global_trial_count()
         trial_set_hash = self.catalog.trial_set_hash()
+        catalog_evidence_matches = bool(
+            evaluation is not None
+            and evaluation.catalog_evidence is not None
+            and verify_catalog_evidence_against_catalog(
+                evaluation.catalog_evidence, self.catalog, alpha_id
+            )
+        )
+        try:
+            current_catalog_evidence = self.catalog.evidence(alpha_id)
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            current_catalog_evidence = None
+        current_catalog_evidence_hash = (
+            current_catalog_evidence.evidence_hash
+            if current_catalog_evidence is not None
+            else None
+        )
         if dst == AlphaState.TESTING:
             return guards.guard_to_testing(evaluation, self.config, cc)
         if dst == AlphaState.VALIDATED:
@@ -126,9 +152,16 @@ class AlphaLifecycleManager:
                 cc,
                 trial_set_hash,
                 bh_survived=fdr_ok,
+                catalog_evidence_matches=catalog_evidence_matches,
             )
         if dst == AlphaState.PAPER_TRADING:
-            return guards.guard_to_paper(evaluation, self.config, cc, trial_set_hash)
+            return guards.guard_to_paper(
+                evaluation,
+                self.config,
+                cc,
+                trial_set_hash,
+                catalog_evidence_matches=catalog_evidence_matches,
+            )
         if dst == AlphaState.APPROVED:
             if grant is not None:
                 # 多方批准路径:eval trial count 优先取调用方从 evaluation artifact 显式喂入的值
@@ -138,15 +171,25 @@ class AlphaLifecycleManager:
                     else self._eval_trial_count.get(alpha_id)
                 etsh = eval_trial_set_hash if eval_trial_set_hash is not None \
                     else self._eval_trial_set_hash.get(alpha_id)
+                evidence_hash = (
+                    eval_catalog_evidence_hash
+                    if eval_catalog_evidence_hash is not None
+                    else self._eval_catalog_evidence_hash.get(alpha_id)
+                )
                 return guards.guard_to_approved_with_grant(
                     alpha_id, grant, actor, paper_evidence, self.config,
                     eval_trial_count=etc, catalog_count=cc,
-                    eval_trial_set_hash=etsh, catalog_trial_set_hash=trial_set_hash)
+                    eval_trial_set_hash=etsh,
+                    catalog_trial_set_hash=trial_set_hash,
+                    eval_catalog_evidence_hash=evidence_hash,
+                    catalog_evidence_hash=current_catalog_evidence_hash)
             return guards.guard_to_approved(
                 alpha_id, approval, actor, paper_evidence, self.config,
                 eval_trial_count=self._eval_trial_count.get(alpha_id), catalog_count=cc,
                 eval_trial_set_hash=self._eval_trial_set_hash.get(alpha_id),
-                catalog_trial_set_hash=trial_set_hash)
+                catalog_trial_set_hash=trial_set_hash,
+                eval_catalog_evidence_hash=self._eval_catalog_evidence_hash.get(alpha_id),
+                catalog_evidence_hash=current_catalog_evidence_hash)
         if dst in (AlphaState.REJECTED, AlphaState.RETIRED):
             return True, ()      # rejection / de-risking is always permitted
         if dst in (AlphaState.SHADOW, AlphaState.DEGRADED, AlphaState.PAUSED):

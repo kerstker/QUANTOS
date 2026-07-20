@@ -79,7 +79,7 @@ def _write_fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
 def test_real_agent_boundary_red_team_denies_privilege_and_allows_handoff():
     report = execute_agent_boundary_red_team(recorded_at=1)
     assert report.verdict.value == "PASS"
-    assert report.tool_manifest_ref == "research-agent-tools@v5"
+    assert report.tool_manifest_ref == "research-agent-tools@v6"
     assert {case.case_id for case in report.cases} == set(report.required_case_ids)
     assert all(not case.boundary_breached for case in report.cases)
     exceptions = {case.case_id: case.observed_exception for case in report.cases}
@@ -125,7 +125,7 @@ def test_evidence_is_deterministic_honest_and_hash_verified(tmp_path):
     assert [event["sequence"] for event in first["runtime_events"]] == [1, 2]
     assert first["artifact_type_counts"]["RedTeamReport"] == 2
     assert first["red_team_report_ref"] == (
-        "red-team-report:research-agent-runtime-boundary-v6"
+        "red-team-report:research-agent-runtime-boundary-v7"
     )
     active_report = next(
         record
@@ -232,7 +232,7 @@ def test_single_revision_mode_remains_reconstructable(tmp_path):
     assert baseline["runtime_invocation_count"] == 1
     assert baseline["artifact_type_counts"]["RedTeamReport"] == 1
     assert baseline["red_team_report_ref"] == (
-        "red-team-report:research-agent-boundary-v5"
+        "red-team-report:research-agent-boundary-v6"
     )
     assert "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED" in baseline["m3_blockers"]
 

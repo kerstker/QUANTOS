@@ -23,7 +23,7 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
-from tests.alpha.fixtures import bound_alpha_evaluation
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 S = AlphaState
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
@@ -44,6 +44,7 @@ def _seed_registry(tmp_path, *, with_artifact=True):
     registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db"), create=True))
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, "a1")
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
@@ -95,7 +96,8 @@ def test_gather_evidence_from_real_artifacts(env):
     ev = gather_promotion_evidence(env["registry"], env["paper"], "a1")
     assert ev.backtest_sharpe == 1.2            # 来自 evaluation artifact 的 net_sharpe
     assert ev.paper_sharpe is not None          # 来自 paper_track.db track(a1)
-    assert ev.eval_trial_count == 1             # 来自 evaluation artifact 的 catalog_trial_count
+    assert ev.eval_trial_count == 2
+    assert ev.eval_catalog_evidence_hash is not None
     assert ev.notes == ()
 
 
@@ -198,6 +200,7 @@ def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_pat
     paper = PaperTrackStore(paper_path, create=True)
     for alpha_id in ("a1", "a2"):
         cat.register(AlphaDefinition(alpha_id=alpha_id, name=alpha_id, factor_ids=("f1",)))
+        seed_catalog_evidence(cat, alpha_id)
         mgr = AlphaLifecycleManager(cat)
         cc = cat.global_trial_count()
         mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)

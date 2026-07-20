@@ -6,6 +6,7 @@ from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEval
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.factory import AlphaFactory
+from tests.alpha.fixtures import catalog_bound_evaluation
 
 
 class _StubEvaluator:
@@ -14,17 +15,28 @@ class _StubEvaluator:
         self.catalog = catalog
         self.verdict = verdict
 
+    def prepare_catalog_observation(self, alpha_id, periods):
+        del periods
+        offset = 0.001 * (len(self.catalog.all_ids()) + 1)
+        self.catalog.set_returns(
+            alpha_id, (0.01 + offset, 0.0, 0.02 + offset, -0.01)
+        )
+
     def evaluate(self, alpha_id, periods, **kw):
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
         pbo_evidence = kw.get("pbo_evidence")
-        return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
-                               pbo_evidence=pbo_evidence,
-                               pbo_evidence_hash=(pbo_evidence.evidence_hash
-                                                  if pbo_evidence is not None else ""),
-                               catalog_trial_count=self.catalog.global_trial_count(),
-                               catalog_trial_set_hash=self.catalog.trial_set_hash(),
-                               marginal_ir=0.5)
+        if self.catalog.evidence(alpha_id) is None:
+            return AlphaEvaluation(
+                alpha_id=alpha_id,
+                verdict=self.verdict,
+                catalog_trial_count=self.catalog.global_trial_count(),
+                catalog_trial_set_hash=self.catalog.trial_set_hash(),
+            )
+        return catalog_bound_evaluation(
+            self.catalog,
+            alpha_id,
+            verdict=self.verdict,
+            pbo_evidence=pbo_evidence,
+        )
 
 
 def _factory(verdict):
@@ -119,3 +131,23 @@ def test_factory_computes_and_stamps_a_real_batch_pbo():
         assert all("NOT_ASSESSED" not in r for r in report[aid]["evaluation"].reasons)
         assert report[aid]["evaluation"].pbo_evidence is not None
         assert report[aid]["evaluation"].pbo_evidence_hash
+
+
+def test_factory_freezes_complete_catalog_before_first_dsr_verdict():
+    fac = AlphaFactory(catalog=_seeded_catalog())
+    evidence = {
+        aid: {"leakage_ok": True, "regime_profitable_frac": 1.0}
+        for aid in ("rc0", "rc1", "rc2")
+    }
+    report = fac.run(_real_cands(3), evidence=evidence)
+    catalog_evidence = [
+        report[aid]["evaluation"].catalog_evidence
+        for aid in ("rc0", "rc1", "rc2")
+    ]
+    assert all(item is not None for item in catalog_evidence)
+    assert len(
+        {item.catalog_snapshot_hash for item in catalog_evidence if item}
+    ) == 1
+    assert {
+        item.trial_count for item in catalog_evidence if item
+    } == {fac.catalog.global_trial_count()}

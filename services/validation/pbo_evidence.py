@@ -10,8 +10,8 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
-from quantos.contracts.alpha import BatchPboEvidence, PboAlignment
 from quantos.contracts.hashing import stable_hash
+from quantos.contracts.validation import BatchPboEvidence, PboAlignment
 from services.validation.deflated_sharpe import pbo_cscv
 
 

@@ -501,10 +501,17 @@ def test_alpha_zoo_is_multidimensional():
         "pbo_evidence_hash",
         "pbo_alignment",
         "pbo_candidate_count",
+        "catalog_evidence_hash",
+        "catalog_snapshot_hash",
+        "catalog_trial_count",
+        "catalog_effective_trial_count",
+        "catalog_mean_abs_correlation",
+        "catalog_var_sr",
         "catalog_trial_set_hash",
     } <= set(row)
     assert "pbo_evidence" not in row
     assert "performance_matrix" not in row
+    assert "return_observations" not in row
 
 
 def test_alpha_zoo_has_paper_track_time_dimensions():

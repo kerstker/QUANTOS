@@ -34,7 +34,7 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
-from tests.alpha.fixtures import bound_alpha_evaluation
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 
 S = AlphaState
@@ -100,6 +100,7 @@ def _seed_registry_with_alpha(tmp_path, alpha_id="test_alpha", *, with_artifact=
     )
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id=alpha_id, name="Test", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, alpha_id)
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)

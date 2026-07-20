@@ -304,6 +304,38 @@ export default function AlphaZoo() {
                               </div>
                             ))}
                           </div>
+                          <div className="mt-3 rounded-md border border-line/70 bg-elevated/30 px-3 py-2 text-2xs">
+                            <div className="mb-1 font-medium text-muted">
+                              {bi('目录验证证据（仅展示摘要）', 'Catalog validation evidence (redacted)')}
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-faint">
+                              <span>
+                                {bi('原始/有效试验', 'raw/effective trials')}{' '}
+                                <b className="tnum text-ink">
+                                  {r.catalog_trial_count ?? '—'}/{r.catalog_effective_trial_count ?? '—'}
+                                </b>
+                              </span>
+                              <span>
+                                {bi('平均绝对相关', 'mean |corr|')}{' '}
+                                <b className="tnum text-ink">
+                                  {typeof r.catalog_mean_abs_correlation === 'number'
+                                    ? r.catalog_mean_abs_correlation.toFixed(4) : '—'}
+                                </b>
+                              </span>
+                              <span>
+                                var(SR){' '}
+                                <b className="tnum text-ink">
+                                  {typeof r.catalog_var_sr === 'number' ? r.catalog_var_sr.toFixed(6) : '—'}
+                                </b>
+                              </span>
+                              <span className="mono">
+                                snapshot {r.catalog_snapshot_hash?.slice(0, 12) ?? '—'}
+                              </span>
+                              <span className="mono">
+                                evidence {r.catalog_evidence_hash?.slice(0, 12) ?? '—'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </td>
                     </tr>

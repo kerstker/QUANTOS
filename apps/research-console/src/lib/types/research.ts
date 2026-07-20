@@ -1858,6 +1858,9 @@ export interface AlphaZooRow {
   net_sharpe: number | null; deflated_sharpe: number | null; pbo?: number | null;
   pbo_evidence_hash?: string | null; pbo_alignment?: string | null;
   pbo_candidate_count?: number | null; catalog_trial_set_hash?: string | null;
+  catalog_evidence_hash?: string | null; catalog_snapshot_hash?: string | null;
+  catalog_trial_count?: number | null; catalog_effective_trial_count?: number | null;
+  catalog_mean_abs_correlation?: number | null; catalog_var_sr?: number | null;
   turnover?: number | null; marginal_ir?: number | null; crowding_score?: number | null;
   capacity_adj_sharpe?: number | null; mean_breadth?: number | null;
   // 时间/活体征: real forward paper-track summary (out-of-sample paper P&L / IC), or null when no track
