@@ -45,7 +45,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | **5 ✓** | **Brinson-Fachler 归因 primitive**(已做,allocation/selection/interaction) | 4 | P2 / M | `services/portfolio/brinson.py`、`construction.py` 既有归因 | 已落地纯函数 benchmark-relative attribution: caller-supplied portfolio/benchmark weights + asset returns + group map → `ATTRIBUTED/BLOCKED`;输出 allocation/selection/interaction/active return 恒等式诊断。诚实边界:primitive only,不读写 DB、不接 dry-run/console/预交易/券商/生命周期;多层 sector/style/macro 适配器留后续。 |
 | **6 ✓** | **冲击模型校准 primitive**(已做,文献默认 + 敏感性参数包) | 5 | P1 / M | `services/research/realism/impact_calibration.py`、`impact.py`、`capacity_curve.py` | 已落地纯函数 calibration set: aggressive/base/conservative 三情景 + `UNCALIBRATED_PRINCIPLED` provenance + 可直接传给 `capacity_band` 的系数带。诚实边界:不是 venue/tick 实测校准,不改 dry-run 成本/成交/组合/下单;真实成交校准仍需 tick/LOB/执行数据。 |
 | 7 | 尾部感知组合构建(CVaR 优化) | 4 | P2 / M | `tail_risk.py`、约束优化器 | min-variance 忽略尾部;CVaR 最小化标准且代码量小 |
-| 8 | 动态相关漂移检测(滚动相关+regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | 静态收缩协方差错过 regime 切换(常态 0.3→压力 0.9) |
+| **8 ✓** | **动态相关漂移检测**(PIT 滚动相关 + regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | **检测与真实干跑诊断已完成；自动缩放被执行控制证伪，诚实保持关闭。** `correlation_drift.py` 用不重叠 52+8 周窗口和 exclusive `end_index` 输出 PASS/WARN/BLOCK + 建议倍数；allocator/driver 保留 provenance 与状态计数。无条件和上期双亏确认两种 overlay 均降低执行级 Sharpe，故 `scaled_periods=0`，不是把 null 结果伪装成风控提升。 |
 | 9 | 全局多重检验预算账本(跨会话 trial 计数) | 3 | P2 / M | `experiment_registry`、DSR n_trials | 把「一共试了多少次」变成全局账,防跨会话选择偏差 |
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
