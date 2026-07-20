@@ -1,5 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-20 外部 AI provider 治理接缝已落地，但 live 凭据未通过：** 新增版本化
+> `config/model_provider_registry.json`，默认仍为 `offline_registered`，仅显式选择
+> `sushuo_gpt_5_6_sol` 才会访问固定的
+> `https://vip.sushuo.biz/v1/chat/completions` / `gpt-5.6-sol`。网络只存在于
+> `tools/external_model_provider.py`；`services/`/`quantos/` 继续零网络。外部调用必须先通过注册
+> `ModelCard`/`PromptTemplateCard`/`ToolManifest` 和 `GovernedModelRuntime`，唯一动作
+> `EVALUATE`，审批、kill-switch、凭据、订单和 live trading 全部禁止。证据设计只保留请求/响应/
+> 内容哈希、模型、用量、TLS leaf 指纹和运行时事件链，不保存 key、key 路径、原始 body 或模型正文；
+> 独立 verifier 会重算注册、lineage、event/self/source/test hashes 和 7 项 provider 红队。
+> 本轮本地 35 项聚焦测试通过；随后用用户指定 KEY 分别通过 Python stdlib HTTPS 和原始 Node
+> `fetch` 形式做无业务数据 echo probe，两者均由服务返回 **HTTP 401**，所以没有生成或提交
+> `evidence/external_model_provider_baseline.json`，`AI.MODEL.REGISTRY.REDTEAM` 继续诚实保持
+> M2/PARTIAL。未来只需更新有效 `NEW_API_KEY` 或仓库外 key 文件并重跑 probe；只有 live 证据通过
+> 独立 verifier 后该项才自动升 M3。`VALIDATION.CHALLENGER.MODEL_RISK` 仍另需强外部人类评审身份，
+> 不随 provider 接入假升级。
+
 > **2026-07-20 多资产研究证据从伪绿补成 M3 真基线:** `ALPHA.MULTI_ASSET.RESEARCH`
 > 不再读取未跟踪的本机 equity cache。现把已版本化的 Frankfurter/ECB FX PIT bundle
 > （18 个可交易货币、126,113 行、1999-01-04 至 2026-06-26）正式接入 `fx_tradable`

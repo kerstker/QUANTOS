@@ -24,6 +24,24 @@ def test_supply_chain_manifest_self_binds_exact_byte_portability_controls():
     } <= set(_MANIFESTS)
 
 
+def test_supply_chain_manifest_binds_external_model_provider_governance_surface():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "config/model_provider_registry.json",
+        "quantos/contracts/external_model_provider.py",
+        "services/governance/external_model_provider_evidence.py",
+        "services/intelligence/external_provider_runtime.py",
+        "services/intelligence/provider_selection.py",
+        "tools/external_model_provider.py",
+        "tools/external_model_provider_probe.py",
+        "tests/governance/test_external_model_provider_boundary.py",
+        "tests/governance/test_external_model_provider_evidence.py",
+        "tests/intelligence/test_external_provider_runtime.py",
+        "tests/tools/test_external_model_provider.py",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 

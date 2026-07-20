@@ -38,6 +38,10 @@ from services.governance.model_risk_dataset import (
     DatasetBundleError,
     verify_pit_bundle,
 )
+from services.governance.external_model_provider_evidence import (
+    ExternalModelProviderEvidenceError,
+    verify_external_model_provider_evidence,
+)
 from services.governance.multi_asset_research_evidence import (
     MultiAssetResearchEvidenceError,
     verify_multi_asset_research_evidence,
@@ -4009,6 +4013,51 @@ def _model_risk_baseline_evidence(
     evidence.extend(sorted(governance_paths))
     evidence = list(dict.fromkeys(evidence))
 
+    maturity_profile = args.get("maturity_profile", "OFFLINE_BASELINE_M2")
+    allowed_maturity_profiles = {
+        "OFFLINE_BASELINE_M2",
+        "EXTERNAL_PROVIDER_RUNTIME_M3",
+        "EXTERNAL_REVIEW_M3",
+    }
+    if maturity_profile not in allowed_maturity_profiles:
+        failures.append("maturity_profile")
+    external_provider_summary: dict[str, Any] | None = None
+    external_provider_path = args.get("external_provider_path")
+    if external_provider_path is None:
+        if maturity_profile != "OFFLINE_BASELINE_M2":
+            failures.append("external_provider_path")
+    elif not isinstance(external_provider_path, str):
+        failures.append("external_provider_path")
+    else:
+        candidate = Path(external_provider_path)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            failures.append("external_provider_path")
+        else:
+            external_evidence_file = repo_root / candidate
+            if external_evidence_file.is_file():
+                evidence.append(external_provider_path)
+                try:
+                    external_document = json.loads(
+                        external_evidence_file.read_text(encoding="utf-8")
+                    )
+                    external_provider_summary = (
+                        verify_external_model_provider_evidence(
+                            external_document,
+                            repo_root=repo_root,
+                        )
+                    )
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    ExternalModelProviderEvidenceError,
+                    TypeError,
+                    ValueError,
+                ):
+                    failures.append("external_provider_evidence")
+                else:
+                    evidence.extend(external_provider_summary["evidence_paths"])
+                    evidence = list(dict.fromkeys(evidence))
+
     if failures:
         return _result(
             "FAILED",
@@ -4022,6 +4071,33 @@ def _model_risk_baseline_evidence(
         else "raw-data retention remains open"
     )
     maturity = args.get("pass_maturity", target)
+    if (
+        maturity_profile == "EXTERNAL_PROVIDER_RUNTIME_M3"
+        and external_provider_summary is not None
+        and external_provider_summary.get("current_maturity") == "M3"
+        and external_provider_summary.get("external_provider_exercised") is True
+    ):
+        maturity = "M3"
+        provider_detail = (
+            "a registered external model provider completed a redacted live HTTPS "
+            "probe through the governed runtime; the provider body is TLS-authenticated "
+            "but unsigned, and strong external reviewer identity remains open"
+        )
+    elif (
+        maturity_profile == "EXTERNAL_REVIEW_M3"
+        and external_provider_summary is not None
+    ):
+        provider_detail = (
+            "a registered external provider live HTTPS probe is verified, but challenger "
+            "reviews remain process-role-only without a strong external reviewer"
+        )
+    else:
+        provider_detail = (
+            "a switchable external-provider boundary and verifier are implemented, but "
+            "no passing live HTTPS probe is retained and strong reviewer identity remains open"
+            if maturity_profile != "OFFLINE_BASELINE_M2"
+            else "an external model provider and strong reviewer identity remain open"
+        )
     return _result(
         "PASS",
         maturity,
@@ -4029,8 +4105,8 @@ def _model_risk_baseline_evidence(
         "immutable model/tool/evaluation lineage and real agent-boundary red-team "
         "evidence verified; both challengers have negative OOS Sharpe and fail the "
         "absolute floor; a registered offline prompt/tool runtime and tamper-evident "
-        f"invocation chain are verified; {dataset_detail}; {history_detail}; an external "
-        "model provider and strong reviewer identity remain open",
+        f"invocation chain are verified; {dataset_detail}; {history_detail}; "
+        f"{provider_detail}",
     )
 
 
