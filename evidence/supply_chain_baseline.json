@@ -151,7 +151,7 @@
     "scripts/generate_strong_identity_evidence.py": "312d056ad706a5824d82e722d8ec0f1c8c2bda24bed0f7d8b269aa428097c2c2",
     "scripts/generate_supply_chain_evidence.py": "a43cc9e757a6be62f8c48ae59bb77b913643a043415ddf1d1ad3b922c759964d",
     "scripts/register_schedules.ps1": "ec9a856a254d3d7e9c330e4537c44b5c55516222f151627ed91a127ef57bd7c3",
-    "scripts/validate.py": "8a70db91112db52bbee45fffdf3e60500f8aa4c1381608b0a1ba1a198b89e6c6",
+    "scripts/validate.py": "0b1a7547d19c3095cc161063892fb355e27103c5249d479cc075caf229ee85e0",
     "services/alpha/evaluator.py": "cdcca5b9f8925c1877c889ac43d6c477428959afbe091965a2f3190edf5a9877",
     "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
     "services/alpha/factory.py": "2e40d826fac518be1c35b339d50beb7486a1fa53d21f1cbd0b4e8b6eb072179f",

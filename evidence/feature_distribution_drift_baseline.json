@@ -1,0 +1,162 @@
+{
+  "assessment": {
+    "assessments": {
+      "fx_distance_from_high_20": {
+        "baseline_end": 6997,
+        "baseline_mean": -0.013820130167879257,
+        "baseline_start": 6937,
+        "baseline_std": 0.010165769377560658,
+        "calibration": "UNCALIBRATED_PRINCIPLED",
+        "end_index": 7017,
+        "ks_distance": 0.4,
+        "load_bearing": false,
+        "provenance": "PIT_TRAILING_KS_DRIFT_V1",
+        "reasons": [
+          "distribution_ks_block"
+        ],
+        "recent_end": 7017,
+        "recent_mean": -0.01806169114692354,
+        "recent_start": 6997,
+        "recent_std": 0.008009595239650422,
+        "sample_counts": [
+          60,
+          20
+        ],
+        "status": "BLOCK"
+      },
+      "fx_momentum_20": {
+        "baseline_end": 6996,
+        "baseline_mean": -0.0020043312681736823,
+        "baseline_start": 6936,
+        "baseline_std": 0.018077727814189315,
+        "calibration": "UNCALIBRATED_PRINCIPLED",
+        "end_index": 7016,
+        "ks_distance": 0.4666666666666667,
+        "load_bearing": false,
+        "provenance": "PIT_TRAILING_KS_DRIFT_V1",
+        "reasons": [
+          "distribution_ks_block"
+        ],
+        "recent_end": 7016,
+        "recent_mean": -0.013436942374406232,
+        "recent_start": 6996,
+        "recent_std": 0.008644768284458494,
+        "sample_counts": [
+          60,
+          20
+        ],
+        "status": "BLOCK"
+      },
+      "fx_volatility_20": {
+        "baseline_end": 6996,
+        "baseline_mean": 0.005809028559779671,
+        "baseline_start": 6936,
+        "baseline_std": 0.0010030472727395765,
+        "calibration": "UNCALIBRATED_PRINCIPLED",
+        "end_index": 7016,
+        "ks_distance": 0.7,
+        "load_bearing": false,
+        "provenance": "PIT_TRAILING_KS_DRIFT_V1",
+        "reasons": [
+          "distribution_ks_block"
+        ],
+        "recent_end": 7016,
+        "recent_mean": 0.004352634160873109,
+        "recent_start": 6996,
+        "recent_std": 0.0004704523234289105,
+        "sample_counts": [
+          60,
+          20
+        ],
+        "status": "BLOCK"
+      }
+    },
+    "calibration": "UNCALIBRATED_PRINCIPLED",
+    "end_index": null,
+    "feature_ids": [
+      "fx_distance_from_high_20",
+      "fx_momentum_20",
+      "fx_volatility_20"
+    ],
+    "load_bearing": false,
+    "missing_features": [],
+    "provenance": "PIT_FEATURE_TRAILING_KS_DRIFT_V1",
+    "reasons": [
+      "fx_distance_from_high_20:distribution_ks_block",
+      "fx_momentum_20:distribution_ks_block",
+      "fx_volatility_20:distribution_ks_block"
+    ],
+    "status": "BLOCK",
+    "unexpected_features": []
+  },
+  "calibration": "UNCALIBRATED_PRINCIPLED",
+  "features": {
+    "fx_distance_from_high_20": {
+      "aggregation": "CROSS_SECTIONAL_MEDIAN",
+      "first_event_time": 917568000000,
+      "formula": "close / rolling_max(close,20) - 1",
+      "last_event_time": 1782432000000,
+      "minimum_cross_sectional_names": 3,
+      "observations": 7017
+    },
+    "fx_momentum_20": {
+      "aggregation": "CROSS_SECTIONAL_MEDIAN",
+      "first_event_time": 917827200000,
+      "formula": "close / delay(close,20) - 1",
+      "last_event_time": 1782432000000,
+      "minimum_cross_sectional_names": 3,
+      "observations": 7016
+    },
+    "fx_volatility_20": {
+      "aggregation": "CROSS_SECTIONAL_MEDIAN",
+      "first_event_time": 917827200000,
+      "formula": "std(close / delay(close,1) - 1,20)",
+      "last_event_time": 1782432000000,
+      "minimum_cross_sectional_names": 3,
+      "observations": 7016
+    }
+  },
+  "honesty_note": "This is a read-only diagnostic rebuilt from the retained PIT FX bundle. It does not claim that a live feed or scheduled FeatureValue cache exists, and it does not gate promotion, sizing, or orders.",
+  "load_bearing": false,
+  "panel": {
+    "event_time_count": 7036,
+    "first_event_time": 915408000000,
+    "instrument_count": 18,
+    "instruments": [
+      "AUD",
+      "BRL",
+      "CAD",
+      "CHF",
+      "CZK",
+      "EUR",
+      "GBP",
+      "HUF",
+      "ILS",
+      "JPY",
+      "KRW",
+      "MXN",
+      "NOK",
+      "NZD",
+      "PLN",
+      "SEK",
+      "SGD",
+      "ZAR"
+    ],
+    "last_event_time": 1782432000000
+  },
+  "policy": {
+    "baseline_window": 60,
+    "block_ks": 0.35,
+    "min_observations": 20,
+    "recent_window": 20,
+    "warn_ks": 0.2
+  },
+  "provenance": "REAL_PIT_FEATURE_DISTRIBUTION_DRIFT_V1",
+  "schema_version": 1,
+  "source": {
+    "bundle_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+    "bundle_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+    "knowledge_rule": "knowledge_time <= event_time",
+    "manifest_sha256": "867657a8c561e510067c5cabe8572c74413896696b8a56e0ffe119fcf87ff11d"
+  }
+}
