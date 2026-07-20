@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-20 Rank #19 复现底座完整收口：** 承重数字指纹已从 dry-run、IC 面板、
+> 容量扩展到 `scenario_tail` 与 `macro_regime`。新增共享提取器固定两条 book 的样本数、
+> 历史危机收益、最差回撤、CVaR、Hill 尾指数、BTC 下尾依赖，以及 VIX/收益率曲线
+> regime Sharpe、信用覆盖期和 ALFRED 缺席标记；来源不是
+> `REAL_HISTORICAL_REPLAY` / `REAL_FRED_MACRO` 会失败关闭。两个版本化 digest 已对正式运营根的
+> 离线快照逐项重放通过；干净 checkout 缺缓存时继续诚实 skip，不把“不可核验”报成通过。
+> 同时修复 linked Git worktree 下 `code_version=unknown`：版本提取现在解析 `.git` indirection、
+> `commondir`、loose refs 与 packed refs，并由合成 worktree 测试钉死。Rank #19 不再有剩余项；
+> 机器顶级判定仍为 **15/22、NOT_TOP_TIER**，因为外部身份、连续灾备历史、外部供应链签名、
+> 持牌数据和 post-L2 多场所执行不因研究证据扩面而假升级。
+>
 > **2026-07-20 Rank #12 验证 provenance 已完整收口：** 共享冻结契约
 > `CatalogEvidence` 与 `BatchPboEvidence` 现在分别保留 catalog 的精确收益序列/Sharpe 总体/
 > 可比较相关矩阵/有效试验数/DSR，以及 CSCV 的精确 block×candidate 矩阵/PBO。只有
