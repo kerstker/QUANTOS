@@ -385,6 +385,11 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
             dj = {}
         operator = (dj.get("params") or {}).get("operator") or ""
         pbo_evidence = ej.get("pbo_evidence") if isinstance(ej.get("pbo_evidence"), dict) else {}
+        catalog_evidence = (
+            ej.get("catalog_evidence")
+            if isinstance(ej.get("catalog_evidence"), dict)
+            else {}
+        )
         candidate_hashes = pbo_evidence.get("candidate_definition_hashes")
         row = {
             "alpha_id": aid,
@@ -407,6 +412,18 @@ def _alpha_zoo_rows_real(st) -> List[Dict]:
             "pbo_alignment": pbo_evidence.get("alignment") or None,
             "pbo_candidate_count": (len(candidate_hashes)
                                     if isinstance(candidate_hashes, list) else None),
+            "catalog_evidence_hash": ej.get("catalog_evidence_hash") or None,
+            "catalog_snapshot_hash": (
+                catalog_evidence.get("catalog_snapshot_hash") or None
+            ),
+            "catalog_trial_count": catalog_evidence.get("trial_count"),
+            "catalog_effective_trial_count": catalog_evidence.get(
+                "effective_trial_count"
+            ),
+            "catalog_mean_abs_correlation": _r(
+                catalog_evidence.get("mean_abs_correlation"), 4
+            ),
+            "catalog_var_sr": _r(catalog_evidence.get("var_sr"), 6),
             "catalog_trial_set_hash": ej.get("catalog_trial_set_hash") or None,
             "turnover": _r(ej.get("turnover"), 3),
             "marginal_ir": _r(ej.get("marginal_ir"), 3),
@@ -452,6 +469,12 @@ def _alpha_zoo_rows_synthetic() -> List[Dict]:
                 "pbo_evidence_hash": None,
                 "pbo_alignment": None,
                 "pbo_candidate_count": None,
+                "catalog_evidence_hash": None,
+                "catalog_snapshot_hash": None,
+                "catalog_trial_count": None,
+                "catalog_effective_trial_count": None,
+                "catalog_mean_abs_correlation": None,
+                "catalog_var_sr": None,
                 "catalog_trial_set_hash": None,
                 "turnover": round(c.get("turnover", 0.3), 3),
                 "marginal_ir": round(c.get("rank_ic", 0.0), 3),

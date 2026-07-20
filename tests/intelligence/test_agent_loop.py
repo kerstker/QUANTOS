@@ -10,23 +10,32 @@ from services.intelligence import agent_loop as agent_loop_module
 from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.guardrails import ForbiddenAgentAction
 from services.research.ports.persistence import TrialPersistenceError
+from tests.alpha.fixtures import catalog_bound_evaluation
 
 
 class _StubEval:
     def __init__(self, catalog, verdict):
         self.catalog, self.verdict = catalog, verdict
 
+    def prepare_catalog_observation(self, alpha_id, periods):
+        del periods
+        self.catalog.set_returns(alpha_id, (0.011, 0.0, 0.021, -0.01))
+
     def evaluate(self, alpha_id, periods, **k):
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
         pbo_evidence = k.get("pbo_evidence")
-        return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
-                               pbo_evidence=pbo_evidence,
-                               pbo_evidence_hash=(pbo_evidence.evidence_hash
-                                                  if pbo_evidence is not None else ""),
-                               catalog_trial_count=self.catalog.global_trial_count(),
-                               catalog_trial_set_hash=self.catalog.trial_set_hash(),
-                               marginal_ir=0.5)
+        if self.catalog.evidence(alpha_id) is None:
+            return AlphaEvaluation(
+                alpha_id=alpha_id,
+                verdict=self.verdict,
+                catalog_trial_count=self.catalog.global_trial_count(),
+                catalog_trial_set_hash=self.catalog.trial_set_hash(),
+            )
+        return catalog_bound_evaluation(
+            self.catalog,
+            alpha_id,
+            verdict=self.verdict,
+            pbo_evidence=pbo_evidence,
+        )
 
 
 def _loop(verdict):
@@ -86,18 +95,22 @@ def test_loop_isolates_a_failing_candidate():
         def __init__(self, catalog):
             self.catalog = catalog
 
+        def prepare_catalog_observation(self, alpha_id, periods):
+            del periods
+            self.catalog.set_returns(
+                alpha_id, (0.011, 0.0, 0.021, -0.01)
+            )
+
         def evaluate(self, alpha_id, periods, **k):
             if alpha_id == "a1":
                 raise RuntimeError("boom")
-            self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
             pbo_evidence = k.get("pbo_evidence")
-            return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
-                                   pbo=pbo_evidence.pbo,
-                                   pbo_evidence=pbo_evidence,
-                                   pbo_evidence_hash=pbo_evidence.evidence_hash,
-                                   catalog_trial_count=self.catalog.global_trial_count(),
-                                   catalog_trial_set_hash=self.catalog.trial_set_hash(),
-                                   marginal_ir=0.5)
+            return catalog_bound_evaluation(
+                self.catalog,
+                alpha_id,
+                verdict=ValidationVerdict.PASS,
+                pbo_evidence=pbo_evidence,
+            )
 
     loop = ResearchAgentLoop(catalog=cat, evaluator=_FlakyEval(cat))
     out = loop.run(_cands(2))                              # a0 ok, a1's eval raises
@@ -160,6 +173,10 @@ class _EvidenceEval:
     def __init__(self, catalog):
         self.catalog, self.seen = catalog, {}
 
+    def prepare_catalog_observation(self, alpha_id, periods):
+        del periods
+        self.catalog.set_returns(alpha_id, (0.011, 0.0, 0.021, -0.01))
+
     def evaluate(self, alpha_id, periods, *, leakage_ok=None, regime_profitable_frac=None,
                  pbo_evidence=None, **k):
         self.seen[alpha_id] = {
@@ -167,19 +184,13 @@ class _EvidenceEval:
             "regime": regime_profitable_frac,
             "pbo_evidence": pbo_evidence,
         }
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
         verdict = (ValidationVerdict.PASS if leakage_ok is True
                    else ValidationVerdict.REQUIRES_HUMAN_REVIEW)
-        return AlphaEvaluation(
-            alpha_id=alpha_id,
+        return catalog_bound_evaluation(
+            self.catalog,
+            alpha_id,
             verdict=verdict,
-            deflated_sharpe=0.8,
-            pbo=pbo_evidence.pbo if pbo_evidence is not None else 0.0,
             pbo_evidence=pbo_evidence,
-            pbo_evidence_hash=(pbo_evidence.evidence_hash if pbo_evidence is not None else ""),
-            catalog_trial_count=self.catalog.global_trial_count(),
-            catalog_trial_set_hash=self.catalog.trial_set_hash(),
-            marginal_ir=0.5,
         )
 
 
@@ -195,6 +206,10 @@ def test_loop_advances_when_real_evidence_is_supplied():
     assert ev.seen["a0"]["leakage_ok"] is True and ev.seen["a0"]["regime"] == 0.8  # evidence threaded
     assert ev.seen["a0"]["pbo_evidence"] is not None
     assert cat.state("a0") != AlphaState.APPROVED                                  # containment intact
+    first = out["report"]["a0"]["evaluation"].catalog_evidence
+    second = out["report"]["a1"]["evaluation"].catalog_evidence
+    assert first is not None and second is not None
+    assert first.catalog_snapshot_hash == second.catalog_snapshot_hash
 
 
 def test_loop_stays_fail_closed_without_evidence():

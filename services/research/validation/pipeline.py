@@ -1,58 +1,48 @@
-"""End-to-end research validation pipeline (Phase 5 wiring).
+"""End-to-end research validation with catalog-minted evidence.
 
-Ties the real machinery together so a ValidationResult reflects ACTUAL
-out-of-sample evidence rather than caller-supplied numbers:
-
-  walk-forward backtest  ->  OOS returns per candidate
-  candidates x folds      ->  PBO (combinatorially symmetric CV)
-  best candidate's OOS    ->  observed Sharpe -> Deflated Sharpe (n_trials = #candidates)
-  leakage check           ->  leakage_ok
-  ----------------------------------------------------------------------
-  ValidationGate.evaluate(...) -> PASS / WARN / FAIL / REQUIRES_HUMAN_REVIEW
-
-`candidate_targets` are the strategy variants that were tried (the multiple-
-testing trials). var_sr is estimated from the spread of the candidates' Sharpe
-estimates.
+The pipeline runs every candidate through sequential OOS windows, retains the
+exact CSCV/PBO matrix, writes the exact OOS return series into the authoritative
+alpha catalog, and consumes the catalog's replayable Deflated-Sharpe evidence.
+Raw trial-count or variance overrides are intentionally not part of this API.
 """
+
 from __future__ import annotations
 
-import statistics
 from typing import Optional, Sequence
 
 from quantos.contracts.cost import CostModel
 from quantos.contracts.data import Bar
-from quantos.contracts.research import ValidationResult
-from services.research.ports.backtest import BacktestExecutionPort, BacktestOutcome
-from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
+from quantos.contracts.research import ValidationResult, ValidationVerdict
+from quantos.contracts.validation import PboAlignment
+from services.research.ports.backtest import (
+    BacktestExecutionPort,
+    BacktestOutcome,
+)
+from services.validation.catalog_evidence import (
+    verify_catalog_evidence_against_catalog,
+)
 from services.validation.gate import ValidationGate
 from services.validation.performance import returns_from_equity, sharpe
+from services.validation.pbo_evidence import create_batch_pbo_evidence
 from services.validation.walk_forward import walk_forward_splits
-
-_VAR_SR_FLOOR = 1e-4
 
 
 def _oos(backtest, bars, targets, splits, cost):
-    """Per-bar OOS returns (concatenated across test windows) and per-fold return."""
+    """Return concatenated per-bar OOS returns plus one return per fold."""
+
     per_bar: list[float] = []
     per_fold: list[float] = []
     for _train, test in splits:
-        tb = [bars[i] for i in test]
-        tt = [targets[i] for i in test]
-        res = backtest.run(tb, tt, cost=cost)
-        if not isinstance(res, BacktestOutcome):
+        test_bars = [bars[index] for index in test]
+        test_targets = [targets[index] for index in test]
+        result = backtest.run(test_bars, test_targets, cost=cost)
+        if not isinstance(result, BacktestOutcome):
             raise TypeError("backtest must return BacktestOutcome")
-        if len(res.equity_curve) != len(tb):
+        if len(result.equity_curve) != len(test_bars):
             raise ValueError("backtest equity_curve must align with OOS bars")
-        per_bar.extend(returns_from_equity(res.equity_curve))
-        per_fold.append(res.total_pnl / res.initial_capital)
+        per_bar.extend(returns_from_equity(result.equity_curve))
+        per_fold.append(result.total_pnl / result.initial_capital)
     return per_bar, per_fold
-
-
-def _observed_sr(returns: Sequence[float]) -> float:
-    if len(returns) < 2:
-        return 0.0
-    sd = statistics.pstdev(returns)
-    return statistics.fmean(returns) / sd if sd > 0 else 0.0
 
 
 def run_research_validation(
@@ -60,6 +50,8 @@ def run_research_validation(
     bars: Sequence[Bar],
     candidate_targets: Sequence[Sequence[int]],
     *,
+    candidate_ids: Sequence[str],
+    catalog,
     backtest: BacktestExecutionPort,
     train_size: int,
     test_size: int,
@@ -67,74 +59,104 @@ def run_research_validation(
     leakage_ok: bool,
     regime_profitable_frac: float = 1.0,
     gate: Optional[ValidationGate] = None,
-    n_trials_override: Optional[int] = None,
-    var_sr_override: Optional[float] = None,
 ) -> ValidationResult:
-    """`leakage_ok` is REQUIRED (no passing default): the gate trusts it, so the caller must COMPUTE
-    it — via the Bar-level `services.features.leakage.detect_leakage` or the cross-sectional
-    `services.research.expression_leakage.compute_leakage_ok` — rather than letting a silent True wave
-    a leaking strategy through (audit fix: this was the one non-fail-closed leakage input).
+    """Validate the selected best candidate from one catalog-bound batch.
 
-    `backtest` is a required port so validation cannot silently select a concrete
-    execution engine. `n_trials_override` / `var_sr_override` let a caller (the Alpha Factory
-    catalog) inject the CATALOG-WIDE trial count and Sharpe-variance estimate, so
-    Deflated Sharpe corrects for every alpha ever tried — not just the local
-    candidate batch. Both must come from the same (catalog) source."""
+    ``leakage_ok`` remains a required computed input.  ``candidate_ids`` must
+    identify already-registered catalog definitions in the same order as
+    ``candidate_targets``.  The caller must name the objectively selected best
+    candidate as ``subject_id``; a mismatch fails rather than relabeling results.
+    """
+
     gate = gate or ValidationGate()
     if not isinstance(backtest, BacktestExecutionPort):
         raise TypeError("backtest must implement BacktestExecutionPort")
-    if not candidate_targets:
-        raise ValueError("need at least one candidate strategy")
+    if len(candidate_targets) < 2:
+        raise ValueError(
+            "PBO evidence requires at least two candidate strategies"
+        )
+    if (
+        len(candidate_ids) != len(candidate_targets)
+        or len(set(candidate_ids)) != len(candidate_ids)
+    ):
+        raise ValueError("candidate_ids must be distinct and align with targets")
     splits = walk_forward_splits(len(bars), train_size, test_size)
     if not splits:
         raise ValueError("not enough bars for the requested walk-forward windows")
+    if not (2 <= len(splits) <= 8):
+        raise ValueError(
+            "replayable PBO evidence requires between 2 and 8 folds"
+        )
 
-    cand_per_bar = []
-    cand_per_fold = []
+    candidate_per_bar: list[list[float]] = []
+    candidate_per_fold: list[list[float]] = []
     for targets in candidate_targets:
         if len(targets) != len(bars):
             raise ValueError("each candidate's targets must align with bars")
-        pb, pf = _oos(backtest, bars, targets, splits, cost)
-        cand_per_bar.append(pb)
-        cand_per_fold.append(pf)
+        per_bar, per_fold = _oos(backtest, bars, targets, splits, cost)
+        candidate_per_bar.append(per_bar)
+        candidate_per_fold.append(per_fold)
 
-    n_folds = len(splits)
-    n_trials = len(candidate_targets)
+    definition_hashes = tuple(
+        catalog.get(candidate_id).definition_hash
+        for candidate_id in candidate_ids
+    )
+    if not set(definition_hashes) <= set(catalog.snapshot().trials):
+        raise ValueError(
+            "candidate definitions are absent from the catalog ledger"
+        )
 
-    # PBO over (folds x candidates) — needs >=2 of each
-    if n_trials >= 2 and n_folds >= 2:
-        perf = [[cand_per_fold[c][f] for c in range(n_trials)] for f in range(n_folds)]
-        pbo = pbo_cscv(perf)
-    else:
-        pbo = 0.0
+    performance = tuple(
+        tuple(
+            candidate_per_fold[candidate][fold]
+            for candidate in range(len(candidate_ids))
+        )
+        for fold in range(len(splits))
+    )
+    pbo_evidence = create_batch_pbo_evidence(
+        candidate_definition_hashes=definition_hashes,
+        performance_matrix=performance,
+        alignment=PboAlignment.POSITIONAL_LEGACY,
+        aligned_period_count=len(candidate_per_bar[0]),
+    )
 
-    # best candidate by total OOS return -> its OOS series feeds Sharpe/DSR
-    best = max(range(n_trials), key=lambda c: sum(cand_per_fold[c]))
-    oos = cand_per_bar[best]
+    best = max(
+        range(len(candidate_ids)),
+        key=lambda candidate: sum(candidate_per_fold[candidate]),
+    )
+    if candidate_ids[best] != subject_id:
+        raise ValueError(
+            "subject_id must identify the selected best candidate"
+        )
+
+    for candidate_id, candidate_returns in zip(
+        candidate_ids, candidate_per_bar, strict=True
+    ):
+        catalog.set_returns(candidate_id, candidate_returns)
+    catalog_evidence = catalog.evidence(subject_id)
+    if catalog_evidence is None:
+        return ValidationResult(
+            subject_id=subject_id,
+            verdict=ValidationVerdict.REQUIRES_HUMAN_REVIEW,
+            reasons=("INSUFFICIENT_CATALOG_FOR_DSR",),
+        )
+    if not verify_catalog_evidence_against_catalog(
+        catalog_evidence, catalog, subject_id
+    ):
+        return ValidationResult(
+            subject_id=subject_id,
+            verdict=ValidationVerdict.FAIL,
+            reasons=("CATALOG_EVIDENCE_INVALID",),
+        )
+
+    oos = candidate_per_bar[best]
     oos_sharpe = sharpe(oos)
-    observed_sr = _observed_sr(oos)
-
-    # var_sr estimated from spread of candidates' per-observation Sharpe
-    cand_sr = [_observed_sr(pb) for pb in cand_per_bar if len(pb) > 1]
-    var_sr = statistics.pstdev(cand_sr) ** 2 if len(cand_sr) > 1 else _VAR_SR_FLOOR
-    var_sr = max(var_sr, _VAR_SR_FLOOR)
-
-    # Catalog-wide multiple-testing: prefer the injected catalog counts so DSR
-    # deflates for every alpha ever tried, and ValidationResult.trial_count
-    # reflects the catalog (the lifecycle guard checks it equals the catalog).
-    eff_trials = n_trials_override if n_trials_override is not None else n_trials
-    eff_var_sr = max(var_sr_override, _VAR_SR_FLOOR) if var_sr_override is not None else var_sr
-
-    dsr = deflated_sharpe_ratio(observed_sr, max(len(oos), 2), eff_trials, eff_var_sr) if len(oos) >= 2 else 0.0
-    walk_forward_passed = oos_sharpe > 0.0
-
     return gate.evaluate(
         subject_id,
         oos_sharpe=oos_sharpe,
-        deflated_sharpe=dsr,
-        pbo=pbo,
-        trial_count=eff_trials,
+        catalog_evidence=catalog_evidence,
+        pbo_evidence=pbo_evidence,
         leakage_ok=leakage_ok,
         regime_profitable_frac=regime_profitable_frac,
-        walk_forward_passed=walk_forward_passed,
+        walk_forward_passed=oos_sharpe > 0.0,
     )

@@ -23,7 +23,7 @@ from services.alpha.lifecycle import AlphaLifecycleManager
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
-from tests.alpha.fixtures import bound_alpha_evaluation
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 from services.governance.identity_authorization import (
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -55,6 +55,7 @@ def _seed(tmp_path):
     registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db"), create=True))
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, "a1")
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
@@ -333,7 +334,7 @@ def test_candidates_lists_paper_trading_alpha_with_evidence(client):
     assert c["state"] == "PAPER_TRADING"
     assert c["evidence"]["backtest_sharpe"] == 1.2
     assert c["evidence"]["paper_sharpe"] is not None
-    assert c["evidence"]["eval_trial_count"] == 1
+    assert c["evidence"]["eval_trial_count"] == 2
 
 
 def test_open_request_for_unknown_alpha_is_409(client):

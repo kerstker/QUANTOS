@@ -3375,14 +3375,14 @@ def _model_risk_baseline_evidence(
         return _result("FAILED", "M1", [path], "model-risk evidence must be an object")
 
     failures: list[str] = []
-    current_release_version = "v5"
-    current_runtime_report_version = "v6"
+    current_release_version = "v6"
+    current_runtime_report_version = "v7"
     current_release_number = int(current_release_version.removeprefix("v"))
     current_agent_red_team_ref = (
-        "red-team-report:research-agent-boundary-v5"
+        "red-team-report:research-agent-boundary-v6"
     )
     current_runtime_red_team_ref = (
-        "red-team-report:research-agent-runtime-boundary-v6"
+        "red-team-report:research-agent-runtime-boundary-v7"
     )
     active_red_team_ref = document.get("red_team_report_ref")
     is_longitudinal_v2 = active_red_team_ref == current_runtime_red_team_ref
@@ -3640,7 +3640,10 @@ def _model_risk_baseline_evidence(
     evaluations = [item for item in loaded if isinstance(item, OfflineEvaluation)]
     red_team_reports = [item for item in loaded if isinstance(item, RedTeamReport)]
     challenger_reviews = [item for item in loaded if isinstance(item, ChallengerReview)]
-    allowed_release_versions = {"v1", "v2", "v3", "v4", current_release_version}
+    allowed_release_versions = {
+        f"v{release_number}"
+        for release_number in range(1, current_release_number + 1)
+    }
     if any(
         artifact.version not in allowed_release_versions
         for artifact in (*model_cards, *prompt_cards, *tool_manifests, *evaluations)

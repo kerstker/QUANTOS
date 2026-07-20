@@ -185,7 +185,7 @@ def test_exact_v2_activation_source_is_read_only_and_deterministic() -> None:
     assert evidence.schema_version == 2
     assert len(evidence.origin_fingerprint) == 64
     assert evidence.origin_fingerprint == (
-        "fbb7c4d7a7478cf8e78e792b203a7c309fe79d972aefb6b38a562f85817262a6"
+        "cf50cf4cbf9bcb248c39c7f0db6e0fc5b2b77712b31fe98fe8acb98338302036"
     )
     assert dict(evidence.row_counts) == {
         "alpha_state": 1,

@@ -165,6 +165,12 @@ class AlphaFactory:
         # retained candidate set is bound to the catalog trial ledger.
         for definition, _periods in candidate_pool:
             self.catalog.register(definition)
+        prepare_observation = getattr(
+            self.evaluator, "prepare_catalog_observation", None
+        )
+        if callable(prepare_observation):
+            for definition, periods in candidate_pool:
+                prepare_observation(definition.alpha_id, periods)
         # one selection-level PBO evidence object for the batch
         pbo_batch = batch_pbo(
             candidate_pool, cost=getattr(self.evaluator, "cost", CostModel()),

@@ -378,6 +378,9 @@ async def candidates(
                         "paper_sharpe": ev.paper_sharpe,
                         "eval_trial_count": ev.eval_trial_count,
                         "eval_trial_set_hash": ev.eval_trial_set_hash,
+                        "eval_catalog_evidence_hash": (
+                            ev.eval_catalog_evidence_hash
+                        ),
                         "eval_run_id": ev.eval_run_id,
                         "notes": list(ev.notes),
                     },

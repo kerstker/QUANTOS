@@ -22,27 +22,37 @@
     {
       "references": [
         {
-          "line": 25,
+          "line": 165,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 24,
           "module": "services.validation.factor_statistics",
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 26,
+          "line": 25,
           "module": "services.validation.gate",
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 27,
+          "line": 26,
           "module": "services.validation.performance",
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 28,
+          "line": 27,
           "module": "services.validation.pbo_evidence",
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 91,
+          "line": 28,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/evaluator.py"
+        },
+        {
+          "line": 93,
           "module": "services.validation.regime",
           "path": "services/alpha/evaluator.py"
         },
@@ -53,12 +63,27 @@
         },
         {
           "line": 16,
-          "module": "services.validation.pbo_evidence",
+          "module": "services.validation.catalog_evidence",
           "path": "services/alpha/guards.py"
         },
         {
           "line": 17,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/alpha/guards.py"
+        },
+        {
+          "line": 31,
+          "module": "services.validation.catalog_evidence",
+          "path": "services/alpha/lifecycle.py"
+        },
+        {
+          "line": 16,
           "module": "services.validation.deflated_sharpe",
+          "path": "services/alpha/multiple_testing.py"
+        },
+        {
+          "line": 17,
+          "module": "services.validation.effective_trials",
           "path": "services/alpha/multiple_testing.py"
         }
       ],
@@ -73,7 +98,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 490,
+          "line": 513,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -677,6 +702,11 @@
           "path": "services/research/experiment_registry/registry.py"
         },
         {
+          "line": 19,
+          "module": "services.alpha.evaluation_evidence",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
           "line": 3,
           "module": "services.alpha.factor_set",
           "path": "services/research/factor_set.py"
@@ -786,8 +816,13 @@
           "path": "services/research/experiment_registry/family_schema_named_verifiers_c8.py"
         },
         {
-          "line": 26,
+          "line": 30,
           "module": "services.validation.pbo_evidence",
+          "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 31,
+          "module": "services.validation.catalog_evidence",
           "path": "services/research/experiment_registry/registry.py"
         },
         {
@@ -836,22 +871,27 @@
           "path": "services/research/validation/gate.py"
         },
         {
-          "line": 26,
-          "module": "services.validation.deflated_sharpe",
+          "line": 21,
+          "module": "services.validation.catalog_evidence",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 27,
+          "line": 24,
           "module": "services.validation.gate",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 28,
+          "line": 25,
           "module": "services.validation.performance",
           "path": "services/research/validation/pipeline.py"
         },
         {
-          "line": 29,
+          "line": 26,
+          "module": "services.validation.pbo_evidence",
+          "path": "services/research/validation/pipeline.py"
+        },
+        {
+          "line": 27,
           "module": "services.validation.walk_forward",
           "path": "services/research/validation/pipeline.py"
         },
@@ -951,7 +991,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c63adb1792355dddefe9268ea6f8834837c95447e18ff227e1f1bc273d3d5300",
+  "graph_sha256": "2e441979aa1324ab997ceaa74f3418d394fdb5da6c77966da6fff3a00243d9ba",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -985,7 +1025,7 @@
   "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 327,
+  "source_file_count": 330,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

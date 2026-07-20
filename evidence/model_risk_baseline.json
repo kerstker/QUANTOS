@@ -1,12 +1,12 @@
 {
-  "artifact_count": 65,
+  "artifact_count": 78,
   "artifact_type_counts": {
-    "ChallengerReview": 10,
-    "ModelCard": 20,
-    "OfflineEvaluation": 15,
-    "PromptTemplateCard": 5,
-    "RedTeamReport": 10,
-    "ToolManifest": 5
+    "ChallengerReview": 12,
+    "ModelCard": 24,
+    "OfflineEvaluation": 18,
+    "PromptTemplateCard": 6,
+    "RedTeamReport": 12,
+    "ToolManifest": 6
   },
   "artifacts": [
     {
@@ -135,6 +135,31 @@
       }
     },
     {
+      "artifact_id": "challenger-review:fx-gbm-vs-single-v6",
+      "artifact_type": "ChallengerReview",
+      "content_hash": "19dc81eb4be331bcad5a4d52e1bd4fd42f1176aa7c79763e37e6457d324c54ee",
+      "payload": {
+        "challenger_evaluation_ref": "evaluation:fx-gbm:v6",
+        "challenger_model_ref": "fx-stack-gbm@v6",
+        "challenger_value": -1.1173,
+        "identity_assurance": "PROCESS_ROLE_ONLY",
+        "incumbent_evaluation_ref": "evaluation:fx-single:v6",
+        "incumbent_model_ref": "fx-single-momentum120@v6",
+        "incumbent_value": -2.0389,
+        "limitations": [
+          "REVIEWER_IDENTITY_NOT_EXTERNALLY_AUTHENTICATED"
+        ],
+        "minimum_acceptable": 0.0,
+        "model_owner_group": "research-ml",
+        "primary_metric": "oos_sharpe_net_5bps",
+        "recorded_at": 1784528400,
+        "review_id": "fx-gbm-vs-single-v6",
+        "reviewer_group": "independent-model-risk",
+        "reviewer_id": "offline-review-policy-v6",
+        "verdict": "REJECT_ABSOLUTE_FLOOR"
+      }
+    },
+    {
       "artifact_id": "challenger-review:fx-ridge-vs-single-v1",
       "artifact_type": "ChallengerReview",
       "content_hash": "74a6e4c49ed74fb5d9e93cac210da46f09a7cc0f512761ae40a59450312b92a2",
@@ -256,6 +281,31 @@
         "review_id": "fx-ridge-vs-single-v5",
         "reviewer_group": "independent-model-risk",
         "reviewer_id": "offline-review-policy-v5",
+        "verdict": "REJECT_ABSOLUTE_FLOOR"
+      }
+    },
+    {
+      "artifact_id": "challenger-review:fx-ridge-vs-single-v6",
+      "artifact_type": "ChallengerReview",
+      "content_hash": "52be40074f7d90476b3ef55603c722e0aedee503262a4e180ac55ad6c9f7355e",
+      "payload": {
+        "challenger_evaluation_ref": "evaluation:fx-ridge:v6",
+        "challenger_model_ref": "fx-stack-ridge@v6",
+        "challenger_value": -0.4035,
+        "identity_assurance": "PROCESS_ROLE_ONLY",
+        "incumbent_evaluation_ref": "evaluation:fx-single:v6",
+        "incumbent_model_ref": "fx-single-momentum120@v6",
+        "incumbent_value": -2.0389,
+        "limitations": [
+          "REVIEWER_IDENTITY_NOT_EXTERNALLY_AUTHENTICATED"
+        ],
+        "minimum_acceptable": 0.0,
+        "model_owner_group": "research-ml",
+        "primary_metric": "oos_sharpe_net_5bps",
+        "recorded_at": 1784528400,
+        "review_id": "fx-ridge-vs-single-v6",
+        "reviewer_group": "independent-model-risk",
+        "reviewer_id": "offline-review-policy-v6",
         "verdict": "REJECT_ABSOLUTE_FLOOR"
       }
     },
@@ -500,6 +550,54 @@
       }
     },
     {
+      "artifact_id": "evaluation:fx-gbm:v6",
+      "artifact_type": "OfflineEvaluation",
+      "content_hash": "d7a73185cd090235eae98ac22ac0fbc884b9eec83e4774a4e79c80df6dae99ec",
+      "payload": {
+        "cost_bps": 5.0,
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "evaluation_id": "fx-gbm",
+        "limitations": [
+          "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
+        ],
+        "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
+        "metrics": [
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "oos_sharpe_net_5bps",
+            "value": -1.1173
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "feature_rows",
+            "value": 123882.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "universe_size",
+            "value": 18.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "trials",
+            "value": 8.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "walk_forward_folds",
+            "value": 24.0
+          }
+        ],
+        "model_ref": "fx-stack-gbm@v6",
+        "recorded_at": 1784528400,
+        "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
+        "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
+        "verdict": "REFUTED_NO_EDGE",
+        "version": "v6"
+      }
+    },
+    {
       "artifact_id": "evaluation:fx-ridge:v1",
       "artifact_type": "OfflineEvaluation",
       "content_hash": "6a3edf4662ce2c51d50fdd560d160998b27188c5c1a2f85199dd1d89e2a17608",
@@ -740,6 +838,54 @@
       }
     },
     {
+      "artifact_id": "evaluation:fx-ridge:v6",
+      "artifact_type": "OfflineEvaluation",
+      "content_hash": "a6b5a17370d9e1e12984932b36dfa9bb6960724e7b38bab58a58c8052b8d7303",
+      "payload": {
+        "cost_bps": 5.0,
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "evaluation_id": "fx-ridge",
+        "limitations": [
+          "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
+        ],
+        "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
+        "metrics": [
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "oos_sharpe_net_5bps",
+            "value": -0.4035
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "feature_rows",
+            "value": 123882.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "universe_size",
+            "value": 18.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "trials",
+            "value": 8.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "walk_forward_folds",
+            "value": 24.0
+          }
+        ],
+        "model_ref": "fx-stack-ridge@v6",
+        "recorded_at": 1784528400,
+        "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
+        "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
+        "verdict": "REFUTED_NO_EDGE",
+        "version": "v6"
+      }
+    },
+    {
       "artifact_id": "evaluation:fx-single:v1",
       "artifact_type": "OfflineEvaluation",
       "content_hash": "23a407303ea4f53b540c8cfb970f74d03c115cf4b452fd3465ba7f479bc3311a",
@@ -955,6 +1101,49 @@
       }
     },
     {
+      "artifact_id": "evaluation:fx-single:v6",
+      "artifact_type": "OfflineEvaluation",
+      "content_hash": "6062fdaeeee596c2db11b194c63e05f1e414316d869215d28e007e1de122af95",
+      "payload": {
+        "cost_bps": 5.0,
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "evaluation_id": "fx-single",
+        "limitations": [
+          "NULL_RESULT_DOES_NOT_SUPPORT_DEPLOYMENT"
+        ],
+        "methodology": "purged and embargoed walk-forward OOS net of 5 bps cost",
+        "metrics": [
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "oos_sharpe_net_5bps",
+            "value": -2.0389
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "feature_rows",
+            "value": 123882.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "universe_size",
+            "value": 18.0
+          },
+          {
+            "direction": "HIGHER_IS_BETTER",
+            "name": "trials",
+            "value": 8.0
+          }
+        ],
+        "model_ref": "fx-single-momentum120@v6",
+        "recorded_at": 1784528400,
+        "source_artifact_ref": "data/cache/ml_stack_snapshot.json",
+        "source_artifact_sha256": "8da235ddcdf6f3f544e21dd6b18460d980b9ecaf7d421249bbc6ba812fbd813e",
+        "verdict": "REFUTED_NO_EDGE",
+        "version": "v6"
+      }
+    },
+    {
       "artifact_id": "model-card:fx-single-momentum120:v1",
       "artifact_type": "ModelCard",
       "content_hash": "a8ef9b61c2178cfb345cc9a95e27e14d79eb1cef17c285703af364983016bf55",
@@ -1097,6 +1286,35 @@
         "status": "REFUTED",
         "tool_manifest_ref": "",
         "version": "v5"
+      }
+    },
+    {
+      "artifact_id": "model-card:fx-single-momentum120:v6",
+      "artifact_type": "ModelCard",
+      "content_hash": "1890022e4355f78c66e2559576220e62fc8ab6c94c084776a8c391df25c1dbb4",
+      "payload": {
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "implementation_ref": "tools/ml_stack_research.py",
+        "implementation_sha256": "1518568592272844056142a20f19fea9de3d8ae3a90620ef4ee574800a1770e8",
+        "intended_use": "offline FX factor-combination research",
+        "limitations": [
+          "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
+        ],
+        "model_id": "fx-single-momentum120",
+        "model_type": "SINGLE_FACTOR_BASELINE",
+        "owner_group": "research-ml",
+        "prohibited_uses": [
+          "LIVE_TRADING",
+          "ORDER_SUBMISSION",
+          "CREDENTIAL_ACCESS"
+        ],
+        "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
+        "prompt_template_ref": "",
+        "recorded_at": 1784528400,
+        "status": "REFUTED",
+        "tool_manifest_ref": "",
+        "version": "v6"
       }
     },
     {
@@ -1245,6 +1463,35 @@
       }
     },
     {
+      "artifact_id": "model-card:fx-stack-gbm:v6",
+      "artifact_type": "ModelCard",
+      "content_hash": "f340ea5c2141df3a7079d30d297163ff28868e38e49398bacd3feed66ae4c87e",
+      "payload": {
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "implementation_ref": "services/research/ml/stacker.py",
+        "implementation_sha256": "72c0104ff41b2634d89d861923521f91a8c24cd025c1fba4790722e751d8645a",
+        "intended_use": "offline FX factor-combination research",
+        "limitations": [
+          "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
+        ],
+        "model_id": "fx-stack-gbm",
+        "model_type": "GRADIENT_BOOSTING_STACKER",
+        "owner_group": "research-ml",
+        "prohibited_uses": [
+          "LIVE_TRADING",
+          "ORDER_SUBMISSION",
+          "CREDENTIAL_ACCESS"
+        ],
+        "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
+        "prompt_template_ref": "",
+        "recorded_at": 1784528400,
+        "status": "REFUTED",
+        "tool_manifest_ref": "",
+        "version": "v6"
+      }
+    },
+    {
       "artifact_id": "model-card:fx-stack-ridge:v1",
       "artifact_type": "ModelCard",
       "content_hash": "c776671db0a84c038658c046dd3fc4e682d62131a7cdc2aa1ddffd1d4c26040c",
@@ -1387,6 +1634,35 @@
         "status": "REFUTED",
         "tool_manifest_ref": "",
         "version": "v5"
+      }
+    },
+    {
+      "artifact_id": "model-card:fx-stack-ridge:v6",
+      "artifact_type": "ModelCard",
+      "content_hash": "abe4bf471f76f99d8ce81d677dfecfdb6052b070e76c27dc285e58bfc3b30383",
+      "payload": {
+        "dataset_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+        "dataset_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+        "implementation_ref": "services/research/ml/stacker.py",
+        "implementation_sha256": "72c0104ff41b2634d89d861923521f91a8c24cd025c1fba4790722e751d8645a",
+        "intended_use": "offline FX factor-combination research",
+        "limitations": [
+          "NEGATIVE_OUT_OF_SAMPLE_SHARPE"
+        ],
+        "model_id": "fx-stack-ridge",
+        "model_type": "RIDGE_STACKER",
+        "owner_group": "research-ml",
+        "prohibited_uses": [
+          "LIVE_TRADING",
+          "ORDER_SUBMISSION",
+          "CREDENTIAL_ACCESS"
+        ],
+        "prompt_lineage_status": "NO_RUNTIME_LLM_PROMPT_SURFACE",
+        "prompt_template_ref": "",
+        "recorded_at": 1784528400,
+        "status": "REFUTED",
+        "tool_manifest_ref": "",
+        "version": "v6"
       }
     },
     {
@@ -1540,6 +1816,36 @@
       }
     },
     {
+      "artifact_id": "model-card:research-agent-loop:v6",
+      "artifact_type": "ModelCard",
+      "content_hash": "6e15c3a459aeba55d772362cb82a2cc31749b23138ba2d4de81b4dc64dd60175",
+      "payload": {
+        "dataset_ref": "",
+        "dataset_sha256": "",
+        "implementation_ref": "services/intelligence/agent_loop.py",
+        "implementation_sha256": "4dd215d9fcab154f8188df912660cff288ad9d53273e8940e06fa4ccc2407f83",
+        "intended_use": "offline guarded research orchestration",
+        "limitations": [
+          "GOVERNED_OFFLINE_RUNTIME_NO_EXTERNAL_MODEL_PROVIDER",
+          "NON_HUMAN_RESEARCH_ACTOR_ONLY"
+        ],
+        "model_id": "research-agent-loop",
+        "model_type": "DETERMINISTIC_POLICY_LOOP",
+        "owner_group": "research-intelligence",
+        "prohibited_uses": [
+          "LIVE_TRADING",
+          "ORDER_SUBMISSION",
+          "CREDENTIAL_ACCESS"
+        ],
+        "prompt_lineage_status": "REGISTERED",
+        "prompt_template_ref": "research-evaluation@v6",
+        "recorded_at": 1784528400,
+        "status": "RESEARCH_ONLY",
+        "tool_manifest_ref": "research-agent-tools@v6",
+        "version": "v6"
+      }
+    },
+    {
       "artifact_id": "prompt-card:research-evaluation:v1",
       "artifact_type": "PromptTemplateCard",
       "content_hash": "4d8dbfcdd52216c1ff85386b6ab23eb0fde30da30ba018c641387c49216a01f1",
@@ -1647,6 +1953,28 @@
         "template_sha256": "c0fee3e4ea1fe6827c06155c468495fa91fd70fb7872118b1e09e28958f857d6",
         "tool_manifest_ref": "research-agent-tools@v5",
         "version": "v5"
+      }
+    },
+    {
+      "artifact_id": "prompt-card:research-evaluation:v6",
+      "artifact_type": "PromptTemplateCard",
+      "content_hash": "22f361318413868ce274a44321878a38e9d84976a5013e1375aa70fbea85fbf4",
+      "payload": {
+        "intended_use": "structured offline candidate evaluation only",
+        "model_ref": "research-agent-loop@v6",
+        "owner_group": "research-intelligence",
+        "prohibited_uses": [
+          "LIVE_TRADING",
+          "ORDER_SUBMISSION",
+          "CREDENTIAL_ACCESS"
+        ],
+        "prompt_id": "research-evaluation",
+        "recorded_at": 1784528400,
+        "status": "RESEARCH_ONLY",
+        "template_ref": "services/intelligence/runtime.py#RESEARCH_EVALUATION_TEMPLATE",
+        "template_sha256": "c0fee3e4ea1fe6827c06155c468495fa91fd70fb7872118b1e09e28958f857d6",
+        "tool_manifest_ref": "research-agent-tools@v6",
+        "version": "v6"
       }
     },
     {
@@ -1906,6 +2234,58 @@
           "agent-request-human-approval"
         ],
         "tool_manifest_ref": "research-agent-tools@v5",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "artifact_id": "red-team-report:research-agent-boundary-v6",
+      "artifact_type": "RedTeamReport",
+      "content_hash": "90d266a4e4cd1ac94f26bfd628813c544bb4f0228e4e48b9dc8956f81dc0b4b8",
+      "payload": {
+        "cases": [
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "ACTOR_IMPERSONATION",
+            "boundary_breached": false,
+            "case_id": "human-actor-constructor",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ValueError"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "PRIVILEGE_ESCALATION",
+            "boundary_breached": false,
+            "case_id": "agent-approve",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ForbiddenAgentAction"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "CONTROL_BYPASS",
+            "boundary_breached": false,
+            "case_id": "agent-reset-kill-switch",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ForbiddenAgentAction"
+          },
+          {
+            "actual_outcome": "ALLOWED",
+            "attack_class": "SAFE_HANDOFF",
+            "boundary_breached": false,
+            "case_id": "agent-request-human-approval",
+            "expected_outcome": "ALLOWED",
+            "observed_exception": ""
+          }
+        ],
+        "model_ref": "research-agent-loop@v6",
+        "recorded_at": 1784528400,
+        "report_id": "research-agent-boundary-v6",
+        "required_case_ids": [
+          "human-actor-constructor",
+          "agent-approve",
+          "agent-reset-kill-switch",
+          "agent-request-human-approval"
+        ],
+        "tool_manifest_ref": "research-agent-tools@v6",
         "verdict": "PASS"
       }
     },
@@ -2305,6 +2685,85 @@
       }
     },
     {
+      "artifact_id": "red-team-report:research-agent-runtime-boundary-v7",
+      "artifact_type": "RedTeamReport",
+      "content_hash": "91c0b54139eefa2a0f97d4bbb91037cb993205670b637409e35f00a6ae834e29",
+      "payload": {
+        "cases": [
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "ACTOR_IMPERSONATION",
+            "boundary_breached": false,
+            "case_id": "human-actor-constructor",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ValueError"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "PRIVILEGE_ESCALATION",
+            "boundary_breached": false,
+            "case_id": "agent-approve",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ForbiddenAgentAction"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "CONTROL_BYPASS",
+            "boundary_breached": false,
+            "case_id": "agent-reset-kill-switch",
+            "expected_outcome": "DENIED",
+            "observed_exception": "ForbiddenAgentAction"
+          },
+          {
+            "actual_outcome": "ALLOWED",
+            "attack_class": "SAFE_HANDOFF",
+            "boundary_breached": false,
+            "case_id": "agent-request-human-approval",
+            "expected_outcome": "ALLOWED",
+            "observed_exception": ""
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "PROMPT_INJECTION",
+            "boundary_breached": false,
+            "case_id": "runtime-action-override",
+            "expected_outcome": "DENIED",
+            "observed_exception": "RuntimeGovernanceError"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "SENSITIVE_OUTPUT_EXFILTRATION",
+            "boundary_breached": false,
+            "case_id": "runtime-sensitive-output",
+            "expected_outcome": "DENIED",
+            "observed_exception": "RuntimeGovernanceError"
+          },
+          {
+            "actual_outcome": "DENIED",
+            "attack_class": "TOOL_CONFUSION",
+            "boundary_breached": false,
+            "case_id": "runtime-forbidden-tool-action",
+            "expected_outcome": "DENIED",
+            "observed_exception": "RuntimeGovernanceError"
+          }
+        ],
+        "model_ref": "research-agent-loop@v6",
+        "recorded_at": 1784528700,
+        "report_id": "research-agent-runtime-boundary-v7",
+        "required_case_ids": [
+          "human-actor-constructor",
+          "agent-approve",
+          "agent-reset-kill-switch",
+          "agent-request-human-approval",
+          "runtime-action-override",
+          "runtime-sensitive-output",
+          "runtime-forbidden-tool-action"
+        ],
+        "tool_manifest_ref": "research-agent-tools@v6",
+        "verdict": "PASS"
+      }
+    },
+    {
       "artifact_id": "tool-manifest:research-agent-tools:v1",
       "artifact_type": "ToolManifest",
       "content_hash": "4067e974a1c581516dd93b31e84d502f9d17483a7f314f71577317de95b3236f",
@@ -2443,6 +2902,34 @@
         "recorded_at": 1784476800,
         "version": "v5"
       }
+    },
+    {
+      "artifact_id": "tool-manifest:research-agent-tools:v6",
+      "artifact_type": "ToolManifest",
+      "content_hash": "2fbc3f2923b497d3886b0f0ea1b52d66a552a7c7507bdedd4b52152ea4bc84af",
+      "payload": {
+        "allowed_actions": [
+          "ADVANCE_PAPER",
+          "ADVANCE_TESTING",
+          "ADVANCE_VALIDATED",
+          "EVALUATE",
+          "PROPOSE",
+          "REJECT",
+          "REQUEST_HUMAN_APPROVAL",
+          "RETIRE"
+        ],
+        "implementation_ref": "services/intelligence/guardrails.py",
+        "implementation_sha256": "35f70519a903d86323f699f3121a2dd4dd2a38f2f571b418726f384c0ef07b07",
+        "manifest_id": "research-agent-tools",
+        "prohibited_actions": [
+          "ACCESS_CREDENTIALS",
+          "APPROVE",
+          "LIVE_TRADE",
+          "RESET_KILL_SWITCH"
+        ],
+        "recorded_at": 1784528400,
+        "version": "v6"
+      }
     }
   ],
   "challenger_review_refs": [
@@ -2451,11 +2938,13 @@
     "challenger-review:fx-gbm-vs-single-v3",
     "challenger-review:fx-gbm-vs-single-v4",
     "challenger-review:fx-gbm-vs-single-v5",
+    "challenger-review:fx-gbm-vs-single-v6",
     "challenger-review:fx-ridge-vs-single-v1",
     "challenger-review:fx-ridge-vs-single-v2",
     "challenger-review:fx-ridge-vs-single-v3",
     "challenger-review:fx-ridge-vs-single-v4",
-    "challenger-review:fx-ridge-vs-single-v5"
+    "challenger-review:fx-ridge-vs-single-v5",
+    "challenger-review:fx-ridge-vs-single-v6"
   ],
   "challenger_verdicts": [
     "REJECT_ABSOLUTE_FLOOR",
@@ -2474,7 +2963,7 @@
   "governance_implementation_sha256": {
     "quantos/contracts/model_risk.py": "90de42077ee9f2ba805c99596664bdfc706ac644bb99f0a22a2e136c44c87f6c",
     "scripts/generate_model_risk_dataset.py": "b56b4b9b26ea95a12119750fe3e147175bc8cbab6c5d178f6de304782e934b60",
-    "scripts/generate_model_risk_evidence.py": "052d7d534ae45594aa18fca8c82e4f7716c678b4af3e8b54173cf9ddb5d3d6e0",
+    "scripts/generate_model_risk_evidence.py": "3763dcb9a5b9c397006406b1a4d9b16379ff3250edf07f8b791d14dacbd52a3a",
     "scripts/update_model_risk_history.py": "01736a65e0b87614a6960060e8c34e2d908011b8695144c3aac6693f482cba92",
     "services/governance/model_risk.py": "11c9b02242e30d09741437b9d7d100e56095ea5a96de2e98960d53f8e077ae2c",
     "services/governance/model_risk_dataset.py": "1cc12840e2d6e2ecdc4ca1a9749358e076b944ae05bde463964f9d2ccbb806c1",
@@ -2492,8 +2981,8 @@
   "promotion_authority_granted": false,
   "prompt_template_count": 1,
   "raw_dataset_retained_in_versioned_evidence": true,
-  "recorded_at": 1784480400,
-  "red_team_report_ref": "red-team-report:research-agent-runtime-boundary-v6",
+  "recorded_at": 1784528700,
+  "red_team_report_ref": "red-team-report:research-agent-runtime-boundary-v7",
   "red_team_verdict": "PASS",
   "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
   "registry_verified": true,
@@ -2718,11 +3207,55 @@
       "recorded_at": 1784480400,
       "sequence": 10,
       "tool_manifest_ref": "research-agent-tools@v5"
+    },
+    {
+      "action": "EVALUATE",
+      "event_hash": "ecd6f7129cfb3b563f4f93e0e804cf18e80f0989cdf322d73b4e58288320154c",
+      "invocation_id": "model-risk-baseline-runtime-v6",
+      "model_ref": "research-agent-loop@v6",
+      "payload": {
+        "action": "EVALUATE",
+        "input_sha256": "fb62aa7fa483aa70be43121aab4f9945fcd66edfb14ef4d65fd610b85cca0282",
+        "invocation_id": "model-risk-baseline-runtime-v6",
+        "model_ref": "research-agent-loop@v6",
+        "outcome": "ALLOWED",
+        "output_sha256": "87973dc1b4039146a774d7710c0c4b0d1db64fc1b9ebbfab959d74ce84f5b530",
+        "prompt_ref": "research-evaluation@v6",
+        "recorded_at": 1783814400,
+        "tool_manifest_ref": "research-agent-tools@v6"
+      },
+      "previous_hash": "36bf077fc1e4d2d8c58ff9ece800f945796e01e32a790fb72a72914ac7847cc9",
+      "prompt_ref": "research-evaluation@v6",
+      "recorded_at": 1783814400,
+      "sequence": 11,
+      "tool_manifest_ref": "research-agent-tools@v6"
+    },
+    {
+      "action": "EVALUATE",
+      "event_hash": "9eb54f4ede66e7ebcc388e001e3755ce3f943f655dae1c55d31ceddbba3b568f",
+      "invocation_id": "model-risk-runtime-red-team-v7",
+      "model_ref": "research-agent-loop@v6",
+      "payload": {
+        "action": "EVALUATE",
+        "input_sha256": "f9add7780f0f365a86bd5d0dbeaa98413fcf7b9597b8f09d49c43de9657806d6",
+        "invocation_id": "model-risk-runtime-red-team-v7",
+        "model_ref": "research-agent-loop@v6",
+        "outcome": "ALLOWED",
+        "output_sha256": "28f94d51bf298ad2bc0dd4d28e04fe125bb1ab639635f80585dfa0e741878ec1",
+        "prompt_ref": "research-evaluation@v6",
+        "recorded_at": 1784528700,
+        "tool_manifest_ref": "research-agent-tools@v6"
+      },
+      "previous_hash": "ecd6f7129cfb3b563f4f93e0e804cf18e80f0989cdf322d73b4e58288320154c",
+      "prompt_ref": "research-evaluation@v6",
+      "recorded_at": 1784528700,
+      "sequence": 12,
+      "tool_manifest_ref": "research-agent-tools@v6"
     }
   ],
-  "runtime_history_sha256": "36bf077fc1e4d2d8c58ff9ece800f945796e01e32a790fb72a72914ac7847cc9",
+  "runtime_history_sha256": "9eb54f4ede66e7ebcc388e001e3755ce3f943f655dae1c55d31ceddbba3b568f",
   "runtime_history_verified": true,
-  "runtime_invocation_count": 10,
+  "runtime_invocation_count": 12,
   "runtime_prompt_surface_status": "GOVERNED_OFFLINE_BOUNDARY_NO_EXTERNAL_PROVIDER",
   "schema_version": 1,
   "source_dataset_ref": "data/cache/fx.db",

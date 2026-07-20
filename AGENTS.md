@@ -52,8 +52,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
   factor-expression compiler. `services/research/backtest_engine/` — single +
   event-driven backtests with exact PnL-reconciliation identity.
 - `services/research/validation/` — Deflated-Sharpe, combinatorial purged CV,
-  purged/embargoed walk-forward gate. `services/research/oos_validation.py` —
-  no-peek selection OOS.
+  purged/embargoed walk-forward gate. `quantos/contracts/validation.py` +
+  `services/validation/catalog_evidence.py` make catalog-wide DSR/effective-trial
+  provenance replayable: exact return observations, Sharpe population and comparable
+  correlations are hash-bound, missing histories count conservatively, and evaluator/
+  registry/lifecycle/promotion reject stale or caller-fabricated evidence. PBO retains
+  its exact CSCV matrix in the same shared validation contract. `services/research/
+  oos_validation.py` — no-peek selection OOS.
 - `services/research/{alpha_factory,alpha_expression,cs_genome,gp_tree,factor_set,
   session}.py` — real evolutionary/GP search, cross-sectional DSL, synergistic
   de-redundant set selection, and the deterministic research-session core.

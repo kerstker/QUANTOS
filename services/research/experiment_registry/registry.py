@@ -16,6 +16,10 @@ from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
+from services.alpha.evaluation_evidence import (
+    bind_evaluation_reproducibility,
+    verify_evaluation_reproducibility,
+)
 from services.research.experiment_registry.evaluation_artifact import (
     prepare_evaluation_artifact,
 )
@@ -24,6 +28,7 @@ from services.research.ports.persistence import (
     ExperimentStorePort,
 )
 from services.validation.pbo_evidence import verify_batch_pbo_evidence
+from services.validation.catalog_evidence import verify_catalog_evidence
 
 
 class ExperimentRegistry:
@@ -217,17 +222,23 @@ class ExperimentRegistry:
         trials = tuple(self._store.all_trial_hashes())
         historical_returns = {}
         historical_pvalues = {}
+        historical_definition_hashes = {}
         try:
             for row in self._store.all_alphas():
                 # Validate the complete canonical row even though lifecycle state is
                 # deliberately not installed into the fresh evaluation catalog.
-                AlphaDefinition.model_validate(json.loads(row["definition_json"]))
+                definition = AlphaDefinition.model_validate(
+                    json.loads(row["definition_json"])
+                )
                 AlphaState(row["state"])
                 values = json.loads(row["returns_json"])
                 if not isinstance(values, list):
                     raise ValueError("returns_json must decode to a list")
                 historical_returns[row["alpha_id"]] = tuple(
                     float(value) for value in values
+                )
+                historical_definition_hashes[row["alpha_id"]] = (
+                    definition.definition_hash
                 )
                 if row["pvalue"] is not None:
                     historical_pvalues[row["alpha_id"]] = float(row["pvalue"])
@@ -239,6 +250,7 @@ class ExperimentRegistry:
             trials=trials,
             historical_returns=historical_returns,
             historical_pvalues=historical_pvalues,
+            historical_definition_hashes=historical_definition_hashes,
         )
 
     # --- immutable evaluation artifacts -------------------------------------
@@ -259,12 +271,36 @@ class ExperimentRegistry:
             else evaluation
         )
         parsed = AlphaEvaluation.model_validate(raw_evaluation)
+        if parsed.catalog_evidence is not None and not verify_catalog_evidence(
+            parsed.catalog_evidence
+        ):
+            raise ValueError("evaluation catalog evidence does not replay")
+        if parsed.pbo_evidence is not None and not verify_batch_pbo_evidence(
+            parsed.pbo_evidence
+        ):
+            raise ValueError("evaluation PBO evidence does not replay")
+        if parsed.verdict.value == "PASS" and (
+            parsed.catalog_evidence is None or parsed.pbo_evidence is None
+        ):
+            raise ValueError("PASS evaluation requires complete replayable evidence")
         if (
             config_hash is not None
             and parsed.pbo_evidence is not None
             and config_hash not in parsed.pbo_evidence.candidate_definition_hashes
         ):
             raise ValueError("evaluation PBO evidence is not bound to the search candidate")
+        if (
+            config_hash is not None
+            and parsed.catalog_evidence is not None
+            and config_hash
+            != parsed.catalog_evidence.subject_definition_hash
+        ):
+            raise ValueError(
+                "evaluation catalog evidence is not bound to the search candidate"
+            )
+        parsed = bind_evaluation_reproducibility(
+            parsed, dataset_version=dataset_version
+        )
         write = prepare_evaluation_artifact(
             parsed,
             dataset_version,
@@ -423,8 +459,16 @@ class ExperimentRegistry:
                 return False
             evaluation = AlphaEvaluation.model_validate(payload)
             return (
-                evaluation.pbo_evidence is not None
+                evaluation.catalog_evidence is not None
+                and verify_catalog_evidence(evaluation.catalog_evidence)
+                and evaluation.pbo_evidence is not None
                 and verify_batch_pbo_evidence(evaluation.pbo_evidence)
+                and evaluation.catalog_evidence.subject_definition_hash
+                in evaluation.pbo_evidence.candidate_definition_hashes
+                and verify_evaluation_reproducibility(
+                    evaluation,
+                    dataset_version=row["dataset_version"],
+                )
             )
         except Exception:
             return False

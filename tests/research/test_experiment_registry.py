@@ -7,9 +7,11 @@ from threading import Event
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.canonical import canonical_sha256
 from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.evaluation_evidence import evaluation_reproducibility_hash
 from services.monitoring.audit_log import GlobalAuditLog
 from services.research.experiment_registry.registry import (
     ExperimentRegistry,
@@ -18,7 +20,7 @@ from services.research.experiment_registry.registry import (
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError,
 )
-from tests.alpha.fixtures import bound_alpha_evaluation
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 
 _EVALUATION_DEFINITION = AlphaDefinition(alpha_id="a1", name="a1", factor_ids=("f1",))
@@ -86,15 +88,38 @@ def test_load_into_corrupt_alpha_row_fails_closed():
         reg.load_into(AlphaCatalog())
 
 
+def test_load_for_evaluation_preserves_historical_definition_bound_returns():
+    registry = _reg()
+    source = _populated()
+    registry.save(source, now=1)
+
+    catalog = AlphaCatalog()
+    registry.load_for_evaluation(catalog)
+    definition = AlphaDefinition(
+        alpha_id="new",
+        name="new",
+        factor_ids=("new-factor",),
+    )
+    catalog.register(definition)
+    catalog.set_returns("new", (0.012, -0.004, 0.018, 0.001))
+
+    evidence = catalog.evidence("new")
+    assert evidence is not None
+    assert evidence.trial_count == 3
+    assert len(evidence.sharpe_observations) == 3
+    assert definition.definition_hash in {
+        item.observation_id for item in evidence.return_observations
+    }
+
+
 def _evaluation():
     catalog = AlphaCatalog()
     catalog.register(_EVALUATION_DEFINITION)
-    catalog.register_trial(stable_hash({"test_support_candidate": "a1"}))
+    seed_catalog_evidence(catalog, "a1")
     catalog.register_trial(stable_hash({"third_catalog_trial": True}))
     return bound_alpha_evaluation(
         catalog,
         "a1",
-        catalog_trial_count=3,
         reproducibility_hash="repro-1",
     )
 
@@ -379,6 +404,37 @@ def test_verify_evaluation_replays_pbo_after_attacker_recomputes_row_hash():
     payload["pbo_evidence"]["performance_matrix"][0][0] += 1.0
     tampered_json = json.dumps(payload, sort_keys=True, default=str)
     tampered_hash = stable_hash({"evaluation": payload, "dataset_version": "v1"})
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
+    reg._store._conn.execute(
+        "UPDATE evaluations SET evaluation_json=?, content_hash=? WHERE run_id=?",
+        (tampered_json, tampered_hash, rid),
+    )
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False
+
+
+def test_verify_evaluation_replays_catalog_dsr_after_all_generic_hashes_change():
+    reg = _reg()
+    rid = reg.record_evaluation(
+        _evaluation(), dataset_version="v1", recorded_ts=10
+    )
+    row = reg.get_evaluation(rid)
+    payload = json.loads(row["evaluation_json"])
+    forged_dsr = 1.0 - payload["catalog_evidence"]["deflated_sharpe"]
+    payload["catalog_evidence"]["deflated_sharpe"] = forged_dsr
+    payload["deflated_sharpe"] = forged_dsr
+    payload["catalog_evidence_hash"] = canonical_sha256(
+        payload["catalog_evidence"]
+    )
+    payload["reproducibility_hash"] = ""
+    forged = AlphaEvaluation.model_validate(payload)
+    payload["reproducibility_hash"] = evaluation_reproducibility_hash(
+        forged, dataset_version="v1"
+    )
+    tampered_json = json.dumps(payload, sort_keys=True, default=str)
+    tampered_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": "v1"}
+    )
     reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
     reg._store._conn.execute(
         "UPDATE evaluations SET evaluation_json=?, content_hash=? WHERE run_id=?",

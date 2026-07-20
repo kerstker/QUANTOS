@@ -9,7 +9,7 @@ import hashlib
 
 import pytest
 
-from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.model_risk import (
     ModelCard,
     ModelUseStatus,
@@ -28,6 +28,7 @@ from services.intelligence.runtime import (
     RESEARCH_EVALUATION_TEMPLATE,
     RuntimeGovernanceError,
 )
+from tests.alpha.fixtures import catalog_bound_evaluation
 
 
 def _runtime(tmp_path):
@@ -178,19 +179,17 @@ class _EvaluationStub:
     def __init__(self, catalog):
         self.catalog = catalog
 
+    def prepare_catalog_observation(self, alpha_id, periods):
+        del periods
+        self.catalog.set_returns(alpha_id, (0.011, 0.0, 0.021, -0.01))
+
     def evaluate(self, alpha_id, periods, **kwargs):
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
         pbo_evidence = kwargs["pbo_evidence"]
-        return AlphaEvaluation(
-            alpha_id=alpha_id,
+        return catalog_bound_evaluation(
+            self.catalog,
+            alpha_id,
             verdict=ValidationVerdict.PASS,
-            deflated_sharpe=0.8,
-            pbo=pbo_evidence.pbo,
             pbo_evidence=pbo_evidence,
-            pbo_evidence_hash=pbo_evidence.evidence_hash,
-            catalog_trial_count=self.catalog.global_trial_count(),
-            catalog_trial_set_hash=self.catalog.trial_set_hash(),
-            marginal_ir=0.5,
         )
 
 

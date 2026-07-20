@@ -194,7 +194,7 @@
   "identity_lifecycle_evidence_status": "LOCAL_REVOCATION_TOKEN_EPOCH_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED",
   "implementation_sha256": {
     "apps/research-console/src/lib/api/governance-pkce.ts": "60f42677fc8033a629c439913d43a3e7d0023ee2db9abd1d2c394877667dc751",
-    "apps/research-console/src/lib/api/promotion-api.ts": "99d242cb850a4c86d2eb69e1b331642dd7ce4ea071d1a7005858053083e17631",
+    "apps/research-console/src/lib/api/promotion-api.ts": "a79034557323e7dadbeb5b9dbd32a1a276f296a25b596418a5990a6fc84d5c57",
     "apps/research-console/src/pages/PromotionQueue.tsx": "8fe9be0a3f42b6f6a75d60e363cddf3566f4b99da7c540cb0a93496966867787",
     "config/identity_authorization_registry.json": "13df7ad56fd2076aa46c681dfe1bd19237909e2b3e760d0e0b3f6454c42f6256",
     "quantos/contracts/identity.py": "de7fc42afc941a27af125d6bbf31624de4bb2b30bdc6c0e3a2dbea653ad9f23d",
@@ -202,7 +202,7 @@
     "services/governance/identity_authorization.py": "43fac24d630ae91dc4360a939ebf17940d4cf822603f451f13746fbc441e7a2b",
     "services/governance/identity_authorization_store.py": "768a73e1833e93e7bb5f0ad8204faa90857c87e5b91d27e9ad449cb3dc2f6890",
     "services/governance/strong_identity.py": "53c7a37affd8364f1cdf954098576e1fdabdf63cb81426c87b35ebfc48e8f320",
-    "services/promotion_api/main.py": "68c69b463571971a158923a472f5a5315eff4b3ffe8c723b12914f8bddf55e85"
+    "services/promotion_api/main.py": "ed1dd4da140b863c681cc890572ab883f5f0b61cb42b252ee4ce99a7485498bc"
   },
   "legacy_shared_token_accepted": false,
   "live_trading_authority_granted": false,

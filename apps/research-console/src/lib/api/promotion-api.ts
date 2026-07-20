@@ -30,6 +30,7 @@ export interface PromotionEvidenceSummary {
   backtest_sharpe: number | null;
   paper_sharpe: number | null;
   eval_trial_count: number | null;
+  eval_catalog_evidence_hash: string | null;
   eval_run_id: string;
   notes: string[];
 }

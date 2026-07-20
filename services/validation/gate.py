@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from quantos.contracts.research import ValidationResult, ValidationVerdict
+from quantos.contracts.validation import BatchPboEvidence, CatalogEvidence
+from services.validation.catalog_evidence import verify_catalog_evidence
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
 
 
 @dataclass(frozen=True)
@@ -60,15 +63,50 @@ class ValidationGate:
         subject_id: str,
         *,
         oos_sharpe: float,
-        deflated_sharpe: float,
-        pbo: float,
-        trial_count: int,
+        catalog_evidence: CatalogEvidence,
+        pbo_evidence: BatchPboEvidence,
         leakage_ok: bool,
         regime_profitable_frac: float,
         walk_forward_passed: bool,
         capacity_ratio: Optional[float] = None,
     ) -> ValidationResult:
         c = self.config
+
+        evidence_reasons = []
+        if (
+            not isinstance(catalog_evidence, CatalogEvidence)
+            or not verify_catalog_evidence(catalog_evidence)
+        ):
+            evidence_reasons.append("CATALOG_EVIDENCE_INVALID")
+        elif catalog_evidence.subject_id != subject_id:
+            evidence_reasons.append("CATALOG_EVIDENCE_SUBJECT_MISMATCH")
+        if (
+            not isinstance(pbo_evidence, BatchPboEvidence)
+            or not verify_batch_pbo_evidence(pbo_evidence)
+        ):
+            evidence_reasons.append("PBO_EVIDENCE_INVALID")
+        elif (
+            isinstance(catalog_evidence, CatalogEvidence)
+            and catalog_evidence.subject_definition_hash
+            not in pbo_evidence.candidate_definition_hashes
+        ):
+            evidence_reasons.append("PBO_EVIDENCE_SUBJECT_MISMATCH")
+        if evidence_reasons:
+            return ValidationResult(
+                subject_id=subject_id,
+                verdict=ValidationVerdict.FAIL,
+                reasons=tuple(evidence_reasons),
+            )
+
+        deflated_sharpe = catalog_evidence.deflated_sharpe
+        pbo = pbo_evidence.pbo
+        trial_count = catalog_evidence.trial_count
+        evidence_fields = {
+            "catalog_evidence": catalog_evidence,
+            "catalog_evidence_hash": catalog_evidence.evidence_hash,
+            "pbo_evidence": pbo_evidence,
+            "pbo_evidence_hash": pbo_evidence.evidence_hash,
+        }
 
         # Fail-closed input validation: impossible metrics must never pass.
         bad = []
@@ -86,7 +124,8 @@ class ValidationGate:
             return ValidationResult(subject_id=subject_id, verdict=ValidationVerdict.FAIL,
                                     deflated_sharpe=min(max(deflated_sharpe, 0.0), 1.0),
                                     pbo=min(max(pbo, 0.0), 1.0), trial_count=max(trial_count, 1),
-                                    reasons=tuple(["INVALID_INPUT"] + bad))
+                                    reasons=tuple(["INVALID_INPUT"] + bad),
+                                    **evidence_fields)
 
         serious: list[str] = []
         soft: list[str] = []
@@ -133,4 +172,5 @@ class ValidationGate:
             subject_id=subject_id, verdict=verdict,
             deflated_sharpe=deflated_sharpe, pbo=pbo, trial_count=trial_count,
             reasons=tuple(reasons),
+            **evidence_fields,
         )

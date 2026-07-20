@@ -74,10 +74,10 @@ DEFAULT_DATASET_BUNDLE = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.js
 DEFAULT_DATASET_MANIFEST = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.manifest.json"
 DEFAULT_OUTPUT = REPO / "evidence" / "model_risk_baseline.json"
 DEFAULT_HISTORY = REPO / "evidence" / "model_risk_history.json"
-BASELINE_RECORDED_AT = 1_784_476_800
-DEFAULT_RECORDED_AT = 1_784_480_400
+BASELINE_RECORDED_AT = 1_784_528_400
+DEFAULT_RECORDED_AT = 1_784_528_700
 
-_CURRENT_RELEASE_VERSION = "v5"
+_CURRENT_RELEASE_VERSION = "v6"
 
 _AGENT_LOOP = "services/intelligence/agent_loop.py"
 _GUARDRAILS = "services/intelligence/guardrails.py"
