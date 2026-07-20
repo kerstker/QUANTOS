@@ -70,3 +70,6 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 
 ---
 *本路线图随开发推进更新;完成一项即在 Rank 行标注 ✓ 并附提交哈希。*
+> **2026-07-21 增量：** Rank #13 的下一小步已落地：复用 PIT trailing KS 内核，新增
+> `evaluate_feature_distribution_drift` 对声明 feature universe 做逐 feature 漂移诊断；缺失/多余
+> feature fail-closed，仍是 read-only diagnostic，不伪造 feature cache、实时 feed 或运营告警。
