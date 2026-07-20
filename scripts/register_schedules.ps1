@@ -5,12 +5,26 @@
 # venue submission, emergency trading action, credential-bearing API, or live
 # monitoring process. Legacy tasks with those capabilities are disabled (not
 # deleted) before the L2 jobs are registered.
-param()
+#
+# The script location is the immutable release code root. -StateRoot may point
+# at a separate mutable operational checkout containing data/cache; scheduled
+# imports still resolve only through tools/l2_schedule_entrypoint.py in this
+# release root.
+param([string]$StateRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$wd = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($StateRoot)) {
+  $stateRoot = $codeRoot
+} else {
+  $stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+}
+$launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
+if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+  throw "L2 schedule entrypoint is unavailable"
+}
 $pythonCommand = Get-Command python -ErrorAction Stop
 $py = $pythonCommand.Source
 
@@ -45,7 +59,7 @@ function Get-L2BackupReadiness {
   if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
     return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_BACKUP_DEST is missing or not absolute" }
   }
-  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $workspaceRoot = [IO.Path]::GetPathRoot($stateRoot)
   $destinationRoot = [IO.Path]::GetPathRoot($destination)
   $isUnc = $destination.StartsWith("\\")
   if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
@@ -75,7 +89,7 @@ function Get-EventSealReadiness {
   if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
     return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_EVENT_SEAL_DEST is missing or not absolute" }
   }
-  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $workspaceRoot = [IO.Path]::GetPathRoot($stateRoot)
   $destinationRoot = [IO.Path]::GetPathRoot($destination)
   $isUnc = $destination.StartsWith("\\")
   if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
@@ -88,13 +102,14 @@ function Register-L2Task {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
     [Parameter(Mandatory = $true)][string]$Module,
-    [Parameter(Mandatory = $true)]$Trigger
+    [Parameter(Mandatory = $true)]$Trigger,
+    [TimeSpan]$ExecutionTimeLimit = (New-TimeSpan -Hours 6)
   )
 
   $action = New-ScheduledTaskAction -Execute $py `
-    -Argument "-m tools.$Module" -WorkingDirectory $wd
+    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
-    -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
+    -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
     -Settings $settings -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
     -Force | Out-Null
@@ -142,7 +157,7 @@ Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
   -Trigger $maintenanceTrigger
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
-  -Trigger $eventOpsTrigger
+  -Trigger $eventOpsTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdog" `
   -Trigger $schedulerWatchdogTrigger
 Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
@@ -173,5 +188,6 @@ if ($eventSealReadiness.Ready) {
 }
 
 Write-Host ""
-Write-Host "L2_DRY_RUN_ONLY schedules registered from $wd using $py"
+Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $py"
+Write-Host "Mutable operational state root: $stateRoot"
 Write-Host "No live submission or broker-capable task was registered."

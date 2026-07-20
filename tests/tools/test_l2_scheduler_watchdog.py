@@ -39,8 +39,16 @@ CONTRACT_SHA256 = hashlib.sha256(
 ).hexdigest()
 
 
-def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
+def _launcher_arguments(code_root: Path, module: str) -> str:
+    launcher = code_root / "tools" / "l2_schedule_entrypoint.py"
+    return f'"{launcher}" {module}'
+
+
+def _healthy_snapshot(
+    repo: Path, name: str, *, code_root: Path | None = None
+) -> TaskSnapshot:
     spec = EXPECTED_TASKS[name]
+    release = repo if code_root is None else code_root
     return TaskSnapshot(
         name=name,
         state="Ready",
@@ -48,7 +56,7 @@ def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
         last_result=0,
         next_run_ms=NOW_MS + 3_600_000,
         execute="C:/Python/python.exe",
-        arguments=f"-m tools.{spec.module}",
+        arguments=_launcher_arguments(release, spec.module),
         working_directory=str(repo),
     )
 
@@ -178,6 +186,63 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
         "UNAVAILABLE": 0,
         "BREACH": 0,
     }
+
+
+def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
+    state_root = tmp_path / "state"
+    code_root = tmp_path / "release"
+    state_root.mkdir()
+    code_root.mkdir()
+    snapshots = [
+        _healthy_snapshot(state_root, name, code_root=code_root)
+        for name in EXPECTED_TASKS
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=state_root,
+        code_root=code_root,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    assert result["verdict"] == "PASS"
+
+
+def test_schedule_evaluation_rejects_legacy_direct_module_action(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "arguments": "-m tools.domain_event_ops",
+            }
+        )
+        if item.name == "QUANTOS_domain_event_ops"
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(
+        item
+        for item in result["checks"]
+        if item["task_name"] == "QUANTOS_domain_event_ops"
+    )
+    assert check["status"] == "BREACH"
+    assert check["code"] == "ACTION_DRIFT"
 
 
 def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp_path):

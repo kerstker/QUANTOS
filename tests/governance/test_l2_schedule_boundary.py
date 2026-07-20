@@ -52,9 +52,13 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
 def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_tasks():
     source = _source()
     assert "$PSScriptRoot" in source
+    assert "StateRoot" in source
+    assert "l2_schedule_entrypoint.py" in source
     assert "Get-Command python" in source
     assert "New-ScheduledTaskAction" in source
     assert "-MultipleInstances IgnoreNew" in source
+    assert "-WorkingDirectory $stateRoot" in source
+    assert "-ExecutionTimeLimit (New-TimeSpan -Minutes 5)" in source
     assert "cmd /" not in source.lower()
     assert "H:\\code\\QUANTOS" not in source
     assert "H:\\miniconda\\python.exe" not in source
@@ -71,6 +75,15 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         assert task_name in source
     assert "Disable-ScheduledTask" in source
     assert "Get-ScheduledTask" in source
+
+
+def test_schedule_registration_separates_release_code_from_mutable_state():
+    source = _source()
+    assert "$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot \"..\")).Path" in source
+    assert "$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path" in source
+    assert '$launcher = Join-Path $codeRoot "tools\\l2_schedule_entrypoint.py"' in source
+    assert '-Argument "`"$launcher`" $Module"' in source
+    assert '-m tools.$Module' not in source
 
 
 def test_backup_registration_never_embeds_a_secret_or_local_default_destination():
