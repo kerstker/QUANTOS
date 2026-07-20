@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 _EVIDENCE = "evidence"
 _DRY_RUN_DB = os.path.join("data", "cache", "dry_run.db")
@@ -39,16 +40,121 @@ def extract_capacity(snap: dict) -> dict:
     return out
 
 
-EXTRACTORS = {"ic_panel": extract_ic_panel, "capacity": extract_capacity}
+def _require_provenance(snap: dict, expected: str) -> None:
+    actual = snap.get("provenance")
+    if actual != expected:
+        raise ValueError(f"snapshot provenance must be {expected!r}, got {actual!r}")
 
 
-def _git_sha() -> str:
+def extract_scenario_tail(snap: dict) -> dict:
+    """Historical-replay crisis and endogenous-tail findings for both deployable books."""
+    _require_provenance(snap, "REAL_HISTORICAL_REPLAY")
+    out = {}
+    for name in ("carry", "crowd_contra"):
+        book = snap["books"][name]
+        crises = book["crises"]
+        out.update(
+            {
+                f"{name}.n_periods": float(book["n_periods"]),
+                f"{name}.worst_drawdown": float(
+                    book["worst_drawdown_window"]["drawdown"]
+                ),
+                f"{name}.cvar_95": float(book["var_cvar_95"]["cvar"]),
+                f"{name}.hill_tail_index": float(book["hill_tail_index"]),
+                f"{name}.lower_tail_dep_vs_btc": float(
+                    book["lower_tail_dep_vs_btc"]
+                ),
+                f"{name}.luna_total_return": float(
+                    crises["2022-05 LUNA"]["total_return"]
+                ),
+                f"{name}.ftx_total_return": float(
+                    crises["2022-11 FTX"]["total_return"]
+                ),
+            }
+        )
+    return out
+
+
+def extract_macro_regime(snap: dict) -> dict:
+    """Retrospective macro-regime complementarity plus the honest coverage limits."""
+    _require_provenance(snap, "REAL_FRED_MACRO")
+    alfred_present = snap.get("alfred_present")
+    if not isinstance(alfred_present, bool):
+        raise ValueError("macro snapshot alfred_present must be a boolean")
+
+    out = {"macro.alfred_present": float(alfred_present)}
+    for name in ("carry", "crowd_contra"):
+        book = snap["books"][name]
+        dims = book["dims"]
+        vix = dims["vol_VIX"]["buckets"]
+        curve = dims["rates_2s10s"]["buckets"]
+        out.update(
+            {
+                f"{name}.n_periods": float(book["n_periods"]),
+                f"{name}.vix_high_sharpe": float(vix["high"]["ann_sharpe"]),
+                f"{name}.vix_low_sharpe": float(vix["low"]["ann_sharpe"]),
+                f"{name}.curve_normal_sharpe": float(
+                    curve["normal"]["ann_sharpe"]
+                ),
+                f"{name}.curve_inverted_sharpe": float(
+                    curve["inverted"]["ann_sharpe"]
+                ),
+                f"{name}.credit_covered_periods": float(
+                    dims["credit_HYOAS"]["covered_periods"]
+                ),
+            }
+        )
+    return out
+
+
+EXTRACTORS = {
+    "ic_panel": extract_ic_panel,
+    "capacity": extract_capacity,
+    "scenario_tail": extract_scenario_tail,
+    "macro_regime": extract_macro_regime,
+}
+
+
+def _git_sha(repo_root: str | os.PathLike[str] = ".") -> str:
     try:
-        head = open(os.path.join(".git", "HEAD"), encoding="utf-8").read().strip()
-        if head.startswith("ref:"):
-            return open(os.path.join(".git", head.split(" ", 1)[1].strip()), encoding="utf-8").read().strip()[:12]
-        return head[:12]
-    except Exception:
+        root = Path(repo_root)
+        dot_git = root / ".git"
+        if dot_git.is_file():
+            marker = dot_git.read_text(encoding="utf-8").strip()
+            if not marker.startswith("gitdir:"):
+                return "unknown"
+            declared = Path(marker.split(":", 1)[1].strip())
+            git_dir = declared if declared.is_absolute() else (root / declared).resolve()
+        else:
+            git_dir = dot_git
+
+        common_dir = git_dir
+        common_marker = git_dir / "commondir"
+        if common_marker.is_file():
+            declared = Path(common_marker.read_text(encoding="utf-8").strip())
+            common_dir = (
+                declared if declared.is_absolute() else (git_dir / declared).resolve()
+            )
+
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head[:12]
+
+        ref = head.split(":", 1)[1].strip()
+        for base in dict.fromkeys((git_dir, common_dir)):
+            loose_ref = base / ref
+            if loose_ref.is_file():
+                return loose_ref.read_text(encoding="utf-8").strip()[:12]
+            packed_refs = base / "packed-refs"
+            if packed_refs.is_file():
+                for line in packed_refs.read_text(encoding="utf-8").splitlines():
+                    if line.startswith(("#", "^")):
+                        continue
+                    sha, _, packed_ref = line.partition(" ")
+                    if packed_ref == ref:
+                        return sha[:12]
+        return "unknown"
+    except (OSError, UnicodeError, ValueError):
         return "unknown"
 
 
@@ -94,6 +200,18 @@ def main() -> None:
         "dry_run_books.json": build_dry_run_digest(),
         "ic_panel.json": build_json_digest("ic_panel_snapshot.json", "ic_panel", rel_tol=0.005, abs_tol=0.001),
         "capacity.json": build_json_digest("capacity_snapshot.json", "capacity", rel_tol=0.01, abs_tol=1.0),
+        "scenario_tail.json": build_json_digest(
+            "scenario_tail_snapshot.json",
+            "scenario_tail",
+            rel_tol=0.005,
+            abs_tol=0.001,
+        ),
+        "macro_regime.json": build_json_digest(
+            "macro_regime_snapshot.json",
+            "macro_regime",
+            rel_tol=0.005,
+            abs_tol=0.01,
+        ),
     }
     for name, digest in digests.items():
         path = os.path.join(_EVIDENCE, name)
