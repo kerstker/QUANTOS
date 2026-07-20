@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-21 路线图校正：** Rank #9「全局多重检验预算账本」已经完成，不再是待开发项。机器评估与能力矩阵均为 `ALPHA.TRIAL.GLOBAL_LEDGER = M4/PASS`；可移植历史链、封存快照、精确评估绑定和追加保护证据见 `evidence/alpha_trial_ledger_history.json`、`evidence/alpha_trial_ledger_snapshot.db`、`evidence/alpha_trial_ledger_snapshot_seal.json`。后续工作仅是持续维护证据，不把内部已完成能力冒充外部成熟度。
+
 > **2026-07-21 组合级统一约束门落地（L2 可用增量）：** 新增纯函数
 > `services/portfolio/portfolio_constraints.py`，把经验 CVaR 尾部预算、firm gross/net 与单名集中、
 > 容量瓶颈、拥挤证据合并为带 provenance 的 `PASS/WARN/PENDING/BLOCK` 结果；缺少已请求证据为
