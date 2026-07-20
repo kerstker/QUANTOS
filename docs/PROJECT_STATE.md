@@ -20,6 +20,13 @@
 > 111 或 363）。无数据库时不伪造漂移行，旧 `FEATURE_DRIFT` 仍显式标 synthetic，直到特征值缓存
 > 真正填充。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、下单或 live 能力。
 
+> **2026-07-21 Rank #13 特征级漂移证据已补齐（仍为诊断）：** 新增
+> `tools/feature_distribution_drift_research.py`，从已封存并验证的 FX PIT bundle 重放三个因果
+> close 特征，以截面中位数形成时间序列，再复用 60/20 窗口 KS 内核。证据制品为
+> `evidence/feature_distribution_drift_baseline.json`，当前三个特征均为 `BLOCK`；这是真实的
+> 数据警告，但明确 `load_bearing=false`，不驱动晋级、仓位、干跑或订单。实时/纸面 feed、定时
+> `FeatureValue` 缓存、阈值校准和运营告警仍未完成；机器结论保持 **15/22、NOT_TOP_TIER**。
+
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
 > `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和
