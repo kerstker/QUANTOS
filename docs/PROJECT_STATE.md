@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
+> `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
+> `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和
+> 非法策略全部 fail-closed。`capital_allocator` 在可选策略下返回明确命名的
+> `correlation_gross_recommendation`，默认配置与归一化 sleeve 权重不变。真实
+> `carry_crowd_risk_parity` 驱动器已接入评估并把 143 PASS / 68 WARN / 23 BLOCK、最新窗口与
+> provenance 写入干跑 detail，但实际缩放固定为 0 期/1.00 倍。原因不是少做：严格同样本控制中，
+> 无条件缩放把 RAW/VT 夏普从 0.6098/1.1173 降至 0.5591/1.0227；预先定义的“相关告警 + 上期
+> 双 sleeve 同亏”虽在 70/30 近似 OOS 降回撤，却在完整门+整手+成本+资金费+vol-target 管线只把
+> VT 回撤从 17.51% 微降至 17.46%，同时夏普降至 1.0922、RAW 回撤仍为 55.77%，故冻结为
+> `DISABLED_BY_EXECUTABLE_CONTROL`，不继续调参追结果。21 项聚焦测试已通过；该研究增量不改变
+> **15/22、NOT_TOP_TIER**，也不增加网络、凭据、券商、下单或 live 能力。
+
 > **2026-07-20 Rank #19 复现底座完整收口：** 承重数字指纹已从 dry-run、IC 面板、
 > 容量扩展到 `scenario_tail` 与 `macro_regime`。新增共享提取器固定两条 book 的样本数、
 > 历史危机收益、最差回撤、CVaR、Hill 尾指数、BTC 下尾依赖，以及 VIX/收益率曲线

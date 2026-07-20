@@ -9,9 +9,18 @@
 """
 from __future__ import annotations
 
+import math
 import os
 
 from services.portfolio.capital_allocator import allocate_capital, CapitalAllocatorConfig
+from services.portfolio.correlation_drift import (
+    BLOCK as CORRELATION_BLOCK,
+    CALIBRATION as CORRELATION_CALIBRATION,
+    PASS as CORRELATION_PASS,
+    PROVENANCE as CORRELATION_PROVENANCE,
+    WARN as CORRELATION_WARN,
+    CorrelationDriftPolicy,
+)
 from services.research import alpha_expression as ax
 from services.research.book_combine import rolling_inverse_vol_weights
 from services.risk.pre_trade.config import RiskLimits
@@ -35,6 +44,19 @@ _COST_BPS = 9.0
 _LOOKBACK = 8          # trailing 周数用于 sleeve 逆波动(回退路径)
 _MIN_HIST = 4
 _MIN_OBS = 20          # allocate_capital 需要的最少观测数;不足则回退逆波动
+_CORRELATION_POLICY = CorrelationDriftPolicy(
+    baseline_window=52,
+    recent_window=8,
+    warn_correlation=0.50,
+    block_correlation=0.75,
+    warn_increase=0.25,
+    block_increase=0.40,
+    warn_gross_multiplier=0.75,
+    block_gross_multiplier=0.50,
+)
+_CORRELATION_MIN_HISTORY = (
+    _CORRELATION_POLICY.baseline_window + _CORRELATION_POLICY.recent_window
+)
 
 
 def _sleeve_return(legs, r, rn, close, fmat, idx_of):
@@ -48,6 +70,29 @@ def _sleeve_return(legs, r, rn, close, fmat, idx_of):
         if fr is not None:
             g += -fr * w
     return g
+
+
+def _combine_sleeves(
+    carry_legs,
+    crowd_legs,
+    *,
+    carry_weight: float,
+    crowd_weight: float,
+):
+    """Combine normalized sleeve weights without an uncalibrated gross overlay."""
+    values = (carry_weight, crowd_weight)
+    if any(not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in values):
+        raise ValueError("sleeve weights and gross multiplier must be finite")
+    if carry_weight < 0.0 or crowd_weight < 0.0:
+        raise ValueError("sleeve weights must be non-negative")
+    if abs(carry_weight + crowd_weight - 1.0) > 1e-8:
+        raise ValueError("sleeve weights must sum to one")
+    combined = {}
+    for index, weight in carry_legs.items():
+        combined[index] = combined.get(index, 0.0) + carry_weight * weight
+    for index, weight in crowd_legs.items():
+        combined[index] = combined.get(index, 0.0) + crowd_weight * weight
+    return {index: weight for index, weight in combined.items() if abs(weight) > 1e-12}
 
 
 def main() -> None:
@@ -74,6 +119,12 @@ def main() -> None:
     periods, weights_by_period, prices_by_period, rate_by_period = [], {}, {}, {}
     sleeve_wlog = []
     alloc_source = {"capital_allocator": 0, "inverse_vol_fallback": 0}
+    correlation_counts = {
+        CORRELATION_PASS: 0,
+        CORRELATION_WARN: 0,
+        CORRELATION_BLOCK: 0,
+    }
+    correlation_latest = None
     for k in range(len(seq)):
         r, cl, ol = seq[k]
         # Rank #10b: sleeve weights now come from the covariance-aware capital allocator (PIT — only
@@ -84,9 +135,27 @@ def main() -> None:
         if k >= _MIN_OBS:
             # Rank #10c: cvar_penalty makes the sleeve sizing tail-aware (the optimizer sees each
             # sleeve's fat left tail via its past-return scenarios), not variance-only.
-            plan = allocate_capital({"carry": tuple(carry_sret[:k]), "crowd": tuple(crowd_sret[:k])},
-                                    config=CapitalAllocatorConfig(max_weight=1.0, mean_shrink_z=1.0,
-                                                                  cvar_penalty=1.0, cvar_alpha=0.90))
+            correlation_policy = (
+                _CORRELATION_POLICY if k >= _CORRELATION_MIN_HISTORY else None
+            )
+            plan = allocate_capital(
+                {"carry": tuple(carry_sret[:k]), "crowd": tuple(crowd_sret[:k])},
+                config=CapitalAllocatorConfig(
+                    max_weight=1.0,
+                    mean_shrink_z=1.0,
+                    cvar_penalty=1.0,
+                    cvar_alpha=0.90,
+                    correlation_drift_policy=correlation_policy,
+                ),
+            )
+            correlation = plan.diagnostics.get("correlation_drift")
+            if correlation is not None:
+                correlation_counts[correlation["status"]] += 1
+                correlation_latest = {
+                    **correlation,
+                    "activation": "DISABLED_BY_EXECUTABLE_CONTROL",
+                    "applied_gross_multiplier": 1.0,
+                }
             if plan.status == "ALLOCATED":
                 aw = {a.book_id: a.target_weight for a in plan.allocations}
                 sc, sq = aw.get("carry", 0.0), aw.get("crowd", 0.0)
@@ -97,12 +166,12 @@ def main() -> None:
             sc, sq = s[0], s[1]
             alloc_source["inverse_vol_fallback"] += 1
         sleeve_wlog.append((sc, sq))
-        combined = {}
-        for i, w in cl.items():
-            combined[i] = combined.get(i, 0.0) + sc * w
-        for i, w in ol.items():
-            combined[i] = combined.get(i, 0.0) + sq * w
-        combined = {i: w for i, w in combined.items() if abs(w) > 1e-12}
+        combined = _combine_sleeves(
+            cl,
+            ol,
+            carry_weight=sc,
+            crowd_weight=sq,
+        )
         if not combined:
             continue
         t = int(ev[r])
@@ -144,7 +213,33 @@ def main() -> None:
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
         event_bus=event_bus, publish_completion_event=False)
 
-    run.detail["sleeve_allocator"] = {**alloc_source, "provenance": "REAL_CAPITAL_ALLOCATOR"}
+    run.detail["sleeve_allocator"] = {
+        **alloc_source,
+        "correlation_scaled_periods": 0,
+        "provenance": "REAL_CAPITAL_ALLOCATOR",
+    }
+    if correlation_latest is not None:
+        run.detail["correlation_drift"] = {
+            "provenance": CORRELATION_PROVENANCE,
+            "calibration": CORRELATION_CALIBRATION,
+            "load_bearing": False,
+            "activation": "DISABLED_BY_EXECUTABLE_CONTROL",
+            "policy": {
+                "baseline_window": _CORRELATION_POLICY.baseline_window,
+                "recent_window": _CORRELATION_POLICY.recent_window,
+                "warn_correlation": _CORRELATION_POLICY.warn_correlation,
+                "block_correlation": _CORRELATION_POLICY.block_correlation,
+                "warn_increase": _CORRELATION_POLICY.warn_increase,
+                "block_increase": _CORRELATION_POLICY.block_increase,
+                "warn_gross_multiplier": _CORRELATION_POLICY.warn_gross_multiplier,
+                "block_gross_multiplier": _CORRELATION_POLICY.block_gross_multiplier,
+            },
+            "status_counts": correlation_counts,
+            "evaluated_periods": sum(correlation_counts.values()),
+            "scaled_periods": 0,
+            "applied_gross_multiplier": 1.0,
+            "latest": correlation_latest,
+        }
     save_and_project_dry_run(
         DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
     )
@@ -154,6 +249,15 @@ def main() -> None:
     print(f"=== CARRY+CROWD 风险平衡统一 book · {len(held_names)} 币 · {p['n_periods']} 周 · 成本 {_COST_BPS:.0f}bps ===", flush=True)
     print(f"  平均 sleeve 权重: carry {avg_sc:.2f} / crowd {avg_sq:.2f} "
           f"· 配置来源: allocator {alloc_source['capital_allocator']}/逆波动回退 {alloc_source['inverse_vol_fallback']}", flush=True)
+    if correlation_latest is not None:
+        print(
+            "  相关漂移(PIT,诊断不缩放): "
+            f"PASS {correlation_counts[CORRELATION_PASS]} / "
+            f"WARN {correlation_counts[CORRELATION_WARN]} / "
+            f"BLOCK {correlation_counts[CORRELATION_BLOCK]} "
+            "· 执行对照否定自动缩放",
+            flush=True,
+        )
     print(f"DryRunRun {run.run_id}: 意图 {run.n_intents} · 门批准 {run.n_approved} · 拒绝 {run.n_rejected}", flush=True)
     print(f"  RAW 净收益 {p['total_return']*100:.1f}% · 夏普(RAW) {p['sharpe']} · 回撤(RAW) {p['max_drawdown']*100:.0f}% "
           f"· 资金费 ${p['total_funding']:,.0f} · 残差 {p['residual']}", flush=True)
