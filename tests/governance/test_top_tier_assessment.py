@@ -1559,6 +1559,103 @@ def test_model_risk_checker_verifies_baseline_but_keeps_m3_open(tmp_path):
     assert "artifact_hash" in result["detail"]
 
 
+def test_committed_external_provider_stays_m2_without_passing_live_probe():
+    report = assess_repository(ROOT, REGISTRY)
+    results = {item["id"]: item for item in report["requirements"]}
+
+    ai_runtime = results["AI.MODEL.REGISTRY.REDTEAM"]
+    challenger_review = results["VALIDATION.CHALLENGER.MODEL_RISK"]
+    assert ai_runtime["status"] == "PARTIAL", ai_runtime["detail"]
+    assert ai_runtime["current_maturity"] == "M2"
+    assert "evidence/external_model_provider_baseline.json" not in ai_runtime["evidence"]
+    assert "no passing live HTTPS probe" in ai_runtime["detail"]
+    assert challenger_review["status"] == "PARTIAL"
+    assert challenger_review["current_maturity"] == "M2"
+    assert "strong reviewer identity remains open" in challenger_review["detail"]
+
+
+def test_model_risk_checker_promotes_ai_only_after_external_provider_verifier(
+    tmp_path, monkeypatch
+):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    external = tmp_path / "external-provider.json"
+    external.write_text("{}", encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "pass_maturity": "M2",
+                    "external_provider_path": external.name,
+                    "maturity_profile": "EXTERNAL_PROVIDER_RUNTIME_M3",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment.verify_external_model_provider_evidence",
+        lambda document, repo_root: {
+            "provider_id": "sushuo_gpt_5_6_sol",
+            "current_maturity": "M3",
+            "external_provider_exercised": True,
+            "review_identity_assurance": "PROCESS_ROLE_ONLY",
+            "evidence_paths": ["config/model_provider_registry.json"],
+        },
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PASS", result["detail"]
+    assert result["current_maturity"] == "M3"
+    assert "live HTTPS probe" in result["detail"]
+
+
+def test_model_risk_checker_keeps_challenger_review_m2_after_provider_probe(
+    tmp_path, monkeypatch
+):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    external = tmp_path / "external-provider.json"
+    external.write_text("{}", encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "pass_maturity": "M2",
+                    "external_provider_path": external.name,
+                    "maturity_profile": "EXTERNAL_REVIEW_M3",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment.verify_external_model_provider_evidence",
+        lambda document, repo_root: {
+            "provider_id": "sushuo_gpt_5_6_sol",
+            "current_maturity": "M3",
+            "external_provider_exercised": True,
+            "review_identity_assurance": "PROCESS_ROLE_ONLY",
+            "evidence_paths": ["config/model_provider_registry.json"],
+        },
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M2"
+    assert "strong external reviewer" in result["detail"]
+
+
 def test_model_risk_checker_recomputes_implementation_hashes(tmp_path):
     evidence = _write_valid_model_risk_evidence(tmp_path)
     registry = _write_registry(
