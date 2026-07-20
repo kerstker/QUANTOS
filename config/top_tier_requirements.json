@@ -211,7 +211,7 @@
                                                             ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add portfolio-level tail budget"
+                             "next_action":  "Add calibrated firm-wide margin/funding and cross-book limits"
                          },
                          {
                              "id":  "PORTFOLIO.COST.CAPACITY.LOAD_BEARING",
