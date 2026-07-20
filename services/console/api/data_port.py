@@ -14,6 +14,8 @@ class DataCatalogPort(Protocol):
 
     def verify_point_in_time_safe(self, dataset_id: str) -> bool: ...
 
+    def enumerate_distribution_series(self) -> Dict[str, List[float]]: ...
+
 
 class DataCatalogUnavailable(RuntimeError):
     pass
