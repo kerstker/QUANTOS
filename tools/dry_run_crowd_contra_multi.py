@@ -36,6 +36,34 @@ _WEEK_MS = 7 * 24 * 3600 * 1000
 _MAX_CROWDING_Z = 3.0
 
 
+def _existing_crowd_run(path: str = _OUT) -> dict | None:
+    """Return the append-only crowd run when this driver has already completed.
+
+    ``save_and_project_dry_run`` correctly rejects binding a second research-risk
+    event to the same deterministic run.  The operator flow is intentionally
+    retryable, so an existing record is a successful idempotent result rather
+    than a reason to recompute and collide with the outbox.
+    """
+    if not os.path.isfile(path):
+        return None
+    store = None
+    try:
+        store = DryRunStore(path, create=False)
+        records = [
+            record
+            for record in store.all_runs()
+            if isinstance(record, dict) and record.get("strategy_id") == "crowd_contra"
+        ]
+        return records[-1] if records else None
+    except Exception:
+        # A corrupt or incomplete store is not treated as a valid idempotent
+        # result; the normal driver path will fail closed and expose the error.
+        return None
+    finally:
+        if store is not None:
+            store.close()
+
+
 def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
     """Rank #10a crowding evidence: trailing-window mean global_ls per instrument, cross-sectionally
     ranked to [0,1] (higher = more crowded-long). Scale-free, so the gate's thresholds apply."""
@@ -51,6 +79,17 @@ def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
 
 
 def main() -> None:
+    existing = _existing_crowd_run()
+    if existing is not None:
+        pnl = existing.get("pnl") if isinstance(existing.get("pnl"), dict) else {}
+        print(
+            f"crowd_contra dry-run already stored: run_id={existing.get('run_id')} "
+            f"sharpe={pnl.get('sharpe')} residual={pnl.get('residual')}",
+            flush=True,
+        )
+        print(f"-> {_OUT}", flush=True)
+        return
+
     panel, instruments = build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
