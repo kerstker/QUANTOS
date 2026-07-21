@@ -18,7 +18,8 @@ from tools.binance_oi_metrics_fetch import (DEFAULT_TICKERS,
                                             parse_metrics_zip)
 from tools.binance_perp_mark_fetch import (fetch_mark_days,
                                            load_mark_prices,
-                                           parse_mark_price_zip)
+                                           parse_mark_price_zip,
+                                           PUBLICATION_LAG_DAYS)
 from tools.cache_io import atomic_write_json
 from tools.source_failures import source_failure_detail
 
@@ -187,6 +188,7 @@ def run_backfill(
     oi_fetch=fetch_ticker_days,
     funding_fetch=fetch_daily_funding,
     funding_workers: int = 8,
+    publication_lag_days: int = 1,
 ) -> dict:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -194,13 +196,32 @@ def run_backfill(
         raise ValueError("lookback_days must be positive")
     if funding_workers <= 0:
         raise ValueError("funding_workers must be positive")
+    if (
+        isinstance(publication_lag_days, bool)
+        or not isinstance(publication_lag_days, int)
+        or publication_lag_days < 1
+    ):
+        raise ValueError("publication_lag_days must be a positive integer")
     scope = sorted(set(instruments or DEFAULT_TICKERS))
-    expected_end = (int(now_ms) // _DAY_MS) * _DAY_MS - _DAY_MS
-    days = [
-        expected_end - offset * _DAY_MS
+    funding_expected_end = (int(now_ms) // _DAY_MS) * _DAY_MS - _DAY_MS
+    funding_days = [
+        funding_expected_end - offset * _DAY_MS
         for offset in reversed(range(lookback_days))
     ]
-    attempted = len(scope) * len(days)
+    mark_oi_expected_end = (
+        funding_expected_end - (publication_lag_days - 1) * _DAY_MS
+    )
+    mark_oi_days = [
+        mark_oi_expected_end - offset * _DAY_MS
+        for offset in reversed(range(lookback_days))
+    ]
+    funding_attempted = len(scope) * len(funding_days)
+    mark_oi_attempted = len(scope) * len(mark_oi_days)
+
+    # ``required_days`` remains the funding window for compatibility with the
+    # admission manifest.  Mark/OI use a separately declared window because
+    # their Data Vision archives have a known publication delay.
+    days = funding_days
 
     mark_cache = load_mark_prices(mark_path)
     funding_raw = _load_object(funding_path, label="funding")
@@ -220,7 +241,7 @@ def run_backfill(
     }
 
     mark_report = {
-        "source": "perp_mark_prices", "attempted_records": attempted,
+        "source": "perp_mark_prices", "attempted_records": mark_oi_attempted,
         "matched_records": 0, "refetched_records": 0, "replayed_records": 0,
         "failures": [], "warnings": [],
     }
@@ -228,7 +249,7 @@ def run_backfill(
         failures = []
         try:
             observed = mark_fetch(
-                ticker, days, archive_root=archive_root,
+                ticker, mark_oi_days, archive_root=archive_root,
                 observed_at_ms=int(now_ms), failure_sink=failures,
             )
         except Exception as exc:
@@ -236,12 +257,12 @@ def run_backfill(
             failures.append(source_failure_detail(
                 ticker, exc, phase="lineage_backfill_mark"
             ))
-        mark_report["refetched_records"] += len(set(days).intersection(observed))
+        mark_report["refetched_records"] += len(set(mark_oi_days).intersection(observed))
         observed, failures, warnings, replayed = _replay_missing(
             archive_root=archive_root,
             dataset_id="perp_mark_prices",
             ticker=ticker,
-            days=days,
+            days=mark_oi_days,
             observed=observed,
             failures=failures,
             parser=lambda payload, day: parse_mark_price_zip(
@@ -251,11 +272,11 @@ def run_backfill(
         mark_report["replayed_records"] += replayed
         mark_report["warnings"].extend(warnings)
         mark_report["failures"].extend(failures)
-        _reconcile(mark_report, ticker, days, mark_cache.get(ticker, {}), observed)
+        _reconcile(mark_report, ticker, mark_oi_days, mark_cache.get(ticker, {}), observed)
     _finish_source(mark_report)
 
     oi_report = {
-        "source": "oi_metrics", "attempted_records": attempted,
+        "source": "oi_metrics", "attempted_records": mark_oi_attempted,
         "matched_records": 0, "refetched_records": 0, "replayed_records": 0,
         "failures": [], "warnings": [],
     }
@@ -263,7 +284,7 @@ def run_backfill(
         failures = []
         try:
             observed = oi_fetch(
-                ticker, days[0], days[-1] + _DAY_MS, set(),
+                ticker, mark_oi_days[0], mark_oi_days[-1] + _DAY_MS, set(),
                 archive_root=archive_root, observed_at_ms=int(now_ms),
                 failure_sink=failures,
             )
@@ -272,12 +293,12 @@ def run_backfill(
             failures.append(source_failure_detail(
                 ticker, exc, phase="lineage_backfill_oi"
             ))
-        oi_report["refetched_records"] += len(set(days).intersection(observed))
+        oi_report["refetched_records"] += len(set(mark_oi_days).intersection(observed))
         observed, failures, warnings, replayed = _replay_missing(
             archive_root=archive_root,
             dataset_id="oi_metrics",
             ticker=ticker,
-            days=days,
+            days=mark_oi_days,
             observed=observed,
             failures=failures,
             parser=lambda payload, _day: parse_metrics_zip(payload),
@@ -285,11 +306,11 @@ def run_backfill(
         oi_report["replayed_records"] += replayed
         oi_report["warnings"].extend(warnings)
         oi_report["failures"].extend(failures)
-        _reconcile(oi_report, ticker, days, oi_cache.get(ticker, {}), observed)
+        _reconcile(oi_report, ticker, mark_oi_days, oi_cache.get(ticker, {}), observed)
     _finish_source(oi_report)
 
     funding_report = {
-        "source": "funding", "attempted_records": attempted,
+        "source": "funding", "attempted_records": funding_attempted,
         "matched_records": 0, "refetched_records": 0, "replayed_records": 0,
         "failures": [], "warnings": [],
     }
@@ -311,11 +332,11 @@ def run_backfill(
     with ThreadPoolExecutor(max_workers=funding_workers) as executor:
         funding_results = list(executor.map(fetch_funding, scope))
     for ticker, observed, failure in funding_results:
-        funding_report["refetched_records"] += len(set(days).intersection(observed))
+        funding_report["refetched_records"] += len(set(funding_days).intersection(observed))
         if failure is not None:
             funding_report["failures"].append(failure)
         _reconcile(
-            funding_report, ticker, days, funding_cache.get(ticker, {}), observed
+            funding_report, ticker, funding_days, funding_cache.get(ticker, {}), observed
         )
     _finish_source(funding_report)
 
@@ -341,6 +362,12 @@ def run_backfill(
         "generated_at_ms": int(now_ms),
         "instrument_scope": scope,
         "required_days": days,
+        "source_required_days": {
+            "funding": funding_days,
+            "perp_mark_prices": mark_oi_days,
+            "oi_metrics": mark_oi_days,
+        },
+        "publication_lag_days": publication_lag_days,
         "archive_root": archive_root.replace("\\", "/"),
         "artifacts": {
             "prices": _artifact(mark_path),
@@ -365,6 +392,7 @@ def main(argv=None) -> int:
         now_ms=args.now_ms,
         lookback_days=args.lookback_days,
         funding_workers=args.funding_workers,
+        publication_lag_days=PUBLICATION_LAG_DAYS,
     )
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     atomic_write_json(args.output, report, indent=2)

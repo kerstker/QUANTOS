@@ -109,6 +109,11 @@ def _seed(tmp_path, *, funding_gap=False, include_lineage=True):
             "generated_at_ms": _NOW,
             "instrument_scope": ["BTC"],
             "required_days": [day * _DAY for day in range(13, 21)],
+            "source_required_days": {
+                "funding": [day * _DAY for day in range(13, 21)],
+                "perp_mark_prices": [day * _DAY for day in range(12, 20)],
+                "oi_metrics": [day * _DAY for day in range(12, 20)],
+            },
             "artifacts": {
                 "prices": artifact(price_path),
                 "funding": artifact(funding_path),
@@ -241,10 +246,10 @@ def test_mark_price_json_is_admitted_as_perp_price_evidence(tmp_path):
     mark_path = tmp_path / "mark.json"
     mark_path.write_text(
         json.dumps({
-            "_meta": {"BTC": {"through": 20 * _DAY}},
+            "_meta": {"BTC": {"through": 19 * _DAY}},
             "data": {
                 "BTC": {
-                    str((20 - offset) * _DAY): 100.0 + offset
+                    str((19 - offset) * _DAY): 100.0 + offset
                     for offset in range(8)
                 }
             },

@@ -52,6 +52,19 @@
 > 不改变晋级、仓位、干跑或订单；实时 feed、阈值校准、独立外部告警 SLA 仍未完成，机器结论保持
 > **15/22、NOT_TOP_TIER**。
 
+> **2026-07-21 Rank #13 数据发布延迟校正（仍为 L2 诊断）：** Binance Data Vision 的日线
+> perpetual mark-price 归档允许显式 `PUBLICATION_LAG_DAYS=2`，因此不会把可接受的 2 日
+> 新鲜度误判成“昨日必须已发布”；3 日 stale 上限、原始 lineage 和 data-admission 门完全不变。
+> 当前真实准入重跑结果为 `quality_verdict=PASS`、`lineage_verdict=BLOCK`，所以前向账本仍不写入；
+> funding/raw-lineage 的外部证据缺口仍需真实数据源补齐。
+
+> **2026-07-21 Forward 证据钟重新接通：** `tools/forward_track_advance.py` 现在在每次刷新后
+> 自动对本轮 canonical cache 做 8 日 raw-lineage backfill，再读取同一 admission authority，避免
+> “刷新改 SHA、旧证据必失效”的接线死路；当前实跑 `refresh_evidence_available=true`、
+> `quality_verdict=PASS`、`lineage_verdict=PASS`，`crowd_contra` 与 `carry_oi_majors` 各新增 1 条
+> `ATTESTED` pending 决策（数据时间 2026-07-16），尚无可兑现周数。XMR 价格完整性和 OI 17/41
+> 的系统性滞后仍只告警并不入权重；机器结论保持 **15/22、NOT_TOP_TIER**。
+
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
 > `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和

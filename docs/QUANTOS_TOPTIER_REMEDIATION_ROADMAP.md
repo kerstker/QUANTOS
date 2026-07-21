@@ -90,3 +90,9 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 > 缓存缺失时仍保留 synthetic fallback；该路径不承重，实时/前向 feed、阈值校准和独立告警 SLA
 > 仍开放。2026-07-21 新增 `tools/monitoring_drift_alert.py`：复用既有 append-only alert sink，
 > 只对真实 provenance 的 `WATCH/BREACH` 行发出可审计消息，合成输入 fail-closed 跳过。
+> 同日将 Binance Data Vision 日线 mark-price 的已知发布延迟显式建模为
+> `PUBLICATION_LAG_DAYS=2`（不放宽 3 日 stale 上限）；当前准入质量已 PASS，但 raw-lineage/
+> funding 仍 BLOCK，故不推进前向决策或实盘权限。
+> 随后把 `raw_data_lineage_backfill` 接入正式 forward 刷新后的准入顺序；实跑三源 192/192
+> 对账通过，并为两条 paper alpha 各记录 1 条 attested pending 决策。前向兑现仍需等待真实
+> 周期，XMR/系统性 OI 滞后仍是运营告警，不视为通过。

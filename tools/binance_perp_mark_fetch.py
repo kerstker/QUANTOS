@@ -18,6 +18,10 @@ from tools.source_failures import classify_source_failure, source_failure_detail
 _HOST = "https://data.binance.vision"
 _DAY_MS = 86_400_000
 _QUALITY_LOOKBACK_DAYS = 8
+# Binance Data Vision daily archives can publish the latest closed day with a
+# one-day delay.  Keep this explicit at the caller boundary: it is not a
+# freshness waiver (the refresh SLO still caps mark prices at three days).
+PUBLICATION_LAG_DAYS = 2
 # A decision may be eight days old when admitted, then remain pending until the
 # next weekly realization. Sixteen closed days preserve both price endpoints.
 _FORWARD_COVERAGE_DAYS = 16
@@ -189,14 +193,25 @@ def _load_cache(path: str) -> dict:
     return payload
 
 
+def _expected_end(now_ms: int, publication_lag_days: int) -> int:
+    if (
+        isinstance(publication_lag_days, bool)
+        or not isinstance(publication_lag_days, int)
+        or publication_lag_days < 1
+    ):
+        raise ValueError("publication_lag_days must be a positive integer")
+    return (int(now_ms) // _DAY_MS) * _DAY_MS - publication_lag_days * _DAY_MS
+
+
 def mark_price_quality_failures(tickers, *, now_ms: int,
                                 cache_path: str = _CACHE,
-                                lookback_days: int = _QUALITY_LOOKBACK_DAYS) -> list:
+                                lookback_days: int = _QUALITY_LOOKBACK_DAYS,
+                                publication_lag_days: int = 1) -> list:
     try:
         cache = _load_cache(cache_path)
     except (OSError, ValueError, json.JSONDecodeError):
         return sorted(set(tickers))
-    expected_end = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
+    expected_end = _expected_end(now_ms, publication_lag_days)
     expected = {
         expected_end - offset * _DAY_MS for offset in range(lookback_days)
     }
@@ -226,6 +241,7 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
                         cache_path: str = _CACHE,
                         http_get_bytes=_http_get_bytes,
                         lookback_days: int = _FORWARD_COVERAGE_DAYS,
+                        publication_lag_days: int = 1,
                         max_workers: int = 4, archive_root=None,
                         observed_at_ms=None) -> dict:
     selected = list(tickers or DEFAULT_TICKERS)
@@ -239,7 +255,7 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
         )
     cache = _load_cache(cache_path)
     meta, data = cache["_meta"], cache["data"]
-    expected_end = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
+    expected_end = _expected_end(now_ms, publication_lag_days)
     expected_start = expected_end - (lookback_days - 1) * _DAY_MS
     report = {
         "source": "perp_mark_prices",
@@ -250,6 +266,8 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
         "failure_details": [],
         "failed_tickers": [],
         "quality_failed": [],
+        "publication_lag_days": publication_lag_days,
+        "expected_end": expected_end,
     }
     attempted = set()
     os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
@@ -279,7 +297,10 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
         atomic_write_json(cache_path, cache)
 
     quality_failed = mark_price_quality_failures(
-        selected, now_ms=now_ms, cache_path=cache_path
+        selected,
+        now_ms=now_ms,
+        cache_path=cache_path,
+        publication_lag_days=publication_lag_days,
     )
     report["quality_failed"] = quality_failed
     existing_failure_tickers = {
@@ -322,6 +343,7 @@ def main() -> None:
         now_ms=now_ms,
         archive_root=DEFAULT_RAW_ARCHIVE,
         observed_at_ms=now_ms,
+        publication_lag_days=PUBLICATION_LAG_DAYS,
     )
     print(
         f"perp mark prices: refreshed={report['refreshed']} "

@@ -183,6 +183,14 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             "perp_mark_prices": 1,
         }},
     })
+    monkeypatch.setattr(driver, "refresh_lineage_evidence", lambda **kwargs: {
+        "verdict": "PASS",
+        "sources": {
+            "funding": {"matched_records": 1},
+            "oi_metrics": {"matched_records": 1},
+            "perp_mark_prices": {"matched_records": 1},
+        },
+    })
 
     def authority(**kwargs):
         calls["authority"] += 1

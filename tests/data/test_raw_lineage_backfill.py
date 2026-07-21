@@ -104,6 +104,60 @@ def test_backfill_archives_and_reconciles_all_required_sources(tmp_path):
     }
 
 
+def test_backfill_declares_publication_lag_for_data_vision_sources(tmp_path):
+    mark_path, funding_path, oi_path, oi_record = _seed(tmp_path)
+    archive = str(tmp_path / "raw")
+    lagged_day = _EXPECTED - _DAY
+    mark_path.write_text(json.dumps({
+        "_meta": {"BTC": {"through": lagged_day}},
+        "data": {"BTC": {str(lagged_day): 100.0}},
+    }), encoding="utf-8")
+    oi_path.write_text(json.dumps({
+        "_meta": {}, "data": {"BTC": {str(lagged_day): oi_record}},
+    }), encoding="utf-8")
+
+    def mark_fetch(ticker, days, *, archive_root, observed_at_ms, failure_sink):
+        assert days == [lagged_day]
+        _archive_bytes(archive_root, "perp_mark_prices", b"mark", observed_at_ms)
+        return {lagged_day: 100.0}
+
+    def oi_fetch(ticker, start_ms, end_ms, present, *, archive_root,
+                 observed_at_ms, failure_sink):
+        assert (start_ms, end_ms) == (lagged_day, _EXPECTED)
+        _archive_bytes(archive_root, "oi_metrics", b"oi", observed_at_ms)
+        return {lagged_day: oi_record}
+
+    def funding_fetch(ticker, *, days, now_ms, archive_root, observed_at_ms):
+        assert days == 4
+        archive_json_response(
+            root=archive, payload=[{"funding": "raw"}],
+            source_uri="https://api.example.test/funding?symbol=BTCUSDT",
+            provider="example-public-data", dataset_id="funding",
+            instrument_id=ticker, observed_at_ms=observed_at_ms,
+            parse_diagnostics={"status": "ACCEPTED", "input_rows": 1},
+        )
+        return {_EXPECTED: 0.001}
+
+    report = run_backfill(
+        now_ms=_NOW,
+        instruments=["BTC"],
+        lookback_days=1,
+        archive_root=archive,
+        mark_path=str(mark_path),
+        funding_path=str(funding_path),
+        oi_path=str(oi_path),
+        mark_fetch=mark_fetch,
+        oi_fetch=oi_fetch,
+        funding_fetch=funding_fetch,
+        funding_workers=1,
+        publication_lag_days=2,
+    )
+
+    assert report["verdict"] == "PASS"
+    assert report["required_days"] == [_EXPECTED]
+    assert report["source_required_days"]["perp_mark_prices"] == [lagged_day]
+
+
 def test_backfill_blocks_source_value_mismatch(tmp_path):
     mark_path, funding_path, oi_path, oi_record = _seed(tmp_path)
     archive = str(tmp_path / "raw")
