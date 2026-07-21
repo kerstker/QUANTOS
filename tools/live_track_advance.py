@@ -100,6 +100,7 @@ _STRATEGY_ID = "crowd_contra"
 # 验证证明门文件(审计 P1-1):策略级、跨 venue 共享(不是 per-venue 授权),gitignored(与 mandate
 # 同处 key/,由真人签署)。缺文件/坏文件 -> fail-closed 全部 BLOCK。模板见 tools.create_validation_attestation_template。
 _VALIDATION_ATTESTATION_FILE = os.path.join("key", "live_validation_attestations.json")
+_ALPHA_PAPER_CYCLE_PATH = os.path.join("evidence", "alpha_paper_cycle.json")
 # firm 硬门状态(审计 P1-6):由哨兵 tools/live_risk_sentinel.py 写(它能看两所仓位),驱动器只读。
 _FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
 # alpha 维护 sweep 状态(Phase 5 item 1,P1-7):由 tools/alpha_maintenance_sweep.py 写(经审计 manager
@@ -239,6 +240,40 @@ def _load_json_or_none(path: str) -> Optional[dict]:
 
 def _load_day_state(path: str) -> Optional[dict]:
     return _load_json_or_none(path)
+
+
+def research_readiness_skip_reason(
+    strategy_id: str,
+    *,
+    path: str = _ALPHA_PAPER_CYCLE_PATH,
+) -> Optional[str]:
+    """Return a fail-closed reason when the paper evidence rejects a strategy.
+
+    The forward driver remains independent and continues accumulating evidence.
+    This bridge only protects the execution driver: a missing/corrupt cycle,
+    an explicit blocker, or a non-PASS canonical research-risk decision may
+    produce a preview warning and prevents ``--submit`` from adding exposure.
+    Human attestation and the other live gates remain separate requirements.
+    """
+    snapshot = _load_json_or_none(path)
+    if not isinstance(snapshot, dict):
+        return "alpha_paper_cycle_missing_or_invalid"
+    rows = snapshot.get("alphas")
+    if not isinstance(rows, dict) or not isinstance(rows.get(strategy_id), dict):
+        return f"alpha_paper_status_missing:{strategy_id}"
+    row = rows[strategy_id]
+    blockers = row.get("blockers")
+    if isinstance(blockers, list) and blockers:
+        labels = ",".join(str(item) for item in blockers[:4])
+        return f"alpha_paper_blocked:{strategy_id}:{labels}"
+    if row.get("paper_verdict") == "BLOCKED":
+        return f"alpha_paper_verdict_blocked:{strategy_id}"
+    canonical = row.get("canonical_dry_run")
+    if isinstance(canonical, dict):
+        decision = canonical.get("research_risk_decision")
+        if decision is not None and decision != "PASS":
+            return f"research_risk_{decision.lower()}:{strategy_id}"
+    return None
 
 
 def maintenance_skip(
@@ -1050,6 +1085,20 @@ def main() -> None:
             # fail-closed:复用跳批路径(仓位原样不动),即便 mandate 已签也不真提交。skip_reason
             # 字符串记进 status JSON(line ~840)= 真源;preserve 既有的数据质量跳批原因。
             skip_reason = skip_reason or f"blocked_no_validation_attestation:{att_reason}"
+
+    # Research-evidence bridge: the forward clock may continue while this
+    # execution driver refuses a strategy whose current paper artifact is
+    # blocked (notably top_contra's canonical RISK_REJECTED dry-run). Preview
+    # stays diagnostic; --submit is fail-closed and leaves existing positions
+    # untouched.
+    research_skip = research_readiness_skip_reason(strategy_id)
+    if research_skip is not None:
+        alerts.append(
+            f"paper/research readiness BLOCK ({research_skip}) — "
+            "live submit will not add exposure"
+        )
+        if submit:
+            skip_reason = skip_reason or f"blocked_paper_research:{research_skip}"
 
     # firm 级敞口硬门(审计 P1-6,用户 2026-07-07 签署上限):firm 门是**跨所**的,只有哨兵能算——
     # 这里读哨兵写的 firm_gate_status.json,BLOCK(firm 超签署的 gross/net/单名集中上限)时停止新增

@@ -950,3 +950,65 @@ def test_carry_signal_does_not_require_global_ls_matrix():
     assert decided_ts == event_times[-1]
     assert ls_row == {}
     assert all(row["crowding_z"] is None for row in evidence.values())
+
+
+def test_research_readiness_missing_cycle_fails_closed(tmp_path):
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    reason = research_readiness_skip_reason(
+        "crowd_contra", path=str(tmp_path / "missing.json")
+    )
+    assert reason == "alpha_paper_cycle_missing_or_invalid"
+
+
+def test_research_readiness_blocks_explicit_alpha_blockers(tmp_path):
+    import json
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    path = tmp_path / "cycle.json"
+    path.write_text(
+        json.dumps(
+            {"alphas": {"carry_oi_majors": {"paper_verdict": "BLOCKED",
+                                               "blockers": ["FORWARD_EVIDENCE_INSUFFICIENT"]}}}
+        ),
+        encoding="utf-8",
+    )
+    reason = research_readiness_skip_reason("carry_oi_majors", path=str(path))
+    assert reason == "alpha_paper_blocked:carry_oi_majors:FORWARD_EVIDENCE_INSUFFICIENT"
+
+
+def test_research_readiness_blocks_non_pass_canonical_risk(tmp_path):
+    import json
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    path = tmp_path / "cycle.json"
+    path.write_text(
+        json.dumps(
+            {"alphas": {"top_contra": {
+                "paper_verdict": "PENDING_REVIEW",
+                "blockers": [],
+                "canonical_dry_run": {"research_risk_decision": "RISK_REJECTED"},
+            }}}
+        ),
+        encoding="utf-8",
+    )
+    reason = research_readiness_skip_reason("top_contra", path=str(path))
+    assert reason == "research_risk_risk_rejected:top_contra"
+
+
+def test_research_readiness_allows_unblocked_pending_human_review(tmp_path):
+    import json
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    path = tmp_path / "cycle.json"
+    path.write_text(
+        json.dumps(
+            {"alphas": {"crowd_contra": {
+                "paper_verdict": "PENDING_REVIEW",
+                "blockers": [],
+                "canonical_dry_run": {"research_risk_decision": "PASS"},
+            }}}
+        ),
+        encoding="utf-8",
+    )
+    assert research_readiness_skip_reason("crowd_contra", path=str(path)) is None
