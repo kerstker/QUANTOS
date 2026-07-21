@@ -261,8 +261,10 @@ def run_flow(
             }
 
     driver_errors = [row for row in drivers if row.get("status") == "ERROR"]
+    forward_ok = not advance_forward or forward.get("status") == "PASS"
     paper_ready = bool(
-        cycle_stage.get("status") == "PASS"
+        forward_ok
+        and cycle_stage.get("status") == "PASS"
         and not driver_errors
         and all(row.get("research_packet_ready_for_paper") is True for row in readiness.values())
     )
@@ -279,7 +281,10 @@ def run_flow(
             "alpha_readiness": readiness,
         },
         "verdict": {
-            "flow_completed": not driver_errors and cycle_stage.get("status") == "PASS",
+            # A requested public-forward refresh is part of this run's
+            # contract.  Never report completion from stale artifacts when the
+            # refresh itself failed.
+            "flow_completed": forward_ok and not driver_errors and cycle_stage.get("status") == "PASS",
             "paper_packet_ready_for_all_three": paper_ready,
             "live_allowed": False,
             "order_submission_allowed": False,

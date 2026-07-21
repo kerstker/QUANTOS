@@ -1,4 +1,5 @@
 from tools.three_alpha_paper_flow import run_flow
+import tools.three_alpha_paper_flow as paper_flow
 from services.execution.dry_run_store import DryRunRun, DryRunStore
 from tools.dry_run_crowd_contra_multi import _existing_crowd_run
 
@@ -79,6 +80,42 @@ def test_flow_records_driver_failure_without_claiming_paper_ready(tmp_path):
     assert report["verdict"]["paper_packet_ready_for_all_three"] is False
     assert report["stages"]["authoritative_dry_runs"][0]["status"] == "ERROR"
     assert report["verdict"]["live_allowed"] is False
+
+
+def test_flow_records_forward_failure_without_claiming_completion(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        paper_flow,
+        "_run_public_forward_driver",
+        lambda: {
+            "status": "ERROR",
+            "driver": "tools.forward_track_advance",
+            "error_type": "RuntimeError",
+            "error": "public refresh failed",
+            "private_binance": False,
+        },
+    )
+
+    def readiness(_alpha_id):
+        return {
+            "deployment": {
+                "research_packet_ready_for_paper": True,
+                "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
+                "blockers": [],
+            }
+        }
+
+    report = run_flow(
+        run_drivers=False,
+        advance_forward=True,
+        output_path=str(tmp_path / "flow.json"),
+        cycle_output_path=str(tmp_path / "cycle.json"),
+        cycle_builder=lambda: {"cycle": {}},
+        readiness_builder=readiness,
+    )
+
+    assert report["stages"]["public_forward"]["status"] == "ERROR"
+    assert report["verdict"]["flow_completed"] is False
+    assert report["verdict"]["paper_packet_ready_for_all_three"] is False
 
 
 def test_crowd_driver_reuses_existing_append_only_run(tmp_path):
