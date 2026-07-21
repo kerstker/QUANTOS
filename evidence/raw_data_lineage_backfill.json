@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1784609234528,
+  "generated_at_ms": 1784611661067,
   "instrument_scope": [
     "AAVE",
     "ADA",
@@ -129,14 +129,14 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 3328,
+    "observation_count": 3737,
     "invalid_observation_count": 0,
     "object_count": 1480,
     "datasets": {
-      "funding": 302,
-      "oi_metrics": 1241,
-      "perp_mark_prices": 1313,
-      "spot_klines": 472
+      "funding": 326,
+      "oi_metrics": 1433,
+      "perp_mark_prices": 1505,
+      "spot_klines": 473
     },
     "providers": [
       "Binance Data Vision USD-M futures metrics",
@@ -148,8 +148,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1784609234528,
-    "aggregate_sha256": "916a581806a81290ee0fa6c945a92c3b75c29a267a2991161abfbfb8f1ccd4bb",
+    "latest_observed_at_ms": 1784611661067,
+    "aggregate_sha256": "8f35994729468faab8c56b4b477aa12adabacc992b0ccf7eebb66ef2274e10a5",
     "errors": []
   },
   "verdict": "PASS",

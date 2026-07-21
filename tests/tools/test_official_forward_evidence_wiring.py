@@ -110,7 +110,7 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
 
 
 def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, monkeypatch):
-    calls = {"authority": 0, "record": [], "realize": []}
+    calls = {"authority": 0, "record": [], "realize": [], "publish": 0}
 
     class Ledger:
         def __init__(self, *args, **kwargs):
@@ -191,6 +191,19 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             "perp_mark_prices": {"matched_records": 1},
         },
     })
+    monkeypatch.setattr(driver, "publish_forward_evidence", lambda **kwargs: (
+        calls.__setitem__("publish", calls["publish"] + 1)
+        or {
+            "observed_at_ms": now_ms,
+            "data_admission": {"status": "CURRENT"},
+            "counts": {
+                "attested_decisions": 1,
+                "attested_pending": 1,
+                "attested_realizations": 0,
+            },
+            "evidence_gate": {"eligible": False},
+        }
+    ))
 
     def authority(**kwargs):
         calls["authority"] += 1
@@ -209,6 +222,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     driver._run()
 
     assert calls["authority"] == 1
+    assert calls["publish"] == 1
     assert calls["record"][0]["admission_ref"] is reference
     assert calls["realize"][0]["admission_ref"] is reference
     assert calls["realize"][0]["committed_at_ms"] == now_ms

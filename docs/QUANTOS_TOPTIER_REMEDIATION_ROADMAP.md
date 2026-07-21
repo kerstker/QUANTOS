@@ -96,3 +96,6 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 > 随后把 `raw_data_lineage_backfill` 接入正式 forward 刷新后的准入顺序；实跑三源 192/192
 > 对账通过，并为两条 paper alpha 各记录 1 条 attested pending 决策。前向兑现仍需等待真实
 > 周期，XMR/系统性 OI 滞后仍是运营告警，不视为通过。
+> 同次把前向驱动器接到 `forward_evidence_status.build_forward_evidence`：刷新后的 authority-bound
+> baseline 现在自动原子发布，控制台/Go-No-Go 读取同一代制品；实跑 `forward evidence: VERIFIED`，
+> 但 8 周门仍 `eligible=false`，因此不改变晋级或实盘结论。

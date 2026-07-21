@@ -65,6 +65,12 @@
 > `ATTESTED` pending 决策（数据时间 2026-07-16），尚无可兑现周数。XMR 价格完整性和 OI 17/41
 > 的系统性滞后仍只告警并不入权重；机器结论保持 **15/22、NOT_TOP_TIER**。
 
+> **2026-07-21 Forward 证据制品接线收口：** 正式 `forward_track_advance` 在完成刷新、raw-lineage
+> 和 data-admission 后，现自动原子发布 `evidence/forward_evidence_baseline.json`；控制台与 Go/No-Go
+> 不再停留在旧空快照。实跑制品已验证 `forward evidence: VERIFIED`，当前为 2 条 attested 决策、
+> 2 条 pending、0 条兑现周，8 周门仍为 `eligible=false`；发布失败只保留旧制品并记录 BREACH，
+> 不会放行任何交易动作。
+
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
 > `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和

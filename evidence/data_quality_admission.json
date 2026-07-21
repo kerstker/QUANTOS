@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_ms": 1784609234528,
+  "generated_at_ms": 1784611661067,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
   "instrument_scope": [
@@ -64,14 +64,14 @@
     "refresh_status": {
       "path": "data/cache/live_refresh_status.json",
       "exists": true,
-      "size_bytes": 15868,
-      "sha256": "646be85165f6f4d3afe31f98ac65221f1a572216f0df32066e07cb8f0d2b7249"
+      "size_bytes": 15818,
+      "sha256": "83c28c42dbc53cf9d04791c5df1ace08923c259e76a5cb8a633c0b52f33884f8"
     },
     "raw_lineage_backfill": {
       "path": "evidence/raw_data_lineage_backfill.json",
       "exists": true,
       "size_bytes": 3751,
-      "sha256": "3ddae6dc2639e6351c6e113cc4fd054206df85c3a9c6db2c0fd304dd15cfe76f"
+      "sha256": "10e4221e52646d6d82d504bacbe561de6a75fbdcc6957deb678f928cc07f75ff"
     }
   },
   "sources": {
@@ -554,14 +554,14 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 3328,
+    "observation_count": 3737,
     "invalid_observation_count": 0,
     "object_count": 1480,
     "datasets": {
-      "funding": 302,
-      "oi_metrics": 1241,
-      "perp_mark_prices": 1313,
-      "spot_klines": 472
+      "funding": 326,
+      "oi_metrics": 1433,
+      "perp_mark_prices": 1505,
+      "spot_klines": 473
     },
     "providers": [
       "Binance Data Vision USD-M futures metrics",
@@ -573,8 +573,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1784609234528,
-    "aggregate_sha256": "916a581806a81290ee0fa6c945a92c3b75c29a267a2991161abfbfb8f1ccd4bb",
+    "latest_observed_at_ms": 1784611661067,
+    "aggregate_sha256": "8f35994729468faab8c56b4b477aa12adabacc992b0ccf7eebb66ef2274e10a5",
     "errors": [],
     "path": "data/cache/raw_market_data"
   },
@@ -596,11 +596,11 @@
   "lineage_backfill": {
     "path": "evidence/raw_data_lineage_backfill.json",
     "exists": true,
-    "sha256": "3ddae6dc2639e6351c6e113cc4fd054206df85c3a9c6db2c0fd304dd15cfe76f",
+    "sha256": "10e4221e52646d6d82d504bacbe561de6a75fbdcc6957deb678f928cc07f75ff",
     "readable": true,
     "passed": true,
     "reasons": [],
-    "generated_at_ms": 1784609234528,
+    "generated_at_ms": 1784611661067,
     "verdict": "PASS",
     "instrument_scope": [
       "AAVE",
@@ -642,8 +642,8 @@
   "lineage_verdict": "PASS",
   "refresh_observation": {
     "readable": true,
-    "run_id": "refresh-1784609234528",
-    "ran_at": 1784609234528,
+    "run_id": "refresh-1784611661067",
+    "ran_at": 1784611661067,
     "reports": [
       {
         "source": "prices",
@@ -683,14 +683,14 @@
       "schema_version": 1,
       "status": "PASS",
       "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-      "observation_count": 2920,
+      "observation_count": 3329,
       "invalid_observation_count": 0,
       "object_count": 1480,
       "datasets": {
-        "funding": 278,
-        "oi_metrics": 1049,
-        "perp_mark_prices": 1121,
-        "spot_klines": 472
+        "funding": 302,
+        "oi_metrics": 1241,
+        "perp_mark_prices": 1313,
+        "spot_klines": 473
       },
       "providers": [
         "Binance Data Vision USD-M futures metrics",
@@ -702,8 +702,8 @@
         "CANONICAL_JSON_UTF8",
         "HTTP_BODY_BYTES"
       ],
-      "latest_observed_at_ms": 1784609234528,
-      "aggregate_sha256": "46bee31c20f6a77305930b667b867e78e93e8000332775069094db373c4d7112",
+      "latest_observed_at_ms": 1784611661067,
+      "aggregate_sha256": "94ad976fbedcc16daf01b69baf5dffe3b651ee56f168c3d855378e1e6ec6acc3",
       "errors": []
     }
   },

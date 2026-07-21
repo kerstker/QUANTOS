@@ -40,6 +40,17 @@ def _incident_response_payload() -> Dict:
             "notification_mode": "READ_ONLY_NO_EXTERNAL_SEND",
         },
         {
+            "route_id": "ROUTE-DATA-DISTRIBUTION-DRIFT",
+            "category": "DATA_DISTRIBUTION_DRIFT",
+            "queue": "Research Platform Data Desk",
+            "primary_owner": "Research Platform",
+            "escalation_owner": "Data Platform Lead",
+            "sla_minutes": 120,
+            "escalation_after_minutes": 90,
+            "runbook_id": "RB-DATA-DISTRIBUTION-DRIFT",
+            "notification_mode": "READ_ONLY_NO_EXTERNAL_SEND",
+        },
+        {
             "route_id": "ROUTE-DATA-FRESHNESS",
             "category": "DATA_FRESHNESS",
             "queue": "Data Operations",
@@ -86,6 +97,12 @@ def _incident_response_payload() -> Dict:
             "Run point-in-time distribution audit",
             "Check source schema and lineage hash",
             "Attach feature quality evidence",
+        ],
+        "RB-DATA-DISTRIBUTION-DRIFT": [
+            "Freeze dependent validation refresh",
+            "Run the PIT distribution and KS comparison",
+            "Check source schema, coverage, and lineage hash",
+            "Attach the distribution-drift evidence packet",
         ],
         "RB-DATA-FRESHNESS": [
             "Confirm upstream snapshot timestamp",
