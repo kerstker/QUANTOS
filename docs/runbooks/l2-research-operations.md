@@ -23,6 +23,26 @@ from the repository root to reconcile the L2 schedule set.
 | `QUANTOS_external_heartbeat` | Every 5 minutes, only when configured | `tools.external_heartbeat` |
 | `QUANTOS_domain_event_seal` | Daily 02:30, only when configured | `tools.domain_event_seal` |
 
+## Three-Alpha Paper Cycle
+
+The operator-level paper flow is a single idempotent, L2-only command. It runs
+the authoritative dry-run seam for `carry_oi_majors`, `crowd_contra`, and
+`top_contra`, rebuilds the shared paper-cycle/readiness evidence, and never
+reads private credentials or submits an order:
+
+```powershell
+rtk python -m tools.three_alpha_paper_flow `
+  --output data/cache/three_alpha_paper_flow.json `
+  --cycle-output evidence/alpha_paper_cycle.json
+```
+
+To advance the public forward-paper clock in the same run, add
+`--advance-forward`. A failed requested forward refresh makes the whole flow
+fail closed; stale evidence is never reported as a successful refresh. The
+official evidence gate is eight realized periods per Alpha. Current L2 output
+is diagnostic/paper evidence only and cannot authorize Binance private access,
+live orders, or a live broker adapter.
+
 ## Selection Trial-Ledger History
 
 The M4 trial-ledger history must come from two distinct, completed,
