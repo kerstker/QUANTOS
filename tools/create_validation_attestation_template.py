@@ -31,6 +31,20 @@ def build_template() -> dict:
             "reason": "REPLACE_WITH_WHY (e.g. crowd_contra: IC panel t=4.32, dry-run VT sharpe 1.38 / "
                       "maxdd 12%, passed 4/5 falsification checks, >=8wk forward evidence + human review)",
         },
+        "carry_oi_majors": {
+            "kind": "human_override",
+            "attested_by": "REPLACE_WITH_YOUR_REAL_NAME",
+            "attested_at": "REPLACE_WITH_EPOCH_MS_INTEGER",
+            "reason": "REPLACE_WITH_WHY (e.g. carry_oi_majors: complete the required forward evidence, "
+                      "net-cost review, and multi-party human approval before any submission)",
+        },
+        "top_contra": {
+            "kind": "human_override",
+            "attested_by": "REPLACE_WITH_YOUR_REAL_NAME",
+            "attested_at": "REPLACE_WITH_EPOCH_MS_INTEGER",
+            "reason": "DO_NOT_ATTEST: top_contra is currently research-risk rejected; resolve the rejection "
+                      "and complete forward evidence before requesting human approval",
+        },
     }
 
 

@@ -88,8 +88,8 @@ from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from tools.alert_sink import emit
 from tools.coingecko_fetch import fetch_simple_price_observations
-from tools.crypto_oi_research import QUANTILE, _legs, build_panel
-from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
+from tools.crypto_oi_verify import CROWD_CONTRA, TOP_CONTRA
 from tools.live_data_refresh import run_refresh
 from tools.kill_switch_events import dispatch_and_project_kill_switch_events
 from tools.signal_quality import rows_with_acceptable_coverage
@@ -502,24 +502,23 @@ def _load_credentials(venue_cfg: dict, venue_name: str):
 
 
 _SIGNAL_MAX_LOOKBACK_ROWS = 7      # 信号行回看上限(日频面板 = 一周);再往前就该修数据而不是硬交易
+def _latest_weights_and_prices_for(expression, panel_bundle=None):
+    """Return the latest signal row with acceptable coverage.
 
-
-def _latest_weights_and_prices(panel_bundle=None):
-    """最近一行**有信号且覆盖率达标**的决策快照。2026-07-05 修复:面板最后一行常常 OI 全空
-    (K线刷新比 OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮
-    静默零意图。改为从最后一行往回找(有界回看,超出上限诚实返回空,不硬凑)。
-    **2026-07-06 根因调查修复①**:OI 归档逐 symbol 滞后发布,发布窗口内最新行可能是"毛边行"
-    (4~13/24 部分覆盖)——`if legs:` 会接受它产出 2~8 腿的退化 book。现在接受条件加覆盖率门:
-    该行非 None 信号数 ≥ 0.8 × 回看窗口内最大截面数(见 tools/signal_quality.py)。
-    价格取同一行(决策快照自洽),decided_ts = 该行数据时间(决策带数据时间,与 Stage 0 同一
-    诚实口径)。同时带出该行的 `global_ls`(拥挤度门的证据源,见 `crowding_score.py`)。"""
+    OI-derived signals can lag refreshed candles, so walk back through a
+    bounded window instead of silently producing an empty or partial book.
+    Carry does not require a ``global_ls`` matrix; its crowding evidence is
+    then explicitly empty and its strategy-level crowding gate stays disabled.
+    """
     panel, _instruments = panel_bundle if panel_bundle is not None else build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
-    global_ls = panel.matrices.get("global_ls", [[None] * len(insts)] * len(panel.event_times))
+    global_ls = panel.matrices.get("global_ls")
+    if global_ls is None:
+        global_ls = [[None] * len(insts) for _ in panel.event_times]
     volume = panel.matrices.get("volume")            # 合成测试面板可能无 volume -> ADV fail-closed None
     ev = panel.event_times
-    sig = ax.evaluate(CROWD_CONTRA, panel)
+    sig = ax.evaluate(expression, panel)
     r_last = len(ev) - 1
     candidates = list(range(r_last, max(r_last - _SIGNAL_MAX_LOOKBACK_ROWS, -1), -1))
     for r in rows_with_acceptable_coverage(sig, candidates):
@@ -544,6 +543,21 @@ def _latest_weights_and_prices(panel_bundle=None):
     return {}, {}, int(ev[r_last]), {}, {}
 
 
+def _latest_weights_and_prices(panel_bundle=None):
+    """Backward-compatible crowd-contra signal entry point."""
+    return _latest_weights_and_prices_for(CROWD_CONTRA, panel_bundle)
+
+
+def _latest_carry_weights_and_prices(panel_bundle=None):
+    """Signal entry point for the forward-paper ``carry_oi_majors`` alpha."""
+    return _latest_weights_and_prices_for(CARRY, panel_bundle)
+
+
+def _latest_top_contra_weights_and_prices(panel_bundle=None):
+    """Signal entry point for the research-only ``top_contra`` alpha."""
+    return _latest_weights_and_prices_for(TOP_CONTRA, panel_bundle)
+
+
 # 策略注册表(2026-07-06 战线③,镜像 ic_panel_registry「加一行」范式):第二条策略上线 =
 # 这里加一行(signal 返回 (weights, prices, decided_ts, global_ls_row, evidence) 五元组——evidence[name]=
 # {adv_units, inst_vol, crowding_z},见 _latest_weights_and_prices;新策略必须同样返回五元组)+ 用户重签
@@ -551,7 +565,9 @@ def _latest_weights_and_prices(panel_bundle=None):
 # 全额度,驱动器会告警,见 multi_strategy_mandate_alert)。CLI:--strategy(默认 crowd_contra,
 # 未注册 -> SystemExit)。注意:策略名会进 status 文件名(非默认策略),只用文件系统安全字符。
 _STRATEGIES = {
-    "crowd_contra": {"signal": _latest_weights_and_prices},
+    "crowd_contra": {"signal": _latest_weights_and_prices, "crowding_gate": True},
+    "carry_oi_majors": {"signal": _latest_carry_weights_and_prices, "crowding_gate": False},
+    "top_contra": {"signal": _latest_top_contra_weights_and_prices, "crowding_gate": False},
 }
 
 
@@ -698,7 +714,8 @@ def main() -> None:
             emit([f"live_track refresh CRASHED: {exc}"], context="live_track", now_ms=now)
             raise
 
-    weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES[strategy_id]["signal"]()
+    strategy_cfg = _STRATEGIES[strategy_id]
+    weights, prices, decided_ts, global_ls_row, evidence = strategy_cfg["signal"]()
 
     # 拥挤度门(2026-07-05,机构审计 P1 quick win;2026-07-07 校准修正接线):crowd_contra 本身就是"反着做
     # 拥挤的散户多空仓位"。**平均分是结构性常数**(校准文档),故 average_warn_only=True 把它降为诊断 WARN;
@@ -706,7 +723,7 @@ def main() -> None:
     # BLOCK -> 跳过整批(不动现有仓位,见 batch_skip_reason——2026-07-06 修复:BLOCK 不再置空 weights,
     # 避免生成真实平仓单);WARN -> 仅告警。证据不足(coverage 太低/无 global_ls)时门 fail-closed BLOCK。
     crowding_blocked = False
-    if weights:
+    if weights and strategy_cfg.get("crowding_gate", False):
         crowding_scores = compute_crowding_scores(global_ls_row)
         z_map = {s: e["crowding_z"] for s, e in evidence.items() if e.get("crowding_z") is not None}
         crowding_decision = evaluate_crowding_gate(
@@ -1160,6 +1177,7 @@ def main() -> None:
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
         "strategy": strategy_id,
+        "crowding_gate_enabled": bool(strategy_cfg.get("crowding_gate", False)),
         "venue": venue_arg, "tca": tca, "order_stats": order_stats,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),

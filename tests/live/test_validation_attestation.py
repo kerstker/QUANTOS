@@ -134,3 +134,15 @@ def test_template_fails_closed_if_loaded_unedited(tmp_path):
     p = _write(tmp_path, build_template())
     with pytest.raises(ValidationAttestationError):
         load_attestations(p)
+
+
+def test_template_covers_all_registered_alphas_and_stays_placeholder_only():
+    from tools.create_validation_attestation_template import build_template
+
+    template = build_template()
+    assert set(template) == {"crowd_contra", "carry_oi_majors", "top_contra"}
+    for strategy_id, attestation in template.items():
+        assert attestation["kind"] == "human_override"
+        assert attestation["attested_by"] == "REPLACE_WITH_YOUR_REAL_NAME"
+        assert attestation["attested_at"] == "REPLACE_WITH_EPOCH_MS_INTEGER"
+        assert strategy_id in attestation["reason"] or strategy_id == "top_contra"

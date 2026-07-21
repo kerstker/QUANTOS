@@ -897,3 +897,56 @@ def test_mainnet_key_safety_skip_reason_never_raises_for_any_registered_venue(mo
 
     for venue in _VENUES:
         assert mainnet_key_safety_skip_reason(venue) is None
+
+
+def test_live_driver_registers_all_three_forward_alphas():
+    from tools.live_track_advance import _STRATEGIES
+
+    assert set(_STRATEGIES) == {"crowd_contra", "carry_oi_majors", "top_contra"}
+    assert _STRATEGIES["crowd_contra"]["crowding_gate"] is True
+    assert _STRATEGIES["carry_oi_majors"]["crowding_gate"] is False
+    assert _STRATEGIES["top_contra"]["crowding_gate"] is False
+
+
+def test_live_driver_signal_wrappers_use_matching_alpha_expressions(monkeypatch):
+    import tools.live_track_advance as driver
+
+    calls = []
+    sentinel = ({"BTC": 0.5}, {"BTC": 60_000.0}, 123, {}, {})
+
+    def fake_latest(expression, panel_bundle=None):
+        calls.append(expression)
+        return sentinel
+
+    monkeypatch.setattr(driver, "_latest_weights_and_prices_for", fake_latest)
+    assert driver._latest_weights_and_prices() == sentinel
+    assert driver._latest_carry_weights_and_prices() == sentinel
+    assert driver._latest_top_contra_weights_and_prices() == sentinel
+    assert calls == [driver.CROWD_CONTRA, driver.CARRY, driver.TOP_CONTRA]
+
+
+def test_carry_signal_does_not_require_global_ls_matrix():
+    import services.research.alpha_expression as ax
+    from tools.live_track_advance import _latest_carry_weights_and_prices
+
+    insts = ["A", "B", "C", "D"]
+    event_times = [1000 * (i + 1) for i in range(20)]
+    matrices = {
+        "close": [[100 + i, 200 + 2 * i, 300 + i, 400 - i] for i in range(20)],
+        "volume": [[1000, 2000, 3000, 4000] for _ in range(20)],
+        "funding": [
+            [0.001 * (i + 1), -0.001 * (i + 1),
+             0.0005 * (i + 1), -0.0005 * (i + 1)]
+            for i in range(20)
+        ],
+    }
+    panel = ax.FieldPanel(instruments=insts, event_times=event_times, matrices=matrices)
+
+    weights, prices, decided_ts, ls_row, evidence = _latest_carry_weights_and_prices(
+        (panel, insts)
+    )
+    assert weights
+    assert prices
+    assert decided_ts == event_times[-1]
+    assert ls_row == {}
+    assert all(row["crowding_z"] is None for row in evidence.values())
