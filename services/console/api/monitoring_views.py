@@ -289,6 +289,7 @@ def _monitoring_drift_payload() -> Dict:
                 "status": status,
                 "owner": dataset["owner"],
                 "evidence_ref": dataset["content_hash"],
+                "provenance": data_catalog["data_provenance"],
                 "last_checked": base_time + 4_000 + idx * 240,
                 "remediation": "Refresh source snapshot and rerun data quality checks"
                 if status != "OK"

@@ -87,4 +87,6 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 
 > **2026-07-21 Rank #13 真实监控读路径：** 已将持久化 PIT 特征缓存接入只读
 > `FEATURE_DRIFT` 监控，复用 60/20 KS 内核并输出 `PIT_FEATURE_TRAILING_KS_DRIFT_V1` provenance。
-> 缓存缺失时仍保留 synthetic fallback；该路径不承重，实时/前向 feed、阈值校准和告警送达仍开放。
+> 缓存缺失时仍保留 synthetic fallback；该路径不承重，实时/前向 feed、阈值校准和独立告警 SLA
+> 仍开放。2026-07-21 新增 `tools/monitoring_drift_alert.py`：复用既有 append-only alert sink，
+> 只对真实 provenance 的 `WATCH/BREACH` 行发出可审计消息，合成输入 fail-closed 跳过。

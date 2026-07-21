@@ -45,6 +45,13 @@
 > 特征漂移；缺缓存仍 fail-closed 到 synthetic fallback。该读路径不承重，仍不提供实时 feed、
 > 阈值校准或告警送达，机器结论保持 **15/22、NOT_TOP_TIER**。
 
+> **2026-07-21 Rank #13 只读告警适配已落地（仍为诊断）：** 新增
+> `services/monitoring/monitoring_alerts.py` 与 `tools/monitoring_drift_alert.py`，复用
+> `monitoring-drift` 快照和已有 append-only `alert_sink`。只有真实 provenance 的 `WATCH/BREACH`
+> 行会生成可审计消息；synthetic/no-honest-input 行 fail-closed 跳过。Telegram 仍是可选通知，
+> 不改变晋级、仓位、干跑或订单；实时 feed、阈值校准、独立外部告警 SLA 仍未完成，机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive
 > `end_index` 和逐对 Pearson 相关计算 `PASS/WARN/BLOCK`；错位、非有限值、历史不足、零方差和
