@@ -140,6 +140,16 @@ CHECKS = [
         REPO,
     ),
     (
+        "feature-value-cache-evidence:current",
+        [
+            sys.executable,
+            "-m",
+            "tools.feature_cache_research",
+            "--check",
+        ],
+        REPO,
+    ),
+    (
         "backup-evidence:current",
         [
             sys.executable,

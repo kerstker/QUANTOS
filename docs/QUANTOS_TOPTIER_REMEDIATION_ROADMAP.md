@@ -50,7 +50,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
 | **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
-| **13 ◑** | **数据漂移检测**(PIT 分布漂移告警) | 4/6 | P2 / M | `macro_regime`、data quality、特征值缓存 | **数据集与封存 PIT 特征分布均已升真：**60/20 窗口 KS 内核 + 真实 `crypto_daily.db` close-to-close 监控行已落地；新增 FX PIT bundle 的 3 个因果特征级重放，当前诊断 3/3 `BLOCK`。**仍缺：**物化特征值缓存、实时/纸面 feed、阈值校准和运营告警；该诊断不承重。 |
+| **13 ◑** | **数据漂移检测**(PIT 分布漂移告警) | 4/6 | P2 / M | `macro_regime`、data quality、特征值缓存 | **数据集与封存 PIT 特征分布均已升真：**60/20 窗口 KS 内核 + 真实 `crypto_daily.db` close-to-close 监控行已落地；新增 FX PIT bundle 的 3 个因果特征级重放，当前诊断 3/3 `BLOCK`；Rank #15 已把三条特征物化到可重放的 bitemporal 缓存。**仍缺：**实时/纸面 feed、阈值校准和运营告警；该诊断不承重。 |
 
 ## 4. 需外部资源(钱与组织,非代码缺陷)
 
@@ -72,9 +72,19 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 *本路线图随开发推进更新;完成一项即在 Rank 行标注 ✓ 并附提交哈希。*
 > **2026-07-21 增量：** Rank #13 的下一小步已落地：复用 PIT trailing KS 内核，新增
 > `evaluate_feature_distribution_drift` 对声明 feature universe 做逐 feature 漂移诊断；缺失/多余
-> feature fail-closed，仍是 read-only diagnostic，不伪造 feature cache、实时 feed 或运营告警。
+> feature fail-closed，仍是 read-only diagnostic；后续不伪造实时 feed 或运营告警。
 
 > **2026-07-21 Rank #13 特征级证据：** `tools/feature_distribution_drift_research.py` 已从封存的
 > FX PIT bundle 重放三个因果 close 特征，并生成可确定性校验的
 > `evidence/feature_distribution_drift_baseline.json`。当前诊断为 `BLOCK`（三个特征均超出 KS
-> 阈值），但制品明确不承重；FeatureValue 缓存、实时/纸面 feed、校准和告警仍是开放项。
+> 阈值），但制品明确不承重；实时/纸面 feed、校准和告警仍是开放项，FeatureValue 缓存已由 Rank #15 补齐。
+
+> **2026-07-21 Rank #15 最小增量：** `tools/feature_cache_research.py` 已把同一封存 FX PIT
+> bundle 的三个特征写入可重放的 SQLite bitemporal 缓存，并生成
+> `evidence/fx_feature_value_cache_baseline.json`。当前为 377,237 行 / 3 特征 / 18 品种，
+> Console 只读读取并标记 `REAL_PIT_FEATURE_CACHE`。这只是历史研究缓存，`load_bearing=false`；
+> 实时或纸面 feed、调度、阈值校准和运营告警仍未完成，不改变 **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #13 真实监控读路径：** 已将持久化 PIT 特征缓存接入只读
+> `FEATURE_DRIFT` 监控，复用 60/20 KS 内核并输出 `PIT_FEATURE_TRAILING_KS_DRIFT_V1` provenance。
+> 缓存缺失时仍保留 synthetic fallback；该路径不承重，实时/前向 feed、阈值校准和告警送达仍开放。

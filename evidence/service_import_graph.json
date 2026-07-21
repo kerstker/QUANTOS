@@ -103,7 +103,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 122,
+          "line": 135,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/monitoring_views.py"
         },
@@ -129,17 +129,17 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 9,
+          "line": 10,
           "module": "services.data.catalog",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.data.persistent_store",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.data.versioning",
           "path": "services/console/data_console.py"
         }
@@ -164,6 +164,16 @@
           "line": 315,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
+        },
+        {
+          "line": 17,
+          "module": "services.features.registry_store",
+          "path": "services/console/data_console.py"
+        },
+        {
+          "line": 18,
+          "module": "services.features.value_store",
+          "path": "services/console/data_console.py"
         }
       ],
       "source": "console",
@@ -396,7 +406,7 @@
           "path": "services/features/registry_store.py"
         },
         {
-          "line": 19,
+          "line": 22,
           "module": "services.data.persistent_store",
           "path": "services/features/value_store.py"
         }
@@ -996,7 +1006,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "d7611aa88874da544968fb8fc6dd6ee34a52ab5f00e05e08446b1e2fa05503a5",
+  "graph_sha256": "46448889acf1c1eeb02965ceb8d08dbf388a628d725261acb433b55de7c1f037",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [

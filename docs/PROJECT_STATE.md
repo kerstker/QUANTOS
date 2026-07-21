@@ -17,15 +17,33 @@
 > BLOCK=0.35，明确标 `UNCALIBRATED_PRINCIPLED`，只读不改数据/权重/晋级。`DefaultDataConsolePort`
 > 从真实 bitemporal `crypto_daily.db` 提取 PIT close-to-close 序列，监控页在数据存在时新增
 > `DATA_DISTRIBUTION_DRIFT` 行；实证根数据 42 个序列，24 PASS / 18 WARN / 0 BLOCK（样本长度
-> 111 或 363）。无数据库时不伪造漂移行，旧 `FEATURE_DRIFT` 仍显式标 synthetic，直到特征值缓存
-> 真正填充。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、下单或 live 能力。
+> 111 或 363）。无数据库时不伪造漂移行；特征值缓存现已由 Rank #15 离线填充，监控仍不会把
+> 历史缓存冒充实时/纸面 feed。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、
+> 下单或 live 能力。
 
 > **2026-07-21 Rank #13 特征级漂移证据已补齐（仍为诊断）：** 新增
 > `tools/feature_distribution_drift_research.py`，从已封存并验证的 FX PIT bundle 重放三个因果
 > close 特征，以截面中位数形成时间序列，再复用 60/20 窗口 KS 内核。证据制品为
 > `evidence/feature_distribution_drift_baseline.json`，当前三个特征均为 `BLOCK`；这是真实的
-> 数据警告，但明确 `load_bearing=false`，不驱动晋级、仓位、干跑或订单。实时/纸面 feed、定时
-> `FeatureValue` 缓存、阈值校准和运营告警仍未完成；机器结论保持 **15/22、NOT_TOP_TIER**。
+> 数据警告，但明确 `load_bearing=false`，不驱动晋级、仓位、干跑或订单。Rank #15 已补齐离线
+> `FeatureValue` 缓存；实时/纸面 feed、阈值校准和运营告警仍未完成；机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #15 PIT 特征缓存填充已落地（仍为离线诊断）：** 新增
+> `tools/feature_cache_research.py`，从封存 FX PIT bundle 可重复填充三个已定义特征到
+> `data/cache/fx_feature_store.db`，并生成 `evidence/fx_feature_value_cache_baseline.json`。
+> 当前基线为 3 个特征、18 个品种、7,036 个事件时点、377,237 个物化行；批量写入、重开读回、
+> bitemporal `as_of` 边界和内容哈希均已验证。Console 的 `data-catalog` 在缓存存在时切换为
+> `REAL_PIT_FEATURE_CACHE` / `PERSISTED_PIT_FEATURE_CACHE`，缓存缺失则保持 synthetic fallback。
+> 该缓存不承重，仍没有实时/纸面 feed、定时刷新、阈值校准或运营告警；机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #13 真实缓存漂移读路径已接通（仍为诊断）：**
+> `SqliteFeatureValueStore.distribution_series()` 对每个事件时点取最新已知修订并计算截面均值，
+> `DefaultDataConsolePort` 只读取通过泄漏审计的缓存，`monitoring-drift` 复用已有 60/20 KS 内核。
+> 缓存存在时 `FEATURE_DRIFT` 标记 `PIT_FEATURE_TRAILING_KS_DRIFT_V1`，不再把质量分数变化伪装成
+> 特征漂移；缺缓存仍 fail-closed 到 synthetic fallback。该读路径不承重，仍不提供实时 feed、
+> 阈值校准或告警送达，机器结论保持 **15/22、NOT_TOP_TIER**。
 
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive

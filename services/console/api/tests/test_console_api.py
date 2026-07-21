@@ -165,18 +165,36 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
     assert payload["catalog_mode"] == "READ_ONLY_DATA_CATALOG"
-    assert payload["feature_store_mode"] == "OFFLINE_POINT_IN_TIME_RESEARCH"
+    assert payload["feature_store_mode"] in {
+        "OFFLINE_POINT_IN_TIME_RESEARCH",
+        "PERSISTED_PIT_FEATURE_CACHE",
+    }
     # DATASETS upgrade to REAL: real path enumerates the on-disk PIT store (42 crypto_daily instruments),
     # synthetic fallback is 5. Assert the shape/relationships, not a fixed count.
     assert payload["data_provenance"] in {"SYNTHETIC_DETERMINISTIC", "REAL_PIT_DATASETS"}
-    assert payload["summary"]["datasets"] == len(payload["datasets"]) >= 5
-    assert payload["summary"]["features"] == 8
+    minimum_datasets = 1 if payload["feature_store_mode"] == "PERSISTED_PIT_FEATURE_CACHE" else 5
+    assert payload["summary"]["datasets"] == len(payload["datasets"]) >= minimum_datasets
+    assert payload["summary"]["features"] == len(payload["features"])
     assert payload["summary"]["quality_checks"] == 3 * len(payload["datasets"])
-    assert payload["summary"]["point_in_time_safe_features"] == 8
-    assert len(payload["features"]) == 8
+    assert payload["summary"]["point_in_time_safe_features"] == len(payload["features"])
+    if payload["feature_store_mode"] == "PERSISTED_PIT_FEATURE_CACHE":
+        assert payload["features_synthetic"] is False
+        assert payload["feature_provenance"] == "REAL_PIT_FEATURE_CACHE"
+        assert len(payload["features"]) == 3
+        assert payload["data_provenance"] == "REAL_PIT_DATASETS"
+    else:
+        assert payload["features_synthetic"] is True
+        assert payload["feature_provenance"] == "SYNTHETIC_DETERMINISTIC"
+        assert len(payload["features"]) == 8
     assert all(dataset["content_hash"] for dataset in payload["datasets"])
     assert all(feature["lineage_hash"] for feature in payload["features"])
-    assert any(edge["kind"] == "FEATURE_TO_EXPERIMENT" for edge in payload["lineage_edges"])
+    if payload["features_synthetic"]:
+        assert any(edge["kind"] == "FEATURE_TO_EXPERIMENT" for edge in payload["lineage_edges"])
+    else:
+        # The offline cache records feature materialization, not experiment consumption.
+        assert all(edge["kind"] == "DATASET_TO_FEATURE" for edge in payload["lineage_edges"])
+        dataset_ids = {dataset["dataset_id"] for dataset in payload["datasets"]}
+        assert all(feature["source_dataset_id"] in dataset_ids for feature in payload["features"])
     assert payload["quality_policy"]["blocks_future_leakage"] is True
     assert payload["quality_policy"]["mutable_raw_inputs"] is False
     # G2: catalog content hashes + PIT-safety now come from the real data layer.
@@ -330,7 +348,9 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
     assert payload["monitoring_mode"] == "READ_ONLY_MONITORING_DRIFT"
-    assert payload["summary"]["monitors"] >= 30
+    # The persisted PIT feature cache intentionally exposes three real features instead of
+    # the eight-feature synthetic fallback, so the monitor count is artifact-dependent.
+    assert payload["summary"]["monitors"] >= 24
     assert payload["summary"]["categories"] >= 5
     assert payload["summary"]["live_authorization_allowed"] is False
     assert payload["status_counts"]["BREACH"] >= 0
@@ -338,12 +358,17 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert any(monitor["category"] == "ALPHA_DECAY" for monitor in payload["monitors"])
     assert any(monitor["category"] == "FEATURE_DRIFT" for monitor in payload["monitors"])
     assert any(monitor["category"] == "REVIEWER_SLA" for monitor in payload["monitors"])
-    assert payload["monitoring_policy"]["distribution_drift"]["available"] is False
-    assert all(
-        monitor.get("provenance") == "SYNTHETIC_FEATURE_VALUES"
-        for monitor in payload["monitors"]
-        if monitor["category"] == "FEATURE_DRIFT"
-    )
+    feature_drift_policy = payload["monitoring_policy"]["feature_distribution_drift"]
+    feature_monitors = [monitor for monitor in payload["monitors"] if monitor["category"] == "FEATURE_DRIFT"]
+    if feature_drift_policy["available"]:
+        assert feature_drift_policy["provenance"] == "PIT_FEATURE_TRAILING_KS_DRIFT_V1"
+        assert all(
+            monitor.get("provenance") == "PIT_FEATURE_TRAILING_KS_DRIFT_V1"
+            and monitor["metric"] == "ks_distance"
+            for monitor in feature_monitors
+        )
+    else:
+        assert all(monitor.get("provenance") == "SYNTHETIC_FEATURE_VALUES" for monitor in feature_monitors)
     first = payload["monitors"][0]
     assert first["evidence_ref"]
     assert first["warn_threshold"] <= first["breach_threshold"]

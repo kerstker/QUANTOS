@@ -16,6 +16,10 @@ class DataCatalogPort(Protocol):
 
     def enumerate_distribution_series(self) -> Dict[str, List[float]]: ...
 
+    def enumerate_real_features(self) -> List[Dict]: ...
+
+    def enumerate_feature_distribution_series(self) -> Dict[str, List[float]]: ...
+
 
 class DataCatalogUnavailable(RuntimeError):
     pass

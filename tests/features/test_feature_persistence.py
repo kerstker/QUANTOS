@@ -65,6 +65,21 @@ def test_registry_fail_closed_on_uninitialized(tmp_path):
         store.has("mom_10")
 
 
+def test_registry_items_are_stable_and_reopenable(tmp_path):
+    path = os.path.join(str(tmp_path), "items.db")
+    store = SqliteFeatureRegistryStore(path, create=True)
+    store.register(_item(version="v2"))
+    store.register(_item(version="v1"))
+    assert [(item.definition.feature_id, item.version) for item in store.items()] == [
+        ("mom_10", "v1"),
+        ("mom_10", "v2"),
+    ]
+    assert [(item.definition.feature_id, item.version) for item in SqliteFeatureRegistryStore(path).items()] == [
+        ("mom_10", "v1"),
+        ("mom_10", "v2"),
+    ]
+
+
 # ---- value materialization store (bitemporal) ----
 
 def _fv(et, kt, val, fid="mom_10", inst="BTC"):
@@ -107,3 +122,36 @@ def test_value_store_fail_closed_on_uninitialized(tmp_path):
     store = SqliteFeatureValueStore(os.path.join(str(tmp_path), "e.db"))   # create=False
     with pytest.raises(DataStoreError):
         store.as_of("mom_10", "v1", "BTC", 100)
+
+
+def test_value_store_summary_and_content_digest_survive_reopen(tmp_path):
+    path = os.path.join(str(tmp_path), "digest.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store.add_many([_fv(100, 100, 0.5), _fv(200, 200, 0.7)], version="v1")
+    expected_summary = {
+        "row_count": 2,
+        "instrument_count": 1,
+        "min_event_time": 100,
+        "max_event_time": 200,
+        "max_knowledge_time": 200,
+    }
+    digest = store.content_digest("mom_10", "v1")
+    assert store.summary("mom_10", "v1") == expected_summary
+    reopened = SqliteFeatureValueStore(path)
+    assert reopened.summary("mom_10", "v1") == expected_summary
+    assert reopened.content_digest("mom_10", "v1") == digest
+
+
+def test_value_store_distribution_series_uses_latest_revision(tmp_path):
+    path = os.path.join(str(tmp_path), "series.db")
+    store = SqliteFeatureValueStore(path, create=True)
+    store.add_many(
+        [
+            _fv(100, 100, 1.0, inst="A"),
+            _fv(100, 110, 3.0, inst="A"),
+            _fv(100, 100, 5.0, inst="B"),
+            _fv(200, 200, 7.0, inst="A"),
+        ],
+        version="v1",
+    )
+    assert store.distribution_series("mom_10", "v1") == [4.0, 7.0]

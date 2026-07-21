@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import statistics
+from pathlib import Path
 from typing import Dict, List
 
 from fastapi import APIRouter
@@ -115,12 +117,47 @@ _SYNTHETIC_CATALOG_DATASETS = [
 ]
 
 
+def _retained_fx_dataset() -> Dict | None:
+    """Return the versioned FX source node used by the persisted feature cache."""
+    root = Path(__file__).resolve().parents[3]
+    manifest_path = root / "evidence" / "datasets" / "fx_pit_tradable_v1.manifest.json"
+    bundle_path = root / "evidence" / "datasets" / "fx_pit_tradable_v1.jsonl.gz"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema_version") != 1
+            or manifest.get("bundle_ref") != "evidence/datasets/fx_pit_tradable_v1.jsonl.gz"
+            or not bundle_path.is_file()
+            or type(manifest.get("row_count")) is not int
+            or not isinstance(manifest.get("bundle_sha256"), str)
+        ):
+            return None
+        return {
+            "dataset_id": "fx_pit_tradable_v1",
+            "name": "Retained FX PIT bundle",
+            "domain": "FX_MARKET_DATA",
+            "version": "fx_pit_tradable_v1",
+            "snapshot_id": "fx-pit-tradable-v1",
+            "row_count": manifest["row_count"],
+            "coverage": 1.0,
+            # This is a historical, offline artifact; never present it as fresh market data.
+            "freshness_hours": 999999.0,
+            "quality_score": 1.0,
+            "point_in_time_safe": True,
+            "owner": "FX Research",
+            "storage_uri": "artifact://evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+            "content_hash": manifest["bundle_sha256"],
+        }
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
 def _data_catalog_payload() -> Dict:
     data_port = data_catalog_runtime.require()
 
-    # DATASETS upgrade to REAL: enumerate the on-disk PIT store (crypto_daily.db) — real content hash,
-    # row_count, coverage, PIT-safety. FEATURES / lineage stay SYNTHETIC (no persisted FeatureRegistry yet)
-    # and are honestly marked. Fail-closed to the synthetic dataset fallback when no db is present (CI).
+    # DATASETS upgrade to REAL when the on-disk PIT store is present. FEATURES upgrade independently
+    # when the offline bitemporal feature cache is present; both paths fail closed in a fresh checkout.
     real_datasets = _enumerate_real_datasets()
     if real_datasets:
         datasets = [dict(d) for d in real_datasets]
@@ -139,6 +176,23 @@ def _data_catalog_payload() -> Dict:
                 data_port.verify_point_in_time_safe(dataset["dataset_id"])
             )
             dataset["checks"] = _dataset_checks(dataset)
+
+    real_features = getattr(data_port, "enumerate_real_features", lambda: [])()
+    feature_provenance = "REAL_PIT_FEATURE_CACHE" if real_features else "SYNTHETIC_DETERMINISTIC"
+    feature_store_mode = "PERSISTED_PIT_FEATURE_CACHE" if real_features else "OFFLINE_POINT_IN_TIME_RESEARCH"
+    if real_features:
+        fx_dataset = _retained_fx_dataset()
+        if fx_dataset is not None:
+            if real_datasets:
+                datasets.append(fx_dataset)
+            else:
+                # A checkout may retain the FX evidence without the optional crypto cache.
+                # Prefer the one real source node to an unrelated synthetic catalog.
+                datasets = [fx_dataset]
+                datasets_provenance = "REAL_PIT_DATASETS"
+            datasets.sort(key=lambda dataset: dataset["dataset_id"])
+            for dataset in datasets:
+                dataset["checks"] = _dataset_checks(dataset)
 
     feature_specs = [
         (
@@ -218,9 +272,8 @@ def _data_catalog_payload() -> Dict:
     real_dataset_ids = [d["dataset_id"] for d in datasets]
     features = []
     for idx, (feature_id, name, family, expression, dataset_id, lookback_days, experiments) in enumerate(feature_specs):
-        # Features are illustrative/synthetic (no persisted FeatureRegistry yet); when datasets are REAL their
-        # hardcoded source ids don't exist, so attach each feature to a real dataset node (round-robin) to keep
-        # the lineage graph connected. The feature values themselves remain synthetic and are marked as such.
+        # The fallback features are illustrative/synthetic. When datasets are REAL their hardcoded source ids
+        # may not exist, so attach each fallback feature to a real dataset node to keep the graph connected.
         if dataset_id not in dataset_quality:
             dataset_id = real_dataset_ids[idx % len(real_dataset_ids)]
         quality_score = max(0.0, min(1.0, dataset_quality[dataset_id] - (idx % 3) * 0.006))
@@ -246,6 +299,9 @@ def _data_catalog_payload() -> Dict:
             }
         )
 
+    if real_features:
+        features = [dict(feature) for feature in real_features]
+
     lineage_edges = []
     for feature in features:
         lineage_edges.append(
@@ -258,13 +314,14 @@ def _data_catalog_payload() -> Dict:
     pit_safe_features = sum(1 for feature in features if feature["point_in_time_policy"]["as_of_join"])
     return {
         "catalog_mode": "READ_ONLY_DATA_CATALOG",
-        "feature_store_mode": "OFFLINE_POINT_IN_TIME_RESEARCH",
+        "feature_store_mode": feature_store_mode,
         "data_backend": data_port.data_backend,
-        # REAL_PIT_DATASETS when datasets came from the on-disk PIT store; the feature/lineage block is still
-        # synthetic regardless — honest partial. SYNTHETIC_DETERMINISTIC when no db (CI / fresh checkout).
+        # REAL_PIT_DATASETS describes dataset provenance; feature provenance is reported separately below.
+        # SYNTHETIC_DETERMINISTIC is retained for a fresh checkout without the corresponding artifacts.
         "data_provenance": datasets_provenance,
-        "datasets_real": bool(real_datasets),
-        "features_synthetic": True,
+        "datasets_real": datasets_provenance == "REAL_PIT_DATASETS",
+        "features_synthetic": not bool(real_features),
+        "feature_provenance": feature_provenance,
         "summary": {
             "datasets": len(datasets),
             "features": len(features),
