@@ -37,13 +37,18 @@ from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.data_quality_admission import DATA_QUALITY_ADMISSION_DB, run_data_quality_admission
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
-from tools.binance_perp_mark_fetch import load_mark_prices
+from tools.binance_perp_mark_fetch import PUBLICATION_LAG_DAYS, load_mark_prices
 from tools.signal_quality import rows_with_acceptable_coverage
+from tools.cache_io import atomic_write_json
+from tools.raw_data_lineage_backfill import run_backfill
+from tools.forward_evidence_status import build_forward_evidence
 from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(纯跨标的门)
 
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_LINEAGE_EVIDENCE = os.path.join("evidence", "raw_data_lineage_backfill.json")
+_FORWARD_EVIDENCE = os.path.join("evidence", "forward_evidence_baseline.json")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
 _LOCK_STALE_S = 600  # assume dead if lock held > 10 minutes
 _DAY_MS = 86_400_000
@@ -153,6 +158,41 @@ def authoritative_admission_status(
         ]
 
 
+def refresh_lineage_evidence(*, now_ms: int) -> dict:
+    """Reconcile the just-refreshed caches before opening data admission.
+
+    Refreshing a canonical cache changes its content hash, so an older
+    lineage manifest cannot authorize the new bytes.  A non-PASS result stays
+    fail-closed; this helper only keeps the evidence clock on the same data
+    generation as the refresh.
+    """
+    evidence = run_backfill(
+        now_ms=now_ms,
+        publication_lag_days=PUBLICATION_LAG_DAYS,
+    )
+    atomic_write_json(_LINEAGE_EVIDENCE, evidence, indent=2)
+    return evidence
+
+
+def publish_forward_evidence(*, now_ms: int) -> dict:
+    """Publish the authority-bound forward snapshot after ledger mutations.
+
+    The console and Go/No-Go report intentionally read this attested baseline,
+    not the mutable status cache. Publishing at the end of a successful run
+    binds the document to the same ledger and admission authorities that
+    accepted this run's decision/realization writes.
+    """
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    document = build_forward_evidence(
+        repo_root,
+        observed_at_ms=now_ms,
+        database=os.path.join(repo_root, _DB),
+        admission_database=os.path.join(repo_root, DATA_QUALITY_ADMISSION_DB),
+    )
+    atomic_write_json(os.path.join(repo_root, _FORWARD_EVIDENCE), document, indent=2)
+    return document
+
+
 def _weekly_rows(event_times) -> list:
     rows, last = [], None
     for r in range(len(event_times)):
@@ -244,6 +284,8 @@ def _run() -> None:
     refresh_evidence_available = False
     admission_ref = None
     admission_status = {"status": "SKIPPED"}
+    lineage_status = {"status": "SKIPPED"}
+    forward_evidence_status = {"status": "SKIPPED"}
     if do_refresh:
         try:
             refresh = run_refresh(now_ms=now_ms)
@@ -269,6 +311,32 @@ def _run() -> None:
             if lineage_block is not None:
                 refresh_evidence_available = False
                 alerts.append(lineage_block)
+            if refresh_evidence_available:
+                try:
+                    lineage = refresh_lineage_evidence(now_ms=now_ms)
+                    lineage_status = {
+                        "status": str(lineage.get("verdict", "BLOCK")),
+                        "matched": {
+                            name: report.get("matched_records", 0)
+                            for name, report in lineage.get("sources", {}).items()
+                        },
+                    }
+                    if lineage.get("verdict") != "PASS":
+                        refresh_evidence_available = False
+                        alerts.append(
+                            "raw lineage backfill BLOCK: "
+                            f"{len(lineage.get('block_reasons', ()))} reason(s)"
+                        )
+                except Exception as exc:
+                    refresh_evidence_available = False
+                    lineage_status = {
+                        "status": "BREACH",
+                        "error_type": type(exc).__name__,
+                    }
+                    alerts.append(
+                        "raw lineage backfill BREACH: "
+                        f"{type(exc).__name__}"
+                    )
             admission_ref, admission_status, admission_alerts = (
                 authoritative_admission_status(now_ms=now_ms)
             )
@@ -410,8 +478,35 @@ def _run() -> None:
             "n_quality_blocked_this_run": out["n_quality_blocked"],
         }
 
+    if refresh_evidence_available is True and admission_ref is not None:
+        try:
+            document = publish_forward_evidence(now_ms=now_ms)
+            admission = document.get("data_admission", {})
+            if admission.get("status") != "CURRENT":
+                raise ValueError("published forward evidence is not current")
+            counts = document.get("counts", {})
+            gate = document.get("evidence_gate", {})
+            forward_evidence_status = {
+                "status": "PUBLISHED",
+                "observed_at_ms": document.get("observed_at_ms"),
+                "attested_decisions": counts.get("attested_decisions", 0),
+                "attested_pending": counts.get("attested_pending", 0),
+                "attested_realizations": counts.get("attested_realizations", 0),
+                "eligible": bool(gate.get("eligible", False)),
+            }
+        except Exception as exc:
+            forward_evidence_status = {
+                "status": "BREACH",
+                "error_type": type(exc).__name__,
+            }
+            alerts.append(
+                "forward evidence publication BREACH: "
+                f"{type(exc).__name__}"
+            )
     status["refresh_evidence_available"] = refresh_evidence_available
     status["data_quality_admission"] = admission_status
+    status["raw_lineage_backfill"] = lineage_status
+    status["forward_evidence"] = forward_evidence_status
     status["forward_price_basis"] = "BINANCE_USDM_PERP_MARK_PRICE"
     status["blocked_instruments"] = sorted(blocked_instruments)
     status["alerts"] = alerts

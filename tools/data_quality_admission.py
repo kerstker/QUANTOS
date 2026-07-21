@@ -19,7 +19,8 @@ from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
 from tools.binance_funding_fetch import FundingDataError, validate_daily_funding
 from tools.binance_oi_metrics_fetch import DEFAULT_TICKERS
 from tools.binance_perp_mark_fetch import (load_mark_prices,
-                                           mark_price_quality_failures)
+                                           mark_price_quality_failures,
+                                           PUBLICATION_LAG_DAYS)
 from tools.cache_io import atomic_write_json
 from tools.live_data_refresh import oi_quality_failures
 
@@ -74,7 +75,10 @@ def _check_prices(path: str, instruments: list[str], *, now_ms: int,
         try:
             prices = load_mark_prices(path)
             failed = set(mark_price_quality_failures(
-                instruments, now_ms=now_ms, cache_path=path
+                instruments,
+                now_ms=now_ms,
+                cache_path=path,
+                publication_lag_days=PUBLICATION_LAG_DAYS,
             ))
             for ticker in instruments:
                 times = sorted(prices.get(ticker, {}))
@@ -297,6 +301,17 @@ def _lineage_backfill_observation(
         result["reasons"].append("LINEAGE:BACKFILL_SCOPE_MISMATCH")
     if payload.get("required_days") != required_days:
         result["reasons"].append("LINEAGE:BACKFILL_DAYS_MISMATCH")
+    expected_mark_oi_days = [
+        int(day) - (PUBLICATION_LAG_DAYS - 1) * _DAY_MS
+        for day in required_days
+    ]
+    expected_source_days = {
+        "funding": [int(day) for day in required_days],
+        "perp_mark_prices": expected_mark_oi_days,
+        "oi_metrics": expected_mark_oi_days,
+    }
+    if payload.get("source_required_days") != expected_source_days:
+        result["reasons"].append("LINEAGE:BACKFILL_SOURCE_DAYS_MISMATCH")
     if payload.get("verdict") != "PASS":
         result["reasons"].append(
             f"LINEAGE:BACKFILL_VERDICT:{payload.get('verdict')}"

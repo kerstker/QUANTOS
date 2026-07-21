@@ -1,0 +1,54 @@
+{
+  "cache": {
+    "event_time_count": 7036,
+    "feature_count": 3,
+    "feature_version": "fx-pit-v1",
+    "instrument_count": 18,
+    "readback_verified": true,
+    "store_mode": "SQLITE_BITEMPORAL_PIT",
+    "store_path": "data/cache/fx_feature_store.db",
+    "total_rows": 377237
+  },
+  "features": {
+    "fx_distance_from_high_20": {
+      "code_version": "feature_cache_v1",
+      "content_sha256": "289f5ef8622e9225e7890ba294882d2c700d23a5cd233b487c84a658f118bcd8",
+      "instrument_count": 18,
+      "leakage_passed": true,
+      "max_event_time": 1782432000000,
+      "max_knowledge_time": 1782432000000,
+      "min_event_time": 917568000000,
+      "row_count": 125752
+    },
+    "fx_momentum_20": {
+      "code_version": "feature_cache_v1",
+      "content_sha256": "8fcc02d3113059b8a730dd98f06e9869076093fa7a558791edb187209f0b1b8e",
+      "instrument_count": 18,
+      "leakage_passed": true,
+      "max_event_time": 1782432000000,
+      "max_knowledge_time": 1782432000000,
+      "min_event_time": 917827200000,
+      "row_count": 125752
+    },
+    "fx_volatility_20": {
+      "code_version": "feature_cache_v1",
+      "content_sha256": "42aef0117fa23ecec4a94e8d4163678403c2b297fa18aa04574353eb772cf90c",
+      "instrument_count": 18,
+      "leakage_passed": true,
+      "max_event_time": 1782432000000,
+      "max_knowledge_time": 1782432000000,
+      "min_event_time": 917827200000,
+      "row_count": 125733
+    }
+  },
+  "honesty_note": "This cache is rebuilt from the retained FX PIT bundle only. It is an offline research cache, not a live or paper feed; no scheduled freshness/threshold alert is claimed, and it does not gate promotion, sizing, dry-run execution, or orders.",
+  "load_bearing": false,
+  "provenance": "REAL_PIT_FEATURE_VALUE_CACHE_V1",
+  "schema_version": 1,
+  "source": {
+    "bundle_ref": "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+    "bundle_sha256": "ff7aa4a8f3d07b4eb28de97f86c1302c0697264565df8555acaf77bea564bcea",
+    "knowledge_rule": "source knowledge_time <= event_time; materialized knowledge_time = event_time",
+    "manifest_sha256": "867657a8c561e510067c5cabe8572c74413896696b8a56e0ffe119fcf87ff11d"
+  }
+}

@@ -17,15 +17,59 @@
 > BLOCK=0.35，明确标 `UNCALIBRATED_PRINCIPLED`，只读不改数据/权重/晋级。`DefaultDataConsolePort`
 > 从真实 bitemporal `crypto_daily.db` 提取 PIT close-to-close 序列，监控页在数据存在时新增
 > `DATA_DISTRIBUTION_DRIFT` 行；实证根数据 42 个序列，24 PASS / 18 WARN / 0 BLOCK（样本长度
-> 111 或 363）。无数据库时不伪造漂移行，旧 `FEATURE_DRIFT` 仍显式标 synthetic，直到特征值缓存
-> 真正填充。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、下单或 live 能力。
+> 111 或 363）。无数据库时不伪造漂移行；特征值缓存现已由 Rank #15 离线填充，监控仍不会把
+> 历史缓存冒充实时/纸面 feed。该增量不改变 **15/22、NOT_TOP_TIER**，不增加网络、凭据、券商、
+> 下单或 live 能力。
 
 > **2026-07-21 Rank #13 特征级漂移证据已补齐（仍为诊断）：** 新增
 > `tools/feature_distribution_drift_research.py`，从已封存并验证的 FX PIT bundle 重放三个因果
 > close 特征，以截面中位数形成时间序列，再复用 60/20 窗口 KS 内核。证据制品为
 > `evidence/feature_distribution_drift_baseline.json`，当前三个特征均为 `BLOCK`；这是真实的
-> 数据警告，但明确 `load_bearing=false`，不驱动晋级、仓位、干跑或订单。实时/纸面 feed、定时
-> `FeatureValue` 缓存、阈值校准和运营告警仍未完成；机器结论保持 **15/22、NOT_TOP_TIER**。
+> 数据警告，但明确 `load_bearing=false`，不驱动晋级、仓位、干跑或订单。Rank #15 已补齐离线
+> `FeatureValue` 缓存；实时/纸面 feed、阈值校准和运营告警仍未完成；机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #15 PIT 特征缓存填充已落地（仍为离线诊断）：** 新增
+> `tools/feature_cache_research.py`，从封存 FX PIT bundle 可重复填充三个已定义特征到
+> `data/cache/fx_feature_store.db`，并生成 `evidence/fx_feature_value_cache_baseline.json`。
+> 当前基线为 3 个特征、18 个品种、7,036 个事件时点、377,237 个物化行；批量写入、重开读回、
+> bitemporal `as_of` 边界和内容哈希均已验证。Console 的 `data-catalog` 在缓存存在时切换为
+> `REAL_PIT_FEATURE_CACHE` / `PERSISTED_PIT_FEATURE_CACHE`，缓存缺失则保持 synthetic fallback。
+> 该缓存不承重，仍没有实时/纸面 feed、定时刷新、阈值校准或运营告警；机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #13 真实缓存漂移读路径已接通（仍为诊断）：**
+> `SqliteFeatureValueStore.distribution_series()` 对每个事件时点取最新已知修订并计算截面均值，
+> `DefaultDataConsolePort` 只读取通过泄漏审计的缓存，`monitoring-drift` 复用已有 60/20 KS 内核。
+> 缓存存在时 `FEATURE_DRIFT` 标记 `PIT_FEATURE_TRAILING_KS_DRIFT_V1`，不再把质量分数变化伪装成
+> 特征漂移；缺缓存仍 fail-closed 到 synthetic fallback。该读路径不承重，仍不提供实时 feed、
+> 阈值校准或告警送达，机器结论保持 **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #13 只读告警适配已落地（仍为诊断）：** 新增
+> `services/monitoring/monitoring_alerts.py` 与 `tools/monitoring_drift_alert.py`，复用
+> `monitoring-drift` 快照和已有 append-only `alert_sink`。只有真实 provenance 的 `WATCH/BREACH`
+> 行会生成可审计消息；synthetic/no-honest-input 行 fail-closed 跳过。Telegram 仍是可选通知，
+> 不改变晋级、仓位、干跑或订单；实时 feed、阈值校准、独立外部告警 SLA 仍未完成，机器结论保持
+> **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Rank #13 数据发布延迟校正（仍为 L2 诊断）：** Binance Data Vision 的日线
+> perpetual mark-price 归档允许显式 `PUBLICATION_LAG_DAYS=2`，因此不会把可接受的 2 日
+> 新鲜度误判成“昨日必须已发布”；3 日 stale 上限、原始 lineage 和 data-admission 门完全不变。
+> 当前真实准入重跑结果为 `quality_verdict=PASS`、`lineage_verdict=BLOCK`，所以前向账本仍不写入；
+> funding/raw-lineage 的外部证据缺口仍需真实数据源补齐。
+
+> **2026-07-21 Forward 证据钟重新接通：** `tools/forward_track_advance.py` 现在在每次刷新后
+> 自动对本轮 canonical cache 做 8 日 raw-lineage backfill，再读取同一 admission authority，避免
+> “刷新改 SHA、旧证据必失效”的接线死路；当前实跑 `refresh_evidence_available=true`、
+> `quality_verdict=PASS`、`lineage_verdict=PASS`，`crowd_contra` 与 `carry_oi_majors` 各新增 1 条
+> `ATTESTED` pending 决策（数据时间 2026-07-16），尚无可兑现周数。XMR 价格完整性和 OI 17/41
+> 的系统性滞后仍只告警并不入权重；机器结论保持 **15/22、NOT_TOP_TIER**。
+
+> **2026-07-21 Forward 证据制品接线收口：** 正式 `forward_track_advance` 在完成刷新、raw-lineage
+> 和 data-admission 后，现自动原子发布 `evidence/forward_evidence_baseline.json`；控制台与 Go/No-Go
+> 不再停留在旧空快照。实跑制品已验证 `forward evidence: VERIFIED`，当前为 2 条 attested 决策、
+> 2 条 pending、0 条兑现周，8 周门仍为 `eligible=false`；发布失败只保留旧制品并记录 BREACH，
+> 不会放行任何交易动作。
 
 > **2026-07-20 动态相关漂移检测完成，自动缩放被执行现实证伪并保持关闭：** 新增纯函数
 > `services/portfolio/correlation_drift.py`，以互不重叠的 52 周基线/8 周近期窗口、exclusive

@@ -122,3 +122,16 @@ class SqliteFeatureRegistryStore:
             raise KeyError((feature_id, version))
         lp = r["leakage_passed"]
         return {"leakage_passed": None if lp is None else bool(lp), "code_version": r["code_version"]}
+
+    def items(self) -> list[FeatureRegistryItem]:
+        """List registered feature versions in stable order for read-only consumers."""
+        with self._lock:
+            self._require_schema()
+            rows = self._conn.execute(
+                "SELECT * FROM feature_registry ORDER BY feature_id, version"
+            ).fetchall()
+        return [self._row_to_item(row) for row in rows]
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()

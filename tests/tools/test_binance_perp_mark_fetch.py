@@ -123,6 +123,31 @@ def test_refresh_mark_prices_classifies_transient_and_keeps_cache_atomic(tmp_pat
     assert payload["data"].get("BTC", {}) == {}
 
 
+def test_mark_price_quality_accepts_explicit_publication_lag(tmp_path):
+    path = str(tmp_path / "mark.json")
+    payload = {
+        "_meta": {},
+        "data": {
+            "BTC": {
+                str(day * _DAY): 100.0 + day
+                for day in range(12, 20)
+            }
+        },
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    assert mark.mark_price_quality_failures(
+        ["BTC"], now_ms=_NOW, cache_path=path
+    ) == ["BTC"]
+    assert mark.mark_price_quality_failures(
+        ["BTC"],
+        now_ms=_NOW,
+        cache_path=path,
+        publication_lag_days=2,
+    ) == []
+
+
 def test_fetch_mark_days_retries_transient_then_succeeds():
     day = 20 * _DAY
     calls = []

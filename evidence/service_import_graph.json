@@ -103,7 +103,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 122,
+          "line": 135,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/monitoring_views.py"
         },
@@ -129,17 +129,17 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 9,
+          "line": 10,
           "module": "services.data.catalog",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 14,
+          "line": 15,
           "module": "services.data.persistent_store",
           "path": "services/console/data_console.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.data.versioning",
           "path": "services/console/data_console.py"
         }
@@ -164,6 +164,16 @@
           "line": 315,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
+        },
+        {
+          "line": 17,
+          "module": "services.features.registry_store",
+          "path": "services/console/data_console.py"
+        },
+        {
+          "line": 18,
+          "module": "services.features.value_store",
+          "path": "services/console/data_console.py"
         }
       ],
       "source": "console",
@@ -396,7 +406,7 @@
           "path": "services/features/registry_store.py"
         },
         {
-          "line": 19,
+          "line": 22,
           "module": "services.data.persistent_store",
           "path": "services/features/value_store.py"
         }
@@ -996,7 +1006,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "d7611aa88874da544968fb8fc6dd6ee34a52ab5f00e05e08446b1e2fa05503a5",
+  "graph_sha256": "47bec06253b0a917c85324cdff2d6954e5e1e14fd4f7235864b5b97922815558",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -1030,7 +1040,7 @@
   "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 333,
+  "source_file_count": 334,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

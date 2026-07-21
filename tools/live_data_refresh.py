@@ -41,7 +41,8 @@ from tools.binance_klines_fetch import fetch_daily_rows
 from tools.binance_funding_fetch import (FundingDataError, fetch_daily_funding,
                                          validate_daily_funding)
 from tools.binance_perp_mark_fetch import (load_mark_prices,
-                                           refresh_mark_prices)
+                                           refresh_mark_prices,
+                                           PUBLICATION_LAG_DAYS)
 from tools import binance_oi_metrics_fetch as oi_fetch
 from tools.cache_io import atomic_write_json
 from tools.source_failures import source_failure_detail
@@ -389,6 +390,7 @@ def _execute_source(source: str, tickers: list[str], *, now_ms: int) -> dict:
             now_ms=now_ms,
             archive_root=_RAW_ARCHIVE,
             observed_at_ms=now_ms,
+            publication_lag_days=PUBLICATION_LAG_DAYS,
         )
     if source == "oi_metrics":
         return refresh_oi(

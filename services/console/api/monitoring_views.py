@@ -18,6 +18,7 @@ from services.console.api.review_access_views import (
 )
 from services.data.distribution_drift import (
     BLOCK as DISTRIBUTION_BLOCK,
+    FEATURE_PROVENANCE,
     PROVENANCE as DISTRIBUTION_PROVENANCE,
     WARN as DISTRIBUTION_WARN,
     DistributionDriftPolicy,
@@ -90,10 +91,22 @@ def _distribution_series() -> Dict[str, List[float]]:
         return {}
 
 
+def _feature_distribution_series() -> Dict[str, List[float]]:
+    port = data_catalog_runtime.require()
+    getter = getattr(port, "enumerate_feature_distribution_series", None)
+    if getter is None:
+        return {}
+    try:
+        return getter()
+    except Exception:
+        return {}
+
+
 def _monitoring_drift_payload() -> Dict:
     candidates = _alpha_candidates()
     data_catalog = _data_catalog_payload()
     distribution_series = _distribution_series()
+    feature_distribution_series = _feature_distribution_series()
     model_risk = _model_risk_review_payload()
     reviewer_workflow = _reviewer_workflow_payload()
     monitors = []
@@ -197,32 +210,62 @@ def _monitoring_drift_payload() -> Dict:
             }
         )
 
-    for idx, feature in enumerate(data_catalog["features"][:8]):
-        baseline = feature["quality_score"]
-        current = round(max(0.0, baseline - 0.012 * (idx % 4)), 3)
-        drift_score = round(max(0.0, baseline - current), 3)
-        status = status_from_score(drift_score, 0.02, 0.04)
-        monitors.append(
-            {
-                "monitor_id": f"MON-FEATURE-{idx + 1:03d}",
-                "category": "FEATURE_DRIFT",
-                "subject_id": feature["feature_id"],
-                "metric": "quality_score_delta",
-                "baseline": baseline,
-                "current": current,
-                "drift_score": drift_score,
-                "warn_threshold": 0.02,
-                "breach_threshold": 0.04,
-                "status": status,
-                "owner": "Research Platform",
-                "evidence_ref": feature["lineage_hash"],
-                "last_checked": base_time + 2_000 + idx * 240,
-                "provenance": "SYNTHETIC_FEATURE_VALUES",
-                "remediation": "Run feature distribution audit and point-in-time sample check"
-                if status != "OK"
-                else "Continue monitoring",
-            }
-        )
+    if feature_distribution_series:
+        for idx, (subject_id, values) in enumerate(sorted(feature_distribution_series.items())[:8]):
+            assessment = evaluate_distribution_drift(values, policy=distribution_policy)
+            status = distribution_status.get(assessment.status, "OK")
+            score = assessment.ks_distance if assessment.ks_distance is not None else 1.0
+            monitors.append(
+                {
+                    "monitor_id": f"MON-FEATURE-{idx + 1:03d}",
+                    "category": "FEATURE_DRIFT",
+                    "subject_id": subject_id,
+                    "metric": "ks_distance",
+                    "baseline": assessment.baseline_mean if assessment.baseline_mean is not None else 0.0,
+                    "current": assessment.recent_mean if assessment.recent_mean is not None else 0.0,
+                    "drift_score": round(score, 3),
+                    "warn_threshold": distribution_policy.warn_ks,
+                    "breach_threshold": distribution_policy.block_ks,
+                    "status": status,
+                    "owner": "Research Platform",
+                    "evidence_ref": (
+                        f"{FEATURE_PROVENANCE}:REAL_PIT_FEATURE_VALUE_CACHE_V1:"
+                        f"{subject_id}:{assessment.end_index}"
+                    ),
+                    "last_checked": base_time + 2_000 + idx * 240,
+                    "provenance": FEATURE_PROVENANCE,
+                    "remediation": "Investigate PIT feature distribution shift and rerun feature quality checks"
+                    if status != "OK"
+                    else "Continue monitoring",
+                }
+            )
+    else:
+        for idx, feature in enumerate(data_catalog["features"][:8]):
+            baseline = feature["quality_score"]
+            current = round(max(0.0, baseline - 0.012 * (idx % 4)), 3)
+            drift_score = round(max(0.0, baseline - current), 3)
+            status = status_from_score(drift_score, 0.02, 0.04)
+            monitors.append(
+                {
+                    "monitor_id": f"MON-FEATURE-{idx + 1:03d}",
+                    "category": "FEATURE_DRIFT",
+                    "subject_id": feature["feature_id"],
+                    "metric": "quality_score_delta",
+                    "baseline": baseline,
+                    "current": current,
+                    "drift_score": drift_score,
+                    "warn_threshold": 0.02,
+                    "breach_threshold": 0.04,
+                    "status": status,
+                    "owner": "Research Platform",
+                    "evidence_ref": feature["lineage_hash"],
+                    "last_checked": base_time + 2_000 + idx * 240,
+                    "provenance": "SYNTHETIC_FEATURE_VALUES",
+                    "remediation": "Run feature distribution audit and point-in-time sample check"
+                    if status != "OK"
+                    else "Continue monitoring",
+                }
+            )
 
     # Cap DATA_FRESHNESS to the staleest few so the page stays readable when the catalog enumerates many
     # real datasets (crypto_daily = 42); rank by freshness so any actually-stale dataset still surfaces.
@@ -246,6 +289,7 @@ def _monitoring_drift_payload() -> Dict:
                 "status": status,
                 "owner": dataset["owner"],
                 "evidence_ref": dataset["content_hash"],
+                "provenance": data_catalog["data_provenance"],
                 "last_checked": base_time + 4_000 + idx * 240,
                 "remediation": "Refresh source snapshot and rerun data quality checks"
                 if status != "OK"
@@ -352,6 +396,13 @@ def _monitoring_drift_payload() -> Dict:
                 ),
                 "baseline_window": distribution_policy.baseline_window,
                 "recent_window": distribution_policy.recent_window,
+            },
+            "feature_distribution_drift": {
+                "available": bool(feature_distribution_series),
+                "provenance": FEATURE_PROVENANCE if feature_distribution_series else "NO_HONEST_INPUT",
+                "baseline_window": distribution_policy.baseline_window,
+                "recent_window": distribution_policy.recent_window,
+                "load_bearing": False,
             },
         },
     }
