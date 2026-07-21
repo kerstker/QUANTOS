@@ -119,8 +119,9 @@ $factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:00"
 $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
-$forwardTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Monday -At "09:00"
+# Poll daily so a newly available public-data watermark is not held until the
+# next Monday; the worker's internal seven-day due check remains authoritative.
+$forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "09:00"
 $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Monday -At "09:05"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `

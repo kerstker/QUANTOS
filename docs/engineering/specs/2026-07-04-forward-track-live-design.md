@@ -62,7 +62,10 @@
   驱动器异常退出(top-level except → emit 后 re-raise)。
 
 ### 2.5 调度(Windows 本机)
-`schtasks /Create /SC WEEKLY /D MON /TN QUANTOS_ForwardTrack /TR "<python> tools/forward_track_advance.py" /ST 09:00`
+`schtasks /Create /SC DAILY /TN QUANTOS_ForwardTrack /TR "<python> tools/forward_track_advance.py" /ST 09:00`
+
+The task polls daily so a delayed public-data watermark is consumed promptly;
+the worker still records a decision only after its internal seven-day due gate.
 + 文档写明:错过也无妨,驱动器幂等、下次运行自动补(catch-up 由"距上次决策 ≥7 天"判定驱动)。
 
 ## 3. 治理与边界(一寸不让)

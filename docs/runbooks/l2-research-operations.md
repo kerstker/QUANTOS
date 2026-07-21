@@ -14,7 +14,7 @@ from the repository root to reconcile the L2 schedule set.
 |---|---|---|
 | `QUANTOS_factory_loop` | Sunday 20:00 | `tools.crypto_factory_loop` |
 | `QUANTOS_ic_panel_refresh` | Sunday 20:30 | `tools.ic_panel_research` |
-| `QUANTOS_forward_track` | Monday 09:00 | `tools.forward_track_advance` |
+| `QUANTOS_forward_track` | Daily 09:00 poll (7-day internal due gate) | `tools.forward_track_advance` |
 | `QUANTOS_alpha_maintenance` | Monday 09:05 | `tools.alpha_maintenance_sweep` |
 | `QUANTOS_domain_event_ops` | Hourly | `tools.domain_event_ops` |
 | `QUANTOS_scheduler_watchdog` | Every 15 minutes | `tools.l2_scheduler_watchdog` |
