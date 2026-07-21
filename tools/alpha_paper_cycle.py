@@ -252,6 +252,9 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
                 "evidence_class": canonical.get("evidence_class"),
                 "run_id": canonical.get("run_id"),
             }
+            risk = canonical.get("research_risk")
+            if isinstance(risk, dict) and risk.get("decision") != "PASS":
+                blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
         if dry is None:
             blockers.append("DRY_RUN_EVIDENCE_MISSING")
         cap_key = f"{definition['capacity_id']}.participation_cap_aum"

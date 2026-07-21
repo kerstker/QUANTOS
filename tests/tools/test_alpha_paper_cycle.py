@@ -100,3 +100,4 @@ def test_report_surfaces_authoritative_top_contra_dry_run(tmp_path):
     assert top["canonical_dry_run"]["n_periods"] == 192
     assert top["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
     assert top["canonical_dry_run"]["crowding_gate_blocks"] == 11
+    assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in top["blockers"]
