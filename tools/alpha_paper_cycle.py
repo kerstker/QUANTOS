@@ -335,7 +335,7 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
         for row in rows.values()
     ):
         next_actions.append(
-            "run the official forward driver weekly until every candidate has at least 8 realized periods"
+            "run the official forward driver on each daily poll until every candidate has at least 8 realized periods"
         )
     if not isinstance(dry_books.get("top_contra"), dict):
         next_actions.append(

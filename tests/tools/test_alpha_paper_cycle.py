@@ -101,3 +101,16 @@ def test_report_surfaces_authoritative_top_contra_dry_run(tmp_path):
     assert top["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
     assert top["canonical_dry_run"]["crowding_gate_blocks"] == 11
     assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in top["blockers"]
+
+
+def test_report_describes_daily_forward_polling(tmp_path):
+    import json
+
+    artifacts = _artifacts()
+    paths = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = str(path)
+    report = build_report(artifact_paths=paths)
+    assert any("daily poll" in action for action in report["next_actions"])
