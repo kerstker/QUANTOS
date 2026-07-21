@@ -1227,6 +1227,8 @@ def main() -> None:
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
         "strategy": strategy_id,
         "crowding_gate_enabled": bool(strategy_cfg.get("crowding_gate", False)),
+        "paper_research_gate": "PASS" if research_skip is None else "BLOCK",
+        "paper_research_skip": research_skip,
         "venue": venue_arg, "tca": tca, "order_stats": order_stats,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),
