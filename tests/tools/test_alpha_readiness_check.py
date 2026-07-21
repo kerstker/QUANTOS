@@ -133,6 +133,19 @@ def test_carry_uses_paper_cycle_research_evidence_and_its_book_ids():
     assert report["deployment"]["small_capital_live_verdict"] == "BLOCKED_L2_DRY_RUN_ONLY"
 
 
+def test_non_crowd_alpha_without_paper_cycle_evidence_fails_closed():
+    artifacts = _artifacts(forward_periods=8, admission="PASS", event_verdict="PASS")
+    artifacts["forward"] = {
+        "quality_evidence_current": True,
+        "alphas": {"carry_oi_majors": {"n_forward_periods": 8, "paper_sharpe": 1.0}},
+    }
+    artifacts["gonogo"] = {"forward_evidence": {"present": True}}
+    report = evaluate_alpha_readiness("carry_oi_majors", **artifacts)
+    assert report["research"]["checks"]["paper_cycle_research_evidence"] is False
+    assert "PAPER_CYCLE_EVIDENCE_MISSING" in report["deployment"]["blockers"]
+    assert report["deployment"]["research_packet_ready_for_paper"] is False
+
+
 def test_top_canonical_risk_rejection_remains_a_readiness_blocker():
     artifacts = _artifacts(forward_periods=8, admission="PASS", event_verdict="PASS")
     artifacts["dry_run"] = {

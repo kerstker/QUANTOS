@@ -120,7 +120,11 @@ def evaluate_alpha_readiness(
         if isinstance(cycle_rows, Mapping) and isinstance(cycle_rows.get(alpha_id), Mapping):
             cycle_row = cycle_rows[alpha_id]
     cycle_research = cycle_row.get("research") if isinstance(cycle_row, Mapping) else None
-    use_cycle_research = alpha_id != "crowd_contra" and bool(cycle_row)
+    # carry/top have Alpha-specific research snapshots in the paper-cycle
+    # artifact.  Never let a missing snapshot fall back to the crowd refutation
+    # artifact: that would make a report look complete while proving the wrong
+    # candidate.  crowd retains its dedicated legacy checks for compatibility.
+    use_cycle_research = alpha_id in {"carry_oi_majors", "top_contra"}
 
     ref_checks = refutation.get("refutation_checks")
     ref_checks = ref_checks if isinstance(ref_checks, dict) else {}
@@ -183,6 +187,8 @@ def evaluate_alpha_readiness(
             ),
             "capacity_diagnostic_present": cap_value is not None and cap_value > 0,
         }
+        if not cycle_row:
+            blockers.append("PAPER_CYCLE_EVIDENCE_MISSING")
         cycle_warnings = cycle_research.get("warnings") if isinstance(cycle_research, Mapping) else []
         if isinstance(cycle_warnings, list):
             warnings.extend(str(item) for item in cycle_warnings[:8])
