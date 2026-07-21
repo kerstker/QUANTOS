@@ -357,6 +357,11 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
             "state": "BLOCKED_BY_DATA_AND_EVENT_GATES" if common_blockers else "PENDING_FORWARD_EVIDENCE",
             "required_forward_periods": REQUIRED_FORWARD_PERIODS,
             "official_driver": "tools/forward_track_advance.py",
+            "forward_return_semantics": {
+                "source": "FORWARD_LIVE_PERP_MARK_GROSS_PLUS_FUNDING",
+                "includes_trading_costs": False,
+                "net_cost_evidence": "data/cache/dry_run.db",
+            },
             "registered_alphas": ["crowd_contra", "carry_oi_majors", "top_contra"],
             "live_allowed": False,
             "order_submission_allowed": False,

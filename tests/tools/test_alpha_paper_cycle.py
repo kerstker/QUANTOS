@@ -114,3 +114,6 @@ def test_report_describes_daily_forward_polling(tmp_path):
         paths[name] = str(path)
     report = build_report(artifact_paths=paths)
     assert any("daily poll" in action for action in report["next_actions"])
+    semantics = report["cycle"]["forward_return_semantics"]
+    assert semantics["includes_trading_costs"] is False
+    assert semantics["net_cost_evidence"] == "data/cache/dry_run.db"
