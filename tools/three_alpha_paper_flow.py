@@ -32,7 +32,11 @@ ALPHA_DRIVERS: tuple[tuple[str, str, str | None], ...] = (
         "tools.dry_run_carry_authoritative_multi",
         os.path.join("data", "cache", "carry_oi_majors_dry_run.json"),
     ),
-    ("crowd_contra", "tools.dry_run_crowd_contra_multi", None),
+    (
+        "crowd_contra",
+        "tools.dry_run_crowd_contra_multi",
+        os.path.join("data", "cache", "crowd_contra_dry_run.json"),
+    ),
     (
         "top_contra",
         "tools.dry_run_top_contra_multi",

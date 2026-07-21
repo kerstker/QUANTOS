@@ -171,6 +171,8 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
         "oi_research": "data/cache/crypto_oi_research.json",
         "oi_verify": "data/cache/crypto_oi_verify.json",
         "dry_run": "evidence/dry_run_books.json",
+        "carry_dry_run_authoritative": "data/cache/carry_oi_majors_dry_run.json",
+        "crowd_dry_run_authoritative": "data/cache/crowd_contra_dry_run.json",
         "top_dry_run_diagnostic": "data/cache/top_contra_dry_run_diagnostic.json",
         "top_dry_run_authoritative": "data/cache/top_contra_dry_run.json",
         "top_verify": "data/cache/crypto_oi_top_verify.json",
@@ -232,11 +234,12 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
         dry_id = definition["dry_run_id"]
         dry = dry_books.get(dry_id) if isinstance(dry_books.get(dry_id), dict) else None
         diagnostic = artifacts["top_dry_run_diagnostic"] if alpha_id == "top_contra" else {}
-        canonical = (
-            artifacts["top_dry_run_authoritative"]
-            if alpha_id == "top_contra"
-            else {}
-        )
+        canonical_paths = {
+            "carry_oi_majors": "carry_dry_run_authoritative",
+            "crowd_contra": "crowd_dry_run_authoritative",
+            "top_contra": "top_dry_run_authoritative",
+        }
+        canonical = artifacts.get(canonical_paths[alpha_id], {})
         canonical = canonical if canonical.get("authoritative") is True else {}
         canonical_pnl = canonical.get("pnl")
         canonical_pnl = canonical_pnl if isinstance(canonical_pnl, dict) else {}

@@ -24,6 +24,8 @@ def _artifacts():
             "embargoed_oos": {"mean_oos": 1.1},
         },
         "top_verify": {},
+        "carry_dry_run_authoritative": {},
+        "crowd_dry_run_authoritative": {},
         "top_dry_run_authoritative": {},
         "dry_run": {"books": {
             "carry": {"sharpe": 0.4},
@@ -101,6 +103,44 @@ def test_report_surfaces_authoritative_top_contra_dry_run(tmp_path):
     assert top["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
     assert top["canonical_dry_run"]["crowding_gate_blocks"] == 11
     assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in top["blockers"]
+
+
+def test_report_surfaces_authoritative_carry_and_crowd_dry_runs(tmp_path):
+    import json
+
+    artifacts = _artifacts()
+    for name, alpha_id in (
+        ("carry_dry_run_authoritative", "carry_oi_majors"),
+        ("crowd_dry_run_authoritative", "crowd_contra"),
+    ):
+        artifacts[name] = {
+            "authoritative": True,
+            "evidence_class": "CANONICAL_L2_DRY_RUN",
+            "run_id": f"{alpha_id}-run-1",
+            "n_periods": 200,
+            "pnl": {
+                "sharpe": 0.7,
+                "sharpe_vt": 0.9,
+                "max_drawdown": 0.2,
+                "total_return": 1.1,
+                "residual": 1e-9,
+            },
+            "research_risk": {"decision": "RISK_REJECTED"},
+            "gate": {"n_block": 2},
+        }
+    paths = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = str(path)
+    report = build_report(artifact_paths=paths)
+    for alpha_id in ("carry_oi_majors", "crowd_contra"):
+        row = report["alphas"][alpha_id]
+        assert row["canonical_dry_run"]["authoritative"] is True
+        assert row["canonical_dry_run"]["run_id"] == f"{alpha_id}-run-1"
+        assert row["canonical_dry_run"]["reconciliation_residual"] == 1e-9
+        assert row["canonical_dry_run"]["research_risk_decision"] == "RISK_REJECTED"
+        assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in row["blockers"]
 
 
 def test_report_describes_daily_forward_polling(tmp_path):

@@ -179,3 +179,21 @@ def test_top_canonical_risk_rejection_remains_a_readiness_blocker():
     assert "PAPER_CYCLE_BLOCKED" in report["deployment"]["blockers"]
     assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in report["deployment"]["blockers"]
     assert report["deployment"]["research_packet_ready_for_paper"] is False
+
+
+def test_crowd_canonical_risk_rejection_remains_a_readiness_blocker():
+    artifacts = _artifacts(forward_periods=8, admission="PASS", event_verdict="PASS")
+    artifacts["paper_cycle"] = {
+        "alphas": {
+            "crowd_contra": {
+                "research": {"verdict": "PASS_WITH_WARNINGS"},
+                "paper_verdict": "BLOCKED",
+                "blockers": [],
+                "canonical_dry_run": {"research_risk_decision": "RISK_REJECTED"},
+            }
+        }
+    }
+    report = evaluate_alpha_readiness("crowd_contra", **artifacts)
+    assert "PAPER_CYCLE_BLOCKED" in report["deployment"]["blockers"]
+    assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in report["deployment"]["blockers"]
+    assert report["deployment"]["research_packet_ready_for_paper"] is False

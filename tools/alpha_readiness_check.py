@@ -128,7 +128,7 @@ def evaluate_alpha_readiness(
 
     ref_checks = refutation.get("refutation_checks")
     ref_checks = ref_checks if isinstance(ref_checks, dict) else {}
-    ref_pass_count = sum(bool(value) for value in ref_checks.values())
+    ref_pass_count = sum(bool(value) for value in ref_checks.values()) if ref_checks else None
     refutation_pass = (
         isinstance(refutation.get("verdict"), str)
         and str(refutation["verdict"]).startswith("SURVIVES")
@@ -192,6 +192,21 @@ def evaluate_alpha_readiness(
         cycle_warnings = cycle_research.get("warnings") if isinstance(cycle_research, Mapping) else []
         if isinstance(cycle_warnings, list):
             warnings.extend(str(item) for item in cycle_warnings[:8])
+        cycle_blockers = cycle_row.get("blockers")
+        if isinstance(cycle_blockers, list):
+            blockers.extend(str(item) for item in cycle_blockers[:8])
+        if cycle_row.get("paper_verdict") == "BLOCKED":
+            blockers.append("PAPER_CYCLE_BLOCKED")
+        canonical_cycle = cycle_row.get("canonical_dry_run")
+        if isinstance(canonical_cycle, Mapping):
+            cycle_risk = canonical_cycle.get("research_risk_decision")
+            if cycle_risk is not None and cycle_risk != "PASS":
+                blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
+    else:
+        # The crowd candidate keeps its dedicated legacy research battery, but
+        # its execution evidence is still governed by the same unified paper
+        # cycle.  Do not let a clean refutation artifact hide a rejected
+        # canonical dry-run or a blocked cycle.
         cycle_blockers = cycle_row.get("blockers")
         if isinstance(cycle_blockers, list):
             blockers.extend(str(item) for item in cycle_blockers[:8])
@@ -362,10 +377,14 @@ def build_report(alpha_id: str = "crowd_contra", *, artifact_paths: Mapping[str,
     if artifact_paths:
         paths.update(artifact_paths)
     artifacts = {name: _load_json(path) for name, path in paths.items()}
+    # The legacy refutation artifact belongs to crowd_contra.  Carry and
+    # top_contra have their own research snapshots in alpha_paper_cycle; do
+    # not copy crowd's pass count/Sharpe into their readiness reports.
+    refutation = artifacts["refutation"] if alpha_id == "crowd_contra" else {}
     safety = RESEARCH_SAFE_DEFAULTS.model_dump()
     return evaluate_alpha_readiness(
         alpha_id,
-        refutation=artifacts["refutation"],
+        refutation=refutation,
         dry_run=artifacts["dry_run"],
         capacity=artifacts["capacity"],
         forward=artifacts["forward"],

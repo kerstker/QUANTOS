@@ -19,12 +19,14 @@ from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
+from tools.cache_io import atomic_write_json
 from live.execution.crowding_score import crowding_zscore as _crowding_zscore  # 共用纯实现,去重
 from tools.crypto_oi_research import build_panel, _legs, QUANTILE
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
 _OUT = os.path.join("data", "cache", "dry_run.db")
+_REPORT = os.path.join("data", "cache", "crowd_contra_dry_run.json")
 _AUM = 1_000_000.0
 _COST_BPS = 10.0            # 平 10bps:大币偏保守,对上证伪里 net@10bps 扛过那条证据
 _WEEK_MS = 7 * 24 * 3600 * 1000
@@ -64,6 +66,34 @@ def _existing_crowd_run(path: str = _OUT) -> dict | None:
             store.close()
 
 
+def _write_existing_report(record: dict) -> None:
+    """Rehydrate the canonical artifact when a retry reuses the append-only run."""
+    detail = record.get("detail") if isinstance(record.get("detail"), dict) else {}
+    pnl = record.get("pnl") if isinstance(record.get("pnl"), dict) else {}
+    atomic_write_json(
+        _REPORT,
+        {
+            "schema_version": 1,
+            "authoritative": True,
+            "evidence_class": "CANONICAL_L2_DRY_RUN",
+            "persistence": "DRY_RUN_STORE_EVENT_OUTBOX",
+            "projection": "PROMOTION_REQUIRES_VERIFIED_BATCH_REBUILD",
+            "readiness": "L2_DRY_RUN_ONLY",
+            "strategy_id": record.get("strategy_id", "crowd_contra"),
+            "alpha_id": "crowd_contra",
+            "expression": "cs_rank(neg(global_ls))",
+            "run_id": record.get("run_id"),
+            "timestamp": record.get("timestamp"),
+            "n_periods": detail.get("n_periods"),
+            "pnl": pnl,
+            "research_risk": detail.get("research_risk"),
+            "gate": detail.get("crowding_gate"),
+            "reconciliation_residual": pnl.get("residual"),
+        },
+        indent=2,
+    )
+
+
 def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
     """Rank #10a crowding evidence: trailing-window mean global_ls per instrument, cross-sectionally
     ranked to [0,1] (higher = more crowded-long). Scale-free, so the gate's thresholds apply."""
@@ -81,6 +111,7 @@ def _crowding_rank(gmat, r: int, idx, lookback: int = 4) -> dict:
 def main() -> None:
     existing = _existing_crowd_run()
     if existing is not None:
+        _write_existing_report(existing)
         pnl = existing.get("pnl") if isinstance(existing.get("pnl"), dict) else {}
         print(
             f"crowd_contra dry-run already stored: run_id={existing.get('run_id')} "
@@ -195,9 +226,15 @@ def main() -> None:
     # honestly, 5 engines SKIPPED not faked); promotion enforcement (guard_to_paper) is a follow-up.
     risk["config_provenance"] = "RISK_CONFIG_DEFAULTS_UNCALIBRATED_FOR_WEEKLY"
     run.detail["research_risk"] = risk
-    save_and_project_dry_run(
-        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
-    )
+    store = DryRunStore(_OUT, create=True)
+    try:
+        save_and_project_dry_run(
+            store, run, event_bus, now_ms=int(run.timestamp)
+        )
+        _write_existing_report(run.as_record())
+    finally:
+        store.close()
+        event_bus.close()
     p = run.pnl
     print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"
           f"/BLOCK {crowding['n_block']} · 最差分 {crowding['worst_score']}", flush=True)
