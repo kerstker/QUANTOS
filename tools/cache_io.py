@@ -4,6 +4,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
+
+
+_REPLACE_RETRY_DELAYS_S = (0.05, 0.10, 0.20, 0.40)
 
 
 def atomic_write_json(path: str, payload, *, indent=None) -> None:
@@ -21,7 +25,21 @@ def atomic_write_json(path: str, payload, *, indent=None) -> None:
             )
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        try:
+            os.replace(temporary, path)
+        except PermissionError:
+            # Windows readers (including antivirus/indexer hooks) can hold the
+            # destination for a short interval. Retry only this transient
+            # failure; a persistent denial remains fail-closed and is raised.
+            for delay in _REPLACE_RETRY_DELAYS_S:
+                time.sleep(delay)
+                try:
+                    os.replace(temporary, path)
+                    break
+                except PermissionError:
+                    continue
+            else:
+                raise
     except BaseException:
         try:
             os.remove(temporary)
