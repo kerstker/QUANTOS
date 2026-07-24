@@ -5,12 +5,21 @@
 # venue submission, emergency trading action, credential-bearing API, or live
 # monitoring process. Legacy tasks with those capabilities are disabled (not
 # deleted) before the L2 jobs are registered.
-param()
+param([string]$StateRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$wd = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($StateRoot)) {
+  $stateRoot = $codeRoot
+} else {
+  $stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+}
+$launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
+if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+  throw "L2 schedule entrypoint is unavailable"
+}
 $pythonCommand = Get-Command python -ErrorAction Stop
 $py = $pythonCommand.Source
 
@@ -45,7 +54,7 @@ function Get-L2BackupReadiness {
   if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
     return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_BACKUP_DEST is missing or not absolute" }
   }
-  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $workspaceRoot = [IO.Path]::GetPathRoot($stateRoot)
   $destinationRoot = [IO.Path]::GetPathRoot($destination)
   $isUnc = $destination.StartsWith("\\")
   if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
@@ -75,7 +84,7 @@ function Get-EventSealReadiness {
   if ([string]::IsNullOrWhiteSpace($destination) -or -not [IO.Path]::IsPathRooted($destination)) {
     return [pscustomobject]@{ Ready = $false; Reason = "QUANTOS_EVENT_SEAL_DEST is missing or not absolute" }
   }
-  $workspaceRoot = [IO.Path]::GetPathRoot($wd)
+  $workspaceRoot = [IO.Path]::GetPathRoot($stateRoot)
   $destinationRoot = [IO.Path]::GetPathRoot($destination)
   $isUnc = $destination.StartsWith("\\")
   if (-not $isUnc -and $workspaceRoot -eq $destinationRoot) {
@@ -92,7 +101,7 @@ function Register-L2Task {
   )
 
   $action = New-ScheduledTaskAction -Execute $py `
-    -Argument "-m tools.$Module" -WorkingDirectory $wd
+    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
@@ -119,8 +128,10 @@ $factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:00"
 $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
-$forwardTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Monday -At "09:00"
+# Poll daily after the expected public-data close so a newly available
+# watermark is consumed promptly; the worker's internal seven-day due check
+# remains authoritative.
+$forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:00"
 $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Monday -At "09:05"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
@@ -132,6 +143,23 @@ $externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMin
 $eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
+$paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
+$paperPreviewTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:10"
+# Public-mark paper valuation is a short-lived L2 worker. It refreshes the
+# current paper account without creating a resident process or touching a
+# private venue/order path.
+$paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Keep the isolated 10,000 USD paper profile on the same five-minute cadence,
+# offset from the default account so the two short-lived workers do not start
+# together.  The worker includes its own semantic health check.
+$paperRealtime10kTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(7) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Run the semantic paper health check one minute after the mark worker.  It is
+# also short-lived and returns non-zero when the paper artifacts are stale or
+# unsafe; it never refreshes data or reaches a broker.
+$paperHealthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 
 Register-L2Task -Name "QUANTOS_factory_loop" -Module "crypto_factory_loop" `
   -Trigger $factoryTrigger
@@ -147,6 +175,16 @@ Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdo
   -Trigger $schedulerWatchdogTrigger
 Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
   -Trigger $gonogoTrigger
+Register-L2Task -Name "QUANTOS_alpha_paper_cycle" -Module "alpha_paper_cycle" `
+  -Trigger $paperCycleTrigger
+Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview" `
+  -Trigger $paperPreviewTrigger
+Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
+  -Trigger $paperRealtimeTrigger
+Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `
+  -Trigger $paperRealtime10kTrigger
+Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
+  -Trigger $paperHealthTrigger
 
 $backupReadiness = Get-L2BackupReadiness
 if ($backupReadiness.Ready) {
@@ -173,5 +211,6 @@ if ($eventSealReadiness.Ready) {
 }
 
 Write-Host ""
-Write-Host "L2_DRY_RUN_ONLY schedules registered from $wd using $py"
+Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $py"
+Write-Host "Mutable operational state root: $stateRoot"
 Write-Host "No live submission or broker-capable task was registered."

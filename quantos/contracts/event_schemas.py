@@ -155,7 +155,10 @@ class _ResearchRiskEvaluatedPayload(_Payload):
     engines_skipped: list[str]
     gates_passed: int = Field(ge=0)
     gates_run: int = Field(ge=1)
-    provenance: Literal["REAL_RESEARCH_RISK_SUBSET"]
+    # SUBSET is the original honest dry-run seam.  FULL is emitted only when
+    # all nine research-risk engines were fed validated, point-in-time inputs;
+    # both remain research evidence and never grant live-trading capability.
+    provenance: Literal["REAL_RESEARCH_RISK_SUBSET", "REAL_RESEARCH_RISK_FULL"]
     reasons: list[str]
     run_id: str = Field(min_length=1)
     run_repro_hash: str = Field(pattern=r"^[0-9a-f]{64}$")

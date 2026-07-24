@@ -54,8 +54,18 @@ def save_and_project_dry_run(
     *,
     now_ms: int,
     projection_path: str = DOMAIN_EVENT_PROJECTION_DB,
+    project: bool = True,
 ) -> dict:
-    """Atomically retain a run+completion outbox, dispatch it, then advance its read model."""
+    """Atomically retain a run+completion outbox and dispatch it.
+
+    ``project=True`` keeps the historical one-shot behavior.  A controlled
+    ``project=False`` mode is used by high-volume offline drivers: the run and
+    its outbox are still committed and published atomically, while a verified
+    full projection rebuild can catch up the append-only read model without
+    replaying every event through the quadratic per-event runtime path.
+    """
+    if not isinstance(project, bool):
+        raise TypeError("project must be a bool")
     mode = str(run.detail.get("mode") or "single_period")
     started = dry_run_started_event(
         run_id=run.run_id,
@@ -77,7 +87,10 @@ def save_and_project_dry_run(
     messages = []
     completion_causation_id = started.event_id
     risk = run.detail.get("research_risk")
-    if risk is not None:
+    # Only evaluated engine sets have a canonical risk event.  Strict FULL
+    # runs with missing evidence remain PENDING and must not be mislabeled as
+    # subset/full evaluated evidence.
+    if isinstance(risk, dict) and risk.get("engines_run"):
         risk_event = research_risk_evaluated_event(
             run_id=run.run_id,
             strategy_id=run.strategy_id,
@@ -105,10 +118,19 @@ def save_and_project_dry_run(
     store.save_run_with_outbox(
         run,
         messages,
+        require_completion=True,
     )
     dispatch = dispatch_dry_run_outbox(store, event_bus, at_ms=now_ms)
-    projection = project_pending_domain_events(
-        event_bus, now_ms=now_ms, projection_path=projection_path
+    projection = (
+        project_pending_domain_events(
+            event_bus, now_ms=now_ms, projection_path=projection_path
+        )
+        if project
+        else {
+            "skipped": True,
+            "reason": "OFFLINE_BATCH_PROJECTION_REBUILD_REQUIRED",
+            "projection_path": projection_path,
+        }
     )
     return {"dispatch": dispatch, "projection": projection}
 

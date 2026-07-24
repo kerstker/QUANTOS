@@ -98,6 +98,18 @@ def test_evaluation_is_deterministic():
     assert r1.reproducibility_hash == r2.reproducibility_hash
 
 
+def test_evaluation_identity_includes_decision_as_of():
+    """Repeated factory rounds are distinct immutable reports when their
+    decision clock differs, even if the measured panel metrics are unchanged."""
+    r1 = AlphaEvaluator(_cat(), cost=CostModel(1, 2)).evaluate(
+        "a1", _panel(), as_of=1_000
+    )
+    r2 = AlphaEvaluator(_cat(), cost=CostModel(1, 2)).evaluate(
+        "a1", _panel(), as_of=2_000
+    )
+    assert r1.reproducibility_hash != r2.reproducibility_hash
+
+
 def test_thin_coverage_routes_to_human_review():
     r = AlphaEvaluator(_cat(), cost=CostModel(0, 0)).evaluate("a1", _panel(n_periods=4))
     assert r.verdict == ValidationVerdict.REQUIRES_HUMAN_REVIEW

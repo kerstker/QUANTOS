@@ -10,10 +10,9 @@ import statistics
 from itertools import combinations
 from typing import Dict, Iterable, List, Optional, Sequence
 
-# Real historical crisis replay (realism engine RE-2) — pure stdlib functions, no IO/RNG/
-# wall-clock, no reverse dependency on services.risk. Roadmap Rank #7 wires it here so the
-# stress gate replays NAMED crises instead of fabricating fixed multipliers.
-from services.research.realism.scenario import (
+# Real historical crisis replay (realism engine RE-2) — shared pure stdlib functions,
+# with no IO/RNG/wall-clock and no reverse dependency on another service domain.
+from quantos.scenario import (
     CRYPTO_CRISES, iso_to_ms, max_drawdown_window, window_stats,
 )
 # Real complete-linkage clustering (2026-07-09, gap audit rank #3) — pure stdlib, no IO/RNG/
@@ -68,12 +67,23 @@ class MarketRiskEngine:
         series = _clean(returns)
         if not series:
             return MarketRiskReport(passed=False)
-        volatility = statistics.pstdev(series) * math.sqrt(252) if len(series) > 1 else 0.0
+        periods_per_year = float(config.periods_per_year)
+        if not math.isfinite(periods_per_year) or periods_per_year <= 0:
+            raise ValueError("periods_per_year must be a positive finite number")
+        volatility = (
+            statistics.pstdev(series) * math.sqrt(periods_per_year)
+            if len(series) > 1
+            else 0.0
+        )
         var_95 = abs(min(0.0, _percentile(series, 0.05)))
         tail = [value for value in series if value <= _percentile(series, 0.05)]
         cvar_95 = abs(statistics.fmean(tail)) if tail else 0.0
         downside = [min(0.0, value) for value in series]
-        downside_volatility = statistics.pstdev(downside) * math.sqrt(252) if len(downside) > 1 else 0.0
+        downside_volatility = (
+            statistics.pstdev(downside) * math.sqrt(periods_per_year)
+            if len(downside) > 1
+            else 0.0
+        )
         tail_loss_99 = abs(min(0.0, _percentile(series, 0.01)))
         max_daily_loss = abs(min(0.0, min(series)))
         passed = (

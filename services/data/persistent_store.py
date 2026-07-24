@@ -126,6 +126,24 @@ class SqlitePITStore:
             "ORDER BY event_time, knowledge_time", (instrument_id, start, end))
         return [Bar.model_validate(json.loads(r["payload_json"])) for r in rows]
 
+    def fetch_bars_pit(self, instrument_id: str, start: int, end: int) -> list:
+        """Bulk PIT-safe read: same return shape and ordering as `fetch_bars`, but each
+        returned bar is filtered to `knowledge_time <= event_time` — only bars knowable
+        by their OWN event date.
+
+        This is the bulk-PIT read for panel builders: a consumer that uses each bar only
+        AT its own event_time (e.g. indexing bars into a date grid) sees exactly the data
+        that was knowable on that date, so the bulk read cannot leak the future even
+        though it scans the whole window in one pass.
+
+        CAUTION: PIT-safe ONLY for use-each-bar-at-its-own-event-date consumers. It is NOT
+        a substitute for `as_of(t)` / `latest_as_of(t)` when consuming at a decision time
+        t != event_time (it neither filters knowledge_time <= t nor carries the latest
+        value knowable at t forward). Decision-time reads must still go through as_of.
+        """
+        return [b for b in self.fetch_bars(instrument_id, start, end)
+                if b.knowledge_time <= b.event_time]
+
     def keys(self) -> list:
         self._require_schema()
         return [r["key"] for r in self._conn.execute("SELECT DISTINCT key FROM bars ORDER BY key")]

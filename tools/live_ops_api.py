@@ -42,7 +42,8 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.tca import tca_summary
 from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.governance.review_queue import ReviewQueue
-from tools.live_snapshot import binance_position_rows, bybit_position_rows
+from tools.live_snapshot import binance_position_rows, bybit_position_rows, mexc_spot_account_rows
+from tools.mexc_credentials import fetch_mexc_account
 from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
 
 _REVIEW_QUEUE_PATH = os.path.join("data", "cache", "live_review_queue.db")
@@ -106,6 +107,32 @@ def _equity_curve(suffix: str, max_points: int = 500) -> list:
     return out[-max_points:]
 
 
+def _mexc_public_marks(acct: dict) -> dict:
+    """现货权益折算用的公开标记价(无签名 bookTicker mid)。价格拿不到 → 该资产不进 marks,
+    持仓行诚实 None(不按 0 计)。网络在 tools/ 正当领地(dashboard 本来就是实时轮询面)。"""
+    from tools.coingecko_fetch import _http_get_json
+    marks = {}
+    for bal in acct.get("balances", []):
+        asset = bal.get("asset", "")
+        if not asset or asset == "USDT":
+            continue
+        try:
+            if float(bal.get("free", 0) or 0) <= 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        try:
+            data = _http_get_json(
+                f"https://api.mexc.com/api/v3/ticker/bookTicker?symbol={asset}USDT",
+                {"accept": "application/json"})
+            bid, ask = float(data["bidPrice"]), float(data["askPrice"])
+            if bid > 0 and ask > 0:
+                marks[asset] = (bid + ask) / 2.0
+        except Exception:
+            continue
+    return marks
+
+
 def _venue_dashboard(venue: str) -> dict:
     cfg = _VENUES[venue]
     paths = _venue_paths(cfg["suffix"])
@@ -114,23 +141,45 @@ def _venue_dashboard(venue: str) -> dict:
     if not out["configured"]:
         return out
     try:
-        v = _venue_adapter(venue)
-        acct = v.account()
-        aum, equity = cfg["balances"](acct)
-        if venue == "binance":
-            positions = binance_position_rows(acct)
+        if cfg.get("spot"):
+            # 现货(mainnet)分支(2026-07 MEXC 对接 1.7):**不走 gated 适配器**——mainnet 构造
+            # 在 L2 默认下 SafetyViolation,而 ops API 绝不 arm(治理钉死:固定 argv 永不携带
+            # arming flag,arming 是人工 CLI 专属)。只读账户查询经 tools/mexc_credentials 的
+            # ungated 镜像(与 verify_key_permissions 同一设计);标记价用公开 bookTicker。
+            # 现货语义:无强平价、无杠杆、无成本基(upnl 诚实 None)。
+            api_key, api_secret = _load_credentials(cfg, venue)
+            acct = fetch_mexc_account(api_key, api_secret)
+            marks = _mexc_public_marks(acct)
+            aum, equity = cfg["balances"](acct, marks)
+            positions = mexc_spot_account_rows(acct, marks)
+            priced = [p for p in positions if p["notional"] is not None]
+            out.update({
+                "ok": True, "spot": True, "equity": equity, "available": aum,
+                "positions": sorted(positions, key=lambda p: -(p["notional"] or 0.0)),
+                "gross_notional": sum(abs(p["notional"]) for p in priced),
+                "net_notional": sum(p["notional"] for p in priced),
+                "upnl_total": None,          # 现货无成本基 → 未实现盈亏不可计算(诚实 None)
+                "unpriced_assets": sorted(p["instrument_id"] for p in positions
+                                          if p["notional"] is None),
+            })
         else:
-            _status, raw_pos = v._get("/v5/position/list",
-                                      {"category": "linear", "settleCoin": "USDT"}, signed=True)
-            positions = bybit_position_rows(raw_pos)
-        gross = sum(abs(p["notional"]) for p in positions)
-        net = sum(p["notional"] for p in positions)
-        out.update({
-            "ok": True, "equity": equity, "available": aum,
-            "positions": sorted(positions, key=lambda p: -abs(p["notional"])),
-            "gross_notional": gross, "net_notional": net,
-            "upnl_total": sum(p["upnl"] for p in positions),
-        })
+            v = _venue_adapter(venue)
+            acct = v.account()
+            aum, equity = cfg["balances"](acct)
+            if venue == "binance":
+                positions = binance_position_rows(acct)
+            else:
+                _status, raw_pos = v._get("/v5/position/list",
+                                          {"category": "linear", "settleCoin": "USDT"}, signed=True)
+                positions = bybit_position_rows(raw_pos)
+            gross = sum(abs(p["notional"]) for p in positions)
+            net = sum(p["notional"] for p in positions)
+            out.update({
+                "ok": True, "equity": equity, "available": aum,
+                "positions": sorted(positions, key=lambda p: -abs(p["notional"])),
+                "gross_notional": gross, "net_notional": net,
+                "upnl_total": sum(p["upnl"] for p in positions),
+            })
     except Exception as exc:
         out.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
         return out

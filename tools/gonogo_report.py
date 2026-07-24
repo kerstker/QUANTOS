@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timezone
 
 from tools.live_track_advance import _VENUES, _venue_paths
+from tools.forward_status import alpha_forward_status
 
 _FORWARD_STATUS = os.path.join("data", "cache", "forward_track_status.json")
 _ALERTS = os.path.join("data", "cache", "alerts.jsonl")
@@ -98,15 +99,23 @@ def _forward_evidence() -> dict:
         return {"present": False}
     alphas = {}
     for aid, a in (ft.get("alphas") or {}).items():
-        n = a.get("n_forward_periods") or 0
+        normalized = alpha_forward_status(ft, aid)
+        n = normalized["n_forward_periods"] or 0
         alphas[aid] = {
             "weeks_accumulated": n,
             "weeks_to_gate": max(0, _EVIDENCE_GATE_WEEKS - n),
-            "paper_sharpe": a.get("paper_sharpe"),
+            "paper_sharpe": normalized["paper_sharpe"],
             "paper_ic": a.get("paper_ic"),
             "cum_return": a.get("cum_return"),
             "backtest_reference_sharpe": a.get("backtest_reference_sharpe"),
-            "pending_decisions": a.get("pending_decisions"),
+            "pending_decisions": normalized["pending_decisions"],
+            "attested_pending_decisions": normalized[
+                "attested_pending_decisions"
+            ],
+            "legacy_unattested_decisions": normalized[
+                "legacy_unattested_decisions"
+            ],
+            "evidence_state": normalized["evidence_state"],
         }
     return {"present": True, "ran_at": ft.get("ran_at"), "gate_weeks": _EVIDENCE_GATE_WEEKS,
             "alphas": alphas}

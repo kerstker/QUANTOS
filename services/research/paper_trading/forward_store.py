@@ -89,8 +89,14 @@ class ForwardLedger:
         return [decision for decision in self.decisions(alpha_id) if not decision["realized"]]
 
     def mark_realized(self, alpha_id: str, decided_ts: int) -> None:
-        self._conn.execute(
-            "UPDATE forward_decisions SET realized=1 WHERE alpha_id=? AND decided_ts=?",
+        cursor = self._conn.execute(
+            "UPDATE forward_decisions SET realized=1 "
+            "WHERE alpha_id=? AND decided_ts=? AND realized=0",
             (alpha_id, int(decided_ts)),
         )
+        if cursor.rowcount != 1:
+            self._conn.rollback()
+            raise ForwardLedgerError(
+                f"pending forward decision not found: {alpha_id}@{int(decided_ts)}"
+            )
         self._conn.commit()

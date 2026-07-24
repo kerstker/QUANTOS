@@ -5,9 +5,9 @@ import type { ExperimentsPayload, ResearchExperiment } from '@/lib/types/researc
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, LoadingVeil, type Column,
 } from '@/ui/primitives';
-import { Histogram, RadialGauge, Donut, BarSeries } from '@/ui/charts';
+import { Histogram, RadialGauge, Donut } from '@/ui/charts';
 import { num, pct, fixed, money, compact, shortHash, stamp, statusTone, type Tone } from '@/ui/format';
 
 const fallbackExperiments: ExperimentsPayload = {
@@ -168,29 +168,29 @@ export default function Experiments() {
       render: e => <Chip label={stageZh[e.stage] ?? e.stage} tone={stageTone[e.stage] ?? 'muted'} />,
     },
     { key: 'decision', header: bi('决策', 'Decision'), render: e => <StatusChip value={String(e.decision)} /> },
-    { key: 'ic', header: 'IC', align: 'right', mono: true, render: e => fixed(e.metrics.ic, 4) },
-    { key: 'ricic', header: bi('秩 IC', 'Rank IC'), align: 'right', mono: true, render: e => fixed(e.metrics.rank_ic, 4) },
+    { key: 'ic', header: 'IC', align: 'right', mono: true, sortable: true, sortAccessor: e => e.metrics.ic, render: e => fixed(e.metrics.ic, 4) },
+    { key: 'ricic', header: bi('秩 IC', 'Rank IC'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.metrics.rank_ic, render: e => fixed(e.metrics.rank_ic, 4) },
     {
-      key: 'sharpe', header: bi('夏普', 'Sharpe'), align: 'right', mono: true,
+      key: 'sharpe', header: bi('夏普', 'Sharpe'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.metrics.sharpe,
       render: e => <span className={e.metrics.sharpe >= 1 ? 'text-pos' : 'text-ink'}>{fixed(e.metrics.sharpe, 2)}</span>,
     },
     {
-      key: 'turnover', header: bi('换手', 'Turnover'), align: 'right', mono: true,
+      key: 'turnover', header: bi('换手', 'Turnover'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.metrics.turnover,
       render: e => <span className={e.metrics.turnover > 0.6 ? 'text-warn' : 'text-ink'}>{pct(e.metrics.turnover, 0)}</span>,
     },
-    { key: 'capacity', header: bi('容量', 'Capacity'), align: 'right', mono: true, render: e => money(e.metrics.capacity_estimate) },
+    { key: 'capacity', header: bi('容量', 'Capacity'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.metrics.capacity_estimate, render: e => money(e.metrics.capacity_estimate) },
     {
-      key: 'score', header: bi('综合分', 'Score'), width: '140px', render: e => (
+      key: 'score', header: bi('综合分', 'Score'), width: '140px', sortable: true, sortAccessor: e => e.metrics.composite_score, render: e => (
         <div className="flex items-center gap-2">
           <ProgressBar value={e.metrics.composite_score} tone={statusTone(String(e.decision))} />
           <span className="tnum w-10 text-right text-muted">{fixed(e.metrics.composite_score, 2)}</span>
         </div>
       ),
     },
-    { key: 'artifacts', header: bi('产物', 'Artifacts'), align: 'right', mono: true, render: e => num(e.artifacts.length) },
+    { key: 'artifacts', header: bi('产物', 'Artifacts'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.artifacts.length, render: e => num(e.artifacts.length) },
     { key: 'snapshot', header: bi('数据快照', 'Snapshot'), mono: true, render: e => <span className="text-faint">{e.config.data_snapshot_id}</span> },
     { key: 'repro', header: bi('复现哈希', 'Repro Hash'), mono: true, render: e => <span className="text-info">{shortHash(e.reproducibility_hash, 12)}</span> },
-    { key: 'created', header: bi('创建时间', 'Created'), mono: true, render: e => <span className="text-faint">{stamp(e.created_at)}</span> },
+    { key: 'created', header: bi('创建时间', 'Created'), mono: true, sortable: true, sortAccessor: e => e.created_at, render: e => <span className="text-faint">{stamp(e.created_at)}</span> },
   ];
 
   return (
@@ -207,6 +207,7 @@ export default function Experiments() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error}
         realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'EXPERIMENT_REGISTRY'} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={6}>
         <StatTile label={bi('实验总数', 'Experiments')} value={num(summary.total_experiments)} accent />
         <StatTile label={bi('通过', 'Approved')} value={num(summary.approved)} tone="pos" />
@@ -300,18 +301,12 @@ export default function Experiments() {
       </Panel>
 
       <Panel eyebrow={bi('全部试验', 'All Trials')} title={bi('实验注册表', 'Experiment Registry')}>
-        <DataTable columns={expCols} rows={experiments} dense getKey={e => e.experiment_id} />
+        <DataTable columns={expCols} rows={experiments} dense getKey={e => e.experiment_id}
+          searchable={e => `${e.experiment_id} ${e.alpha_id} ${e.expression} ${e.owner_agent} ${e.stage} ${e.decision}`}
+          searchPlaceholder={bi('搜索实验 / 因子 / 负责人…', 'Search experiment / alpha / owner…')} />
       </Panel>
 
-      <Panel eyebrow={bi('阶段计数', 'Stage Counts')} title={bi('阶段流转条形图', 'Stage Throughput')}>
-        <BarSeries
-          data={stageBins.map(b => b.count)}
-          labels={stageBins.map(b => b.label)}
-          height={150}
-          posTone="accent"
-          valueFormat={v => num(v)}
-        />
-      </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

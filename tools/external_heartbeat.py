@@ -15,6 +15,11 @@ import urllib.request
 from services.monitoring.consumer_group import (
     PROCESS_DECLARED_WORKER_ASSURANCE,
 )
+from services.governance.external_evidence import (
+    ContinuityAssessment,
+    ContinuityObservation,
+    evaluate_continuity,
+)
 from tools.cache_io import atomic_write_json
 
 
@@ -262,6 +267,27 @@ def send_external_heartbeat(
     return result
 
 
+def evaluate_heartbeat_continuity(
+    observations: tuple[ContinuityObservation, ...],
+    *,
+    now_ms: int,
+    max_gap_ms: int,
+    minimum_history_span_ms: int,
+    minimum_passes: int,
+    clean_lookback_ms: int,
+) -> ContinuityAssessment:
+    """Evaluate retained heartbeat receipts without contacting the endpoint."""
+
+    return evaluate_continuity(
+        observations,
+        now_ms=now_ms,
+        max_gap_ms=max_gap_ms,
+        minimum_history_span_ms=minimum_history_span_ms,
+        minimum_passes=minimum_passes,
+        clean_lookback_ms=clean_lookback_ms,
+    )
+
+
 def main() -> int:
     endpoint = os.environ.get(ENDPOINT_ENV)
     if not endpoint:
@@ -296,5 +322,6 @@ if __name__ == "__main__":
 __all__ = [
     "ExternalHeartbeatConfigurationError",
     "build_heartbeat_payload",
+    "evaluate_heartbeat_continuity",
     "send_external_heartbeat",
 ]

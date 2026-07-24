@@ -61,3 +61,53 @@ def test_research_risk_event_rejects_inconsistent_gate_counts():
             risk=risk,
         )
 
+
+def test_research_risk_event_accepts_full_nine_engine_provenance():
+    risk = {
+        "decision": "RISK_APPROVED",
+        "gates_passed": 9,
+        "gates_run": 9,
+        "engines_run": {
+            name: True
+            for name in (
+                "market",
+                "liquidity",
+                "concentration",
+                "correlation",
+                "drawdown",
+                "regime",
+                "stress",
+                "capacity",
+                "model_alpha",
+            )
+        },
+        "engines_skipped": {},
+        "reasons": [],
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+        "series": "vol_target",
+        "config_provenance": "RISK_CONFIG_HASH",
+    }
+    event = research_risk_evaluated_event(
+        run_id="full-run",
+        strategy_id="crowd_contra",
+        run_repro_hash="b" * 64,
+        timestamp_ms=1_234,
+        risk=risk,
+    )
+
+    assert event.payload["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert CANONICAL_EVENT_SCHEMAS.validate(event) == event
+
+
+def test_research_risk_event_rejects_unknown_provenance():
+    risk = _risk()
+    risk["provenance"] = "SYNTHETIC_FULL"
+    with pytest.raises(ValueError, match="risk provenance"):
+        research_risk_evaluated_event(
+            run_id="run-1",
+            strategy_id="crowd_contra",
+            run_repro_hash="a" * 64,
+            timestamp_ms=1_234,
+            risk=risk,
+        )
+

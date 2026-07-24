@@ -85,7 +85,7 @@ def ic_tstat(ic_series: Sequence[Optional[float]]) -> Optional[float]:
     s = clean(ic_series)
     if len(s) < 2:
         return None
-    sd = statistics.pstdev(s)
+    sd = statistics.stdev(s)
     if sd <= 0:
         return None
     return statistics.fmean(s) / (sd / math.sqrt(len(s)))

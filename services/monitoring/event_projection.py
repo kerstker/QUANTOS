@@ -93,6 +93,10 @@ class DomainEventProjection:
         self._c = sqlite3.connect(db_path, check_same_thread=False)
         self._lock = threading.Lock()
         self._head_hash = ""
+        # SQLite changes its data_version when another connection commits.  We
+        # use that marker to avoid re-verifying the entire append-only chain on
+        # every event while still forcing a full audit after an external write.
+        self._data_version = -1
         self._read_only = not create
         self._schema_registry = schema_registry
         self._consumer_versions = (
@@ -109,6 +113,18 @@ class DomainEventProjection:
             else:
                 self._c.execute("PRAGMA query_only=ON")
             self._head_hash = self._verify_rows(self._rows_locked())
+            self._data_version = self._sqlite_data_version_locked()
+
+    def _sqlite_data_version_locked(self) -> int:
+        row = self._c.execute("PRAGMA data_version").fetchone()
+        return int(row[0]) if row else 0
+
+    def _refresh_integrity_locked(self) -> None:
+        """Verify the full chain only after another connection changed it."""
+        current = self._sqlite_data_version_locked()
+        if current != self._data_version:
+            self._head_hash = self._verify_rows(self._rows_locked())
+            self._data_version = current
 
     def _rows_locked(self) -> list[tuple]:
         try:
@@ -205,9 +221,10 @@ class DomainEventProjection:
             raise PermissionError("read-only domain event projection cannot apply events")
         with self._lock:
             previous_head = self._head_hash
+            previous_data_version = self._data_version
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._head_hash = self._verify_rows(self._rows_locked())
+                self._refresh_integrity_locked()
                 existing = self._c.execute(
                     "SELECT projection_seq,event_seq,event_id,event_type,event_version,"
                     " timestamp,source,domain,criticality,correlation_id,causation_id,"
@@ -256,11 +273,20 @@ class DomainEventProjection:
                 )
                 self._c.commit()
                 self._head_hash = digest
+                self._data_version = self._sqlite_data_version_locked()
                 return True
             except Exception:
                 if self._c.in_transaction:
                     self._c.rollback()
-                self._head_hash = previous_head
+                # Preserve a newly observed external head when possible.  If
+                # the chain itself is corrupt, retain the prior cached state so
+                # the next explicit chain_valid()/records() call fails closed.
+                try:
+                    self._head_hash = self._verify_rows(self._rows_locked())
+                    self._data_version = self._sqlite_data_version_locked()
+                except Exception:
+                    self._head_hash = previous_head
+                    self._data_version = previous_data_version
                 raise
 
     def records(self, *, limit: Optional[int] = None) -> Tuple[dict, ...]:
@@ -272,6 +298,7 @@ class DomainEventProjection:
         with self._lock:
             rows = self._rows_locked()
             self._head_hash = self._verify_rows(rows)
+            self._data_version = self._sqlite_data_version_locked()
             if limit is not None:
                 rows = rows[-limit:]
             return tuple(
@@ -295,6 +322,7 @@ class DomainEventProjection:
         with self._lock:
             try:
                 self._head_hash = self._verify_rows(self._rows_locked())
+                self._data_version = self._sqlite_data_version_locked()
                 return True
             except (EventProjectionIntegrityError, sqlite3.DatabaseError):
                 return False

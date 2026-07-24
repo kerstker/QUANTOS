@@ -21,6 +21,11 @@ from typing import Callable
 
 from services.monitoring.domain_event_runtime import DOMAIN_EVENT_DB
 from services.monitoring.event_bus import DurableEventBus, EventAuthorityCommitment
+from services.governance.external_evidence import (
+    ContinuityAssessment,
+    ContinuityObservation,
+    evaluate_continuity,
+)
 from tools.cache_io import atomic_write_json
 
 
@@ -222,6 +227,27 @@ def export_event_authority_seal(
     return result
 
 
+def evaluate_event_seal_continuity(
+    observations: tuple[ContinuityObservation, ...],
+    *,
+    now_ms: int,
+    max_gap_ms: int,
+    minimum_history_span_ms: int,
+    minimum_passes: int,
+    clean_lookback_ms: int,
+) -> ContinuityAssessment:
+    """Evaluate retained external-anchor receipts without touching the authority."""
+
+    return evaluate_continuity(
+        observations,
+        now_ms=now_ms,
+        max_gap_ms=max_gap_ms,
+        minimum_history_span_ms=minimum_history_span_ms,
+        minimum_passes=minimum_passes,
+        clean_lookback_ms=clean_lookback_ms,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Export a verified create-once domain-event authority commitment"
@@ -260,6 +286,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "DomainEventSealError",
+    "evaluate_event_seal_continuity",
     "export_event_authority_seal",
     "verify_event_authority_seal",
 ]

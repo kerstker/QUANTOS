@@ -73,6 +73,7 @@ _ALPHA_LIBRARY_ROUTES = {
     "/api/v1/console/alpha-zoo",
     "/api/v1/console/crypto-live",
     "/api/v1/console/dsl-explorer",
+    "/api/v1/console/dsl-explorer/check",
     "/api/v1/console/population-optimizer",
 }
 

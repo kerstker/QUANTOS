@@ -221,6 +221,41 @@ def test_job_runs_and_writes_registry(tmp_path):
         _unregister_stub("_stub")
 
 
+def test_paper_cycle_runner_uses_fixed_profile_and_adapts_health(
+    tmp_path, monkeypatch
+):
+    import tools.paper_realtime as paper_tool
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "cache").mkdir(parents=True)
+    captured = {}
+
+    def fake_main(argv):
+        captured["argv"] = list(argv)
+        output = argv[argv.index("--output") + 1]
+        health_output = argv[argv.index("--health-output") + 1]
+        (tmp_path / output).write_text(json.dumps({
+            "verdict": {"cycle_completed": True},
+            "persistence": {"new_snapshots": 3},
+            "alphas": {"carry_oi_majors": {"net_pnl": 1.5}},
+        }), encoding="utf-8")
+        (tmp_path / health_output).write_text(json.dumps({
+            "verdict": {"paper_ready": True}, "blockers": [],
+        }), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(paper_tool, "main", fake_main)
+    result = RUN_KINDS["paper_cycle"].runner({"small_10k": True})
+
+    assert result["profile"] == "small_10k"
+    assert "--refresh-paper" in captured["argv"]
+    assert captured["argv"][captured["argv"].index("--aum") + 1] == "10000"
+    assert result["report"]["persistence"]["new_snapshots"] == 3
+    adapted = RUN_KINDS["paper_cycle"].adapter(result)
+    assert adapted["verdict"] == "PAPER_CYCLE_OK"
+    assert adapted["provenance"] == "tools/paper_realtime.py"
+
+
 def test_same_second_submissions_are_distinct_invocations(tmp_path):
     reg = RunRegistry(ResearchRunStore(str(tmp_path / "same-second.db")))
     _register_stub("_same_second", RunSpec(

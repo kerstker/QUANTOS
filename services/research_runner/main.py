@@ -52,6 +52,12 @@ def _load_or_create_token(path: str = _TOKEN_FILE) -> str:
 
 _RUNNER_TOKEN = _load_or_create_token()
 
+_extra_cors_origins = tuple(
+    origin.strip()
+    for origin in os.getenv("QUANTOS_RUNNER_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+)
+
 
 def require_runner_token(x_runner_token: Optional[str] = Header(default=None)) -> None:
     if x_runner_token is None or not secrets.compare_digest(x_runner_token, _RUNNER_TOKEN):
@@ -61,7 +67,7 @@ def require_runner_token(x_runner_token: Optional[str] = Header(default=None)) -
 app = FastAPI(title="QUANTOS Research Runner", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100"],
+    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100", *_extra_cors_origins],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],

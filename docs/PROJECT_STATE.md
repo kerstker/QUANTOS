@@ -1,5 +1,35 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-23 小资金纸面调度已接通：** 新增固定隔离 worker
+> `tools.paper_realtime_10k` 与 `QUANTOS_paper_realtime_10k` 计划任务，每 5 分钟错峰运行；
+> 每次执行 10,000 USD 三 Alpha 纸面标记并自带 `paper_health` 门，独立写入
+> `paper_order_ledger_10k.db` / `paper_realtime_10k.db`。手动触发后的任务结果为 0，
+> `paper_ready=true`、实时链有效；默认 1,000,000 USD 账户与所有实盘能力不变。
+> `/api/v1/console/dry-run` 与 Dry-Run 页面现只读展示 `small_10k` profile 的健康、链和安全状态。
+
+> **2026-07-23 L2 纸面操作员烟测通过：** `tools.l2_paper_operator --no-forward` 在当前账本上
+> 真实完成三 Alpha 权威 dry-run + 纸面订单预览，`operator_completed=true`、三 Alpha
+> `PAPER_FILLED`、对账残差约 0；随后 `tools.paper_realtime` 连续标记并由
+> `tools.paper_health` 判定 `paper_ready=true`。本地受管 console API/研究 Runner/前端栈
+> 启停烟测也通过，`/api/v1/console/dry-run` 返回实时纸面、回测引用和安全旗标；所有真实下单旗标
+> 仍为 false。不同 AUM 复用同一决策时现已 fail-closed，必须使用独立纸面账本。
+
+> **2026-07-22 L2 实时纸面可运行：** 新增 `tools.paper_realtime` 前台操作入口。
+> 每个周期先复用三 Alpha 的 L2 纸面成交账本，再从 Binance 公共 mark-price REST
+> 取得当前标记，计算实时持仓/现金/未实现与净 PnL，并把结果写入追加式哈希链
+> `data/cache/paper_realtime.db`。同一收据还携带三个权威 dry-run 回测摘要；控制台
+> `/api/v1/console/dry-run` 的 `paper_realtime` 与 Dry-Run Pipeline 页面已展示该状态。
+> 当前验证：三 Alpha 各 8 个纸面 fills、对账残差约 0、实时收据链有效；仍是
+> `L2_DRY_RUN_ONLY`，`live_allowed=false`，无私有 Binance、密钥、券商或真实订单路径。
+
+> **2026-07-22 L2 端到端运行收口:** 当前 Windows L2 调度任务已从旧的
+> `ops-release-20260720` 入口切换到当前代码根 `tools/l2_schedule_entrypoint.py`，并新增每日
+> `QUANTOS_alpha_paper_cycle`(Go/No-Go 后 5 分钟)刷新默认纸面周期。三 Alpha 完整流程
+> (`three_alpha_paper_flow --advance-forward`) 已真实跑通：公开数据准入、三个权威 dry-run、
+> 前向账本、Go/No-Go、纸面周期和就绪报告均完成；当前仍为 `L2_DRY_RUN_ONLY`，三条 Alpha
+> 均为 0/8 个有效前向周，绝不授权实盘。另修复事件投影 worker 在并发调度下因旧时间戳离组而失败的
+> 竞态：直接 consumer-group API 仍对显式时钟回拨 fail-closed，协作投影 worker 会读取权威时间并有限重试。
+
 > **2026-07-16 Wave0后P2质量改进:** import-linter依赖治理已引入（4个合约，检测到
 > research↔alpha 16处循环依赖，live/隔离与contracts清洁度已验证）；147个空DDD目录
 > 已用PLANNED.md标记为架构占位；console_api已验证为按router拆分（7548行分布多视图）；

@@ -35,6 +35,7 @@ mandate.py`)。mandate 的真实数字由用户自己创建文件签署,本文�
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -43,6 +44,7 @@ from typing import Dict, Optional
 from live.contracts import VenueOrderResult
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.exchange.bybit_futures import BybitFuturesAdapter
+from live.exchange.mexc_spot import MexcSpotAdapter
 from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
 from live.execution.market_stats import average_daily_volume_units, realized_volatility
@@ -62,6 +64,7 @@ from live.execution.evidence_escalation import check_evidence_deviation
 from live.execution.gate_context import build_gate_positions, build_recent_order_gate_inputs
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
 from live.execution.price_check import flag_noncontemporaneous_instruments
+from live.execution.funding_check import flag_unverifiable_funding_instruments
 from live.execution.pricing import LimitPricing
 from live.execution.reconciliation import preflight_check
 from live.execution.risk_monitor import (
@@ -76,6 +79,9 @@ from live.governance.validation_attestation import (ValidationAttestationError, 
                                                     require_validation_attestation)
 from services.alpha.live_linkage import maintenance_skip_reason
 from services.alpha.maintenance_store import MaintenanceStore
+from services.data.caching_store import CachingPITStore
+from services.data.persistent_store import SqlitePITStore
+from quantos.contracts.config import SafetyConfig
 from services.portfolio.firm_gate import firm_gate_skip_reason
 from live.pipeline import (LiveBatchResult, UNIT_SCALE, resolve_unconfirmed_orders,
                            submit_live_batch)
@@ -88,9 +94,11 @@ from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from tools.alert_sink import emit
 from tools.coingecko_fetch import fetch_simple_price_observations
-from tools.crypto_oi_research import QUANTILE, _legs, build_panel
-from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
+from tools.crypto_oi_verify import CROWD_CONTRA, TOP_CONTRA
 from tools.live_data_refresh import run_refresh
+from tools.mexc_credentials import check_mexc_key_safety
+from tools.dry_run_btc_spot_multi import _signal_series_hysteresis
 from tools.kill_switch_events import dispatch_and_project_kill_switch_events
 from tools.signal_quality import rows_with_acceptable_coverage
 
@@ -100,6 +108,7 @@ _STRATEGY_ID = "crowd_contra"
 # 验证证明门文件(审计 P1-1):策略级、跨 venue 共享(不是 per-venue 授权),gitignored(与 mandate
 # 同处 key/,由真人签署)。缺文件/坏文件 -> fail-closed 全部 BLOCK。模板见 tools.create_validation_attestation_template。
 _VALIDATION_ATTESTATION_FILE = os.path.join("key", "live_validation_attestations.json")
+_ALPHA_PAPER_CYCLE_PATH = os.path.join("evidence", "alpha_paper_cycle.json")
 # firm 硬门状态(审计 P1-6):由哨兵 tools/live_risk_sentinel.py 写(它能看两所仓位),驱动器只读。
 _FIRM_GATE_STATUS_PATH = os.path.join("data", "cache", "firm_gate_status.json")
 # alpha 维护 sweep 状态(Phase 5 item 1,P1-7):由 tools/alpha_maintenance_sweep.py 写(经审计 manager
@@ -115,18 +124,53 @@ _VOL_ANNUALIZE = 365.0
 # gate-calibration.md):被 short 名字 global_ls 时序 z > 3.0 -> BLOCK(挤压保护)。与干跑驱动器同一签署值。
 _MAX_CROWDING_Z = 3.0
 
-def _binance_balances(account: dict) -> tuple:
+def _binance_balances(account: dict, prices: Optional[dict] = None) -> tuple:
     """(可用余额 aum, 含未实现盈亏的权益 equity)——Binance /fapi/v2/account 原始形状。"""
     return (float(account.get("availableBalance", 0.0) or 0.0),
             float(account.get("totalMarginBalance", 0.0) or 0.0))
 
 
-def _bybit_balances(account: dict) -> tuple:
+def _bybit_balances(account: dict, prices: Optional[dict] = None) -> tuple:
     """同上——Bybit V5 wallet-balance 信封:result.list[0] 里的统一账户余额字段。"""
     rows = ((account.get("result") or {}).get("list")) or [{}]
     row = rows[0] or {}
     return (float(row.get("totalAvailableBalance", 0.0) or 0.0),
             float(row.get("totalEquity", 0.0) or 0.0))
+
+
+def _mexc_balances(account: dict, prices: Optional[dict] = None) -> tuple:
+    """(可用 USDT 现金 aum, 现货权益 equity)——MEXC /api/v3/account 现货形状
+    {"balances": [{"asset", "free", "locked"}, ...]}。权益 = USDT free + Σ(非 USDT 自由余额
+    × prices[asset])(现货无未实现盈亏字段,权益必须按最新价折算;prices 缺该资产 → 该持仓
+    按 0 计——保守方向:低估权益 → 回撤被高估 → 偏向硬停,绝不高估权益放松风控)。
+    冻结(locked)余额不计(与适配器 positions() 同口径:被挂单冻结的资产不可支配)。"""
+    usdt_free = 0.0
+    equity = 0.0
+    for bal in account.get("balances", []):
+        asset = bal.get("asset", "")
+        if not asset:
+            continue
+        try:
+            free = float(bal.get("free", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if free <= 0.0:
+            continue
+        if asset == "USDT":
+            usdt_free += free
+            equity += free
+            continue
+        px = (prices or {}).get(asset)
+        if px is not None and px > 0:
+            equity += free * px
+    return usdt_free, equity
+
+
+def _mexc_margin(account: dict) -> tuple:
+    """现货无维持保证金概念(无杠杆、无强平)——维持**要求**恒 0.0(这是事实陈述,不是
+    "字段缺失");维持**余额**无对应字段 → None(与 _num_or_none 的"缺失 fail-closed"
+    语义一致,由 evaluate_risk_state 决定如何对待)。"""
+    return None, 0.0
 
 
 def _num_or_none(d: dict, key: str):
@@ -190,6 +234,45 @@ _VENUES = {
         "margin": _bybit_margin,
         "mandate_file": os.path.join("key", "live_mandate_bybit_demo.json"),
     },
+    # MEXC 现货(2026-07 MEXC 对接,docs/MEXC_INTEGRATION.md):**无现货 testnet**,
+    # 唯一合法 base = mainnet——默认 SafetyConfig 下适配器构造即 SafetyViolation,
+    # 只有人工 CLI `--arm-live`(见 main())才构造得出;ops API/哨兵等不 arm 的进程
+    # 对这个 venue 只能得到诚实 gated 报告。mandate 文件 per-venue(venue="mainnet",
+    # exchange="mexc",由真人签署,代码不代填)。"spot" 标记驱动 main() 的现货分支:
+    # 现金检查/现货口径风控限额/权益折算(见 1.4 与 _mexc_balances)。
+    "mexc": {
+        "adapter": MexcSpotAdapter,
+        "base_url": MexcSpotAdapter.MAINNET_BASE,
+        "env": ("MEXC_API_KEY", "MEXC_API_SECRET"),
+        "key_file": os.path.join("key", "mexc_spot.json"),
+        "suffix": "_mexc",
+        "balances": _mexc_balances,
+        "margin": _mexc_margin,
+        "mandate_file": os.path.join("key", "live_mandate_mexc.json"),
+        "spot": True,
+    },
+    # Binance USDT-M 期货 mainnet(2026-07 Binance mainnet 接线,镜像 MEXC 对接 Part 1,
+    # runbook: docs/runbooks/binance-futures-live-runbook.md):与 "binance"(testnet)同一
+    # 适配器类、同一期货语义(balances/margin 复用 testnet 分支,**绝非**现货分支——无现货
+    # 现金门、无现货口径限额),只是 base_url = MAINNET_BASE——默认 SafetyConfig 下适配器
+    # 构造即 SafetyViolation,只有人工 CLI `--arm-live`(见 main())才构造得出;ops API/
+    # 哨兵等不 arm 的进程对这个 venue 只能得到诚实 gated 报告。env/key_file 与
+    # tools/verify_key_permissions.py::_MAINNET_CREDENTIAL_CONFIG["binance"] 刻意完全一致
+    # (同一份凭据——mainnet_key_safety_skip_reason 归一化到 venue_name="binance" 后查的
+    # 就是它)。mandate 文件 per-venue(venue="mainnet",exchange="binance",由真人签署,
+    # 代码不代填)。"mainnet_only" 标记驱动 main() 两处启动闸门:无 --arm-live 直接
+    # SystemExit;arm 之后仍强制过一次 key 权限校验(apiRestrictions 只读,fail-closed)。
+    "binance_mainnet": {
+        "adapter": BinanceFuturesAdapter,
+        "base_url": BinanceFuturesAdapter.MAINNET_BASE,
+        "env": ("BINANCE_MAINNET_API_KEY", "BINANCE_MAINNET_API_SECRET"),
+        "key_file": os.path.join("key", "binance_mainnet_key.json"),
+        "suffix": "_binance_mainnet",
+        "balances": _binance_balances,
+        "margin": _binance_margin,
+        "mandate_file": os.path.join("key", "live_mandate_binance_mainnet.json"),
+        "mainnet_only": True,
+    },
 }
 
 
@@ -225,6 +308,17 @@ _MAX_SLIPPAGE_OVER_ASSUMED_BPS = 50.0
 # explicitly UNCALIBRATED until retained source observations support empirical tuning.
 _CROSS_CHECK_MAX_AGE_MS = 5 * 60_000
 _CROSS_CHECK_MAX_SKEW_MS = 5 * 60_000
+# 资金费实时交叉核对(2026-07-23):funding 信号策略(carry_oi_majors)的信号来自日频离线
+# 快照(crypto_funding_rates.json),用 venue premium-index 实时读交叉核对。容差口径见
+# live/execution/funding_check.py 模块 docstring——**陈旧/垃圾探测器,不是精确等值**
+# (8h 费率日内合法漂移):abs=0.001(日化 10bps ≈ 典型日化资金费 0.03% 的 3.3 倍,
+# 只有单位错/垃圾/严重断档才超)、rel=2.0(大费率日允许 3× 带宽)。工程默认,非业务风险容忍度。
+_FUNDING_RATES_PATH = os.path.join("data", "cache", "crypto_funding_rates.json")
+_FUNDING_INTERVAL_MS = 8 * 3_600_000          # Binance USDT 永续 8h 结算区间
+_FUNDING_NEXT_GRACE_MS = 3_600_000            # next_funding_time 滞后/超前宽限(时钟偏移 + 结算边界)
+_FUNDING_SNAPSHOT_MAX_AGE_MS = 2 * 86_400_000  # 离线日快照最新日桶超过 2 天未刷新 = 陈旧
+_FUNDING_ABS_RATE_TOLERANCE = 0.001
+_FUNDING_REL_RATE_TOLERANCE = 2.0
 
 
 def _load_json_or_none(path: str) -> Optional[dict]:
@@ -239,6 +333,42 @@ def _load_json_or_none(path: str) -> Optional[dict]:
 
 def _load_day_state(path: str) -> Optional[dict]:
     return _load_json_or_none(path)
+
+APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
+
+
+def research_readiness_skip_reason(
+    strategy_id: str,
+    *,
+    path: str = _ALPHA_PAPER_CYCLE_PATH,
+) -> Optional[str]:
+    """Return a fail-closed reason when the paper evidence rejects a strategy.
+
+    The forward driver remains independent and continues accumulating evidence.
+    This bridge only protects the execution driver: a missing/corrupt cycle,
+    an explicit blocker, or a non-PASS canonical research-risk decision may
+    produce a preview warning and prevents ``--submit`` from adding exposure.
+    Human attestation and the other live gates remain separate requirements.
+    """
+    snapshot = _load_json_or_none(path)
+    if not isinstance(snapshot, dict):
+        return "alpha_paper_cycle_missing_or_invalid"
+    rows = snapshot.get("alphas")
+    if not isinstance(rows, dict) or not isinstance(rows.get(strategy_id), dict):
+        return f"alpha_paper_status_missing:{strategy_id}"
+    row = rows[strategy_id]
+    blockers = row.get("blockers")
+    if isinstance(blockers, list) and blockers:
+        labels = ",".join(str(item) for item in blockers[:4])
+        return f"alpha_paper_blocked:{strategy_id}:{labels}"
+    if row.get("paper_verdict") == "BLOCKED":
+        return f"alpha_paper_verdict_blocked:{strategy_id}"
+    canonical = row.get("canonical_dry_run")
+    if isinstance(canonical, dict):
+        decision = canonical.get("research_risk_decision")
+        if decision is not None and decision not in APPROVED_RESEARCH_RISK_DECISIONS:
+            return f"research_risk_{decision.lower()}:{strategy_id}"
+    return None
 
 
 def maintenance_skip(
@@ -382,14 +512,15 @@ _MAX_CANCEL_RATE = 0.80                 # L2 工程基线；外部执行数据�
 _MIN_CANCEL_RATE_SAMPLES = 20
 
 
-def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap):
+def gate_limits(instruments, *, gross_cap, net_cap, single_order_cap, daily_loss_cap,
+                max_leverage=3.0, max_single_name_pct=0.5):
     """gate 的客观安全边界(非业务授权,见模块 docstring)。裸数量类阈值设成有效无限——多资产
     book 里"最大 N 个单位"跨币种没有统一意义;保护交给价格感知的名义额类检查。"""
     return RiskLimits(
         allowed_instruments=frozenset(instruments), allowed_accounts=frozenset({"live_testnet"}),
         default_max_position_qty=10 ** 15, fat_finger_qty=10 ** 15,
         max_order_notional=single_order_cap, max_gross_exposure=gross_cap, max_net_exposure=net_cap,
-        max_leverage=3.0, max_single_name_pct=0.5, max_turnover=1.0, max_participation_rate=1.0,
+        max_leverage=max_leverage, max_single_name_pct=max_single_name_pct, max_turnover=1.0, max_participation_rate=1.0,
         max_instrument_vol=5.0, daily_loss_limit=daily_loss_cap, max_drawdown=0.5,
         # 频率 runaway-guard(P1-5):接活了此前的死代码(需驱动器回填 recent_timestamps 才生效)
         rate_window_ms=_RATE_WINDOW_MS, max_orders_per_window=_RATE_MAX_ORDERS,
@@ -482,6 +613,11 @@ class PreviewVenue:
         # 一样透传真实 venue,定价基于真实市况而非造假数据。
         return self._real.book_ticker(instrument_id)
 
+    def premium_index(self, instrument_id):
+        # 只读(2026-07-23,资金费交叉核对证据源)——同 book_ticker 一样透传真实 venue,
+        # preview 模式跑与 --submit 完全相同的资金费核对(核对基于真实市况,不是造假数据)。
+        return self._real.premium_index(instrument_id)
+
 
 def _load_credentials(venue_cfg: dict, venue_name: str):
     env_key, env_secret = venue_cfg["env"]
@@ -497,29 +633,28 @@ def _load_credentials(venue_cfg: dict, venue_name: str):
         if k and s:
             return k.strip(), s.strip()
     raise RuntimeError(
-        f"{venue_name} testnet credentials not found "
+        f"{venue_name} credentials not found "
         f"(set ${env_key}/${env_secret}, or {key_file})")
 
 
 _SIGNAL_MAX_LOOKBACK_ROWS = 7      # 信号行回看上限(日频面板 = 一周);再往前就该修数据而不是硬交易
+def _latest_weights_and_prices_for(expression, panel_bundle=None):
+    """Return the latest signal row with acceptable coverage.
 
-
-def _latest_weights_and_prices(panel_bundle=None):
-    """最近一行**有信号且覆盖率达标**的决策快照。2026-07-05 修复:面板最后一行常常 OI 全空
-    (K线刷新比 OI 指标快,最新时间戳还没有 global_ls)——盲取最后一行会产出空 book,整轮
-    静默零意图。改为从最后一行往回找(有界回看,超出上限诚实返回空,不硬凑)。
-    **2026-07-06 根因调查修复①**:OI 归档逐 symbol 滞后发布,发布窗口内最新行可能是"毛边行"
-    (4~13/24 部分覆盖)——`if legs:` 会接受它产出 2~8 腿的退化 book。现在接受条件加覆盖率门:
-    该行非 None 信号数 ≥ 0.8 × 回看窗口内最大截面数(见 tools/signal_quality.py)。
-    价格取同一行(决策快照自洽),decided_ts = 该行数据时间(决策带数据时间,与 Stage 0 同一
-    诚实口径)。同时带出该行的 `global_ls`(拥挤度门的证据源,见 `crowding_score.py`)。"""
+    OI-derived signals can lag refreshed candles, so walk back through a
+    bounded window instead of silently producing an empty or partial book.
+    Carry does not require a ``global_ls`` matrix; its crowding evidence is
+    then explicitly empty and its strategy-level crowding gate stays disabled.
+    """
     panel, _instruments = panel_bundle if panel_bundle is not None else build_panel()
     insts = panel.instruments
     close = panel.matrices["close"]
-    global_ls = panel.matrices.get("global_ls", [[None] * len(insts)] * len(panel.event_times))
+    global_ls = panel.matrices.get("global_ls")
+    if global_ls is None:
+        global_ls = [[None] * len(insts) for _ in panel.event_times]
     volume = panel.matrices.get("volume")            # 合成测试面板可能无 volume -> ADV fail-closed None
     ev = panel.event_times
-    sig = ax.evaluate(CROWD_CONTRA, panel)
+    sig = ax.evaluate(expression, panel)
     r_last = len(ev) - 1
     candidates = list(range(r_last, max(r_last - _SIGNAL_MAX_LOOKBACK_ROWS, -1), -1))
     for r in rows_with_acceptable_coverage(sig, candidates):
@@ -544,6 +679,54 @@ def _latest_weights_and_prices(panel_bundle=None):
     return {}, {}, int(ev[r_last]), {}, {}
 
 
+def _latest_weights_and_prices(panel_bundle=None):
+    """Backward-compatible crowd-contra signal entry point."""
+    return _latest_weights_and_prices_for(CROWD_CONTRA, panel_bundle)
+
+
+def _latest_carry_weights_and_prices(panel_bundle=None):
+    """Signal entry point for the forward-paper ``carry_oi_majors`` alpha."""
+    return _latest_weights_and_prices_for(CARRY, panel_bundle)
+
+
+def _latest_top_contra_weights_and_prices(panel_bundle=None):
+    """Signal entry point for the research-only ``top_contra`` alpha."""
+    return _latest_weights_and_prices_for(TOP_CONTRA, panel_bundle)
+
+
+_MEXC_DB = os.path.join("data", "cache", "crypto_mexc.db")
+
+
+def _latest_btc_spot_weights_and_prices():
+    """btc_spot_trend(MEXC 现货 BTC 迟滞趋势)信号入口——与 tools/dry_run_btc_spot_multi
+    同一信号核(Donchian 20d 突破 ∧ 30d 动量,迟滞退出),数据 = MEXC PIT 日线
+    (crypto_mexc.db,由 tools/live_data_refresh 第 5 源刷新)。返回注册表五元组:
+    - 单名 book:信号开 → {"BTC": 1.0},信号关 → {"BTC": 0.0}——0 权重是**合法目标**
+      (生成平仓单),不是"空信号";空五元组只在库缺/无 bar 时返回(触发数据质量跳批);
+    - ls_row 恒空(现货无 OI 维度 → 策略级拥挤门注册为关闭);
+    - evidence 给真实 ADV(MEXC base 成交量,经 UNIT_SCALE 缩放)/年化波动(对数收益)。"""
+    if not os.path.exists(_MEXC_DB):
+        return {}, {}, 0, {}, {}
+    store = CachingPITStore(SqlitePITStore(_MEXC_DB, create=False))
+    bars = sorted(store.fetch_bars("BTC", -10 ** 18, 10 ** 18), key=lambda b: b.event_time)
+    if not bars:
+        return {}, {}, 0, {}, {}
+    closes = [float(b.close) for b in bars]
+    px = closes[-1]
+    decided_ts = int(bars[-1].event_time)
+    if not px or px <= 0:
+        return {}, {}, decided_ts, {}, {}
+    sig = _signal_series_hysteresis(closes)
+    volumes = [float(b.volume or 0.0) for b in bars]
+    evidence = {"BTC": {
+        "adv_units": average_daily_volume_units(volumes, unit_scale=UNIT_SCALE,
+                                                window=_ADV_WINDOW),
+        "inst_vol": realized_volatility(closes, window=_VOL_WINDOW,
+                                        annualize=_VOL_ANNUALIZE),
+        "crowding_z": None}}
+    return {"BTC": float(sig[-1])}, {"BTC": px}, decided_ts, {}, evidence
+
+
 # 策略注册表(2026-07-06 战线③,镜像 ic_panel_registry「加一行」范式):第二条策略上线 =
 # 这里加一行(signal 返回 (weights, prices, decided_ts, global_ls_row, evidence) 五元组——evidence[name]=
 # {adv_units, inst_vol, crowding_z},见 _latest_weights_and_prices;新策略必须同样返回五元组)+ 用户重签
@@ -551,8 +734,16 @@ def _latest_weights_and_prices(panel_bundle=None):
 # 全额度,驱动器会告警,见 multi_strategy_mandate_alert)。CLI:--strategy(默认 crowd_contra,
 # 未注册 -> SystemExit)。注意:策略名会进 status 文件名(非默认策略),只用文件系统安全字符。
 _STRATEGIES = {
-    "crowd_contra": {"signal": _latest_weights_and_prices},
+    "crowd_contra": {"signal": _latest_weights_and_prices, "crowding_gate": True},
+    "carry_oi_majors": {"signal": _latest_carry_weights_and_prices, "crowding_gate": False},
+    "top_contra": {"signal": _latest_top_contra_weights_and_prices, "crowding_gate": False},
+    "btc_spot_trend": {"signal": _latest_btc_spot_weights_and_prices, "crowding_gate": False},
 }
+
+# funding 信号策略注册(2026-07-23,加法式——**不改 _STRATEGIES 条目的形状**,注册表形状有
+# 测试钉死):这些策略的边在资金费现金流,其日频离线资金费快照若陈旧/被污染,跨源**价格**
+# 核对抓不到——main() 对它们跑实时资金费交叉核对(funding_cross_check,镜像跨源核价)。
+_FUNDING_CHECK_STRATEGIES = frozenset({"carry_oi_majors"})
 
 
 def position_scopes(ledger, strategy_id: str) -> tuple:
@@ -590,6 +781,21 @@ def multi_strategy_mandate_alert(ledger_strategy_ids, current_strategy: str, man
                 f"(worst case N× intended exposure); re-sign the mandate with per-strategy "
                 f"blocks before running more than one strategy with --submit")
     return None
+
+
+def armed_safety_config(argv) -> "Optional[SafetyConfig]":
+    """`--arm-live` 解析(2026-07 MEXC 对接 1.5,**人工 CLI 专属**):只有 argv 同时含
+    `--submit` 与 `--arm-live` 才返回 armed SafetyConfig——`allow_ai_direct_trading` 恒
+    False、`require_human_approval` 恒 True(SafetyConfig 安全默认,本函数绝不传这两个
+    参数,代码里不存在把它们翻掉的路径);否则 None(= 各适配器回退默认安全构造,mainnet
+    构造即 SafetyViolation)。`--arm-live` 不带 `--submit` → SystemExit:preview 绝不 arm
+    (preview 的全部意义就是"绝不真提交",arm 一个没有提交语义的进程只会制造误导)。"""
+    if "--arm-live" not in argv:
+        return None
+    if "--submit" not in argv:
+        raise SystemExit("--arm-live requires --submit (human CLI only; preview never arms)")
+    return SafetyConfig(live_trading_enabled=True, real_broker_enabled=True,
+                        allow_order_submission=True)
 
 
 def resolve_limit_pricing(argv) -> tuple:
@@ -650,6 +856,31 @@ def compute_limit_fill_stats(ledger: LiveLedger, client_order_ids) -> dict:
 _MIN_SIGNAL_LEG_RATIO = 0.8   # 与覆盖率门同一口径:信号腿数掉到上次决策的 80% 以下即视为数据问题
 
 
+def spot_cash_shortfall(weights, prices, current_positions, *, deploy_aum, free_quote,
+                        rel_tolerance: float = 1e-9):
+    """现货现金门(2026-07 MEXC 对接 1.4,驱动层 pre-submit):LiveLedger 只有数量腿、无
+    quote 现金腿——BUY 的名义额必须 ≤ 交易所自由 USDT,否则 fail-closed 升人工(现金腿
+    以交易所账户为准,账本无 quote 腿是诚实标注的已知边界,见 runbook)。返回 None =
+    现金充足;返回原因字符串 = 不足额(调用方:preview 告警,--submit 跳批升人工)。
+
+    只累加**净买入**部分(delta>0 的腿);卖出/减仓不需要现金。delta 用策略级仓位
+    (与 submit_live_batch 的目标增量同一口径),不是账户级。"""
+    needed = 0.0
+    for inst, w in weights.items():
+        px = prices.get(inst)
+        if px is None or px <= 0 or w <= 0:
+            continue
+        target_qty = w * deploy_aum / px
+        delta = target_qty - current_positions.get(inst, 0.0)
+        if delta > 0:
+            needed += delta * px
+    if needed > free_quote * (1.0 + rel_tolerance) + rel_tolerance:
+        return (f"spot_cash_insufficient: BUY needs ${needed:.2f} quote but only "
+                f"${free_quote:.2f} free USDT — fail-closed to human review "
+                "(ledger is quantity-only; the cash leg is authoritative at the venue)")
+    return None
+
+
 def batch_skip_reason(weights, *, crowding_blocked, expected_legs,
                       min_ratio=_MIN_SIGNAL_LEG_RATIO):
     """本轮是否应该跳过整批(保持现有仓位、只告警)——**信号收缩与平仓解耦**(2026-07-06
@@ -669,9 +900,99 @@ def batch_skip_reason(weights, *, crowding_blocked, expected_legs,
     return None
 
 
+def latest_daily_funding_observations(instrument_ids, *, path=_FUNDING_RATES_PATH):
+    """离线资金费日快照的最新日观测 {instrument: {"rate": float, "day_ms": int}}——纯读
+    crypto_funding_rates.json({ticker: {day_ms_str: 当日 8h 费率之和}},由 live_data_refresh
+    按日桶幂等刷新)。文件缺/坏、标的缺、条目畸形一律诚实省略该标的(上游
+    flag_unverifiable_funding_instruments 据此 fail-closed 冻结,与跨源核价
+    "无法验证即冻结"同一哲学)。失败绝不崩驱动器。"""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for inst in instrument_ids:
+        series = raw.get(inst)
+        if not isinstance(series, dict) or not series:
+            continue
+        try:
+            day_ms = max(int(k) for k in series)
+        except (TypeError, ValueError):
+            continue
+        try:
+            rate = float(series.get(str(day_ms)))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(rate):
+            continue
+        out[inst] = {"rate": rate, "day_ms": day_ms}
+    return out
+
+
+def funding_cross_check(venue, target_instruments, *, strategy_id, venue_name, now_ms, alerts,
+                        funding_path=_FUNDING_RATES_PATH):
+    """funding 信号策略的实时资金费交叉核对(main() 的可测桥,2026-07-23——main() 是网络胶水
+    不单测,与 mainnet_key_safety_skip_reason 同一「可测桥 + 源码钉子」惯例)。
+
+    返回 (flagged, status):flagged = {instrument: reason}(调用方并入 frozen_names,
+    与跨源核价共用排除双侧机制);status ∈ {"ran", "skipped_not_funding_strategy",
+    "skipped_venue_lacks_premium_index"}(进 status JSON,诚实记录本轮核对是否真的跑了)。
+    venue 无 premium_index 读(bybit/mexc)→ 跳过并告警(fail-open 是诚实选择:该 venue
+    根本提供不了证据,把每个标的都冻结等于谎称"它们都可疑"——与 price_check 的
+    secondary_unavailable fail-soft 同一区分);非 funding 策略 → 静默跳过(不告警,
+    每轮 crowd_contra 都响是噪音)。"""
+    if strategy_id not in _FUNDING_CHECK_STRATEGIES:
+        return {}, "skipped_not_funding_strategy"
+    premium_index_fn = getattr(venue, "premium_index", None)
+    if premium_index_fn is None:
+        alerts.append(
+            f"funding cross-check skipped: venue {venue_name!r} adapter has no premium_index "
+            f"read — funding-signal strategy {strategy_id} runs this cycle WITHOUT real-time "
+            "funding verification (venue cannot provide the evidence)")
+        return {}, "skipped_venue_lacks_premium_index"
+    venue_snapshots = {}
+    for instrument_id in target_instruments:
+        try:
+            venue_snapshots[instrument_id] = premium_index_fn(instrument_id)
+        except Exception as exc:
+            venue_snapshots[instrument_id] = None
+            alerts.append(f"venue premium-index unavailable for {instrument_id}: "
+                          f"{type(exc).__name__}: {exc}")
+    daily = latest_daily_funding_observations(target_instruments, path=funding_path)
+    flagged = flag_unverifiable_funding_instruments(
+        target_instruments,
+        venue_snapshots,
+        daily,
+        now_ms=now_ms,
+        funding_interval_ms=_FUNDING_INTERVAL_MS,
+        next_funding_grace_ms=_FUNDING_NEXT_GRACE_MS,
+        max_snapshot_age_ms=_FUNDING_SNAPSHOT_MAX_AGE_MS,
+        abs_rate_tolerance=_FUNDING_ABS_RATE_TOLERANCE,
+        rel_rate_tolerance=_FUNDING_REL_RATE_TOLERANCE,
+    )
+    if flagged:
+        alerts.append(
+            f"real-time funding cross-check froze {len(flagged)} instrument(s) "
+            f"(positions untouched; staleness/garbage detector, UNCALIBRATED limits: "
+            f"abs_tol={_FUNDING_ABS_RATE_TOLERANCE}, rel_tol={_FUNDING_REL_RATE_TOLERANCE}, "
+            f"interval_ms={_FUNDING_INTERVAL_MS}, grace_ms={_FUNDING_NEXT_GRACE_MS}, "
+            f"snapshot_age_ms={_FUNDING_SNAPSHOT_MAX_AGE_MS}): {flagged}")
+    return flagged, "ran"
+
+
 def main() -> None:
     submit = "--submit" in sys.argv
     do_refresh = "--no-refresh" not in sys.argv
+    # --arm-live(2026-07 MEXC 对接 1.5,**人工 CLI 专属**):唯一能让适配器拿到 armed
+    # SafetyConfig 的构造路径(见 armed_safety_config)。即便 arm,mandate/attestation/
+    # kill-switch/gate 全部照常 fail-closed——arm 只是"允许构造 mainnet 适配器",不是
+    # "允许下单"。ops API 的固定 argv 永不携带此 flag(governance 测试钉死)。
+    safety_config = armed_safety_config(sys.argv)
     venue_arg = "binance"
     if "--venue" in sys.argv:
         venue_arg = sys.argv[sys.argv.index("--venue") + 1]
@@ -698,7 +1019,8 @@ def main() -> None:
             emit([f"live_track refresh CRASHED: {exc}"], context="live_track", now_ms=now)
             raise
 
-    weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES[strategy_id]["signal"]()
+    strategy_cfg = _STRATEGIES[strategy_id]
+    weights, prices, decided_ts, global_ls_row, evidence = strategy_cfg["signal"]()
 
     # 拥挤度门(2026-07-05,机构审计 P1 quick win;2026-07-07 校准修正接线):crowd_contra 本身就是"反着做
     # 拥挤的散户多空仓位"。**平均分是结构性常数**(校准文档),故 average_warn_only=True 把它降为诊断 WARN;
@@ -706,7 +1028,7 @@ def main() -> None:
     # BLOCK -> 跳过整批(不动现有仓位,见 batch_skip_reason——2026-07-06 修复:BLOCK 不再置空 weights,
     # 避免生成真实平仓单);WARN -> 仅告警。证据不足(coverage 太低/无 global_ls)时门 fail-closed BLOCK。
     crowding_blocked = False
-    if weights:
+    if weights and strategy_cfg.get("crowding_gate", False):
         crowding_scores = compute_crowding_scores(global_ls_row)
         z_map = {s: e["crowding_z"] for s, e in evidence.items() if e.get("crowding_z") is not None}
         crowding_decision = evaluate_crowding_gate(
@@ -717,10 +1039,47 @@ def main() -> None:
                          f"(score={crowding_decision.score})")
         crowding_blocked = crowding_decision.status == "BLOCK"
 
+    if venue_cfg.get("spot") and safety_config is None:
+        raise SystemExit(
+            f"venue {venue_arg!r} is mainnet-only spot (MEXC has no spot testnet): adapter "
+            "construction is L2-gated. Human-only path: --submit --arm-live with a signed "
+            "mandate + validation attestation (see docs/runbooks/mexc-live-runbook.md)")
+    if venue_cfg.get("mainnet_only") and safety_config is None:
+        raise SystemExit(
+            f"venue {venue_arg!r} is mainnet-only (Binance USDT-M futures mainnet): adapter "
+            "construction is L2-gated. Human-only path: --submit --arm-live with a signed "
+            "mandate + validation attestation (see "
+            "docs/runbooks/binance-futures-live-runbook.md)")
     api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
     adapter_cls = venue_cfg["adapter"]
     real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
-                             base_url=venue_cfg["base_url"])
+                             base_url=venue_cfg["base_url"], safety_config=safety_config)
+    if venue_cfg.get("spot"):
+        # §10 启动只读校验(docs/MEXC_INTEGRATION.md):提现必须已在交易所侧关闭 + 现货
+        # 交易开着 + /api/v3/account 只读可达,任一不满足 fail-closed 直接退出——即便已
+        # --arm-live 也不例外(arm 只是允许**构造** mainnet 适配器;key 本身的权限位是
+        # 独立的一道门,与 mandate/attestation 平行)。
+        key_check = check_mexc_key_safety(api_key, api_secret)
+        if not key_check.is_safe:
+            raise SystemExit(
+                f"MEXC key safety check FAILED (fail-closed): {'; '.join(key_check.reasons)} "
+                "— fix the key at the MEXC console and re-run "
+                "python -m tools.verify_key_permissions --venue mexc before any --arm-live use")
+    if venue_cfg.get("mainnet_only"):
+        # Binance mainnet 启动 key 权限校验(镜像 MEXC §10 启动校验):提现必须已在交易所
+        # 侧关闭 + IP 白名单已绑定 + /sapi/v1/account/apiRestrictions 只读可达,任一不
+        # 满足(SAFE 之外一律)fail-closed 直接退出——即便已 --arm-live 也不例外(arm 只是
+        # 允许**构造** mainnet 适配器;key 本身的权限位是独立的一道门,与 mandate/
+        # attestation 平行)。延迟导入避免循环 import(tools.verify_key_permissions 顶层
+        # 反向依赖本模块 _load_credentials,与 mainnet_key_safety_skip_reason 同法)。
+        from tools.verify_key_permissions import check_binance_key_permissions
+        key_check = check_binance_key_permissions(api_key, api_secret)
+        if not key_check.is_safe_to_proceed:
+            raise SystemExit(
+                "Binance mainnet key permission check FAILED (fail-closed): "
+                f"{'; '.join(key_check.reasons)} — fix the key at the Binance console and "
+                "re-run python -m tools.verify_key_permissions --venue binance before any "
+                "--arm-live use")
     real_venue.sync_clock()                  # 时钟偏移校正,fail-soft(失败保留默认 0 偏移)
 
     # P2-6 contemporaneous cross-source check. Historical decision prices remain inputs to
@@ -764,6 +1123,16 @@ def main() -> None:
         if len(frozen_names) >= 0.5 * max(len(weights), 1):
             alerts.append("current cross-source check froze most of the book — treat as a data "
                           "incident, investigate the price sources before next cycle")
+
+    # 资金费实时交叉核对(2026-07-23,加法式):funding 信号策略(carry_oi_majors)的边在资金费
+    # 现金流,其日频离线快照若陈旧/被污染,上方跨源**价格**核对完全抓不到——用 venue
+    # premium-index 实时读交叉核对,冻结名单并入同一个 frozen_names(与跨源核价共用
+    # 排除双侧机制:该名本轮不动,仓位原样)。非 funding 策略/venue 无 premium_index →
+    # 跳过并诚实记录进 status(见 funding_cross_check)。
+    funding_flagged, funding_check_status = funding_cross_check(
+        real_venue, target_instruments, strategy_id=strategy_id, venue_name=venue_arg,
+        now_ms=int(time.time() * 1000), alerts=alerts)
+    frozen_names |= set(funding_flagged)
 
     # 信号收缩防护的参照:上次记录在案的决策腿数(Stage 0 前向台账;也是下方 parity 的纸面侧)。
     # 提早加载:跳批判断需要它。fail-soft——台账缺失只影响收缩比较,空信号检查照常有效。
@@ -821,7 +1190,7 @@ def main() -> None:
         return
 
     account = real_venue.account()
-    aum, equity = venue_cfg["balances"](account)   # equity 含未实现盈亏,回撤监控用它;形状因所而异
+    aum, equity = venue_cfg["balances"](account, prices)   # equity 含未实现盈亏(期货)/现货持仓市值(spot),回撤监控用它;形状因所而异
 
     peak_state = record_and_validate_peak_equity(
         state_path=paths["risk_state"],
@@ -879,9 +1248,17 @@ def main() -> None:
               f"-> {paths['status']}", flush=True)
         return
 
+    # 现货敞口上限口径(2026-07 MEXC 对接 1.4):期货形默认(net_cap=0.3×aum)是为多腿 L/S
+    # book 设计的;单名满仓 long 是 btc_spot_trend 的**合法目标**——照套会在正常持仓时误触
+    # kill-switch。现货 1x long-only:gross/net 上限 = 1×equity(满仓即 100% 权益,无杠杆
+    # 不可能超);回撤口径不变。期货 venue 行为一字节不变。
+    if venue_cfg.get("spot"):
+        risk_gross_cap, risk_net_cap = equity * 1.0, equity * 1.0
+    else:
+        risk_gross_cap, risk_net_cap = aum * 2, aum * 0.3
     breach = evaluate_risk_state(
         equity=equity, peak_equity=peak_equity, positions=venue_positions, prices=prices,
-        max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=aum * 2, max_net_exposure=aum * 0.3)
+        max_drawdown_pct=_MAX_DRAWDOWN_PCT, max_gross_exposure=risk_gross_cap, max_net_exposure=risk_net_cap)
     kill_switch_store = open_authoritative_kill_switch_store(paths["kill_switch"])
     try:
         risk_response = respond_to_breach_persisted(
@@ -918,8 +1295,8 @@ def main() -> None:
                       f"-> {risk_response['action']}")
         # 紧急减仓:独立通道,不经过被 kill-switch 挡住的共用 gate(2026-07-05 用户拍板)。
         # preview 模式同样只记录不真提交(PreviewVenue + 草稿账本)。
-        flatten_target = flatten_target_for_breach(breach, max_gross_exposure=aum * 2,
-                                                   max_net_exposure=aum * 0.3)
+        flatten_target = flatten_target_for_breach(breach, max_gross_exposure=risk_gross_cap,
+                                                   max_net_exposure=risk_net_cap)
         emergency_summary = None
         if flatten_target is not None:
             flatten = compute_flatten_orders(venue_positions, prices,
@@ -986,7 +1363,19 @@ def main() -> None:
     # 会生成 target-0 **平仓单**,若 allowed_instruments 只含信号腿,check_instrument_allowed 会拒掉平仓单
     # (structural allow-list,不是 reduce-only 豁免能修的),导致持仓平不掉。并入持仓只放行**已持有名字的
     # 平仓**(它们没有信号权重、不会生成新开仓单),绝不放行新标的开仓。
-    gate = PreTradeRiskGate(
+    # 现货 gate 限额口径(2026-07 MEXC 对接 1.4,与上方 risk caps 同一理由):单名满仓 long 是
+    # 合法目标 → net/gross/单笔/单名上限全部按 1×equity 显式设定,杠杆上限 1.0(现货无杠杆);
+    # 期货形默认(0.3×aum net、0.5 单名)是为多腿 L/S book 设计的,照套会把正常现货 book 误杀。
+    # 现金不足由下方 spot_cash_shortfall 单独把守(gate 没有 quote 现金腿概念)。期货 venue 不变。
+    if venue_cfg.get("spot"):
+        gate = PreTradeRiskGate(
+            gate_limits(set(weights) | set(account_positions),
+                        gross_cap=equity * 1.0, net_cap=equity * 1.0,
+                        single_order_cap=equity * 1.0, daily_loss_cap=equity * 0.1,
+                        max_leverage=1.0, max_single_name_pct=1.0),
+            kill_switch=kill_switch)
+    else:
+        gate = PreTradeRiskGate(
         gate_limits(set(weights) | set(account_positions), gross_cap=aum * 2, net_cap=aum * 0.3,
                    single_order_cap=aum * 0.5, daily_loss_cap=aum * 0.1),
         kill_switch=kill_switch)
@@ -1007,7 +1396,9 @@ def main() -> None:
     # 同现,已跳批)-> None -> 占位符路径(字节等价)。
     adv_units = {s: e["adv_units"] for s, e in evidence.items()} if evidence else None
     inst_vol = {s: e["inst_vol"] for s, e in evidence.items()} if evidence else None
-    ctx_factory = make_ctx_factory(prices, aum=aum, now=now, price_as_of=decided_ts,
+    # 现货的账户资本基数 = 权益(现金+持仓市值):pct-of-equity 类检查(单名集中度等)对着真实
+    # 权益评估才不错口径;aum(自由 USDT)只是现金腿。期货 venue 沿用 aum(可用余额),不变。
+    ctx_factory = make_ctx_factory(prices, aum=equity if venue_cfg.get("spot") else aum, now=now, price_as_of=decided_ts,
                                    current_positions=account_positions, day_pnl=day_pnl,
                                    peak_equity=peak_equity, strategy_id=strategy_id,
                                    recent_timestamps=recent_orders.timestamps,
@@ -1033,6 +1424,20 @@ def main() -> None:
             # fail-closed:复用跳批路径(仓位原样不动),即便 mandate 已签也不真提交。skip_reason
             # 字符串记进 status JSON(line ~840)= 真源;preserve 既有的数据质量跳批原因。
             skip_reason = skip_reason or f"blocked_no_validation_attestation:{att_reason}"
+
+    # Research-evidence bridge: the forward clock may continue while this
+    # execution driver refuses a strategy whose current paper artifact is
+    # blocked (notably top_contra's canonical RISK_REJECTED dry-run). Preview
+    # stays diagnostic; --submit is fail-closed and leaves existing positions
+    # untouched.
+    research_skip = research_readiness_skip_reason(strategy_id)
+    if research_skip is not None:
+        alerts.append(
+            f"paper/research readiness BLOCK ({research_skip}) — "
+            "live submit will not add exposure"
+        )
+        if submit:
+            skip_reason = skip_reason or f"blocked_paper_research:{research_skip}"
 
     # firm 级敞口硬门(审计 P1-6,用户 2026-07-07 签署上限):firm 门是**跨所**的,只有哨兵能算——
     # 这里读哨兵写的 firm_gate_status.json,BLOCK(firm 超签署的 gross/net/单名集中上限)时停止新增
@@ -1076,6 +1481,17 @@ def main() -> None:
     # BLOCK)-> 整批跳过,现有仓位原样不动,只告警。绝不把退化 weights 喂进 build_intents
     # (那会把消失的持仓名字目标置 0、生成真实平仓单)。对账/风控/kill-switch 检查在上面已
     # 照常跑完——跳的只是"新订单",不是安全检查。
+    # 现货现金门(2026-07 MEXC 对接 1.4,pre-submit):LiveLedger 只有数量腿、无 quote 现金腿
+    # ——BUY 名义额必须 ≤ 交易所自由 USDT(aum),不足即 fail-closed 升人工。与 attestation/
+    # firm/maintenance 同一模式:preview 只告警,--submit 跳批(仓位原样不动)。现金腿以交易所
+    # 账户为准(账本无 quote 腿是诚实标注的已知边界,见 docs/runbooks/mexc-live-runbook.md)。
+    if venue_cfg.get("spot"):
+        cash_reason = spot_cash_shortfall(weights, prices, strategy_positions,
+                                          deploy_aum=deploy_aum, free_quote=aum)
+        if cash_reason is not None:
+            alerts.append(f"SPOT CASH CHECK: {cash_reason}")
+            if submit:
+                skip_reason = skip_reason or cash_reason
     if skip_reason is not None:
         alerts.append(f"BATCH SKIPPED (positions untouched): {skip_reason}")
         result = LiveBatchResult(tier="SKIPPED_DATA_QUALITY")
@@ -1160,6 +1576,9 @@ def main() -> None:
     status = {
         "ran_at": now, "mode": "submit" if submit else "preview", "tier": result.tier,
         "strategy": strategy_id,
+        "crowding_gate_enabled": bool(strategy_cfg.get("crowding_gate", False)),
+        "paper_research_gate": "PASS" if research_skip is None else "BLOCK",
+        "paper_research_skip": research_skip,
         "venue": venue_arg, "tca": tca, "order_stats": order_stats,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),
@@ -1167,6 +1586,10 @@ def main() -> None:
         "n_submission_errors": len(result.submission_errors),
         "n_ledger_write_errors": len(result.ledger_write_errors),
         "batch_skipped": skip_reason, "n_frozen": len(frozen_names),
+        # 资金费实时交叉核对(2026-07-23):与跨源核价同一位置诚实暴露——本轮核对是否真跑、
+        # 冻结了几个/哪些(frozen 是 funding 子集,已并入上方 n_frozen 总数)。
+        "funding_check": {"status": funding_check_status, "n_frozen": len(funding_flagged),
+                          "frozen": sorted(funding_flagged)},
         "reconciliation": recon, "aum": aum, "deploy_aum": deploy_aum, "alerts": alerts,
         "parity": {"paper_source": parity["paper_source"],
                    "n_paper_legs": parity["n_paper_legs"],

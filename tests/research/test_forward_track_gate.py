@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from tools.forward_track_advance import (
     _mark_price_map,
+    _candidate_advances_ledger,
     authoritative_admission_status,
     decision_block_reason,
     raw_lineage_block_reason,
@@ -23,6 +24,13 @@ def test_mark_price_map_never_falls_back_to_spot_prices():
     assert _mark_price_map(
         {"BTC": {100: 10.0}, "ETH": {200: 20.0}}, [100, 200]
     ) == {100: {"BTC": 10.0}, 200: {"ETH": 20.0}}
+
+
+def test_new_admission_cannot_backdate_behind_legacy_ledger_rows():
+    assert _candidate_advances_ledger(101, [100]) is True
+    assert _candidate_advances_ledger(100, [100]) is False
+    assert _candidate_advances_ledger(99, [100]) is False
+    assert _candidate_advances_ledger(100, []) is True
 
 
 def test_raw_lineage_requires_integrity_and_all_forward_datasets():

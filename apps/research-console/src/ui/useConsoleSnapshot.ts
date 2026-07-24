@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 import { isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import {
+  deriveSnapshotDisplayState,
+  isSnapshotActionAllowed,
+  normalizeSnapshotDisplayState,
+  type SnapshotDisplayState,
+} from './snapshot-state';
 
 export type ConsoleApiState = 'disabled' | 'loading' | 'connected' | 'error';
 
@@ -10,6 +16,10 @@ export interface SnapshotResult<T> {
   error: string | null;
   /** True only when a live backend snapshot is in hand. */
   usingBackend: boolean;
+  /** Normalized admission state derived from the transport and payload. */
+  snapshotState?: SnapshotDisplayState;
+  /** True only for REAL/EVIDENCE snapshots; synthetic or missing data is never actionable. */
+  actionsAllowed?: boolean;
 }
 
 /**
@@ -55,5 +65,38 @@ export function useConsoleSnapshot<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiEnabled, ...deps]);
 
-  return { payload, apiState, error, usingBackend: apiState === 'connected' && payload !== null };
+  const usingBackend = apiState === 'connected' && payload !== null;
+  const payloadRecord = payload as Record<string, unknown> | null;
+  const quality = payloadRecord?.data_quality;
+  const qualityRecord = quality && typeof quality === 'object'
+    ? quality as Record<string, unknown>
+    : null;
+  const explicitStatus = normalizeSnapshotDisplayState(
+    payloadRecord?.snapshot_status
+      ?? qualityRecord?.status
+      ?? payloadRecord?.verdict,
+  );
+  const snapshotState = deriveSnapshotDisplayState({
+    apiState,
+    usingBackend,
+    dataStatus: explicitStatus,
+    noDataYet: usingBackend && payloadRecord?.snapshot_present === false,
+    realData: usingBackend && (
+      payloadRecord?.data_provenance === 'REAL'
+      || (typeof payloadRecord?.data_provenance === 'string' && payloadRecord.data_provenance.startsWith('REAL_'))
+    ),
+    evidenceData: usingBackend && (
+      payloadRecord?.data_provenance === 'EVIDENCE'
+      || payloadRecord?.data_provenance === 'REPOSITORY_EVIDENCE'
+    ),
+  });
+
+  return {
+    payload,
+    apiState,
+    error,
+    usingBackend,
+    snapshotState,
+    actionsAllowed: isSnapshotActionAllowed(snapshotState),
+  };
 }

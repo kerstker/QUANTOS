@@ -109,6 +109,14 @@ class ExperimentRegistry:
     def search_history_valid(self) -> bool:
         return self._store.search_history_valid()
 
+    def search_identity(self, search_id: str) -> dict[str, str]:
+        """Return the verified immutable identity of a persistent search."""
+        return self._store.search_identity(search_id)
+
+    def evaluation_binding(self, run_id: str) -> dict | None:
+        """Return the verified search identity bound to an evaluation artifact."""
+        return self._store.evaluation_binding(run_id)
+
     def save(
         self,
         catalog: AlphaCatalog,

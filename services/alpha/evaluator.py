@@ -226,6 +226,14 @@ class AlphaEvaluator:
             "battery": {k: m[k] for k in ("icir", "ic_tstat", "hit_rate", "n_periods")},
             "net_sharpe": round(net_sharpe, 10), "dsr": round(dsr, 10),
             "trials": trial_count, "dataset_version": dataset_version,
+            # ``as_of`` is part of the immutable AlphaEvaluation payload.  Keep
+            # it in the artifact identity as well: a repeated factory round can
+            # evaluate the same expression at a later decision point, and those
+            # are two distinct reports even when the measured metrics happen to
+            # match.  Omitting it made the registry derive one run_id for both
+            # reports and then (correctly) reject the second write as an
+            # immutable-content conflict.
+            "as_of": as_of,
         })
 
         return AlphaEvaluation(

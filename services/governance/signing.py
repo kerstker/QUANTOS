@@ -13,6 +13,11 @@ from typing import Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .external_evidence import (
+    ExternalEvidenceStatus,
+    build_external_blocked_status,
+)
+
 
 class SigningUnavailable(PermissionError):
     pass
@@ -60,3 +65,52 @@ def verify_signed_ref(ref: Optional[SignedDecisionRef], payload_hash: str,
         raise SigningUnavailable("out-of-process signature verification is a post-L2 capability")
     except Exception:
         return False
+
+
+def signing_capability_status(
+    authority: Optional[SigningAuthority],
+    *,
+    observed_at_ms: int,
+) -> ExternalEvidenceStatus:
+    """Describe signing availability without trusting an in-process spoof.
+
+    L2 has no signing authority by design.  Even a caller-provided object that
+    advertises ``is_out_of_process`` is only a post-L2 integration seam; it is
+    reported as ``PARTIAL`` until an independent deployment supplies retained
+    verification evidence.  This helper never calls ``sign`` or verifies a
+    signature.
+    """
+
+    if authority is None or isinstance(authority, NullSigningAuthority):
+        return build_external_blocked_status(
+            capability="decision_signing",
+            reason_code="SIGNING_AUTHORITY_NOT_PROVISIONED",
+            required_action=(
+                "Provision an independent out-of-process signing authority and "
+                "retain its key/verification evidence"
+            ),
+            observed_at_ms=observed_at_ms,
+        )
+    key_id = getattr(authority, "key_id", "")
+    return ExternalEvidenceStatus(
+        capability="decision_signing",
+        status="PARTIAL",
+        reason_code="OUT_OF_PROCESS_SIGNING_DEPLOYMENT_UNVERIFIED",
+        required_action=(
+            "Verify the independent signer deployment, key custody, rotation, and "
+            "decision-ref audit evidence"
+        ),
+        observed_at_ms=observed_at_ms,
+        external_authority="out-of-process-signing-authority",
+        evidence_ref=f"key-id:{key_id}" if isinstance(key_id, str) and key_id else "",
+    )
+
+
+__all__ = [
+    "NullSigningAuthority",
+    "SignedDecisionRef",
+    "SigningAuthority",
+    "SigningUnavailable",
+    "signing_capability_status",
+    "verify_signed_ref",
+]

@@ -60,6 +60,18 @@ def test_fetch_bars_identical():
             assert _tup(c.fetch_bars(key, lo, hi)) == _tup(s.fetch_bars(key, lo, hi)), (key, lo, hi)
 
 
+def test_fetch_bars_pit_identical_and_filters_late_knowledge():
+    s = _seed()
+    c = CachingPITStore(s)
+    for key in s.keys():
+        for lo, hi in ((0, 100), (15, 25), (30, 30), (6, 9)):
+            assert _tup(c.fetch_bars_pit(key, lo, hi)) == _tup(s.fetch_bars_pit(key, lo, hi)), (key, lo, hi)
+    # the seed has kt>et bars (BTC et=20 kt=35, ETH et=10 kt=25): they must be dropped
+    assert _tup(s.fetch_bars_pit("BTC", 0, 100)) == [(10, 10, 100), (20, 20, 101), (30, 30, 103)]
+    assert _tup(s.fetch_bars_pit("ETH", 0, 100)) == [(15, 15, 51), (30, 30, 52)]
+    assert c.fetch_bars_pit("NOPE", 0, 100) == []
+
+
 def test_missing_key_returns_empty():
     c = CachingPITStore(_seed())
     assert c.as_of("NOPE", 100) == [] and c.latest_as_of("NOPE", 100) is None

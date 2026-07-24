@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { signed, fixed } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -74,6 +74,7 @@ export default function FxResearch() {
           'Honest note: the full-universe no-peek OOS looked positive (+0.70) but the gauntlet (tradable floaters only + cost sweep) REFUTED it — OOS negative at every cost. The +0.70 came from pre-Euro convergence one-offs + pegged/controlled/non-executable currencies. ECB daily fixings are not executable quotes; the tradable gauntlet is the arbiter. Read-only, no broker/order path.')}
       </div>
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={5}>
         <StatTile label={bi('货币数(全)', 'Currencies (full)')} value={String(full.n_currencies ?? '—')} accent />
         <StatTile label={bi('日线期数', 'Daily periods')} value={String(full.n_periods ?? '—')} tone="info" />
@@ -82,8 +83,9 @@ export default function FxResearch() {
         <StatTile label={bi('全 universe OOS', 'Full-universe OOS')}
           value={fullOos == null ? '—' : signed(fullOos, 2)} tone={fullOos != null && fullOos > 0 ? 'warn' : 'muted'}
           sub={bi('未去污染,误导', 'contaminated · misleading')} />
-        <StatTile label={bi('裁决', 'Verdict')} value={bi(VERDICT_ZH[p.verdict] ?? p.verdict, p.verdict)}
-          tone={refuted ? 'neg' : p.verdict === 'SURVIVES_TRADABLE_GAUNTLET' ? 'pos' : 'muted'} />
+        <StatTile label={bi('裁决', 'Verdict')}
+          value={apiState === 'loading' ? bi('加载中…', 'loading…') : bi(VERDICT_ZH[p.verdict] ?? p.verdict, p.verdict)}
+          tone={apiState === 'loading' ? 'muted' : refuted ? 'neg' : p.verdict === 'SURVIVES_TRADABLE_GAUNTLET' ? 'pos' : 'muted'} />
       </KpiStrip>
 
       <Panel eyebrow={bi('可交易关卡', 'TRADABLE GAUNTLET')}
@@ -106,6 +108,7 @@ export default function FxResearch() {
         {bi('只读 · 研究/干跑(L2)· 离线 ECB 数据 · 同一套关卡(泄漏/regime/PBO/无窥视 OOS)· 结论与加密一致:干净可交易数据上简单截面趋势无 OOS edge',
           'Read-only · research / dry-run (L2) · offline ECB data · the same gauntlet (leakage/regime/PBO/no-peek OOS) · same verdict as crypto: no OOS edge for simple cross-sectional trend on clean tradable data')}
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

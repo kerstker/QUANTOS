@@ -6,7 +6,7 @@ import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import type { IntegrationGateStatus, ServiceHealth, SystemHealthPayload } from '@/lib/types/research';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { BarSeries, Donut } from '@/ui/charts';
 import { num, pct, fixed, statusTone, type Tone } from '@/ui/format';
@@ -121,6 +121,7 @@ export default function SystemHealth() {
           'Read-only operational snapshot of research-platform services, integration gates and the safety boundary')}
         actions={<Chip label={overallLabel} tone={overallTone} soft={false} />} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
+      <LoadingVeil active={apiState === 'loading'}>
       {/* Honesty: latency/uptime are deterministic synthetic figures, NOT real health probes — an unrun
           service still shows "healthy" here. Real liveness checks are a future (Phase 4+) capability. */}
       <div className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-1.5 text-2xs text-warn">
@@ -206,6 +207,7 @@ export default function SystemHealth() {
           ))}
         </div>
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

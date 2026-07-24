@@ -143,7 +143,10 @@ def test_driver_uses_contemporaneous_cross_source_prices_without_age_skip():
     assert "_CROSS_CHECK_MAX_STALENESS_MS" not in _SRC
     assert "cross-venue price check skipped" not in _SRC
     # signal 现返回五元组(evidence 携带 adv/vol/z),解包点必须同步
-    assert "weights, prices, decided_ts, global_ls_row, evidence = _STRATEGIES" in _SRC
+    assert (
+        'weights, prices, decided_ts, global_ls_row, evidence = '
+        'strategy_cfg["signal"]()'
+    ) in _SRC
 
 
 def test_driver_allows_closing_held_positions_not_in_signal():
@@ -307,3 +310,18 @@ def test_sentinel_risk_positions_come_from_venue_rows_not_ledger():
     assert "strategy_id" not in src                            # 哨兵是账户级的,不感知策略
     assert src.count("LiveLedger(") == 1                       # 账本构造只有一处……
     assert "LiveLedger(" in src.split("if act:")[1]            # ……且在 --act 记账分支里
+
+
+def test_driver_wires_realtime_funding_cross_check_after_price_check():
+    # 2026-07-23 资金费实时交叉核对(镜像跨源核价的加法式接线,main() 不可离线跑 → 源码钉子):
+    # 核对发生在跨源核价之后、submit_live_batch 之前,冻结名单并入**同一个** frozen_names
+    # (共用排除双侧机制,不另起一套);结果诚实暴露进 status JSON。
+    assert "flag_unverifiable_funding_instruments" in _SRC
+    assert '_FUNDING_CHECK_STRATEGIES = frozenset({"carry_oi_majors"})' in _SRC
+    assert "frozen_names |= set(funding_flagged)" in _SRC
+    assert '"funding_check":' in _SRC                      # status JSON 诚实暴露(跑了没/冻了谁)
+    assert "def premium_index(self, instrument_id):" in _SRC   # PreviewVenue 只读透传
+    i_price = _SRC.index("flag_noncontemporaneous_instruments(")
+    i_funding = _SRC.index("funding_flagged, funding_check_status = funding_cross_check(")
+    i_submit = _SRC.index("frozen=frozenset(frozen_names)")
+    assert i_price < i_funding < i_submit

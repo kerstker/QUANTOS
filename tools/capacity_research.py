@@ -17,7 +17,7 @@ from services.research import alpha_expression as ax
 from services.research.realism.capacity_curve import capacity_band
 from tools.crypto_carry_strategy import COMPOSITE as CARRY_COMPOSITE, QUANTILE as CARRY_Q, _legs as carry_legs
 from tools.crypto_oi_research import build_panel as oi_build_panel, _legs as oi_legs, QUANTILE as OI_Q
-from tools.crypto_oi_verify import CROWD_CONTRA
+from tools.crypto_oi_verify import CROWD_CONTRA, TOP_CONTRA
 
 _OUT = os.path.join("data", "cache", "capacity_snapshot.json")
 _AUM_GRID = [1e5, 3e5, 1e6, 3e6, 1e7, 3e7, 1e8, 3e8, 1e9, 3e9, 1e10]
@@ -150,6 +150,14 @@ def main() -> None:
     og, ot = _book_inputs(op.instruments, op.matrices["close"], op.matrices["volume"],
                           op.matrices["funding"], op.event_times, osig, oi_legs, OI_Q)
     snap["books"]["crowd_contra"] = _band_for("crowd_contra", og, ot)
+
+    # top_contra uses the same PIT OI/price/volume panel and book construction.
+    # This is diagnostic evidence only; it does not promote the candidate or
+    # write a paper/live decision.
+    tsig = ax.evaluate(TOP_CONTRA, op)
+    tg, tt = _book_inputs(op.instruments, op.matrices["close"], op.matrices["volume"],
+                          op.matrices["funding"], op.event_times, tsig, oi_legs, OI_Q)
+    snap["books"]["top_contra"] = _band_for("top_contra", tg, tt)
 
     json.dump(snap, open(_OUT, "w", encoding="utf-8"), indent=2, default=str)
     print("=== 容量带(honest binding = min(冲击-夏普, 参与率上限);系数 5–20bps;UNCALIBRATED_PRINCIPLED)===", flush=True)

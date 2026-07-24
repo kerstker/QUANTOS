@@ -42,7 +42,7 @@
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 17,
+          "line": 19,
           "module": "services.validation.deflated_sharpe",
           "path": "services/alpha/factory.py"
         },
@@ -63,7 +63,7 @@
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 478,
+          "line": 525,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -110,9 +110,14 @@
     {
       "references": [
         {
-          "line": 12,
+          "line": 13,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/artifact_snapshots.py"
+        },
+        {
+          "line": 33,
+          "module": "services.execution.dry_run_store",
+          "path": "services/console/api/mexc_views.py"
         }
       ],
       "source": "console",
@@ -121,7 +126,7 @@
     {
       "references": [
         {
-          "line": 315,
+          "line": 325,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
         }
@@ -169,7 +174,7 @@
     {
       "references": [
         {
-          "line": 448,
+          "line": 458,
           "module": "services.portfolio.optimizer",
           "path": "services/console/api/main.py"
         }
@@ -201,6 +206,26 @@
         },
         {
           "line": 244,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 291,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 292,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 293,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 294,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -261,7 +286,7 @@
     {
       "references": [
         {
-          "line": 639,
+          "line": 649,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/main.py"
         },
@@ -292,7 +317,7 @@
     {
       "references": [
         {
-          "line": 81,
+          "line": 83,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/main.py"
         },
@@ -324,7 +349,7 @@
     {
       "references": [
         {
-          "line": 28,
+          "line": 29,
           "module": "services.monitoring.audit_log",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -335,12 +360,33 @@
     {
       "references": [
         {
-          "line": 30,
+          "line": 33,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 37,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 38,
+          "module": "services.risk.research_risk.events",
+          "path": "services/execution/dry_run_pipeline.py"
+        }
+      ],
+      "source": "execution",
+      "target": "risk"
+    },
+    {
+      "references": [
+        {
+          "line": 31,
           "module": "services.trading.broker_adapter",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 31,
+          "line": 32,
           "module": "services.trading.dry_run_adapters.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -351,7 +397,7 @@
     {
       "references": [
         {
-          "line": 20,
+          "line": 28,
           "module": "services.data.persistent_store",
           "path": "services/features/registry_store.py"
         },
@@ -912,21 +958,10 @@
       ],
       "source": "risk",
       "target": "governance"
-    },
-    {
-      "references": [
-        {
-          "line": 16,
-          "module": "services.research.realism.scenario",
-          "path": "services/risk/research_risk/domain/risk_modules.py"
-        }
-      ],
-      "source": "risk",
-      "target": "research"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "2acaae1c17fab74876656801a593228dfbce337ebaa20972cbad304c510aba27",
+  "graph_sha256": "fdaf413855a91d30eef1d03aeb62af67fed73cfe4e0ef77973a49f205c5f4706",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -957,10 +992,10 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
+  "policy_sha256": "55dc2cad3872fa1fe76963b12ff3ece154d334c8cb346f0fc2e918b247e680b9",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 294,
+  "source_file_count": 312,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

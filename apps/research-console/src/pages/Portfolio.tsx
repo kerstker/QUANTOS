@@ -6,7 +6,7 @@ import type { CalculationLineageItem, PortfolioDashboardPayload, PortfolioSimula
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, Chip, ProgressBar, KeyValue, type Column,
+  StatusChip, Chip, ProgressBar, KeyValue, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { AreaChart, UnderwaterChart, Donut, DivergingBars } from '@/ui/charts';
 import { num, pct, pctPoints, fixed, signed, money, shortHash, statusTone, type Tone } from '@/ui/format';
@@ -200,6 +200,7 @@ export default function Portfolio() {
         actions={analyticsMethod ? <Chip label={analyticsMethod} tone="special" /> : undefined} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={6}>
         <StatTile label={bi('模拟状态', 'Status')} value={<StatusChip value={simulation.status} />} />
         <StatTile label={bi('夏普', 'Sharpe')} value={fixed(sharpe, 2)} tone={statusTone(sharpe >= 1 ? 'OK' : 'WATCH')} accent={sharpe >= 1} />
@@ -291,6 +292,7 @@ export default function Portfolio() {
         right={<Chip label={bi(`${lineage.length} 条`, `${lineage.length} steps`)} tone="info" />}>
         <DataTable columns={lineageCols} rows={lineage} dense getKey={it => it.id} />
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

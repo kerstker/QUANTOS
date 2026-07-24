@@ -11,6 +11,14 @@ from quantos.contracts.events import (
 )
 
 
+_RESEARCH_RISK_PROVENANCE = frozenset(
+    {
+        "REAL_RESEARCH_RISK_SUBSET",
+        "REAL_RESEARCH_RISK_FULL",
+    }
+)
+
+
 def _event_id(*parts: object) -> str:
     digest = hashlib.sha256(
         "|".join(str(part) for part in parts).encode("utf-8")
@@ -61,6 +69,19 @@ def research_risk_evaluated_event(
     if any(not reason for reason in reasons):
         raise ValueError("risk reasons must be non-empty strings")
 
+    provenance = str(risk.get("provenance", ""))
+    if provenance not in _RESEARCH_RISK_PROVENANCE:
+        raise ValueError(
+            "risk provenance must be REAL_RESEARCH_RISK_SUBSET or "
+            "REAL_RESEARCH_RISK_FULL"
+        )
+    config_provenance = str(risk.get("config_provenance", ""))
+    series = str(risk.get("series", ""))
+    if not config_provenance:
+        raise ValueError("risk config_provenance must be non-empty")
+    if not series:
+        raise ValueError("risk series must be non-empty")
+
     return Event(
         event_id=_event_id(run_id, run_repro_hash, decision, timestamp_ms),
         event_type=EVENT_RESEARCH_RISK_EVALUATED,
@@ -70,17 +91,17 @@ def research_risk_evaluated_event(
         domain="risk",
         criticality="C2" if decision == "RISK_APPROVED" else "C1",
         payload={
-            "config_provenance": str(risk.get("config_provenance", "")),
+            "config_provenance": config_provenance,
             "decision": decision,
             "engines_run": engines_run,
             "engines_skipped": skipped,
             "gates_passed": gates_passed,
             "gates_run": gates_run,
-            "provenance": str(risk.get("provenance", "")),
+            "provenance": provenance,
             "reasons": reasons,
             "run_id": run_id,
             "run_repro_hash": run_repro_hash,
-            "series": str(risk.get("series", "")),
+            "series": series,
             "strategy_id": strategy_id,
         },
     )

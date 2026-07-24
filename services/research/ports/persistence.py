@@ -92,6 +92,10 @@ class ExperimentStorePort(Protocol):
 
     def search_history_valid(self) -> bool: ...
 
+    def search_identity(self, search_id: str) -> dict[str, str]: ...
+
+    def evaluation_binding(self, run_id: str) -> Optional[dict]: ...
+
     def add_trials(
         self,
         config_hashes: Iterable[str],

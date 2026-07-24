@@ -4,6 +4,7 @@ from quantos.contracts.events import (
     EVENT_DRY_RUN_STARTED,
     EVENT_PRETRADE_APPROVED,
     EVENT_PRETRADE_REJECTED,
+    EVENT_RESEARCH_RISK_EVALUATED,
 )
 
 from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
@@ -17,6 +18,8 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
+from services.risk.research_risk.domain.models import RiskConfig
 
 
 def _gate(kill_switch=None, fat_finger=10 ** 9):
@@ -106,7 +109,114 @@ def _pipeline(ks=None, event_bus=None):
         weights={"BTC": 0.5, "ETH": -0.5}, prices={"BTC": 100.0, "ETH": 50.0}, current_positions={},
         aum=1e6, gate=_gate(kill_switch=ks), ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
         adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
-        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
+         marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
+
+
+def _full_research_risk_inputs(n_periods):
+    return DryRunResearchRiskInputs(
+        capacity_cny={"BTC": 1.0e12, "ETH": 1.0e12},
+        daily_volume_cny=1.0e12,
+        total_aum=1.0e6,
+        alpha_returns={
+            "alpha_a": [0.001 for _ in range(n_periods)],
+            "alpha_b": [(-0.0002 if i % 2 else 0.0003) for i in range(n_periods)],
+        },
+        regime_labels=["normal"] * n_periods,
+        alpha_metadata=[
+            {
+                "alpha_id": "alpha_a",
+                "age_days": 10.0,
+                "validation_confidence": 0.8,
+                "paper_confidence": 0.8,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+            {
+                "alpha_id": "alpha_b",
+                "age_days": 12.0,
+                "validation_confidence": 0.8,
+                "paper_confidence": 0.8,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+        ],
+    )
+
+
+def test_single_pipeline_persists_full_research_risk_and_publishes_canonical_event():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5, "ETH": -0.5},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={}, aum=1e6, gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=bus,
+        research_risk_inputs=_full_research_risk_inputs(1),
+    )
+    risk = run.detail["research_risk"]
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["input_mode"] == "FULL"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert risk["gates_run"] == 9 and set(risk["engines_run"]) == {
+        "market", "liquidity", "concentration", "correlation", "drawdown",
+        "regime", "stress", "capacity", "model_alpha",
+    }
+    assert risk["decision"] == "RISK_REJECTED"  # 50% legs exceed the concentration limit
+    assert any("Concentration:" in reason for reason in risk["reasons"])
+    events = [record["event"] for record in bus.records(correlation_id=run.run_id)]
+    assert [event.event_type for event in events] == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_RESEARCH_RISK_EVALUATED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    assert events[3].payload["run_repro_hash"] == run.reproducibility_hash
+    assert events[3].payload["provenance"] == "REAL_RESEARCH_RISK_FULL"
+
+
+def test_multi_period_strict_research_risk_without_evidence_is_pending_and_fail_closed():
+    bus = DurableEventBus(":memory:")
+    run = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX,
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(),
+        strategy_id="carry", aum=1e6, cost_bps=5.0, event_bus=bus,
+        require_full_research_risk=True,
+    )
+    risk = run.detail["research_risk"]
+    assert risk["status"] == "PENDING"
+    assert risk["decision"] == "RISK_REJECTED"
+    assert risk["gates_run"] == risk["gates_passed"] == 0
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL_PENDING"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert "full_research_risk_inputs_missing" in risk["reasons"]
+    assert run.detail["n_fills"] == 0
+    # Pending evidence must not be downgraded to a synthetic/subset risk event.
+    assert all(
+        record["event"].event_type != "RESEARCH_RISK_EVALUATED"
+        for record in bus.records(correlation_id=run.run_id)
+    )
+
+
+def test_multi_period_persists_full_research_risk_against_aligned_curve():
+    run = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX,
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(),
+        strategy_id="carry", aum=1e6, cost_bps=5.0,
+        research_risk_inputs=_full_research_risk_inputs(len(_PERIODS)),
+    )
+    risk = run.detail["research_risk"]
+    assert risk["series"] == "multi_period"
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert risk["gates_run"] == 9
+    assert set(risk["engines_run"]) == {
+        "market", "liquidity", "concentration", "correlation", "drawdown",
+        "regime", "stress", "capacity", "model_alpha",
+    }
 
 
 def test_end_to_end_benign_produces_run():
@@ -302,12 +412,13 @@ _W = {1: {"BTC": 0.5, "ETH": -0.5}, 2: {"BTC": 0.5, "ETH": -0.5}, 3: {"BTC": 0.4
 _PX = {1: {"BTC": 100.0, "ETH": 50.0}, 2: {"BTC": 110.0, "ETH": 48.0}, 3: {"BTC": 105.0, "ETH": 52.0}}
 
 
-def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None):
+def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None,
+        research_risk_config=None):
     return run_multi_period_dry_run(
         periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=gate or _gate(),
         ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
         cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target,
-        event_bus=event_bus)
+        event_bus=event_bus, research_risk_config=research_risk_config)
 
 
 def test_multi_period_benign_curve():
@@ -349,6 +460,14 @@ def test_multi_period_funding_flows_into_equity():
 def test_multi_period_deterministic():
     a, b = _mp(), _mp()
     assert (a.audit_root, a.pnl, a.detail["equity_curve"]) == (b.audit_root, b.pnl, b.detail["equity_curve"])
+
+
+def test_explicit_subset_risk_config_binds_immutable_run_identity():
+    default = _mp()
+    weekly = _mp(research_risk_config=RiskConfig(periods_per_year=52))
+    assert weekly.run_id != default.run_id
+    assert weekly.detail["research_risk"]["config_provenance"] != \
+        default.detail["research_risk"]["config_provenance"]
 
 
 def test_vol_target_returns_passthrough_then_scales():

@@ -13,7 +13,7 @@ from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        load_archived_response,
                                        summarize_archive)
 from tools.binance_funding_fetch import fetch_daily_funding
-from tools.binance_oi_metrics_fetch import (DEFAULT_TICKERS,
+from tools.binance_oi_metrics_fetch import (FORWARD_MAJOR_TICKERS,
                                             fetch_ticker_days,
                                             parse_metrics_zip)
 from tools.binance_perp_mark_fetch import (fetch_mark_days,
@@ -194,7 +194,7 @@ def run_backfill(
         raise ValueError("lookback_days must be positive")
     if funding_workers <= 0:
         raise ValueError("funding_workers must be positive")
-    scope = sorted(set(instruments or DEFAULT_TICKERS))
+    scope = sorted(set(instruments or FORWARD_MAJOR_TICKERS))
     expected_end = (int(now_ms) // _DAY_MS) * _DAY_MS - _DAY_MS
     days = [
         expected_end - offset * _DAY_MS

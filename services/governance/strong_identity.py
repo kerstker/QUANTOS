@@ -22,6 +22,11 @@ from quantos.contracts.identity import (
     VerifiedIdentity,
 )
 
+from .external_evidence import (
+    ExternalEvidenceStatus,
+    build_external_blocked_status,
+)
+
 
 _ASYMMETRIC_ALGORITHMS = frozenset({"EdDSA", "RS256"})
 
@@ -304,6 +309,45 @@ def load_oidc_policy_from_environment(
         ) from exc
 
 
+def oidc_policy_configuration_status(
+    environ: Mapping[str, str] | None = None,
+    *,
+    observed_at_ms: int,
+) -> ExternalEvidenceStatus:
+    """Report identity configuration without claiming IdP deployment evidence.
+
+    A valid local policy is only ``PARTIAL`` until an operator supplies proof
+    of the external issuer, trusted mTLS termination, MFA policy, key custody,
+    and revocation lifecycle.  Missing or invalid configuration is an explicit
+    ``EXTERNAL_BLOCKED`` status consumed by release/governance tooling.
+    """
+
+    try:
+        policy = load_oidc_policy_from_environment(environ)
+    except StrongIdentityUnavailable as exc:
+        return build_external_blocked_status(
+            capability="oidc_identity",
+            reason_code=exc.code,
+            required_action=(
+                "Provision external OIDC issuer, trusted mTLS termination, MFA, "
+                "and key lifecycle evidence"
+            ),
+            observed_at_ms=observed_at_ms,
+        )
+    policy_digest = hashlib.sha256(policy.public_key_pem.encode("ascii")).hexdigest()
+    return ExternalEvidenceStatus(
+        capability="oidc_identity",
+        status="PARTIAL",
+        reason_code="OIDC_POLICY_CONFIGURED_EXTERNAL_DEPLOYMENT_UNVERIFIED",
+        required_action=(
+            "Retain operator-owned OIDC/mTLS/MFA deployment, revocation, and key-custody evidence"
+        ),
+        observed_at_ms=observed_at_ms,
+        external_authority=policy.issuer,
+        evidence_ref=f"local-policy-sha256:{policy_digest}",
+    )
+
+
 __all__ = [
     "OidcMtlsVerifier",
     "OidcTrustPolicy",
@@ -311,5 +355,6 @@ __all__ = [
     "StrongIdentityUnavailable",
     "extract_verified_client_certificate",
     "load_oidc_policy_from_environment",
+    "oidc_policy_configuration_status",
     "require_role",
 ]

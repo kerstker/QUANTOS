@@ -5,7 +5,7 @@ import type { MonitoringDriftPayload, MonitoringDriftRecord } from '@/lib/types/
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, LoadingVeil, Callout, type Column,
 } from '@/ui/primitives';
 import { Donut, Histogram } from '@/ui/charts';
 import { num, pct, fixed, stamp, statusTone, type Tone } from '@/ui/format';
@@ -74,11 +74,11 @@ function monitorColumns(): Column<MonitoringDriftRecord>[] {
       render: m => <span className="text-muted">{m.subject_id}</span> },
     { key: 'metric', header: bi('指标', 'Metric'), mono: true,
       render: m => <span className="text-muted">{m.metric}</span> },
-    { key: 'baseline', header: bi('基线', 'Baseline'), align: 'right', mono: true,
+    { key: 'baseline', header: bi('基线', 'Baseline'), align: 'right', mono: true, sortable: true, sortAccessor: m => m.baseline,
       render: m => fixed(m.baseline, 3) },
-    { key: 'current', header: bi('当前', 'Current'), align: 'right', mono: true,
+    { key: 'current', header: bi('当前', 'Current'), align: 'right', mono: true, sortable: true, sortAccessor: m => m.current,
       render: m => fixed(m.current, 3) },
-    { key: 'drift', header: bi('漂移压力', 'Drift Pressure'), width: '180px',
+    { key: 'drift', header: bi('漂移压力', 'Drift Pressure'), width: '180px', sortable: true, sortAccessor: m => m.drift_score,
       render: m => (
         <div className="flex items-center gap-2">
           <ProgressBar value={driftPressure(m)} tone={statusTone(m.status)} />
@@ -91,7 +91,7 @@ function monitorColumns(): Column<MonitoringDriftRecord>[] {
       render: m => <StatusChip value={m.status} /> },
     { key: 'owner', header: bi('负责人', 'Owner'),
       render: m => <span className="text-muted">{m.owner}</span> },
-    { key: 'checked', header: bi('检查时间', 'Checked'), align: 'right', mono: true,
+    { key: 'checked', header: bi('检查时间', 'Checked'), align: 'right', mono: true, sortable: true, sortAccessor: m => m.last_checked,
       render: m => <span className="text-faint">{stamp(m.last_checked)}</span> },
   ];
 }
@@ -173,13 +173,15 @@ export default function MonitoringDrift() {
         } />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={monitoring.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {/* Honest partial-real disclosure: the ALPHA_DECAY category's baseline + decay verdict are computed by
           the REAL degradation_monitor on real factor backtests; the live-drift side has no live/paper feed
           under L2_DRY_RUN_ONLY and is a placeholder. The other categories are synthetic baselines. */}
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-amber-200/90">
+      <Callout tone="warn" summary={bi('诚实标注:ALPHA_DECAY 来自真引擎 · 其余类别为合成基线',
+        'Honest note: ALPHA_DECAY is real · other categories are synthetic baselines')}>
         {bi('诚实标注:ALPHA_DECAY 的回测基线与衰退裁决来自真引擎(degradation_monitor,快照在场时);实时漂移在 L2_DRY_RUN_ONLY 下无实盘/纸面数据源,显示为占位。FEATURE_DRIFT / DATA_FRESHNESS / MODEL_RISK / REVIEWER_SLA 为合成基线,待相应持久层建成后升真。',
             'Honest note: ALPHA_DECAY baseline + decay verdict come from the real degradation_monitor (when the snapshot is present); live drift has no live/paper source under L2_DRY_RUN_ONLY and is shown as a placeholder. FEATURE_DRIFT / DATA_FRESHNESS / MODEL_RISK / REVIEWER_SLA are synthetic baselines pending their data layers.')}
-      </div>
+      </Callout>
 
       <KpiStrip cols={7}>
         <StatTile label={bi('监控项', 'Monitors')} value={num(summary.monitors)} accent />
@@ -259,8 +261,11 @@ export default function MonitoringDrift() {
 
       <Panel eyebrow={bi('全量明细', 'Full Ledger')} title={bi('全量监控明细', 'Full Monitor Ledger')}
         right={<Chip label={bi(`${sortedMonitors.length} 项`, `${sortedMonitors.length} monitors`)} tone="info" />}>
-        <DataTable columns={monitorColumns()} rows={sortedMonitors} dense getKey={m => m.monitor_id} />
+        <DataTable columns={monitorColumns()} rows={sortedMonitors} dense getKey={m => m.monitor_id}
+          searchable={m => `${m.monitor_id} ${m.category} ${m.subject_id} ${m.metric} ${m.owner} ${m.status}`}
+          searchPlaceholder={bi('搜索监控 ID / 类别 / 主体 / 负责人…', 'Search monitor / category / subject / owner…')} />
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

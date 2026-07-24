@@ -251,6 +251,39 @@ def test_staleness_summary_delisted_does_not_poison(tmp_path):
         assert s2[src]["freshest_days"] is None and s2[src]["n_total"] == 0
 
 
+def test_staleness_summary_can_scope_forward_universe_without_erasing_archive(tmp_path):
+    db = str(tmp_path / "px.db")
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE bars (key TEXT NOT NULL, event_time INTEGER NOT NULL, "
+                 "knowledge_time INTEGER NOT NULL, payload_json TEXT NOT NULL, "
+                 "PRIMARY KEY (key, event_time, knowledge_time))")
+    conn.execute("INSERT INTO bars VALUES (?,?,?,?)", ("BTC", _T0, _T0, "{}"))
+    conn.execute("INSERT INTO bars VALUES (?,?,?,?)",
+                 ("DEADCOIN", _T0 - 800 * _DAY, _T0 - 800 * _DAY, "{}"))
+    conn.commit()
+    conn.close()
+    fp = str(tmp_path / "fund.json")
+    json.dump({"BTC": {str(_T0 - 2 * _DAY): 0.001},
+               "DEADCOIN": {str(_T0 - 800 * _DAY): 0.001}}, open(fp, "w"))
+    oip = str(tmp_path / "oi.json")
+    json.dump({"data": {
+        "BTC": {str(_T0 - 5 * _DAY): _oi_record()},
+        "DEADCOIN": {str(_T0 - 800 * _DAY): _oi_record()},
+    }}, open(oip, "w"))
+
+    archive = staleness_days(_T0 + _DAY, db_path=db, fund_path=fp, oi_path=oip)
+    scoped = staleness_days(
+        _T0 + _DAY, db_path=db, fund_path=fp, oi_path=oip,
+        active_tickers=["BTC"],
+    )
+    assert archive["prices"]["n_total"] == 2
+    assert scoped["prices"] == {
+        "freshest_days": 1, "worst_days": 1, "n_stale": 0, "n_total": 1
+    }
+    assert scoped["funding"]["n_total"] == 1
+    assert scoped["oi_metrics"]["n_total"] == 1
+
+
 def test_oi_quality_uses_actual_recent_ticker_data_not_meta(tmp_path):
     path = str(tmp_path / "oi.json")
     days = {str(_T0 - offset * _DAY): _oi_record() for offset in range(8)}
@@ -415,7 +448,7 @@ def test_run_refresh_persists_history_slo_and_atomic_status(tmp_path):
     snapshot.write_text(json.dumps({"instruments": ["BTC"]}), encoding="utf-8")
     stale = {
         source: {"freshest_days": 1, "worst_days": 1, "n_stale": 0, "n_total": 1}
-        for source in ("prices", "funding", "perp_mark_prices", "oi_metrics")
+        for source in ("prices", "funding", "perp_mark_prices", "oi_metrics", "mexc_btc")
     }
 
     def fake_runner(source_tickers, **kwargs):
@@ -467,3 +500,87 @@ def test_run_refresh_persists_history_slo_and_atomic_status(tmp_path):
     assert delivered == []
     assert json.load(open(status_path, encoding="utf-8"))["history"]["entry_seq"] == 1
     assert json.load(open(slo_path, encoding="utf-8"))["provenance"] == "REAL_REFRESH_HISTORY"
+
+
+# --- MEXC 现货 BTC(第 5 源,2026-07 MEXC 对接 1.1)---
+
+from tools.live_data_refresh import refresh_mexc_btc
+
+
+def _mexc_rows(start_day, n):
+    return [{"instrument_id": "BTC", "event_time": start_day + i * _DAY,
+             "knowledge_time": start_day + i * _DAY,
+             "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+            for i in range(n)]
+
+
+def test_refresh_mexc_btc_ingests_and_writes_snapshot_then_skips(tmp_path):
+    db = str(tmp_path / "crypto_mexc.db")
+    snap = str(tmp_path / "mexc_btc_klines.json")
+    now = _T0 + 5 * _DAY
+    calls = []
+
+    def fake_fetch(tk, *, days, now_ms):
+        calls.append((tk, days))
+        return _mexc_rows(_T0 + 2 * _DAY, 3)          # .. _T0+4*_DAY = expected_end
+
+    rep = refresh_mexc_btc(now_ms=now, fetch=fake_fetch, db_path=db, snapshot_path=snap)
+    assert rep["refreshed"] == 1 and rep["ingested_rows"] == 3
+    assert rep["watermark_after"] == _T0 + 4 * _DAY
+    assert calls and calls[0][0] == "BTC" and calls[0][1] >= 8   # 空库首跑:全量缺口 + pad
+    payload = json.load(open(snap, encoding="utf-8"))
+    assert payload["provenance"] == "REAL_MEXC_PUBLIC_KLINES"
+    assert payload["rows"] == 3
+    assert payload["first_event_time"] == _T0 + 2 * _DAY
+    assert payload["last_event_time"] == _T0 + 4 * _DAY
+    # 幂等:水位只落后 1 天(未收盘当根,PIT 本来就丢)→ 跳过,不再抓
+    rep2 = refresh_mexc_btc(now_ms=now, fetch=fake_fetch, db_path=db, snapshot_path=snap)
+    assert rep2["skipped"] == 1 and rep2["refreshed"] == 0
+    assert len(calls) == 1
+
+
+def test_refresh_mexc_btc_fails_soft_and_still_writes_empty_snapshot(tmp_path):
+    db = str(tmp_path / "missing.db")
+    snap = str(tmp_path / "snap.json")
+
+    def boom(tk, *, days, now_ms):
+        raise RuntimeError("offline")
+    rep = refresh_mexc_btc(now_ms=_T0 + 5 * _DAY, fetch=boom, db_path=db, snapshot_path=snap)
+    assert rep["refreshed"] == 0 and rep["failed_tickers"] == ["BTC"]
+    payload = json.load(open(snap, encoding="utf-8"))
+    assert payload["rows"] == 0 and payload["first_event_time"] is None   # 诚实空快照
+
+
+def test_staleness_days_includes_mexc_btc_source(tmp_path):
+    out = staleness_days(_T0, db_path=str(tmp_path / "no.db"),
+                         fund_path=str(tmp_path / "no.json"),
+                         oi_path=str(tmp_path / "no2.json"),
+                         mexc_db_path=str(tmp_path / "no3.db"))
+    assert "mexc_btc" in out and out["mexc_btc"]["n_total"] == 0
+
+
+def test_run_refresh_includes_mexc_btc_in_source_tickers_and_scope(tmp_path):
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(json.dumps({"instruments": ["BTC"]}), encoding="utf-8")
+    captured = {}
+
+    def fake_runner(source_tickers, **kwargs):
+        captured["source_tickers"] = dict(source_tickers)
+        return [{"source": s, "outcome": "PASS", "duration_ms": 1, "failed": [],
+                 "failure_details": [], "failed_tickers": [], "quality_failed": [],
+                 "watermark_after": _T0} for s in source_tickers]
+
+    status = run_refresh(
+        now_ms=_T0, snapshot_path=str(snapshot),
+        history_path=str(tmp_path / "h.db"), status_path=str(tmp_path / "s.json"),
+        slo_status_path=str(tmp_path / "slo.json"),
+        event_bus_path=str(tmp_path / "e.db"),
+        event_projection_path=str(tmp_path / "p.db"),
+        source_runner=fake_runner,
+        staleness_reader=lambda now_ms: {},
+        archive_summary=lambda root: {},
+        alert_emitter=lambda alerts, **kw: {"n": 0},
+    )
+    assert captured["source_tickers"]["mexc_btc"] == ["BTC"]
+    assert status["staleness_scope"]["mexc_btc"] == ["BTC"]
+    assert status["budgets"]["source_timeout_seconds"]["mexc_btc"] > 0

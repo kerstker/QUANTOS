@@ -17,6 +17,10 @@ import statistics
 from typing import Callable, Collection, Mapping, Optional, Sequence
 
 from services.research.ic_panel import _MIN_PAIRS_PER_PERIOD, _rank
+from services.research.paper_trading.forward_evidence import (
+    FORWARD_L2_REALIZATION_SOURCE,
+    ForwardAdmissionRef,
+)
 from services.research.ports.persistence import ForwardLedgerPort, PaperTrackStorePort
 
 _DAY_MS = 86_400_000
@@ -52,6 +56,8 @@ def realize_due(
     funding_sum: Optional[Callable[[str, int, int], float]] = None,
     blocked_instruments: Collection[str] = (),
     quality_evidence_current: bool = False,
+    admission_ref: ForwardAdmissionRef | None = None,
+    committed_at_ms: int | None = None,
     min_gap_ms: int = DEFAULT_MIN_GAP_MS,
     min_coverage: float = DEFAULT_MIN_COVERAGE,
     extreme_abs_return: float = DEFAULT_EXTREME_ABS_RETURN,
@@ -72,14 +78,34 @@ def realize_due(
     n_realized = 0
     n_quality_blocked = 0
     blocked = {str(name) for name in blocked_instruments}
-    for dec in ledger.pending(alpha_id):
+    if admission_ref is not None:
+        pending_reader = getattr(ledger, "attested_pending", None)
+        if not callable(pending_reader) or committed_at_ms is None:
+            return {
+                "n_realized": 0,
+                "n_quality_blocked": 1,
+                "alerts": [
+                    f"{alpha_id}: attested ledger/commit clock unavailable - left pending"
+                ],
+            }
+        pending = pending_reader(alpha_id)
+        realization_source = (
+            FORWARD_L2_REALIZATION_SOURCE
+            if source == SOURCE_FORWARD_LIVE
+            else source
+        )
+    else:
+        pending = ledger.pending(alpha_id)
+        realization_source = source
+
+    for dec in pending:
         t0 = int(dec["decided_ts"])
         weights = json.loads(dec["weights_json"])
         later = [t for t in ts_sorted if t >= t0 + min_gap_ms]
         if not later:
             continue  # 还没到期,静默等待
         t1 = later[0]
-        if quality_evidence_current is not True:
+        if admission_ref is None and quality_evidence_current is not True:
             alerts.append(f"{alpha_id}@{t0}: current quality evidence unavailable — left pending")
             n_quality_blocked += 1
             continue
@@ -99,17 +125,42 @@ def realize_due(
             )
             continue
         per_name = {n: p1[n] / p0[n] - 1.0 for n in names}
+        inputs = {
+            name: {
+                "weight": float(weights[name]),
+                "price_return": float(per_name[name]),
+                "funding": (
+                    0.0
+                    if funding_sum is None
+                    else float(funding_sum(name, t0, t1))
+                ),
+            }
+            for name in sorted(names)
+        }
         ret = sum(weights[n] * per_name[n] for n in names)
         if funding_sum is not None:
-            ret += sum(-weights[n] * float(funding_sum(n, t0, t1)) for n in names)
+            ret += sum(-inputs[n]["weight"] * inputs[n]["funding"] for n in names)
         ic = None
         if dec["signals_json"]:
             sig = json.loads(dec["signals_json"])
             ic = _spearman([(float(sig[n]), per_name[n]) for n in names if n in sig])
         if abs(ret) > extreme_abs_return:
             alerts.append(f"{alpha_id}@{t1}: extreme weekly return {ret:+.4f} (recorded, review)")
-        store.append_periods(alpha_id, [(t1, ret, ic, source)])
-        ledger.mark_realized(alpha_id, t0)
+        if admission_ref is not None:
+            ledger.commit_realization(
+                alpha_id,
+                t0,
+                as_of_ts=t1,
+                realized_return=ret,
+                realized_ic=ic,
+                source=realization_source,
+                inputs=inputs,
+                admission_ref=admission_ref,
+                committed_at_ms=committed_at_ms,
+            )
+        else:
+            store.append_periods(alpha_id, [(t1, ret, ic, realization_source)])
+            ledger.mark_realized(alpha_id, t0)
         n_realized += 1
     if n_realized:
         store.recompute_summary(alpha_id, backtest_sharpe=backtest_sharpe)

@@ -1,1 +1,176 @@
-{"backed_up_sources": [{"relative_path": "data/cache/data_quality_admission.db", "required": true, "role": "data_quality_admission"}, {"relative_path": "data/cache/domain_event_projection.db", "required": true, "role": "domain_event_projection"}, {"relative_path": "data/cache/domain_events.db", "required": true, "role": "domain_event_authority"}, {"relative_path": "data/cache/dry_run.db", "required": true, "role": "dry_run_ledger"}, {"relative_path": "data/cache/experiment_registry.db", "required": true, "role": "experiment_registry"}, {"relative_path": "data/cache/governance_audit.db", "required": true, "role": "governance_audit"}, {"relative_path": "data/cache/l2_restore_history.db", "required": true, "role": "l2_restore_history_authority"}, {"relative_path": "data/cache/live_refresh_history.db", "required": true, "role": "data_refresh_history"}, {"relative_path": "data/cache/paper_track.db", "required": true, "role": "paper_track"}, {"relative_path": "data/cache/research_runs.db", "required": true, "role": "research_run_registry"}], "backup_elapsed_ms": 815, "destination_class": "SEPARATE_VOLUME", "encrypted": true, "external_destination_verified": true, "file_count": 10, "manifest_verified": true, "max_rpo_ms": 86400000, "missing_optional_sources": ["data/cache/alpha_maintenance.db", "data/cache/approvals.db", "data/cache/artifact_admission.db", "data/cache/deployment_state.db", "data/cache/identity_authorization.db", "data/cache/live_kill_switch.db"], "mode": "L2_AUTHORITY_STATE", "observed_at_ms": 1784144517622, "required_source_count": 10, "restore_elapsed_ms": 332, "restore_history_verified": true, "restore_verified": true, "rpo_met": true, "rto_met": true, "rto_ms": 300000, "schema_version": 1, "source_age_ms": 0, "source_contract": {"sources": [{"relative_path": "data/cache/alpha_maintenance.db", "required": false, "role": "alpha_maintenance"}, {"relative_path": "data/cache/approvals.db", "required": false, "role": "approval_authority"}, {"relative_path": "data/cache/artifact_admission.db", "required": false, "role": "artifact_admission_authority"}, {"relative_path": "data/cache/data_quality_admission.db", "required": true, "role": "data_quality_admission"}, {"relative_path": "data/cache/deployment_state.db", "required": false, "role": "deployment_state"}, {"relative_path": "data/cache/domain_event_projection.db", "required": true, "role": "domain_event_projection"}, {"relative_path": "data/cache/domain_events.db", "required": true, "role": "domain_event_authority"}, {"relative_path": "data/cache/dry_run.db", "required": true, "role": "dry_run_ledger"}, {"relative_path": "data/cache/experiment_registry.db", "required": true, "role": "experiment_registry"}, {"relative_path": "data/cache/governance_audit.db", "required": true, "role": "governance_audit"}, {"relative_path": "data/cache/identity_authorization.db", "required": false, "role": "identity_authorization_authority"}, {"relative_path": "data/cache/l2_restore_history.db", "required": true, "role": "l2_restore_history_authority"}, {"relative_path": "data/cache/live_kill_switch.db", "required": false, "role": "kill_switch_authority"}, {"relative_path": "data/cache/live_refresh_history.db", "required": true, "role": "data_refresh_history"}, {"relative_path": "data/cache/paper_track.db", "required": true, "role": "paper_track"}, {"relative_path": "data/cache/research_runs.db", "required": true, "role": "research_run_registry"}], "version": 2}, "source_contract_sha256": "0d0fd6de23624434ef59b538fd08ae60cfd5d49d105652b39e80ae84aa9e43c5", "source_contract_verified": true, "sqlite_integrity_verified": true, "verdict": "PASS"}
+{
+  "backed_up_sources": [
+    {
+      "relative_path": "data/cache/alpha_maintenance.db",
+      "required": false,
+      "role": "alpha_maintenance"
+    },
+    {
+      "relative_path": "data/cache/data_quality_admission.db",
+      "required": true,
+      "role": "data_quality_admission"
+    },
+    {
+      "relative_path": "data/cache/domain_event_projection.db",
+      "required": true,
+      "role": "domain_event_projection"
+    },
+    {
+      "relative_path": "data/cache/domain_events.db",
+      "required": true,
+      "role": "domain_event_authority"
+    },
+    {
+      "relative_path": "data/cache/dry_run.db",
+      "required": true,
+      "role": "dry_run_ledger"
+    },
+    {
+      "relative_path": "data/cache/experiment_registry.db",
+      "required": true,
+      "role": "experiment_registry"
+    },
+    {
+      "relative_path": "data/cache/governance_audit.db",
+      "required": true,
+      "role": "governance_audit"
+    },
+    {
+      "relative_path": "data/cache/l2_restore_history.db",
+      "required": true,
+      "role": "l2_restore_history_authority"
+    },
+    {
+      "relative_path": "data/cache/live_refresh_history.db",
+      "required": true,
+      "role": "data_refresh_history"
+    },
+    {
+      "relative_path": "data/cache/paper_track.db",
+      "required": true,
+      "role": "paper_track"
+    },
+    {
+      "relative_path": "data/cache/research_runs.db",
+      "required": true,
+      "role": "research_run_registry"
+    }
+  ],
+  "backup_elapsed_ms": 2705,
+  "destination_class": "SEPARATE_VOLUME",
+  "encrypted": true,
+  "external_destination_verified": true,
+  "file_count": 11,
+  "history_authoritative": true,
+  "history_event_hash": "a2620d93f26f1c3800733f5bc1aef2e4feb9c2ccd95b95c69d7e7ec136777ca5",
+  "history_event_seq": 34,
+  "manifest_verified": true,
+  "max_rpo_ms": 86400000,
+  "missing_optional_sources": [
+    "data/cache/approvals.db",
+    "data/cache/artifact_admission.db",
+    "data/cache/deployment_state.db",
+    "data/cache/identity_authorization.db",
+    "data/cache/live_kill_switch.db"
+  ],
+  "mode": "L2_AUTHORITY_STATE",
+  "observed_at_ms": 1784746801471,
+  "required_source_count": 10,
+  "restore_elapsed_ms": 605,
+  "restore_history_verified": true,
+  "restore_verified": true,
+  "rpo_met": true,
+  "rto_met": true,
+  "rto_ms": 300000,
+  "schema_version": 1,
+  "source_age_ms": 0,
+  "source_contract": {
+    "sources": [
+      {
+        "relative_path": "data/cache/alpha_maintenance.db",
+        "required": false,
+        "role": "alpha_maintenance"
+      },
+      {
+        "relative_path": "data/cache/approvals.db",
+        "required": false,
+        "role": "approval_authority"
+      },
+      {
+        "relative_path": "data/cache/artifact_admission.db",
+        "required": false,
+        "role": "artifact_admission_authority"
+      },
+      {
+        "relative_path": "data/cache/data_quality_admission.db",
+        "required": true,
+        "role": "data_quality_admission"
+      },
+      {
+        "relative_path": "data/cache/deployment_state.db",
+        "required": false,
+        "role": "deployment_state"
+      },
+      {
+        "relative_path": "data/cache/domain_event_projection.db",
+        "required": true,
+        "role": "domain_event_projection"
+      },
+      {
+        "relative_path": "data/cache/domain_events.db",
+        "required": true,
+        "role": "domain_event_authority"
+      },
+      {
+        "relative_path": "data/cache/dry_run.db",
+        "required": true,
+        "role": "dry_run_ledger"
+      },
+      {
+        "relative_path": "data/cache/experiment_registry.db",
+        "required": true,
+        "role": "experiment_registry"
+      },
+      {
+        "relative_path": "data/cache/governance_audit.db",
+        "required": true,
+        "role": "governance_audit"
+      },
+      {
+        "relative_path": "data/cache/identity_authorization.db",
+        "required": false,
+        "role": "identity_authorization_authority"
+      },
+      {
+        "relative_path": "data/cache/l2_restore_history.db",
+        "required": true,
+        "role": "l2_restore_history_authority"
+      },
+      {
+        "relative_path": "data/cache/live_kill_switch.db",
+        "required": false,
+        "role": "kill_switch_authority"
+      },
+      {
+        "relative_path": "data/cache/live_refresh_history.db",
+        "required": true,
+        "role": "data_refresh_history"
+      },
+      {
+        "relative_path": "data/cache/paper_track.db",
+        "required": true,
+        "role": "paper_track"
+      },
+      {
+        "relative_path": "data/cache/research_runs.db",
+        "required": true,
+        "role": "research_run_registry"
+      }
+    ],
+    "version": 2
+  },
+  "source_contract_sha256": "0d0fd6de23624434ef59b538fd08ae60cfd5d49d105652b39e80ae84aa9e43c5",
+  "source_contract_verified": true,
+  "sqlite_integrity_verified": true,
+  "verdict": "PASS"
+}

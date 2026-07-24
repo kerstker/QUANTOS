@@ -32,13 +32,15 @@ import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
-from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult, VenuePosition
+from live.contracts import (ExchangeFilters, FundingRateSnapshot, LiveOrderRequest,
+                            PremiumIndexSnapshot, VenueOrderResult, VenuePosition)
 from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
 _ORDER_NOT_FOUND_CODE = -2013     # Binance: "Order does not exist."
 _CANCEL_REJECTED_CODE = -2011     # Binance: "Unknown order sent."(不存在或已终态,无法撤)
 _RATE_LIMIT_STATUSES = frozenset({429, 418})
+_FUNDING_RATE_MAX_LIMIT = 1000      # Binance /fapi/v1/fundingRate 的 limit 上限
 
 
 def _is_rate_limited(result: tuple) -> bool:
@@ -225,6 +227,46 @@ class BinanceFuturesAdapter:
                     if as_of_ms > 0:
                         book["as_of_ms"] = as_of_ms
             return book
+        except Exception:
+            return None
+
+    def premium_index(self, instrument_id: str) -> Optional[PremiumIndexSnapshot]:
+        """只读标记价/指数价/最新资金费快照(Phase 2 缺口:此前资金费数据只有离线日级快照):
+        GET /fapi/v1/premiumIndex,不签名。fail-soft 与 `book_ticker` 同型——非 2xx/非 JSON/
+        缺字段/非有限值(NaN/Inf)一律返回 None(它是定价/诊断输入,不在下单路径上),
+        绝不因快照拿不到而抛异常打断整批。"""
+        try:
+            status, data = self._get("/fapi/v1/premiumIndex",
+                                     {"symbol": instrument_id + "USDT"}, signed=False)
+            if not (200 <= status < 300):
+                return None
+            return PremiumIndexSnapshot(
+                instrument_id=instrument_id,
+                mark_price=float(data["markPrice"]),
+                index_price=float(data["indexPrice"]),
+                last_funding_rate=float(data["lastFundingRate"]),
+                next_funding_time_ms=int(data["nextFundingTime"]),
+                time_ms=int(data["time"]))
+        except Exception:
+            return None
+
+    def funding_rates(self, instrument_id: str, *,
+                      limit: int = 100) -> Optional[tuple[FundingRateSnapshot, ...]]:
+        """只读历史资金费序列:GET /fapi/v1/fundingRate,不签名。limit 钳制到 Binance 上限 1000
+        (下限 1)。fail-soft 与 `book_ticker` 同型——非 2xx/非 JSON/非数组/缺字段/非有限值
+        一律返回 None。"""
+        clamped = max(1, min(int(limit), _FUNDING_RATE_MAX_LIMIT))
+        try:
+            status, data = self._get("/fapi/v1/fundingRate",
+                                     {"symbol": instrument_id + "USDT", "limit": clamped},
+                                     signed=False)
+            if not (200 <= status < 300) or not isinstance(data, list):
+                return None
+            return tuple(
+                FundingRateSnapshot(instrument_id=instrument_id,
+                                    funding_rate=float(item["fundingRate"]),
+                                    funding_time_ms=int(item["fundingTime"]))
+                for item in data)
         except Exception:
             return None
 

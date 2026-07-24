@@ -26,14 +26,22 @@ export default {
         special: 'var(--special)',
         cyan: 'var(--cyan)',
         grid: 'var(--grid)',
+        /* institutional amber scale (workbench signature) */
+        amber: {
+          300: '#f8d12e',
+          400: '#f0b90b',
+          500: '#d9a213',
+          600: '#b8860b',
+          900: '#4d3d08',
+        },
       },
       fontFamily: {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
       borderRadius: {
-        panel: '18px',
-        tile: '14px',
+        panel: '8px',
+        tile: '6px',
       },
       boxShadow: {
         panel: 'var(--shadow-panel)',
@@ -41,7 +49,11 @@ export default {
         glow: 'var(--glow-accent)',
       },
       fontSize: {
-        '2xs': ['10.5px', '14px'],
+        '3xs': ['9.5px', '12px'],
+        '2xs': ['10.5px', '13px'],
+        xs: ['11.5px', '15px'],
+        sm: ['12.5px', '17px'],
+        base: ['13.5px', '19px'],
       },
       backgroundImage: {
         grad: 'var(--grad)',

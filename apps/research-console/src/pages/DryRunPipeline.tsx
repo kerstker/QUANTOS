@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, PillToggle, LoadingVeil, Callout, type Column,
 } from '@/ui/primitives';
-import { signed, stamp } from '@/ui/format';
+import { signed, stamp, type Tone } from '@/ui/format';
+import { EquityCurveChart, type EquitySeries } from '@/ui/workbench';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
-import { fetchDryRunSnapshot } from '@/lib/api/research-console-api';
-import type { DryRunPipelinePayload, DryRunRunRow } from '@/lib/types/research';
+import { fetchDryRunSnapshot, fetchResearchRun, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import { fetchRunnerHealth, getRunnerToken, runnerEnabled, triggerRun } from '@/lib/api/research-runner-api';
+import type { DryRunPipelinePayload, DryRunRunRow, PaperOrderPreviewAlpha, PaperRealtimeAlpha, PaperProfilePayload, PaperRealtimeHistoryPoint, LiveTradingForwardAlpha, ResearchRunDetail } from '@/lib/types/research';
 
 /**
  * Dry-Run Pipeline — the end-to-end run, surfaced read-only. This is the PROOF that the pre-trade risk gate is
@@ -30,34 +32,130 @@ const VERDICT_ZH: Record<string, string> = {
 const fmtUsd = (v?: number) => (v == null ? '—' : `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
 const fmtResidual = (v?: number) => (v == null ? '—' : Math.abs(v) < 1e-6 ? '≈0' : v.toExponential(1));
 
-// Pure SVG two-line equity curve (raw=accent solid, vol-target=info dashed). Deterministic; no Date/random.
-function EquityCurve({ raw, vt }: { raw: { equity: number }[]; vt: { equity: number }[] }) {
-  const W = 640, H = 160, pad = 6;
-  const all = [...raw.map(p => p.equity), ...vt.map(p => p.equity)];
-  if (!raw.length || !all.length) return null;
-  const lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
-  const path = (pts: { equity: number }[]) => pts.map((p, i) => {
-    const x = pad + (i / Math.max(pts.length - 1, 1)) * (W - 2 * pad);
-    const y = H - pad - ((p.equity - lo) / span) * (H - 2 * pad);
-    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="equity curve">
-      <path d={path(raw)} fill="none" stroke="var(--accent, #6ea8fe)" strokeWidth={1.5} />
-      {vt.length > 0 && <path d={path(vt)} fill="none" stroke="var(--info, #4fd1c5)" strokeWidth={1.2} strokeDasharray="3 2" />}
-    </svg>
-  );
+// Paper PnL history grouped per alpha — rendered by the shared EquityCurveChart (workbench kit).
+const PAPER_TONES: Tone[] = ['accent', 'info', 'warn', 'special', 'pos'];
+function paperSeries(history: PaperRealtimeHistoryPoint[]): EquitySeries[] {
+  const byAlpha = new Map<string, { t: number; equity: number }[]>();
+  for (const p of history) {
+    if (typeof p.net_pnl !== 'number' || !Number.isFinite(p.net_pnl)) continue;
+    const rows = byAlpha.get(p.alpha_id) ?? [];
+    rows.push({ t: p.observed_at, equity: p.net_pnl });
+    byAlpha.set(p.alpha_id, rows);
+  }
+  return Array.from(byAlpha.entries()).map(([alpha, points], i) => ({
+    label: alpha,
+    points: points.sort((a, b) => a.t - b.t),
+    tone: PAPER_TONES[i % PAPER_TONES.length],
+  }));
 }
 
 export default function DryRunPipeline() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DryRunPipelinePayload>(
-    s => fetchDryRunSnapshot(s));
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [runnerOnline, setRunnerOnline] = useState<boolean | null>(null);
+  const [cycleRunId, setCycleRunId] = useState<string | null>(null);
+  const [cycleRun, setCycleRun] = useState<ResearchRunDetail | null>(null);
+  const [cycleProfile, setCycleProfile] = useState<'default' | 'small_10k'>('default');
+  const [cycleError, setCycleError] = useState<string | null>(null);
+  const [cycleBusy, setCycleBusy] = useState(false);
+  useEffect(() => {
+    if (!isResearchConsoleApiEnabled()) return undefined;
+    const timer = window.setInterval(() => setRefreshTick(value => value + 1), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!runnerEnabled()) {
+      setRunnerOnline(false);
+      return undefined;
+    }
+    let disposed = false;
+    const check = async () => {
+      try {
+        const health = await fetchRunnerHealth();
+        if (!disposed) setRunnerOnline(health.live_disallowed === true && health.kinds.includes('paper_cycle'));
+      } catch {
+        if (!disposed) setRunnerOnline(false);
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 10_000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, []);
+  useEffect(() => {
+    if (!cycleRunId || !isResearchConsoleApiEnabled()) return undefined;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const response = await fetchResearchRun(cycleRunId);
+        if (disposed) return;
+        setCycleRun(response.run);
+        if (response.run && (response.run.status === 'queued' || response.run.status === 'running')) {
+          timer = window.setTimeout(() => { void poll(); }, 2_000);
+        } else {
+          setRefreshTick(value => value + 1);
+        }
+      } catch (err) {
+        if (!disposed) setCycleError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    void poll();
+    return () => { disposed = true; if (timer !== undefined) window.clearTimeout(timer); };
+  }, [cycleRunId]);
+  const { payload, apiState, error, usingBackend, snapshotState } = useConsoleSnapshot<DryRunPipelinePayload>(
+    s => fetchDryRunSnapshot(s), [refreshTick]);
   const p: DryRunPipelinePayload = usingBackend ? payload! : mockPayload;
+  const [strategyFilter, setStrategyFilter] = useState('全部');
+  const strategies = useMemo(() => ['全部', ...Array.from(new Set(p.runs.map(r => r.strategy_id)))], [p.runs]);
+  const filteredRuns = useMemo(
+    () => p.runs.filter(r => strategyFilter === '全部' || r.strategy_id === strategyFilter),
+    [p.runs, strategyFilter],
+  );
   const has = p.snapshot_present && p.runs.length > 0;
   const latest = (has ? (p.latest as DryRunRunRow) : null);
   const pnl = latest?.pnl ?? {};
   const nFills = latest?.detail?.n_fills ?? 0;
   const mp = latest?.detail?.mode === 'multi_period' ? latest.detail : null;  // multi-period rolling run
+  type PaperAlphaRow = { alpha: string } & PaperOrderPreviewAlpha;
+  const paperPreview = p.paper_order_preview;
+  const paperOperator = p.paper_operator;
+  const paperRealtime = p.paper_realtime;
+  const paperHealth = p.paper_health;
+  const forwardTrack = p.forward_track;
+  const paperProfiles = Object.values(p.paper_profiles ?? {}) as PaperProfilePayload[];
+  const paperAlphaRows: PaperAlphaRow[] = Object.entries(paperPreview?.alphas ?? {}).map(([alpha, row]) => ({
+    alpha,
+    ...row,
+  }));
+  const observedAt = paperRealtime?.observed_at ?? paperHealth?.observed_at;
+  const observedAgeMs = typeof observedAt === 'number'
+    ? Math.max(0, Date.now() - observedAt)
+    : (paperHealth?.age_ms ?? null);
+  const maxPaperAgeMs = paperHealth?.max_age_ms ?? 5 * 60 * 1000;
+  const detectorStatus = !paperHealth?.snapshot_present || !paperRealtime?.snapshot_present
+    ? 'NO_SNAPSHOT'
+    : paperHealth.verdict.paper_ready && observedAgeMs != null && observedAgeMs <= maxPaperAgeMs
+      ? 'PAPER_HEALTHY'
+      : observedAgeMs != null && observedAgeMs > maxPaperAgeMs
+        ? 'MARKS_STALE'
+        : 'PAPER_BLOCKED';
+  const cycleActive = cycleBusy || cycleRun?.status === 'queued' || cycleRun?.status === 'running';
+  const cycleCanExecute = usingBackend && runnerOnline === true && Boolean(getRunnerToken()) && !cycleActive;
+  const executePaperCycle = async (small_10k: boolean) => {
+    setCycleProfile(small_10k ? 'small_10k' : 'default');
+    setCycleError(null);
+    setCycleRun(null);
+    setCycleRunId(null);
+    setCycleBusy(true);
+    try {
+      const result = await triggerRun('paper_cycle', { small_10k });
+      setCycleRunId(result.run_id);
+      setRefreshTick(value => value + 1);
+    } catch (err) {
+      setCycleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCycleBusy(false);
+    }
+  };
 
   // pipeline stages (with the latest run's live numbers) — the chokepoint story, left to right
   const stages = [
@@ -81,15 +179,16 @@ export default function DryRunPipeline() {
   ];
 
   const runCols: Column<DryRunRunRow>[] = [
-    { key: 'time', header: bi('时间(UTC)', 'Time (UTC)'), mono: true, render: r => stamp(r.timestamp) },
-    { key: 'strat', header: bi('策略', 'Strategy'), render: r => r.strategy_id },
-    { key: 'intents', header: bi('意图', 'Intents'), align: 'right', mono: true, render: r => r.n_intents },
-    { key: 'appr', header: bi('门批准', 'Approved'), align: 'right', mono: true,
+    { key: 'time', header: bi('时间(UTC)', 'Time (UTC)'), mono: true, sortable: true, sortAccessor: r => r.timestamp, render: r => stamp(r.timestamp) },
+    { key: 'strat', header: bi('策略', 'Strategy'), sortable: true, sortAccessor: r => r.strategy_id, render: r => r.strategy_id },
+    { key: 'intents', header: bi('意图', 'Intents'), align: 'right', mono: true, sortable: true, sortAccessor: r => r.n_intents, render: r => r.n_intents },
+    { key: 'appr', header: bi('门批准', 'Approved'), align: 'right', mono: true, sortable: true, sortAccessor: r => r.n_approved,
       render: r => <span className="text-pos">{r.n_approved}</span> },
-    { key: 'rej', header: bi('门拒绝', 'Rejected'), align: 'right', mono: true,
+    { key: 'rej', header: bi('门拒绝', 'Rejected'), align: 'right', mono: true, sortable: true, sortAccessor: r => r.n_rejected,
       render: r => <span className={r.n_rejected ? 'text-neg' : 'text-faint'}>{r.n_rejected}</span> },
-    { key: 'fills', header: bi('成交', 'Fills'), align: 'right', mono: true, render: r => r.detail?.n_fills ?? 0 },
+    { key: 'fills', header: bi('成交', 'Fills'), align: 'right', mono: true, sortable: true, sortAccessor: r => r.detail?.n_fills ?? 0, render: r => r.detail?.n_fills ?? 0 },
     { key: 'pnl', header: bi('收益', 'Return'), align: 'right', mono: true,
+      sortable: true, sortAccessor: r => r.pnl?.total_return ?? r.pnl?.total_pnl ?? 0,
       render: r => {
         // multi-period rows carry total_return (%), single-snapshot rows carry total_pnl ($)
         const mpRet = r.pnl?.total_return, usd = r.pnl?.total_pnl;
@@ -109,18 +208,272 @@ export default function DryRunPipeline() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
         realData={usingBackend && p.data_provenance === 'REAL_DRY_RUN_OFFLINE_SNAPSHOT'}
         source={usingBackend ? (has ? 'REAL_DRY_RUN_OFFLINE_SNAPSHOT' : 'NO_DRY_RUN') : 'FRONTEND_DRY_RUN_MOCK'}
-        error={error} />
+        error={error}
+        noDataYet={usingBackend && !p.snapshot_present}
+        dataStatus={snapshotState} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <div className="flex items-center gap-3">
         <StatusChip value={p.verdict} />
         <span className="text-2xs text-muted">{bi(VERDICT_ZH[p.verdict] ?? p.verdict, p.verdict)}</span>
         {has && <span className="text-2xs text-faint">{bi(`共 ${p.n_runs} 次干跑`, `${p.n_runs} dry-runs`)}</span>}
       </div>
 
-      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-emerald-200/90">
+      <Callout tone="pos" summary={bi('这页证明预交易风控门是运行时 chokepoint,非测过的死代码',
+        'This page proves the pre-trade gate is a runtime chokepoint, not tested dead code')}>
         {bi('这页是"预交易风控门是运行时 chokepoint(而非测过的死代码)"的证明:每一笔订单意图都必须先过门(fail-closed;kill-switch 拉下 → 全部拒绝),通过的才会进入纸面成交。绝不真发券商;纸面成交按平均成本对账到恒等式(残差≈0);每一步进哈希链审计。只读、零下单/券商/凭证路径,L2_DRY_RUN_ONLY。实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。',
             'This page is the PROOF the pre-trade gate is a RUNTIME chokepoint (not tested dead code): every order intent must pass the gate first (fail-closed; kill-switch latched → all rejected) before any paper fill. Nothing is sent to a broker; paper fills reconcile to an exact average-cost identity (residual ≈0); every step is hash-chain audited. Read-only, no broker/order path; L2_DRY_RUN_ONLY. Live = swap the adapter + human approval = non-goal.')}
-      </div>
+      </Callout>
+
+      <Panel eyebrow="PAPER CYCLE CONTROL" title="纸面周期自动检测与执行"
+        right={<StatusChip value={detectorStatus} />}>
+        <div className="grid gap-2 md:grid-cols-4">
+          <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
+            <div className="text-2xs text-muted">数据检测 / Data detector</div>
+            <div className={`mt-1 text-xs mono ${detectorStatus === 'PAPER_HEALTHY' ? 'text-pos' : 'text-warn'}`}>
+              {detectorStatus}
+            </div>
+            <div className="mt-1 text-2xs text-faint">
+              {observedAgeMs == null ? 'mark age unavailable' : `mark age ${Math.round(observedAgeMs / 1000)}s / limit ${Math.round(maxPaperAgeMs / 1000)}s`}
+            </div>
+          </div>
+          <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
+            <div className="text-2xs text-muted">Runner / 执行服务</div>
+            <div className={`mt-1 text-xs mono ${runnerOnline ? 'text-pos' : 'text-faint'}`}>
+              {runnerOnline ? 'ONLINE · PAPER_ONLY' : runnerEnabled() ? 'OFFLINE' : 'NOT_CONFIGURED'}
+            </div>
+            <div className="mt-1 text-2xs text-faint">{getRunnerToken() ? 'token present in this tab' : '需要本标签页 Runner Token'}</div>
+          </div>
+          <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
+            <div className="text-2xs text-muted">最新周期 / Latest cycle</div>
+            <div className="mt-1 text-xs mono text-fg">{cycleRun?.status?.toUpperCase() ?? 'IDLE'}</div>
+            <div className="mt-1 text-2xs text-faint">{cycleRunId ? cycleRunId.slice(0, 16) : '尚未从页面触发'}</div>
+          </div>
+          <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
+            <div className="text-2xs text-muted">安全边界 / Safety</div>
+            <div className="mt-1 text-xs mono text-pos">L2_DRY_RUN_ONLY</div>
+            <div className="mt-1 text-2xs text-faint">live=false · broker=false · credentials=false</div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={() => { void executePaperCycle(false); }} disabled={!cycleCanExecute}
+            className={`rounded-md border px-3 py-1.5 text-xs transition ${cycleCanExecute
+              ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+            {cycleActive && cycleProfile === 'default' ? '执行中…' : '执行默认纸面周期'}
+          </button>
+          <button onClick={() => { void executePaperCycle(true); }} disabled={!cycleCanExecute}
+            className={`rounded-md border px-3 py-1.5 text-xs transition ${cycleCanExecute
+              ? 'border-info/50 text-info hover:bg-info/10' : 'cursor-not-allowed border-line text-faint'}`}>
+            {cycleActive && cycleProfile === 'small_10k' ? '执行中…' : '执行 10K 隔离周期'}
+          </button>
+          <span className="text-2xs text-muted">页面每 10 秒自动刷新检测；检测到过期或阻塞时，可在此触发一次固定配置周期。</span>
+        </div>
+        {cycleRun && (
+          <div className="mt-3 rounded-md border border-line bg-inset/30 px-3 py-2 text-2xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusChip value={cycleRun.status.toUpperCase()} />
+              <StatusChip value={cycleRun.verdict || 'PAPER_CYCLE_PENDING'} />
+              <span className="text-faint mono">{cycleRun.run_id}</span>
+            </div>
+            {cycleRun.status === 'done' && (
+              <div className="mt-1 text-muted">
+                {cycleRun.verdict === 'PAPER_CYCLE_OK' ? '三 Alpha 周期完成，健康检查通过。' : '周期执行完成，但健康检查未通过，请查看阻塞原因。'}
+                {cycleRun.caveats?.length ? ` · ${cycleRun.caveats.slice(-3).join(', ')}` : ''}
+              </div>
+            )}
+            {cycleRun.status === 'error' && <div className="mt-1 text-neg">{cycleRun.error ?? 'paper cycle failed'}</div>}
+          </div>
+        )}
+        {cycleError && <div className="mt-2 text-2xs text-neg">{cycleError}</div>}
+        <div className="mt-2 text-2xs text-muted">
+          自动检测只读取健康快照；执行入口仅允许固定的公共行情纸面驱动器，不读取私钥、不连接券商、不产生真实订单。
+        </div>
+      </Panel>
+
+      {paperPreview && (
+        <Panel eyebrow={bi('纸面订单预览', 'PAPER ORDER PREVIEW')}
+          title={bi('当前三条 Alpha 的调仓视图', 'Current three-Alpha rebalance view')}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {paperOperator && (
+              <>
+                <StatusChip value={paperOperator.verdict.operator_completed ? 'OPERATOR_COMPLETE' : 'OPERATOR_BLOCKED'} />
+                <StatusChip value={paperOperator.verdict.research_packet_ready_for_all_three ? 'RESEARCH_READY' : 'RESEARCH_PENDING'} />
+              </>
+            )}
+            <StatusChip value={paperPreview.verdict.paper_preview_ready ? 'PAPER_READY' : 'PAPER_BLOCKED'} />
+            <span className="text-2xs text-muted">
+              {bi('仅纸面成交，绝不真发；同一决策重复运行不会重复成交',
+                'paper fills only; never sent to a broker; repeated decisions are idempotent')}
+            </span>
+          </div>
+          {paperAlphaRows.length ? (
+            <DataTable
+              rows={paperAlphaRows}
+              columns={[
+                { key: 'alpha', header: 'Alpha', mono: true, render: r => r.alpha },
+                { key: 'intents', header: bi('意图', 'Intents'), align: 'right', mono: true, render: r => r.n_intents ?? 0 },
+                { key: 'approved', header: bi('门批准', 'Approved'), align: 'right', mono: true,
+                  render: r => <span className="text-pos">{r.n_approved ?? 0}</span> },
+                { key: 'fills', header: bi('纸面成交', 'Paper fills'), align: 'right', mono: true, render: r => r.n_paper_fills ?? 0 },
+                { key: 'state', header: bi('状态', 'State'), render: r => r.replayed_from_store ? 'PAPER_REPLAY' : (r.paper_execution ?? 'BLOCKED') },
+                { key: 'resid', header: bi('对账残差', 'Residual'), align: 'right', mono: true, render: r => fmtResidual(r.reconciliation_residual) },
+              ] as Column<PaperAlphaRow>[]}
+              getKey={r => r.alpha}
+            />
+          ) : <div className="text-2xs text-faint">{bi('尚无纸面订单预览', 'no paper order preview yet')}</div>}
+          <div className="mt-2 text-2xs text-muted">
+            {bi('live_allowed=false · order_submission_allowed=false · L2_DRY_RUN_ONLY',
+              'live_allowed=false · order_submission_allowed=false · L2_DRY_RUN_ONLY')}
+          </div>
+        </Panel>
+      )}
+
+      {paperRealtime && (
+        <Panel eyebrow={bi('瀹炴椂绾搁潰鏍囪', 'REAL-TIME PAPER MARKS')}
+          title={bi('鍏紑琛屾儏鏍囪 + 鍥炴祴鍩哄噯', 'Public marks + backtest reference')}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusChip value={paperRealtime.verdict.cycle_completed ? 'PAPER_MARKS_READY' : 'PAPER_MARKS_BLOCKED'} />
+            <StatusChip value={paperRealtime.verdict.backtest_reference_present_for_all_three ? 'BACKTESTS_READY' : 'BACKTESTS_PENDING'} />
+            <StatusChip value={paperRealtime.funding_refresh?.error ? 'FUNDING_REFRESH_PENDING' : paperRealtime.funding_refresh?.attempted ? 'FUNDING_REFRESHED' : 'FUNDING_CACHE_ONLY'} />
+            <span className="text-2xs text-muted">
+              {paperRealtime.provider ?? 'PUBLIC_MARK_DATA'} · {paperRealtime.observed_at ? stamp(paperRealtime.observed_at) : '—'}
+            </span>
+            {usingBackend && <span className="text-2xs text-faint">{bi('控制台 10 秒自动刷新', 'console auto-refresh 10s')}</span>}
+          </div>
+          {Object.keys(paperRealtime.alphas ?? {}).length ? (
+            <DataTable
+              rows={Object.entries(paperRealtime.alphas).map(([alpha, row]) => ({ alpha, ...row }))}
+              columns={[
+                { key: 'alpha', header: 'Alpha', mono: true, render: r => r.alpha },
+                { key: 'status', header: bi('鐘舵€?', 'State'), render: r => r.status ?? '—' },
+                { key: 'equity', header: bi('褰撳墠鏉冪泭', 'Equity'), align: 'right', mono: true, render: r => fmtUsd(r.equity) },
+                { key: 'net', header: bi('鍑€ PnL', 'Net PnL'), align: 'right', mono: true,
+                  render: r => <span className={(r.net_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.net_pnl)}</span> },
+                { key: 'unrealized', header: bi('鏈疄鐜?', 'Unrealized'), align: 'right', mono: true,
+                  render: r => <span className={(r.unrealized_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.unrealized_pnl)}</span> },
+                { key: 'funding', header: bi('资金费', 'Funding'), align: 'right', mono: true,
+                  render: r => <span className={(r.funding_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{r.funding_data_complete === false ? '—' : fmtUsd(r.funding_pnl)}</span> },
+                { key: 'sharpe', header: bi('鍥炴祴 SR', 'Backtest SR'), align: 'right', mono: true,
+                  render: r => paperRealtime.backtests?.[r.alpha]?.sharpe == null ? '—' : signed(paperRealtime.backtests[r.alpha].sharpe!, 2) },
+                { key: 'resid', header: bi('瀵硅处娈嬪樊', 'Residual'), align: 'right', mono: true, render: r => fmtResidual(r.reconciliation_residual) },
+              ] as Column<{ alpha: string } & PaperRealtimeAlpha>[]}
+              getKey={r => r.alpha}
+            />
+          ) : <div className="text-2xs text-faint">{bi('灏氭棤瀹炴椂鏍囪', 'no real-time paper mark yet')}</div>}
+          <div className="mt-2 text-2xs text-muted">
+            {bi(`瀹炴椂=鍏紑 mark REST 杞 · 鏂版鏍囪 ${paperRealtime.persistence.new_snapshots} · 閾惧畬鏁?${paperRealtime.persistence.chain_valid ? 'PASS' : 'BLOCKED'} · 瀹炵洏绂佺敤`,
+              `real-time = public mark REST polling · new snapshots ${paperRealtime.persistence.new_snapshots} · chain ${paperRealtime.persistence.chain_valid ? 'PASS' : 'BLOCKED'} · live disabled`)}
+          </div>
+          {paperRealtime.history && paperRealtime.history.length > 0 && (
+            <div className="mt-3 border-t border-line/60 pt-2">
+              <div className="mb-1 text-2xs text-muted">Paper PnL history · recent hash-chained marks</div>
+              <EquityCurveChart height={120} series={paperSeries(paperRealtime.history)}
+                yFormat={v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} />
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {paperHealth && (
+        <Panel eyebrow="PAPER HEALTH" title="Semantic readiness gate">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusChip value={paperHealth.verdict.paper_ready ? 'PAPER_READY' : 'PAPER_BLOCKED'} />
+            <StatusChip value={paperHealth.verdict.paper_mark_ready ? 'MARKS_READY' : 'MARKS_BLOCKED'} />
+            <StatusChip value={paperHealth.verdict.paper_preview_ready ? 'PREVIEW_READY' : 'PREVIEW_BLOCKED'} />
+            <StatusChip value={paperHealth.verdict.funding_data_complete_for_all_three ? 'FUNDING_READY' : 'FUNDING_PENDING'} />
+            <span className="text-2xs text-muted">
+              {paperHealth.age_ms == null ? 'mark age unavailable' : `mark age ${Math.round(paperHealth.age_ms / 1000)}s`}
+            </span>
+          </div>
+          {paperHealth.blockers.length > 0 ? (
+            <div className="text-2xs text-neg">
+              Blockers: {paperHealth.blockers.join(', ')}
+            </div>
+          ) : (
+            <div className="text-2xs text-pos">
+              All three paper accounts, fills, backtest references, and reconciliation checks are healthy.
+            </div>
+          )}
+          <div className="mt-2 text-2xs text-muted">
+            paper-only · live_allowed=false · order_submission_allowed=false
+          </div>
+        </Panel>
+      )}
+
+      {forwardTrack && (
+        <Panel eyebrow="FORWARD PAPER CLOCK" title={bi('前向纸面证据时钟', 'Out-of-sample paper evidence clock')}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusChip value={forwardTrack.present ? 'FORWARD_TRACKING' : 'FORWARD_TRACK_MISSING'} />
+            <StatusChip value={forwardTrack.quality_evidence_current === true ? 'DATA_ADMISSION_PASS' : 'DATA_ADMISSION_PENDING'} />
+            <StatusChip value={forwardTrack.alphas?.every(row => (row.n_forward_periods ?? 0) >= (forwardTrack.evidence_gate_weeks ?? 8)) ? 'FORWARD_GATE_COMPLETE' : 'FORWARD_GATE_PENDING'} />
+            <span className="text-2xs text-muted">
+              {bi(`门槛 ${(forwardTrack.evidence_gate_weeks ?? 8)} 个真实前向周期`, `${forwardTrack.evidence_gate_weeks ?? 8} real forward periods required`)}
+            </span>
+          </div>
+          {forwardTrack.alphas && forwardTrack.alphas.length > 0 ? (
+            <DataTable
+              rows={forwardTrack.alphas as LiveTradingForwardAlpha[]}
+              columns={[
+                { key: 'alpha_id', header: 'Alpha', mono: true, render: row => row.alpha_id },
+                { key: 'periods', header: bi('已实现/门槛', 'Realized / gate'), align: 'right', mono: true,
+                  render: row => `${row.n_forward_periods ?? 0}/${forwardTrack.evidence_gate_weeks ?? 8}` },
+                { key: 'pending', header: bi('待实现决策', 'Pending decision'), align: 'right', mono: true,
+                  render: row => row.pending_decisions ?? 0 },
+                { key: 'state', header: bi('证据状态', 'Evidence state'), render: row => row.evidence_state ?? 'UNKNOWN' },
+                { key: 'sharpe', header: bi('前向 SR', 'Forward SR'), align: 'right', mono: true,
+                  render: row => row.paper_sharpe == null ? '—' : signed(row.paper_sharpe, 2) },
+              ] as Column<LiveTradingForwardAlpha>[]}
+              getKey={row => row.alpha_id}
+            />
+          ) : (
+            <div className="text-2xs text-faint">{bi('尚无前向证据记录', 'no forward evidence record yet')}</div>
+          )}
+          <div className="mt-2 text-2xs text-muted">
+            {bi('纸面账户健康不等于前向证据完成；待实现决策会在下一真实闭合周期后结算，系统不会用历史数据伪造周期。',
+              'Paper-account health is separate from forward evidence. Pending decisions settle only after the next real closed period; historical data is never reused to fake a period.')}
+          </div>
+          {forwardTrack.alerts && forwardTrack.alerts.length > 0 && (
+            <div className="mt-2 text-2xs text-neg">{forwardTrack.alerts.join(', ')}</div>
+          )}
+        </Panel>
+      )}
+
+      {paperProfiles.length > 0 && (
+        <Panel eyebrow="PAPER PROFILES" title={bi('隔离纸面账户', 'Isolated paper profiles')}>
+          <div className="grid gap-2 md:grid-cols-2">
+            {paperProfiles.map(profile => {
+              const alphaEquity = profile.realtime.total_equity;
+              const alphaNetPnl = profile.realtime.total_net_pnl;
+              const paperLedger = profile.realtime.paper_ledger;
+              return (
+              <div key={profile.profile_id} className="rounded-md border border-line bg-inset/40 px-3 py-2">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="mono text-xs">{profile.profile_id}</span>
+                  <StatusChip value={profile.health.paper_ready ? 'PAPER_READY' : 'PAPER_BLOCKED'} />
+                  <StatusChip value={profile.realtime.chain_valid ? 'CHAIN_PASS' : 'CHAIN_BLOCKED'} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-2xs text-muted">
+                  <span>{bi('账户规模', 'AUM')}<br /><strong className="text-fg">{fmtUsd(profile.aum)}</strong></span>
+                  <span>{bi('Alpha 数', 'Alphas')}<br /><strong className="text-fg">{Object.keys(profile.realtime.alphas ?? {}).length}</strong></span>
+                  <span>{bi('标记年龄', 'Mark age')}<br /><strong className="text-fg">{profile.health.age_ms == null ? '—' : `${Math.round(profile.health.age_ms / 1000)}s`}</strong></span>
+                </div>
+                <div className="mt-2 text-2xs text-muted">
+                  Paper decisions: <strong className="text-fg">{paperLedger?.n_decisions ?? '—'}</strong>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line/60 pt-2 text-2xs text-muted">
+                  <span>{bi('三 Alpha 权益', '3-Alpha equity')}<br /><strong className="text-fg">{fmtUsd(alphaEquity ?? undefined)}</strong></span>
+                  <span>{bi('合计净 PnL', 'Σ net PnL')}<br /><strong className={alphaNetPnl == null ? 'text-faint' : alphaNetPnl >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(alphaNetPnl ?? undefined)}</strong></span>
+                </div>
+                {profile.health.blockers.length > 0 && (
+                  <div className="mt-2 text-2xs text-neg">{profile.health.blockers.join(', ')}</div>
+                )}
+                <div className="mt-2 text-2xs text-muted">paper-only · live/order submission disabled</div>
+              </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
 
       <KpiStrip cols={6}>
         <StatTile label={bi('意图', 'Intents')} value={latest ? String(latest.n_intents) : '—'} tone="muted" />
@@ -152,9 +505,15 @@ export default function DryRunPipeline() {
               tone={(latest?.n_rejected ?? 0) > 0 ? 'neg' : 'muted'} />
           </KpiStrip>
           <Panel eyebrow={bi('净值曲线', 'EQUITY CURVE')}
+            className="terminal-panel"
             title={bi('门强制下的滚动净值(蓝实线=raw,虚线=vol-target 压尾)· 含资金费现金流',
               'Gate-enforced rolling equity (solid=raw, dashed=vol-target) · funding cash-flow included')}>
-            <EquityCurve raw={mp.equity_curve ?? []} vt={mp.equity_curve_vt ?? []} />
+            <EquityCurveChart height={170}
+              series={[
+                { label: bi('raw 净值', 'raw'), points: mp.equity_curve ?? [], tone: 'accent' },
+                { label: bi('vol-target 压尾', 'vol-target'), points: mp.equity_curve_vt ?? [], tone: 'info', dashed: true },
+              ]}
+              yFormat={v => v.toFixed(2)} />
             <div className="mt-1 text-2xs text-muted">
               {bi(`累计资金费 $${(pnl.total_funding ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · 对账残差 ${fmtResidual(pnl.residual)}(价格腿恒等式)。诚实发现:书本已近美元中性(净敞口 ${((pnl.avg_net_exposure_pct ?? 0) * 100).toFixed(1)}%),故 ${((pnl.max_drawdown ?? 0) * 100).toFixed(0)}% 回撤是 L/S 截面价差本身的波动、非净市场敞口/整数手舍入(经 $1M↔$100M 规模不变验证);funding 是骑在这条波动价差上的较小稳定边,无法干净隔离。`,
                 `funding $${(pnl.total_funding ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · residual ${fmtResidual(pnl.residual)}. Honest finding: the book is already ~dollar-neutral (net ${((pnl.avg_net_exposure_pct ?? 0) * 100).toFixed(1)}%), so the ${((pnl.max_drawdown ?? 0) * 100).toFixed(0)}% drawdown is the inherent L/S cross-sectional spread — NOT net-market exposure or integer-lot rounding (verified scale-invariant $1M↔$100M); funding is the smaller steady edge riding on that volatile spread, not cleanly separable.`)}
@@ -184,12 +543,26 @@ export default function DryRunPipeline() {
 
       <Panel eyebrow={bi('最新组合(纸面持仓)', 'LATEST BOOK')}
         title={bi('门批准后的纸面目标持仓(按手数绝对值前 12)', 'Gate-approved paper target positions (top 12 by |qty|)')}>
-        {posRows.length ? <DataTable rows={posRows} columns={posCols} getKey={r => r.inst} /> : (
+        {posRows.length ? <DataTable rows={posRows} columns={posCols} getKey={r => r.inst} density="compact" /> : (
           <div className="text-2xs text-faint">{bi('无持仓(尚无干跑或全被门拒)', 'no positions (no run yet, or all gate-rejected)')}</div>)}
       </Panel>
 
       <Panel eyebrow={bi('运行历史', 'RUN HISTORY')} title={bi('每次干跑都是一条可复现记录(append-only)', 'Each dry-run is a reproducible record (append-only)')}>
-        {p.runs.length ? <DataTable rows={[...p.runs].reverse()} columns={runCols} getKey={r => r.run_id} /> : (
+        {p.runs.length ? (
+          <>
+            {strategies.length > 2 && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {strategies.map(s => (
+                  <PillToggle key={s} label={s} active={strategyFilter === s} onClick={() => setStrategyFilter(s)} />
+                ))}
+              </div>
+            )}
+            <DataTable rows={[...filteredRuns].reverse()} columns={runCols} getKey={r => r.run_id}
+              stickyHeader maxHeight={420} density="compact"
+              searchable={r => `${r.run_id} ${r.strategy_id} ${r.audit_root}`}
+              searchPlaceholder={bi('按 run_id / 策略 / 审计根搜索…', 'search by run_id / strategy / audit root…')} />
+          </>
+        ) : (
           <div className="text-2xs text-faint">{bi('无干跑记录 —— 门外跑 tools/dry_run_carry.py 生成', 'no dry-run records — run tools/dry_run_carry.py off-gate')}</div>)}
       </Panel>
 
@@ -197,6 +570,7 @@ export default function DryRunPipeline() {
         {bi('只读 · 研究/干跑(L2)· DryRunStore(data/cache/dry_run.db)· 门 fail-closed + kill-switch + 哈希链审计 · 绝不真发券商 · 晋级实盘人工专属',
           'Read-only · research / dry-run (L2) · DryRunStore · gate fail-closed + kill-switch + hash-chain audit · never sent to a broker · promotion to live is human-only')}
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

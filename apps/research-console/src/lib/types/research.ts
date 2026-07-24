@@ -139,6 +139,20 @@ export interface ConsolePayloadBase {
   // every console_api snapshot carries an honesty marker; pages read it to label the ProvenanceRibbon
   // accurately (REAL_* markers => real data, else synthetic). Optional so mock fixtures need not set it.
   data_provenance?: string;
+  /** Common backend admission metadata added by the console snapshot middleware. */
+  snapshot_status?: 'REAL' | 'SYNTHETIC' | 'NO_SNAPSHOT' | 'STALE' | 'DATA_BLOCKED' | 'UNAVAILABLE' | string;
+  snapshot_id?: string | null;
+  snapshot_ids?: string[];
+  data_quality?: {
+    status?: string;
+    provenance?: string;
+    snapshot_present?: boolean;
+    is_synthetic?: boolean;
+    is_stale?: boolean;
+    is_blocked?: boolean;
+    is_available?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 export interface ResearchStats {
@@ -1471,6 +1485,256 @@ export interface DryRunRunRow {
   };
 }
 
+export interface PaperOrderPreviewOrder {
+  instrument: string;
+  side: string;
+  quantity: number;
+  target_signed_quantity?: number;
+  decision_mark_price?: number;
+  notional?: number;
+  paper_position_before?: number;
+  paper_position_after_fill?: number;
+}
+
+export interface PaperOrderPreviewAlpha {
+  alpha_id: string;
+  decision_ts?: number;
+  decision_source?: string;
+  scope?: string[];
+  paper_positions_before?: Record<string, number>;
+  paper_positions?: Record<string, number>;
+  orders?: PaperOrderPreviewOrder[];
+  n_intents?: number;
+  n_approved?: number;
+  n_rejected?: number;
+  rejected_reasons?: string[];
+  n_paper_fills?: number;
+  paper_execution?: string;
+  reconciliation_residual?: number;
+  replayed_from_store?: boolean;
+}
+
+export interface PaperOrderPreviewPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  verdict: {
+    paper_preview_ready?: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  alphas: Record<string, PaperOrderPreviewAlpha>;
+  errors: Record<string, { error_type?: string; error?: string; paper_execution?: string }>;
+  safety: {
+    paper_only: boolean;
+    broker_connectivity: boolean;
+    broker_order_submission: boolean;
+    credentials_accessed: boolean;
+  };
+}
+
+export interface L2PaperOperatorPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  verdict: {
+    operator_completed: boolean;
+    paper_preview_ready: boolean;
+    research_packet_ready_for_all_three: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  stages: {
+    three_alpha_paper_flow: { status: string; flow_completed: boolean };
+    paper_order_preview: { status: string; paper_preview_ready: boolean };
+  };
+  safety: {
+    paper_only: boolean;
+    private_binance_access: boolean;
+    credential_access: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperRealtimeAlpha {
+  alpha_id: string;
+  observed_at?: number;
+  status?: string;
+  n_fills?: number;
+  positions?: Record<string, number>;
+  marks?: Record<string, number>;
+  cash?: number;
+  market_value?: number;
+  equity?: number;
+  realized_pnl?: number;
+  unrealized_pnl?: number;
+  funding_pnl?: number;
+  funding_events?: number;
+  funding_data_complete?: boolean;
+  funding_missing_instruments?: string[];
+  funding_missing_events?: string[];
+  gross_pnl?: number;
+  costs?: number;
+  net_pnl?: number;
+  return_on_aum?: number;
+  turnover?: number;
+  reconciliation_residual?: number;
+  paper_only?: boolean;
+  live_allowed?: boolean;
+  order_submission_allowed?: boolean;
+}
+
+export interface PaperRealtimeBacktest {
+  run_id?: string;
+  n_periods?: number;
+  total_return?: number;
+  sharpe?: number;
+  sharpe_vt?: number;
+  max_drawdown?: number;
+  max_drawdown_vt?: number;
+  reconciliation_residual?: number;
+  research_risk_decision?: string;
+  provenance?: string;
+}
+
+export interface PaperRealtimeHistoryPoint {
+  alpha_id: string;
+  observed_at: number;
+  equity?: number;
+  net_pnl?: number;
+}
+
+export interface PaperRealtimePayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  observed_at?: number;
+  provider?: string;
+  verdict: {
+    cycle_completed: boolean;
+    paper_mark_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  alphas: Record<string, PaperRealtimeAlpha>;
+  backtests: Record<string, PaperRealtimeBacktest>;
+  history?: PaperRealtimeHistoryPoint[];
+  funding_refresh?: {
+    attempted?: boolean;
+    provider?: string;
+    observed_at?: number | null;
+    error?: string | null;
+  };
+  paper_ledger?: {
+    n_rows?: number;
+    n_decisions?: number;
+    latest_decision_ts?: number | null;
+  };
+  persistence: { new_snapshots: number; chain_valid: boolean };
+  errors: Record<string, string>;
+  safety: {
+    paper_only: boolean;
+    public_market_data_only: boolean;
+    private_binance_access: boolean;
+    credentials_accessed: boolean;
+    broker_connectivity: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperHealthPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  observed_at?: number;
+  age_ms?: number;
+  max_age_ms?: number;
+  verdict: {
+    paper_ready: boolean;
+    paper_mark_ready: boolean;
+    paper_preview_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    funding_data_complete_for_all_three?: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  blockers: string[];
+  forward_evidence?: {
+    present?: boolean;
+    ran_at?: number;
+    evidence_gate_periods?: number;
+    complete_for_all_three?: boolean;
+    quality_evidence_current?: boolean;
+    data_quality_admission?: {
+      verdict?: string;
+      quality_verdict?: string;
+      lineage_verdict?: string;
+    };
+    alphas?: Record<string, {
+      n_forward_periods?: number | null;
+      periods_to_gate?: number | null;
+      pending_decisions?: number | null;
+      attested_pending_decisions?: number | null;
+      evidence_state?: string;
+      paper_sharpe?: number | null;
+    }>;
+    alerts?: string[];
+  };
+  safety: {
+    paper_only: boolean;
+    public_market_data_only: boolean;
+    broker_connectivity: boolean;
+    credentials_accessed: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperProfilePayload {
+  profile_id: string;
+  aum: number;
+  read_only: boolean;
+  snapshot_present: boolean;
+  realtime: {
+    cycle_completed: boolean;
+    paper_mark_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    observed_at?: number;
+    funding_refresh?: PaperRealtimePayload['funding_refresh'];
+    chain_valid: boolean;
+    alphas: Record<string, PaperRealtimeAlpha>;
+    total_equity?: number | null;
+    total_net_pnl?: number | null;
+    paper_ledger?: {
+      n_rows?: number;
+      n_decisions?: number;
+      latest_decision_ts?: number | null;
+    };
+    history?: PaperRealtimeHistoryPoint[];
+  };
+  health: {
+    paper_ready: boolean;
+    paper_mark_ready: boolean;
+    paper_preview_ready: boolean;
+    funding_data_complete_for_all_three?: boolean;
+    age_ms?: number;
+    blockers: string[];
+  };
+  forward_track?: LiveTradingForwardTrack;
+  safety: {
+    paper_only: boolean;
+    broker_connectivity: boolean;
+    credentials_accessed: boolean;
+    broker_order_submission: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+}
+
 export interface DryRunPipelinePayload extends ConsolePayloadBase {
   data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
   snapshot_present: boolean;
@@ -1478,6 +1742,12 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   n_runs: number;
   latest: DryRunRunRow | Record<string, never>;
   runs: DryRunRunRow[];
+  paper_order_preview?: PaperOrderPreviewPayload;
+  paper_operator?: L2PaperOperatorPayload;
+  paper_realtime?: PaperRealtimePayload;
+  paper_health?: PaperHealthPayload;
+  forward_track?: LiveTradingForwardTrack;
+  paper_profiles?: Record<string, PaperProfilePayload>;
   safety_note: string;
 }
 
@@ -1596,6 +1866,8 @@ export interface LiveTradingForwardAlpha {
   backtest_reference_sharpe: number | null;
   reference_weeks: number | null;
   pending_decisions: number | null;
+  attested_pending_decisions?: number | null;
+  evidence_state?: string;
   last_decision_ts: number | null;
 }
 export interface LiveTradingForwardTrack {
@@ -1603,6 +1875,12 @@ export interface LiveTradingForwardTrack {
   ran_at?: number;
   staleness_days?: Record<string, { freshest_days: number | null; worst_days: number | null; n_stale: number | null; n_total: number }>;
   evidence_gate_weeks?: number;
+  quality_evidence_current?: boolean;
+  data_quality_admission?: {
+    verdict?: string;
+    quality_verdict?: string;
+    lineage_verdict?: string;
+  };
   alphas?: LiveTradingForwardAlpha[];
   alerts?: string[];
 }
@@ -1883,4 +2161,80 @@ export interface AlphaGraphPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   nodes: AlphaGraphNode[]; edges: AlphaGraphEdge[]; clusters: AlphaGraphCluster[];
   rho_cut: number; n_near_dup: number;
+}
+
+// ---- MEXC 零手续费 BTC 现货对接(read-only 三端点;additive contract,
+// mirrors services/console/api/mexc_views.py — 改形状两侧同步) ----
+export interface MexcMarketPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_MEXC_MARKET_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;              // MEXC_MARKET_OK | NO_SNAPSHOT
+  venue: string;                // "MEXC"
+  symbol: string;               // "BTCUSDT"
+  latest_price: number | null;
+  change_24h_pct: number | null;
+  volatility_30d_ann: number | null;
+  coverage: { date_start: string | null; date_end: string | null; n_rows: number };
+  freshness: {
+    fetched_at: number | null; age_hours: number | null;
+    fresh_within_hours: number; is_fresh: boolean;
+  };
+  db: { present: boolean; n_rows: number; date_start: string | null; date_end: string | null };
+  /** Optional per-bar OHLC series (not yet emitted by the backend; pages render honestly without it). */
+  bars?: { t?: number; open: number; high: number; low: number; close: number; volume?: number }[];
+  honesty_note: string;
+}
+
+export interface MexcStrategyMetrics {
+  total_return: number | null;
+  sharpe: number | null;
+  sharpe_vt: number | null;
+  max_drawdown: number | null;
+  max_drawdown_vt: number | null;
+  turnover: number | null;
+  n_periods: number | null;
+  n_approved: number | null;
+  n_rejected: number | null;
+  reconciliation_residual: number | null;
+}
+export interface MexcBuyAndHold {
+  present: boolean;
+  total_return?: number | null;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+  curve?: { t: number; equity: number }[];
+}
+export interface MexcStrategyPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;              // BTC_SPOT_TREND_OK | NO_RUN
+  venue: string;
+  strategy_id: string;          // "btc_spot_trend"
+  n_runs: number;
+  metrics: MexcStrategyMetrics;
+  equity_curve: { t: number; equity: number; ret?: number }[];
+  equity_curve_vt: { t: number; equity: number; ret?: number }[];
+  buy_and_hold: MexcBuyAndHold;
+  latest: DryRunRunRow | Record<string, never>;
+  runs: DryRunRunRow[];
+  honesty_note: string;
+}
+
+export interface MexcReadinessCheck {
+  id: string;
+  label: string;
+  status: "READY" | "BLOCKED" | string;
+  reason: string;
+}
+export interface MexcReadinessPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_MEXC_READINESS_CHECK" | string;
+  snapshot_present: boolean;
+  verdict: string;              // READY | BLOCKED
+  venue: string;
+  readiness: string;            // "L2_DRY_RUN_ONLY"
+  n_ready: number;
+  n_blocked: number;
+  checks: MexcReadinessCheck[];
+  kill_switch: { tripped: boolean; reason: string | null };
+  honesty_note: string;
 }

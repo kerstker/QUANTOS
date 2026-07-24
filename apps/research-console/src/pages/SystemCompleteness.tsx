@@ -10,6 +10,7 @@ import {
   Chip,
   DataTable,
   KpiStrip,
+  LoadingVeil,
   PageHeader,
   PageShell,
   Panel,
@@ -182,6 +183,7 @@ export default function SystemCompleteness() {
         evidenceData={verified}
       />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {!verified && (
         <Panel tone="warn" title="Assessment unavailable" eyebrow="UNVERIFIED">
           <p className="text-sm text-warn">assessment artifact unavailable</p>
@@ -248,6 +250,7 @@ export default function SystemCompleteness() {
           </p>
         </Panel>
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

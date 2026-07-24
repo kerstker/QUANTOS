@@ -3,54 +3,17 @@ import { fetchCryptoLiveSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { CryptoFactor, CryptoLivePayload } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
-import { RESEARCH_CONSOLE_API_BASE } from '@/lib/api/research-console-api';
 import {
   PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip,
-  GateDot, type Column,
+  GateDot, ProvenanceRibbon, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { BarSeries } from '@/ui/charts';
 import { num, fixed, pct, signed, stamp, shortHash } from '@/ui/format';
-import type { ConsoleApiState as ApiState } from '@/ui/useConsoleSnapshot';
 
 /* Short, stable display label for an alpha id (interaction ids are long). */
 function shortLabel(id: string): string {
   const s = id.replace(/^hx_/, '').replace(/^h_/, '').replace(/price-/g, '');
   return s.length > 16 ? `${s.slice(0, 15)}…` : s;
-}
-
-/**
- * Honesty + connection ribbon — REAL read-only crypto data (NOT the synthetic demo
- * snapshots the other pages serve). States the source, the containment, and that
- * the research core never touches the network.
- */
-function RealDataRibbon({ apiState, usingBackend, present, provenance, error }:
-  { apiState: ApiState; usingBackend: boolean; present: boolean; provenance?: string; error?: string | null }) {
-  const tone = !usingBackend ? 'var(--warn)' : present ? 'var(--pos)' : 'var(--info)';
-  const headline = !usingBackend
-    ? bi('未连接只读后端 · 真实加密研究仅在连接后端时渲染', 'Not connected · real crypto research renders only against the read-only backend')
-    : present
-      ? bi('真实只读行情(CoinGecko)· 链下抓取、研究核心离线 · 非实盘盈亏', 'Real read-only market data (CoinGecko) · off-gate fetch, offline research core · not live PnL')
-      : bi('已连接后端 · 尚未生成真实快照', 'Backend connected · no live snapshot generated yet');
-  const apiLabel = apiState === 'connected' ? bi('已连接', 'CONNECTED') : apiState === 'error' ? bi('错误', 'ERROR')
-    : apiState === 'loading' ? bi('加载中', 'LOADING') : bi('未连接', 'NOT_CONNECTED');
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
-      style={{ background: `color-mix(in srgb, ${tone} 8%, transparent)`, boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${tone} 30%, transparent)` }}>
-      <span className="text-2xs font-medium" style={{ color: tone }}>
-        {present ? '◆' : '○'} {headline}
-      </span>
-      <span className="mx-1 h-3 w-px bg-line-strong" />
-      <Chip label={present ? 'REAL_DATA' : usingBackend ? 'AWAITING_SNAPSHOT' : 'MOCK_MODE'} tone={present ? 'pos' : usingBackend ? 'info' : 'warn'} />
-      <Chip label={apiLabel} tone={apiState === 'connected' ? 'pos' : apiState === 'error' ? 'neg' : 'muted'} />
-      <Chip label={bi('只读', 'READ_ONLY')} tone="info" />
-      <Chip label={bi('实盘禁用', 'LIVE_DISALLOWED')} tone="neg" />
-      <span className="ml-auto text-2xs text-faint">
-        {error ? <span className="text-neg">{bi('错误', 'Error')}: {error}</span>
-          : <>{bi('数据源', 'Source')}: <span className="mono">{provenance ?? 'COINGECKO_OFFLINE'}</span>
-            {'  ·  API: '}<span className="mono">{RESEARCH_CONSOLE_API_BASE || bi('未启用', 'disabled')}</span></>}
-      </span>
-    </div>
-  );
 }
 
 /* The factor factory as a pipeline — static stages from data to verdict. */
@@ -170,9 +133,12 @@ export default function CryptoLive() {
           ? <Chip label={bi(`${meta!.n_instruments} 标的 · ${meta!.n_periods} 周期`, `${meta!.n_instruments} coins · ${meta!.n_periods} periods`)} tone="pos" />
           : <Chip label={bi('等待快照', 'awaiting snapshot')} tone="warn" />} />
 
-      <RealDataRibbon apiState={apiState} usingBackend={usingBackend} present={!!present}
-        provenance={payload?.data_provenance} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} variant="crypto"
+        realData={!!present} noDataYet={usingBackend && !present}
+        source={payload?.data_provenance ?? 'COINGECKO_OFFLINE'} error={error}
+        extraChips={<Chip label={bi('实盘禁用', 'LIVE_DISALLOWED')} tone="neg" />} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {!present ? (
         <Instructions connected={usingBackend} />
       ) : (
@@ -354,6 +320,7 @@ export default function CryptoLive() {
           </div>
         </>
       )}
+      </LoadingVeil>
     </PageShell>
   );
 }

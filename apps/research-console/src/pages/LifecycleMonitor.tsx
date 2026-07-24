@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, LoadingVeil,
+  PillToggle, type Column,
 } from '@/ui/primitives';
 import { signed, fixed } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -86,11 +87,8 @@ export default function LifecycleMonitor() {
       if (!slot) return <span className="text-faint">—</span>;
       const active = paperDetailAlphaId === slot;
       return (
-        <button onClick={() => setPaperDetailAlphaId(active ? null : slot)}
-          className={`rounded-md border px-2 py-0.5 text-2xs transition ${
-            active ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-ink'}`}>
-          {active ? bi('收起', 'hide') : bi('查看', 'view')}
-        </button>
+        <PillToggle label={active ? bi('收起', 'hide') : bi('查看', 'view')} active={active}
+          onClick={() => setPaperDetailAlphaId(active ? null : slot)} />
       );
     } },
   ];
@@ -104,6 +102,7 @@ export default function LifecycleMonitor() {
         realData={usingBackend && payload?.data_provenance === 'EXPERIMENT_REGISTRY'}
         source={usingBackend ? 'EXPERIMENT_REGISTRY' : 'FRONTEND_LIFECYCLE_MOCK'} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {/* Honesty: backtest-side fields are REAL (immutable experiment_registry artifacts). The forward
           paper-track store feeds a REAL held-out paper Sharpe per tracked alpha, compared APPLES-TO-APPLES
           to the train Sharpe — PAPER_RETURN_ONLY means paper return holds up (no IC to certify further),
@@ -169,6 +168,7 @@ export default function LifecycleMonitor() {
           <PaperTrackDetail alphaId={paperDetailAlphaId} />
         </Panel>
       )}
+      </LoadingVeil>
     </PageShell>
   );
 }

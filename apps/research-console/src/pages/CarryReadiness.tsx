@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, LoadingVeil, Callout, type Column,
 } from '@/ui/primitives';
 import { signed, fixed } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
@@ -82,11 +82,13 @@ export default function CarryReadiness() {
         <span className="text-2xs text-muted">{bi(VERDICT_ZH[p.verdict] ?? p.verdict, p.verdict)}</span>
       </div>
 
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-amber-200/90">
+      <Callout tone="warn" summary={bi('诚实标注:头条夏普非前向承诺 — 资金费压缩、回撤尾巴未控',
+        'Honest note: headline Sharpe is not a forward promise — funding compression, uncontrolled drawdown tail')}>
         {bi('诚实标注:资金费 carry 是有经济学根据的风险溢价,过了全套关卡(非过拟合——连最笨的 −funding 都成立、扛过 2022 熊市、真实分层滑点下存活)。但头条夏普被肥沃的 2020–21 抬高:资金费 5 年压缩约 5×,前向预期更低;且未上实盘、回撤尾巴(25–30% / 最差日 −8%)未控。研究只读、零下单/券商/凭证路径,L2_DRY_RUN_ONLY,晋级实盘人工专属。',
-            'Honest note: funding carry is an economically-grounded risk premium that passed the full gauntlet (NOT overfit — even the dumbest −funding spec holds, survived the 2022 bear, lives under realistic tiered slippage). But the headline Sharpe is inflated by the rich 2020–21 premium: funding has compressed ~5× over 5 years, so the forward expectation is lower; and it is not live-executed, with an uncontrolled 25–30% drawdown tail (−8% worst day). Read-only, no broker/order path; L2_DRY_RUN_ONLY, promotion to live is human-only.')}
-      </div>
+          'Honest note: funding carry is an economically-grounded risk premium that passed the full gauntlet (NOT overfit — even the dumbest −funding spec holds, survived the 2022 bear, lives under realistic tiered slippage). But the headline Sharpe is inflated by the rich 2020–21 premium: funding has compressed ~5× over 5 years, so the forward expectation is lower; and it is not live-executed, with an uncontrolled 25–30% drawdown tail (−8% worst day). Read-only, no broker/order path; L2_DRY_RUN_ONLY, promotion to live is human-only.')}
+      </Callout>
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={5}>
         <StatTile label={bi('净夏普 @5bps', 'Net SR @5bps')} value={st.sharpe_net_5bps == null ? '—' : signed(st.sharpe_net_5bps, 2)}
           accent sub={bi('全历史·偏乐观', 'full hist · optimistic')} />
@@ -140,6 +142,7 @@ export default function CarryReadiness() {
         {bi('只读 · 研究/干跑(L2)· 三份离线快照(strategy/walkforward/capacity)· 晋级实盘人工专属 · 头条夏普非前向承诺',
           'Read-only · research / dry-run (L2) · three offline snapshots · promotion to live is human-only · the headline Sharpe is not a forward promise')}
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

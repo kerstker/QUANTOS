@@ -84,7 +84,11 @@ def test_ops_api_accepts_correct_token():
 def test_ops_token_file_is_gitignored():
     # 一次生成、跨进程复用的本机密钥文件绝不能被提交
     proc_result = __import__("subprocess").run(
-        ["git", "check-ignore", os.path.join("key", "live_ops_token.txt")],
+        # QUANTOS keeps a bare .git directory for worktree orchestration;
+        # explicitly opt into worktree semantics so this check is portable.
+        ["git", "--git-dir", os.path.join(_ROOT, ".git"),
+         "--work-tree", _ROOT, "-c", "core.bare=false", "check-ignore",
+         os.path.join("key", "live_ops_token.txt")],
         cwd=_ROOT, capture_output=True, text=True)
     assert proc_result.returncode == 0, "key/live_ops_token.txt must be gitignored"
 
@@ -141,3 +145,91 @@ def test_ops_api_pending_review_requires_auth():
     from tools.live_ops_api import app
     client = TestClient(app)
     assert client.get("/api/v1/liveops/pending-review").status_code == 401
+
+
+# --- venue 注册表白名单(2026-07-14, MEXC 现货) ---
+
+_KNOWN_VENUES = {"binance", "bybit", "bybit_demo", "mexc", "binance_mainnet"}
+
+
+def test_ops_api_venue_registry_only_known_venues():
+    """_VENUES(live_track_advance)是 ops API 命令行白名单的源头——它注册什么,前端就能
+    以固定 argv 子进程跑什么。机器钉死注册表只能是已知 venue 的子集,防止任意注册把
+    未经治理审查的 venue 暴露给 /run 端点。MEXC 注册后(mexc 现货适配器由并行任务接入)
+    必须满足同一形状:固定 argv、无 shell、可走 submit 流程。"""
+    from tools.live_track_advance import _VENUES
+    assert set(_VENUES) <= _KNOWN_VENUES, \
+        f"_VENUES may only register known venues, got: {sorted(set(_VENUES) - _KNOWN_VENUES)}"
+
+
+def test_ops_api_mexc_venue_builds_fixed_argv_when_registered():
+    from tools.live_track_advance import _VENUES
+    if "mexc" not in _VENUES:
+        pytest.skip("mexc 尚未注册进 _VENUES——注册后本测试自动生效")
+    from tools.live_ops_api import _build_run_cmd
+    cmd = _build_run_cmd("mexc", submit=True, refresh=False)
+    assert cmd[1:4] == ["-m", "tools.live_track_advance", "--venue"]
+    assert cmd[4] == "mexc"
+    assert "--submit" in cmd and "--no-refresh" in cmd
+
+
+def test_ops_api_binance_mainnet_venue_builds_fixed_argv_when_registered():
+    """binance_mainnet(2026-07 Binance 期货 mainnet 接线)注册后满足同一形状:固定 argv、
+    无 shell、可走 submit 流程——但 argv 永不携带 --arm-live(ops API 无 arming 能力,
+    该 venue 经 ops API 触发的运行会在驱动器 mainnet_only 闸门上 fail-closed SystemExit)。"""
+    from tools.live_track_advance import _VENUES
+    if "binance_mainnet" not in _VENUES:
+        pytest.skip("binance_mainnet 尚未注册进 _VENUES——注册后本测试自动生效")
+    from tools.live_ops_api import _build_run_cmd
+    cmd = _build_run_cmd("binance_mainnet", submit=True, refresh=False)
+    assert cmd[1:4] == ["-m", "tools.live_track_advance", "--venue"]
+    assert cmd[4] == "binance_mainnet"
+    assert "--submit" in cmd and "--no-refresh" in cmd
+    assert "--arm-live" not in cmd
+
+
+# --- --arm-live 治理(2026-07, MEXC 对接 1.5)---
+
+def test_ops_api_fixed_argv_never_carries_arm_live():
+    """--arm-live 是**人工 CLI 专属**的 arming 路径(唯一允许构造 armed SafetyConfig 的入口)。
+    ops API 的 POST /run 固定 argv 绝不携带它——AI/前端可触达的进程没有任何 arming 能力。"""
+    src = _src()
+    assert "--arm-live" not in src
+    from tools.live_ops_api import _build_run_cmd
+    for venue in ("binance", "bybit_demo", "mexc"):
+        for submit in (True, False):
+            cmd = _build_run_cmd(venue, submit=submit, refresh=False)
+            assert "--arm-live" not in cmd
+
+
+def test_armed_safety_config_helper_keeps_ai_and_human_approval_invariants():
+    from tools.live_track_advance import armed_safety_config
+    assert armed_safety_config(["prog"]) is None
+    assert armed_safety_config(["prog", "--submit"]) is None
+    with pytest.raises(SystemExit):
+        armed_safety_config(["prog", "--arm-live"])          # preview 绝不 arm
+    cfg = armed_safety_config(["prog", "--submit", "--arm-live"])
+    assert cfg.live_trading_armed is True
+    assert cfg.allow_ai_direct_trading is False              # AI 直接交易恒禁(此路径翻不掉)
+    assert cfg.require_human_approval is True
+
+
+def test_no_arm_path_outside_the_human_cli_driver():
+    """armed SafetyConfig 的构造面必须收敛到人工 CLI 驱动器一处:`live_trading_enabled=True`
+    字面量在 tools/services/live 生产代码里只允许出现在 tools/live_track_advance.py
+    (armed_safety_config)——任何第二处构造路径都是未经治理评审的 arming 旁路。"""
+    offenders = []
+    for tree in ("tools", "services", "live"):
+        for dirpath, _dirs, files in os.walk(os.path.join(_ROOT, tree)):
+            if "__pycache__" in dirpath:
+                continue
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, fn)
+                if os.path.basename(path) == "live_track_advance.py":
+                    continue
+                src = open(path, encoding="utf-8").read()
+                if "live_trading_enabled=True" in src:
+                    offenders.append(os.path.relpath(path, _ROOT))
+    assert not offenders, f"armed SafetyConfig construction outside the human CLI driver: {offenders}"

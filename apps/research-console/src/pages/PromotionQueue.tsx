@@ -13,9 +13,12 @@ import {
 } from '@/lib/api/governance-pkce';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  Button, Chip, EmptyState, KpiStrip, PageHeader, PageShell, Panel, StatTile, StatusChip,
+  Button, Chip, DataTable, EmptyState, KpiStrip, PageHeader, PageShell, Panel, StatTile, StatusChip,
+  type Column,
 } from '@/ui/primitives';
 import { fixed, stamp } from '@/ui/format';
+import { useConfirm } from '@/ui/dialog';
+import { useToast } from '@/ui/toast';
 
 /**
  * PromotionQueue — 研究晋级(→APPROVED)的多方批准操作台(战线①,2026-07-06)。
@@ -33,9 +36,10 @@ export default function PromotionQueue() {
   );
   const [candidates, setCandidates] = useState<PromotionCandidatesPayload | null>(null);
   const [requests, setRequests] = useState<PromotionRequestDetail[]>([]);
-  const [msg, setMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const reload = useCallback(async () => {
     if (!enabled || !getGovernanceAccessToken()) return;
@@ -60,13 +64,14 @@ export default function PromotionQueue() {
       .then(result => {
         if (result.status !== 'AUTHENTICATED') return;
         setAuthenticated(true);
-        setMsg({ tone: 'pos', text: bi('OIDC 登录完成', 'OIDC sign-in complete') });
+        toast.success(bi('OIDC 登录完成', 'OIDC sign-in complete'));
         void reload();
       })
       .catch(error => {
         setAuthenticated(false);
         setLoadError(error instanceof Error ? error.message : String(error));
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload]);
 
   async function onSignIn() {
@@ -86,37 +91,49 @@ export default function PromotionQueue() {
     setAuthenticated(false);
     setCandidates(null);
     setRequests([]);
-    setMsg({ tone: 'info', text: bi('OIDC 会话已清除', 'OIDC session cleared') });
+    toast.info(bi('OIDC 会话已清除', 'OIDC session cleared'));
   }
 
   async function act(label: string, fn: () => Promise<unknown>) {
-    setMsg({ tone: 'info', text: bi(`执行中:${label} …`, `running: ${label} …`) });
     try {
       await fn();
-      setMsg({ tone: 'pos', text: bi(`完成:${label}`, `done: ${label}`) });
+      toast.success(bi(`完成:${label}`, `done: ${label}`));
       await reload();
     } catch (e) {
-      setMsg({ tone: 'neg', text: e instanceof Error ? e.message : String(e) });
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 
   async function onExecute(requestId: string) {
-    setMsg({ tone: 'info', text: bi('执行晋级 …', 'executing …') });
+    const confirmed = await confirm({
+      title: bi('执行晋级', 'Execute promotion'),
+      message: bi('这会一次性烧毁本次多方批准的 grant——无论证据门通过与否,grant 都不可复用;若被拒绝需重新走三方批准。',
+        'This burns the multi-party grant one-way — whether the evidence guard passes or not, the grant cannot be reused; a rejection requires restarting the 3-party flow.'),
+      severity: 'warn', confirmLabel: bi('执行(烧毁 grant)', 'Execute (burn grant)'),
+    });
+    if (!confirmed) return;
     try {
       const out = await executePromotionRequest(requestId);
       if (out.ok) {
-        setMsg({ tone: 'pos', text: bi(`已晋级:${out.alpha_id} → ${out.dst}`, `promoted: ${out.alpha_id} → ${out.dst}`) });
+        toast.success(bi(`已晋级:${out.alpha_id} → ${out.dst}`, `promoted: ${out.alpha_id} → ${out.dst}`));
       } else {
-        setMsg({
-          tone: 'neg',
-          text: bi(`晋级被证据门拒绝(${out.reasons.join('; ')})—— grant 已一次性烧毁,需重新走三方`,
-            `guard rejected (${out.reasons.join('; ')}) — the grant is burned one-way; restart the 3-party flow`),
-        });
+        toast.error(bi(`晋级被证据门拒绝(${out.reasons.join('; ')})—— grant 已一次性烧毁,需重新走三方`,
+          `guard rejected (${out.reasons.join('; ')}) — the grant is burned one-way; restart the 3-party flow`));
       }
       await reload();
     } catch (e) {
-      setMsg({ tone: 'neg', text: e instanceof Error ? e.message : String(e) });
+      toast.error(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  async function onReject(requestId: string) {
+    const confirmed = await confirm({
+      title: bi('否决申请', 'Reject request'),
+      message: bi('否决后该申请关闭,需重新发起才能再次尝试晋级。', 'Rejecting closes this request — promoting again requires opening a fresh one.'),
+      severity: 'warn', confirmLabel: bi('否决', 'Reject'),
+    });
+    if (!confirmed) return;
+    await act(bi('否决', 'reject'), () => rejectPromotionRequest(requestId));
   }
 
   const open = requests.filter(r => OPEN_STATES.has(r.state));
@@ -157,7 +174,8 @@ export default function PromotionQueue() {
         )}
         <div className="flex flex-wrap items-center gap-2 text-2xs text-faint">
           {!authenticated ? (
-            <Button onClick={() => void onSignIn()} disabled={!enabled || !pkceEnabled || busy} variant="accent">
+            <Button onClick={() => void onSignIn()} disabled={!enabled || !pkceEnabled || busy} variant="pos"
+              className="font-semibold">
               {bi('OIDC 登录', 'OIDC sign in')}
             </Button>
           ) : (
@@ -165,12 +183,11 @@ export default function PromotionQueue() {
               {bi('退出', 'Sign out')}
             </Button>
           )}
-          <Button onClick={() => void reload()} disabled={!ready || busy} variant="accent">
+          <Button onClick={() => void reload()} disabled={!ready || busy} variant="muted">
             {busy ? bi('加载中…', 'loading…') : bi('刷新', 'Refresh')}
           </Button>
         </div>
         {loadError && <div className="mt-2 text-2xs text-neg">{loadError}</div>}
-        {msg && <div className={`mt-2 text-2xs ${({ pos: 'text-pos', neg: 'text-neg', info: 'text-info' } as const)[msg.tone]}`}>{msg.text}</div>}
       </Panel>
 
       {/* ① 候选 alpha:证据摘要 + 发起申请 */}
@@ -212,59 +229,66 @@ export default function PromotionQueue() {
         right={<Chip label={bi('三个两两不同的外部身份', 'three distinct external identities')} tone="info" />}>
         {open.length === 0 ? (
           <EmptyState>{bi('没有进行中的申请。', 'No in-flight requests.')}</EmptyState>
-        ) : open.map(r => {
-          return (
-            <div key={r.request_id} className="mb-3 rounded-lg border border-line px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-2xs text-faint">{r.request_id}</span>
-                <span className="font-medium text-ink">{r.subject_id}</span>
-                <StatusChip value={r.state} />
-              </div>
-              <ol className="mt-2 flex flex-wrap gap-3">
-                {r.steps.map((s, i) => (
-                  <li key={i} className="text-2xs text-muted">
-                    <span className="font-mono">{s.state}</span>
-                    {' · '}<span className="text-ink">{s.actor_id}</span>
-                    {' · '}<span className="text-faint">{stamp(s.timestamp)}</span>
-                    {s.note && <span className="text-faint"> · “{s.note}”</span>}
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {r.state === 'REQUESTED' && (
-                  <>
-                    <Button onClick={() => void act(bi('复核', 'review'), () => reviewPromotionRequest(r.request_id))}
-                      disabled={!ready} variant="accent">
-                      {bi('复核通过', 'Review OK')}
-                    </Button>
-                    <Button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
-                      disabled={!ready} variant="neg">
-                      {bi('否决', 'Reject')}
-                    </Button>
-                  </>
-                )}
-                {r.state === 'REVIEWED' && (
-                  <>
-                    <Button onClick={() => void act(bi('批准', 'approve'), () => approvePromotionRequest(r.request_id))}
-                      disabled={!ready} variant="accent">
-                      {bi('批准(第三人)', 'Approve (3rd human)')}
-                    </Button>
-                    <Button onClick={() => void act(bi('否决', 'reject'), () => rejectPromotionRequest(r.request_id))}
-                      disabled={!ready} variant="neg">
-                      {bi('否决', 'Reject')}
-                    </Button>
-                  </>
-                )}
-                {r.state === 'APPROVED' && (
-                  <Button onClick={() => void onExecute(r.request_id)}
-                    disabled={!ready} variant="pos">
-                    {bi('执行晋级(烧毁 grant,一次性)', 'Execute (burns the grant, one-way)')}
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        ) : (
+          <DataTable rows={open} getKey={r => r.request_id}
+            searchable={r => `${r.request_id} ${r.subject_id} ${r.state}`}
+            searchPlaceholder={bi('按 request id / alpha 搜索…', 'search by request id / alpha…')}
+            columns={[
+              { key: 'id', header: bi('申请', 'Request'), render: r => (
+                  <div>
+                    <div className="font-medium text-ink">{r.subject_id}</div>
+                    <div className="font-mono text-2xs text-faint">{r.request_id}</div>
+                  </div>
+                ) },
+              { key: 'state', header: bi('状态', 'State'), render: r => <StatusChip value={r.state} /> },
+              { key: 'steps', header: bi('步骤时间线', 'Step timeline'), render: r => (
+                  <ol className="flex flex-wrap gap-3">
+                    {r.steps.map((s, i) => (
+                      <li key={i} className="text-2xs text-muted">
+                        <span className="font-mono">{s.state}</span>
+                        {' · '}<span className="text-ink">{s.actor_id}</span>
+                        {' · '}<span className="text-faint">{stamp(s.timestamp)}</span>
+                        {s.note && <span className="text-faint"> · “{s.note}”</span>}
+                      </li>
+                    ))}
+                  </ol>
+                ) },
+              { key: 'actions', header: bi('操作', 'Actions'), render: r => (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {r.state === 'REQUESTED' && (
+                      <>
+                        <Button onClick={() => void act(bi('复核', 'review'), () => reviewPromotionRequest(r.request_id))}
+                          disabled={!ready} variant="accent">
+                          {bi('复核通过', 'Review OK')}
+                        </Button>
+                        <Button onClick={() => void onReject(r.request_id)}
+                          disabled={!ready} variant="neg">
+                          {bi('否决', 'Reject')}
+                        </Button>
+                      </>
+                    )}
+                    {r.state === 'REVIEWED' && (
+                      <>
+                        <Button onClick={() => void act(bi('批准', 'approve'), () => approvePromotionRequest(r.request_id))}
+                          disabled={!ready} variant="accent">
+                          {bi('批准(第三人)', 'Approve (3rd human)')}
+                        </Button>
+                        <Button onClick={() => void onReject(r.request_id)}
+                          disabled={!ready} variant="neg">
+                          {bi('否决', 'Reject')}
+                        </Button>
+                      </>
+                    )}
+                    {r.state === 'APPROVED' && (
+                      <Button onClick={() => void onExecute(r.request_id)}
+                        disabled={!ready} variant="pos">
+                        {bi('执行晋级(烧毁 grant,一次性)', 'Execute (burns the grant, one-way)')}
+                      </Button>
+                    )}
+                  </div>
+                ) },
+            ]} />
+        )}
       </Panel>
 
       {/* ③ 历史 */}

@@ -115,13 +115,65 @@ _SYNTHETIC_CATALOG_DATASETS = [
 ]
 
 
+def _unavailable_data_catalog_payload(reason: str) -> Dict:
+    """Return an explicit unavailable state when the composition port is absent.
+
+    Returning the deterministic catalogue here would make a wiring or storage
+    outage look healthy to the operator.  The reason is intentionally reduced
+    to a stable class label rather than exposing filesystem/driver details.
+    """
+    return {
+        "catalog_mode": "READ_ONLY_DATA_CATALOG",
+        "feature_store_mode": "OFFLINE_POINT_IN_TIME_RESEARCH",
+        "data_backend": "UNAVAILABLE",
+        "data_provenance": "UNAVAILABLE",
+        "datasets_real": False,
+        "features_synthetic": False,
+        "snapshot_present": False,
+        "snapshot_id": None,
+        "snapshot_ids": [],
+        "snapshot_status": "UNAVAILABLE",
+        "data_quality": {
+            "status": "UNAVAILABLE",
+            "provenance": "UNAVAILABLE",
+            "snapshot_present": False,
+            "snapshot_ids": [],
+            "reason": reason,
+        },
+        "unavailable_reason": reason,
+        "summary": {
+            "datasets": 0,
+            "features": 0,
+            "quality_checks": 0,
+            "quality_passed": 0,
+            "point_in_time_safe_features": 0,
+            "lineage_edges": 0,
+            "avg_dataset_quality": 0.0,
+            "avg_feature_quality": 0.0,
+        },
+        "datasets": [],
+        "features": [],
+        "lineage_edges": [],
+        "quality_policy": {
+            "requires_dataset_hash": True,
+            "requires_event_timestamp": True,
+            "requires_asof_join": True,
+            "blocks_future_leakage": True,
+            "mutable_raw_inputs": False,
+        },
+    }
+
+
 def _data_catalog_payload() -> Dict:
-    data_port = data_catalog_runtime.require()
+    try:
+        data_port = data_catalog_runtime.require()
+        real_datasets = _enumerate_real_datasets()
+    except Exception as exc:
+        return _unavailable_data_catalog_payload(type(exc).__name__)
 
     # DATASETS upgrade to REAL: enumerate the on-disk PIT store (crypto_daily.db) — real content hash,
     # row_count, coverage, PIT-safety. FEATURES / lineage stay SYNTHETIC (no persisted FeatureRegistry yet)
     # and are honestly marked. Fail-closed to the synthetic dataset fallback when no db is present (CI).
-    real_datasets = _enumerate_real_datasets()
     if real_datasets:
         datasets = [dict(d) for d in real_datasets]
         datasets_provenance = "REAL_PIT_DATASETS"
@@ -264,6 +316,13 @@ def _data_catalog_payload() -> Dict:
         # synthetic regardless — honest partial. SYNTHETIC_DETERMINISTIC when no db (CI / fresh checkout).
         "data_provenance": datasets_provenance,
         "datasets_real": bool(real_datasets),
+        "snapshot_present": bool(real_datasets),
+        "snapshot_id": real_datasets[0].get("snapshot_id") if len(real_datasets) == 1 else None,
+        "snapshot_ids": [
+            str(dataset["snapshot_id"])
+            for dataset in real_datasets
+            if dataset.get("snapshot_id")
+        ],
         "features_synthetic": True,
         "summary": {
             "datasets": len(datasets),

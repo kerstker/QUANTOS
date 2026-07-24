@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from services.alpha.factor_set import select_synergistic_set
 from services.console.api.registry_snapshots import (
@@ -279,6 +279,53 @@ def _dsl_explorer_payload() -> Dict:
             }
         )
     return {"exprs": rows, "analysis_backend": "REAL_DSL_CHECKER+LEAKAGE+COMPLEXITY"}
+
+
+def _analyze_custom_expr(expr_text: str) -> Dict:
+    """Run a user-typed S-expression string through the SAME real engines as the curated library
+    (deserialize -> check_expression -> complexity -> leakage), so the Explorer's free-input box is
+    backed by the real checker rather than a hand-picked example list. Never evaluates/executes the
+    expression against real data — this is static analysis only (no research_runner, no order path).
+    Fail-closed: a parse error is reported as an invalid row (`valid: False`) with the parser's message,
+    it never raises out to the endpoint."""
+    import services.research.alpha_expression as ax
+    from services.research.dsl_checker import check_expression
+    from services.research.complexity import complexity as _cx
+    from services.research import expression_leakage as el
+
+    text = (expr_text or "").strip()
+    if not text:
+        return {"expr": "", "valid": False, "complexity": 0.0, "leakage_ok": None, "deps": [],
+                "note": "empty", "errors": ["empty expression"]}
+    try:
+        expr = ax.deserialize(text)
+    except Exception as exc:  # malformed S-expression string
+        return {"expr": text, "valid": False, "complexity": 0.0, "leakage_ok": None, "deps": [],
+                "note": "parse error", "errors": [str(exc)]}
+
+    chk = check_expression(expr)
+    try:
+        cx_val = round(_cx(expr), 2)
+    except Exception:
+        cx_val = 0.0
+    leak = None
+    if chk.ok:
+        insts, T = ["A", "B", "C", "D"], 16
+
+        def _mat(base):
+            return [[base + 0.5 * t + 0.1 * j for j in range(len(insts))] for t in range(T)]
+
+        panel = ax.FieldPanel(insts, list(range(T)),
+                               {"close": _mat(100.0), "volume": _mat(10.0), "funding": _mat(0.01)})
+        try:
+            leak = el.compute_leakage_ok(expr, panel)
+        except Exception:
+            leak = None
+    return {
+        "expr": ax.serialize(expr), "valid": bool(chk.ok), "complexity": cx_val,
+        "leakage_ok": leak, "deps": _expr_fields(expr), "note": "自定义 / custom",
+        "errors": list(chk.errors)[:5],
+    }
 
 
 # The full multi-dimensional factor-analysis schema surfaced by the Alpha Zoo. Each entry is one real
@@ -627,6 +674,21 @@ async def dsl_explorer() -> Dict:
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
         "lineage": [item for item in _lineage() if item["layer"] == "Alpha"],
+    }
+
+
+@router.get("/api/v1/console/dsl-explorer/check")
+async def dsl_explorer_check(expr: str = Query(...)) -> Dict:
+    """On-demand static analysis of a user-typed S-expression, via the same real dsl_checker +
+    complexity + leakage engines as the curated library above. Read-only / no execution against
+    real data — pure static analysis (see `_analyze_custom_expr`)."""
+    row = _analyze_custom_expr(expr)
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": "SYNTHETIC_DETERMINISTIC",
+        "row": row,
     }
 
 

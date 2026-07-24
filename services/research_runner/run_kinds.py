@@ -75,6 +75,111 @@ def _tool_then_json(module: str, out_json: str) -> Callable:
     return run
 
 
+def _load_cache_object(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _paper_cycle_runner(params: dict) -> dict:
+    """Run one fixed, public-data paper cycle without accepting paths or shell input.
+
+    The UI may choose only the isolated profile bit. All stores and output
+    locations stay pinned to the two audited L2 profiles, and the driver is
+    always invoked with one cycle, a paper refresh, and the fail-closed health
+    check. The tool returns an exit code rather than raising for a health
+    failure; the adapter keeps that failure visible in the registry result.
+    """
+    small_10k = bool(params.get("small_10k", False))
+    if small_10k:
+        profile = "small_10k"
+        aum = "10000"
+        paper_store = os.path.join(_CACHE, "paper_order_ledger_10k.db")
+        realtime_store = os.path.join(_CACHE, "paper_realtime_10k.db")
+        output = os.path.join(_CACHE, "paper_realtime_10k_status.json")
+        operator_receipt = os.path.join(_CACHE, "l2_paper_operator_10k.json")
+        health_output = os.path.join(_CACHE, "paper_health_10k.json")
+    else:
+        profile = "default"
+        aum = "1000000"
+        paper_store = os.path.join(_CACHE, "paper_order_ledger.db")
+        realtime_store = os.path.join(_CACHE, "paper_realtime.db")
+        output = os.path.join(_CACHE, "paper_realtime_status.json")
+        operator_receipt = os.path.join(_CACHE, "l2_paper_operator.json")
+        health_output = os.path.join(_CACHE, "paper_health.json")
+
+    tool = importlib.import_module("tools.paper_realtime")
+    exit_code = tool.main([
+        "--cycles", "1",
+        "--refresh-paper",
+        "--health-check",
+        "--aum", aum,
+        "--paper-store", paper_store,
+        "--store", realtime_store,
+        "--output", output,
+        "--operator-receipt", operator_receipt,
+        "--health-output", health_output,
+    ])
+    return {
+        "profile": profile,
+        "exit_code": int(exit_code),
+        "report": _load_cache_object(output),
+        "health": _load_cache_object(health_output),
+    }
+
+
+def _adapt_paper_cycle(payload: dict) -> dict:
+    report = payload.get("report") if isinstance(payload.get("report"), dict) else {}
+    health = payload.get("health") if isinstance(payload.get("health"), dict) else {}
+    report_verdict = report.get("verdict") if isinstance(report.get("verdict"), dict) else {}
+    health_verdict = health.get("verdict") if isinstance(health.get("verdict"), dict) else {}
+    persistence = report.get("persistence") if isinstance(report.get("persistence"), dict) else {}
+    blockers = health.get("blockers") if isinstance(health.get("blockers"), list) else []
+    alpha_rows = report.get("alphas") if isinstance(report.get("alphas"), dict) else {}
+    profile = str(payload.get("profile") or "default")
+    try:
+        exit_code = int(payload.get("exit_code", 1))
+    except (TypeError, ValueError):
+        exit_code = 1
+    cycle_ok = bool(
+        exit_code == 0
+        and report_verdict.get("cycle_completed") is True
+        and health_verdict.get("paper_ready") is True
+    )
+    metrics = {
+        "cycle_completed": 1.0 if report_verdict.get("cycle_completed") is True else 0.0,
+        "paper_ready": 1.0 if health_verdict.get("paper_ready") is True else 0.0,
+        "new_snapshots": float(persistence.get("new_snapshots", 0) or 0),
+        "n_alphas": float(len(alpha_rows)),
+        "health_blockers": float(len(blockers)),
+        "exit_code": float(exit_code),
+    }
+    series = {"net_pnl": []}
+    for alpha_id, row in sorted(alpha_rows.items()):
+        if not isinstance(row, dict):
+            continue
+        value = row.get("net_pnl")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            series["net_pnl"].append({"label": str(alpha_id), "value": float(value)})
+    caveats = [
+        f"profile={profile}",
+        "L2_DRY_RUN_ONLY; public market data; no broker or credential path",
+    ]
+    caveats.extend(str(item) for item in blockers if str(item))
+    return {
+        "title": f"Paper cycle ({profile})",
+        "params": {"profile": profile},
+        "metrics": metrics,
+        "series": series,
+        "verdict": "PAPER_CYCLE_OK" if cycle_ok else "PAPER_CYCLE_BLOCKED",
+        "caveats": caveats,
+        "provenance": "tools/paper_realtime.py",
+    }
+
+
 def _refresh_runner(params):
     """data_refresh: pull the positioning metrics (eod, or intraday-derived) via the public fetcher."""
     f = importlib.import_module("tools.binance_oi_metrics_fetch")
@@ -148,6 +253,8 @@ RUN_KINDS: dict = {
     "wide_gauntlet": RunSpec("tools.wide_factor_gauntlet:main", {}, _adapt_wide_gauntlet,
                              "宽宇宙候选证伪", DIAGNOSTIC_ONLY,
                              runner=_tool_then_json("tools.wide_factor_gauntlet", "wide_factor_gauntlet.json")),
+    "paper_cycle": RunSpec("tools.paper_realtime:main", {"small_10k": bool}, _adapt_paper_cycle,
+                           "Paper real-time cycle", DIAGNOSTIC_ONLY, runner=_paper_cycle_runner),
 }
 
 

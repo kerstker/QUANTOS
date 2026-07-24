@@ -42,3 +42,11 @@ class CachingPITStore:
 
     def fetch_bars(self, instrument_id: str, start: int, end: int) -> list:
         return [b for b in self._by_key.get(instrument_id, ()) if start <= b.event_time <= end]
+
+    def fetch_bars_pit(self, instrument_id: str, start: int, end: int) -> list:
+        """Bulk PIT-safe read: fetch_bars filtered to knowledge_time <= event_time.
+        Same contract as SqlitePITStore.fetch_bars_pit (see its docstring): safe ONLY for
+        use-each-bar-at-its-own-event-date consumers (panel builders), NOT a substitute
+        for as_of(t) at a decision time t != event_time."""
+        return [b for b in self.fetch_bars(instrument_id, start, end)
+                if b.knowledge_time <= b.event_time]

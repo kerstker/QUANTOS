@@ -13,7 +13,8 @@ def test_icir_is_series_mean_over_std_and_tstat_is_icir_sqrt_T():
     expected_icir = statistics.fmean(series) / statistics.pstdev(series)
     assert metrics.icir(series) == expected_icir
     T = len(series)
-    assert metrics.ic_tstat(series) == pytest.approx(expected_icir * math.sqrt(T))
+    expected_t = statistics.fmean(series) / (statistics.stdev(series) / math.sqrt(T))
+    assert metrics.ic_tstat(series) == pytest.approx(expected_t, rel=1e-10)
     # two-sided p-value is in (0,1] and shrinks as t grows
     assert 0.0 < metrics.ic_pvalue(series) <= 1.0
 
@@ -53,11 +54,16 @@ def test_degenerate_series_returns_none_not_inf():
 def test_ic_pvalue_uses_student_t_not_normal_at_small_T():
     # at small T the normal approximation overstates significance (review finding);
     # the Student-t p-value must be strictly LARGER (heavier tails, more conservative)
-    from statistics import NormalDist
+    from statistics import NormalDist, stdev
     series = [0.05, 0.02, 0.06, 0.01, 0.07]   # T=5 -> df=4
-    t = metrics.ic_tstat(series)
+    # 验证 tstat 使用 stdev（样本标准差，N-1 分母）而非 pstdev
+    from services.alpha.metrics import ic_tstat, ic_pvalue, clean
+    t = ic_tstat(series)
+    s = clean(series)
+    expected_t = statistics.fmean(s) / (stdev(s) / math.sqrt(len(s)))
+    assert t == pytest.approx(expected_t, rel=1e-10)
     normal_p = 2.0 * (1.0 - NormalDist().cdf(abs(t)))
-    p = metrics.ic_pvalue(series)
+    p = ic_pvalue(series)
     assert 0.0 < p <= 1.0
     assert p > normal_p * 5      # df=4, |t|~4: t-p ~0.015 vs normal-p ~5e-5 (orders of magnitude)
 
