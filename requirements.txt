@@ -29,7 +29,7 @@ h11==0.16.0
 idna==3.18
 joblib==1.5.3
 pycparser==3.0
-pydantic-core==2.46.4
+pydantic-core==2.47.0
 scipy==1.18.0
 threadpoolctl==3.6.0
 typing-extensions==4.16.0
