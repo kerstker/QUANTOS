@@ -6,7 +6,7 @@ import type { ValidationDashboardPayload, ValidationReport, CalculationLineageIt
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { RadialGauge, Histogram } from '@/ui/charts';
 import { fixed, signed, num, shortHash, statusTone, type Tone } from '@/ui/format';
@@ -22,7 +22,7 @@ const gateDefs: Array<{ key: string; zh: string; en: string; get: (r: Validation
 ];
 
 export default function Validation() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<ValidationDashboardPayload>(
+  const { payload, apiState, error, usingBackend, snapshotState } = useConsoleSnapshot<ValidationDashboardPayload>(
     s => fetchValidationSnapshot(s));
 
   const reports: ValidationReport[] = usingBackend ? payload!.reports : mockValidationReports;
@@ -67,9 +67,9 @@ export default function Validation() {
         <span className="tnum w-10 text-right text-muted">{rep.gates_passed}/{rep.gates_total}</span>
       </div>
     ) },
-    { key: 'oos_sharpe', header: bi('样本外夏普', 'OOS Sharpe'), align: 'right', mono: true, render: rep => fixed(rep.oos_sharpe) },
-    { key: 'oos_ic', header: bi('样本外 IC', 'OOS IC'), align: 'right', mono: true, render: rep => signed(rep.oos_ic, 3) },
-    { key: 'net_sharpe', header: bi('净夏普', 'Net Sharpe'), align: 'right', mono: true, render: rep => (
+    { key: 'oos_sharpe', header: bi('样本外夏普', 'OOS Sharpe'), align: 'right', mono: true, sortable: true, sortAccessor: rep => rep.oos_sharpe, render: rep => fixed(rep.oos_sharpe) },
+    { key: 'oos_ic', header: bi('样本外 IC', 'OOS IC'), align: 'right', mono: true, sortable: true, sortAccessor: rep => rep.oos_ic, render: rep => signed(rep.oos_ic, 3) },
+    { key: 'net_sharpe', header: bi('净夏普', 'Net Sharpe'), align: 'right', mono: true, sortable: true, sortAccessor: rep => rep.net_sharpe, render: rep => (
       <span className={rep.net_sharpe >= 0.5 ? 'text-pos' : rep.net_sharpe > 0 ? 'text-warn' : 'text-neg'}>{fixed(rep.net_sharpe)}</span>
     ) },
     { key: 'haircut', header: bi('净/毛差', 'Net − OOS'), align: 'right', mono: true, render: rep => (
@@ -82,8 +82,10 @@ export default function Validation() {
       <PageHeader title="Alpha Validation" titleZh="Alpha 验证"
         subtitle={bi('六道泄露/稳健性门禁的样本外验证快照 — 决策、门禁与衰减证据',
           'Out-of-sample validation snapshot across six leakage / robustness gates — decision, gates, decay evidence')} />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error}
+        dataStatus={usingBackend && r.decision.startsWith('REJECTED') ? 'BLOCKED' : snapshotState} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={6}>
         <StatTile label={bi('选中决策', 'Selected Decision')} value={<StatusChip value={r.decision} />} />
         <StatTile label={bi('门禁通过', 'Gates Passed')} value={`${r.gates_passed}/${r.gates_total}`}
@@ -166,7 +168,9 @@ export default function Validation() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2" eyebrow={bi('队列', 'Cohort')} title={bi('全部验证报告', 'All Validation Reports')}
           right={<Chip label={bi(`${reports.length} 份`, `${reports.length} reports`)} tone="info" />}>
-          <DataTable columns={reportCols} rows={reports} getKey={rep => rep.run_id} />
+          <DataTable columns={reportCols} rows={reports} getKey={rep => rep.run_id}
+            searchable={rep => `${rep.alpha_id} ${rep.run_id} ${rep.decision}`}
+            searchPlaceholder={bi('搜索因子 / run_id / 决策…', 'Search alpha / run_id / decision…')} />
         </Panel>
 
         <Panel eyebrow={bi('决策分布', 'Decision Mix')} title={bi('队列决策构成', 'Cohort Decision Breakdown')}>
@@ -196,6 +200,7 @@ export default function Validation() {
           </div>
         </Panel>
       )}
+      </LoadingVeil>
     </PageShell>
   );
 }

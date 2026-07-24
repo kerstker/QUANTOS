@@ -265,13 +265,13 @@ def test_source_sentinel_gate_aum_multipliers_match_live_track_advance():
 
     覆盖 `tools/reconcile_mandate_limits.py` 模块 docstring 承诺的全部三处调用点(而不只是
     `gate_limits()` 一处):
-    1. `gate_limits()`(第 840-841 行)—— gross_cap/net_cap/single_order_cap/daily_loss_cap
-       四个字面量各出现一次,`max_leverage=3.0` 在其函数体内(第 300 行)出现一次;
-    2. `evaluate_risk_state()`(第 762-764 行)与 3. `flatten_target_for_breach()`(第 776-777
-       行)—— 两处熔断调用点各自都写 `max_gross_exposure=aum * 2` / `max_net_exposure=aum *
-       0.3`,因此这两个字面量理应在源码里各出现恰好 2 次(每处调用点各一次)。任一处独立漂移
-       (例如只改了 evaluate_risk_state 忘了改 flatten_target_for_breach,或两处一起改但没跟
-       reconcile_mandate_limits.py 的常量同步)都会让计数偏离 2,这里先报红。
+    1. `gate_limits()`(期货 venue 的 else 分支)—— gross_cap/net_cap/single_order_cap/
+       daily_loss_cap 四个字面量各出现一次,`max_leverage=3.0` 在函数签名默认值里出现一次;
+    2. `evaluate_risk_state()` 与 3. `flatten_target_for_breach()`—— 2026-07 MEXC 对接后,
+       两处熔断调用点改从统一的 `risk_gross_cap`/`risk_net_cap` 变量取值(现货 venue 用
+       1×equity 口径,单名满仓 long 是合法目标),期货口径在 else 分支**单点赋值**
+       `risk_gross_cap, risk_net_cap = aum * 2, aum * 0.3`——钉住这个单点不漂移(恰好 1 次),
+       且两个调用点都确实经变量透传(各恰好 2 次)。任一处独立漂移都会让计数偏离,这里先报红。
     """
     src = open(os.path.join(_ROOT, "tools", "live_track_advance.py"), encoding="utf-8").read()
 
@@ -284,11 +284,16 @@ def test_source_sentinel_gate_aum_multipliers_match_live_track_advance():
             f"tools/reconcile_mandate_limits.py's GATE_*_AUM_MULT constants have drifted "
             f"from the real gate_limits() call site and must be updated to match")
 
-    for literal in ("max_gross_exposure=aum * 2", "max_net_exposure=aum * 0.3"):
+    # 期货熔断口径的单点赋值(见 docstring):与 GATE_GROSS/NET_AUM_MULT 同步的唯一地方
+    count = _count_boundary_literal("risk_gross_cap, risk_net_cap = aum * 2, aum * 0.3", src)
+    assert count == 1, (
+        f"live_track_advance.py expected exactly 1 single-point assignment of the futures "
+        f"breach caps ('risk_gross_cap, risk_net_cap = aum * 2, aum * 0.3'), found {count} — "
+        f"the futures multiplier has drifted from tools/reconcile_mandate_limits.py's "
+        f"GATE_GROSS_AUM_MULT/GATE_NET_AUM_MULT constants; update both to match")
+    for literal in ("max_gross_exposure=risk_gross_cap", "max_net_exposure=risk_net_cap"):
         count = _count_boundary_literal(literal, src)
         assert count == 2, (
-            f"live_track_advance.py expected exactly 2 occurrences of {literal!r} as a whole "
-            f"numeric literal (evaluate_risk_state() call site + flatten_target_for_breach() "
-            f"call site), found {count} — either call site's aum multiplier has drifted from "
-            f"the other, or both have drifted from tools/reconcile_mandate_limits.py's "
-            f"GATE_*_AUM_MULT constants; update to match")
+            f"live_track_advance.py expected exactly 2 pass-through occurrences of {literal!r} "
+            f"(evaluate_risk_state() call site + flatten_target_for_breach() call site), "
+            f"found {count} — one breach call site stopped using the shared cap variables")

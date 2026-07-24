@@ -48,7 +48,7 @@ def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
         last_result=0,
         next_run_ms=NOW_MS + 3_600_000,
         execute="C:/Python/python.exe",
-        arguments=f"-m tools.{spec.module}",
+        arguments=f'"{repo / "tools" / "l2_schedule_entrypoint.py"}" {spec.module}',
         working_directory=str(repo),
     )
 
@@ -178,6 +178,33 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
         "UNAVAILABLE": 0,
         "BREACH": 0,
     }
+
+
+def test_watchdog_does_not_self_latch_on_its_previous_failure(tmp_path):
+    snapshots = _healthy_tasks(tmp_path, include_backup=True, include_external=True)
+    snapshots = [
+        TaskSnapshot(**{**item.__dict__, "last_result": 1})
+        if item.name == "QUANTOS_scheduler_watchdog"
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    assert result["verdict"] == "PASS"
+    self_check = next(
+        check
+        for check in result["checks"]
+        if check["task_name"] == "QUANTOS_scheduler_watchdog"
+    )
+    assert self_check["code"] == "SELF_CHECK"
 
 
 def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp_path):

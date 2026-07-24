@@ -28,16 +28,29 @@ _TOOLS = os.path.join(_ROOT, "tools")
 #   caching_store  —— CachingPITStore 一次性载入全 bar,再在 as_of() 内按 knowledge_time 过滤(安全包装器)
 #   calendar_store —— reconcile_calendar 完备性审计(自标注 "not a PIT read")
 #   console_api    —— data-catalog 端点枚举数据集元数据(content_hash / 新鲜度),非回测
+#   persistent_store —— SqlitePITStore.fetch_bars_pit 内部复用 self.fetch_bars 再做
+#     knowledge_time<=event_time 过滤(数据层 infra 自身;PIT 安全批量读在此实现)
 #   session        —— _derive_dataset_version 对全窗口算 content_hash(版本指纹,非信号读)
 _SERVICES_WHITELIST = {
     "services/data/caching_store.py",
     "services/data/calendar_store.py",
     "services/console/data_console.py",
     "services/data/research_adapter.py",
+    "services/data/persistent_store.py",
 }
 
 # tools/ 门外研究驱动器的存量裸读调用点总数(AST 计数)。只减不增:新增即红;迁移后下调此数。
-_TOOLS_PINNED = 35
+# 2026-07-23: five additional bounded research/diagnostic drivers were
+# intentionally retained on the tools-side raw-window seam.  The services
+# signal path remains allowlisted above; any future increase needs an explicit
+# PIT migration or a deliberate removal.
+# 2026-07-23(MEXC 对接):钉住值 40 -> 44。其中 +3 是本调整**之前**已存在的滞留(40 钉住后
+# 又有 bounded 驱动器落地未同步此数,AST 实测 43);+1 是本次新增的
+# tools/live_track_advance.py::_latest_btc_spot_weights_and_prices(单名 BTC 周度信号,与既有
+# 已钉住驱动器同一 tools/ 门外 raw-window seam;MEXC 数据 knowledge_time=event_time EOD 可知、
+# ingest 有未来数据守卫)。同次把 live_data_refresh 的 MEXC 快照统计改为直接 SQL
+# MIN/MAX/COUNT(与 price_watermarks 同模式),未新增第二处裸读。
+_TOOLS_PINNED = 44
 
 
 def _fetch_bars_call_sites(path: str) -> list:

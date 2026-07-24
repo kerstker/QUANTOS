@@ -2,26 +2,26 @@
   "canonical_latest_timestamp_unit": "unix_epoch_microseconds",
   "event_type_count": 12,
   "implementation_sha256": {
-    "quantos/contracts/event_schemas.py": "8951b7c9e8ade5471f411f467bf8d1acd62f419ba73b3eb2a79912695f107efa",
-    "quantos/contracts/events.py": "7460c157d3ea07bd47a860759f43c541f91367b1e36b2657c2d3d9fce520acd7",
-    "scripts/generate_event_schema_catalog.py": "0c5ba2e4e3d820fad535b03c9e9d9d0b0bafd5714703fc0434e7ecd482aa3bc2",
-    "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
-    "services/alpha/maintenance_events.py": "af29de4ea9f4bfbc1dea65d200f25449eb3d09fc057d9973f0fe5b30052e5217",
-    "services/console/api/system_views.py": "07ad5ff4f44f961c472a452735b418de9e0cd0a2dabd66bb66122782d84498de",
-    "services/data/admission_store.py": "56cf672826e7a9318c419552a5ed7387aed6a6ee56d77e81c016a6278178acaa",
-    "services/data/events.py": "61e7e140c6dcab0afeb9efcaabf7ab769e67e797b5644d5d4155a11d1def4804",
-    "services/data/refresh_history.py": "ca8bb6e0755c7041c61e4062dad3cd0ee2799dbe89a065717c6e72febd01c816",
-    "services/deployment/events.py": "51e27421aa686669cbf7c0aab9372847ac900c0023a678df3a1f477903f8d4c6",
-    "services/deployment/runtime.py": "be1cb970ae6867226067fe7f5595aa3ac75469d27d2b173b84a85775ef102adc",
-    "services/deployment/store.py": "aa4be3d957680063ee9968870c9380b0c557bb03ae875bf03a50f2975be1519f",
-    "services/execution/dry_run_store.py": "1ab72d9a9a0a9711144b3f75860d8495d38d3604ac7e59a0b648f2769b6d914b",
-    "services/execution/events.py": "8a7d63b2138e092d8e9a87c4eb315c8759c6774a943e044254ee5bf0b8ae1625",
-    "services/monitoring/domain_event_runtime.py": "3043b761365b606ba5c2b99cb2658ccd3c166041906d5de6129474b6fee26e87",
-    "services/monitoring/event_health.py": "7848de9e1ecc49248a5ba2b6a0e2fcbd8107e212a40be35b006b9e80d051a954",
-    "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
-    "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
-    "services/risk/research_risk/events.py": "f2fd56be0a9dc60b0306895ef7c76c2f09051e7acb76a92918c925d96a95d575",
-    "tools/data_quality_admission.py": "15d668c2ae63b5856a58cca76be215102de9d3ad5cfc5f4c31e0d6b088d4d1ed"
+    "quantos/contracts/event_schemas.py": "8169a14841c7f3737af8952f40e54bd2de38de1df7061e841f66498f4b77497b",
+    "quantos/contracts/events.py": "fa6854b2a2f6847dcfc2bfd8b27853e1f7b8af52133aa82324c9e3aacb99dd5f",
+    "scripts/generate_event_schema_catalog.py": "9c65d39f206858e6be0a36b8c105713f93695015670344a0790e991707d5e488",
+    "services/alpha/events.py": "f05cc2ebb8beb2d58d2f46d6feff1cc393f14516538f90e70e06ed7a80d914e3",
+    "services/alpha/maintenance_events.py": "0bf910d1afed82b1886f71b956db6a513b1a485031e2145a3bafc6022d1a4289",
+    "services/console/api/system_views.py": "044138a69b6050fbc3066216229ba881f2e176715053f2096fd1b4c63d424676",
+    "services/data/admission_store.py": "550f22854bc7266d1e2e12a2d930ed9767d29a2664ee1d57638a229e59fad95b",
+    "services/data/events.py": "7c1cbdd19b52b722a4828831018fe8fa87d0c585683412e4e8851a9319820e82",
+    "services/data/refresh_history.py": "87a8c5c3992b3c9141f24336104d5fec8845ad68d4fd41278e2d2ff99a2875c5",
+    "services/deployment/events.py": "9d4754e33189b8c1bd516338053afacf02acfe12b04dcc31f963ac0c71025105",
+    "services/deployment/runtime.py": "2447702a9044089988318f4eab87e919ab2b377006cb2511774e0b8013010d74",
+    "services/deployment/store.py": "50b0584ed1998f7b90fa2062d5691da3a50e7d1fbc537073e5dc74b7929f5553",
+    "services/execution/dry_run_store.py": "9cf5f3e86af32358a4e2c5337470288e305b9d4c397e11907ec8939921fade7c",
+    "services/execution/events.py": "3bc09f0d0cae0891a9c18e20e2dd710a1b1c168c56e99d373115f6afe9f2f8b8",
+    "services/monitoring/domain_event_runtime.py": "4ab60f9597296ab8bc38e6e932f37e8f6ed0877e1c99e6b5298d20ffab6bd582",
+    "services/monitoring/event_health.py": "7daec970a46a77c962f8fb139fd55b06fa49c912f1196b8e299b6e0ed103156b",
+    "services/risk/pre_trade/events.py": "18299c0aca2deae0d1b2cd83821325d5c92ea290fca6c25126fd1a1013412fb4",
+    "services/risk/pre_trade/kill_switch_store.py": "436d84b26adcec00837d01c34c51a1f6a5b9727d1e731a1630a339d4e3cf6889",
+    "services/risk/research_risk/events.py": "14bb705271a93258b932048584a2fa3df1e36e7a20feab096c6675408e4ffb2b",
+    "tools/data_quality_admission.py": "f8e1657719570afd5e4231f65f3bff2507107a66979b225b2c83a8f39668fee4"
   },
   "latest_consumer_versions": {
     "data.market.refresh.recorded": "1.0.0",
@@ -859,7 +859,10 @@
                 "type": "integer"
               },
               "provenance": {
-                "const": "REAL_RESEARCH_RISK_SUBSET",
+                "enum": [
+                  "REAL_RESEARCH_RISK_SUBSET",
+                  "REAL_RESEARCH_RISK_FULL"
+                ],
                 "title": "Provenance",
                 "type": "string"
               },
@@ -908,7 +911,7 @@
             "title": "_ResearchRiskEvaluatedPayload",
             "type": "object"
           },
-          "payload_schema_sha256": "c8bb4ff5b381126f407b4247c4cf5bd393fa6fbd553d6ac2b909f5bcb8860fac",
+          "payload_schema_sha256": "72b30bc5decc08352ee18f40ea98644bb3098d4e321e7fcbbc807e0321cb8216",
           "sources": [
             "services.risk.research_risk.dry_run_guard"
           ],
@@ -1311,6 +1314,6 @@
       ]
     }
   },
-  "schemas_sha256": "e6b1d7b4f4e8a018a50e12080a4682f4dca407650da01d6d6b82f0670c5329fa",
+  "schemas_sha256": "6ed55f1c0963e78955a7f4d55cd9f361bc9f8e09bf1d9f8123b3f80c8b29bab5",
   "verdict": "PASS"
 }

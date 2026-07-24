@@ -7,7 +7,7 @@ import type {
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { Donut, Histogram } from '@/ui/charts';
 import { num, pct, fixed, compact, shortHash, type Tone } from '@/ui/format';
@@ -274,6 +274,7 @@ export default function DataCatalog() {
         realData={usingBackend && catalog.data_provenance === 'REAL_PIT_DATASETS'}
         source={catalog.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={8}>
         <StatTile label={bi('数据集', 'Datasets')} value={num(catalog.summary.datasets)} accent />
         <StatTile label={bi('特征', 'Features')} value={num(catalog.summary.features)} />
@@ -337,6 +338,7 @@ export default function DataCatalog() {
         <DataTable columns={featureCols} rows={catalog.features} getKey={f => f.feature_id} dense />
       </Panel>
 
+      </LoadingVeil>
       <Panel eyebrow={bi('血缘', 'Lineage')} title={bi('特征血缘链路', 'Feature Lineage Chain')}
         right={<Chip label={bi('数据集 → 特征 → 实验', 'dataset → feature → experiment')} tone="muted" />}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

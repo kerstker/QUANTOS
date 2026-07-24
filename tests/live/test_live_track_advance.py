@@ -899,13 +899,15 @@ def test_mainnet_key_safety_skip_reason_never_raises_for_any_registered_venue(mo
         assert mainnet_key_safety_skip_reason(venue) is None
 
 
-def test_live_driver_registers_all_three_forward_alphas():
+def test_live_driver_registers_all_forward_alphas():
     from tools.live_track_advance import _STRATEGIES
 
-    assert set(_STRATEGIES) == {"crowd_contra", "carry_oi_majors", "top_contra"}
+    assert set(_STRATEGIES) == {"crowd_contra", "carry_oi_majors", "top_contra", "btc_spot_trend"}
     assert _STRATEGIES["crowd_contra"]["crowding_gate"] is True
     assert _STRATEGIES["carry_oi_majors"]["crowding_gate"] is False
     assert _STRATEGIES["top_contra"]["crowding_gate"] is False
+    # MEXC 现货趋势(2026-07 MEXC 对接):现货无 OI 维度,策略级拥挤门恒关闭
+    assert _STRATEGIES["btc_spot_trend"]["crowding_gate"] is False
 
 
 def test_live_driver_signal_wrappers_use_matching_alpha_expressions(monkeypatch):
@@ -1012,3 +1014,178 @@ def test_research_readiness_allows_unblocked_pending_human_review(tmp_path):
         encoding="utf-8",
     )
     assert research_readiness_skip_reason("crowd_contra", path=str(path)) is None
+
+
+def test_research_readiness_allows_canonical_risk_approved(tmp_path):
+    import json
+    from tools.live_track_advance import research_readiness_skip_reason
+
+    path = tmp_path / "cycle.json"
+    path.write_text(
+        json.dumps(
+            {"alphas": {"crowd_contra": {
+                "paper_verdict": "PENDING_REVIEW",
+                "blockers": [],
+                "canonical_dry_run": {"research_risk_decision": "RISK_APPROVED"},
+            }}}
+        ),
+        encoding="utf-8",
+    )
+    assert research_readiness_skip_reason("crowd_contra", path=str(path)) is None
+
+
+# --- 2026-07-23 资金费实时交叉核对(funding_check 镜像跨源核价):可测桥 funding_cross_check ---
+# --- + latest_daily_funding_observations + _FUNDING_CHECK_STRATEGIES 注册 + PreviewVenue ---
+# --- premium_index 透传。main() 是网络胶水不单测(本文件顶部 docstring 惯例),接线顺序由 ---
+# --- tests/live/test_strategy_wiring.py 的源码钉子锁。 ---
+
+_FUNDING_NOW = 1_760_000_000_000
+
+
+def _funding_venue(rate_by_inst, next_ms=_FUNDING_NOW + 4 * 3_600_000):
+    """假 venue:premium_index(instrument) -> PremiumIndexSnapshot 形状 mapping(rate_by_inst
+    里没有的标的返回 None,镜像适配器 fail-soft)。"""
+    class _Venue:
+        def __init__(self):
+            self.calls = []
+
+        def premium_index(self, instrument_id):
+            self.calls.append(instrument_id)
+            rate = rate_by_inst.get(instrument_id)
+            if rate is None:
+                return None
+            return {"last_funding_rate": rate, "next_funding_time_ms": next_ms}
+    return _Venue()
+
+
+def _funding_snapshot(tmp_path, rate_by_inst, day_ms=_FUNDING_NOW - 12 * 3_600_000):
+    import json
+    path = tmp_path / "crypto_funding_rates.json"
+    json.dump({inst: {str(day_ms): rate} for inst, rate in rate_by_inst.items()},
+              open(path, "w", encoding="utf-8"))
+    return str(path)
+
+
+def test_funding_check_strategies_registry_is_additive():
+    # 注册表条目形状一字不动(任务约束:不加键);funding 策略集合是独立模块常量
+    from tools.live_track_advance import _FUNDING_CHECK_STRATEGIES, _STRATEGIES
+    assert _FUNDING_CHECK_STRATEGIES == frozenset({"carry_oi_majors"})
+    for name, cfg in _STRATEGIES.items():
+        assert set(cfg) == {"signal", "crowding_gate"}, name
+    assert "crowd_contra" not in _FUNDING_CHECK_STRATEGIES
+
+
+def test_funding_cross_check_skips_non_funding_strategy_without_touching_venue():
+    # crowd_contra(非 funding 信号策略)-> 静默跳过:不查 venue、不告警、不冻结
+    from tools.live_track_advance import funding_cross_check
+
+    class _NoCallVenue:
+        def premium_index(self, instrument_id):
+            raise AssertionError("premium_index must not be called for non-funding strategies")
+
+    alerts = []
+    flagged, status = funding_cross_check(
+        _NoCallVenue(), ("BTC",), strategy_id="crowd_contra", venue_name="binance",
+        now_ms=_FUNDING_NOW, alerts=alerts)
+    assert flagged == {} and status == "skipped_not_funding_strategy"
+    assert alerts == []                                     # 每轮都响是噪音 -> 静默
+
+
+def test_funding_cross_check_skips_venue_without_premium_index():
+    # bybit/mexc 无 premium_index -> 跳过并诚实告警(fail-open:venue 提供不了证据,
+    # 冻结全部等于谎称"每个标的都可疑"——与 price_check 的 secondary_unavailable 同一区分)
+    from tools.live_track_advance import funding_cross_check
+
+    class _BareVenue:
+        pass
+
+    alerts = []
+    flagged, status = funding_cross_check(
+        _BareVenue(), ("BTC",), strategy_id="carry_oi_majors", venue_name="bybit",
+        now_ms=_FUNDING_NOW, alerts=alerts)
+    assert flagged == {} and status == "skipped_venue_lacks_premium_index"
+    assert len(alerts) == 1 and "premium_index" in alerts[0] and "bybit" in alerts[0]
+
+
+def test_funding_cross_check_freezes_divergent_and_keeps_clean(tmp_path):
+    # carry_oi_majors:ETH venue 8h 0.1%(日化 0.3%)vs 日快照 0.03% = 单位错/垃圾量级 -> 冻结;
+    # BTC 两源一致 -> 照常交易(per-instrument fail-soft,不因一个标的拖垮整批)
+    from tools.live_track_advance import funding_cross_check
+    venue = _funding_venue({"BTC": 0.0001, "ETH": 0.001})
+    path = _funding_snapshot(tmp_path, {"BTC": 0.0003, "ETH": 0.0003})
+    alerts = []
+    flagged, status = funding_cross_check(
+        venue, ("BTC", "ETH"), strategy_id="carry_oi_majors", venue_name="binance",
+        now_ms=_FUNDING_NOW, alerts=alerts, funding_path=path)
+    assert status == "ran"
+    assert set(flagged) == {"ETH"}
+    assert "diverges" in flagged["ETH"]
+    assert venue.calls == ["BTC", "ETH"]                    # 只对当前目标标的查 venue
+    assert any("funding cross-check froze 1 instrument" in a for a in alerts)
+
+
+def test_funding_cross_check_freezes_all_when_daily_snapshot_file_missing(tmp_path):
+    # 离线快照文件不存在 -> 每个 funding 标的都无法验证 -> fail-closed 全冻结
+    from tools.live_track_advance import funding_cross_check
+    venue = _funding_venue({"BTC": 0.0001})
+    flagged, status = funding_cross_check(
+        venue, ("BTC",), strategy_id="carry_oi_majors", venue_name="binance",
+        now_ms=_FUNDING_NOW, alerts=[], funding_path=str(tmp_path / "absent.json"))
+    assert status == "ran" and set(flagged) == {"BTC"}
+
+
+def test_funding_cross_check_venue_exception_freezes_that_instrument(tmp_path):
+    # venue 调用本身抛异常(网络错误穿透适配器 fail-soft)——该标的不验证即冻结,不崩整批
+    from tools.live_track_advance import funding_cross_check
+
+    class _BoomVenue:
+        def premium_index(self, instrument_id):
+            raise ConnectionError("network unreachable")
+
+    path = _funding_snapshot(tmp_path, {"BTC": 0.0003})
+    alerts = []
+    flagged, status = funding_cross_check(
+        _BoomVenue(), ("BTC",), strategy_id="carry_oi_majors", venue_name="binance",
+        now_ms=_FUNDING_NOW, alerts=alerts, funding_path=path)
+    assert status == "ran" and set(flagged) == {"BTC"}
+    assert any("ConnectionError" in a for a in alerts)
+
+
+def test_latest_daily_funding_observations_picks_latest_day(tmp_path):
+    # 多日序列 -> 取最新日桶;缺标的/坏条目/非有限值诚实省略
+    import json
+    from tools.live_track_advance import latest_daily_funding_observations
+    day1, day2 = _FUNDING_NOW - 36 * 3_600_000, _FUNDING_NOW - 12 * 3_600_000
+    path = tmp_path / "f.json"
+    json.dump({"BTC": {str(day1): 0.0001, str(day2): 0.0003},
+               "ETH": {str(day2): float("nan")},            # 非有限 -> 省略
+               "BAD": "not-a-dict",                          # 畸形 -> 省略
+               "BROKEN": {"not-a-day": 0.001}},              # 坏时间键 -> 省略
+              open(path, "w", encoding="utf-8"))
+    out = latest_daily_funding_observations(["BTC", "ETH", "BAD", "BROKEN", "GHOST"],
+                                            path=str(path))
+    assert out == {"BTC": {"rate": 0.0003, "day_ms": day2}}
+
+
+def test_latest_daily_funding_observations_missing_or_corrupt_file_is_empty(tmp_path):
+    from tools.live_track_advance import latest_daily_funding_observations
+    assert latest_daily_funding_observations(["BTC"], path=str(tmp_path / "none.json")) == {}
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not valid json", encoding="utf-8")
+    assert latest_daily_funding_observations(["BTC"], path=str(bad)) == {}
+
+
+def test_preview_venue_premium_index_passes_through_to_real_venue():
+    # 资金费核对证据源(2026-07-23):premium_index 是只读方法,preview 模式必须像
+    # book_ticker 一样透传真实 venue(preview 跑与 --submit 完全相同的核对)
+    from tools.live_track_advance import PreviewVenue
+
+    class _FakeRealVenueWithPremiumIndex(_FakeRealVenue):
+        def premium_index(self, instrument_id):
+            return {"last_funding_rate": 0.0001, "next_funding_time_ms": 123}
+
+    real = _FakeRealVenueWithPremiumIndex()
+    preview = PreviewVenue(real)
+    assert preview.premium_index("BTC") == {"last_funding_rate": 0.0001,
+                                            "next_funding_time_ms": 123}
+    assert real.place_order_calls == []                     # 只读透传,绝不触下单路径

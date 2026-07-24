@@ -344,6 +344,69 @@ def test_trial_count_persists_across_sessions(tmp_path) -> None:
     registry2._store.close()
 
 
+def test_search_identity_is_stable_across_sessions_and_binds_evaluations(tmp_path) -> None:
+    """A durable search has one canonical identity independent of process state."""
+    db_path = str(tmp_path / "identity-ledger.db")
+    registry1 = ExperimentRegistry(SqliteExperimentStore(db_path, create=True))
+    registry1.begin_search_attempt(
+        search_id="identity-search",
+        search_kind="ALPHA_FACTORY",
+        source="tests.identity",
+        dataset_version="dataset-v1",
+        recorded_at=100,
+    )
+    registry1.register_search_candidates(
+        "identity-search", ["candidate-a"], registered_at=100
+    )
+    identity1 = registry1.search_identity("identity-search")
+    assert identity1["search_id"] == "identity-search"
+    assert identity1["search_kind"] == "ALPHA_FACTORY"
+    assert identity1["source"] == "tests.identity"
+    assert identity1["dataset_version"] == "dataset-v1"
+    assert len(identity1["identity_hash"]) == 64
+    registry1._store.insert_evaluation(
+        run_id="identity-run",
+        alpha_id="a1",
+        dataset_version="dataset-v1",
+        recorded_ts=100,
+        verdict="PASS",
+        content_hash="content-identity",
+        evaluation_json='{"alpha_id":"a1"}',
+        search_id="identity-search",
+        config_hash="candidate-a",
+    )
+    binding = registry1.evaluation_binding("identity-run")
+    assert binding is not None
+    assert binding["search_identity_hash"] == identity1["identity_hash"]
+    registry1._store.close()
+
+    registry2 = ExperimentRegistry(SqliteExperimentStore(db_path, create=False))
+    assert registry2.search_identity("identity-search") == identity1
+    assert registry2.evaluation_binding("identity-run") == binding
+    registry2._store.close()
+
+
+def test_search_identity_fails_closed_when_start_metadata_is_tampered() -> None:
+    registry = _registry()
+    registry.begin_search_attempt(
+        search_id="identity-tamper",
+        search_kind="ALPHA_FACTORY",
+        source="tests.identity",
+        dataset_version="dataset-v1",
+        recorded_at=100,
+    )
+    registry._store._conn.execute(
+        "DROP TRIGGER search_attempt_events_no_update"
+    )
+    registry._store._conn.execute(
+        "UPDATE search_attempt_events SET source='tampered' WHERE search_id=?",
+        ("identity-tamper",),
+    )
+    registry._store._conn.commit()
+    with pytest.raises(ExperimentStoreError):
+        registry.search_identity("identity-tamper")
+
+
 def test_failed_terminal_write_does_not_mask_the_scorer_error(monkeypatch) -> None:
     registry = _registry()
 

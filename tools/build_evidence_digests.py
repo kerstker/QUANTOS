@@ -28,11 +28,16 @@ def extract_ic_panel(snap: dict) -> dict:
 
 
 def extract_capacity(snap: dict) -> dict:
-    """Honest capacity = participation-bound (carry ~$2M / crowd ~$7M); impact-only overstates it
-    to ~$B (the ~300x finding). Digest the binding caps + the overstatement ratio."""
+    """Digest the participation-bound capacity for every tracked OI book.
+
+    The impact-only value is retained beside the binding cap so the artifact
+    cannot silently revert to the optimistic, impact-only story.  ``top_contra``
+    is a research candidate, not a promotion decision; including its diagnostic
+    here only makes the local calculation reproducible.
+    """
     b = snap["books"]
     out = {}
-    for name in ("carry", "crowd_contra"):
+    for name in ("carry", "crowd_contra", "top_contra"):
         cap = float(b[name]["participation_cap_aum"])
         out[f"{name}.participation_cap_aum"] = cap
         out[f"{name}.impact_over_participation_ratio"] = float(b[name]["impact_aum_high"]) / cap
@@ -83,9 +88,14 @@ def build_json_digest(artifact_name: str, extractor: str, rel_tol: float, abs_to
     numbers = {}
     for key, value in EXTRACTORS[extractor](snap).items():
         numbers[key] = {"value": round(float(value), 6), "rel_tol": rel_tol, "abs_tol": abs_tol}
-    return {"artifact": os.path.join(_CACHE, artifact_name).replace("\\", "/"),
-            "kind": "json_numbers", "extractor": extractor, "code_version": _git_sha(),
-            "numbers": numbers}
+    digest = {"artifact": os.path.join(_CACHE, artifact_name).replace("\\", "/"),
+              "kind": "json_numbers", "extractor": extractor, "code_version": _git_sha(),
+              "numbers": numbers}
+    # Preserve a declared diagnostic provenance marker without making the
+    # extractor trust any unvalidated numeric summary.
+    if isinstance(snap.get("provenance"), str):
+        digest["provenance"] = snap["provenance"]
+    return digest
 
 
 def main() -> None:

@@ -127,7 +127,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Model prompt tools evaluation and red-team lineage",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: governance_implementation_digest:quantos/contracts/model_risk.py, governance_implementation_digest:scripts/generate_model_risk_dataset.py, governance_implementation_digest:scripts/generate_model_risk_evidence.py, governance_implementation_digest:scripts/update_model_risk_history.py, governance_implementation_digest:services/governance/model_risk.py, governance_implementation_digest:services/governance/model_risk_dataset.py, governance_implementation_digest:services/governance/model_risk_history.py, governance_implementation_digest:services/governance/model_risk_registry.py, governance_implementation_digest:services/intelligence/runtime.py, implementation_digest:services/intelligence/agent_loop.py, implementation_digest:services/research/ml/stacker.py, implementation_digest:tools/ml_stack_research.py, source_snapshot_digest",
       "domain": "ai_agents",
       "evidence": [
         "evidence/model_risk_baseline.json",
@@ -756,7 +756,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -929,6 +929,7 @@
         "services/research/experiment_registry/registry.py",
         "services/research/experiment_registry/store.py",
         "services/research/ports/persistence.py",
+        "services/research/robust_optimization.py",
         "services/risk/pre_trade/events.py",
         "services/risk/pre_trade/kill_switch.py",
         "services/risk/pre_trade/kill_switch_runtime.py",
@@ -985,6 +986,7 @@
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
         "tools/alpha_maintenance_sweep.py",
+        "tools/crypto_robust_optimization.py",
         "tools/deployment_events.py",
         "tools/domain_event_bus.py",
         "tools/domain_event_health.py",
@@ -1205,7 +1207,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M1",
       "description": "Independent challenger and model cards exist",
-      "detail": "model-risk baseline failed: implementation_digest:services/intelligence/agent_loop.py",
+      "detail": "model-risk baseline failed: governance_implementation_digest:quantos/contracts/model_risk.py, governance_implementation_digest:scripts/generate_model_risk_dataset.py, governance_implementation_digest:scripts/generate_model_risk_evidence.py, governance_implementation_digest:scripts/update_model_risk_history.py, governance_implementation_digest:services/governance/model_risk.py, governance_implementation_digest:services/governance/model_risk_dataset.py, governance_implementation_digest:services/governance/model_risk_history.py, governance_implementation_digest:services/governance/model_risk_registry.py, governance_implementation_digest:services/intelligence/runtime.py, implementation_digest:services/intelligence/agent_loop.py, implementation_digest:services/research/ml/stacker.py, implementation_digest:tools/ml_stack_research.py, source_snapshot_digest",
       "domain": "validation_model_risk",
       "evidence": [
         "evidence/model_risk_baseline.json",

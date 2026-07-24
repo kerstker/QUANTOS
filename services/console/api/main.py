@@ -45,6 +45,7 @@ from services.console.api.model_evidence_views import (
     configure_model_evidence_views,
     router as model_evidence_views_router,
 )
+from services.console.api.mexc_views import configure_mexc_views, router as mexc_views_router
 from services.console.api.monitoring_views import (
     configure_monitoring_views,
     router as monitoring_views_router,
@@ -74,6 +75,7 @@ from services.console.api.review_access_views import (
     router as review_access_views_router,
 )
 from services.console.api.risk_port import risk_console_runtime
+from services.console.api.snapshot_middleware import attach_console_snapshot_metadata
 from services.console.api.system_views import (
     configure_system_views,
     router as system_views_router,
@@ -86,13 +88,21 @@ _IC_PANEL_SNAPSHOT = IC_PANEL_SNAPSHOT
 
 app = FastAPI(title="QUANTOS Research Console API", version="0.1.0")
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_extra_cors_origins = tuple(
+    origin.strip()
+    for origin in os.getenv("QUANTOS_CONSOLE_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100"],
+    allow_origins=["http://127.0.0.1:3100", "http://localhost:3100", *_extra_cors_origins],
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+app.middleware("http")(attach_console_snapshot_metadata)
 
 
 ALPHAS = [
@@ -726,6 +736,7 @@ configure_model_evidence_views(
     backtest_explainability=_backtest_explainability_payload,
     scenario_stress=_scenario_stress_payload,
 )
+configure_mexc_views(kill_switch_state=_load_live_kill_switch_state)
 configure_monitoring_views(
     alpha_candidates=_alpha_candidates,
     has_real_factors=lambda: bool(_load_real_factors()),
@@ -775,6 +786,7 @@ app.include_router(backtest_views_router)
 app.include_router(primary_views_router)
 app.include_router(model_evidence_views_router)
 app.include_router(review_access_views_router)
+app.include_router(mexc_views_router)
 app.include_router(monitoring_views_router)
 app.include_router(incident_views_router)
 app.include_router(promotion_views_router)

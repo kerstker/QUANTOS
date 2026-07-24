@@ -108,6 +108,7 @@ from live.exchange.bybit_futures import _default_http_request as _bybit_default_
 from live.exchange.bybit_futures import _is_rate_limited as _bybit_is_rate_limited
 from live.exchange.retry import call_with_backoff
 from tools.live_track_advance import _load_credentials
+from tools.mexc_credentials import check_mexc_key_safety
 
 # Binance 的账户/权限查询在**现货**host,不是 binance_futures.py 用的 fapi(合约)host——见模块
 # docstring"端点/字段名诚实标注"。字面量常量,不从 BinanceFuturesAdapter 派生(那个类只知道
@@ -334,7 +335,31 @@ def check_bybit_key_permissions(api_key: str, api_secret: str, *,
     return _parse_bybit_query_api(status, data)
 
 
-_CHECKERS = {"binance": check_binance_key_permissions, "bybit": check_bybit_key_permissions}
+# ---------------------------------------------------------------------------
+# MEXC:GET /api/v3/account(只读)——复用 tools/mexc_credentials.py 的 ungated 镜像
+# ---------------------------------------------------------------------------
+
+def check_mexc_key_permissions(api_key: str, api_secret: str, **kwargs) -> KeyPermissionResult:
+    """查询 MEXC mainnet 现货账户的 key 权限位(§10 加载器的校验半)。MEXC v3 没有
+    Binance 那种 apiRestrictions 专用端点,权限位从 `/api/v3/account` 的
+    `canTrade`/`canWithdraw` 读取(字段名假设未经真实响应验证——缺失即 UNKNOWN,
+    fail-closed,见 tools/mexc_credentials.py 模块 docstring)。**MEXC 的 IP 白名单
+    绑定无法经 v3 API 验证**,所以 SAFE 的语义比 binance/bybit 弱一档:只承诺
+    「提现已关闭 + 现货交易开着 + 只读可达」,IP 白名单必须由人在交易所网页确认
+    (reasons 里诚实标注)。注入/fail-closed 约定同 `check_binance_key_permissions`。"""
+    result = check_mexc_key_safety(api_key, api_secret, **kwargs)
+    if result.is_safe:
+        return KeyPermissionResult(venue="mexc", safety=KeySafety.SAFE,
+                                   reasons=result.reasons, raw_fields=result.raw_fields)
+    if result.withdraw_disabled is False:
+        return KeyPermissionResult(venue="mexc", safety=KeySafety.UNSAFE,
+                                   reasons=result.reasons, raw_fields=result.raw_fields)
+    return KeyPermissionResult(venue="mexc", safety=KeySafety.UNKNOWN,
+                               reasons=result.reasons, raw_fields=result.raw_fields)
+
+
+_CHECKERS = {"binance": check_binance_key_permissions, "bybit": check_bybit_key_permissions,
+             "mexc": check_mexc_key_permissions}
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +376,11 @@ _MAINNET_CREDENTIAL_CONFIG = {
                "key_file": os.path.join("key", "binance_mainnet_key.json")},
     "bybit": {"env": ("BYBIT_MAINNET_API_KEY", "BYBIT_MAINNET_API_SECRET"),
              "key_file": os.path.join("key", "bybit_mainnet_key.json")},
+    # MEXC 无现货 testnet——这把 key 就是它唯一的(mainnet)key;env 带 MAINNET 字样是为了与
+    # binance/bybit 两家族的配置形状对齐,文件与 tools/live_track_advance._VENUES["mexc"] 共用
+    # 同一份 key/mexc_spot.json(形状 {"api_key", "api_secret"})。
+    "mexc": {"env": ("MEXC_MAINNET_API_KEY", "MEXC_MAINNET_API_SECRET"),
+            "key_file": os.path.join("key", "mexc_spot.json")},
 }
 
 

@@ -6,7 +6,7 @@ import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunPayload, ResearchRunDetail } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, StatusChip, Chip,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, StatusChip, Chip, LoadingVeil, Button,
 } from '@/ui/primitives';
 import { BarSeries } from '@/ui/charts';
 import { fixed, stamp } from '@/ui/format';
@@ -86,12 +86,12 @@ export default function RunDetail() {
         subtitle={bi(`${run.kind} · 研究运行(只读,数据驱动渲染)`, `${run.kind} · research run (read-only, data-driven)`)}
         actions={<div className="flex items-center gap-2"><StatusChip value={run.status.toUpperCase()} />
           {active && runnerEnabled() && (
-            <button onClick={onCancel} className="rounded-md border border-neg/50 px-2 py-0.5 text-2xs text-neg hover:bg-neg/10">
-              {bi('取消', 'Cancel')}</button>)}
+            <Button onClick={onCancel} variant="neg">{bi('取消', 'Cancel')}</Button>)}
           <Link to="/research/runs" className="text-2xs text-accent hover:underline">{bi('← 研究中心', '← Runs')}</Link></div>} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData
         source={usingBackend ? payload?.source : 'FRONTEND_RUN_DETAIL_FALLBACK'} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {(active || (run.log && run.log.length > 1)) && (
         <Panel eyebrow={bi('实时日志', 'Live Log')} title={bi('运行进度', 'Run Progress')}
           tone={active ? 'info' : undefined}
@@ -156,6 +156,7 @@ export default function RunDetail() {
           </div>
         </Panel>
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

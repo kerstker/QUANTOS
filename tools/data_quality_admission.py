@@ -17,7 +17,7 @@ from services.data.quality import build_ingestion_report
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        summarize_archive)
 from tools.binance_funding_fetch import FundingDataError, validate_daily_funding
-from tools.binance_oi_metrics_fetch import DEFAULT_TICKERS
+from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_perp_mark_fetch import (load_mark_prices,
                                            mark_price_quality_failures)
 from tools.cache_io import atomic_write_json
@@ -344,7 +344,7 @@ def build_data_quality_evidence(*, now_ms: int | None = None,
                                 price_basis: str = "PERP_MARK_PRICE") -> dict:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
-    scope = sorted(set(instruments or DEFAULT_TICKERS))
+    scope = sorted(set(instruments or FORWARD_MAJOR_TICKERS))
     expected_end = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
 
     snapshot_missing = []

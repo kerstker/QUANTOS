@@ -71,6 +71,47 @@ def test_project_pending_domain_events_advances_durable_offset(tmp_path):
     assert repeated["offset"] == 2
 
 
+def test_projection_leave_retries_when_another_worker_advances_group_clock(tmp_path):
+    """Concurrent L2 projectors must not fail only because their exit clock is stale."""
+    event_path = str(tmp_path / "events.db")
+    projection_path = str(tmp_path / "projection.db")
+    bus = DurableEventBus(event_path)
+    bus.publish(_event("race-e1", 1), correlation_id="race")
+
+    original_leave = bus.leave_consumer_group
+    injected = False
+
+    def leave_with_race(group_id, *, worker_id, now_ms):
+        nonlocal injected
+        if not injected:
+            injected = True
+            bus.heartbeat_consumer_group(
+                group_id,
+                worker_id="concurrent-worker",
+                now_ms=200,
+                partition_count=1,
+                session_timeout_ms=120_000,
+            )
+        return original_leave(group_id, worker_id=worker_id, now_ms=now_ms)
+
+    bus.leave_consumer_group = leave_with_race
+    summary = project_pending_domain_events(
+        bus,
+        now_ms=100,
+        projection_path=projection_path,
+        worker_id="projection-worker",
+        schema_registry=None,
+    )
+
+    assert summary["projected"] == 1
+    assert injected is True
+    assert bus.consumer_group_chain_valid()
+    assert bus.consumer_group_status(
+        DOMAIN_EVENT_PROJECTION_CONSUMER,
+        now_ms=200,
+    )["active_workers"] == ("concurrent-worker",)
+
+
 def test_dispatch_outbox_recovers_publish_before_ack_without_duplicate(tmp_path):
     bus = DurableEventBus(str(tmp_path / "events.db"))
     store = DryRunStore(str(tmp_path / "dry_run.db"), create=True)
@@ -151,6 +192,47 @@ def test_save_and_project_dry_run_is_load_bearing_end_to_end(tmp_path):
         started.event_id,
         records[-1]["event"].event_id,
     ]
+
+
+def test_save_and_project_dry_run_can_defer_projection_for_verified_batch_rebuild(tmp_path):
+    bus = DurableEventBus(str(tmp_path / "events.db"))
+    store = DryRunStore(str(tmp_path / "dry_run.db"), create=True)
+    projection_path = str(tmp_path / "projection.db")
+    run = DryRunRun(
+        run_id="deferred-r1",
+        strategy_id="carry",
+        timestamp=10,
+        n_intents=1,
+        n_approved=1,
+        n_rejected=0,
+        rejected_reasons=[],
+        pnl={},
+        audit_root="audit",
+        detail={"n_fills": 1},
+    )
+    started = dry_run_started_event(
+        run_id=run.run_id,
+        strategy_id=run.strategy_id,
+        timestamp_ms=run.timestamp,
+        mode="multi_period",
+    )
+    bus.publish_once(started, correlation_id=run.run_id)
+
+    summary = save_and_project_dry_run(
+        store,
+        run,
+        bus,
+        now_ms=run.timestamp,
+        projection_path=projection_path,
+        project=False,
+    )
+
+    assert summary["projection"]["skipped"] is True
+    assert summary["dispatch"] == {"dispatched": 1, "pending": 0}
+    assert not (tmp_path / "projection.db").exists()
+    assert store.get_run(run.run_id)["strategy_id"] == "carry"
+    bus.close()
+    store.close()
 
 
 def test_save_and_project_retains_risk_decision_with_exact_run_snapshot(tmp_path):

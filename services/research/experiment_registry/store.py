@@ -285,6 +285,30 @@ def _search_event_hash(
     )
 
 
+def _search_identity_hash(
+    *,
+    search_id: str,
+    search_kind: str,
+    source: str,
+    dataset_version: str,
+) -> str:
+    """Return the stable identity of a search attempt.
+
+    The identity deliberately excludes mutable lifecycle fields (status,
+    candidate count, and terminal timestamps).  It is derived from the
+    immutable STARTED metadata and can therefore be recomputed in a later
+    process without adding a second mutable authority to the ledger.
+    """
+    return _canonical_hash(
+        {
+            "dataset_version": dataset_version,
+            "search_id": search_id,
+            "search_kind": search_kind,
+            "source": source,
+        }
+    )
+
+
 def _search_candidate_hash(
     *,
     search_id: str,
@@ -1490,6 +1514,53 @@ class SqliteExperimentStore:
                 (search_id,),
             )
         ]
+
+    def search_identity(self, search_id: str) -> dict[str, str]:
+        """Return the canonical, cross-session identity for one search.
+
+        Reads go through the complete hash-chain verifier first.  A caller
+        cannot obtain an identity from a tampered STARTED row, and the returned
+        digest is derived only from immutable search metadata.
+        """
+        search_id = self._require_text(search_id, "search_id")
+        attempts = self._verified_search_state()[2]
+        attempt = attempts.get(search_id)
+        if attempt is None:
+            raise ExperimentStoreError(
+                f"search attempt {search_id} has not STARTED"
+            )
+        search_kind, source, dataset_version = attempt["metadata"]
+        identity = {
+            "search_id": search_id,
+            "search_kind": str(search_kind),
+            "source": str(source),
+            "dataset_version": str(dataset_version),
+        }
+        identity["identity_hash"] = _search_identity_hash(**identity)
+        return identity
+
+    def evaluation_binding(self, run_id: str) -> dict | None:
+        """Return an evaluation's verified search binding and identity digest.
+
+        The link is only exposed after the complete search provenance chain is
+        verified.  A missing link is represented as ``None`` so diagnostic
+        evaluations cannot be mistaken for selection-bound artifacts.
+        """
+        run_id = self._require_text(run_id, "run_id")
+        self._verified_search_state()
+        row = self._conn.execute(
+            "SELECT link_seq,search_id,config_hash,run_id,recorded_at,"
+            "evaluation_content_hash,prev_link_hash,link_hash "
+            "FROM search_evaluations WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        binding = dict(row)
+        binding["search_identity_hash"] = self.search_identity(
+            str(row["search_id"])
+        )["identity_hash"]
+        return binding
 
     def search_attempt_recoveries(self, search_id: str) -> list[dict]:
         search_id = self._require_text(search_id, "search_id")

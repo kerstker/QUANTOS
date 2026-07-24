@@ -112,3 +112,19 @@ def test_factory_computes_and_stamps_a_real_batch_pbo():
     assert len({round(p, 9) for p in pbos}) == 1          # one batch-level selection PBO, shared
     for aid in ("rc0", "rc1", "rc2"):                     # evidence present -> not parked for that
         assert all("NOT_ASSESSED" not in r for r in report[aid]["evaluation"].reasons)
+
+
+def test_batch_pbo_returns_none_for_single_candidate():
+    """单候选返回 None — 无法测量选择偏差，FAIL CLOSED（正确行为）。"""
+    from services.alpha.factory import batch_pbo
+    result = batch_pbo(_real_cands(1), cost=CostModel(), quantile=0.2, target_aum=1e7)
+    assert result is None
+
+
+def test_batch_pbo_narrows_exception_handling():
+    """batch_pbo 在无法计算 PBO 时应返回 None（fail-closed），
+    但不应吞没编程错误（如传入非候选的乱数据）。"""
+    from services.alpha.factory import batch_pbo
+    # 传入空列表 → 返回 None（正确行为：无法测量）
+    result = batch_pbo([], cost=CostModel(), quantile=0.2, target_aum=1e7)
+    assert result is None

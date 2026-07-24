@@ -13,10 +13,16 @@ import os
 from typing import Any, Mapping
 
 from tools.cache_io import atomic_write_json
+from tools.forward_status import alpha_forward_status, forward_evidence_is_current
 
 
 DEFAULT_OUTPUT = os.path.join("evidence", "alpha_paper_cycle.json")
 REQUIRED_FORWARD_PERIODS = 8
+
+# The research-risk gate uses the canonical domain decision names.  ``PASS``
+# is retained for older paper artifacts, but an approved dry-run is not a
+# generic string PASS; it is explicitly ``RISK_APPROVED``.
+APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
 
 ALPHAS: dict[str, dict[str, str]] = {
     "carry_oi_majors": {
@@ -224,8 +230,11 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
             if projection_recovered
             else "EVENT_AUTHORITY_PROJECTION_INCONSISTENT"
         )
-    if (gonogo.get("forward_evidence") or {}).get("present") is not True:
+    gonogo_forward = gonogo.get("forward_evidence")
+    if not isinstance(gonogo_forward, Mapping) or gonogo_forward.get("present") is not True:
         common_blockers.append("GONOGO_FORWARD_EVIDENCE_ABSENT")
+    elif not forward_evidence_is_current(artifacts["forward"], gonogo):
+        common_blockers.append("GONOGO_FORWARD_EVIDENCE_STALE")
 
     rows: dict[str, Any] = {}
     for alpha_id, definition in ALPHAS.items():
@@ -256,7 +265,10 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
                 "run_id": canonical.get("run_id"),
             }
             risk = canonical.get("research_risk")
-            if isinstance(risk, dict) and risk.get("decision") != "PASS":
+            if (
+                isinstance(risk, dict)
+                and risk.get("decision") not in APPROVED_RESEARCH_RISK_DECISIONS
+            ):
                 blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
         if dry is None:
             blockers.append("DRY_RUN_EVIDENCE_MISSING")
@@ -267,7 +279,8 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
         forward_id = definition["forward_id"]
         forward = forward_alphas.get(forward_id)
         forward = forward if isinstance(forward, dict) else {}
-        n_forward = forward.get("n_forward_periods")
+        forward_normalized = alpha_forward_status(artifacts["forward"], forward_id)
+        n_forward = forward_normalized["n_forward_periods"]
         if not isinstance(n_forward, int) or n_forward < REQUIRED_FORWARD_PERIODS:
             blockers.append("FORWARD_EVIDENCE_INSUFFICIENT")
         rows[alpha_id] = {
@@ -311,9 +324,16 @@ def build_report(*, artifact_paths: Mapping[str, str] | None = None) -> dict[str
             },
             "forward": {
                 "n_forward_periods": n_forward,
-                "paper_sharpe": forward.get("paper_sharpe"),
-                "pending_decisions": forward.get("pending_decisions"),
-                "last_decision_ts": forward.get("last_decision_ts"),
+                "paper_sharpe": forward_normalized["paper_sharpe"],
+                "pending_decisions": forward_normalized["pending_decisions"],
+                "attested_pending_decisions": forward_normalized[
+                    "attested_pending_decisions"
+                ],
+                "legacy_unattested_decisions": forward_normalized[
+                    "legacy_unattested_decisions"
+                ],
+                "evidence_state": forward_normalized["evidence_state"],
+                "last_decision_ts": forward_normalized["last_decision_ts"],
             },
             "paper_verdict": "BLOCKED" if blockers or research["verdict"] in {"BLOCKED", "UNCONFIRMED"} else "PENDING_REVIEW",
             "blockers": list(dict.fromkeys(blockers)),

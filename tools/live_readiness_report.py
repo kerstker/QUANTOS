@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
 from services.deployment.gate import PLATFORM_READINESS
 from tools.cache_io import atomic_write_json
+from tools.forward_status import (
+    alpha_forward_status,
+    forward_evidence_is_current,
+    refresh_evidence_available,
+)
 
 
 OUTPUT = os.path.join("evidence", "live_readiness_report.json")
@@ -66,23 +72,31 @@ def build_report() -> dict[str, Any]:
     )
     if status_rows:
         forward_source = "data/cache/forward_track_status.json"
-        forward_periods = {
-            alpha_id: (
-                status_rows.get(alpha_id, {}).get("n_forward_periods")
-                if isinstance(status_rows.get(alpha_id), dict)
-                else None
-            )
+        normalized = {
+            alpha_id: alpha_forward_status(forward_status, alpha_id)
             for alpha_id in FORWARD_ALPHA_IDS
+        }
+        forward_periods = {
+            alpha_id: row["n_forward_periods"]
+            for alpha_id, row in normalized.items()
         }
         pending_decisions = {
-            alpha_id: (
-                status_rows.get(alpha_id, {}).get("pending_decisions")
-                if isinstance(status_rows.get(alpha_id), dict)
-                else None
-            )
-            for alpha_id in FORWARD_ALPHA_IDS
+            alpha_id: row["pending_decisions"]
+            for alpha_id, row in normalized.items()
+        }
+        attested_pending_decisions = {
+            alpha_id: row["attested_pending_decisions"]
+            for alpha_id, row in normalized.items()
+        }
+        legacy_unattested_decisions = {
+            alpha_id: row["legacy_unattested_decisions"]
+            for alpha_id, row in normalized.items()
+        }
+        evidence_states = {
+            alpha_id: row["evidence_state"] for alpha_id, row in normalized.items()
         }
         forward_ran_at = forward_status.get("ran_at")
+        refresh_current = refresh_evidence_available(forward_status)
     else:
         forward_source = "evidence/alpha_paper_cycle.json"
         forward_periods = {
@@ -106,6 +120,13 @@ def build_report() -> dict[str, Any]:
             for alpha_id in FORWARD_ALPHA_IDS
         }
         forward_ran_at = cycle.get("generated_at")
+        attested_pending_decisions = dict(pending_decisions)
+        legacy_unattested_decisions = {
+            alpha_id: None for alpha_id in FORWARD_ALPHA_IDS
+        }
+        evidence_states = {alpha_id: None for alpha_id in FORWARD_ALPHA_IDS}
+        refresh_current = False
+    gonogo_forward_current = forward_evidence_is_current(forward_status, gonogo)
     forward_ok = bool(forward_periods) and all(
         isinstance(periods, int) and periods >= REQUIRED_FORWARD_PERIODS
         for periods in forward_periods.values()
@@ -159,6 +180,10 @@ def build_report() -> dict[str, Any]:
             "required_periods_per_alpha": REQUIRED_FORWARD_PERIODS,
             "realized_periods": forward_periods,
             "pending_decisions": pending_decisions,
+            "attested_pending_decisions": attested_pending_decisions,
+            "legacy_unattested_decisions": legacy_unattested_decisions,
+            "evidence_state": evidence_states,
+            "refresh_evidence_available": refresh_current,
             "source": forward_source,
             "ran_at": forward_ran_at,
         },
@@ -182,8 +207,9 @@ def build_report() -> dict[str, Any]:
             "historical_failed_deliveries": historical_failures,
         },
         "go_no_go": {
-            "status": "PASS" if (gonogo.get("forward_evidence") or {}).get("present") is True else "BLOCK",
+            "status": "PASS" if gonogo_forward_current else "BLOCK",
             "forward_evidence": gonogo.get("forward_evidence"),
+            "current_for_forward_status": gonogo_forward_current,
         },
         "strong_identity": {
             "status": identity.get("verdict", "MISSING"),
@@ -217,7 +243,11 @@ def build_report() -> dict[str, Any]:
     if checks["event_authority"]["status"] != "PASS":
         blockers.append("EVENT_AUTHORITY_NOT_HEALTHY_OR_CONSISTENT")
     if checks["go_no_go"]["status"] != "PASS":
-        blockers.append("GONOGO_FORWARD_EVIDENCE_ABSENT")
+        evidence = gonogo.get("forward_evidence")
+        if isinstance(evidence, Mapping) and evidence.get("present") is True:
+            blockers.append("GONOGO_FORWARD_EVIDENCE_STALE")
+        else:
+            blockers.append("GONOGO_FORWARD_EVIDENCE_ABSENT")
     if checks["top_tier"]["status"] != "TOP_TIER":
         blockers.append("TOP_TIER_RED_LINES_OPEN")
     next_safe_actions = ["keep the three candidates in the official forward-paper clock"]

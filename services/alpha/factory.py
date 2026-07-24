@@ -9,6 +9,8 @@ the lifecycle manager.
 """
 from __future__ import annotations
 
+import sys
+import traceback
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
@@ -73,6 +75,7 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
         try:
             res = run_panel_backtest(periods, cost=cost, quantile=quantile, target_aum=target_aum)
         except Exception:
+            traceback.print_exc(file=sys.stderr)
             return None
         rets = list(res.period_returns)
         series.append(rets)
@@ -103,6 +106,7 @@ def batch_pbo(candidates, *, cost: CostModel, quantile: float, target_aum: float
     try:
         return pbo_cscv(perf)
     except Exception:
+        traceback.print_exc(file=sys.stderr)
         return None
 
 

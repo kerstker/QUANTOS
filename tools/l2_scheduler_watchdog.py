@@ -64,6 +64,11 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         "domain_event_ops", 3 * _HOUR_MS, frozenset({2})
     ),
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
+    "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
+    "QUANTOS_paper_order_preview": ExpectedTask("paper_order_preview", 2 * _DAY_MS),
+    "QUANTOS_paper_realtime": ExpectedTask("paper_realtime", 15 * 60_000),
+    "QUANTOS_paper_realtime_10k": ExpectedTask("paper_realtime_10k", 15 * 60_000),
+    "QUANTOS_paper_health": ExpectedTask("paper_health", 15 * 60_000),
     "QUANTOS_scheduler_watchdog": ExpectedTask(
         "l2_scheduler_watchdog", 2 * _HOUR_MS, frozenset({2})
     ),
@@ -355,7 +360,20 @@ def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path)
         "python.exe",
     }:
         return False
-    if (snapshot.arguments or "").strip() != f"-m tools.{spec.module}":
+    arguments = (snapshot.arguments or "").strip()
+    # L2 tasks must resolve workers through the immutable-root launcher.  The
+    # older ``-m tools.<module>`` action is intentionally rejected: it lets a
+    # mutable state checkout shadow the scheduled code and is therefore action
+    # drift, even though the module name itself looks correct.
+    if not arguments.startswith('"') or '" ' not in arguments:
+        return False
+    launcher_text, module = arguments[1:].split('" ', 1)
+    expected_launcher = repo_root / "tools" / "l2_schedule_entrypoint.py"
+    try:
+        launcher_matches = Path(launcher_text).resolve(strict=False) == expected_launcher.resolve(strict=False)
+    except OSError:
+        launcher_matches = False
+    if not launcher_matches or module.strip() != spec.module:
         return False
     if not snapshot.working_directory:
         return False
@@ -373,6 +391,7 @@ def _check_task(
     spec: ExpectedTask,
     now_ms: int,
     repo_root: Path,
+    self_check: bool = False,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -425,6 +444,20 @@ def _check_task(
             "status": "PARTIAL",
             "code": f"RESULT_{snapshot.last_result}",
             "detail": f"task completed with an explicitly partial result ({snapshot.last_result})",
+        }
+    # A watchdog invocation is the authority that is evaluating the current
+    # scheduler metadata.  Its previous non-zero exit code is not an
+    # independent worker failure: the previous run may have been non-zero
+    # precisely because it reported another task's breach, which otherwise
+    # creates a permanent self-referential RESULT_1 alert.  Freshness,
+    # action-pinning, and the current invocation's own exit status remain
+    # observable through the external heartbeat / next scheduler poll.
+    if self_check and snapshot.last_result != 0:
+        return {
+            "task_name": name,
+            "status": "PASS",
+            "code": "SELF_CHECK",
+            "detail": "fresh watchdog metadata is being evaluated; prior watchdog result is not self-reported",
         }
     if snapshot.last_result != 0:
         return {
@@ -544,6 +577,7 @@ def evaluate_schedule(
             spec=spec,
             now_ms=now_ms,
             repo_root=root,
+            self_check=name == "QUANTOS_scheduler_watchdog",
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)

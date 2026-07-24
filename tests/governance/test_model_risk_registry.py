@@ -157,3 +157,74 @@ def test_challenger_relative_lift_is_rejected_when_absolute_metric_is_negative()
         ChallengerReview.model_validate(
             {**review.model_dump(), "reviewer_group": "research-ml"}
         )
+
+
+def test_model_risk_readiness_is_external_blocked_until_provider_and_identity_exist():
+    from quantos.contracts.model_risk import (
+        ChallengerVerdict,
+        ReviewIdentityAssurance,
+    )
+    from services.governance.model_risk import (
+        ModelRiskReadiness,
+        assess_model_risk_readiness,
+    )
+
+    result = assess_model_risk_readiness(
+        external_provider_verified=False,
+        reviewer_identity=ReviewIdentityAssurance.PROCESS_ROLE_ONLY,
+        challenger_verdict=ChallengerVerdict.REJECT_ABSOLUTE_FLOOR,
+        challenger_oos_metric=-0.4035,
+        forward_periods=0,
+        minimum_forward_periods=8,
+    )
+    assert result.status == ModelRiskReadiness.EXTERNAL_BLOCKED
+    assert "EXTERNAL_PROVIDER_NOT_VERIFIED" in result.reason_codes
+    assert "REVIEWER_IDENTITY_NOT_EXTERNALLY_AUTHENTICATED" in result.reason_codes
+    assert "NO_POSITIVE_OOS_CHALLENGER" in result.reason_codes
+    assert result.execution_authority_granted is False
+
+
+def test_model_risk_readiness_never_invents_positive_edge_from_relative_lift():
+    from quantos.contracts.model_risk import (
+        ChallengerVerdict,
+        ReviewIdentityAssurance,
+    )
+    from services.governance.model_risk import (
+        ModelRiskReadiness,
+        assess_model_risk_readiness,
+    )
+
+    result = assess_model_risk_readiness(
+        external_provider_verified=True,
+        reviewer_identity=ReviewIdentityAssurance.EXTERNAL_STRONG_IDENTITY,
+        challenger_verdict=ChallengerVerdict.ACCEPT_RESEARCH_ONLY,
+        challenger_oos_metric=-0.01,
+        forward_periods=8,
+        minimum_forward_periods=8,
+    )
+    assert result.status == ModelRiskReadiness.NO_EDGE
+    assert "NO_POSITIVE_OOS_CHALLENGER" in result.reason_codes
+    assert result.execution_authority_granted is False
+
+
+def test_model_risk_readiness_can_only_be_research_only_with_positive_oos_and_full_external_evidence():
+    from quantos.contracts.model_risk import (
+        ChallengerVerdict,
+        ReviewIdentityAssurance,
+    )
+    from services.governance.model_risk import (
+        ModelRiskReadiness,
+        assess_model_risk_readiness,
+    )
+
+    result = assess_model_risk_readiness(
+        external_provider_verified=True,
+        reviewer_identity=ReviewIdentityAssurance.EXTERNAL_STRONG_IDENTITY,
+        challenger_verdict=ChallengerVerdict.ACCEPT_RESEARCH_ONLY,
+        challenger_oos_metric=0.21,
+        forward_periods=8,
+        minimum_forward_periods=8,
+    )
+    assert result.status == ModelRiskReadiness.RESEARCH_ONLY
+    assert result.reason_codes == ()
+    assert result.execution_authority_granted is False

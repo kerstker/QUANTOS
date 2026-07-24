@@ -50,6 +50,36 @@ class ExchangeFilters:
 
 
 @dataclass(frozen=True)
+class PremiumIndexSnapshot:
+    """Binance `GET /fapi/v1/premiumIndex` 的只读快照(标记价/指数价/最新资金费)——
+    定价与诊断输入,不在下单路径上。时间均为 ms epoch int;价格/费率为 float(finite 校验)。"""
+    instrument_id: str
+    mark_price: float
+    index_price: float
+    last_funding_rate: float
+    next_funding_time_ms: int
+    time_ms: int
+
+    def __post_init__(self) -> None:
+        for name in ("mark_price", "index_price", "last_funding_rate"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite, got {getattr(self, name)!r}")
+
+
+@dataclass(frozen=True)
+class FundingRateSnapshot:
+    """Binance `GET /fapi/v1/fundingRate` 历史资金费单条记录——离线研究/干跑校准输入,
+    不在下单路径上。"""
+    instrument_id: str
+    funding_rate: float
+    funding_time_ms: int
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.funding_rate):
+            raise ValueError(f"funding_rate must be finite, got {self.funding_rate!r}")
+
+
+@dataclass(frozen=True)
 class LiveOrderRequest:
     """已过交易所过滤器取整的、随时可提交的浮点数量订单。设计:
     docs/engineering/specs/2026-07-06-limit-order-execution-design.md §1(LIMIT 扩展)。

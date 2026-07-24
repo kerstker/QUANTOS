@@ -17,7 +17,7 @@ RUN_OWNER_RUNNER_INVOCATION = "RUNNER_INVOCATION"
 VALID_RUN_OWNERS = {RUN_OWNER_LEGACY_MIRROR, RUN_OWNER_RUNNER_INVOCATION}
 ALLOWED_KINDS = {"carry_strategy", "oi_research", "combo_book", "survivorship",
                  "factory_orthogonal", "factory_loop", "data_refresh",
-                 "ic_panel", "wide_gauntlet"}
+                 "ic_panel", "wide_gauntlet", "paper_cycle"}
 
 _INVOCATION_ID_MAX_LENGTH = 128
 _REQUEST_IDENTITY_SCHEMA = "quantos.research_runner.request.v1"

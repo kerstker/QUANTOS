@@ -12,6 +12,12 @@ export function runnerEnabled(): boolean {
 
 export interface TriggerResult { run_id: string; status: string; kind: string; operator?: string; }
 
+export interface RunnerHealth {
+  mode: string;
+  live_disallowed: boolean;
+  kinds: string[];
+}
+
 // Rank #18: the runner requires an X-Operator tag on every trigger — a SELF-ASSERTED, UNAUTHENTICATED
 // accountability label (not RBAC/authn). Persisted in localStorage so the operator keeps their tag.
 const OPERATOR_KEY = 'quantos.operator';
@@ -32,6 +38,13 @@ export function getRunnerToken(): string {
 }
 export function setRunnerToken(token: string): void {
   try { sessionStorage.setItem(RUNNER_TOKEN_KEY, token); } catch { /* private-mode etc */ }
+}
+
+export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHealth> {
+  if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
+  const res = await fetch(new URL('/health', RESEARCH_RUNNER_BASE), { method: 'GET', signal });
+  if (!res.ok) throw new Error(`runner returned ${res.status}`);
+  return res.json();
 }
 
 export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {
@@ -76,6 +89,9 @@ export interface RunParamSpec {
 // The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo. A kind with a
 // non-empty `params` renders typed inputs in the trigger panel; the values are passed to POST /run.
 export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string; params?: RunParamSpec[] }> = [
+  { kind: 'paper_cycle', label: '执行纸面周期', params: [
+    { name: 'small_10k', type: 'bool', label: '10K 隔离账户', default: false },
+  ] },
   { kind: 'combo_book', label: '双因子组合' },
   { kind: 'oi_research', label: '持仓因子研究' },
   { kind: 'survivorship', label: '幸存者重测' },

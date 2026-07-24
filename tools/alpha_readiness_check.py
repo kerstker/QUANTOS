@@ -16,10 +16,16 @@ from typing import Any
 
 from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
 from tools.cache_io import atomic_write_json
+from tools.forward_status import (
+    alpha_forward_status,
+    forward_evidence_is_current,
+    refresh_evidence_available,
+)
 
 
 REQUIRED_FORWARD_PERIODS = 8
 DEFAULT_OUTPUT = os.path.join("evidence", "alpha_readiness_crowd_contra.json")
+APPROVED_RESEARCH_RISK_DECISIONS = frozenset({"PASS", "RISK_APPROVED"})
 
 ALPHA_CATALOG: dict[str, dict[str, str]] = {
     "crowd_contra": {
@@ -200,7 +206,7 @@ def evaluate_alpha_readiness(
         canonical_cycle = cycle_row.get("canonical_dry_run")
         if isinstance(canonical_cycle, Mapping):
             cycle_risk = canonical_cycle.get("research_risk_decision")
-            if cycle_risk is not None and cycle_risk != "PASS":
+            if cycle_risk is not None and cycle_risk not in APPROVED_RESEARCH_RISK_DECISIONS:
                 blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
     else:
         # The crowd candidate keeps its dedicated legacy research battery, but
@@ -215,7 +221,7 @@ def evaluate_alpha_readiness(
         canonical_cycle = cycle_row.get("canonical_dry_run")
         if isinstance(canonical_cycle, Mapping):
             cycle_risk = canonical_cycle.get("research_risk_decision")
-            if cycle_risk is not None and cycle_risk != "PASS":
+            if cycle_risk is not None and cycle_risk not in APPROVED_RESEARCH_RISK_DECISIONS:
                 blockers.append("DRY_RUN_RESEARCH_RISK_NOT_PASS")
     if not research_checks["registered_alpha"]:
         blockers.append("ALPHA_NOT_REGISTERED")
@@ -230,21 +236,16 @@ def evaluate_alpha_readiness(
     forward_alphas = forward.get("alphas") if isinstance(forward.get("alphas"), dict) else {}
     forward_row = forward_alphas.get(alpha_id) if isinstance(forward_alphas, dict) else None
     forward_row = forward_row if isinstance(forward_row, dict) else {}
-    n_forward = forward_row.get("n_forward_periods")
-    forward_sharpe = _number(forward_row.get("paper_sharpe"))
+    forward_normalized = alpha_forward_status(forward, alpha_id)
+    n_forward = forward_normalized["n_forward_periods"]
+    forward_sharpe = _number(forward_normalized["paper_sharpe"])
     admission_verdict = data_admission.get("verdict")
     # The clock-integrity forward driver renamed this field when it bound each
     # decision/realization to the data-admission authority. Accept the legacy
     # field for old artifacts, but prefer the current pair: a complete refresh
     # evidence set plus a PASS admission decision. This is report-only; the
     # driver and its fail-closed gates remain authoritative.
-    quality_current = (
-        forward.get("quality_evidence_current") is True
-        or (
-            forward.get("refresh_evidence_available") is True
-            and admission_verdict == "PASS"
-        )
-    )
+    quality_current = refresh_evidence_available(forward) and admission_verdict == "PASS"
     if admission_verdict != "PASS":
         blockers.append("DATA_ADMISSION_BLOCK")
     if not isinstance(n_forward, int) or n_forward < REQUIRED_FORWARD_PERIODS:
@@ -264,9 +265,14 @@ def evaluate_alpha_readiness(
     if event_consistency and event_consistency.get("verdict") != "PASS":
         blockers.append("EVENT_AUTHORITY_PROJECTION_INCONSISTENT")
 
-    forward_present = (gonogo.get("forward_evidence") or {}).get("present") is True
+    forward_present = forward_evidence_is_current(forward, gonogo)
+    raw_forward_present = (gonogo.get("forward_evidence") or {}).get("present") is True
     if not forward_present:
-        blockers.append("GONOGO_FORWARD_EVIDENCE_ABSENT")
+        blockers.append(
+            "GONOGO_FORWARD_EVIDENCE_STALE"
+            if raw_forward_present
+            else "GONOGO_FORWARD_EVIDENCE_ABSENT"
+        )
 
     safe = dict(safety or {})
     live_flags = any(bool(safe.get(name)) for name in (
@@ -337,6 +343,14 @@ def evaluate_alpha_readiness(
             "n_forward_periods": n_forward,
             "paper_sharpe": forward_sharpe,
             "quality_evidence_current": quality_current,
+            "attested_pending_decisions": forward_normalized[
+                "attested_pending_decisions"
+            ],
+            "legacy_unattested_decisions": forward_normalized[
+                "legacy_unattested_decisions"
+            ],
+            "evidence_state": forward_normalized["evidence_state"],
+            "refresh_evidence_available": refresh_evidence_available(forward),
             "event_health_verdict": event_verdict,
             "pending_events": pending_events,
             "gonogo_forward_evidence_present": forward_present,

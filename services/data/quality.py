@@ -104,7 +104,15 @@ def build_ingestion_report(
     off_grid_count = 0
     if expected_interval is not None:
         for times in series.values():
+            # When callers provide explicit boundaries, an empty instrument is
+            # a complete absence of the expected grid, not an instrument that
+            # should be silently omitted from the aggregate.  This matters for
+            # multi-instrument refreshes: a failed ticker must keep the quality
+            # report BLOCKed instead of disappearing from ``event_times_by_instrument``.
             if not times:
+                if expected_start is not None and expected_end is not None \
+                        and expected_start <= expected_end:
+                    missing_count += ((expected_end - expected_start) // expected_interval) + 1
                 continue
             present = set(times)
             start = expected_start if expected_start is not None else min(present)

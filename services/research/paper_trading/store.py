@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS paper_track (
   cum_return      REAL, paper_sharpe REAL, paper_ic REAL,
   backtest_sharpe REAL, perf_gap REAL
 );
+CREATE TRIGGER IF NOT EXISTS paper_periods_no_update
+BEFORE UPDATE ON paper_periods
+BEGIN SELECT RAISE(ABORT, 'paper_periods is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS paper_periods_no_delete
+BEFORE DELETE ON paper_periods
+BEGIN SELECT RAISE(ABORT, 'paper_periods is append-only'); END;
 """
 _TABLES = ("paper_periods", "paper_track")
 
@@ -51,12 +57,48 @@ class PaperTrackStore:
             raise PaperTrackStoreError(f"paper-track store missing tables: {missing}")
 
     def append_periods(self, alpha_id: str, rows: Sequence[tuple]) -> None:
-        self._conn.executemany(
-            "INSERT OR IGNORE INTO paper_periods(alpha_id, as_of_ts, realized_return, realized_ic, source) "
-            "VALUES (?,?,?,?,?)",
-            [(alpha_id, int(ts), float(r), (None if ic is None else float(ic)), str(src)) for ts, r, ic, src in rows],
-        )
-        self._conn.commit()
+        normalized = [
+            (
+                alpha_id,
+                int(ts),
+                float(realized_return),
+                None if realized_ic is None else float(realized_ic),
+                str(source),
+            )
+            for ts, realized_return, realized_ic, source in rows
+        ]
+        try:
+            with self._conn:
+                for row in normalized:
+                    existing = self._conn.execute(
+                        "SELECT realized_return, realized_ic, source FROM paper_periods "
+                        "WHERE alpha_id=? AND as_of_ts=?",
+                        row[:2],
+                    ).fetchone()
+                    if existing is not None:
+                        retained = (
+                            float(existing["realized_return"]),
+                            (
+                                None
+                                if existing["realized_ic"] is None
+                                else float(existing["realized_ic"])
+                            ),
+                            str(existing["source"]),
+                        )
+                        if retained != row[2:]:
+                            raise PaperTrackStoreError(
+                                "paper period identity reused with different content: "
+                                f"{alpha_id}@{row[1]}"
+                            )
+                        continue
+                    self._conn.execute(
+                        "INSERT INTO paper_periods"
+                        "(alpha_id, as_of_ts, realized_return, realized_ic, source) "
+                        "VALUES (?,?,?,?,?)",
+                        row,
+                    )
+        except sqlite3.DatabaseError as exc:
+            raise PaperTrackStoreError(f"paper period write failed: {exc}") from exc
 
     def periods(self, alpha_id: str) -> list:
         return [

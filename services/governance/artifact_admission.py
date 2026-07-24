@@ -22,6 +22,11 @@ from pydantic import (
     model_validator,
 )
 
+from .external_evidence import (
+    ExternalEvidenceStatus,
+    build_external_blocked_status,
+)
+
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_DIGEST = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -694,6 +699,59 @@ def evaluate_verified_provenance(
     )
 
 
+def artifact_external_evidence_status(
+    *,
+    observed_at_ms: int,
+    external_bundle_available: bool = False,
+    signed_receipt_available: bool = False,
+    independent_deployment_available: bool = False,
+    external_authority: str = "",
+    evidence_ref: str = "",
+) -> ExternalEvidenceStatus:
+    """Describe external artifact-admission evidence without fabricating it.
+
+    The local verifier can be fully implemented while its external Sigstore
+    bundle, signed freshness receipt, or independent admission deployment is
+    absent.  A caller may pass observed facts from an operator-owned source;
+    this function does not inspect files, call a verifier, or sign anything.
+    """
+
+    missing: list[str] = []
+    if not external_bundle_available:
+        missing.append("signed provenance bundle")
+    if not signed_receipt_available:
+        missing.append("external signed verification receipt")
+    if not independent_deployment_available:
+        missing.append("independent admission deployment")
+    if missing:
+        return build_external_blocked_status(
+            capability="artifact_admission",
+            reason_code="ARTIFACT_EXTERNAL_EVIDENCE_NOT_PROVIDED",
+            required_action="Provide " + ", ".join(missing),
+            observed_at_ms=observed_at_ms,
+            external_authority=external_authority,
+        )
+    if not external_authority or not evidence_ref:
+        return ExternalEvidenceStatus(
+            capability="artifact_admission",
+            status="PARTIAL",
+            reason_code="ARTIFACT_EXTERNAL_EVIDENCE_REFERENCE_UNBOUND",
+            required_action="Bind evidence to an operator-owned authority and retained receipt",
+            observed_at_ms=observed_at_ms,
+            external_authority=external_authority,
+            evidence_ref=evidence_ref,
+        )
+    return ExternalEvidenceStatus(
+        capability="artifact_admission",
+        status="VERIFIED",
+        reason_code="ARTIFACT_EXTERNAL_EVIDENCE_VERIFIED",
+        required_action="",
+        observed_at_ms=observed_at_ms,
+        external_authority=external_authority,
+        evidence_ref=evidence_ref,
+    )
+
+
 __all__ = [
     "ArtifactAdmissionDecision",
     "ArtifactAdmissionPolicy",
@@ -706,6 +764,7 @@ __all__ = [
     "VerifiedSigstoreFacts",
     "VerifiedReceiptAuthentication",
     "artifact_verification_receipt_sha256",
+    "artifact_external_evidence_status",
     "denied_admission_decision",
     "evaluate_verified_provenance",
     "load_json_without_duplicate_keys",

@@ -1,7 +1,7 @@
 import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, LoadingVeil, Callout, type Column,
 } from '@/ui/primitives';
 import { BarSeries, DivergingBars } from '@/ui/charts';
 import { fixed } from '@/ui/format';
@@ -69,26 +69,6 @@ function edgeColumns(): Column<Edge>[] {
   ];
 }
 
-function HonestBanner({ usingBackend }: { usingBackend: boolean }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3.5 py-2"
-      style={{ background: 'color-mix(in srgb, var(--pos) 7%, transparent)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--pos) 28%, transparent)' }}>
-      <span className="text-2xs font-medium text-pos">
-        ✓ {usingBackend
-          ? bi('真实回测结果(实时取自 run_registry)· 历史回测,非未来收益承诺',
-            'Real backtest results (live from run_registry) · historical backtest, NOT a promise of future returns')
-          : bi('真实回测观察值(工具实测,离线)· 历史回测,非未来收益承诺',
-            'Real observed backtest figures (offline, from tool output) · historical backtest, NOT a promise of future returns')}
-      </span>
-      <span className="mx-1 h-3 w-px bg-line-strong" />
-      <Chip label={usingBackend ? 'REAL_BACKTEST · RESEARCH_RUN_REGISTRY' : 'OBSERVED_SNAPSHOT'}
-        tone={usingBackend ? 'pos' : 'info'} />
-      <Chip label="L2_RESEARCH_ONLY" tone="info" />
-      <Chip label={bi('非投资建议', 'NOT ADVICE')} tone="warn" />
-    </div>
-  );
-}
-
 export default function BacktestResults() {
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<BacktestResultsPayload>(
     sig => fetchBacktestResultsSnapshot(sig));
@@ -107,17 +87,24 @@ export default function BacktestResults() {
       <PageHeader title="Backtest Results" titleZh="回测战果"
         subtitle={bi('真实加密回测的诚实战果:1 条可部署边 + 1 条机器发现的第二条边;每个数字都带折扣',
           'Honest results of the real crypto backtests — 1 deployable edge + 1 machine-found second edge; every figure carries its discount')} />
-      <HonestBanner usingBackend={usingBackend} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
         realData={usingBackend && payload?.data_provenance === 'RESEARCH_RUN_REGISTRY'}
-        source={usingBackend ? 'RESEARCH_RUN_REGISTRY' : 'FRONTEND_OBSERVED_SNAPSHOT'} error={error} />
+        source={usingBackend ? 'RESEARCH_RUN_REGISTRY' : 'FRONTEND_OBSERVED_SNAPSHOT'} error={error}
+        extraChips={<>
+          <Chip label="L2_RESEARCH_ONLY" tone="info" />
+          <Chip label={bi('非投资建议', 'NOT ADVICE')} tone="warn" />
+        </>} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('稳健正交边', 'Robust edges')} value="2" accent
           sub={bi('carry + crowd_contra', 'carry + crowd_contra')} />
-        <StatTile label={bi('资金费 carry 净夏普', 'Carry net Sharpe')} value="2.09" tone="pos"
-          sub={bi('流动半区·年化 47%', 'liquid half · 47% ann')} />
-        <StatTile label={bi('第二条边 与 carry 相关', '2nd edge R² vs carry')} value="0.5%" tone="info"
+        <StatTile label={bi('资金费 carry 净夏普', 'Carry net Sharpe')}
+          value={fixed(metric(carry, 'sharpe_raw', 2.09), 2)} tone="pos"
+          sub={bi(`流动半区·年化 ${fixed(metric(carry, 'ann_return', 0.47) * 100, 0)}%`,
+            `liquid half · ${fixed(metric(carry, 'ann_return', 0.47) * 100, 0)}% ann`)} />
+        <StatTile label={bi('第二条边 与 carry 相关', '2nd edge R² vs carry')}
+          value={`${fixed(metric(oi, 'crowd_contra_r2_vs_carry', 0.005) * 100, 1)}%`} tone="info"
           sub={bi('几乎完全正交', 'near-orthogonal')} />
         <StatTile label={bi('双因子组合夏普', 'Combo Sharpe')} value={fixed(comboSharpe, 2)} tone="pos"
           sub={bi(`maxDD ${fixed(metric(combo, 'max_drawdown', 0.12), 2)}`, `maxDD ${fixed(metric(combo, 'max_drawdown', 0.12), 2)}`)} />
@@ -126,10 +113,11 @@ export default function BacktestResults() {
       <Panel eyebrow={bi('诚实地图', 'Honest Map')} title={bi('我们到底有什么', 'What We Actually Have')}
         right={<Chip label={bi('2 真 / 3 证伪', '2 real / 3 rejected')} tone="muted" />}>
         <DataTable columns={edgeColumns()} rows={EDGES} dense getKey={e => e.name} />
-        <div className="mt-2 text-2xs text-secondary">
+        <Callout tone="muted" summary={bi('数百因子自主搜索 → 诚实 gauntlet 只留两条稳健正交边',
+          'Hundreds of factors autonomously searched → the honesty gauntlet leaves two robust orthogonal edges')}>
           {bi('机器在 9–15 维(价/量/资金费/持仓/基差/日内)自主搜了数百因子;诚实 gauntlet(IC/滞后/成本/多重检验/幸存者)把脆弱假象全毙了。免费加密日频的稳健正交空间就这两条。',
             'The machine autonomously searched hundreds of factors across 9–15 dims; the honesty gauntlet (IC/lag/cost/multiplicity/survivorship) killed every fragile artifact. Only two robust orthogonal edges exist in free crypto daily data.')}
-        </div>
+        </Callout>
       </Panel>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -139,25 +127,30 @@ export default function BacktestResults() {
             <StatTile label={bi('净夏普@5bps', 'Net Sharpe @5bps')} value={fixed(metric(carry, 'net_sharpe_5bps', 2.03), 2)} tone="pos" />
             <StatTile label={bi('日均收资金费', 'Funding/day')} value={`${fixed(metric(carry, 'funding_bps_day', 5.43), 2)} bps`} tone="pos" />
             <StatTile label={bi('换手', 'Turnover')} value={fixed(metric(carry, 'turnover', 0.28), 2)} tone="info" />
-            <StatTile label={bi('流动半区年化', 'Liquid ann')} value="47%" tone="pos" />
-            <StatTile label={bi('最大回撤', 'Max DD')} value="26%" tone="warn" />
-            <StatTile label={bi('最差单日', 'Worst day')} value="−6.8%" tone="neg" />
+            <StatTile label={bi('流动半区年化', 'Liquid ann')}
+              value={`${fixed(metric(carry, 'ann_return', 0.47) * 100, 0)}%`} tone="pos" />
+            <StatTile label={bi('最大回撤', 'Max DD')}
+              value={`${fixed(metric(carry, 'max_drawdown', 0.26) * 100, 0)}%`} tone="warn" />
+            <StatTile label={bi('最差单日', 'Worst day')}
+              value={`${fixed(metric(carry, 'worst_day', -0.068) * 100, 1)}%`} tone="neg" />
           </KpiStrip>
           <div className="mt-3 text-2xs text-muted">{bi('逐年净夏普(流动半区,@5bps)— 7/7 年全正含 2022 熊市 · 观察值',
             'Per-year net Sharpe (liquid half, @5bps) — 7/7 years positive incl. 2022 bear · observed')}</div>
           <BarSeries data={CARRY_YEARS.map(y => y.value)} labels={CARRY_YEARS.map(y => `'${y.label}`)}
             valueFormat={v => fixed(v, 1)} />
-          <div className="mt-2 text-2xs text-secondary">
+          <Callout tone="muted" summary={bi('是 yield 不是价格预测 · 折扣:幸存者/滑点/尾部/容量',
+            'A yield, not price prediction · discounts: survivorship / slippage / tail / capacity')}>
             {bi('多空两腿都收资金费(做多负费币、做空正费币),是 yield 不是价格预测。折扣:幸存者偏差、滑点为建模值非实测、爆仓尾部风险未建模、容量有限。',
               'Collects funding on both legs — a yield, not price prediction. Discounts: survivorship, modeled (not measured) slippage, unmodeled liquidation tail risk, finite capacity.')}
-          </div>
+          </Callout>
         </Panel>
 
         <Panel eyebrow={bi('第二条边', 'Edge #2')} title={bi('逆向散户持仓 crowd_contra', 'Fade Crowded Retail')}
           tone="info" right={<StatusChip value="WATCH" />}>
           <KpiStrip cols={3}>
             <StatTile label={bi('价夏普', 'Price Sharpe')} value={fixed(priceSharpe, 2)} tone="pos" />
-            <StatTile label={bi('与 carry 相关 R²', 'R² vs carry')} value="0.5%" tone="info" />
+            <StatTile label={bi('与 carry 相关 R²', 'R² vs carry')}
+              value={`${fixed(metric(oi, 'crowd_contra_r2_vs_carry', 0.005) * 100, 1)}%`} tone="info" />
             <StatTile label={bi('增量 IR', 'Incremental IR')} value={`+${fixed(metric(oi, 'incremental_ir', 1.13), 2)}`} tone="pos" />
             <StatTile label={bi('滞后 1 天后', 'After 1-day lag')} value={fixed(afterLag, 2)} tone="pos" />
             <StatTile label={bi('幸存者检验后', 'Post-survivorship')} value={fixed(metric(surv, 'complete_sharpe_raw', 0.93), 2)} tone="warn" />
@@ -167,10 +160,11 @@ export default function BacktestResults() {
             'Per-year Sharpe (complete survivorship basis) — incl. 2022 bear')}</div>
           <BarSeries data={crowdYears.map(y => y.value)} labels={crowdYears.map(y => `'${y.label}`)}
             posTone="info" valueFormat={v => fixed(v, 2)} />
-          <div className="mt-2 text-2xs text-secondary">
+          <Callout tone="muted" summary={bi('候选,非确认 · WEAK_LEAD(多重检验 + 近端软化 + 幸存者折扣)',
+            'A candidate, not confirmed · WEAK_LEAD (multiplicity + recent softening + survivorship haircut)')}>
             {bi('散户多空比太偏多头就做空,与资金费 carry 几乎完全正交。4 路对抗验证无致命缺陷但裁决 WEAK_LEAD(多重检验+近端软化+幸存者打 ~0.3 折)。是候选,非确认。',
               'Short the coins retail is over-long — near-orthogonal to carry. 4-vector verify found no kill-shot but verdict WEAK_LEAD (multiplicity + recent softening + ~0.3 survivorship haircut). A candidate, not confirmed.')}
-          </div>
+          </Callout>
         </Panel>
       </div>
 
@@ -187,10 +181,11 @@ export default function BacktestResults() {
             'Per-year combo economic Sharpe (2020–26) — all positive')}</div>
           <BarSeries data={comboYears.map(y => y.value)} labels={comboYears.map(y => `'${y.label}`)}
             valueFormat={v => fixed(v, 2)} />
-          <div className="mt-2 text-2xs text-secondary">
+          <Callout tone="muted" summary={bi('正交边组合的教科书效果 · 继承部分未重测的幸存者折扣',
+            'Textbook effect of combining orthogonal edges · inherits some un-retested survivorship discount')}>
             {bi('真优化器把两条正交边去冗余组合 → 更高夏普 + 更低回撤(正交边组合的教科书效果)。组合数字继承 crowd_contra 部分未重测的幸存者折扣。',
               'The real optimizer de-redundantly combines the two orthogonal edges → higher Sharpe + lower drawdown. The combo figure inherits part of crowd_contra\'s un-retested survivorship discount.')}
-          </div>
+          </Callout>
         </Panel>
 
         <Panel eyebrow={bi('诚实折扣', 'Discounts')} title={bi('每个数字都要打折', 'Every Figure Carries These')}
@@ -219,11 +214,13 @@ export default function BacktestResults() {
             { label: 'carry', value: 1 }, { label: 'crowd_contra', value: 1 },
             { label: 'top_ls', value: -0.5 }, { label: 'vol×price', value: -1 }, { label: 'intraday×6', value: -1 },
           ]} />
-        <div className="mt-2 text-2xs text-secondary">
+        <Callout tone="muted" summary={bi('能力已落地,稳健空间已挖尽 · 下一步需要另一种数据',
+          'Capability landed, robust space mined out · next lever is a different kind of data')}>
           {bi('机器把已知边作为「正交奖励」基准,自主在多维空间繁殖跨维度因子;诚实 gauntlet 把同 bar 时序假象(量×价纸面 1.38)和脆弱近年 lead(top_ls)全部毙掉。能力已落地,稳健空间已挖尽 —— 下一步要的是另一种数据(盘口微结构/链上/跨资产)。',
             'The machine breeds cross-dim factors rewarded for orthogonality to known edges; the honesty gauntlet killed same-bar timing artifacts (vol×price showed 1.38 in-sample) and fragile recent-years leads (top_ls). Capability landed, robust space mined out — the next lever is a different kind of data (order-book microstructure / on-chain / cross-asset).')}
-        </div>
+        </Callout>
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

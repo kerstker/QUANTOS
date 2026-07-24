@@ -1,14 +1,72 @@
-import React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { fetchResearchRunsCompare } from '@/lib/api/research-console-api';
+import React, { useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { fetchResearchRuns, fetchResearchRunsCompare } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { ResearchRunsComparePayload, ResearchRunDetail } from '@/lib/types/research';
+import type { ResearchRunsComparePayload, ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, DataTable, StatusChip, Chip, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, DataTable, StatusChip, Chip, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { BarSeries } from '@/ui/charts';
 import { fixed, stamp } from '@/ui/format';
+
+const fbPickerRuns: ResearchRunSummary[] = [
+  { run_id: 'fb_carry', kind: 'carry_strategy', title: '资金费 Carry 策略', status: 'done',
+    created_ts: 1782700000, headline: { label: 'net_sharpe_5bps', value: 2.03 }, verdict: 'DEPLOYABLE',
+    params: {}, code_version: 'abc1234def0' },
+  { run_id: 'fb_combo', kind: 'combo_book', title: 'carry × crowd 双因子组合', status: 'done',
+    created_ts: 1782700000, headline: { label: 'combo_sharpe', value: 1.5 }, verdict: 'diversification helps',
+    params: {}, code_version: 'abc1234def0' },
+  { run_id: 'fb_surv', kind: 'survivorship', title: 'crowd_contra 幸存者重测', status: 'done',
+    created_ts: 1782700000, headline: { label: 'complete_sharpe_raw', value: 0.933 }, verdict: 'WEAKENS but survives',
+    params: {}, code_version: 'abc1234def0' },
+];
+
+/** Inline picker for the <2-ids dead-end — search the run registry and pick 2+ without a round trip
+ * through /research/runs. Mirrors ResearchRuns.tsx's selection/compare pattern. */
+function RunPicker() {
+  const navigate = useNavigate();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { payload, usingBackend } = useConsoleSnapshot<ResearchRunsPayload>(s => fetchResearchRuns(s));
+  const runs = usingBackend ? payload!.runs : fbPickerRuns;
+
+  function toggleSelect(runId: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId); else next.add(runId);
+      return next;
+    });
+  }
+  function goCompare() {
+    if (selected.size < 2) return;
+    navigate(`/research/compare?ids=${Array.from(selected).join(',')}`);
+  }
+
+  const cols: Column<ResearchRunSummary>[] = [
+    { key: 'sel', header: '', render: r => (
+      <input type="checkbox" checked={selected.has(r.run_id)} onChange={() => toggleSelect(r.run_id)}
+        aria-label={bi('选择对比', 'select to compare')} />) },
+    { key: 'kind', header: bi('类型', 'Kind'), render: r => <Chip label={r.kind} tone="muted" /> },
+    { key: 'title', header: bi('运行', 'Run'), render: r => <span className="font-medium text-ink">{r.title}</span> },
+    { key: 'status', header: bi('状态', 'Status'), render: r => <StatusChip value={r.status.toUpperCase()} /> },
+    { key: 'created', header: bi('时间', 'When'), align: 'right', mono: true,
+      render: r => <span className="text-faint text-2xs">{stamp(r.created_ts)}</span> },
+  ];
+
+  return (
+    <Panel eyebrow={bi('对比', 'Compare')} title={bi('挑选 2 个以上运行', 'Pick 2+ runs to compare')}
+      right={<button onClick={goCompare} disabled={selected.size < 2}
+        title={selected.size < 2 ? bi('勾选 2 个以上运行', 'select 2+ runs') : bi('对比所选', 'compare selected')}
+        className={`rounded-md border px-2.5 py-1 text-2xs transition ${selected.size >= 2
+          ? 'border-accent/50 text-accent hover:bg-accent/10' : 'cursor-not-allowed border-line text-faint'}`}>
+        {bi(`对比所选 (${selected.size})`, `Compare (${selected.size})`)}
+      </button>}>
+      <DataTable columns={cols} rows={runs} dense getKey={r => r.run_id}
+        searchable={r => `${r.run_id} ${r.title} ${r.kind} ${r.verdict}`}
+        searchPlaceholder={bi('按运行 id / 标题 / 裁决搜索…', 'search by run id / title / verdict…')} />
+    </Panel>
+  );
+}
 
 /**
  * CompareRuns — side-by-side comparison of 2+ research runs selected in the registry. Reads run_ids from
@@ -84,13 +142,9 @@ export default function CompareRuns() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData
         source={usingBackend ? payload?.source : 'FRONTEND_COMPARE_FALLBACK'} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       {runs.length < 2 ? (
-        <Panel eyebrow={bi('对比', 'Compare')} title={bi('请选择至少两个运行', 'Pick at least two runs')}>
-          <div className="py-6 text-center text-xs text-faint">
-            {bi('在研究中心勾选 2 个以上运行再对比 · ', 'Select 2+ runs in the registry to compare · ')}
-            <Link to="/research/runs" className="text-accent hover:underline">{bi('返回研究中心', 'back to Research Runs')}</Link>
-          </div>
-        </Panel>
+        <RunPicker />
       ) : (
         <>
           <Panel eyebrow={bi('对比的运行', 'Runs')} title={bi('被对比的运行', 'Runs Being Compared')}>
@@ -131,6 +185,7 @@ export default function CompareRuns() {
           ))}
         </>
       )}
+      </LoadingVeil>
     </PageShell>
   );
 }

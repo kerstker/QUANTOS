@@ -39,6 +39,34 @@ def binance_position_rows(raw_account: dict) -> List[dict]:
     return out
 
 
+def mexc_spot_account_rows(raw_account: dict, marks: dict) -> List[dict]:
+    """MEXC /api/v3/account {"balances": [{asset, free, locked}]} → 统一行(**现货语义**)。
+
+    与期货行的诚实差异:`entry_price` 恒 0.0(账户快照无法恢复成本基,绝不臆造——与
+    MexcSpotAdapter.positions() 同一口径);`upnl` 恒 None(无成本基则未实现盈亏不可计算,
+    不是 0);**不带 liquidation_price/leverage 字段**(现货无强平/杠杆,展示层据此诚实隐藏)。
+    marks = {asset: 最新价};缺价的非零持仓 mark_price/notional 为 None(诚实缺失——
+    按 0 计是"价值为零"的错误陈述)。USDT 现金腿不是敞口标的,跳过(与适配器同口径)。"""
+    out = []
+    for bal in raw_account.get("balances", []):
+        asset = bal.get("asset", "")
+        if not asset or asset == "USDT":
+            continue
+        try:
+            free = float(bal.get("free", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if free <= 0.0:
+            continue
+        mark = (marks or {}).get(asset)
+        if mark is not None and mark <= 0:
+            mark = None
+        out.append({"instrument_id": asset, "qty": free, "entry_price": 0.0,
+                    "mark_price": mark, "upnl": None,
+                    "notional": (free * mark) if mark else None})
+    return out
+
+
 def bybit_position_rows(raw_position_list: dict) -> List[dict]:
     """输入 = /v5/position/list 的整个响应信封(含 result.list)。"""
     result = (raw_position_list or {}).get("result") or {}

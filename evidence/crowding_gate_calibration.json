@@ -1,7 +1,7 @@
 {
   "dataset": {
     "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
-    "bundle_sha256": "372b1a1901d72a4d3688fe6f0bcd5ad51a24d36b9d4fbe0a01dba68b9b6e01d2",
+    "bundle_sha256": "44fbb85061d154aba883fb02f4f0cc94d5ce4aade5e91f68a7cd6234723e0f08",
     "instruments": [
       "AAVE",
       "ADA",
@@ -28,26 +28,26 @@
       "XLM",
       "XRP"
     ],
-    "manifest_sha256": "3ae12ad39bf8761c403f1e0b67e8b8ba1e7af4790f9b0d1a787a84ee7b70eb48",
-    "max_period": 1783555200000,
+    "manifest_sha256": "df8d020c543807fd0c32f54dbe9c8e4773ed006ce4609f214f393f9cd2962ae8",
+    "max_period": 1784160000000,
     "min_period": 1642636800000,
-    "row_count": 234,
+    "row_count": 235,
     "source_sha256": {
-      "data/cache/crypto_funding.db": "c12b700d238499ece8f8fc251d89a69eff8d98e262d60f68a27ee3a1fdb5f2ab",
-      "data/cache/crypto_funding_rates.json": "e7e327867feb02116142d725f073c935615c5c4264193e65a933e7fa1554a10b",
+      "data/cache/crypto_funding.db": "9b6407fb02ec5466dcf0fabcc68481ddd6aea874b58ccfcac6be85b3270eb675",
+      "data/cache/crypto_funding_rates.json": "be704aed4297ea4919aa12b2e42c136c0760e91b20f544cbd689f569bb5acd3d",
       "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
-      "data/cache/crypto_oi_metrics.json": "2647c72cba025517ed859d7b07904f610a76abce178fa724918e912534fc5767"
+      "data/cache/crypto_oi_metrics.json": "dc89948b22ab4b93de5cc8f556b72bae6e94905c0a5066657b36870797690b06"
     }
   },
-  "evidence_sha256": "465bef964b28970a0357f50089399e6a343d44d4f2c91f102cb4843fdea8f612",
+  "evidence_sha256": "fe07e7e245f023a709b2cc813d3d3cfa10c7769c0262aaf41d4142d983cca73c",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "a4e9bfc80ad9755ba0c4d6fb13aa427a212024f1d0cbfdc9862bfb4a08e9ee82",
     "services/portfolio/crowding_calibration.py": "b221b2e446625e7faf4aaf2e2137e8e3887357497ad20fee6a65034ad43d288b",
     "services/portfolio/crowding_gate.py": "420e8656ff8b592f8d37b64e8405e602c8dca22007d36dd6177b93fb4d2945d3",
     "tools/crowding_metric_research.py": "a5b1ea02eead9c67f779b80d4bd3537bcc5f854ac4c49e7c4f7dc4a50142cc8e",
-    "tools/dry_run_crowd_contra_multi.py": "ceb6b297a551f04df1b95c6787651b4fb5daa24c4f1955014fd2a15ecd195fc5",
-    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "fe5067658c9e025c74c695ba702e95b805b9735eff4b2c97551830af409774bf",
-    "tools/live_track_advance.py": "010c7d43474495e08505fdc1ba414b56898e51c586f6dd256500ccd9555d099e"
+    "tools/dry_run_crowd_contra_multi.py": "1734f0d450efdda7b949cb5dafda3d013429f7c54bc06864639fdf60fdc37722",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "916ea77f61d028b13030518c52f22ac3f50a672edc775810690c8ba731ff8abf",
+    "tools/live_track_advance.py": "bfcefe4b8c6d0fddca0e3ef7fb4280e4ca4a0577e1e6f74ff0e210be5fc55ddd"
   },
   "limitations": [
     "Sensitivity replay is historical and not causal proof of loss prevention.",
@@ -76,29 +76,29 @@
     "absolute_statistics": {
       "short_max_z": {
         "max": 5.870804,
-        "mean": 1.499687,
+        "mean": 1.497616,
         "min": -0.501008,
-        "n": 233,
+        "n": 234,
         "p10": 0.214209,
         "p50": 1.388896,
         "p90": 2.905214
       },
       "short_mean_z": {
         "max": 3.775822,
-        "mean": 0.405931,
+        "mean": 0.403995,
         "min": -1.078983,
-        "n": 233,
+        "n": 234,
         "p10": -0.435172,
         "p50": 0.304006,
         "p90": 1.344697
       },
       "short_raw_gls": {
         "max": 6.583925,
-        "mean": 3.293372,
+        "mean": 3.289722,
         "min": 1.987949,
-        "n": 234,
-        "p10": 2.509293,
-        "p50": 3.2415,
+        "n": 235,
+        "p10": 2.505401,
+        "p50": 3.230152,
         "p90": 4.150884
       }
     },
@@ -128,10 +128,10 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.089744,
+        "block_rate": 0.089362,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 213
+        "n_warn": 214
       },
       "live": {
         "block_periods": [
@@ -157,76 +157,76 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.089744,
+        "block_rate": 0.089362,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 213
+        "n_warn": 214
       }
     },
     "max_name_weight": {
       "max": 0.083333,
-      "mean": 0.073006,
+      "mean": 0.072999,
       "min": 0.071429,
-      "n": 234,
+      "n": 235,
       "p10": 0.071429,
       "p50": 0.071429,
       "p90": 0.083333
     },
-    "max_period": 1783555200000,
+    "max_period": 1784160000000,
     "min_period": 1642636800000,
-    "n_periods": 234,
+    "n_periods": 235,
     "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
     "rank_statistics": {
       "dry_run_average": {
         "max": 0.5,
         "mean": 0.5,
         "min": 0.5,
-        "n": 234,
+        "n": 235,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.5
       },
       "dry_run_long": {
         "max": 0.307692,
-        "mean": 0.23148,
+        "mean": 0.231477,
         "min": 0.227273,
-        "n": 234,
+        "n": 235,
         "p10": 0.227273,
         "p50": 0.230769,
         "p90": 0.230769
       },
       "dry_run_short": {
         "max": 0.772727,
-        "mean": 0.76852,
+        "mean": 0.768523,
         "min": 0.692308,
-        "n": 234,
+        "n": 235,
         "p10": 0.769231,
         "p50": 0.769231,
         "p90": 0.772727
       },
       "live_average": {
         "max": 0.65528,
-        "mean": 0.502804,
+        "mean": 0.502792,
         "min": 0.5,
-        "n": 234,
+        "n": 235,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.503106
       },
       "live_long": {
         "max": 0.440994,
-        "mean": 0.136419,
+        "mean": 0.136394,
         "min": 0.125,
-        "n": 234,
+        "n": 235,
         "p10": 0.130435,
         "p50": 0.130435,
         "p90": 0.142857
       },
       "live_short": {
         "max": 0.875,
-        "mean": 0.869189,
+        "mean": 0.86919,
         "min": 0.857143,
-        "n": 234,
+        "n": 235,
         "p10": 0.868421,
         "p50": 0.869565,
         "p90": 0.869565
@@ -236,35 +236,35 @@
     "z_threshold_sensitivity": {
       "2.0": {
         "block_periods_equal": true,
-        "block_rate": 0.260684,
+        "block_rate": 0.259574,
         "dry_n_block": 61,
         "live_n_block": 61,
         "n_block": 61
       },
       "2.5": {
         "block_periods_equal": true,
-        "block_rate": 0.162393,
+        "block_rate": 0.161702,
         "dry_n_block": 38,
         "live_n_block": 38,
         "n_block": 38
       },
       "3.0": {
         "block_periods_equal": true,
-        "block_rate": 0.089744,
+        "block_rate": 0.089362,
         "dry_n_block": 21,
         "live_n_block": 21,
         "n_block": 21
       },
       "3.5": {
         "block_periods_equal": true,
-        "block_rate": 0.038462,
+        "block_rate": 0.038298,
         "dry_n_block": 9,
         "live_n_block": 9,
         "n_block": 9
       },
       "4.0": {
         "block_periods_equal": true,
-        "block_rate": 0.021368,
+        "block_rate": 0.021277,
         "dry_n_block": 5,
         "live_n_block": 5,
         "n_block": 5

@@ -3,7 +3,7 @@ import { fetchAlphaGraphSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { AlphaGraphPayload } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
-import { PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, Chip } from '@/ui/primitives';
+import { PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, Chip, LoadingVeil } from '@/ui/primitives';
 
 /**
  * Alpha Correlation Graph. Renders the explicit nodes/edges graph the backend builds with the real
@@ -44,6 +44,12 @@ export default function AlphaGraph() {
   const data = usingBackend ? payload! : fallback;
   const { nodes, edges, clusters, rho_cut: rho, n_near_dup } = data;
   const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const [selected, setSelected] = React.useState<string | null>(null);
+  const selectedNode = selected ? byId[selected] : null;
+  const clusterMembers = selectedNode ? nodes.filter(n => n.cluster === selectedNode.cluster) : [];
+  const clusterEdges = selectedNode
+    ? edges.filter(e => byId[e.a]?.cluster === selectedNode.cluster && byId[e.b]?.cluster === selectedNode.cluster)
+    : [];
 
   return (
     <PageShell>
@@ -53,6 +59,7 @@ export default function AlphaGraph() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error}
         realData={data.data_provenance === 'REAL_CRYPTO_SERIES'} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('节点', 'Nodes')} value={String(nodes.length)} />
         <StatTile label={bi('边', 'Edges')} value={String(edges.length)} tone="info" />
@@ -85,18 +92,49 @@ export default function AlphaGraph() {
             );
           })}
           {nodes.map(n => (
-            <g key={n.id}>
-              <circle cx={n.x} cy={n.y} r="15" fill={clusterColor(n.cluster)} fillOpacity="0.85"
-                stroke="var(--surface)" strokeWidth="2" />
-              <text x={n.x} y={n.y + 28} fontSize="9" fill="var(--ink)" textAnchor="middle">{n.label}</text>
+            <g key={n.id} onClick={() => setSelected(n.id === selected ? null : n.id)}
+              style={{ cursor: 'pointer' }} role="button" tabIndex={0}
+              aria-label={bi(`选中节点 ${n.label}`, `select node ${n.label}`)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setSelected(n.id === selected ? null : n.id); }}>
+              <circle cx={n.x} cy={n.y} r={n.id === selected ? 19 : 15} fill={clusterColor(n.cluster)}
+                fillOpacity={selectedNode && n.cluster !== selectedNode.cluster ? 0.25 : 0.85}
+                stroke={n.id === selected ? 'var(--ink)' : 'var(--surface)'} strokeWidth={n.id === selected ? 3 : 2} />
+              <text x={n.x} y={n.y + 28} fontSize="9"
+                fill={selectedNode && n.cluster !== selectedNode.cluster ? 'var(--faint)' : 'var(--ink)'}
+                textAnchor="middle">{n.label}</text>
             </g>
           ))}
         </svg>
         <div className="mt-2 text-2xs text-secondary">
-          {bi(`连通分量(|corr| ≥ ${rho})即冗余簇 — 同簇因子近重复,优化器只保留一个代表;簇间弱相关。`,
-            `Connected components at |corr| ≥ ${rho} are the redundancy clusters — same-cluster factors are near-duplicates (optimizer keeps one representative); clusters are weakly correlated.`)}
+          {bi(`连通分量(|corr| ≥ ${rho})即冗余簇 — 同簇因子近重复,优化器只保留一个代表;簇间弱相关。点击节点高亮所在簇。`,
+            `Connected components at |corr| ≥ ${rho} are the redundancy clusters — same-cluster factors are near-duplicates (optimizer keeps one representative); clusters are weakly correlated. Click a node to highlight its cluster.`)}
         </div>
       </Panel>
+
+      {selectedNode && (
+        <Panel eyebrow={bi('选中簇', 'Selected Cluster')}
+          title={bi(`${selectedNode.label} 所在簇(${selectedNode.cluster})`, `${selectedNode.label}'s cluster (${selectedNode.cluster})`)}
+          right={<Chip label={bi(`${clusterMembers.length} 个成员`, `${clusterMembers.length} members`)} tone="info" />}>
+          <div className="flex flex-wrap gap-2">
+            {clusterMembers.map(m => (
+              <Chip key={m.id} label={m.label} tone={m.id === selectedNode.id ? 'accent' : 'muted'} />
+            ))}
+          </div>
+          {clusterEdges.length > 0 ? (
+            <div className="mt-3 flex flex-col gap-1.5">
+              {clusterEdges.map(e => (
+                <div key={`${e.a}-${e.b}`} className="flex items-center justify-between rounded border border-line bg-inset/40 px-2.5 py-1.5 text-2xs">
+                  <span className="mono text-ink">{byId[e.a]?.label} ↔ {byId[e.b]?.label}</span>
+                  <span className={e.corr >= rho ? 'text-pos' : 'text-muted'}>{e.corr.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 text-2xs text-faint">{bi('簇内无显式边', 'no intra-cluster edges')}</div>
+          )}
+        </Panel>
+      )}
+      </LoadingVeil>
     </PageShell>
   );
 }

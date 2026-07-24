@@ -152,6 +152,8 @@ class ConsumerGroupCoordinator:
         self._c = connection
         self.head_hash = ""
         self._states: dict[str, _GroupState] = {}
+        self._known_total_changes = -1
+        self._known_data_version = -1
 
     @staticmethod
     def _identity(value: object, *, name: str) -> str:
@@ -210,7 +212,7 @@ class ConsumerGroupCoordinator:
                 "ON event_consumer_group_journal BEGIN SELECT RAISE(ABORT, "
                 "'event_consumer_group_journal is append-only'); END"
             )
-        self.verify_locked()
+        self.verify_locked(force=False)
 
     def _rows_locked(self) -> list[tuple]:
         try:
@@ -248,7 +250,22 @@ class ConsumerGroupCoordinator:
             )
         return assignments
 
-    def verify_locked(self) -> str:
+    def verify_locked(self, *, force: bool = True) -> str:
+        if not isinstance(force, bool):
+            raise TypeError("force must be a boolean")
+        if not force:
+            data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
+            db_head_row = self._c.execute(
+                "SELECT record_hash FROM event_consumer_group_journal "
+                "ORDER BY coordination_seq DESC LIMIT 1"
+            ).fetchone()
+            db_head = db_head_row[0] if db_head_row else ""
+            if (
+                self._c.total_changes == self._known_total_changes
+                and data_version == self._known_data_version
+                and db_head == self.head_hash
+            ):
+                return self.head_hash
         previous = ""
         states: dict[str, _GroupState] = {}
         for row in self._rows_locked():
@@ -342,6 +359,8 @@ class ConsumerGroupCoordinator:
 
         self.head_hash = previous
         self._states = states
+        self._known_total_changes = self._c.total_changes
+        self._known_data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
         return previous
 
     def _append_locked(
@@ -419,7 +438,7 @@ class ConsumerGroupCoordinator:
         session_timeout_ms = self._positive_int(
             session_timeout_ms, name="session_timeout_ms"
         )
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states.get(group_id)
         if state is None:
             self._append_locked(
@@ -432,7 +451,7 @@ class ConsumerGroupCoordinator:
                 generation=0,
                 assignments=("",) * partition_count,
             )
-            self.verify_locked()
+            self.verify_locked(force=False)
             state = self._states[group_id]
         elif not self._configuration_matches(
             state,
@@ -461,7 +480,7 @@ class ConsumerGroupCoordinator:
                 generation=state.generation,
                 assignments=state.assignments,
             )
-            self.verify_locked()
+            self.verify_locked(force=False)
             state = self._states[group_id]
 
         self._append_locked(
@@ -474,7 +493,7 @@ class ConsumerGroupCoordinator:
             generation=state.generation,
             assignments=state.assignments,
         )
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states[group_id]
         desired = _desired_assignments(state, now_ms)
         if desired != state.assignments:
@@ -488,7 +507,7 @@ class ConsumerGroupCoordinator:
                 generation=state.generation + 1,
                 assignments=desired,
             )
-            self.verify_locked()
+            self.verify_locked(force=False)
             state = self._states[group_id]
         return EventConsumerGroupAssignment(
             group_id=group_id,
@@ -515,7 +534,7 @@ class ConsumerGroupCoordinator:
         declared_worker_id = self._identity(worker_id, name="worker_id")
         worker_id = _coordination_worker_id(declared_worker_id)
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states.get(group_id)
         if state is None:
             raise EventConsumerGroupConfigurationError(
@@ -543,7 +562,7 @@ class ConsumerGroupCoordinator:
             generation=state.generation,
             assignments=state.assignments,
         )
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states[group_id]
         desired = _desired_assignments(state, now_ms)
         if desired != state.assignments:
@@ -557,13 +576,13 @@ class ConsumerGroupCoordinator:
                 generation=state.generation + 1,
                 assignments=desired,
             )
-            self.verify_locked()
+        self.verify_locked(force=False)
         return self.status_locked(group_id, now_ms=now_ms)
 
     def status_locked(self, group_id: str, *, now_ms: int) -> dict:
         group_id = self._group_identity(group_id)
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states.get(group_id)
         if state is None:
             raise EventConsumerGroupConfigurationError(
@@ -608,7 +627,7 @@ class ConsumerGroupCoordinator:
             raise TypeError("assignment must be an EventConsumerGroupAssignment")
         partition_id = self._non_negative_int(partition_id, name="partition_id")
         now_ms = self._non_negative_int(now_ms, name="now_ms")
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states.get(assignment.group_id)
         if state is None:
             raise EventConsumerGroupFencedError("consumer group is unavailable")
@@ -635,7 +654,7 @@ class ConsumerGroupCoordinator:
 
     def partition_count_locked(self, group_id: str) -> int:
         group_id = self._group_identity(group_id)
-        self.verify_locked()
+        self.verify_locked(force=False)
         state = self._states.get(group_id)
         if state is None:
             raise EventConsumerGroupConfigurationError(

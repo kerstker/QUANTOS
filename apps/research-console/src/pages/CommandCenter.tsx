@@ -10,7 +10,7 @@ import type {
   ResearchRunsPayload, OverviewPayload, CryptoLivePayload,
   SafetyPrimitivesPayload, PopulationOptimizerPayload,
 } from '@/lib/types/research';
-import { PageShell, PageHeader, Panel, StatusChip, Chip } from '@/ui/primitives';
+import { PageShell, PageHeader, Panel, StatusChip, Chip, LoadingVeil, Button } from '@/ui/primitives';
 
 /**
  * Command Center — the single-pane research cockpit. Draggable (reorder) + resizable (width/height) tiles
@@ -44,12 +44,14 @@ function RunsTile() {
   const active = runs.filter(r => r.status === 'queued' || r.status === 'running').length;
   if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
-    <div className="flex flex-wrap items-end gap-5">
-      <Metric label={bi('运行总数', 'Total runs')} value={runs.length || '—'} tone="accent" />
-      <Metric label={bi('完成', 'Done')} value={done} tone="pos" />
-      <Metric label={bi('进行中', 'Active')} value={active} tone="info" />
-      {runs[0] && <div className="text-2xs text-muted">{bi('最新', 'latest')}: {runs[0].title}</div>}
-    </div>
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-end gap-5">
+        <Metric label={bi('运行总数', 'Total runs')} value={runs.length || '—'} tone="accent" />
+        <Metric label={bi('完成', 'Done')} value={done} tone="pos" />
+        <Metric label={bi('进行中', 'Active')} value={active} tone="info" />
+        {runs[0] && <div className="text-2xs text-muted">{bi('最新', 'latest')}: {runs[0].title}</div>}
+      </div>
+    </LoadingVeil>
   );
 }
 
@@ -58,10 +60,12 @@ function OverviewTile() {
   const f = usingBackend ? (payload?.funnel ?? []) : [];
   if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
-    <div className="flex flex-wrap items-end gap-4">
-      {f.length ? f.map(x => <Metric key={x.id} label={x.label} value={x.value} />)
-        : <span className="text-2xs text-faint">{bi('未连后端', 'backend offline')}</span>}
-    </div>
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-end gap-4">
+        {f.length ? f.map(x => <Metric key={x.id} label={x.label} value={x.value} />)
+          : <span className="text-2xs text-faint">{bi('未连后端', 'backend offline')}</span>}
+      </div>
+    </LoadingVeil>
   );
 }
 
@@ -71,11 +75,13 @@ function CryptoTile() {
   const top = [...factors].sort((a, b) => (b.net_sharpe ?? -9) - (a.net_sharpe ?? -9))[0];
   if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
-    <div className="flex flex-wrap items-end gap-5">
-      <Metric label={bi('真实因子', 'Real factors')} value={factors.length || '—'} tone="cyan" />
-      {top && <Metric label={bi('最佳净夏普', 'Top net SR')} value={top.net_sharpe?.toFixed(2) ?? '—'} tone="pos" />}
-      {top && <div className="text-2xs text-muted">{top.name ?? top.alpha_id}</div>}
-    </div>
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-end gap-5">
+        <Metric label={bi('真实因子', 'Real factors')} value={factors.length || '—'} tone="cyan" />
+        {top && <Metric label={bi('最佳净夏普', 'Top net SR')} value={top.net_sharpe?.toFixed(2) ?? '—'} tone="pos" />}
+        {top && <div className="text-2xs text-muted">{top.name ?? top.alpha_id}</div>}
+      </div>
+    </LoadingVeil>
   );
 }
 
@@ -84,13 +90,15 @@ function SafetyTile() {
   if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   if (!payload) return <span className="text-2xs text-faint">{bi('载入中…', 'loading…')}</span>;
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <StatusChip value={payload.kill_switch?.is_active ? 'KILL_TRIPPED' : 'KILL_CLEAR'} />
-      <Metric label={bi('盘前检查', 'Pre-trade checks')} value={payload.pre_trade_gate?.checks_registered ?? '—'} tone="info" />
-      <Chip label="LIVE_DISALLOWED" tone="neg" />
-      <Chip label={payload.safety_config?.require_human_approval ? 'HUMAN_APPROVAL' : 'NO_APPROVAL'}
-        tone={payload.safety_config?.require_human_approval ? 'pos' : 'neg'} />
-    </div>
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-center gap-3">
+        <StatusChip value={payload.kill_switch?.is_active ? 'KILL_TRIPPED' : 'KILL_CLEAR'} />
+        <Metric label={bi('盘前检查', 'Pre-trade checks')} value={payload.pre_trade_gate?.checks_registered ?? '—'} tone="info" />
+        <Chip label="LIVE_DISALLOWED" tone="neg" />
+        <Chip label={payload.safety_config?.require_human_approval ? 'HUMAN_APPROVAL' : 'NO_APPROVAL'}
+          tone={payload.safety_config?.require_human_approval ? 'pos' : 'neg'} />
+      </div>
+    </LoadingVeil>
   );
 }
 
@@ -99,11 +107,13 @@ function OptimizerTile() {
   const d = usingBackend ? payload : null;
   if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
   return (
-    <div className="flex flex-wrap items-end gap-5">
-      <Metric label={bi('已选', 'Selected')} value={d?.selected?.length ?? '—'} tone="pos" />
-      <Metric label={bi('剔除', 'Excluded')} value={d?.excluded?.length ?? '—'} tone="warn" />
-      <Metric label={bi('多样性', 'Diversity')} value={d?.diversity ?? '—'} tone="info" />
-    </div>
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-end gap-5">
+        <Metric label={bi('已选', 'Selected')} value={d?.selected?.length ?? '—'} tone="pos" />
+        <Metric label={bi('剔除', 'Excluded')} value={d?.excluded?.length ?? '—'} tone="warn" />
+        <Metric label={bi('多样性', 'Diversity')} value={d?.diversity ?? '—'} tone="info" />
+      </div>
+    </LoadingVeil>
   );
 }
 
@@ -151,8 +161,7 @@ export default function CommandCenter() {
       <PageHeader title="Command Center" titleZh="指挥中心"
         subtitle={bi('单屏研究座舱 · 磁贴可拖拽重排 / 点击缩放 · 布局自动保存 · 全部真实数据(只读)',
           'Single-pane research cockpit · drag to reorder / click to resize · layout auto-saved · all real data (read-only)')}
-        actions={<button onClick={resetLayout} className="rounded-md border border-line px-2.5 py-1 text-2xs text-muted hover:text-ink">
-          {bi('重置布局', 'reset layout')}</button>} />
+        actions={<Button onClick={resetLayout} variant="muted">{bi('重置布局', 'reset layout')}</Button>} />
 
       <div className="grid grid-cols-12 gap-4">
         {ordered.map(tile => {
@@ -163,11 +172,14 @@ export default function CommandCenter() {
               draggable onDragStart={() => setDrag(tile.id)} onDragEnd={() => setDrag(null)}
               onDragOver={e => { e.preventDefault(); reorder(tile.id); }}>
               <Panel eyebrow={bi('磁贴', 'Tile')} title={bi(tile.titleZh, tile.title)}
+                className="terminal-panel" bodyClass="density-compact"
                 right={<div className="flex items-center gap-1.5">
                   <button onClick={() => cycleSize(tile.id)} title={bi('缩放', 'resize')}
+                    aria-label={bi('缩放磁贴', 'resize tile')}
                     className="rounded border border-line px-1.5 py-0.5 text-2xs text-muted hover:text-ink">⤢</button>
                   <Link to={tile.to} className="text-2xs text-accent hover:underline">{bi('打开', 'open')}</Link>
-                  <span className="cursor-grab text-faint" title={bi('拖动重排', 'drag to reorder')}>⠿</span>
+                  <span className="cursor-grab text-faint" role="img" title={bi('拖动重排', 'drag to reorder')}
+                    aria-label={bi('拖动重排', 'drag to reorder')}>⠿</span>
                 </div>}>
                 <div className={span.h > 1 ? 'min-h-[8rem]' : ''}>{tile.render()}</div>
               </Panel>

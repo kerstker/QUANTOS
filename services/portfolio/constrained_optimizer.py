@@ -17,6 +17,10 @@ from .constraints import (
     PortfolioConstraints, InfeasibleConstraints,
     project_box, project_hyperplane, project_l1_ball, dykstra_project,
 )
+from .portfolio_constraints import (
+    PortfolioConstraintInputs,
+    enforce_portfolio_constraints,
+)
 
 
 class OptimizerError(Exception):
@@ -50,6 +54,7 @@ def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioCo
                          prev_weights: Optional[Sequence[float]] = None,
                          cvar_scenarios: Optional[Sequence[Sequence[float]]] = None,
                          cvar_penalty: float = 0.0, cvar_alpha: float = 0.95,
+                         portfolio_constraints: Optional[PortfolioConstraintInputs] = None,
                          iterations: int = 2000, tol: float = 1e-10) -> list[float]:
     """Constrained MEAN-VARIANCE: minimize 1/2 w'Σw − λ·μ'w. With expected_returns=None
     (default) it is pure minimum-variance. A max_turnover constraint (with prev_weights)
@@ -152,4 +157,12 @@ def min_variance_weights(cov, alpha_ids: Sequence[str], constraints: PortfolioCo
         turnover = sum(abs(w[i] - float(prev_weights[i])) for i in range(n))
         if turnover > constraints.max_turnover + tol_feas:
             raise InfeasibleConstraints("turnover cap unmet")
+    # The classic optimizer constraints above protect mathematical
+    # feasibility.  The unified portfolio gate protects evidence-backed
+    # deployability (tail, firm, capacity and crowding) and is intentionally
+    # opt-in so legacy research callers retain their historical API.
+    enforce_portfolio_constraints(
+        {alpha_ids[i]: float(w[i]) for i in range(n)},
+        portfolio_constraints,
+    )
     return w

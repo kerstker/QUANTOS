@@ -9,6 +9,7 @@ from services.execution.dry_run_store import (
     DryRunStore,
     DryRunStoreError,
 )
+from services.execution.events import dry_run_completed_event
 from services.risk.research_risk.events import research_risk_evaluated_event
 
 
@@ -209,3 +210,113 @@ def test_research_risk_event_must_match_the_bound_run_decision():
 
     with pytest.raises(ValueError, match="exact run snapshot"):
         DryRunStore(":memory:", create=True).save_run_with_outbox(run, [message])
+
+
+def test_canonical_completion_binds_all_run_summary_fields():
+    run = DryRunRun(
+        **{
+            **_run().__dict__,
+            "detail": {"n_fills": 4, "reconciliation": {"residual": 0.0}},
+        }
+    )
+    event = dry_run_completed_event(
+        run_id=run.run_id,
+        strategy_id=run.strategy_id,
+        timestamp_ms=run.timestamp,
+        n_intents=run.n_intents,
+        n_approved=run.n_approved,
+        n_rejected=run.n_rejected,
+        n_fills=4,
+        audit_root=run.audit_root,
+        run_repro_hash=run.reproducibility_hash,
+    )
+    changed = event.model_copy(
+        update={"payload": {**event.payload, "n_fills": 3}}
+    )
+    with pytest.raises(ValueError, match="exact run snapshot"):
+        DryRunStore(":memory:", create=True).save_run_with_outbox(
+            run,
+            [
+                DryRunOutboxEvent(
+                    run_id=run.run_id,
+                    event=changed,
+                    correlation_id=run.run_id,
+                )
+            ],
+        )
+
+
+def test_completion_transaction_requires_canonical_completion_event():
+    store = DryRunStore(":memory:", create=True)
+    with pytest.raises(ValueError, match="canonical dry-run completion"):
+        store.save_run_with_outbox(_run(), [_outbox()], require_completion=True)
+    assert store.get_run("r1") is None
+
+
+def test_research_risk_snapshot_requires_atomic_risk_event_pair():
+    risk = {
+        "decision": "RISK_REJECTED",
+        "gates_passed": 0,
+        "gates_run": 1,
+        "engines_run": {"market": False},
+        "engines_skipped": {},
+        "reasons": ["market: not passed"],
+        "provenance": "REAL_RESEARCH_RISK_SUBSET",
+        "series": "vol_target",
+        "config_provenance": "RISK_CONFIG",
+    }
+    run = DryRunRun(**{**_run().__dict__, "detail": {"research_risk": risk}})
+    store = DryRunStore(":memory:", create=True)
+    with pytest.raises(ValueError, match="bound risk evaluation"):
+        store.save_run_with_outbox(
+            run,
+            [_outbox(run.run_id)],
+        )
+    assert store.get_run(run.run_id) is None
+
+
+def test_pending_full_research_risk_is_persisted_without_forged_risk_event():
+    risk = {
+        "decision": "RISK_REJECTED",
+        "status": "PENDING",
+        "gates_passed": 0,
+        "gates_run": 0,
+        "engines_run": {},
+        "engines_skipped": {"liquidity": "MISSING_REQUIRED_INPUTS"},
+        "engines_pending": {"liquidity": "MISSING_REQUIRED_INPUTS"},
+        "reasons": ["full_research_risk_inputs_missing"],
+        "provenance": "REAL_RESEARCH_RISK_FULL_PENDING",
+        "series": "multi_period",
+        "scope": "POST_RUN_PORTFOLIO_EVIDENCE",
+        "config_provenance": "TEST_CONFIG",
+    }
+    run = DryRunRun(
+        **{
+            **_run("pending").__dict__,
+            "n_approved": 0,
+            "detail": {"n_fills": 0, "research_risk": risk},
+        }
+    )
+    completion = dry_run_completed_event(
+        run_id=run.run_id,
+        strategy_id=run.strategy_id,
+        timestamp_ms=run.timestamp,
+        n_intents=run.n_intents,
+        n_approved=run.n_approved,
+        n_rejected=run.n_rejected,
+        n_fills=0,
+        audit_root=run.audit_root,
+        run_repro_hash=run.reproducibility_hash,
+    )
+    store = DryRunStore(":memory:", create=True)
+    store.save_run_with_outbox(
+        run,
+        [DryRunOutboxEvent(run_id=run.run_id, event=completion, correlation_id=run.run_id)],
+        require_completion=True,
+    )
+    saved = store.get_run(run.run_id)
+    assert saved is not None
+    assert saved["detail"]["research_risk"]["status"] == "PENDING"
+    assert [item["event"].event_type for item in store.pending_outbox()] == [
+        "execution.dry_run.completed"
+    ]

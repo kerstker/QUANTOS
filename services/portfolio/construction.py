@@ -19,6 +19,10 @@ from quantos.contracts.factor import FactorRiskModel
 from .constrained_optimizer import min_variance_weights
 from .constraints import PortfolioConstraints
 from .factor_risk import risk_decomposition, total_covariance
+from .portfolio_constraints import (
+    PortfolioConstraintInputs,
+    enforce_portfolio_constraints,
+)
 
 
 def build_portfolio(
@@ -28,6 +32,7 @@ def build_portfolio(
     *,
     config: Optional[PortfolioConfig] = None,
     prev_weights: Optional[dict[str, float]] = None,
+    portfolio_constraints: Optional[PortfolioConstraintInputs] = None,
 ) -> RebalancePlan:
     config = config or PortfolioConfig()
     ids, cov = covariance_matrix(returns_by_alpha, min_overlap=config.min_overlap)
@@ -39,6 +44,11 @@ def build_portfolio(
         target, turnover = cost_aware_rebalance(prev_weights, target, no_trade_band=config.no_trade_band)
     else:
         turnover = sum(target.values())   # initial build from a flat book
+
+    # Apply the unified evidence gate to the post-rebalance target.  Checking
+    # before the no-trade-band adjustment would allow the actual submitted
+    # target to violate capacity or concentration limits.
+    enforce_portfolio_constraints(target, portfolio_constraints)
 
     targets = tuple(
         TargetPosition(instrument_id=aid, target_weight=round(target[aid], 10))
@@ -103,7 +113,8 @@ def attribution_report(returns_by_alpha: dict[str, Sequence[float]],
 def build_factor_portfolio(plan_id: str, portfolio_id: str, model: FactorRiskModel,
                            alpha_ids, constraints: PortfolioConstraints, *,
                            prev_weights: Optional[dict] = None,
-                           config: Optional[PortfolioConfig] = None) -> RebalancePlan:
+                           config: Optional[PortfolioConfig] = None,
+                           portfolio_constraints: Optional[PortfolioConstraintInputs] = None) -> RebalancePlan:
     """Constrained minimum-variance plan over a factor risk model. Long-short:
     a budget-0 / factor-neutral book yields negative target weights. Existing
     build_portfolio is unchanged."""
@@ -111,12 +122,20 @@ def build_factor_portfolio(plan_id: str, portfolio_id: str, model: FactorRiskMod
     ids = list(alpha_ids)
     cov = total_covariance(model, ids)
     B, _ = model.aligned(ids)
-    w = min_variance_weights(cov, ids, constraints, loadings=B, factor_ids=list(model.factor_ids))
+    w = min_variance_weights(
+        cov,
+        ids,
+        constraints,
+        loadings=B,
+        factor_ids=list(model.factor_ids),
+        portfolio_constraints=portfolio_constraints,
+    )
     target = {ids[i]: w[i] for i in range(len(ids))}
     if prev_weights is not None:
         target, turnover = cost_aware_rebalance(prev_weights, target, no_trade_band=cfg.no_trade_band)
     else:
         turnover = sum(abs(v) for v in target.values())
+    enforce_portfolio_constraints(target, portfolio_constraints)
     return RebalancePlan(
         plan_id=plan_id, portfolio_id=portfolio_id,
         targets=tuple(TargetPosition(instrument_id=a, target_weight=round(target[a], 10))

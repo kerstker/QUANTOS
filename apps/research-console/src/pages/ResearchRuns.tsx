@@ -6,10 +6,11 @@ import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip,
-  type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, PillToggle,
+  LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { stamp } from '@/ui/format';
+import { useToast } from '@/ui/toast';
 
 /**
  * Research Runs — the dynamic, registry-backed home for every backtest/research run. The list reflects
@@ -34,8 +35,6 @@ const fallbackRuns: ResearchRunsPayload = {
   ],
 };
 
-const KINDS = ['全部', 'carry_strategy', 'oi_research', 'combo_book', 'survivorship', 'factory_orthogonal', 'factory_loop'];
-
 function fmtHeadline(h: ResearchRunSummary['headline']): string {
   if (h.value == null) return '—';
   return `${h.label}: ${typeof h.value === 'number' ? h.value : h.value}`;
@@ -57,7 +56,7 @@ export default function ResearchRuns() {
   const [kind, setKind] = useState('全部');
   const [operator, setOperatorState] = useState(getOperator());
   const [runnerToken, setRunnerTokenState] = useState(getRunnerToken());
-  const [trigMsg, setTrigMsg] = useState<{ tone: 'pos' | 'neg' | 'info'; text: string } | null>(null);
+  const toast = useToast();
   // per-kind param values for kinds that expose a typed schema (e.g. factory search depth)
   const [paramVals, setParamVals] = useState<Record<string, Record<string, number | boolean>>>(() => {
     const init: Record<string, Record<string, number | boolean>> = {};
@@ -92,16 +91,18 @@ export default function ResearchRuns() {
 
   async function onRun(k: string) {
     const params = paramVals[k] ?? {};
-    setTrigMsg({ tone: 'info', text: bi(`已提交 ${k} …`, `submitting ${k} …`) });
     try {
       const res = await triggerRun(k, params);
-      setTrigMsg({ tone: 'pos', text: bi(`已排队:${res.kind}`, `queued: ${res.kind}`) });
+      toast.success(bi(`已排队:${res.kind}`, `queued: ${res.kind}`));
       setReloadKey(x => x + 1);            // surface the queued run immediately; polling then tracks it
     } catch (e) {
-      setTrigMsg({ tone: 'neg', text: (e instanceof Error ? e.message : String(e)) });
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 
+  // derive the kind filter list from the actual data, mirroring AlphaZoo's GENERATORS pattern —
+  // avoids a hardcoded list silently drifting from what the registry actually contains.
+  const kinds = useMemo(() => ['全部', ...Array.from(new Set(data.runs.map(r => r.kind)))], [data.runs]);
   const runs = useMemo(() => data.runs.filter(r => kind === '全部' || r.kind === kind), [data.runs, kind]);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -136,6 +137,7 @@ export default function ResearchRuns() {
           'Registry-backed home for every research run — each backtest/search appears automatically; one generic viewer renders any result (read-only)')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error} realData />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('运行总数', 'Total runs')} value={String(data.runs.length)} accent />
         <StatTile label={bi('完成', 'Done')} value={String(counts['done'] ?? 0)} tone="pos" />
@@ -202,7 +204,6 @@ export default function ResearchRuns() {
             </div>
           ))}
         </div>
-        {trigMsg && <div className={`mt-2 text-2xs ${({ pos: 'text-pos', neg: 'text-neg', info: 'text-info' } as const)[trigMsg.tone]}`}>{trigMsg.text}</div>}
         {active && <div className="mt-1 text-2xs text-info">{bi('● 有运行进行中,自动刷新状态…', '● a run is in progress — auto-refreshing…')}</div>}
       </Panel>
 
@@ -217,13 +218,15 @@ export default function ResearchRuns() {
           <Chip label={bi(`${runs.length} 项`, `${runs.length} shown`)} tone="info" />
         </div>}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {KINDS.map(k => (
-            <button key={k} onClick={() => setKind(k)}
-              className={`rounded-md border px-2.5 py-1 text-xs transition ${kind === k ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-ink'}`}>{k}</button>
+          {kinds.map(k => (
+            <PillToggle key={k} label={k} active={kind === k} onClick={() => setKind(k)} />
           ))}
         </div>
-        <DataTable columns={cols} rows={runs} dense getKey={r => r.run_id} />
+        <DataTable columns={cols} rows={runs} dense getKey={r => r.run_id}
+          searchable={r => `${r.run_id} ${r.title} ${r.kind} ${r.verdict}`}
+          searchPlaceholder={bi('按运行 id / 标题 / 裁决搜索…', 'search by run id / title / verdict…')} />
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

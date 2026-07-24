@@ -14,6 +14,7 @@ from services.research.backtest_engine.metrics import sharpe
 from services.research.oos_validation import walk_forward_selection_oos
 from services.research.ml.feature_panel import build_feature_panel
 from services.research.ml.walk_forward_stack import walk_forward_stack
+from services.research.ml.accelerator import inspect_accelerator
 from quantos.contracts.alpha import AlphaDefinition
 
 _POOLS = {
@@ -35,7 +36,7 @@ def _instruments_and_times(db):
     return insts, ets
 
 
-def main(asset: str = "crypto") -> None:
+def main(asset: str = "crypto", accelerator: str = "cpu") -> None:
     db, fwd, pool = _POOLS[asset]
     if not os.path.exists(db):
         print(f"no {db} — fetch first"); return
@@ -60,6 +61,10 @@ def main(asset: str = "crypto") -> None:
     ts, te, cost = 1000, 250, 5.0                              # 5bps 换手成本:stacker 与单因子同口径(apples-to-apples)
     gbm = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="gbm", cost_bps=cost)
     ridge = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd, model="ridge", cost_bps=cost)
+    xgb = None
+    if accelerator != "cpu":
+        xgb = walk_forward_stack(fp, train_size=ts, test_size=te, embargo=fwd,
+                                 model="xgb", accelerator=accelerator, cost_bps=cost)
 
     def _sr(rs):
         return round(sharpe(rs), 4) if len(rs) > 1 else None
@@ -85,8 +90,12 @@ def main(asset: str = "crypto") -> None:
 
     result = {
         "asset": asset, "factors": fp.factor_names, "feature_rows": int(fp.X.shape[0]), "fwd_horizon": fwd,
+        "accelerator_requested": accelerator,
+        "accelerator_status": inspect_accelerator(accelerator).as_dict(),
         "stack_gbm_oos_sharpe": _sr(gbm["oos_returns"]), "stack_gbm_folds": gbm["n_folds"],
         "stack_ridge_oos_sharpe": _sr(ridge["oos_returns"]), "stack_ridge_folds": ridge["n_folds"],
+        "stack_xgb_oos_sharpe": _sr(xgb["oos_returns"]) if xgb else None,
+        "stack_xgb_folds": xgb["n_folds"] if xgb else 0,
         "single_best_oos_sharpe": single.get("mean_oos_sharpe"), "single_best_name": _most_selected(single),
         "cost_bps": cost, "universe_size": len(insts), "trials": len(factor_periods) + 2,
     }
@@ -98,6 +107,8 @@ def main(asset: str = "crypto") -> None:
     else:
         verdict = "REFUTED_NO_EDGE"
     result["verdict"] = verdict
+    print(f"  stack XGB   {result['stack_xgb_oos_sharpe']}  (folds {result['stack_xgb_folds']}, "
+          f"accelerator {accelerator})", flush=True)
 
     print(f"\n=== 三方 OOS Sharpe ===\n  stack GBM   {g}  (folds {gbm['n_folds']})\n"
           f"  stack Ridge {r}  (folds {ridge['n_folds']})\n  single best {s}\n  verdict: {verdict}", flush=True)
@@ -108,4 +119,11 @@ def main(asset: str = "crypto") -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "crypto")
+    asset = "crypto"
+    accelerator = "cpu"
+    for arg in sys.argv[1:]:
+        if arg in _POOLS:
+            asset = arg
+        elif arg.startswith("--accelerator="):
+            accelerator = arg.split("=", 1)[1]
+    main(asset, accelerator)

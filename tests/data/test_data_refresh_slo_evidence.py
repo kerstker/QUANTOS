@@ -2,7 +2,7 @@ from services.data.refresh_history import RefreshHistoryStore
 from tools.data_refresh_slo_evidence import build_evidence
 
 
-_SOURCES = ("prices", "funding", "perp_mark_prices", "oi_metrics")
+_SOURCES = ("prices", "funding", "perp_mark_prices", "oi_metrics", "mexc_btc")
 
 
 def test_slo_evidence_is_real_history_and_remains_blocked_without_minimum_window(tmp_path):

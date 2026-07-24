@@ -11,6 +11,7 @@ RiskContext 由注入的 ctx_factory 装配(核心不硬编码账户/安全装�
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import statistics
 from typing import Callable, Dict, Optional, Sequence, Tuple
@@ -29,11 +30,122 @@ from services.monitoring.audit_log import GlobalAuditLog
 from quantos.contracts.paper import FillMethod, OrderSide as PaperSide, PaperFill
 from services.trading.broker_adapter import assert_dry_run_adapter
 from services.trading.dry_run_adapters.domain.models import DryRunCommand
+from services.risk.research_risk.dry_run_guard import (
+    DryRunResearchRiskInputs,
+    evaluate_dry_run_risk,
+)
+from services.risk.research_risk.domain.models import RiskConfig
+from services.risk.research_risk.events import research_risk_evaluated_event
 
 
 def _det_id(*parts) -> str:
     """Deterministic short id from parts (no RNG/clock) — keeps the whole pipeline reproducible."""
     return hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()[:16]
+
+
+def _research_risk_identity(
+    inputs: Optional[DryRunResearchRiskInputs],
+    config: Optional[RiskConfig],
+    require_full: bool,
+) -> str:
+    """Return a deterministic run-id suffix for risk evidence.
+
+    A run snapshot includes its research-risk decision.  If callers submit a
+    different evidence bundle for the same strategy/period, that must produce a
+    different immutable ``DryRunRun`` instead of colliding in the append-only
+    store.  The default legacy subset path intentionally has an empty suffix so
+    existing dry-run identifiers remain stable.
+    """
+    # The historical subset path without an explicit config keeps its stable
+    # identifiers.  An explicit config (for example weekly ppy=52) is part of
+    # the evidence identity even when the seam still has only its honest
+    # four-engine inputs; otherwise a cadence correction would collide with
+    # the prior immutable run and its risk event.
+    if inputs is None and not require_full and config is None:
+        return ""
+    payload = {
+        "require_full": bool(require_full),
+        "config": (config or RiskConfig()).compute_hash(),
+    }
+    if isinstance(inputs, DryRunResearchRiskInputs):
+        try:
+            payload["inputs"] = {
+                "capacity_cny": dict(sorted(inputs.capacity_cny.items(), key=lambda item: str(item[0]))),
+                "daily_volume_cny": inputs.daily_volume_cny,
+                "total_aum": inputs.total_aum,
+                "alpha_returns": {
+                    str(key): list(value)
+                    for key, value in sorted(inputs.alpha_returns.items(), key=lambda item: str(item[0]))
+                },
+                "regime_labels": list(inputs.regime_labels),
+                "alpha_metadata": [dict(item) for item in inputs.alpha_metadata],
+            }
+        except Exception:
+            # The evaluator will return a strict PENDING result for malformed
+            # evidence; identity generation must not turn that into an exception.
+            payload["inputs_type"] = "INVALID_DRY_RUN_RESEARCH_RISK_INPUTS"
+    elif inputs is not None:
+        payload["inputs_type"] = type(inputs).__name__
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _evaluate_research_risk(
+    *,
+    returns: Sequence[float],
+    weights: Dict[str, float],
+    equity_curve: Sequence[float],
+    timestamps: Optional[Sequence[int]],
+    inputs: Optional[DryRunResearchRiskInputs],
+    config: Optional[RiskConfig],
+    require_full: bool,
+    series: str,
+) -> dict:
+    """Evaluate and normalize the research-risk snapshot consumed by a dry run.
+
+    Providing a full input bundle always selects the strict nine-engine path;
+    callers cannot accidentally downgrade it with ``require_full=False``.  A
+    missing bundle under explicit strict mode remains a pending/rejected result.
+    Any unexpected evaluator failure is converted to a deterministic pending
+    result so execution never treats an unavailable risk decision as approval.
+    The result is explicitly post-run portfolio evidence; it does not replace
+    the per-intent ``PreTradeRiskGate``.
+    """
+    strict = bool(require_full or inputs is not None)
+    effective_config = config or RiskConfig()
+    try:
+        risk = evaluate_dry_run_risk(
+            list(returns),
+            dict(weights),
+            list(equity_curve),
+            timestamps=list(timestamps) if timestamps is not None else None,
+            config=effective_config,
+            full_inputs=inputs,
+            require_full_inputs=strict,
+        )
+    except Exception as exc:  # fail-closed: no risk result is ever an approval
+        risk = {
+            "decision": "RISK_REJECTED",
+            "status": "PENDING",
+            "gates_passed": 0,
+            "gates_run": 0,
+            "engines_run": {},
+            "engines_skipped": {},
+            "engines_pending": {},
+            "reports": {},
+            "reasons": [f"research_risk_error:{type(exc).__name__}"],
+            "provenance": "REAL_RESEARCH_RISK_FULL_PENDING" if strict else "REAL_RESEARCH_RISK_SUBSET",
+            "config_provenance": effective_config.compute_hash(),
+        }
+    snapshot = dict(risk)
+    snapshot["series"] = str(series)
+    snapshot["input_mode"] = "FULL" if strict else "SUBSET"
+    # This is a portfolio-level, post-run evidence gate.  The per-intent
+    # PreTradeRiskGate remains the execution chokepoint and is intentionally
+    # separate; consumers must not interpret this snapshot as order admission.
+    snapshot["scope"] = "POST_RUN_PORTFOLIO_EVIDENCE"
+    return snapshot
 
 
 def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float,
@@ -202,11 +314,22 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                          current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
                          adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
                          initial_capital: float = 1e7, cost_bps: float = 0.0,
-                         event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
+                         event_bus=None, publish_completion_event: bool = True,
+                         research_risk_inputs: Optional[DryRunResearchRiskInputs] = None,
+                         research_risk_config: Optional[RiskConfig] = None,
+                         require_full_research_risk: bool = False,
+                         publish_research_risk_event: Optional[bool] = None) -> DryRunRun:
     """端到端干跑编排器(薄、确定性):权重→目标手数→意图→门 chokepoint(fail-closed)→干跑受理(不真发)
     →纸面成交→对账→哈希链审计→DryRunRun。墙钟/seed 在调用方边界(timestamp/adapter)注入;此函数无 RNG/墙钟。
     kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。"""
-    run_id = _det_id(strategy_id, timestamp, tuple(sorted(weights.items())))
+    strict_research_risk = bool(require_full_research_risk or research_risk_inputs is not None)
+    risk_identity = _research_risk_identity(
+        research_risk_inputs, research_risk_config, strict_research_risk
+    )
+    run_id_parts = [strategy_id, timestamp, tuple(sorted(weights.items()))]
+    if risk_identity:
+        run_id_parts.append(risk_identity)
+    run_id = _det_id(*run_id_parts)
     start_event_id = ""
     if event_bus is not None:
         start_event = dry_run_started_event(
@@ -241,13 +364,34 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                      action="INTENT_REJECTED", timestamp=timestamp, target=intent.instrument_id,
                      metadata={"reasons": ",".join(str(r) for r in reasons)})
 
-    filled = simulate_fills(screened["approved"], prices, adapter=adapter, run_id=run_id,
-                            timestamp=timestamp, cost_bps=cost_bps)
+    if strict_research_risk and research_risk_inputs is None:
+        # An explicit request for the complete nine-engine contract without its
+        # evidence is fail-closed even in dry-run mode: do not simulate fills
+        # that a caller could mistake for admitted research output.
+        filled = {"fills": [], "reports": [], "impact_trades": [], "n_impact": 0, "n_flat": 0}
+    else:
+        filled = simulate_fills(screened["approved"], prices, adapter=adapter, run_id=run_id,
+                                timestamp=timestamp, cost_bps=cost_bps)
     for f in filled["fills"]:
         audit.append(event_id=_det_id("fill", run_id, f.instrument_id), actor=f"dry_run:{strategy_id}",
                      action="DRY_RUN_FILL", timestamp=timestamp, target=f.instrument_id,
                      metadata={"qty": str(f.quantity), "price": str(f.price), "side": f.side.value})
     pnl = reconcile_run(filled["fills"], marks or prices, initial_capital)
+    single_return = (
+        float(pnl["total_pnl"]) / float(initial_capital)
+        if isinstance(initial_capital, (int, float)) and initial_capital > 0
+        else float("nan")
+    )
+    research_risk = _evaluate_research_risk(
+        returns=[single_return],
+        weights=weights,
+        equity_curve=[float(pnl["equity"])],
+        timestamps=[int(timestamp)],
+        inputs=research_risk_inputs,
+        config=research_risk_config,
+        require_full=strict_research_risk,
+        series="single_period",
+    )
     audit_root = audit.seal().head_hash
 
     result = DryRunRun(
@@ -256,7 +400,29 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         rejected_reasons=[rr for _, rs in screened["rejected"] for rr in rs], pnl=pnl,
         audit_root=str(audit_root),
         detail={"n_fills": len(filled["fills"]), "targets": targets,
-                "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"])})
+                "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"]),
+                "research_risk": research_risk})
+    should_publish_risk = (
+        bool(publish_research_risk_event)
+        if publish_research_risk_event is not None
+        else research_risk_inputs is not None
+    )
+    if (
+        event_bus is not None
+        and should_publish_risk
+        and research_risk.get("engines_run")
+    ):
+        event_bus.publish_once(
+            research_risk_evaluated_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                run_repro_hash=result.reproducibility_hash,
+                timestamp_ms=int(timestamp),
+                risk=research_risk,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
     if event_bus is not None and publish_completion_event:
         event_bus.publish_once(
             dry_run_completed_event(
@@ -332,7 +498,11 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
                              vol_target: dict = None, impact=None, adv_by_period: dict = None,
                              filters: Optional[Dict[str, Tuple[float, float, float]]] = None,
-                             event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
+                             event_bus=None, publish_completion_event: bool = True,
+                             research_risk_inputs: Optional[DryRunResearchRiskInputs] = None,
+                             research_risk_config: Optional[RiskConfig] = None,
+                             require_full_research_risk: bool = False,
+                             publish_research_risk_event: Optional[bool] = None) -> DryRunRun:
     """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
     价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
     ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。
@@ -341,7 +511,14 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     `{instrument_id: (step_size, min_qty, min_notional)}`,原样透传给每期的 `plan_target_quantities`
     (见其 docstring)。默认 None -> 每期目标手数计算与改动前逐字节相同(回归测试钉死)。这轮只交付
     管线本身有能力做量化——真实 Binance/Bybit exchangeInfo 数据接进具体驱动器是后续独立工作。"""
-    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:]))
+    strict_research_risk = bool(require_full_research_risk or research_risk_inputs is not None)
+    risk_identity = _research_risk_identity(
+        research_risk_inputs, research_risk_config, strict_research_risk
+    )
+    run_id_parts = [strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:])]
+    if risk_identity:
+        run_id_parts.append(risk_identity)
+    run_id = _det_id(*run_id_parts)
     start_event_id = ""
     if event_bus is not None:
         start_event = dry_run_started_event(
@@ -365,7 +542,8 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     curve: list = []
     tot_appr = tot_rej = 0
     prev_equity = aum
-    for t in periods:
+    n_periods = len(periods)
+    for i, t in enumerate(periods):
         prices_t = prices_by_period[t]
         adv_t = adv_by_period.get(t) if adv_by_period else None
         targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum, filters=filters)
@@ -384,9 +562,15 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             )
         tot_appr += len(screened["approved"])
         tot_rej += len(screened["rejected"])
-        filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
-                                run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps,
-                                impact=impact, adv=adv_t)
+        if strict_research_risk and research_risk_inputs is None:
+            # Keep the strict contract fail-closed across every period.  We
+            # still build the curve and persist the pending decision so the
+            # missing evidence is observable and reproducible.
+            filled = {"fills": [], "reports": [], "impact_trades": [], "n_impact": 0, "n_flat": 0}
+        else:
+            filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
+                                    run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps,
+                                    impact=impact, adv=adv_t)
         all_impact_trades.extend(filled.get("impact_trades", []))
         tot_impact += filled.get("n_impact", 0)
         tot_flat += filled.get("n_flat", 0)
@@ -412,6 +596,10 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
                      metadata={"equity": str(round(equity_t, 2)), "ret": str(round(ret, 6)),
                                "approved": str(len(screened["approved"])),
                                "rejected": str(len(screened["rejected"]))})
+        # 每 20 周或最后一周打印进度
+        if (i + 1) % 20 == 0 or i == n_periods - 1:
+            print(f"  [{i+1}/{n_periods}] equity={equity_t:,.0f}  "
+                  f"approved={len(screened['approved'])}  rejected={len(screened['rejected'])}", flush=True)
 
     returns = [p["ret"] for p in curve]
     vt_curve: list = []
@@ -445,12 +633,47 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             "cost_fills": {"impact": tot_impact, "flat": tot_flat}, "cost_bps": cost_bps}
     if used_impact:
         cost["tca"] = _tca_lite(impact, all_impact_trades)
+    risk_weights = (
+        dict(weights_by_period.get(periods[-1], {})) if periods else {}
+    )
+    research_risk = _evaluate_research_risk(
+        returns=returns,
+        weights=risk_weights,
+        equity_curve=[p["equity"] for p in curve],
+        timestamps=[int(period) for period in periods],
+        inputs=research_risk_inputs,
+        config=research_risk_config,
+        require_full=strict_research_risk,
+        series="multi_period",
+    )
     result = DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
         pnl=pnl, audit_root=str(audit.seal().head_hash),
         detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
-                "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve, **cost})
+                "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve,
+                "research_risk": research_risk, **cost})
+    should_publish_risk = (
+        bool(publish_research_risk_event)
+        if publish_research_risk_event is not None
+        else research_risk_inputs is not None
+    )
+    if (
+        event_bus is not None
+        and should_publish_risk
+        and research_risk.get("engines_run")
+    ):
+        event_bus.publish_once(
+            research_risk_evaluated_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                run_repro_hash=result.reproducibility_hash,
+                timestamp_ms=result.timestamp,
+                risk=research_risk,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
     if event_bus is not None and publish_completion_event:
         event_bus.publish_once(
             dry_run_completed_event(

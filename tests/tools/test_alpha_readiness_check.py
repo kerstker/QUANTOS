@@ -133,6 +133,23 @@ def test_carry_uses_paper_cycle_research_evidence_and_its_book_ids():
     assert report["deployment"]["small_capital_live_verdict"] == "BLOCKED_L2_DRY_RUN_ONLY"
 
 
+def test_paper_cycle_accepts_canonical_risk_approved_decision():
+    artifacts = _artifacts(forward_periods=8, admission="PASS", event_verdict="PASS")
+    artifacts["paper_cycle"] = {
+        "alphas": {
+            "crowd_contra": {
+                "research": {"verdict": "PASS_WITH_WARNINGS"},
+                "paper_verdict": "PENDING_REVIEW",
+                "blockers": [],
+                "canonical_dry_run": {"research_risk_decision": "RISK_APPROVED"},
+            }
+        }
+    }
+    report = evaluate_alpha_readiness("crowd_contra", **artifacts)
+    assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" not in report["deployment"]["blockers"]
+    assert report["deployment"]["research_packet_ready_for_paper"] is True
+
+
 def test_non_crowd_alpha_without_paper_cycle_evidence_fails_closed():
     artifacts = _artifacts(forward_periods=8, admission="PASS", event_verdict="PASS")
     artifacts["forward"] = {

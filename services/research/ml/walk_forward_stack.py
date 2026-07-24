@@ -21,12 +21,14 @@ def _ls_weights(scores: np.ndarray) -> np.ndarray:
 
 
 def walk_forward_stack(panel: FeaturePanel, *, train_size: int, test_size: int, embargo: int = 1,
-                       model: str = "gbm", seed: int = 0, cost_bps: float = 0.0) -> dict:
+                       model: str = "gbm", seed: int = 0, cost_bps: float = 0.0,
+                       accelerator: str = "cpu") -> dict:
     """oos_returns 为 NET:每期组合收益减换手成本 = (cost_bps/1e4) * sum|w_p - w_{p-1}|(逐标的对齐,缺失记
     0 权重)。cost_bps=0(默认)-> net==gross,与既有调用/测试一致。"""
     rows = panel.rows
     if not rows:
-        return {"oos_returns": [], "n_folds": 0, "n_test_periods": 0}
+        return {"oos_returns": [], "n_folds": 0, "n_test_periods": 0,
+                "model": model, "accelerator": accelerator}
     periods = sorted({i for i, _ in rows})
     by_period = {p: np.array([k for k, (i, _) in enumerate(rows) if i == p]) for p in periods}
     cost_frac = cost_bps / 1e4
@@ -40,7 +42,8 @@ def walk_forward_stack(panel: FeaturePanel, *, train_size: int, test_size: int, 
         train_idx = np.concatenate([by_period[p] for p in periods if p < train_cutoff]) \
             if any(p < train_cutoff for p in periods) else np.array([], dtype=int)
         if train_idx.size >= 2 * panel.X.shape[1] + 5:         # enough rows to fit
-            st = fit_stacker(panel.X[train_idx], panel.y[train_idx], model=model, seed=seed)
+            st = fit_stacker(panel.X[train_idx], panel.y[train_idx], model=model, seed=seed,
+                             accelerator=accelerator)
             n_folds += 1
             for p in test_ps:
                 idx = by_period[p]
@@ -52,4 +55,5 @@ def walk_forward_stack(panel: FeaturePanel, *, train_size: int, test_size: int, 
                 oos.append(gross - cost_frac * turnover)       # NET of turnover cost
                 prev_w = curr_w
         test_start += test_size
-    return {"oos_returns": oos, "n_folds": n_folds, "n_test_periods": len(oos)}
+    return {"oos_returns": oos, "n_folds": n_folds, "n_test_periods": len(oos),
+            "model": model, "accelerator": accelerator}

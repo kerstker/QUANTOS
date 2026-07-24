@@ -5,8 +5,21 @@ Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](QUANTOS_MASTER_BLUEPRINT.md)
 (11 layers, phases 0–14). Program plan:
 [`docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md`](docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md).
 
-Readiness: **L2_DRY_RUN_ONLY** — research + dry-run simulation only. No live
-trading, no broker connectivity, no real credentials.
+Readiness: **L2_DRY_RUN_ONLY (default)** — 分层表述,三层实况:
+
+- **L2 研究 + 干跑(默认态)**:研究与全量测试默认运行在 L2,mainnet
+  实盘被多重结构性人工门封锁(见下)。
+- **Testnet 已联通**:`live/` 执行栈已存在并联调 —— Binance/Bybit
+  期货 testnet 适配器(`live/exchange/`)、`live/pipeline.py::submit_live_batch`
+  (attestation→plan→gate→mandate→ledger→place→confirm→audit 全链)、
+  `tools/live_ops_api.py`(port 8440 只读运维 API)。
+- **Mainnet 被多重人工门结构封锁**:mainnet 适配器构造即
+  `raise SafetyViolation`(`SafetyConfig.live_trading_armed` 默认 False);
+  下单必须经过 validation attestation + 人工 mandate(AUTO 拒绝)+
+  pre-trade gate + kill-switch + 账本预记账;MEXC 现货 mainnet 适配器
+  (建设中)同样遵循。MEXC 无现货 testnet → 毕业路径 = 干跑 → 小额真实 +
+  人工 mandate → 规模化。无真凭证落盘承诺不变(`key/` gitignored,
+  只写格式文档,绝不写真实密钥)。
 
 ## Safety boundary (non-negotiable — blueprint §1)
 
@@ -40,7 +53,7 @@ catalog access is for human-controlled workflows and is not an agent API.
 
 Authoritative reality map + completion roadmap:
 [`docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md).
-**The backend is substantially built and tested (~1047 tests pass). The console-wiring
+**The backend is substantially built and tested (1631+ tests pass). The console-wiring
 gap is now largely closed: the four ALPHA-pipeline breaks are all wired + tested — 断点1
 关卡证据回喂 evaluator (real `detect_leakage`/regime/PBO evidence through every search loop),
 断点2 前向 paper 追踪持久层, 断点3 console 真组合 (optimizer + real returns), 断点4 衰退/退役调度器.
@@ -151,7 +164,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   BH-FDR ranker, population_optimizer, decay, crowding/capacity, correlation/
   cluster, orthogonalize, zoo, alpha_graph, lineage, degradation_monitor.
 - `services/data/` (89 tests) — PIT store, survivorship-free universe, versioning,
-  quality, normalization, PIT corporate actions, catalog.
+  quality, normalization, PIT corporate actions, catalog. 存储层提供
+  `fetch_bars_pit(instrument, start, end)`(SqlitePITStore + CachingPITStore,2026-07-23):
+  批量读但逐 bar 过滤 `knowledge_time <= event_time`——仅对「每根 bar 只在自己的
+  event_date 消费」的 panel builder 是 PIT 安全的,不能替代决策时点 `as_of(t)`;
+  services/ 裸 `fetch_bars` 仍被 AST 治理钉死在白名单 infra。
 - `services/portfolio/` (57 tests) — constrained optimizer (feasibility-checked),
   PSD-checked factor risk model, construction, attribution, signal_adapter.
 - `services/intelligence/` (59 tests) — guardrailed non-human `ResearchAgentLoop`
@@ -260,8 +277,71 @@ Real, tested backend engines (`*_TESTED` in the audit):
   与它 IC t-stat 4.32、过 4/5 证伪一致。诚实边界:这是对**已知历史**的执行现实回测(整手+门+成本+换手,残差≈0 恒等式成立),
   **非前向/实盘**;宇宙仅 14 大币;证伪已过≠前向必赚——是否送前向 paper-track/加仓位是另一独立决策。
   实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
-- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (~31 GET
-  endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
+- `live/` — **实盘执行栈(已存在,testnet 已联调)**:`live/exchange/base.py`
+  `VenueAdapter` Protocol + `live/exchange/retry.py`(`call_with_backoff`)+
+  `live/exchange/binance_futures.py` / `bybit_futures.py`(纯 stdlib
+  urllib+hmac,无交易所 SDK;构造注入 `http_request/clock/sleep` 可测;
+  mainnet base 在默认 SafetyConfig 下构造即 `raise SafetyViolation`;
+  未知 base_url raise ValueError)。`live/pipeline.py::submit_live_batch`
+  全链:validation attestation → 计划 → pre-trade gate → 过滤器 →
+  mandate(AUTO 拒绝/人工复核)→ 账本预记账 → 下单 → 确认 → 审计。
+  `live/governance/{mandate,mandate_store,validation_attestation}.py` 人工门。
+  **OMS canonical 状态机(2026-07-23 接入)**:`live/execution/oms_state.py` 把
+  `quantos/contracts/order.py::OrderState` 状态机接进 `LiveLedger`——venue 状态串
+  fail-closed 映射到 canonical(`PENDING_NEW→RISK_APPROVED`、`NEW→SUBMITTED`、
+  `PREVIEW_NOT_SUBMITTED→FAILED` 等 9 条,未知串 raise ValueError),账本新增
+  `canonical_state` 列(lazy 迁移,兼容存量 testnet 账本),`update_status` 强制
+  **可达性**(BFS over ALLOWED_TRANSITIONS,快照语义:允许合并未记录的中间跳,
+  禁止 terminal 改写/状态回退),幂等重放语义不变;`ReconciliationStatus`
+  (`IN_SYNC`/`RECONCILIATION_REQUIRED`)显式化对账状态(仍 report-only/硬停,
+  绝不自动纠正)。**适配器行情读(2026-07-23)**:`BinanceFuturesAdapter` 新增
+  `premium_index()`(标记价/指数价/最新资金费率/下次结算时间)与
+  `funding_rates()`(历史资金费率,limit 钳 [1,1000])——公开无签名端点,
+  fail-soft None,与 `book_ticker` 同法;合约 `PremiumIndexSnapshot`/
+  `FundingRateSnapshot` 在 `live/contracts.py`(NaN/Inf 拒)。策略级资金费数据
+  此前只有日频离线快照,这是首个执行面实时读。**资金费实时交叉校验
+  (2026-07-23)**:`live/execution/funding_check.py` 纯模块(镜像 `price_check.py`)
+  + `tools/live_track_advance.py` 接线——对 `_FUNDING_CHECK_STRATEGIES`
+  (目前仅 `carry_oi_majors`,资金费信号策略)逐目标币用 venue `premium_index`
+  实时读比对日频快照(`venue_rate×3` vs 当日累计费率,abs 0.001 + rel 2.0
+  组合带宽,**未校准的过期/垃圾探测器非精确等式**;快照 None/过期/next_funding_time
+  荒谬 → fail-closed 冻结该币),冻结名单并集进价格检查的 `frozen_names` 一起进
+  `submit_live_batch(frozen=...)`;`PreviewVenue` 加 `premium_index` 透传使
+  preview 跑同一检查;无该方法的场地(bybit/mexc)干净跳过。carry 的信号本身
+  就是资金费率——没有实时校验等于拿昨天的费率下今天的单,此洞已补。
+  **Binance Futures mainnet 代码面 human-ready(2026-07-23,与 MEXC 对称)**:
+  `_VENUES["binance_mainnet"]`(MAINNET_BASE,env `BINANCE_MAINNET_API_KEY/SECRET`,
+  `mainnet_only: True` 标记——未 arm 即 SystemExit,唯一通路=人工 `--submit --arm-live`;
+  启动强制 `check_binance_key_permissions`(`/sapi/v1/account/apiRestrictions`,
+  提现已关 ∧ IP 白名单才 SAFE,否则 fail-closed 拒绝);`key/live_mandate_binance_mainnet
+  .json.template`(占位 expires_at=0 恒过期,绝不 AUTO)+ 只读首验
+  `tools/binance_readonly_smoke.py`(4 个 GET,无凭据零网络,落
+  `evidence/binance_mainnet_smoke.json`,首单前 `order_response_shape=
+  UNVERIFIED_UNTIL_FIRST_FILL`)+ 首单 runbook
+  `docs/runbooks/binance-futures-live-runbook.md`(干跑→paper-track→testnet→
+  smoke→mandate+attestation→≤$100 首单→对账→规模化)。真凭证/真 mandate/
+  attestation 仍只能真人提供;ops API 固定 argv 永不携带 `--arm-live`。
+  `tools/live_ops_api.py`(port 8440,X-Ops-Token,**只读运维、绝不直接下单**)
+  + `tools/live_track_advance.py::_VENUES` 场地注册表 + `tools/live_data_refresh.py`
+  行情刷新流水线。治理边界机器钉死:网络 import 只在 `live/exchange/` 与 `tools/`,
+  `services/` 永不 import `live/`。
+- `live/exchange/mexc_spot.py` + `tools/mexc_klines_fetch.py` +
+  `tools/dry_run_btc_spot_multi.py` — **MEXC 零手续费 BTC 现货对接(代码面 human-ready,
+  2026-07-23 Part 1 接线完成)**:MEXC Spot API v3(Binance 兼容,`https://api.mexc.com`,签名=
+  HMAC-SHA256(urlencoded query)+ `X-MEXC-APIKEY` 头)现货适配器,遵循与
+  Binance/Bybit 相同的构造注入与安全不变量(mainnet 默认构造即 SafetyViolation;
+  MEXC 无现货 testnet → 毕业路径 = 干跑 → 小额真实 + 人工 mandate → 规模化,
+  见 `docs/MEXC_INTEGRATION.md`)。接线实况:MEXC klines 已是 `tools/live_data_refresh.py`
+  第 5 幂等源(落 `crypto_mexc.db` + `mexc_btc_klines.json`);`btc_spot_trend` 干跑主口径
+  已切 MEXC PIT(CoinGecko `_cg` 对照)+ paper_track.db 前向持久层;`_VENUES["mexc"]` /
+  `_STRATEGIES["btc_spot_trend"]` 已注册进 `tools/live_track_advance.py`(现货现金门 +
+  现货口径风控限额 + §10 启动 key 校验);§10 凭证加载器 `tools/mexc_credentials.py` +
+  `verify_key_permissions.py` MEXC 分支;`--arm-live` 人工 CLI arming(ops API 固定 argv
+  永不携带,治理钉死);只读首验 `tools/mexc_readonly_smoke.py`(人工执行,未跑前
+  readiness 诚实报 UNVERIFIED_MAINNET_RESPONSE);ops API 现货 dashboard 分支 +
+  `docs/runbooks/mexc-live-runbook.md` 首单 checklist。永不实现提现/划转(治理扫描机器禁止)。
+- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (45+ GET
+  endpoints, console 8400 + live_ops 8440), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
   `research-run` (run_registry sqlite), `crypto-live` (CoinGecko offline snapshot),
   `fx-research` (ECB/Frankfurter snapshots + tradable gauntlet), `lifecycle-monitor`
@@ -269,7 +349,9 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (12-dim real eval + time/活体征 dims), `backtest-results` (run_registry by role),
   `data-catalog` (real PIT datasets), `safety-primitives` (real KillSwitch/gate), `portfolio`
   (real optimizer/risk-parity), risk-dashboard/validation (real engines), `dry-run` (DryRunStore
-  runs), `architecture`+`system-completeness` (**REAL_REPO_INVENTORY** — live read-only repo
+  runs), `mexc-market`/`mexc-strategy`/`mexc-readiness` (MEXC PIT 现货快照 + OHLCV bars +
+  btc_spot_trend 干跑指标/净值 vs 买入持有基准 + human-ready 就绪检查清单,前端 MEXC 三页消费),
+  `architecture`+`system-completeness` (**REAL_REPO_INVENTORY** — live read-only repo
   introspection via `_repo_inventory()`: per-domain module/LOC + test/page/endpoint counts, grounding
   the curated maturity map in hard counts). The residual synthetic surfaces are the genuinely-missing
   governance/process subsystems (incident/committee/RBAC/…), kept HONESTLY LABELED (not faked — faking
@@ -282,7 +364,13 @@ Real, tested backend engines (`*_TESTED` in the audit):
   promotion/model-risk)+ 合成或重复(Agents/Phase3A/ScenarioStress/BacktestExplainability/
   SignalToPortfolio/Overview),旧路由语义就近重定向(蓝图页 → SystemCompleteness,那里
   REAL_REPO_INVENTORY 诚实列出缺失子系统——删页不删诚实);后端 console_api 端点零改动
-  (契约测试锁定)。测试地板:**30/30 页全冒烟 + 注册表一致性测试**(44 fe tests)。
+  (契约测试锁定)。测试地板:**33/33 页全冒烟 + 注册表一致性测试**(116 fe tests)。
+  **机构工作台改版(已落地 2026-07-23)**:设计原则与组件清单见
+  [`docs/FRONTEND_WORKBENCH_REDESIGN.md`](docs/FRONTEND_WORKBENCH_REDESIGN.md)。共享组件层
+  `src/ui/workbench.tsx`(EquityCurveChart 多序列净值/StatusBanner 常驻 kill-switch 条/AsOfStamp/
+  EndpointFootnote/StateView/ConfirmActionButton/MandateGateChip/MarketTape 顶栏滚动带),
+  DataTable 粘性表头 + compact 密度,MEXC 交易台三页(市场 CandleChart/策略净值 vs 买入持有基准/
+  就绪检查清单),LiveDesk 现货分支。
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain

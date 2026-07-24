@@ -53,6 +53,17 @@ DEFAULT_TICKERS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "LI
                    "LTC", "BCH", "TRX", "ATOM", "NEAR", "APT", "OP", "FIL", "ETC", "UNI",
                    "AAVE", "INJ", "XLM", "ICP"]
 
+# The forward-paper clock intentionally uses the existing major-book shape,
+# rather than making the small-cap tail a prerequisite for evidence.  This is
+# a fixed, reviewable L2 scope: the historical model card used MATIC, which is
+# no longer in the active cache, so current BCH is the compatible replacement.
+# ``DEFAULT_TICKERS`` remains the wider liquid-history universe for research
+# and survivorship diagnostics; callers must opt into this narrower scope.
+FORWARD_MAJOR_TICKERS = (
+    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX",
+    "BCH", "DOT", "LTC", "UNI", "LINK", "ATOM",
+)
+
 # end-of-day fields we keep (column index in the metrics CSV, 0-based)
 _COLS = {"oi": 2, "oi_value": 3, "top_ls": 5, "global_ls": 6, "taker_ls": 7}
 _PROBE_FLOOR_MS = 1_598_918_400_000  # 2020-09-01 UTC — no metrics archive predates this

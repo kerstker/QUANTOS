@@ -33,7 +33,11 @@ import type {
   AlphaGraphPayload,
   AlphaZooPayload,
   DslExplorerPayload,
+  DslExprRow,
   SafetyPrimitivesPayload,
+  MexcMarketPayload,
+  MexcStrategyPayload,
+  MexcReadinessPayload,
   LifecycleMonitorPayload,
   BacktestResultsPayload,
   PromotionControlPayload,
@@ -222,6 +226,20 @@ export function fetchDslExplorerSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<DslExplorerPayload>('/api/v1/console/dsl-explorer', signal);
 }
 
+export async function checkDslExpression(expr: string, signal?: AbortSignal): Promise<DslExprRow> {
+  if (!RESEARCH_CONSOLE_API_BASE) {
+    throw new Error('VITE_API_URL is not configured');
+  }
+  const url = new URL('/api/v1/console/dsl-explorer/check', RESEARCH_CONSOLE_API_BASE);
+  url.searchParams.set('expr', expr);
+  const response = await fetch(url, { method: 'GET', signal });
+  if (!response.ok) {
+    throw new Error(`Console API returned ${response.status}`);
+  }
+  const body = assertConsoleSnapshot<{ row: DslExprRow }>(await response.json(), '/api/v1/console/dsl-explorer/check');
+  return body.row;
+}
+
 export function fetchSafetyPrimitivesSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SafetyPrimitivesPayload>('/api/v1/console/safety-primitives', signal);
 }
@@ -276,6 +294,18 @@ export function fetchLiveTradingSnapshot(signal?: AbortSignal) {
 
 export function fetchGonogo(signal?: AbortSignal) {
   return fetchConsoleJson<GonogoPayload>('/api/v1/console/gonogo', signal);
+}
+
+export function fetchMexcMarketSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcMarketPayload>('/api/v1/console/mexc-market', signal);
+}
+
+export function fetchMexcStrategySnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcStrategyPayload>('/api/v1/console/mexc-strategy', signal);
+}
+
+export function fetchMexcReadinessSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcReadinessPayload>('/api/v1/console/mexc-readiness', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {

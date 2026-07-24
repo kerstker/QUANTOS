@@ -1,11 +1,13 @@
 """增量数据刷新(Stage 0,实盘路线)—— 把四个一次性研究抓取器包成幂等的生产刷新。设计:
 docs/engineering/specs/2026-07-04-forward-track-live-design.md §2.2。
 
-四个源全部复用现有幂等原语,只补水位之后的缺口:
+五个源全部复用现有幂等原语,只补水位之后的缺口:
 1. 价格 `crypto_funding.db`(PIT 库,主键去重 + 未来数据守卫):fetch_daily_rows → ingest_provider_rows;
 2. 资金费 `crypto_funding_rates.json`:fetch_daily_funding 按日桶合并(已有日不覆盖);
 3. 永续 mark price `crypto_perp_mark_prices.json`:Data Vision 日归档,16 日定价覆盖 + 最近 8 日质量门;
-4. OI 指标 `crypto_oi_metrics.json`:binance_oi_metrics_fetch.main 本身断点续传(缺日补齐)。
+4. OI 指标 `crypto_oi_metrics.json`:binance_oi_metrics_fetch.main 本身断点续传(缺日补齐);
+5. MEXC 现货 BTC 日线 `crypto_mexc.db` + `mexc_btc_klines.json`(2026-07 MEXC 对接第一阶段,
+   公开行情无 key):mexc_klines_fetch.fetch_daily_rows → ingest_provider_rows,宇宙恒为单名 BTC。
 
 产出 data/cache/live_refresh_status.json:各源刷新前/后水位、新增数、失败列表、staleness 天数。
 逐 ticker fail-soft(单个失败记录、不中断整轮)。网络/墙钟只在此(门外);读写只碰 data/cache。
@@ -43,6 +45,7 @@ from tools.binance_funding_fetch import (FundingDataError, fetch_daily_funding,
 from tools.binance_perp_mark_fetch import (load_mark_prices,
                                            refresh_mark_prices)
 from tools import binance_oi_metrics_fetch as oi_fetch
+from tools import mexc_klines_fetch as mexc_fetch
 from tools.cache_io import atomic_write_json
 from tools.source_failures import source_failure_detail
 
@@ -58,12 +61,16 @@ _SLO_STATUS = os.path.join("data", "cache", "live_refresh_slo.json")
 _RAW_ARCHIVE = DEFAULT_RAW_ARCHIVE
 _OI_REQUIRED_FIELDS = ("oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 _OI_QUALITY_LOOKBACK_DAYS = 8
-_SOURCE_ORDER = ("prices", "funding", "perp_mark_prices", "oi_metrics")
+_SOURCE_ORDER = ("prices", "funding", "perp_mark_prices", "oi_metrics", "mexc_btc")
+_MEXC_DB = os.path.join("data", "cache", "crypto_mexc.db")
+_MEXC_SNAP = os.path.join("data", "cache", "mexc_btc_klines.json")
+_MEXC_TICKER = "BTC"
 SOURCE_TIMEOUT_SECONDS = {
     "prices": 900.0,
     "funding": 900.0,
     "perp_mark_prices": 1_200.0,
     "oi_metrics": 1_800.0,
+    "mexc_btc": 600.0,
 }
 GLOBAL_TIMEOUT_SECONDS = 1_800.0
 SLO_WINDOW_RUNS = 30
@@ -144,6 +151,70 @@ def refresh_prices(tickers, *, now_ms: int, fetch=fetch_daily_rows, db_path: str
             _record_failure(report, tk, exc)
         if sleep:
             time.sleep(sleep)
+    wm2 = price_watermarks(db_path)
+    report["watermark_after"] = min(wm2.values()) if wm2 else None
+    return report
+
+
+def refresh_mexc_btc(*, now_ms: int, fetch=mexc_fetch.fetch_daily_rows,
+                     db_path: str = _MEXC_DB, snapshot_path: str = _MEXC_SNAP,
+                     pad_days: int = 3, archive_root=None) -> dict:
+    """第 5 个幂等源:MEXC 现货 BTCUSDT 日线(公开行情,无 key)→ crypto_mexc.db +
+    mexc_btc_klines.json 快照。与 refresh_prices 同一水位/缺口/幂等模式,只是宇宙恒为
+    单名 BTC(MEXC 对接第一阶段,docs/MEXC_INTEGRATION.md §6);库不存在时 create=True
+    (首跑自建——与主库的 create=False 不同,主库是历史快照资产、缺了算事故,这个库是本源
+    自己产出的)。"""
+    report = {"source": "mexc_btc", "refreshed": 0, "skipped": 0, "ingested_rows": 0,
+              "failed": [], "failure_details": [], "failed_tickers": [], "quality_failed": []}
+    wm = price_watermarks(db_path)
+    gap = _gap_days(wm.get(_MEXC_TICKER, 0), now_ms)
+    if gap <= 1:                          # 只差今天(未收盘,PIT 本来就丢) → 无缺口
+        report["skipped"] = 1
+    else:
+        try:
+            if archive_root is None:
+                rows = fetch(_MEXC_TICKER, days=gap + pad_days, now_ms=now_ms)
+            else:
+                rows = fetch(_MEXC_TICKER, days=gap + pad_days, now_ms=now_ms,
+                             archive_root=archive_root, observed_at_ms=now_ms)
+            store = SqlitePITStore(db_path, create=True)
+            today = (now_ms // _DAY_MS) * _DAY_MS
+            rep = ingest_provider_rows(
+                rows, store, dataset_id=f"mexc-{_MEXC_TICKER}", now=now_ms, time_unit="ms",
+                strict=True, expected_interval=_DAY_MS,
+                expected_start=(wm[_MEXC_TICKER] + _DAY_MS if _MEXC_TICKER in wm else None),
+                expected_end=today - _DAY_MS)
+            report["refreshed"] = 1
+            report["ingested_rows"] = getattr(rep, "bars_ingested", 0) or 0
+        except FatalIngestionError as exc:
+            _record_failure(report, _MEXC_TICKER, exc, quality=True)
+        except Exception as exc:              # fail-soft:记录、继续(快照仍从库重建)
+            _record_failure(report, _MEXC_TICKER, exc)
+    # 快照从库内聚合统计重建(MIN/MAX/COUNT 直接 SQL,与 price_watermarks 同一轻量模式——
+    # 不为快照做全窗口 fetch_bars 裸读);库不存在/读不出则写空快照(rows=0,span=None),绝不硬凑。
+    n_bars, first_ts, last_ts = 0, None, None
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(DISTINCT event_time), MIN(event_time), MAX(event_time) "
+                    "FROM bars WHERE key=?", (_MEXC_TICKER,)).fetchone()
+            finally:
+                conn.close()
+            n_bars, first_ts, last_ts = int(row[0]), row[1], row[2]
+        except Exception as exc:
+            _record_failure(report, _MEXC_TICKER, exc)
+    snap_rows = ([{"event_time": int(first_ts)}]
+                 + ([{"event_time": int(last_ts)}] if last_ts != first_ts else [])
+                 if n_bars else [])
+    snap = mexc_fetch.build_snapshot(
+        snap_rows, ticker=_MEXC_TICKER, interval="1d", fetched_at_ms=now_ms,
+        db_path=db_path if n_bars else None,
+        dataset_id=f"mexc-{_MEXC_TICKER}" if n_bars else None,
+        bars_ingested=report["ingested_rows"] or None)
+    snap["rows"] = n_bars                # build_snapshot 的 rows=len(rows),这里换成库内真实行数
+    atomic_write_json(snapshot_path, snap, indent=2)
     wm2 = price_watermarks(db_path)
     report["watermark_after"] = min(wm2.values()) if wm2 else None
     return report
@@ -230,7 +301,7 @@ def refresh_funding(tickers, *, now_ms: int, fetch=fetch_daily_funding, fund_pat
 def refresh_oi(tickers=None, *, now_ms=None, fetch=oi_fetch.main,
                oi_path: str = _OI, archive_root=None) -> dict:
     """OI 指标归档刷新:直接复用 binance_oi_metrics_fetch.main(缺日补齐 + 逐 ticker 断点)。
-    只刷 DEFAULT_TICKERS(在市流动大币);已退市 ticker 的历史段不动。"""
+    只刷显式传入或 DEFAULT_TICKERS(在市流动大币);已退市 ticker 的历史段不动。"""
     selected = list(tickers or oi_fetch.DEFAULT_TICKERS)
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -338,7 +409,7 @@ def oi_quality_failures(tickers, *, now_ms: int, oi_path: str = _OI,
 
 # 各源"落后几天算 stale"的阈值(OI 归档天然滞后 1-2 天,给 5)
 STALE_LIMITS = {"prices": 3, "funding": 3, "oi_metrics": 5,
-                "perp_mark_prices": 3}
+                "perp_mark_prices": 3, "mexc_btc": 3}
 
 
 def _gap_summary(gaps, limit) -> dict:
@@ -351,26 +422,58 @@ def _gap_summary(gaps, limit) -> dict:
 
 
 def staleness_days(now_ms: int, *, db_path: str = _DB, fund_path: str = _FUND,
-                   oi_path: str = _OI, mark_path: str = _MARK) -> dict:
+                   oi_path: str = _OI, mark_path: str = _MARK,
+                   mexc_db_path: str = _MEXC_DB,
+                   active_tickers: list[str] | tuple[str, ...] | None = None) -> dict:
+    """Return per-source freshness, optionally scoped to the live universe.
+
+    Historical PIT/funding archives intentionally retain delisted symbols.  The
+    default remains the complete archive (useful for survivorship diagnostics),
+    while forward-paper callers pass the current active universe so an old
+    symbol cannot create a systemic-live staleness alert after it has left the
+    tradable universe.
+    """
+    scope = None if active_tickers is None else set(active_tickers)
+
+    def _scoped(mapping: dict) -> list[int]:
+        values = mapping.items()
+        if scope is not None:
+            values = ((ticker, watermark) for ticker, watermark in values
+                      if ticker in scope)
+        return [int(watermark) for _ticker, watermark in values]
+
     out = {}
     wm = price_watermarks(db_path)
-    out["prices"] = _gap_summary([_gap_days(v, now_ms) for v in wm.values()], STALE_LIMITS["prices"])
+    out["prices"] = _gap_summary(
+        [_gap_days(value, now_ms) for value in _scoped(wm)],
+        STALE_LIMITS["prices"],
+    )
     if os.path.exists(fund_path):
         fund = json.load(open(fund_path, encoding="utf-8"))
-        wms = [max(int(k) for k in d) for d in fund.values() if d]
+        fund_wm = {
+            ticker: max(int(day) for day in days)
+            for ticker, days in fund.items() if days
+        }
+        wms = _scoped(fund_wm)
         out["funding"] = _gap_summary([_gap_days(v, now_ms) for v in wms], STALE_LIMITS["funding"])
     else:
         out["funding"] = _gap_summary([], STALE_LIMITS["funding"])
     oi_wm = _oi_watermarks(oi_path)
     out["oi_metrics"] = _gap_summary(
-        [_gap_days(value, now_ms) for value in oi_wm.values()],
+        [_gap_days(value, now_ms) for value in _scoped(oi_wm)],
         STALE_LIMITS["oi_metrics"],
     )
     try:
         mark = load_mark_prices(mark_path)
-        mark_wms = [max(days) for days in mark.values() if days]
+        mark_wm = {ticker: max(days) for ticker, days in mark.items() if days}
+        mark_wms = _scoped(mark_wm)
     except (OSError, ValueError, json.JSONDecodeError):
         mark_wms = []
+    mexc_wm = price_watermarks(mexc_db_path)
+    out["mexc_btc"] = _gap_summary(
+        [_gap_days(value, now_ms) for value in mexc_wm.values()],
+        STALE_LIMITS["mexc_btc"],
+    )
     out["perp_mark_prices"] = _gap_summary(
         [_gap_days(value, now_ms) for value in mark_wms],
         STALE_LIMITS["perp_mark_prices"],
@@ -396,6 +499,8 @@ def _execute_source(source: str, tickers: list[str], *, now_ms: int) -> dict:
             now_ms=now_ms,
             archive_root=_RAW_ARCHIVE,
         )
+    if source == "mexc_btc":
+        return refresh_mexc_btc(now_ms=now_ms, archive_root=_RAW_ARCHIVE)
     raise ValueError(f"unknown refresh source: {source}")
 
 
@@ -725,19 +830,37 @@ def run_refresh(*, now_ms=None, source_timeouts=None,
                 snapshot_path: str = _SNAP,
                 source_runner=None, staleness_reader=None,
                 archive_summary=None, alert_emitter=None) -> dict:
-    """Run all four sources under hard budgets, persist history/SLO, and publish status."""
+    """Run all five sources under hard budgets, persist history/SLO, and publish status."""
     if now_ms is None:
         now_ms = int(time.time() * 1000)
-    tickers = list(json.load(open(snapshot_path, encoding="utf-8"))["instruments"])
+    # The historical funding snapshot intentionally contains 115 symbols, including
+    # names that Binance later delisted (for example XMR).  Forward paper decisions
+    # are built from the current OI/positioning universe, so refresh only that
+    # explicitly active 24-symbol set.  Historical bars remain immutable in the PIT
+    # store; a retired symbol is not silently treated as a live-quality failure.
+    snapshot_tickers = list(json.load(open(snapshot_path, encoding="utf-8"))["instruments"])
+    active_tickers = [
+        ticker for ticker in oi_fetch.FORWARD_MAJOR_TICKERS
+        if ticker in snapshot_tickers
+    ]
     resolved_source_runner = source_runner or _run_sources_with_deadlines
-    resolved_staleness_reader = staleness_reader or staleness_days
+    if staleness_reader is None:
+        # Match the actual forward refresh universe, not the historical archive.
+        resolved_staleness_reader = lambda timestamp: staleness_days(
+            timestamp, active_tickers=active_tickers
+        )
+    else:
+        # Keep the injected test/operator reader's one-argument contract.
+        resolved_staleness_reader = staleness_reader
     resolved_archive_summary = archive_summary or summarize_archive
     resolved_alert_emitter = alert_emitter or emit
     source_tickers = {
-        "prices": tickers,
-        "funding": tickers,
-        "perp_mark_prices": list(oi_fetch.DEFAULT_TICKERS),
-        "oi_metrics": list(oi_fetch.DEFAULT_TICKERS),
+        "prices": active_tickers,
+        "funding": active_tickers,
+        "perp_mark_prices": list(active_tickers),
+        "oi_metrics": list(active_tickers),
+        # MEXC 现货 BTC(第 5 源):宇宙恒为单名 BTC,与期货宇宙无关(docs/MEXC_INTEGRATION.md §6)。
+        "mexc_btc": [_MEXC_TICKER],
     }
     resolved_timeouts = dict(SOURCE_TIMEOUT_SECONDS)
     if source_timeouts:
@@ -750,6 +873,14 @@ def run_refresh(*, now_ms=None, source_timeouts=None,
         "ran_at": int(now_ms),
         "reports": [],
         "staleness_before": resolved_staleness_reader(int(now_ms)),
+        "staleness_scope": {
+            "prices": list(active_tickers),
+            "funding": list(active_tickers),
+            "perp_mark_prices": list(active_tickers),
+            "oi_metrics": list(active_tickers),
+            "mexc_btc": [_MEXC_TICKER],
+            "provenance": "FIXED_FORWARD_MAJOR_UNIVERSE",
+        },
         "budgets": {
             "global_timeout_seconds": float(global_timeout_s),
             "source_timeout_seconds": {

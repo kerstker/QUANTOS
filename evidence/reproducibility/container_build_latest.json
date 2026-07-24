@@ -13,36 +13,36 @@
   },
   "builds": [
     {
-      "archive_name": "quantos-console-repro-20260713-acyclic-cachefix-a.oci.tar",
-      "archive_sha256": "d1bdd50a483da77a9124d4f67b4bc8ed589c04b592543007626d6fcdf3dddd9a",
-      "archive_size": 129128448,
-      "config_digest": "sha256:8c8d87ca0daf1caabd52a4f00a76a54c992eb953bb7f56dbf8e741efdd079132",
+      "archive_name": "build-a.oci.tar",
+      "archive_sha256": "37243e6767c5257b6055e8fd59948dc173b6e3bb48a3cffd14a6757e0dd1251a",
+      "archive_size": 129332224,
+      "config_digest": "sha256:78694ade5f6f7b09783491ea6628f53c85d0dc555ddf082c0c80e0eb04433c04",
       "label": "A",
-      "manifest_digest": "sha256:4fce371aee715f289891b965068e52e7bf7ce6cfc7fc67932f294ff658e134e9"
+      "manifest_digest": "sha256:871066e30e0146075e23f972f642c1e00ae7f3388b451d2a42a60479e59e9a0f"
     },
     {
-      "archive_name": "quantos-console-repro-20260713-acyclic-cachefix-b.oci.tar",
-      "archive_sha256": "d1bdd50a483da77a9124d4f67b4bc8ed589c04b592543007626d6fcdf3dddd9a",
-      "archive_size": 129128448,
-      "config_digest": "sha256:8c8d87ca0daf1caabd52a4f00a76a54c992eb953bb7f56dbf8e741efdd079132",
+      "archive_name": "build-b.oci.tar",
+      "archive_sha256": "37243e6767c5257b6055e8fd59948dc173b6e3bb48a3cffd14a6757e0dd1251a",
+      "archive_size": 129332224,
+      "config_digest": "sha256:78694ade5f6f7b09783491ea6628f53c85d0dc555ddf082c0c80e0eb04433c04",
       "label": "B",
-      "manifest_digest": "sha256:4fce371aee715f289891b965068e52e7bf7ce6cfc7fc67932f294ff658e134e9"
+      "manifest_digest": "sha256:871066e30e0146075e23f972f642c1e00ae7f3388b451d2a42a60479e59e9a0f"
     }
   ],
   "dockerfile": {
     "path": "deploy/console.Dockerfile",
-    "sha256": "4ba5e910d2a03ddcb01161555fd003e664cfa65aff49f10aaa4c20f403e43a1c",
-    "size": 3261
+    "sha256": "150758fff700f6e2ded912d5d49eee145b621085e4cf6158c4298e82e519ebcb",
+    "size": 3328
   },
   "dockerignore": {
     "path": ".dockerignore",
-    "sha256": "2829448d02eb8f3f6c022f7a0cf69bb3466ceb2bb6d72fda32a9c1b523fa9ced",
-    "size": 489
+    "sha256": "db1eae2fab9aad3719c2b9d61448a81910f458906065dab454ef2d6ec8fc874d",
+    "size": 495
   },
   "exporter": "oci",
   "image": {
     "architecture": "amd64",
-    "config_digest": "sha256:8c8d87ca0daf1caabd52a4f00a76a54c992eb953bb7f56dbf8e741efdd079132",
+    "config_digest": "sha256:78694ade5f6f7b09783491ea6628f53c85d0dc555ddf082c0c80e0eb04433c04",
     "config_size": 8094,
     "created": "2026-06-16T00:20:04Z",
     "diff_ids": [
@@ -54,9 +54,9 @@
       "sha256:fc2984ce96dffa6729625973791f813d3081f6c2bc4959f242162eea4aa6a4aa",
       "sha256:5a2aa8e17974948c2030b7ef6f8e3a18a42c2fb929f89c2a5a0b087a56e8f285",
       "sha256:0ab260ff080ff59afabe51ea6c576bf63a73f98c1ea5ce5d64da8bb5d990a373",
-      "sha256:1755b9abd0b36cdf1b0e9db9619cad48b05c812a5f9677d403c670dfde185cb8",
-      "sha256:d480fcacc11c37c230bcedd7dca566fd0e29adb54b88759f6b68421d99b90f92",
-      "sha256:a14ebba8f0e9181aec08f317d24875bb15bb4755e0baa27d9ce714598a80281f"
+      "sha256:6516acf4a683f292676901c4a10b846909f584d566f2b6cfc5ef85ef47442fa0",
+      "sha256:0609c5f0c8c55acaae9becf8a8f1940377b125e483062abd0bfa4c2d8990821b",
+      "sha256:ed9b295590ed95624a699393a080e1d12c400309192b46cc50b627122ad4262a"
     ],
     "layers": [
       {
@@ -100,22 +100,22 @@
         "size": 1725128
       },
       {
-        "digest": "sha256:3cd13ccb55cb755a126c13bb2d7f75ec33b5538627affd3a54b9f9fed73f504c",
+        "digest": "sha256:e73508b95ebd5354a77b57971864d866fafa23dd07cea1374cff623c4ec26624",
         "rewritten_timestamp": true,
-        "size": 462805
+        "size": 660956
       },
       {
-        "digest": "sha256:1600586c1334a6fe7075262933fb4c036c4deff41284119138fa4d42d8e101d0",
+        "digest": "sha256:06bd1fb5bb6b4501a0ae5a477eaa573d840d283bf1e4918a0f9c63b43233e602",
         "rewritten_timestamp": true,
-        "size": 20211
+        "size": 25830
       },
       {
-        "digest": "sha256:aeebe63446d38063276876c2e7e02bf88fc057baf103c1534816da85a2c457c6",
+        "digest": "sha256:47f17056cba4091c4faf23b8fef59f7d3ecf9d24c663766d7efc1ad4709c43bd",
         "rewritten_timestamp": true,
-        "size": 907
+        "size": 908
       }
     ],
-    "manifest_digest": "sha256:4fce371aee715f289891b965068e52e7bf7ce6cfc7fc67932f294ff658e134e9",
+    "manifest_digest": "sha256:871066e30e0146075e23f972f642c1e00ae7f3388b451d2a42a60479e59e9a0f",
     "manifest_size": 2982,
     "os": "linux",
     "rewritten_timestamp_layer_count": 7
@@ -127,12 +127,12 @@
   ],
   "mode": "LOCAL_TWO_COLD_OCI_BUILDS_BYTE_IDENTICAL",
   "no_cache": true,
-  "observed_at": 1783949446,
+  "observed_at": 1784833000,
   "provenance_disabled": true,
   "requirements": {
     "path": "requirements.txt",
-    "sha256": "5f5ad27ec57bf7553712992a109d5190eddb7353fcda0c4a610d06abc1da3ace",
-    "size": 1318
+    "sha256": "c9a9bb22726f00b773cacf534ac4610cf7a24ee3a6fc1d59ac6b2538e22e4d85",
+    "size": 1339
   },
   "rewrite_timestamp": true,
   "schema_version": 1,

@@ -5,7 +5,7 @@ import type { EventBusHealth, EventsPayload, EventRecord } from '@/lib/types/res
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  Chip, GateDot, ProgressBar, type Column,
+  Chip, GateDot, ProgressBar, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { Histogram, Donut } from '@/ui/charts';
 import { num, stamp, shortHash, statusTone, type Tone } from '@/ui/format';
@@ -135,7 +135,7 @@ export default function Events() {
       ),
     },
     { key: 'id', header: bi('事件 ID', 'Event ID'), align: 'right', mono: true, render: e => shortHash(e.event_id, 12) },
-    { key: 'ts', header: bi('时间戳', 'Timestamp'), align: 'right', mono: true, render: e => stamp(e.timestamp) },
+    { key: 'ts', header: bi('时间戳', 'Timestamp'), align: 'right', mono: true, sortable: true, sortAccessor: e => e.timestamp, render: e => stamp(e.timestamp) },
   ];
 
   const sortedEvents = [...events].sort((a, b) => b.timestamp - a.timestamp);
@@ -146,6 +146,7 @@ export default function Events() {
         subtitle={bi('只读审计事件快照 · 跨智能体、纸面与风险服务的事件总线', 'Read-only audit event snapshot across the agent, paper, and risk bus')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={6}>
         <StatTile label={bi('事件总数', 'Total Events')} value={num(events.length)} accent />
         <StatTile label={bi('事件类型', 'Distinct Types')} value={num(typeCounts.size)} tone="info" />
@@ -237,8 +238,11 @@ export default function Events() {
 
       <Panel eyebrow={bi('总线', 'Bus')} title={bi('事件明细(按时间倒序)', 'Event Log (newest first)')}
         right={<Chip label={bi(`${events.length} 条`, `${events.length} events`)} tone="info" />}>
-        <DataTable columns={eventCols} rows={sortedEvents} dense getKey={e => e.event_id} />
+        <DataTable columns={eventCols} rows={sortedEvents} dense getKey={e => e.event_id}
+          searchable={e => `${e.event_id} ${e.event_type} ${e.source} ${e.correlation_id ?? ''}`}
+          searchPlaceholder={bi('搜索事件类型 / 来源 / 关联 ID…', 'Search event type / source / correlation ID…')} />
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

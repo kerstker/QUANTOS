@@ -29,6 +29,11 @@ from services.governance.l2_restore_history import (
     RestoreOutcome,
     RestoreProof,
 )
+from services.governance.external_evidence import (
+    ContinuityAssessment,
+    ContinuityObservation,
+    evaluate_continuity,
+)
 from tools.live_backup import _check_passphrase_strength, encrypt_bytes
 from tools.restore_drill import RestoreDrillError, run_restore_drill
 
@@ -893,6 +898,27 @@ def run_recorded_l2_backup(
         raise L2BackupError(reason_code) from None
     finally:
         history_store.close()
+
+
+def evaluate_restore_continuity(
+    observations: tuple[ContinuityObservation, ...],
+    *,
+    now_ms: int,
+    max_gap_ms: int,
+    minimum_history_span_ms: int,
+    minimum_passes: int,
+    clean_lookback_ms: int,
+) -> ContinuityAssessment:
+    """Evaluate retained restore receipts without mutating the history store."""
+
+    return evaluate_continuity(
+        observations,
+        now_ms=now_ms,
+        max_gap_ms=max_gap_ms,
+        minimum_history_span_ms=minimum_history_span_ms,
+        minimum_passes=minimum_passes,
+        clean_lookback_ms=clean_lookback_ms,
+    )
 
 
 def main() -> None:

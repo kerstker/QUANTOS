@@ -179,6 +179,35 @@ def _run_public_forward_driver() -> dict[str, Any]:
     }
 
 
+def _run_gonogo_report() -> dict[str, Any]:
+    """Rebuild the read-only Go/No-Go evidence after a forward refresh.
+
+    The forward driver is allowed to advance the public evidence clock, so the
+    report consumed by ``alpha_paper_cycle`` must be regenerated in the same
+    operator run.  This remains a report-only step: it never enables live
+    trading, reads credentials, or submits an order.
+    """
+    try:
+        module = importlib.import_module("tools.gonogo_report")
+        module.main()
+    except Exception as exc:  # stale evidence must fail closed
+        return {
+            "status": "ERROR",
+            "driver": "tools.gonogo_report",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:240],
+            "live_allowed": False,
+        }
+    path = os.path.join("data", "cache", "gonogo_report.json")
+    return {
+        "status": "PASS",
+        "driver": "tools.gonogo_report",
+        "snapshot_path": path,
+        "snapshot": _load_json(path),
+        "live_allowed": False,
+    }
+
+
 def run_flow(
     *,
     run_drivers: bool = True,
@@ -196,6 +225,15 @@ def run_flow(
         _run_public_forward_driver()
         if advance_forward
         else {"status": "SKIPPED", "reason": "FORWARD_DRIVER_NOT_REQUESTED", "private_binance": False}
+    )
+    gonogo = (
+        _run_gonogo_report()
+        if advance_forward and forward.get("status") == "PASS"
+        else {
+            "status": "SKIPPED",
+            "reason": "FORWARD_REFRESH_NOT_COMPLETED",
+            "live_allowed": False,
+        }
     )
 
     drivers: list[dict[str, Any]] = []
@@ -238,7 +276,18 @@ def run_flow(
     readiness: dict[str, Any] = {}
     for alpha_id, _, _ in ALPHA_DRIVERS:
         try:
-            report = readiness_builder(alpha_id)
+            # The default readiness builder reads the paper-cycle artifact from
+            # disk.  Pass the cycle path used by this run so a custom
+            # ``--cycle-output`` can never make readiness consume an older
+            # snapshot from the default location.  Injected test/application
+            # builders retain the historical one-argument contract.
+            if readiness_builder is build_alpha_readiness_report:
+                report = readiness_builder(
+                    alpha_id,
+                    artifact_paths={"paper_cycle": cycle_output_path},
+                )
+            else:
+                report = readiness_builder(alpha_id)
             readiness[alpha_id] = {
                 "status": "PASS",
                 "research_packet_ready_for_paper": bool(
@@ -262,8 +311,10 @@ def run_flow(
 
     driver_errors = [row for row in drivers if row.get("status") == "ERROR"]
     forward_ok = not advance_forward or forward.get("status") == "PASS"
+    gonogo_ok = not advance_forward or gonogo.get("status") == "PASS"
     paper_ready = bool(
         forward_ok
+        and gonogo_ok
         and cycle_stage.get("status") == "PASS"
         and not driver_errors
         and all(row.get("research_packet_ready_for_paper") is True for row in readiness.values())
@@ -276,6 +327,7 @@ def run_flow(
         "readiness": "L2_DRY_RUN_ONLY",
         "stages": {
             "public_forward": forward,
+            "gonogo_refresh": gonogo,
             "authoritative_dry_runs": drivers,
             "paper_cycle": cycle_stage,
             "alpha_readiness": readiness,
@@ -284,7 +336,7 @@ def run_flow(
             # A requested public-forward refresh is part of this run's
             # contract.  Never report completion from stale artifacts when the
             # refresh itself failed.
-            "flow_completed": forward_ok and not driver_errors and cycle_stage.get("status") == "PASS",
+            "flow_completed": forward_ok and gonogo_ok and not driver_errors and cycle_stage.get("status") == "PASS",
             "paper_packet_ready_for_all_three": paper_ready,
             "live_allowed": False,
             "order_submission_allowed": False,

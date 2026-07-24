@@ -327,3 +327,217 @@ export function DivergingBars({ items, height, valueFormat }:
     </svg>
   );
 }
+
+/* ============================================================================
+   Institutional workbench kit — exchange-grade market microstructure visuals.
+   Same constraints as above: hand-rolled SVG/DOM, zero deps, deterministic,
+   themed via CSS tokens, graceful on empty data.
+   ========================================================================== */
+
+export interface Candle { t?: string | number; open: number; high: number; low: number; close: number; volume?: number }
+
+/* ---------- CandleChart: OHLC candles + volume subpane + MA overlays ------ */
+export function CandleChart({ bars, height = 280, maPeriods = [], yFormat }:
+  { bars: ReadonlyArray<Candle>; height?: number; maPeriods?: ReadonlyArray<number>;
+    yFormat?: (v: number) => string }) {
+  if (bars.length < 2) return <Empty h={height} />;
+  const W = 1000, padL = 56, padR = 12, padT = 10, padB = 18;
+  const volFrac = bars.some(b => (b.volume ?? 0) > 0) ? 0.18 : 0;
+  const volH = (height - padT - padB) * volFrac;
+  const priceH = height - padT - padB - volH - (volFrac ? 6 : 0);
+  const minY = Math.min(...bars.map(b => b.low));
+  const maxY = Math.max(...bars.map(b => b.high));
+  const maxVol = Math.max(...bars.map(b => b.volume ?? 0), 1e-9);
+  const slot = (W - padL - padR) / bars.length;
+  const bw = Math.max(1, Math.min(slot * 0.62, 14));
+  const sx = (i: number) => padL + slot * i + slot / 2;
+  const sy = (y: number) => padT + (1 - (y - minY) / (maxY - minY || 1)) * priceH;
+  const ticks = Array.from({ length: 4 }, (_, i) => minY + (i / 3) * (maxY - minY));
+  const maTones = ['var(--warn)', 'var(--info)', 'var(--special)'];
+  const maLine = (period: number) => {
+    if (period < 2 || bars.length < period) return null;
+    let d = '';
+    for (let i = period - 1; i < bars.length; i++) {
+      let s = 0;
+      for (let j = i - period + 1; j <= i; j++) s += bars[j].close;
+      const v = s / period;
+      d += `${d ? 'L' : 'M'}${sx(i).toFixed(1)} ${sy(v).toFixed(1)}`;
+    }
+    return d;
+  };
+  const last = bars[bars.length - 1];
+  const lastUp = last.close >= last.open;
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img">
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={padL} x2={W - padR} y1={sy(t)} y2={sy(t)} stroke="var(--grid)" strokeWidth={1} />
+          <text x={padL - 8} y={sy(t) + 3} textAnchor="end" fontSize={10} fill="var(--faint)" className="tnum">
+            {yFormat ? yFormat(t) : t.toFixed(0)}
+          </text>
+        </g>
+      ))}
+      {bars.map((b, i) => {
+        const up = b.close >= b.open;
+        const c = up ? 'var(--pos)' : 'var(--neg)';
+        const yO = sy(b.open), yC = sy(b.close);
+        const y = Math.min(yO, yC), h = Math.max(Math.abs(yO - yC), 0.6);
+        return (
+          <g key={i}>
+            <line x1={sx(i)} x2={sx(i)} y1={sy(b.high)} y2={sy(b.low)} stroke={c} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+            <rect x={sx(i) - bw / 2} y={y} width={bw} height={h} fill={c} opacity={up ? 0.85 : 0.9} />
+          </g>
+        );
+      })}
+      {maPeriods.map((p, k) => {
+        const d = maLine(p);
+        return d ? <path key={p} d={d} fill="none" stroke={maTones[k % maTones.length]} strokeWidth={1.2}
+          vectorEffect="non-scaling-stroke" opacity={0.9} /> : null;
+      })}
+      {volFrac > 0 && bars.map((b, i) => {
+        const up = b.close >= b.open;
+        const vh = ((b.volume ?? 0) / maxVol) * volH;
+        return <rect key={`v${i}`} x={sx(i) - bw / 2} y={height - padB - vh} width={bw} height={Math.max(vh, 0.4)}
+          fill={up ? 'var(--pos)' : 'var(--neg)'} opacity={0.4} />;
+      })}
+      <line x1={padL} x2={W - padR} y1={sy(last.close)} y2={sy(last.close)}
+        stroke={lastUp ? 'var(--pos)' : 'var(--neg)'} strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />
+      <text x={W - padR + 2} y={sy(last.close) + 3} fontSize={10} fill={lastUp ? 'var(--pos)' : 'var(--neg)'} className="tnum">
+        {yFormat ? yFormat(last.close) : last.close.toFixed(0)}
+      </text>
+    </svg>
+  );
+}
+
+/* ---------- DepthChart: bilateral cumulative book depth ------------------- */
+export function DepthChart({ bids, asks, height = 160, xFormat }:
+  { bids: ReadonlyArray<readonly [number, number]>; asks: ReadonlyArray<readonly [number, number]>;
+    height?: number; xFormat?: (v: number) => string }) {
+  if (!bids.length && !asks.length) return <Empty h={height} />;
+  const W = 1000, padL = 8, padR = 8, padT = 8, padB = 18;
+  const cum = (rows: ReadonlyArray<readonly [number, number]>) => {
+    let s = 0;
+    return rows.map(([p, q]) => ({ p, c: (s += q) }));
+  };
+  const bc = cum([...bids].sort((a, b) => b[0] - a[0]));
+  const ac = cum([...asks].sort((a, b) => a[0] - b[0]));
+  const maxC = Math.max(bc.length ? bc[bc.length - 1].c : 0, ac.length ? ac[ac.length - 1].c : 0, 1e-9);
+  const prices = [...bc.map(x => x.p), ...ac.map(x => x.p)];
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const sx = (p: number) => padL + ((p - minP) / (maxP - minP || 1)) * (W - padL - padR);
+  const sy = (c: number) => padT + (1 - c / maxC) * (height - padT - padB);
+  const path = (rows: { p: number; c: number }[], side: 'bid' | 'ask') => {
+    if (!rows.length) return null;
+    const sorted = side === 'bid' ? [...rows].reverse() : rows;
+    let d = '';
+    sorted.forEach((r, i) => { d += `${i ? 'L' : 'M'}${sx(r.p).toFixed(1)} ${sy(r.c).toFixed(1)}`; });
+    const base = height - padB;
+    if (side === 'bid') d = `M${sx(minP)} ${base} ` + d + ` L${sx(sorted[sorted.length - 1].p)} ${base} Z`;
+    else d = `M${sx(sorted[0].p)} ${base} ` + d + ` L${sx(maxP)} ${base} Z`;
+    return d;
+  };
+  const xt = [minP, (minP + maxP) / 2, maxP];
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img">
+      <path d={path(bc, 'bid') ?? ''} fill="var(--pos)" fillOpacity={0.18} stroke="var(--pos)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+      <path d={path(ac, 'ask') ?? ''} fill="var(--neg)" fillOpacity={0.18} stroke="var(--neg)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+      <line x1={padL} x2={W - padR} y1={height - padB} y2={height - padB} stroke="var(--line)" strokeWidth={1} />
+      {xt.map((p, i) => (
+        <text key={i} x={sx(p)} y={height - 5} textAnchor="middle" fontSize={10} fill="var(--faint)" className="tnum">
+          {xFormat ? xFormat(p) : p.toFixed(0)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+/* ---------- OrderBookLadder: bid/ask ladder with cumulative depth bars ---- */
+export function OrderBookLadder({ bids, asks, levels = 8, priceDigits = 1, qtyDigits = 4 }:
+  { bids: ReadonlyArray<readonly [number, number]>; asks: ReadonlyArray<readonly [number, number]>;
+    levels?: number; priceDigits?: number; qtyDigits?: number }) {
+  const b = [...bids].sort((x, y) => y[0] - x[0]).slice(0, levels);
+  const a = [...asks].sort((x, y) => x[0] - y[0]).slice(0, levels);
+  if (!b.length && !a.length) return <Empty h={levels * 22} />;
+  const tot = (rows: ReadonlyArray<readonly [number, number]>) => {
+    let s = 0;
+    return rows.map(([p, q]) => [p, q, (s += q)] as const);
+  };
+  const bt = tot(b), at = tot(a);
+  const maxT = Math.max(bt.length ? bt[bt.length - 1][2] : 0, at.length ? at[at.length - 1][2] : 0, 1e-9);
+  const spread = b.length && a.length ? a[0][0] - b[0][0] : null;
+  const row = (p: number, q: number, t: number, side: 'bid' | 'ask', i: number) => (
+    <div key={`${side}${i}`} className="relative grid grid-cols-3 px-2 py-[3px] text-2xs ticker-num">
+      <span className="absolute inset-y-0 right-0"
+        style={{ width: `${(t / maxT) * 100}%`, background: side === 'bid' ? 'var(--pos)' : 'var(--neg)', opacity: 0.10 }} />
+      <span className="relative" style={{ color: side === 'bid' ? 'var(--pos)' : 'var(--neg)' }}>{p.toFixed(priceDigits)}</span>
+      <span className="relative text-right text-muted">{q.toFixed(qtyDigits)}</span>
+      <span className="relative text-right text-faint">{t.toFixed(qtyDigits)}</span>
+    </div>
+  );
+  return (
+    <div className="density-compact overflow-hidden rounded-tile border border-line bg-inset/40">
+      <div className="grid grid-cols-3 border-b border-line px-2 py-1 text-3xs uppercase tracking-[0.1em] text-faint">
+        <span>Price</span><span className="text-right">Size</span><span className="text-right">Total</span>
+      </div>
+      <div className="flex flex-col-reverse">{at.map(([p, q, t], i) => row(p, q, t, 'ask', i))}</div>
+      <div className="border-y border-line-strong px-2 py-1 text-center text-2xs ticker-num text-muted">
+        {spread !== null ? `Spread ${spread.toFixed(priceDigits)}` : '—'}
+      </div>
+      <div>{bt.map(([p, q, t], i) => row(p, q, t, 'bid', i))}</div>
+    </div>
+  );
+}
+
+/* ---------- TickerTape: scrolling market tape (topbar slot) --------------- */
+export function TickerTape({ items, durationSec = 40, className = '' }:
+  { items: ReadonlyArray<{ symbol: string; price: number | string; changePct?: number }>;
+    durationSec?: number; className?: string }) {
+  if (!items.length) return null;
+  const seq = (key: string) => (
+    <div key={key} className="flex shrink-0 items-center">
+      {items.map((it, i) => {
+        const up = (it.changePct ?? 0) >= 0;
+        return (
+          <span key={i} className="mx-4 flex items-center gap-2 text-2xs ticker-num">
+            <span className="font-semibold text-muted">{it.symbol}</span>
+            <span className="text-ink">{typeof it.price === 'number' ? it.price.toLocaleString('en-US') : it.price}</span>
+            {it.changePct !== undefined && (
+              <span style={{ color: up ? 'var(--pos)' : 'var(--neg)' }}>
+                {up ? '▲' : '▼'} {Math.abs(it.changePct).toFixed(2)}%
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+  return (
+    <div className={`relative min-w-0 flex-1 overflow-hidden ${className}`} role="marquee" aria-label="market tape">
+      <div className="tape-scroll flex w-max"
+        style={{ animation: `q-tape ${durationSec}s linear infinite` }}>
+        {seq('a')}{seq('b')}
+      </div>
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-surface to-transparent" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
+    </div>
+  );
+}
+
+/* ---------- MetricGrid: dense institutional metric grid ------------------- */
+export function MetricGrid({ items, minCol = 128, className = '' }:
+  { items: ReadonlyArray<{ label: React.ReactNode; value: React.ReactNode; sub?: React.ReactNode; tone?: Tone }>;
+    minCol?: number; className?: string }) {
+  const toneColor = (t?: Tone) => (t ? TONE_VAR[t] : 'var(--ink)');
+  return (
+    <div className={`grid gap-px overflow-hidden rounded-tile border border-line bg-line ${className}`}
+      style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minCol}px, 1fr))` }}>
+      {items.map((it, i) => (
+        <div key={i} className="flex min-w-0 flex-col gap-0.5 bg-panel px-2.5 py-2">
+          <span className="truncate text-3xs font-medium uppercase tracking-[0.1em] text-faint">{it.label}</span>
+          <span className="truncate text-sm font-semibold ticker-num" style={{ color: toneColor(it.tone) }}>{it.value}</span>
+          {it.sub !== undefined && <span className="truncate text-3xs text-faint">{it.sub}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -143,6 +143,28 @@ def test_report_surfaces_authoritative_carry_and_crowd_dry_runs(tmp_path):
         assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" in row["blockers"]
 
 
+def test_risk_approved_canonical_dry_run_is_not_false_blocked(tmp_path):
+    import json
+
+    artifacts = _artifacts()
+    artifacts["carry_dry_run_authoritative"] = {
+        "authoritative": True,
+        "evidence_class": "CANONICAL_L2_DRY_RUN",
+        "run_id": "carry-approved-1",
+        "n_periods": 10,
+        "pnl": {"sharpe": 0.4, "residual": 1e-9},
+        "research_risk": {"decision": "RISK_APPROVED"},
+    }
+    paths = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = str(path)
+    report = build_report(artifact_paths=paths)
+    assert report["alphas"]["carry_oi_majors"]["canonical_dry_run"]["research_risk_decision"] == "RISK_APPROVED"
+    assert "DRY_RUN_RESEARCH_RISK_NOT_PASS" not in report["alphas"]["carry_oi_majors"]["blockers"]
+
+
 def test_report_describes_daily_forward_polling(tmp_path):
     import json
 
@@ -157,3 +179,32 @@ def test_report_describes_daily_forward_polling(tmp_path):
     semantics = report["cycle"]["forward_return_semantics"]
     assert semantics["includes_trading_costs"] is False
     assert semantics["net_cost_evidence"] == "data/cache/dry_run.db"
+
+
+def test_report_reads_attested_forward_status_fields(tmp_path):
+    import json
+
+    artifacts = _artifacts()
+    artifacts["forward"] = {
+        "refresh_evidence_available": True,
+        "alphas": {
+            alpha_id: {
+                "n_forward_periods": 0,
+                "attested_pending_decisions": 0,
+                "legacy_unattested_decisions": 2 if alpha_id != "top_contra" else 1,
+                "evidence_state": "ADMISSION_READY_PENDING_DECISION",
+            }
+            for alpha_id in ("carry_oi_majors", "crowd_contra", "top_contra")
+        },
+    }
+    paths = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = str(path)
+    report = build_report(artifact_paths=paths)
+    forward = report["alphas"]["crowd_contra"]["forward"]
+    assert forward["pending_decisions"] == 0
+    assert forward["attested_pending_decisions"] == 0
+    assert forward["legacy_unattested_decisions"] == 2
+    assert forward["evidence_state"] == "ADMISSION_READY_PENDING_DECISION"
