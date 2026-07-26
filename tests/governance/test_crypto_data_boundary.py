@@ -18,6 +18,9 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_perp_mark_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
+             # REST gap-fill(2026-07-26,消除 Data Vision 发布滞后的每日死窗):fapi 公共只读
+             # markPriceKlines + futures/data 指标族,无 key、绝不下单——同一条边界钉住它。
+             os.path.join(_ROOT, "tools", "binance_rest_gap_fill.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
              os.path.join(_ROOT, "tools", "frankfurter_fetch.py"),
              os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py"),
@@ -83,6 +86,8 @@ _EXTRA_ALLOWED_BY_FILE = {
     "coingecko_fetch.py": {"math"},
     "binance_funding_fetch.py": {"math"},
     "binance_perp_mark_fetch.py": {"math"},
+    # REST gap-fill:math 只做有限数校验(拒 NaN/Inf 源观测),不增加网络/交易/凭证能力。
+    "binance_rest_gap_fill.py": {"math"},
     # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
     # terminates it on deadline. Both imports are stdlib and add no network/trade capability.
     "live_data_refresh.py": {"math", "multiprocessing", "queue"},

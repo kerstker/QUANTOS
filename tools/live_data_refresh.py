@@ -6,6 +6,9 @@ docs/engineering/specs/2026-07-04-forward-track-live-design.md §2.2。
 2. 资金费 `crypto_funding_rates.json`:fetch_daily_funding 按日桶合并(已有日不覆盖);
 3. 永续 mark price `crypto_perp_mark_prices.json`:Data Vision 日归档,16 日定价覆盖 + 最近 8 日质量门;
 4. OI 指标 `crypto_oi_metrics.json`:binance_oi_metrics_fetch.main 本身断点续传(缺日补齐);
+   perp_mark_prices 与 oi_metrics 两源在归档之后追加 REST gap-fill(tools/binance_rest_gap_fill.py,
+   消除 Data Vision 发布滞后 ~10-16h 的每日死窗):只补缺失的已收盘日、标 REST_GAP_FILL 占位,
+   归档发布即覆盖(归档 canonical),占位行每次重跑先回归档重试。
 5. MEXC 现货 BTC 日线 `crypto_mexc.db` + `mexc_btc_klines.json`(2026-07 MEXC 对接第一阶段,
    公开行情无 key):mexc_klines_fetch.fetch_daily_rows → ingest_provider_rows,宇宙恒为单名 BTC。
 
@@ -45,6 +48,7 @@ from tools.binance_funding_fetch import (FundingDataError, fetch_daily_funding,
 from tools.binance_perp_mark_fetch import (load_mark_prices,
                                            refresh_mark_prices)
 from tools import binance_oi_metrics_fetch as oi_fetch
+from tools import binance_rest_gap_fill as gap_fill
 from tools import mexc_klines_fetch as mexc_fetch
 from tools.cache_io import atomic_write_json
 from tools.source_failures import source_failure_detail
@@ -299,18 +303,23 @@ def refresh_funding(tickers, *, now_ms: int, fetch=fetch_daily_funding, fund_pat
 
 
 def refresh_oi(tickers=None, *, now_ms=None, fetch=oi_fetch.main,
-               oi_path: str = _OI, archive_root=None) -> dict:
+               oi_path: str = _OI, archive_root=None,
+               rest_fetch=gap_fill.fetch_oi_days_rest) -> dict:
     """OI 指标归档刷新:直接复用 binance_oi_metrics_fetch.main(缺日补齐 + 逐 ticker 断点)。
-    只刷显式传入或 DEFAULT_TICKERS(在市流动大币);已退市 ticker 的历史段不动。"""
+    只刷显式传入或 DEFAULT_TICKERS(在市流动大币);已退市 ticker 的历史段不动。REST gap-fill
+    (rest_fetch,默认 fetch_oi_days_rest)只补归档死窗内缺失的已收盘日,占位标 REST_GAP_FILL,
+    归档发布即覆盖(归档 canonical)——规则见 tools/binance_rest_gap_fill.py。"""
     selected = list(tickers or oi_fetch.DEFAULT_TICKERS)
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     before = _oi_watermark(oi_path)
+    # rest_fetch 只传给真正的 binance_oi_metrics_fetch.main;注入的 fake fetch 契约不变。
+    extra = {"rest_fetch": rest_fetch} if fetch is oi_fetch.main else {}
     if archive_root is None:
-        fetch_report = fetch(selected) or {}
+        fetch_report = fetch(selected, **extra) or {}
     else:
         fetch_report = fetch(
-            selected, archive_root=archive_root, observed_at_ms=now_ms
+            selected, archive_root=archive_root, observed_at_ms=now_ms, **extra
         ) or {}
     after = _oi_watermark(oi_path)
     quality_failed = oi_quality_failures(selected, now_ms=now_ms, oi_path=oi_path)
@@ -326,6 +335,7 @@ def refresh_oi(tickers=None, *, now_ms=None, fetch=oi_fetch.main,
         for ticker in quality_failed
     ]
     return {"source": "oi_metrics", "watermark_before": before, "watermark_after": after,
+            "rest_gap_fill_days": int(fetch_report.get("rest_gap_fill_days", 0) or 0),
             "failed": [f"{item['ticker']}: {item['kind']}: {item['message']}" for item in details],
             "failure_details": details, "failed_tickers": failed_tickers,
             "quality_failed": quality_failed}
@@ -492,6 +502,7 @@ def _execute_source(source: str, tickers: list[str], *, now_ms: int) -> dict:
             now_ms=now_ms,
             archive_root=_RAW_ARCHIVE,
             observed_at_ms=now_ms,
+            rest_fetch=gap_fill.fetch_mark_days_rest,
         )
     if source == "oi_metrics":
         return refresh_oi(

@@ -20,6 +20,7 @@ from tools.binance_funding_fetch import FundingDataError, validate_daily_funding
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_perp_mark_fetch import (load_mark_prices,
                                            mark_price_quality_failures)
+from tools.binance_rest_gap_fill import PROVENANCE_REST_GAP_FILL
 from tools.cache_io import atomic_write_json
 from tools.live_data_refresh import oi_quality_failures
 
@@ -222,6 +223,58 @@ def _check_oi(path: str, instruments: list[str], *, now_ms: int) -> dict:
     }
 
 
+def _mark_rest_gap_fill_days(path: str, instruments: list) -> dict:
+    """Mark-price cache days ingested via REST gap-fill (cache "provenance" section).
+
+    Honesty surface only: a provenance read failure degrades to {} and never changes a verdict.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        provenance = payload.get("provenance")
+        if not isinstance(provenance, dict):
+            return {}
+        out = {}
+        for ticker in instruments:
+            days = provenance.get(ticker)
+            if not isinstance(days, dict):
+                continue
+            filled = sorted(
+                int(day) for day, source in days.items()
+                if source == PROVENANCE_REST_GAP_FILL
+            )
+            if filled:
+                out[ticker] = filled
+        return out
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _oi_rest_gap_fill_days(path: str, instruments: list) -> dict:
+    """OI cache days ingested via REST gap-fill (record "source" marker). Same honesty-only rule."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return {}
+        out = {}
+        for ticker in instruments:
+            records = data.get(ticker)
+            if not isinstance(records, dict):
+                continue
+            filled = sorted(
+                int(day) for day, record in records.items()
+                if isinstance(record, dict)
+                and record.get("source") == PROVENANCE_REST_GAP_FILL
+            )
+            if filled:
+                out[ticker] = filled
+        return out
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+
+
 def _refresh_observation(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -359,6 +412,8 @@ def build_data_quality_evidence(*, now_ms: int | None = None,
     prices = _check_prices(price_path, scope, now_ms=now_ms, expected_end=expected_end)
     funding = _check_funding(funding_path, scope, expected_end=expected_end)
     oi = _check_oi(oi_path, scope, now_ms=now_ms)
+    prices["rest_gap_fill_days"] = _mark_rest_gap_fill_days(price_path, scope)
+    oi["rest_gap_fill_days"] = _oi_rest_gap_fill_days(oi_path, scope)
     sources = {"prices": prices, "funding": funding, "oi_metrics": oi}
 
     quality_reasons = []

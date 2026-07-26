@@ -252,7 +252,7 @@
     "tools/l2_backup.py": "54f648e7eae56681c1ccd01263436b0670e0a2ce047f55685838254676a2ffc6",
     "tools/l2_scheduler_watchdog.py": "430b14b11cfb4d73005065913f23795a814a8cb050543ccafd8121daed5212f5",
     "tools/live_backup.py": "e56a76192d32f77046007c8e7515a15d218b8c8e80491d06173ca759a0896db6",
-    "tools/live_data_refresh.py": "ed5ce58074060b4f4c6b4c1f68142046465672cf7b1af2d1fce02db2edc10e83",
+    "tools/live_data_refresh.py": "d5ca444414f3fa92aadc2fa22fafc365f066dd746fcfaf9c2cb8ddb78dfc1aaa",
     "tools/live_kill_switch_reset.py": "6a83cd12d7bd1a4260209b5a9da2e2f0b154fc6c5c9ff2f1ad880d0f0dbcbd7e",
     "tools/live_risk_sentinel.py": "1dccb7e6649a061cc82cbfff0ed8ec7cc0eabe3ad72b77d68b8d48f2785e22f5",
     "tools/live_track_advance.py": "a83c5a75f746750546fd9d431517f845e3709673088d6b6c89a387985226e69b",

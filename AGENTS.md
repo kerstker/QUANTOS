@@ -422,6 +422,15 @@ Real, tested backend engines (`*_TESTED` in the audit):
   + `tools/live_track_advance.py::_VENUES` 场地注册表 + `tools/live_data_refresh.py`
   行情刷新流水线。治理边界机器钉死:网络 import 只在 `live/exchange/` 与 `tools/`,
   `services/` 永不 import `live/`。
+  **REST gap-fill(2026-07-26,消除 Data Vision 发布滞后死窗)**:`tools/binance_rest_gap_fill.py`
+  —— Data Vision 日归档在 UTC 日收盘后 ~10-16h 才发布,死窗内 admission 恒 BLOCK;
+  现 perp_mark_prices/oi_metrics 两源在归档 pass 后对「最新已收盘日缺失」的币用 fapi 公共
+  REST(markPriceKlines 1d + futures/data 指标族 5m eod 行,端点时间戳语义已对真实数据
+  逐字段钉死:OI 族 window-end eod=次日00:00行,taker window-start eod=当日23:55行)补占位。
+  规则:**归档 canonical**——占位标 `REST_GAP_FILL`(mark 缓存顶层 `provenance` 段 /
+  OI record `source` 字段),每次刷新先回归档重试、发布即覆盖;REST 绝不覆盖归档行、
+  绝不入当日未收盘 bar;占位日以专用 dataset id(`*_rest_gap_fill`)进 raw archive,
+  lineage backfill 对占位日走 REST 重取+回放校验(同源同严度,不放宽)。
   **W6 动态回撤状态机 + 可解释风险乘数(spec §10,2026-07-24 落地,
   2026-07-25 接真制品)**:
   `live/execution/drawdown_controller.py`(纯核,无 IO)——

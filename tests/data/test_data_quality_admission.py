@@ -327,3 +327,53 @@ def test_run_records_authoritative_decision_before_publishing_manifest(tmp_path)
     assert store.evidence(decision.admission_id) == evidence
     assert len(store.pending_event_outbox()) == 1
     store.close()
+
+
+def test_rest_gap_fill_provenance_is_surfaced_without_weakening_admission(tmp_path):
+    _, funding, oi, snapshot, refresh, raw, lineage = _seed(tmp_path)
+    mark_path = tmp_path / "mark.json"
+    mark_path.write_text(
+        json.dumps({
+            "_meta": {"BTC": {"through": 20 * _DAY}},
+            "data": {
+                "BTC": {
+                    str((20 - offset) * _DAY): 100.0 + offset
+                    for offset in range(8)
+                }
+            },
+            "provenance": {"BTC": {str(20 * _DAY): "REST_GAP_FILL"}},
+        }),
+        encoding="utf-8",
+    )
+    oi_payload = json.loads(oi.read_text(encoding="utf-8"))
+    oi_payload["data"]["BTC"][str(20 * _DAY)] = dict(
+        oi_payload["data"]["BTC"][str(20 * _DAY)], source="REST_GAP_FILL"
+    )
+    oi.write_text(json.dumps(oi_payload), encoding="utf-8")
+
+    lineage_payload = json.loads(lineage.read_text(encoding="utf-8"))
+    for name, path in (("prices", mark_path), ("oi_metrics", oi)):
+        blob = path.read_bytes()
+        lineage_payload["artifacts"][name] = {
+            "path": str(path).replace("\\", "/"),
+            "size_bytes": len(blob),
+            "sha256": hashlib.sha256(blob).hexdigest(),
+        }
+    lineage.write_text(json.dumps(lineage_payload), encoding="utf-8")
+
+    evidence = build_data_quality_evidence(
+        now_ms=_NOW,
+        instruments=["BTC"],
+        price_path=str(mark_path),
+        funding_path=str(funding),
+        oi_path=str(oi),
+        snapshot_path=str(snapshot),
+        refresh_status_path=str(refresh),
+        raw_archive_path=str(raw),
+        lineage_backfill_path=str(lineage),
+        price_basis="PERP_MARK_PRICE",
+    )
+
+    assert evidence["sources"]["prices"]["rest_gap_fill_days"] == {"BTC": [20 * _DAY]}
+    assert evidence["sources"]["oi_metrics"]["rest_gap_fill_days"] == {"BTC": [20 * _DAY]}
+    assert evidence["verdict"] == "PASS"
