@@ -1,0 +1,102 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 三栏结构回应"是不是只有 PPT"。已完成栏的每一条都可以在尽调数据室里打开对应数据库和测试报告。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "05 · 系统能力"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "已完成的，远比待做的多"}
+  - elementId: col1-h
+    elementType: text
+    bounds: [90, 122, 250, 24]
+    content: {style: "$h2", wrap: false, text: "已完成"}
+  - elementId: col1-rule
+    elementType: line
+    bounds: [90, 150, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: col1
+    elementType: text
+    bounds: [90, 164, 250, 280]
+    content:
+      style: "$body"
+      fontSize: 11.5
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>研究与回测引擎（PnL 对账恒等式）</p>
+        <p>因子引擎与表达式编译器</p>
+        <p>统计验证门（DSR · 多重检验 · walk-forward）</p>
+        <p>Alpha 目录与全生命周期管理</p>
+        <p>AI 研究 Agent（带护栏）</p>
+        <p>组合优化与归因</p>
+        <p>9 引擎 pre-trade 风控门 + Kill Switch</p>
+        <p>Paper / Shadow 交易与追加式账本</p>
+        <p>研究 Console（多页面实时监控）</p>
+  - elementId: col2-h
+    elementType: text
+    bounds: [380, 122, 250, 24]
+    content: {style: "$h2", wrap: false, text: "正在验证"}
+  - elementId: col2-rule
+    elementType: line
+    bounds: [380, 150, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$blue"}
+  - elementId: col2
+    elementType: text
+    bounds: [380, 164, 250, 280]
+    content:
+      style: "$body"
+      fontSize: 11.5
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>前向 paper-track 证据积累（8 期时钟）</p>
+        <p>交易所 testnet 执行链路联调</p>
+        <p>实盘退化与收益保留率基线</p>
+        <p>容量与市场冲击校准</p>
+        <p>多策略低相关组合构建</p>
+        <p>回测 / 影子盘 / 实盘三线对比框架</p>
+  - elementId: col3-h
+    elementType: text
+    bounds: [670, 122, 250, 24]
+    content: {style: "$h2", wrap: false, text: "融资后完善"}
+  - elementId: col3-rule
+    elementType: line
+    bounds: [670, 150, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$muted"}
+  - elementId: col3
+    elementType: text
+    bounds: [670, 164, 250, 280]
+    content:
+      style: "$body"
+      fontSize: 11.5
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>小资金实盘闭环与每日 NAV</p>
+        <p>出进程签名与部署隔离</p>
+        <p>投资人只读看板与尽调数据室</p>
+        <p>外部身份提供商接入</p>
+        <p>核心团队最低配置</p>
+  - elementId: evidence
+    elementType: text
+    bounds: [90, 456, 780, 36]
+    content:
+      style: "$small"
+      text: |
+        <p>工程基线：433 测试文件 / 3,897 测试用例全量通过（2026-07-25 实测）· 18 条策略历史模拟落库 · 全系统审计报告可供尽调</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 06"}

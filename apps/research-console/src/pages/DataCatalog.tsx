@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { fetchDataCatalogSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type {
-  DataCatalogDataset, DataCatalogFeature, DataCatalogPayload,
+  DataCatalogDataset, DataCatalogFeature, DataCatalogPayload, DataChannel,
 } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
@@ -112,6 +112,7 @@ const fallbackCatalog: DataCatalogPayload = {
     {from: 'ds-liquidity-profile', to: 'feat-turnover-std-60', kind: 'DATASET_TO_FEATURE'},
     {from: 'feat-turnover-std-60', to: 'exp-alpha-5-v002', kind: 'FEATURE_TO_EXPERIMENT'},
   ],
+  data_channels: { status: 'UNAVAILABLE', channels: [], summary: {} },
   quality_policy: {
     requires_dataset_hash: true,
     requires_event_timestamp: true,
@@ -127,6 +128,13 @@ function qualityTone(v: number): Tone {
   if (v >= 0.97) return 'pos';
   if (v >= 0.94) return 'accent';
   if (v >= 0.9) return 'warn';
+  return 'neg';
+}
+
+function channelTone(status: string): Tone {
+  if (status === 'REAL_HISTORY') return 'pos';
+  if (status === 'REAL_SNAPSHOT' || status === 'REAL_DIAGNOSTIC') return 'info';
+  if (status === 'PUBLIC_STREAM_REQUIRED') return 'warn';
   return 'neg';
 }
 
@@ -256,6 +264,36 @@ export default function DataCatalog() {
     },
   ];
 
+  const channelCols: Column<DataChannel>[] = [
+    {
+      key: 'channel', header: bi('渠道', 'Channel'),
+      render: c => (
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{c.channel_id}</div>
+          <div className="truncate text-2xs text-faint">{c.provider} / {c.venue}</div>
+        </div>
+      ),
+    },
+    { key: 'dataset', header: bi('数据集', 'Dataset'), mono: true, render: c => c.dataset_id },
+    { key: 'cadence', header: bi('频率', 'Cadence'), render: c => c.cadence },
+    {
+      key: 'status', header: bi('证据状态', 'Evidence'),
+      render: c => <StatusChip value={c.artifact.status} />,
+    },
+    {
+      key: 'availability', header: bi('可用性', 'Availability'),
+      render: c => <Chip label={c.availability} tone={channelTone(c.availability)} />,
+    },
+    {
+      key: 'artifact', header: bi('资产', 'Artifact'),
+      render: c => <span className="mono truncate text-2xs text-muted">{c.artifact_path}</span>,
+    },
+    {
+      key: 'fields', header: bi('字段', 'Fields'),
+      render: c => <span className="truncate text-2xs text-muted">{c.fields.join(', ')}</span>,
+    },
+  ];
+
   const qPassRate = catalog.summary.quality_checks > 0
     ? catalog.summary.quality_passed / catalog.summary.quality_checks : 0;
 
@@ -331,6 +369,15 @@ export default function DataCatalog() {
       <Panel eyebrow={bi('数据集', 'Datasets')} title={bi('数据集健康度', 'Dataset Health')}
         right={<Chip label={bi(`${catalog.datasets.length} 个`, `${catalog.datasets.length} sets`)} tone="info" />}>
         <DataTable columns={datasetCols} rows={catalog.datasets} getKey={d => d.dataset_id} dense />
+      </Panel>
+
+      <Panel eyebrow={bi('渠道', 'Channels')} title={bi('真实数据获取渠道', 'Real Data Acquisition Channels')}
+        right={<Chip label={bi(`${catalog.data_channels.channels.length} 个`, `${catalog.data_channels.channels.length} channels`)}
+          tone={catalog.data_channels.status === 'REAL_COVERAGE_INVENTORY' ? 'info' : 'warn'} />}>
+        <DataTable columns={channelCols} rows={catalog.data_channels.channels} getKey={c => c.channel_id} dense />
+        {catalog.data_channels.honesty?.length ? (
+          <div className="mt-3 text-2xs text-faint">{catalog.data_channels.honesty.join(' · ')}</div>
+        ) : null}
       </Panel>
 
       <Panel eyebrow={bi('特征库', 'Feature Store')} title={bi('特征定义与 PIT 策略', 'Feature Definitions & PIT Policy')}

@@ -355,9 +355,18 @@ def event_seal_configuration_ready(
 
 
 def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path) -> bool:
+    # ``scripts/register_schedules.ps1`` intentionally registers the
+    # non-console workers with ``pythonw.exe``.  Treating that exact
+    # executable as drift makes every otherwise-canonical L2 task report
+    # BREACH, so the watchdog can never attest the scheduler it installs.
+    # Both console and windowless Python launchers are valid here; the
+    # immutable ``l2_schedule_entrypoint.py`` and module/working-directory
+    # checks below remain the safety boundary.
     if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
         "python",
         "python.exe",
+        "pythonw",
+        "pythonw.exe",
     }:
         return False
     arguments = (snapshot.arguments or "").strip()
@@ -373,7 +382,28 @@ def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path)
         launcher_matches = Path(launcher_text).resolve(strict=False) == expected_launcher.resolve(strict=False)
     except OSError:
         launcher_matches = False
-    if not launcher_matches or module.strip() != spec.module:
+    if not launcher_matches:
+        return False
+    module_tail = module.strip()
+    module_matches = module_tail == spec.module
+    # The production registration script appends the fixed log sink so that
+    # windowless Task Scheduler workers retain an auditable stdout/stderr
+    # record.  It is part of the approved launcher contract, not arbitrary
+    # worker arguments.  Accept exactly that repository-local path and reject
+    # every other flag/path combination.
+    if not module_matches:
+        log_prefix = f"{spec.module} --log-dir "
+        if not module_tail.startswith(log_prefix):
+            return False
+        log_dir = module_tail[len(log_prefix) :].strip()
+        if len(log_dir) >= 2 and log_dir[0] == log_dir[-1] == '"':
+            log_dir = log_dir[1:-1]
+        try:
+            expected_log_dir = (repo_root / ".runtime" / "logs").resolve(strict=False)
+            module_matches = Path(log_dir).resolve(strict=False) == expected_log_dir
+        except OSError:
+            module_matches = False
+    if not module_matches:
         return False
     if not snapshot.working_directory:
         return False

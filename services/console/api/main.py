@@ -21,6 +21,9 @@ from services.console.api.alpha_library_views import (
     configure_alpha_library_views,
     router as alpha_library_views_router,
 )
+from services.console.api.ashare_views import (
+    router as ashare_views_router,
+)
 from services.console.api.artifact_snapshots import (
     IC_PANEL_SNAPSHOT,
     router as artifact_snapshots_router,
@@ -46,6 +49,11 @@ from services.console.api.model_evidence_views import (
     router as model_evidence_views_router,
 )
 from services.console.api.mexc_views import configure_mexc_views, router as mexc_views_router
+from services.console.api.go_live_views import router as go_live_views_router
+from services.console.api.alpha_lifecycle_views import router as alpha_lifecycle_views_router
+from services.console.api.alpha_family_views import router as alpha_family_views_router
+from services.console.api.live_degradation_views import router as live_degradation_views_router
+from services.console.api.investor_snapshot_views import router as investor_snapshot_views_router
 from services.console.api.monitoring_views import (
     configure_monitoring_views,
     router as monitoring_views_router,
@@ -775,22 +783,8 @@ configure_primary_views(
         lineage=LINEAGE,
     )
 )
-app.include_router(system_views_router)
-app.include_router(architecture_views_router)
-app.include_router(registry_snapshots_router)
-app.include_router(research_run_views_router)
-app.include_router(data_catalog_router)
-app.include_router(artifact_snapshots_router)
-app.include_router(alpha_library_views_router)
-app.include_router(backtest_views_router)
-app.include_router(primary_views_router)
-app.include_router(model_evidence_views_router)
-app.include_router(review_access_views_router)
-app.include_router(mexc_views_router)
-app.include_router(monitoring_views_router)
-app.include_router(incident_views_router)
-app.include_router(promotion_views_router)
-app.include_router(release_committee_views_router)
+for _router in (system_views_router, architecture_views_router, registry_snapshots_router, research_run_views_router, data_catalog_router, artifact_snapshots_router, ashare_views_router, alpha_library_views_router, backtest_views_router, primary_views_router, model_evidence_views_router, review_access_views_router, mexc_views_router, go_live_views_router, alpha_lifecycle_views_router, alpha_family_views_router, live_degradation_views_router, investor_snapshot_views_router, monitoring_views_router, incident_views_router, promotion_views_router, release_committee_views_router):
+    app.include_router(_router)
 
 
 if __name__ == "__main__":

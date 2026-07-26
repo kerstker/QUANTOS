@@ -10,11 +10,16 @@ from services.alpha.catalog import AlphaCatalog
 from services.alpha.config import AlphaFactoryConfig
 from services.alpha.evaluator import AlphaEvaluator
 from services.research.experiment_registry.registry import ExperimentRegistry
+from services.research.research_budget import (
+    BudgetExhausted,
+    ResearchBudget,
+    check_budget,
+)
 
 from .agent_loop import ResearchAgentLoop
 
 
-def _required_text(name: str, value: str) -> str:
+def _required_text(name: str, value: str | None) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     return value
@@ -61,12 +66,33 @@ def run_registered_candidate_batch(
     config: AlphaFactoryConfig | None = None,
     evidence: Mapping[str, Mapping[str, Any]] | None = None,
     audit_log=None,
+    budget: ResearchBudget | None = None,
+    parent_hypothesis: str | None = None,
+    search_space: str | None = None,
+    data_source: str | None = None,
+    uses_locked_oos: bool | None = None,
 ) -> dict:
     """Pre-register a complete pool, then evaluate it through the agent loop.
 
     Candidate hashes enter both the append-only search ledger and the global
     trial population in one transaction before the catalog or evaluator can
     observe the batch. Caller-supplied time keeps the composition deterministic.
+
+    W10 (spec §14.1/§14.2): when ``budget`` is provided, the batch FIRST checks
+    the declared ResearchBudget and refuses with ``BudgetExhausted`` once
+    exhausted — before a single byte enters the durable ledger (no STARTED
+    event, no candidates, no trials). ``parent_hypothesis`` and ``search_space``
+    are then REQUIRED (every experiment records them). Usage semantics:
+    ``trials_used`` = this batch's declared family size (the pre-registration
+    contract bounds the enumerated family, not incremental novelty — growing
+    the family past the declaration is a NEW experiment and must raise the
+    budget deliberately); ``feature_count`` / ``parameter_dimensions`` = the
+    max cardinality over the pool's factor_ids / params; compute hours are NOT
+    metered here, so a declared ``max_compute_hours`` is refused fail-closed as
+    ``unverified_dimension``. ``uses_locked_oos`` / ``data_source`` are caller
+    attestations checked against ``locked_oos_period`` / ``allowed_data_sources``.
+    When ``budget`` is None the remaining budget kwargs must be None as well,
+    and behavior is byte-identical to the pre-budget composition.
     """
 
     if not isinstance(registry, ExperimentRegistry):
@@ -93,8 +119,55 @@ def run_registered_candidate_batch(
         raise ValueError("periods_per_year must be a positive integer")
     if evidence is not None and not isinstance(evidence, Mapping):
         raise TypeError("evidence must be a mapping or None")
+    if budget is None:
+        if (
+            parent_hypothesis is not None
+            or search_space is not None
+            or data_source is not None
+            or uses_locked_oos is not None
+        ):
+            raise ValueError(
+                "parent_hypothesis/search_space/data_source/uses_locked_oos "
+                "require budget="
+            )
+    else:
+        if not isinstance(budget, ResearchBudget):
+            raise TypeError("budget must be a ResearchBudget or None")
+        parent_hypothesis = _required_text("parent_hypothesis", parent_hypothesis)
+        search_space = _required_text("search_space", search_space)
+        if uses_locked_oos is not None and not isinstance(uses_locked_oos, bool):
+            raise TypeError("uses_locked_oos must be a bool or None")
 
     pool = _materialize_candidates(candidates)
+
+    budget_declaration: dict | None = None
+    if budget is not None:
+        usage = {
+            "trials_used": len(pool),
+            # compute_hours_used deliberately absent: the registrar meters no
+            # wall clock, so a declared compute budget fails closed as
+            # unverified_dimension (only declare verifiable dimensions).
+            "feature_count": max(len(definition.factor_ids) for definition, _ in pool),
+            "parameter_dimensions": max(len(definition.params) for definition, _ in pool),
+        }
+        budget_check = check_budget(
+            budget,
+            usage,
+            now_known_oos=uses_locked_oos,
+            data_source=data_source,
+        )
+        if budget_check.exhausted:
+            raise BudgetExhausted(budget_check)
+        budget_declaration = {
+            "budget": budget.metadata(),
+            "parent_hypothesis": parent_hypothesis,
+            "search_space": search_space,
+            "data_source": data_source,
+            "uses_locked_oos": uses_locked_oos,
+            "usage": dict(usage),
+            "check": budget_check.to_dict(),
+        }
+
     definitions_by_alpha_id = {
         definition.alpha_id: definition for definition, _periods in pool
     }
@@ -170,12 +243,17 @@ def run_registered_candidate_batch(
             status="COMPLETED",
             recorded_at=recorded_at,
         )
-        return {
+        completed = {
             **result,
             "recorded_run_ids": recorded_run_ids,
             "registered_candidate_count": len(set(config_hashes)),
             "recovered_search_ids": recovered_search_ids,
         }
+        if budget_declaration is not None:
+            # Additive run-artifact fields (spec §14.1): budget metadata +
+            # parent_hypothesis + search_space, recorded only when declared.
+            completed["budget_declaration"] = budget_declaration
+        return completed
     except BaseException as original:
         try:
             registry.finish_search_attempt(

@@ -1,0 +1,64 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "10 · 宏观 Regime 画像"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "两条边的宏观画像相反、互补"}
+  - elementId: regime-table
+    elementType: table
+    bounds: [80, 124, 800, 160]
+    columnWidths: [0.28, 0.20, 0.24, 0.28]
+    rowHeights: [0.2, 0.2, 0.2, 0.2, 0.2]
+    style: "$dark"
+    rows:
+      - - text: "Regime（FRED 真实数据）"
+        - text: "carry 夏普"
+        - text: "crowd_contra 夏普"
+        - text: "解读"
+      - - {text: "VIX 低（平静）", align: [left, middle]}
+        - {text: "2.36", bold: true}
+        - text: "1.25"
+        - {text: "carry 爱 risk-on", fontSize: 10}
+      - - {text: "VIX 高（压力）", align: [left, middle]}
+        - text: "0.68"
+        - {text: "1.96", bold: true, color: "$accent"}
+        - {text: "crowd 爱 risk-off", fontSize: 10}
+      - - {text: "利率曲线正常", align: [left, middle]}
+        - {text: "2.10", bold: true}
+        - text: "0.88"
+        - {text: "—", fontSize: 10}
+      - - {text: "利率曲线倒挂", align: [left, middle]}
+        - text: "0.67"
+        - {text: "1.76", bold: true, color: "$accent"}
+        - {text: "—", fontSize: 10}
+  - elementId: claim
+    elementType: text
+    bounds: [80, 310, 800, 60]
+    content:
+      style: "$body"
+      fontSize: 14
+      lineHeight: 1.7
+      text: |
+        <p><span style="color:$accent">■</span> crowd_contra 正好在 carry 走弱处走强 —— 组合分散故事的宏观根基</p>
+        <p><span style="color:$accent">■</span> 数据来源：FRED 6 条市场型日频序列，39,271 行，PIT 无前视</p>
+  - elementId: honest
+    elementType: text
+    bounds: [80, 400, 800, 60]
+    content:
+      style: "$small"
+      text: |
+        <p>诚实边界：regime 标签 = 全样本分位（回顾性描述，非 PIT 可交易择时）· gross 无成本（RELATIVE 模式才是结论）· 净成本执行层面的修正见第 11 页</p>
+  - elementId: src
+    elementType: text
+    bounds: [80, 478, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>证据：data/cache/macro_regime_snapshot.json（REAL_FRED_MACRO）· data/cache/macro_fred.db</p>

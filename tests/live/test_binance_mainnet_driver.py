@@ -193,3 +193,63 @@ def test_mandate_template_unedited_is_fail_closed_at_evaluation(tmp_path):
     decision = evaluate_mandate([order], {"BTC": 60_000.0}, mandate,
                                 venue="mainnet", exchange="binance", now=1)
     assert decision.tier == NEEDS_HUMAN_REVIEW
+
+
+# --- armed preview(2026-07-24):--arm-live 无 --submit = 真实适配器只读透传 + 结构性零提交 ---
+
+def test_armed_preview_config_constructs_mainnet_adapter():
+    # armed preview 的全部意义:preview 也能拿到真实 mainnet 适配器(唯读方法透传真实市况)
+    cfg = drv.armed_safety_config(["prog", "--arm-live"])
+    assert cfg is not None and cfg.live_trading_armed is True
+    adapter = BinanceFuturesAdapter(
+        api_key="k", api_secret="s", base_url=drv._VENUES["binance_mainnet"]["base_url"],
+        safety_config=cfg, http_request=lambda *a, **kw: (200, {}))
+    assert adapter.venue_mode == "mainnet"
+
+
+def test_armed_preview_venue_structurally_cannot_submit():
+    # PreviewVenue 包装 **armed** 的真实 venue:place_order 只记录 would_submit、返回
+    # PREVIEW_NOT_SUBMITTED,真实 venue 的 place_order 零调用;唯读方法照常透传。
+    from live.contracts import LiveOrderRequest
+    from quantos.contracts.trading import OrderSide
+
+    class _ArmedRealVenue:
+        venue_mode = "mainnet"
+        venue_name = "binance"
+
+        def __init__(self):
+            self.place_calls = []
+
+        def place_order(self, order):                     # 被调到 = armed preview 破防
+            self.place_calls.append(order)
+            raise AssertionError("PreviewVenue must never forward place_order")
+
+        def account(self):
+            return {"availableBalance": "1.0"}
+
+    real = _ArmedRealVenue()
+    preview = drv.PreviewVenue(real)
+    order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=0.001,
+                             client_order_id="c1")
+    result = preview.place_order(order)
+    assert result.status == "PREVIEW_NOT_SUBMITTED"
+    assert preview.would_submit == [order]
+    assert real.place_calls == []
+    assert preview.account() == {"availableBalance": "1.0"}   # 唯读透传不受影响
+
+
+def test_armed_preview_submit_branch_never_entered_source_pin():
+    # main() 网络胶水不可离线跑(仓库惯例)→ 源码钉子:不带 --submit 时 venue 恒为
+    # PreviewVenue(real_venue)、写账本恒为 :memory: 草稿——armed preview 的两道结构性保险。
+    assert "real_venue if submit else PreviewVenue(real_venue)" in _SRC
+    assert 'ledger if submit else LiveLedger(":memory:", create=True)' in _SRC
+
+
+def test_venue_requires_arm_matches_mainnet_only_set():
+    # arm 面 = 驱动器两处启动闸门(spot/mainnet_only)的并集,ops /preview 据此加 --arm-live
+    assert drv.venue_requires_arm("binance_mainnet") is True
+    assert drv.venue_requires_arm("mexc") is True
+    for testnet in ("binance", "bybit", "bybit_demo"):
+        assert drv.venue_requires_arm(testnet) is False
+    for name, cfg in drv._VENUES.items():
+        assert drv.venue_requires_arm(name) == bool(cfg.get("mainnet_only") or cfg.get("spot"))

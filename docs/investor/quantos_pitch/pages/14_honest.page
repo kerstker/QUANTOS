@@ -1,0 +1,61 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "11 · 失败实验披露"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "我们也失败 —— 并且全部留档"}
+  - elementId: intro
+    elementType: text
+    bounds: [80, 106, 800, 26]
+    content:
+      style: "$body"
+      color: "$muted"
+      wrap: false
+      text: |
+        <p>诚实披露失败是研究平台成熟度的标志。以下实验均未达标，记录完整保留：</p>
+  - elementId: fail-table
+    elementType: table
+    bounds: [80, 146, 800, 190]
+    columnWidths: [0.34, 0.42, 0.24]
+    rowHeights: [0.16, 0.21, 0.21, 0.21, 0.21]
+    style: "$dark"
+    rows:
+      - - text: "实验"
+        - text: "结果"
+        - text: "证据"
+      - - {text: "ML stacking（GBM/Ridge/XGBoost）", align: [left, middle]}
+        - {text: "OOS 夏普 -0.78 / -0.24 / -0.80，全部不如单因子 1.78 —— 无可交易边", align: [left, middle], color: "$warn", fontSize: 10}
+        - {text: "ml_stack_snapshot.json", fontSize: 9}
+      - - {text: "A 股微盘 v2_u249", align: [left, middle]}
+        - {text: "净成本后 -14.6%，夏普 -0.24，被证伪", align: [left, middle], color: "$warn", fontSize: 10}
+        - {text: "dry_run.db（保留）", fontSize: 9}
+      - - {text: "统一执行 book 组合", align: [left, middle]}
+        - {text: "净成本后分散不兑现：1.14–1.21 < 单条 1.38", align: [left, middle], color: "$warn", fontSize: 10}
+        - {text: "dry_run.db 第 4/5 条", fontSize: 9}
+      - - {text: "17 变体中的 9 个", align: [left, middle]}
+        - {text: "REJECTED；3d 变体 DSR≈0.001，统计上不显著", align: [left, middle], color: "$warn", fontSize: 10}
+        - {text: "crowd_contra_variants.json", fontSize: 9}
+  - elementId: claim
+    elementType: text
+    bounds: [80, 370, 800, 90]
+    content:
+      style: "$body"
+      fontSize: 15
+      lineHeight: 1.8
+      text: |
+        <p><span style="color:$accent">■</span> ML 层的结论：瓶颈在数据/信号类，不在建模 —— 这指明了下一步投入方向</p>
+        <p><span style="color:$accent">■</span> 失败记录与成功记录<strong>并列存证于同一数据库</strong>，投资人技术顾问可逐条复核</p>
+  - elementId: src
+    elementType: text
+    bounds: [80, 478, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>我们承诺：本材料不含任何无法出示证据的绩效声明</p>

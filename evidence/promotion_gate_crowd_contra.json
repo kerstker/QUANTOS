@@ -1,0 +1,902 @@
+{
+  "schema_version": 1,
+  "evidence_class": "PROMOTION_GATE_REPORT",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at": 1784929177,
+  "alpha_id": "crowd_contra",
+  "pre_registration": {
+    "family": "promotion_gate_crowd_contra_v1",
+    "registered_before_evaluation": true,
+    "date": "2026-07-25",
+    "trial_count_planned": 15,
+    "center": {
+      "quantile": 0.3,
+      "cadence_days": 7,
+      "expression": "cs_rank(neg(global_ls))"
+    },
+    "cost_tiers_bps": [
+      10.0,
+      15.0,
+      20.0
+    ],
+    "perturbation_grid": {
+      "quantile": [
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4
+      ],
+      "cadence_days": [
+        3,
+        7,
+        14
+      ],
+      "metric": "sharpe_vt",
+      "cost_bps": 10.0
+    },
+    "thresholds": {
+      "cost_stress": {
+        "min_sharpe_stressed": 0.0,
+        "monotonic_tolerance": 0.05,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      },
+      "perturbation": {
+        "min_neighborhood": 4,
+        "plateau_abs": 0.05,
+        "plateau_rel": 0.1,
+        "spike_abs": 0.1,
+        "spike_rel": 0.25,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      },
+      "concentration": {
+        "min_contributors": 3,
+        "warn_top1_share": 0.5,
+        "fail_top1_share": 0.67,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      }
+    },
+    "notes": [
+      "网格 15 点全部经 run_registered_candidate_batch 注册(3 个节奏批);12/15 点与 crowd_contra_variants 族重叠,属另一次预注册实验的保守重复计数(trial 只增不减)。",
+      "三闸判定阈值全部 UNCALIBRATED 工程默认,随证据落盘;verdict 只落本文件,不驱动自动晋级。",
+      "成本压力/扰动指标 = vol-target 年化夏普(按点自身节奏 ppy 重算);集中度在 RAW 簿口径。",
+      "集中度归因假设门全批准:n_rejected 与 Σ归因−(equity_final−aum) 残差实跑记录。"
+    ]
+  },
+  "dataset": {
+    "universe": "crypto_oi_majors",
+    "n_instruments": 24,
+    "n_event_times": 2227,
+    "date_start": "2020-06-18",
+    "date_end": "2026-07-23",
+    "dataset_version": "c7b0dd376a31d33367e8040b974f4db0c3842633665db3fd5c725e1ca8656169"
+  },
+  "trial_registration": {
+    "dataset_version": "c7b0dd376a31d33367e8040b974f4db0c3842633665db3fd5c725e1ca8656169",
+    "trial_count_before": 2467,
+    "batches": [
+      {
+        "cadence_days": 3,
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "n_candidates": 5,
+        "registered_candidate_count": 5
+      },
+      {
+        "cadence_days": 7,
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "n_candidates": 5,
+        "registered_candidate_count": 5
+      },
+      {
+        "cadence_days": 14,
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "n_candidates": 5,
+        "registered_candidate_count": 5
+      }
+    ],
+    "candidates": {
+      "pgate_crowd_q20_3d": {
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "pgate_crowd_q25_3d": {
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "pgate_crowd_q30_3d": {
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "pgate_crowd_q35_3d": {
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "pgate_crowd_q40_3d": {
+        "search_id": "search-954c6a4926c08f30f28ca1f1",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "pgate_crowd_q20_7d": {
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0341,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "pgate_crowd_q25_7d": {
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0335,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "pgate_crowd_q30_7d": {
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0331,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "pgate_crowd_q35_7d": {
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0329,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "pgate_crowd_q40_7d": {
+        "search_id": "search-3a23e045b453f90c60005e0b",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0329,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "pgate_crowd_q20_14d": {
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.1726,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "pgate_crowd_q25_14d": {
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.1661,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "pgate_crowd_q30_14d": {
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.1606,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "pgate_crowd_q35_14d": {
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.1559,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "pgate_crowd_q40_14d": {
+        "search_id": "search-096cb6b22c40315f29685a48",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.152,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      }
+    },
+    "trial_count_after": 2482,
+    "trial_count_delta": 15
+  },
+  "inputs": {
+    "cost_stress": {
+      "sharpe_vt_by_tier_bps": {
+        "10.0": 1.095,
+        "15.0": 1.0717,
+        "20.0": 1.0484
+      },
+      "sharpe_raw_by_tier_bps": {
+        "10.0": 1.0695,
+        "15.0": 1.0473,
+        "20.0": 1.025
+      },
+      "tiers_bps": [
+        10.0,
+        15.0,
+        20.0
+      ]
+    },
+    "perturbation": {
+      "grid_sharpe_vt": {
+        "q20_3d": 1.306,
+        "q25_3d": 1.5506,
+        "q30_3d": 1.5682,
+        "q35_3d": 1.6606,
+        "q40_3d": 1.7487,
+        "q20_7d": 1.5489,
+        "q25_7d": 1.2484,
+        "q30_7d": 1.095,
+        "q35_7d": 1.008,
+        "q40_7d": 1.3563,
+        "q20_14d": 1.1734,
+        "q25_14d": 0.925,
+        "q30_14d": 0.9415,
+        "q35_14d": 0.7372,
+        "q40_14d": 0.8069
+      },
+      "grid_sharpe_raw": {
+        "q20_3d": 1.1682,
+        "q25_3d": 1.2529,
+        "q30_3d": 1.2135,
+        "q35_3d": 1.432,
+        "q40_3d": 1.4174,
+        "q20_7d": 1.1389,
+        "q25_7d": 0.9242,
+        "q30_7d": 1.0695,
+        "q35_7d": 1.0459,
+        "q40_7d": 1.2582,
+        "q20_14d": 1.2608,
+        "q25_14d": 0.739,
+        "q30_14d": 0.9725,
+        "q35_14d": 0.9958,
+        "q40_14d": 0.7978
+      },
+      "grid_max_drawdown_vt": {
+        "q20_3d": 0.1864,
+        "q25_3d": 0.1059,
+        "q30_3d": 0.1195,
+        "q35_3d": 0.1125,
+        "q40_3d": 0.1008,
+        "q20_7d": 0.1324,
+        "q25_7d": 0.1746,
+        "q30_7d": 0.0971,
+        "q35_7d": 0.1543,
+        "q40_7d": 0.0806,
+        "q20_14d": 0.1357,
+        "q25_14d": 0.1561,
+        "q30_14d": 0.1177,
+        "q35_14d": 0.1884,
+        "q40_14d": 0.1158
+      },
+      "grid_n_periods": {
+        "q20_3d": 551,
+        "q25_3d": 551,
+        "q30_3d": 551,
+        "q35_3d": 551,
+        "q40_3d": 551,
+        "q20_7d": 236,
+        "q25_7d": 236,
+        "q30_7d": 236,
+        "q35_7d": 236,
+        "q40_7d": 236,
+        "q20_14d": 118,
+        "q25_14d": 118,
+        "q30_14d": 118,
+        "q35_14d": 118,
+        "q40_14d": 118
+      },
+      "center": "q30_7d",
+      "metric": "sharpe_vt"
+    },
+    "concentration": {
+      "aum": 1000000.0,
+      "cost_bps": 10.0,
+      "series": "raw_book",
+      "n_periods": 236,
+      "per_instrument": {
+        "AAVE": {
+          "price_pnl": 1089.65,
+          "funding": -1862.5,
+          "cost": 2012.52,
+          "total": -2785.37
+        },
+        "ADA": {
+          "price_pnl": -40294.3,
+          "funding": 514.68,
+          "cost": 2388.98,
+          "total": -42168.6
+        },
+        "APT": {
+          "price_pnl": 227931.01,
+          "funding": 403.57,
+          "cost": 2807.38,
+          "total": 225527.2
+        },
+        "ATOM": {
+          "price_pnl": -49496.88,
+          "funding": 1808.46,
+          "cost": 2869.71,
+          "total": -50558.13
+        },
+        "AVAX": {
+          "price_pnl": 211250.54,
+          "funding": 1561.38,
+          "cost": 2680.06,
+          "total": 210131.86
+        },
+        "BCH": {
+          "price_pnl": 64483.2,
+          "funding": 656.37,
+          "cost": 2075.12,
+          "total": 63064.44
+        },
+        "BNB": {
+          "price_pnl": 63850.85,
+          "funding": 1384.08,
+          "cost": 2551.24,
+          "total": 62683.69
+        },
+        "BTC": {
+          "price_pnl": 72694.5,
+          "funding": -2645.06,
+          "cost": 1814.57,
+          "total": 68234.87
+        },
+        "DOGE": {
+          "price_pnl": 156316.63,
+          "funding": 2309.32,
+          "cost": 2576.69,
+          "total": 156049.25
+        },
+        "DOT": {
+          "price_pnl": 124649.03,
+          "funding": -102.66,
+          "cost": 1407.48,
+          "total": 123138.9
+        },
+        "ETC": {
+          "price_pnl": -88066.28,
+          "funding": -794.97,
+          "cost": 1771.04,
+          "total": -90632.28
+        },
+        "ETH": {
+          "price_pnl": 87527.95,
+          "funding": -2.95,
+          "cost": 2495.04,
+          "total": 85029.96
+        },
+        "FIL": {
+          "price_pnl": 22899.31,
+          "funding": 1565.13,
+          "cost": 1614.29,
+          "total": 22850.15
+        },
+        "ICP": {
+          "price_pnl": -223149.43,
+          "funding": 889.82,
+          "cost": 3262.31,
+          "total": -225521.92
+        },
+        "INJ": {
+          "price_pnl": -21387.44,
+          "funding": 1895.37,
+          "cost": 3276.6,
+          "total": -22768.67
+        },
+        "LINK": {
+          "price_pnl": -133240.74,
+          "funding": -516.45,
+          "cost": 3691.33,
+          "total": -137448.52
+        },
+        "LTC": {
+          "price_pnl": 76094.34,
+          "funding": 0.84,
+          "cost": 2033.7,
+          "total": 74061.48
+        },
+        "NEAR": {
+          "price_pnl": 231946.31,
+          "funding": 553.66,
+          "cost": 3759.15,
+          "total": 228740.83
+        },
+        "OP": {
+          "price_pnl": 153811.3,
+          "funding": -46.33,
+          "cost": 2744.76,
+          "total": 151020.21
+        },
+        "SOL": {
+          "price_pnl": 317652.04,
+          "funding": 13065.67,
+          "cost": 4664.17,
+          "total": 326053.54
+        },
+        "TRX": {
+          "price_pnl": 143697.0,
+          "funding": 2545.45,
+          "cost": 794.8,
+          "total": 145447.65
+        },
+        "UNI": {
+          "price_pnl": -139874.07,
+          "funding": -651.63,
+          "cost": 2659.47,
+          "total": -143185.17
+        },
+        "XLM": {
+          "price_pnl": 93536.73,
+          "funding": 46.67,
+          "cost": 2163.23,
+          "total": 91420.17
+        },
+        "XRP": {
+          "price_pnl": -101180.26,
+          "funding": 1263.84,
+          "cost": 3213.24,
+          "total": -103129.67
+        }
+      },
+      "per_period_dollars": [
+        20705.94,
+        -26130.85,
+        -7483.45,
+        53957.8,
+        -12316.96,
+        21655.83,
+        -13771.72,
+        -17888.55,
+        3023.24,
+        -18463.29,
+        -35886.51,
+        -3669.61,
+        1793.0,
+        -8252.27,
+        77279.69,
+        204365.14,
+        769.34,
+        5226.32,
+        5845.48,
+        -68300.53,
+        -1164.96,
+        39226.34,
+        -10844.84,
+        -45871.04,
+        82500.35,
+        -57337.36,
+        52541.98,
+        658.44,
+        1258.61,
+        14464.46,
+        18872.14,
+        20298.93,
+        4726.73,
+        -5986.49,
+        -28848.8,
+        12747.67,
+        -3008.57,
+        22015.92,
+        33609.25,
+        -74378.45,
+        36220.12,
+        35135.39,
+        888.61,
+        63698.45,
+        -15577.55,
+        -29508.17,
+        -21472.64,
+        37542.05,
+        47253.9,
+        -44020.78,
+        9502.13,
+        38634.55,
+        -19197.75,
+        122936.71,
+        33375.14,
+        23235.21,
+        -30160.35,
+        5278.23,
+        -12382.63,
+        61673.02,
+        -5366.4,
+        -32253.84,
+        13766.16,
+        -6059.02,
+        5301.95,
+        29208.01,
+        -19330.56,
+        -7101.76,
+        23613.22,
+        8627.69,
+        16556.34,
+        16354.85,
+        -16047.34,
+        49925.35,
+        79849.99,
+        4118.16,
+        59222.17,
+        -11761.6,
+        -5309.38,
+        -4559.18,
+        -15936.08,
+        -6086.5,
+        38898.07,
+        -20007.97,
+        -3829.68,
+        19816.81,
+        18536.84,
+        35539.7,
+        9038.86,
+        1611.98,
+        44309.47,
+        45123.03,
+        1532.99,
+        5844.53,
+        -83307.01,
+        -47795.45,
+        -5686.14,
+        -16264.74,
+        46653.14,
+        106211.78,
+        56169.87,
+        10150.23,
+        76781.3,
+        4330.07,
+        -13098.51,
+        -59050.29,
+        -430.23,
+        40.64,
+        -30867.19,
+        -46602.28,
+        46908.74,
+        -39666.18,
+        3117.35,
+        71253.19,
+        39910.17,
+        22655.59,
+        -2465.18,
+        11321.72,
+        -22718.38,
+        32520.09,
+        6795.94,
+        -36048.86,
+        9255.56,
+        -3579.36,
+        30962.59,
+        11523.0,
+        15994.02,
+        11890.27,
+        -15459.95,
+        -16403.84,
+        18515.88,
+        -20749.91,
+        24547.21,
+        -31597.45,
+        28090.55,
+        -27606.34,
+        13131.06,
+        -23452.86,
+        17113.5,
+        -64987.62,
+        34314.77,
+        26708.34,
+        47695.08,
+        -41506.47,
+        -33455.43,
+        24343.53,
+        81795.87,
+        -57676.72,
+        -56802.43,
+        129956.58,
+        -102850.44,
+        55533.0,
+        -5803.05,
+        16854.51,
+        -131335.1,
+        38757.39,
+        39609.75,
+        32827.09,
+        -56430.43,
+        38807.74,
+        9549.28,
+        -24859.79,
+        40642.16,
+        -62878.76,
+        -18001.71,
+        -20489.78,
+        -1720.43,
+        46748.07,
+        3897.0,
+        -35504.24,
+        -30080.81,
+        6012.12,
+        -295.46,
+        43219.14,
+        -12740.35,
+        15124.35,
+        40192.62,
+        14025.51,
+        7354.05,
+        19152.49,
+        3714.44,
+        733.3,
+        -79286.15,
+        23417.93,
+        5055.64,
+        26034.69,
+        -54586.39,
+        -26959.26,
+        58967.73,
+        -19606.07,
+        -30510.17,
+        -5722.52,
+        -26331.0,
+        32119.75,
+        -19251.82,
+        -28330.16,
+        10200.3,
+        64620.62,
+        15845.82,
+        -7241.62,
+        -15512.8,
+        -9300.45,
+        950.86,
+        40268.97,
+        2247.57,
+        9622.85,
+        8173.47,
+        3413.21,
+        -26353.4,
+        -11397.94,
+        35339.42,
+        -78846.99,
+        -21634.17,
+        -24216.75,
+        19301.34,
+        -8673.83,
+        8549.2,
+        9817.02,
+        23646.83,
+        30369.64,
+        35734.12,
+        -3167.88,
+        5595.55,
+        16122.61,
+        -10455.69,
+        2735.6,
+        88316.62,
+        -19149.17,
+        -19463.87,
+        10964.95,
+        10993.13,
+        -22179.19,
+        -2964.63,
+        -23071.23,
+        4428.6,
+        -666.26
+      ],
+      "attribution_residual_dollars": 0.0,
+      "gate_n_rejected": 0
+    }
+  },
+  "gates": {
+    "cost_stress": {
+      "tiers": {
+        "10.0": 1.095,
+        "15.0": 1.0717,
+        "20.0": 1.0484
+      },
+      "base_cost_bps": 10.0,
+      "n_tiers": 3,
+      "elasticity_sharpe_per_bps": 0.00466,
+      "degradation_at_max_tier": 0.0466,
+      "degradation_pct_at_max_tier": 0.0426,
+      "breakeven_cost_bps": 244.98,
+      "monotonic": true,
+      "verdict": "PASS",
+      "reasons": [
+        "EDGE_SURVIVES_ALL_TIERS_MONOTONIC"
+      ],
+      "thresholds": {
+        "min_sharpe_stressed": 0.0,
+        "monotonic_tolerance": 0.05,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      },
+      "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    "perturbation": {
+      "center": "q30_7d",
+      "center_metric": 1.095,
+      "n_grid": 15,
+      "n_neighborhood": 14,
+      "n_missing": 0,
+      "surface": {
+        "q20_14d": 1.1734,
+        "q20_3d": 1.306,
+        "q20_7d": 1.5489,
+        "q25_14d": 0.925,
+        "q25_3d": 1.5506,
+        "q25_7d": 1.2484,
+        "q30_14d": 0.9415,
+        "q30_3d": 1.5682,
+        "q30_7d": 1.095,
+        "q35_14d": 0.7372,
+        "q35_3d": 1.6606,
+        "q35_7d": 1.008,
+        "q40_14d": 0.8069,
+        "q40_3d": 1.7487,
+        "q40_7d": 1.3563
+      },
+      "neighborhood_median": 1.2772,
+      "neighborhood_max": 1.7487,
+      "neighborhood_min": 0.7372,
+      "center_rank_pct": 0.3571,
+      "plateau_gap": 0.6537,
+      "spike_gap": -0.6537,
+      "verdict": "FAIL",
+      "reasons": [
+        "BELOW_NEIGHBORHOOD_MEDIAN:center_rank=0.3571<0.5"
+      ],
+      "thresholds": {
+        "min_neighborhood": 4,
+        "plateau_abs": 0.05,
+        "plateau_rel": 0.1,
+        "spike_abs": 0.1,
+        "spike_rel": 0.25,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      },
+      "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    "concentration": {
+      "dimensions": {
+        "instrument": {
+          "dimension": "instrument",
+          "total": 1215255.85,
+          "n_contributors": 24,
+          "n_missing": 0,
+          "top1": {
+            "key": "SOL",
+            "contribution": 326053.54,
+            "share": 0.2683
+          },
+          "top3_share": 0.6421,
+          "residual_ex_top1": 889202.31,
+          "residual_ex_top3": 434934.28,
+          "verdict": "PASS",
+          "reasons": [
+            "EDGE_SURVIVES_LEAVE_ONE_OUT"
+          ]
+        },
+        "period": {
+          "dimension": "period",
+          "total": 1215255.85,
+          "n_contributors": 236,
+          "n_missing": 0,
+          "top1": {
+            "key": "15",
+            "contribution": 204365.14,
+            "share": 0.1682
+          },
+          "top3_share": 0.3763,
+          "residual_ex_top1": 1010890.71,
+          "residual_ex_top3": 757997.41,
+          "verdict": "PASS",
+          "reasons": [
+            "EDGE_SURVIVES_LEAVE_ONE_OUT"
+          ]
+        },
+        "month": {
+          "dimension": "month",
+          "total": 1215255.85,
+          "n_contributors": 55,
+          "n_missing": 0,
+          "top1": {
+            "key": "2023-12",
+            "contribution": 219185.01,
+            "share": 0.1804
+          },
+          "top3_share": 0.4832,
+          "residual_ex_top1": 996070.83,
+          "residual_ex_top3": 627988.9,
+          "verdict": "PASS",
+          "reasons": [
+            "EDGE_SURVIVES_LEAVE_ONE_OUT"
+          ]
+        }
+      },
+      "verdict": "PASS",
+      "thresholds": {
+        "min_contributors": 3,
+        "warn_top1_share": 0.5,
+        "fail_top1_share": 0.67,
+        "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+      },
+      "provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    }
+  },
+  "overall_verdict": "FAIL",
+  "cross_checks": {
+    "canonical_dry_run_db": {
+      "stored_run_id": "af119aff537f7092",
+      "stored_total_return": 1.21154,
+      "stored_sharpe": 1.0697,
+      "stored_sharpe_vt": 1.095,
+      "stored_n_periods": 235,
+      "recomputed_total_return": 1.215256,
+      "recomputed_sharpe_ppy52": 1.0695,
+      "delta_total_return": 0.003716,
+      "delta_sharpe": -0.0002,
+      "note": "正典库记录 vs 本次同接线重算;数据演进会体现为非零差值(如实记录,不硬断言)。"
+    },
+    "variants_family_overlap": {
+      "n_overlap": 12,
+      "delta_sharpe_vt_by_point": {
+        "q30_7d": 0.0,
+        "q20_7d": 0.0,
+        "q25_7d": 0.0,
+        "q35_7d": 0.0,
+        "q30_3d": 0.0,
+        "q30_14d": 0.0,
+        "q25_3d": 0.0,
+        "q25_14d": 0.0,
+        "q35_3d": 0.0,
+        "q35_14d": 0.0,
+        "q20_3d": 0.0,
+        "q20_14d": 0.0
+      },
+      "max_abs_delta": 0.0,
+      "note": "同一管线/同一簿构造/同一面板,12/15 网格点与 variants 族重叠;差值应≈0。"
+    }
+  },
+  "honesty": {
+    "thresholds_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT",
+    "trial_count": 15,
+    "registry_trial_count_before": 2467,
+    "registry_trial_count_after": 2482,
+    "caveats": [
+      "对已知历史的执行现实回测,非前向/实盘;三闸是晋升*门槛证据*,晋级本身是另一独立人工决策。",
+      "网格 15 点中 12 点与 crowd_contra_variants 族重叠,本实验保守重复注册(trial 只增不减,DSR 泄气更重);有效独立赌注数远小于 15(同一 global_ls 信号族)。",
+      "集中度在 RAW 簿口径(实际持仓美元 PnL);vol-target 是组合层风险缩放,不改变贡献构成。",
+      "归因假设门全批准(n_rejected 已记录);Σ归因 与管线权益增量的残差已记录,暴露任何分叉。",
+      "成本弹性/breakeven 是线性外推(三档),非成本曲线的全形状;判定阈值全部 UNCALIBRATED。"
+    ]
+  }
+}

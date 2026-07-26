@@ -306,6 +306,44 @@ def test_run_cycle_persists_three_alpha_marks_and_backtests(tmp_path):
     assert json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))["verdict"]["live_allowed"] is False
 
 
+def test_run_cycle_marks_existing_fills_when_new_operator_is_blocked(tmp_path):
+    """A blocked new decision must not stop observation of immutable paper fills."""
+    paper_path = tmp_path / "paper-orders.db"
+    order_store = PaperExecutionStore(str(paper_path), create=True)
+    try:
+        for alpha in ALPHA_IDS:
+            order_store.append_preview(_row(alpha))
+    finally:
+        order_store.close()
+
+    blocked_operator = _operator()
+    blocked_operator["verdict"] = {
+        "operator_completed": False,
+        "paper_preview_ready": False,
+    }
+    report = run_cycle(
+        operator=blocked_operator,
+        mark_provider=lambda _instruments: {
+            "provider": "BINANCE_PUBLIC_MARK_PRICE",
+            "observed_at": 2000,
+            "marks": {"BTC": 110.0},
+            "source_times": {"BTC": 2000},
+        },
+        paper_store_path=str(paper_path),
+        realtime_store_path=str(tmp_path / "realtime.db"),
+        output_path=str(tmp_path / "status.json"),
+        aum=1000.0,
+        generated_at_ms=3000,
+    )
+
+    assert report["operator_mode"] == paper_realtime.MARK_ONLY_REPLAY_REASON
+    assert report["verdict"]["cycle_completed"] is True
+    assert report["verdict"]["new_paper_orders_allowed"] is False
+    assert report["verdict"]["live_allowed"] is False
+    assert report["persistence"]["chain_valid"] is True
+    assert all(row["status"] == "PAPER_MARKED" for row in report["alphas"].values())
+
+
 def test_run_cycle_fails_closed_on_stale_public_marks(tmp_path):
     paper_path = tmp_path / "paper-orders.db"
     order_store = PaperExecutionStore(str(paper_path), create=True)

@@ -42,11 +42,11 @@ SKILL_DIR = (r"C:\Users\Administrator\AppData\Roaming\kimi-desktop\daimon-share"
              r"\daimon\runtime\kimi-code\home\plugins\managed\wind-allskill"
              r"\skills\wind-mcp-skill")
 
-UNIVERSE_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_universe.json")
-DB_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_daily.db")
-RAW_DIR = os.path.join(REPO_ROOT, "data", "cache", "ashare_klines_raw")
-PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_klines_progress.json")
-SNAPSHOT_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_klines_snapshot.json")
+UNIVERSE_PATH = os.path.join(REPO_ROOT, "data", "stocks", "universe.json")
+DB_PATH = os.path.join(REPO_ROOT, "data", "stocks", "stocks.db")
+RAW_DIR = os.path.join(REPO_ROOT, "data", "stocks", "raw", "wind")
+PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "stocks", "wind_fetch_progress.json")
+SNAPSHOT_PATH = os.path.join(REPO_ROOT, "data", "stocks", "snapshots", "klines_snapshot.json")
 
 BEGIN_DATE = "20210101"
 END_DATE = "20260723"

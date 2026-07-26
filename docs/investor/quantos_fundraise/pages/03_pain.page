@@ -1,0 +1,112 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 讲痛点时用自己的数据佐证：我们的引擎首跑就发现"冲击-only 容量模型会高估 300 倍"——行业里大多数项目停在这一页的前两格。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "02 · 行业痛点"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "大多数量化策略，死在回测到实盘之间"}
+  - elementId: step1
+    elementType: text
+    bounds: [90, 130, 140, 60]
+    content:
+      style: "$body"
+      align: [center, top]
+      text: |
+        <p><strong>交易想法</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:10px">研报 / 直觉 / 数据 pattern</span></p>
+  - elementId: ar1
+    elementType: line
+    bounds: [234, 152, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 1.5, color: "$line"}
+  - elementId: step2
+    elementType: text
+    bounds: [278, 130, 140, 60]
+    content:
+      style: "$body"
+      align: [center, top]
+      text: |
+        <p><strong>回测漂亮</strong></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:10px">数据泄漏 · 过拟合 · 参数偏差</span></p>
+  - elementId: ar2
+    elementType: line
+    bounds: [422, 152, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 1.5, color: "$warn"}
+  - elementId: step3
+    elementType: text
+    bounds: [466, 130, 140, 60]
+    content:
+      style: "$body"
+      align: [center, top]
+      text: |
+        <p><span style="color:$warn"><strong>成本失真</strong></span></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:10px">手续费 · 滑点 · 资金费 · 冲击</span></p>
+  - elementId: ar3
+    elementType: line
+    bounds: [610, 152, 40, 2]
+    viewBox: [40, 2]
+    points: "0,1 40,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 1.5, color: "$warn"}
+  - elementId: step4
+    elementType: text
+    bounds: [654, 130, 140, 60]
+    content:
+      style: "$body"
+      align: [center, top]
+      text: |
+        <p><span style="color:$warn"><strong>实盘退化</strong></span></p>
+        <p style="margin-top:4px"><span style="color:$muted;font-size:10px">收益保留率无人问津</span></p>
+  - elementId: ar4
+    elementType: line
+    bounds: [798, 152, 30, 2]
+    viewBox: [30, 2]
+    points: "0,1 30,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 1.5, color: "$warn"}
+  - elementId: step5
+    elementType: text
+    bounds: [832, 130, 100, 60]
+    content:
+      style: "$body"
+      align: [center, top]
+      text: |
+        <p><span style="color:$warn"><strong>策略失效</strong></span></p>
+  - elementId: pains
+    elementType: text
+    bounds: [90, 226, 780, 220]
+    content:
+      style: "$body"
+      fontSize: 12.5
+      lineHeight: 1.75
+      text: |
+        <p><span style="color:$accent">■</span> 很多量化项目只有策略，<strong>没有完整研究和交易基础设施</strong></p>
+        <p><span style="color:$accent">■</span> 回测结果普遍受数据泄漏、过拟合、参数选择偏差影响</p>
+        <p><span style="color:$accent">■</span> 单一策略随市场制度变化失效，<strong>缺乏持续生产和淘汰机制</strong></p>
+        <p><span style="color:$accent">■</span> 手续费、滑点、资金费、市场冲击让回测收益在实盘中大幅退化</p>
+        <p><span style="color:$accent">■</span> 人工研究效率低、实验难复现；中小机构无力承担完整平台建设成本</p>
+        <p><span style="color:$accent">■</span> 投资人难以区分收益来自真 Alpha、市场 Beta 还是运气；数字资产 24 小时运行，风控要求更高</p>
+  - elementId: claim
+    elementType: text
+    bounds: [90, 458, 780, 40]
+    content:
+      fontSize: 14
+      color: "$ink"
+      text: |
+        <p>QuantOS 的价值不是预测每一次涨跌，而是建立一个<strong>持续生产、验证、组合、执行和淘汰策略</strong>的收益生产体系。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 03"}

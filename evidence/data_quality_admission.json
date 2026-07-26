@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_ms": 1784811601048,
+  "generated_at_ms": 1785027602008,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
   "instrument_scope": [
@@ -19,7 +19,7 @@
     "UNI",
     "XRP"
   ],
-  "expected_last_closed_day_ms": 1784678400000,
+  "expected_last_closed_day_ms": 1784937600000,
   "price_basis": "PERP_MARK_PRICE",
   "source_provenance": {
     "prices": "Binance Data Vision USD-M perpetual mark-price klines",
@@ -30,20 +30,20 @@
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
       "exists": true,
-      "size_bytes": 17439,
-      "sha256": "0ecb360c799f315d67df014e30562fc0ee9aa9a7668acf220e88d4d91c3fc307"
+      "size_bytes": 18764,
+      "sha256": "e4b2afdf2a0bdfd1662eecd9dc095687892461439adc7ab6cd926335ebc7bd0c"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
       "exists": true,
-      "size_bytes": 7814879,
-      "sha256": "be704aed4297ea4919aa12b2e42c136c0760e91b20f544cbd689f569bb5acd3d"
+      "size_bytes": 7816189,
+      "sha256": "91a0d1bd087d80a206e0f8002dfe3c18d21faafff59ac8a7dbad508a3b845243"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
       "exists": true,
-      "size_bytes": 6847554,
-      "sha256": "dc89948b22ab4b93de5cc8f556b72bae6e94905c0a5066657b36870797690b06"
+      "size_bytes": 6851289,
+      "sha256": "90ea76e6eeacbc743f1acf77d9ec691b31eb158accd1d895ad41986662081426"
     },
     "universe_snapshot": {
       "path": "data/cache/crypto_funding_snapshot.json",
@@ -54,118 +54,161 @@
     "refresh_status": {
       "path": "data/cache/live_refresh_status.json",
       "exists": true,
-      "size_bytes": 8693,
-      "sha256": "d278052da2385d01e690f246e1427933ea60081847795faf5ed4c5050ac76a41"
+      "size_bytes": 22361,
+      "sha256": "1a16f5bcdf8e76335ee632426f6a1607c4e5802601fc840bcc1a37caa0097ba6"
     },
     "raw_lineage_backfill": {
       "path": "evidence/raw_data_lineage_backfill.json",
       "exists": true,
-      "size_bytes": 2951,
-      "sha256": "bee332fd1474ba52a643a3a4e19262108b29f16195b158716f4e92c5b1c2a531"
+      "size_bytes": 3237,
+      "sha256": "117de3691a2b7c40b55314eaadc9f7bfdb17a0d39c71585ac90696432d8ff8a8"
     }
   },
   "sources": {
     "prices": {
-      "passed": true,
-      "failed_instruments": [],
+      "passed": false,
+      "failed_instruments": [
+        "ADA",
+        "ATOM",
+        "AVAX",
+        "BCH",
+        "BNB",
+        "BTC",
+        "DOGE",
+        "DOT",
+        "ETH",
+        "LINK",
+        "LTC",
+        "SOL",
+        "UNI",
+        "XRP"
+      ],
       "instruments": {
         "ADA": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "ATOM": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "AVAX": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "BCH": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "BNB": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "BTC": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "DOGE": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "DOT": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "ETH": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "LINK": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "LTC": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "SOL": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "UNI": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         },
         "XRP": {
-          "passed": true,
-          "n_records": 26,
-          "last_event_time": 1784678400000,
-          "failed_checks": [],
-          "detail": "ok"
+          "passed": false,
+          "n_records": 28,
+          "last_event_time": 1784851200000,
+          "failed_checks": [
+            "recent_mark_price_quality"
+          ],
+          "detail": "recent mark-price quality failed"
         }
       }
     },
@@ -175,86 +218,86 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 2130,
-          "last_event_time": 1784678400000,
+          "n_records": 2133,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 2204,
-          "last_event_time": 1784678400000,
+          "n_records": 2207,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 2163,
-          "last_event_time": 1784678400000,
+          "n_records": 2166,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 2139,
-          "last_event_time": 1784678400000,
+          "n_records": 2142,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 2135,
-          "last_event_time": 1784678400000,
+          "n_records": 2138,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 2226,
-          "last_event_time": 1784678400000,
+          "n_records": 2229,
+          "last_event_time": 1784937600000,
           "detail": "ok"
         }
       }
@@ -265,86 +308,86 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2151,
-          "last_event_time": 1784678400000,
+          "n_records": 2153,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 1671,
-          "last_event_time": 1784678400000,
+          "n_records": 1673,
+          "last_event_time": 1784851200000,
           "detail": "ok"
         }
       }
@@ -354,27 +397,34 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 5410,
+    "observation_count": 7024,
     "invalid_observation_count": 0,
-    "object_count": 1737,
+    "object_count": 2702,
     "datasets": {
-      "funding": 500,
-      "oi_metrics": 2175,
-      "perp_mark_prices": 2222,
-      "spot_klines": 513
+      "cross_exchange_snapshots": 24,
+      "funding": 1266,
+      "oi_metrics": 2525,
+      "perp_klines_1d": 58,
+      "perp_mark_prices": 2593,
+      "spot_klines": 555,
+      "spot_klines_1d": 3
     },
     "providers": [
+      "Binance + Bybit public synchronized market snapshot",
       "Binance Data Vision USD-M futures metrics",
       "Binance Data Vision USD-M mark-price klines",
       "Binance USD-M perpetual funding history",
-      "Binance public spot klines"
+      "Binance public spot klines",
+      "Bybit public linear perp funding history",
+      "Bybit public linear perp klines",
+      "MEXC public spot klines"
     ],
     "representations": [
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1784811601048,
-    "aggregate_sha256": "a8264169c5aeaf72416212c7fe4442d8f62c37a0889a9bd199e4728287442258",
+    "latest_observed_at_ms": 1785027602008,
+    "aggregate_sha256": "8d1cdc8cd873270c7d605ff415d5d40500786145baaf212d6d007cf73c6de81d",
     "errors": [],
     "path": "data/cache/raw_market_data"
   },
@@ -384,29 +434,27 @@
     "perp_mark_prices"
   ],
   "required_lineage_days": [
-    1784073600000,
-    1784160000000,
-    1784246400000,
     1784332800000,
     1784419200000,
     1784505600000,
     1784592000000,
-    1784678400000
+    1784678400000,
+    1784764800000,
+    1784851200000,
+    1784937600000
   ],
   "lineage_backfill": {
     "path": "evidence/raw_data_lineage_backfill.json",
     "exists": true,
-    "sha256": "bee332fd1474ba52a643a3a4e19262108b29f16195b158716f4e92c5b1c2a531",
+    "sha256": "117de3691a2b7c40b55314eaadc9f7bfdb17a0d39c71585ac90696432d8ff8a8",
     "readable": true,
     "passed": false,
     "reasons": [
       "LINEAGE:BACKFILL_DAYS_MISMATCH",
-      "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
       "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
-      "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
       "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
     ],
-    "generated_at_ms": 1784721234692,
+    "generated_at_ms": 1784996063560,
     "verdict": "PASS",
     "instrument_scope": [
       "ADA",
@@ -425,21 +473,21 @@
       "XRP"
     ],
     "required_days": [
-      1783987200000,
-      1784073600000,
-      1784160000000,
       1784246400000,
       1784332800000,
       1784419200000,
       1784505600000,
-      1784592000000
+      1784592000000,
+      1784678400000,
+      1784764800000,
+      1784851200000
     ]
   },
   "lineage_verdict": "BLOCK",
   "refresh_observation": {
     "readable": true,
-    "run_id": "refresh-1784811601048",
-    "ran_at": 1784811601048,
+    "run_id": "refresh-1785027602008",
+    "ran_at": 1785027602008,
     "reports": [
       {
         "source": "prices",
@@ -455,12 +503,118 @@
       },
       {
         "source": "perp_mark_prices",
+        "failed_count": 14,
+        "failed_tickers": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "failure_details": [
+          {
+            "ticker": "ADA",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "ATOM",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "AVAX",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "BCH",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "BNB",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "BTC",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "DOGE",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "DOT",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "ETH",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "LINK",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "LTC",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "SOL",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "UNI",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          },
+          {
+            "ticker": "XRP",
+            "kind": "QUALITY",
+            "error_type": "MarkPriceQualityError",
+            "message": "recent mark-price cache is incomplete or invalid"
+          }
+        ]
+      },
+      {
+        "source": "oi_metrics",
         "failed_count": 0,
         "failed_tickers": [],
         "failure_details": []
       },
       {
-        "source": "oi_metrics",
+        "source": "mexc_btc",
         "failed_count": 0,
         "failed_tickers": [],
         "failure_details": []
@@ -470,37 +624,43 @@
       "schema_version": 1,
       "status": "PASS",
       "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-      "observation_count": 5410,
+      "observation_count": 7024,
       "invalid_observation_count": 0,
-      "object_count": 1737,
+      "object_count": 2702,
       "datasets": {
-        "funding": 500,
-        "oi_metrics": 2175,
-        "perp_mark_prices": 2222,
-        "spot_klines": 513
+        "cross_exchange_snapshots": 24,
+        "funding": 1266,
+        "oi_metrics": 2525,
+        "perp_klines_1d": 58,
+        "perp_mark_prices": 2593,
+        "spot_klines": 555,
+        "spot_klines_1d": 3
       },
       "providers": [
+        "Binance + Bybit public synchronized market snapshot",
         "Binance Data Vision USD-M futures metrics",
         "Binance Data Vision USD-M mark-price klines",
         "Binance USD-M perpetual funding history",
-        "Binance public spot klines"
+        "Binance public spot klines",
+        "Bybit public linear perp funding history",
+        "Bybit public linear perp klines",
+        "MEXC public spot klines"
       ],
       "representations": [
         "CANONICAL_JSON_UTF8",
         "HTTP_BODY_BYTES"
       ],
-      "latest_observed_at_ms": 1784811601048,
-      "aggregate_sha256": "a8264169c5aeaf72416212c7fe4442d8f62c37a0889a9bd199e4728287442258",
+      "latest_observed_at_ms": 1785027602008,
+      "aggregate_sha256": "8d1cdc8cd873270c7d605ff415d5d40500786145baaf212d6d007cf73c6de81d",
       "errors": []
     }
   },
-  "quality_verdict": "PASS",
+  "quality_verdict": "BLOCK",
   "verdict": "BLOCK",
   "block_reasons": [
+    "QUALITY:prices:['ADA', 'ATOM', 'AVAX', 'BCH', 'BNB', 'BTC', 'DOGE', 'DOT', 'ETH', 'LINK', 'LTC', 'SOL', 'UNI', 'XRP']",
     "LINEAGE:BACKFILL_DAYS_MISMATCH",
-    "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
     "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
-    "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
     "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
   ]
 }

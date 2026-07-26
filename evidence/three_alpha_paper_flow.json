@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "flow": "THREE_ALPHA_PAPER_FLOW",
-  "started_at": 1784820922513,
-  "finished_at": 1784820922669,
+  "started_at": 1785041572664,
+  "finished_at": 1785041572849,
   "readiness": "L2_DRY_RUN_ONLY",
   "stages": {
     "public_forward": {
@@ -192,6 +192,7 @@
             "paper_verdict": "BLOCKED",
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
@@ -262,6 +263,7 @@
             "paper_verdict": "BLOCKED",
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           },
@@ -333,12 +335,14 @@
             "paper_verdict": "BLOCKED",
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           }
         },
         "common_blockers": [
-          "DATA_ADMISSION_BLOCK"
+          "DATA_ADMISSION_BLOCK",
+          "GONOGO_FORWARD_EVIDENCE_STALE"
         ],
         "next_actions": [
           "wait for a clean recent-data admission and matching raw-lineage backfill",
@@ -354,6 +358,7 @@
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
           "DATA_ADMISSION_BLOCK",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "DRY_RUN_RESEARCH_RISK_NOT_PASS",
           "FORWARD_EVIDENCE_INSUFFICIENT",
           "PAPER_CYCLE_BLOCKED",
@@ -402,7 +407,7 @@
             "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": true,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -418,6 +423,7 @@
             "research_packet_ready_for_paper": false,
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT",
               "PAPER_CYCLE_BLOCKED",
@@ -438,6 +444,7 @@
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
           "DATA_ADMISSION_BLOCK",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
           "PAPER_CYCLE_BLOCKED",
           "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
@@ -494,7 +501,7 @@
             "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": true,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -510,6 +517,7 @@
             "research_packet_ready_for_paper": false,
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
               "PAPER_CYCLE_BLOCKED",
               "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
@@ -529,6 +537,7 @@
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
           "DATA_ADMISSION_BLOCK",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
           "PAPER_CYCLE_BLOCKED",
           "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
@@ -575,7 +584,7 @@
             "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": true,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -591,6 +600,7 @@
             "research_packet_ready_for_paper": false,
             "blockers": [
               "DATA_ADMISSION_BLOCK",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
               "PAPER_CYCLE_BLOCKED",
               "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"

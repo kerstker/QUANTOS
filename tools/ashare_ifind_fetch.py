@@ -47,12 +47,12 @@ from services.data.persistent_store import SqlitePITStore  # noqa: E402
 IFIND_DIR = (r"C:\Users\Administrator\AppData\Roaming\kimi-desktop\daimon-share"
              r"\daimon\runtime\kimi-code\home\plugins\managed\ifind")
 
-UNIVERSE_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_universe.json")
-DB_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_daily.db")
-RAW_DIR = os.path.join(REPO_ROOT, "data", "cache", "ashare_ifind_raw")
-PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_ifind_progress.json")
-SNAPSHOT_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_klines_snapshot.json")
-WIND_PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "cache", "ashare_klines_progress.json")
+UNIVERSE_PATH = os.path.join(REPO_ROOT, "data", "stocks", "universe.json")
+DB_PATH = os.path.join(REPO_ROOT, "data", "stocks", "stocks.db")
+RAW_DIR = os.path.join(REPO_ROOT, "data", "stocks", "raw", "ifind")
+PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "stocks", "ifind_fetch_progress.json")
+SNAPSHOT_PATH = os.path.join(REPO_ROOT, "data", "stocks", "snapshots", "klines_snapshot.json")
+WIND_PROGRESS_PATH = os.path.join(REPO_ROOT, "data", "stocks", "wind_fetch_progress.json")
 
 # (start_date, end_date) ISO — max 3-year range per call, disjoint, covering the
 # full Wind window 2021-01-01 → 2026-07-23.

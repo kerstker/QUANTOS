@@ -5,33 +5,20 @@ import { money, fixed, stamp } from '@/ui/format';
 import { EquityCurveChart } from '@/ui/workbench';
 import { useConfirm, usePrompt } from '@/ui/dialog';
 import { useToast } from '@/ui/toast';
+import {
+  LiveOpsHttpError, OPS_URL, postLiveOpsPreview, useOpsToken, venueDefaultStrategy,
+} from '@/lib/api/live-ops-api';
 
 /**
  * Live Desk 交易台 — 类交易所界面:双所实时仓位/权益/uPnL + 订单成交流水 + TCA + 受控操作。
  * 数据源 = tools/live_ops_api.py(:8440,tools 层实时查两所 REST;"实时"= 轮询粒度,默认 8s)。
- * 操作面治理:所有下单动作只经 POST /run -> 驱动器 CLI 子进程 —— 与人工命令行同一条
- * mandate → gate → 确认 → 记账链,没有旁路;submit 按钮双重确认。
+ * 操作面治理(2026-07-24 收紧):页面唯一动作 = POST /preview -> 驱动器 CLI 子进程
+ * (服务端固定 argv,绝不携带 --submit;mainnet-only venue 自动 --arm-live = armed preview,
+ * 真实账户只读透传,PreviewVenue 结构性无法下单)——与人工命令行同一条 mandate → gate 链,
+ * 没有旁路;真提交仅人工 CLI,本页永不提供 Submit。
+ * ops token 机制(X-Ops-Token / sessionStorage,绝不打进构建产物)见 lib/api/live-ops-api.ts。
  */
 
-const OPS_URL: string = import.meta.env.VITE_OPS_URL || 'http://127.0.0.1:8440';
-// 本机共享密钥认证(2026-07-05,2026-07-05 安全审查后修正):ops API 的全部端点要求
-// X-Ops-Token 匹配 key/live_ops_token.txt。**刻意不用 VITE_ 前缀的构建期变量**——Vite 会把
-// 那类变量原样编译进最终 JS bundle 明文,任何能拿到这份 JS 文件的人(一旦控制台以
-// `--host`/反代/静态托管等非纯 loopback dev server 方式暴露)`grep` 一下就能拿到共享密钥,
-// 绕过浏览器直接对 ops API 发起真实请求。改为运行时输入:只存在 sessionStorage(不进构建
-// 产物、关闭标签页即清空,不跨会话持久化)。
-const OPS_TOKEN_STORAGE_KEY = 'quantos_ops_token';
-
-function useOpsToken(): [string, (t: string) => void] {
-  const [token, setTokenState] = useState<string>(() => {
-    try { return sessionStorage.getItem(OPS_TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
-  });
-  const setToken = (t: string) => {
-    setTokenState(t);
-    try { sessionStorage.setItem(OPS_TOKEN_STORAGE_KEY, t); } catch { /* private-mode etc */ }
-  };
-  return [token, setToken];
-}
 const POLL_MS = 8000;
 
 interface PositionRow {
@@ -160,41 +147,39 @@ export default function LiveDesk() {
     }
   }, [poll, prompt, toast]);
 
-  const runDriver = useCallback(async (venue: string, submit: boolean) => {
-    if (submit) {
-      const expect = `submit ${venue}`;
-      const typed = await prompt({
-        title: bi('真实提交确认', 'Confirm real submission'),
-        message: bi(`将以驱动器 CLI 同一条 mandate/gate 链向 ${VENUE_ZH[venue] ?? venue} 提交真实订单(测试环境,零真实资金)。`,
-          `This submits a real order to ${VENUE_ZH[venue] ?? venue} through the driver CLI's mandate/gate chain (test environment, zero real capital).`),
-        label: bi(`输入 "${expect}" 以确认`, `Type "${expect}" to confirm`),
-        severity: 'danger',
-        confirmLabel: bi('真实提交', 'Submit'),
-      });
-      if (typed !== expect) return;
-    } else if (!await confirm({
+  const runPreview = useCallback(async (venue: string) => {
+    if (!await confirm({
       title: bi('跑一轮 Preview', 'Run preview'),
-      message: bi(`对 ${VENUE_ZH[venue] ?? venue} 跑一轮只读评估,零提交。`, `Run a read-only evaluation pass against ${VENUE_ZH[venue] ?? venue} — zero submission.`),
+      message: bi(`对 ${VENUE_ZH[venue] ?? venue} 跑一轮 armed preview 演练(真实账户只读 + 完整 mandate/gate 链,PreviewVenue 结构性零提交,约 10–60 秒)。`,
+        `Run one armed-preview drill against ${VENUE_ZH[venue] ?? venue} (real account read-only + full mandate/gate chain; PreviewVenue structurally places zero orders; ~10–60s).`),
       severity: 'info', confirmLabel: bi('跑 Preview', 'Run Preview'),
     })) {
       return;
     }
     setBusy(true);
     try {
-      const r = await fetch(`${OPS_URL}/api/v1/liveops/run`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...opsHeaders },
-        body: JSON.stringify({ venue, submit, refresh: false }),
-      });
-      const j = await r.json();
-      if (r.ok) toast.success(`${venue} ${submit ? 'SUBMIT' : 'preview'} ${bi('已启动', 'started')}`);
-      else toast.error(JSON.stringify(j));
+      const j = await postLiveOpsPreview(venue, venueDefaultStrategy(venue), opsToken);
+      if (j.ok) {
+        const n = j.status?.would_submit?.length;
+        toast.success(`${venue} preview ${bi('完成', 'done')} · ${j.status?.batch_skipped
+          ? `skipped: ${j.status.batch_skipped}`
+          : bi(`本会提交 ${n ?? '—'} 单`, `would submit ${n ?? '—'}`)}`);
+      } else {
+        toast.error(`${venue} preview rc=${j.returncode ?? '—'}`);
+      }
     } catch (e) {
-      toast.error(String(e));
+      if (e instanceof LiveOpsHttpError && e.status === 409) {
+        toast.error(bi('409 —— 另一个运行/演练正在进行(单飞锁)', '409 — another run/preview is in flight (single-flight)'));
+      } else if (e instanceof LiveOpsHttpError && e.status === 401) {
+        toast.error(bi('401 —— token 不对,重新粘贴 key/live_ops_token.txt 的内容', '401 — wrong token, re-paste key/live_ops_token.txt'));
+      } else {
+        toast.error(String(e));
+      }
     } finally {
       setBusy(false);
       setTimeout(poll, 1500);
     }
-  }, [poll, confirm, prompt, toast]);
+  }, [poll, confirm, toast, opsToken]);
 
   const claimDemoFunds = useCallback(async () => {
     if (!await confirm({
@@ -255,12 +240,15 @@ export default function LiveDesk() {
     if (venue.ok !== true) return bi('交易所状态不可用', 'venue state unavailable');
     return null;
   };
-  const submitBlockReason = (venue: VenuePanel): string | null => {
-    const unavailable = venueUnavailableReason(venue);
-    if (unavailable) return unavailable;
+  // 治理提示(2026-07-24):此前是 submit 的阻断理由;submit UI 已随 ops API 治理收紧移除
+  // (真提交仅人工 CLI)。这些理由仍值得**展示**(mandate 未签/过期、上轮 HARD STOP)——但不再
+  // 阻断 preview:演练正是诊断这些问题的工具,驱动器自身 fail-closed。
+  const venueGovernanceNote = (venue: VenuePanel): string | null => {
+    if (err || !data) return null;
+    if (venue.ok !== true) return null;
     if (venue.last_run?.hard_stop === true) return bi('上轮触发 HARD STOP', 'last run triggered HARD STOP');
     if (!venue.mandate) return bi('mandate 未签署', 'mandate is unsigned');
-    if (venue.mandate.expires_at != null && venue.mandate.expires_at <= data!.generated_at) {
+    if (venue.mandate.expires_at != null && venue.mandate.expires_at <= data.generated_at) {
       return bi('mandate 已过期', 'mandate has expired');
     }
     return null;
@@ -308,13 +296,13 @@ export default function LiveDesk() {
 
       {runState?.running && (
         <div className="rounded border border-info/40 bg-info/[0.06] px-3 py-2 text-2xs text-info">
-          ⏳ {bi(`驱动器运行中:${runState.venue} ${runState.submit ? 'SUBMIT' : 'preview'}(单飞锁,完成前不能再触发)`,
-            `driver running: ${runState.venue} ${runState.submit ? 'SUBMIT' : 'preview'} (single-flight)`)}
+          ⏳ {bi(`驱动器运行中:${runState.venue} preview(单飞锁,完成前不能再触发)`,
+            `driver running: ${runState.venue} preview (single-flight)`)}
         </div>
       )}
       {runState && !runState.running && runState.finished_at != null && (
         <div className={`rounded border px-3 py-2 text-2xs ${runState.returncode === 0 ? 'border-line text-muted' : 'border-neg/40 text-neg'}`}>
-          {bi('上次操作', 'last action')}: {runState.venue} {runState.submit ? 'SUBMIT' : 'preview'} · rc={String(runState.returncode)}
+          {bi('上次操作', 'last action')}: {runState.venue} preview · rc={String(runState.returncode)}
           {runState.tail && <span className="mono"> · {runState.tail.slice(-160)}</span>}
         </div>
       )}
@@ -344,13 +332,12 @@ export default function LiveDesk() {
 
       {venues.map(v => {
         const unavailableReason = venueUnavailableReason(v);
-        const blockedSubmitReason = submitBlockReason(v);
+        const govNote = venueGovernanceNote(v);
         const commonBlocked = busy || Boolean(runState?.running);
         const previewBlocked = commonBlocked || unavailableReason !== null;
-        const submitBlocked = commonBlocked || blockedSubmitReason !== null;
         const demoFundsBlocked = commonBlocked || unavailableReason !== null;
         // 现货场地(MEXC):余额账户、无强平价/杠杆字段(诚实省略,非零);
-        // mainnet 首单是人工 CLI(--arm-live)专属动作,本页绝不提供 Submit。
+        // 真提交一律人工 CLI(--submit --arm-live)专属动作,本页只提供 armed-preview 演练。
         const isSpot = v.kind === 'spot' || Array.isArray(v.balances);
         const balCols: Column<BalanceRow>[] = [
           { key: 'asset', header: bi('资产', 'Asset'), render: b => <span className="mono text-ink">{b.asset}</span> },
@@ -362,21 +349,15 @@ export default function LiveDesk() {
         <Panel key={v.venue} eyebrow={v.venue.toUpperCase()} title={VENUE_ZH[v.venue] ?? v.venue}
           right={
             <div className="flex items-center gap-2">
-              {blockedSubmitReason && <span className="text-2xs text-neg">{blockedSubmitReason}</span>}
+              {govNote && <span className="text-2xs text-warn">{govNote}</span>}
               <button className="rounded border border-line px-2.5 py-1 text-2xs text-muted hover:text-ink hover:border-ink/40"
-                disabled={previewBlocked} onClick={() => runDriver(v.venue, false)}>
-                {bi('跑 Preview', 'Run Preview')}
+                disabled={previewBlocked} onClick={() => runPreview(v.venue)}>
+                {bi('运行演练 Preview', 'Run Preview')}
               </button>
-              {isSpot ? (
+              {isSpot && (
                 <span className="text-2xs text-warn">
-                  {bi('现货 mainnet:首单走人工 CLI(--arm-live),本页不提供 Submit', 'spot mainnet: first order is human CLI (--arm-live) only — no Submit here')}
+                  {bi('现货 mainnet:真提交仅人工 CLI(--arm-live),本页永不提供 Submit', 'spot mainnet: real submission is human CLI (--arm-live) only — never a Submit here')}
                 </span>
-              ) : (
-              <button className="rounded border border-neg px-2.5 py-1 text-2xs font-semibold text-neg shadow-[0_0_0_1px_rgba(0,0,0,0)] hover:bg-neg/15"
-                style={{ background: 'color-mix(in srgb, var(--neg) 14%, transparent)' }}
-                disabled={submitBlocked} onClick={() => runDriver(v.venue, true)}>
-                ⛔ {bi('真实提交', 'Submit')}
-              </button>
               )}
               {v.venue === 'bybit_demo' && (
                 <button className="rounded border border-line px-2.5 py-1 text-2xs text-muted hover:text-ink"
@@ -480,9 +461,9 @@ export default function LiveDesk() {
       })}
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
-        {bi('全部为测试环境(测试网/Demo,零真实资金)· 提交动作 = 驱动器 CLI 子进程(mandate fail-closed 到底)· '
+        {bi('全部为测试环境(测试网/Demo,零真实资金)· 页面唯一动作 = armed-preview 演练(驱动器 CLI 子进程,固定 argv 绝不携带 --submit,mandate fail-closed 到底;真提交仅人工 CLI)· '
           + '实时 = REST 轮询粒度,周度策略刻意不做 websocket',
-          'All simulated environments (testnet/demo, zero real capital) · submit = driver CLI subprocess (mandate fail-closed) · '
+          'All simulated environments (testnet/demo, zero real capital) · the only page action is an armed-preview drill (driver CLI subprocess, fixed argv never carries --submit, mandate fail-closed; real submission is human-CLI-only) · '
           + 'realtime = REST polling granularity; deliberately no websocket for a weekly strategy')}
       </div>
     </PageShell>

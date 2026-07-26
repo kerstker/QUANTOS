@@ -40,19 +40,25 @@
         "top_contra": 1
       },
       "evidence_state": {
-        "carry_oi_majors": "ATTESTED_PENDING_REALIZATION",
-        "crowd_contra": "ATTESTED_PENDING_REALIZATION",
-        "top_contra": "ATTESTED_PENDING_REALIZATION"
+        "carry_oi_majors": "DATA_BLOCKED",
+        "crowd_contra": "DATA_BLOCKED",
+        "top_contra": "DATA_BLOCKED"
       },
-      "refresh_evidence_available": true,
+      "refresh_evidence_available": false,
       "source": "data/cache/forward_track_status.json",
-      "ran_at": 1784730631324
+      "ran_at": 1784811601048
     },
     "data_admission": {
-      "status": "PASS",
+      "status": "BLOCK",
       "quality": "PASS",
-      "lineage": "PASS",
-      "block_reasons": []
+      "lineage": "BLOCK",
+      "block_reasons": [
+        "LINEAGE:BACKFILL_DAYS_MISMATCH",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
+        "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
+      ]
     },
     "event_authority": {
       "status": "PASS",
@@ -66,7 +72,7 @@
       "status": "PASS",
       "forward_evidence": {
         "present": true,
-        "ran_at": 1784730631324,
+        "ran_at": 1784811601048,
         "gate_weeks": 8,
         "alphas": {
           "crowd_contra": {
@@ -75,11 +81,11 @@
             "paper_sharpe": null,
             "paper_ic": null,
             "cum_return": null,
-            "backtest_reference_sharpe": 2.468804918005684,
+            "backtest_reference_sharpe": 2.535014112509048,
             "pending_decisions": 1,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "ATTESTED_PENDING_REALIZATION"
+            "evidence_state": "DATA_BLOCKED"
           },
           "carry_oi_majors": {
             "weeks_accumulated": 0,
@@ -87,11 +93,11 @@
             "paper_sharpe": null,
             "paper_ic": null,
             "cum_return": null,
-            "backtest_reference_sharpe": 2.1978929143961983,
+            "backtest_reference_sharpe": 2.2349227898630595,
             "pending_decisions": 1,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "ATTESTED_PENDING_REALIZATION"
+            "evidence_state": "DATA_BLOCKED"
           },
           "top_contra": {
             "weeks_accumulated": 0,
@@ -99,11 +105,11 @@
             "paper_sharpe": null,
             "paper_ic": null,
             "cum_return": null,
-            "backtest_reference_sharpe": 2.110138466440032,
+            "backtest_reference_sharpe": 2.215693413199477,
             "pending_decisions": 1,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 1,
-            "evidence_state": "ATTESTED_PENDING_REALIZATION"
+            "evidence_state": "DATA_BLOCKED"
           }
         }
       },
@@ -116,9 +122,9 @@
     "top_tier": {
       "status": "NOT_TOP_TIER",
       "summary": {
-        "failed": 5,
+        "failed": 4,
         "manual_evidence_required": 2,
-        "partial": 1,
+        "partial": 2,
         "passed": 14,
         "red_lines_failed": 4,
         "total": 22,
@@ -141,10 +147,12 @@
     "MULTI_PARTY_EXTERNAL_APPROVAL_AND_STRONG_IDENTITY_NOT_COMPLETE",
     "PROCESS_ISOLATION_AND_OUT_OF_PROCESS_SIGNING_NOT_DEPLOYED",
     "FORWARD_PAPER_EVIDENCE_NOT_COMPLETE",
+    "DATA_ADMISSION_NOT_PASS",
     "TOP_TIER_RED_LINES_OPEN"
   ],
   "next_safe_actions": [
     "keep the three candidates in the official forward-paper clock",
+    "restore a clean recent-data admission with matching raw-lineage backfill",
     "complete the missing external identity, supply-chain, broker, process-isolation, compliance, and capital-route controls in a separately approved post-L2 program"
   ]
 }

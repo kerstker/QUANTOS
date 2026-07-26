@@ -37,10 +37,10 @@ from services.research.equity_alpha import ic_eval as ev
 from services.research.equity_alpha import panel as eq_panel
 from services.research.paper_trading.store import PaperTrackStore
 
-_DB = os.path.join("data", "cache", "ashare_daily_research.db")   # research COPY
-_UNIVERSE = os.path.join("data", "cache", "ashare_universe.json")
+_DB = os.path.join("data", "stocks", "research.db")   # research COPY of data/stocks/stocks.db
+_UNIVERSE = os.path.join("data", "stocks", "universe.json")
 _TRACK_DB = os.path.join("data", "cache", "paper_track.db")
-_OUT = os.path.join("data", "cache", "ashare_paper_track_snapshot.json")
+_OUT = os.path.join("data", "stocks", "snapshots", "paper_track_snapshot.json")
 STRATEGY_ID_BASE = "ashare_microcap_composite_v3"
 SOURCE = "BACKFILL"
 # 换手变体参数(与 ashare_alpha_research.VARIANTS 同步;baseline = 无参数)

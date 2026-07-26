@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import statistics
 from typing import Dict, List
 
@@ -9,6 +11,31 @@ from fastapi import APIRouter
 
 from services.console.api.common import short_hash as _short_hash
 from services.console.api.data_port import data_catalog_runtime
+
+_DATA_CHANNEL_INVENTORY = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+    "data", "cache", "data_channel_inventory.json",
+)
+
+
+def _data_channel_payload() -> Dict:
+    """读取只读渠道审计产物；缺失时显式 UNAVAILABLE，不生成占位渠道。"""
+    if not os.path.exists(_DATA_CHANNEL_INVENTORY):
+        return {"status": "UNAVAILABLE", "channels": [], "summary": {}}
+    try:
+        with open(_DATA_CHANNEL_INVENTORY, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"status": "INVALID", "channels": [], "summary": {}}
+    if not isinstance(payload, dict) or not isinstance(payload.get("channels"), list):
+        return {"status": "INVALID", "channels": [], "summary": {}}
+    return {
+        "status": "REAL_COVERAGE_INVENTORY",
+        "generated_at_ms": payload.get("generated_at_ms"),
+        "channels": payload["channels"],
+        "summary": payload.get("summary", {}),
+        "honesty": payload.get("honesty", []),
+    }
 
 
 def _enumerate_real_datasets() -> List[Dict]:
@@ -154,6 +181,7 @@ def _unavailable_data_catalog_payload(reason: str) -> Dict:
         "datasets": [],
         "features": [],
         "lineage_edges": [],
+        "data_channels": _data_channel_payload(),
         "quality_policy": {
             "requires_dataset_hash": True,
             "requires_event_timestamp": True,
@@ -337,6 +365,7 @@ def _data_catalog_payload() -> Dict:
         "datasets": datasets,
         "features": features,
         "lineage_edges": lineage_edges,
+        "data_channels": _data_channel_payload(),
         "quality_policy": {
             "requires_dataset_hash": True,
             "requires_event_timestamp": True,

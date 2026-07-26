@@ -51,12 +51,12 @@ export function Panel({ title, eyebrow, right, tone, children, className = '', b
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <div className="min-w-0">
             {eyebrow && <div className="mb-0.5 text-2xs font-medium uppercase tracking-[0.14em] text-faint">{eyebrow}</div>}
-            {title && <h2 className="truncate text-[15px] font-semibold tracking-tight text-ink">{title}</h2>}
+            {title && <h2 className="truncate text-base font-semibold tracking-tight text-ink">{title}</h2>}
           </div>
           {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
         </header>
       )}
-      <div className={`min-w-0 flex-1 p-5 ${bodyClass}`}>{children}</div>
+      <div className={`min-w-0 flex-1 p-6 ${bodyClass}`}>{children}</div>
     </section>
   );
 }
@@ -77,7 +77,7 @@ export function StatTile({ label, value, unit, sub, tone, accent }:
     <div className="lift flex min-w-0 flex-col justify-between gap-3 rounded-tile border border-line bg-gradient-to-b from-panel-2/70 to-panel p-4 shadow-panel">
       <div className="truncate text-2xs font-medium uppercase tracking-[0.12em] text-faint">{label}</div>
       <div className="flex items-baseline gap-1.5">
-        <span className={`tnum text-[28px] font-bold leading-none tracking-tight ${accent ? 'grad-text' : tone ? toneText[tone] : 'text-ink'}`}>{value}</span>
+        <span className={`tnum text-[34px] font-bold leading-none tracking-tight ${accent ? 'grad-text' : tone ? toneText[tone] : 'text-ink'}`}>{value}</span>
         {unit && <span className="text-xs font-medium text-muted">{unit}</span>}
       </div>
       {sub !== undefined && <div className="truncate text-2xs text-faint">{sub}</div>}
@@ -168,7 +168,7 @@ export function DataTable<T>({ columns, rows, dense, empty, getKey, searchable, 
       {!sorted.length ? <EmptyState>{empty ?? bi('无记录', 'No records')}</EmptyState> : (
         <div className={`-mx-1 ${stickyHeader ? 'overflow-auto' : 'overflow-x-auto'} ${density === 'compact' ? 'density-compact' : ''}`}
           style={stickyHeader && maxHeight ? { maxHeight } : undefined}>
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-[14px]">
             <thead className={stickyHeader ? 'sticky top-0 z-10' : undefined}>
               <tr className="border-b border-line">
                 {columns.map(c => (
@@ -291,11 +291,11 @@ export function PageHeader({ title, titleZh, subtitle, actions }:
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2.5">
-          <span className="h-6 w-1 rounded-full bg-grad" />
-          <h1 className="text-[26px] font-bold leading-none tracking-tight text-ink">{titleZh}</h1>
-          <span className="text-[15px] font-medium tracking-tight text-faint">{title}</span>
+          <span className="h-7 w-1 rounded-full bg-grad" />
+          <h1 className="text-[30px] font-bold leading-none tracking-tight text-ink">{titleZh}</h1>
+          <span className="text-base font-medium tracking-tight text-faint">{title}</span>
         </div>
-        {subtitle && <p className="mt-2 max-w-3xl pl-3.5 text-[13px] leading-relaxed text-muted">{subtitle}</p>}
+        {subtitle && <p className="mt-2.5 max-w-3xl pl-4 text-sm leading-relaxed text-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>

@@ -52,8 +52,33 @@ def test_report_keeps_three_candidates_separate_and_fail_closed():
 
 
 def test_forward_driver_registers_the_same_three_candidates():
-    assert set(_ALPHAS) == {"carry_oi_majors", "crowd_contra", "top_contra"}
+    assert {"carry_oi_majors", "crowd_contra", "top_contra"} <= set(_ALPHAS)
     assert _ALPHAS["top_contra"] == TOP_CONTRA
+
+
+def test_forward_driver_registers_preregistered_variant_candidates():
+    # 2026-07-24 pre-registered crowd_contra variant family
+    # (evidence/crowd_contra_variants.json): exactly the 7 CANDIDATEs are registered
+    # for forward paper evidence; the 9 REJECTED variants must NOT appear.
+    from tools.crowd_contra_variants import build_variant_specs
+    from tools.forward_track_advance import CROWD_TAKER_COMBO, _alpha_spec
+
+    specs = {s["id"]: s for s in build_variant_specs()}
+    expected_candidates = {"crowd_contra_q20", "crowd_taker_combo", "crowd_contra_14d",
+                           "crowd_contra_q20_14d", "crowd_contra_3d", "crowd_contra_q25_3d",
+                           "crowd_contra_q35_3d"}
+    assert expected_candidates <= set(_ALPHAS)
+    rejected = set(specs) - expected_candidates - {"crowd_contra"}
+    assert not (rejected & set(_ALPHAS))
+    for vid in expected_candidates:
+        registered = _alpha_spec(_ALPHAS[vid])
+        pre = specs[vid]
+        assert registered["quantile"] == pre["quantile"], vid
+        assert registered["cadence_days"] == pre["cadence_days"], vid
+        if vid == "crowd_taker_combo":
+            assert registered["expr"] == pre["expr"] == CROWD_TAKER_COMBO
+        else:
+            assert registered["expr"] == pre["expr"]
 
 
 def test_report_marks_top_contra_unconfirmed(tmp_path):

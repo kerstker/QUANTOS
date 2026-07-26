@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
@@ -73,6 +75,79 @@ def _tool_then_json(module: str, out_json: str) -> Callable:
         with open(os.path.join(_CACHE, out_json), encoding="utf-8") as f:
             return json.load(f)
     return run
+
+
+_ASHARE_TOOL_TIMEOUT_S = 7200   # A 股研究驱动器(面板+因子+干跑)可能跑数十分钟
+
+
+def _module_subprocess_then_json(module: str, snapshot_relpath: str) -> Callable:
+    """Run a tools.* research module as ``python -m <module>`` then load the snapshot JSON it wrote.
+
+    The child process is launched with an explicit argv list and shell=False (never a shell
+    string), capturing stdout so it streams into the run's live log via the caller's
+    redirect_stdout. Paths stay cwd-relative like every other kind (the runner service is
+    started from the repo root). Fail-closed: a non-zero exit raises with the stderr tail;
+    a missing/invalid snapshot raises instead of serving stale data."""
+    def run(params):
+        argv = [sys.executable, "-m", module]
+        completed = subprocess.run(
+            argv, shell=False, capture_output=True, text=True,
+            timeout=_ASHARE_TOOL_TIMEOUT_S, check=False,
+        )
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.returncode != 0:
+            tail = (completed.stderr or completed.stdout or "")[-800:]
+            raise RuntimeError(f"{module} exited {completed.returncode}: {tail}")
+        with open(snapshot_relpath, encoding="utf-8") as fh:
+            return json.load(fh)
+    return run
+
+
+def _adapt_ashare_alpha(j: dict) -> dict:
+    combo = j.get("combo") or {}
+    h1 = ((combo.get("ic") or {}).get("h1") or {}).get("test") or {}
+    basket = j.get("basket") or {}
+    strat = (basket.get("test") or {}).get("strategy") or {}
+    dry = j.get("dry_run_champion_variant") or j.get("dry_run") or {}
+    equity = ((j.get("_equity_test")) or (basket.get("test") or {}).get("equity")) or []
+    return {"title": "A股微盘复合 alpha 研究", "params": {},
+            "metrics": {"universe_used": (j.get("universe") or {}).get("used"),
+                        "n_factors_kept": len((j.get("hygiene") or {}).get("kept") or []),
+                        "h1_test_ic": h1.get("mean_ic"),
+                        "h1_test_t": h1.get("t_stat"),
+                        "basket_test_return": strat.get("total_return"),
+                        "basket_test_sharpe": strat.get("ann_sharpe"),
+                        "basket_test_max_dd": strat.get("max_drawdown"),
+                        "dry_run_sharpe": dry.get("sharpe"),
+                        "dry_run_return": dry.get("total_return")},
+            "series": {"basket_test_equity": [
+                {"label": str(i), "value": v} for i, v in enumerate(equity)]},
+            "verdict": "DIAGNOSTIC",
+            "caveats": ["初筛诊断,非晋级门禁——未过 evaluator 门禁,不驱动任何自动晋级/下单",
+                        "宇宙为幸存者截面;价格为前复权;成交额为代理",
+                        "L2_DRY_RUN_ONLY;无券商/凭证/下单路径"],
+            "provenance": "tools/ashare_alpha_research.py"}
+
+
+def _adapt_ashare_paper_track(j: dict) -> dict:
+    summary = j.get("summary") or {}
+    weekly = j.get("weekly") or []
+    return {"title": "A股微盘 alpha paper-track 追踪", "params": {"variant": j.get("variant")},
+            "metrics": {"n_weeks": summary.get("n_weeks"),
+                        "paper_cum_return": summary.get("paper_cum_return"),
+                        "paper_sharpe_weekly_annualized": summary.get("paper_sharpe_weekly_annualized"),
+                        "paper_ic_mean": summary.get("paper_ic_mean"),
+                        "paper_ic_t_stat": summary.get("paper_ic_t_stat"),
+                        "bench_total_return": summary.get("bench_total_return"),
+                        "perf_gap_vs_train": summary.get("perf_gap_vs_train")},
+            "series": {"weekly_ic": [
+                {"label": str(w.get("date")), "value": w.get("weekly_ic")}
+                for w in weekly if isinstance(w, dict)]},
+            "verdict": "DIAGNOSTIC",
+            "caveats": ["全部行为 BACKFILL 历史回填,非真 FORWARD 在线 advance",
+                        "初筛诊断,非晋级门禁——不驱动任何自动晋级/下单"],
+            "provenance": "tools/ashare_paper_track.py"}
 
 
 def _load_cache_object(path: str) -> dict:
@@ -255,6 +330,17 @@ RUN_KINDS: dict = {
                              runner=_tool_then_json("tools.wide_factor_gauntlet", "wide_factor_gauntlet.json")),
     "paper_cycle": RunSpec("tools.paper_realtime:main", {"small_10k": bool}, _adapt_paper_cycle,
                            "Paper real-time cycle", DIAGNOSTIC_ONLY, runner=_paper_cycle_runner),
+    "ashare_alpha": RunSpec("tools.ashare_alpha_research:main", {}, _adapt_ashare_alpha,
+                            "A股微盘复合 alpha 研究", DIAGNOSTIC_ONLY,
+                            runner=_module_subprocess_then_json(
+                                "tools.ashare_alpha_research",
+                                os.path.join("data", "stocks", "snapshots", "alpha_snapshot.json"))),
+    "ashare_paper_track": RunSpec("tools.ashare_paper_track:main", {}, _adapt_ashare_paper_track,
+                                  "A股微盘 alpha paper-track 追踪", DIAGNOSTIC_ONLY,
+                                  runner=_module_subprocess_then_json(
+                                      "tools.ashare_paper_track",
+                                      os.path.join("data", "stocks", "snapshots",
+                                                   "paper_track_snapshot.json"))),
 }
 
 

@@ -1,0 +1,79 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 先念标注再念数字。口径：Binance USDT-M 永续 730 天本地连续纸面模拟，可复现、可对账。top_contra 是最弱一条——主动讲：Sharpe 仅 0.185、回撤 30.8%，已进入诊断/隔离/退役候选；系统识别并隔离它，这是治理能力。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 36, 400, 16]
+    content: {style: "$kicker", wrap: false, text: "08 · 当前历史验证结果"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 56, 780, 34]
+    content: {style: "$h1", fontSize: 26, wrap: false, text: "四条策略线，含一条被淘汰线"}
+  - elementId: disclaimer
+    elementType: text
+    bounds: [90, 96, 780, 22]
+    content:
+      fontSize: 12
+      bold: true
+      color: "$warn"
+      wrap: false
+      text: |
+        <p>历史模拟结果（本地纸面测试），不代表未来表现 · 非实盘收益 · 非客户收益 · 非收益承诺</p>
+  - elementId: res-table
+    elementType: table
+    bounds: [90, 126, 780, 130]
+    columnWidths: [0.26, 0.17, 0.14, 0.15, 0.13, 0.15]
+    rowHeights: [0.2, 0.2, 0.2, 0.2, 0.2]
+    style: "$dark"
+    rows:
+      - - text: "策略"
+        - text: "净收益"
+        - text: "Sharpe"
+        - text: "最大回撤"
+        - text: "调仓"
+        - text: "交易次数"
+      - - {text: "carry_oi_majors", align: [left, middle]}
+        - {text: "+28.2%", bold: true, color: "$accent"}
+        - text: "0.862"
+        - text: "12.0%"
+        - text: "103"
+        - text: "1,088"
+      - - {text: "crowd_contra", align: [left, middle]}
+        - {text: "+34.9%", bold: true, color: "$accent"}
+        - text: "0.955"
+        - text: "22.9%"
+        - text: "105"
+        - text: "1,055"
+      - - {text: "top_contra（最弱→诊断/退役候选）", align: [left, middle]}
+        - {text: "+3.4%", color: "$warn"}
+        - {text: "0.185", color: "$warn"}
+        - {text: "30.8%", color: "$warn"}
+        - text: "105"
+        - text: "1,021"
+      - - {text: "等权组合", align: [left, middle]}
+        - text: "+23.0%"
+        - text: "0.946"
+        - text: "16.4%"
+        - text: "105"
+        - text: "1,342"
+  - elementId: eq-img
+    elementType: image
+    bounds: [90, 266, 780, 196]
+    src: "media/equity_730d.png"
+    fit: {mode: contain}
+  - elementId: caption
+    elementType: text
+    bounds: [90, 464, 780, 42]
+    content:
+      style: "$small"
+      fontSize: 9
+      text: |
+        <p>测试区间：2024-07-24 ~ 2026-07-23（730 个完整历史日）· Binance USDT-M 永续 · 成本：4bps taker + 合约步长/最小名义 + 盘口半价差 + 资金费 + Almgren-Chriss 冲击，连续周度调仓、追加式账本、重复运行幂等</p>
+        <p>证据：data/cache/binance_usdt_continuous_paper.json（表格与曲线同一数据源，可复现可对账）</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 508, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 10"}

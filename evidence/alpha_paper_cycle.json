@@ -89,6 +89,7 @@
       "paper_verdict": "BLOCKED",
       "blockers": [
         "DATA_ADMISSION_BLOCK",
+        "GONOGO_FORWARD_EVIDENCE_STALE",
         "DRY_RUN_RESEARCH_RISK_NOT_PASS",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
@@ -159,6 +160,7 @@
       "paper_verdict": "BLOCKED",
       "blockers": [
         "DATA_ADMISSION_BLOCK",
+        "GONOGO_FORWARD_EVIDENCE_STALE",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     },
@@ -230,12 +232,14 @@
       "paper_verdict": "BLOCKED",
       "blockers": [
         "DATA_ADMISSION_BLOCK",
+        "GONOGO_FORWARD_EVIDENCE_STALE",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     }
   },
   "common_blockers": [
-    "DATA_ADMISSION_BLOCK"
+    "DATA_ADMISSION_BLOCK",
+    "GONOGO_FORWARD_EVIDENCE_STALE"
   ],
   "next_actions": [
     "wait for a clean recent-data admission and matching raw-lineage backfill",

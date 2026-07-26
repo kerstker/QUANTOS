@@ -195,8 +195,8 @@ export default function Portfolio() {
   return (
     <PageShell>
       <PageHeader title="Portfolio Research" titleZh="组合研究"
-        subtitle={bi('组合模拟权益、回撤、权重构成与风险/收益归因(只读合成快照)。',
-          'Portfolio simulation equity, drawdown, weight composition and risk/return attribution (read-only synthetic snapshot).')}
+        subtitle={bi('组合权益、回撤、权重构成与风险/收益归因 —— 权重由真实约束优化器(风险平价,基于收益协方差)计算,收益序列按上方来源徽标区分真实/合成(只读)。',
+          'Portfolio equity, drawdown, weight composition and risk/return attribution — weights come from the real constrained optimizer (risk-parity over the return covariance); the return series is badged real vs synthetic above (read-only).')}
         actions={analyticsMethod ? <Chip label={analyticsMethod} tone="special" /> : undefined} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 

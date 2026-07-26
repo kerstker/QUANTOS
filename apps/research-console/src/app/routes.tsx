@@ -12,6 +12,9 @@ import type React from 'react';
  * 硬标准的页面(对比 MonitoringDrift/SystemHealth/DslExplorer 那些同样含合成成分但已用横幅诚实声明、
  * 因而不归档的页面)。Crypto Live / FX Research 从「数据」组挪到「验证」组——核心内容是资产类别专属的
  * "无窥视 OOS + 可交易关卡"案例研究,方法论上属于"不自欺关卡",不是数据基础设施。
+ * 2026-07-25 第三轮:MexcReadiness 并入 GoLive(唯一的真重复页;5 项独有检查 + 毕业路径
+ * 迁移到 mexc 场地卡的「MEXC 专项检查」展开区,后端端点保留);LifecycleMonitor(实验登记 SM +
+ * paper-track)从「执行」挪入「验证」组;执行组按就绪→上线→跟踪流程重排。
  */
 
 export type GroupId =
@@ -47,6 +50,8 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/GettingStarted') },
   { path: '/research/command', zh: '指挥中心', en: 'Command Center', icon: 'CC', group: 'overview',
     load: () => import('@/pages/CommandCenter') },
+  { path: '/research/ops-console', zh: '人工操作台', en: 'Human Ops', icon: 'OP', group: 'overview',
+    load: () => import('@/pages/OpsConsole') },
 
   // ---- 数据:纯基础设施(数据集/质量/血缘)。资产类别层面的验证案例见「验证」组 ----
   { path: '/research/data-catalog', zh: '数据目录', en: 'Data Catalog', icon: 'DC', group: 'data',
@@ -59,18 +64,24 @@ export const PAGES: readonly PageDef[] = [
     load: () => import('@/pages/ICPanel') },
   { path: '/research/alpha-zoo', zh: 'Alpha 资产库', en: 'Alpha Zoo', icon: 'AZ', group: 'alpha',
     load: () => import('@/pages/AlphaZoo') },
+  { path: '/research/alpha-lifecycle', zh: '生命周期驾驶舱', en: 'Lifecycle Cockpit', icon: 'AL', group: 'alpha',
+    load: () => import('@/pages/AlphaLifecycle') },
   { path: '/research/alpha-graph', zh: '相关图谱', en: 'Alpha Graph', icon: 'GR', group: 'alpha',
     load: () => import('@/pages/AlphaGraph') },
   { path: '/research/dsl-explorer', zh: 'DSL 检查器', en: 'DSL Explorer', icon: 'DSL', group: 'alpha',
     load: () => import('@/pages/DslExplorer') },
   { path: '/research/findings', zh: '研究结论', en: 'Findings', icon: 'RF', group: 'alpha',
     load: () => import('@/pages/ResearchFindings') },
+  { path: '/research/ashare-alpha', zh: 'A股Alpha', en: 'A-Share Alpha', icon: 'Aα', group: 'alpha',
+    load: () => import('@/pages/AShareAlpha') },
 
   // ---- 验证:不自欺关卡与证据(含资产类别层面的 OOS/可交易关卡案例研究) ----
   { path: '/research/validation', zh: '验证门', en: 'Validation Gate', icon: 'VA', group: 'validation',
     load: () => import('@/pages/Validation') },
   { path: '/research/experiments', zh: '实验登记', en: 'Experiments', icon: 'EX', group: 'validation',
     load: () => import('@/pages/Experiments') },
+  { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'validation',
+    load: () => import('@/pages/LifecycleMonitor') },
   { path: '/research/backtest-results', zh: '回测战果', en: 'Backtest Results', icon: 'BR', group: 'validation',
     load: () => import('@/pages/BacktestResults') },
   { path: '/research/crypto-live', zh: '加密市场', en: 'Crypto Live', icon: '₿', group: 'validation',
@@ -88,25 +99,23 @@ export const PAGES: readonly PageDef[] = [
   { path: '/research/monitoring-drift', zh: '衰退监控', en: 'Drift Monitor', icon: 'MD', group: 'portfolio',
     load: () => import('@/pages/MonitoringDrift') },
 
-  // ---- 执行与跟踪:干跑是运行时 chokepoint,生命周期含纸面轨迹钻取 ----
+  // ---- 执行与跟踪:干跑是运行时 chokepoint,按就绪→上线→跟踪的实际流程排序 ----
   { path: '/research/dry-run', zh: '干跑流水线', en: 'Dry-Run Pipeline', icon: 'DR', group: 'execution',
     load: () => import('@/pages/DryRunPipeline') },
   { path: '/research/carry-readiness', zh: 'Carry 就绪', en: 'Carry Readiness', icon: 'CY', group: 'execution',
     load: () => import('@/pages/CarryReadiness') },
-  { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
-    load: () => import('@/pages/LiveTrading') },
+  { path: '/research/go-live', zh: '上线向导', en: 'Go-Live', icon: 'GL', group: 'execution',
+    load: () => import('@/pages/GoLive') },
   { path: '/research/live-desk', zh: '交易台', en: 'Live Desk', icon: 'LD', group: 'execution',
     load: () => import('@/pages/LiveDesk') },
+  { path: '/research/live-trading', zh: '实盘路线', en: 'Live Trading', icon: 'LT', group: 'execution',
+    load: () => import('@/pages/LiveTrading') },
   { path: '/research/mexc-market', zh: 'MEXC 市场', en: 'MEXC Market', icon: 'MX', group: 'execution',
     load: () => import('@/pages/MexcMarket') },
   { path: '/research/mexc-strategy', zh: 'MEXC 策略', en: 'MEXC Strategy', icon: 'MS', group: 'execution',
     load: () => import('@/pages/MexcStrategy') },
-  { path: '/research/mexc-readiness', zh: 'MEXC 就绪', en: 'MEXC Readiness', icon: 'MR', group: 'execution',
-    load: () => import('@/pages/MexcReadiness') },
   { path: '/research/gonogo', zh: 'GoNoGo 证据', en: 'GoNoGo Evidence', icon: 'GG', group: 'execution',
     load: () => import('@/pages/Gonogo') },
-  { path: '/research/lifecycle-monitor', zh: '生命周期', en: 'Lifecycle', icon: 'LC', group: 'execution',
-    load: () => import('@/pages/LifecycleMonitor') },
 
   // ---- 治理与系统:审计、健康、诚实完整度 ----
   { path: '/research/promotion-queue', zh: '晋级审批', en: 'Promotion Queue', icon: 'PQ', group: 'system',
@@ -146,4 +155,6 @@ export const REDIRECTS: readonly RedirectDef[] = [
   { from: '/research/paper-trading', to: '/research/lifecycle-monitor' },
   { from: '/research/architecture', to: '/research/system-completeness' },
   { from: '/research/evidence-ledger', to: '/research/system-completeness' },
+  // 2026-07-25 第三轮:MexcReadiness 并入 GoLive(mexc 场地卡的「MEXC 专项检查」展开区,独有价值零损失)
+  { from: '/research/mexc-readiness', to: '/research/go-live' },
 ] as const;

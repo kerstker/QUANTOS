@@ -1,0 +1,67 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 核心表达在底部：竞争对手可以模仿某一条策略，但很难复制持续发现、验证、部署、监控和淘汰策略的完整生产体系。五层壁垒是递进的，越往下越难复制。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "11 · 竞争壁垒"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "五层护城河，越往下越难复制"}
+  - elementId: m1
+    elementType: text
+    bounds: [90, 124, 780, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent"><strong>1 · 研究工艺</strong></span></p>
+        <p style="margin-top:3px"><span style="color:$muted;font-size:11px">标准化实验 · 防过拟合 · 多重检验 · 策略晋升/退役纪律 · 回测与实盘一致性验证</span></p>
+  - elementId: m2
+    elementType: text
+    bounds: [130, 190, 740, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent"><strong>2 · 数据资产</strong></span></p>
+        <p style="margin-top:3px"><span style="color:$muted;font-size:11px">清洗后历史数据 · 资金费/OI 特征 · 订单成交数据 · 策略实验数据库 · 版本与血缘</span></p>
+  - elementId: m3
+    elementType: text
+    bounds: [170, 256, 700, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent"><strong>3 · 实盘反馈</strong></span></p>
+        <p style="margin-top:3px"><span style="color:$muted;font-size:11px">真实滑点/成交/延迟/冲击 · 策略退化曲线 · 交易所质量 · 回测—实盘偏差数据</span></p>
+  - elementId: m4
+    elementType: text
+    bounds: [210, 322, 660, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent"><strong>4 · 系统工程</strong></span></p>
+        <p style="margin-top:3px"><span style="color:$muted;font-size:11px">数据→研究→组合→风控→执行→归因完整闭环 · 可回放 · 可复现 · 可审计 · 自动风控</span></p>
+  - elementId: m5
+    elementType: text
+    bounds: [250, 388, 620, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent"><strong>5 · 组织学习</strong></span></p>
+        <p style="margin-top:3px"><span style="color:$muted;font-size:11px">AI 辅助研究 · 多模型交叉审查 · 失败实验知识库 · 持续迭代效率</span></p>
+  - elementId: claim
+    elementType: text
+    bounds: [90, 462, 780, 34]
+    content:
+      fontSize: 13.5
+      bold: true
+      color: "$ink"
+      text: |
+        <p>竞争对手可以模仿某一条策略，但很难复制<strong>持续发现、验证、部署、监控和淘汰策略</strong>的完整生产体系。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 13"}

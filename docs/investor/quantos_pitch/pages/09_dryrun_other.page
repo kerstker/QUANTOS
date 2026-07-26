@@ -1,0 +1,83 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "06 · 干跑实测 —— BTC 现货与 A 股"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "流水线是策略无关的执行骨架"}
+  - elementId: btc-title
+    elementType: text
+    bounds: [80, 118, 400, 24]
+    content: {style: "$h2", wrap: false, text: "BTC 现货趋势"}
+  - elementId: btc-table
+    elementType: table
+    bounds: [80, 150, 800, 108]
+    columnWidths: [0.34, 0.22, 0.22, 0.22]
+    rowHeights: [0.25, 0.25, 0.25, 0.25]
+    style: "$dark"
+    rows:
+      - - text: "策略"
+        - text: "总收益"
+        - text: "RAW 夏普"
+        - text: "最大回撤"
+      - - {text: "btc_spot_trend_hold", align: [left, middle]}
+        - {text: "+298.0%", bold: true, color: "$accent"}
+        - text: "1.24"
+        - text: "13.9%"
+      - - {text: "btc_spot_trend_hold_c5（成本敏感性）", align: [left, middle]}
+        - text: "+295.0%"
+        - text: "1.23"
+        - text: "14.0%"
+      - - {text: "btc_spot_trend", align: [left, middle]}
+        - text: "+105.3%"
+        - text: "0.82"
+        - text: "7.2%"
+  - elementId: ashare-title
+    elementType: text
+    bounds: [80, 284, 500, 24]
+    content: {style: "$h2", wrap: false, text: "A 股微盘复合（多宇宙多版本迭代）"}
+  - elementId: ashare-table
+    elementType: table
+    bounds: [80, 316, 800, 140]
+    columnWidths: [0.40, 0.15, 0.15, 0.15, 0.15]
+    rowHeights: [0.2, 0.2, 0.2, 0.2, 0.2]
+    style: "$dark"
+    rows:
+      - - text: "版本"
+        - text: "成本"
+        - text: "总收益"
+        - text: "RAW 夏普"
+        - text: "最大回撤"
+      - - {text: "v3_u249_cap40（市值上限 40 亿）", align: [left, middle]}
+        - text: "15bps"
+        - {text: "+41.4%", bold: true, color: "$accent"}
+        - {text: "1.25", bold: true, color: "$accent"}
+        - text: "17.1%"
+      - - {text: "v3_u249_cap30", align: [left, middle]}
+        - text: "15bps"
+        - text: "+40.5%"
+        - text: "1.23"
+        - text: "16.9%"
+      - - {text: "v3_u249", align: [left, middle]}
+        - text: "15bps"
+        - text: "+20.6%"
+        - text: "0.69"
+        - text: "21.1%"
+      - - {text: "v2_u249（被证伪，记录保留）", align: [left, middle]}
+        - text: "15bps"
+        - {text: "-14.6%", color: "$warn"}
+        - {text: "-0.24", color: "$warn"}
+        - {text: "50.4%", color: "$warn"}
+  - elementId: note
+    elementType: text
+    bounds: [80, 470, 800, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>被证伪的负收益版本不删除、不隐藏 —— 全部 18 条策略运行记录并列存证于 data/cache/dry_run.db</p>

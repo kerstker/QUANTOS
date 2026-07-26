@@ -63,12 +63,44 @@ _SYSTEMIC_STALE_FRAC = 0.2                          # >20% ticker 落后 = 系�
 # lets a clean future data-admission run start a separately attributable paper
 # clock instead of silently dropping the third candidate.
 TOP_CONTRA = ("cs_zscore", ("neg", ("field", "top_ls")))
+# 2026-07-24 预注册 crowd_contra 变体族(evidence/crowd_contra_variants.json;17 trial 含基线重跑,
+# 相对判定 7 个非基线 CANDIDATE)注册于此,只做**前向 paper 证据积累**——不晋级、不授权交易、不碰
+# live 轨道(_STRATEGIES/mandate/attestation 一字未动)。dict 值 = 变体 spec(expr/quantile/
+# cadence_days),由 _alpha_spec 补全默认;与原三元组(纯 DSL tuple)同一条信号路径。诚实注脚:
+# DSR(按 2453-trial 总体泄气)对 3d 节奏变体深度怀疑(~0.001)——前向 OOS 证据是诚实裁判。
+CROWD_TAKER_COMBO = ("div", ("add", ("cs_zscore", ("neg", ("field", "global_ls"))),
+                             ("cs_zscore", ("neg", ("field", "taker_ls")))), ("const", 2.0))
 _ALPHAS = {
     "crowd_contra": CROWD_CONTRA,
     "carry_oi_majors": CARRY,
     "top_contra": TOP_CONTRA,
+    # --- 变体族 CANDIDATE(2026-07-24 预注册判定通过 7/16;REJECTED 9 个按纪律不注册)---
+    "crowd_contra_q20": {"expr": CROWD_CONTRA, "quantile": 0.20, "cadence_days": 7},
+    "crowd_taker_combo": {"expr": CROWD_TAKER_COMBO, "quantile": 0.30, "cadence_days": 7},
+    "crowd_contra_14d": {"expr": CROWD_CONTRA, "quantile": 0.30, "cadence_days": 14},
+    "crowd_contra_q20_14d": {"expr": CROWD_CONTRA, "quantile": 0.20, "cadence_days": 14},
+    "crowd_contra_3d": {"expr": CROWD_CONTRA, "quantile": 0.30, "cadence_days": 3},
+    "crowd_contra_q25_3d": {"expr": CROWD_CONTRA, "quantile": 0.25, "cadence_days": 3},
+    "crowd_contra_q35_3d": {"expr": CROWD_CONTRA, "quantile": 0.35, "cadence_days": 3},
 }
 _REQUIRED_RAW_LINEAGE = frozenset({"funding", "oi_metrics", "perp_mark_prices"})
+
+
+def _alpha_spec(entry):
+    """Normalize an _ALPHAS entry to a full per-alpha spec. A plain DSL tuple (the three original
+    alphas) gets weekly/q=QUANTILE defaults that are byte-identical to the pre-variant wiring
+    (decision_due 7d-12h = _DECISION_DUE_MS; min_gap 7d-12h = realize_due's DEFAULT_MIN_GAP_MS).
+    Dict entries (2026-07-24 variant family) set expr/quantile/cadence_days; the decision and
+    realization cadence derives from cadence_days with the same 12h grid-jitter tolerance."""
+    if isinstance(entry, dict):
+        spec = dict(entry)
+    else:
+        spec = {"expr": entry}
+    spec.setdefault("quantile", QUANTILE)
+    cadence = int(spec.setdefault("cadence_days", 7))
+    spec.setdefault("decision_due_ms", cadence * _DAY_MS - 12 * 3600 * 1000)
+    spec.setdefault("min_gap_ms", cadence * _DAY_MS - 12 * 3600 * 1000)
+    return spec
 
 
 def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,
@@ -163,17 +195,23 @@ def _load_attested_admission_ref(summary: dict, *, instruments) -> object | None
         return None
 
 
-def _weekly_rows(event_times) -> list:
+def _cadence_rows(event_times, cadence_days):
+    """首行 + 每行与上一决策行相距 >= cadence_days 天;cadence_days=7 时与原 _weekly_rows 逐位一致。"""
     rows, last = [], None
+    step = int(cadence_days) * _DAY_MS
     for r in range(len(event_times)):
-        if last is None or event_times[r] - last >= _WEEK_MS:
+        if last is None or event_times[r] - last >= step:
             rows.append(r)
             last = event_times[r]
     return rows
 
 
-def _weights_and_signals(sig_row, insts):
-    legs = _legs(sig_row, QUANTILE)
+def _weekly_rows(event_times) -> list:
+    return _cadence_rows(event_times, 7)
+
+
+def _weights_and_signals(sig_row, insts, quantile=QUANTILE):
+    legs = _legs(sig_row, quantile)
     weights = {insts[i]: w for i, w in legs.items()}
     signals = {insts[i]: sig_row[i] for i in range(len(insts)) if sig_row[i] is not None}
     return weights, signals
@@ -201,7 +239,7 @@ def _candidate_advances_ledger(decided_ts: int, existing_timestamps) -> bool:
     return int(decided_ts) > latest
 
 
-def _reference_sharpe(sig, rows, ev, insts, prices, funding_sum, *, before_ts) -> tuple:
+def _reference_sharpe(sig, rows, ev, insts, prices, funding_sum, *, before_ts, quantile=QUANTILE) -> tuple:
     """冻结的历史参照:对 before_ts 之前的周度网格,用与兑现完全相同的公式重算周度序列的 sharpe。
     与 paper_sharpe 同单位(周度、非年化)——apples-to-apples。返回 (sharpe, n_weeks)。"""
     rets = []
@@ -210,7 +248,7 @@ def _reference_sharpe(sig, rows, ev, insts, prices, funding_sum, *, before_ts) -
         t0, t1 = int(ev[r0]), int(ev[r1])
         if t1 >= before_ts:
             break
-        legs = _legs(sig[r0], QUANTILE)
+        legs = _legs(sig[r0], quantile)
         if not legs:
             continue
         weights = {insts[i]: w for i, w in legs.items()}
@@ -364,7 +402,7 @@ def _run() -> None:
     # several days.
     latest_event_row = len(ev) - 1
     spot_prices = {int(ev[r]): {insts[i]: close[r][i] for i in range(len(insts))
-                                if close[r][i] and close[r][i] > 0} for r in rows}
+                                if close[r][i] and close[r][i] > 0} for r in range(len(ev))}
     prices = _mark_price_map(
         load_mark_prices(), [int(timestamp) for timestamp in ev]
     )
@@ -378,8 +416,9 @@ def _run() -> None:
     store = PaperTrackStore(_DB, create=True)
     status = {"ran_at": now_ms, "staleness_days": stale, "alphas": {}}
 
-    for alpha_id, expr in _ALPHAS.items():
-        sig = ax.evaluate(expr, panel)
+    for alpha_id, entry in _ALPHAS.items():
+        spec = _alpha_spec(entry)
+        sig = ax.evaluate(spec["expr"], panel)
         r_last = latest_event_row
         t_last = int(ev[r_last])
         # A clean admission starts a new attested evidence clock.  Historical
@@ -389,7 +428,7 @@ def _run() -> None:
             decs = ledger.attested_decisions(alpha_id)
         else:
             decs = ledger.decisions(alpha_id)
-        due = (not decs) or (t_last - decs[-1]["decided_ts"] >= _DECISION_DUE_MS)
+        due = (not decs) or (t_last - decs[-1]["decided_ts"] >= spec["decision_due_ms"])
         recorded_new = False
         recorded_ts = None
         blocked = False              # P1-8:本轮是否被决策门挡住(区分"无腿跳过"vs"数据脏暂停")
@@ -429,7 +468,7 @@ def _run() -> None:
             for r_try in candidates:
                 if r_try not in acceptable:
                     continue
-                weights, signals = _weights_and_signals(sig[r_try], insts)
+                weights, signals = _weights_and_signals(sig[r_try], insts, quantile=spec["quantile"])
                 if weights:
                     t_dec = int(ev[r_try])
                     if not _candidate_advances_ledger(t_dec, occupied_timestamps):
@@ -476,13 +515,17 @@ def _run() -> None:
 
         first_dec_ts = (decs[0]["decided_ts"] if decs
                         else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
-        ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, spot_prices, funding_sum,
-                                                  before_ts=first_dec_ts)
-        out = realize_due(ledger, store, alpha_id, timestamps=[int(ev[r]) for r in rows],
+        ref_sharpe, ref_weeks = _reference_sharpe(sig, _cadence_rows(ev, spec["cadence_days"]),
+                                                  ev, insts, spot_prices, funding_sum,
+                                                  before_ts=first_dec_ts, quantile=spec["quantile"])
+        out = realize_due(ledger, store, alpha_id,
+                          timestamps=([int(ev[r]) for r in rows] if spec["cadence_days"] == 7
+                                      else [int(_t) for _t in ev]),
                           prices=prices, funding_sum=funding_sum, backtest_sharpe=ref_sharpe,
                           blocked_instruments=blocked_instruments,
                           quality_evidence_current=quality_evidence_current,
                           admission_ref=admission_ref,
+                          min_gap_ms=spec["min_gap_ms"],
                           committed_at_ms=now_ms if admission_ref is not None else None)
         alerts.extend(out["alerts"])
 

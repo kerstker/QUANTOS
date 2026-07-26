@@ -1,0 +1,83 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 300, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "04 · 安全治理"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "“AI 永远不能碰实盘” —— 结构性约束，不是承诺"}
+  - elementId: flags
+    elementType: text
+    bounds: [80, 118, 800, 70]
+    content:
+      fontSize: 12
+      color: "$accent"
+      lineHeight: 1.7
+      fontFamily: {latin: "Consolas", ea: "MiSans"}
+      text: |
+        <p>LIVE_TRADING_ENABLED=false · REAL_BROKER_ENABLED=false · ALLOW_ORDER_SUBMISSION=false</p>
+        <p>ALLOW_AI_DIRECT_TRADING=false · REQUIRE_HUMAN_APPROVAL=true</p>
+  - elementId: row1-icon
+    elementType: icon
+    bounds: [80, 210, 26, 26]
+    iconName: "fas:user-shield"
+    fill: {type: solid, color: "$accent"}
+  - elementId: row1
+    elementType: text
+    bounds: [124, 204, 760, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>非人 actor 架构性封顶</strong></p>
+        <p><span style="color:$muted;font-size:11px">AI agent 在生命周期状态机上永远到不了 APPROVED · 无法 reset kill-switch · 无法触达凭证</span></p>
+  - elementId: row2-icon
+    elementType: icon
+    bounds: [80, 276, 26, 26]
+    iconName: "fas:users"
+    fill: {type: solid, color: "$accent"}
+  - elementId: row2
+    elementType: text
+    bounds: [124, 270, 760, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>多方人工批准状态机</strong></p>
+        <p><span style="color:$muted;font-size:11px">提出/复核/批准三个两两不同的真人 · 全程哈希链审计 · 批准一次性绑定 subject</span></p>
+  - elementId: row3-icon
+    elementType: icon
+    bounds: [80, 342, 26, 26]
+    iconName: "fas:fingerprint"
+    fill: {type: solid, color: "$accent"}
+  - elementId: row3
+    elementType: text
+    bounds: [124, 336, 760, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>强身份 M2 基线 + 出进程签名接缝</strong></p>
+        <p><span style="color:$muted;font-size:11px">OIDC + mTLS 绑定 + RBAC（13 攻击案例存证）· L2 默认无密钥：签不出、验不过</span></p>
+  - elementId: row4-icon
+    elementType: icon
+    bounds: [80, 408, 26, 26]
+    iconName: "fas:link"
+    fill: {type: solid, color: "$accent"}
+  - elementId: row4
+    elementType: text
+    bounds: [124, 402, 760, 56]
+    content:
+      style: "$body"
+      text: |
+        <p><strong>全链哈希链 + 治理扫描器</strong></p>
+        <p><span style="color:$muted;font-size:11px">6 个 transactional outbox · 事件 schema 目录篡改即失败 · 机器钉死：无券商 SDK import、真凭证永不落盘</span></p>
+  - elementId: honest
+    elementType: text
+    bounds: [80, 472, 800, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>威胁模型诚实边界：单进程运行时控制挡不住受信代码直接构造 HUMAN actor —— 该层由代码审查 + 治理扫描器 + Phase 14 进程隔离（设计已完成）治理。</p>

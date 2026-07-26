@@ -1,0 +1,649 @@
+{
+  "artifact": "GO_LIVE_READINESS",
+  "generated_at_ms": 1784922118185,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "venues": [
+    {
+      "venue": "binance",
+      "mainnet": false,
+      "suffix": "",
+      "key_permissions": {
+        "status": "UNVERIFIED",
+        "checked_at_ms": null
+      },
+      "smoke": {
+        "verdict": "ABSENT",
+        "age_ms": null
+      },
+      "mandate": {
+        "path": "key\\live_mandate.json",
+        "present": true,
+        "loads": true,
+        "expired": false,
+        "expires_at": 1788073673735,
+        "venue_domain_ok": true,
+        "exchange_domain_ok": true,
+        "expected_venue": "testnet",
+        "expected_exchange": "binance",
+        "allowed_instruments": [
+          "AAVE",
+          "ADA",
+          "APT",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETC",
+          "ETH",
+          "FIL",
+          "ICP",
+          "INJ",
+          "LINK",
+          "LTC",
+          "NEAR",
+          "OP",
+          "SOL",
+          "TRX",
+          "UNI",
+          "XLM",
+          "XRP"
+        ],
+        "max_gross_notional": 10000.0,
+        "max_single_order_notional": 2500.0,
+        "max_net_notional": 3000.0
+      },
+      "attestations": {
+        "crowd_contra": {
+          "present": true,
+          "kind": "human_override"
+        },
+        "carry_oi_majors": {
+          "present": false,
+          "kind": null
+        },
+        "top_contra": {
+          "present": false,
+          "kind": null
+        },
+        "btc_spot_trend": {
+          "present": false,
+          "kind": null
+        }
+      },
+      "kill_switch_tripped": false,
+      "last_run": {
+        "status_path": "data\\cache\\live_track_status.json",
+        "present": true,
+        "at_ms": 1783905000982,
+        "summary": {
+          "mode": "submit",
+          "tier": "AUTO",
+          "strategy": "crowd_contra",
+          "venue": "binance"
+        }
+      }
+    },
+    {
+      "venue": "bybit",
+      "mainnet": false,
+      "suffix": "_bybit",
+      "key_permissions": {
+        "status": "UNVERIFIED",
+        "checked_at_ms": null
+      },
+      "smoke": {
+        "verdict": "ABSENT",
+        "age_ms": null
+      },
+      "mandate": {
+        "path": "key\\live_mandate_bybit.json",
+        "present": false,
+        "loads": false,
+        "expired": null,
+        "expires_at": null,
+        "venue_domain_ok": null,
+        "exchange_domain_ok": null,
+        "expected_venue": "testnet",
+        "expected_exchange": "bybit",
+        "allowed_instruments": [],
+        "max_gross_notional": null,
+        "max_single_order_notional": null,
+        "max_net_notional": null
+      },
+      "attestations": {
+        "crowd_contra": {
+          "present": true,
+          "kind": "human_override"
+        },
+        "carry_oi_majors": {
+          "present": false,
+          "kind": null
+        },
+        "top_contra": {
+          "present": false,
+          "kind": null
+        },
+        "btc_spot_trend": {
+          "present": false,
+          "kind": null
+        }
+      },
+      "kill_switch_tripped": false,
+      "last_run": {
+        "status_path": "data\\cache\\live_track_status_bybit.json",
+        "present": true,
+        "at_ms": 1783233056491,
+        "summary": {
+          "mode": "preview"
+        }
+      }
+    },
+    {
+      "venue": "bybit_demo",
+      "mainnet": false,
+      "suffix": "_bybit_demo",
+      "key_permissions": {
+        "status": "UNVERIFIED",
+        "checked_at_ms": null
+      },
+      "smoke": {
+        "verdict": "ABSENT",
+        "age_ms": null
+      },
+      "mandate": {
+        "path": "key\\live_mandate_bybit_demo.json",
+        "present": true,
+        "loads": true,
+        "expired": false,
+        "expires_at": 1788073673735,
+        "venue_domain_ok": true,
+        "exchange_domain_ok": true,
+        "expected_venue": "testnet",
+        "expected_exchange": "bybit",
+        "allowed_instruments": [
+          "AAVE",
+          "ADA",
+          "APT",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETC",
+          "ETH",
+          "FIL",
+          "ICP",
+          "INJ",
+          "LINK",
+          "LTC",
+          "NEAR",
+          "OP",
+          "SOL",
+          "TRX",
+          "UNI",
+          "XLM",
+          "XRP"
+        ],
+        "max_gross_notional": 10000.0,
+        "max_single_order_notional": 2500.0,
+        "max_net_notional": 3000.0
+      },
+      "attestations": {
+        "crowd_contra": {
+          "present": true,
+          "kind": "human_override"
+        },
+        "carry_oi_majors": {
+          "present": false,
+          "kind": null
+        },
+        "top_contra": {
+          "present": false,
+          "kind": null
+        },
+        "btc_spot_trend": {
+          "present": false,
+          "kind": null
+        }
+      },
+      "kill_switch_tripped": false,
+      "last_run": {
+        "status_path": "data\\cache\\live_track_status_bybit_demo.json",
+        "present": true,
+        "at_ms": 1783276171406,
+        "summary": {
+          "mode": "preview",
+          "tier": "AUTO",
+          "venue": "bybit_demo",
+          "n_would_submit": 0,
+          "would_submit": []
+        }
+      }
+    },
+    {
+      "venue": "mexc",
+      "mainnet": true,
+      "suffix": "_mexc",
+      "key_permissions": {
+        "status": "UNVERIFIED",
+        "checked_at_ms": null
+      },
+      "smoke": {
+        "verdict": "ABSENT",
+        "age_ms": null
+      },
+      "mandate": {
+        "path": "key\\live_mandate_mexc.json",
+        "present": false,
+        "loads": false,
+        "expired": null,
+        "expires_at": null,
+        "venue_domain_ok": null,
+        "exchange_domain_ok": null,
+        "expected_venue": "mainnet",
+        "expected_exchange": "mexc",
+        "allowed_instruments": [],
+        "max_gross_notional": null,
+        "max_single_order_notional": null,
+        "max_net_notional": null
+      },
+      "attestations": {
+        "crowd_contra": {
+          "present": true,
+          "kind": "human_override"
+        },
+        "carry_oi_majors": {
+          "present": false,
+          "kind": null
+        },
+        "top_contra": {
+          "present": false,
+          "kind": null
+        },
+        "btc_spot_trend": {
+          "present": false,
+          "kind": null
+        }
+      },
+      "kill_switch_tripped": false,
+      "last_run": {
+        "status_path": "data\\cache\\live_track_status_mexc.json",
+        "present": false,
+        "at_ms": null,
+        "summary": {}
+      }
+    },
+    {
+      "venue": "binance_mainnet",
+      "mainnet": true,
+      "suffix": "_binance_mainnet",
+      "key_permissions": {
+        "status": "SAFE",
+        "checked_at_ms": 1784875153972
+      },
+      "smoke": {
+        "verdict": "PASS",
+        "age_ms": 50349749
+      },
+      "mandate": {
+        "path": "key\\live_mandate_binance_mainnet.json",
+        "present": true,
+        "loads": true,
+        "expired": false,
+        "expires_at": 1792816121000,
+        "venue_domain_ok": true,
+        "exchange_domain_ok": true,
+        "expected_venue": "mainnet",
+        "expected_exchange": "binance",
+        "allowed_instruments": [
+          "BTC",
+          "ETH"
+        ],
+        "max_gross_notional": 100.0,
+        "max_single_order_notional": 100.0,
+        "max_net_notional": 100.0
+      },
+      "attestations": {
+        "crowd_contra": {
+          "present": true,
+          "kind": "human_override"
+        },
+        "carry_oi_majors": {
+          "present": false,
+          "kind": null
+        },
+        "top_contra": {
+          "present": false,
+          "kind": null
+        },
+        "btc_spot_trend": {
+          "present": false,
+          "kind": null
+        }
+      },
+      "kill_switch_tripped": false,
+      "last_run": {
+        "status_path": "data\\cache\\live_track_status_binance_mainnet.json",
+        "present": false,
+        "at_ms": null,
+        "summary": {}
+      }
+    }
+  ],
+  "strategies": {
+    "crowd_contra": {
+      "decided_ts": 1784592000000,
+      "n_legs": 14,
+      "gross": 1.0,
+      "legs": [
+        {
+          "instrument": "AAVE",
+          "weight": 0.07142857142857142,
+          "price": 95.7
+        },
+        {
+          "instrument": "ADA",
+          "weight": -0.07142857142857142,
+          "price": 0.1737
+        },
+        {
+          "instrument": "APT",
+          "weight": 0.07142857142857142,
+          "price": 0.61
+        },
+        {
+          "instrument": "BCH",
+          "weight": 0.07142857142857142,
+          "price": 223.9
+        },
+        {
+          "instrument": "BNB",
+          "weight": -0.07142857142857142,
+          "price": 573.95
+        },
+        {
+          "instrument": "BTC",
+          "weight": 0.07142857142857142,
+          "price": 66556.16
+        },
+        {
+          "instrument": "DOGE",
+          "weight": -0.07142857142857142,
+          "price": 0.07339
+        },
+        {
+          "instrument": "DOT",
+          "weight": -0.07142857142857142,
+          "price": 0.847
+        },
+        {
+          "instrument": "ETC",
+          "weight": 0.07142857142857142,
+          "price": 7.0
+        },
+        {
+          "instrument": "FIL",
+          "weight": 0.07142857142857142,
+          "price": 0.769
+        },
+        {
+          "instrument": "LTC",
+          "weight": -0.07142857142857142,
+          "price": 46.87
+        },
+        {
+          "instrument": "OP",
+          "weight": 0.07142857142857142,
+          "price": 0.0982
+        },
+        {
+          "instrument": "SOL",
+          "weight": -0.07142857142857142,
+          "price": 78.12
+        },
+        {
+          "instrument": "XRP",
+          "weight": -0.07142857142857142,
+          "price": 1.1436
+        }
+      ],
+      "capacity_utilization_note": "容量带 [3582051.4819425005, 71641029.63885] AUM(binding=participation, UNCALIBRATED_PRINCIPLED);deploy 目标 1000 USDT 对最保守 safe=3582051.48 的利用率 = 0.0279%;规则 deploy ≤ safe/3:PASS"
+    },
+    "carry_oi_majors": {
+      "decided_ts": 1784592000000,
+      "n_legs": 14,
+      "gross": 1.0,
+      "legs": [
+        {
+          "instrument": "ATOM",
+          "weight": 0.07142857142857142,
+          "price": 1.486
+        },
+        {
+          "instrument": "BCH",
+          "weight": 0.07142857142857142,
+          "price": 223.9
+        },
+        {
+          "instrument": "BNB",
+          "weight": -0.07142857142857142,
+          "price": 573.95
+        },
+        {
+          "instrument": "BTC",
+          "weight": -0.07142857142857142,
+          "price": 66556.16
+        },
+        {
+          "instrument": "DOGE",
+          "weight": -0.07142857142857142,
+          "price": 0.07339
+        },
+        {
+          "instrument": "DOT",
+          "weight": 0.07142857142857142,
+          "price": 0.847
+        },
+        {
+          "instrument": "FIL",
+          "weight": 0.07142857142857142,
+          "price": 0.769
+        },
+        {
+          "instrument": "INJ",
+          "weight": 0.07142857142857142,
+          "price": 5.304
+        },
+        {
+          "instrument": "LINK",
+          "weight": -0.07142857142857142,
+          "price": 8.659
+        },
+        {
+          "instrument": "LTC",
+          "weight": -0.07142857142857142,
+          "price": 46.87
+        },
+        {
+          "instrument": "OP",
+          "weight": 0.07142857142857142,
+          "price": 0.0982
+        },
+        {
+          "instrument": "TRX",
+          "weight": 0.07142857142857142,
+          "price": 0.3297
+        },
+        {
+          "instrument": "UNI",
+          "weight": -0.07142857142857142,
+          "price": 3.72
+        },
+        {
+          "instrument": "XLM",
+          "weight": -0.07142857142857142,
+          "price": 0.1922
+        }
+      ],
+      "capacity_utilization_note": "容量带 [976700.5476466801, 19534010.952933602] AUM(binding=participation, UNCALIBRATED_PRINCIPLED);deploy 目标 1000 USDT 对最保守 safe=976700.55 的利用率 = 0.1024%;规则 deploy ≤ safe/3:PASS"
+    },
+    "top_contra": {
+      "decided_ts": 1784592000000,
+      "n_legs": 14,
+      "gross": 1.0,
+      "legs": [
+        {
+          "instrument": "ADA",
+          "weight": 0.07142857142857142,
+          "price": 0.1737
+        },
+        {
+          "instrument": "APT",
+          "weight": -0.07142857142857142,
+          "price": 0.61
+        },
+        {
+          "instrument": "AVAX",
+          "weight": 0.07142857142857142,
+          "price": 6.571
+        },
+        {
+          "instrument": "BCH",
+          "weight": 0.07142857142857142,
+          "price": 223.9
+        },
+        {
+          "instrument": "BTC",
+          "weight": 0.07142857142857142,
+          "price": 66556.16
+        },
+        {
+          "instrument": "DOGE",
+          "weight": -0.07142857142857142,
+          "price": 0.07339
+        },
+        {
+          "instrument": "ETC",
+          "weight": -0.07142857142857142,
+          "price": 7.0
+        },
+        {
+          "instrument": "ETH",
+          "weight": 0.07142857142857142,
+          "price": 1930.09
+        },
+        {
+          "instrument": "FIL",
+          "weight": -0.07142857142857142,
+          "price": 0.769
+        },
+        {
+          "instrument": "ICP",
+          "weight": -0.07142857142857142,
+          "price": 2.224
+        },
+        {
+          "instrument": "LTC",
+          "weight": -0.07142857142857142,
+          "price": 46.87
+        },
+        {
+          "instrument": "NEAR",
+          "weight": -0.07142857142857142,
+          "price": 1.938
+        },
+        {
+          "instrument": "TRX",
+          "weight": 0.07142857142857142,
+          "price": 0.3297
+        },
+        {
+          "instrument": "XLM",
+          "weight": 0.07142857142857142,
+          "price": 0.1922
+        }
+      ],
+      "capacity_utilization_note": "容量带 [3582051.4819425005, 71641029.63885] AUM(binding=participation, UNCALIBRATED_PRINCIPLED);deploy 目标 1000 USDT 对最保守 safe=3582051.48 的利用率 = 0.0279%;规则 deploy ≤ safe/3:PASS"
+    },
+    "btc_spot_trend": {
+      "decided_ts": 1784764800000,
+      "n_legs": 1,
+      "gross": 1.0,
+      "legs": [
+        {
+          "instrument": "BTC",
+          "weight": 1.0,
+          "price": 65084.05
+        }
+      ]
+    }
+  },
+  "guidance": {
+    "venue": "binance_mainnet",
+    "strategy": "crowd_contra",
+    "deploy_target_usdt": 1000.0,
+    "required_instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "FIL",
+      "LTC",
+      "OP",
+      "SOL",
+      "XRP"
+    ],
+    "missing_from_mandate": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "BCH",
+      "BNB",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "FIL",
+      "LTC",
+      "OP",
+      "SOL",
+      "XRP"
+    ],
+    "stale_in_mandate": [
+      "ETH"
+    ],
+    "min_deploy_for_all_legs": 700.0,
+    "min_deploy_binding_leg": "BTC",
+    "suggested_caps": {
+      "max_gross_notional": 1100.0,
+      "max_single_order_notional": 150.0,
+      "max_net_notional": 100.0,
+      "per_instrument": 150.0
+    },
+    "capacity_safety": {
+      "safe_capacity_est": 3582051.4819425005,
+      "source": "data\\cache\\capacity_snapshot.json#books.crowd_contra",
+      "deploy_target_usdt": 1000.0,
+      "utilization": 0.00027916963366972965,
+      "rule": "deploy <= safe_capacity/3",
+      "passes": true,
+      "note": "safe_capacity 取最保守角(calibrated_range.low 与 binding aum 现存者的最小值,UNCALIBRATED_PRINCIPLED 未校准原则带,诊断口径);deploy 1000 USDT = safe 的 0.0279%,规则上限 safe/3 = 1194017.16 USDT"
+    },
+    "warnings": [
+      "13/14 条信号腿不在 mandate allowed_instruments 里: AAVE, ADA, APT, BCH, BNB, DOGE, DOT, ETC, FIL, LTC, OP, SOL, XRP —— 这些腿的订单恒 instrument_not_allowed 升人工",
+      "mandate 授权了 1 个当前信号没有的标的: ETH —— 重签时按最新信号腿收敛授权面",
+      "按当前 mandate gross 上限 100.0 推算 deploy≈95.00 USDT,4/14 条腿名义额低于交易所 min-notional: BCH, BTC, ETC, LTC —— gross 上限提到 ≥ 1100.0 全部腿才可下单",
+      "按 deploy≈1000 USDT / 14 腿,单腿目标名义≈71.4 USDT,周度调仓 delta 多数 < 交易所 min-notional(5–50 USDT)——调仓将是量化/部分的;这是工程约束,不是 alpha 衰减信号"
+    ]
+  },
+  "honesty_note": "Go-live 就绪清单:全部项绿也只是'具备提交人工评审的材料',绝不代表可以实盘——L2 边界(SafetyConfig 五旗标 + readiness pin)不变,live 仍需多方人工 mandate + 人工 --arm-live。key_permissions 来自人工跑 verify_key_permissions --write-evidence 的脱敏证据(缺 = UNVERIFIED,本驱动器绝不自己联网校验);mandate/attestation 读本地 key/ 文件但不涉及任何密钥值;kill-switch 读 SQLite 权威,损坏即 fail-closed tripped。guidance.suggested_caps 是给真人重签 mandate 的建议,代码不代签任何数字。guidance.capacity_safety 与各策略 capacity_utilization_note 是 spec §11.3 deploy ≤ safe_capacity/3 的只读诊断:safe 取容量带最保守角(UNCALIBRATED_PRINCIPLED),缺证据 passes=null 绝不编造,违反只大声告警、不 clamp 任何数字。"
+}

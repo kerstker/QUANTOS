@@ -11,6 +11,11 @@
       "role": "data_quality_admission"
     },
     {
+      "relative_path": "data/cache/deployment_state.db",
+      "required": false,
+      "role": "deployment_state"
+    },
+    {
       "relative_path": "data/cache/domain_event_projection.db",
       "required": true,
       "role": "domain_event_projection"
@@ -41,6 +46,11 @@
       "role": "l2_restore_history_authority"
     },
     {
+      "relative_path": "data/cache/live_kill_switch.db",
+      "required": false,
+      "role": "kill_switch_authority"
+    },
+    {
       "relative_path": "data/cache/live_refresh_history.db",
       "required": true,
       "role": "data_refresh_history"
@@ -56,27 +66,25 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 2705,
+  "backup_elapsed_ms": 9820,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
-  "file_count": 11,
+  "file_count": 13,
   "history_authoritative": true,
-  "history_event_hash": "a2620d93f26f1c3800733f5bc1aef2e4feb9c2ccd95b95c69d7e7ec136777ca5",
-  "history_event_seq": 34,
+  "history_event_hash": "e898d635cd592c492697b4ec620cc7d8742265adb003d17b3f940f8f9f00d271",
+  "history_event_seq": 38,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
     "data/cache/approvals.db",
     "data/cache/artifact_admission.db",
-    "data/cache/deployment_state.db",
-    "data/cache/identity_authorization.db",
-    "data/cache/live_kill_switch.db"
+    "data/cache/identity_authorization.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1784746801471,
+  "observed_at_ms": 1785006002228,
   "required_source_count": 10,
-  "restore_elapsed_ms": 605,
+  "restore_elapsed_ms": 1698,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,

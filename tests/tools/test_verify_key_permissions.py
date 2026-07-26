@@ -465,3 +465,55 @@ def test_result_repr_never_contains_key_material():
     dump = repr(result)
     assert _SENTINEL_KEY not in dump
     assert _SENTINEL_SECRET not in dump
+
+
+# ---------------------------------------------------------------------------
+# --write-evidence(2026-07-24,go-live 向导):脱敏证据 artifact
+# ---------------------------------------------------------------------------
+
+def test_cli_write_evidence_writes_redacted_artifact(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("BINANCE_MAINNET_API_KEY", _SENTINEL_KEY)
+    monkeypatch.setenv("BINANCE_MAINNET_API_SECRET", _SENTINEL_SECRET)
+    resp = {"ipRestrict": True, "enableWithdrawals": False, "enableFutures": True}
+    monkeypatch.setattr("tools.verify_key_permissions._binance_default_transport",
+                        _fake_transport(200, resp))
+    out_path = tmp_path / "key_permissions_binance_mainnet.json"
+    exit_code = main(["--venue", "binance", "--write-evidence", str(out_path)])
+    assert exit_code == 0
+    artifact = json.loads(out_path.read_text(encoding="utf-8"))
+    assert artifact["venue"] == "binance"
+    assert artifact["safety"] == "SAFE"
+    assert isinstance(artifact["reasons"], list) and artifact["reasons"]
+    assert artifact["raw_fields"]["ipRestrict"] is True
+    assert artifact["raw_fields"]["enableWithdrawals"] is False
+    assert isinstance(artifact["checked_at_ms"], int) and artifact["checked_at_ms"] > 0
+    # 哨兵:密钥明文绝不出现在 artifact 文件里(整个文件原文检查,不只解析后的字段)
+    raw_text = out_path.read_text(encoding="utf-8")
+    assert _SENTINEL_KEY not in raw_text
+    assert _SENTINEL_SECRET not in raw_text
+
+
+def test_cli_write_evidence_records_unsafe_verdict(monkeypatch, tmp_path):
+    monkeypatch.setenv("BYBIT_MAINNET_API_KEY", _SENTINEL_KEY)
+    monkeypatch.setenv("BYBIT_MAINNET_API_SECRET", _SENTINEL_SECRET)
+    resp = {"retCode": 0, "result": {"ips": ["*"], "permissions": {"Wallet": ["Withdraw"]}}}
+    monkeypatch.setattr("tools.verify_key_permissions._bybit_default_transport",
+                        _fake_transport(200, resp))
+    out_path = tmp_path / "kp.json"
+    exit_code = main(["--venue", "bybit", "--write-evidence", str(out_path)])
+    assert exit_code != 0                       # 非 SAFE 退出码不变
+    artifact = json.loads(out_path.read_text(encoding="utf-8"))
+    assert artifact["safety"] == "UNSAFE"       # 不安全结论同样诚实落证据
+
+
+def test_cli_default_writes_no_evidence_file(monkeypatch, capsys, tmp_path):
+    # 默认行为逐字节不变:不带 --write-evidence 时绝不写任何文件
+    monkeypatch.setenv("BINANCE_MAINNET_API_KEY", _SENTINEL_KEY)
+    monkeypatch.setenv("BINANCE_MAINNET_API_SECRET", _SENTINEL_SECRET)
+    resp = {"ipRestrict": True, "enableWithdrawals": False}
+    monkeypatch.setattr("tools.verify_key_permissions._binance_default_transport",
+                        _fake_transport(200, resp))
+    monkeypatch.chdir(tmp_path)
+    exit_code = main(["--venue", "binance"])
+    assert exit_code == 0
+    assert list(tmp_path.iterdir()) == []

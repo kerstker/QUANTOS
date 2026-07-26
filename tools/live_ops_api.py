@@ -4,13 +4,20 @@
 单向边界管辖,只能读快照;交易台要实时查两所行情/仓位,网络 + live/ import 都是 tools/ 的
 正当领地(驱动器/取数器同在此)。
 
-**操作面的治理边界(tests/governance/test_live_ops_boundary.py 机器钉死):**
-1. 本模块**绝不直接下单**——不调用任何下单/撤单/批量提交入口(字面量扫描钉死);POST /run
-   只以固定 argv 子进程运行 `python -m tools.live_track_advance`,与人工敲 CLI 完全同一条
-   mandate → gate → 确认 → 记账链,没有任何旁路;
-2. venue 参数白名单(_VENUES 键),submit 是布尔——不存在自由字符串到达命令行;
-3. 响应永不包含密钥值(凭证只在进程内构造适配器用);
-4. CORS 仅本机 3100(与 console_api 同款)。
+**操作面的治理边界(tests/governance/test_live_ops_boundary.py 机器钉死,2026-07-24 收紧):**
+1. 本模块**绝不直接下单、也绝不让子进程下单**——不调用任何下单/撤单/批量提交入口(字面量
+   扫描钉死);所有固定 argv 都**绝不携带 `--submit`**(整模块字面量钉死),驱动器恒走
+   preview 路径(PreviewVenue 结构性无法提交);
+2. POST /preview(2026-07-24,演练):固定 argv `--venue <v> --strategy <s>`,仅对
+   mainnet-only venue 追加 `--arm-live`——**armed preview**:真实 mainnet 适配器被构造
+   (唯读方法透传真实市况),但 PreviewVenue 包装 + 草稿账本保证零提交。`--arm-live`
+   只允许出现在 `_build_preview_cmd` 一处(AST 钉死);
+3. venue/strategy 参数白名单(_VENUES/_STRATEGIES 键),其余参数是布尔——请求体无法注入
+   任何 flag(argv 服务端固定);
+4. 响应永不包含密钥值(凭证只在进程内构造适配器用;preview 的 stdout 尾部再防御性过滤
+   凭证形状的行);
+5. CORS 仅本机 3100/3200(与 console_api 同款,另支持 QUANTOS_LIVEOPS_CORS_ORIGINS
+   逗号分隔追加——镜像 QUANTOS_CONSOLE_CORS_ORIGINS)。
 
 **本机共享密钥认证(2026-07-05,机构审计 P1):** 此前全部端点零认证——同一台机器上任意
 进程(包括恶意进程)都能打这个端口触发真实提交。全部端点现在要求请求头 `X-Ops-Token` 匹配
@@ -44,7 +51,8 @@ from live.governance.mandate_store import MandateLoadError, load_mandate
 from live.governance.review_queue import ReviewQueue
 from tools.live_snapshot import binance_position_rows, bybit_position_rows, mexc_spot_account_rows
 from tools.mexc_credentials import fetch_mexc_account
-from tools.live_track_advance import _VENUES, _load_credentials, _venue_paths
+from tools.live_track_advance import (_STRATEGIES, _VENUES, _load_credentials, _venue_paths,
+                                      venue_requires_arm)
 
 _REVIEW_QUEUE_PATH = os.path.join("data", "cache", "live_review_queue.db")
 
@@ -76,8 +84,18 @@ def require_ops_token(x_ops_token: Optional[str] = Header(default=None)) -> None
 
 
 app = FastAPI(title="QUANTOS Live Ops", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3100", "http://127.0.0.1:3100"],
-                   allow_methods=["GET", "POST"], allow_headers=["*"])
+# 与 console_api 同款:本机 3100/3200(前端两套端口)+ QUANTOS_LIVEOPS_CORS_ORIGINS 追加
+_extra_cors_origins = tuple(
+    origin.strip()
+    for origin in os.getenv("QUANTOS_LIVEOPS_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3100", "http://127.0.0.1:3100",
+                   "http://localhost:3200", "http://127.0.0.1:3200",
+                   *_extra_cors_origins],
+    allow_methods=["GET", "POST"], allow_headers=["*"])
 
 _RUN_LOCK = threading.Lock()
 _RUN_STATE = {"running": False, "venue": None, "submit": None, "started_at": None,
@@ -143,8 +161,8 @@ def _venue_dashboard(venue: str) -> dict:
     try:
         if cfg.get("spot"):
             # 现货(mainnet)分支(2026-07 MEXC 对接 1.7):**不走 gated 适配器**——mainnet 构造
-            # 在 L2 默认下 SafetyViolation,而 ops API 绝不 arm(治理钉死:固定 argv 永不携带
-            # arming flag,arming 是人工 CLI 专属)。只读账户查询经 tools/mexc_credentials 的
+            # 在 L2 默认下 SafetyViolation;dashboard 是轮询面,不 arm(arm 只在 /preview 的
+            # armed-preview 固定 argv 里,绝不提交——治理钉死)。只读账户查询经 tools/mexc_credentials 的
             # ungated 镜像(与 verify_key_permissions 同一设计);标记价用公开 bookTicker。
             # 现货语义:无强平价、无杠杆、无成本基(upnl 诚实 None)。
             api_key, api_secret = _load_credentials(cfg, venue)
@@ -228,22 +246,34 @@ async def dashboard() -> dict:
 
 class RunRequest(BaseModel):
     venue: str
-    submit: bool = False
     refresh: bool = False
 
 
-def _build_run_cmd(venue: str, submit: bool, refresh: bool) -> list:
-    """固定 argv(绝无 shell/自由字符串):驱动器 CLI 与人工执行完全同一入口。"""
+def _build_run_cmd(venue: str, refresh: bool) -> list:
+    """固定 argv(绝无 shell/自由字符串):驱动器 CLI 与人工执行完全同一入口。
+    **2026-07-24 治理收紧:ops API 的 argv 绝不携带 `--submit`**——真提交只留给人工 CLI;
+    /run 触发的运行恒为 preview(PreviewVenue 结构性无法提交)。"""
     cmd = [sys.executable, "-m", "tools.live_track_advance", "--venue", venue]
-    if submit:
-        cmd.append("--submit")
     if not refresh:
         cmd.append("--no-refresh")
     return cmd
 
 
-def _run_driver(venue: str, submit: bool, refresh: bool) -> None:
-    cmd = _build_run_cmd(venue, submit, refresh)
+def _build_preview_cmd(venue: str, strategy: str) -> list:
+    """armed-preview(演练)固定 argv(2026-07-24,绝无 shell/自由字符串):**绝不携带
+    `--submit`**;仅 mainnet-only venue(venue_requires_arm,与驱动器启动闸门同一判定)
+    追加 `--arm-live`——armed preview:真实 mainnet 适配器只读透传,PreviewVenue 结构性
+    无法提交。这是整个 ops API 唯一允许出现 `--arm-live` 的地方(governance AST 钉死)。
+    `--no-refresh`:preview 读当前快照演练决策,行情刷新是 /run(refresh=true)的职责。"""
+    cmd = [sys.executable, "-m", "tools.live_track_advance",
+           "--venue", venue, "--strategy", strategy, "--no-refresh"]
+    if venue_requires_arm(venue):
+        cmd.append("--arm-live")
+    return cmd
+
+
+def _run_driver(venue: str, refresh: bool) -> None:
+    cmd = _build_run_cmd(venue, refresh)
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800,
                               cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -262,12 +292,100 @@ async def run(req: RunRequest) -> dict:
         raise HTTPException(400, f"unknown venue {req.venue!r} (allowed: {sorted(_VENUES)})")
     if not _RUN_LOCK.acquire(blocking=False):
         raise HTTPException(409, "a driver run is already in progress (single-flight)")
-    _RUN_STATE.update({"running": True, "venue": req.venue, "submit": req.submit,
+    _RUN_STATE.update({"running": True, "venue": req.venue, "submit": False,
                        "started_at": int(time.time() * 1000), "finished_at": None,
                        "returncode": None, "tail": ""})
-    threading.Thread(target=_run_driver, args=(req.venue, req.submit, req.refresh),
+    threading.Thread(target=_run_driver, args=(req.venue, req.refresh),
                      daemon=True).start()
-    return {"started": True, "venue": req.venue, "submit": req.submit}
+    # submit 恒 False(治理收紧后 /run 不再接受提交语义;保留字段仅为 dashboard 形状兼容)
+    return {"started": True, "venue": req.venue, "submit": False}
+
+
+# --- armed-preview(演练)端点(2026-07-24)---
+
+_PREVIEW_TIMEOUT_S = 600          # --no-refresh 的 preview:信号 + venue 唯读,远低于 /run 的 1800
+_STATUS_TAIL_LINES = 50
+# 驱动器本不该打印凭证(凭证只在进程内构造适配器用);这里防御性过滤凭证形状的行。
+_CREDENTIAL_LINE_MARKERS = ("api_key", "apikey", "api-key", "api_secret", "secret",
+                            "token", "signature", "passwd", "password")
+
+
+class PreviewRequest(BaseModel):
+    venue: str
+    strategy: str
+
+
+def _sanitize_tail(text: str, max_lines: int = _STATUS_TAIL_LINES) -> str:
+    """stdout/stderr 尾部 N 行,丢弃任何凭证形状的行(纵深防御,见模块 docstring)。"""
+    lines = [ln for ln in (text or "").splitlines()[-max_lines:]
+             if not any(m in ln.lower() for m in _CREDENTIAL_LINE_MARKERS)]
+    return "\n".join(lines)
+
+
+def _read_fresh_status(venue: str, strategy: str, started_ms: int) -> Optional[dict]:
+    """读**本次运行**落盘的 status JSON(含 would_submit)。文件缺失/损坏、或 ran_at 早于
+    本次启动(= 上一轮的陈旧快照)→ 诚实 None,绝不把旧 status 当本次结果返回。"""
+    path = _venue_paths(_VENUES[venue]["suffix"], strategy_id=strategy)["status"]
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        ran_at = int(data.get("ran_at") or 0)
+    except (TypeError, ValueError):
+        return None
+    if ran_at < started_ms:
+        return None
+    return data
+
+
+@app.post("/api/v1/liveops/preview", dependencies=[Depends(require_ops_token)])
+async def preview(req: PreviewRequest) -> dict:
+    """演练:固定 argv 子进程跑驱动器的 preview 路径——**绝不携带 `--submit`**(治理钉死),
+    mainnet-only venue 自动加 `--arm-live`(armed preview:真实适配器唯读透传,
+    PreviewVenue 结构性无法提交)。同步等待完成(单飞,与 /run 共用一把锁),返回本次
+    落盘的 status JSON(含 would_submit)。"""
+    if req.venue not in _VENUES:
+        raise HTTPException(400, f"unknown venue {req.venue!r} (allowed: {sorted(_VENUES)})")
+    if req.strategy not in _STRATEGIES:
+        raise HTTPException(
+            400, f"unknown strategy {req.strategy!r} (allowed: {sorted(_STRATEGIES)})")
+    if not _RUN_LOCK.acquire(blocking=False):
+        raise HTTPException(409, "a driver run is already in progress (single-flight)")
+    started_ms = int(time.time() * 1000)
+    cmd = _build_preview_cmd(req.venue, req.strategy)
+    _RUN_STATE.update({"running": True, "venue": req.venue, "submit": False,
+                       "started_at": started_ms, "finished_at": None,
+                       "returncode": None, "tail": ""})
+    try:
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, text=True,
+                timeout=_PREVIEW_TIMEOUT_S,
+                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            ok = proc.returncode == 0
+            returncode = proc.returncode
+            tail = _sanitize_tail((proc.stdout or "") + "\n" + (proc.stderr or ""))
+        except subprocess.TimeoutExpired:
+            ok, returncode = False, None
+            tail = f"preview driver timed out after {_PREVIEW_TIMEOUT_S}s (killed)"
+        except Exception as exc:
+            ok, returncode = False, None
+            tail = f"{type(exc).__name__}: {exc}"
+        _RUN_STATE.update({"returncode": returncode, "tail": tail[-2000:]})
+    finally:
+        _RUN_STATE.update({"running": False, "finished_at": int(time.time() * 1000)})
+        _RUN_LOCK.release()
+    return {"ok": ok, "returncode": returncode, "venue": req.venue,
+            "strategy": req.strategy, "mode": "preview",
+            "armed": venue_requires_arm(req.venue),
+            "status": _read_fresh_status(req.venue, req.strategy, started_ms),
+            "stdout_tail": tail}
 
 
 class DemoFundsRequest(BaseModel):

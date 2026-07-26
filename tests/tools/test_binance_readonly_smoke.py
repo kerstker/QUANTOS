@@ -129,6 +129,21 @@ def test_account_bad_position_row_fails():
     assert result["verdict"] == "FAIL"
 
 
+def test_account_non_usdt_rows_are_skipped_like_the_adapter():
+    """真实 mainnet 账户的 positions 数组恒带 USDC 本位/季度合约零仓位行(实测 846 行里 49 行
+    非 USDT)——适配器 positions() 对它们是跳过而非报错,smoke 镜像同一语义。"""
+    mixed = dict(_ACCOUNT, positions=[
+        {"symbol": "BTCUSDT", "positionAmt": "0.001", "entryPrice": "59000.0"},
+        {"symbol": "BTCUSDC", "positionAmt": "0", "entryPrice": "0"},
+        {"symbol": "BTCUSDT_241227", "positionAmt": "0", "entryPrice": "0"},
+    ])
+    result, _rec = _run(http_request=_http_account(mixed, []))
+    assert result["verdict"] == "PASS"
+    account = [c for c in result["checks"] if c["name"] == "account"][0]
+    assert account["status"] == "PASS"
+    assert account.get("n_skipped_non_usdt") == 2
+
+
 def test_account_non_2xx_degrades_to_fail_not_crash():
     result, _rec = _run(http_request=_http_account({}, [], status=401))
     assert result["verdict"] == "FAIL"

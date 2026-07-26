@@ -19,6 +19,7 @@ SQLITE_ADAPTERS = {
     "services/research/paper_trading/store.py",
     "services/research/paper_trading/forward_store.py",
     "services/research/paper_trading/attested_store.py",
+    "services/research/alpha_family_registry.py",
 }
 
 

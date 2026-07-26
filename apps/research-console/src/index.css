@@ -72,7 +72,7 @@ body {
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13.5px;
+  font-size: 15px;
   letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -134,8 +134,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* .density-compact — opt-in compact container (tables, ladders, tapes) */
-.density-compact { font-size: 12px; line-height: 1.35; }
-.density-compact :is(th, td) { padding: 4px 8px !important; }
+.density-compact { font-size: 13px; line-height: 1.4; }
+.density-compact :is(th, td) { padding: 5px 9px !important; }
 .density-compact :is(.px-5) { padding-left: 12px !important; padding-right: 12px !important; }
 
 /* keyboard-focus ring for SVG node groups (e.g. AlphaGraph) — the <g role="button"> itself has

@@ -49,11 +49,13 @@ export default {
         glow: 'var(--glow-accent)',
       },
       fontSize: {
-        '3xs': ['9.5px', '12px'],
-        '2xs': ['10.5px', '13px'],
-        xs: ['11.5px', '15px'],
-        sm: ['12.5px', '17px'],
-        base: ['13.5px', '19px'],
+        /* 2026-07-24 readability refactor: whole scale shifted up ~1.5px —
+           3xs is now floor-legible (11px), body text lands at 15px. */
+        '3xs': ['11px', '14px'],
+        '2xs': ['12px', '16px'],
+        xs: ['13px', '18px'],
+        sm: ['14px', '20px'],
+        base: ['15px', '22px'],
       },
       backgroundImage: {
         grad: 'var(--grad)',

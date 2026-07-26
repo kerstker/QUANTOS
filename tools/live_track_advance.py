@@ -49,6 +49,11 @@ from live.execution.position_ledger import LiveLedger
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
 from live.execution.market_stats import average_daily_volume_units, realized_volatility
 from live.execution.day_pnl import compute_day_pnl
+from live.execution.drawdown_controller import (
+    DrawdownController, DrawdownState, DrawdownThresholds, combine_risk_multiplier,
+    correlation_component, correlation_shock_from_artifact,
+    degradation_component_from_artifact, drawdown_component,
+    snapshot_from_dict, snapshot_to_dict, unknown_component, venue_health_component)
 from live.execution.equity_state import (record_and_validate_peak_equity,
                                          save_peak_equity)
 from live.execution.state_io import atomic_write_json
@@ -236,8 +241,9 @@ _VENUES = {
     },
     # MEXC 现货(2026-07 MEXC 对接,docs/MEXC_INTEGRATION.md):**无现货 testnet**,
     # 唯一合法 base = mainnet——默认 SafetyConfig 下适配器构造即 SafetyViolation,
-    # 只有人工 CLI `--arm-live`(见 main())才构造得出;ops API/哨兵等不 arm 的进程
-    # 对这个 venue 只能得到诚实 gated 报告。mandate 文件 per-venue(venue="mainnet",
+    # 只有 `--arm-live`(见 main())才构造得出;ops API 只能经 /preview 的 armed-preview
+    # 固定 argv(绝不提交)构造它,哨兵等不 arm 的进程对这个 venue 只能得到诚实 gated
+    # 报告。mandate 文件 per-venue(venue="mainnet",
     # exchange="mexc",由真人签署,代码不代填)。"spot" 标记驱动 main() 的现货分支:
     # 现金检查/现货口径风控限额/权益折算(见 1.4 与 _mexc_balances)。
     "mexc": {
@@ -255,8 +261,9 @@ _VENUES = {
     # runbook: docs/runbooks/binance-futures-live-runbook.md):与 "binance"(testnet)同一
     # 适配器类、同一期货语义(balances/margin 复用 testnet 分支,**绝非**现货分支——无现货
     # 现金门、无现货口径限额),只是 base_url = MAINNET_BASE——默认 SafetyConfig 下适配器
-    # 构造即 SafetyViolation,只有人工 CLI `--arm-live`(见 main())才构造得出;ops API/
-    # 哨兵等不 arm 的进程对这个 venue 只能得到诚实 gated 报告。env/key_file 与
+    # 构造即 SafetyViolation,只有 `--arm-live`(见 main())才构造得出;ops API 只能经
+    # /preview 的 armed-preview 固定 argv(绝不提交)构造它,哨兵等不 arm 的进程对这个
+    # venue 只能得到诚实 gated 报告。env/key_file 与
     # tools/verify_key_permissions.py::_MAINNET_CREDENTIAL_CONFIG["binance"] 刻意完全一致
     # (同一份凭据——mainnet_key_safety_skip_reason 归一化到 venue_name="binance" 后查的
     # 就是它)。mandate 文件 per-venue(venue="mainnet",exchange="binance",由真人签署,
@@ -276,6 +283,15 @@ _VENUES = {
 }
 
 
+def venue_requires_arm(venue_arg: str) -> bool:
+    """该 venue 的适配器是否只有 armed SafetyConfig 才构造得出——与 main() 的两处启动
+    闸门(spot / mainnet_only)同一判定,单一真源绝不漂移。ops API 的 armed-preview
+    固定 argv 据此决定加不加 `--arm-live`(armed preview 绝不提交,见
+    armed_safety_config)。"""
+    cfg = _VENUES[venue_arg]
+    return bool(cfg.get("mainnet_only") or cfg.get("spot"))
+
+
 def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
     """**只有 status 是 per-strategy 的**(2026-07-06 战线③):两条策略顺序跑同一 venue 会
     互相覆盖 status 快照 -> 默认策略沿用历史路径(连续性:watchdog/ops API/gonogo/备份 glob
@@ -290,6 +306,9 @@ def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
         "ledger": os.path.join("data", "cache", f"live_track{suffix}.db"),
         "status": os.path.join("data", "cache", status_name),
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
+        # W6 回撤控制器快照(账户级,与 risk_state 同口径;独立文件的理由见
+        # drawdown_control_decision docstring——不塞进 risk_state 避免被 save_peak_equity 重建载荷时丢弃)
+        "drawdown_state": os.path.join("data", "cache", f"live_drawdown_state{suffix}.json"),
         "equity": os.path.join("data", "cache", f"live_equity{suffix}.jsonl"),
         "parity": os.path.join("data", "cache", f"live_parity{suffix}.jsonl"),
         "day_state": os.path.join("data", "cache", f"live_day_state{suffix}.json"),
@@ -784,16 +803,19 @@ def multi_strategy_mandate_alert(ledger_strategy_ids, current_strategy: str, man
 
 
 def armed_safety_config(argv) -> "Optional[SafetyConfig]":
-    """`--arm-live` 解析(2026-07 MEXC 对接 1.5,**人工 CLI 专属**):只有 argv 同时含
-    `--submit` 与 `--arm-live` 才返回 armed SafetyConfig——`allow_ai_direct_trading` 恒
-    False、`require_human_approval` 恒 True(SafetyConfig 安全默认,本函数绝不传这两个
-    参数,代码里不存在把它们翻掉的路径);否则 None(= 各适配器回退默认安全构造,mainnet
-    构造即 SafetyViolation)。`--arm-live` 不带 `--submit` → SystemExit:preview 绝不 arm
-    (preview 的全部意义就是"绝不真提交",arm 一个没有提交语义的进程只会制造误导)。"""
+    """`--arm-live` 解析(2026-07 MEXC 对接 1.5;2026-07-24 放开 **armed preview**):argv
+    含 `--arm-live` 即返回 armed SafetyConfig——`allow_ai_direct_trading` 恒 False、
+    `require_human_approval` 恒 True(SafetyConfig 安全默认,本函数绝不传这两个参数,
+    代码里不存在把它们翻掉的路径);否则 None(= 各适配器回退默认安全构造,mainnet
+    构造即 SafetyViolation)。
+    `--arm-live` 不带 `--submit` = **armed preview**(2026-07-24;此前 SystemExit 让
+    mainnet venue 完全没有 preview 路径,违背 preview-first 工作流):真实 mainnet 适配器
+    被构造出来(唯读方法透传真实市况),但 submit=False → main() 恒走 PreviewVenue 包装 +
+    :memory: 草稿账本——PreviewVenue.place_order 只记录 would_submit、返回
+    PREVIEW_NOT_SUBMITTED,**结构性无法提交**;arm 的只是"允许构造 mainnet 适配器",
+    不是"允许下单"。真提交仍只有 `--submit --arm-live` 一条人工路径。"""
     if "--arm-live" not in argv:
         return None
-    if "--submit" not in argv:
-        raise SystemExit("--arm-live requires --submit (human CLI only; preview never arms)")
     return SafetyConfig(live_trading_enabled=True, real_broker_enabled=True,
                         allow_order_submission=True)
 
@@ -985,13 +1007,147 @@ def funding_cross_check(venue, target_instruments, *, strategy_id, venue_name, n
     return flagged, "ran"
 
 
+# --- W6 动态回撤状态机 + 可解释风险乘数(spec §10,2026-07-24,加法式) ---
+# 纯核 live/execution/drawdown_controller.py;此处是 main() 的可测桥(与 maintenance_skip/
+# funding_cross_check 同一「可测桥 + 源码钉子」惯例,main() 是网络胶水不单测)。
+_LIVE_DEGRADATION_PATH = os.path.join("evidence", "live_degradation.json")
+_COMMON_RISK_PATH = os.path.join("evidence", "common_risk_decomposition.json")
+_DRAWDOWN_WINDOW_TAIL = 16      # 喂给稳定门的历史观测尾窗(K/M/exit 默认最大 6,16 足够有界)
+
+
+def _equity_window_from_history(path: str, *, limit: int, drop_ts: Optional[int] = None) -> list:
+    """读权益观测 jsonl 的最近 limit 条权益值(回撤控制器稳定门的窗口证据)。fail-soft:
+    文件缺/坏 -> 空窗 -> 恢复双门恒不满足 -> 恢复被挡(保守方向,绝不崩驱动器;正常路径
+    record_and_validate_peak_equity 已在上方落过本轮观测)。drop_ts:丢弃尾部 ts 相同的
+    一行(本轮刚 append 的当前观测——控制器契约要求窗口**不含**本次,它自己追加)。"""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    equities = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        v = row.get("equity")
+        if (isinstance(v, (int, float)) and not isinstance(v, bool)
+                and math.isfinite(float(v)) and float(v) > 0):
+            equities.append((row.get("ts"), float(v)))
+    if drop_ts is not None and equities and equities[-1][0] == drop_ts:
+        equities.pop()
+    return [v for _ts, v in equities[-limit:]]
+
+
+def apply_risk_multiplier(deploy_aum: float, multiplier: float) -> float:
+    """W6:风险乘数是 ≤1 的 scaler——钳进 [0,1] 后相乘,绝不把 deploy 抬过既有 mandate
+    上限口径(combine_risk_multiplier 已钳过一次,这里是应用点的纵深防御:任何模型输出
+    都无法覆盖硬风险上限)。"""
+    return float(deploy_aum) * min(1.0, max(0.0, float(multiplier)))
+
+
+def drawdown_control_decision(*, equity, peak_equity, peak_state_valid, venue_books, now,
+                              state_path, equity_history_path, strategy_id, venue,
+                              degradation_path=_LIVE_DEGRADATION_PATH,
+                              common_risk_path=_COMMON_RISK_PATH, thresholds=None):
+    """W6 回撤控制器 bridge:输入全部来自本轮真实运行——equity/peak_equity(账户级,
+    record_and_validate_peak_equity 已落观测)、venue_books(本轮 book_ticker 只读探测,
+    全灭 = 场地事故)、peak_state_valid(峰值权益状态校验,无效 = 数据异常;实际上那条
+    路在上方风控越限分支已 hard-stop,这里是纵深防御)。已接真制品(2026-07-25):
+    相关冲击 = W3 `evidence/common_risk_decomposition.json` 的 correlation_shock 块
+    (in_shock_now=True -> 状态机至少 DEFENSIVE + 分量 0.25);衰退 = W1
+    `evidence/live_degradation.json` 按 strategy_id×venue 取报告(7 天 staleness 守门,
+    ratio null/SMALL_SAMPLE -> UNKNOWN,可信 ratio 按 UNCALIBRATED 分档映射)。
+    两个制品都 fail-soft:缺失/过期/畸形 -> 与制品缺席时行为逐位一致(相关冲击 None 无意见、
+    衰退 UNKNOWN)。vol_target/liquidity/capacity 无实盘制品 -> UNKNOWN。UNKNOWN 分量按 min
+    语义把乘数压到 ≤0.5——**缺证据不放满配**,这是刻意的默认姿态。
+
+    快照持久化:独立文件 live_drawdown_state{suffix}.json(atomic_write_json,本驱动器是
+    唯一写者,无 peak/day_state 那类哨兵共享竞态;**有意**不塞进 risk_state 文件——
+    save_peak_equity 每次重建载荷会丢弃外加键)。preview 同样落快照(与 equity jsonl
+    「preview 也落观测」既有口径一致:一次运行 = 一次观测)。
+
+    DEFENSIVE 的实践语义:submit_live_batch 没有 reduce-only 概念(全树只有紧急通道
+    emergency.py 有,那是风控越限的保留路径,不为本控制器复用)——按任务裁定 DEFENSIVE
+    与 HALT 一样跳批(本轮不开新风险),不虚构 reduce-only 订单路径。
+
+    返回可 JSON 序列化 dict(state/multiplier/binding/skip_reason/components/explain/…),
+    调用方把乘数乘进 deploy_aum(≤1,只缩不放)、把 skip_reason 并入跳批、整 dict 进 status。"""
+    th = thresholds or DrawdownThresholds()
+    window = _equity_window_from_history(equity_history_path, limit=_DRAWDOWN_WINDOW_TAIL,
+                                         drop_ts=now)
+    snapshot = snapshot_from_dict(_load_json_or_none(state_path))
+    available = sum(1 for v in venue_books.values() if v is not None)
+    venue_reading, venue_incident = venue_health_component(available, len(venue_books), th)
+    # W3 相关冲击制品(2026-07-25 接线):纯读者 fail-soft——制品缺失/畸形/status!=OK
+    # -> None(无意见,分量 UNKNOWN 保守默认,与制品缺席时行为逐位一致)。
+    correlation_shock = correlation_shock_from_artifact(_load_json_or_none(common_risk_path))
+    controller = DrawdownController(snapshot=snapshot, thresholds=th)
+    decision = controller.update(
+        equity=equity, peak_equity=peak_equity, now=now, equity_window=window,
+        correlation_shock=correlation_shock,     # W3 制品真值;None = 无意见(分量 UNKNOWN)
+        data_anomaly=not peak_state_valid,       # 峰值权益状态无效 = 数据异常(纵深防御)
+        venue_incident=venue_incident)
+    components = [
+        drawdown_component(decision.drawdown_pct, th),
+        unknown_component("vol_target",
+                          "no live vol-target artifact (dry-run vol-target is research-only) "
+                          "— fail-closed conservative", th),
+        unknown_component("liquidity",
+                          "no live liquidity artifact (per-order ADV checks live in the "
+                          "pre-trade gate) — fail-closed conservative", th),
+        correlation_component(correlation_shock, th),
+        # W1 衰退制品(2026-07-25 接线):按 strategy_id×venue 取报告,7d staleness 守门
+        # (注入本轮 now),ratio null/SMALL_SAMPLE -> UNKNOWN(绝不把无意义比值翻成数字)。
+        degradation_component_from_artifact(
+            _load_json_or_none(degradation_path), strategy_id, venue,
+            now_ms=now, thresholds=th),
+        venue_reading,
+        unknown_component("capacity",
+                          "capacity is an UNCALIBRATED research band, no live artifact "
+                          "— fail-closed conservative", th),
+    ]
+    result = combine_risk_multiplier(
+        components, state=decision.state,
+        observations_in_recovery=decision.snapshot.observations_in_recovery, thresholds=th)
+    skip_reason = None
+    if decision.state is DrawdownState.HALT:
+        skip_reason = f"drawdown_controller_halt:{decision.reason}"
+    elif decision.state is DrawdownState.DEFENSIVE:
+        skip_reason = (f"drawdown_controller_defensive:{decision.reason} "
+                       "(submit_live_batch has no reduce-only concept — batch skip substitutes, "
+                       "no new risk this cycle)")
+    persist_error = None
+    try:
+        atomic_write_json(state_path, snapshot_to_dict(decision.snapshot))
+    except OSError as exc:
+        persist_error = f"{type(exc).__name__}: {exc}"
+    return {
+        "state": decision.state.value, "reason": decision.reason,
+        "drawdown_pct": decision.drawdown_pct,
+        "multiplier": result.multiplier, "binding": list(result.binding),
+        "state_ceiling": result.state_ceiling, "skip_reason": skip_reason,
+        "venue_incident": venue_incident,
+        "components": {c.name: c.as_dict() for c in components},
+        "explain": {"controller": decision.explain, "multiplier": result.explain},
+        "snapshot_persisted": persist_error is None, "persist_error": persist_error,
+    }
+
+
 def main() -> None:
     submit = "--submit" in sys.argv
     do_refresh = "--no-refresh" not in sys.argv
     # --arm-live(2026-07 MEXC 对接 1.5,**人工 CLI 专属**):唯一能让适配器拿到 armed
     # SafetyConfig 的构造路径(见 armed_safety_config)。即便 arm,mandate/attestation/
     # kill-switch/gate 全部照常 fail-closed——arm 只是"允许构造 mainnet 适配器",不是
-    # "允许下单"。ops API 的固定 argv 永不携带此 flag(governance 测试钉死)。
+    # "允许下单";不带 --submit 时 PreviewVenue + 草稿账本结构性保证零提交(armed preview,
+    # 2026-07-24)。ops API:只有 /preview 的固定 argv 对 mainnet-only venue 携带此 flag
+    # (armed preview,绝不携带 --submit),/run 的固定 argv 永不携带(governance 测试钉死)。
     safety_config = armed_safety_config(sys.argv)
     venue_arg = "binance"
     if "--venue" in sys.argv:
@@ -1042,14 +1198,15 @@ def main() -> None:
     if venue_cfg.get("spot") and safety_config is None:
         raise SystemExit(
             f"venue {venue_arg!r} is mainnet-only spot (MEXC has no spot testnet): adapter "
-            "construction is L2-gated. Human-only path: --submit --arm-live with a signed "
-            "mandate + validation attestation (see docs/runbooks/mexc-live-runbook.md)")
+            "construction is L2-gated. Human-only paths: --arm-live (armed preview, never "
+            "submits) or --submit --arm-live (real submit, needs signed mandate + "
+            "validation attestation — see docs/runbooks/mexc-live-runbook.md)")
     if venue_cfg.get("mainnet_only") and safety_config is None:
         raise SystemExit(
             f"venue {venue_arg!r} is mainnet-only (Binance USDT-M futures mainnet): adapter "
-            "construction is L2-gated. Human-only path: --submit --arm-live with a signed "
-            "mandate + validation attestation (see "
-            "docs/runbooks/binance-futures-live-runbook.md)")
+            "construction is L2-gated. Human-only paths: --arm-live (armed preview, never "
+            "submits) or --submit --arm-live (real submit, needs signed mandate + "
+            "validation attestation — see docs/runbooks/binance-futures-live-runbook.md)")
     api_key, api_secret = _load_credentials(venue_cfg, venue_arg)
     adapter_cls = venue_cfg["adapter"]
     real_venue = adapter_cls(api_key=api_key, api_secret=api_secret,
@@ -1354,10 +1511,40 @@ def main() -> None:
     # 容量基数用 equity(含未实现盈亏)而非 availableBalance:mandate 提额超过余额后,
     # available 会随保证金占用漂移(建仓越多 available 越小),用它定容量会让 book 自我收缩;
     # equity 才是经济上正确的资本基数(2026-07-05 提额到 10000 时暴露)。
+    # W6 动态回撤状态机 + 可解释风险乘数(spec §10,2026-07-24 落地,2026-07-25 接真制品):
+    # 账户级 equity 回撤驱动 NORMAL/CAUTION/DEFENSIVE/RECOVERY/HALT(纯核
+    # live/execution/drawdown_controller.py,阈值全部 UNCALIBRATED 工程默认)。乘数 =
+    # min(各分量, 状态天花板) ≤ 1——只缩不放,绝不抬过 mandate 上限。已接真制品:相关冲击 =
+    # W3 evidence/common_risk_decomposition.json(in_shock_now=True -> 至少 DEFENSIVE 跳批);
+    # 衰退 = W1 evidence/live_degradation.json(strategy×venue,7d staleness 守门,ratio 分档
+    # UNCALIBRATED)。仍 UNKNOWN 的分量(vol_target/liquidity/capacity 无实盘制品;两制品缺失/
+    # 过期/畸形时同样回退 UNKNOWN)解析为保守默认 0.5(缺证据不放满配)。HALT/DEFENSIVE ->
+    # 跳批(管线无 reduce-only 概念,见 drawdown_control_decision docstring;闩锁式全局 halt
+    # 仍是 kill-switch,本机不复制,也不走 emergency 通道——那条是风控越限的保留路径)。
+    # preview 同样求值/落快照/跳批(与数据质量跳批同一口径:preview 必须诚实反映本轮会做什么)。
+    # 风控越限/kill-switch 早退在上方,不受影响。
+    drawdown = drawdown_control_decision(
+        equity=equity, peak_equity=peak_equity, peak_state_valid=peak_state.valid,
+        venue_books=venue_books, now=now,
+        state_path=paths["drawdown_state"], equity_history_path=paths["equity"],
+        strategy_id=strategy_id, venue=venue_arg)
+    if drawdown["persist_error"] is not None:
+        alerts.append(f"DRAWDOWN STATE PERSIST FAILED: {drawdown['persist_error']} — "
+                      "controller memory resets next run (conservative: recovery ramp restarts)")
+    if drawdown["skip_reason"] is not None:
+        alerts.append(f"DRAWDOWN CONTROLLER {drawdown['state']}: {drawdown['reason']} "
+                      f"(dd={drawdown['drawdown_pct']:.2%}) — batch skip, no new risk this cycle")
+        skip_reason = skip_reason or drawdown["skip_reason"]
+    elif drawdown["multiplier"] < 1.0:
+        alerts.append(f"drawdown controller scales deploy x{drawdown['multiplier']:.2f} "
+                      f"(state={drawdown['state']}, binding={drawdown['binding']})")
+
     capital_base = equity if equity > 0 else aum
     deploy_aum = capital_base
     if mandate is not None and mandate.max_gross_notional > 0:
         deploy_aum = min(capital_base, 0.95 * mandate.max_gross_notional)
+    # W6 风险乘数接线点:≤1 scaler 乘在 mandate 上限口径**之后**(只缩不放,硬上限永不被覆盖)
+    deploy_aum = apply_risk_multiplier(deploy_aum, drawdown["multiplier"])
 
     # allowed_instruments = 本期信号腿 ∪ **账户当前持仓**(2026-07-07):持有但不在本期信号里的遗留仓位
     # 会生成 target-0 **平仓单**,若 allowed_instruments 只含信号腿,check_instrument_allowed 会拒掉平仓单
@@ -1580,12 +1767,18 @@ def main() -> None:
         "paper_research_gate": "PASS" if research_skip is None else "BLOCK",
         "paper_research_skip": research_skip,
         "venue": venue_arg, "tca": tca, "order_stats": order_stats,
+        # armed preview 留痕(2026-07-24):本轮是否以 armed SafetyConfig 构造了 mainnet
+        # 适配器(mode=="preview" ∧ armed=True = armed preview——唯读透传,零提交)。
+        "armed": safety_config is not None,
         "n_submitted": len(result.submitted), "n_pending_review": len(result.pending_review),
         "n_rejected_by_gate": len(result.rejected_by_gate),
         "n_dropped_by_filters": len(result.dropped_by_filters),
         "n_submission_errors": len(result.submission_errors),
         "n_ledger_write_errors": len(result.ledger_write_errors),
         "batch_skipped": skip_reason, "n_frozen": len(frozen_names),
+        # W6 回撤控制器(2026-07-24,加法式):本轮状态机状态/可解释乘数全量审计(分量读数、
+        # UNKNOWN 原因、binding、阈值快照),与 funding_check 同一位置诚实暴露。
+        "drawdown_control": drawdown,
         # 资金费实时交叉核对(2026-07-23):与跨源核价同一位置诚实暴露——本轮核对是否真跑、
         # 冻结了几个/哪些(frozen 是 funding 子集,已并入上方 n_frozen 总数)。
         "funding_check": {"status": funding_check_status, "n_frozen": len(funding_flagged),

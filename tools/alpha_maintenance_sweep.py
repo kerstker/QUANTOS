@@ -14,6 +14,17 @@ fail-closed:paper_track.db 缺/坏、或某 alpha 无 backtest 参照 -> 该 alp
 保守默认(mechanism 自带,非本 sweep 新设);backtest 参照(每 alpha 的 ic/return 期望)由研究/人
 写进 `data/cache/alpha_backtest_refs.json`——absent -> {} -> 全 no-op,agent 不代填研究参照数字。
 
+spec §16.3 / §12.2(2026-07-24,top_contra quarantine):spec 要求 top_contra **立即标记
+QUARANTINED**("异常或证据不足,只减仓";若锁定外样本仍无效才正式 RETIRED)。canonical 状态机
+(`quantos/contracts/research.py::AlphaState`)**没有 QUARANTINED 枚举**;其 §12 语义对应
+`AlphaState.PAUSED`(reversible halt——live 停止新增敞口、绝不自动减仓、可逆待诊断, retirement
+是之后的独立人工/证据决策)。`top_contra_quarantine_health` 把**现实执行连续 paper**
+(`data/cache/binance_usdt_continuous_paper.json`,PIT 日信号 + taker 费 + spread + Almgren-Chriss
+冲击)的已实现 max_drawdown 喂给 degradation monitor(既有 0.30 阈值),触发证据驱动的
+PAPER_TRADING -> PAUSED 转换(非人、审计、AGENT_REACHABLE,与 paper_track 健康证据同一台机器);
+判定引用的证据仓(证伪计数 / 前向阻塞 / 连续 paper 统计)原样落快照 `quarantine_evidence` 块
+供人复核。下轮 sweep 证据仍在则自然维持 PAUSED,证据消失则自然恢复——与既有 sweep 语义一致。
+
 调度:running `scripts/register_schedules.ps1` 注册一条 weekly 任务 = 用户签署这条常驻自动化;在此
 之前快照文件不存在 -> live 驱动器读到 None -> `maintenance_skip_reason` 返回 None -> 旧行为字节不变。
 
@@ -52,9 +63,18 @@ _PAPER_TRACK_DB = os.path.join("data", "cache", "paper_track.db")
 _BACKTEST_REFS = os.path.join("data", "cache", "alpha_backtest_refs.json")
 _SNAPSHOT_PATH = os.path.join("data", "cache", "alpha_maintenance_status.json")
 
+# top_contra quarantine(spec §16.3)证据仓:现实执行连续 paper(已实现回撤)+ paper-cycle
+# 前向阻塞 + 专项证伪计数。三个都是**只读已有证据**,本 sweep 不产生新研究数学。
+_CONTINUOUS_PAPER = os.path.join("data", "cache", "binance_usdt_continuous_paper.json")
+_PAPER_CYCLE = os.path.join("evidence", "alpha_paper_cycle.json")
+_OI_TOP_VERIFY = os.path.join("data", "cache", "crypto_oi_top_verify.json")
+_QUARANTINE_ALPHA = "top_contra"
+
 _HONESTY_NOTE = ("维护 sweep 只驱动 research catalog 的降级/退役(非人、审计、绝不 APPROVED),live 侧"
                  "只做'降级 -> 停止新增敞口'(现有仓位原样不动)。绝不自动减仓——de-risk 目标数字 + "
-                 "full-flatten 需用户签署 + 人工确认(spec §9)。")
+                 "full-flatten 需用户签署 + 人工确认(spec §9)。spec §12 QUARANTINED(异常/证据不足,"
+                 "只减仓)映射到 canonical AlphaState.PAUSED(reversible halt,语义相同:停止新增、"
+                 "绝不自动减仓、可逆待诊断)。")
 
 
 def build_status_snapshot_with_events(
@@ -116,6 +136,86 @@ def _load_backtest_refs(path: str) -> dict:
         return {}
 
 
+def _load_json_or_none(path: str) -> Optional[dict]:
+    """缺文件/坏文件/非 dict -> None(fail-safe,不崩驱动器)。"""
+    if not os.path.exists(path):
+        return None
+    try:
+        obj = json.load(open(path, encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def top_contra_quarantine_health(*, continuous_paper: str = _CONTINUOUS_PAPER,
+                                 paper_cycle_path: str = _PAPER_CYCLE,
+                                 verify_path: str = _OI_TOP_VERIFY) -> tuple:
+    """spec §16.3 的 top_contra QUARANTINED(canonical = PAUSED)证据装配。
+
+    返回 ``(health_by_alpha, evidence_refs)``:
+
+    - ``health_by_alpha``:degradation monitor 的 ``{backtest, live}`` 形,只含 top_contra
+      一个键。live 侧取**现实执行连续 paper** 的已实现 ``total_return`` / ``max_drawdown``
+      (PIT 日信号 + taker 费 + spread + 冲击,730 天);backtest 侧**留空**——192 周干跑与
+      730 天连续 paper 窗口不同,跨口径比总收益/IC 会自欺,monitor 对缺失 ic/return 会诚实
+      记 data 告警而非编造比较。已实现回撤 0.308 ≥ 机制既有 0.30 阈值 -> PAUSED。
+    - ``evidence_refs``:判定引用的证据仓(连续 paper 统计 / 专项证伪计数 / paper-cycle
+      前向阻塞),原样进快照 ``quarantine_evidence`` 块供人复核,绝不进 monitor 数值。
+
+    fail-closed:连续 paper 缺/坏/无 top_contra 统计 -> ``({}, {})``(无量化证据 = 无动作,
+    与 sweep 既有"无证据 -> 零动作"纪律一致)。
+    """
+    paper = _load_json_or_none(continuous_paper)
+    sims = paper.get("simulations") if isinstance(paper, dict) else None
+    sim = sims.get(_QUARANTINE_ALPHA) if isinstance(sims, dict) else None
+    stats = sim.get("stats") if isinstance(sim, dict) else None
+    if not isinstance(stats, dict):
+        return {}, {}
+    total_return = stats.get("total_return")
+    max_drawdown = stats.get("max_drawdown")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (total_return, max_drawdown)):
+        return {}, {}
+
+    refs: dict = {
+        "spec": "§16.3/§12.2: top_contra 应立即 QUARANTINED;canonical 映射 = AlphaState.PAUSED",
+        "continuous_paper": {
+            "path": continuous_paper,
+            "data_window": paper.get("data_window") if isinstance(paper.get("data_window"), dict) else None,
+            "total_return": total_return,
+            "sharpe": stats.get("sharpe"),
+            "max_drawdown": max_drawdown,
+            "classification": paper.get("classification"),
+        },
+    }
+    verify = _load_json_or_none(verify_path)
+    checks = verify.get("refutation_checks") if isinstance(verify, dict) else None
+    if isinstance(checks, dict) and checks:
+        refs["falsification"] = {
+            "path": verify_path,
+            "n_pass": sum(1 for v in checks.values() if v is True),
+            "n_total": len(checks),
+            "broad_across_years": checks.get("broad_across_years"),
+            "verdict": verify.get("verdict"),
+        }
+    cycle = _load_json_or_none(paper_cycle_path)
+    alphas = cycle.get("alphas") if isinstance(cycle, dict) else None
+    row = alphas.get(_QUARANTINE_ALPHA) if isinstance(alphas, dict) else None
+    if isinstance(row, dict):
+        forward = row.get("forward") if isinstance(row.get("forward"), dict) else {}
+        refs["forward"] = {
+            "path": paper_cycle_path,
+            "paper_verdict": row.get("paper_verdict"),
+            "blockers": row.get("blockers") if isinstance(row.get("blockers"), list) else [],
+            "n_forward_periods": forward.get("n_forward_periods"),
+            "evidence_state": forward.get("evidence_state"),
+        }
+    health = {_QUARANTINE_ALPHA: {
+        "backtest": {},
+        "live": {"return": float(total_return), "drawdown": float(max_drawdown)},
+    }}
+    return health, refs
+
+
 def _seed_manager(alpha_ids) -> AlphaLifecycleManager:
     """把有证据的 alpha 播进一个**一次性** catalog 的 PAPER_TRADING(非特权、agent-reachable 态),
     纯粹为跑那套审计过的降级逻辑;持久产物是 status 快照、不是 catalog 态(catalog 每轮重建)。
@@ -129,15 +229,27 @@ def _seed_manager(alpha_ids) -> AlphaLifecycleManager:
 
 def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
               backtest_refs: str = _BACKTEST_REFS, out: str = _SNAPSHOT_PATH,
-              maintenance_db: Optional[str] = None, event_bus=None) -> dict:
-    """驱动器边界:载 paper_track.db + backtest 参照 -> 算 health_by_alpha -> 播一次性 catalog ->
-    跑维护 -> 落只读快照。任何缺失/损坏 -> fail-closed 空快照(零动作)。"""
+              maintenance_db: Optional[str] = None, event_bus=None,
+              continuous_paper: str = _CONTINUOUS_PAPER,
+              paper_cycle_path: str = _PAPER_CYCLE,
+              verify_path: str = _OI_TOP_VERIFY) -> dict:
+    """驱动器边界:载 paper_track.db + backtest 参照 -> 算 health_by_alpha -> 并入 top_contra
+    quarantine 证据(spec §16.3)-> 播一次性 catalog -> 跑维护 -> 落只读快照。
+    任何缺失/损坏 -> fail-closed 空快照(零动作)。"""
     refs = _load_backtest_refs(backtest_refs)
     try:
         store = PaperTrackStore(paper_track_db, create=False)
         health_by_alpha = paper_health_by_alpha(store, backtest_by_alpha=refs)
     except Exception:                                # 库缺/坏/任何读异常 -> 无证据(fail-closed 空快照)
         health_by_alpha = {}
+
+    # spec §16.3:top_contra quarantine 证据(现实执行连续 paper 已实现回撤)。paper_track
+    # 健康证据优先(若同一 alpha 两边都有),quarantine 证据只补缺。
+    quar_health, quar_refs = top_contra_quarantine_health(
+        continuous_paper=continuous_paper, paper_cycle_path=paper_cycle_path,
+        verify_path=verify_path)
+    for aid, ev in quar_health.items():
+        health_by_alpha.setdefault(aid, ev)
 
     manager = _seed_manager(sorted(health_by_alpha))
     snap, events = build_status_snapshot_with_events(
@@ -146,6 +258,8 @@ def run_sweep(*, now: int, paper_track_db: str = _PAPER_TRACK_DB,
         timestamp=now,
         health_by_alpha=health_by_alpha,
     )
+    if quar_refs:
+        snap["quarantine_evidence"] = quar_refs
     messages = tuple(
         EventOutboxMessage(
             event=CANONICAL_EVENT_SCHEMAS.validate(event),

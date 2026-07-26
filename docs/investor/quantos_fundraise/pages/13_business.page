@@ -1,0 +1,109 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 强调阶段是顺序推进的，不是同时做所有业务。第二阶段必须念出合规前提：在符合法律法规和监管要求的前提下探索，不承诺公开募资或代客理财。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "12 · 商业模式"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "三个阶段，顺序推进"}
+  - elementId: p1-h
+    elementType: text
+    bounds: [90, 126, 250, 46]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$accent;font-size:15px"><strong>第一阶段</strong></span></p>
+        <p><span style="color:$muted;font-size:10.5px">自营策略验证（当前）</span></p>
+  - elementId: p1-rule
+    elementType: line
+    bounds: [90, 178, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: p1
+    elementType: text
+    bounds: [90, 192, 250, 180]
+    content:
+      style: "$body"
+      fontSize: 11
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>自有/合作验证资金</p>
+        <p>形成真实实盘记录</p>
+        <p>验证风险、执行与收益保留率</p>
+        <p>建立项目可信度</p>
+  - elementId: p2-h
+    elementType: text
+    bounds: [380, 126, 250, 46]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$blue;font-size:15px"><strong>第二阶段</strong></span></p>
+        <p><span style="color:$muted;font-size:10.5px">策略管理与机构合作</span></p>
+  - elementId: p2-rule
+    elementType: line
+    bounds: [380, 178, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$blue"}
+  - elementId: p2
+    elementType: text
+    bounds: [380, 192, 250, 180]
+    content:
+      style: "$body"
+      fontSize: 11
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>专户策略合作 · 机构联合产品</p>
+        <p>策略管理 · 技术服务</p>
+        <p>业绩分成 · 风险系统合作</p>
+        <p style="margin-top:8px"><span style="color:$warn;font-size:10px">前提：符合相关法律法规与监管合规要求，不承诺公开募资或代客理财</span></p>
+  - elementId: p3-h
+    elementType: text
+    bounds: [670, 126, 250, 46]
+    content:
+      style: "$body"
+      text: |
+        <p><span style="color:$ink;font-size:15px"><strong>第三阶段</strong></span></p>
+        <p><span style="color:$muted;font-size:10.5px">量化基础设施输出</span></p>
+  - elementId: p3-rule
+    elementType: line
+    bounds: [670, 178, 250, 2]
+    viewBox: [250, 2]
+    points: "0,1 250,1"
+    border: {style: solid, width: 2, color: "$muted"}
+  - elementId: p3
+    elementType: text
+    bounds: [670, 192, 250, 180]
+    content:
+      style: "$body"
+      fontSize: 11
+      lineHeight: 1.7
+      color: "$muted"
+      text: |
+        <p>研究平台私有化部署</p>
+        <p>风控引擎 · Alpha 实验平台</p>
+        <p>数据与信号服务</p>
+        <p>策略研究合作 · 机构技术服务</p>
+  - elementId: claim
+    elementType: text
+    bounds: [90, 420, 780, 60]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.7
+      text: |
+        <p>短期通过自营实盘<strong>建立证据</strong>，中期通过资金管理与机构合作<strong>扩大收益</strong>，</p>
+        <p>长期通过技术平台<strong>提高收入稳定性和估值上限</strong>。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 14"}

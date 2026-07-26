@@ -1,0 +1,3423 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RESEARCH_VARIANT_FAMILY_PREREGISTERED",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at": 1784904868,
+  "pre_registration": {
+    "family": "crowd_contra_variants_v1",
+    "registered_before_evaluation": true,
+    "date": "2026-07-24",
+    "trial_count_planned": 17,
+    "verdict_bar": {
+      "min_t_stat": 2.0,
+      "t_stat_horizon": "variant_own_cadence_non_overlapping",
+      "min_falsification_passes": "baseline_this_run",
+      "min_vt_sharpe_ratio_vs_baseline": 0.8,
+      "max_drawdown_vt_ratio_vs_baseline": 1.5
+    },
+    "adaptations": [
+      "证伪电池按变体自身分位+自身节奏构造流(检验实际交易形态);verify 原 harness 的日频重平衡 流对周度基线是近似——基线同时跑 cadence=1 复现 data/cache/crypto_oi_verify.json 数字作锚。",
+      "节奏变体 lag 检验保持'信号后 1 个自然日入场'(同一时点假象检验精神);成本按调仓日实际换手计。",
+      "quantile 稳健性扫描(verify 第 3 项诊断,非 5 项机器检验)对分位变体按定义省略——分位即变体轴。",
+      "干跑年化夏普按变体节奏重算(管线 _ann_sharpe 恒 √52,3d/14d 变体需 √122/√26);7d 时与管线逐位一致。",
+      "容量 ppy 按变体节奏(52/122/26);AUM 网格/冲击系数带/参与率网格与 tools/capacity_research.py 相同。",
+      "变体不写 dry_run.db(正典库只留官方 5 条策略);变体数字只落本证据文件。"
+    ],
+    "variants": [
+      {
+        "id": "crowd_contra",
+        "role": "baseline",
+        "kind": "baseline",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "trial #0 基线重跑(部署口径 q=0.30/7d)——全族判定相对本次重跑的它,非绝对值"
+      },
+      {
+        "id": "crowd_contra_q20",
+        "role": "variant",
+        "kind": "quantile",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 7,
+        "rationale": "集中度↑(24 币 k≈5):edge 若住在最拥挤尾部则更纯;book 更噪——测尾部集中度"
+      },
+      {
+        "id": "crowd_contra_q25",
+        "role": "variant",
+        "kind": "quantile",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 7,
+        "rationale": "中间集中度(k≈6):q20 与基线 k≈7 之间的广度/集中度权衡点"
+      },
+      {
+        "id": "crowd_contra_q35",
+        "role": "variant",
+        "kind": "quantile",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 7,
+        "rationale": "广度↑(k≈8):若 edge 集中在最拥挤名,更宽腿会稀释它——q20 的反方向稳健性"
+      },
+      {
+        "id": "crowd_contra_3d",
+        "role": "variant",
+        "kind": "cadence",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 3,
+        "rationale": "信号 horizon 匹配:fade 若衰减快,更快调仓多收 alpha;换手/成本 ~2.3× —— 净值检验"
+      },
+      {
+        "id": "crowd_contra_14d",
+        "role": "variant",
+        "kind": "cadence",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 14,
+        "rationale": "慢持仓假说:拥挤度若慢变,持有 14d 损失小、换手/成本减半"
+      },
+      {
+        "id": "crowd_taker_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expression": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field taker_ls)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "taker_ls=主动吃单失衡,同一 fade 命题作用在正交 OI 指标上——信号内分散"
+      },
+      {
+        "id": "crowd_top_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expression": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field top_ls)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "top_contra 是已记录 verify 跑里协同集第 3 选(增量 IR 0.52)——两个 fade 信号复合"
+      },
+      {
+        "id": "crowd_taker_top_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expression": "(div (add (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field taker_ls)))) (cs_zscore (neg (field top_ls)))) (const 3.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "等权三重:fade 命题跨三条持仓序列的最大跨指标分散"
+      },
+      {
+        "id": "crowd_contra_q25_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 3,
+        "rationale": "分位×节奏网格:集中度可能与持有期交互(集中 book 换手更快)——网格角揭示交互"
+      },
+      {
+        "id": "crowd_contra_q25_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 14,
+        "rationale": "分位×节奏网格(同上,交互对角)"
+      },
+      {
+        "id": "crowd_contra_q35_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 3,
+        "rationale": "分位×节奏网格(广度×快节奏角)"
+      },
+      {
+        "id": "crowd_contra_q35_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 14,
+        "rationale": "分位×节奏网格(广度×慢节奏角——成本最省形态)"
+      },
+      {
+        "id": "crowd_contra_q20_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 3,
+        "rationale": "分位×节奏网格(最集中×最快角——换手压力最大形态)"
+      },
+      {
+        "id": "crowd_contra_q20_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expression": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 14,
+        "rationale": "分位×节奏网格(最集中×最慢角)"
+      },
+      {
+        "id": "crowd_oi_delta_combo",
+        "role": "variant",
+        "kind": "composite_extra",
+        "expression": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (ts_delta (field global_ls) 7)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "同一持仓序列的 水平+动态 复合;delta 变体已是注册过的 IC 面板候选(oi_ls_delta_contra)"
+      },
+      {
+        "id": "crowd_carry_blend",
+        "role": "variant",
+        "kind": "composite_extra",
+        "expression": "(div (add (cs_zscore (neg (field global_ls))) (div (add (add (cs_zscore (neg (decay_linear (field funding) 3))) (cs_zscore (neg (decay_linear (field funding) 7)))) (add (cs_zscore (neg (decay_linear (field funding) 14))) (cs_zscore (neg (ts_mean (field funding) 7))))) (const 4.0))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "rationale": "两条已确认正交 edge 的**信号级**等权混合(book 级混合已研究:VT 1.20 < crowd 单条 1.38;信号级未测)——同宇宙同口径检验"
+      }
+    ]
+  },
+  "dataset": {
+    "universe": "crypto_oi_majors",
+    "n_instruments": 24,
+    "instruments": [
+      "AAVE",
+      "ADA",
+      "APT",
+      "ATOM",
+      "AVAX",
+      "BCH",
+      "BNB",
+      "BTC",
+      "DOGE",
+      "DOT",
+      "ETC",
+      "ETH",
+      "FIL",
+      "ICP",
+      "INJ",
+      "LINK",
+      "LTC",
+      "NEAR",
+      "OP",
+      "SOL",
+      "TRX",
+      "UNI",
+      "XLM",
+      "XRP"
+    ],
+    "n_event_times": 2227,
+    "date_start": "2020-06-18",
+    "date_end": "2026-07-23",
+    "dataset_version": "8441b2bcf08615488f2e6ac50976b4f7c12c58d69fcf1cb05452a7371162d4d7"
+  },
+  "trial_registration": {
+    "dataset_version": "8441b2bcf08615488f2e6ac50976b4f7c12c58d69fcf1cb05452a7371162d4d7",
+    "trial_count_before": 2436,
+    "batches": [
+      {
+        "cadence_days": 7,
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "n_candidates": 9,
+        "registered_candidate_count": 9,
+        "recorded_run_ids": [
+          "8259f5b80d059ec3",
+          "7a773dddc59d4bc1",
+          "52759c71fbcafea6",
+          "3872815339bc30bd",
+          "8374421e3e6895ab",
+          "30d5c23badab7fa7",
+          "04ae37742151a1f4",
+          "9ec4ef6cce8ac50a",
+          "61f54042495b77fe"
+        ]
+      },
+      {
+        "cadence_days": 3,
+        "search_id": "search-57b46df0a7700f876b7fe893",
+        "n_candidates": 4,
+        "registered_candidate_count": 4,
+        "recorded_run_ids": [
+          "6606c52525179ae0",
+          "ad27e75f3e64250e",
+          "21ec8fd04d72a5d4",
+          "b221fd944bdd74f6"
+        ]
+      },
+      {
+        "cadence_days": 14,
+        "search_id": "search-2382de64d81a6123eef4d7f3",
+        "n_candidates": 4,
+        "registered_candidate_count": 4,
+        "recorded_run_ids": [
+          "b8c16fa610f5ffa8",
+          "111ecc341cf2c403",
+          "a033b29ecd963515",
+          "ad5db934a0fb1a8c"
+        ]
+      }
+    ],
+    "candidates": {
+      "crowd_contra": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.8407,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "crowd_contra_q20": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.6334,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "crowd_contra_q25": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.4723,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "crowd_contra_q35": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.363,
+        "ic_tstat": 4.588190210898972,
+        "net_sharpe": 1.4768,
+        "n_periods": 236
+      },
+      "crowd_taker_combo": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0518,
+        "ic_tstat": 2.462834235070093,
+        "net_sharpe": 0.8158,
+        "n_periods": 221
+      },
+      "crowd_top_combo": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.6841,
+        "ic_tstat": 5.169918610516347,
+        "net_sharpe": 2.263,
+        "n_periods": 194
+      },
+      "crowd_taker_top_combo": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.1881,
+        "ic_tstat": 4.702984135904164,
+        "net_sharpe": 1.6114,
+        "n_periods": 194
+      },
+      "crowd_oi_delta_combo": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0105,
+        "ic_tstat": 2.701794026183274,
+        "net_sharpe": 0.9371,
+        "n_periods": 234
+      },
+      "crowd_carry_blend": {
+        "search_id": "search-a3008bf0aab0368212ba5c93",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0441,
+        "ic_tstat": 4.118178185704848,
+        "net_sharpe": 1.207,
+        "n_periods": 236
+      },
+      "crowd_contra_3d": {
+        "search_id": "search-57b46df0a7700f876b7fe893",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0009,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "crowd_contra_q25_3d": {
+        "search_id": "search-57b46df0a7700f876b7fe893",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0013,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "crowd_contra_q35_3d": {
+        "search_id": "search-57b46df0a7700f876b7fe893",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0018,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "crowd_contra_q20_3d": {
+        "search_id": "search-57b46df0a7700f876b7fe893",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.0025,
+        "ic_tstat": 3.981365910976277,
+        "net_sharpe": 1.5571,
+        "n_periods": 550
+      },
+      "crowd_contra_14d": {
+        "search_id": "search-2382de64d81a6123eef4d7f3",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.3765,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "crowd_contra_q25_14d": {
+        "search_id": "search-2382de64d81a6123eef4d7f3",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.3491,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "crowd_contra_q35_14d": {
+        "search_id": "search-2382de64d81a6123eef4d7f3",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.3275,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      },
+      "crowd_contra_q20_14d": {
+        "search_id": "search-2382de64d81a6123eef4d7f3",
+        "evaluator_verdict": "REQUIRES_HUMAN_REVIEW",
+        "state": "TESTING",
+        "deflated_sharpe": 0.3104,
+        "ic_tstat": 4.368614839045876,
+        "net_sharpe": 1.2257,
+        "n_periods": 118
+      }
+    },
+    "trial_count_after": 2453,
+    "trial_count_delta": 17
+  },
+  "results": {
+    "crowd_contra": {
+      "spec": {
+        "id": "crowd_contra",
+        "role": "baseline",
+        "kind": "baseline",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0449,
+            "ic_std": 0.238,
+            "icir": 0.1888,
+            "hit_rate": 0.5532,
+            "t_stat": 2.8943,
+            "n_periods": 235,
+            "per_year": {
+              "2022": 0.07,
+              "2023": 0.0628,
+              "2024": 0.0363,
+              "2025": 0.0234,
+              "2026": 0.0237
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.006,
+            "econ_sharpe": 1.072,
+            "avg_turnover_per_day": 0.0612,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 1.16,
+            "2023": 1.5,
+            "2024": 1.25,
+            "2025": 0.56,
+            "2026": 1.81
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.981,
+            "5": 0.942,
+            "10": 0.878,
+            "20": 0.749
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.006,
+            "1": 1.021,
+            "2": 1.067
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.029
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.952
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.94
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.778
+            }
+          },
+          "incremental_ir_vs_carry": 0.927,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 1268024770.8595836,
+          "impact_aum_high": 7079758326.383258,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 235,
+          "gross_sharpe": 1.555,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 236,
+          "n_intents": 5179,
+          "n_approved": 5179,
+          "n_rejected": 0,
+          "total_return": 1.215256,
+          "total_funding": 23841.749935,
+          "reconciliation_residual": 5e-09,
+          "sharpe_raw": 1.0695,
+          "max_drawdown_raw": 0.0885,
+          "sharpe_vt": 1.095,
+          "max_drawdown_vt": 0.0971,
+          "pipeline_sharpe_ppy52": 1.0695,
+          "pipeline_sharpe_vt_ppy52": 1.095,
+          "crowding_gate": {
+            "n_periods": 236,
+            "n_pass": 0,
+            "n_warn": 215,
+            "n_block": 21,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:AVAX:z=3.3088>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:ICP:z=3.1567>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q20": {
+      "spec": {
+        "id": "crowd_contra_q20",
+        "role": "variant",
+        "kind": "quantile",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0449,
+            "ic_std": 0.238,
+            "icir": 0.1888,
+            "hit_rate": 0.5532,
+            "t_stat": 2.8943,
+            "n_periods": 235,
+            "per_year": {
+              "2022": 0.07,
+              "2023": 0.0628,
+              "2024": 0.0363,
+              "2025": 0.0234,
+              "2026": 0.0237
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.906,
+            "econ_sharpe": 0.971,
+            "avg_turnover_per_day": 0.0741,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.96,
+            "2023": 1.5,
+            "2024": 0.85,
+            "2025": 0.63,
+            "2026": 2.14
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.881,
+            "5": 0.843,
+            "10": 0.781,
+            "20": 0.656
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.906,
+            "1": 0.941,
+            "2": 1.029
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.828
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.627
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.675
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.792
+            }
+          },
+          "incremental_ir_vs_carry": 0.793,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 5110415.70703,
+          "aum_high": 5110415.70703,
+          "impact_aum_low": 797124517.1796606,
+          "impact_aum_high": 4552959803.892878,
+          "participation_cap_aum": 5110415.70703,
+          "n_periods": 235,
+          "gross_sharpe": 1.372,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 2555207.853515,
+            "p5_h5": 12776039.267575,
+            "p10_h1": 5110415.70703,
+            "p10_h5": 25552078.53515,
+            "p20_h1": 10220831.41406,
+            "p20_h5": 51104157.0703
+          },
+          "calibrated_range": {
+            "low": 2555207.853515,
+            "high": 51104157.0703
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 236,
+          "n_intents": 5137,
+          "n_approved": 5137,
+          "n_rejected": 0,
+          "total_return": 1.830787,
+          "total_funding": 31193.698215,
+          "reconciliation_residual": 9e-09,
+          "sharpe_raw": 1.1389,
+          "max_drawdown_raw": 0.2119,
+          "sharpe_vt": 1.5489,
+          "max_drawdown_vt": 0.1324,
+          "pipeline_sharpe_ppy52": 1.1389,
+          "pipeline_sharpe_vt_ppy52": 1.5489,
+          "crowding_gate": {
+            "n_periods": 236,
+            "n_pass": 0,
+            "n_warn": 216,
+            "n_block": 20,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:AVAX:z=3.3088>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:ICP:z=3.1567>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q25": {
+      "spec": {
+        "id": "crowd_contra_q25",
+        "role": "variant",
+        "kind": "quantile",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0449,
+            "ic_std": 0.238,
+            "icir": 0.1888,
+            "hit_rate": 0.5532,
+            "t_stat": 2.8943,
+            "n_periods": 235,
+            "per_year": {
+              "2022": 0.07,
+              "2023": 0.0628,
+              "2024": 0.0363,
+              "2025": 0.0234,
+              "2026": 0.0237
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.81,
+            "econ_sharpe": 0.874,
+            "avg_turnover_per_day": 0.0677,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.98,
+            "2023": 1.39,
+            "2024": 0.65,
+            "2025": 0.6,
+            "2026": 1.57
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.785,
+            "5": 0.746,
+            "10": 0.683,
+            "20": 0.555
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.81,
+            "1": 0.83,
+            "2": 0.909
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.909
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.738
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.758
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.766
+            }
+          },
+          "incremental_ir_vs_carry": 0.714,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 6132498.848436001,
+          "aum_high": 6132498.848436001,
+          "impact_aum_low": 740822176.4417547,
+          "impact_aum_high": 4336998272.750642,
+          "participation_cap_aum": 6132498.848436001,
+          "n_periods": 235,
+          "gross_sharpe": 1.211,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3066249.4242180004,
+            "p5_h5": 15331247.12109,
+            "p10_h1": 6132498.848436001,
+            "p10_h5": 30662494.24218,
+            "p20_h1": 12264997.696872002,
+            "p20_h5": 61324988.48436
+          },
+          "calibrated_range": {
+            "low": 3066249.4242180004,
+            "high": 61324988.48436
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 236,
+          "n_intents": 5166,
+          "n_approved": 5166,
+          "n_rejected": 0,
+          "total_return": 1.163903,
+          "total_funding": 26698.889788,
+          "reconciliation_residual": 1.2e-08,
+          "sharpe_raw": 0.9242,
+          "max_drawdown_raw": 0.2416,
+          "sharpe_vt": 1.2484,
+          "max_drawdown_vt": 0.1746,
+          "pipeline_sharpe_ppy52": 0.9242,
+          "pipeline_sharpe_vt_ppy52": 1.2484,
+          "crowding_gate": {
+            "n_periods": 236,
+            "n_pass": 0,
+            "n_warn": 215,
+            "n_block": 21,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:AVAX:z=3.3088>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:ICP:z=3.1567>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q35": {
+      "spec": {
+        "id": "crowd_contra_q35",
+        "role": "variant",
+        "kind": "quantile",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0449,
+            "ic_std": 0.238,
+            "icir": 0.1888,
+            "hit_rate": 0.5532,
+            "t_stat": 2.8943,
+            "n_periods": 235,
+            "per_year": {
+              "2022": 0.07,
+              "2023": 0.0628,
+              "2024": 0.0363,
+              "2025": 0.0234,
+              "2026": 0.0237
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.057,
+            "econ_sharpe": 1.118,
+            "avg_turnover_per_day": 0.0572,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 1.88,
+            "2023": 1.13,
+            "2024": 1.17,
+            "2025": 0.61,
+            "2026": 1.46
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.032,
+            "5": 0.994,
+            "10": 0.93,
+            "20": 0.803
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.057,
+            "1": 1.119,
+            "2": 1.066
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.068
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.886
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.977
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.896
+            }
+          },
+          "incremental_ir_vs_carry": 0.966,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 8176665.131248001,
+          "aum_high": 8176665.131248001,
+          "impact_aum_low": 1458377048.5788891,
+          "impact_aum_high": 7993003811.012523,
+          "participation_cap_aum": 8176665.131248001,
+          "n_periods": 235,
+          "gross_sharpe": 1.592,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 4088332.5656240005,
+            "p5_h5": 20441662.82812,
+            "p10_h1": 8176665.131248001,
+            "p10_h5": 40883325.65624,
+            "p20_h1": 16353330.262496002,
+            "p20_h5": 81766651.31248
+          },
+          "calibrated_range": {
+            "low": 4088332.5656240005,
+            "high": 81766651.31248
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 236,
+          "n_intents": 5172,
+          "n_approved": 5172,
+          "n_rejected": 0,
+          "total_return": 1.087125,
+          "total_funding": 19666.552988,
+          "reconciliation_residual": 8e-09,
+          "sharpe_raw": 1.0459,
+          "max_drawdown_raw": 0.1072,
+          "sharpe_vt": 1.008,
+          "max_drawdown_vt": 0.1543,
+          "pipeline_sharpe_ppy52": 1.0459,
+          "pipeline_sharpe_vt_ppy52": 1.008,
+          "crowding_gate": {
+            "n_periods": 236,
+            "n_pass": 0,
+            "n_warn": 215,
+            "n_block": 21,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1219>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.1577>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:AVAX:z=3.3088>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_3d": {
+      "spec": {
+        "id": "crowd_contra_3d",
+        "role": "variant",
+        "kind": "cadence",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 3,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.026,
+            "ic_std": 0.2504,
+            "icir": 0.1039,
+            "hit_rate": 0.5418,
+            "t_stat": 2.4362,
+            "n_periods": 550,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0413,
+              "2023": 0.033,
+              "2024": 0.0324,
+              "2025": 0.0307,
+              "2026": -0.0331
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.364,
+            "econ_sharpe": 1.425,
+            "avg_turnover_per_day": 0.1218,
+            "n_rebalances": 743
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.22,
+            "2022": 1.86,
+            "2023": 1.86,
+            "2024": 1.26,
+            "2025": 1.4,
+            "2026": 1.49
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.315,
+            "5": 1.24,
+            "10": 1.117,
+            "20": 0.869
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.364,
+            "1": 1.242,
+            "2": 1.16
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.374
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 1.152
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 1.144
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.807
+            }
+          },
+          "incremental_ir_vs_carry": 1.261,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": true,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 5
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 865042767.1964717,
+          "impact_aum_high": 5133432464.848153,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 550,
+          "gross_sharpe": 1.884,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 122,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 551,
+          "n_intents": 12036,
+          "n_approved": 12036,
+          "n_rejected": 0,
+          "total_return": 1.414021,
+          "total_funding": 32849.074773,
+          "reconciliation_residual": 4e-09,
+          "sharpe_raw": 1.2135,
+          "max_drawdown_raw": 0.1381,
+          "sharpe_vt": 1.5682,
+          "max_drawdown_vt": 0.1195,
+          "pipeline_sharpe_ppy52": 0.7922,
+          "pipeline_sharpe_vt_ppy52": 1.0238,
+          "crowding_gate": {
+            "n_periods": 551,
+            "n_pass": 0,
+            "n_warn": 498,
+            "n_block": 53,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1571>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.2201>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.3038>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.1457>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.2908>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.4955>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.0107>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.2347>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 122,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_14d": {
+      "spec": {
+        "id": "crowd_contra_14d",
+        "role": "variant",
+        "kind": "cadence",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.3,
+        "cadence_days": 14,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0709,
+            "ic_std": 0.2391,
+            "icir": 0.2964,
+            "hit_rate": 0.6068,
+            "t_stat": 3.2056,
+            "n_periods": 117,
+            "per_year": {
+              "2022": 0.0919,
+              "2023": 0.1091,
+              "2024": 0.0426,
+              "2025": 0.0653,
+              "2026": 0.0251
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.052,
+            "econ_sharpe": 1.098,
+            "avg_turnover_per_day": 0.0365,
+            "n_rebalances": 160
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.88,
+            "2023": 1.8,
+            "2024": 1.25,
+            "2025": 0.99,
+            "2026": 1.33
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.037,
+            "5": 1.013,
+            "10": 0.974,
+            "20": 0.895
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.052,
+            "1": 1.052,
+            "2": 0.954
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.062
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.941
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.653
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.915
+            }
+          },
+          "incremental_ir_vs_carry": 0.964,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 2462653398.763983,
+          "impact_aum_high": null,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 117,
+          "gross_sharpe": 1.499,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 26,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 118,
+          "n_intents": 2606,
+          "n_approved": 2606,
+          "n_rejected": 0,
+          "total_return": 0.993014,
+          "total_funding": 4430.792924,
+          "reconciliation_residual": 2e-09,
+          "sharpe_raw": 0.9725,
+          "max_drawdown_raw": 0.1665,
+          "sharpe_vt": 0.9415,
+          "max_drawdown_vt": 0.1177,
+          "pipeline_sharpe_ppy52": 1.3753,
+          "pipeline_sharpe_vt_ppy52": 1.3314,
+          "crowding_gate": {
+            "n_periods": 118,
+            "n_pass": 0,
+            "n_warn": 109,
+            "n_block": 9,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.7030>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2662>3.0000",
+              "absolute_crowding_z_block:OP:z=3.4252>3.0000",
+              "absolute_crowding_z_block:UNI:z=3.1675>3.0000",
+              "absolute_crowding_z_block:UNI:z=4.3451>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 26,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_taker_combo": {
+      "spec": {
+        "id": "crowd_taker_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expr": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field taker_ls)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls",
+          "taker_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0095,
+            "ic_std": 0.2306,
+            "icir": 0.0413,
+            "hit_rate": 0.5094,
+            "t_stat": 1.6221,
+            "n_periods": 1541,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0145,
+              "2023": 0.0058,
+              "2024": 0.0202,
+              "2025": 0.009,
+              "2026": -0.0068
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0338,
+            "ic_std": 0.2314,
+            "icir": 0.1462,
+            "hit_rate": 0.5251,
+            "t_stat": 2.1638,
+            "n_periods": 219,
+            "per_year": {
+              "2022": -0.0069,
+              "2023": 0.0516,
+              "2024": 0.0631,
+              "2025": 0.0305,
+              "2026": 0.0032
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.806,
+            "econ_sharpe": 0.857,
+            "avg_turnover_per_day": 0.0999,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.36,
+            "2023": 1.17,
+            "2024": 0.88,
+            "2025": 1.55,
+            "2026": 0.52
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.762,
+            "5": 0.695,
+            "10": 0.584,
+            "20": 0.362
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.806,
+            "1": 0.787,
+            "2": 0.667
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.919
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.616
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.499
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.889
+            }
+          },
+          "incremental_ir_vs_carry": 0.798,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7059519.534600002,
+          "aum_high": 7059519.534600002,
+          "impact_aum_low": 336008357.1479504,
+          "impact_aum_high": 2185047887.3461914,
+          "participation_cap_aum": 7059519.534600002,
+          "n_periods": 219,
+          "gross_sharpe": 1.227,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3529759.767300001,
+            "p5_h5": 17648798.836500004,
+            "p10_h1": 7059519.534600002,
+            "p10_h5": 35297597.67300001,
+            "p20_h1": 14119039.069200004,
+            "p20_h5": 70595195.34600002
+          },
+          "calibrated_range": {
+            "low": 3529759.767300001,
+            "high": 70595195.34600002
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 220,
+          "n_intents": 4953,
+          "n_approved": 4953,
+          "n_rejected": 0,
+          "total_return": 1.281287,
+          "total_funding": 21536.192557,
+          "reconciliation_residual": 7e-09,
+          "sharpe_raw": 0.9832,
+          "max_drawdown_raw": 0.1556,
+          "sharpe_vt": 1.0946,
+          "max_drawdown_vt": 0.1028,
+          "pipeline_sharpe_ppy52": 0.9832,
+          "pipeline_sharpe_vt_ppy52": 1.0946,
+          "crowding_gate": {
+            "n_periods": 220,
+            "n_pass": 0,
+            "n_warn": 206,
+            "n_block": 14,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1219>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.3800>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.9235>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:INJ:z=5.2756>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2110>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2662>3.0000",
+              "absolute_crowding_z_block:OP:z=3.4252>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_top_combo": {
+      "spec": {
+        "id": "crowd_top_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expr": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field top_ls)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls",
+          "top_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0123,
+            "ic_std": 0.2406,
+            "icir": 0.0511,
+            "hit_rate": 0.5174,
+            "t_stat": 1.8782,
+            "n_periods": 1351,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0087,
+              "2023": 0.0101,
+              "2024": 0.032,
+              "2025": 0.003,
+              "2026": -0.0006
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0617,
+            "ic_std": 0.215,
+            "icir": 0.287,
+            "hit_rate": 0.6042,
+            "t_stat": 3.977,
+            "n_periods": 192,
+            "per_year": {
+              "2022": null,
+              "2023": 0.0825,
+              "2024": 0.0721,
+              "2025": 0.0336,
+              "2026": 0.0741
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.93,
+            "econ_sharpe": 1.065,
+            "avg_turnover_per_day": 0.0464,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.1,
+            "2023": 1.92,
+            "2024": 1.09,
+            "2025": 0.69,
+            "2026": 1.27
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.909,
+            "5": 0.877,
+            "10": 0.823,
+            "20": 0.716
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.93,
+            "1": 0.998,
+            "2": 1.016
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.806
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.961
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.8
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 1.1
+            }
+          },
+          "incremental_ir_vs_carry": 0.752,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 1236182174.8975573,
+          "impact_aum_high": 6927204511.070175,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 192,
+          "gross_sharpe": 1.328,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 193,
+          "n_intents": 4362,
+          "n_approved": 4362,
+          "n_rejected": 0,
+          "total_return": 1.046483,
+          "total_funding": 21045.177647,
+          "reconciliation_residual": 0.0,
+          "sharpe_raw": 0.9754,
+          "max_drawdown_raw": 0.1701,
+          "sharpe_vt": 0.6434,
+          "max_drawdown_vt": 0.1357,
+          "pipeline_sharpe_ppy52": 0.9754,
+          "pipeline_sharpe_vt_ppy52": 0.6434,
+          "crowding_gate": {
+            "n_periods": 193,
+            "n_pass": 0,
+            "n_warn": 176,
+            "n_block": 17,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:ICP:z=3.1567>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.9235>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:INJ:z=5.2756>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_taker_top_combo": {
+      "spec": {
+        "id": "crowd_taker_top_combo",
+        "role": "variant",
+        "kind": "composite",
+        "expr": "(div (add (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (field taker_ls)))) (cs_zscore (neg (field top_ls)))) (const 3.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls",
+          "taker_ls",
+          "top_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0181,
+            "ic_std": 0.2274,
+            "icir": 0.0796,
+            "hit_rate": 0.5337,
+            "t_stat": 2.9243,
+            "n_periods": 1351,
+            "per_year": {
+              "2021": null,
+              "2022": 0.01,
+              "2023": 0.0134,
+              "2024": 0.0323,
+              "2025": 0.0148,
+              "2026": 0.0109
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0592,
+            "ic_std": 0.2227,
+            "icir": 0.2659,
+            "hit_rate": 0.6042,
+            "t_stat": 3.6843,
+            "n_periods": 192,
+            "per_year": {
+              "2022": null,
+              "2023": 0.0815,
+              "2024": 0.0881,
+              "2025": 0.0418,
+              "2026": 0.0441
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.08,
+            "econ_sharpe": 1.185,
+            "avg_turnover_per_day": 0.0749,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": -0.95,
+            "2023": 1.84,
+            "2024": 1.8,
+            "2025": 1.3,
+            "2026": 0.78
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.045,
+            "5": 0.992,
+            "10": 0.904,
+            "20": 0.728
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.08,
+            "1": 1.045,
+            "2": 0.998
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.964
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.702
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.775
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.791
+            }
+          },
+          "incremental_ir_vs_carry": 0.981,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 702356281.2538617,
+          "impact_aum_high": 4115486790.591659,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 192,
+          "gross_sharpe": 1.506,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 193,
+          "n_intents": 4358,
+          "n_approved": 4358,
+          "n_rejected": 0,
+          "total_return": 1.026453,
+          "total_funding": 16947.126174,
+          "reconciliation_residual": 6e-09,
+          "sharpe_raw": 0.8128,
+          "max_drawdown_raw": 0.3767,
+          "sharpe_vt": 0.1871,
+          "max_drawdown_vt": 0.3767,
+          "pipeline_sharpe_ppy52": 0.8128,
+          "pipeline_sharpe_vt_ppy52": 0.1871,
+          "crowding_gate": {
+            "n_periods": 193,
+            "n_pass": 0,
+            "n_warn": 176,
+            "n_block": 17,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1219>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.3800>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.9235>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2110>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q25_3d": {
+      "spec": {
+        "id": "crowd_contra_q25_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 3,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.026,
+            "ic_std": 0.2504,
+            "icir": 0.1039,
+            "hit_rate": 0.5418,
+            "t_stat": 2.4362,
+            "n_periods": 550,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0413,
+              "2023": 0.033,
+              "2024": 0.0324,
+              "2025": 0.0307,
+              "2026": -0.0331
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.28,
+            "econ_sharpe": 1.343,
+            "avg_turnover_per_day": 0.1346,
+            "n_rebalances": 743
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.17,
+            "2022": 1.64,
+            "2023": 1.25,
+            "2024": 1.7,
+            "2025": 1.31,
+            "2026": 1.62
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.229,
+            "5": 1.153,
+            "10": 1.026,
+            "20": 0.773
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.28,
+            "1": 1.215,
+            "2": 1.173
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.252
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 1.098
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 1.089
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 1.16
+            }
+          },
+          "incremental_ir_vs_carry": 1.181,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": true,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 5
+        },
+        "capacity": {
+          "aum_low": 6132498.848436001,
+          "aum_high": 6132498.848436001,
+          "impact_aum_low": 693868829.9322882,
+          "impact_aum_high": 4106231564.694242,
+          "participation_cap_aum": 6132498.848436001,
+          "n_periods": 550,
+          "gross_sharpe": 1.777,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3066249.4242180004,
+            "p5_h5": 15331247.12109,
+            "p10_h1": 6132498.848436001,
+            "p10_h5": 30662494.24218,
+            "p20_h1": 12264997.696872002,
+            "p20_h5": 61324988.48436
+          },
+          "calibrated_range": {
+            "low": 3066249.4242180004,
+            "high": 61324988.48436
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 122,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 551,
+          "n_intents": 11997,
+          "n_approved": 11997,
+          "n_rejected": 0,
+          "total_return": 1.670264,
+          "total_funding": 36615.879896,
+          "reconciliation_residual": 9e-09,
+          "sharpe_raw": 1.2529,
+          "max_drawdown_raw": 0.1291,
+          "sharpe_vt": 1.5506,
+          "max_drawdown_vt": 0.1059,
+          "pipeline_sharpe_ppy52": 0.818,
+          "pipeline_sharpe_vt_ppy52": 1.0124,
+          "crowding_gate": {
+            "n_periods": 551,
+            "n_pass": 0,
+            "n_warn": 500,
+            "n_block": 51,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1571>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.2201>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.3038>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.1457>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.2908>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.4955>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.2347>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.4751>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 122,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q25_14d": {
+      "spec": {
+        "id": "crowd_contra_q25_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.25,
+        "cadence_days": 14,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0709,
+            "ic_std": 0.2391,
+            "icir": 0.2964,
+            "hit_rate": 0.6068,
+            "t_stat": 3.2056,
+            "n_periods": 117,
+            "per_year": {
+              "2022": 0.0919,
+              "2023": 0.1091,
+              "2024": 0.0426,
+              "2025": 0.0653,
+              "2026": 0.0251
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.964,
+            "econ_sharpe": 1.009,
+            "avg_turnover_per_day": 0.0394,
+            "n_rebalances": 160
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 1.24,
+            "2023": 1.51,
+            "2024": 0.88,
+            "2025": 0.9,
+            "2026": 1.19
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.949,
+            "5": 0.926,
+            "10": 0.887,
+            "20": 0.81
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.964,
+            "1": 0.99,
+            "2": 1.0
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.073
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.871
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.587
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 1.004
+            }
+          },
+          "incremental_ir_vs_carry": 0.862,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 6132498.848436001,
+          "aum_high": 6132498.848436001,
+          "impact_aum_low": 2051843940.8604152,
+          "impact_aum_high": null,
+          "participation_cap_aum": 6132498.848436001,
+          "n_periods": 117,
+          "gross_sharpe": 1.504,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3066249.4242180004,
+            "p5_h5": 15331247.12109,
+            "p10_h1": 6132498.848436001,
+            "p10_h5": 30662494.24218,
+            "p20_h1": 12264997.696872002,
+            "p20_h5": 61324988.48436
+          },
+          "calibrated_range": {
+            "low": 3066249.4242180004,
+            "high": 61324988.48436
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 26,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 118,
+          "n_intents": 2574,
+          "n_approved": 2574,
+          "n_rejected": 0,
+          "total_return": 0.897932,
+          "total_funding": 5107.803718,
+          "reconciliation_residual": 0.0,
+          "sharpe_raw": 0.739,
+          "max_drawdown_raw": 0.3077,
+          "sharpe_vt": 0.925,
+          "max_drawdown_vt": 0.1561,
+          "pipeline_sharpe_ppy52": 1.0451,
+          "pipeline_sharpe_vt_ppy52": 1.3081,
+          "crowding_gate": {
+            "n_periods": 118,
+            "n_pass": 0,
+            "n_warn": 109,
+            "n_block": 9,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.7030>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2662>3.0000",
+              "absolute_crowding_z_block:OP:z=3.4252>3.0000",
+              "absolute_crowding_z_block:UNI:z=3.1675>3.0000",
+              "absolute_crowding_z_block:UNI:z=4.3451>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 26,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q35_3d": {
+      "spec": {
+        "id": "crowd_contra_q35_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 3,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.026,
+            "ic_std": 0.2504,
+            "icir": 0.1039,
+            "hit_rate": 0.5418,
+            "t_stat": 2.4362,
+            "n_periods": 550,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0413,
+              "2023": 0.033,
+              "2024": 0.0324,
+              "2025": 0.0307,
+              "2026": -0.0331
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.412,
+            "econ_sharpe": 1.472,
+            "avg_turnover_per_day": 0.1109,
+            "n_rebalances": 743
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.3,
+            "2022": 2.0,
+            "2023": 2.12,
+            "2024": 1.55,
+            "2025": 1.19,
+            "2026": 0.87
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.364,
+            "5": 1.291,
+            "10": 1.17,
+            "20": 0.927
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.412,
+            "1": 1.288,
+            "2": 1.176
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.398
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 1.157
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 1.251
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.897
+            }
+          },
+          "incremental_ir_vs_carry": 1.303,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": true,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 5
+        },
+        "capacity": {
+          "aum_low": 8176665.131248001,
+          "aum_high": 8176665.131248001,
+          "impact_aum_low": 970345778.8233141,
+          "impact_aum_high": 5773278826.529829,
+          "participation_cap_aum": 8176665.131248001,
+          "n_periods": 550,
+          "gross_sharpe": 1.957,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 4088332.5656240005,
+            "p5_h5": 20441662.82812,
+            "p10_h1": 8176665.131248001,
+            "p10_h5": 40883325.65624,
+            "p20_h1": 16353330.262496002,
+            "p20_h5": 81766651.31248
+          },
+          "calibrated_range": {
+            "low": 4088332.5656240005,
+            "high": 81766651.31248
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 122,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 551,
+          "n_intents": 12072,
+          "n_approved": 12072,
+          "n_rejected": 0,
+          "total_return": 1.441567,
+          "total_funding": 29285.566374,
+          "reconciliation_residual": 1e-08,
+          "sharpe_raw": 1.432,
+          "max_drawdown_raw": 0.1158,
+          "sharpe_vt": 1.6606,
+          "max_drawdown_vt": 0.1125,
+          "pipeline_sharpe_ppy52": 0.9349,
+          "pipeline_sharpe_vt_ppy52": 1.0842,
+          "crowding_gate": {
+            "n_periods": 551,
+            "n_pass": 0,
+            "n_warn": 498,
+            "n_block": 53,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1571>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.2201>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.3038>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.1457>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.2908>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.4955>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.0107>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.2347>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 122,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q35_14d": {
+      "spec": {
+        "id": "crowd_contra_q35_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.35,
+        "cadence_days": 14,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0709,
+            "ic_std": 0.2391,
+            "icir": 0.2964,
+            "hit_rate": 0.6068,
+            "t_stat": 3.2056,
+            "n_periods": 117,
+            "per_year": {
+              "2022": 0.0919,
+              "2023": 0.1091,
+              "2024": 0.0426,
+              "2025": 0.0653,
+              "2026": 0.0251
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.99,
+            "econ_sharpe": 1.032,
+            "avg_turnover_per_day": 0.0337,
+            "n_rebalances": 160
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.95,
+            "2023": 1.77,
+            "2024": 1.25,
+            "2025": 0.98,
+            "2026": 0.42
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.975,
+            "5": 0.952,
+            "10": 0.914,
+            "20": 0.837
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.99,
+            "1": 0.993,
+            "2": 0.901
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.91
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.84
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.615
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.868
+            }
+          },
+          "incremental_ir_vs_carry": 0.889,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 8176665.131248001,
+          "aum_high": 8176665.131248001,
+          "impact_aum_low": 2363385963.8365107,
+          "impact_aum_high": null,
+          "participation_cap_aum": 8176665.131248001,
+          "n_periods": 117,
+          "gross_sharpe": 1.359,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 4088332.5656240005,
+            "p5_h5": 20441662.82812,
+            "p10_h1": 8176665.131248001,
+            "p10_h5": 40883325.65624,
+            "p20_h1": 16353330.262496002,
+            "p20_h5": 81766651.31248
+          },
+          "calibrated_range": {
+            "low": 4088332.5656240005,
+            "high": 81766651.31248
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 26,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 118,
+          "n_intents": 2622,
+          "n_approved": 2622,
+          "n_rejected": 0,
+          "total_return": 0.913395,
+          "total_funding": 3571.980189,
+          "reconciliation_residual": 1e-09,
+          "sharpe_raw": 0.9958,
+          "max_drawdown_raw": 0.1108,
+          "sharpe_vt": 0.7372,
+          "max_drawdown_vt": 0.1884,
+          "pipeline_sharpe_ppy52": 1.4083,
+          "pipeline_sharpe_vt_ppy52": 1.0425,
+          "crowding_gate": {
+            "n_periods": 118,
+            "n_pass": 0,
+            "n_warn": 109,
+            "n_block": 9,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1219>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.7030>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2662>3.0000",
+              "absolute_crowding_z_block:OP:z=3.4252>3.0000",
+              "absolute_crowding_z_block:UNI:z=3.1675>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 26,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q20_3d": {
+      "spec": {
+        "id": "crowd_contra_q20_3d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 3,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.026,
+            "ic_std": 0.2504,
+            "icir": 0.1039,
+            "hit_rate": 0.5418,
+            "t_stat": 2.4362,
+            "n_periods": 550,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0413,
+              "2023": 0.033,
+              "2024": 0.0324,
+              "2025": 0.0307,
+              "2026": -0.0331
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.219,
+            "econ_sharpe": 1.275,
+            "avg_turnover_per_day": 0.1451,
+            "n_rebalances": 743
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": -0.08,
+            "2022": 1.5,
+            "2023": 1.37,
+            "2024": 1.76,
+            "2025": 0.98,
+            "2026": 1.67
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.17,
+            "5": 1.097,
+            "10": 0.975,
+            "20": 0.73
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.219,
+            "1": 1.366,
+            "2": 1.352
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.101
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.952
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 1.058
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 1.065
+            }
+          },
+          "incremental_ir_vs_carry": 1.119,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 5110415.70703,
+          "aum_high": 5110415.70703,
+          "impact_aum_low": 576602322.8112397,
+          "impact_aum_high": 3370502023.8407326,
+          "participation_cap_aum": 5110415.70703,
+          "n_periods": 550,
+          "gross_sharpe": 1.651,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 2555207.853515,
+            "p5_h5": 12776039.267575,
+            "p10_h1": 5110415.70703,
+            "p10_h5": 25552078.53515,
+            "p20_h1": 10220831.41406,
+            "p20_h5": 51104157.0703
+          },
+          "calibrated_range": {
+            "low": 2555207.853515,
+            "high": 51104157.0703
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 122,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 551,
+          "n_intents": 12025,
+          "n_approved": 12025,
+          "n_rejected": 0,
+          "total_return": 2.091502,
+          "total_funding": 39518.498032,
+          "reconciliation_residual": 4e-09,
+          "sharpe_raw": 1.1682,
+          "max_drawdown_raw": 0.2602,
+          "sharpe_vt": 1.306,
+          "max_drawdown_vt": 0.1864,
+          "pipeline_sharpe_ppy52": 0.7627,
+          "pipeline_sharpe_vt_ppy52": 0.8526,
+          "crowding_gate": {
+            "n_periods": 551,
+            "n_pass": 0,
+            "n_warn": 503,
+            "n_block": 48,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1571>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.2201>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.1457>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.2908>3.0000",
+              "absolute_crowding_z_block:ATOM:z=3.4955>3.0000",
+              "absolute_crowding_z_block:ETC:z=3.4751>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.1015>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.1993>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 122,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_contra_q20_14d": {
+      "spec": {
+        "id": "crowd_contra_q20_14d",
+        "role": "variant",
+        "kind": "grid",
+        "expr": "(cs_rank (neg (field global_ls)))",
+        "quantile": 0.2,
+        "cadence_days": 14,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0043,
+            "ic_std": 0.2475,
+            "icir": 0.0172,
+            "hit_rate": 0.5021,
+            "t_stat": 0.6995,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.0168,
+              "2023": 0.001,
+              "2024": 0.0191,
+              "2025": -0.0031,
+              "2026": -0.0259
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0709,
+            "ic_std": 0.2391,
+            "icir": 0.2964,
+            "hit_rate": 0.6068,
+            "t_stat": 3.2056,
+            "n_periods": 117,
+            "per_year": {
+              "2022": 0.0919,
+              "2023": 0.1091,
+              "2024": 0.0426,
+              "2025": 0.0653,
+              "2026": 0.0251
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.142,
+            "econ_sharpe": 1.186,
+            "avg_turnover_per_day": 0.0426,
+            "n_rebalances": 160
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 1.3,
+            "2023": 2.07,
+            "2024": 0.79,
+            "2025": 1.13,
+            "2026": 1.96
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 1.127,
+            "5": 1.104,
+            "10": 1.067,
+            "20": 0.991
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.142,
+            "1": 1.135,
+            "2": 1.104
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 1.054
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.791
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.5
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.63
+            }
+          },
+          "incremental_ir_vs_carry": 1.029,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 5110415.70703,
+          "aum_high": 5110415.70703,
+          "impact_aum_low": 2342144787.534086,
+          "impact_aum_high": null,
+          "participation_cap_aum": 5110415.70703,
+          "n_periods": 117,
+          "gross_sharpe": 1.78,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 2555207.853515,
+            "p5_h5": 12776039.267575,
+            "p10_h1": 5110415.70703,
+            "p10_h5": 25552078.53515,
+            "p20_h1": 10220831.41406,
+            "p20_h5": 51104157.0703
+          },
+          "calibrated_range": {
+            "low": 2555207.853515,
+            "high": 51104157.0703
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 26,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 118,
+          "n_intents": 2560,
+          "n_approved": 2560,
+          "n_rejected": 0,
+          "total_return": 1.865144,
+          "total_funding": 6799.55865,
+          "reconciliation_residual": 4e-09,
+          "sharpe_raw": 1.2608,
+          "max_drawdown_raw": 0.1667,
+          "sharpe_vt": 1.1734,
+          "max_drawdown_vt": 0.1357,
+          "pipeline_sharpe_ppy52": 1.7831,
+          "pipeline_sharpe_vt_ppy52": 1.6595,
+          "crowding_gate": {
+            "n_periods": 118,
+            "n_pass": 0,
+            "n_warn": 110,
+            "n_block": 8,
+            "worst_score": 0.5000000000000002,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.7030>3.0000",
+              "absolute_crowding_z_block:INJ:z=4.7169>3.0000",
+              "absolute_crowding_z_block:NEAR:z=3.2662>3.0000",
+              "absolute_crowding_z_block:OP:z=3.4252>3.0000",
+              "absolute_crowding_z_block:UNI:z=3.1675>3.0000",
+              "absolute_crowding_z_block:UNI:z=4.3451>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 26,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_oi_delta_combo": {
+      "spec": {
+        "id": "crowd_oi_delta_combo",
+        "role": "variant",
+        "kind": "composite_extra",
+        "expr": "(div (add (cs_zscore (neg (field global_ls))) (cs_zscore (neg (ts_delta (field global_ls) 7)))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": -0.004,
+            "ic_std": 0.2451,
+            "icir": -0.0162,
+            "hit_rate": 0.5204,
+            "t_stat": -0.656,
+            "n_periods": 1639,
+            "per_year": {
+              "2022": 0.0119,
+              "2023": -0.0069,
+              "2024": 0.008,
+              "2025": -0.0139,
+              "2026": -0.0289
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0242,
+            "ic_std": 0.2266,
+            "icir": 0.1069,
+            "hit_rate": 0.5256,
+            "t_stat": 1.635,
+            "n_periods": 234,
+            "per_year": {
+              "2022": 0.0483,
+              "2023": 0.0224,
+              "2024": 0.0233,
+              "2025": 0.0016,
+              "2026": 0.029
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 0.555,
+            "econ_sharpe": 0.601,
+            "avg_turnover_per_day": 0.1346,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 0.97,
+            "2023": 0.98,
+            "2024": 0.26,
+            "2025": 0.07,
+            "2026": 1.42
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.5,
+            "5": 0.418,
+            "10": 0.282,
+            "20": 0.008
+          },
+          "price_sharpe_by_lag": {
+            "0": 0.555,
+            "1": 0.662,
+            "2": 0.501
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.6
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.408
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.517
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.497
+            }
+          },
+          "incremental_ir_vs_carry": 0.502,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": false,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 3
+        },
+        "capacity": {
+          "aum_low": 7059519.534600002,
+          "aum_high": 7059519.534600002,
+          "impact_aum_low": 105492773.60733019,
+          "impact_aum_high": 819823804.2095342,
+          "participation_cap_aum": 7059519.534600002,
+          "n_periods": 234,
+          "gross_sharpe": 0.802,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3529759.767300001,
+            "p5_h5": 17648798.836500004,
+            "p10_h1": 7059519.534600002,
+            "p10_h5": 35297597.67300001,
+            "p20_h1": 14119039.069200004,
+            "p20_h5": 70595195.34600002
+          },
+          "calibrated_range": {
+            "low": 3529759.767300001,
+            "high": 70595195.34600002
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 235,
+          "n_intents": 5250,
+          "n_approved": 5250,
+          "n_rejected": 0,
+          "total_return": 1.180912,
+          "total_funding": 18318.957415,
+          "reconciliation_residual": 1.1e-08,
+          "sharpe_raw": 1.0072,
+          "max_drawdown_raw": 0.1221,
+          "sharpe_vt": 0.6418,
+          "max_drawdown_vt": 0.1069,
+          "pipeline_sharpe_ppy52": 1.0072,
+          "pipeline_sharpe_vt_ppy52": 0.6418,
+          "crowding_gate": {
+            "n_periods": 235,
+            "n_pass": 0,
+            "n_warn": 215,
+            "n_block": 20,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.1219>3.0000",
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:AAVE:z=4.6540>3.0000",
+              "absolute_crowding_z_block:AVAX:z=3.3088>3.0000",
+              "absolute_crowding_z_block:BNB:z=3.2297>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.5939>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    },
+    "crowd_carry_blend": {
+      "spec": {
+        "id": "crowd_carry_blend",
+        "role": "variant",
+        "kind": "composite_extra",
+        "expr": "(div (add (cs_zscore (neg (field global_ls))) (div (add (add (cs_zscore (neg (decay_linear (field funding) 3))) (cs_zscore (neg (decay_linear (field funding) 7)))) (add (cs_zscore (neg (decay_linear (field funding) 14))) (cs_zscore (neg (ts_mean (field funding) 7))))) (const 4.0))) (const 2.0))",
+        "quantile": 0.3,
+        "cadence_days": 7,
+        "fields": [
+          "global_ls",
+          "funding"
+        ]
+      },
+      "stages": {
+        "ic": {
+          "h1": {
+            "mean_ic": 0.0105,
+            "ic_std": 0.2451,
+            "icir": 0.0429,
+            "hit_rate": 0.5088,
+            "t_stat": 1.7415,
+            "n_periods": 1651,
+            "per_year": {
+              "2021": null,
+              "2022": 0.016,
+              "2023": 0.0034,
+              "2024": 0.036,
+              "2025": 0.0063,
+              "2026": -0.0245
+            }
+          },
+          "h_cadence": {
+            "mean_ic": 0.0491,
+            "ic_std": 0.2304,
+            "icir": 0.213,
+            "hit_rate": 0.5787,
+            "t_stat": 3.2653,
+            "n_periods": 235,
+            "per_year": {
+              "2022": 0.0711,
+              "2023": 0.0582,
+              "2024": 0.0498,
+              "2025": 0.0319,
+              "2026": 0.0242
+            }
+          }
+        },
+        "falsification": {
+          "base": {
+            "price_sharpe": 1.016,
+            "econ_sharpe": 1.206,
+            "avg_turnover_per_day": 0.0651,
+            "n_rebalances": 319
+          },
+          "per_year_price": {
+            "2020": 0.0,
+            "2021": 0.0,
+            "2022": 1.12,
+            "2023": 1.41,
+            "2024": 0.82,
+            "2025": 1.26,
+            "2026": 1.67
+          },
+          "net_sharpe_by_fee_bps": {
+            "2": 0.989,
+            "5": 0.95,
+            "10": 0.884,
+            "20": 0.751
+          },
+          "price_sharpe_by_lag": {
+            "0": 1.016,
+            "1": 1.011,
+            "2": 0.997
+          },
+          "price_sharpe_by_subset": {
+            "drop_BTC": {
+              "n": 23,
+              "price_sharpe": 0.893
+            },
+            "drop_top4": {
+              "n": 20,
+              "price_sharpe": 0.524
+            },
+            "even_idx": {
+              "n": 12,
+              "price_sharpe": 0.924
+            },
+            "odd_idx": {
+              "n": 12,
+              "price_sharpe": 0.584
+            }
+          },
+          "incremental_ir_vs_carry": 0.743,
+          "refutation_checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_pass": 4
+        },
+        "capacity": {
+          "aum_low": 7154581.989842001,
+          "aum_high": 7154581.989842001,
+          "impact_aum_low": 1225543099.6715832,
+          "impact_aum_high": 6884908671.958442,
+          "participation_cap_aum": 7154581.989842001,
+          "n_periods": 235,
+          "gross_sharpe": 1.552,
+          "binding": "participation",
+          "sensitivity_particip_horizon": {
+            "p5_h1": 3577290.9949210007,
+            "p5_h5": 17886454.974605,
+            "p10_h1": 7154581.989842001,
+            "p10_h5": 35772909.94921,
+            "p20_h1": 14309163.979684003,
+            "p20_h5": 71545819.89842
+          },
+          "calibrated_range": {
+            "low": 3577290.9949210007,
+            "high": 71545819.89842
+          },
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "ppy": 52,
+          "data_quality": "OK"
+        },
+        "dry_run": {
+          "n_periods": 236,
+          "n_intents": 5193,
+          "n_approved": 5193,
+          "n_rejected": 0,
+          "total_return": 0.823309,
+          "total_funding": 51866.059228,
+          "reconciliation_residual": 8e-09,
+          "sharpe_raw": 0.7839,
+          "max_drawdown_raw": 0.294,
+          "sharpe_vt": 0.7654,
+          "max_drawdown_vt": 0.1931,
+          "pipeline_sharpe_ppy52": 0.7839,
+          "pipeline_sharpe_vt_ppy52": 0.7654,
+          "crowding_gate": {
+            "n_periods": 236,
+            "n_pass": 0,
+            "n_warn": 217,
+            "n_block": 19,
+            "worst_score": 0.5000000000000003,
+            "sample_reasons": [
+              "absolute_crowding_z_block:AAVE:z=3.6672>3.0000",
+              "absolute_crowding_z_block:BTC:z=3.3880>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.0648>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.3517>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.4635>3.0000",
+              "absolute_crowding_z_block:ETH:z=3.8062>3.0000",
+              "absolute_crowding_z_block:ICP:z=3.1567>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.0124>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.3800>3.0000",
+              "absolute_crowding_z_block:INJ:z=3.7030>3.0000"
+            ],
+            "provenance": "REAL_CROWDING_GATE"
+          },
+          "ppy": 52,
+          "cost_bps": 10.0
+        }
+      },
+      "stage_reached": "complete",
+      "error": null
+    }
+  },
+  "baseline_inputs": {
+    "t_stat": 2.8943,
+    "falsification_passes": 4,
+    "vt_sharpe": 1.095,
+    "max_drawdown_vt": 0.0971
+  },
+  "verdicts": {
+    "crowd_contra": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q20": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q25": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q35": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_3d": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_14d": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_taker_combo": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_top_combo": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "vt_sharpe"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_taker_top_combo": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q25_3d": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q25_14d": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q35_3d": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q35_14d": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q20_3d": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_contra_q20_14d": {
+      "verdict": "CANDIDATE",
+      "failed_bars": [],
+      "stage_reached": "complete"
+    },
+    "crowd_oi_delta_combo": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "t_stat",
+        "falsification",
+        "vt_sharpe"
+      ],
+      "stage_reached": "complete"
+    },
+    "crowd_carry_blend": {
+      "verdict": "REJECTED",
+      "failed_bars": [
+        "vt_sharpe",
+        "max_drawdown"
+      ],
+      "stage_reached": "complete"
+    }
+  },
+  "candidates": [
+    "crowd_contra_q20",
+    "crowd_contra_3d",
+    "crowd_contra_14d",
+    "crowd_taker_combo",
+    "crowd_contra_q25_3d",
+    "crowd_contra_q35_3d",
+    "crowd_contra_q20_14d"
+  ],
+  "harness_anchor_check": {
+    "note": "基线 cadence=1 证伪应复现 data/cache/crypto_oi_verify.json 的 5 项机器检验",
+    "refutation_checks": {
+      "survives_1d_lag": true,
+      "survives_10bps_cost": true,
+      "broad_across_years": true,
+      "survives_subsets": true,
+      "adds_to_carry": true
+    },
+    "n_pass": 5,
+    "price_sharpe_lag0": 1.207,
+    "net_sharpe_10bps": 0.694,
+    "incremental_ir_vs_carry": 1.107
+  },
+  "honesty": {
+    "trial_count": 17,
+    "trial_count_including_baseline": true,
+    "registry_trial_count_before": 2436,
+    "registry_trial_count_after": 2453,
+    "multiple_comparison_note": "17 次试验同属一个信号族、book 高度相关(同一 global_ls 主轴)——有效独立赌注数远小于 17;DSR(评估器按全 trial 总体泄气,Deflated Sharpe)逐候选见 trial_registration.candidates;有效独立 N 无既有机器 → 诚实陈述而非编造。判定门槛已预注册(pre_registration.verdict_bar),族判定相对本次重跑基线,非绝对值。",
+    "dsr_batching_note": "注册按节奏分 3 批(7d→3d→14d):后批评估时可见 trial 更多、DSR 泄气更狠(保守方向);7d 批 8 候选、3d 批 5、14d 批 4。",
+    "caveats": [
+      "对已知历史的执行现实回测,非前向/实盘;是否送前向 paper-track 是另一独立决策。",
+      "干跑变体不落 dry_run.db(不污染正典库);数字以本文件为准。",
+      "容量带 UNCALIBRATED_PRINCIPLED(冲击系数无法校准,区间带非单点)。",
+      "基线证伪按周度交易口径重跑,与 crypto_oi_verify.json 的日频口径数字不逐位一致属预期(见 harness_anchor_check 的日频锚定复现)。",
+      "近期资金费压缩(1.78bp/日 vs 全历史 4.81)属 carry 维度;crowd_contra 是价格方向信号,其 funding 现金流项较小,但复合变体 crowd_carry_blend 直接暴露于该压缩。"
+    ]
+  }
+}

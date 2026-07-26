@@ -20,7 +20,7 @@ $launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   throw "L2 schedule entrypoint is unavailable"
 }
-$pythonCommand = Get-Command python -ErrorAction Stop
+$pythonCommand = Get-Command pythonw -ErrorAction Stop
 $py = $pythonCommand.Source
 
 function Disable-TaskIfPresent {
@@ -100,8 +100,10 @@ function Register-L2Task {
     [Parameter(Mandatory = $true)]$Trigger
   )
 
+  $logRoot = Join-Path $stateRoot ".runtime\logs"
   $action = New-ScheduledTaskAction -Execute $py `
-    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
+    -Argument "`"$launcher`" $Module --log-dir `"$logRoot`"" `
+    -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `

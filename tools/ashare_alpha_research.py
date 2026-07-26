@@ -44,9 +44,9 @@ from services.execution.dry_run_pipeline import run_multi_period_dry_run
 from services.execution.dry_run_store import DryRunStore
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
-_DB = os.path.join("data", "cache", "ashare_daily_research.db")   # research COPY (live one is being appended)
-_UNIVERSE = os.path.join("data", "cache", "ashare_universe.json")
-_OUT = os.path.join("data", "cache", "ashare_alpha_snapshot.json")
+_DB = os.path.join("data", "stocks", "research.db")   # research COPY of data/stocks/stocks.db
+_UNIVERSE = os.path.join("data", "stocks", "universe.json")
+_OUT = os.path.join("data", "stocks", "snapshots", "alpha_snapshot.json")
 _DRY_DB = os.path.join("data", "cache", "dry_run.db")
 STRATEGY_ID_BASE = "ashare_microcap_composite_v3"   # v3: 修 dry-run 价格覆盖(全标的,治僵尸持仓)
 COST_GRID_BPS = (10.0, 15.0, 25.0)
@@ -86,7 +86,7 @@ def main() -> None:
 
     # --- 坏 bar 卫生报告(超板块涨跌幅带跳变,逐源统计) ---------------------------
     try:
-        _ksnap = json.load(open(os.path.join("data", "cache", "ashare_klines_snapshot.json"),
+        _ksnap = json.load(open(os.path.join("data", "stocks", "snapshots", "klines_snapshot.json"),
                                 encoding="utf-8"))
         src_map = {c: v.get("source", "unknown")
                    for c, v in _ksnap.get("per_stock", {}).items()}

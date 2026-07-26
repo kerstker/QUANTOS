@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1784721234692,
+  "generated_at_ms": 1784996063560,
   "instrument_scope": [
     "ADA",
     "ATOM",
@@ -20,31 +20,31 @@
     "XRP"
   ],
   "required_days": [
-    1783987200000,
-    1784073600000,
-    1784160000000,
     1784246400000,
     1784332800000,
     1784419200000,
     1784505600000,
-    1784592000000
+    1784592000000,
+    1784678400000,
+    1784764800000,
+    1784851200000
   ],
   "archive_root": "data/cache/raw_market_data",
   "artifacts": {
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
-      "size_bytes": 17067,
-      "sha256": "9bc416cc8a83603003c7f7b7d68c47dd9d8694642da5453afb35a938b9f4db59"
+      "size_bytes": 18764,
+      "sha256": "e4b2afdf2a0bdfd1662eecd9dc095687892461439adc7ab6cd926335ebc7bd0c"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
-      "size_bytes": 7814378,
-      "sha256": "07c3cc37e3d10d836e110d5e362735b35885fcafa30b2075ff2263bae645bed2"
+      "size_bytes": 7815749,
+      "sha256": "27df546834464674ae0192140777c73fa80768cda664ef02d3ddc9f26eb1461d"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
-      "size_bytes": 6845695,
-      "sha256": "96b3d2b697524c0e990c517c43cfe8671a2e187345aa19cf6df62d69ea1e1dd6"
+      "size_bytes": 6851289,
+      "sha256": "90ea76e6eeacbc743f1acf77d9ec691b31eb158accd1d895ad41986662081426"
     }
   },
   "sources": {
@@ -86,27 +86,34 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 5354,
+    "observation_count": 6995,
     "invalid_observation_count": 0,
-    "object_count": 1681,
+    "object_count": 2673,
     "datasets": {
-      "funding": 486,
-      "oi_metrics": 2161,
-      "perp_mark_prices": 2208,
-      "spot_klines": 499
+      "cross_exchange_snapshots": 24,
+      "funding": 1252,
+      "oi_metrics": 2525,
+      "perp_klines_1d": 58,
+      "perp_mark_prices": 2593,
+      "spot_klines": 541,
+      "spot_klines_1d": 2
     },
     "providers": [
+      "Binance + Bybit public synchronized market snapshot",
       "Binance Data Vision USD-M futures metrics",
       "Binance Data Vision USD-M mark-price klines",
       "Binance USD-M perpetual funding history",
-      "Binance public spot klines"
+      "Binance public spot klines",
+      "Bybit public linear perp funding history",
+      "Bybit public linear perp klines",
+      "MEXC public spot klines"
     ],
     "representations": [
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1784721234692,
-    "aggregate_sha256": "cb72007425b4f24485d8122b44883d21f204b7b3f34afda40c4f7853e02c2355",
+    "latest_observed_at_ms": 1784996063560,
+    "aggregate_sha256": "343c26ce8f1aa85fe0943b41ad52d2d9f44994639d2c18286839aaabf96ec69d",
     "errors": []
   },
   "verdict": "PASS",

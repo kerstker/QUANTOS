@@ -121,6 +121,8 @@ export default function DryRunPipeline() {
   const paperRealtime = p.paper_realtime;
   const paperHealth = p.paper_health;
   const forwardTrack = p.forward_track;
+  const dataRefresh = p.data_refresh;
+  const scheduler = p.scheduler_watchdog;
   const paperProfiles = Object.values(p.paper_profiles ?? {}) as PaperProfilePayload[];
   const paperAlphaRows: PaperAlphaRow[] = Object.entries(paperPreview?.alphas ?? {}).map(([alpha, row]) => ({
     alpha,
@@ -289,6 +291,102 @@ export default function DryRunPipeline() {
           自动检测只读取健康快照；执行入口仅允许固定的公共行情纸面驱动器，不读取私钥、不连接券商、不产生真实订单。
         </div>
       </Panel>
+
+      {dataRefresh && (
+        <Panel eyebrow="REAL-TIME DATA + GATES" title="实时数据同步与全流程门控">
+          <div className="grid gap-2 md:grid-cols-4">
+            {[
+              ['刷新结果 / Refresh', dataRefresh.outcome ?? 'NO_SNAPSHOT', dataRefresh.outcome === 'PASS'],
+              ['数据血缘 / Lineage', dataRefresh.raw_lineage?.status ?? 'UNKNOWN', dataRefresh.raw_lineage?.status === 'PASS'],
+              ['失败源 / Failed', `${dataRefresh.failed_total ?? 0} / ${dataRefresh.failed_ticker_total ?? 0}`, (dataRefresh.failed_total ?? 0) === 0],
+              ['链 / History chain', dataRefresh.history?.chain_valid === true ? 'PASS' : 'BLOCKED', dataRefresh.history?.chain_valid === true],
+            ].map(([label, value, ok]) => (
+              <div key={String(label)} className="rounded-md border border-line bg-inset/40 px-3 py-2">
+                <div className="text-2xs text-muted">{label}</div>
+                <div className={`mt-1 text-xs mono ${ok ? 'text-pos' : 'text-warn'}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {(dataRefresh.sources ?? []).map(source => {
+              const freshness = dataRefresh.staleness_after?.[source.source];
+              const ok = source.outcome === 'PASS';
+              return (
+                <div key={source.source} className="rounded-md border border-line bg-inset/40 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs mono text-fg">{source.source}</span>
+                    <StatusChip value={ok ? 'PASS' : (source.outcome ?? 'BLOCKED')} />
+                  </div>
+                  <div className="mt-1 text-2xs text-muted">
+                    {freshness?.worst_days == null ? 'freshness unavailable' : `worst age ${freshness.worst_days}d / stale ${freshness.n_stale ?? 0}/${freshness.n_total ?? 0}`}
+                    {' · '}{source.failed_count ?? 0} failed
+                  </div>
+                  {(source.failed_tickers?.length ?? 0) > 0 && (
+                    <div className="mt-1 text-2xs text-warn">{source.failed_tickers?.slice(0, 8).join(', ')}{(source.failed_tickers?.length ?? 0) > 8 ? ' …' : ''}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <div className="rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs">
+              <div className="text-muted">前向证据 / Forward clock</div>
+              <div className="mt-1 mono text-fg">{forwardTrack?.alphas?.map(row => `${row.alpha_id}:${row.n_forward_periods ?? 0}/${forwardTrack.evidence_gate_weeks ?? 8}`).join(' · ') ?? '—'}</div>
+            </div>
+            <div className="rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs">
+              <div className="text-muted">纸面操作员 / Operator</div>
+              <div className="mt-1 mono text-fg">{paperRealtime?.operator_mode ?? (paperOperator?.verdict.operator_completed ? 'PAPER_OPERATOR_READY' : 'PAPER_OPERATOR_BLOCKED')}</div>
+              <div className="mt-1 text-faint">new paper orders: {paperRealtime?.verdict.new_paper_orders_allowed ? 'allowed' : 'blocked'}</div>
+            </div>
+            <div className="rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs">
+              <div className="text-muted">安全边界 / Safety</div>
+              <div className="mt-1 mono text-pos">L2_DRY_RUN_ONLY · live=false · broker=false</div>
+            </div>
+          </div>
+          {(dataRefresh.alerts?.length ?? 0) > 0 && (
+            <div className="mt-3 text-2xs text-warn">{dataRefresh.alerts?.slice(0, 5).join(' · ')}</div>
+          )}
+        </Panel>
+      )}
+
+      {scheduler && (
+        <Panel eyebrow="L2 SCHEDULER + OPERATIONS" title="调度、同步与安全任务状态">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusChip value={scheduler.verdict ?? 'NO_SNAPSHOT'} />
+            <span className="text-2xs text-muted">
+              PASS {scheduler.summary?.PASS ?? 0} · BREACH {scheduler.summary?.BREACH ?? 0} · UNAVAILABLE {scheduler.summary?.UNAVAILABLE ?? 0}
+            </span>
+            <span className="text-2xs text-faint">只展示 L2 调度结果；任何实盘/券商任务都不在此控制面。</span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-4">
+            {[
+              ['健康任务', scheduler.summary?.PASS ?? 0, (scheduler.summary?.PASS ?? 0) > 0],
+              ['门控告警', scheduler.summary?.BREACH ?? 0, (scheduler.summary?.BREACH ?? 0) === 0],
+              ['外部依赖未配置', scheduler.summary?.UNAVAILABLE ?? 0, (scheduler.summary?.UNAVAILABLE ?? 0) === 0],
+              ['事件封存', scheduler.event_seal_configured ? 'CONFIGURED' : 'NOT_CONFIGURED', scheduler.event_seal_configured === true],
+            ].map(([label, value, ok]) => (
+              <div key={String(label)} className="rounded-md border border-line bg-inset/40 px-3 py-2">
+                <div className="text-2xs text-muted">{label}</div>
+                <div className={`mt-1 text-xs mono ${ok ? 'text-pos' : 'text-warn'}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {scheduler.checks.map(check => (
+              <div key={check.task_name} className="rounded-md border border-line bg-inset/30 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-2xs mono text-fg">{check.task_name}</span>
+                  <StatusChip value={check.status ?? 'UNKNOWN'} />
+                </div>
+                <div className="mt-1 text-2xs text-faint">{check.code ?? 'UNKNOWN'} · {check.detail ?? ''}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-2xs text-muted">
+            external heartbeat: {scheduler.external_heartbeat_configured ? 'configured' : 'not configured'} · event seal: {scheduler.event_seal_configured ? 'configured' : 'not configured'} · L2 remains paper-only
+          </div>
+        </Panel>
+      )}
 
       {paperPreview && (
         <Panel eyebrow={bi('纸面订单预览', 'PAPER ORDER PREVIEW')}
@@ -460,7 +558,11 @@ export default function DryRunPipeline() {
                 <div className="mt-2 text-2xs text-muted">
                   Paper decisions: <strong className="text-fg">{paperLedger?.n_decisions ?? '—'}</strong>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line/60 pt-2 text-2xs text-muted">
+                  <div className="mt-1 text-2xs text-muted">
+                    Operator: <strong className="text-fg">{profile.realtime.operator_mode ?? 'UNKNOWN'}</strong>
+                    {' · '}new paper orders: <strong className={profile.realtime.new_paper_orders_allowed ? 'text-pos' : 'text-warn'}>{profile.realtime.new_paper_orders_allowed ? 'allowed' : 'blocked'}</strong>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line/60 pt-2 text-2xs text-muted">
                   <span>{bi('三 Alpha 权益', '3-Alpha equity')}<br /><strong className="text-fg">{fmtUsd(alphaEquity ?? undefined)}</strong></span>
                   <span>{bi('合计净 PnL', 'Σ net PnL')}<br /><strong className={alphaNetPnl == null ? 'text-faint' : alphaNetPnl >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(alphaNetPnl ?? undefined)}</strong></span>
                 </div>

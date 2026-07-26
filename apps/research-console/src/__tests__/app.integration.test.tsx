@@ -28,6 +28,6 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
 
   it('Command Center is still reachable at its own route', async () => {
     render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/单屏研究座舱/)).toBeTruthy();
+    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
   });
 });

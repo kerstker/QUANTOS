@@ -1,0 +1,490 @@
+{
+  "artifact": "LIVE_DEGRADATION",
+  "schema_version": 1,
+  "generated_at_ms": 1784919395704,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "cost_model": {
+    "cost_bps": 10.0,
+    "provenance": "FLAT_BPS — canonical dry-run assumption (tools/dry_run_crowd_contra_multi.py::_COST_BPS)"
+  },
+  "replay_construction": "replay = 记录在案的 contemporaneous 决策权重(前向台账 forward_decisions 为纸面权威;其缺失的 decided_ts 用 live_parity*.jsonl submit 记录的 target_weight,provenance 如实标 LIVE_PARITY_RECORD)过干跑流水线同款经济学(plan_target_quantities 整数取整 + flat 10bps 佣金 + reconcile 平均成本恒等式 + canonical 资金费现金流公式),逐日 PIT close MTM,资金费按日快照利率计提;决策日之后的价格只用于 MTM,绝不改变决策。曲线与 run_multi_period_dry_run 的等价性由测试钉死。",
+  "honesty_note": "testnet/demo 成交无真实市场冲击、无排队、无部分成交——本报告度量的是 运营/模型 漏损(执行延迟、滑点 vs 决策价、掉腿/漏调仓、成本假设差),不是真实生产冲击;mainnet 首秀的真实冲击需 mainnet 首单后重跑本驱动器。账本不记录 venue 手续费与资金费现金流 -> fee_actual/funding_actual 恒 UNKNOWN;live_net 是已记录现实里的净额(成交价内含真实滑点),真实净额 = live_net − fee_actual + funding_actual。任何比率为 None 时读 degradation_ratio_reason,绝不把 None 当 0 或 1。",
+  "summary": {
+    "n_reports": 2,
+    "n_with_ratio": 0,
+    "biggest_leak_by_strategy": {
+      "binance:crowd_contra": {
+        "component": "position_timing_effect",
+        "usd": 112.627981
+      },
+      "bybit_demo:crowd_contra": {
+        "component": "slippage_cost_actual",
+        "usd": -160.60344
+      }
+    },
+    "strategies": [
+      "crowd_contra"
+    ],
+    "venues": [
+      "binance",
+      "bybit_demo"
+    ]
+  },
+  "reports": [
+    {
+      "strategy_id": "crowd_contra",
+      "venue": "binance",
+      "window": {
+        "first_decision_ts": 1782950400000,
+        "first_fill_ts": 1783147031274,
+        "last_fill_ts": 1783905000982,
+        "mark_end_ts": 1784592000000,
+        "n_days": 20,
+        "dropped_mark_days": [
+          1784678400000,
+          1784764800000
+        ],
+        "names_missing_from_panel": []
+      },
+      "live_net_pnl": 103.490836,
+      "replay_net_pnl": -34.974964,
+      "live_gross_pnl": 103.490836,
+      "replay_gross_pnl": -24.65247,
+      "live_degradation_ratio": null,
+      "degradation_ratio_reason": "sign_flip_ratio_meaningless",
+      "cost_overrun": null,
+      "cost_overrun_recorded_part": -23.708642,
+      "slippage_bps_weighted": -33.850639,
+      "fill_rate": 1.0,
+      "n_orders": 29,
+      "n_fills": 39,
+      "n_rejects": 0,
+      "n_tca": 28,
+      "n_fills_without_tca": 11,
+      "unknown_fields": [
+        "fee_actual",
+        "funding_actual",
+        "slippage_vs_arrival",
+        "cost_overrun"
+      ],
+      "components": {
+        "fee_expected": 8.193318,
+        "fee_actual": null,
+        "slippage_cost_actual": -15.515325,
+        "slippage_vs_arrival": null,
+        "funding_expected": 2.453198,
+        "funding_actual": null,
+        "replay_model_cost": 17.160707,
+        "replay_funding": 6.838213,
+        "trading_pnl_delta": 128.143306,
+        "position_timing_effect": 112.627981,
+        "residual": -0.0
+      },
+      "daily": [
+        {
+          "t": 1782950400000,
+          "live_equity": 5108.512593,
+          "replay_equity": 5104.304621,
+          "gap": 4.207972
+        },
+        {
+          "t": 1783036800000,
+          "live_equity": 5108.512593,
+          "replay_equity": 5076.331169,
+          "gap": 32.181424
+        },
+        {
+          "t": 1783123200000,
+          "live_equity": 5108.512593,
+          "replay_equity": 5021.348886,
+          "gap": 87.163707
+        },
+        {
+          "t": 1783209600000,
+          "live_equity": 5110.924993,
+          "replay_equity": 4992.310739,
+          "gap": 118.614254
+        },
+        {
+          "t": 1783296000000,
+          "live_equity": 5112.035936,
+          "replay_equity": 5028.80613,
+          "gap": 83.229806
+        },
+        {
+          "t": 1783382400000,
+          "live_equity": 5129.416665,
+          "replay_equity": 5044.324054,
+          "gap": 85.092611
+        },
+        {
+          "t": 1783468800000,
+          "live_equity": 5169.420905,
+          "replay_equity": 5073.849438,
+          "gap": 95.571467
+        },
+        {
+          "t": 1783555200000,
+          "live_equity": 5195.614045,
+          "replay_equity": 5099.497613,
+          "gap": 96.116432
+        },
+        {
+          "t": 1783641600000,
+          "live_equity": 5199.716675,
+          "replay_equity": 5100.049466,
+          "gap": 99.667209
+        },
+        {
+          "t": 1783728000000,
+          "live_equity": 5215.699235,
+          "replay_equity": 5107.997126,
+          "gap": 107.702109
+        },
+        {
+          "t": 1783814400000,
+          "live_equity": 5232.654745,
+          "replay_equity": 5122.602697,
+          "gap": 110.052048
+        },
+        {
+          "t": 1783900800000,
+          "live_equity": 5217.247395,
+          "replay_equity": 5130.015605,
+          "gap": 87.23179
+        },
+        {
+          "t": 1783987200000,
+          "live_equity": 5226.298613,
+          "replay_equity": 5119.04119,
+          "gap": 107.257423
+        },
+        {
+          "t": 1784073600000,
+          "live_equity": 5242.001953,
+          "replay_equity": 5136.408678,
+          "gap": 105.593275
+        },
+        {
+          "t": 1784160000000,
+          "live_equity": 5205.253337,
+          "replay_equity": 5105.256418,
+          "gap": 99.996919
+        },
+        {
+          "t": 1784246400000,
+          "live_equity": 5212.539876,
+          "replay_equity": 5095.4048,
+          "gap": 117.135076
+        },
+        {
+          "t": 1784332800000,
+          "live_equity": 5210.740121,
+          "replay_equity": 5076.253121,
+          "gap": 134.487
+        },
+        {
+          "t": 1784419200000,
+          "live_equity": 5203.265395,
+          "replay_equity": 5053.253939,
+          "gap": 150.011456
+        },
+        {
+          "t": 1784505600000,
+          "live_equity": 5212.447364,
+          "replay_equity": 5045.855281,
+          "gap": 166.592083
+        },
+        {
+          "t": 1784592000000,
+          "live_equity": 5212.003429,
+          "replay_equity": 5073.53763,
+          "gap": 138.465799
+        }
+      ],
+      "significance": {
+        "level": "DESCRIPTIVE_ONLY",
+        "reason": "单一样本期的事后对照,无重复抽样——描述性数字,非显著性检验"
+      },
+      "decisions": [
+        {
+          "decided_ts": 1782950400000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_LIVE)",
+          "recorded_at": 1783140335606,
+          "aum": 4990.84488486,
+          "aum_provenance": "PARITY_SUBMIT_RECORD",
+          "executed": true,
+          "n_orders": 14,
+          "first_submitted_at": 1783228680067,
+          "n_paper_legs": 14
+        },
+        {
+          "decided_ts": 1783728000000,
+          "weights_provenance": "LIVE_PARITY_RECORD",
+          "recorded_at": null,
+          "aum": 5108.51259329,
+          "aum_provenance": "PARITY_SUBMIT_RECORD",
+          "executed": true,
+          "n_orders": 14,
+          "first_submitted_at": 1783905000982,
+          "n_paper_legs": 14
+        },
+        {
+          "decided_ts": 1784160000000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_LIVE)",
+          "recorded_at": 1784638274847,
+          "aum": 5108.51259329,
+          "aum_provenance": "CARRIED_LAST_RECORDED",
+          "executed": false,
+          "n_orders": 0,
+          "first_submitted_at": null,
+          "n_paper_legs": 14
+        },
+        {
+          "decided_ts": 1784592000000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_L2_ATTESTED_DECISION)",
+          "recorded_at": 1784724170252,
+          "aum": 5108.51259329,
+          "aum_provenance": "CARRIED_LAST_RECORDED",
+          "executed": false,
+          "n_orders": 0,
+          "first_submitted_at": null,
+          "n_paper_legs": 8
+        }
+      ],
+      "orders_without_decision_trace": [
+        "quantos-smoke-1783147029"
+      ],
+      "replay_construction": {
+        "aum": 5108.51259329,
+        "cost_bps": 10.0,
+        "skip_reason": null,
+        "n_periods": 20,
+        "n_replay_fills": 57,
+        "reconciliation_residual": 0.0,
+        "funding_missing_cells": 0
+      }
+    },
+    {
+      "strategy_id": "crowd_contra",
+      "venue": "bybit_demo",
+      "window": {
+        "first_decision_ts": 1782950400000,
+        "first_fill_ts": 1783234305302,
+        "last_fill_ts": 1783236046649,
+        "mark_end_ts": 1784592000000,
+        "n_days": 20,
+        "dropped_mark_days": [
+          1784678400000,
+          1784764800000
+        ],
+        "names_missing_from_panel": []
+      },
+      "live_net_pnl": 121.15397,
+      "replay_net_pnl": 2.16165,
+      "live_gross_pnl": 121.15397,
+      "replay_gross_pnl": 19.59812,
+      "live_degradation_ratio": null,
+      "degradation_ratio_reason": "replay_net_approx_zero_ratio_meaningless(|replay_net|<9.5=0.1%·aum)",
+      "cost_overrun": null,
+      "cost_overrun_recorded_part": -167.657414,
+      "slippage_bps_weighted": -261.578658,
+      "fill_rate": 1.0,
+      "n_orders": 20,
+      "n_fills": 20,
+      "n_rejects": 0,
+      "n_tca": 20,
+      "n_fills_without_tca": 0,
+      "unknown_fields": [
+        "fee_actual",
+        "funding_actual",
+        "slippage_vs_arrival",
+        "cost_overrun"
+      ],
+      "components": {
+        "fee_expected": 7.053974,
+        "fee_actual": null,
+        "slippage_cost_actual": -160.60344,
+        "slippage_vs_arrival": null,
+        "funding_expected": 8.123344,
+        "funding_actual": null,
+        "replay_model_cost": 28.751358,
+        "replay_funding": 11.314888,
+        "trading_pnl_delta": 101.55585,
+        "position_timing_effect": -59.04759,
+        "residual": -0.0
+      },
+      "daily": [
+        {
+          "t": 1782950400000,
+          "live_equity": 9500.0,
+          "replay_equity": 9492.563991,
+          "gap": 7.436009
+        },
+        {
+          "t": 1783036800000,
+          "live_equity": 9500.0,
+          "replay_equity": 9458.976804,
+          "gap": 41.023196
+        },
+        {
+          "t": 1783123200000,
+          "live_equity": 9500.0,
+          "replay_equity": 9360.709141,
+          "gap": 139.290859
+        },
+        {
+          "t": 1783209600000,
+          "live_equity": 9500.0,
+          "replay_equity": 9324.473277,
+          "gap": 175.526723
+        },
+        {
+          "t": 1783296000000,
+          "live_equity": 9554.64648,
+          "replay_equity": 9389.340233,
+          "gap": 165.306247
+        },
+        {
+          "t": 1783382400000,
+          "live_equity": 9587.25604,
+          "replay_equity": 9409.264074,
+          "gap": 177.991966
+        },
+        {
+          "t": 1783468800000,
+          "live_equity": 9634.38629,
+          "replay_equity": 9455.179586,
+          "gap": 179.206704
+        },
+        {
+          "t": 1783555200000,
+          "live_equity": 9636.16187,
+          "replay_equity": 9505.583777,
+          "gap": 130.578093
+        },
+        {
+          "t": 1783641600000,
+          "live_equity": 9615.32766,
+          "replay_equity": 9517.689802,
+          "gap": 97.637858
+        },
+        {
+          "t": 1783728000000,
+          "live_equity": 9617.82443,
+          "replay_equity": 9537.800543,
+          "gap": 80.023887
+        },
+        {
+          "t": 1783814400000,
+          "live_equity": 9654.78106,
+          "replay_equity": 9571.358394,
+          "gap": 83.422666
+        },
+        {
+          "t": 1783900800000,
+          "live_equity": 9661.03691,
+          "replay_equity": 9544.85612,
+          "gap": 116.18079
+        },
+        {
+          "t": 1783987200000,
+          "live_equity": 9651.83125,
+          "replay_equity": 9550.849549,
+          "gap": 100.981701
+        },
+        {
+          "t": 1784073600000,
+          "live_equity": 9730.96017,
+          "replay_equity": 9628.708163,
+          "gap": 102.252007
+        },
+        {
+          "t": 1784160000000,
+          "live_equity": 9686.79288,
+          "replay_equity": 9561.785109,
+          "gap": 125.007771
+        },
+        {
+          "t": 1784246400000,
+          "live_equity": 9671.51468,
+          "replay_equity": 9540.059937,
+          "gap": 131.454743
+        },
+        {
+          "t": 1784332800000,
+          "live_equity": 9634.93929,
+          "replay_equity": 9506.522615,
+          "gap": 128.416675
+        },
+        {
+          "t": 1784419200000,
+          "live_equity": 9636.68249,
+          "replay_equity": 9464.487353,
+          "gap": 172.195137
+        },
+        {
+          "t": 1784505600000,
+          "live_equity": 9653.45967,
+          "replay_equity": 9451.18755,
+          "gap": 202.27212
+        },
+        {
+          "t": 1784592000000,
+          "live_equity": 9621.15397,
+          "replay_equity": 9502.16165,
+          "gap": 118.99232
+        }
+      ],
+      "significance": {
+        "level": "SMALL_SAMPLE",
+        "reason": "n_fills=20 < 30 — 样本太小,比值只作描述、不构成任何显著性断言"
+      },
+      "decisions": [
+        {
+          "decided_ts": 1782950400000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_LIVE)",
+          "recorded_at": 1783140335606,
+          "aum": 9500.0,
+          "aum_provenance": "PARITY_SUBMIT_RECORD",
+          "executed": true,
+          "n_orders": 20,
+          "first_submitted_at": 1783234305302,
+          "n_paper_legs": 14
+        },
+        {
+          "decided_ts": 1784160000000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_LIVE)",
+          "recorded_at": 1784638274847,
+          "aum": 9500.0,
+          "aum_provenance": "CARRIED_LAST_RECORDED",
+          "executed": false,
+          "n_orders": 0,
+          "first_submitted_at": null,
+          "n_paper_legs": 14
+        },
+        {
+          "decided_ts": 1784592000000,
+          "weights_provenance": "FORWARD_LEDGER(FORWARD_L2_ATTESTED_DECISION)",
+          "recorded_at": 1784724170252,
+          "aum": 9500.0,
+          "aum_provenance": "CARRIED_LAST_RECORDED",
+          "executed": false,
+          "n_orders": 0,
+          "first_submitted_at": null,
+          "n_paper_legs": 8
+        }
+      ],
+      "orders_without_decision_trace": [],
+      "replay_construction": {
+        "aum": 9500.0,
+        "cost_bps": 10.0,
+        "skip_reason": null,
+        "n_periods": 20,
+        "n_replay_fills": 46,
+        "reconciliation_residual": 0.0,
+        "funding_missing_cells": 0
+      }
+    }
+  ]
+}

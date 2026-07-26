@@ -10,7 +10,8 @@ import type {
   ResearchRunsPayload, OverviewPayload, CryptoLivePayload,
   SafetyPrimitivesPayload, PopulationOptimizerPayload,
 } from '@/lib/types/research';
-import { PageShell, PageHeader, Panel, StatusChip, Chip, LoadingVeil, Button } from '@/ui/primitives';
+import { PageShell, PageHeader, Panel, StatusChip, Chip, LoadingVeil, Button, SectionHeader } from '@/ui/primitives';
+import { PipelineFlow } from '@/ui/PipelineFlow';
 
 /**
  * Command Center — the single-pane research cockpit. Draggable (reorder) + resizable (width/height) tiles
@@ -159,9 +160,15 @@ export default function CommandCenter() {
   return (
     <PageShell>
       <PageHeader title="Command Center" titleZh="指挥中心"
-        subtitle={bi('单屏研究座舱 · 磁贴可拖拽重排 / 点击缩放 · 布局自动保存 · 全部真实数据(只读)',
-          'Single-pane research cockpit · drag to reorder / click to resize · layout auto-saved · all real data (read-only)')}
+        subtitle={bi('研究全流程一张图:七个阶段连成一条可视化管道,每个节点实时显示该阶段的真实读数;点击进入任一阶段。下方磁贴可拖拽重排 / 点击缩放 · 布局自动保存 · 全部真实数据(只读)',
+          'The whole research lifecycle on one canvas: seven stages wired into a visual pipeline, each node showing a live real reading; click to enter any stage. Tiles below: drag to reorder / click to resize · layout auto-saved · all real data (read-only)')}
         actions={<Button onClick={resetLayout} variant="muted">{bi('重置布局', 'reset layout')}</Button>} />
+
+      {/* ── 全流程可视化管道:数据 → 研究 → 验证 → 组合 → 执行 → 治理 ── */}
+      <PipelineFlow activeGroup="overview" />
+
+      <SectionHeader title={bi('实时磁贴', 'LIVE TILES')}
+        sub={bi('拖拽重排 · ⤢ 缩放 · 打开进入对应页面', 'drag to reorder · ⤢ resize · open jumps to the page')} />
 
       <div className="grid grid-cols-12 gap-4">
         {ordered.map(tile => {

@@ -180,6 +180,53 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
     }
 
 
+def test_schedule_evaluation_accepts_registered_windowless_python_launcher(tmp_path):
+    snapshots = [
+        TaskSnapshot(**{**item.__dict__, "execute": "C:/Python/pythonw.exe"})
+        for item in _healthy_tasks(
+            tmp_path, include_backup=True, include_external=True
+        )
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    assert result["verdict"] == "PASS"
+
+
+def test_schedule_evaluation_accepts_fixed_schedule_log_sink(tmp_path):
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "arguments": (
+                    f'"{tmp_path / "tools" / "l2_schedule_entrypoint.py"}" '
+                    f'{EXPECTED_TASKS[item.name].module} --log-dir '
+                    f'"{tmp_path / ".runtime" / "logs"}"'
+                ),
+            }
+        )
+        for item in _healthy_tasks(tmp_path, include_backup=True, include_external=True)
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    assert result["verdict"] == "PASS"
+
+
 def test_watchdog_does_not_self_latch_on_its_previous_failure(tmp_path):
     snapshots = _healthy_tasks(tmp_path, include_backup=True, include_external=True)
     snapshots = [

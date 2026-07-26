@@ -27,8 +27,8 @@ WIND_CLI_DIR = Path(
     r"C:\Users\Administrator\AppData\Roaming\kimi-desktop\daimon-share\daimon"
     r"\runtime\kimi-code\home\plugins\managed\wind-allskill\skills\wind-mcp-skill"
 )
-OUT_JSON = REPO / "data" / "cache" / "ashare_universe.json"
-OUT_CSV = REPO / "data" / "cache" / "ashare_universe.csv"
+OUT_JSON = REPO / "data" / "stocks" / "universe.json"
+OUT_CSV = REPO / "data" / "stocks" / "universe.csv"
 
 TARGET_COUNT = 220
 CAP_FLOOR = 20.0      # 亿 — micro-cap segment floor

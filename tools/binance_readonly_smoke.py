@@ -186,8 +186,9 @@ def _check_premium_index(http_get: Callable) -> dict:
 def _check_account(api_key: str, api_secret: str, *, http_request: Optional[Callable],
                    clock: Callable[[], float], sleep: Optional[Callable]) -> dict:
     """适配器假设(account/positions):availableBalance/totalMarginBalance/totalMaintMargin
-    可解析 float(_binance_balances/_binance_margin 的口径);positions[] 每行 symbol 字符串
-    (以 USDT 结尾)+ positionAmt/entryPrice 可解析 float(adapter.positions 净额归并逻辑)。
+    可解析 float(_binance_balances/_binance_margin 的口径);positions[] 的 **USDT 行** symbol 为字符串
+    且 positionAmt/entryPrice 可解析 float(adapter.positions 净额归并逻辑);非 USDT 行
+    (USDC 本位/季度合约等)与适配器同法语义=跳过,不算失败。
     权限位不在 /fapi 响应里——verify_key_permissions --venue binance 已单独把关,这里不重复。"""
     try:
         payload = fetch_binance_futures_account(api_key, api_secret, http_request=http_request,
@@ -206,12 +207,15 @@ def _check_account(api_key: str, api_secret: str, *, http_request: Optional[Call
     else:
         bad = 0
         n_open = 0
+        n_skipped_non_usdt = 0
         for p in positions:
             if not isinstance(p, dict) or not isinstance(p.get("symbol"), str):
                 bad += 1
                 continue
             if not p["symbol"].endswith("USDT"):
-                bad += 1
+                # 适配器 positions() 对非 USDT 行(USDC 本位/季度合约等恒出现的零仓位行)
+                # 是跳过而非报错——镜像同一语义,只有 USDT 行形状坏才算失败。
+                n_skipped_non_usdt += 1
                 continue
             try:
                 qty = float(p["positionAmt"])
@@ -222,12 +226,14 @@ def _check_account(api_key: str, api_secret: str, *, http_request: Optional[Call
             if qty != 0.0:
                 n_open += 1
         if bad:
-            problems.append(f"{bad} position row(s) fail symbol/positionAmt/entryPrice shape")
+            problems.append(f"{bad} USDT position row(s) fail symbol/positionAmt/entryPrice shape")
     if problems:
         return _check("account", False, "; ".join(problems))
     return _check("account", True,
-                  "balance fields parse; position rows parse per adapter assumptions",
-                  n_positions=len(positions), n_open_positions=n_open)
+                  "balance fields parse; USDT position rows parse per adapter assumptions "
+                  "(non-USDT rows skipped like the adapter)",
+                  n_positions=len(positions), n_open_positions=n_open,
+                  n_skipped_non_usdt=n_skipped_non_usdt)
 
 
 def run_smoke(api_key: str, api_secret: str, *, http_get: Callable = _http_get_json,

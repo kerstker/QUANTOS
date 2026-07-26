@@ -1,0 +1,70 @@
+version: v2
+title: QuantOS 融资路演
+size: [960, 540]
+theme:
+  colors:
+    bg: "#10151C"
+    bg2: "#161D27"
+    ink: "#E8E4D8"
+    muted: "#8A93A0"
+    accent: "#C9A227"
+    blue: "#5B8DB8"
+    line: "#2A3340"
+    warn: "#B5654A"
+  textStyles:
+    h1:
+      fontSize: 28
+      color: "$ink"
+      bold: true
+    h2:
+      fontSize: 16
+      color: "$accent"
+      bold: true
+    body:
+      fontSize: 12.5
+      color: "$ink"
+      lineHeight: 1.55
+    small:
+      fontSize: 9.5
+      color: "$muted"
+      lineHeight: 1.45
+    kicker:
+      fontSize: 10
+      color: "$accent"
+      letterSpacing: 3
+    bignum:
+      fontSize: 40
+      color: "$accent"
+      bold: true
+  tableStyles:
+    dark:
+      cellStyle:
+        fontSize: 10.5
+        color: "$ink"
+        border: [null, null, {style: solid, width: 1, color: "$line"}, null]
+        align: [center, middle]
+      firstRowStyle:
+        color: "$accent"
+        bold: true
+        fontSize: 10.5
+        border: [null, null, {style: solid, width: 1, color: "$accent"}, null]
+pages:
+  - pages/01_cover.page
+  - pages/02_summary.page
+  - pages/03_pain.page
+  - pages/04_why_now.page
+  - pages/05_solution.page
+  - pages/06_capability.page
+  - pages/06b_screenshots.page
+  - pages/07_ai.page
+  - pages/08_lifecycle.page
+  - pages/09_results.page
+  - pages/10_why_credible.page
+  - pages/11_risk.page
+  - pages/12_moat.page
+  - pages/13_business.page
+  - pages/14_use_of_funds.page
+  - pages/15_roadmap.page
+  - pages/16_team.page
+  - pages/17_why_invest.page
+  - pages/18_final.page

@@ -756,7 +756,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT",
+      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, SUCCESS_GAP_EXCEEDED, HISTORY_SPAN_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",

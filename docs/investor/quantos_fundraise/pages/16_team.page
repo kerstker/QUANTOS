@@ -1,0 +1,64 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 不虚构团队。创始人介绍只讲已验证的事实：系统是他持续开发出来的，3,897 个测试是工作证明。岗位清单是融资后的招聘计划。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "15 · 团队"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "创始人【待补充姓名】 · 技术型联合创始人 / CTO"}
+  - elementId: founder
+    elementType: text
+    bounds: [90, 124, 440, 260]
+    content:
+      style: "$body"
+      fontSize: 12.5
+      lineHeight: 1.8
+      text: |
+        <p><span style="color:$accent">■</span> 计算机 / 网络工程 / 软件开发 / AI 应用 / 量化系统开发背景</p>
+        <p><span style="color:$accent">■</span> 技术栈：Python · C++ · FastAPI · PyTorch · Docker · React/TS · 数据工程 · 机器学习 · RAG · AI Agent · 分布式与交易系统</p>
+        <p><span style="color:$accent">■</span> 持续开发 QuantOS 至今——本材料全部系统能力为实际开发成果，非商业概念</p>
+        <p><span style="color:$accent">■</span> 核心优势：把复杂研究转化为工程系统，建立数据到实盘的完整闭环；重视防过拟合、风险治理与实盘偏差</p>
+        <p><span style="color:$accent">■</span> 使用多 AI 模型交叉审查代码与研究结果，具备 AI 辅助研发流程管理能力</p>
+  - elementId: hire-title
+    elementType: text
+    bounds: [580, 124, 340, 24]
+    content: {style: "$h2", fontSize: 14, wrap: false, text: "核心团队正在组建"}
+  - elementId: hire-rule
+    elementType: line
+    bounds: [580, 152, 300, 2]
+    viewBox: [300, 2]
+    points: "0,1 300,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: hire
+    elementType: text
+    bounds: [580, 166, 340, 180]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.9
+      color: "$muted"
+      text: |
+        <p>融资后优先岗位：</p>
+        <p>· 量化研究员</p>
+        <p>· 交易系统工程师</p>
+        <p>· 数据工程师</p>
+        <p>· 风险与合规顾问</p>
+  - elementId: claim
+    elementType: text
+    bounds: [90, 420, 780, 56]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.7
+      text: |
+        <p>创始人的定位不是"预测市场的天才"，而是<strong>长期构建量化机构基础设施</strong>的工程与研究的结合体。</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 17"}

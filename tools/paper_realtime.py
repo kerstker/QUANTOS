@@ -52,6 +52,7 @@ ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
 REALTIME_HISTORY_LIMIT = 96
+MARK_ONLY_REPLAY_REASON = "EXISTING_FILLED_PAPER_LEDGER_REPLAY"
 
 
 class PublicMarkDataError(RuntimeError):
@@ -544,6 +545,38 @@ def _load_mark_history(path: str) -> dict[str, Any]:
         return {}
 
 
+def _existing_paper_ledger_is_markable(path: str) -> bool:
+    """Return whether an existing paper ledger can be marked without new orders.
+
+    A failed refresh or blocked forward gate must not erase the ability to
+    observe positions that were already paper-filled.  This check is strictly
+    read-only and only admits a complete set of immutable ``PAPER_FILLED``
+    rows for the three registered Alphas.  It never creates a store and never
+    authorizes a new paper decision.
+    """
+    store: PaperExecutionStore | None = None
+    try:
+        store = PaperExecutionStore(path, create=False)
+        rows = store.rows()
+    except (OSError, ValueError, RuntimeError):
+        return False
+    finally:
+        if store is not None:
+            store.close()
+    by_alpha: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        alpha_id = str(row.get("alpha_id", ""))
+        if alpha_id in ALPHA_IDS:
+            by_alpha[alpha_id].append(row)
+    return all(
+        by_alpha.get(alpha_id)
+        and all(row.get("paper_execution") == "PAPER_FILLED" for row in by_alpha[alpha_id])
+        for alpha_id in ALPHA_IDS
+    )
+
+
 def run_cycle(
     *,
     operator: Mapping[str, Any] | None = None,
@@ -572,6 +605,14 @@ def run_cycle(
         and operator_verdict.get("operator_completed") is True
         and operator_verdict.get("paper_preview_ready") is True
     )
+    operator_execution_ready = operator_ready
+    mark_only_replay = False
+    if not operator_ready and _existing_paper_ledger_is_markable(paper_store_path):
+        # Existing paper fills remain observable when a *new* decision is
+        # blocked by data admission.  This is deliberately a mark-only mode:
+        # no order preview is created and no new paper order can be admitted.
+        operator_ready = True
+        mark_only_replay = True
     errors: dict[str, str] = {}
     snapshots: dict[str, dict[str, Any]] = {}
     backtests: dict[str, dict[str, Any]] = {}
@@ -740,10 +781,18 @@ def run_cycle(
         },
         "history": history,
         "errors": errors,
+        "operator_mode": (
+            "PAPER_OPERATOR_READY"
+            if operator_execution_ready
+            else MARK_ONLY_REPLAY_REASON
+            if mark_only_replay
+            else "PAPER_OPERATOR_BLOCKED"
+        ),
         "verdict": {
             "cycle_completed": cycle_completed,
             "paper_mark_ready": paper_ready,
             "backtest_reference_present_for_all_three": backtest_ready,
+            "new_paper_orders_allowed": operator_execution_ready,
             "live_allowed": False,
             "order_submission_allowed": False,
             "human_review_required": True,
@@ -943,6 +992,7 @@ __all__ = [
     "DEFAULT_HEALTH_OUTPUT",
     "DEFAULT_OUTPUT",
     "DEFAULT_STORE",
+    "MARK_ONLY_REPLAY_REASON",
     "PublicMarkDataError",
     "build_mark_snapshot",
     "fetch_public_funding_history",

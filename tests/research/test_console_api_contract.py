@@ -146,6 +146,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
     "/api/v1/console/gonogo": ("", ("snapshot_present", "verdict", "forward_evidence",
                                     "execution_evidence", "incidents", "honesty_note")),
+    # A股微盘 alpha 研究栈:真实 alpha/paper-track/klines 快照(缺文件时诚实 SYNTHETIC)
+    "/api/v1/console/ashare-alpha": ("", (
+        "source", "read_only", "provenance", "generated_at", "data_freshness", "universe",
+        "factors", "combo", "basket", "variants", "dry_run", "paper_track",
+        "cost_grid", "turnover_caps", "holdings_latest", "honest_limitations")),
     # MEXC 零手续费 BTC 现货对接(read-only 三端点;artifact 未产出时诚实 SYNTHETIC/NO_SNAPSHOT)
     "/api/v1/console/mexc-market": ("", ("snapshot_present", "verdict", "venue", "symbol",
                                          "latest_price", "coverage", "freshness", "bars",
@@ -154,6 +159,22 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
                                            "equity_curve", "buy_and_hold", "runs", "honesty_note")),
     "/api/v1/console/mexc-readiness": ("", ("snapshot_present", "verdict", "readiness", "n_ready",
                                             "n_blocked", "checks", "kill_switch", "honesty_note")),
+    # Alpha 生命周期驾驶舱:tools/alpha_lifecycle_cockpit.py 的离线聚合 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/alpha-lifecycle": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                             "alphas", "stage_legend", "honesty_note")),
+    "/api/v1/console/alpha-families": ("", ("registry_present", "chain_valid", "families",
+                                              "honesty_note")),
+    # Go-Live 上线向导:tools/go_live_readiness.py 的离线就绪 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/go-live-readiness": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                               "venues", "strategies", "guidance", "honesty_note")),
+    # live-vs-replay 衰减(W1):tools/live_degradation.py 的离线 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/live-degradation": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                              "readiness", "summary", "reports", "honesty_note")),
+    # 投资者/审计证据快照(W9 §13):tools/investor_snapshot.py 的离线 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/investor-snapshot": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                               "readiness", "data_cutoff_ms", "report_snapshot_hash",
+                                               "hash_scheme", "portfolio_views", "summary", "venues",
+                                               "amendments", "unknown_fields", "honesty_note")),
 }
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
@@ -177,6 +198,19 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/mexc-market": {"SYNTHETIC_DETERMINISTIC", "REAL_MEXC_MARKET_SNAPSHOT"},
     "/api/v1/console/mexc-strategy": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/mexc-readiness": "REAL_MEXC_READINESS_CHECK",
+    # go-live-readiness: REAL go_live_readiness.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/go-live-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_GO_LIVE_READINESS"},
+    # live-degradation: REAL live_degradation.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/live-degradation": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_DEGRADATION"},
+    # investor-snapshot: REAL investor_snapshot.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/investor-snapshot": {"SYNTHETIC_DETERMINISTIC", "REAL_INVESTOR_SNAPSHOT"},
+    # alpha-lifecycle: REAL alpha_lifecycle_cockpit.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/alpha-lifecycle": {"SYNTHETIC_DETERMINISTIC", "REAL_ALPHA_LIFECYCLE"},
+    "/api/v1/console/alpha-families": "REAL_ALPHA_FAMILY_LEDGER",
     "/api/v1/console/research-findings": {"SYNTHETIC_DETERMINISTIC", "REAL_RESEARCH_FINDINGS"},
     "/api/v1/console/lance-1m-validation": {"SYNTHETIC_DETERMINISTIC", "REAL_LANCE_1M_VALIDATION"},
     # architecture: curated module/maturity roadmap + REAL repo introspection (`inventory`). REAL marker
@@ -206,6 +240,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/live-trading": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_TRADING_SNAPSHOT"},
     # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
+    # A股微盘 alpha:真实快照存在时 REAL_ASHARE_ALPHA_SNAPSHOT,缺失时诚实 SYNTHETIC(CI)
+    "/api/v1/console/ashare-alpha": {"SYNTHETIC_DETERMINISTIC", "REAL_ASHARE_ALPHA_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {
         "SYNTHETIC_DETERMINISTIC",
@@ -500,3 +536,40 @@ def test_data_catalog_port_failure_is_explicitly_unavailable(monkeypatch):
     assert payload["snapshot_present"] is False
     assert payload["datasets"] == [] and payload["features"] == []
     assert payload["data_quality"]["status"] == "UNAVAILABLE"
+
+
+def test_ashare_alpha_endpoint_numeric_sanity():
+    """A股 alpha 端点:形状契约之外的数值合理性(|IC|<=1、持仓权重和≈1、净值曲线非空)。
+
+    快照缺失(CI)时 fail-closed 到 SYNTHETIC 也是合法响应——此时只校验诚实标记。"""
+    body = client.get("/api/v1/console/ashare-alpha").json()
+    assert body["source"] == "BACKEND_COMPUTED_SNAPSHOT"
+    assert body["read_only"] is True
+    assert body["provenance"] in ("REAL_ASHARE_ALPHA_SNAPSHOT", "SYNTHETIC_DETERMINISTIC")
+    if body["provenance"] != "REAL_ASHARE_ALPHA_SNAPSHOT":
+        assert body["snapshot_present"] is False
+        assert body["honest_limitations"]
+        return
+    for f in body["factors"]:
+        assert abs(f["train_ic"]) <= 1.0 and abs(f["test_ic"]) <= 1.0
+        assert isinstance(f["kept"], bool)
+    combo = body["combo"]
+    assert abs(combo["h1_test_ic"]) <= 1.0 and abs(combo["h5_test_ic"]) <= 1.0
+    assert 0.0 <= combo["hit_rate"] <= 1.0
+    holdings = body["holdings_latest"]
+    assert holdings, "real snapshot must carry last-week holdings"
+    assert abs(sum(h["weight"] for h in holdings) - 1.0) < 1e-6
+    assert all(w["weight"] > 0 for w in holdings)
+    basket = body["basket"]
+    assert basket["equity_test"] and basket["bench_equity_test"]
+    assert all(isinstance(v, (int, float)) for v in basket["equity_test"])
+    assert basket["n"] > 0 and basket["aum_cny"] > 0
+    dry = body["dry_run"]
+    assert dry["run_id"] and dry["n_approved"] >= 0 and dry["n_rejected"] >= 0
+    paper = body["paper_track"]
+    assert paper["kind"] in ("BACKFILL", "FORWARD") and paper["n_weeks"] > 0
+    assert abs(paper["weekly_ic_mean"]) <= 1.0
+    assert body["variants"] and any(v["is_champion"] for v in body["variants"])
+    assert body["cost_grid"] and body["turnover_caps"]
+    assert body["data_freshness"]["stocks"] > 0 and body["data_freshness"]["last_date"] > 0
+    assert body["honest_limitations"]

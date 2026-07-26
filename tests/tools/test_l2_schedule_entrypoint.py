@@ -117,6 +117,9 @@ def test_entrypoint_rejects_ambiguous_exit_code(tmp_path: Path, result: object) 
 def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
     assert ALLOWED_L2_MODULES == frozenset(
         {
+            "ashare_kline_fetch",
+            "ashare_ifind_fetch",
+            "ashare_paper_track",
             "alpha_maintenance_sweep",
             "crypto_factory_loop",
             "domain_event_ops",
@@ -167,3 +170,38 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     assert completed.returncode == 0
     assert completed.stdout.strip() == "RELEASE"
     assert "DIRTY" not in completed.stdout
+
+
+def test_script_entrypoint_redirects_scheduled_output_to_per_worker_log(
+    tmp_path: Path,
+) -> None:
+    source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
+    release = tmp_path / "release"
+    state = tmp_path / "state"
+    log_dir = tmp_path / "logs"
+    for root in (release, state):
+        (root / "tools").mkdir(parents=True)
+        (root / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    (release / "tools" / "domain_event_ops.py").write_text(
+        "def main():\n    print('RELEASE')\n    return 0\n",
+        encoding="utf-8",
+    )
+    launcher = release / "tools" / "l2_schedule_entrypoint.py"
+    launcher.write_bytes(source_launcher.read_bytes())
+
+    completed = subprocess.run(
+        [sys.executable, str(launcher), "domain_event_ops", "--log-dir", str(log_dir)],
+        cwd=state,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert completed.stderr == ""
+    log_text = (log_dir / "domain_event_ops.log").read_text(encoding="utf-8")
+    assert "START module=domain_event_ops" in log_text
+    assert "RELEASE" in log_text
+    assert "END module=domain_event_ops exit_code=0" in log_text

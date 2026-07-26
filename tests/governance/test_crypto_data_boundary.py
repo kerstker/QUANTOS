@@ -37,7 +37,20 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # Binance 期货 mainnet 只读首验工具(2026-07,镜像 mexc_readonly_smoke):人工
              # 执行,4 个只读 GET(time/exchangeInfo/premiumIndex/account),绝不下单——但它
              # 确实发起真实签名网络请求,同一条只读数据边界必须钉住它。
-             os.path.join(_ROOT, "tools", "binance_readonly_smoke.py")]
+             os.path.join(_ROOT, "tools", "binance_readonly_smoke.py"),
+             # Deribit 公开波动率/衍生品抓取器(2026-07-24,第四数据类 options/vol):
+             # DVOL 日频 + 永续/到期期货日线 + 期权 book 快照,公共端点无 key 只读,
+             # 绝不下单——同一条只读数据边界钉住它。
+             os.path.join(_ROOT, "tools", "deribit_fetch.py"),
+             # 补充数据维度(2026-07-25):近期强平事件 + Binance/Bybit 同步公开盘口。
+             os.path.join(_ROOT, "tools", "binance_liquidations_fetch.py"),
+             os.path.join(_ROOT, "tools", "cross_exchange_snapshot.py"),
+             os.path.join(_ROOT, "tools", "data_breadth_refresh.py"),
+             os.path.join(_ROOT, "tools", "data_channel_inventory.py"),
+             # Bybit 公开 linear perp 历史抓取器(2026-07-25,W2 cross-venue 簇 Phase 1):
+             # 日线 klines + funding history,公共端点无 key 只读,绝不下单——同一条只读
+             # 数据边界钉住它。
+             os.path.join(_ROOT, "tools", "bybit_klines_fetch.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 _QUANTOS = os.path.join(_ROOT, "quantos")
 
@@ -84,6 +97,15 @@ _EXTRA_ALLOWED_BY_FILE = {
     # Binance 只读首验:typing(注入签名)+ `live`(复用 binance_futures.py 的模块级
     # transport/常量与 retry——不实例化任何 gated 类,不碰任何 LIVE 安全旗标)。
     "binance_readonly_smoke.py": {"typing", "live"},
+    # Deribit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
+    # 均不增加网络/交易/凭证能力。
+    "deribit_fetch.py": {"math", "argparse"},
+    # 补充公开行情/强平解析器:math 只做有限数校验，不增加交易能力。
+    "binance_liquidations_fetch.py": {"math"},
+    "cross_exchange_snapshot.py": {"math"},
+    # Bybit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
+    # 均不增加网络/交易/凭证能力。
+    "bybit_klines_fetch.py": {"math", "argparse"},
 }
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",

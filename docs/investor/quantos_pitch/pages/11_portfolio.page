@@ -1,0 +1,69 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "08 · 组合分散"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "两条近零相关的边 —— 以及一个诚实的修正"}
+  - elementId: corr-num
+    elementType: text
+    bounds: [80, 118, 200, 60]
+    content: {style: "$bignum", wrap: false, text: "-0.038"}
+  - elementId: corr-label
+    elementType: text
+    bounds: [80, 182, 280, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>carry × crowd_contra 周收益相关</p>
+        <p>231 个共同周 · 近乎零相关</p>
+  - elementId: combo-table
+    elementType: table
+    bounds: [80, 240, 800, 132]
+    columnWidths: [0.30, 0.20, 0.22, 0.28]
+    rowHeights: [0.2, 0.2, 0.2, 0.2, 0.2]
+    style: "$dark"
+    rows:
+      - - text: "组合（gross 收益流）"
+        - text: "年化夏普"
+        - text: "最大回撤"
+        - text: "总收益"
+      - - {text: "carry 单条", align: [left, middle]}
+        - text: "1.44"
+        - text: "16.4%"
+        - text: "161.2%"
+      - - {text: "crowd_contra 单条", align: [left, middle]}
+        - text: "1.30"
+        - text: "14.8%"
+        - text: "192.1%"
+      - - {text: "等权组合", align: [left, middle]}
+        - {text: "1.95", bold: true, color: "$accent"}
+        - {text: "7.6%", bold: true, color: "$accent"}
+        - text: "186.9%"
+      - - {text: "逆波动组合", align: [left, middle]}
+        - {text: "1.98", bold: true, color: "$accent"}
+        - text: "8.0%"
+        - text: "184.8%"
+  - elementId: honest-box
+    elementType: text
+    bounds: [80, 396, 800, 80]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.6
+      text: |
+        <p><span style="color:$warn"><strong>诚实修正：</strong></span>1.95 是 gross 理想化口径。净成本 + 整手 + vol-target 的统一执行 book 实测：三种合并方式夏普 1.14–1.21，<strong>均低于 crowd_contra 单条 1.38</strong> —— 执行现实吃掉了理想分散，当前可部署形态 = 单条边。</p>
+        <p><span style="color:$muted;font-size:11px">“理想 vs 真的差”正是我们的执行流水线抓出来的 —— 绝大多数平台永远发现不了它。</span></p>
+  - elementId: src
+    elementType: text
+    bounds: [80, 486, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>证据：data/cache/combo_book_snapshot.json · tools/dry_run_combo_riskparity_multi.py · dry_run.db 第 4/5 条策略</p>

@@ -1,0 +1,2365 @@
+{
+  "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+  "schema_version": 1,
+  "generated_at_ms": 1784996218627,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "alphas": [
+    {
+      "alpha_id": "crowd_contra",
+      "display_name": "crowd_contra",
+      "derived_stage": "LIVE_TRACK",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "PRESENT",
+          "source": "data\\cache\\ic_panel_snapshot.json",
+          "factor": "crowd_contra",
+          "universe": "crypto_oi_majors",
+          "mean_ic": 0.0047,
+          "icir": 0.0191,
+          "t_stat": 0.776,
+          "hit_rate": 0.5033,
+          "n_periods": 1643,
+          "n_instruments": 24,
+          "per_year": {
+            "2021": null,
+            "2022": 0.0168,
+            "2023": 0.001,
+            "2024": 0.0191,
+            "2025": -0.0031,
+            "2026": -0.0231
+          },
+          "by_holding_period": {
+            "1": {
+              "hit_rate": 0.5033,
+              "ic_std": 0.2477,
+              "icir": 0.0191,
+              "mean_ic": 0.0047,
+              "n_periods": 1643,
+              "per_year": {
+                "2021": null,
+                "2022": 0.0168,
+                "2023": 0.001,
+                "2024": 0.0191,
+                "2025": -0.0031,
+                "2026": -0.0231
+              },
+              "t_stat": 0.776
+            },
+            "14": {
+              "hit_rate": 0.6121,
+              "ic_std": 0.2392,
+              "icir": 0.3044,
+              "mean_ic": 0.0728,
+              "n_periods": 116,
+              "per_year": {
+                "2022": 0.0919,
+                "2023": 0.1091,
+                "2024": 0.0426,
+                "2025": 0.0653,
+                "2026": 0.0391
+              },
+              "t_stat": 3.2787
+            },
+            "7": {
+              "hit_rate": 0.5579,
+              "ic_std": 0.2384,
+              "icir": 0.1942,
+              "mean_ic": 0.0463,
+              "n_periods": 233,
+              "per_year": {
+                "2022": 0.07,
+                "2023": 0.0628,
+                "2024": 0.0363,
+                "2025": 0.0234,
+                "2026": 0.0339
+              },
+              "t_stat": 2.9644
+            }
+          }
+        },
+        "falsification": {
+          "status": "PRESENT",
+          "sources": [
+            "data\\cache\\crypto_oi_verify.json",
+            "evidence\\alpha_paper_cycle.json"
+          ],
+          "checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": true,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_checks_pass": 5,
+          "n_checks_total": 5,
+          "verdict_pass": true,
+          "research_verdict": "PASS_WITH_WARNINGS",
+          "research_evidence": {
+            "refutation_pass_count": 5,
+            "net_sharpe_10bps": 0.687,
+            "one_day_lag_sharpe": 1.312,
+            "embargoed_oos_mean_sharpe": 1.1269,
+            "source_verdict": "SURVIVES 5/5 refutation checks — strong second-edge candidate; proceed to paper-track"
+          },
+          "research_warnings": [
+            "survivorship and recent-decay risk remain open"
+          ],
+          "verify_summary": {
+            "verdict": "SURVIVES 5/5 refutation checks — strong second-edge candidate; proceed to paper-track",
+            "net_sharpe_by_fee_bps": {
+              "2": 1.096,
+              "5": 0.943,
+              "10": 0.687,
+              "20": 0.175
+            },
+            "embargoed_oos": {
+              "n_folds": 10,
+              "mean_is": 1.5631,
+              "mean_oos": 1.1269,
+              "haircut": -0.4362,
+              "picks": [
+                [
+                  0,
+                  [
+                    "carry"
+                  ],
+                  -0.18
+                ],
+                [
+                  1,
+                  [
+                    "carry"
+                  ],
+                  -0.47
+                ],
+                [
+                  2,
+                  [
+                    "crowd_contra"
+                  ],
+                  2.98
+                ],
+                [
+                  3,
+                  [
+                    "crowd_contra"
+                  ],
+                  2.69
+                ],
+                [
+                  4,
+                  [
+                    "crowd_contra"
+                  ],
+                  1.12
+                ],
+                [
+                  5,
+                  [
+                    "crowd_contra"
+                  ],
+                  0.41
+                ],
+                [
+                  6,
+                  [
+                    "top_contra"
+                  ],
+                  1.66
+                ],
+                [
+                  7,
+                  [
+                    "crowd_contra"
+                  ],
+                  0.73
+                ],
+                [
+                  8,
+                  [
+                    "top_contra"
+                  ],
+                  0.63
+                ],
+                [
+                  9,
+                  [
+                    "carry"
+                  ],
+                  1.71
+                ]
+              ]
+            },
+            "price_sharpe_by_lag": {
+              "0": 1.198,
+              "1": 1.312,
+              "2": 1.253
+            }
+          }
+        },
+        "stress": {
+          "status": "PRESENT",
+          "source": "data\\cache\\scenario_tail_snapshot.json",
+          "book": "crowd_contra",
+          "provenance": "REAL_HISTORICAL_REPLAY",
+          "n_periods": 233,
+          "crises": {
+            "2021-05 crash": {
+              "n_periods": 0,
+              "total_return": 0.0,
+              "max_drawdown": 0.0,
+              "worst_period": 0.0
+            },
+            "2022-05 LUNA": {
+              "n_periods": 3,
+              "total_return": 0.08495694029318335,
+              "max_drawdown": 0.023267193058256315,
+              "worst_period": -0.02326719305825643
+            },
+            "2022-11 FTX": {
+              "n_periods": 2,
+              "total_return": 0.05285465015005619,
+              "max_drawdown": 0.0,
+              "worst_period": 0.012394174149795628
+            },
+            "2023-03 banking/USDC": {
+              "n_periods": 2,
+              "total_return": 0.024838861563716286,
+              "max_drawdown": 0.022705245718324756,
+              "worst_period": -0.022705245718324774
+            }
+          },
+          "worst_drawdown_window": {
+            "peak_ts": 1697673600000,
+            "trough_ts": 1709164800000,
+            "drawdown": 0.13816050797887444,
+            "peak_to_trough_periods": 19,
+            "peak_date": "2023-10-19",
+            "trough_date": "2024-02-29"
+          },
+          "var_cvar_95": {
+            "var": 0.0293036838821974,
+            "cvar": 0.04142090147108519,
+            "alpha": 0.95
+          },
+          "var_cvar_99": {
+            "var": 0.05005367822555853,
+            "cvar": 0.053721624450141475,
+            "alpha": 0.99
+          },
+          "hill_tail_index": 2.6748338543227086,
+          "lower_tail_dep_vs_btc": 0.043478260869565216
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "crowd_contra",
+          "run_id": "af119aff537f7092",
+          "timestamp": 1784160000000,
+          "canonical": true,
+          "n_runs_for_strategy": 2,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 235,
+          "window_start_ts": 1642636800000,
+          "window_end_ts": 1784160000000,
+          "total_return": 1.21154,
+          "sharpe_raw": 1.0697,
+          "sharpe_vol_target": 1.095,
+          "max_drawdown_raw": 0.0885,
+          "max_drawdown_vol_target": 0.0971,
+          "final_equity": 2211539.535837,
+          "total_funding": 23794.041323,
+          "avg_net_exposure_pct": 0.010277,
+          "reconciliation_residual": 2e-09,
+          "n_intents": 5155,
+          "n_approved": 5155,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_APPROVED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 10.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": {
+            "n_pass": 0,
+            "n_warn": 214,
+            "n_block": 21,
+            "worst_score": 0.5000000000000003
+          }
+        },
+        "capacity": {
+          "status": "PRESENT",
+          "source": "data\\cache\\capacity_snapshot.json",
+          "book": "crowd_contra",
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "participation_cap_aum": 7164102.963885001,
+          "binding": "participation",
+          "calibrated_range": {
+            "low": 3582051.4819425005,
+            "high": 71641029.63885
+          },
+          "impact_aum_low": 1290310228.8449354,
+          "impact_aum_high": 7183235521.202192,
+          "gross_sharpe": 1.566,
+          "n_periods": 234,
+          "data_quality": "OK"
+        },
+        "portfolio": {
+          "status": "PRESENT",
+          "return_stream_combo": {
+            "source": "data\\cache\\combo_book_snapshot.json",
+            "kind": "RETURN_STREAM_COMBINE_GROSS_RELATIVE",
+            "standalone_sharpe": 1.297,
+            "standalone_max_drawdown": 0.148,
+            "standalone_total_return": 1.9213,
+            "inverse_vol_weight": 0.44,
+            "combo_equal_weight_sharpe": 1.949,
+            "combo_inverse_vol_sharpe": 1.977,
+            "combo_inverse_vol_max_drawdown": 0.0799,
+            "corr_carry_crowd": -0.038,
+            "common_weeks": 231
+          },
+          "optimizer_combo": {
+            "source": "data\\cache\\crypto_combo_book.json",
+            "kind": "OPTIMIZER_COMBO",
+            "weight": 0.3511,
+            "alone_econ_sharpe": 1.277,
+            "alone_max_drawdown": 0.168,
+            "combo_econ_sharpe": 1.787,
+            "combo_max_drawdown": 0.087,
+            "lift_vs_best_alone": 0.51,
+            "verdict": "combo SR 1.787 vs best-alone 1.277 (lift +0.510); diversification helps"
+          }
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "crowd_contra",
+          "n_periods": 1,
+          "track": {
+            "start_ts": 1783555200000,
+            "last_ts": 1783555200000,
+            "n_periods": 1,
+            "cum_return": 0.000955,
+            "paper_sharpe": 0.0,
+            "paper_ic": 0.3451,
+            "backtest_sharpe": 3.660227651801592,
+            "perf_gap": 1.0
+          },
+          "last_period": {
+            "as_of_ts": 1783555200000,
+            "realized_return": 0.0009548292104472526,
+            "realized_ic": 0.34505494505494505,
+            "source": "FORWARD_LIVE_PERP_MARK_GROSS_PLUS_FUNDING"
+          },
+          "forward": {
+            "n_forward_periods": 0,
+            "paper_sharpe": null,
+            "evidence_state": "DATA_BLOCKED",
+            "paper_verdict": "BLOCKED",
+            "blockers": [
+              "FORWARD_EVIDENCE_INSUFFICIENT"
+            ],
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "last_decision_ts": 1784592000000
+          },
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "PRESENT",
+          "runs": [
+            {
+              "venue": "binance",
+              "mode": "submit",
+              "tier": "AUTO",
+              "armed": null,
+              "hard_stop": false,
+              "n_submitted": 14,
+              "n_pending_review": 0,
+              "n_rejected_by_gate": 0,
+              "n_dropped_by_filters": 4,
+              "n_submission_errors": 0,
+              "order_stats": {
+                "FILLED": 29
+              },
+              "ran_at": 1783905000982,
+              "status_file": "data\\cache\\live_track_status.json"
+            }
+          ]
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "前向证据不足:1/8 期 —— paper-cycle 判 BLOCKED",
+        "paper-cycle blockers: FORWARD_EVIDENCE_INSUFFICIENT",
+        "capacity 为未校准原则性区间带(诊断,非门禁)"
+      ]
+    },
+    {
+      "alpha_id": "carry_oi_majors",
+      "display_name": "carry",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "PRESENT",
+          "source": "data\\cache\\ic_panel_snapshot.json",
+          "factor": "carry_composite",
+          "universe": "crypto_funding",
+          "mean_ic": 0.0005,
+          "icir": 0.0037,
+          "t_stat": 0.1757,
+          "hit_rate": 0.5016,
+          "n_periods": 2205,
+          "n_instruments": 115,
+          "per_year": {
+            "2020": 0.0181,
+            "2021": 0.0289,
+            "2022": -0.0208,
+            "2023": -0.0112,
+            "2024": 0.0183,
+            "2025": -0.0139,
+            "2026": -0.0137
+          },
+          "by_holding_period": {
+            "1": {
+              "hit_rate": 0.5016,
+              "ic_std": 0.1408,
+              "icir": 0.0037,
+              "mean_ic": 0.0005,
+              "n_periods": 2205,
+              "per_year": {
+                "2020": 0.0181,
+                "2021": 0.0289,
+                "2022": -0.0208,
+                "2023": -0.0112,
+                "2024": 0.0183,
+                "2025": -0.0139,
+                "2026": -0.0137
+              },
+              "t_stat": 0.1757
+            },
+            "14": {
+              "hit_rate": 0.5987,
+              "ic_std": 0.1374,
+              "icir": 0.2177,
+              "mean_ic": 0.0299,
+              "n_periods": 157,
+              "per_year": {
+                "2020": 0.048,
+                "2021": 0.0581,
+                "2022": 0.0043,
+                "2023": 0.0103,
+                "2024": 0.0514,
+                "2025": 0.0363,
+                "2026": -0.0121
+              },
+              "t_stat": 2.7281
+            },
+            "7": {
+              "hit_rate": 0.5446,
+              "ic_std": 0.1458,
+              "icir": 0.1574,
+              "mean_ic": 0.0229,
+              "n_periods": 314,
+              "per_year": {
+                "2020": 0.0249,
+                "2021": 0.0515,
+                "2022": -0.0116,
+                "2023": 0.0054,
+                "2024": 0.0528,
+                "2025": 0.0143,
+                "2026": 0.0247
+              },
+              "t_stat": 2.789
+            }
+          }
+        },
+        "falsification": {
+          "status": "PRESENT",
+          "sources": [
+            "evidence\\alpha_paper_cycle.json"
+          ],
+          "checks": null,
+          "n_checks_pass": null,
+          "n_checks_total": null,
+          "verdict_pass": true,
+          "research_verdict": "PASS_WITH_WARNINGS",
+          "research_evidence": {
+            "net_sharpe_5bps": 2.01,
+            "walkforward_verdict": "DESIGN_ROBUST",
+            "walkforward_blocks": 5
+          },
+          "research_warnings": [
+            "carry is an economic funding-yield edge; price-only alpha is weaker",
+            "forward evidence is still required"
+          ],
+          "verify_summary": null
+        },
+        "stress": {
+          "status": "PRESENT",
+          "source": "data\\cache\\scenario_tail_snapshot.json",
+          "book": "carry",
+          "provenance": "REAL_HISTORICAL_REPLAY",
+          "n_periods": 313,
+          "crises": {
+            "2021-05 crash": {
+              "n_periods": 3,
+              "total_return": 0.02424072737836691,
+              "max_drawdown": 0.02571708010252116,
+              "worst_period": -0.025717080102521193
+            },
+            "2022-05 LUNA": {
+              "n_periods": 3,
+              "total_return": -0.0016313770605905775,
+              "max_drawdown": 0.018341358574342017,
+              "worst_period": -0.0183413585743421
+            },
+            "2022-11 FTX": {
+              "n_periods": 2,
+              "total_return": -0.033650588616166655,
+              "max_drawdown": 0.033650588616166655,
+              "worst_period": -0.029437822034167872
+            },
+            "2023-03 banking/USDC": {
+              "n_periods": 2,
+              "total_return": -0.028476601906744836,
+              "max_drawdown": 0.028476601906744836,
+              "worst_period": -0.015987324228743067
+            }
+          },
+          "worst_drawdown_window": {
+            "peak_ts": 1605225600000,
+            "trough_ts": 1607644800000,
+            "drawdown": 0.19345410859350134,
+            "peak_to_trough_periods": 4,
+            "peak_date": "2020-11-13",
+            "trough_date": "2020-12-11"
+          },
+          "var_cvar_95": {
+            "var": 0.03234270058347289,
+            "cvar": 0.05186648248225106,
+            "alpha": 0.95
+          },
+          "var_cvar_99": {
+            "var": 0.0631395385015771,
+            "cvar": 0.08708743687592228,
+            "alpha": 0.99
+          },
+          "hill_tail_index": 2.430979148920072,
+          "lower_tail_dep_vs_btc": 0.12903225806451613
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "carry",
+          "run_id": "90eb3789e575ff54",
+          "timestamp": 1784246400000,
+          "canonical": true,
+          "n_runs_for_strategy": 2,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 316,
+          "window_start_ts": 1593734400000,
+          "window_end_ts": 1784246400000,
+          "total_return": 1.501318,
+          "sharpe_raw": 0.4771,
+          "sharpe_vol_target": 0.7458,
+          "max_drawdown_raw": 0.7107,
+          "max_drawdown_vol_target": 0.2208,
+          "final_equity": 2501318.200346,
+          "total_funding": 165149.723073,
+          "avg_net_exposure_pct": 0.024822,
+          "reconciliation_residual": 4e-09,
+          "n_intents": 16148,
+          "n_approved": 16041,
+          "n_rejected": 107,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "IMPACT_AC",
+          "cost_bps": 8.5,
+          "cost_provenance": "UNCALIBRATED_PRINCIPLED",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "PRESENT",
+          "source": "data\\cache\\capacity_snapshot.json",
+          "book": "carry",
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "participation_cap_aum": 1953401.0952933603,
+          "binding": "participation",
+          "calibrated_range": {
+            "low": 976700.5476466801,
+            "high": 19534010.952933602
+          },
+          "impact_aum_low": 739132770.9269073,
+          "impact_aum_high": 4076997574.830617,
+          "gross_sharpe": 1.672,
+          "n_periods": 314,
+          "data_quality": "OK"
+        },
+        "portfolio": {
+          "status": "PRESENT",
+          "return_stream_combo": {
+            "source": "data\\cache\\combo_book_snapshot.json",
+            "kind": "RETURN_STREAM_COMBINE_GROSS_RELATIVE",
+            "standalone_sharpe": 1.444,
+            "standalone_max_drawdown": 0.1642,
+            "standalone_total_return": 1.6121,
+            "inverse_vol_weight": 0.56,
+            "combo_equal_weight_sharpe": 1.949,
+            "combo_inverse_vol_sharpe": 1.977,
+            "combo_inverse_vol_max_drawdown": 0.0799,
+            "corr_carry_crowd": -0.038,
+            "common_weeks": 231
+          },
+          "optimizer_combo": {
+            "source": "data\\cache\\crypto_combo_book.json",
+            "kind": "OPTIMIZER_COMBO",
+            "weight": 0.2098,
+            "alone_econ_sharpe": 1.201,
+            "alone_max_drawdown": 0.271,
+            "combo_econ_sharpe": 1.787,
+            "combo_max_drawdown": 0.087,
+            "lift_vs_best_alone": 0.51,
+            "verdict": "combo SR 1.787 vs best-alone 1.277 (lift +0.510); diversification helps"
+          }
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "carry_oi_majors",
+          "n_periods": 1,
+          "track": {
+            "start_ts": 1783555200000,
+            "last_ts": 1783555200000,
+            "n_periods": 1,
+            "cum_return": 0.009949,
+            "paper_sharpe": 0.0,
+            "paper_ic": 0.1824,
+            "backtest_sharpe": 3.138792035885218,
+            "perf_gap": 1.0
+          },
+          "last_period": {
+            "as_of_ts": 1783555200000,
+            "realized_return": 0.009949260524540648,
+            "realized_ic": 0.1824175824175824,
+            "source": "FORWARD_LIVE_PERP_MARK_GROSS_PLUS_FUNDING"
+          },
+          "forward": {
+            "n_forward_periods": 0,
+            "paper_sharpe": null,
+            "evidence_state": "DATA_BLOCKED",
+            "paper_verdict": "BLOCKED",
+            "blockers": [
+              "DRY_RUN_RESEARCH_RISK_NOT_PASS",
+              "FORWARD_EVIDENCE_INSUFFICIENT"
+            ],
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "last_decision_ts": 1784592000000
+          },
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)",
+        "前向证据不足:1/8 期 —— paper-cycle 判 BLOCKED",
+        "paper-cycle blockers: DRY_RUN_RESEARCH_RISK_NOT_PASS, FORWARD_EVIDENCE_INSUFFICIENT",
+        "capacity 为未校准原则性区间带(诊断,非门禁)"
+      ]
+    },
+    {
+      "alpha_id": "top_contra",
+      "display_name": "top_contra",
+      "derived_stage": "DRY_RUN",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "PRESENT",
+          "sources": [
+            "data\\cache\\crypto_oi_top_verify.json",
+            "evidence\\alpha_paper_cycle.json"
+          ],
+          "checks": {
+            "survives_1d_lag": true,
+            "survives_10bps_cost": true,
+            "broad_across_years": false,
+            "survives_subsets": true,
+            "adds_to_carry": true
+          },
+          "n_checks_pass": 4,
+          "n_checks_total": 5,
+          "verdict_pass": false,
+          "research_verdict": "PASS_WITH_WARNINGS",
+          "research_evidence": {
+            "price_sharpe": 0.727,
+            "economic_sharpe": 0.879,
+            "ic": 0.0216,
+            "incremental_ir_vs_carry": 0.606,
+            "source_verdict": "candidate orthogonal positioning factor(s) — needs adversarial verification",
+            "dedicated_refutation_pass_count": 4,
+            "dedicated_refutation_verdict": "SURVIVES 4/5 refutation checks"
+          },
+          "research_warnings": [
+            "capacity remains an uncalibrated diagnostic, not a promotion gate"
+          ],
+          "verify_summary": {
+            "verdict": "SURVIVES 4/5 refutation checks",
+            "evidence_class": "RESEARCH_REFUTATION_DIAGNOSTIC",
+            "baseline": {
+              "price_sharpe": 0.955,
+              "economic_sharpe": 1.113,
+              "avg_turnover": 0.141
+            },
+            "net_sharpe_by_fee_bps": {
+              "2": 0.884,
+              "5": 0.777,
+              "10": 0.598,
+              "20": 0.242
+            },
+            "embargoed_oos": {
+              "n_folds": 10,
+              "mean_is": 1.1734,
+              "mean_oos": 0.8375,
+              "haircut": -0.3359,
+              "picks": [
+                [
+                  0,
+                  [
+                    "carry"
+                  ],
+                  -0.18
+                ],
+                [
+                  1,
+                  [
+                    "carry"
+                  ],
+                  -0.471
+                ],
+                [
+                  2,
+                  [
+                    "top_contra"
+                  ],
+                  0.887
+                ],
+                [
+                  3,
+                  [
+                    "top_contra"
+                  ],
+                  1.135
+                ],
+                [
+                  4,
+                  [
+                    "top_contra"
+                  ],
+                  2.401
+                ],
+                [
+                  5,
+                  [
+                    "top_contra"
+                  ],
+                  -0.133
+                ],
+                [
+                  6,
+                  [
+                    "top_contra"
+                  ],
+                  1.662
+                ],
+                [
+                  7,
+                  [
+                    "carry"
+                  ],
+                  0.614
+                ],
+                [
+                  8,
+                  [
+                    "top_contra"
+                  ],
+                  0.632
+                ],
+                [
+                  9,
+                  [
+                    "carry"
+                  ],
+                  1.827
+                ]
+              ]
+            },
+            "price_sharpe_by_lag": {
+              "0": 0.955,
+              "1": 1.03,
+              "2": 0.985
+            }
+          }
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "top_contra",
+          "run_id": "993d3a28a95ea411",
+          "timestamp": 1784160000000,
+          "canonical": true,
+          "n_runs_for_strategy": 2,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 192,
+          "window_start_ts": 1654128000000,
+          "window_end_ts": 1784160000000,
+          "total_return": 1.650056,
+          "sharpe_raw": 1.5246,
+          "sharpe_vol_target": 1.3013,
+          "max_drawdown_raw": 0.2015,
+          "max_drawdown_vol_target": 0.2015,
+          "final_equity": 2650055.573333,
+          "total_funding": 19126.014336,
+          "avg_net_exposure_pct": 0.010149,
+          "reconciliation_residual": 1e-09,
+          "n_intents": 4425,
+          "n_approved": 4425,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_APPROVED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 10.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": {
+            "n_pass": 0,
+            "n_warn": 181,
+            "n_block": 11,
+            "worst_score": 0.5000000000000003
+          }
+        },
+        "capacity": {
+          "status": "PRESENT",
+          "source": "data\\cache\\capacity_snapshot.json",
+          "book": "top_contra",
+          "provenance": "UNCALIBRATED_PRINCIPLED",
+          "participation_cap_aum": 7164102.963885001,
+          "binding": "participation",
+          "calibrated_range": {
+            "low": 3582051.4819425005,
+            "high": 71641029.63885
+          },
+          "impact_aum_low": 871973019.3856409,
+          "impact_aum_high": 5157185095.929375,
+          "gross_sharpe": 0.985,
+          "n_periods": 191,
+          "data_quality": "OK"
+        },
+        "portfolio": {
+          "status": "PRESENT",
+          "return_stream_combo": null,
+          "optimizer_combo": {
+            "source": "data\\cache\\crypto_combo_book.json",
+            "kind": "OPTIMIZER_COMBO",
+            "weight": 0.4391,
+            "alone_econ_sharpe": 1.132,
+            "alone_max_drawdown": 0.151,
+            "combo_econ_sharpe": 1.787,
+            "combo_max_drawdown": 0.087,
+            "lift_vs_best_alone": 0.51,
+            "verdict": "combo SR 1.787 vs best-alone 1.277 (lift +0.510); diversification helps"
+          }
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "top_contra",
+          "n_periods": 0,
+          "track": null,
+          "last_period": null,
+          "forward": {
+            "n_forward_periods": 0,
+            "paper_sharpe": null,
+            "evidence_state": "DATA_BLOCKED",
+            "paper_verdict": "BLOCKED",
+            "blockers": [
+              "FORWARD_EVIDENCE_INSUFFICIENT"
+            ],
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "last_decision_ts": 1784592000000
+          },
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": {
+            "reasons": [
+              {
+                "detail": "drawdown 0.31 >= 0.3",
+                "metric": "drawdown",
+                "severity": "PAUSED"
+              },
+              {
+                "detail": "missing live metric(s): ['ic']",
+                "metric": "data",
+                "severity": "DEGRADED"
+              }
+            ],
+            "state": "PAUSED"
+          },
+          "degraded": true
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "证伪证据存在但未全过(4/5) —— VALIDATED 不成立,derived_stage 不含证伪背书",
+        "maintenance 权威已把本 alpha 降为 PAUSED —— live 停止新增敞口(现有仓位原样不动,绝不自动减仓;spec §12 QUARANTINED 语义映射 PAUSED)",
+        "前向证据不足:0/8 期 —— paper-cycle 判 BLOCKED",
+        "paper-cycle blockers: FORWARD_EVIDENCE_INSUFFICIENT",
+        "capacity 为未校准原则性区间带(诊断,非门禁)"
+      ]
+    },
+    {
+      "alpha_id": "btc_spot_trend",
+      "display_name": "btc_spot_trend",
+      "derived_stage": "DRY_RUN",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "btc_spot_trend",
+          "run_id": "b73df9ca627cdf9c",
+          "timestamp": 1784160000000,
+          "canonical": false,
+          "n_runs_for_strategy": 1,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 318,
+          "window_start_ts": 1592438400000,
+          "window_end_ts": 1784160000000,
+          "total_return": 1.053452,
+          "sharpe_raw": 0.818,
+          "sharpe_vol_target": 0.9247,
+          "max_drawdown_raw": 0.0718,
+          "max_drawdown_vol_target": 0.0526,
+          "final_equity": 2053452.47,
+          "total_funding": 0.0,
+          "avg_net_exposure_pct": 0.103786,
+          "reconciliation_residual": 0.0,
+          "n_intents": 54,
+          "n_approved": 54,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 0.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "ABSENT"
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)"
+      ]
+    },
+    {
+      "alpha_id": "ashare_microcap_composite_v2_u120",
+      "display_name": "ashare_microcap_composite_v2_u120",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "ashare_microcap_composite_v2_u120",
+          "run_id": "1d71ce97c06c3b00",
+          "timestamp": 1784246400000,
+          "canonical": false,
+          "n_runs_for_strategy": 1,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 75,
+          "window_start_ts": 1735862400000,
+          "window_end_ts": 1784246400000,
+          "total_return": 0.207559,
+          "sharpe_raw": 0.6622,
+          "sharpe_vol_target": null,
+          "max_drawdown_raw": 0.3485,
+          "max_drawdown_vol_target": null,
+          "final_equity": 3622677.9455,
+          "total_funding": 0.0,
+          "avg_net_exposure_pct": 0.982894,
+          "reconciliation_residual": 2e-08,
+          "n_intents": 7441,
+          "n_approved": 7441,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 15.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "ashare_microcap_composite_v2_u120",
+          "n_periods": 74,
+          "track": {
+            "start_ts": 1735862400000,
+            "last_ts": 1783641600000,
+            "n_periods": 74,
+            "cum_return": 0.216348,
+            "paper_sharpe": 1.4368,
+            "paper_ic": 0.1065,
+            "backtest_sharpe": 0.2967,
+            "perf_gap": -3.8427
+          },
+          "last_period": {
+            "as_of_ts": 1783641600000,
+            "realized_return": -0.03635300694836163,
+            "realized_ic": 0.37803731662156387,
+            "source": "BACKFILL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)"
+      ]
+    },
+    {
+      "alpha_id": "ashare_microcap_composite_v3_u249",
+      "display_name": "ashare_microcap_composite_v3_u249",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "ashare_microcap_composite_v3_u249",
+          "run_id": "7112c1c638dfe327",
+          "timestamp": 1784246400000,
+          "canonical": false,
+          "n_runs_for_strategy": 1,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 75,
+          "window_start_ts": 1735862400000,
+          "window_end_ts": 1784246400000,
+          "total_return": 0.205537,
+          "sharpe_raw": 0.6913,
+          "sharpe_vol_target": null,
+          "max_drawdown_raw": 0.2108,
+          "max_drawdown_vol_target": null,
+          "final_equity": 3616609.6775,
+          "total_funding": 0.0,
+          "avg_net_exposure_pct": 0.982365,
+          "reconciliation_residual": 1e-09,
+          "n_intents": 2216,
+          "n_approved": 2216,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 15.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "ashare_microcap_composite_v3_u249",
+          "n_periods": 74,
+          "track": {
+            "start_ts": 1735862400000,
+            "last_ts": 1783641600000,
+            "n_periods": 74,
+            "cum_return": 0.184578,
+            "paper_sharpe": 1.2609,
+            "paper_ic": 0.1235,
+            "backtest_sharpe": 0.2929,
+            "perf_gap": -3.305
+          },
+          "last_period": {
+            "as_of_ts": 1783641600000,
+            "realized_return": -0.036586831882473025,
+            "realized_ic": 0.41742574319742076,
+            "source": "BACKFILL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)"
+      ]
+    },
+    {
+      "alpha_id": "ashare_microcap_composite_v3_u249_cap30",
+      "display_name": "ashare_microcap_composite_v3_u249_cap30",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "ashare_microcap_composite_v3_u249_cap30",
+          "run_id": "11dae0671c13e2e2",
+          "timestamp": 1784246400000,
+          "canonical": false,
+          "n_runs_for_strategy": 1,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 75,
+          "window_start_ts": 1735862400000,
+          "window_end_ts": 1784246400000,
+          "total_return": 0.405078,
+          "sharpe_raw": 1.2285,
+          "sharpe_vol_target": null,
+          "max_drawdown_raw": 0.1692,
+          "max_drawdown_vol_target": null,
+          "final_equity": 4215233.804,
+          "total_funding": 0.0,
+          "avg_net_exposure_pct": 0.982559,
+          "reconciliation_residual": 1e-09,
+          "n_intents": 1846,
+          "n_approved": 1846,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 15.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "ashare_microcap_composite_v3_u249_cap30",
+          "n_periods": 74,
+          "track": {
+            "start_ts": 1735862400000,
+            "last_ts": 1783641600000,
+            "n_periods": 74,
+            "cum_return": 0.449145,
+            "paper_sharpe": 2.4134,
+            "paper_ic": 0.1235,
+            "backtest_sharpe": 0.4376,
+            "perf_gap": -4.5151
+          },
+          "last_period": {
+            "as_of_ts": 1783641600000,
+            "realized_return": -0.017565377434527907,
+            "realized_ic": 0.41742574319742076,
+            "source": "BACKFILL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)"
+      ]
+    },
+    {
+      "alpha_id": "ashare_microcap_composite_v3_u249_cap40",
+      "display_name": "ashare_microcap_composite_v3_u249_cap40",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "PRESENT",
+          "source": "data\\cache\\dry_run.db",
+          "strategy_id": "ashare_microcap_composite_v3_u249_cap40",
+          "run_id": "56f1871dff4fca62",
+          "timestamp": 1784246400000,
+          "canonical": false,
+          "n_runs_for_strategy": 1,
+          "mode": "multi_period",
+          "cadence": "weekly",
+          "n_periods": 75,
+          "window_start_ts": 1735862400000,
+          "window_end_ts": 1784246400000,
+          "total_return": 0.4139,
+          "sharpe_raw": 1.2526,
+          "sharpe_vol_target": null,
+          "max_drawdown_raw": 0.1714,
+          "max_drawdown_vol_target": null,
+          "final_equity": 4241699.1145,
+          "total_funding": 0.0,
+          "avg_net_exposure_pct": 0.98248,
+          "reconciliation_residual": 3e-09,
+          "n_intents": 1994,
+          "n_approved": 1994,
+          "n_rejected": 0,
+          "research_risk_decision": "RISK_REJECTED",
+          "cost_model": "FLAT_BPS",
+          "cost_bps": 15.0,
+          "cost_provenance": "FLAT_BPS",
+          "crowding_gate": null
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "ashare_microcap_composite_v3_u249_cap40",
+          "n_periods": 74,
+          "track": {
+            "start_ts": 1735862400000,
+            "last_ts": 1783641600000,
+            "n_periods": 74,
+            "cum_return": 0.459551,
+            "paper_sharpe": 2.4316,
+            "paper_ic": 0.1235,
+            "backtest_sharpe": 0.3745,
+            "perf_gap": -5.4928
+          },
+          "last_period": {
+            "as_of_ts": 1783641600000,
+            "realized_return": -0.027995173698234566,
+            "realized_ic": 0.41742574319742076,
+            "source": "BACKFILL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "权威 dry-run 的 research-risk 决策为 RISK_REJECTED(非 RISK_APPROVED)"
+      ]
+    },
+    {
+      "alpha_id": "h_momentum_3",
+      "display_name": "h_momentum_3",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "h_momentum_3",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.025382,
+            "paper_sharpe": 4.7778,
+            "paper_ic": null,
+            "backtest_sharpe": 0.3194,
+            "perf_gap": -13.9588
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": 2.487e-05,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "h_ts_rank_5",
+      "display_name": "h_ts_rank_5",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "h_ts_rank_5",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.030327,
+            "paper_sharpe": 6.4379,
+            "paper_ic": null,
+            "backtest_sharpe": -1.2151,
+            "perf_gap": null
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00359996,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "h_zscore_3",
+      "display_name": "h_zscore_3",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "h_zscore_3",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.021991,
+            "paper_sharpe": 3.6593,
+            "paper_ic": null,
+            "backtest_sharpe": 1.3932,
+            "perf_gap": -1.6266
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00449436,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "h_zscore_5",
+      "display_name": "h_zscore_5",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "h_zscore_5",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.010961,
+            "paper_sharpe": 2.3584,
+            "paper_ic": null,
+            "backtest_sharpe": 1.859,
+            "perf_gap": -0.2687
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00378148,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-momentum-3_price-dist_from_high-3",
+      "display_name": "hx_sum_price-momentum-3_price-dist_from_high-3",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-momentum-3_price-dist_from_high-3",
+          "n_periods": 23,
+          "track": {
+            "start_ts": 4406400000,
+            "last_ts": 6307200000,
+            "n_periods": 23,
+            "cum_return": 0.007875,
+            "paper_sharpe": 1.6717,
+            "paper_ic": null,
+            "backtest_sharpe": 0.9416,
+            "perf_gap": -0.7754
+          },
+          "last_period": {
+            "as_of_ts": 6307200000,
+            "realized_return": -0.0019726,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-momentum-3_price-ts_rank-5",
+      "display_name": "hx_sum_price-momentum-3_price-ts_rank-5",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-momentum-3_price-ts_rank-5",
+          "n_periods": 23,
+          "track": {
+            "start_ts": 4492800000,
+            "last_ts": 6393600000,
+            "n_periods": 23,
+            "cum_return": 0.021176,
+            "paper_sharpe": 4.0964,
+            "paper_ic": null,
+            "backtest_sharpe": -0.2019,
+            "perf_gap": null
+          },
+          "last_period": {
+            "as_of_ts": 6393600000,
+            "realized_return": -0.00402618,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-accel-10",
+      "display_name": "hx_sum_price-zscore-3_price-accel-10",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-accel-10",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.007095,
+            "paper_sharpe": 1.2707,
+            "paper_ic": null,
+            "backtest_sharpe": 0.8239,
+            "perf_gap": -0.5423
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00484253,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-dist_from_high-10",
+      "display_name": "hx_sum_price-zscore-3_price-dist_from_high-10",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-dist_from_high-10",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.031222,
+            "paper_sharpe": 4.7653,
+            "paper_ic": null,
+            "backtest_sharpe": 0.1312,
+            "perf_gap": -35.3207
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00235316,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-dist_from_high-3",
+      "display_name": "hx_sum_price-zscore-3_price-dist_from_high-3",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-dist_from_high-3",
+          "n_periods": 23,
+          "track": {
+            "start_ts": 4406400000,
+            "last_ts": 6307200000,
+            "n_periods": 23,
+            "cum_return": 0.020046,
+            "paper_sharpe": 3.9434,
+            "paper_ic": null,
+            "backtest_sharpe": 0.382,
+            "perf_gap": -9.3229
+          },
+          "last_period": {
+            "as_of_ts": 6307200000,
+            "realized_return": -0.00449436,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-ema_ratio-10",
+      "display_name": "hx_sum_price-zscore-3_price-ema_ratio-10",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-ema_ratio-10",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.014136,
+            "paper_sharpe": 2.4952,
+            "paper_ic": null,
+            "backtest_sharpe": 0.6136,
+            "perf_gap": -3.0664
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.0030085,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-ema_ratio-3",
+      "display_name": "hx_sum_price-zscore-3_price-ema_ratio-3",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-ema_ratio-3",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.026663,
+            "paper_sharpe": 4.3839,
+            "paper_ic": null,
+            "backtest_sharpe": -0.036,
+            "perf_gap": null
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00360091,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    },
+    {
+      "alpha_id": "hx_sum_price-zscore-3_price-momentum-10",
+      "display_name": "hx_sum_price-zscore-3_price-momentum-10",
+      "derived_stage": "PAPER_TRACKED",
+      "lifecycle_state": null,
+      "stages": {
+        "discovery": {
+          "status": "ABSENT"
+        },
+        "falsification": {
+          "status": "ABSENT"
+        },
+        "stress": {
+          "status": "ABSENT"
+        },
+        "backtest": {
+          "status": "ABSENT"
+        },
+        "capacity": {
+          "status": "ABSENT"
+        },
+        "portfolio": {
+          "status": "ABSENT"
+        },
+        "paper": {
+          "status": "PRESENT",
+          "source": "data\\cache\\paper_track.db",
+          "paper_id": "hx_sum_price-zscore-3_price-momentum-10",
+          "n_periods": 24,
+          "track": {
+            "start_ts": 4579200000,
+            "last_ts": 6566400000,
+            "n_periods": 24,
+            "cum_return": 0.014976,
+            "paper_sharpe": 2.6186,
+            "paper_ic": null,
+            "backtest_sharpe": 1.5208,
+            "perf_gap": -0.7219
+          },
+          "last_period": {
+            "as_of_ts": 6566400000,
+            "realized_return": -0.00235316,
+            "realized_ic": null,
+            "source": "OOS_TAIL"
+          },
+          "forward": null,
+          "required_forward_periods": 8
+        },
+        "live": {
+          "status": "ABSENT"
+        },
+        "decay": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "sweep_generated_at": 1784922592692,
+          "actor_kind": "AGENT",
+          "n_actions": 1,
+          "alpha_action": null,
+          "degraded": false
+        },
+        "retirement": {
+          "status": "PRESENT",
+          "source": "data\\cache\\alpha_maintenance.db",
+          "retired": false,
+          "n_retirement_events": 0,
+          "events": []
+        }
+      },
+      "warnings": [
+        "无 falsification 证据却有后段证据 —— 阶段跳跃(未证伪先行),需人工确认",
+        "有前向 paper 证据但无权威 dry-run 回执 —— 阶段跳跃(缺执行现实检验)",
+        "paper-track 时间戳早于 2000 年 —— 合成研究会话刻度,非真实前向证据"
+      ]
+    }
+  ],
+  "stage_legend": {
+    "discovery": "IC 初筛:data/cache/ic_panel_snapshot.json 中该因子的截面 rank IC(mean_ic/icir/t_stat/hit_rate/逐年/分持有期)。初筛诊断,非晋级门禁。",
+    "falsification": "证伪/研究裁决:data/cache/crypto_oi_verify.json(crowd_contra 5 项 refutation checks)、data/cache/crypto_oi_top_verify.json(top_contra 指标)+ evidence/alpha_paper_cycle.json 的 research.verdict。verdict_pass=True 才支撑 VALIDATED 级。",
+    "stress": "历史情景重演 + 尾部风险:data/cache/scenario_tail_snapshot.json(REAL_HISTORICAL_REPLAY)中该 book 的危机窗口 / 最差回撤窗口 / VaR-CVaR / Hill 尾指数 / 对 BTC 下尾依赖。",
+    "backtest": "执行现实回测:data/cache/dry_run.db dry_run 表该 strategy 的权威多期干跑(RAW / vol-target Sharpe、maxDD、对账残差、research-risk 决策、成本)。同一 strategy 多条 run 时优先 paper-cycle 登记的 canonical run_id,否则取 (timestamp, run_id) 最大者。",
+    "capacity": "容量区间带:data/cache/capacity_snapshot.json(UNCALIBRATED_PRINCIPLED —— 未校准原则性区间,诊断非门禁)。",
+    "portfolio": "组合分散证据:data/cache/combo_book_snapshot.json(收益流层面组合,gross 无成本 RELATIVE 比较)+ data/cache/crypto_combo_book.json(optimizer 三 alpha 组合权重与 lift)。",
+    "paper": "前向 paper-track:data/cache/paper_track.db(paper_track / paper_periods 表)+ alpha_paper_cycle 的 forward 块。n_periods > 0 才支撑 PAPER_TRACKED 级;required_forward_periods 来自 paper-cycle(当前 8 期)。",
+    "live": "live-track 最近批次:data/cache/live_track_status*.json 中 strategy 字段匹配的场地快照(testnet / mainnet、preview / submit 原样标注,armed 缺省为 null)。attestation / mandate / key 权限就绪见 /api/v1/console/go-live-readiness,本驾驶舱不重复。",
+    "decay": "衰退监控:data/cache/alpha_maintenance.db 最新 maintenance snapshot 中该 alpha 的降级动作(alpha_action 为 null = 权威里无降级记录)。非人 sweep、绝不 APPROVED。state=PAUSED 对应 spec §12 QUARANTINED 语义(停止新增敞口、可逆待诊断)。",
+    "retirement": "退役:同一 maintenance 权威的事件流中该 alpha 的 RETIRED 转移(retired=False = 无退役记录)。退役只能由 maintenance / 人工路径发生。",
+    "derived_stage": "推导规则(纯机械、非背书):取证据链上有 PRESENT 证据的最远阶段 —— LIVE_TRACK > PAPER_TRACKED(paper.n_periods>0)> DRY_RUN > VALIDATED(falsification 且 verdict_pass=True)> CANDIDATE > UNTRACKED(全无)。阶段可跳跃;跳跃在 warnings 里显式标注。",
+    "lifecycle_state": "services/alpha 生命周期状态机的持久化状态。仓库内无 per-alpha catalog 状态落盘(纯/内存核心 + asset_store 无 db 文件),故恒为 null —— 不伪造,只看 derived_stage。"
+  },
+  "honesty_note": "Alpha 生命周期驾驶舱:对**已存在**证据仓的只读聚合,没有任何新研究数学;每个阶段 fail-soft 读取,缺证据即 ABSENT,绝不编造。derived_stage 是机械推导(见 stage_legend),**非晋级背书**;lifecycle_state 恒为 null(状态机无落盘)。capacity 为 UNCALIBRATED_PRINCIPLED 区间带(诊断非门禁);combo_book 为 gross 收益流层面 RELATIVE 比较;paper 前向证据多数仍不足 8 期(paper-cycle BLOCKED 原样呈现)。live 阶段只引用 live_track status 快照的 strategy/venue/mode;attestation/mandate/key 权限就绪归 /api/v1/console/go-live-readiness。L2 边界不变:本驾驶舱只读、不授权、不下单、不碰凭据。"
+}
