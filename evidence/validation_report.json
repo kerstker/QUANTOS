@@ -1,9 +1,9 @@
 {
-  "checks_manifest_sha256": "79d30b714a4e355f4513b6965c8409d2bf9103d019c014385d3e58c745e4acf8",
-  "commit": "3c990d67dd1c7d9c0b5f5ed9f22560dbf2c578ea",
-  "duration_ms": 259773,
-  "generated_at_ms": 1785127634498,
-  "overall_status": "FAIL",
+  "checks_manifest_sha256": "09bca116a5727e846d830876c883c7ed8ba4a6f22f9a23da1d09843a39d87de7",
+  "commit": "291247582795d3e4deb161093f5c8124acab61a7",
+  "duration_ms": 305600,
+  "generated_at_ms": 1785132849500,
+  "overall_status": "PASS",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
   "requested_stages": [
@@ -17,7 +17,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 119,
+      "duration_ms": 131,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -30,7 +30,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 128,
+      "duration_ms": 194,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -43,7 +43,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 138,
+      "duration_ms": 185,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -56,7 +56,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 102,
+      "duration_ms": 150,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -69,7 +69,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 97,
+      "duration_ms": 118,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -82,7 +82,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 257,
+      "duration_ms": 314,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -95,7 +95,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 628,
+      "duration_ms": 741,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -108,7 +108,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 254,
+      "duration_ms": 301,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -121,7 +121,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 229,
+      "duration_ms": 288,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -135,10 +135,10 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 379,
-      "returncode": 1,
+      "duration_ms": 524,
+      "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
-      "status": "FAIL",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
@@ -148,7 +148,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1316,
+      "duration_ms": 1544,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -161,7 +161,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 82,
+      "duration_ms": 104,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -173,7 +173,7 @@
         "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 349,
+      "duration_ms": 399,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -185,7 +185,7 @@
         "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1443,
+      "duration_ms": 2017,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -202,6 +202,7 @@
         "tests/features",
         "tests/research",
         "tests/alpha",
+        "tests/lifecycle",
         "tests/portfolio",
         "tests/risk",
         "tests/execution",
@@ -216,10 +217,10 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 202273,
-      "returncode": 1,
+      "duration_ms": 235004,
+      "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
-      "status": "FAIL",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
@@ -233,7 +234,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 35354,
+      "duration_ms": 43307,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -246,7 +247,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 2955,
+      "duration_ms": 3929,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -259,7 +260,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4419,
+      "duration_ms": 5489,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -271,7 +272,7 @@
         "test"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4378,
+      "duration_ms": 5087,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -284,7 +285,7 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4860,
+      "duration_ms": 5764,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -315,14 +316,14 @@
     "frontend: production build"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1785127374724,
+  "started_at_ms": 1785132543899,
   "summary": {
     "errored": 0,
-    "failed": 2,
-    "passed": 18,
+    "failed": 0,
+    "passed": 20,
     "selected": 20,
     "timed_out": 0
   },
   "timeout_seconds": 1800.0,
-  "validate_script_sha256": "cbd2781c075be540fa22eaa24ca9ab0a58323ec6f1a643a9cc61f3366a4c21b4"
+  "validate_script_sha256": "956a84c82749533cdd831a8a479848b5c5bd7b810f7e50d91e8f87e9a42b1ac4"
 }

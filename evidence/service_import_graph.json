@@ -976,9 +976,9 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "7018edc960ad9f0b5bbbd2e2da38e0e8b3c15f99a5ed48b357b9d663f77d2717",
+  "graph_sha256": "e3e1aa686f6fbbd1ae79292433fcc7f5ab243026bb3ae7d45311aa3390010e2e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
-  "node_count": 16,
+  "node_count": 17,
   "nodes": [
     "alpha",
     "console",
@@ -988,6 +988,7 @@
     "features",
     "governance",
     "intelligence",
+    "lifecycle",
     "monitoring",
     "portfolio",
     "promotion_api",
@@ -1010,7 +1011,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 331,
+  "source_file_count": 336,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

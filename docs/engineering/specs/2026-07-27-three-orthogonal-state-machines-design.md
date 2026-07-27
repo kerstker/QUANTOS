@@ -97,12 +97,15 @@ evidence_hash = stable_hash({
 `services/alpha/guards.py`：
 
 ```python
-verify_multi_party_grant(grant, promotion_subject(alpha_id, AlphaState.APPROVED))
+PROMOTION_SUBJECT_PREFIX = "alpha-promotion"
+def promotion_subject(alpha_id, dst): return f"{PREFIX}:{alpha_id}:{dst.value}"
+def parse_promotion_subject(subject): ...; return alpha_id, AlphaState(parts[-1])
 ```
 
-grant 的 subject 绑的是字符串 `"APPROVED"`。§1.2 规定「任意一项变化，授权立即失效」——
-这个行为是**对的**，但意味着改枚举值会让 `approvals.db` 里所有已由三个真人签署的
-grant 一次性作废。这也不可接受：那些是真人的签名，不能被一次重构注销。
+grant 的 subject 是字面串 `alpha-promotion:{alpha_id}:APPROVED`，反解时执行
+`AlphaState(parts[-1])`。§1.2 规定「任意一项变化，授权立即失效」—— 这个行为是**对的**，
+但意味着改枚举值会让 `approvals.db` 里所有已由三个真人签署的 grant 一次性**解析不了**。
+这也不可接受：那些是真人的签名，不能被一次重构注销。
 
 ### 2.3 由此得出的裁定
 
@@ -249,6 +252,34 @@ project(AlphaState) -> (ResearchState, DeploymentState, HealthState | None)
 9. 727 §20.2 第 16 条：strategy_hash / config_hash 变化后 Grant 失效。
 
 第 5、6 条是本方案的**验收核心** —— 它们证明这次重构没有注销任何既有证据或签名。
+
+## 7.1 C1 实施中发现：旧机器从未建模 §12 的分级上线（真实发现）
+
+写 §7 第 7 条那个「每条历史边都要能投影成合法新边」的测试时，它**抓到三条投影不合法的旧边**：
+
+```text
+PAPER_TRADING → APPROVED     投影成 PAPER      → LIVE
+SHADOW        → APPROVED     投影成 SHADOW     → LIVE
+PAUSED        → APPROVED     投影成 PAUSED     → LIVE
+```
+
+三条是同一个缺陷：**旧机器允许人类从纸面/影子/暂停态直接授权实盘，中间没有
+`MICRO_LIVE` 这一级。** 而 §12.4 明确要求「只有 Micro-Live 经过足够真实成交、对账、
+故障恢复和 Reality Gap 验证后」才能生成 Live 晋级建议；§11.2 更是直接把
+`PAUSED → LIVE` 列为系统与人都不得走的捷径。
+
+L2 下这三条是无害的（五个旗帜结构性挡死执行），但它意味着**状态机本身从来没有
+表达过 §12 的分级上线**。这不是投影的 bug，是旧模型的缺陷被投影照出来了。
+
+裁定：**不把这三条加进新机器**（那等于把旧的宽松度进口过来，直接废掉 §12.4）。
+它们作为**已声明的收紧**记录在 `tests/lifecycle/test_legacy_identity_preserved.py::
+_INTENTIONAL_DIVERGENCES`，并用**双向相等**断言钉死 —— 新出现未声明的分歧会失败，
+已声明的分歧悄悄消失（= 新机器被放松回旧宽松度）也会失败。
+
+**对 C3 的影响（必须在 C3 评审时单独确认）**：采用新机器后，一条今天能走
+`PAPER_TRADING → APPROVED` 的 alpha 将必须依次经过 `SHADOW → MICRO_LIVE → LIVE`。
+这是 §12 要求的正确行为，但它是**真实的行为收紧**，不是纯重构。C3 不能当作
+「只是换个类型」提交。
 
 ## 8. 明确非目标
 

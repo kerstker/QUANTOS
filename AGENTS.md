@@ -254,6 +254,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/{features,execution,monitoring,deployment}/` — leakage detector +
   feature registry; execution boundary + intent builder; hash-chained audit log +
   health; fail-closed deployment/version-pin gate. All tested.
+- `services/lifecycle/` — **三个正交状态机(727 §3/§11,C1 已落地)**:把混合的
+  `AlphaState` 拆为 `research_state`(研究是否成立)/ `deployment_state`(跑在哪里,
+  唯一带人类专属边的机器:进入 MICRO_LIVE/LIVE 必须真人 + Grant,L2 下
+  `REAL_CAPITAL_BLOCKED_AT_L2` 结构性拒绝,PAUSED→LIVE 无边)/ `health_state`
+  (当前是否健康,带原因码)+ `projection`(旧 `AlphaState` → 三元组的加法投影,
+  UNKNOWN_LEGACY 诚实哨兵零入边)。纯数据+纯函数、无 IO、不 import `services/*`,
+  故编排器 `services/alpha/lifecycle.py` 可采用而无循环依赖。**C1 无人调用、零行为
+  变化**;C2 双写 / C3 编排切换(唯一改行为的提交,需单独评审)/ C4 console 展示
+  见设计文档 `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
+  迁移发现的旧模型缺陷(PAPER_TRADING/SHADOW/PAUSED→APPROVED 跳级,绕过 §12 分级
+  上线)作为已声明收紧钉在 `tests/lifecycle/test_legacy_identity_preserved.py`。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only
