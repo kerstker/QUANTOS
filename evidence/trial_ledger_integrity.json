@@ -1,0 +1,108 @@
+{
+  "block_reasons": [],
+  "commit": "3c990d67dd1c7d9c0b5f5ed9f22560dbf2c578ea",
+  "family_multiple_testing": {
+    "available": true,
+    "exported": [
+      "assign_families",
+      "simes_pvalue",
+      "hierarchical_fdr",
+      "family_adjusted_trial_count",
+      "marginal_ir"
+    ],
+    "role": "DIAGNOSTIC_NOT_GATE",
+    "wired_into_promotion_gate": false
+  },
+  "generated_at_ms": 1785126417634,
+  "ledger": {
+    "append_only_guards": {
+      "evaluations": "GUARDED",
+      "search_attempt_events": "GUARDED",
+      "search_candidates": "GUARDED",
+      "search_evaluations": "GUARDED",
+      "trial_provenance": "TABLE_ABSENT",
+      "trials": "GUARDED"
+    },
+    "exists": true,
+    "path": "data/cache/experiment_registry.db",
+    "row_counts": {
+      "evaluations": 212,
+      "search_attempt_events": 71,
+      "search_candidates": 17644,
+      "search_evaluations": 211,
+      "trials": 2533
+    },
+    "sha256": "04b95c7d5298ca8b05b4dbb0592e422c450a82ba8a4ffa4651d7e5dfa809c12f",
+    "sqlite_integrity": "ok",
+    "user_version": 2
+  },
+  "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
+  "open_gaps": [
+    {
+      "detail": "record_trial_provenance() exists and is chain-verified, but the research drivers still register bare config hashes. Until each entry point writes a TrialRecord, bare_trials stays non-zero and this artifact stays PARTIAL.",
+      "id": "TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT",
+      "requirement": "727 \u00a77.2 \u2014 all AI, manual and sweep attempts enter one ledger",
+      "state": "MECHANISM_LANDED_CALLERS_PENDING"
+    },
+    {
+      "detail": "services/alpha/family_testing.py implements the two-stage hierarchy, family-adjusted trial count and marginal IR. It is not yet the lens used by the promotion guard, which still applies the flat BH/BHY lens.",
+      "id": "FAMILY_FDR_NOT_A_GATE",
+      "requirement": "727 \u00a77.3 \u2014 family-level and within-family FDR",
+      "state": "DIAGNOSTIC_ONLY"
+    },
+    {
+      "detail": "viewed_oos_boundaries is persisted and surfaced via oos_peek_totals(), but a caller that omits it records zero peeks. The field cannot by itself prove a boundary was unseen.",
+      "id": "OOS_PEEK_ACCOUNTING_DEPENDS_ON_CALLERS",
+      "requirement": "727 \u00a77.2 / \u00a70.4.7 \u2014 OOS view count must be recorded",
+      "state": "FIELD_EXISTS_CALLERS_PENDING"
+    }
+  ],
+  "provenance": {
+    "actor_type_counts": {},
+    "attempts_recorded": 0,
+    "bare_trials": 2533,
+    "chain_head": null,
+    "chain_valid": null,
+    "configs_with_provenance": 0,
+    "coverage_ratio": 0.0,
+    "max_oos_peek_count": null,
+    "reason": "PROVENANCE_SCHEMA_NOT_YET_MIGRATED",
+    "status_counts": {},
+    "table_present": false
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "schema_version": 1,
+  "trial_record_fields_required": [
+    "trial_id",
+    "parent_trial_id",
+    "research_session_id",
+    "actor_id",
+    "actor_type",
+    "model_name",
+    "model_version",
+    "prompt_hash",
+    "hypothesis_id",
+    "factor_ids",
+    "alpha_expression",
+    "canonical_expression",
+    "expression_hash",
+    "parameter_set",
+    "parameter_hash",
+    "dataset_versions",
+    "universe_version",
+    "cost_model_version",
+    "validation_policy_version",
+    "code_hash",
+    "started_at",
+    "completed_at",
+    "status",
+    "metrics",
+    "failure_reasons",
+    "artifact_paths",
+    "artifact_hashes",
+    "viewed_oos_boundaries",
+    "prev_hash",
+    "entry_hash"
+  ],
+  "verdict": "PARTIAL"
+}

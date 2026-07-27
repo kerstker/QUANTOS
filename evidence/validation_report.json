@@ -1,0 +1,328 @@
+{
+  "checks_manifest_sha256": "79d30b714a4e355f4513b6965c8409d2bf9103d019c014385d3e58c745e4acf8",
+  "commit": "3c990d67dd1c7d9c0b5f5ed9f22560dbf2c578ea",
+  "duration_ms": 259773,
+  "generated_at_ms": 1785127634498,
+  "overall_status": "FAIL",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "report_kind": "FAIL_CLOSED_VALIDATION",
+  "requested_stages": [
+    "all"
+  ],
+  "results": [
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_python_audit_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 119,
+      "returncode": 0,
+      "stage": "python-audit-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_npm_audit_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 128,
+      "returncode": 0,
+      "stage": "npm-audit-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_actions_audit_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 138,
+      "returncode": 0,
+      "stage": "actions-osv-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_container_audit_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 102,
+      "returncode": 0,
+      "stage": "container-trivy-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_container_reproducibility_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 97,
+      "returncode": 0,
+      "stage": "container-reproducibility-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_event_schema_catalog.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 257,
+      "returncode": 0,
+      "stage": "event-schema-catalog:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_service_import_graph.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 628,
+      "returncode": 0,
+      "stage": "service-import-graph:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\generate_supply_chain_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 254,
+      "returncode": 0,
+      "stage": "supply-chain-baseline:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\update_model_risk_history.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 229,
+      "returncode": 0,
+      "stage": "model-risk-history:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "-m",
+        "tools.crowding_metric_research",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 379,
+      "returncode": 1,
+      "stage": "crowding-calibration-evidence:current",
+      "status": "FAIL",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\assess_top_tier.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 1316,
+      "returncode": 0,
+      "stage": "top-tier-assessment-artifacts",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\check_backup_evidence.py",
+        "--check"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 82,
+      "returncode": 0,
+      "stage": "backup-evidence:current",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 349,
+      "returncode": 0,
+      "stage": "risk-recovery-drill:fresh",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 1443,
+      "returncode": 0,
+      "stage": "governance-scanner",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/contracts",
+        "tests/data",
+        "tests/features",
+        "tests/research",
+        "tests/alpha",
+        "tests/portfolio",
+        "tests/risk",
+        "tests/execution",
+        "tests/intelligence",
+        "tests/monitoring",
+        "tests/deployment",
+        "tests/governance",
+        "tests/reproducibility",
+        "services/console/api/tests/test_console_api.py",
+        "services/research/factor_engine/tests/test_model_compile.py",
+        "services/trading/dry_run_adapters/tests/test_dry_run.py",
+        "tests/integration/test_dry_run_all.py"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 202273,
+      "returncode": 1,
+      "stage": "pytest: all suites (contracts, governance, research, trading)",
+      "status": "FAIL",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/live",
+        "tests/trading",
+        "tests/tools"
+      ],
+      "cwd": "H:\\code\\QUANTOS",
+      "duration_ms": 35354,
+      "returncode": 0,
+      "stage": "pytest: live execution stack (live, trading, tools)",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Program Files\\nodejs\\npm.CMD",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
+      "duration_ms": 2955,
+      "returncode": 0,
+      "stage": "frontend: typecheck",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Program Files\\nodejs\\npm.CMD",
+        "run",
+        "eslint"
+      ],
+      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
+      "duration_ms": 4419,
+      "returncode": 0,
+      "stage": "frontend: eslint",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Program Files\\nodejs\\npm.CMD",
+        "test"
+      ],
+      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
+      "duration_ms": 4378,
+      "returncode": 0,
+      "stage": "frontend: tests",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    },
+    {
+      "command": [
+        "C:\\Program Files\\nodejs\\npm.CMD",
+        "run",
+        "build"
+      ],
+      "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
+      "duration_ms": 4860,
+      "returncode": 0,
+      "stage": "frontend: production build",
+      "status": "PASS",
+      "timeout_seconds": 1800.0
+    }
+  ],
+  "schema_version": 1,
+  "selected_stages": [
+    "python-audit-evidence:current",
+    "npm-audit-evidence:current",
+    "actions-osv-evidence:current",
+    "container-trivy-evidence:current",
+    "container-reproducibility-evidence:current",
+    "event-schema-catalog:current",
+    "service-import-graph:current",
+    "supply-chain-baseline:current",
+    "model-risk-history:current",
+    "crowding-calibration-evidence:current",
+    "top-tier-assessment-artifacts",
+    "backup-evidence:current",
+    "risk-recovery-drill:fresh",
+    "governance-scanner",
+    "pytest: all suites (contracts, governance, research, trading)",
+    "pytest: live execution stack (live, trading, tools)",
+    "frontend: typecheck",
+    "frontend: eslint",
+    "frontend: tests",
+    "frontend: production build"
+  ],
+  "selection_scope": "ALL",
+  "started_at_ms": 1785127374724,
+  "summary": {
+    "errored": 0,
+    "failed": 2,
+    "passed": 18,
+    "selected": 20,
+    "timed_out": 0
+  },
+  "timeout_seconds": 1800.0,
+  "validate_script_sha256": "cbd2781c075be540fa22eaa24ca9ab0a58323ec6f1a643a9cc61f3366a4c21b4"
+}

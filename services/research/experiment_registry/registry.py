@@ -21,6 +21,7 @@ from services.research.ports.persistence import (
     ExperimentStoreError,
     ExperimentStorePort,
 )
+from services.research.trial_provenance import TrialProvenance
 
 
 class ExperimentRegistry:
@@ -112,6 +113,28 @@ class ExperimentRegistry:
     def search_identity(self, search_id: str) -> dict[str, str]:
         """Return the verified immutable identity of a persistent search."""
         return self._store.search_identity(search_id)
+
+    # --- trial provenance (727 §7.1) ----------------------------------------
+
+    def record_trial_provenance(self, record: TrialProvenance) -> bool:
+        """Retain one immutable TrialRecord. False means already retained
+        (idempotent replay), NOT that the write was skipped silently."""
+        return self._store.record_trial_provenance(record)
+
+    def trial_provenance(self, trial_id: str) -> Optional[dict]:
+        return self._store.trial_provenance(trial_id)
+
+    def trial_provenance_for_config(self, config_hash: str) -> list[dict]:
+        return self._store.trial_provenance_for_config(config_hash)
+
+    def trial_provenance_chain_valid(self) -> bool:
+        return self._store.trial_provenance_chain_valid()
+
+    def trial_provenance_head(self) -> str:
+        return self._store.trial_provenance_head()
+
+    def oos_peek_totals(self) -> dict[str, int]:
+        return self._store.oos_peek_totals()
 
     def evaluation_binding(self, run_id: str) -> dict | None:
         """Return the verified search identity bound to an evaluation artifact."""

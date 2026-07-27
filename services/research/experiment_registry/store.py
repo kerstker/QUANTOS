@@ -12,7 +12,7 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import replace
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Iterable, Mapping, Optional, Sequence
 
 from quantos.contracts.events import Event, EventOutboxMessage
 
@@ -20,7 +20,11 @@ from services.research.ports.persistence import (
     EvaluationAuditIntent,
     ExperimentStoreError,
     ImmutableArtifactError,
+    TrialPersistenceError,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, keeps the store import-light
+    from services.research.trial_provenance import TrialProvenance
 
 
 _SCHEMA = """
@@ -88,11 +92,15 @@ _SEARCH_ACTIVITY_TABLES = (
     "search_attempt_heartbeats",
     "search_attempt_recoveries",
     "search_evaluations",
+    "trial_provenance",
 )
 _EVALUATION_AUDIT_TABLES = ("evaluation_audit_outbox", "evaluation_audit_dispatch")
 _SEARCH_TERMINAL_STATUSES = frozenset({"FAILED", "COMPLETED"})
 _SEARCH_RECOVERY_REASON = "STALE_STARTED_TIMEOUT"
-_SEARCH_SCHEMA_VERSION = 2
+# v3 adds trial_provenance (727 §7.1 TrialRecord). The migration replays the
+# whole _SEARCH_SCHEMA script and every statement is CREATE ... IF NOT EXISTS,
+# so a v2 store gains only the new table + triggers and keeps every existing row.
+_SEARCH_SCHEMA_VERSION = 3
 _SEARCH_APPEND_ONLY_TRIGGERS = {
     "search_attempt_events_no_update": ("search_attempt_events", "update"),
     "search_attempt_events_no_delete": ("search_attempt_events", "delete"),
@@ -112,6 +120,8 @@ _SEARCH_APPEND_ONLY_TRIGGERS = {
     "evaluation_audit_outbox_no_delete": ("evaluation_audit_outbox", "delete"),
     "evaluation_audit_dispatch_no_update": ("evaluation_audit_dispatch", "update"),
     "evaluation_audit_dispatch_no_delete": ("evaluation_audit_dispatch", "delete"),
+    "trial_provenance_no_update": ("trial_provenance", "update"),
+    "trial_provenance_no_delete": ("trial_provenance", "delete"),
 }
 
 _SEARCH_SCHEMA = """
@@ -249,6 +259,36 @@ BEGIN SELECT RAISE(ABORT, 'evaluation_audit_dispatch is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS evaluation_audit_dispatch_no_delete
 BEFORE DELETE ON evaluation_audit_dispatch
 BEGIN SELECT RAISE(ABORT, 'evaluation_audit_dispatch is append-only'); END;
+CREATE TABLE IF NOT EXISTS trial_provenance (
+    provenance_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT UNIQUE NOT NULL,
+    research_session_id TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at INTEGER NOT NULL CHECK(started_at >= 0),
+    completed_at INTEGER NOT NULL CHECK(completed_at >= started_at),
+    parent_trial_id TEXT NOT NULL,
+    hypothesis_id TEXT NOT NULL,
+    expression_hash TEXT NOT NULL,
+    parameter_hash TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    oos_peek_count INTEGER NOT NULL CHECK(oos_peek_count >= 0),
+    record_json TEXT NOT NULL,
+    prev_entry_hash TEXT NOT NULL,
+    entry_hash TEXT UNIQUE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trial_provenance_by_config
+ON trial_provenance(config_hash, provenance_seq);
+CREATE INDEX IF NOT EXISTS trial_provenance_by_session
+ON trial_provenance(research_session_id, provenance_seq);
+CREATE TRIGGER IF NOT EXISTS trial_provenance_no_update
+BEFORE UPDATE ON trial_provenance
+BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trial_provenance_no_delete
+BEFORE DELETE ON trial_provenance
+BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
 """
 
 
@@ -1167,6 +1207,178 @@ class SqliteExperimentStore:
             [(h, first_seen_ts) for h in config_hashes],
         )
         self._conn.commit()
+
+    # --- trial provenance (727 §7.1) ----------------------------------------
+
+    def _trial_provenance_rows(self) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT provenance_seq,trial_id,config_hash,record_json,"
+            " prev_entry_hash,entry_hash"
+            " FROM trial_provenance ORDER BY provenance_seq"
+        ).fetchall()
+
+    def record_trial_provenance(self, record: "TrialProvenance") -> bool:
+        """Append one immutable TrialRecord; return False if already retained.
+
+        The config_hash is ALSO admitted into `trials` in the SAME transaction.
+        A provenance row whose config never entered the trial population would
+        let a real attempt escape the DSR/PBO/FDR denominator (§7.2) — the two
+        writes must not be separable.
+        """
+        self._ensure_search_schema()
+        payload = record.canonical_payload()
+        record_json = json.dumps(
+            payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        )
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                "SELECT entry_hash FROM trial_provenance WHERE trial_id = ?",
+                (record.trial_id,),
+            ).fetchone()
+            if existing is not None:
+                self._conn.commit()
+                return False
+            head_row = self._conn.execute(
+                "SELECT entry_hash FROM trial_provenance"
+                " ORDER BY provenance_seq DESC LIMIT 1"
+            ).fetchone()
+            prev = "" if head_row is None else str(head_row["entry_hash"])
+            entry = record.entry_hash(prev)
+            self._conn.execute(
+                "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
+                (record.config_hash, record.started_at),
+            )
+            self._conn.execute(
+                "INSERT INTO trial_provenance("
+                " trial_id,research_session_id,config_hash,actor_id,actor_type,status,"
+                " started_at,completed_at,parent_trial_id,hypothesis_id,expression_hash,"
+                " parameter_hash,code_hash,oos_peek_count,record_json,prev_entry_hash,"
+                " entry_hash)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    record.trial_id,
+                    record.research_session_id,
+                    record.config_hash,
+                    record.actor_id,
+                    record.actor_type.value,
+                    record.status.value,
+                    record.started_at,
+                    record.completed_at,
+                    record.parent_trial_id,
+                    record.hypothesis_id,
+                    record.expression_hash,
+                    record.parameter_hash,
+                    record.code_hash,
+                    record.oos_peek_count,
+                    record_json,
+                    prev,
+                    entry,
+                ),
+            )
+            self._conn.commit()
+            return True
+        except sqlite3.DatabaseError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise TrialPersistenceError(
+                f"trial provenance could not be retained: {exc}"
+            ) from exc
+
+    def trial_provenance(self, trial_id: str) -> Optional[dict]:
+        self._require_search_schema()
+        row = self._conn.execute(
+            "SELECT provenance_seq,trial_id,config_hash,record_json,"
+            " prev_entry_hash,entry_hash FROM trial_provenance WHERE trial_id = ?",
+            (trial_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._decoded_provenance_row(row)
+
+    def trial_provenance_for_config(self, config_hash: str) -> list[dict]:
+        """Every ATTEMPT at this config. §7.2 counts attempts, `trials` counts
+        distinct configs — so this legitimately returns more than one row."""
+        self._require_search_schema()
+        return [
+            self._decoded_provenance_row(row)
+            for row in self._conn.execute(
+                "SELECT provenance_seq,trial_id,config_hash,record_json,"
+                " prev_entry_hash,entry_hash FROM trial_provenance"
+                " WHERE config_hash = ? ORDER BY provenance_seq",
+                (config_hash,),
+            )
+        ]
+
+    @staticmethod
+    def _decoded_provenance_row(row: sqlite3.Row) -> dict:
+        try:
+            record = json.loads(row["record_json"])
+        except Exception as exc:
+            raise ExperimentStoreError(
+                f"trial provenance {row['trial_id']} record is corrupt"
+            ) from exc
+        if not isinstance(record, dict):
+            raise ExperimentStoreError(
+                f"trial provenance {row['trial_id']} record is not an object"
+            )
+        return {
+            "provenance_seq": row["provenance_seq"],
+            "trial_id": row["trial_id"],
+            "config_hash": row["config_hash"],
+            "record": record,
+            "prev_entry_hash": row["prev_entry_hash"],
+            "entry_hash": row["entry_hash"],
+        }
+
+    def trial_provenance_chain_valid(self) -> bool:
+        """Recompute the whole provenance chain. Fail-closed: any corruption,
+        gap, reordering, or a config missing from `trials` returns False."""
+        try:
+            self._require_search_schema()
+            trials = {
+                str(row["config_hash"])
+                for row in self._conn.execute("SELECT config_hash FROM trials")
+            }
+            previous = ""
+            for row in self._trial_provenance_rows():
+                decoded = self._decoded_provenance_row(row)
+                if row["prev_entry_hash"] != previous:
+                    return False
+                if decoded["config_hash"] not in trials:
+                    return False
+                expected = _canonical_hash(
+                    {"entry": decoded["record"], "prev_hash": previous}
+                )
+                if row["entry_hash"] != expected:
+                    return False
+                previous = expected
+            return True
+        except Exception:
+            return False
+
+    def trial_provenance_head(self) -> str:
+        """Current chain head ("" when empty); the value an evidence artifact
+        pins so a later audit can prove no record was inserted retroactively."""
+        self._require_search_schema()
+        row = self._conn.execute(
+            "SELECT entry_hash FROM trial_provenance"
+            " ORDER BY provenance_seq DESC LIMIT 1"
+        ).fetchone()
+        return "" if row is None else str(row["entry_hash"])
+
+    def oos_peek_totals(self) -> dict[str, int]:
+        """Max distinct OOS boundaries any single attempt at each config had
+        already viewed. §0.4.7 forbids calling re-inspected OOS data "unseen";
+        this surfaces the number instead of leaving it unrecorded."""
+        self._require_search_schema()
+        return {
+            str(row["config_hash"]): int(row["peeks"])
+            for row in self._conn.execute(
+                "SELECT config_hash, MAX(oos_peek_count) AS peeks"
+                " FROM trial_provenance GROUP BY config_hash"
+            )
+        }
 
     def begin_search_attempt(
         self,

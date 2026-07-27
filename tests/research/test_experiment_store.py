@@ -305,13 +305,19 @@ def test_search_schema_migration_fault_rolls_back_partial_changes(
         dataset_version="dataset-v1",
         recorded_at=10,
     )
-    assert store._conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert (
+        store._conn.execute("PRAGMA user_version").fetchone()[0]
+        == experiment_store._SEARCH_SCHEMA_VERSION
+    )
     assert store.search_history_valid() is True
 
 
-def test_real_v1_search_schema_migrates_to_v2_without_rewriting_chains(
+def test_real_v1_search_schema_migrates_to_current_without_rewriting_chains(
     tmp_path,
 ):
+    """Pinned to the CONSTANT, not a literal: the assertion under test is
+    "migration lands on the current version and rewrites no chain", which must
+    keep holding across future schema bumps."""
     path = tmp_path / "schema-v1.db"
     _create_v1_search_store(path)
     store = SqliteExperimentStore(str(path), create=False)
@@ -319,7 +325,10 @@ def test_real_v1_search_schema_migrates_to_v2_without_rewriting_chains(
 
     store._ensure_search_schema()
 
-    assert store._conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert (
+        store._conn.execute("PRAGMA user_version").fetchone()[0]
+        == experiment_store._SEARCH_SCHEMA_VERSION
+    )
     assert _v1_chain_rows(store._conn) == before
     assert {
         row["name"]
@@ -328,7 +337,7 @@ def test_real_v1_search_schema_migrates_to_v2_without_rewriting_chains(
     assert store.search_history_valid()
 
 
-def test_v1_to_v2_migration_fault_is_atomic_and_preserves_existing_chains(
+def test_v1_migration_fault_is_atomic_and_preserves_existing_chains(
     tmp_path, monkeypatch
 ):
     path = tmp_path / "schema-v1-fault.db"
@@ -342,11 +351,11 @@ def test_v1_to_v2_migration_fault_is_atomic_and_preserves_existing_chains(
         )
     }
 
-    def fail_after_new_v2_ddl(stage: str) -> None:
+    def fail_mid_migration(stage: str) -> None:
         if stage == "statement:6":
-            raise RuntimeError("injected v1 to v2 migration failure")
+            raise RuntimeError("injected search-schema migration failure")
 
-    monkeypatch.setattr(store, "_migration_checkpoint", fail_after_new_v2_ddl)
+    monkeypatch.setattr(store, "_migration_checkpoint", fail_mid_migration)
     with pytest.raises(ExperimentStoreError, match="migration failed"):
         store._ensure_search_schema()
 
@@ -361,7 +370,10 @@ def test_v1_to_v2_migration_fault_is_atomic_and_preserves_existing_chains(
 
     monkeypatch.setattr(store, "_migration_checkpoint", lambda _stage: None)
     store._ensure_search_schema()
-    assert store._conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert (
+        store._conn.execute("PRAGMA user_version").fetchone()[0]
+        == experiment_store._SEARCH_SCHEMA_VERSION
+    )
     assert _v1_chain_rows(store._conn) == before_chains
     assert store.search_history_valid()
 

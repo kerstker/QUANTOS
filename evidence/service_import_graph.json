@@ -126,7 +126,7 @@
     {
       "references": [
         {
-          "line": 333,
+          "line": 334,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
         }
@@ -148,22 +148,22 @@
     {
       "references": [
         {
-          "line": 24,
+          "line": 26,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 28,
+          "line": 30,
           "module": "services.monitoring.event_projection",
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 10,
+          "line": 11,
           "module": "services.monitoring.audit_store",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.monitoring.health",
           "path": "services/console/risk_console.py"
         }
@@ -174,7 +174,7 @@
     {
       "references": [
         {
-          "line": 466,
+          "line": 467,
           "module": "services.portfolio.optimizer",
           "path": "services/console/api/main.py"
         }
@@ -296,28 +296,23 @@
     {
       "references": [
         {
-          "line": 657,
+          "line": 658,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/main.py"
         },
         {
-          "line": 12,
+          "line": 13,
           "module": "services.risk.pre_trade.checks",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 13,
+          "line": 14,
           "module": "services.risk.pre_trade.kill_switch",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 14,
-          "module": "services.risk.research_risk.domain.gate",
-          "path": "services/console/risk_console.py"
-        },
-        {
           "line": 15,
-          "module": "services.risk.research_risk.domain.models",
+          "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/console/risk_console.py"
         }
       ],
@@ -327,7 +322,7 @@
     {
       "references": [
         {
-          "line": 91,
+          "line": 92,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/main.py"
         },
@@ -981,7 +976,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "caa0d8da75efd0a4449ffb76db7f387d259897072ae30db0fa382c53824154f5",
+  "graph_sha256": "7018edc960ad9f0b5bbbd2e2da38e0e8b3c15f99a5ed48b357b9d663f77d2717",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 16,
   "nodes": [
@@ -1015,7 +1010,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 328,
+  "source_file_count": 331,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
