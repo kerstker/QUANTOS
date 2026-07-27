@@ -9,8 +9,9 @@ Honest boundary(诚实边界):
 - 无网络、无券商 SDK、不触碰凭证与五个安全旗标;L2_DRY_RUN_ONLY 不变。
 
 K1 = command_envelope + idempotency(持久命令日志)+ command_bus;
-K2 = leader_lease(单实例 Leader + fencing token + 任务租约)。
-scheduler / workflow_engine 等见设计文档 K 系列切片计划,本包尚未提供。
+K2 = leader_lease(单实例 Leader + fencing token + 任务租约);
+K3 = scheduler(持久化确定性调度器:leader 门控 + 幂等补跑 + 错过合并 + DLQ)。
+workflow_engine / recovery 等见设计文档 K 系列切片计划,本包尚未提供。
 """
 from __future__ import annotations
 
@@ -37,6 +38,14 @@ from services.orchestration.leader_lease import (
     LeaderLeaseFencedError,
     SqliteLeaderLeaseStore,
 )
+from services.orchestration.scheduler import (
+    ScheduledTask,
+    Scheduler,
+    SchedulerConflictError,
+    SchedulerError,
+    SchedulerRun,
+    SqliteSchedulerStore,
+)
 
 __all__ = [
     "CommandBus",
@@ -51,7 +60,13 @@ __all__ = [
     "LeaderLeaseBusyError",
     "LeaderLeaseError",
     "LeaderLeaseFencedError",
+    "ScheduledTask",
+    "Scheduler",
+    "SchedulerConflictError",
+    "SchedulerError",
+    "SchedulerRun",
     "SqliteCommandLog",
     "SqliteLeaderLeaseStore",
+    "SqliteSchedulerStore",
     "StateVersionConflictError",
 ]

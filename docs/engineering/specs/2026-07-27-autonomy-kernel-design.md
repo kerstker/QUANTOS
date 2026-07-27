@@ -3,9 +3,10 @@
 - 日期:2026-07-27
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §2.5(自治内核)、§4.2
   (CommandEnvelope)、§0.4.8(未知订单/在飞状态绝不盲目重试)
-- 状态:**K1、K2 已落地**(K1:command_envelope + idempotency 持久命令日志 +
-  command_bus;K2:leader_lease 单实例 Leader + fencing token + 任务租约,
-  `services/orchestration/`,41 测试)。K3–K4 为后续切片,见 §3。
+- 状态:**K1–K3 已落地**(K1:command_envelope + idempotency 持久命令日志 +
+  command_bus;K2:leader_lease 单实例 Leader + fencing token + 任务租约;
+  K3:scheduler 持久化确定性调度器,`services/orchestration/`,65 测试)。
+  K4 为后续切片,见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import。
 
@@ -51,7 +52,7 @@
 |---|---|---|
 | **K1** | `command_envelope` + `idempotency`(SqliteCommandLog)+ `command_bus` | **本提交** |
 | K2 | `leader_lease`:单节点领导租约(多实例防双活;SQLite CAS,确定性时钟注入) | **已落地(2026-07-27)** |
-| K3 | `scheduler`:持久化调度器,missed-run 补跑语义,与 leader_lease 联动 | 未做 |
+| K3 | `scheduler`:持久化调度器,missed-run 补跑语义,与 leader_lease 联动 | **已落地(2026-07-27)** |
 | K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | 未做 |
 
 切分原则:每片独立可测、独立入库、不依赖后片;K1 不预留「将来一定这样」的
@@ -161,3 +162,52 @@ CommandBus 执行链上的崩溃窗口与裁决:
 - 确定性核心:无墙钟、无随机;所有时间戳为调用方传入的非负整数。
 - CommandBus 是编排原语,**不授予**任何新权限:handler 能做什么仍由调用方
   既有边界决定(research_runner 白名单、live 人工 mandate 等,一字未动)。
+
+## 9. K3 实施记录(scheduler,2026-07-27)
+
+`services/orchestration/scheduler.py` — `SqliteSchedulerStore`(双链:
+`scheduler_tasks` 重链链 + `scheduler_runs` 追加链,后者 UPDATE/DELETE 触发器
+双禁)+ `Scheduler`(复用 K1 CommandBus 与 K2 LeaderLeaseStore,不起线程,
+兑现节奏由调用方驱动 `run_once`)。三 store 可共库(不同表),崩溃重启恢复
+已测(tmp_path 共库重开,补跑继续)。
+
+语义裁定:
+
+1. **只有 leader 兑现**:run_once 先 acquire 租约,异 owner 持有中 → 每个 due
+   task 记 `SKIPPED_NOT_LEADER`(带持有者 fencing_token 与 `held_by:` 明细,
+   跳过也进审计);每个 task 兑现前再过 `require_owner` fencing 闸门,轮中
+   失约即记 SKIPPED 并中止本轮。
+2. **按计划时刻推进,不漂移**:INTERVAL 完成后 `next_due = slot_ms +
+   interval_ms`(slot 是计划时刻,不是 now)——调度延迟不累积成周期漂移,
+   测试钉死精确值。
+3. **错过补跑合并(coalesce)**:落后超过一个周期(`now - slot > interval`)
+   → 被跳过的旧槽位各追加一条 COALESCED run(带 `coalesced into slot N`
+   明细,错过哪些诚实留痕,绝不静默),只兑现最新完整周期槽位;ONE_SHOT
+   不合并。落后 3 槽位 → 2 COALESCED + 1 COMPLETED,executor 恰跑 1 次。
+4. **幂等补跑 = K1 重放**:command_id/idempotency_key =
+   `sched:{task_id}:{slot}:{attempts}`。**显式偏差登记**:任务书规格写的是
+   `{task_id}:{slot'}`,不含 attempts——但 K1 规定 FAILED 终态不换 key 不重跑,
+   不含 attempts 的 key 会让失败退避重试永远撞 CommandStateError,重试机制
+   名存实亡。编入 attempts 后每次重试是逻辑上的新命令,K1「每条命令至多
+   执行一次」不变;同 (task, 槽位, attempts) 的崩溃重跑仍是零副作用重放
+   (executor 计数恒 1,测试钉死)。
+5. **确定性退避 + DLQ**:FAILED → attempts+1;耗尽(max_attempts)→ dead=1 +
+   追加 DLQ run(`attempts exhausted (n>=m)` 明细),`due_tasks` 永不再含它,
+   `dead_tasks()` 只上面、绝不自动重试;否则 `next_due = now + min(base *
+   2**attempts, cap)`(attempts 为递增后的值——递增前/后是规格模糊点,取
+   递增后,首次失败退避 2·base;base/cap 为 store 构造参数,默认
+   60_000/3_600_000)。
+6. **record_run 单事务原子**:run 追加与 task 迁移同事务提交——崩溃窗口只
+   可能整段缺失,重放后恰好补回一条 run;不存在半截记录(这正是「重放后
+   两条 COMPLETED run」的规格预期被修正为「恰一条」的原因,测试按修正后
+   语义钉死)。
+7. **未知结果大声抛出,已知失败正常记账**:CommandBusError(in-flight 冲突
+   = 结果未知)从 run_once 原样抛出、不记 FAILED——命令留在 RECEIVED 由
+   in_flight() 上面,人工裁决(镜像 §0.4.8);CommandStateError(FAILED 重放
+   = 结果已知为失败,崩溃在 command-fail 与 record_run 之间的收敛路径)按
+   任务失败记账,attempts 正常推进。
+8. **单任务失败不拖垮整轮**:FAILED 记账后 continue;due 快照序
+   (next_due_ms, task_id) 确定性。
+9. **actor 调用方传入**:调度器不伪造身份(非人 actor 是常态,测试用
+   SYSTEM);executor 与 CommandBus handler 同约定(result 或 (result, events),
+   事件走 K1 publish_once 因果链)。
