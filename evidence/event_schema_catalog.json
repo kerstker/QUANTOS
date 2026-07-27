@@ -1,10 +1,11 @@
 {
   "canonical_latest_timestamp_unit": "unix_epoch_microseconds",
-  "event_type_count": 12,
+  "event_type_count": 13,
   "implementation_sha256": {
-    "quantos/contracts/event_schemas.py": "8169a14841c7f3737af8952f40e54bd2de38de1df7061e841f66498f4b77497b",
-    "quantos/contracts/events.py": "fa6854b2a2f6847dcfc2bfd8b27853e1f7b8af52133aa82324c9e3aacb99dd5f",
-    "scripts/generate_event_schema_catalog.py": "9c65d39f206858e6be0a36b8c105713f93695015670344a0790e991707d5e488",
+    "live/execution/shadow_store.py": "11a3f151397f741f5e1454ba71eb97a05d56eedcdbcb88a0fb406c16f6f03a13",
+    "quantos/contracts/event_schemas.py": "09bab6f0f9415bbbd63abe202dda0a9080a3b50432a18f2ab97e4759c9581a8d",
+    "quantos/contracts/events.py": "1b5580269e869e4b0e6852e7751a993c755f148972398e0a034a44d5156c3cbb",
+    "scripts/generate_event_schema_catalog.py": "ed508aaeffa4f481799d41a4cd22ab8af9da482b5e5927bd56ef70430af6932a",
     "services/alpha/events.py": "f05cc2ebb8beb2d58d2f46d6feff1cc393f14516538f90e70e06ed7a80d914e3",
     "services/alpha/maintenance_events.py": "0bf910d1afed82b1886f71b956db6a513b1a485031e2145a3bafc6022d1a4289",
     "services/console/api/system_views.py": "e00a6a06424b2e3c3356dacc786c75e9b3bc0a430745bb525836fcfb89f21601",
@@ -16,7 +17,7 @@
     "services/deployment/store.py": "50b0584ed1998f7b90fa2062d5691da3a50e7d1fbc537073e5dc74b7929f5553",
     "services/execution/dry_run_store.py": "9cf5f3e86af32358a4e2c5337470288e305b9d4c397e11907ec8939921fade7c",
     "services/execution/events.py": "3bc09f0d0cae0891a9c18e20e2dd710a1b1c168c56e99d373115f6afe9f2f8b8",
-    "services/monitoring/domain_event_runtime.py": "4ab60f9597296ab8bc38e6e932f37e8f6ed0877e1c99e6b5298d20ffab6bd582",
+    "services/monitoring/domain_event_runtime.py": "ad0d0d4228cd29547ebaba1f41f2c7966d4db5dbeada5d1dd5c8082d70457f90",
     "services/monitoring/event_health.py": "7daec970a46a77c962f8fb139fd55b06fa49c912f1196b8e299b6e0ed103156b",
     "services/risk/pre_trade/events.py": "18299c0aca2deae0d1b2cd83821325d5c92ea290fca6c25126fd1a1013412fb4",
     "services/risk/pre_trade/kill_switch_store.py": "436d84b26adcec00837d01c34c51a1f6a5b9727d1e731a1630a339d4e3cf6889",
@@ -28,6 +29,7 @@
     "data.quality.admission.decided": "1.0.0",
     "execution.dry_run.completed": "1.1.0",
     "execution.dry_run.started": "1.0.0",
+    "execution.shadow.observed": "1.0.0",
     "governance.deployment.recorded": "1.1.0",
     "research.alpha.maintenance.transition": "1.0.0",
     "research.alpha.promoted": "1.1.0",
@@ -61,7 +63,7 @@
     }
   ],
   "mode": "VERSIONED_CANONICAL_EVENT_SCHEMA_CATALOG",
-  "schema_definition_count": 17,
+  "schema_definition_count": 18,
   "schema_version": 1,
   "schemas": {
     "data.market.refresh.recorded": {
@@ -446,6 +448,134 @@
           "payload_schema_sha256": "cfe99421e94cf73a8e03949ca9510cce82e1bc02c91b10e636e65b379928e252",
           "sources": [
             "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "execution",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "execution.shadow.observed": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "description": "SHADOW \u89c2\u6d4b\u7684\u8131\u654f\u6458\u8981(727 \u00a712.2,Phase 7 S2)\u2014\u2014\u53ea\u542b\u6807\u91cf\u7ed3\u8bba,\n\u4e0d\u542b\u76d8\u53e3\u7c3f/walk \u660e\u7ec6(\u5b8c\u6574\u89c2\u6d4b\u5728 shadow_store \u884c payload_json)\u3002\u65b0\u4e8b\u4ef6\u7c7b\u578b,\ntimestamp \u4e3a Unix epoch \u5fae\u79d2(\u73b0\u884c\u7ea6\u5b9a,catalog \u9489\u6b7b latest \u4e00\u5f8b \u00b5s)\u3002",
+            "properties": {
+              "as_of_ms": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of Ms"
+              },
+              "book_age_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book Age Ms"
+              },
+              "decision_price": {
+                "exclusiveMinimum": 0,
+                "title": "Decision Price",
+                "type": "number"
+              },
+              "executable_vwap": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Executable Vwap"
+              },
+              "instrument_id": {
+                "minLength": 1,
+                "title": "Instrument Id",
+                "type": "string"
+              },
+              "observation_id": {
+                "pattern": "^shd_[0-9a-f]{16}$",
+                "title": "Observation Id",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "SHADOW",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "quantity": {
+                "exclusiveMinimum": 0,
+                "title": "Quantity",
+                "type": "number"
+              },
+              "run_label": {
+                "minLength": 1,
+                "title": "Run Label",
+                "type": "string"
+              },
+              "side": {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ],
+                "title": "Side",
+                "type": "string"
+              },
+              "slippage_bps_vs_decision": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Slippage Bps Vs Decision"
+              }
+            },
+            "required": [
+              "decision_price",
+              "instrument_id",
+              "observation_id",
+              "provenance",
+              "quantity",
+              "run_label",
+              "side"
+            ],
+            "title": "_ShadowObservedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "385111621141dc6d2118dbc606bf171886df6d454554af18cc141614d5ae0378",
+          "sources": [
+            "live.execution.shadow_store"
           ],
           "timestamp_unit": "unix_epoch_microseconds",
           "version": "1.0.0"
@@ -1314,6 +1444,6 @@
       ]
     }
   },
-  "schemas_sha256": "6ed55f1c0963e78955a7f4d55cd9f361bc9f8e09bf1d9f8123b3f80c8b29bab5",
+  "schemas_sha256": "2f19450c065c0d0f92aeca5075babc32d0807f35038202206671a8573a7100ce",
   "verdict": "PASS"
 }

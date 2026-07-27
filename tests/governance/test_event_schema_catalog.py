@@ -25,8 +25,8 @@ def test_catalog_is_deterministic_and_latest_versions_use_microseconds():
 
     assert first == second
     assert first["verdict"] == "PASS"
-    assert first["event_type_count"] == 12
-    assert first["schema_definition_count"] == 17
+    assert first["event_type_count"] == 13
+    assert first["schema_definition_count"] == 18
     assert first["canonical_latest_timestamp_unit"] == (
         EVENT_TIMESTAMP_UNIT_MICROSECONDS
     )
@@ -80,6 +80,7 @@ def test_catalog_binds_all_timestamp_producers_and_normalizer():
     assert {
         "quantos/contracts/events.py",
         "quantos/contracts/event_schemas.py",
+        "live/execution/shadow_store.py",
         "services/alpha/events.py",
         "services/alpha/maintenance_events.py",
         "services/console/api/system_views.py",

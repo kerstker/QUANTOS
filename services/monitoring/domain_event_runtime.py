@@ -531,6 +531,41 @@ def dispatch_data_quality_admission_event_outbox(
     }
 
 
+def dispatch_shadow_event_outbox(
+    store,
+    event_bus: DurableEventBus,
+    *,
+    at_ms: int,
+    limit: int = 1_000,
+) -> dict:
+    """Idempotently move shadow-observation events into the shared log.
+
+    Same dependency-injection signature as the six existing dispatchers (the
+    owner store instance is passed in): services/ never imports live/, and the
+    shadow owner store lives at live/execution/shadow_store.py.
+    """
+    pending = store.pending_event_outbox(limit=limit)
+    dispatched = 0
+    for record in pending:
+        event = record["event"]
+        CANONICAL_EVENT_SCHEMAS.validate(event)
+        event_bus.publish_once(
+            event,
+            correlation_id=record["correlation_id"],
+            causation_id=record["causation_id"],
+        )
+        store.mark_event_dispatched(
+            record["outbox_id"],
+            dispatched_at=at_ms,
+            event_repro_hash=event.reproducibility_hash,
+        )
+        dispatched += 1
+    return {
+        "dispatched": dispatched,
+        "pending": len(store.pending_event_outbox(limit=limit)),
+    }
+
+
 __all__ = [
     "DOMAIN_EVENT_DB",
     "DOMAIN_EVENT_PROJECTION_CONSUMER",
@@ -543,6 +578,7 @@ __all__ = [
     "dispatch_kill_switch_event_outbox",
     "dispatch_maintenance_event_outbox",
     "dispatch_refresh_event_outbox",
+    "dispatch_shadow_event_outbox",
     "open_domain_event_bus",
     "project_pending_domain_events",
     "read_domain_event_bus_health",

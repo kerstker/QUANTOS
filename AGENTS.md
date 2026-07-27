@@ -621,9 +621,10 @@ Real, tested backend engines (`*_TESTED` in the audit):
   的 armed-preview 固定 argv 携带,绝不提交,治理钉死);只读首验 `tools/mexc_readonly_smoke.py`(人工执行,未跑前
   readiness 诚实报 UNVERIFIED_MAINNET_RESPONSE);ops API 现货 dashboard 分支 +
   `docs/runbooks/mexc-live-runbook.md` 首单 checklist。永不实现提现/划转(治理扫描机器禁止)。
-- `live/execution/shadow.py` + 三适配器 `depth()` — **SHADOW Phase 7 S1(727 §12.2,2026-07-27 落地,
-  S2/S3 计划中)**:设计 `docs/engineering/specs/2026-07-27-shadow-phase7-design.md`。Paper→Micro-Live
-  之间全缺的 SHADOW 层的第一片:① 订单簿深度端点——`BookLevel`/`OrderBookSnapshot` 契约
+- `live/execution/shadow.py` + 三适配器 `depth()` + `live/execution/shadow_store.py` —
+  **SHADOW Phase 7 S1+S2(727 §12.2,2026-07-27 落地,S3 计划中)**:设计
+  `docs/engineering/specs/2026-07-27-shadow-phase7-design.md`。Paper→Micro-Live
+  之间全缺的 SHADOW 层的第一、二片:① 订单簿深度端点——`BookLevel`/`OrderBookSnapshot` 契约
   (fail-closed 校验,as_of_ms 缺失诚实 None,刻意不拒瞬时交叉簿)+ `live/exchange/depth.py`
   共享解析/钳档(向上取档绝不少给)+ 三适配器 `depth(instrument_id, *, limit)`(MEXC 档 5–1000
   无时间戳 / Binance 档 5–1000 取 E→T / Bybit linear 档 1/50/200/1000 取 result.ts,全部
@@ -635,9 +636,18 @@ Real, tested backend engines (`*_TESTED` in the audit):
   spread/slippage 复用 `tca.slippage_bps`;expected_impact 鸭子类型双给才算,UNCALIBRATED
   输入绝不编造;paper_fill_price=decision_price 如实记录当前 paper 语义——**SHADOW 观测正是
   量化「paper fill=决策价」缺口的机器,不修复它**;provenance 恒 "SHADOW" §18.2 构造期校验)。
+  ③ **S2 持久化+事件化**:`SqliteShadowStore`(克隆 refresh_history 结构,全新库无迁移分支——
+  观测行与其 canonical 事件**同一事务**提交;observation_id 内容派生 `"shd_"+sha256[:16]`
+  幂等、run_label 是批次元数据不进身份;观测/outbox/dispatch 三哈希链 + append-only 触发器;
+  create=False 缺库即拒 + 打开即全链校验,篡改拒开拒续写)+ `SHADOW_OBSERVED` 事件 schema
+  (`execution.shadow.observed` v1.0,**µs**,domain=execution,payload 是**脱敏摘要**——
+  结论标量,不含盘口簿/walk 明细;catalog 12→13 types/17→18 defs)+
+  `dispatch_shadow_event_outbox`(**与六店同款依赖注入签名,无偏差**)+ drain 第 8 注册源
+  (`data/cache/shadow_observations.db`;治理测试对 drain 的 `"live."` 禁令**精确开洞**:
+  唯一允许引用=纯 sqlite 的 shadow_store,其余仍全面禁止)。
   venue 裁定:Phase 7 驱动器主线 = Binance testnet,MEXC 现货 shadow 化留 Phase 8 的 §13
   单列任务(depth 端点三家已对称落地备 §13 阶段 A)。测试 tests/live/test_shadow.py(27)
-  + 三适配器各 6。S2(shadow_store 哈希链 + SHADOW 事件 + 第七 outbox)/ S3(tools/
+  + 三适配器各 6 + tests/live/test_shadow_store.py(17)。S3(tools/
   shadow_track 驱动器 + shadow_ready 全条件门 + 证据)计划中。
 - `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (45+ GET
   endpoints, console 8400 + live_ops 8440), now **mostly REAL** (distinct provenance markers; fail-closed to

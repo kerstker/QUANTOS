@@ -6,11 +6,12 @@
   盘口深度/Spread/Slippage/Latency/Expected impact)、§3.2(DeploymentState:
   PAPER → SHADOW → MICRO_LIVE)、§18.2(provenance 标签 SHADOW)、§13(MEXC
   BTC 现货接入顺序)。
-- 状态:**S1 已落地**——三家 venue 适配器的订单簿深度端点(`depth()`,fail-soft)
+- 状态:**S1+S2 已落地**——S1:三家 venue 适配器的订单簿深度端点(`depth()`,fail-soft)
   + SHADOW 比较纯核 `live/execution/shadow.py`(727 §12.2 八项比较的机器落地);
-  S2(shadow_store 哈希链 + SHADOW 事件 schema + 第七 outbox)/ S3(tools/
-  驱动器 + shadow_ready 全条件门 + 证据)**计划中,未做**。727 Phase 7 验收对照
-  见 §6。
+  S2(本提交):`live/execution/shadow_store.py`(append-only 哈希链观测账本 +
+  SHADOW_OBSERVED 事件 schema + transactional outbox 同事务)+ 第七 dispatch +
+  drain 第 8 源;S3(tools/ 驱动器 + shadow_ready 全条件门 + 证据)**计划中,未做**。
+  727 Phase 7 验收对照见 §6。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何下单路径
   (深度端点是只读公共端点,不签名;SHADOW 结构性不发单——727 §12.2「但不发送
   订单」由构造保证,不是靠纪律),不触碰凭证;网络 import 只在三个 venue 适配器
@@ -90,7 +91,7 @@
 | 切片 | 内容 | 状态 |
 |---|---|---|
 | **S1** | `live/contracts.py`:`BookLevel` + `OrderBookSnapshot`(fail-closed 校验,as_of_ms 缺失诚实 None,刻意不拒瞬时交叉簿);`live/exchange/depth.py` 共享解析/钳档;三适配器 `depth()`(MEXC `/api/v3/depth` 档 5–1000、Binance `/fapi/v1/depth` 档 5–1000 取 `E`→`T`、Bybit `/v5/market/orderbook` linear 档 1/50/200/1000 取 `result.ts`,全 fail-soft);`base.py` 可选能力惯例文档化;`live/execution/shadow.py` 纯核(ShadowLeg/WalkBookResult/walk_the_book/ShadowObservation/observe_leg/observe_batch) | **本提交**(适配器 6+6+6 测试 + shadow 27 测试) |
-| **S2** | `live/execution/shadow_store.py`:append-only SQLite 哈希链观测账本(与 maintenance_store/hypothesis_store 同款开库语义);SHADOW_OBSERVATION 事件 schema 进 `quantos/contracts/event_schemas.py` + 目录证据;第七 transactional outbox(观测落账与其 canonical 事件同提交,与既有六个 outbox 同法);JSON 只作原子兼容镜像 | 计划中 |
+| **S2** | `live/execution/shadow_store.py`:append-only SQLite 哈希链观测账本(观测行与其 canonical 事件**同一事务**提交,克隆 refresh_history 结构);SHADOW_OBSERVED 事件 schema(v1.0,µs,脱敏摘要 payload)进 `quantos/contracts/event_schemas.py` + catalog 证据(12→13 types / 17→18 defs);第七 dispatch(`dispatch_shadow_event_outbox`,与六店同款依赖注入签名)+ drain 第 8 注册源 | **本提交**(17 store/dispatch/drain 测试 + 治理/schema 测试更新) |
 | **S3** | `tools/shadow_track.py` 驱动器(Binance testnet:权重 → ShadowLeg 序列 → 逐币 `depth()` 实测 latency → observe_batch → 经 S2 落账);`shadow_ready` 全条件门(预注册观测窗口 + 覆盖全部目标腿 + 无 BOOK_UNAVAILABLE/STALE 空洞 + slippage/impact 统计完整,全过才 READY_FOR_SHADOW 建议——只生成建议,不开放权限,§22 同款纪律);`evidence/shadow_track.json` + console 只读端点(provenance REAL/SHADOW 分层标注) | 计划中 |
 
 切分原则:每片独立可测、独立入库、不依赖后片——S1 的深度端点与比较核无
@@ -139,8 +140,62 @@
 - `observe_batch`:输出序 = 输入序;books 缺标的 → 该腿 BOOK_UNAVAILABLE
   (per-leg fail-closed 不拖垮整批);latencies_ms 缺标的 → ValueError(latency
   是承重字段,宁可整批不开跑);adv 按标的键取,缺失 → 该腿 impact None。
-- 测试 `tests/live/test_shadow.py`(25)+ 三适配器各 6 个 depth 测试(假
+- 测试 `tests/live/test_shadow.py`(27)+ 三适配器各 6 个 depth 测试(假
   transport,零真网络)。
+
+### 4.4 S2 实施记录(2026-07-27,本提交)
+
+- **包位置裁定(落地无偏差)**:S2 计划曾预留「dispatch 若 import owner store 模块
+  则 shadow dispatch 需放别处」的偏差备案——细读六个现有 dispatch 后确认它们
+  **本就全部依赖注入**(store 实例作参数,`services/monitoring/
+  domain_event_runtime.py` 不 import 任何 owner store 模块),故
+  `dispatch_shadow_event_outbox` 与六店签名逐位同构,直接放进同一文件,
+  无偏差可登记。store 本体放 `live/execution/shadow_store.py`(消费
+  ShadowObservation;services/ 永不 import live/,live 侧 store 先例
+  position_ledger.py)。
+- **store 结构(克隆 `services/data/refresh_history.py`,全新库无 legacy
+  迁移分支)**:表 `shadow_observations`(obs_seq 自增主键 / observation_id
+  内容派生 `"shd_"+payload_sha256[:16]` UNIQUE / run_label / payload_json
+  全字段 canonical / payload_sha256 / provenance CHECK='SHADOW' / as_of_ms
+  可空 / recorded_at_ms / prev_hash / record_hash)+ `shadow_event_outbox`
+  (obs_seq UNIQUE FK / event_id UNIQUE / event_json / correlation_id=
+  run_label / causation_id="" / event_repro_hash / 双哈希链)+
+  `shadow_event_dispatch`(确认链);三表全部 no-update/no-delete
+  触发器。**观测行与其 canonical 事件同一 BEGIN IMMEDIATE 事务提交**;
+  create=False 缺库即拒(ro&immutable 预检,不产生 -wal 副作用)+ 打开即
+  全链校验;append 前先全链校验(篡改存量即拒续写)。
+- **幂等与身份**:`observation_id` 由 payload 内容派生——同 id 同 payload →
+  (id, False) 不产生新行/新事件;同 id 不同 payload → ShadowStoreError
+  (按构造不可达,纵深防御分支,测试经 stub 钉死)。`run_label` 是批次元数据
+  **不进身份**(同一观测跨批次重放仍是同一观测,与 PaperRealtimeStore 剔除
+  generated_at 同款裁定)。
+- **事件 schema(SHADOW_OBSERVED = `execution.shadow.observed`,v1.0.0)**:
+  domain=execution,source=`live.execution.shadow_store`,criticality C2,
+  timestamp **µs**(新类型现行约定,catalog 机器钉死 latest 一律 µs;
+  `event_timestamp_from_milliseconds(recorded_at_ms)`)。payload 是**脱敏
+  摘要**:observation_id/run_label/instrument_id/side/quantity/decision_price/
+  executable_vwap/slippage_bps_vs_decision/book_age_ms/as_of_ms/provenance
+  ——**不含盘口簿、不含 walk 明细**(完整观测在 store 行 payload_json;
+  与 refresh 事件不含源错误详情同款纪律)。strict payload:`observation_id`
+  钉 `^shd_[0-9a-f]{16}$`,provenance 钉 Literal["SHADOW"]。
+- **drain 接线与「第七」计数诚实注**:`tools/domain_event_outbox_drain.py`
+  新增第 8 个注册源 `shadow`(`data/cache/shadow_observations.db`,
+  create=False,失败脱敏不堵其他源)——S2 条目的「第七 outbox」是计划语言;
+  落地时 data_quality_admission 已先于本切片成为 drain 第 7 源,故 shadow 实为
+  **第 8 个注册源**(事件 outbox 机制本身排第 7 套)。治理测试
+  `test_unified_outbox_recovery_has_eight_sources_...` 同步更新,并对 drain 的
+  `"live."` 禁令做**精确开洞**(唯一允许引用 = 纯 sqlite 持久化的
+  `live.execution.shadow_store` import;其余 live. 引用仍全面禁止,开洞由
+  测试钉死而非删除规则)。
+- **catalog 变化**:13 types / 18 definitions;
+  `IMPLEMENTATION_PATHS` + `live/execution/shadow_store.py`(它是 canonical
+  事件生产者);`evidence/event_schema_catalog.json` 已重生成,
+  `tests/governance/test_event_schema_catalog.py` 计数与实现集合同步。
+- **测试**:`tests/live/test_shadow_store.py`(17:打开语义/幂等/冲突/链/
+  两类篡改拒开拒续/provenance CHECK/过滤查询/同事务事件形状(µs+脱敏)/
+  schema 拒绝畸形 payload/mark 语义/重开持久化/publish-before-ack 恢复/
+  真 sqlite drain→bus→projection e2e)+ 既有治理/drain/schema 测试更新
+  (全绿)。
 
 ## 5. 非目标(本切片刻意不做)
 
@@ -155,7 +210,9 @@
    只覆盖 tools/ 抓取器,适配器 depth 方法是 venue 适配器能力,无需进白名单)。
 4. **不修复「paper fill = 决策价」语义**。SHADOW 观测量化这个缺口;改 paper
    语义是独立的、需要预注册评审的论文级决策。
-5. **S2/S3 的账本/事件/驱动器/console 一律不在本切片**。
+5. **S3 的驱动器/console 一律不在已落地切片**(S1 的比较核、S2 的账本/事件已落地;
+   S3 的 tools/shadow_track 驱动器 + shadow_ready 门 + 证据/console 是唯
+   一剩余切片)。
 
 ## 6. 727 Phase 7(§12.2)验收对照表
 
@@ -169,5 +226,5 @@
 | Latency | ✓(S1 字段)/ 实测待 S3 | `latency_ms` 调用方注入;驱动器打点归 S3 |
 | Expected impact | ✓(S1,条件计算) | `expected_impact_bps`(impact_model + adv 双给才算,UNKNOWN 绝不编造) |
 | SHADOW provenance 标签(§18.2) | ✓ | `provenance="SHADOW"` 构造期 fail-closed 校验 |
-| 观测持久化 + 事件链 | S2 | shadow_store 哈希链 + SHADOW 事件 + 第七 outbox(计划中) |
+| 观测持久化 + 事件链 | ✓(S2) | shadow_store 三链(观测/outbox/dispatch)+ SHADOW_OBSERVED schema(µs,脱敏摘要)+ 第七 dispatch + drain 第 8 源 |
 | shadow_ready 全条件门 + 证据 | S3 | tools/shadow_track.py + shadow_ready 门 + evidence(计划中) |
