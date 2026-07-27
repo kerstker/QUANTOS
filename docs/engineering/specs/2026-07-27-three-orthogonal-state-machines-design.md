@@ -2,7 +2,9 @@
 
 - 日期：2026-07-27
 - 依据：[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §3（三个正交状态机）、§11（生命周期控制器）
-- 状态：**C1（核心机器 + 测试）与 C2（双写持久化）已落地**，C3/C4 待做。落地分 4 个独立提交，见 §6；C1/C2 实施记录见 §7.1/§7.2。
+- 状态：**C1（核心机器 + 测试）、C2（双写持久化）与 C3（health 机器接入
+  维护链路）已落地**,C4（console 三维展示）待做。落地分 4 个独立提交,
+  见 §6;实施记录见 §7.1/§7.2/§7.3（C3 含行为变化评审清单）。
 - readiness：L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标，不新增任何真实下单路径。
 - 前置：[`2026-07-27-trial-provenance-and-family-fdr-design.md`](2026-07-27-trial-provenance-and-family-fdr-design.md) §9 把本项列为下一最高优先级。
 
@@ -305,6 +307,51 @@ _INTENTIONAL_DIVERGENCES`，并用**双向相等**断言钉死 —— 新出现�
 - 测试 `tests/lifecycle/test_dual_write_persistence.py`（6）：双写同 row 同事务、
   投影回退（含 DEGRADED 的 UNKNOWN_LEGACY + lossy）、迁移惰性/幂等/历史行保留、
   坏枚举 fail-closed、HEALTHY/NONE 往返。
+
+## 7.3 C3 落地记录（2026-07-27）—— 唯一改变运行行为的提交
+
+**改了什么**：`degradation_monitor` / `maintenance` / `retirement` 切到三台正交
+机器;自动降险改走 health 机器（`AlphaLifecycleManager.advance_health`）。
+
+**行为变化逐条（评审清单）**：
+
+1. **降级不再覆盖部署位**。旧：`PAPER_TRADING → DEGRADED` 把部署位信息写没。
+   新：legacy 字段写法和以前逐位相同（所有未切换的读者看到的东西不变）,
+   但 catalog 三元组里 `deployment=PAPER` 被保留,`health=(DEGRADED, SIGNAL_DECAY)`
+   带机器可读原因码 —— §3.4 的组合状态首次可表达,§11.3「根因消除」有了入口。
+2. **monitor 的 PAUSED 建议映射为 health FAILED + 自动降险**。FAILED 在部署机
+   器上强制 de-risk 到 PAUSED（§3.4 不变量 3 / §11.2,任何 actor 可达）。
+   legacy 仍写 PAUSED,报告 action 串仍是 `"PAUSED"` —— live_linkage /
+   maintenance events / console 消费格式零变化（有测试钉死）。
+3. **legacy 表达不了的恢复边,health 机器能记**。`FAILED→DEGRADED`（健康恢复）
+   合法,但 legacy `PAUSED→DEGRADED` 不存在 —— 此时 legacy 保持更严重的值
+   （fail-safe 方向）,health 机器如实记录,audit metadata 标
+   `legacy_write=skipped_illegal_legacy_edge`。旧行为是整条记录 error。
+4. **sweep 集合按部署态筛选**。旧 `_LIVE_STATES` 里混着 DEGRADED（健康值）;
+   新集合 = `DeploymentState ∈ {PAPER, SHADOW, MICRO_LIVE, LIVE}` + 保守保留
+   `UNKNOWN_LEGACY`（旧 DEGRADED 行,丢了部署位但本来在跑,掉出 sweep =
+   静默停止监控一个衰退 alpha,危险方向）。传 legacy `AlphaState` 值进
+   `live_states` 直接 `TypeError`（静默匹配空 = 全 alpha 失监,必须响）。
+5. **退役链路不变**。RETIRED 仍走 legacy audited advance;投影
+   (RESEARCH_RETIRED, CLOSED, HEALTHY) 本来就对。
+6. **幂等收敛**。同一 verdict 重复观测 = no-op 不进审计;同态不同原因 =
+    audited 修正（`skipped_same_state`）,不再每个 sweep 重复转换。
+7. **HEALTHY 恢复刻意未接线**:§11.3 恢复（根因消除→重放→Shadow 冷静期→
+   人工批准）是人门,C3 不写;`advance_health(..., HEALTHY)` 直接 raise。
+
+**持久化**:三元组首次可能**偏离投影**（如 VALIDATED+PAPER+DEGRADED）。
+新增第 7 列 `lossy_json`（同一惰性迁移机制,逐列 ADD COLUMN）:C2 行
+lossy_json=NULL → lossy 从投影派生;C3 行显式存（含空列表）。
+`research_challenged` 标记在 C3 行上保留 —— C3 没记录挑战史,不假装知道。
+
+**未做的（刻意）**:`advance_research` / `advance_deployment` 公共入口 —
+C3 唯一真实调用者是 health 机器的 de-risk 耦合（内联实现）,为无调用者的
+入口写代码违反本仓库「不写投机性死代码」纪律;有真实调用者时再加。
+`promotion.py` / `agent_loop.py` / `factory.py` / console 的切换留 C4/后续。
+
+测试 `tests/lifecycle/test_c3_health_machine.py`（13）。旧套件
+（tests/alpha 185 + tests/tools + console 契约）**零修改通过** ——
+证明 legacy 可见行为逐位不变。
 
 ## 8. 明确非目标
 

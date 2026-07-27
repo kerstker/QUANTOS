@@ -25,6 +25,26 @@
           "line": 23,
           "module": "services.lifecycle",
           "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 25,
+          "module": "services.lifecycle",
+          "path": "services/alpha/degradation_monitor.py"
+        },
+        {
+          "line": 33,
+          "module": "services.lifecycle",
+          "path": "services/alpha/lifecycle.py"
+        },
+        {
+          "line": 33,
+          "module": "services.lifecycle",
+          "path": "services/alpha/maintenance.py"
+        },
+        {
+          "line": 17,
+          "module": "services.lifecycle",
+          "path": "services/alpha/retirement.py"
         }
       ],
       "source": "alpha",
@@ -998,7 +1018,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "00bcfb7fff8e9c714bda4947456a86f6142d42f9db1369307cafc6e7bd3d8d45",
+  "graph_sha256": "fd57020aa377886f18d781c361cedee05556cefd7ca790e3330b1a8c482728ad",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 17,
   "nodes": [

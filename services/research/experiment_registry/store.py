@@ -99,7 +99,45 @@ _TRIPLE_COLUMNS = {
     "research_reason": "TEXT",
     "deployment_reason": "TEXT",
     "health_reason": "TEXT",
+    # C3: rows whose triple diverges from project(legacy state) need their loss
+    # markers persisted (C2 rows are exact projections, so NULL means "derive
+    # from the legacy state" — never a fabricated marker list).
+    "lossy_json": "TEXT",
 }
+
+_ALPHA_BASE_COLUMNS = (
+    "alpha_id",
+    "definition_json",
+    "state",
+    "returns_json",
+    "sharpe",
+    "pvalue",
+)
+
+
+def _alpha_insert_sql(*, on_conflict_update: bool) -> str:
+    """Single source for the alpha_state INSERT column list — the base columns
+    plus every 727 C2/C3 triple column, so the three write paths cannot drift."""
+    columns = list(_ALPHA_BASE_COLUMNS) + list(_TRIPLE_COLUMNS)
+    sql = (
+        f"INSERT INTO alpha_state({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})"
+    )
+    if on_conflict_update:
+        updates = ", ".join(
+            f"{column}=excluded.{column}"
+            for column in columns
+            if column != "alpha_id"
+        )
+        sql += f" ON CONFLICT(alpha_id) DO UPDATE SET {updates}"
+    return sql
+
+
+def _alpha_row_params(row: Mapping[str, object]) -> tuple:
+    params: list[object] = [row[column] for column in _ALPHA_BASE_COLUMNS[:4]]
+    params.extend(row.get(column) for column in _ALPHA_BASE_COLUMNS[4:])
+    params.extend(row.get(column) for column in _TRIPLE_COLUMNS)
+    return tuple(params)
 _OUTBOX_TABLES = ("experiment_event_outbox", "experiment_event_dispatch")
 _SEARCH_TABLES = ("search_attempt_events", "search_candidates")
 _SEARCH_ACTIVITY_TABLES = (
@@ -1896,33 +1934,8 @@ class SqliteExperimentStore:
                 # pre-C2 callers may omit the triple keys; they persist as NULL
                 # and the loader falls back to the projection.
                 self._conn.execute(
-                    "INSERT INTO alpha_state(alpha_id, definition_json, state, "
-                    "returns_json, sharpe, pvalue, research_state, deployment_state, "
-                    "health_state, research_reason, deployment_reason, health_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(alpha_id) DO UPDATE SET "
-                    "definition_json=excluded.definition_json, state=excluded.state, "
-                    "returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-                    "pvalue=excluded.pvalue, research_state=excluded.research_state, "
-                    "deployment_state=excluded.deployment_state, "
-                    "health_state=excluded.health_state, "
-                    "research_reason=excluded.research_reason, "
-                    "deployment_reason=excluded.deployment_reason, "
-                    "health_reason=excluded.health_reason",
-                    (
-                        row["alpha_id"],
-                        row["definition_json"],
-                        row["state"],
-                        row["returns_json"],
-                        row.get("sharpe"),
-                        row.get("pvalue"),
-                        row.get("research_state"),
-                        row.get("deployment_state"),
-                        row.get("health_state"),
-                        row.get("research_reason"),
-                        row.get("deployment_reason"),
-                        row.get("health_reason"),
-                    ),
+                    _alpha_insert_sql(on_conflict_update=True),
+                    _alpha_row_params(row),
                 )
             for message in messages:
                 existing = self._conn.execute(
@@ -1989,24 +2002,8 @@ class SqliteExperimentStore:
                         )
                     continue
                 self._conn.execute(
-                    "INSERT INTO alpha_state(alpha_id,definition_json,state,returns_json,"
-                    " sharpe,pvalue,research_state,deployment_state,health_state,"
-                    " research_reason,deployment_reason,health_reason) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        row["alpha_id"],
-                        row["definition_json"],
-                        row["state"],
-                        row["returns_json"],
-                        row.get("sharpe"),
-                        row.get("pvalue"),
-                        row.get("research_state"),
-                        row.get("deployment_state"),
-                        row.get("health_state"),
-                        row.get("research_reason"),
-                        row.get("deployment_reason"),
-                        row.get("health_reason"),
-                    ),
+                    _alpha_insert_sql(on_conflict_update=False),
+                    _alpha_row_params(row),
                 )
             self._conn.commit()
         except Exception:
@@ -2137,51 +2134,40 @@ class SqliteExperimentStore:
         research_reason: Optional[str] = None,
         deployment_reason: Optional[str] = None,
         health_reason: Optional[str] = None,
+        lossy_json: Optional[str] = None,
     ) -> None:
         """Legacy-signature upsert. The 727 C2 triple columns are OPTIONAL:
         callers that only know the legacy mixed state persist NULLs and the
         loader falls back to project(state) — never a fabricated dimension."""
         self._require_schema()
         self._ensure_triple_columns()
+        row = {
+            "alpha_id": alpha_id,
+            "definition_json": definition_json,
+            "state": state,
+            "returns_json": returns_json,
+            "sharpe": sharpe,
+            "pvalue": pvalue,
+            "research_state": research_state,
+            "deployment_state": deployment_state,
+            "health_state": health_state,
+            "research_reason": research_reason,
+            "deployment_reason": deployment_reason,
+            "health_reason": health_reason,
+            "lossy_json": lossy_json,
+        }
         self._conn.execute(
-            "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, "
-            "sharpe, pvalue, research_state, deployment_state, health_state, "
-            "research_reason, deployment_reason, health_reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(alpha_id) DO UPDATE SET definition_json=excluded.definition_json, "
-            "state=excluded.state, returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-            "pvalue=excluded.pvalue, research_state=excluded.research_state, "
-            "deployment_state=excluded.deployment_state, health_state=excluded.health_state, "
-            "research_reason=excluded.research_reason, "
-            "deployment_reason=excluded.deployment_reason, "
-            "health_reason=excluded.health_reason",
-            (
-                alpha_id,
-                definition_json,
-                state,
-                returns_json,
-                sharpe,
-                pvalue,
-                research_state,
-                deployment_state,
-                health_state,
-                research_reason,
-                deployment_reason,
-                health_reason,
-            ),
+            _alpha_insert_sql(on_conflict_update=True),
+            _alpha_row_params(row),
         )
         self._conn.commit()
 
     def all_alphas(self) -> list[dict]:
         self._require_schema()
-        triple = _TRIPLE_COLUMNS.keys() <= self._alpha_state_columns()
-        select_triple = (
-            ", research_state, deployment_state, health_state, "
-            "research_reason, deployment_reason, health_reason"
-            if triple
-            else ", NULL AS research_state, NULL AS deployment_state, "
-            "NULL AS health_state, NULL AS research_reason, "
-            "NULL AS deployment_reason, NULL AS health_reason"
+        present = self._alpha_state_columns()
+        select_triple = "".join(
+            f", {column}" if column in present else f", NULL AS {column}"
+            for column in _TRIPLE_COLUMNS
         )
         return [
             dict(r)

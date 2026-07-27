@@ -22,9 +22,62 @@ from typing import Mapping, Optional
 
 from quantos.contracts.research import AlphaState
 
+from services.lifecycle import HealthReason, HealthState, HealthVerdict
+
 _RANK = {"OK": 0, "DEGRADED": 1, "PAUSED": 2, "RETIRED": 3}
 _STATE = {"OK": None, "DEGRADED": AlphaState.DEGRADED, "PAUSED": AlphaState.PAUSED,
           "RETIRED": AlphaState.RETIRED}
+
+# 727 C3: the monitor's legacy recommendation translated into the orthogonal
+# health machine. A PAUSED recommendation means execution or risk BROKE — that
+# is health FAILED (which forces the deployment machine to de-risk, §3.4
+# invariant 3); a DEGRADED recommendation is eroded-but-present predictive
+# power. RETIRED is deliberately absent: retirement stays with the retirement
+# sweep (research INVALIDATED + deployment CLOSED), not the health machine.
+_RECOMMENDATION_TO_HEALTH = {
+    "DEGRADED": HealthState.DEGRADED,
+    "PAUSED": HealthState.FAILED,
+}
+
+_ALERT_METRIC_TO_REASON = {
+    "ic_sign": HealthReason.SIGNAL_DECAY,
+    "ic_retention": HealthReason.SIGNAL_DECAY,
+    "return": HealthReason.SIGNAL_DECAY,
+    "turnover": HealthReason.COST_INFLATION,
+    "slippage": HealthReason.SLIPPAGE_BREACH,
+    "drawdown": HealthReason.RISK_BREACH,
+    "capacity": HealthReason.RISK_BREACH,
+    "data": HealthReason.DATA_STALE,
+}
+
+_FALLBACK_REASON = {
+    "DEGRADED": HealthReason.SIGNAL_DECAY,
+    "PAUSED": HealthReason.RISK_BREACH,
+}
+
+
+def health_verdict_for(recommendation: object, alerts: object) -> Optional[HealthVerdict]:
+    """Map one monitor output to a HealthVerdict (727 C3), or None when the
+    recommendation is not a health-machine write (OK / RETIRED / unknown).
+
+    The reason code comes from the highest-priority alert that produced the
+    recommendation, so §11.3's 根因消除 starts from a machine-readable cause
+    instead of an audit-chain archaeology dig."""
+    if not isinstance(recommendation, str):
+        return None
+    state = _RECOMMENDATION_TO_HEALTH.get(recommendation)
+    if state is None:
+        return None
+    reason = _FALLBACK_REASON[recommendation]
+    if isinstance(alerts, list):
+        matching = [a for a in alerts
+                    if isinstance(a, dict) and a.get("severity") == recommendation]
+        if matching:
+            # alerts are appended in fixed check order; the first match is the
+            # earliest-fired (most fundamental) cause, deterministic.
+            metric = matching[0].get("metric")
+            reason = _ALERT_METRIC_TO_REASON.get(metric, reason)
+    return HealthVerdict(state, reason)
 
 
 @dataclass(frozen=True)

@@ -21,6 +21,9 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState
 
 from services.lifecycle import (
+    LOSSY_DEPLOYMENT,
+    LOSSY_HEALTH,
+    LOSSY_HEALTH_REASON,
     DeploymentState,
     HealthState,
     HealthVerdict,
@@ -180,6 +183,34 @@ class AlphaCatalog:
         # with its projection. Zero behavior change — the legacy read path stays
         # authoritative until C3 switches the orchestrator.
         self._write_triple(alpha_id, project(state))
+
+    def _set_health(self, alpha_id: str, verdict: HealthVerdict) -> None:
+        """INTERNAL (727 C3) — health-machine write, same chokepoint discipline as
+        _set_state: only AlphaLifecycleManager.advance_health may call this in
+        production. Records a fully-known verdict, so the row's loss markers
+        concerning health are cleared (deployment loss, if any, is kept)."""
+        self._health[alpha_id] = verdict
+        self._lossy[alpha_id] = tuple(
+            marker
+            for marker in self._lossy.get(alpha_id, ())
+            if marker not in (LOSSY_HEALTH, LOSSY_HEALTH_REASON)
+        )
+
+    def _set_deployment(self, alpha_id: str, state: DeploymentState) -> None:
+        """INTERNAL (727 C3) — deployment-machine write; only the manager's
+        advance_deployment / advance_health de-risk coupling may call it."""
+        self._deployment[alpha_id] = state
+        if state is not DeploymentState.UNKNOWN_LEGACY:
+            self._lossy[alpha_id] = tuple(
+                marker
+                for marker in self._lossy.get(alpha_id, ())
+                if marker != LOSSY_DEPLOYMENT
+            )
+
+    def _set_research(self, alpha_id: str, state: ResearchState) -> None:
+        """INTERNAL (727 C3) — research-machine write; reserved for the manager's
+        advance_research entry (no production caller yet)."""
+        self._research[alpha_id] = state
 
     # --- orthogonal machine reads (727 C2; additive, legacy reads untouched) --
 

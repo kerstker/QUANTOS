@@ -35,14 +35,17 @@ from services.research.trial_provenance import TrialProvenance
 
 def _triple_db_fields(triple: LifecycleTriple) -> dict:
     """727 C2 dual-write: persist the orthogonal machines next to the legacy
-    mixed state in the same row (same transaction upstream)."""
+    mixed state in the same row (same transaction upstream). C3 persists the
+    loss markers too — a triple that diverges from the projection is a fully
+    recorded row, and its (possibly empty) marker list must round-trip."""
     return {
         "research_state": triple.research.value,
         "deployment_state": triple.deployment.value,
         "health_state": triple.health.state.value,
-        "research_reason": None,  # reserved for C3 transition notes
+        "research_reason": None,  # reserved for C3+ transition notes
         "deployment_reason": None,
         "health_reason": triple.health.reason.value,
+        "lossy_json": json.dumps(list(triple.lossy)),
     }
 
 
@@ -55,16 +58,22 @@ def _triple_from_row(row: dict) -> LifecycleTriple:
     if row.get("research_state") is None:
         return project(legacy)
     health_reason = row.get("health_reason") or HealthReason.NONE.value
+    lossy_json = row.get("lossy_json")
+    if lossy_json is None:
+        # A C2 dual-written row is an exact projection, so the legacy
+        # projection's loss markers are the honest metadata for it.
+        lossy = project(legacy).lossy
+    else:
+        # A C3-written row carries its own markers (possibly empty: a fully
+        # recorded divergent triple has nothing lost).
+        lossy = tuple(json.loads(lossy_json))
     return LifecycleTriple(
         research=ResearchState(row["research_state"]),
         deployment=DeploymentState(row["deployment_state"]),
         health=HealthVerdict(
             HealthState(row["health_state"]), HealthReason(health_reason)
         ),
-        # C2 rows are exact projections, so the legacy projection's loss markers
-        # are the honest metadata for them too. C3 must revisit this when it
-        # starts writing triples that diverge from the projection.
-        lossy=project(legacy).lossy,
+        lossy=lossy,
     )
 
 

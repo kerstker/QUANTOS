@@ -14,6 +14,8 @@ from typing import Optional
 from quantos.contracts.alpha import Actor, DecayReport, RetirementDecision
 from quantos.contracts.research import AlphaState
 
+from services.lifecycle import DeploymentState
+
 from .config import AlphaFactoryConfig
 
 
@@ -62,17 +64,28 @@ class AlphaRetirementSystem:
         actor: Actor,
         *,
         timestamp: int,
-        states: tuple[AlphaState, ...] = (AlphaState.APPROVED, AlphaState.PAPER_TRADING),
+        states: tuple[DeploymentState, ...] = (
+            DeploymentState.LIVE,
+            DeploymentState.PAPER,
+        ),
     ) -> dict[str, tuple]:
-        """The production DRIVER: scan live (APPROVED/PAPER_TRADING) alphas and
-        retire those that have decayed. The CALLER is services/alpha/maintenance.py
-        ::run_maintenance (the periodic maintenance pass — 断点4); at L2 it is invoked
-        on-demand (no wall-clock loop) and a Phase-14 scheduler will call it
-        periodically once live alphas + a forward-metrics feed exist.
+        """The production DRIVER: scan deployed alphas and retire those that have
+        decayed. The CALLER is services/alpha/maintenance.py::run_maintenance
+        (the periodic maintenance pass — 断点4); at L2 it is invoked on-demand
+        (no wall-clock loop) and a Phase-14 scheduler will call it periodically
+        once live alphas + a forward-metrics feed exist.
+
+        727 C3: `states` holds DEPLOYMENT states (where the alpha runs), matching
+        the old default (APPROVED, PAPER_TRADING) -> (LIVE, PAPER). A legacy
+        DEGRADED row whose deployment position was lost (UNKNOWN_LEGACY) stays
+        swept — dropping it would silently un-monitor a degraded alpha.
+        Retiring still goes through the legacy audited advance(); the projection
+        maps RETIRED to research RESEARCH_RETIRED + deployment CLOSED already.
         """
         results: dict[str, tuple] = {}
         for aid in self.manager.catalog.all_ids():
-            if self.manager.catalog.state(aid) in states:
+            dep = self.manager.catalog.deployment_state(aid)
+            if dep in states or dep is DeploymentState.UNKNOWN_LEGACY:
                 results[aid] = self.retire_if_needed(
                     aid, actor, timestamp=timestamp, **evidence_by_alpha.get(aid, {}))
         return results

@@ -153,6 +153,7 @@ class ExperimentStorePort(Protocol):
         research_reason: Optional[str] = None,
         deployment_reason: Optional[str] = None,
         health_reason: Optional[str] = None,
+        lossy_json: Optional[str] = None,
     ) -> None: ...
 
     def all_alphas(self) -> list[dict]: ...
