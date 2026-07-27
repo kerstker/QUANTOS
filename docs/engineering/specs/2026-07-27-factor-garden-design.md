@@ -4,9 +4,11 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §6(Factor Garden:
   §6.1 FactorDefinition / §6.2 FactorObservation / §6.3 offline-online 一致性 /
   §6.4 因子家族)、§8.1(无经济解释的表达式禁令)
-- 状态:**F1+F2 已落地**——F1:契约加宽 + `services/factor_garden/`
-  (definitions + registry 边界,22 测试);F2(本提交):canonical 因子收敛
-  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3–F5 计划见 §3。
+- 状态:**F1–F3 已落地**——F1:契约加宽 + `services/factor_garden/`
+  (definitions + registry 边界,22 测试);F2:canonical 因子收敛
+  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3(本提交):物化器 +
+  feature_values schema v2(`materializer.py` + value_store 四列,16 测试);
+  F4–F5 计划见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import;注册一个因子不改变任何评估
   门禁、mandate 或 live 路径(诊断非门禁)。
@@ -72,7 +74,7 @@
 |---|---|---|
 | **F1** | 契约加宽(FeatureDefinition §6.1 字段 + FactorFamily)+ `services/factor_garden/`(definitions + registry 边界,store `all_items()` 只读加法) | **本提交** |
 | F2 | canonical 因子收敛:tools/ 双份定义(CARRY 双份、crowd_contra 决策行三套)移入 services 侧注册;QUANTILE 0.2 vs 0.3 分叉**诚实记录为两个版本**,不擅自统一 | **本提交** |
-| F3 | materializer + feature_values schema v2:§6.2 FactorObservation 落盘面(+computed_at/dataset_version/materializer_version/quality_verdict) | 计划 |
+| F3 | materializer + feature_values schema v2:§6.2 FactorObservation 落盘面(+computed_at/dataset_version/materializer_version/quality_verdict) | **本提交** |
 | F4 | offline_online_parity + dependency_graph + health:同一核心计算函数不同窗口适配器的 parity test;dataset BLOCK → factor STALE 传播(泛化 forward_track_advance 的语义) | 计划 |
 | F5 | family_cluster:§6.4 家族维度聚类,接入 W3 簇图;显式建立 FactorFamily ↔ 组合风险维映射 | 计划 |
 
@@ -185,19 +187,77 @@ register_canonical_factors 全新注册/幂等重开/冲突 raise/输入校验�
 `tests/factor_garden + tests/tools + tests/research`、
 `tests/governance` 全绿。
 
-## 6. 明确非目标(F1/F2 不做,单独评审)
+## 6. F3 实施记录(2026-07-27,物化器 + feature_values schema v2)
+
+### 6.1 `services/features/value_store.py` schema v2(惰性迁移)
+
+- 新列(727 §6.2 FactorObservation):`computed_at_ms INTEGER` /
+  `dataset_version TEXT` / `materializer_version TEXT` / `quality_verdict TEXT`,
+  全 nullable 无 DEFAULT。`_SCHEMA` 刻意保持 v1 形状,`_ensure_v2_columns`
+  (与 `experiment_registry._ensure_triple_columns` 同先例:PRAGMA table_info +
+  BEGIN IMMEDIATE 下逐列 ALTER TABLE)是**唯一**加列路径,首次 v2 写触发、幂等;
+  旧行读回 NULL = 「物化于 v2 之前」诚实标记,绝不回填。`_SCHEMA_VERSION = 2`。
+- 写路径:`add`/`add_many` 加四个可选 kwargs(默认 None → 旧 6 列 INSERT 逐位
+  不变、不触发迁移;既有 tests/features 35 测试零改动通过);带任一 v2 元数据 →
+  校验(computed_at_ms 非负 int 非 bool;三个 TEXT 非空)→ 迁移 → 10 列 INSERT。
+- 读路径(最小侵入裁定):`as_of`/`latest_as_of` 保持返回 FeatureValue 契约逐位
+  不变;新增 `as_of_observations` 返回全列 dict(未迁移 v1 库以 NULL AS 回退),
+  同一 PIT 过滤与排序。
+
+### 6.2 `services/factor_garden/materializer.py`(纯核 + 注入 store)
+
+- `MATERIALIZER_VERSION = "1.0.0"`;`materialize_factor`:
+  `evaluate(deserialize(defn.formula), panel)` → 逐格落
+  `FeatureValue(feature_id=defn.name, et, kt=et, value)`;None 格(缺失/warmup)
+  不落盘(无观测,沿用 materialize_rolling_feature 先例);NaN/Inf 不落盘、计入
+  `skipped_non_finite`;幂等靠 store 主键 INSERT OR IGNORE(重跑 0 新增,测试钉死)。
+  返回 {factor_id, factor_version, written, skipped_existing, skipped_non_finite,
+  instruments, periods, dataset_version, materializer_version}。
+- `materialize_many`:逐因子隔离失败(记 `{"factor_id", "error"}`,与
+  services/alpha/maintenance 同先例)。
+
+### 6.3 knowledge_time 语义裁定(kt := event_time)
+
+`FieldPanel` **不携带逐格 knowledge_time**;其构建契约(`build_field_panel`:
+`latest_as_of(inst, t, t)` 且仅当最新可知 bar 的 event_time == t 才取值,否则
+None)是「格 (t,i) 在 t 可知」。`evaluate` 只组合 ts 算子(回看 ≤t 行)与 cs 算子
+(同行 t),故 (t,i) 的因子值完全由 t 可知的数据算出 → **kt := event_time**,与
+仓库既有 EOD 数据存储(FRED/Deribit)的 kt=et 约定一致。该 kt 是从 panel 的 PIT
+契约**推导**而非虚构;物化器与所有 `evaluate` 消费方同级信任 panel 契约——
+调用方自建受污染 panel 时 kt=et 同样被污染(docstring 明文)。
+
+### 6.4 quality_verdict 来源边界
+
+quality_verdict 是**调用方/全局标记**,整批逐行照写;本切片**不做**逐格
+leakage/质量检测(那是 F4 的事),绝不编造逐格判定。
+
+### 6.5 测试(16)
+
+- `tests/features/test_value_store_v2.py`(7):手工 v1 库读回 NULL 新列;首次 v2 写
+  触发迁移;迁移幂等(二次写 + 重开);v1 写路径不迁移且逐位不变;v2 元数据校验;
+  INSERT OR IGNORE 幂等;as_of_observations PIT 过滤/排序/校验。
+- `tests/factor_garden/test_materializer.py`(9):合成 panel(2×3)物化行数/主键/
+  值 = 直接 evaluate 逐格一致;kt=et + PIT 读(未来 kt 不可见);v2 四列落盘;
+  重跑 0 新增;warmup None 不落盘;NaN/Inf 跳过计数(monkeypatch evaluate);
+  输入校验;materialize_many 隔离失败;registry→materializer 端到端
+  (register_canonical_factors → get → materialize → PIT 读回 + v1 契约读一致)。
+
+## 7. 明确非目标(F1–F3 不做,单独评审)
 
 1. **不统一 QUANTILE 0.2 vs 0.3 分叉**——那是行为变更(两个数字背后是不同的
    前向证据积累),需人工决策;F2 已把两值以显式命名常量
    (`CARRY_QUANTILE_OFFLINE`/`CARRY_QUANTILE_LIVE`)诚实记录于 canonical.py,
    统一留人工。
-2. **不接 console**——Phase 11 的事;F1 无 HTTP 面。
+2. **不接 console**——Phase 11 的事;F1–F3 无 HTTP 面。
 3. **不迁移 factor_engine**——字符串 AST 编译器维持隔离/死码现状,删除或重建
    是独立决策(与 quarantined `trading/pre_trade_risk` 同款处置)。
-4. **不驱动物化**——F3 才落 §6.2;F1 的注册表只登记定义,不产生因子值。
-5. **不接任何晋级/下单路径**——诊断非门禁立场不变。
+4. **不做逐格质量/leakage 检测**——F3 的 quality_verdict 是调用方/全局标记;
+   逐格检测与 dataset BLOCK → factor STALE 传播是 F4(offline_online_parity +
+   dependency_graph + health)的事。
+5. **不接任何晋级/下单路径**——诊断非门禁立场不变;物化只写 feature_values
+   观测,不改变任何评估门、mandate 或 live 路径。
 
-## 7. L2 边界声明
+## 8. L2 边界声明
 
 - 五个安全旗标、live-order 路径、凭证零触碰;`services/factor_garden` 零网络
   import(治理扫描机器钉死)。

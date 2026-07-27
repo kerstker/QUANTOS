@@ -297,8 +297,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
   (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
   有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
-- `services/factor_garden/` — **Factor Garden F1+F2(727 §6/Phase 4,2026-07-27 落地,
-  22+11 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+- `services/factor_garden/` — **Factor Garden F1–F3(727 §6/Phase 4,2026-07-27 落地,
+  22+11+9 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
   (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
   provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
   13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
@@ -318,8 +318,20 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `CARRY_QUANTILE_OFFLINE`/`CARRY_QUANTILE_LIVE` 命名常量诚实记录(人工决策)。
   诚实边界:trend 的生产形式是 SIGNAL_OPS pair-tuple(与 tuple DSL 不逐位等价),
   故只收敛常量、**不在** CANONICAL_FACTORS(DSL 原生 trend 注册是独立评审切片)。
-  确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁:注册因子不驱动任何晋级/下单**。
-  F3–F5(materializer §6.2/offline_online_parity+dependency_graph/family_cluster)
+  **F3 物化器 + feature_values schema v2**:`materializer.py` ——
+  `evaluate(deserialize(defn.formula), panel)` 逐格落 `SqliteFeatureValueStore`
+  (schema v2 四列 computed_at_ms/dataset_version/materializer_version/quality_verdict,
+  惰性迁移 `_ensure_v2_columns` 与 experiment_registry 同先例、唯一加列路径、
+  旧行 NULL 诚实标记绝不回填;`add_many` 可选 kwargs 默认 None → v1 路径逐位不变,
+  读路径新增 `as_of_observations` 全列 dict,as_of/latest_as_of 契约不变)。
+  **kt 语义裁定:kt := event_time**——FieldPanel 无逐格 kt,其构建契约是「格 (t,i)
+  在 t 可知」(latest_as_of(t,t) ∧ bar.event_time==t),evaluate 只回看 ≤t/同行 t →
+  因子值在 t 可知,与 EOD 数据存储 kt=et 约定一致;从 panel PIT 契约推导非虚构。
+  None 格不落盘(无观测)、NaN/Inf 跳过计数;幂等靠主键 INSERT OR IGNORE(重跑 0 新增);
+  `materialize_many` 逐因子隔离失败。quality_verdict = 调用方/全局标记,
+  **逐格 leakage/质量检测不做**(F4)。物化只写观测,不驱动任何晋级/下单。
+  确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁**。
+  F4–F5(offline_online_parity+dependency_graph+health/family_cluster)
   计划见设计文档
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
 - `quantos/contracts/event_schemas.py` +

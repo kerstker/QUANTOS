@@ -34,6 +34,7 @@ from .definitions import (
     build_factor_definition,
     factor_content_hash,
 )
+from .materializer import MATERIALIZER_VERSION, materialize_factor, materialize_many
 from .registry import FactorGardenRegistry
 
 __all__ = [
@@ -47,10 +48,13 @@ __all__ = [
     "FactorDefinitionError",
     "FactorFamily",
     "FactorGardenRegistry",
+    "MATERIALIZER_VERSION",
     "TOP_CONTRA_EXPRESSION",
     "TREND_COMPOSITE_EXPRESSION",
     "build_factor_definition",
     "factor_content_hash",
     "legs",
+    "materialize_factor",
+    "materialize_many",
     "register_canonical_factors",
 ]
