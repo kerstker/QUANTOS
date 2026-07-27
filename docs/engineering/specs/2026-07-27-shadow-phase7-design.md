@@ -6,12 +6,15 @@
   盘口深度/Spread/Slippage/Latency/Expected impact)、§3.2(DeploymentState:
   PAPER → SHADOW → MICRO_LIVE)、§18.2(provenance 标签 SHADOW)、§13(MEXC
   BTC 现货接入顺序)。
-- 状态:**S1+S2 已落地**——S1:三家 venue 适配器的订单簿深度端点(`depth()`,fail-soft)
-  + SHADOW 比较纯核 `live/execution/shadow.py`(727 §12.2 八项比较的机器落地);
-  S2(本提交):`live/execution/shadow_store.py`(append-only 哈希链观测账本 +
-  SHADOW_OBSERVED 事件 schema + transactional outbox 同事务)+ 第七 dispatch +
-  drain 第 8 源;S3(tools/ 驱动器 + shadow_ready 全条件门 + 证据)**计划中,未做**。
-  727 Phase 7 验收对照见 §6。
+- 状态:**S1–S3 全部落地,Phase 7(SHADOW 侧)完成**——S1:三家 venue 适配器的
+  订单簿深度端点(`depth()`,fail-soft)+ SHADOW 比较纯核
+  `live/execution/shadow.py`(727 §12.2 八项比较的机器落地);S2:
+  `live/execution/shadow_store.py`(append-only 哈希链观测账本 + SHADOW_OBSERVED
+  事件 schema + transactional outbox 同事务)+ 第七 dispatch + drain 第 8 源;
+  S3(本提交):`tools/shadow_track.py` 运行时驱动器(真实 testnet 首跑 14 观测
+  落账 + 14 事件经 drain 入共享事件日志)+ shadow_ready 全条件门 +
+  `evidence/shadow_status.json`。727 Phase 7 验收对照见 §6;§12.3/12.4
+  MICRO_LIVE/LIVE 是 Phase 9+,非本方案。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何下单路径
   (深度端点是只读公共端点,不签名;SHADOW 结构性不发单——727 §12.2「但不发送
   订单」由构造保证,不是靠纪律),不触碰凭证;网络 import 只在三个 venue 适配器
@@ -92,7 +95,7 @@
 |---|---|---|
 | **S1** | `live/contracts.py`:`BookLevel` + `OrderBookSnapshot`(fail-closed 校验,as_of_ms 缺失诚实 None,刻意不拒瞬时交叉簿);`live/exchange/depth.py` 共享解析/钳档;三适配器 `depth()`(MEXC `/api/v3/depth` 档 5–1000、Binance `/fapi/v1/depth` 档 5–1000 取 `E`→`T`、Bybit `/v5/market/orderbook` linear 档 1/50/200/1000 取 `result.ts`,全 fail-soft);`base.py` 可选能力惯例文档化;`live/execution/shadow.py` 纯核(ShadowLeg/WalkBookResult/walk_the_book/ShadowObservation/observe_leg/observe_batch) | **本提交**(适配器 6+6+6 测试 + shadow 27 测试) |
 | **S2** | `live/execution/shadow_store.py`:append-only SQLite 哈希链观测账本(观测行与其 canonical 事件**同一事务**提交,克隆 refresh_history 结构);SHADOW_OBSERVED 事件 schema(v1.0,µs,脱敏摘要 payload)进 `quantos/contracts/event_schemas.py` + catalog 证据(12→13 types / 17→18 defs);第七 dispatch(`dispatch_shadow_event_outbox`,与六店同款依赖注入签名)+ drain 第 8 注册源 | **本提交**(17 store/dispatch/drain 测试 + 治理/schema 测试更新) |
-| **S3** | `tools/shadow_track.py` 驱动器(Binance testnet:权重 → ShadowLeg 序列 → 逐币 `depth()` 实测 latency → observe_batch → 经 S2 落账);`shadow_ready` 全条件门(预注册观测窗口 + 覆盖全部目标腿 + 无 BOOK_UNAVAILABLE/STALE 空洞 + slippage/impact 统计完整,全过才 READY_FOR_SHADOW 建议——只生成建议,不开放权限,§22 同款纪律);`evidence/shadow_track.json` + console 只读端点(provenance REAL/SHADOW 分层标注) | 计划中 |
+| **S3** | `tools/shadow_track.py` 驱动器(复用 `_STRATEGIES` 信号注册表,绝不重算信号;venue 从 `_VENUES` 按 base_url 白名单结构性筛 testnet/demo,空凭证构造只调无签名方法;逐标的 `depth()` 实测 latency → observe_batch → shadow_store 落账;`--once`/`--follow` 真实时间推进)+ `build_shadow_readiness` 五 blocker 全条件门(NO_OBSERVATIONS/CHAIN_INVALID/OUTBOX_CHAIN_INVALID/LATEST_OBSERVATION_STALE/NO_EXECUTABLE_OBSERVATION)+ `evidence/shadow_status.json`(provenance SHADOW + honesty_note) | **本提交**(18 驱动器测试 + 真实 testnet 首跑) |
 
 切分原则:每片独立可测、独立入库、不依赖后片——S1 的深度端点与比较核无
 任何持久化,S2 的账本消费 S1 的纯值对象但不改其语义,S3 的驱动器是唯一带
@@ -197,6 +200,55 @@
   真 sqlite drain→bus→projection e2e)+ 既有治理/drain/schema 测试更新
   (全绿)。
 
+### 4.5 S3 实施记录(2026-07-27,本提交)
+
+- **驱动器 `tools/shadow_track.py`**(IO 边界,墙钟/网络只在这里):
+  `build_shadow_legs`(权重×名义/决策价 → ShadowLeg,零权重跳过、缺价
+  fail-closed ValueError、按标的排序确定性)+ `run_shadow_pass`(venue 注入;
+  `depth()` hasattr 探测——无能力/异常/None 一律 BOOK_UNAVAILABLE 不炸整轮;
+  latency = depth 往返实测,latency_clock 可注入,默认 time.perf_counter;
+  observe_batch → 逐条 `store.append`,run_label=`{strategy_id}:{now_ms}`)+
+  `build_shadow_readiness`(纯核只读 store,五 blocker,镜像 paper_health
+  「全满足才 true」)+ `build_shadow_status`(证据快照,honesty_note 写明
+  「观测是只读盘口比较,非成交、非 paper fill 证明」)。CLI:`--strategy`
+  (crowd_contra 默认)/`--venue`(binance_testnet 默认)/`--notional`
+  (10000)/`--once`/`--follow --interval-seconds`(300)/`--db`/`--evidence`/
+  `--max-obs-age-ms`。
+- **信号复用裁定**:`_STRATEGIES[strategy]["signal"]()` 五元组 → weights/prices,
+  与 live preview 同一信号核,绝不重算;面板来自本地 PIT 库(离线),唯一
+  网络面 = venue 适配器的无签名公共 GET。
+- **venue 结构守卫**:`shadow_venues()` 从 `_VENUES` 按 **base_url 白名单**
+  (Binance TESTNET / Bybit TESTNET / Bybit DEMO)筛出三个别名
+  (binance_testnet/bybit_testnet/bybit_demo)——mainnet_only/spot 项结构性
+  进不来(不是按名字挡,`_VENUES` 演进自动继承);适配器**空凭证构造**
+  (无签名方法不需要 key,绝不加载凭证文件/env)。`build_shadow_venue`
+  对 mexc/binance_mainnet/未知名一律 SystemExit。
+- **latency 诚实缺省**:venue 无 depth 能力时未发起任何请求,latency 记 0
+  且该腿计入 unavailable——绝不编造一个「测得的」往返;BOOK_UNAVAILABLE
+  观测的 latency=0 在模块 docstring 钉死语义。
+- **_FETCHERS 登记**:shadow_track.py 是网络承载的 out-of-gate 驱动器,
+  按边界自身纪律登记进 `tests/governance/test_crypto_data_boundary.py`
+  `_FETCHERS` + `_EXTRA_ALLOWED_BY_FILE`(math/argparse/typing/live;
+  live 是 venue 适配器 + shadow 核复用,与 verify_key_permissions/
+  binance_readonly_smoke 同款)。诚实注:`tools/live_track_advance.py`
+  本身不在 _FETCHERS(与 fred_fetch 同型的既有清单缺口)——本切片不扩大
+  范围,仅记录。
+- **真实首跑(2026-07-27,binance testnet,crowd_contra,$10k 名义)**:
+  14 腿全观测落账(appended=14,chain/outbox 链全过),drain 真数据
+  e2e 14 事件 dispatched/0 pending/8 源 PASS。**诚实发现:testnet 盘口
+  稀疏——14 腿中 11 腿的 depth 快照 as_of 超 60s(BOOK_STALE,testnet
+  簿更新极少),仅 3 腿可成交,mean_abs_slippage 439bps**——这正是
+  SHADOW 要量化的缺口:testnet 深度极薄,paper 的「决策价成交」假设与
+  真实可成交价差数百 bps;readiness 按预注册五 blocker 判定 ready=true
+  (stale 腿计数如实呈现在 last_pass.stale,门规则不含 stale 比率——
+  是否加 STALE_RATIO blocker 是独立的校准决策,本切片不加未预注册的规则)。
+- **测试 `tests/tools/test_shadow_track.py`(18)**:legs 数学/缺价 fail-closed/
+  名义校验;pass 落库计数/幂等重跑 appended=0/注入 clock 实测 latency/无 depth
+  能力/depth 抛异常/返回 None 全 fail-soft;readiness 五 blocker 逐条 + 全绿
+  ready=true + 链篡改双 INVALID;venue 注册结构守卫/mainnet 与未知名拒/
+  空凭证构造;CLI 拒未知 venue/strategy;run_once 注入假 venue 假信号写证据
+  端到端(文件与返回逐位一致)。
+
 ## 5. 非目标(本切片刻意不做)
 
 1. **不发单**。深度端点是只读公共端点,`observe_*` 只产观测值;SHADOW「但不
@@ -210,21 +262,25 @@
    只覆盖 tools/ 抓取器,适配器 depth 方法是 venue 适配器能力,无需进白名单)。
 4. **不修复「paper fill = 决策价」语义**。SHADOW 观测量化这个缺口;改 paper
    语义是独立的、需要预注册评审的论文级决策。
-5. **S3 的驱动器/console 一律不在已落地切片**(S1 的比较核、S2 的账本/事件已落地;
-   S3 的 tools/shadow_track 驱动器 + shadow_ready 门 + 证据/console 是唯
-   一剩余切片)。
+5. **不接 console**。设计文档 S3 计划曾含 console 只读端点,落地时裁定**不做**
+   (证据快照 `evidence/shadow_status.json` 已可读;console 展示是独立切片,
+   需要契约测试双侧同改,不为收官而扩大面)。
+6. **不改 paper_ready / 不碰 §12.3/12.4**。§12.1 PAPER 全条件门已存在
+   (tools/paper_health.py);MICRO_LIVE/LIVE 是 Phase 9+,非本方案。
 
 ## 6. 727 Phase 7(§12.2)验收对照表
 
 | 验收项 | 状态 | 承载 |
 |---|---|---|
-| 连接真实市场行情/盘口但不发送订单 | ✓(S1 读侧)/ 驱动器待 S3 | 三适配器 `depth()` 只读公共端点;结构性无下单路径 |
+| 连接真实市场行情/盘口但不发送订单 | ✓(S1+S3) | 三适配器 `depth()` 只读公共端点 + S3 驱动器真实 testnet 轮询(空凭证,结构性无下单路径) |
 | 理论成交 vs Paper fill vs 实时可成交价 | ✓(S1 核心) | `ShadowObservation`:decision_price / paper_fill_price / executable_vwap 三列并置 |
 | 盘口深度 | ✓(S1) | `OrderBookSnapshot` 全深度 + `WalkBookResult.levels_consumed`/`filled`/`unfilled` |
 | Spread | ✓(S1) | `book_spread_bps`(top-of-book,任一侧空簿诚实 None) |
 | Slippage | ✓(S1) | `slippage_bps_vs_decision`(tca 同语义,带方向) |
-| Latency | ✓(S1 字段)/ 实测待 S3 | `latency_ms` 调用方注入;驱动器打点归 S3 |
-| Expected impact | ✓(S1,条件计算) | `expected_impact_bps`(impact_model + adv 双给才算,UNKNOWN 绝不编造) |
-| SHADOW provenance 标签(§18.2) | ✓ | `provenance="SHADOW"` 构造期 fail-closed 校验 |
+| Latency | ✓(S3 实测) | `latency_ms` = 驱动器 depth 往返实测(可注入 clock;无 depth 能力记 0 不编造) |
+| Expected impact | ✓(S1,条件计算) | `expected_impact_bps`(impact_model + adv 双给才算,UNKNOWN 绝不编造;S3 驱动器本轮不接 adv,恒 None 如实) |
+| 真实时间推进 | ✓(S3) | `--follow --interval-seconds` 前台轮询(paper_realtime 同语义,绝不拉起后台进程) |
+| 无未来数据 | ✓(S1) | `BOOK_STALE`/`BOOK_FROM_FUTURE` 门(max_book_age_ms;as_of 缺失诚实 None 不可判龄) |
+| SHADOW provenance 标签(§18.2) | ✓ | `provenance="SHADOW"` 构造期 fail-closed 校验 + 证据快照同标签 |
 | 观测持久化 + 事件链 | ✓(S2) | shadow_store 三链(观测/outbox/dispatch)+ SHADOW_OBSERVED schema(µs,脱敏摘要)+ 第七 dispatch + drain 第 8 源 |
-| shadow_ready 全条件门 + 证据 | S3 | tools/shadow_track.py + shadow_ready 门 + evidence(计划中) |
+| shadow_ready 全条件门 + 证据 | ✓(S3) | `build_shadow_readiness` 五 blocker + `evidence/shadow_status.json`(首跑 14 观测/3 可成交/439bps,testnet 稀疏诚实呈现) |

@@ -53,7 +53,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # Bybit 公开 linear perp 历史抓取器(2026-07-25,W2 cross-venue 簇 Phase 1):
              # 日线 klines + funding history,公共端点无 key 只读,绝不下单——同一条只读
              # 数据边界钉住它。
-             os.path.join(_ROOT, "tools", "bybit_klines_fetch.py")]
+             os.path.join(_ROOT, "tools", "bybit_klines_fetch.py"),
+             # SHADOW 轨道驱动器(2026-07-27,Phase 7 S3):网络面 = venue 适配器的
+             # 无签名公共行情 GET(depth);空凭证构造适配器、结构性只调无签名方法、
+             # 绝不下单——同一条只读数据边界钉住它。
+             os.path.join(_ROOT, "tools", "shadow_track.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 _QUANTOS = os.path.join(_ROOT, "quantos")
 
@@ -111,6 +115,11 @@ _EXTRA_ALLOWED_BY_FILE = {
     # Bybit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
     # 均不增加网络/交易/凭证能力。
     "bybit_klines_fetch.py": {"math", "argparse"},
+    # SHADOW 轨道驱动器:math(有限数校验)+ argparse(CLI)+ typing(注入签名)+
+    # `live`(live/execution/shadow 比较核 + shadow_store 账本 + live/exchange venue
+    # 适配器——与 verify_key_permissions/binance_readonly_smoke 同款只读复用,
+    # 空凭证构造,不碰任何 LIVE 安全旗标)。
+    "shadow_track.py": {"math", "argparse", "typing", "live"},
 }
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
