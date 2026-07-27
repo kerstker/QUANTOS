@@ -2,7 +2,7 @@
 
 - 日期：2026-07-27
 - 依据：[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §3（三个正交状态机）、§11（生命周期控制器）
-- 状态：**设计文档，本文档不含代码改动**。落地分 4 个独立提交，见 §6。
+- 状态：**C1（核心机器 + 测试）与 C2（双写持久化）已落地**，C3/C4 待做。落地分 4 个独立提交，见 §6；C1/C2 实施记录见 §7.1/§7.2。
 - readiness：L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标，不新增任何真实下单路径。
 - 前置：[`2026-07-27-trial-provenance-and-family-fdr-design.md`](2026-07-27-trial-provenance-and-family-fdr-design.md) §9 把本项列为下一最高优先级。
 
@@ -280,6 +280,31 @@ _INTENTIONAL_DIVERGENCES`，并用**双向相等**断言钉死 —— 新出现�
 `PAPER_TRADING → APPROVED` 的 alpha 将必须依次经过 `SHADOW → MICRO_LIVE → LIVE`。
 这是 §12 要求的正确行为，但它是**真实的行为收紧**，不是纯重构。C3 不能当作
 「只是换个类型」提交。
+
+## 7.2 C2 落地记录（2026-07-27，提交见 git log `feat(lifecycle): ... C2`）
+
+- `alpha_state` 表惰性迁移：`_ensure_triple_columns()` 在**首次 catalog 写**
+  （`save_catalog_snapshot` / `save_evaluation_catalog_snapshot` / `upsert_alpha`）
+  时 `ALTER TABLE` 加 6 列（`research_state`/`deployment_state`/`health_state`
+  + 三个 reason 列），**全部 nullable 无 DEFAULT**。纯读路径不触发迁移；
+  `all_alphas()` 按 `PRAGMA table_info` 动态选列，旧库读回 NULL。
+- 双写：`registry.save()` / `save_evaluation_context()` 把 `project(legacy)`
+  的三元组与旧 `state` 写进**同一行、同一事务**（崩溃窗口不存在）；
+  `upsert_alpha` 的旧签名调用者可以只写旧列 → 新列 NULL。
+- 读路径：`registry._triple_from_row` —— 新列非 NULL 以新列为准，
+  NULL 走 `project(legacy state)` 投影回退；`lossy` 元数据在 C2 恒等于投影的
+  lossy（C2 写的就是投影），**C3 写出发散三元组时必须重估这一来源**。
+- catalog：`_research`/`_deployment`/`_health`/`_lossy` 四个并行字典，
+  `register`/`_set_state` 双写，新增 `triple()/research_state()/deployment_state()/
+  health()/by_deployment()/by_health()` 只读 API；`state()/by_state()/approved_set()`
+  一字未动，旧读路径仍权威。
+- 诚实注记：旧签名 `upsert_alpha` 覆盖行时新列写 NULL —— 这不是丢数据，
+  读路径投影回退与 C2 双写结果逐位等价（因为 C2 三元组 ≡ 投影）。
+- 真实库验证：`data/cache/experiment_registry.db`（66 行，未迁移）读路径
+  正常，迁移将在该库首次 catalog 写时惰性发生。
+- 测试 `tests/lifecycle/test_dual_write_persistence.py`（6）：双写同 row 同事务、
+  投影回退（含 DEGRADED 的 UNKNOWN_LEGACY + lossy）、迁移惰性/幂等/历史行保留、
+  坏枚举 fail-closed、HEALTHY/NONE 往返。
 
 ## 8. 明确非目标
 

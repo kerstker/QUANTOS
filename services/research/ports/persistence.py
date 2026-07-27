@@ -146,6 +146,13 @@ class ExperimentStorePort(Protocol):
         returns_json: str,
         sharpe: Optional[float],
         pvalue: Optional[float],
+        *,
+        research_state: Optional[str] = None,
+        deployment_state: Optional[str] = None,
+        health_state: Optional[str] = None,
+        research_reason: Optional[str] = None,
+        deployment_reason: Optional[str] = None,
+        health_reason: Optional[str] = None,
     ) -> None: ...
 
     def all_alphas(self) -> list[dict]: ...

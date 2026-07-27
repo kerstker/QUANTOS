@@ -16,12 +16,56 @@ from quantos.contracts.events import EventOutboxMessage
 from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
+from services.lifecycle import (
+    DeploymentState,
+    HealthReason,
+    HealthState,
+    HealthVerdict,
+    LifecycleTriple,
+    ResearchState,
+    project,
+)
 from services.research.ports.persistence import (
     EvaluationAuditIntent,
     ExperimentStoreError,
     ExperimentStorePort,
 )
 from services.research.trial_provenance import TrialProvenance
+
+
+def _triple_db_fields(triple: LifecycleTriple) -> dict:
+    """727 C2 dual-write: persist the orthogonal machines next to the legacy
+    mixed state in the same row (same transaction upstream)."""
+    return {
+        "research_state": triple.research.value,
+        "deployment_state": triple.deployment.value,
+        "health_state": triple.health.state.value,
+        "research_reason": None,  # reserved for C3 transition notes
+        "deployment_reason": None,
+        "health_reason": triple.health.reason.value,
+    }
+
+
+def _triple_from_row(row: dict) -> LifecycleTriple:
+    """Read path for the C2 columns. A row whose triple columns are NULL predates
+    the dual-write (or came from a legacy-only caller) — fall back to the
+    projection of the legacy state instead of inventing dimensions. Fail-closed
+    on corrupt values, exactly like the legacy state column."""
+    legacy = AlphaState(row["state"])
+    if row.get("research_state") is None:
+        return project(legacy)
+    health_reason = row.get("health_reason") or HealthReason.NONE.value
+    return LifecycleTriple(
+        research=ResearchState(row["research_state"]),
+        deployment=DeploymentState(row["deployment_state"]),
+        health=HealthVerdict(
+            HealthState(row["health_state"]), HealthReason(health_reason)
+        ),
+        # C2 rows are exact projections, so the legacy projection's loss markers
+        # are the honest metadata for them too. C3 must revisit this when it
+        # starts writing triples that diverge from the projection.
+        lossy=project(legacy).lossy,
+    )
 
 
 class ExperimentRegistry:
@@ -166,6 +210,7 @@ class ExperimentRegistry:
                     "returns_json": json.dumps(list(row.returns)),
                     "sharpe": sharpe,
                     "pvalue": row.pvalue,
+                    **_triple_db_fields(row.triple or project(row.state)),
                 }
             )
         self._store.save_catalog_snapshot(
@@ -195,6 +240,7 @@ class ExperimentRegistry:
                     "returns_json": json.dumps(list(row.returns)),
                     "sharpe": catalog._sharpes.get(row.alpha_id),
                     "pvalue": row.pvalue,
+                    **_triple_db_fields(row.triple or project(row.state)),
                 }
             )
         self._store.save_evaluation_catalog_snapshot(
@@ -234,6 +280,7 @@ class ExperimentRegistry:
                         state=AlphaState(r["state"]),
                         returns=tuple(json.loads(r["returns_json"])),
                         pvalue=r["pvalue"],
+                        triple=_triple_from_row(r),
                     )
                 )
         except Exception as exc:  # intra-row corruption (bad JSON/state) -> fail closed,
@@ -251,6 +298,7 @@ class ExperimentRegistry:
                 # deliberately not installed into the fresh evaluation catalog.
                 AlphaDefinition.model_validate(json.loads(row["definition_json"]))
                 AlphaState(row["state"])
+                _triple_from_row(row)  # fail closed on corrupt C2 columns too
                 values = json.loads(row["returns_json"])
                 if not isinstance(values, list):
                     raise ValueError("returns_json must decode to a list")

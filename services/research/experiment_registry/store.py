@@ -86,6 +86,20 @@ BEGIN SELECT RAISE(ABORT, 'experiment_event_dispatch is append-only'); END;
 """
 
 _TABLES = ("trials", "alpha_state", "evaluations")
+# 727 C2 lazy migration: the three orthogonal lifecycle machines (design doc
+# 2026-07-27-three-orthogonal-state-machines-design.md §6) land alongside the
+# legacy mixed `state` column. All nullable with NO default — a pre-C2 row reads
+# back NULL and the loader falls back to project(legacy state); fabricating
+# values for rows whose dimensions were never recorded would be exactly the
+# backfill this migration refuses to do.
+_TRIPLE_COLUMNS = {
+    "research_state": "TEXT",
+    "deployment_state": "TEXT",
+    "health_state": "TEXT",
+    "research_reason": "TEXT",
+    "deployment_reason": "TEXT",
+    "health_reason": "TEXT",
+}
 _OUTBOX_TABLES = ("experiment_event_outbox", "experiment_event_dispatch")
 _SEARCH_TABLES = ("search_attempt_events", "search_candidates")
 _SEARCH_ACTIVITY_TABLES = (
@@ -531,6 +545,35 @@ class SqliteExperimentStore:
         missing = [t for t in _TABLES if t not in present]
         if missing:
             raise ExperimentStoreError(f"store uninitialized; missing tables: {missing}")
+
+    def _alpha_state_columns(self) -> set[str]:
+        return {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(alpha_state)").fetchall()
+        }
+
+    def _ensure_triple_columns(self) -> None:
+        """Migrate an already-valid store to the 727 C2 dual-write schema on the
+        first catalog write. Idempotent; historical rows keep NULL triple columns
+        (the honest pre-C2 marker), only new writes carry both representations."""
+        if self._conn.in_transaction:
+            self._conn.rollback()
+        self._require_schema()
+        if not (_TRIPLE_COLUMNS.keys() - self._alpha_state_columns()):
+            return
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            present = self._alpha_state_columns()  # re-checked under the write lock
+            for column, ddl in _TRIPLE_COLUMNS.items():
+                if column not in present:
+                    self._conn.execute(
+                        f"ALTER TABLE alpha_state ADD COLUMN {column} {ddl}"
+                    )
+            self._conn.commit()
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
 
     def _ensure_search_schema(self) -> None:
         """Migrate only an already-valid experiment store on the first search write."""
@@ -1832,6 +1875,7 @@ class SqliteExperimentStore:
         """Atomically persist the catalog snapshot and any causally-bound events."""
         self._require_schema()
         self._require_outbox_schema()
+        self._ensure_triple_columns()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
         messages = tuple(event_outbox)
@@ -1846,13 +1890,25 @@ class SqliteExperimentStore:
                 trial_rows,
             )
             for row in alpha_rows:
+                # Dual-write (727 C2): the legacy mixed `state` and the orthogonal
+                # triple commit in the SAME transaction, so no crash window can
+                # leave one representation written without the other. Rows from
+                # pre-C2 callers may omit the triple keys; they persist as NULL
+                # and the loader falls back to the projection.
                 self._conn.execute(
                     "INSERT INTO alpha_state(alpha_id, definition_json, state, "
-                    "returns_json, sharpe, pvalue) VALUES (?, ?, ?, ?, ?, ?) "
+                    "returns_json, sharpe, pvalue, research_state, deployment_state, "
+                    "health_state, research_reason, deployment_reason, health_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(alpha_id) DO UPDATE SET "
                     "definition_json=excluded.definition_json, state=excluded.state, "
                     "returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-                    "pvalue=excluded.pvalue",
+                    "pvalue=excluded.pvalue, research_state=excluded.research_state, "
+                    "deployment_state=excluded.deployment_state, "
+                    "health_state=excluded.health_state, "
+                    "research_reason=excluded.research_reason, "
+                    "deployment_reason=excluded.deployment_reason, "
+                    "health_reason=excluded.health_reason",
                     (
                         row["alpha_id"],
                         row["definition_json"],
@@ -1860,6 +1916,12 @@ class SqliteExperimentStore:
                         row["returns_json"],
                         row.get("sharpe"),
                         row.get("pvalue"),
+                        row.get("research_state"),
+                        row.get("deployment_state"),
+                        row.get("health_state"),
+                        row.get("research_reason"),
+                        row.get("deployment_reason"),
+                        row.get("health_reason"),
                     ),
                 )
             for message in messages:
@@ -1906,6 +1968,7 @@ class SqliteExperimentStore:
     ) -> None:
         """Add new evaluation rows without mutating existing lifecycle state."""
         self._require_schema()
+        self._ensure_triple_columns()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
         try:
@@ -1927,7 +1990,9 @@ class SqliteExperimentStore:
                     continue
                 self._conn.execute(
                     "INSERT INTO alpha_state(alpha_id,definition_json,state,returns_json,"
-                    " sharpe,pvalue) VALUES (?,?,?,?,?,?)",
+                    " sharpe,pvalue,research_state,deployment_state,health_state,"
+                    " research_reason,deployment_reason,health_reason) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         row["alpha_id"],
                         row["definition_json"],
@@ -1935,6 +2000,12 @@ class SqliteExperimentStore:
                         row["returns_json"],
                         row.get("sharpe"),
                         row.get("pvalue"),
+                        row.get("research_state"),
+                        row.get("deployment_state"),
+                        row.get("health_state"),
+                        row.get("research_reason"),
+                        row.get("deployment_reason"),
+                        row.get("health_reason"),
                     ),
                 )
             self._conn.commit()
@@ -2059,25 +2130,64 @@ class SqliteExperimentStore:
         returns_json: str,
         sharpe: Optional[float],
         pvalue: Optional[float],
+        *,
+        research_state: Optional[str] = None,
+        deployment_state: Optional[str] = None,
+        health_state: Optional[str] = None,
+        research_reason: Optional[str] = None,
+        deployment_reason: Optional[str] = None,
+        health_reason: Optional[str] = None,
     ) -> None:
+        """Legacy-signature upsert. The 727 C2 triple columns are OPTIONAL:
+        callers that only know the legacy mixed state persist NULLs and the
+        loader falls back to project(state) — never a fabricated dimension."""
         self._require_schema()
+        self._ensure_triple_columns()
         self._conn.execute(
-            "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, sharpe, pvalue) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, "
+            "sharpe, pvalue, research_state, deployment_state, health_state, "
+            "research_reason, deployment_reason, health_reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(alpha_id) DO UPDATE SET definition_json=excluded.definition_json, "
             "state=excluded.state, returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-            "pvalue=excluded.pvalue",
-            (alpha_id, definition_json, state, returns_json, sharpe, pvalue),
+            "pvalue=excluded.pvalue, research_state=excluded.research_state, "
+            "deployment_state=excluded.deployment_state, health_state=excluded.health_state, "
+            "research_reason=excluded.research_reason, "
+            "deployment_reason=excluded.deployment_reason, "
+            "health_reason=excluded.health_reason",
+            (
+                alpha_id,
+                definition_json,
+                state,
+                returns_json,
+                sharpe,
+                pvalue,
+                research_state,
+                deployment_state,
+                health_state,
+                research_reason,
+                deployment_reason,
+                health_reason,
+            ),
         )
         self._conn.commit()
 
     def all_alphas(self) -> list[dict]:
         self._require_schema()
+        triple = _TRIPLE_COLUMNS.keys() <= self._alpha_state_columns()
+        select_triple = (
+            ", research_state, deployment_state, health_state, "
+            "research_reason, deployment_reason, health_reason"
+            if triple
+            else ", NULL AS research_state, NULL AS deployment_state, "
+            "NULL AS health_state, NULL AS research_reason, "
+            "NULL AS deployment_reason, NULL AS health_reason"
+        )
         return [
             dict(r)
             for r in self._conn.execute(
                 "SELECT alpha_id, definition_json, state, returns_json, sharpe, pvalue "
-                "FROM alpha_state ORDER BY alpha_id"
+                f"{select_triple} FROM alpha_state ORDER BY alpha_id"
             )
         ]
 

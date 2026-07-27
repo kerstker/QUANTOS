@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 36,
+  "edge_count": 38,
   "edges": [
     {
       "references": [
@@ -18,6 +18,17 @@
       ],
       "source": "alpha",
       "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 23,
+          "module": "services.lifecycle",
+          "path": "services/alpha/catalog.py"
+        }
+      ],
+      "source": "alpha",
+      "target": "lifecycle"
     },
     {
       "references": [
@@ -806,6 +817,17 @@
     {
       "references": [
         {
+          "line": 19,
+          "module": "services.lifecycle",
+          "path": "services/research/experiment_registry/registry.py"
+        }
+      ],
+      "source": "research",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
           "line": 32,
           "module": "services.portfolio.signal_adapter",
           "path": "services/research/alpha_pipeline.py"
@@ -976,7 +998,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "e3e1aa686f6fbbd1ae79292433fcc7f5ab243026bb3ae7d45311aa3390010e2e",
+  "graph_sha256": "00bcfb7fff8e9c714bda4947456a86f6142d42f9db1369307cafc6e7bd3d8d45",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 17,
   "nodes": [

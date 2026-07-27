@@ -20,6 +20,15 @@ from typing import Callable, Mapping, Optional, Sequence
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.research import AlphaState
 
+from services.lifecycle import (
+    DeploymentState,
+    HealthState,
+    HealthVerdict,
+    LifecycleTriple,
+    ResearchState,
+    project,
+)
+
 _VAR_SR_FLOOR = 1e-4
 
 
@@ -30,6 +39,10 @@ class AlphaStateRow:
     state: AlphaState
     returns: tuple[float, ...]
     pvalue: Optional[float]
+    # 727 C2: the three orthogonal machines alongside the legacy mixed state.
+    # None means "written before C2" — restore() falls back to project(state)
+    # rather than inventing dimensions that were never recorded.
+    triple: Optional[LifecycleTriple] = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +62,13 @@ class AlphaCatalog:
     ) -> None:
         self._defs: dict[str, AlphaDefinition] = {}
         self._state: dict[str, AlphaState] = {}
+        # 727 C2: parallel per-machine views. In C2 they are ALWAYS the
+        # projection of _state (dual-write); C3's advance_research/deployment/
+        # health entries are what will let them diverge from the projection.
+        self._research: dict[str, ResearchState] = {}
+        self._deployment: dict[str, DeploymentState] = {}
+        self._health: dict[str, HealthVerdict] = {}
+        self._lossy: dict[str, tuple[str, ...]] = {}
         self._returns: dict[str, tuple[float, ...]] = {}
         self._sharpes: dict[str, float] = {}
         self._pvalues: dict[str, float] = {}
@@ -70,6 +90,7 @@ class AlphaCatalog:
         self.register_trial(definition.definition_hash)
         self._defs[aid] = definition
         self._state[aid] = AlphaState.DRAFT
+        self._write_triple(aid, project(AlphaState.DRAFT))
 
     def register_trial(self, config_hash: str) -> None:
         """Count a never-seen config exactly once; monotonic, never decremented."""
@@ -140,6 +161,12 @@ class AlphaCatalog:
     def state(self, alpha_id: str) -> AlphaState:
         return self._state[alpha_id]
 
+    def _write_triple(self, alpha_id: str, triple: LifecycleTriple) -> None:
+        self._research[alpha_id] = triple.research
+        self._deployment[alpha_id] = triple.deployment
+        self._health[alpha_id] = triple.health
+        self._lossy[alpha_id] = triple.lossy
+
     def _set_state(self, alpha_id: str, state: AlphaState) -> None:
         """INTERNAL — performs NO validation. The AlphaLifecycleManager (the
         validated, audited chokepoint) is the ONLY component that should call this
@@ -149,6 +176,41 @@ class AlphaCatalog:
         (see the threat-model note in CLAUDE.md: in-process trusted code is governed
         by code review + the governance scanner, not by this runtime check)."""
         self._state[alpha_id] = state
+        # Dual-write (727 C2): the orthogonal machines shadow the legacy write
+        # with its projection. Zero behavior change — the legacy read path stays
+        # authoritative until C3 switches the orchestrator.
+        self._write_triple(alpha_id, project(state))
+
+    # --- orthogonal machine reads (727 C2; additive, legacy reads untouched) --
+
+    def triple(self, alpha_id: str) -> LifecycleTriple:
+        """The three-machine view. Rows registered/restored after C2 carry it
+        directly; anything older is projected on the fly with its loss markers."""
+        if alpha_id not in self._research:
+            return project(self._state[alpha_id])
+        return LifecycleTriple(
+            research=self._research[alpha_id],
+            deployment=self._deployment[alpha_id],
+            health=self._health[alpha_id],
+            lossy=self._lossy.get(alpha_id, ()),
+        )
+
+    def research_state(self, alpha_id: str) -> ResearchState:
+        return self.triple(alpha_id).research
+
+    def deployment_state(self, alpha_id: str) -> DeploymentState:
+        return self.triple(alpha_id).deployment
+
+    def health(self, alpha_id: str) -> HealthVerdict:
+        return self.triple(alpha_id).health
+
+    def by_deployment(self, state: DeploymentState) -> list[str]:
+        return sorted(
+            aid for aid in self._defs if self.triple(aid).deployment is state
+        )
+
+    def by_health(self, state: HealthState) -> list[str]:
+        return sorted(aid for aid in self._defs if self.triple(aid).health.state is state)
 
     def all_ids(self) -> list[str]:
         return sorted(self._defs)
@@ -170,6 +232,7 @@ class AlphaCatalog:
                 state=self._state[aid],
                 returns=self._returns.get(aid, ()),
                 pvalue=self._pvalues.get(aid),
+                triple=self.triple(aid),
             )
             for aid in self.all_ids()
         )
@@ -181,6 +244,10 @@ class AlphaCatalog:
         consistent with the persisted returns."""
         self._defs = {}
         self._state = {}
+        self._research = {}
+        self._deployment = {}
+        self._health = {}
+        self._lossy = {}
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
@@ -191,6 +258,9 @@ class AlphaCatalog:
         for row in snap.alphas:
             self._defs[row.alpha_id] = row.definition
             self._state[row.alpha_id] = row.state
+            # Rows persisted before C2 have no triple columns; project the legacy
+            # state (keeping its loss markers) instead of inventing dimensions.
+            self._write_triple(row.alpha_id, row.triple or project(row.state))
             if row.returns:
                 self.set_returns(row.alpha_id, row.returns)   # recomputes _sharpes
             if row.pvalue is not None:
@@ -211,6 +281,10 @@ class AlphaCatalog:
         """
         self._defs = {}
         self._state = {}
+        self._research = {}
+        self._deployment = {}
+        self._health = {}
+        self._lossy = {}
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
