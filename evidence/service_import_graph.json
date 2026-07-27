@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 38,
+  "edge_count": 39,
   "edges": [
     {
       "references": [
@@ -104,12 +104,12 @@
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 235,
+          "line": 271,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 307,
+          "line": 343,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -175,6 +175,17 @@
       ],
       "source": "console",
       "target": "governance"
+    },
+    {
+      "references": [
+        {
+          "line": 32,
+          "module": "services.lifecycle",
+          "path": "services/console/api/registry_snapshots.py"
+        }
+      ],
+      "source": "console",
+      "target": "lifecycle"
     },
     {
       "references": [
@@ -296,12 +307,12 @@
           "path": "services/console/api/primary_views.py"
         },
         {
-          "line": 115,
+          "line": 151,
           "module": "services.research.experiment_registry.store",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 126,
+          "line": 162,
           "module": "services.research.paper_trading.store",
           "path": "services/console/api/registry_snapshots.py"
         },
@@ -1018,7 +1029,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "fd57020aa377886f18d781c361cedee05556cefd7ca790e3330b1a8c482728ad",
+  "graph_sha256": "772b087a1637666ff8f3ba1ead6917842a2a79103c02e8eada83f63344ef985b",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 17,
   "nodes": [
