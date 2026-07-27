@@ -444,3 +444,67 @@ def test_non_json_body_raises_clear_runtime_error():
                         clock=_CLOCK, safety_config=_ARMED, sleep=lambda _s: None)
     with pytest.raises(RuntimeError, match="non-JSON response"):
         c.account()
+
+
+# --- depth(SHADOW 订单簿深度,2026-07-27 Phase 7 S1) ---
+
+_DEPTH_RESP = {"lastUpdateId": 111,
+               "bids": [["49999.5", "0.10"], ["49999.0", "0.20"]],
+               "asks": [["50000.5", "0.15"], ["50001.0", "0.30"]]}
+
+
+def test_depth_parses_levels_labels_source_and_as_of_none():
+    c, _ = _client({"/api/v3/depth": (200, _DEPTH_RESP)})
+    snap = c.depth("BTC")
+    assert snap is not None
+    assert snap.source == "mexc"
+    assert snap.instrument_id == "BTC"
+    assert [(l.price, l.size) for l in snap.bids] == [(49999.5, 0.10), (49999.0, 0.20)]
+    assert [(l.price, l.size) for l in snap.asks] == [(50000.5, 0.15), (50001.0, 0.30)]
+    assert snap.as_of_ms is None                     # MEXC depth 响应不带时间戳,诚实 None
+
+
+def test_depth_is_unsigned_get_with_symbol_and_limit():
+    c, t = _client({"/api/v3/depth": (200, _DEPTH_RESP)})
+    c.depth("ETH", limit=20)
+    url = t.calls[0]["url"]
+    assert "signature" not in url
+    params = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+    assert params == {"symbol": "ETHUSDT", "limit": "20"}
+
+
+def test_depth_limit_clamped_up_to_nearest_allowed():
+    for requested, expected in ((1, "5"), (75, "100"), (101, "500"), (99999, "1000")):
+        c, t = _client({"/api/v3/depth": (200, _DEPTH_RESP)})
+        c.depth("BTC", limit=requested)
+        params = dict(urllib.parse.parse_qsl(t.calls[0]["url"].split("?", 1)[1]))
+        assert params["limit"] == expected           # 向上取档,绝不少给;超最大档取最大档
+
+
+def test_depth_fail_soft_on_http_error_and_non_json():
+    c, _ = _client({"/api/v3/depth": (500, {"msg": "boom"})})
+    assert c.depth("BTC") is None
+
+    def transport(method, url, *, body=None, headers=None):
+        return 200, b"<html>not json</html>"
+    c2 = MexcSpotAdapter(api_key=_KEY, api_secret=_SECRET,
+                         base_url=MexcSpotAdapter.MAINNET_BASE, http_request=transport,
+                         clock=_CLOCK, safety_config=_ARMED, sleep=lambda _s: None)
+    assert c2.depth("BTC") is None                   # 反向代理 HTML 页也 fail-soft None
+
+
+def test_depth_fail_soft_on_malformed_or_empty_sides():
+    for payload in ({"bids": [], "asks": [["1", "1"]]},          # 空簿
+                    {"bids": [["1", "1"]], "asks": []},
+                    {"bids": "nope", "asks": [["1", "1"]]},      # 形状不符
+                    {"asks": [["1", "1"]]},                      # 缺 bids 键
+                    {"bids": [["1", "x"]], "asks": [["1", "1"]]},  # 不可解析档
+                    {"bids": [["1", "0"]], "asks": [["1", "1"]]}): # 零量档(快照垃圾)
+        c, _ = _client({"/api/v3/depth": (200, payload)})
+        assert c.depth("BTC") is None
+
+
+def test_depth_fail_soft_on_non_finite_level():
+    c, _ = _client({"/api/v3/depth": (200, {"bids": [["NaN", "1"]],
+                                            "asks": [["1", "1"]]})})
+    assert c.depth("BTC") is None                    # 任一非有限档 -> 整簿 None,不硬凑

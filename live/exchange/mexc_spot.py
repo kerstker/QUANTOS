@@ -45,7 +45,9 @@ import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
-from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult, VenuePosition
+from live.contracts import (ExchangeFilters, LiveOrderRequest, OrderBookSnapshot,
+                            VenueOrderResult, VenuePosition)
+from live.exchange.depth import clamp_depth_limit, parse_depth_levels
 from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 from quantos.contracts.trading import OrderSide
@@ -53,6 +55,9 @@ from quantos.contracts.trading import OrderSide
 _ORDER_NOT_FOUND_CODE = -2013     # MEXC: "Order does not exist."(与 Binance 同码)
 _CANCEL_REJECTED_CODE = -2011     # MEXC: "Unknown order sent."(不存在或已终态,无法撤)
 _RATE_LIMIT_STATUSES = frozenset({429, 418})
+# MEXC /api/v3/depth 的合法 limit 档位(公开 API v3 文档;文档另有 5000 档,本适配器
+# 保守不承接——SHADOW 读数 1000 档已远超需求,越深响应越大,无必要不请求)。
+_DEPTH_ALLOWED_LIMITS = (5, 10, 20, 50, 100, 500, 1000)
 
 
 def _is_rate_limited(result: tuple) -> bool:
@@ -244,6 +249,29 @@ class MexcSpotAdapter:
                     if as_of_ms > 0:
                         book["as_of_ms"] = as_of_ms
             return book
+        except Exception:
+            return None
+
+    def depth(self, instrument_id: str, *, limit: int = 100) -> Optional[OrderBookSnapshot]:
+        """只读订单簿深度(SHADOW 比较输入,2026-07-27 Phase 7 S1):GET /api/v3/depth,
+        不签名。limit 钳到 MEXC 合法档(5/10/20/50/100/500/1000,向上取档绝不少给;
+        文档另有 5000 档,保守不承接)。fail-soft 与 `book_ticker` 同型——非 2xx/非 JSON/
+        形状不符/任一侧空簿/任一非有限档一律 None。MEXC 该响应**不带时间戳**,
+        as_of_ms 诚实置 None(绝不自造——调用方据此无法做 staleness 判定,如实缺失)。
+        只读、绝不在下单路径上。"""
+        clamped = clamp_depth_limit(limit, _DEPTH_ALLOWED_LIMITS)
+        try:
+            status, data = self._get("/api/v3/depth",
+                                     {"symbol": instrument_id + "USDT", "limit": clamped},
+                                     signed=False)
+            if not (200 <= status < 300) or not isinstance(data, dict):
+                return None
+            bids = parse_depth_levels(data.get("bids"))
+            asks = parse_depth_levels(data.get("asks"))
+            if not bids or not asks:
+                return None
+            return OrderBookSnapshot(instrument_id=instrument_id, bids=bids, asks=asks,
+                                     as_of_ms=None, source="mexc")
         except Exception:
             return None
 

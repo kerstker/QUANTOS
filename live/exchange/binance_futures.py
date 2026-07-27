@@ -33,7 +33,9 @@ import urllib.request
 from typing import Callable, Optional
 
 from live.contracts import (ExchangeFilters, FundingRateSnapshot, LiveOrderRequest,
-                            PremiumIndexSnapshot, VenueOrderResult, VenuePosition)
+                            OrderBookSnapshot, PremiumIndexSnapshot, VenueOrderResult,
+                            VenuePosition)
+from live.exchange.depth import clamp_depth_limit, extract_as_of_ms, parse_depth_levels
 from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
@@ -41,6 +43,7 @@ _ORDER_NOT_FOUND_CODE = -2013     # Binance: "Order does not exist."
 _CANCEL_REJECTED_CODE = -2011     # Binance: "Unknown order sent."(不存在或已终态,无法撤)
 _RATE_LIMIT_STATUSES = frozenset({429, 418})
 _FUNDING_RATE_MAX_LIMIT = 1000      # Binance /fapi/v1/fundingRate 的 limit 上限
+_DEPTH_ALLOWED_LIMITS = (5, 10, 20, 50, 100, 500, 1000)   # Binance /fapi/v1/depth 合法 limit 档
 
 
 def _is_rate_limited(result: tuple) -> bool:
@@ -267,6 +270,29 @@ class BinanceFuturesAdapter:
                                     funding_rate=float(item["fundingRate"]),
                                     funding_time_ms=int(item["fundingTime"]))
                 for item in data)
+        except Exception:
+            return None
+
+    def depth(self, instrument_id: str, *, limit: int = 100) -> Optional[OrderBookSnapshot]:
+        """只读订单簿深度(SHADOW 比较输入,2026-07-27 Phase 7 S1):GET /fapi/v1/depth,
+        不签名。limit 钳到 Binance 合法档(5/10/20/50/100/500/1000,向上取档绝不少给)。
+        fail-soft 与 `book_ticker` 同型——非 2xx/非 JSON/形状不符/任一侧空簿/任一非有限档
+        一律 None。as_of_ms 取载荷的 `E`(event time,行情推送时刻),缺失回退 `T`
+        (transaction time),都没有则 None(绝不自造)。只读、绝不在下单路径上。"""
+        clamped = clamp_depth_limit(limit, _DEPTH_ALLOWED_LIMITS)
+        try:
+            status, data = self._get("/fapi/v1/depth",
+                                     {"symbol": instrument_id + "USDT", "limit": clamped},
+                                     signed=False)
+            if not (200 <= status < 300) or not isinstance(data, dict):
+                return None
+            bids = parse_depth_levels(data.get("bids"))
+            asks = parse_depth_levels(data.get("asks"))
+            if not bids or not asks:
+                return None
+            return OrderBookSnapshot(instrument_id=instrument_id, bids=bids, asks=asks,
+                                     as_of_ms=extract_as_of_ms(data.get("E"), data.get("T")),
+                                     source="binance")
         except Exception:
             return None
 

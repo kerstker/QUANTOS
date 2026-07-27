@@ -454,3 +454,73 @@ def test_binance_book_ticker_non_json_fails_soft_returns_none():
                               base_url=BinanceFuturesAdapter.TESTNET_BASE,
                               http_request=_HtmlTransport(), clock=lambda: 1_700_000_000.0)
     assert c.book_ticker("BTC") is None
+
+
+# --- depth(SHADOW 订单簿深度,2026-07-27 Phase 7 S1) ---
+
+_DEPTH_RESP = {"lastUpdateId": 1027024,
+               "E": 1_700_000_000_123, "T": 1_700_000_000_120,
+               "bids": [["49999.5", "0.10"], ["49999.0", "0.20"]],
+               "asks": [["50000.5", "0.15"], ["50001.0", "0.30"]]}
+
+
+def test_depth_parses_levels_and_as_of_prefers_event_time():
+    c, _ = _client({"/fapi/v1/depth": (200, _DEPTH_RESP)})
+    snap = c.depth("BTC")
+    assert snap is not None
+    assert snap.source == "binance"
+    assert snap.instrument_id == "BTC"
+    assert [(l.price, l.size) for l in snap.bids] == [(49999.5, 0.10), (49999.0, 0.20)]
+    assert [(l.price, l.size) for l in snap.asks] == [(50000.5, 0.15), (50001.0, 0.30)]
+    assert snap.as_of_ms == 1_700_000_000_123         # E(event time)优先
+
+
+def test_depth_as_of_falls_back_to_transaction_time_then_none():
+    resp = dict(_DEPTH_RESP)
+    del resp["E"]
+    c, _ = _client({"/fapi/v1/depth": (200, resp)})
+    assert c.depth("BTC").as_of_ms == 1_700_000_000_120   # 缺 E 回退 T
+    resp2 = dict(resp)
+    del resp2["T"]
+    c2, _ = _client({"/fapi/v1/depth": (200, resp2)})
+    assert c2.depth("BTC").as_of_ms is None               # 都没有 -> 诚实 None,绝不自造
+
+
+def test_depth_is_unsigned_get_with_symbol_and_limit():
+    c, t = _client({"/fapi/v1/depth": (200, _DEPTH_RESP)})
+    c.depth("ETH", limit=20)
+    url = t.calls[0]["url"]
+    assert "signature" not in url
+    params = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+    assert params == {"symbol": "ETHUSDT", "limit": "20"}
+
+
+def test_depth_limit_clamped_up_to_nearest_allowed():
+    for requested, expected in ((1, "5"), (75, "100"), (101, "500"), (99999, "1000")):
+        c, t = _client({"/fapi/v1/depth": (200, _DEPTH_RESP)})
+        c.depth("BTC", limit=requested)
+        params = dict(urllib.parse.parse_qsl(t.calls[0]["url"].split("?", 1)[1]))
+        assert params["limit"] == expected
+
+
+def test_depth_fail_soft_on_http_error_and_non_json():
+    c, _ = _client({"/fapi/v1/depth": (500, {"msg": "boom"})})
+    assert c.depth("BTC") is None
+
+    def transport(method, url, *, body=None, headers=None):
+        return 200, b"<html>not json</html>"
+    c2 = BinanceFuturesAdapter(api_key=_KEY, api_secret=_SECRET,
+                               base_url=BinanceFuturesAdapter.TESTNET_BASE,
+                               http_request=transport, clock=lambda: 1_700_000_000.0)
+    assert c2.depth("BTC") is None
+
+
+def test_depth_fail_soft_on_malformed_empty_or_non_finite():
+    for payload in ({"bids": [], "asks": [["1", "1"]]},
+                    {"bids": [["1", "1"]], "asks": []},
+                    {"bids": "nope", "asks": [["1", "1"]]},
+                    {"asks": [["1", "1"]]},
+                    {"bids": [["NaN", "1"]], "asks": [["1", "1"]]},
+                    {"bids": [["1", "0"]], "asks": [["1", "1"]]}):
+        c, _ = _client({"/fapi/v1/depth": (200, payload)})
+        assert c.depth("BTC") is None

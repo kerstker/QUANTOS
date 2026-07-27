@@ -8,6 +8,7 @@ docs/engineering/specs/2026-07-04-live-execution-stack-design.md §3.3 延伸(§
 import hashlib
 import hmac
 import json
+import urllib.parse
 
 import pytest
 
@@ -590,3 +591,71 @@ def test_bybit_book_ticker_empty_list_fails_soft_returns_none():
     resp = {"retCode": 0, "retMsg": "OK", "result": {"list": []}, "time": 1700000000000}
     c, _ = _client({"/v5/market/tickers": (200, resp)})
     assert c.book_ticker("BTC") is None
+
+
+# --- depth(SHADOW 订单簿深度,2026-07-27 Phase 7 S1) ---
+
+_DEPTH_RESP = {"retCode": 0, "retMsg": "OK",
+               "result": {"s": "BTCUSDT",
+                          "b": [["49999.5", "0.10"], ["49999.0", "0.20"]],
+                          "a": [["50000.5", "0.15"], ["50001.0", "0.30"]],
+                          "ts": 1_700_000_000_123, "u": 12345},
+               "time": 1_700_000_000_130}
+
+
+def test_depth_parses_envelope_levels_and_result_ts():
+    c, _ = _client({"/v5/market/orderbook": (200, _DEPTH_RESP)})
+    snap = c.depth("BTC")
+    assert snap is not None
+    assert snap.source == "bybit"
+    assert snap.instrument_id == "BTC"
+    assert [(l.price, l.size) for l in snap.bids] == [(49999.5, 0.10), (49999.0, 0.20)]
+    assert [(l.price, l.size) for l in snap.asks] == [(50000.5, 0.15), (50001.0, 0.30)]
+    assert snap.as_of_ms == 1_700_000_000_123         # result.ts(快照时刻),非信封 time
+
+
+def test_depth_as_of_none_when_result_ts_missing():
+    resp = {"retCode": 0, "retMsg": "OK",
+            "result": {"s": "BTCUSDT", "b": [["1", "1"]], "a": [["2", "1"]], "u": 1},
+            "time": 1_700_000_000_130}
+    c, _ = _client({"/v5/market/orderbook": (200, resp)})
+    assert c.depth("BTC").as_of_ms is None            # 缺 ts -> 诚实 None,绝不自造
+
+
+def test_depth_is_unsigned_get_with_category_symbol_and_limit():
+    c, t = _client({"/v5/market/orderbook": (200, _DEPTH_RESP)})
+    c.depth("ETH", limit=200)
+    call = t.calls[0]
+    assert call["headers"] == {}                      # 公开端点不签名
+    params = dict(urllib.parse.parse_qsl(call["url"].split("?", 1)[1]))
+    assert params == {"category": "linear", "symbol": "ETHUSDT", "limit": "200"}
+
+
+def test_depth_limit_clamped_to_bybit_linear_allowed():
+    for requested, expected in ((0, "1"), (30, "50"), (51, "200"), (201, "1000"),
+                                (99999, "1000")):
+        c, t = _client({"/v5/market/orderbook": (200, _DEPTH_RESP)})
+        c.depth("BTC", limit=requested)
+        params = dict(urllib.parse.parse_qsl(t.calls[0]["url"].split("?", 1)[1]))
+        assert params["limit"] == expected            # 合法档 1/50/200/1000,向上取档
+
+
+def test_depth_fail_soft_on_http_error_and_retcode():
+    c, _ = _client({"/v5/market/orderbook": (500, {"retCode": 500, "retMsg": "boom"})})
+    assert c.depth("BTC") is None
+    c2, _ = _client({"/v5/market/orderbook": (200, {"retCode": 10001, "retMsg": "params error",
+                                                    "result": {}, "time": 1})})
+    assert c2.depth("BTC") is None                    # 2xx 但 retCode!=0 也 fail-soft None
+
+
+def test_depth_fail_soft_on_malformed_empty_or_non_finite():
+    def resp(result):
+        return {"retCode": 0, "retMsg": "OK", "result": result, "time": 1}
+    for payload in (resp({"b": [], "a": [["1", "1"]]}),
+                    resp({"b": [["1", "1"]], "a": []}),
+                    resp({"b": "nope", "a": [["1", "1"]]}),
+                    resp({"a": [["1", "1"]]}),
+                    resp({"b": [["NaN", "1"]], "a": [["1", "1"]]}),
+                    resp({"b": [["1", "0"]], "a": [["1", "1"]]})):
+        c, _ = _client({"/v5/market/orderbook": (200, payload)})
+        assert c.depth("BTC") is None
