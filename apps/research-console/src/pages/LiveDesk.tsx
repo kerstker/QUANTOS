@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import { PageShell, PageHeader, Panel, KpiStrip, StatTile, DataTable, Chip, type Column } from '@/ui/primitives';
 import { money, fixed, stamp } from '@/ui/format';
@@ -96,7 +96,11 @@ export default function LiveDesk() {
   const [busy, setBusy] = useState(false);
   const [opsToken, setOpsToken] = useOpsToken();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const opsHeaders: Record<string, string> = opsToken ? { 'X-Ops-Token': opsToken } : {};
+  const opsHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = {};
+    if (opsToken) headers['X-Ops-Token'] = opsToken;
+    return headers;
+  }, [opsToken]);
   const confirm = useConfirm();
   const prompt = usePrompt();
   const toast = useToast();
@@ -115,8 +119,7 @@ export default function LiveDesk() {
       const r2 = await fetch(`${OPS_URL}/api/v1/liveops/pending-review`, { headers: opsHeaders });
       if (r2.ok) setPending((await r2.json()).pending ?? []);
     } catch { /* dashboard error already surfaced above */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opsToken]);
+  }, [opsHeaders, opsToken]);
 
   useEffect(() => {
     poll();
@@ -145,7 +148,7 @@ export default function LiveDesk() {
     } finally {
       poll();
     }
-  }, [poll, prompt, toast]);
+  }, [opsHeaders, poll, prompt, toast]);
 
   const runPreview = useCallback(async (venue: string) => {
     if (!await confirm({
@@ -200,7 +203,7 @@ export default function LiveDesk() {
       setBusy(false);
       setTimeout(poll, 1500);
     }
-  }, [poll, confirm, toast]);
+  }, [opsHeaders, poll, confirm, toast]);
 
   const posCols: Column<PositionRow>[] = [
     { key: 'inst', header: bi('标的', 'Instrument'), render: p => <span className="mono text-ink">{p.instrument_id}</span> },

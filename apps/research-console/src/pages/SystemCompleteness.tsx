@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { fetchSystemCompletenessSnapshot } from '@/lib/api/research-console-api';
 import type {
   SystemCompletenessPayload,

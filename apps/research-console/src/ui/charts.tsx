@@ -218,7 +218,7 @@ export function RadialGauge({ value, max = 1, size = 132, label, tone }:
   const frac = Math.max(0, Math.min(1, value / (max || 1)));
   const t: Tone = tone ?? (frac >= 0.75 ? 'pos' : frac >= 0.5 ? 'accent' : frac >= 0.3 ? 'warn' : 'neg');
   const r = size / 2 - 12, cx = size / 2, cy = size / 2;
-  const C = 2 * Math.PI * r, start = 0.5 * Math.PI;
+  const start = 0.5 * Math.PI;
   const a0 = start + 0.2 * Math.PI, sweep = 1.6 * Math.PI;
   const polar = (ang: number) => `${cx + r * Math.cos(ang)} ${cy + r * Math.sin(ang)}`;
   const arc = (frac0: number) => {

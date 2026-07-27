@@ -111,6 +111,9 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/system-completeness": ("", (
         "assessment", "domains", "requirements", "red_lines", "inventory", "summary", "safety_boundary")),
     "/api/v1/console/system-health": ("", ("services", "gates", "safety_checks")),
+    "/api/v1/console/runtime-contract": ("", (
+        "contract_version", "service", "instance_id", "process_id", "build_sha",
+        "build_sha_known", "event_schema_catalog", "safety_boundary", "generated_at_ms")),
     "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
         "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
         "equity_curve", "drawdown_curve", "risk_report", "lineage")),
@@ -258,6 +261,7 @@ REAL_DATA_PROVENANCE = {
     # factor backtests when the snapshot is present, but the live-drift side stays synthetic (L2 has no
     # live/paper feed). The partial marker says exactly that — never claim fully real.
     "/api/v1/console/monitoring-drift": {"SYNTHETIC_DETERMINISTIC", "PARTIAL_ALPHA_DECAY_REAL"},
+    "/api/v1/console/runtime-contract": "REAL_RUNTIME_CONTRACT",
 }
 
 
@@ -276,6 +280,23 @@ def test_architecture_inventory_counts_included_router_endpoints():
 def test_health_endpoint_is_read_only():
     body = client.get("/health").json()
     assert body["status"] == "healthy" and body["mode"] == "READ_ONLY"
+
+
+def test_runtime_contract_binds_version_schema_instance_and_l2_boundary():
+    body = client.get("/api/v1/console/runtime-contract").json()
+    assert body["contract_version"] == "console-runtime.v1"
+    assert body["service"] == "research-console-api"
+    assert body["instance_id"]
+    assert isinstance(body["process_id"], int)
+    assert isinstance(body["event_schema_catalog"]["sha256"], str)
+    assert body["event_schema_catalog"]["event_type_count"] >= 1
+    assert body["safety_boundary"] == {
+        "read_only_console": True,
+        "authorized_level": "L2_DRY_RUN_ONLY",
+        "live_trading_authorized": False,
+        "order_submission_allowed": False,
+        "broker_connectivity": False,
+    }
 
 
 def test_dry_run_surfaces_paper_order_preview_without_live_capability():
@@ -321,6 +342,7 @@ def test_dry_run_surfaces_realtime_paper_marks_and_backtests_without_live_capabi
     assert realtime["read_only"] is True
     assert isinstance(realtime["verdict"]["cycle_completed"], bool)
     assert isinstance(realtime["verdict"]["paper_mark_ready"], bool)
+    assert isinstance(realtime.get("readiness_class"), str)
     assert isinstance(realtime["verdict"]["backtest_reference_present_for_all_three"], bool)
     assert isinstance(realtime["paper_ledger"], dict)
     assert isinstance(realtime["history"], list)
@@ -345,6 +367,8 @@ def test_dry_run_surfaces_semantic_paper_health_without_live_capability():
     assert health["read_only"] is True
     assert isinstance(health["verdict"]["paper_ready"], bool)
     assert isinstance(health["blockers"], list)
+    assert isinstance(health.get("readiness_class"), str)
+    assert isinstance(health.get("research_risk_bundles"), dict)
     assert isinstance(health["forward_evidence"], dict)
     assert isinstance(health["forward_evidence"]["complete_for_all_three"], bool)
     assert health["verdict"]["live_allowed"] is False

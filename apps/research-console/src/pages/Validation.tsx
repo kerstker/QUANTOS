@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { fetchValidationSnapshot } from '@/lib/api/research-console-api';
 import { mockValidationReports } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';

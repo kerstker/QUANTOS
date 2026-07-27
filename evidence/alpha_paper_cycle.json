@@ -83,11 +83,12 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 2,
-        "evidence_state": "ATTESTED_PENDING_REALIZATION",
+        "evidence_state": "DATA_BLOCKED",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "DATA_ADMISSION_BLOCK",
         "GONOGO_FORWARD_EVIDENCE_STALE",
         "DRY_RUN_RESEARCH_RISK_NOT_PASS",
         "FORWARD_EVIDENCE_INSUFFICIENT"
@@ -153,11 +154,12 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 2,
-        "evidence_state": "ATTESTED_PENDING_REALIZATION",
+        "evidence_state": "DATA_BLOCKED",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "DATA_ADMISSION_BLOCK",
         "GONOGO_FORWARD_EVIDENCE_STALE",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
@@ -224,20 +226,23 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 1,
-        "evidence_state": "ATTESTED_PENDING_REALIZATION",
+        "evidence_state": "DATA_BLOCKED",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "DATA_ADMISSION_BLOCK",
         "GONOGO_FORWARD_EVIDENCE_STALE",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     }
   },
   "common_blockers": [
+    "DATA_ADMISSION_BLOCK",
     "GONOGO_FORWARD_EVIDENCE_STALE"
   ],
   "next_actions": [
+    "wait for a clean recent-data admission and matching raw-lineage backfill",
     "run the official forward driver on each daily poll until every candidate has at least 8 realized periods",
     "keep top_contra research-only until its forward evidence reaches the required period count"
   ]

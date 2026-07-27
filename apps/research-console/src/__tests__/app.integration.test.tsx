@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '@/App';
 import { GROUPS } from '@/app/routes';
@@ -29,5 +29,12 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
   it('Command Center is still reachable at its own route', async () => {
     render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
     expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
+  });
+  it('opens the global route search instead of a decorative placeholder', async () => {
+    render(<MemoryRouter initialEntries={['/research/getting-started']}><App /></MemoryRouter>);
+    const search = screen.getByRole('button', { name: /Global search|全局搜索/ });
+    fireEvent.click(search);
+    expect(await screen.findByRole('dialog', { name: 'global search' })).toBeTruthy();
+    expect(screen.getByPlaceholderText(/Search pages|搜索页面/)).toBeTruthy();
   });
 });

@@ -2401,7 +2401,7 @@ def test_committed_alpha_trial_requirement_uses_semantic_checker():
     } <= set(requirement["checker_args"]["verification_paths"])
 
 
-def test_committed_alpha_trial_requirement_is_partial_without_history(tmp_path):
+def test_committed_alpha_trial_requirement_uses_retained_history(tmp_path):
     requirement = next(
         item for item in load_requirements(REGISTRY)
         if item["id"] == "ALPHA.TRIAL.GLOBAL_LEDGER"
@@ -2410,6 +2410,6 @@ def test_committed_alpha_trial_requirement_is_partial_without_history(tmp_path):
 
     result = assess_repository(ROOT, registry)["requirements"][0]
 
-    assert result["status"] == "PARTIAL"
-    assert result["current_maturity"] == "M3"
-    assert "factory persistence wiring is verified" in result["detail"]
+    assert result["status"] == "PASS"
+    assert result["current_maturity"] == "M4"
+    assert "two-session monotonic history chain" in result["detail"]

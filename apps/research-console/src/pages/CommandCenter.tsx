@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   fetchResearchRuns, fetchOverviewSnapshot, fetchCryptoLiveSnapshot,
-  fetchSafetyPrimitivesSnapshot, fetchPopulationOptimizerSnapshot,
+  fetchSafetyPrimitivesSnapshot, fetchPopulationOptimizerSnapshot, fetchEventsSnapshot,
 } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import type {
   ResearchRunsPayload, OverviewPayload, CryptoLivePayload,
-  SafetyPrimitivesPayload, PopulationOptimizerPayload,
+  SafetyPrimitivesPayload, PopulationOptimizerPayload, EventsPayload,
 } from '@/lib/types/research';
 import { PageShell, PageHeader, Panel, StatusChip, Chip, LoadingVeil, Button, SectionHeader } from '@/ui/primitives';
 import { PipelineFlow } from '@/ui/PipelineFlow';
@@ -118,7 +118,31 @@ function OptimizerTile() {
   );
 }
 
+function ActivityTile() {
+  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<EventsPayload>(s => fetchEventsSnapshot(s));
+  const events = usingBackend ? (payload?.events ?? []) : [];
+  const health = usingBackend ? payload?.event_bus_health : null;
+  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
+  return (
+    <LoadingVeil active={apiState === 'loading'}>
+      <div className="flex flex-wrap items-start gap-5">
+        <Metric label={bi('事件总数', 'Events')} value={(health?.event_records ?? events.length) || '—'} tone="accent" />
+        <Metric label={bi('待处理', 'Pending')} value={health?.pending_events ?? '—'} tone="info" />
+        <Metric label={bi('死信', 'Dead letters')} value={health?.dead_letter_count ?? '—'} tone={health?.dead_letter_count ? 'warn' : 'pos'} />
+        <div className="min-w-[14rem] flex-1 text-2xs text-muted">
+          <div className="mb-1 flex items-center gap-2"><StatusChip value={health?.verdict ?? 'UNKNOWN'} /> <span>{bi('后台活动 / 最近事件', 'background activity / latest events')}</span></div>
+          <div className="space-y-0.5 text-faint">
+            {events.slice(0, 3).map(event => <div key={event.event_id} className="truncate">{event.event_type} · {event.source}</div>)}
+            {!events.length && <span>{bi('暂无事件记录', 'no event records')}</span>}
+          </div>
+        </div>
+      </div>
+    </LoadingVeil>
+  );
+}
+
 const TILES: TileDef[] = [
+  { id: 'activity', title: 'Background Activity', titleZh: '后台活动', to: '/research/events', render: () => <ActivityTile /> },
   { id: 'runs', title: 'Research Runs', titleZh: '研究运行', to: '/research/runs', render: () => <RunsTile /> },
   { id: 'overview', title: 'Research Funnel', titleZh: '研究漏斗', to: '/research/alpha-zoo', render: () => <OverviewTile /> },
   { id: 'crypto', title: 'Crypto Live', titleZh: '加密实盘', to: '/research/crypto-live', render: () => <CryptoTile /> },
@@ -129,11 +153,17 @@ const TILES: TileDef[] = [
 interface Layout { order: string[]; spans: Record<string, number> }   // spans = index into SIZES
 
 function loadLayout(): Layout {
+  const defaults = { order: TILES.map(t => t.id), spans: Object.fromEntries(TILES.map(t => [t.id, 1])) };
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Layout>;
+      const savedOrder = Array.isArray(saved.order) ? saved.order.filter(id => TILES.some(tile => tile.id === id)) : [];
+      const order = [...savedOrder, ...defaults.order.filter(id => !savedOrder.includes(id))];
+      return { order, spans: { ...defaults.spans, ...(saved.spans ?? {}) } };
+    }
   } catch { /* ignore */ }
-  return { order: TILES.map(t => t.id), spans: Object.fromEntries(TILES.map(t => [t.id, 1])) };
+  return defaults;
 }
 
 export default function CommandCenter() {

@@ -85,6 +85,8 @@ def service_specs() -> list[dict[str, Any]]:
             "command": [sys.executable, "-m", "uvicorn", "services.console.main:app",
                         "--host", "127.0.0.1", "--port", "8400"],
             "health": "http://127.0.0.1:8400/openapi.json",
+            "cors_probe": "http://127.0.0.1:8400/health",
+            "cors_origins": [f"http://127.0.0.1:{frontend_port}", f"http://localhost:{frontend_port}"],
             "env": {"QUANTOS_CONSOLE_CORS_ORIGINS": frontend_origin},
         },
         {
@@ -132,6 +134,54 @@ def _port_busy(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", int(port))) == 0
 
 
+def _listening_pid(port: int) -> int | None:
+    """Return the process that owns a local TCP listener, when discoverable.
+
+    ``npm.cmd`` and some Windows Python launchers can exit after handing the
+    actual service to a child.  Tracking only ``Popen.pid`` therefore creates
+    false ``running=false`` states and leaves an orphan listener on stop.  The
+    listener PID is the resource we must own and reclaim.
+    """
+    if os.name == "nt":
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        target = f":{int(port)}"
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if len(fields) < 5 or fields[0].upper() != "TCP":
+                continue
+            if fields[1].endswith(target) and fields[3].upper() == "LISTENING":
+                try:
+                    pid = int(fields[4])
+                except ValueError:
+                    continue
+                return pid if pid > 0 else None
+        return None
+    # Linux/macOS runners normally provide lsof.  If not, retaining the
+    # launcher PID remains the safest fail-closed fallback.
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{int(port)}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    for line in result.stdout.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid > 0:
+            return pid
+    return None
+
+
 def _pid_alive(pid: Any) -> bool:
     try:
         pid = int(pid)
@@ -139,8 +189,34 @@ def _pid_alive(pid: Any) -> bool:
         return False
     if pid <= 0:
         return False
+    if os.name == "nt":
+        # ``os.kill(pid, 0)`` is not a validity probe on Windows (it returns
+        # WinError 87 for both live and dead PIDs).  Ask the kernel for the
+        # process exit code instead so Node/Vite children are tracked too.
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            try:
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return False
+                return int(exit_code.value) == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+        except (AttributeError, OSError, ctypes.error):
+            # Fall through to the portable probe for unusual Windows hosts.
+            pass
     try:
         os.kill(pid, 0)
+    except PermissionError:
+        # Windows may deny the zero-signal probe for a live process owned by
+        # another token (notably the Node/Vite child).  Permission denied is
+        # evidence that the PID exists, not evidence that it is dead.
+        return True
     except (OSError, ProcessLookupError):
         return False
     return True
@@ -161,6 +237,24 @@ def _wait_health(url: str, *, timeout: float = 30.0) -> None:
     raise RuntimeError(f"health check failed for {url}: {last_error}")
 
 
+def _wait_cors(url: str, origin: str, *, timeout: float = 30.0) -> None:
+    """Fail closed unless the API explicitly echoes the managed frontend origin."""
+    deadline = time.monotonic() + timeout
+    last_error = "not attempted"
+    while time.monotonic() < deadline:
+        request = urllib.request.Request(url, headers={"Origin": origin})
+        try:
+            with urllib.request.urlopen(request, timeout=1.0) as response:
+                allowed = response.headers.get("Access-Control-Allow-Origin")
+                if allowed == origin:
+                    return
+                last_error = f"Access-Control-Allow-Origin={allowed!r}"
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        time.sleep(0.25)
+    raise RuntimeError(f"CORS handshake failed for {origin} via {url}: {last_error}")
+
+
 def _kill(pid: int) -> None:
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -178,10 +272,21 @@ def stop() -> dict[str, Any]:
     for service in manifest.get("services", []) if isinstance(manifest.get("services"), list) else []:
         if not isinstance(service, dict):
             continue
-        pid = service.get("pid")
-        if _pid_alive(pid):
-            _kill(int(pid))
-            stopped.append({"name": service.get("name"), "pid": int(pid)})
+        pids = []
+        for key in ("pid", "launcher_pid"):
+            try:
+                candidate = int(service.get(key))
+            except (TypeError, ValueError):
+                continue
+            if candidate > 0 and candidate not in pids:
+                pids.append(candidate)
+        service_stopped = []
+        for pid in pids:
+            if _pid_alive(pid):
+                _kill(pid)
+                service_stopped.append(pid)
+        if service_stopped:
+            stopped.append({"name": service.get("name"), "pids": service_stopped})
     if MANIFEST.exists():
         MANIFEST.unlink()
     return {"stopped": stopped, "manifest": str(MANIFEST)}
@@ -197,6 +302,7 @@ def status() -> dict[str, Any]:
         rows.append({
             "name": service.get("name"),
             "pid": service.get("pid"),
+            "launcher_pid": service.get("launcher_pid"),
             "port": port,
             "pid_alive": _pid_alive(service.get("pid")),
             "port_listening": _port_busy(int(port)) if isinstance(port, int) else False,
@@ -239,16 +345,28 @@ def start() -> dict[str, Any]:
                 )
             finally:
                 log.close()
-            record = {"name": spec["name"], "pid": process.pid, "port": spec["port"],
-                      "health": spec["health"], "log": str(log_path)}
+            record = {"name": spec["name"], "pid": process.pid, "launcher_pid": process.pid,
+                      "port": spec["port"], "health": spec["health"], "log": str(log_path)}
             started.append(record)
             _write_json(MANIFEST, {"schema_version": 1, "started_at": int(time.time()),
                                    "services": started})
             _wait_health(spec["health"])
+            cors_probe = spec.get("cors_probe")
+            cors_origins = spec.get("cors_origins", [])
+            if isinstance(cors_probe, str) and isinstance(cors_origins, list):
+                for origin in cors_origins:
+                    if isinstance(origin, str) and origin:
+                        _wait_cors(cors_probe, origin)
+            listener_pid = _listening_pid(int(spec["port"]))
+            if listener_pid is not None:
+                record["pid"] = listener_pid
+                _write_json(MANIFEST, {"schema_version": 1, "started_at": int(time.time()),
+                                       "services": started})
     except BaseException:
         for service in started:
-            if _pid_alive(service.get("pid")):
-                _kill(int(service["pid"]))
+            for key in ("pid", "launcher_pid"):
+                if _pid_alive(service.get(key)):
+                    _kill(int(service[key]))
         if MANIFEST.exists():
             MANIFEST.unlink()
         raise

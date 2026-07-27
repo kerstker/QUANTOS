@@ -17,6 +17,8 @@ from services.research.ml.walk_forward_stack import walk_forward_stack
 from services.research.ml.accelerator import inspect_accelerator
 from quantos.contracts.alpha import AlphaDefinition
 
+_CACHE_DIR = os.path.join("data", "cache")
+
 _POOLS = {
     "crypto": (os.path.join("data", "cache", "crypto_history.db"), 3,
                [("momentum", 7), ("momentum", 14), ("zscore", 5), ("ts_rank", 14),
@@ -36,7 +38,25 @@ def _instruments_and_times(db):
     return insts, ets
 
 
-def main(asset: str = "crypto", accelerator: str = "cpu") -> None:
+def snapshot_path(asset: str, output_path: str | None = None) -> str:
+    """Return an asset-scoped snapshot path.
+
+    A single mutable ``ml_stack_snapshot.json`` used to be shared by crypto
+    and FX runs.  That let a GPU crypto experiment silently replace the FX
+    model-risk evidence source.  Asset-scoped defaults make that class of
+    provenance collision impossible; callers may still provide an explicit
+    path for a deliberate export.
+    """
+    if asset not in _POOLS:
+        raise ValueError(f"unsupported asset: {asset}")
+    return output_path or os.path.join(_CACHE_DIR, f"ml_stack_snapshot_{asset}.json")
+
+
+def main(
+    asset: str = "crypto",
+    accelerator: str = "cpu",
+    output_path: str | None = None,
+) -> None:
     db, fwd, pool = _POOLS[asset]
     if not os.path.exists(db):
         print(f"no {db} — fetch first"); return
@@ -113,17 +133,22 @@ def main(asset: str = "crypto", accelerator: str = "cpu") -> None:
     print(f"\n=== 三方 OOS Sharpe ===\n  stack GBM   {g}  (folds {gbm['n_folds']})\n"
           f"  stack Ridge {r}  (folds {ridge['n_folds']})\n  single best {s}\n  verdict: {verdict}", flush=True)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
-    json.dump(result, open(os.path.join("data", "cache", "ml_stack_snapshot.json"), "w", encoding="utf-8"),
-              indent=2, sort_keys=True)
-    print("snapshot -> data/cache/ml_stack_snapshot.json", flush=True)
+    destination = snapshot_path(asset, output_path)
+    os.makedirs(os.path.dirname(destination) or ".", exist_ok=True)
+    with open(destination, "w", encoding="utf-8", newline="") as handle:
+        json.dump(result, handle, indent=2, sort_keys=True)
+    print(f"snapshot -> {destination}", flush=True)
 
 
 if __name__ == "__main__":
     asset = "crypto"
     accelerator = "cpu"
+    output_path = None
     for arg in sys.argv[1:]:
         if arg in _POOLS:
             asset = arg
         elif arg.startswith("--accelerator="):
             accelerator = arg.split("=", 1)[1]
-    main(asset, accelerator)
+        elif arg.startswith("--output="):
+            output_path = arg.split("=", 1)[1]
+    main(asset, accelerator, output_path)

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_ms": 1785046721502,
+  "generated_at_ms": 1785122285672,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
   "instrument_scope": [
@@ -19,7 +19,7 @@
     "UNI",
     "XRP"
   ],
-  "expected_last_closed_day_ms": 1784937600000,
+  "expected_last_closed_day_ms": 1785024000000,
   "price_basis": "PERP_MARK_PRICE",
   "source_provenance": {
     "prices": "Binance Data Vision USD-M perpetual mark-price klines",
@@ -30,20 +30,20 @@
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
       "exists": true,
-      "size_bytes": 19783,
-      "sha256": "2a2798cc19cc085cf5e51fb85fe3383a6463a01b33ee40ccbe2dffdd17f683bf"
+      "size_bytes": 20718,
+      "sha256": "794eb63893c1c864d09b75bacc6605597f357b5325b82231e677473fb2b13488"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
       "exists": true,
-      "size_bytes": 7816189,
-      "sha256": "91a0d1bd087d80a206e0f8002dfe3c18d21faafff59ac8a7dbad508a3b845243"
+      "size_bytes": 7816616,
+      "sha256": "76679c094b3b3fa0af8a95710fb5bbb1ccbec91fb33a1879c93fb6a44d532b1b"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
       "exists": true,
-      "size_bytes": 6853429,
-      "sha256": "7e8e3ad53f9501768746f55a49e76525443b26f043fc20bd7d39a84e02c8244f"
+      "size_bytes": 6855302,
+      "sha256": "8ef40f04395e3540c1ccd788210dd2028501c8c87891522188aac78bd2fbc941"
     },
     "universe_snapshot": {
       "path": "data/cache/crypto_funding_snapshot.json",
@@ -54,14 +54,14 @@
     "refresh_status": {
       "path": "data/cache/live_refresh_status.json",
       "exists": true,
-      "size_bytes": 18143,
-      "sha256": "515f6c3310143c8857aea635989f9d4860c58a9e584c5598b33dbb0dae397d35"
+      "size_bytes": 18159,
+      "sha256": "da5c521b5220e7696a8e29703c407f355824a7c137507b03c3391fb7b8d8a094"
     },
     "raw_lineage_backfill": {
       "path": "evidence/raw_data_lineage_backfill.json",
       "exists": true,
       "size_bytes": 3518,
-      "sha256": "7e0e79890e23ba651c101fce9ef0023f672c6b1dd8dfb55de4415de4fc26c675"
+      "sha256": "c853ab41ac36c04c4bc762f7db5a96ad4650726cc90129f14d6e7a41a1d3b40b"
     }
   },
   "sources": {
@@ -71,145 +71,145 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 29,
-          "last_event_time": 1784937600000,
+          "n_records": 30,
+          "last_event_time": 1785024000000,
           "failed_checks": [],
           "detail": "ok"
         }
       },
       "rest_gap_fill_days": {
         "ADA": [
-          1784937600000
+          1785024000000
         ],
         "ATOM": [
-          1784937600000
+          1785024000000
         ],
         "AVAX": [
-          1784937600000
+          1785024000000
         ],
         "BCH": [
-          1784937600000
+          1785024000000
         ],
         "BNB": [
-          1784937600000
+          1785024000000
         ],
         "BTC": [
-          1784937600000
+          1785024000000
         ],
         "DOGE": [
-          1784937600000
+          1785024000000
         ],
         "DOT": [
-          1784937600000
+          1785024000000
         ],
         "ETH": [
-          1784937600000
+          1785024000000
         ],
         "LINK": [
-          1784937600000
+          1785024000000
         ],
         "LTC": [
-          1784937600000
+          1785024000000
         ],
         "SOL": [
-          1784937600000
+          1785024000000
         ],
         "UNI": [
-          1784937600000
+          1785024000000
         ],
         "XRP": [
-          1784937600000
+          1785024000000
         ]
       }
     },
@@ -219,86 +219,86 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 2133,
-          "last_event_time": 1784937600000,
+          "n_records": 2134,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 2207,
-          "last_event_time": 1784937600000,
+          "n_records": 2208,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 2166,
-          "last_event_time": 1784937600000,
+          "n_records": 2167,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 2142,
-          "last_event_time": 1784937600000,
+          "n_records": 2143,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 2138,
-          "last_event_time": 1784937600000,
+          "n_records": 2139,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 2229,
-          "last_event_time": 1784937600000,
+          "n_records": 2230,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         }
       }
@@ -309,131 +309,131 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2154,
-          "last_event_time": 1784937600000,
+          "n_records": 2155,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 1674,
-          "last_event_time": 1784937600000,
+          "n_records": 1675,
+          "last_event_time": 1785024000000,
           "detail": "ok"
         }
       },
       "rest_gap_fill_days": {
         "ADA": [
-          1784937600000
+          1785024000000
         ],
         "ATOM": [
-          1784937600000
+          1785024000000
         ],
         "AVAX": [
-          1784937600000
+          1785024000000
         ],
         "BCH": [
-          1784937600000
+          1785024000000
         ],
         "BNB": [
-          1784937600000
+          1785024000000
         ],
         "BTC": [
-          1784937600000
+          1785024000000
         ],
         "DOGE": [
-          1784937600000
+          1785024000000
         ],
         "DOT": [
-          1784937600000
+          1785024000000
         ],
         "ETH": [
-          1784937600000
+          1785024000000
         ],
         "LINK": [
-          1784937600000
+          1785024000000
         ],
         "LTC": [
-          1784937600000
+          1785024000000
         ],
         "SOL": [
-          1784937600000
+          1785024000000
         ],
         "UNI": [
-          1784937600000
+          1785024000000
         ],
         "XRP": [
-          1784937600000
+          1785024000000
         ]
       }
     }
@@ -442,19 +442,19 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 7290,
+    "observation_count": 7613,
     "invalid_observation_count": 0,
-    "object_count": 2744,
+    "object_count": 2843,
     "datasets": {
       "cross_exchange_snapshots": 24,
-      "funding": 1280,
-      "oi_metrics": 2623,
-      "oi_metrics_rest_gap_fill": 28,
+      "funding": 1308,
+      "oi_metrics": 2749,
+      "oi_metrics_rest_gap_fill": 42,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 2691,
-      "perp_mark_prices_rest_gap_fill": 28,
-      "spot_klines": 555,
-      "spot_klines_1d": 3
+      "perp_mark_prices": 2817,
+      "perp_mark_prices_rest_gap_fill": 42,
+      "spot_klines": 569,
+      "spot_klines_1d": 4
     },
     "providers": [
       "Binance + Bybit public synchronized market snapshot",
@@ -471,8 +471,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785045954597,
-    "aggregate_sha256": "2c5d3ab7f8e83bc3009fc84e191248ead1b5deb9810c6fe851fb0c73e0f63db0",
+    "latest_observed_at_ms": 1785122285672,
+    "aggregate_sha256": "e435cc9df5e9fc7d657f16ab1f2bd75ec7f3f2a19793a49abeeee61a50bbdeef",
     "errors": [],
     "path": "data/cache/raw_market_data"
   },
@@ -482,23 +482,29 @@
     "perp_mark_prices"
   ],
   "required_lineage_days": [
-    1784332800000,
     1784419200000,
     1784505600000,
     1784592000000,
     1784678400000,
     1784764800000,
     1784851200000,
-    1784937600000
+    1784937600000,
+    1785024000000
   ],
   "lineage_backfill": {
     "path": "evidence/raw_data_lineage_backfill.json",
     "exists": true,
-    "sha256": "7e0e79890e23ba651c101fce9ef0023f672c6b1dd8dfb55de4415de4fc26c675",
+    "sha256": "c853ab41ac36c04c4bc762f7db5a96ad4650726cc90129f14d6e7a41a1d3b40b",
     "readable": true,
-    "passed": true,
-    "reasons": [],
-    "generated_at_ms": 1785045954597,
+    "passed": false,
+    "reasons": [
+      "LINEAGE:BACKFILL_DAYS_MISMATCH",
+      "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
+      "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
+      "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
+      "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
+    ],
+    "generated_at_ms": 1785067533604,
     "verdict": "PASS",
     "instrument_scope": [
       "ADA",
@@ -527,11 +533,11 @@
       1784937600000
     ]
   },
-  "lineage_verdict": "PASS",
+  "lineage_verdict": "BLOCK",
   "refresh_observation": {
     "readable": true,
-    "run_id": "refresh-1785046721502",
-    "ran_at": 1785046721502,
+    "run_id": "refresh-1785122285672",
+    "ran_at": 1785122285672,
     "reports": [
       {
         "source": "prices",
@@ -568,19 +574,19 @@
       "schema_version": 1,
       "status": "PASS",
       "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-      "observation_count": 7290,
+      "observation_count": 7613,
       "invalid_observation_count": 0,
-      "object_count": 2744,
+      "object_count": 2843,
       "datasets": {
         "cross_exchange_snapshots": 24,
-        "funding": 1280,
-        "oi_metrics": 2623,
-        "oi_metrics_rest_gap_fill": 28,
+        "funding": 1308,
+        "oi_metrics": 2749,
+        "oi_metrics_rest_gap_fill": 42,
         "perp_klines_1d": 58,
-        "perp_mark_prices": 2691,
-        "perp_mark_prices_rest_gap_fill": 28,
-        "spot_klines": 555,
-        "spot_klines_1d": 3
+        "perp_mark_prices": 2817,
+        "perp_mark_prices_rest_gap_fill": 42,
+        "spot_klines": 569,
+        "spot_klines_1d": 4
       },
       "providers": [
         "Binance + Bybit public synchronized market snapshot",
@@ -597,12 +603,18 @@
         "CANONICAL_JSON_UTF8",
         "HTTP_BODY_BYTES"
       ],
-      "latest_observed_at_ms": 1785045954597,
-      "aggregate_sha256": "2c5d3ab7f8e83bc3009fc84e191248ead1b5deb9810c6fe851fb0c73e0f63db0",
+      "latest_observed_at_ms": 1785122285672,
+      "aggregate_sha256": "e435cc9df5e9fc7d657f16ab1f2bd75ec7f3f2a19793a49abeeee61a50bbdeef",
       "errors": []
     }
   },
   "quality_verdict": "PASS",
-  "verdict": "PASS",
-  "block_reasons": []
+  "verdict": "BLOCK",
+  "block_reasons": [
+    "LINEAGE:BACKFILL_DAYS_MISMATCH",
+    "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
+    "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
+    "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
+    "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
+  ]
 }

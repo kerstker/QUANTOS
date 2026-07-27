@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from tools.cache_io import atomic_write_json
+from tools.paper_order_preview import _full_research_risk_approved
 
 
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
@@ -116,6 +117,35 @@ def _forward_evidence_summary(status: Mapping[str, Any] | None) -> dict[str, Any
         "alphas": rows,
         "alerts": snapshot.get("alerts", []) if isinstance(snapshot.get("alerts", []), list) else [],
     }
+
+
+def _readiness_class(
+    *,
+    paper_ready: bool,
+    paper_mark_ready: bool,
+    preview_ready: bool,
+    realtime_verdict: Mapping[str, Any],
+    operator_mode: object,
+) -> tuple[str, str]:
+    """Return a machine-readable state and the only safe next action.
+
+    ``paper_mark_ready`` is deliberately a weaker observation state: it can be
+    true while the worker is replaying an immutable legacy ledger and while the
+    complete nine-engine risk bundle is still pending.  Keeping this distinction
+    in the health artifact prevents a UI/automation consumer from treating a
+    mark cycle as an order-admission signal.
+    """
+    if paper_ready:
+        return "PAPER_READY", "continue_forward_paper_track"
+    if paper_mark_ready and operator_mode == "EXISTING_FILLED_PAPER_LEDGER_REPLAY":
+        return "PAPER_MARKS_ONLY_REPLAY", "resolve_research_risk_and_create_new_decision"
+    if paper_mark_ready and not preview_ready:
+        return "PAPER_MARKS_READY_PENDING_RISK", "complete_full_nine_engine_risk_bundle"
+    if paper_mark_ready:
+        return "PAPER_MARKS_READY_PENDING_HEALTH", "inspect_health_blockers"
+    if realtime_verdict.get("cycle_completed") is True:
+        return "PAPER_CYCLE_BLOCKED", "inspect_health_blockers"
+    return "PAPER_BLOCKED", "repair_realtime_inputs_and_rerun"
 
 
 def evaluate_paper_health(
@@ -252,9 +282,21 @@ def evaluate_paper_health(
     )
     if set(preview_alphas) != set(ALPHA_IDS):
         block("PAPER_ORDER_ALPHA_SET_INCOMPLETE")
+    preview_research_risk_complete = True
+    research_risk_bundles: dict[str, dict[str, Any]] = {}
     for alpha_id in ALPHA_IDS:
         row = preview_alphas.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
+        bundle = row.get("research_risk_bundle")
+        bundle = bundle if isinstance(bundle, Mapping) else {}
+        research_risk_bundles[alpha_id] = {
+            "status": bundle.get("status", "NOT_PROVIDED"),
+            "provenance": bundle.get("provenance"),
+            "path": bundle.get("path"),
+            "bundle_sha256": bundle.get("bundle_sha256"),
+            "missing": bundle.get("missing", []),
+            "reasons": bundle.get("reasons", []),
+        }
         residual = _finite_number(row.get("reconciliation_residual"))
         if row.get("paper_execution") != "PAPER_FILLED":
             block(f"{alpha_id}:PAPER_EXECUTION_NOT_FILLED")
@@ -270,6 +312,9 @@ def evaluate_paper_health(
             block(f"{alpha_id}:PAPER_ORDER_REJECTED")
         if residual is None or abs(residual) > RECONCILIATION_TOLERANCE:
             block(f"{alpha_id}:PAPER_ORDER_RECONCILIATION_FAILED")
+        if not _full_research_risk_approved(row.get("research_risk")):
+            preview_research_risk_complete = False
+            block(f"{alpha_id}:PAPER_RESEARCH_RISK_NOT_FULL")
 
     if realtime_safety.get("paper_only") is not True:
         block("REALTIME_PAPER_ONLY_FLAG_NOT_TRUE")
@@ -297,8 +342,23 @@ def evaluate_paper_health(
 
     ready = not blockers
     forward_evidence = _forward_evidence_summary(forward_track)
+    research_risk_bundle_complete = bool(research_risk_bundles) and all(
+        row.get("status") == "READY" for row in research_risk_bundles.values()
+    )
     funding_complete = bool(alpha_report) and all(
         row.get("funding_data_complete") is True for row in alpha_report.values()
+    )
+    paper_mark_ready = realtime_verdict.get("paper_mark_ready") is True
+    paper_preview_ready = (
+        preview_verdict.get("paper_preview_ready") is True
+        and preview_research_risk_complete
+    )
+    readiness_class, next_action = _readiness_class(
+        paper_ready=ready,
+        paper_mark_ready=paper_mark_ready,
+        preview_ready=paper_preview_ready,
+        realtime_verdict=realtime_verdict,
+        operator_mode=realtime_status.get("operator_mode"),
     )
     return {
         "schema_version": 1,
@@ -310,8 +370,10 @@ def evaluate_paper_health(
         "max_age_ms": max_age_ms,
         "verdict": {
             "paper_ready": ready,
-            "paper_mark_ready": realtime_verdict.get("paper_mark_ready") is True,
-            "paper_preview_ready": preview_verdict.get("paper_preview_ready") is True,
+            "paper_mark_ready": paper_mark_ready,
+            "paper_preview_ready": paper_preview_ready,
+            "paper_research_risk_complete": preview_research_risk_complete,
+            "paper_research_risk_bundle_complete": research_risk_bundle_complete,
             "backtest_reference_present_for_all_three": (
                 realtime_verdict.get("backtest_reference_present_for_all_three") is True
             ),
@@ -320,7 +382,11 @@ def evaluate_paper_health(
             "order_submission_allowed": False,
             "human_review_required": True,
         },
+        "readiness_class": readiness_class,
+        "next_action": next_action,
         "alphas": alpha_report,
+        "research_risk_bundles": research_risk_bundles,
+        "research_risk_bundle_complete": research_risk_bundle_complete,
         "forward_evidence": forward_evidence,
         "blockers": blockers,
         "safety": {

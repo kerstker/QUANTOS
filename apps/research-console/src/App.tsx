@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell, type NavGroup } from '@/ui/AppShell';
 import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
@@ -24,6 +24,20 @@ function RouteFallback() {
   );
 }
 
+function RouteErrorFallback({ page }: { page: (typeof PAGES)[number] }) {
+  return (
+    <div className="mx-auto mt-10 max-w-xl rounded-xl border border-neg/30 bg-surface p-6">
+      <div className="mb-2 text-2xs font-semibold uppercase tracking-[0.14em] text-neg">ROUTE_ERROR</div>
+      <h2 className="text-lg font-semibold text-ink">{page.zh} <span className="text-muted">{page.en}</span></h2>
+      <p className="mt-2 text-sm text-faint">页面加载失败。其它工作区仍可用；请重试或返回全局搜索。 / This route failed to render. Other workspaces remain available.</p>
+      <button type="button" onClick={() => window.location.reload()}
+        className="mt-4 rounded-md border border-line px-3 py-1.5 text-2xs text-muted hover:bg-inset">
+        重试 / Retry
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AppShell nav={nav} tape={<MarketTape />}>
@@ -35,7 +49,8 @@ export default function App() {
               <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
             ))}
             {LAZY.map(({ page, Component }) => (
-              <Route key={page.path} path={page.path} element={<Component />} />
+              <Route key={page.path} path={page.path}
+                element={<ErrorBoundary fallback={<RouteErrorFallback page={page} />}><Component /></ErrorBoundary>} />
             ))}
           </Routes>
         </Suspense>

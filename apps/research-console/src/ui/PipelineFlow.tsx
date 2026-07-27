@@ -23,45 +23,55 @@ import {
 interface MetricSpec {
   fetcher: (signal: AbortSignal) => Promise<unknown>;
   /** Pull the single headline number out of the payload; null = unavailable. */
-  extract: (payload: any) => string | number | null;
+  extract: (payload: Record<string, unknown>) => string | number | null;
   labelZh: string;
   labelEn: string;
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
 
 const STAGE_METRICS: Record<GroupId, MetricSpec> = {
   overview: {
     fetcher: fetchResearchRuns as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (Array.isArray(p?.runs) ? p.runs.length : null),
+    extract: p => (Array.isArray(p.runs) ? p.runs.length : null),
     labelZh: '研究运行', labelEn: 'runs',
   },
   data: {
     fetcher: fetchDataCatalogSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (typeof p?.summary?.datasets === 'number' ? p.summary.datasets : null),
+    extract: p => {
+      const summary = nestedRecord(p.summary);
+      return typeof summary?.datasets === 'number' ? summary.datasets : null;
+    },
     labelZh: '数据集', labelEn: 'datasets',
   },
   alpha: {
     fetcher: fetchAlphaZooSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (Array.isArray(p?.rows) ? p.rows.length : null),
+    extract: p => (Array.isArray(p.rows) ? p.rows.length : null),
     labelZh: '因子', labelEn: 'alphas',
   },
   validation: {
     fetcher: fetchValidationSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (Array.isArray(p?.reports) ? p.reports.length : null),
+    extract: p => (Array.isArray(p.reports) ? p.reports.length : null),
     labelZh: '验证报告', labelEn: 'reports',
   },
   portfolio: {
     fetcher: fetchMonitoringDriftSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (typeof p?.summary?.monitors === 'number' ? p.summary.monitors : null),
+    extract: p => {
+      const summary = nestedRecord(p.summary);
+      return typeof summary?.monitors === 'number' ? summary.monitors : null;
+    },
     labelZh: '衰退监控', labelEn: 'monitors',
   },
   execution: {
     fetcher: fetchDryRunSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (typeof p?.n_runs === 'number' ? p.n_runs : null),
+    extract: p => (typeof p.n_runs === 'number' ? p.n_runs : null),
     labelZh: '干跑记录', labelEn: 'dry-runs',
   },
   system: {
     fetcher: fetchSystemHealthSnapshot as (s: AbortSignal) => Promise<unknown>,
-    extract: p => (Array.isArray(p?.services) ? p.services.length : null),
+    extract: p => (Array.isArray(p.services) ? p.services.length : null),
     labelZh: '服务', labelEn: 'services',
   },
 };
@@ -78,7 +88,10 @@ function firstPathOf(group: GroupId): string {
 /** One live metric chip inside a node. Isolated component so each node owns its hook. */
 function StageMetric({ spec, compact }: { spec: MetricSpec; compact: boolean }) {
   const { payload, usingBackend, apiState } = useConsoleSnapshot<unknown>(s => spec.fetcher(s));
-  const value = usingBackend ? spec.extract(payload) : null;
+  const record = payload !== null && typeof payload === 'object'
+    ? payload as Record<string, unknown>
+    : null;
+  const value = usingBackend && record ? spec.extract(record) : null;
   const live = usingBackend && value != null;
   if (compact) {
     return (

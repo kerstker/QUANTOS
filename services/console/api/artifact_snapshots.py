@@ -303,6 +303,11 @@ def _paper_profile_payload(
                 realtime_verdict.get("new_paper_orders_allowed", False)
             ),
             "operator_mode": realtime.get("operator_mode") if realtime else None,
+            "readiness_class": (
+                realtime.get("readiness_class", "PAPER_MARKS_BLOCKED")
+                if realtime
+                else "PAPER_MARKS_BLOCKED"
+            ),
             "observed_at": realtime.get("observed_at") if realtime else None,
             "funding_refresh": (
                 realtime_funding_refresh
@@ -322,6 +327,21 @@ def _paper_profile_payload(
             "paper_preview_ready": bool(health_verdict.get("paper_preview_ready", False)),
             "funding_data_complete_for_all_three": bool(
                 health_verdict.get("funding_data_complete_for_all_three", False)
+            ),
+            "readiness_class": health.get("readiness_class", "PAPER_BLOCKED")
+            if health
+            else "PAPER_BLOCKED",
+            "next_action": health.get("next_action") if health else None,
+            "research_risk_bundle_complete": bool(
+                health.get("research_risk_bundle_complete", False)
+            )
+            if health
+            else False,
+            "research_risk_bundles": (
+                health.get("research_risk_bundles")
+                if isinstance(health, dict)
+                and isinstance(health.get("research_risk_bundles"), dict)
+                else {}
             ),
             "age_ms": health.get("age_ms") if health else None,
             "blockers": blockers if isinstance(blockers, list) else [],
@@ -461,6 +481,11 @@ def _dry_run_payload() -> Dict:
         },
         "alphas": realtime_artifact.get("alphas", {}) if realtime_artifact else {},
         "operator_mode": realtime_artifact.get("operator_mode") if realtime_artifact else None,
+        "readiness_class": (
+            realtime_artifact.get("readiness_class", "PAPER_MARKS_BLOCKED")
+            if realtime_artifact
+            else "PAPER_MARKS_BLOCKED"
+        ),
         "backtests": realtime_artifact.get("backtests", {}) if realtime_artifact else {},
         "paper_ledger": realtime_ledger if isinstance(realtime_ledger, dict) else {},
         "history": realtime_history if isinstance(realtime_history, list) else [],
@@ -536,7 +561,22 @@ def _dry_run_payload() -> Dict:
                 health_verdict.get("order_submission_allowed", False)
             ),
         },
+        "readiness_class": health_artifact.get("readiness_class", "PAPER_BLOCKED")
+        if health_artifact
+        else "PAPER_BLOCKED",
+        "next_action": health_artifact.get("next_action") if health_artifact else None,
         "blockers": health_blockers if isinstance(health_blockers, list) else [],
+        "research_risk_bundle_complete": bool(
+            health_artifact.get("research_risk_bundle_complete", False)
+        )
+        if health_artifact
+        else False,
+        "research_risk_bundles": (
+            health_artifact.get("research_risk_bundles")
+            if isinstance(health_artifact, dict)
+            and isinstance(health_artifact.get("research_risk_bundles"), dict)
+            else {}
+        ),
         "forward_evidence": (
             health_artifact.get("forward_evidence")
             if isinstance(health_artifact, dict)

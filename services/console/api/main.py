@@ -85,6 +85,7 @@ from services.console.api.review_access_views import (
 from services.console.api.risk_port import risk_console_runtime
 from services.console.api.snapshot_middleware import attach_console_snapshot_metadata
 from services.console.api.system_views import (
+    CONSOLE_API_VERSION,
     configure_system_views,
     router as system_views_router,
 )
@@ -94,7 +95,7 @@ from services.validation.factor_statistics import compute_ic
 _IC_PANEL_SNAPSHOT = IC_PANEL_SNAPSHOT
 
 
-app = FastAPI(title="QUANTOS Research Console API", version="0.1.0")
+app = FastAPI(title="QUANTOS Research Console API", version=CONSOLE_API_VERSION)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _extra_cors_origins = tuple(
     origin.strip()

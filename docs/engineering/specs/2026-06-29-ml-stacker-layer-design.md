@@ -62,7 +62,7 @@
 3. `walk_forward_stack`(GBM)+`walk_forward_stack`(Ridge)→ 两条 OOS 组合收益;另取单因子最优的 OOS(复用
    `walk_forward_selection_oos`)。
 4. 三方 + 成本扫描:对每条 OOS 收益算关卡指标(sharpe、no-peek OOS、成本敏感);并排报。
-5. 诚实裁决(`STACK_BEATS_BASELINE` / `NO_LIFT_OVER_LINEAR` / `REFUTED_NO_EDGE`)+ 写 `data/cache/ml_stack_snapshot.json`。
+5. 诚实裁决(`STACK_BEATS_BASELINE` / `NO_LIFT_OVER_LINEAR` / `REFUTED_NO_EDGE`)+ 写资产隔离的 `data/cache/ml_stack_snapshot_<asset>.json`。
 6. **不**注册进 run_registry(与既有研究驱动器一致,结果落快照)。确定性、可复现、可重跑。
 
 ## 6. 容器化 / 安全 / 确定性边界(机器强制,不可让)

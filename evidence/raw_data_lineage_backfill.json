@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1785045954597,
+  "generated_at_ms": 1785067533604,
   "instrument_scope": [
     "ADA",
     "ATOM",
@@ -33,8 +33,8 @@
   "artifacts": {
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
-      "size_bytes": 19783,
-      "sha256": "2a2798cc19cc085cf5e51fb85fe3383a6463a01b33ee40ccbe2dffdd17f683bf"
+      "size_bytes": 19867,
+      "sha256": "a7492b873f5de0e88be135404ace566d253d3d2a37740b6164163d3ff30f225f"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
@@ -43,8 +43,8 @@
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
-      "size_bytes": 6853429,
-      "sha256": "7e8e3ad53f9501768746f55a49e76525443b26f043fc20bd7d39a84e02c8244f"
+      "size_bytes": 6853165,
+      "sha256": "534cac649b393d8f19079dd1c00e0d6f0c423cbea61aa354d1c6709538256fc3"
     }
   },
   "sources": {
@@ -52,9 +52,9 @@
       "source": "perp_mark_prices",
       "attempted_records": 112,
       "matched_records": 112,
-      "refetched_records": 98,
+      "refetched_records": 112,
       "replayed_records": 0,
-      "rest_refetched_records": 14,
+      "rest_refetched_records": 0,
       "rest_replayed_records": 0,
       "failures": [],
       "warnings": [],
@@ -65,9 +65,9 @@
       "source": "oi_metrics",
       "attempted_records": 112,
       "matched_records": 112,
-      "refetched_records": 98,
+      "refetched_records": 112,
       "replayed_records": 0,
-      "rest_refetched_records": 14,
+      "rest_refetched_records": 0,
       "rest_replayed_records": 0,
       "failures": [],
       "warnings": [],
@@ -90,16 +90,16 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 7290,
+    "observation_count": 7556,
     "invalid_observation_count": 0,
-    "object_count": 2744,
+    "object_count": 2786,
     "datasets": {
       "cross_exchange_snapshots": 24,
-      "funding": 1280,
-      "oi_metrics": 2623,
+      "funding": 1294,
+      "oi_metrics": 2749,
       "oi_metrics_rest_gap_fill": 28,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 2691,
+      "perp_mark_prices": 2817,
       "perp_mark_prices_rest_gap_fill": 28,
       "spot_klines": 555,
       "spot_klines_1d": 3
@@ -119,8 +119,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785045954597,
-    "aggregate_sha256": "2c5d3ab7f8e83bc3009fc84e191248ead1b5deb9810c6fe851fb0c73e0f63db0",
+    "latest_observed_at_ms": 1785067533604,
+    "aggregate_sha256": "1e915ad2a016cec5f896d20a47fdbfe6e9b695c71839d22c85e148a8e96a7f68",
     "errors": []
   },
   "verdict": "PASS",

@@ -19,6 +19,12 @@ import tempfile
 import time
 from typing import Any, Callable, Iterator, Mapping
 
+# Support the documented direct-script invocation without requiring an
+# editable install of the repository package.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from quantos.contracts.hashing import stable_hash
 
 
@@ -70,6 +76,10 @@ _EVALUATION_FIELDS = {
     "content_hash",
 }
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+# Trial/config identities created by pre-v2 research runners were short
+# immutable identifiers. They are accepted only in config/trial positions;
+# record, event, link, and content hashes remain full SHA-256 values.
+_CONFIG_HASH = re.compile(r"^(?:[0-9a-f]{16}|[0-9a-f]{64})$")
 
 
 class TrialLedgerHistoryError(RuntimeError):
@@ -225,7 +235,7 @@ def _validate_history_document(
             not isinstance(candidates, list)
             or not candidates
             or candidates != sorted(set(candidates))
-            or any(not isinstance(value, str) or not _DIGEST.fullmatch(value) for value in candidates)
+            or any(not isinstance(value, str) or not _CONFIG_HASH.fullmatch(value) for value in candidates)
         ):
             raise TrialLedgerHistoryError(f"history record {expected_sequence} session candidates are invalid")
         evaluation_links = provenance["evaluation_links"]
@@ -238,7 +248,7 @@ def _validate_history_document(
             run_id = link["run_id"]
             if (
                 not isinstance(link["config_hash"], str)
-                or not _DIGEST.fullmatch(link["config_hash"])
+                or not _CONFIG_HASH.fullmatch(link["config_hash"])
                 or link["config_hash"] not in candidates
                 or not _is_nonempty_string(run_id)
                 or run_id in linked_runs
@@ -265,7 +275,7 @@ def _validate_history_document(
         if (
             not isinstance(trials, list)
             or trials != sorted(set(trials))
-            or any(not isinstance(value, str) or not _DIGEST.fullmatch(value) for value in trials)
+            or any(not isinstance(value, str) or not _CONFIG_HASH.fullmatch(value) for value in trials)
         ):
             raise TrialLedgerHistoryError(f"history record {expected_sequence} trials are invalid")
         current_trials = set(trials)
@@ -371,7 +381,7 @@ def _read_verified_ledger_once(
         trials = [
             str(row["config_hash"]) for row in connection.execute("SELECT config_hash FROM trials ORDER BY config_hash")
         ]
-        if not trials or trials != sorted(set(trials)) or any(not _DIGEST.fullmatch(value) for value in trials):
+        if not trials or trials != sorted(set(trials)) or any(not _CONFIG_HASH.fullmatch(value) for value in trials):
             raise TrialLedgerHistoryError("ledger trials are empty or invalid")
 
         evaluations: list[dict[str, Any]] = []
@@ -500,7 +510,7 @@ def _read_verified_ledger_once(
                 or identity in candidate_identities
                 or row["status"] != "REGISTERED"
                 or not isinstance(row["config_hash"], str)
-                or not _DIGEST.fullmatch(row["config_hash"])
+                or not _CONFIG_HASH.fullmatch(row["config_hash"])
                 or row["config_hash"] not in trials
                 or type(row["registered_at"]) is not int
                 or row["registered_at"] < latest_candidate_at
@@ -539,7 +549,7 @@ def _read_verified_ledger_once(
                 or not attempt["candidates"]
                 or row["config_hash"] not in attempt["candidates"]
                 or not isinstance(row["config_hash"], str)
-                or not _DIGEST.fullmatch(row["config_hash"])
+                or not _CONFIG_HASH.fullmatch(row["config_hash"])
                 or not _is_nonempty_string(row["run_id"])
                 or identity in linked_identities
                 or evaluation is None

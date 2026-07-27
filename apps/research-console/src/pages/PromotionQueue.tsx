@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   approvePromotionRequest, executePromotionRequest, fetchPromotionCandidates,
   fetchPromotionRequest, fetchPromotionRequests, getGovernanceAccessToken, governanceEnabled,
@@ -14,7 +14,6 @@ import {
 import { bi } from '@/lib/i18n/bilingual';
 import {
   Button, Chip, DataTable, EmptyState, KpiStrip, PageHeader, PageShell, Panel, StatTile, StatusChip,
-  type Column,
 } from '@/ui/primitives';
 import { fixed, stamp } from '@/ui/format';
 import { useConfirm } from '@/ui/dialog';

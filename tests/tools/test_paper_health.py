@@ -41,6 +41,29 @@ def _realtime(*, observed_at: int = 1_000) -> dict:
 
 
 def _preview() -> dict:
+    full_research_risk = {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_passed": 9,
+        "gates_run": 9,
+        "engines_run": {
+            name: True
+            for name in (
+                "market",
+                "liquidity",
+                "concentration",
+                "correlation",
+                "drawdown",
+                "regime",
+                "stress",
+                "capacity",
+                "model_alpha",
+            )
+        },
+        "engines_skipped": {},
+        "engines_pending": {},
+        "provenance": "REAL_RESEARCH_RISK_FULL",
+    }
     return {
         "verdict": {
             "paper_preview_ready": True,
@@ -63,6 +86,7 @@ def _preview() -> dict:
                 "n_paper_fills": 2,
                 "n_rejected": 0,
                 "reconciliation_residual": 0.0,
+                "research_risk": full_research_risk,
             }
             for alpha in ALPHA_IDS
         },
@@ -103,6 +127,32 @@ def test_paper_health_passes_complete_fresh_three_alpha_artifacts():
     assert report["verdict"]["live_allowed"] is False
     assert report["forward_evidence"]["complete_for_all_three"] is False
     assert report["forward_evidence"]["alphas"]["crowd_contra"]["periods_to_gate"] == 8
+    assert report["readiness_class"] == "PAPER_READY"
+
+
+def test_paper_health_distinguishes_mark_only_replay_from_order_ready():
+    realtime = _realtime()
+    realtime["operator_mode"] = "EXISTING_FILLED_PAPER_LEDGER_REPLAY"
+    preview = _preview()
+    # A mark-only replay can be healthy as an observation while the preview is
+    # still blocked by the missing full-risk admission artifact.
+    preview["verdict"]["paper_preview_ready"] = False
+    preview["alphas"]["crowd_contra"]["research_risk"] = {
+        "decision": "RISK_PENDING",
+        "status": "PENDING",
+        "gates_run": 4,
+        "gates_passed": 4,
+        "engines_run": {"market": True, "drawdown": True, "concentration": True, "stress": True},
+        "engines_skipped": {"liquidity": "missing"},
+        "engines_pending": {"liquidity": "missing"},
+        "provenance": "REAL_RESEARCH_RISK_SUBSET",
+    }
+    report = evaluate_paper_health(
+        realtime, preview, now_ms=2_000, forward_track=_forward_track()
+    )
+    assert report["verdict"]["paper_ready"] is False
+    assert report["readiness_class"] == "PAPER_MARKS_ONLY_REPLAY"
+    assert report["next_action"] == "resolve_research_risk_and_create_new_decision"
 
 
 def test_paper_health_marks_forward_evidence_complete_only_after_all_periods():
@@ -140,6 +190,43 @@ def test_paper_health_never_accepts_live_flags():
     report = evaluate_paper_health(_realtime(), preview, now_ms=2_000)
     assert report["verdict"]["paper_ready"] is False
     assert "PREVIEW_LIVE_ALLOWED_NOT_FALSE" in report["blockers"]
+
+
+def test_paper_health_blocks_four_engine_subset_even_when_fills_reconcile():
+    preview = _preview()
+    preview["alphas"]["crowd_contra"]["research_risk"] = {
+        "decision": "RISK_APPROVED",
+        "status": "APPROVED",
+        "gates_passed": 4,
+        "gates_run": 4,
+        "engines_run": {
+            "market": True,
+            "drawdown": True,
+            "concentration": True,
+            "stress": True,
+        },
+        "engines_skipped": {"liquidity": "NO_HONEST_INPUT_AT_DRY_RUN_SEAM"},
+        "engines_pending": {"liquidity": "NO_HONEST_INPUT_AT_DRY_RUN_SEAM"},
+        "provenance": "REAL_RESEARCH_RISK_SUBSET",
+    }
+    report = evaluate_paper_health(_realtime(), preview, now_ms=2_000)
+    assert report["verdict"]["paper_ready"] is False
+    assert report["verdict"]["paper_preview_ready"] is False
+    assert report["verdict"]["paper_research_risk_complete"] is False
+    assert "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL" in report["blockers"]
+
+
+def test_paper_health_surfaces_missing_research_risk_bundle_without_inventing_a_blocker():
+    preview = _preview()
+    preview["alphas"]["crowd_contra"]["research_risk_bundle"] = {
+        "status": "PENDING",
+        "missing": ["bundle_file"],
+        "reasons": ["missing:bundle_file"],
+    }
+    report = evaluate_paper_health(_realtime(), preview, now_ms=2_000)
+    assert report["research_risk_bundle_complete"] is False
+    assert report["verdict"]["paper_research_risk_bundle_complete"] is False
+    assert report["research_risk_bundles"]["crowd_contra"]["missing"] == ["bundle_file"]
 
 
 def test_paper_health_blocks_missing_error_or_safety_fields():

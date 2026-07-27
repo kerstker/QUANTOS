@@ -1,9 +1,8 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import { PageShell, PageHeader, ProvenanceRibbon, Panel, Chip, LoadingVeil } from '@/ui/primitives';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchResearchFindings, fetchLance1mValidation } from '@/lib/api/research-console-api';
-import type { ResearchFindingsPayload, Lance1mValidationPayload, Lance1mFeeResult, Lance1mRollingStress } from '@/lib/types/research';
+import type { ResearchFindingsPayload, ResearchFindingsMetric, Lance1mValidationPayload, Lance1mFeeResult, Lance1mRollingStress } from '@/lib/types/research';
 
 /**
  * Research Findings — 现实主义/宏观/组合三件研究成果只读聚合:
@@ -214,6 +213,12 @@ export default function ResearchFindings() {
   const capBooks = Object.entries(p.capacity.books ?? {});
   const comboStd = p.combo.standalone ?? {};
   const comboC = p.combo.combo ?? {};
+  const comboRows: Array<[string, ResearchFindingsMetric | undefined]> = [
+    ['carry', comboStd.carry],
+    ['crowd_contra', comboStd.crowd_contra],
+    ['combo 50/50', comboC.equal_weight],
+    ['combo 逆波动', comboC.inverse_vol],
+  ];
   const macroBooks = Object.entries(p.macro_regime.books ?? {});
 
   return (
@@ -261,8 +266,7 @@ export default function ResearchFindings() {
               <th className="text-right">{bi('最大回撤', 'max DD')}</th><th className="text-right">{bi('总收益', 'total ret')}</th>
             </tr></thead>
             <tbody className="mono">
-              {[['carry', comboStd.carry], ['crowd_contra', comboStd.crowd_contra],
-                ['combo 50/50', comboC.equal_weight], ['combo 逆波动', comboC.inverse_vol]].map(([lbl, m]: any) => m ? (
+              {comboRows.map(([lbl, m]) => m ? (
                 <tr key={lbl} className="border-t border-line/50">
                   <td className="py-1 text-ink">{lbl}</td>
                   <td className={`text-right ${shTone(m.ann_sharpe)}`}>{m.ann_sharpe.toFixed(2)}</td>

@@ -60,7 +60,7 @@ from services.intelligence.runtime import (
 )
 
 
-DEFAULT_SNAPSHOT = REPO / "data" / "cache" / "ml_stack_snapshot.json"
+DEFAULT_SNAPSHOT = REPO / "data" / "cache" / "ml_stack_snapshot_fx.json"
 DEFAULT_DATASET = REPO / "data" / "cache" / "fx.db"
 DEFAULT_DATASET_BUNDLE = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.jsonl.gz"
 DEFAULT_DATASET_MANIFEST = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.manifest.json"
@@ -182,7 +182,13 @@ def _denied_case(
     )
 
 
-def execute_agent_boundary_red_team(*, recorded_at: int) -> RedTeamReport:
+def execute_agent_boundary_red_team(
+    *,
+    recorded_at: int,
+    model_ref: str = "research-agent-loop@v1",
+    tool_manifest_ref: str = "research-agent-tools@v1",
+    report_id: str = "research-agent-boundary-v1",
+) -> RedTeamReport:
     cases = [
         _denied_case(
             case_id="human-actor-constructor",
@@ -235,9 +241,9 @@ def execute_agent_boundary_red_team(*, recorded_at: int) -> RedTeamReport:
             )
         )
     return assess_red_team(
-        report_id="research-agent-boundary-v1",
-        model_ref="research-agent-loop@v1",
-        tool_manifest_ref="research-agent-tools@v1",
+        report_id=report_id,
+        model_ref=model_ref,
+        tool_manifest_ref=tool_manifest_ref,
         cases=tuple(cases),
         required_case_ids=_REQUIRED_RED_TEAM_CASES,
         recorded_at=recorded_at,
@@ -245,7 +251,14 @@ def execute_agent_boundary_red_team(*, recorded_at: int) -> RedTeamReport:
 
 
 def execute_runtime_boundary_red_team(
-    artifacts: Sequence[ModelRiskArtifact], *, recorded_at: int
+    artifacts: Sequence[ModelRiskArtifact],
+    *,
+    recorded_at: int,
+    model_ref: str = "research-agent-loop@v1",
+    prompt_ref: str = "research-evaluation@v1",
+    tool_manifest_ref: str = "research-agent-tools@v1",
+    report_id: str = "research-agent-runtime-boundary-v2",
+    agent_report_id: str = "research-agent-boundary-v1",
 ) -> RedTeamReport:
     """Execute prompt/tool/output attacks against the registered runtime."""
     with tempfile.TemporaryDirectory(prefix="quantos-runtime-red-team-") as directory:
@@ -259,13 +272,16 @@ def execute_runtime_boundary_red_team(
                     )
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref="research-agent-loop@v1",
-                prompt_ref="research-evaluation@v1",
-                tool_manifest_ref="research-agent-tools@v1",
+                model_ref=model_ref,
+                prompt_ref=prompt_ref,
+                tool_manifest_ref=tool_manifest_ref,
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             base_cases = execute_agent_boundary_red_team(
-                recorded_at=recorded_at
+                recorded_at=recorded_at,
+                model_ref=model_ref,
+                tool_manifest_ref=tool_manifest_ref,
+                report_id=agent_report_id,
             ).cases
             cases = [
                 *base_cases,
@@ -311,9 +327,9 @@ def execute_runtime_boundary_red_team(
         finally:
             store.close()
     return assess_red_team(
-        report_id="research-agent-runtime-boundary-v2",
-        model_ref="research-agent-loop@v1",
-        tool_manifest_ref="research-agent-tools@v1",
+        report_id=report_id,
+        model_ref=model_ref,
+        tool_manifest_ref=tool_manifest_ref,
         cases=tuple(cases),
         required_case_ids=(*_REQUIRED_RED_TEAM_CASES, *_RUNTIME_RED_TEAM_CASES),
         recorded_at=recorded_at,

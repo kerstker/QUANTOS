@@ -76,7 +76,10 @@ export default function CryptoLive() {
   const present = usingBackend && payload?.snapshot_present === true;
   const meta = payload?.meta;
   const summary = payload?.summary;
-  const factors: CryptoFactor[] = present ? payload!.factors : [];
+  const factors = useMemo<CryptoFactor[]>(
+    () => present ? (payload?.factors ?? []) : [],
+    [present, payload?.factors],
+  );
   const oos = present ? payload!.oos : null;
   const synSet = present ? payload!.synergistic_set : null;
   const cost = present ? payload!.cost_stress : null;

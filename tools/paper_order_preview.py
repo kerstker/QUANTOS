@@ -8,7 +8,9 @@ opens a broker connection, or submits an order.
 
 The output is an atomic, read-only operator artifact.  A preview is not a live
 authorization and does not advance the append-only forward ledger; forward
-realization remains a separate evidence step.
+realization remains a separate evidence step.  Paper fills additionally
+require an approved, complete nine-engine research-risk snapshot.  A legacy
+four-engine subset remains diagnostic only and is reported as blocked.
 """
 from __future__ import annotations
 
@@ -16,14 +18,24 @@ import argparse
 import json
 import math
 import os
+from pathlib import Path
+import sys
 import time
 from collections.abc import Mapping
 from typing import Any
+
+# Keep the documented direct-script entrypoint import-safe from the repository
+# root.  This does not alter package imports when the module is run with ``-m``.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from quantos.contracts.portfolio import Position
 from services.execution.dry_run_pipeline import run_dry_run_pipeline
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.research.paper_trading.attested_store import AttestedForwardLedger
+from services.risk.research_risk.bundle import load_research_risk_bundle
+from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (
     AccountRiskState,
@@ -44,10 +56,26 @@ DEFAULT_MARK_CACHE = os.path.join("data", "cache", "crypto_perp_mark_prices.json
 DEFAULT_STATUS = os.path.join("data", "cache", "forward_track_status.json")
 DEFAULT_OUTPUT = os.path.join("data", "cache", "paper_order_preview.json")
 DEFAULT_PAPER_STORE = os.path.join("data", "cache", "paper_order_ledger.db")
+DEFAULT_RESEARCH_RISK_BUNDLE = os.path.join(
+    "data", "cache", "paper_research_risk_inputs.json"
+)
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
 MAX_DECISION_AGE_DAYS = 8
+FULL_RESEARCH_RISK_ENGINES = frozenset(
+    {
+        "market",
+        "liquidity",
+        "concentration",
+        "correlation",
+        "drawdown",
+        "regime",
+        "stress",
+        "capacity",
+        "model_alpha",
+    }
+)
 
 
 def _load_json(path: str) -> dict[str, Any]:
@@ -87,6 +115,31 @@ def _status_guard(status: Mapping[str, Any], *, recorded_at: int) -> None:
             raise RuntimeError(f"forward data is stale: {sorted(stale_sources)}")
 
 
+def _full_research_risk_approved(risk: object) -> bool:
+    """Return whether the complete nine-engine research gate admitted a run.
+
+    The four-engine subset is useful for diagnostics, but it is not an order
+    admission decision.  Keep this predicate deliberately structural so a
+    stale or hand-edited ``decision`` field cannot turn a partial snapshot into
+    a paper fill.
+    """
+    if not isinstance(risk, Mapping):
+        return False
+    engines_run = risk.get("engines_run")
+    return (
+        risk.get("decision") == "RISK_APPROVED"
+        and risk.get("status") == "APPROVED"
+        and risk.get("provenance") == "REAL_RESEARCH_RISK_FULL"
+        and risk.get("gates_run") == len(FULL_RESEARCH_RISK_ENGINES)
+        and risk.get("gates_passed") == len(FULL_RESEARCH_RISK_ENGINES)
+        and isinstance(engines_run, Mapping)
+        and set(engines_run) == set(FULL_RESEARCH_RISK_ENGINES)
+        and all(value is True for value in engines_run.values())
+        and risk.get("engines_skipped") == {}
+        and risk.get("engines_pending") == {}
+    )
+
+
 def _latest_attested_pending(path: str, alpha_id: str) -> tuple[dict[str, Any], int]:
     ledger = AttestedForwardLedger(path, create=False)
     try:
@@ -102,7 +155,12 @@ def _latest_attested_pending(path: str, alpha_id: str) -> tuple[dict[str, Any], 
             f"{alpha_id} has {len(pending)} unresolved attested decisions; "
             "realize or review the backlog before previewing a new order"
         )
-    return pending[0], len(pending)
+    row = dict(pending[0])
+    # ``attested_pending`` historically returned a row without alpha_id.  The
+    # bundle digest binds the decision identity, so make the identity explicit
+    # at this boundary without changing the append-only ledger schema.
+    row["alpha_id"] = str(alpha_id)
+    return row, len(pending)
 
 
 def _decision_inputs(
@@ -173,8 +231,18 @@ def build_alpha_preview(
     aum: float = DEFAULT_AUM,
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
+    research_risk_inputs: DryRunResearchRiskInputs | None = None,
+    research_risk_bundle_status: Mapping[str, Any] | None = None,
+    require_full_research_risk: bool = True,
 ) -> dict[str, Any]:
-    """Run one attested decision through the real paper execution chain."""
+    """Run one attested decision through the real paper execution chain.
+
+    Paper order admission is fail-closed on the complete nine-engine research
+    risk result.  ``research_risk_inputs`` must therefore come from the same
+    PIT snapshot as the decision when the caller wants a fill.  Omitting it is
+    intentional and observable: the pipeline returns a pending full-risk
+    result and no paper fills are admitted.
+    """
     if alpha_id not in ALPHA_IDS:
         raise ValueError(f"unsupported alpha: {alpha_id}")
     if not math.isfinite(float(aum)) or float(aum) <= 0:
@@ -257,6 +325,8 @@ def build_alpha_preview(
         cost_bps=float(cost_bps),
         event_bus=None,
         publish_completion_event=False,
+        research_risk_inputs=research_risk_inputs,
+        require_full_research_risk=bool(require_full_research_risk),
     )
     targets = {
         str(name): int(quantity)
@@ -289,12 +359,20 @@ def build_alpha_preview(
                 "paper_position_after_fill": positions.get(instrument, 0),
             }
         )
-    fully_filled = (
+    pretrade_filled = (
         run.n_intents == run.n_approved
         and run.n_rejected == 0
         and int(run.detail.get("n_fills", 0)) == run.n_approved
         and abs(float(run.pnl.get("residual", 1.0))) <= 1e-6
     )
+    risk_snapshot = dict(run.detail.get("research_risk") or {})
+    full_risk_approved = _full_research_risk_approved(risk_snapshot)
+    fully_filled = pretrade_filled and full_risk_approved
+    rejected_reasons = [
+        str(reason) for reason in (getattr(run, "rejected_reasons", []) or [])
+    ]
+    if not full_risk_approved:
+        rejected_reasons.append("FULL_RESEARCH_RISK_NOT_APPROVED")
     return {
         "alpha_id": alpha_id,
         "decision_ts": decision_ts,
@@ -307,14 +385,24 @@ def build_alpha_preview(
         "n_intents": int(run.n_intents),
         "n_approved": int(run.n_approved),
         "n_rejected": int(run.n_rejected),
-        "rejected_reasons": [
-            str(reason) for reason in (getattr(run, "rejected_reasons", []) or [])
-        ],
+        "rejected_reasons": rejected_reasons,
         "n_paper_fills": int(run.detail.get("n_fills", 0)),
         "paper_execution": "PAPER_FILLED" if fully_filled else "PAPER_BLOCKED",
         "pnl": dict(run.pnl),
         "reconciliation_residual": run.pnl.get("residual"),
-        "research_risk": dict(run.detail.get("research_risk") or {}),
+        "research_risk": risk_snapshot,
+        "research_risk_bundle": dict(research_risk_bundle_status or {
+            "status": "NOT_PROVIDED",
+            "provenance": "REAL_RESEARCH_RISK_INPUT_BUNDLE",
+            "alpha_id": alpha_id,
+            "missing": ["bundle_file"],
+            "reasons": ["missing:bundle_file"],
+        }),
+        "research_risk_admission": (
+            "FULL_NINE_ENGINE_APPROVED"
+            if full_risk_approved
+            else "FULL_NINE_ENGINE_REQUIRED"
+        ),
         "run_id": run.run_id,
         "audit_root": run.audit_root,
         "aum": float(aum),
@@ -390,6 +478,7 @@ def run_preview(
     status_path: str = DEFAULT_STATUS,
     output_path: str = DEFAULT_OUTPUT,
     paper_store_path: str = DEFAULT_PAPER_STORE,
+    research_risk_bundle_path: str = DEFAULT_RESEARCH_RISK_BUNDLE,
     aum: float = DEFAULT_AUM,
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
@@ -407,8 +496,14 @@ def run_preview(
         for alpha_id in selected:
             try:
                 pending, _ = _latest_attested_pending(forward_db, alpha_id)
+                pending["alpha_id"] = str(alpha_id)
                 decision_ts, _, _ = _decision_inputs(pending, mark_by_ticker)
                 _status_guard(status, recorded_at=int(pending.get("recorded_at", 0) or 0))
+                bundle_result = load_research_risk_bundle(
+                    research_risk_bundle_path,
+                    alpha_id=alpha_id,
+                    pending=pending,
+                )
                 existing = store.get_by_decision(alpha_id, decision_ts)
                 if existing is not None:
                     stored_aum = existing.get("aum")
@@ -455,6 +550,42 @@ def run_preview(
                             "order_submission_allowed": False,
                         }
                         continue
+                    if not _full_research_risk_approved(existing.get("research_risk")):
+                        # This can only be a legacy subset preview or a stale
+                        # artifact produced before the nine-engine contract.
+                        # The append-only store must not be rewritten; expose
+                        # the historical row as blocked and require a new
+                        # decision after complete evidence is available.
+                        blocked = dict(existing)
+                        blocked["generated_at"] = int(
+                            generated_at_ms
+                            if generated_at_ms is not None
+                            else time.time() * 1000
+                        )
+                        blocked["replayed_from_store"] = True
+                        blocked["paper_execution"] = "PAPER_BLOCKED"
+                        reasons = list(blocked.get("rejected_reasons") or [])
+                        if "FULL_RESEARCH_RISK_NOT_APPROVED" not in reasons:
+                            reasons.append("FULL_RESEARCH_RISK_NOT_APPROVED")
+                        blocked["rejected_reasons"] = reasons
+                        blocked["research_risk_admission"] = (
+                            "FULL_NINE_ENGINE_REQUIRED"
+                        )
+                        blocked["research_risk_bundle"] = dict(bundle_result.status)
+                        previews[alpha_id] = blocked
+                        errors[alpha_id] = {
+                            "error_type": "PaperResearchRiskNotFull",
+                            "error": (
+                                "stored paper preview is not backed by a complete "
+                                "nine-engine research-risk approval"
+                            ),
+                            "reason": "FULL_RESEARCH_RISK_NOT_APPROVED",
+                            "research_risk": dict(existing.get("research_risk") or {}),
+                            "paper_execution": "PAPER_BLOCKED",
+                            "live_allowed": False,
+                            "order_submission_allowed": False,
+                        }
+                        continue
                     existing["generated_at"] = int(
                         generated_at_ms if generated_at_ms is not None else time.time() * 1000
                     )
@@ -462,6 +593,7 @@ def run_preview(
                     existing["rejected_reasons"] = list(
                         existing.get("rejected_reasons") or []
                     )
+                    existing["research_risk_bundle"] = dict(bundle_result.status)
                     previews[alpha_id] = existing
                     continue
                 preview = build_alpha_preview(
@@ -473,10 +605,28 @@ def run_preview(
                     aum=aum,
                     cost_bps=cost_bps,
                     generated_at_ms=generated_at_ms,
+                    research_risk_inputs=bundle_result.inputs,
+                    research_risk_bundle_status=bundle_result.status,
                 )
                 if preview.get("paper_execution") == "PAPER_FILLED":
                     store.append_preview(preview)
                 previews[alpha_id] = preview
+                if preview.get("paper_execution") != "PAPER_FILLED":
+                    errors[alpha_id] = {
+                        "error_type": "PaperResearchRiskNotFull",
+                        "error": (
+                            "paper preview is blocked until complete nine-engine "
+                            "research-risk evidence is approved"
+                        ),
+                        "reason": "FULL_RESEARCH_RISK_NOT_APPROVED",
+                        "research_risk": dict(preview.get("research_risk") or {}),
+                        "research_risk_bundle": dict(
+                            preview.get("research_risk_bundle") or {}
+                        ),
+                        "paper_execution": "PAPER_BLOCKED",
+                        "live_allowed": False,
+                        "order_submission_allowed": False,
+                    }
             except Exception as exc:
                 errors[alpha_id] = {
                     "error_type": type(exc).__name__,
@@ -488,7 +638,9 @@ def run_preview(
     finally:
         store.close()
     ready = bool(previews) and not errors and all(
-        row.get("paper_execution") == "PAPER_FILLED" for row in previews.values()
+        row.get("paper_execution") == "PAPER_FILLED"
+        and _full_research_risk_approved(row.get("research_risk"))
+        for row in previews.values()
     )
     report = {
         "schema_version": 1,
@@ -525,6 +677,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--paper-store", default=DEFAULT_PAPER_STORE)
+    parser.add_argument(
+        "--research-risk-bundle",
+        default=DEFAULT_RESEARCH_RISK_BUNDLE,
+        help="immutable same-PIT nine-engine risk bundle; missing means pending/block",
+    )
     args = parser.parse_args(argv)
     alpha_ids = ALPHA_IDS if args.alpha == "all" else (args.alpha,)
     report = run_preview(
@@ -534,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
         status_path=args.status,
         output_path=args.output,
         paper_store_path=args.paper_store,
+        research_risk_bundle_path=args.research_risk_bundle,
         aum=args.aum,
         cost_bps=args.cost_bps,
     )
@@ -550,6 +708,9 @@ __all__ = [
     "ALPHA_IDS",
     "DEFAULT_PAPER_STORE",
     "DEFAULT_OUTPUT",
+    "FULL_RESEARCH_RISK_ENGINES",
+    "DEFAULT_RESEARCH_RISK_BUNDLE",
     "build_alpha_preview",
+    "_full_research_risk_approved",
     "run_preview",
 ]

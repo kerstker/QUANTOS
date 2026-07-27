@@ -1,4 +1,3 @@
-import React from 'react';
 import { fetchEventsSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { EventBusHealth, EventsPayload, EventRecord } from '@/lib/types/research';

@@ -7,7 +7,7 @@
     "scripts/generate_event_schema_catalog.py": "9c65d39f206858e6be0a36b8c105713f93695015670344a0790e991707d5e488",
     "services/alpha/events.py": "f05cc2ebb8beb2d58d2f46d6feff1cc393f14516538f90e70e06ed7a80d914e3",
     "services/alpha/maintenance_events.py": "0bf910d1afed82b1886f71b956db6a513b1a485031e2145a3bafc6022d1a4289",
-    "services/console/api/system_views.py": "044138a69b6050fbc3066216229ba881f2e176715053f2096fd1b4c63d424676",
+    "services/console/api/system_views.py": "e00a6a06424b2e3c3356dacc786c75e9b3bc0a430745bb525836fcfb89f21601",
     "services/data/admission_store.py": "550f22854bc7266d1e2e12a2d930ed9767d29a2664ee1d57638a229e59fad95b",
     "services/data/events.py": "7c1cbdd19b52b722a4828831018fe8fa87d0c585683412e4e8851a9319820e82",
     "services/data/refresh_history.py": "87a8c5c3992b3c9141f24336104d5fec8845ad68d4fd41278e2d2ff99a2875c5",
@@ -21,7 +21,7 @@
     "services/risk/pre_trade/events.py": "18299c0aca2deae0d1b2cd83821325d5c92ea290fca6c25126fd1a1013412fb4",
     "services/risk/pre_trade/kill_switch_store.py": "436d84b26adcec00837d01c34c51a1f6a5b9727d1e731a1630a339d4e3cf6889",
     "services/risk/research_risk/events.py": "14bb705271a93258b932048584a2fa3df1e36e7a20feab096c6675408e4ffb2b",
-    "tools/data_quality_admission.py": "f8e1657719570afd5e4231f65f3bff2507107a66979b225b2c83a8f39668fee4"
+    "tools/data_quality_admission.py": "e3e0f809bbf0bd4fbbe06249beeb7e5d0a47be41d6eefcfbaf412ac966723f37"
   },
   "latest_consumer_versions": {
     "data.market.refresh.recorded": "1.0.0",

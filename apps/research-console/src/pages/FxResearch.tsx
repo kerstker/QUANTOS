@@ -1,9 +1,8 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, StatusChip, LoadingVeil, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, LoadingVeil, type Column,
 } from '@/ui/primitives';
-import { signed, fixed } from '@/ui/format';
+import { signed } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchFxResearchSnapshot } from '@/lib/api/research-console-api';
 import type { FxResearchPayload, FxCostSweepRow, FxYearRow } from '@/lib/types/research';

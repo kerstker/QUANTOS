@@ -1,16 +1,15 @@
-"""Rank #13 — fail-closed research-risk gate for a dry-run book, honestly graded.
+"""Fail-closed research-risk gate for a dry-run book.
 
-The full `RiskApprovalGate` runs 9 engines and needs inputs (per-leg alpha_returns, capacity,
-daily volume, regime labels, alpha metadata) the dry-run seam does NOT honestly have. Feeding
-those engines empty/fabricated inputs would either fail-closed (rejecting every book) or — worse —
-manufacture a risk clearance from invented data, which is exactly what this platform must never do.
+The complete ``RiskApprovalGate`` runs nine engines and requires per-leg
+returns, capacity/ADV, PIT regime labels, and immutable alpha metadata. Legacy
+dry-run callers do not always have that evidence. They may use the four-engine
+subset for diagnostics, but its ``REAL_RESEARCH_RISK_SUBSET`` provenance is
+never an admission decision.
 
-So this gate runs ONLY the four engines whose inputs the dry-run seam genuinely provides
-(market / drawdown / concentration / stress), each fail-closed, and marks the other five
-`NO_HONEST_INPUT_AT_DRY_RUN_SEAM` — SKIPPED, never faked. A `RISK_APPROVED` here means "passed the
-four honestly-fed engines", with the five skipped engines named in the decision (provenance
-`REAL_RESEARCH_RISK_SUBSET`). Wiring the five to real inputs (per-leg attribution, capacity/ADV,
-PIT regime labels, the alpha's AlphaEvaluation) is a later increment; until then they stay honest-SKIPPED.
+When ``require_full_inputs=True`` (the paper-order path), missing or malformed
+evidence produces an explicit ``PENDING``/``RISK_REJECTED`` result and zero
+fills. Only a real nine-engine ``REAL_RESEARCH_RISK_FULL`` result can satisfy
+the paper execution contract; this module never fabricates missing inputs.
 """
 from __future__ import annotations
 
@@ -182,8 +181,15 @@ def _summary(name: str, report) -> dict:
         out["hhi"] = round(float(report.hhi), 6)
     elif name == "stress":
         out["provenance"] = getattr(report, "provenance", "")
+        out["worst_scenario"] = str(getattr(report, "worst_scenario", ""))
+        out["worst_stress_loss"] = round(float(getattr(report, "worst_stress_loss", 0.0)), 6)
         out["scenarios_survived"] = int(report.scenarios_survived)
         out["total_scenarios"] = int(report.total_scenarios)
+        out["scenarios_skipped"] = int(getattr(report, "scenarios_skipped", 0))
+        out["scenario_losses"] = {
+            str(key): round(float(value), 6)
+            for key, value in dict(getattr(report, "scenario_losses", {})).items()
+        }
     elif name == "liquidity":
         out.update({
             "avg_daily_volume_usage": round(float(report.avg_daily_volume_usage), 6),

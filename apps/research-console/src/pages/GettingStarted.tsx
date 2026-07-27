@@ -192,7 +192,7 @@ export default function GettingStarted() {
 
       {/* ---- 全流程分阶段讲解 ---- */}
       <Panel eyebrow={bi('研究全流程', 'THE RESEARCH LIFECYCLE')}
-        title={bi('六个阶段,对应左侧导航的六个分组', 'Six stages, matching the six groups in the left-hand nav')}>
+        title={bi('六个研究阶段,总览为入口,对应顶部导航的六个工作分组', 'Six research stages, with Overview as the entry point, mapped to six work groups in the top navigation')}>
         <ol className="flex flex-col gap-7">
           {STAGES.map((stage, i) => {
             const group = GROUPS.find(g => g.id === stage.group)!;

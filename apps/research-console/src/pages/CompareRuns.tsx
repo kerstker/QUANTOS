@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchResearchRuns, fetchResearchRunsCompare } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';

@@ -41,6 +41,7 @@ _SYSTEM_VIEW_ROUTES = {
     "/api/v1/console/events",
     "/api/v1/console/phase-3a-readiness",
     "/api/v1/console/system-health",
+    "/api/v1/console/runtime-contract",
 }
 
 _ARCHITECTURE_VIEW_ROUTES = {

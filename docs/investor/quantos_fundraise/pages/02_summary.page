@@ -1,22 +1,22 @@
 pageType: content
 background:
   type: solid
-  color: "$bg"
+  color: $bg
 notes: 一页讲完整个项目。节奏：问题（30 秒）→ 已完成（30 秒）→ 阶段（15 秒）→ 本轮目的（15 秒）。强调"已跨过纯概念阶段"。
 elements:
   - elementId: kicker
     elementType: text
     bounds: [90, 40, 300, 16]
-    content: {style: "$kicker", wrap: false, text: "01 · 执行摘要"}
+    content: {style: $kicker, wrap: false, text: 01 · 执行摘要}
   - elementId: title
     elementType: text
     bounds: [90, 62, 780, 36]
-    content: {style: "$h1", wrap: false, text: "核心系统已建成，正在进入实盘验证阶段"}
+    content: {style: $h1, wrap: false, text: 核心系统已建成，正在进入实盘验证阶段}
   - elementId: q1
     elementType: text
     bounds: [90, 128, 380, 84]
     content:
-      style: "$body"
+      style: $body
       text: |
         <p><span style="color:$accent"><strong>我们是谁</strong></span></p>
         <p style="margin-top:5px"><span style="color:$muted;font-size:11px">技术型创始人主导开发的量化投资操作系统，覆盖数据、研究、验证、组合、风控、执行、归因全链路</span></p>
@@ -24,7 +24,7 @@ elements:
     elementType: text
     bounds: [510, 128, 380, 84]
     content:
-      style: "$body"
+      style: $body
       text: |
         <p><span style="color:$accent"><strong>解决什么问题</strong></span></p>
         <p style="margin-top:5px"><span style="color:$muted;font-size:11px">量化项目"回测漂亮、实盘失效"——收益退化、过拟合、不可复现、无法审计</span></p>
@@ -32,7 +32,7 @@ elements:
     elementType: text
     bounds: [90, 224, 380, 84]
     content:
-      style: "$body"
+      style: $body
       text: |
         <p><span style="color:$accent"><strong>已完成什么</strong></span></p>
         <p style="margin-top:5px"><span style="color:$muted;font-size:11px">研究与交易基础设施全部建成：3,897 个测试用例全量通过，18 条策略历史模拟落库，全链路可复现</span></p>
@@ -40,7 +40,7 @@ elements:
     elementType: text
     bounds: [510, 224, 380, 84]
     content:
-      style: "$body"
+      style: $body
       text: |
         <p><span style="color:$accent"><strong>当前阶段</strong></span></p>
         <p style="margin-top:5px"><span style="color:$muted;font-size:11px">从工程开发阶段，进入小资金实盘验证、商业验证与融资阶段</span></p>
@@ -48,20 +48,18 @@ elements:
     elementType: line
     bounds: [90, 330, 780, 2]
     viewBox: [780, 2]
-    points: "0,1 780,1"
-    border: {style: solid, width: 1, color: "$line"}
+    points: 0,1 780,1
+    border: {style: solid, width: 1, color: $line}
   - elementId: round
     elementType: text
     bounds: [90, 352, 780, 110]
     content:
-      style: "$body"
+      style: $body
       fontSize: 13
       lineHeight: 1.7
-      text: |
-        <p><span style="color:$accent"><strong>本轮融资要完成什么</strong></span>　计划融资：人民币 150 万元（最小实现方案，可调整）</p>
-        <p style="margin-top:6px">不是大规模扩张，而是完成下一阶段价值验证：<strong>小资金实盘闭环 → 连续实盘记录 → 首个机构合作</strong>，</p>
-        <p>把已建成的系统能力，转化为可审计的实盘证据。</p>
+      text: |-
+        <p><strong><span style="color: rgb(201, 162, 39);">本轮融资要完成什么</span></strong>　计划融资：人民币 300 万元（最小实现方案，可调整）</p><p style="margin-top: 6px;">不是大规模扩张，而是完成下一阶段价值验证：<strong>小资金实盘闭环 → 连续实盘记录 → 首个机构合作</strong>，</p><p>把已建成的系统能力，转化为可审计的实盘证据。</p>
   - elementId: footer
     elementType: text
     bounds: [90, 505, 780, 16]
-    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 02"}
+    content: {style: $small, wrap: false, text: QuantOS · Confidential · 02}

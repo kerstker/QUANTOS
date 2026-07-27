@@ -13,8 +13,11 @@ export default defineConfig({
   },
   define: {
     'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || ''),
-    'import.meta.env.VITE_MOCK_MODE': JSON.stringify(process.env.VITE_MOCK_MODE || 'true'),
+    // Real API is the safe product default.  Mock mode must be explicitly
+    // requested for isolated demos/tests so a stale fixture cannot look live.
+    'import.meta.env.VITE_MOCK_MODE': JSON.stringify(process.env.VITE_MOCK_MODE || 'false'),
     'import.meta.env.VITE_RUNNER_URL': JSON.stringify(process.env.VITE_RUNNER_URL || ''),
+    'import.meta.env.VITE_CONSOLE_API_VERSION': JSON.stringify(process.env.VITE_CONSOLE_API_VERSION || '0.1.0'),
   },
   // Phase 8: real UI test config — the audit flagged its absence (jsdom + @testing-library were
   // installed but no `test` block existed, so component/render tests could not run).

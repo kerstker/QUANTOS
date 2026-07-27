@@ -1,4 +1,3 @@
-import React from 'react';
 import { fetchSystemHealthSnapshot } from '@/lib/api/research-console-api';
 import { mockHealthServices } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
@@ -39,10 +38,11 @@ const STATUS_ZH: Record<string, string> = {
   healthy: bi('健康', 'Healthy'),
   degraded: bi('降级', 'Degraded'),
   down: bi('宕机', 'Down'),
+  unknown: bi('未知', 'Unknown'),
 };
 
 const statusDonutTone: Record<string, Tone> = {
-  healthy: 'pos', degraded: 'warn', down: 'neg',
+  healthy: 'pos', degraded: 'warn', down: 'neg', unknown: 'muted',
 };
 
 /** A gate string counts as "passed" when it maps to a positive tone. */
@@ -62,23 +62,40 @@ export default function SystemHealth() {
   const healthy = services.filter(s => s.status === 'healthy').length;
   const degraded = services.filter(s => s.status === 'degraded').length;
   const down = services.filter(s => s.status === 'down').length;
-  const avgLatency = total ? services.reduce((a, s) => a + s.latency_ms, 0) / total : 0;
-  const maxErr = services.reduce((a, s) => Math.max(a, s.error_rate), 0);
+  const unknown = services.filter(s => s.status === 'unknown').length;
+  const measuredLatencies = services
+    .map(s => s.latency_ms)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const measuredErrorRates = services
+    .map(s => s.error_rate)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const avgLatency = measuredLatencies.length
+    ? measuredLatencies.reduce((a, value) => a + value, 0) / measuredLatencies.length
+    : 0;
+  const maxErr = measuredErrorRates.length ? Math.max(...measuredErrorRates) : 0;
   const worstErrSvc = services.reduce<ServiceHealth | null>(
-    (w, s) => (!w || s.error_rate > w.error_rate ? s : w), null);
+    (w, s) => (
+      s.error_rate === null
+      || (w && w.error_rate !== null && s.error_rate <= w.error_rate)
+        ? w
+        : s
+    ), null);
   const gatesPassed = gates.filter(g => gateOk(g.s)).length;
 
-  const overallTone: Tone = down > 0 ? 'neg' : degraded > 0 ? 'warn' : 'pos';
+  const overallTone: Tone = down > 0 ? 'neg' : degraded > 0 || unknown > 0 ? 'warn' : 'pos';
   const overallLabel = down > 0 ? bi('故障', 'IMPAIRED')
-    : degraded > 0 ? bi('降级', 'DEGRADED') : bi('全绿', 'ALL HEALTHY');
+    : degraded > 0 ? bi('降级', 'DEGRADED')
+      : unknown > 0 ? bi('部分未知', 'PARTLY UNKNOWN')
+        : bi('全绿', 'ALL HEALTHY');
 
   const statusSegments = [
     { label: STATUS_ZH.healthy, value: healthy, tone: statusDonutTone.healthy },
     { label: STATUS_ZH.degraded, value: degraded, tone: statusDonutTone.degraded },
     { label: STATUS_ZH.down, value: down, tone: statusDonutTone.down },
+    { label: STATUS_ZH.unknown, value: unknown, tone: statusDonutTone.unknown },
   ].filter(s => s.value > 0);
 
-  const latencyData = services.map(s => s.latency_ms);
+  const latencyData = services.map(s => s.latency_ms ?? 0);
   const latencyLabels = services.map(s => s.service.replace(/-.*/, '').slice(0, 6));
 
   const serviceCols: Column<ServiceHealth>[] = [
@@ -94,9 +111,15 @@ export default function SystemHealth() {
       key: 'latency', header: bi('延迟', 'Latency'), align: 'right', mono: true, width: '210px',
       render: s => (
         <div className="flex items-center justify-end gap-2">
-          <ProgressBar value={s.latency_ms} max={Math.max(avgLatency * 2.5, 1)}
-            tone={s.latency_ms > avgLatency * 1.5 ? 'warn' : 'info'} />
-          <span className="tnum w-16 text-right">{fixed(s.latency_ms, 1)}<span className="text-faint"> ms</span></span>
+          {s.latency_ms === null ? (
+            <span className="w-24 text-right text-faint">{bi('未测量', 'not measured')}</span>
+          ) : (
+            <>
+              <ProgressBar value={s.latency_ms} max={Math.max(avgLatency * 2.5, 1)}
+                tone={s.latency_ms > avgLatency * 1.5 ? 'warn' : 'info'} />
+              <span className="tnum w-16 text-right">{fixed(s.latency_ms, 1)}<span className="text-faint"> ms</span></span>
+            </>
+          )}
         </div>
       ),
     },
@@ -104,11 +127,17 @@ export default function SystemHealth() {
       key: 'error', header: bi('错误率', 'Error Rate'), align: 'right', mono: true, width: '170px',
       render: s => (
         <div className="flex items-center justify-end gap-2">
-          <ProgressBar value={s.error_rate} max={Math.max(maxErr, 1e-9)}
-            tone={s.error_rate > 0.02 ? 'neg' : s.error_rate > 0 ? 'warn' : 'pos'} />
-          <span className={`tnum w-14 text-right ${s.error_rate > 0.02 ? 'text-neg' : 'text-muted'}`}>
-            {pct(s.error_rate, 2)}
-          </span>
+          {s.error_rate === null ? (
+            <span className="w-24 text-right text-faint">{bi('未测量', 'not measured')}</span>
+          ) : (
+            <>
+              <ProgressBar value={s.error_rate} max={Math.max(maxErr, 1e-9)}
+                tone={s.error_rate > 0.02 ? 'neg' : s.error_rate > 0 ? 'warn' : 'pos'} />
+              <span className={`tnum w-14 text-right ${s.error_rate > 0.02 ? 'text-neg' : 'text-muted'}`}>
+                {pct(s.error_rate, 2)}
+              </span>
+            </>
+          )}
         </div>
       ),
     },
@@ -122,22 +151,21 @@ export default function SystemHealth() {
         actions={<Chip label={overallLabel} tone={overallTone} soft={false} />} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={payload?.source} error={apiError} />
       <LoadingVeil active={apiState === 'loading'}>
-      {/* Honesty: latency/uptime are deterministic synthetic figures, NOT real health probes — an unrun
-          service still shows "healthy" here. Real liveness checks are a future (Phase 4+) capability. */}
       <div className="rounded-lg border border-warn/25 bg-warn/5 px-3 py-1.5 text-2xs text-warn">
-        {bi('注:延迟/在线率为合成确定性数字,非真实健康探针 — 未运行的服务也会显示"健康"。真实探活待后续接入。',
-          'Note: latency/uptime are synthetic deterministic figures, not real probes — an unrun service still shows “healthy”. Real liveness checks are a later capability.')}
+        {bi('注:仅研究控制台自身的监控调用已实测；其余服务未配置探活时显示“未知”，不会伪报健康。错误率暂无请求计数器。',
+          'Only the console process monitoring call is measured. Services without configured probes are shown as “unknown”, never as healthy; error rates require a request counter.')}
       </div>
 
-      <KpiStrip cols={6}>
+      <KpiStrip cols={7}>
         <StatTile label={bi('服务总数', 'Services')} value={num(total)} />
         <StatTile label={bi('健康', 'Healthy')} value={num(healthy)} tone="pos"
           sub={bi(`${total} 中 ${healthy} 个`, `${healthy} of ${total}`)} />
         <StatTile label={bi('降级', 'Degraded')} value={num(degraded)} tone={degraded ? 'warn' : 'muted'} />
         <StatTile label={bi('宕机', 'Down')} value={num(down)} tone={down ? 'neg' : 'muted'} />
-        <StatTile label={bi('平均延迟', 'Avg Latency')} value={fixed(avgLatency, 1)} unit="ms" tone="info" />
-        <StatTile label={bi('峰值错误率', 'Peak Error')} value={pct(maxErr, 2)}
-          tone={maxErr > 0.02 ? 'neg' : maxErr > 0 ? 'warn' : 'pos'}
+        <StatTile label={bi('未知', 'Unknown')} value={num(unknown)} tone={unknown ? 'warn' : 'muted'} />
+        <StatTile label={bi('平均延迟', 'Avg Latency')} value={measuredLatencies.length ? fixed(avgLatency, 1) : '—'} unit={measuredLatencies.length ? 'ms' : undefined} tone="info" />
+        <StatTile label={bi('峰值错误率', 'Peak Error')} value={measuredErrorRates.length ? pct(maxErr, 2) : '—'}
+          tone={!measuredErrorRates.length ? 'muted' : maxErr > 0.02 ? 'neg' : maxErr > 0 ? 'warn' : 'pos'}
           sub={worstErrSvc ? worstErrSvc.service : undefined} />
       </KpiStrip>
 
@@ -157,6 +185,7 @@ export default function SystemHealth() {
                 ['healthy', healthy] as const,
                 ['degraded', degraded] as const,
                 ['down', down] as const,
+                ['unknown', unknown] as const,
               ]).map(([k, v]) => (
                 <div key={k} className="flex flex-col gap-1">
                   <div className="flex items-center justify-between gap-2">

@@ -1,7 +1,6 @@
-import React from 'react';
 import { fetchPopulationOptimizerSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { PopulationOptimizerPayload, PopOptSelected, PopOptExcluded } from '@/lib/types/research';
+import type { PopulationOptimizerPayload, PopOptSelected } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, LoadingVeil,
@@ -17,8 +16,6 @@ import { fixed, signed } from '@/ui/format';
  */
 
 type Selected = PopOptSelected;
-type Excluded = PopOptExcluded;
-
 const fallback: PopulationOptimizerPayload = {
   source: 'FRONTEND_POPOPT_FALLBACK', read_only: true, api_version: '0.1.0',
   data_provenance: 'SYNTHETIC_DETERMINISTIC', method: 'FORWARD_SELECTION_INCREMENTAL_IR', n_candidates: 7,

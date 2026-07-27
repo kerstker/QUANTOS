@@ -249,7 +249,12 @@ export default function AlphaZoo() {
           <span className="mx-0.5 h-4 w-px self-center bg-line" />
           {SCREENS.map(s => (
             <PillToggle key={s.key} label={bi(s.zh, s.en)} tone="pos" active={screens.has(s.key)}
-              onClick={() => setScreens(prev => { const n = new Set(prev); n.has(s.key) ? n.delete(s.key) : n.add(s.key); return n; })} />
+              onClick={() => setScreens(prev => {
+                const n = new Set(prev);
+                if (n.has(s.key)) n.delete(s.key);
+                else n.add(s.key);
+                return n;
+              })} />
           ))}
         </div>
 

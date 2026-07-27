@@ -1,5 +1,20 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-27 模型风险快照隔离修复：** `tools.ml_stack_research` 不再让 crypto 与 FX
+> 研究共享可变的 `ml_stack_snapshot.json`；默认分别写入
+> `data/cache/ml_stack_snapshot_crypto.json` 与 `data/cache/ml_stack_snapshot_fx.json`，
+> 仍可通过显式 `--output` 导出。模型风险基线默认固定消费 FX 快照，防止 GPU crypto
+> 研究覆盖 FX challenger 证据。该修复解决了证据源串写问题，但不改变模型风险的外部
+> provider、独立 reviewer 身份或生产授权缺口；这些仍由顶级门硬阻断。
+
+> **当前权威状态覆盖（2026-07-27 之后）：** 上述 2026-07-23/22 记录是历史运行快照，不代表当前放行状态。当前应以 `data/cache/paper_health.json`、`data/cache/paper_health_10k.json`、`data/cache/paper_order_preview.json` 和 `evidence/top_tier_assessment.json` 为准：三条 Alpha 的 `paper_mark_ready=true` 只表示可以继续观察已有纸面持仓，完整 `paper_ready=false`，`paper_preview_ready=false`；九引擎风险包仍为 `PENDING`，前向证据为 `0/8`，实盘和真实下单均为 `false`。
+
+> **2026-07-27 Phase 0/1 证据重对齐：** 当前可执行的 `evidence/data_quality_admission.json` 与其绑定的
+> `evidence/raw_data_lineage_backfill.json` 均为 `PASS`（quality/lineage 通过，输入制品哈希和 8 日窗口已绑定）。
+> 本文件较早运行记录中出现的 `quality=BLOCK` / `lineage=BLOCK` 仅保留为历史阻断，不能覆盖当前机器制品；
+> 冲突由 `evidence/autonomy_baseline.json` 以 `EVIDENCE_CONFLICT.PROJECT_STATE_VS_CURRENT_ADMISSION` 显式记录。
+> 数据准入 PASS 不改变 `paper_ready=false`、九引擎风险包 `PENDING`、L2 安全旗标或真实下单禁止。
+
 > **2026-07-23 小资金纸面调度已接通：** 新增固定隔离 worker
 > `tools.paper_realtime_10k` 与 `QUANTOS_paper_realtime_10k` 计划任务，每 5 分钟错峰运行；
 > 每次执行 10,000 USD 三 Alpha 纸面标记并自带 `paper_health` 门，独立写入

@@ -9,7 +9,15 @@ capability.
 """
 from __future__ import annotations
 
+import argparse
 from collections.abc import Sequence
+from pathlib import Path
+import sys
+
+# The scheduled worker is also a documented direct-script entrypoint.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from tools import paper_realtime
 
@@ -37,12 +45,16 @@ PROFILE_ARGS: tuple[str, ...] = (
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the fixed profile; arbitrary scheduled arguments are rejected."""
     if argv:
+        if any(str(arg) in {"-h", "--help"} for arg in argv):
+            argparse.ArgumentParser(
+                description="Run the fixed 10,000 USD isolated L2 paper profile once"
+            ).parse_args(list(argv))
         raise ValueError("paper_realtime_10k does not accept worker arguments")
     return paper_realtime.main(list(PROFILE_ARGS))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
 
 
 __all__ = ["PROFILE_AUM", "PROFILE_ARGS", "main"]

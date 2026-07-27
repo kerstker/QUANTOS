@@ -12,9 +12,17 @@ import argparse
 import importlib
 import json
 import os
+from pathlib import Path
+import sys
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
+
+# Direct script execution is a supported operator path; bootstrap the repo
+# before importing the two top-level package trees.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from services.execution.dry_run_store import DryRunStore
 from tools.alpha_paper_cycle import build_report as build_paper_cycle_report

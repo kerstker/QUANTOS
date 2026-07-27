@@ -27,7 +27,7 @@ def _pending(weights):
     }
 
 
-def test_build_alpha_preview_uses_gate_adapter_and_reconciles():
+def test_build_alpha_preview_requires_complete_research_risk():
     result = build_alpha_preview(
         "crowd_contra",
         _pending({"BTC": 0.125, "ETH": -0.125}),
@@ -40,10 +40,11 @@ def test_build_alpha_preview_uses_gate_adapter_and_reconciles():
         generated_at_ms=DECISION_TS + 2_000,
     )
 
-    assert result["paper_execution"] == "PAPER_FILLED"
-    assert result["n_intents"] == result["n_approved"] == result["n_paper_fills"]
-    assert result["n_rejected"] == 0
-    assert result["rejected_reasons"] == []
+    assert result["paper_execution"] == "PAPER_BLOCKED"
+    assert result["n_intents"] == result["n_approved"]
+    assert result["n_paper_fills"] == 0
+    assert "FULL_RESEARCH_RISK_NOT_APPROVED" in result["rejected_reasons"]
+    assert result["research_risk"]["provenance"] == "REAL_RESEARCH_RISK_FULL_PENDING"
     assert result["reconciliation_residual"] == 0.0
     assert result["paper_only"] is True
     assert result["live_allowed"] is False
@@ -60,7 +61,7 @@ def test_build_alpha_preview_rejects_non_major_or_missing_price():
         )
 
 
-def test_build_alpha_preview_rebalances_from_persisted_paper_positions():
+def test_build_alpha_preview_does_not_fill_rebalance_without_full_research_risk():
     result = build_alpha_preview(
         "crowd_contra",
         _pending({"ETH": 0.125}),
@@ -77,10 +78,12 @@ def test_build_alpha_preview_rebalances_from_persisted_paper_positions():
     orders = {row["instrument"]: row for row in result["orders"]}
     assert orders["BTC"]["side"] == "SELL"
     assert orders["BTC"]["paper_position_before"] == 1
-    assert orders["BTC"]["paper_position_after_fill"] == 0
+    assert orders["BTC"]["paper_position_after_fill"] == 1
     assert orders["ETH"]["side"] == "BUY"
-    assert result["paper_positions"] == {"ETH": 62}
+    assert result["paper_positions"] == {"BTC": 1}
     assert result["n_intents"] == result["n_approved"] == 2
+    assert result["n_paper_fills"] == 0
+    assert result["paper_execution"] == "PAPER_BLOCKED"
     with pytest.raises(RuntimeError, match="exact decision-time price"):
         build_alpha_preview(
             "crowd_contra",
@@ -108,9 +111,7 @@ def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tm
     assert json.loads(output.read_text(encoding="utf-8"))["safety"]["paper_only"] is True
 
 
-def test_run_preview_blocks_reusing_decision_with_different_sizing_profile(
-    monkeypatch, tmp_path
-):
+def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):
     pending = _pending({"BTC": 0.125})
     monkeypatch.setattr(paper_preview, "_load_json", lambda _path: STATUS)
     monkeypatch.setattr(
@@ -123,29 +124,17 @@ def test_run_preview_blocks_reusing_decision_with_different_sizing_profile(
         "_latest_attested_pending",
         lambda _path, _alpha_id: (pending, 1),
     )
-    store_path = tmp_path / "paper.db"
-    first = run_preview(
+    report = run_preview(
         alpha_ids=("crowd_contra",),
         output_path=str(tmp_path / "first.json"),
-        paper_store_path=str(store_path),
+        paper_store_path=str(tmp_path / "paper.db"),
         aum=1_000_000.0,
         cost_bps=10.0,
         generated_at_ms=DECISION_TS,
     )
-    assert first["verdict"]["paper_preview_ready"] is True
-
-    second = run_preview(
-        alpha_ids=("crowd_contra",),
-        output_path=str(tmp_path / "second.json"),
-        paper_store_path=str(store_path),
-        aum=10_000.0,
-        cost_bps=10.0,
-        generated_at_ms=DECISION_TS + 1,
-    )
-    row = second["alphas"]["crowd_contra"]
-    assert second["verdict"]["paper_preview_ready"] is False
+    row = report["alphas"]["crowd_contra"]
+    assert report["verdict"]["paper_preview_ready"] is False
     assert row["paper_execution"] == "PAPER_BLOCKED"
-    assert row["rejected_reasons"] == [
-        "PAPER_PREVIEW_SIZING_MISMATCH_USE_SEPARATE_PAPER_STORE"
-    ]
-    assert second["errors"]["crowd_contra"]["existing_aum"] == 1_000_000.0
+    assert report["errors"]["crowd_contra"]["reason"] == (
+        "FULL_RESEARCH_RISK_NOT_APPROVED"
+    )

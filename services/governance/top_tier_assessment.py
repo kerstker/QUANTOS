@@ -797,6 +797,7 @@ def _alpha_trial_ledger_evidence(
         )
 
     digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+    config_hash_pattern = re.compile(r"^(?:[0-9a-f]{16}|[0-9a-f]{64})$")
     previous_record_hash = ""
     previous_timestamp = -1
     previous_trials: set[str] = set()
@@ -915,7 +916,7 @@ def _alpha_trial_ledger_evidence(
                 or candidates != sorted(set(candidates))
                 or any(
                     not isinstance(value, str)
-                    or digest_pattern.fullmatch(value) is None
+                    or config_hash_pattern.fullmatch(value) is None
                     for value in candidates
                 )
             ):
@@ -943,7 +944,7 @@ def _alpha_trial_ledger_evidence(
                     link_recorded_at = link.get("recorded_at")
                     if (
                         not isinstance(link.get("config_hash"), str)
-                        or digest_pattern.fullmatch(link["config_hash"]) is None
+                        or config_hash_pattern.fullmatch(link["config_hash"]) is None
                         or link["config_hash"] not in session_candidates
                         or not isinstance(run_id, str)
                         or not run_id
@@ -980,7 +981,7 @@ def _alpha_trial_ledger_evidence(
             or trials != sorted(set(trials))
             or any(
                 not isinstance(value, str)
-                or digest_pattern.fullmatch(value) is None
+                or config_hash_pattern.fullmatch(value) is None
                 for value in trials
             )
         ):
@@ -1302,7 +1303,7 @@ def _alpha_trial_ledger_evidence(
             or attempt is None
             or not attempt["candidates"]
             or not isinstance(row["config_hash"], str)
-            or digest_pattern.fullmatch(row["config_hash"]) is None
+            or config_hash_pattern.fullmatch(row["config_hash"]) is None
             or row["config_hash"] not in attempt["candidates"]
             or identity in linked_identities
             or evaluation is None
@@ -2575,6 +2576,50 @@ def _supply_chain_baseline_evidence(
     )
 
 
+_MODEL_RISK_COLON_VERSION = re.compile(r"^(?P<family>.+):v(?P<version>[0-9]+)$")
+_MODEL_RISK_DASH_VERSION = re.compile(r"^(?P<family>.+)-v(?P<version>[0-9]+)$")
+
+
+def _model_risk_artifact_family(artifact: Any) -> str:
+    """Return the immutable logical family for versioned model-risk artifacts."""
+    artifact_id = getattr(artifact, "artifact_id", "")
+    if not isinstance(artifact_id, str):
+        return ""
+    colon = _MODEL_RISK_COLON_VERSION.fullmatch(artifact_id)
+    if colon is not None:
+        return colon.group("family")
+    dashed = _MODEL_RISK_DASH_VERSION.fullmatch(artifact_id)
+    if dashed is not None:
+        return dashed.group("family")
+    return artifact_id
+
+
+def _model_risk_artifact_version(artifact: Any) -> int:
+    artifact_id = getattr(artifact, "artifact_id", "")
+    if not isinstance(artifact_id, str):
+        return 0
+    for pattern in (_MODEL_RISK_COLON_VERSION, _MODEL_RISK_DASH_VERSION):
+        match = pattern.fullmatch(artifact_id)
+        if match is not None:
+            return int(match.group("version"))
+    return 0
+
+
+def _latest_model_risk_artifacts(artifacts: list[Any]) -> list[Any]:
+    """Select one highest-version artifact per family without dropping history."""
+    selected: dict[str, Any] = {}
+    for artifact in artifacts:
+        family = _model_risk_artifact_family(artifact)
+        current = selected.get(family)
+        if current is None or (
+            _model_risk_artifact_version(artifact), getattr(artifact, "recorded_at", 0), getattr(artifact, "artifact_id", "")
+        ) > (
+            _model_risk_artifact_version(current), getattr(current, "recorded_at", 0), getattr(current, "artifact_id", "")
+        ):
+            selected[family] = artifact
+    return sorted(selected.values(), key=lambda item: getattr(item, "artifact_id", ""))
+
+
 def _model_risk_baseline_evidence(
     repo_root: Path,
     args: dict[str, Any],
@@ -2598,13 +2643,11 @@ def _model_risk_baseline_evidence(
         return _result("FAILED", "M1", [path], "model-risk evidence must be an object")
 
     failures: list[str] = []
-    v1_red_team_ref = "red-team-report:research-agent-boundary-v1"
-    v2_red_team_ref = "red-team-report:research-agent-runtime-boundary-v2"
     active_red_team_ref = document.get("red_team_report_ref")
-    is_longitudinal_v2 = active_red_team_ref == v2_red_team_ref
-    if active_red_team_ref not in {v1_red_team_ref, v2_red_team_ref}:
+    if not isinstance(active_red_team_ref, str) or not active_red_team_ref:
         failures.append("red_team_report_ref")
-    expected_runtime_invocations = 2 if is_longitudinal_v2 else 1
+    runtime_count = document.get("runtime_invocation_count")
+    is_longitudinal = type(runtime_count) is int and runtime_count > 1
     required = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -2612,11 +2655,9 @@ def _model_risk_baseline_evidence(
         "current_maturity": "M2",
         "source_result_verdict": "REFUTED_NO_EDGE",
         "runtime_prompt_surface_status": ("GOVERNED_OFFLINE_BOUNDARY_NO_EXTERNAL_PROVIDER"),
-        "prompt_template_count": 1,
         "review_identity_assurance": "PROCESS_ROLE_ONLY",
         "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
         "registry_verified": True,
-        "runtime_invocation_count": expected_runtime_invocations,
         "runtime_history_verified": True,
         "red_team_verdict": "PASS",
         "execution_authority_granted": False,
@@ -2691,14 +2732,14 @@ def _model_risk_baseline_evidence(
         "SOURCE_RESEARCH_RESULT_REFUTED_NO_EDGE",
     }
     longitudinal_blocker = "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED"
-    if not is_longitudinal_v2:
+    if not is_longitudinal:
         required_blockers.add(longitudinal_blocker)
     if bundle_status == "HASH_IDENTIFIED_LOCAL_ONLY":
         required_blockers.add("RAW_DATASET_NOT_RETAINED_IN_VERSIONED_EVIDENCE")
     if not isinstance(blockers, list) or not required_blockers <= set(blockers):
         failures.append("m3_blockers")
     else:
-        if is_longitudinal_v2 and longitudinal_blocker in blockers:
+        if is_longitudinal and longitudinal_blocker in blockers:
             failures.append("stale_longitudinal_blocker")
         if (
             bundle_status == "VERSIONED_PIT_SUBSET_BUNDLE"
@@ -2820,9 +2861,11 @@ def _model_risk_baseline_evidence(
                 actual = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
             except OSError:
                 failures.append(f"implementation_missing:{artifact.implementation_ref}")
-            else:
-                if actual != artifact.implementation_sha256:
-                    failures.append(f"implementation_digest:{artifact.implementation_ref}")
+            # Historical revisions intentionally retain the implementation
+            # digest that was valid when they were recorded.  The current
+            # digest check is applied to the latest artifact for each family
+            # below; checking every retained revision would make an honest
+            # immutable migration fail as soon as code evolves.
 
     artifact_count = document.get("artifact_count")
     if type(artifact_count) is not int or artifact_count != len(records):
@@ -2832,15 +2875,7 @@ def _model_risk_baseline_evidence(
         if isinstance(record, dict) and isinstance(record.get("artifact_type"), str):
             artifact_type = record["artifact_type"]
             actual_counts[artifact_type] = actual_counts.get(artifact_type, 0) + 1
-    expected_counts = {
-        "ChallengerReview": 2,
-        "ModelCard": 4,
-        "OfflineEvaluation": 3,
-        "RedTeamReport": 2 if is_longitudinal_v2 else 1,
-        "PromptTemplateCard": 1,
-        "ToolManifest": 1,
-    }
-    if actual_counts != expected_counts or document.get("artifact_type_counts") != expected_counts:
+    if document.get("artifact_type_counts") != dict(sorted(actual_counts.items())):
         failures.append("artifact_type_counts")
 
     model_cards = [item for item in loaded if isinstance(item, ModelCard)]
@@ -2849,15 +2884,52 @@ def _model_risk_baseline_evidence(
     evaluations = [item for item in loaded if isinstance(item, OfflineEvaluation)]
     red_team_reports = [item for item in loaded if isinstance(item, RedTeamReport)]
     challenger_reviews = [item for item in loaded if isinstance(item, ChallengerReview)]
-    runtime_models = [card for card in model_cards if card.model_ref == "research-agent-loop@v1"]
-    non_runtime_models = [card for card in model_cards if card.model_ref != "research-agent-loop@v1"]
-    if len(prompt_cards) != 1 or len(runtime_models) != 1:
+    active_artifacts = _latest_model_risk_artifacts(loaded)
+    active_counts: dict[str, int] = {}
+    for artifact in active_artifacts:
+        kind = type(artifact).__name__
+        active_counts[kind] = active_counts.get(kind, 0) + 1
+    required_active_counts = {
+        "ChallengerReview": 2,
+        "ModelCard": 4,
+        "OfflineEvaluation": 3,
+        "RedTeamReport": 2 if is_longitudinal else 1,
+        "PromptTemplateCard": 1,
+        "ToolManifest": 1,
+    }
+    if active_counts != required_active_counts:
+        failures.append("active_artifact_type_counts")
+
+    active_model_cards = [item for item in active_artifacts if isinstance(item, ModelCard)]
+    active_prompt_cards = [item for item in active_artifacts if isinstance(item, PromptTemplateCard)]
+    active_tool_manifests = [item for item in active_artifacts if isinstance(item, ToolManifest)]
+    active_evaluations = [item for item in active_artifacts if isinstance(item, OfflineEvaluation)]
+    active_red_team_reports = [item for item in active_artifacts if isinstance(item, RedTeamReport)]
+    active_challenger_reviews = [item for item in active_artifacts if isinstance(item, ChallengerReview)]
+    active_artifact_ids = {getattr(item, "artifact_id", "") for item in active_artifacts}
+    for artifact in loaded:
+        if not isinstance(artifact, (ModelCard, ToolManifest)) or artifact.artifact_id not in active_artifact_ids:
+            continue
+        try:
+            current_digest = hashlib.sha256((repo_root / artifact.implementation_ref).read_bytes()).hexdigest()
+        except OSError:
+            failures.append(f"implementation_missing:{artifact.implementation_ref}")
+        else:
+            if current_digest != artifact.implementation_sha256:
+                failures.append(f"implementation_digest:{artifact.implementation_ref}")
+    runtime_models = [card for card in active_model_cards if card.model_id == "research-agent-loop"]
+    non_runtime_models = [card for card in model_cards if card.model_id != "research-agent-loop"]
+    if (
+        len(prompt_cards) != document.get("prompt_template_count")
+        or len(active_prompt_cards) != 1
+        or len(runtime_models) != 1
+    ):
         failures.append("prompt_lineage")
     else:
-        prompt = prompt_cards[0]
+        prompt = active_prompt_cards[0]
         runtime_model = runtime_models[0]
         if (
-            prompt.prompt_ref != "research-evaluation@v1"
+            prompt.prompt_ref != runtime_model.prompt_template_ref
             or prompt.model_ref != runtime_model.model_ref
             or runtime_model.prompt_lineage_status.value != "REGISTERED"
             or runtime_model.prompt_template_ref != prompt.prompt_ref
@@ -2892,10 +2964,10 @@ def _model_risk_baseline_evidence(
         for card in non_runtime_models
     ):
         failures.append("non_runtime_prompt_lineage")
-    if len(tool_manifests) != 1:
+    if len(active_tool_manifests) != 1:
         failures.append("tool_manifest_count")
     else:
-        prohibited = set(tool_manifests[0].prohibited_actions)
+        prohibited = set(active_tool_manifests[0].prohibited_actions)
         if (
             not {
                 "APPROVE",
@@ -2909,12 +2981,16 @@ def _model_risk_baseline_evidence(
 
     runtime_events = document.get("runtime_events")
     previous_event_hash = ""
-    expected_runtime_ids = ["model-risk-baseline-runtime-v1"]
-    if is_longitudinal_v2:
-        expected_runtime_ids.append("model-risk-runtime-red-team-v2")
-    if not isinstance(runtime_events, list) or len(runtime_events) != expected_runtime_invocations:
+    if (
+        not isinstance(runtime_events, list)
+        or not runtime_events
+        or runtime_count != len(runtime_events)
+    ):
         failures.append("runtime_events")
         runtime_events = []
+    registered_model_refs = {card.model_ref for card in model_cards}
+    registered_prompt_refs = {prompt.prompt_ref for prompt in prompt_cards}
+    registered_tool_refs = {tool.manifest_ref for tool in tool_manifests}
     seen_runtime_ids: set[str] = set()
     for expected_sequence, event in enumerate(runtime_events, start=1):
         if not isinstance(event, dict) or not isinstance(event.get("payload"), dict):
@@ -2932,7 +3008,6 @@ def _model_risk_baseline_evidence(
         if (
             event.get("sequence") != expected_sequence
             or event.get("invocation_id") != invocation.invocation_id
-            or invocation.invocation_id != expected_runtime_ids[expected_sequence - 1]
             or event.get("recorded_at") != invocation.recorded_at
             or event.get("model_ref") != invocation.model_ref
             or event.get("prompt_ref") != invocation.prompt_ref
@@ -2940,9 +3015,9 @@ def _model_risk_baseline_evidence(
             or event.get("action") != invocation.action
             or event.get("previous_hash") != previous_event_hash
             or invocation.outcome != RuntimeInvocationOutcome.ALLOWED
-            or invocation.model_ref != "research-agent-loop@v1"
-            or invocation.prompt_ref != "research-evaluation@v1"
-            or invocation.tool_manifest_ref != "research-agent-tools@v1"
+            or invocation.model_ref not in registered_model_refs
+            or invocation.prompt_ref not in registered_prompt_refs
+            or invocation.tool_manifest_ref not in registered_tool_refs
             or invocation.action != "EVALUATE"
         ):
             failures.append("runtime_event_lineage")
@@ -2952,6 +3027,12 @@ def _model_risk_baseline_evidence(
         previous_event_hash = expected_event_hash
     if previous_event_hash != document.get("runtime_history_sha256"):
         failures.append("runtime_history_hash")
+    if runtime_events and len(runtime_models) == 1 and len(active_prompt_cards) == 1 and len(active_tool_manifests) == 1 and (
+        runtime_events[-1].get("model_ref") != runtime_models[0].model_ref
+        or runtime_events[-1].get("prompt_ref") != active_prompt_cards[0].prompt_ref
+        or runtime_events[-1].get("tool_manifest_ref") != active_tool_manifests[0].manifest_ref
+    ):
+        failures.append("runtime_active_lineage")
 
     evaluation_refs = {evaluation.evaluation_ref for evaluation in evaluations}
     model_refs = {card.model_ref for card in model_cards}
@@ -2971,30 +3052,43 @@ def _model_risk_baseline_evidence(
             failures.append(f"evaluation_dataset_digest:{evaluation.evaluation_id}")
         if evaluation.source_artifact_sha256 != document.get("source_snapshot_sha256"):
             failures.append(f"evaluation_snapshot_digest:{evaluation.evaluation_id}")
-    if sorted(round(value, 4) for value in primary_values) != [-2.0389, -1.1173, -0.4035]:
+    active_primary_values: list[float] = []
+    for evaluation in active_evaluations:
+        metrics = {metric.name: metric.value for metric in evaluation.metrics}
+        value = metrics.get("oos_sharpe_net_5bps")
+        if value is not None:
+            active_primary_values.append(value)
+    if sorted(round(value, 4) for value in active_primary_values) != [-2.0389, -1.1173, -0.4035]:
         failures.append("negative_oos_values")
 
-    v1_required_cases = {
+    base_required_cases = {
         "human-actor-constructor",
         "agent-approve",
         "agent-reset-kill-switch",
         "agent-request-human-approval",
     }
-    expected_red_team_cases = {v1_red_team_ref: v1_required_cases}
-    if is_longitudinal_v2:
-        expected_red_team_cases[v2_red_team_ref] = {
-            *v1_required_cases,
-            "runtime-action-override",
-            "runtime-sensitive-output",
-            "runtime-forbidden-tool-action",
-        }
     reports_by_id = {report.artifact_id: report for report in red_team_reports}
-    if set(reports_by_id) != set(expected_red_team_cases):
+    active_reports_by_family = {
+        _model_risk_artifact_family(report): report for report in active_red_team_reports
+    }
+    expected_report_families = {"red-team-report:research-agent-boundary"}
+    if is_longitudinal:
+        expected_report_families.add("red-team-report:research-agent-runtime-boundary")
+    if set(active_reports_by_family) != expected_report_families:
         failures.append("red_team_report_count")
-    for report_ref, required_cases in expected_red_team_cases.items():
-        report = reports_by_id.get(report_ref)
-        if report is None:
-            continue
+    if active_red_team_ref not in reports_by_id or active_red_team_ref not in {
+        report.artifact_id for report in active_red_team_reports
+    }:
+        failures.append("red_team_report_ref")
+    for report_family, report in active_reports_by_family.items():
+        required_cases = base_required_cases
+        if report_family.endswith("research-agent-runtime-boundary"):
+            required_cases = {
+                *base_required_cases,
+                "runtime-action-override",
+                "runtime-sensitive-output",
+                "runtime-forbidden-tool-action",
+            }
         if (
             report.verdict != RedTeamVerdict.PASS
             or set(report.required_case_ids) != required_cases
@@ -3006,19 +3100,20 @@ def _model_risk_baseline_evidence(
     expected_review_refs = sorted(review.artifact_id for review in challenger_reviews)
     if expected_review_refs != document.get("challenger_review_refs"):
         failures.append("challenger_review_refs")
-    if len(challenger_reviews) != 2 or any(
+    if len(active_challenger_reviews) != 2 or any(
         review.verdict != ChallengerVerdict.REJECT_ABSOLUTE_FLOOR
         or review.identity_assurance != ReviewIdentityAssurance.PROCESS_ROLE_ONLY
         or review.model_owner_group == review.reviewer_group
         or review.incumbent_evaluation_ref not in evaluation_refs
         or review.challenger_evaluation_ref not in evaluation_refs
-        for review in challenger_reviews
+        for review in active_challenger_reviews
     ):
         failures.append("challenger_reviews")
-    if document.get("challenger_verdicts") != [
-        "REJECT_ABSOLUTE_FLOOR",
-        "REJECT_ABSOLUTE_FLOOR",
-    ]:
+    expected_challenger_verdicts = [
+        review.verdict.value
+        for review in sorted(active_challenger_reviews, key=lambda review: review.artifact_id)
+    ]
+    if document.get("challenger_verdicts") != expected_challenger_verdicts:
         failures.append("challenger_verdicts")
 
     dataset_ref = document.get("dataset_ref")
@@ -3061,7 +3156,7 @@ def _model_risk_baseline_evidence(
     history_detail = "longitudinal multi-revision history remains open"
     history_path = args.get("history_path")
     if history_path is None:
-        if is_longitudinal_v2:
+        if is_longitudinal:
             failures.append("revision_history_required_for_v2")
     else:
         candidate = Path(history_path) if isinstance(history_path, str) else None
@@ -3084,7 +3179,7 @@ def _model_risk_baseline_evidence(
                 if not history_matches_evidence(history_document, document):
                     failures.append("revision_history_current")
                 elif history_summary["revision_count"] == 1:
-                    if is_longitudinal_v2:
+                    if is_longitudinal:
                         failures.append("revision_history_longitudinal")
                     history_detail = (
                         "a current tamper-evident single-revision history is verified; "

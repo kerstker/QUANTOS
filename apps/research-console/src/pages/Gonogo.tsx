@@ -1,4 +1,3 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import { PageShell, PageHeader, ProvenanceRibbon, Panel, LoadingVeil } from '@/ui/primitives';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';

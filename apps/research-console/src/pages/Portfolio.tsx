@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { fetchPortfolioSnapshot } from '@/lib/api/research-console-api';
 import { mockCalculationLineage, mockPortfolioSims } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';

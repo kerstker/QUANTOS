@@ -15,6 +15,13 @@ def test_health_read_only():
     assert response.json()["mode"] == "READ_ONLY"
 
 
+def test_console_cors_echoes_explicit_frontend_origin():
+    origin = "http://127.0.0.1:3100"
+    response = client.get("/health", headers={"Origin": origin})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == origin
+
+
 def test_phase1b_real_series_back_engines(monkeypatch):
     # Phase 1B: when the offline snapshot's real per-factor return series are loaded, the engines run on
     # REAL data and provenance flips to REAL_CRYPTO_SERIES; absent, everything fails closed to synthetic.
@@ -45,7 +52,12 @@ def test_phase1b_real_series_back_engines(monkeypatch):
     assert any(round(c["ic"], 4) == 0.05 for c in af["candidates"])  # real IC, not synthetic
     risk = client.get("/api/v1/console/risk-dashboard?alpha_id=alpha-1").json()
     assert risk["data_provenance"] == "REAL_CRYPTO_SERIES"
-    assert risk["primary_report"]["gates_total"] == 9  # the real 9-engine gate ran
+    assert risk["primary_report"]["gates_total"] == 9
+    assert risk["primary_report"]["gates_run"] == 0
+    assert risk["primary_report"]["provenance"] == "REAL_RESEARCH_RISK_FULL_PENDING"
+    assert risk["primary_report"]["admission_allowed"] is False
+    assert risk["reports"][1]["decision"] == "RISK_REJECTED"
+    assert risk["reports"][1]["provenance"] == "NO_SNAPSHOT"
 
     monkeypatch.setattr(capi, "_REAL_FACTORS_CACHE", [])  # fail-closed -> synthetic
     assert client.get("/api/v1/console/alpha-factory").json()["data_provenance"] == "SYNTHETIC_DETERMINISTIC"
@@ -774,9 +786,13 @@ def test_system_health_snapshot_uses_backend_contract():
     assert payload["read_only"] is True
     assert any(service["service"] == "research-console-api" for service in payload["services"])
     assert len(payload["safety_checks"]) == 5
-    # Rank #26: the REAL integrity block (build_snapshot over the durable audit chain) is present,
-    # and the illustrative latencies are honestly labelled (not presented as measured).
-    assert payload["latency_provenance"] == "ILLUSTRATIVE_NOT_MEASURED"
+    # Health must expose measured local evidence and explicit unknowns for
+    # services without a configured probe; no deterministic latency is passed
+    # off as an operational measurement.
+    assert payload["latency_provenance"] == "MEASURED_LOCAL_MONITORING_CALL"
+    assert payload["latency_scope"] == "PROCESS_LOCAL_ONLY"
+    assert payload["error_rate_provenance"] == "UNMEASURED_NO_REQUEST_COUNTER"
+    assert any(service["status"] == "unknown" for service in payload["services"])
     mon = payload["monitoring"]
     assert mon["provenance"] in ("REAL_MONITORING_SNAPSHOT", "NO_DURABLE_AUDIT_CHAIN", "MONITORING_ERROR")
     if mon["provenance"] == "REAL_MONITORING_SNAPSHOT":

@@ -337,6 +337,7 @@ def test_run_cycle_marks_existing_fills_when_new_operator_is_blocked(tmp_path):
     )
 
     assert report["operator_mode"] == paper_realtime.MARK_ONLY_REPLAY_REASON
+    assert report["readiness_class"] == "PAPER_MARKS_ONLY_REPLAY"
     assert report["verdict"]["cycle_completed"] is True
     assert report["verdict"]["new_paper_orders_allowed"] is False
     assert report["verdict"]["live_allowed"] is False

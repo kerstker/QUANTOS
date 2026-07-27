@@ -32,7 +32,7 @@ elements:
         - text: "证据"
       - - {text: "ML stacking（GBM/Ridge/XGBoost）", align: [left, middle]}
         - {text: "OOS 夏普 -0.78 / -0.24 / -0.80，全部不如单因子 1.78 —— 无可交易边", align: [left, middle], color: "$warn", fontSize: 10}
-        - {text: "ml_stack_snapshot.json", fontSize: 9}
+        - {text: "ml_stack_snapshot_crypto.json", fontSize: 9}
       - - {text: "A 股微盘 v2_u249", align: [left, middle]}
         - {text: "净成本后 -14.6%，夏普 -0.24，被证伪", align: [left, middle], color: "$warn", fontSize: 10}
         - {text: "dry_run.db（保留）", fontSize: 9}

@@ -1,7 +1,8 @@
 """Concrete read-only risk adapter for the console composition root."""
 from __future__ import annotations
 
-import dataclasses
+import hashlib
+import json
 import os
 from typing import Any, Mapping, Sequence
 
@@ -11,8 +12,7 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.monitoring.health import build_snapshot
 from services.risk.pre_trade.checks import CHECK_REGISTRY
 from services.risk.pre_trade.kill_switch import KillSwitch
-from services.risk.research_risk.domain.gate import RiskApprovalGate
-from services.risk.research_risk.domain.models import RiskConfig, RiskRun
+from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
 
 
 class DefaultRiskConsolePort:
@@ -23,53 +23,67 @@ class DefaultRiskConsolePort:
         equity_points: Sequence[Mapping[str, float]],
         capacity: float,
     ) -> dict[str, Any]:
+        """Return a read-only risk snapshot without manufacturing admission.
+
+        The console port does not receive the immutable alpha metadata, PIT
+        regime labels, and per-leg capacity inputs required by the complete
+        nine-engine gate.  The four-engine result is retained as a diagnostic
+        panel, while the authoritative decision stays ``PENDING``/rejected.
+        This prevents a UI proxy from being mistaken for a promotion or paper
+        order approval.
+        """
         weights = {f"{alpha_id}-{index}": 0.1 for index in range(10)}
-        capacity_cny = {name: capacity for name in weights}
-        alpha_returns = {
-            name: [value * (0.8 + index * 0.04) for value in returns[:90]]
-            for index, name in enumerate(weights)
-        }
-        metadata = [
-            {
-                "validation_confidence": 0.78,
-                "paper_confidence": 0.72,
-                "age_days": 45,
-                "decay_flag": False,
-                "overfit_flag": False,
-                "leakage_flag": False,
-            }
-        ]
-        run = RiskRun(portfolio_id=f"portfolio-{alpha_id}", config=RiskConfig())
-        decision = RiskApprovalGate().evaluate(
-            run=run,
-            returns=list(returns[:120]),
-            weights=weights,
-            equity_curve=[point["equity"] for point in equity_points],
-            capacity_cny=capacity_cny,
-            alpha_returns=alpha_returns,
-            regime_labels=[
-                "normal" if index % 5 else "stress"
-                for index in range(len(returns[:120]))
-            ],
-            alpha_metadata=metadata,
-            daily_volume_cny=1_000_000_000,
-            total_aum=100_000_000,
+        returns_used = list(returns[:120])
+        equity_curve = [point["equity"] for point in equity_points]
+        subset = evaluate_dry_run_risk(
+            returns_used,
+            weights,
+            equity_curve,
+            timestamps=list(range(len(returns_used))),
         )
-        stress_report = run.gate_reports.get("stress")
+        full = evaluate_dry_run_risk(
+            returns_used,
+            weights,
+            equity_curve,
+            timestamps=list(range(len(returns_used))),
+            require_full_inputs=True,
+        )
+        stress_report = dict((subset.get("reports") or {}).get("stress") or {})
+        if stress_report:
+            stress_report["diagnostic_only"] = True
+            stress_report["admission_provenance"] = "REAL_RESEARCH_RISK_FULL_PENDING"
+        repro_payload = {
+            "alpha_id": alpha_id,
+            "weights": weights,
+            "returns": returns_used,
+            "equity_curve": equity_curve,
+            "risk": full,
+        }
+        reproducibility_hash = hashlib.sha256(
+            json.dumps(
+                repro_payload,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
         return {
-            "run_id": run.run_id,
-            "portfolio_id": run.portfolio_id,
-            "decision": decision.decision.value,
-            "gates_passed": decision.gates_passed,
-            "gates_total": decision.gates_total,
-            "gate_results": run.gate_results,
-            "reasons": decision.reasons,
-            "reproducibility_hash": run.reproducibility_hash,
-            "stress": (
-                dataclasses.asdict(stress_report)
-                if stress_report is not None
-                else None
-            ),
+            "run_id": f"risk-pending-{alpha_id}",
+            "portfolio_id": f"portfolio-{alpha_id}",
+            "decision": full["decision"],
+            "status": full["status"],
+            "gates_passed": full["gates_passed"],
+            "gates_run": full["gates_run"],
+            "gates_total": 9,
+            "gate_results": dict(full.get("engines_run") or {}),
+            "engines_pending": dict(full.get("engines_pending") or {}),
+            "engines_skipped": dict(full.get("engines_skipped") or {}),
+            "reasons": list(full.get("reasons") or []),
+            "provenance": full["provenance"],
+            "admission_allowed": False,
+            "reproducibility_hash": reproducibility_hash,
+            "stress": stress_report or None,
+            "diagnostic_subset": subset,
         }
 
     def monitoring_snapshot(

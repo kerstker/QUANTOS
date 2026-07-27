@@ -405,7 +405,7 @@ git commit -m "feat(ml): walk_forward_stack——purged+embargo 滚动 + 截面�
 
 **Interfaces:**
 - Consumes: `build_feature_panel`、`walk_forward_stack`(组合)、`make_data_periods_provider`(因子面板)、`walk_forward_selection_oos`(单因子最优 OOS)、`metrics.sharpe`。
-- Produces: `data/cache/ml_stack_snapshot.json`(三方 OOS + 成本扫描 + 裁决)。
+- Produces: `data/cache/ml_stack_snapshot_<asset>.json`(三方 OOS + 成本扫描 + 裁决；crypto/FX 不再共享可变快照)。
 
 - [ ] **Step 1: 实现驱动器**
 
@@ -502,9 +502,10 @@ def main(asset: str = "crypto") -> None:
     print(f"\n=== 三方 OOS Sharpe ===\n  stack GBM   {g}  (folds {gbm['n_folds']})\n"
           f"  stack Ridge {r}  (folds {ridge['n_folds']})\n  single best {s}\n  verdict: {verdict}", flush=True)
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
-    json.dump(result, open(os.path.join("data", "cache", "ml_stack_snapshot.json"), "w", encoding="utf-8"),
-              indent=2, sort_keys=True)
-    print("snapshot -> data/cache/ml_stack_snapshot.json", flush=True)
+    destination = snapshot_path(asset)
+    with open(destination, "w", encoding="utf-8", newline="") as handle:
+        json.dump(result, handle, indent=2, sort_keys=True)
+    print(f"snapshot -> {destination}", flush=True)
 
 
 if __name__ == "__main__":
@@ -520,7 +521,7 @@ Expected: `ok ['crypto', 'fx']`
 
 Run: `PYTHONPATH=. python -m tools.ml_stack_research crypto`
 Run: `PYTHONPATH=. python -m tools.ml_stack_research fx`
-Expected: 打印三方 OOS Sharpe + verdict;`data/cache/ml_stack_snapshot.json` 存在。诚实预期:大概率 `REFUTED_NO_EDGE` 或 `NO_LIFT_OVER_LINEAR`(薄数据无趋势 edge)——这本身是诚实结论。
+Expected: 打印三方 OOS Sharpe + verdict;对应资产的 `data/cache/ml_stack_snapshot_<asset>.json` 存在。诚实预期:大概率 `REFUTED_NO_EDGE` 或 `NO_LIFT_OVER_LINEAR`(薄数据无趋势 edge)——这本身是诚实结论。
 
 > 若 `walk_forward_selection_oos` 返回的最优名键不是 `selected`/`top`,在 Step 3 观察实际键后把 `single_best_name` 的取法改对(只影响展示,不影响 OOS 数值)。
 

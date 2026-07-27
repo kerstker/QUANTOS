@@ -51,7 +51,13 @@ export interface PortfolioWeights { weights_id: string; weights: Record<string,n
 export interface PortfolioSimulation { run_id: string; status: string; metrics: Record<string,number>; equity_curve: {day:number;equity:number}[]; }
 export interface RiskReport { run_id: string; portfolio_id: string; decision: RiskDecision; gates_passed: number; gates_total: number; reasons: string[]; gate_results: Record<string,boolean>; }
 export interface EventRecord { event_id: string; event_type: string; timestamp: number; source: string; correlation_id?: string; payload: Record<string,unknown>; }
-export interface ServiceHealth { service: string; status: "healthy"|"degraded"|"down"; latency_ms: number; error_rate: number; }
+export interface ServiceHealth {
+  service: string;
+  status: "healthy"|"degraded"|"down"|"unknown";
+  latency_ms: number | null;
+  error_rate: number | null;
+  probe?: string;
+}
 
 export interface ChartPoint {
   x: number;
@@ -492,6 +498,29 @@ export interface SystemHealthPayload extends ConsolePayloadBase {
   safety_checks: string[];
 }
 
+/** Read-only frontend/backend runtime handshake (console-runtime.v1). */
+export interface RuntimeContractPayload extends ConsolePayloadBase {
+  contract_version: string;
+  service: string;
+  instance_id: string;
+  process_id: number;
+  build_sha: string;
+  build_sha_known: boolean;
+  event_schema_catalog: {
+    sha256: string;
+    event_type_count: number;
+    latest_versions: Record<string, string>;
+  };
+  safety_boundary: {
+    read_only_console: boolean;
+    authorized_level: "L2_DRY_RUN_ONLY" | string;
+    live_trading_authorized: false;
+    order_submission_allowed: false;
+    broker_connectivity: false;
+  };
+  generated_at_ms: number;
+}
+
 export type Phase3ACriterionStatus = "APPROVED" | "PENDING" | "REJECTED";
 
 export interface Phase3ACriterion {
@@ -868,6 +897,7 @@ export interface PaperRealtimePayload {
     new_paper_orders_allowed?: boolean;
   };
   operator_mode?: string | null;
+  readiness_class?: string;
   alphas: Record<string, PaperRealtimeAlpha>;
   backtests: Record<string, PaperRealtimeBacktest>;
   history?: PaperRealtimeHistoryPoint[];
@@ -911,7 +941,25 @@ export interface PaperHealthPayload {
     live_allowed: boolean;
     order_submission_allowed: boolean;
   };
+  readiness_class?:
+    | 'PAPER_READY'
+    | 'PAPER_MARKS_ONLY_REPLAY'
+    | 'PAPER_MARKS_READY_PENDING_RISK'
+    | 'PAPER_MARKS_READY_PENDING_HEALTH'
+    | 'PAPER_CYCLE_BLOCKED'
+    | 'PAPER_BLOCKED'
+    | string;
+  next_action?: string | null;
   blockers: string[];
+  research_risk_bundle_complete?: boolean;
+  research_risk_bundles?: Record<string, {
+    status?: string;
+    provenance?: string;
+    path?: string;
+    bundle_sha256?: string;
+    missing?: string[];
+    reasons?: string[];
+  }>;
   forward_evidence?: {
     present?: boolean;
     ran_at?: number;
@@ -951,6 +999,7 @@ export interface PaperProfilePayload {
     cycle_completed: boolean;
     paper_mark_ready: boolean;
     backtest_reference_present_for_all_three: boolean;
+    readiness_class?: string;
     observed_at?: number;
     funding_refresh?: PaperRealtimePayload['funding_refresh'];
     chain_valid: boolean;
@@ -971,6 +1020,10 @@ export interface PaperProfilePayload {
     paper_mark_ready: boolean;
     paper_preview_ready: boolean;
     funding_data_complete_for_all_three?: boolean;
+    readiness_class?: string;
+    next_action?: string | null;
+    research_risk_bundle_complete?: boolean;
+    research_risk_bundles?: PaperHealthPayload['research_risk_bundles'];
     age_ms?: number;
     blockers: string[];
   };

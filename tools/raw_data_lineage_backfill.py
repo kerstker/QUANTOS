@@ -12,8 +12,13 @@ import hashlib
 import json
 import math
 import os
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        load_archived_response,

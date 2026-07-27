@@ -1,10 +1,9 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, LoadingVeil,
   DataTable, StatusChip, type Column,
 } from '@/ui/primitives';
-import { AsOfStamp, EndpointFootnote, StatusBanner, EquityCurveChart } from '@/ui/workbench';
+import { EndpointFootnote, StatusBanner, EquityCurveChart } from '@/ui/workbench';
 import { pct, signed, stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchMexcStrategySnapshot } from '@/lib/api/research-console-api';

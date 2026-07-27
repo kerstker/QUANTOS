@@ -9,7 +9,7 @@ production deployment approval, or live-trading authority.
 
 ## Real Evidence Sources
 
-1. `data/cache/ml_stack_snapshot.json`: real FX purged/embargoed walk-forward OOS
+1. `data/cache/ml_stack_snapshot_fx.json`: real FX purged/embargoed walk-forward OOS；crypto 研究写入独立的 `ml_stack_snapshot_crypto.json`
    comparison of Ridge, GBM, and the selected single-factor baseline. All three
    Sharpe values are negative and the source verdict is `REFUTED_NO_EDGE`.
 2. `services/intelligence/guardrails.py` and `ResearchAgentLoop`: executable

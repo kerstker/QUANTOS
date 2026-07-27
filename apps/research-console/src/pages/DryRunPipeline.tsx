@@ -431,6 +431,7 @@ export default function DryRunPipeline() {
           title={bi('鍏紑琛屾儏鏍囪 + 鍥炴祴鍩哄噯', 'Public marks + backtest reference')}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusChip value={paperRealtime.verdict.cycle_completed ? 'PAPER_MARKS_READY' : 'PAPER_MARKS_BLOCKED'} />
+            <StatusChip value={paperRealtime.readiness_class ?? 'PAPER_MARKS_BLOCKED'} />
             <StatusChip value={paperRealtime.verdict.backtest_reference_present_for_all_three ? 'BACKTESTS_READY' : 'BACKTESTS_PENDING'} />
             <StatusChip value={paperRealtime.funding_refresh?.error ? 'FUNDING_REFRESH_PENDING' : paperRealtime.funding_refresh?.attempted ? 'FUNDING_REFRESHED' : 'FUNDING_CACHE_ONLY'} />
             <span className="text-2xs text-muted">
@@ -479,6 +480,7 @@ export default function DryRunPipeline() {
             <StatusChip value={paperHealth.verdict.paper_mark_ready ? 'MARKS_READY' : 'MARKS_BLOCKED'} />
             <StatusChip value={paperHealth.verdict.paper_preview_ready ? 'PREVIEW_READY' : 'PREVIEW_BLOCKED'} />
             <StatusChip value={paperHealth.verdict.funding_data_complete_for_all_three ? 'FUNDING_READY' : 'FUNDING_PENDING'} />
+            <StatusChip value={paperHealth.readiness_class ?? 'PAPER_BLOCKED'} />
             <span className="text-2xs text-muted">
               {paperHealth.age_ms == null ? 'mark age unavailable' : `mark age ${Math.round(paperHealth.age_ms / 1000)}s`}
             </span>
@@ -491,6 +493,32 @@ export default function DryRunPipeline() {
             <div className="text-2xs text-pos">
               All three paper accounts, fills, backtest references, and reconciliation checks are healthy.
             </div>
+          )}
+          {Object.keys(paperHealth.research_risk_bundles ?? {}).length > 0 && (
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              {Object.entries(paperHealth.research_risk_bundles ?? {}).map(([alpha, bundle]) => {
+                const missing = bundle.missing ?? [];
+                const reasons = bundle.reasons ?? [];
+                const ready = bundle.status === 'READY';
+                return (
+                  <div key={alpha} className="rounded-md border border-line bg-inset/30 px-3 py-2 text-2xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="mono text-fg">{alpha}</span>
+                      <StatusChip value={ready ? 'RISK_BUNDLE_READY' : (bundle.status ?? 'RISK_BUNDLE_PENDING')} />
+                    </div>
+                    {!ready && (
+                      <>
+                        <div className="mt-1 text-warn">missing: {missing.length ? missing.join(', ') : 'not supplied'}</div>
+                        {reasons.length > 0 && <div className="mt-1 text-faint">{reasons.slice(0, 2).join(' · ')}</div>}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {paperHealth.next_action && (
+            <div className="mt-2 text-2xs text-warn">Next action: {paperHealth.next_action}</div>
           )}
           <div className="mt-2 text-2xs text-muted">
             paper-only · live_allowed=false · order_submission_allowed=false

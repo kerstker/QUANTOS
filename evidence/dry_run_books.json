@@ -1,6 +1,61 @@
 {
   "artifact": "data/cache/dry_run.db",
   "books": {
+    "ashare_microcap_composite": {
+      "max_drawdown": 0.3214,
+      "sharpe": 0.7418,
+      "total_return": 0.220045
+    },
+    "ashare_microcap_composite_u118": {
+      "max_drawdown": 0.3526,
+      "sharpe": 0.3939,
+      "total_return": 0.09504
+    },
+    "ashare_microcap_composite_v2_u120": {
+      "max_drawdown": 0.3485,
+      "sharpe": 0.6622,
+      "total_return": 0.207559
+    },
+    "ashare_microcap_composite_v2_u249": {
+      "max_drawdown": 0.5035,
+      "sharpe": -0.2421,
+      "total_return": -0.14572
+    },
+    "ashare_microcap_composite_v3_u249": {
+      "max_drawdown": 0.2108,
+      "sharpe": 0.6913,
+      "total_return": 0.205537
+    },
+    "ashare_microcap_composite_v3_u249_cap30": {
+      "max_drawdown": 0.1692,
+      "sharpe": 1.2285,
+      "total_return": 0.405078
+    },
+    "ashare_microcap_composite_v3_u249_cap40": {
+      "max_drawdown": 0.1714,
+      "sharpe": 1.2526,
+      "total_return": 0.4139
+    },
+    "btc_spot_trend": {
+      "max_drawdown": 0.0718,
+      "sharpe": 0.818,
+      "total_return": 1.053452
+    },
+    "btc_spot_trend_c5": {
+      "max_drawdown": 0.0738,
+      "sharpe": 0.8032,
+      "total_return": 1.028925
+    },
+    "btc_spot_trend_hold": {
+      "max_drawdown": 0.1392,
+      "sharpe": 1.2364,
+      "total_return": 2.980349
+    },
+    "btc_spot_trend_hold_c5": {
+      "max_drawdown": 0.1402,
+      "sharpe": 1.228,
+      "total_return": 2.950374
+    },
     "carry": {
       "max_drawdown": 0.7107,
       "sharpe": 0.4771,
@@ -9,7 +64,7 @@
     "crowd_contra": {
       "max_drawdown": 0.0885,
       "sharpe": 1.0697,
-      "total_return": 1.211456
+      "total_return": 1.21154
     },
     "top_contra": {
       "max_drawdown": 0.2015,
@@ -17,7 +72,7 @@
       "total_return": 1.650056
     }
   },
-  "code_version": "56ee0cd7051c",
+  "code_version": "3c990d67dd1c",
   "description": "Deployable dry-run book conclusions; reconciliation residual must stay ~0.",
   "kind": "dry_run_db",
   "residual_max": 1e-06,

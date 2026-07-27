@@ -333,7 +333,6 @@ export function ProvenanceRibbon({
   // honesty demands an accurate label (still read-only; historical backtest != future returns).
   const evidence = displayState === 'EVIDENCE';
   const real = displayState === 'REAL';
-  const awaiting = displayState === 'NO_SNAPSHOT';
   const tint: string = displayState === 'UNAVAILABLE' || displayState === 'BLOCKED'
     ? 'var(--neg)'
     : displayState === 'STALE' || displayState === 'MOCK'

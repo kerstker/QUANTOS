@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { fetchMonitoringDriftSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { MonitoringDriftPayload, MonitoringDriftRecord } from '@/lib/types/research';

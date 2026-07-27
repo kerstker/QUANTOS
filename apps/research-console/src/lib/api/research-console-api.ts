@@ -34,6 +34,7 @@ import type {
   LifecycleMonitorPayload,
   BacktestResultsPayload,
   RiskDashboardPayload,
+  RuntimeContractPayload,
   SystemCompletenessPayload,
   SystemHealthPayload,
   ValidationDashboardPayload,
@@ -41,8 +42,33 @@ import type {
 
 export const RESEARCH_CONSOLE_API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
+/**
+ * The console has three deliberately explicit runtime modes.  A missing API
+ * URL is not the same thing as an intentional mock session: it is an
+ * unavailable real console and must be visible to the operator.
+ */
+export type ConsoleRuntimeMode = 'MOCK' | 'REAL_API' | 'REAL_API_UNAVAILABLE';
+
+export function getConsoleRuntimeMode(): ConsoleRuntimeMode {
+  if (import.meta.env.VITE_MOCK_MODE === 'true') return 'MOCK';
+  return RESEARCH_CONSOLE_API_BASE ? 'REAL_API' : 'REAL_API_UNAVAILABLE';
+}
+
 export function isResearchConsoleApiEnabled() {
   return import.meta.env.VITE_MOCK_MODE === 'false' && RESEARCH_CONSOLE_API_BASE.length > 0;
+}
+
+/**
+ * Read-only snapshots are polled by several shared surfaces.  A short-lived
+ * client cache prevents a page from issuing the same expensive snapshot more
+ * than once during a render/poll burst, while keeping the authoritative
+ * backend as the source of truth.  Errors are never cached.
+ */
+const SNAPSHOT_CACHE_TTL_MS = 3_000;
+const snapshotCache = new Map<string, { expiresAt: number; value: unknown }>();
+
+export function clearConsoleSnapshotCache() {
+  snapshotCache.clear();
 }
 
 /**
@@ -71,12 +97,22 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
     throw new Error('VITE_API_URL is not configured');
   }
 
+  if (signal?.aborted) {
+    throw new Error('Console snapshot request aborted');
+  }
+  const cached = snapshotCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value as TPayload;
+  }
+
   const response = await fetch(new URL(path, RESEARCH_CONSOLE_API_BASE), { method: 'GET', signal });
   if (!response.ok) {
     throw new Error(`Console API returned ${response.status}`);
   }
 
-  return assertConsoleSnapshot<TPayload>(await response.json(), path);
+  const value = assertConsoleSnapshot<TPayload>(await response.json(), path);
+  snapshotCache.set(path, { value, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
+  return value;
 }
 
 export function fetchOverviewSnapshot(signal?: AbortSignal) {
@@ -161,6 +197,10 @@ export function fetchBacktestResultsSnapshot(signal?: AbortSignal) {
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SystemHealthPayload>('/api/v1/console/system-health', signal);
+}
+
+export function fetchRuntimeContract(signal?: AbortSignal) {
+  return fetchConsoleJson<RuntimeContractPayload>('/api/v1/console/runtime-contract', signal);
 }
 
 export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {

@@ -98,27 +98,34 @@ def _with_real_second_revision(evidence: dict[str, object]) -> dict[str, object]
     artifacts = revised["artifacts"]
     assert isinstance(artifacts, list)
 
-    ridge_card = next(
-        record
-        for record in artifacts
-        if record["artifact_id"] == "model-card:fx-stack-ridge:v1"
+    ridge_card = max(
+        (
+            record
+            for record in artifacts
+            if record["artifact_id"].startswith("model-card:fx-stack-ridge:v")
+        ),
+        key=lambda record: int(record["artifact_id"].rsplit(":v", 1)[1]),
     )
     card_payload = copy.deepcopy(ridge_card["payload"])
-    card_payload["version"] = "v2"
+    next_version = f"v{int(ridge_card['artifact_id'].rsplit(':v', 1)[1]) + 1}"
+    card_payload["version"] = next_version
     artifacts.append(
-        _record(card_payload, "ModelCard", "model-card:fx-stack-ridge:v2")
+        _record(card_payload, "ModelCard", f"model-card:fx-stack-ridge:{next_version}")
     )
 
-    ridge_evaluation = next(
-        record
-        for record in artifacts
-        if record["artifact_id"] == "evaluation:fx-ridge:v1"
+    ridge_evaluation = max(
+        (
+            record
+            for record in artifacts
+            if record["artifact_id"].startswith("evaluation:fx-ridge:v")
+        ),
+        key=lambda record: int(record["artifact_id"].rsplit(":v", 1)[1]),
     )
     evaluation_payload = copy.deepcopy(ridge_evaluation["payload"])
-    evaluation_payload["version"] = "v2"
-    evaluation_payload["model_ref"] = "fx-stack-ridge@v2"
+    evaluation_payload["version"] = next_version
+    evaluation_payload["model_ref"] = f"fx-stack-ridge@{next_version}"
     artifacts.append(
-        _record(evaluation_payload, "OfflineEvaluation", "evaluation:fx-ridge:v2")
+        _record(evaluation_payload, "OfflineEvaluation", f"evaluation:fx-ridge:{next_version}")
     )
     return revised
 

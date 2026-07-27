@@ -756,6 +756,14 @@ def run_cycle(
     )
     backtest_ready = len(backtests) == len(ALPHA_IDS)
     cycle_completed = paper_ready and backtest_ready
+    if paper_ready and mark_only_replay:
+        readiness_class = "PAPER_MARKS_ONLY_REPLAY"
+    elif paper_ready and operator_execution_ready:
+        readiness_class = "PAPER_MARKS_AND_NEW_ORDERS"
+    elif paper_ready:
+        readiness_class = "PAPER_MARKS_READY_PENDING_OPERATOR"
+    else:
+        readiness_class = "PAPER_MARKS_BLOCKED"
     report = {
         "schema_version": 1,
         "flow": "PAPER_REALTIME_CYCLE",
@@ -788,6 +796,7 @@ def run_cycle(
             if mark_only_replay
             else "PAPER_OPERATOR_BLOCKED"
         ),
+        "readiness_class": readiness_class,
         "verdict": {
             "cycle_completed": cycle_completed,
             "paper_mark_ready": paper_ready,
