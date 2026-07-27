@@ -508,3 +508,178 @@ def test_depth_fail_soft_on_non_finite_level():
     c, _ = _client({"/api/v3/depth": (200, {"bids": [["NaN", "1"]],
                                             "asks": [["1", "1"]]})})
     assert c.depth("BTC") is None                    # 任一非有限档 -> 整簿 None,不硬凑
+
+
+# --- Phase 8 M1:只读账户端点(open_orders / all_orders / my_trades,2026-07-27) ---
+
+_OPEN_ORDER_ROW = {"symbol": "BTCUSDT", "orderId": 987654, "clientOrderId": "cid-9",
+                   "price": "50000.0", "origQty": "0.01", "executedQty": "0.002",
+                   "status": "PARTIALLY_FILLED", "side": "BUY", "type": "LIMIT",
+                   "transactTime": 1_700_000_000_123}
+
+_TRADE_ROW = {"id": 555, "orderId": 987654, "clientOrderId": "cid-9",
+              "symbol": "BTCUSDT", "isBuyer": True, "price": "49999.0",
+              "qty": "0.002", "quoteQty": "99.998", "commission": "0",
+              "commissionAsset": "BTC", "time": 1_700_000_000_456, "isMaker": False}
+
+
+def test_open_orders_happy_path_exact_fields():
+    c, _ = _client({"/api/v3/openOrders": (200, [_OPEN_ORDER_ROW])})
+    rows = c.open_orders()
+    assert rows == [{"order_id": "987654", "client_order_id": "cid-9",
+                     "symbol": "BTCUSDT", "side": "BUY", "type": "LIMIT",
+                     "status": "PARTIALLY_FILLED", "price": 50000.0,
+                     "orig_qty": pytest.approx(0.01),
+                     "executed_qty": pytest.approx(0.002),
+                     "transact_time_ms": 1_700_000_000_123}]
+
+
+def test_open_orders_signed_shape_and_no_symbol_means_market_wide():
+    c, t = _client({"/api/v3/openOrders": (200, [])})
+    assert c.open_orders() == []
+    call = t.calls[0]
+    assert call["method"] == "GET"
+    assert call["headers"]["X-MEXC-APIKEY"] == _KEY
+    qs_with_sig = call["url"].split("?", 1)[1]
+    assert _verify_signature(qs_with_sig)
+    params = dict(urllib.parse.parse_qsl(qs_with_sig))
+    assert "symbol" not in params                     # 不带 symbol = 全市场挂单
+    assert params["timestamp"] == "1700000000000"
+    assert params["recvWindow"] == "5000"
+
+
+def test_open_orders_with_symbol_param():
+    c, t = _client({"/api/v3/openOrders": (200, [_OPEN_ORDER_ROW])})
+    c.open_orders("BTC")
+    qs_with_sig = t.calls[0]["url"].split("?", 1)[1]
+    assert _verify_signature(qs_with_sig)
+    params = dict(urllib.parse.parse_qsl(qs_with_sig))
+    assert params["symbol"] == "BTCUSDT"
+
+
+def test_open_orders_non_2xx_raises():
+    c, _ = _client({"/api/v3/openOrders": (400, {"code": -1100, "msg": "bad"})})
+    with pytest.raises(RuntimeError, match="open_orders failed"):
+        c.open_orders()
+
+
+def test_open_orders_malformed_fails_loud():
+    # 非 list 载荷 / 行缺 orderId / 数值字段不可解析——对账输入一律 fail-loud,绝不静默跳过
+    c, _ = _client({"/api/v3/openOrders": (200, {"code": 0})})
+    with pytest.raises(RuntimeError, match="expected list"):
+        c.open_orders()
+    c2, _ = _client({"/api/v3/openOrders": (200, [{"symbol": "BTCUSDT"}])})
+    with pytest.raises(RuntimeError, match="malformed exchange order row"):
+        c2.open_orders()
+    bad = dict(_OPEN_ORDER_ROW, executedQty="oops")
+    c3, _ = _client({"/api/v3/openOrders": (200, [bad])})
+    with pytest.raises(RuntimeError, match="malformed exchange row"):
+        c3.open_orders()
+
+
+def test_all_orders_happy_path_and_signed_shape():
+    c, t = _client({"/api/v3/allOrders": (200, [dict(_OPEN_ORDER_ROW, status="FILLED",
+                                                     executedQty="0.01")])})
+    rows = c.all_orders("BTC")
+    assert rows[0]["status"] == "FILLED"
+    assert rows[0]["order_id"] == "987654"
+    qs_with_sig = t.calls[0]["url"].split("?", 1)[1]
+    assert _verify_signature(qs_with_sig)
+    params = dict(urllib.parse.parse_qsl(qs_with_sig))
+    assert params["symbol"] == "BTCUSDT"
+    assert params["limit"] == "500"                    # 默认 limit
+
+
+def test_all_orders_limit_clamped_to_1_1000():
+    for requested, expected in ((0, "1"), (-5, "1"), (5000, "1000"), (250, "250")):
+        c, t = _client({"/api/v3/allOrders": (200, [])})
+        c.all_orders("BTC", limit=requested)
+        params = dict(urllib.parse.parse_qsl(t.calls[0]["url"].split("?", 1)[1]))
+        assert params["limit"] == expected
+
+
+def test_all_orders_non_2xx_and_malformed_raise():
+    c, _ = _client({"/api/v3/allOrders": (403, {"code": -2015, "msg": "Invalid API-key"})})
+    with pytest.raises(RuntimeError, match="all_orders failed"):
+        c.all_orders("BTC")
+    c2, _ = _client({"/api/v3/allOrders": (200, [dict(_OPEN_ORDER_ROW, status=None)])})
+    with pytest.raises(RuntimeError, match="malformed exchange order row"):
+        c2.all_orders("BTC")
+
+
+def test_my_trades_happy_path_exact_fields():
+    c, _ = _client({"/api/v3/myTrades": (200, [_TRADE_ROW])})
+    rows = c.my_trades("BTC")
+    assert rows == [{"trade_id": "555", "order_id": "987654", "client_order_id": "cid-9",
+                     "symbol": "BTCUSDT", "side": "BUY", "price": 49999.0,
+                     "qty": pytest.approx(0.002),
+                     "quote_qty": pytest.approx(99.998),
+                     "commission": 0.0, "commission_asset": "BTC",
+                     "time_ms": 1_700_000_000_456, "is_maker": False}]
+
+
+def test_my_trades_signed_shape_and_limit_clamped():
+    c, t = _client({"/api/v3/myTrades": (200, [])})
+    c.my_trades("BTC", limit=9999)
+    call = t.calls[0]
+    assert call["headers"]["X-MEXC-APIKEY"] == _KEY
+    qs_with_sig = call["url"].split("?", 1)[1]
+    assert _verify_signature(qs_with_sig)
+    params = dict(urllib.parse.parse_qsl(qs_with_sig))
+    assert params == {"symbol": "BTCUSDT", "limit": "1000",
+                      "timestamp": "1700000000000", "recvWindow": "5000",
+                      "signature": params["signature"]}
+
+
+def test_my_trades_side_from_is_buyer_and_missing_client_order_id_honest_empty():
+    c, _ = _client({"/api/v3/myTrades": (200, [dict(_TRADE_ROW, isBuyer=False),
+                                               {k: v for k, v in _TRADE_ROW.items()
+                                                if k != "clientOrderId"}])})
+    rows = c.my_trades("BTC")
+    assert rows[0]["side"] == "SELL"
+    assert rows[1]["client_order_id"] == ""            # 字段缺席 -> 诚实 "",不编造
+
+
+def test_my_trades_non_2xx_and_malformed_raise():
+    c, _ = _client({"/api/v3/myTrades": (500, {"msg": "boom"})})
+    with pytest.raises(RuntimeError, match="my_trades failed"):
+        c.my_trades("BTC")
+    c2, _ = _client({"/api/v3/myTrades": (200, [{k: v for k, v in _TRADE_ROW.items()
+                                                 if k != "isBuyer"}])})
+    with pytest.raises(RuntimeError, match="isBuyer"):
+        c2.my_trades("BTC")
+
+
+# --- Phase 8 M1:exchangeInfo 的 maker/taker commission 解析 ---
+
+_EXCHANGE_INFO_WITH_COMMISSION = {"symbols": [
+    {"symbol": "BTCUSDT", "baseAsset": "BTC",
+     "makerCommission": "0", "takerCommission": "0",
+     "filters": [
+         {"filterType": "LOT_SIZE", "stepSize": "0.00001", "minQty": "0.00001"},
+         {"filterType": "MIN_NOTIONAL", "notional": "5"},
+     ]},
+    {"symbol": "ETHUSDT", "baseAsset": "ETH",          # 无 commission 字段 -> 诚实 None
+     "filters": [
+         {"filterType": "LOT_SIZE", "stepSize": "0.0001", "minQty": "0.0001"},
+         {"filterType": "MIN_NOTIONAL", "notional": "5"},
+     ]},
+]}
+
+
+def test_exchange_filters_parses_maker_taker_commission():
+    c, _ = _client({"/api/v3/exchangeInfo": (200, _EXCHANGE_INFO_WITH_COMMISSION)})
+    f = c.exchange_filters()["BTC"]
+    assert f.maker_commission == 0.0                   # 零手续费是 venue 报的事实
+    assert f.taker_commission == 0.0
+    assert f.step_size == pytest.approx(0.00001)       # 原有字段不回归
+
+
+def test_exchange_filters_commission_none_when_absent():
+    c, _ = _client({"/api/v3/exchangeInfo": (200, _EXCHANGE_INFO_WITH_COMMISSION)})
+    f = c.exchange_filters()["ETH"]
+    assert f.maker_commission is None                  # 缺席 ≠ 免费,诚实 None
+    assert f.taker_commission is None
+    # 旧响应形状(无 commission 字段)同样 None,既有构造/测试零漂移
+    c2, _ = _client({"/api/v3/exchangeInfo": (200, _EXCHANGE_INFO)})
+    assert c2.exchange_filters()["BTC"].maker_commission is None

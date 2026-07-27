@@ -131,10 +131,19 @@ MexcSpotAdapter(
   `sapiPost` 字面量(governance scanner 硬禁)。
 - 密钥永不硬编码、永不落盘;`key/` gitignored,只写格式文档。
 
-方法面(现货语义):`place_order` / `cancel_order` / `get_order` /
-`get_open_orders` / `get_account` / 行情只读方法(`get_klines`、
-`get_book_ticker` 等,供抓取器与运维 API 复用)。重试经
-`live/exchange/retry.py::call_with_backoff`(429/5xx 指数退避,4xx 不重试)。
+方法面(现货语义,以 `live/exchange/mexc_spot.py` 实际实现为准;VenueAdapter
+Protocol 方法 + hasattr 可选能力,2026-07-27 Phase 8 M1 更新):
+
+- **账户/订单(签名)**:`account()` / `positions()` / `place_order()` /
+  `get_order()` / `cancel_order`;只读账户端点 `open_orders()` /
+  `all_orders()` / `my_trades()`(M1 新增,fail-loud,喂对账,**不在**下单路径上,
+  不进 VenueAdapter Protocol——与 `depth()` 同款 hasattr 可选能力惯例)。
+- **行情只读(不签名)**:`exchange_info()` / `exchange_filters()`(M1 起附
+  maker/taker commission 解析,缺席诚实 None)/ `book_ticker()` / `depth()` /
+  `sync_clock()`。公开 klines 由 `tools/mexc_klines_fetch.py` 直接消费,不经适配器。
+
+重试经
+`live/exchange/retry.py::call_with_backoff`(429/418 指数退避,4xx 不重试)。
 
 ---
 

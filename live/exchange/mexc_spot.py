@@ -29,7 +29,9 @@ timestamp+recvWindow 参数、错误 JSON `{"code":..., "msg":...}`。
 /api/v3/time 拉取服务器时间、计算本机偏移(ms)修正签名 timestamp——fail-soft(查询失败
 保留旧偏移,不打断流程),默认偏移为 0。
 
-诚实标注:响应字段名(orderId/executedQty/cummulativeQuoteQty/balances[].free 等)依
+诚实标注:响应字段名(orderId/executedQty/cummulativeQuoteQty/balances[].free、
+openOrders/allOrders 的 origQty/transactTime、myTrades 的 isBuyer/quoteQty/commissionAsset、
+exchangeInfo 的 makerCommission/takerCommission 等)依
 MEXC 公开 API v3 文档规格假设,**尚未对真实 mainnet 响应验证**——首次真实联调是用户提供
 API key + 人工 mandate 后的显式步骤,不在本文件范围内。MEXC MARKET 单不返回 avgPrice,
 成交均价从 cummulativeQuoteQty / executedQty 折算;executedQty=0(未成交)时 avg_price=0.0。
@@ -69,6 +71,81 @@ def _format_qty(qty: float) -> str:
     """浮点数量 -> 交易所期望的十进制字符串(绝不用科学计数法;去尾随零,保留整数形式)。"""
     s = f"{qty:.8f}".rstrip("0").rstrip(".")
     return s if s else "0"
+
+
+def _parse_optional_float(raw) -> Optional[float]:
+    """可选数值字段解析:缺失/不可解析 -> None(诚实缺席),绝不把解析失败硬凑成 0。"""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _require_float(raw, field: str) -> float:
+    """对账输入的必填数值字段:缺失/不可解析 fail-loud(见 open_orders docstring 的
+    fail-loud 裁定)。"""
+    if raw is None or isinstance(raw, bool):
+        raise RuntimeError(f"malformed exchange row: field {field!r} missing/not numeric: {raw!r}")
+    try:
+        return float(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"malformed exchange row: field {field!r} not numeric: {raw!r}") from exc
+
+
+def _normalize_order_row(row: dict) -> dict:
+    """openOrders / allOrders 行的最小规范化(Phase 8 M1)。字段缺失/类型不符 -> fail-loud
+    RuntimeError(不静默跳过——见 open_orders docstring)。"""
+    if not isinstance(row, dict):
+        raise RuntimeError(f"malformed exchange order row: not a dict: {type(row).__name__}")
+    for key in ("orderId", "symbol", "side", "type", "status"):
+        if not isinstance(row.get(key), (str, int)) or isinstance(row.get(key), bool):
+            raise RuntimeError(f"malformed exchange order row: field {key!r} missing/invalid: "
+                               f"{row.get(key)!r}")
+    return {
+        "order_id": str(row["orderId"]),
+        "client_order_id": str(row.get("clientOrderId") or ""),
+        "symbol": str(row["symbol"]),
+        "side": str(row["side"]),
+        "type": str(row["type"]),
+        "status": str(row["status"]),
+        "price": _require_float(row.get("price"), "price"),
+        "orig_qty": _require_float(row.get("origQty"), "origQty"),
+        "executed_qty": _require_float(row.get("executedQty"), "executedQty"),
+        "transact_time_ms": int(_require_float(row.get("transactTime"), "transactTime")),
+    }
+
+
+def _normalize_trade_row(row: dict) -> dict:
+    """myTrades 行的最小规范化(Phase 8 M1),fail-loud 与 _normalize_order_row 同法。
+    side 从 isBuyer 推导(Binance 兼容口径);MEXC myTrades 按公开 v3 文档带 clientOrderId,
+    缺席诚实置 ""。"""
+    if not isinstance(row, dict):
+        raise RuntimeError(f"malformed exchange trade row: not a dict: {type(row).__name__}")
+    for key in ("id", "orderId", "symbol"):
+        if not isinstance(row.get(key), (str, int)) or isinstance(row.get(key), bool):
+            raise RuntimeError(f"malformed exchange trade row: field {key!r} missing/invalid: "
+                               f"{row.get(key)!r}")
+    is_buyer = row.get("isBuyer")
+    if not isinstance(is_buyer, bool):
+        raise RuntimeError(f"malformed exchange trade row: field 'isBuyer' missing/not bool: "
+                           f"{is_buyer!r}")
+    return {
+        "trade_id": str(row["id"]),
+        "order_id": str(row["orderId"]),
+        "client_order_id": str(row.get("clientOrderId") or ""),
+        "symbol": str(row["symbol"]),
+        "side": "BUY" if is_buyer else "SELL",
+        "price": _require_float(row.get("price"), "price"),
+        "qty": _require_float(row.get("qty"), "qty"),
+        "quote_qty": _require_float(row.get("quoteQty"), "quoteQty"),
+        "commission": _require_float(row.get("commission"), "commission"),
+        "commission_asset": str(row.get("commissionAsset") or ""),
+        "time_ms": int(_require_float(row.get("time"), "time")),
+        "is_maker": bool(row.get("isMaker")),
+    }
 
 
 def _default_http_request(method: str, url: str, *, body: Optional[bytes] = None,
@@ -225,8 +302,15 @@ class MexcSpotAdapter:
                     tick_size = float(price_filter["tickSize"])
                 except (KeyError, TypeError, ValueError):
                     tick_size = None
+            # Phase 8 M1(2026-07-27):交易所按 symbol 报的 maker/taker 费率(MEXC
+            # 零手续费现货对核心策略是真实成本项)。可解析才填,否则诚实 None——
+            # 绝不把"字段缺席"当 0(缺席 ≠ 免费)。
+            maker_commission = _parse_optional_float(sym.get("makerCommission"))
+            taker_commission = _parse_optional_float(sym.get("takerCommission"))
             out[inst] = ExchangeFilters(instrument_id=inst, step_size=step_size, min_qty=min_qty,
-                                        min_notional=min_notional, tick_size=tick_size)
+                                        min_notional=min_notional, tick_size=tick_size,
+                                        maker_commission=maker_commission,
+                                        taker_commission=taker_commission)
         return out
 
     def book_ticker(self, instrument_id: str) -> Optional[dict]:
@@ -304,6 +388,56 @@ class MexcSpotAdapter:
                 continue
             out[asset] = VenuePosition(instrument_id=asset, quantity=free, entry_price=0.0)
         return out
+
+    def open_orders(self, instrument_id: Optional[str] = None) -> list:
+        """GET /api/v3/openOrders(签名,只读)——交易所侧当前挂单权威清单
+        (Phase 8 M1,727 §13.5 启动对账的交易所侧输入)。
+        instrument_id 为 None 时不带 symbol 参数(全市场挂单)。
+
+        **fail-loud 裁定(与 book_ticker 的 fail-soft 相反,刻意)**:非 2xx ->
+        RuntimeError(带 status);响应非 list 或任一行字段缺失/类型不符 ->
+        RuntimeError。本方法喂的是**对账**——静默跳过一行等于把交易所侧的真实挂单
+        从对账视野里抹掉(账本说无单、交易所说有单,漂移不报错)。宁可整批拒绝,
+        由调用方(M2/M3 的对账器)显式处理。只读、绝不在下单路径上。"""
+        params = {"symbol": instrument_id + "USDT"} if instrument_id else {}
+        status, data = self._get("/api/v3/openOrders", params, signed=True)
+        if not (200 <= status < 300):
+            raise RuntimeError(f"open_orders failed: {status} {data}")
+        if not isinstance(data, list):
+            raise RuntimeError(f"open_orders failed: expected list payload, got "
+                               f"{type(data).__name__}: {data}")
+        return [_normalize_order_row(row) for row in data]
+
+    def all_orders(self, instrument_id: str, *, limit: int = 500) -> list:
+        """GET /api/v3/allOrders(签名,只读)——近期订单历史(含终态)。
+        symbol 必填;limit 钳 [1,1000]。**MEXC 窗口诚实注记:该端点只覆盖最近
+        7 天**(公开 v3 文档口径)——更早的历史要靠本地账本/成交回填,本方法不承诺
+        全量历史。fail-loud 与 open_orders 同裁定。"""
+        clamped = max(1, min(int(limit), 1000))
+        params = {"symbol": instrument_id + "USDT", "limit": clamped}
+        status, data = self._get("/api/v3/allOrders", params, signed=True)
+        if not (200 <= status < 300):
+            raise RuntimeError(f"all_orders failed: {status} {data}")
+        if not isinstance(data, list):
+            raise RuntimeError(f"all_orders failed: expected list payload, got "
+                               f"{type(data).__name__}: {data}")
+        return [_normalize_order_row(row) for row in data]
+
+    def my_trades(self, instrument_id: str, *, limit: int = 500) -> list:
+        """GET /api/v3/myTrades(签名,只读)——账户成交历史(逐笔 fill,含手续费)。
+        limit 钳 [1,1000]。**MEXC 窗口诚实注记:约最近 1 个月**(公开 v3 文档口径)。
+        这是 §13.4 unknown 订单接管与 §14 成交对账的交易所侧输入——commission /
+        commission_asset 原样透出(零手续费 venue 恒 0 是 venue 事实,不是解析假设)。
+        fail-loud 与 open_orders 同裁定。"""
+        clamped = max(1, min(int(limit), 1000))
+        params = {"symbol": instrument_id + "USDT", "limit": clamped}
+        status, data = self._get("/api/v3/myTrades", params, signed=True)
+        if not (200 <= status < 300):
+            raise RuntimeError(f"my_trades failed: {status} {data}")
+        if not isinstance(data, list):
+            raise RuntimeError(f"my_trades failed: expected list payload, got "
+                               f"{type(data).__name__}: {data}")
+        return [_normalize_trade_row(row) for row in data]
 
     def place_order(self, order: LiveOrderRequest) -> VenueOrderResult:
         """LiveOrderRequest -> MEXC MARKET/LIMIT 现货单(POST /api/v3/order)。

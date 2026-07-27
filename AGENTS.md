@@ -621,6 +621,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   的 armed-preview 固定 argv 携带,绝不提交,治理钉死);只读首验 `tools/mexc_readonly_smoke.py`(人工执行,未跑前
   readiness 诚实报 UNVERIFIED_MAINNET_RESPONSE);ops API 现货 dashboard 分支 +
   `docs/runbooks/mexc-live-runbook.md` 首单 checklist。永不实现提现/划转(治理扫描机器禁止)。
+  **Phase 8 M1(727 §13 阶段 B,2026-07-27)**:适配器新增三个签名只读账户端点——
+  `open_orders(instrument_id=None)` / `all_orders(instrument_id, limit 钳 [1,1000],7 天窗口)` /
+  `my_trades(instrument_id, limit 钳 [1,1000],~1 月窗口)`,全部 **fail-loud**(喂对账,
+  绝不静默跳过;非 2xx/畸形行 → RuntimeError),不进 VenueAdapter Protocol(hasattr
+  可选能力惯例);`exchange_filters()` 附 maker/taker commission 解析(`ExchangeFilters`
+  加法扩展两个 `Optional[float]=None` 尾随字段,缺席诚实 None ≠ 免费,既有构造零漂移);
+  治理 `_FETCHERS` 补登记 `tools/mexc_klines_fetch.py` + `tools/mexc_readonly_smoke.py`;
+  `docs/MEXC_INTEGRATION.md` §3 方法面漂移修正(原列 get_open_orders 等不存在)。
+  user stream/listenKey **推迟立据**(与 2026-07-07 审计「周度策略不要 ws」裁定一致,
+  REST 三件套等价覆盖断连恢复)。设计 + M1..M3 切片计划
+  `docs/engineering/specs/2026-07-27-mexc-phase8-design.md`。测试 45→59。
 - `live/execution/shadow.py` + 三适配器 `depth()` + `live/execution/shadow_store.py` +
   `tools/shadow_track.py` — **SHADOW Phase 7 S1–S3 全部落地(727 §12.2,2026-07-27,
   Phase 7 SHADOW 侧完成)**:设计

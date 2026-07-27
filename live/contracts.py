@@ -47,6 +47,12 @@ class ExchangeFilters:
     min_qty: float
     min_notional: float
     tick_size: Optional[float] = None
+    # MEXC Phase 8 M1(2026-07-27,加法扩展):交易所按 symbol 报的成交费率(小数,
+    # 如 0.0 = 零手续费;MEXC exchangeInfo 携带 makerCommission/takerCommission)。
+    # 其他 venue 不解析 → 诚实 None(缺费率证据,不编造 0)。只读诊断输入,
+    # 不在下单/定价路径上消费。
+    maker_commission: Optional[float] = None
+    taker_commission: Optional[float] = None
 
 
 @dataclass(frozen=True)

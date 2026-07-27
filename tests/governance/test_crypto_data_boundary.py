@@ -54,6 +54,11 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # 日线 klines + funding history,公共端点无 key 只读,绝不下单——同一条只读
              # 数据边界钉住它。
              os.path.join(_ROOT, "tools", "bybit_klines_fetch.py"),
+             # MEXC 集成两个门外工具(2026-07-27,Phase 8 M1 补登记——审计发现的既有缺口,
+             # binance_readonly_smoke 在册而这两个不在):klines 公开行情抓取器(无 key 只读)
+             # 与 mainnet 只读首验(人工执行,3 个只读 GET,绝不下单)——同一条只读数据边界钉住。
+             os.path.join(_ROOT, "tools", "mexc_klines_fetch.py"),
+             os.path.join(_ROOT, "tools", "mexc_readonly_smoke.py"),
              # SHADOW 轨道驱动器(2026-07-27,Phase 7 S3):网络面 = venue 适配器的
              # 无签名公共行情 GET(depth);空凭证构造适配器、结构性只调无签名方法、
              # 绝不下单——同一条只读数据边界钉住它。
@@ -115,6 +120,12 @@ _EXTRA_ALLOWED_BY_FILE = {
     # Bybit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
     # 均不增加网络/交易/凭证能力。
     "bybit_klines_fetch.py": {"math", "argparse"},
+    # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用
+    # tools/coingecko_fetch._http_get_json 的 urllib,已在 _ALLOWED_FETCHER 内)。
+    "mexc_klines_fetch.py": {"argparse"},
+    # MEXC 只读首验:typing(注入签名)——签名 HMAC 走 tools/mexc_credentials 内部
+    # (同 verify_key_permissions 的 ungated 纯函数镜像设计),不实例化任何 gated 类。
+    "mexc_readonly_smoke.py": {"typing"},
     # SHADOW 轨道驱动器:math(有限数校验)+ argparse(CLI)+ typing(注入签名)+
     # `live`(live/execution/shadow 比较核 + shadow_store 账本 + live/exchange venue
     # 适配器——与 verify_key_permissions/binance_readonly_smoke 同款只读复用,
