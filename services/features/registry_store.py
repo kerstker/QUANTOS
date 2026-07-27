@@ -421,6 +421,19 @@ class SqliteFeatureRegistryStore:
             ).fetchall()
         return [str(row["version"]) for row in rows]
 
+    def all_items(self) -> list[FeatureRegistryItem]:
+        """All current rows, history-verified, ordered by (feature_id, version).
+
+        Additive read for the Factor Garden's by_family scan (F1, 2026-07-27);
+        same fail-closed verification posture as every other read.
+        """
+        with self._lock:
+            self._verify_history_unlocked()
+            rows = self._conn.execute(
+                "SELECT * FROM feature_registry ORDER BY feature_id, version"
+            ).fetchall()
+        return [self._row_to_item(row) for row in rows]
+
     def set_status(
         self,
         feature_id: str,

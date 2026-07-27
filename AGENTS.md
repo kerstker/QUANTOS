@@ -297,6 +297,21 @@ Real, tested backend engines (`*_TESTED` in the audit):
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
   (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
   有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
+- `services/factor_garden/` — **Factor Garden F1(727 §6/Phase 4,2026-07-27 落地,
+  22 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+  (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
+  provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
+  13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
+  (`formula=serialize`、`expression_hash=alpha_id`;factor_engine 字符串 AST 刻意不用)。
+  `definitions.py`(纯核:fail-closed 建造器——§8.1 假说非空/数据依赖非空/真枚举/
+  表达式过 DSL 自身 serialize 往返 + 合成面板 evaluate 校验;`factor_content_hash`
+  只含身份字段,created_at_ms 不进哈希)+ `registry.py`(薄边界包
+  `SqliteFeatureRegistryStore`——garden 不变量边界复检纵深防御,owner=creator_actor,
+  content hash 进 lineage 审计;store 只加 `all_items()` 只读,持久化/哈希链全复用)。
+  确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁:注册因子不驱动任何晋级/下单**。
+  F2–F5(canonical 因子收敛/materializer §6.2/offline_online_parity+dependency_graph/
+  family_cluster)计划见设计文档
+  `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only

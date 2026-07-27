@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 40,
+  "edge_count": 42,
   "edges": [
     {
       "references": [
@@ -440,6 +440,28 @@
       ],
       "source": "execution",
       "target": "trading"
+    },
+    {
+      "references": [
+        {
+          "line": 21,
+          "module": "services.features.registry_store",
+          "path": "services/factor_garden/registry.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/factor_garden/definitions.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "research"
     },
     {
       "references": [
@@ -1050,15 +1072,16 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "a276492c7885480ab54012d7dfc4b855bc69b80b848ca7fb5d2a2d13525b9162",
+  "graph_sha256": "585d3310c2167021239a77daa975a5d5bcb2bd51c3614cdd5a529ce276c3dccb",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
-  "node_count": 18,
+  "node_count": 19,
   "nodes": [
     "alpha",
     "console",
     "data",
     "deployment",
     "execution",
+    "factor_garden",
     "features",
     "governance",
     "intelligence",
@@ -1086,7 +1109,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 347,
+  "source_file_count": 350,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

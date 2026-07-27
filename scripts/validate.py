@@ -167,6 +167,8 @@ CHECKS = [
             "tests/lifecycle",
             # 2026-07-27:自治内核 K1(727 §2.5/§4.2 Phase 2,command bus + 幂等命令日志)。
             "tests/orchestration",
+            # 2026-07-27:Factor Garden F1(727 §6/Phase 4,因子契约加宽 + 注册表边界)。
+            "tests/factor_garden",
             "tests/portfolio",
             "tests/risk",
             "tests/execution",
