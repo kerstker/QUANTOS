@@ -4,12 +4,12 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §6(Factor Garden:
   §6.1 FactorDefinition / §6.2 FactorObservation / §6.3 offline-online 一致性 /
   §6.4 因子家族)、§8.1(无经济解释的表达式禁令)
-- 状态:**F1–F4 已落地**——F1:契约加宽 + `services/factor_garden/`
-  (definitions + registry 边界,22 测试);F2:canonical 因子收敛
-  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3:物化器 +
+- 状态:**F1–F5 全部落地,Phase 4 完成**——F1:契约加宽 +
+  `services/factor_garden/`(definitions + registry 边界,22 测试);F2:canonical
+  因子收敛(`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3:物化器 +
   feature_values schema v2(`materializer.py` + value_store 四列,16 测试);
-  F4(本提交):offline_online_parity + dependency_graph + health(24 测试,
-  含真实双路径 parity 案例);F5 计划见 §3。
+  F4:offline_online_parity + dependency_graph + health(24 测试,含真实双路径
+  parity 案例);F5(本提交):family_cluster(11 测试)。验收对照见 §9。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import;注册一个因子不改变任何评估
   门禁、mandate 或 live 路径(诊断非门禁)。
@@ -77,7 +77,7 @@
 | F2 | canonical 因子收敛:tools/ 双份定义(CARRY 双份、crowd_contra 决策行三套)移入 services 侧注册;QUANTILE 0.2 vs 0.3 分叉**诚实记录为两个版本**,不擅自统一 | **本提交** |
 | F3 | materializer + feature_values schema v2:§6.2 FactorObservation 落盘面(+computed_at/dataset_version/materializer_version/quality_verdict) | **本提交** |
 | F4 | offline_online_parity + dependency_graph + health:同一核心计算函数不同窗口适配器的 parity test;dataset BLOCK → factor STALE 传播(泛化 forward_track_advance 的语义) | **本提交** |
-| F5 | family_cluster:§6.4 家族维度聚类,接入 W3 簇图;显式建立 FactorFamily ↔ 组合风险维映射 | 计划 |
+| F5 | family_cluster:§6.4 家族维度聚类,接入 W3 簇图;显式建立 FactorFamily ↔ 组合风险维映射 | **本提交**(聚类 ✓;FactorFamily ↔ 组合风险维显式映射留评审,见 §10.7) |
 
 切分原则:每片独立可测、独立入库、不依赖后片;F1 不预留「将来一定这样」的
 抽象(F3 的物化 schema 可能反过来修正 F1 的字段选择,届时显式评审)。
@@ -299,7 +299,54 @@ leakage/质量检测(那是 F4 的事),绝不编造逐格判定。
   PAUSED;DatasetHealth 校验;propagate 到 alpha(含 alphas 参数合流与图外因子
   fail-closed)。
 
-## 8. 明确非目标(F1–F4 不做,单独评审)
+## 8. F5 实施记录(2026-07-27,family_cluster)
+
+### 8.1 `family_cluster.py`(纯核,无 IO)
+
+- `FactorClusterAssignment` 冻结 dataclass(factor_id/family(FactorFamily)/
+  cluster_id/method∈{DECLARED,CORRELATION,SINGLETON});`FactorClusterError`。
+- **声明家族优先**:factor_family_id 无效/缺失 → FactorClusterError(fail-closed,
+  绝不猜家族;未知字符串家族在 F1 契约层已被拒,模块层可达形态只有 None)。
+- **家族内相关聚类 = 并查集(传递闭包)**:correlation 注入
+  ({(a,b):ρ},键序无关、负相关高幅值也并——拥挤反向变体同族,§7.3),|ρ|≥rho_cut
+  合并。**刻意不复用 `services/alpha/cluster.py` 的 complete-linkage**:那个实现
+  (a) 签名吃 return_series 自算相关,与本模块「相关注入」边界不合;(b) complete-
+  linkage 明确要求**禁止链式**(P2-3),与本切片规定的传递闭包语义直接冲突。
+  诚实记录链式风险:并查集是单链语义,a-b/b-c 会把 a-c 不相关的两端拉进同簇——
+  对 §7.3 的用途这是**保守方向**(更宽的簇 = 声称的独立赌注更少,绝不更多),
+  也是 rho_cut 保持显式 UNCALIBRATED 工程默认(0.5,W3 同口径)的原因。
+- correlation=None → 全 SINGLETON(诚实:无相关证据 = 不声称冗余也不声称独立);
+  有相关图但本因子无任何边 → DECLARED(仅声明家族可归)。
+- cluster_id 确定性:`<FAMILY>#<簇内最小 factor_id>`(插入序无关,测试钉死);
+  簇内并查集 root 取字典序最小者。
+- `family_of` + `cluster_summary`(per family/cluster 计数,确定性序)。
+- **§7.3 接缝(只接口不整合)**:cluster_id 就是 family-level DSR/FDR 的分组键
+  (trial 多重性应按 cluster_id 计,不按单个 factor_id)——docstring 明文,
+  但**不改** family_testing/ranker/multiple_testing 任何现有代码(整合是调用方
+  的事,单独评审)。
+
+### 8.2 测试(`tests/factor_garden/test_family_cluster.py`,11)
+
+声明家族分组 + family_of;缺失家族 fail-closed(None 形态);传递闭包 a-b/b-c →
+a,b,c 同簇;低于阈值各 SINGLETON;跨家族 ρ=0.99 也不并簇;correlation=None 全
+SINGLETON;无边因子 DECLARED;cluster_id 确定性(同输入同 id、插入序无关、键序
+无关);负相关高幅值并簇;相关图/阈值/重复 id 校验;summary 计数。
+
+## 9. 727 Phase 4 验收对照表(F1–F5 全部落地,2026-07-27)
+
+| 验收项 | 状态 | 落点 |
+|---|---|---|
+| 稳定 factor_id/version(身份 + 变更检测) | ✓ F1 | `build_factor_definition`(factor_id=name 稳定人类身份,version 注册表承载)+ `factor_content_hash` 身份字段哈希;`expression_hash=alpha_id` |
+| 历史与实时同逻辑(offline/online 同一计算) | ✓ F2+F4 | F2 消灭全部双份定义(单一 canonical 真源,对象同一性钉死);F4 parity 真实双路径案例(真 live 函数 vs 真干跑组合,同一决策行 tolerance=0 PARITY_OK;三套行选择政策不统一属显式非目标) |
+| 依赖失败传播暂停 | ✓ F4 | `health.evaluate_factor_health/propagate`:BLOCK/UNKNOWN → factor PAUSED → alpha PAUSED 带明细(fail-closed;泛化 forward_track/live_track 语义);verdict 写回 registry 留驱动器显式决策 |
+| 物化(§6.2 FactorObservation 落盘面) | ✓ F3 | `materializer.py` + feature_values schema v2(computed_at_ms/dataset_version/materializer_version/quality_verdict;kt:=et 裁定;幂等;旧行 NULL 诚实标记) |
+| 家族聚类(§6.4/§7.3 先聚类再 family-level FDR) | ✓ F5 | `family_cluster.py`(声明家族 + 家族内并查集,cluster_id = FDR 分组键接缝) |
+
+遗留诚实边界(全部显式非目标,见 §10):逐格 leakage 检测未做;三套行选择政策
+未统一;FactorFamily ↔ 组合风险维(FactorCategory)显式映射留评审;cluster_id
+未接入任何 ranker/FDR 代码;QUANTILE 0.2/0.3 分叉未统一(人工决策)。
+
+## 10. 明确非目标(F1–F5 不做,单独评审)
 
 1. **不统一 QUANTILE 0.2 vs 0.3 分叉**——那是行为变更(两个数字背后是不同的
    前向证据积累),需人工决策;F2 已把两值以显式命名常量
@@ -315,8 +362,11 @@ leakage/质量检测(那是 F4 的事),绝不编造逐格判定。
    parity 只在同一政策下判定;统一是行为变更,需评审。
 6. **不接任何晋级/下单路径**——诊断非门禁立场不变;物化只写 feature_values
    观测,health 只产出 verdict,不改变任何评估门、mandate 或 live 路径。
+7. **不建 FactorFamily ↔ 组合风险维(FactorCategory)映射、不把 cluster_id 接进
+   ranker/FDR**——F5 的 table 行所述「接入 W3 簇图/显式映射」以接缝形式交付
+   (cluster_id 即分组键,§8.1);真正的整合改的是 W3/多重检验承重代码,单独评审。
 
-## 9. L2 边界声明
+## 11. L2 边界声明
 
 - 五个安全旗标、live-order 路径、凭证零触碰;`services/factor_garden` 零网络
   import(治理扫描机器钉死)。

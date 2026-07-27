@@ -297,8 +297,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
   (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
   有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
-- `services/factor_garden/` — **Factor Garden F1–F4(727 §6/Phase 4,2026-07-27 落地,
-  22+11+9+24 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+- `services/factor_garden/` — **Factor Garden F1–F5 全部落地,727 Phase 4 完成
+  (2026-07-27,22+11+9+24+11 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
   (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
   provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
   13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
@@ -344,8 +344,19 @@ Real, tested backend engines (`*_TESTED` in the audit):
   propagate 到 alpha:任一依赖 factor 非 HEALTHY → PAUSED 带明细——
   forward_track_advance/live_track_advance 依赖失败→暂停语义的图驱动泛化)。
   **verdict 不写回 registry**(纯评估;set_status 写回留驱动器显式决策)。
+  **F5 family_cluster(727 §6.4/§7.3)**:`family_cluster.py` —— 声明家族优先
+  (缺失/无效 → FactorClusterError fail-closed 绝不猜)+ 家族内相关聚类 =
+  **并查集传递闭包**(correlation 注入、键序无关、负相关高幅值也并——拥挤反向
+  变体同族;**刻意不复用** services/alpha/cluster.py 的 complete-linkage——
+  那个签名自算相关且明确禁链式(P2-3),与本切片规定的传递闭包冲突;链式过并
+  对 §7.3 是保守方向——更宽簇=声称独立赌注更少,rho_cut=0.5 UNCALIBRATED W3
+  同口径)。correlation=None → 全 SINGLETON(无证据不声称冗余);无边因子
+  DECLARED;cluster_id=`<FAMILY>#<簇内最小 factor_id>` 确定性(插入序/键序无关)。
+  **§7.3 接缝(只接口不整合)**:cluster_id = family-level DSR/FDR 分组键,
+  但 family_testing/ranker/multiple_testing 一字未动(整合留评审)。
   确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁**。
-  F5(family_cluster)计划见设计文档
+  Phase 4 验收对照表(factor_id/version ✓ / 历史实时同逻辑 ✓ / 依赖失败传播
+  暂停 ✓ / 物化 ✓ / 家族聚类 ✓)见设计文档 §9
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —

@@ -35,6 +35,13 @@ from .definitions import (
     factor_content_hash,
 )
 from .dependency_graph import DependencyGraph
+from .family_cluster import (
+    FactorClusterAssignment,
+    FactorClusterError,
+    assign_factor_clusters,
+    cluster_summary,
+    family_of,
+)
 from .health import (
     DatasetHealth,
     FactorHealthVerdict,
@@ -62,6 +69,8 @@ __all__ = [
     "DatasetHealth",
     "DependencyGraph",
     "FUNDING_FIELD",
+    "FactorClusterAssignment",
+    "FactorClusterError",
     "FactorDefinitionError",
     "FactorFamily",
     "FactorGardenRegistry",
@@ -73,11 +82,14 @@ __all__ = [
     "ParityReport",
     "TOP_CONTRA_EXPRESSION",
     "TREND_COMPOSITE_EXPRESSION",
+    "assign_factor_clusters",
     "build_factor_definition",
+    "cluster_summary",
     "compare_panels",
     "compare_series",
     "evaluate_factor_health",
     "factor_content_hash",
+    "family_of",
     "legs",
     "materialize_factor",
     "materialize_many",
