@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 39,
+  "edge_count": 40,
   "edges": [
     {
       "references": [
@@ -631,6 +631,17 @@
     {
       "references": [
         {
+          "line": 41,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/command_bus.py"
+        }
+      ],
+      "source": "orchestration",
+      "target": "monitoring"
+    },
+    {
+      "references": [
+        {
           "line": 51,
           "module": "services.alpha.catalog",
           "path": "services/promotion_api/main.py"
@@ -1029,9 +1040,9 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "772b087a1637666ff8f3ba1ead6917842a2a79103c02e8eada83f63344ef985b",
+  "graph_sha256": "f765fe07d458bd6599a4fd9ae63049837ca6ce4a3c6004b549d483735a2a77f1",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
-  "node_count": 17,
+  "node_count": 18,
   "nodes": [
     "alpha",
     "console",
@@ -1043,6 +1054,7 @@
     "intelligence",
     "lifecycle",
     "monitoring",
+    "orchestration",
     "portfolio",
     "promotion_api",
     "research",
@@ -1064,7 +1076,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 336,
+  "source_file_count": 340,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

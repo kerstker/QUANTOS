@@ -254,6 +254,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/{features,execution,monitoring,deployment}/` — leakage detector +
   feature registry; execution boundary + intent builder; hash-chained audit log +
   health; fail-closed deployment/version-pin gate. All tested.
+- `services/orchestration/` — **Autonomy Kernel(727 §2.5/§4.2,Phase 2,K1 已落地)**:
+  `command_envelope.py`(§4.2 CommandEnvelope 冻结值,payload_hash=stable_hash 强校验)+
+  `idempotency.py`(`SqliteCommandLog`:UNIQUE(command_type,idempotency_key) 幂等受理,
+  同 key 同 payload 重试返回既有行、异 payload 冲突即拒;RECEIVED→COMPLETED/FAILED
+  CAS 状态机,哈希链迁移重链,终态不可变,in_flight 上面崩溃悬挂命令,**绝不自动
+  重试**)+ `command_bus.py`(六步流:版本乐观锁(写日志前拒)→ 幂等 begin →
+  COMPLETED 重放直接回存证结果(handler 不跑 = 「重复命令不产生重复副作用」)→
+  handler → publish_once(causation_id=command_id,命令→事件因果链)→ complete;
+  事件无 bus 即拒)。确定性(时间全由调用方给)、无网络、单节点诚实边界(非跨主机
+  共识)。K2 leader_lease / K3 scheduler / K4 workflow·policy·recovery 见设计文档
+  `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`。
 - `services/lifecycle/` — **三个正交状态机(727 §3/§11,C1–C3 已落地)**:把混合的
   `AlphaState` 拆为 `research_state`(研究是否成立)/ `deployment_state`(跑在哪里,
   唯一带人类专属边的机器:进入 MICRO_LIVE/LIVE 必须真人 + Grant,L2 下

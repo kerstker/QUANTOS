@@ -165,6 +165,8 @@ CHECKS = [
             # 2026-07-27:三个正交状态机(727 §3)。新加的测试目录必须同时进这张表,
             # 否则它只在手动调用时跑,门禁抓不到回归。
             "tests/lifecycle",
+            # 2026-07-27:自治内核 K1(727 §2.5/§4.2 Phase 2,command bus + 幂等命令日志)。
+            "tests/orchestration",
             "tests/portfolio",
             "tests/risk",
             "tests/execution",
