@@ -1456,6 +1456,15 @@ export interface LifecycleRow {
   live_ic: number | null;           // honestly null in L2 — no live/paper IC source exists
   recommendation: string;           // NO_LIVE_DATA in L2 (degradation needs a live feed)
   alerts: string[];
+  // 727 C4: the three orthogonal lifecycle machines alongside the legacy mixed
+  // `state` (design doc 2026-07-27 §3). STORED = dual-written columns; PROJECTED
+  // = derived from the legacy state (pre-C2 row); SYNTHETIC = mock/fallback row;
+  // UNKNOWN = legacy state unreadable. Nulls only with triple_source=UNKNOWN.
+  research_state: string | null;
+  deployment_state: string | null;
+  health_state: string | null;
+  health_reason: string | null;
+  triple_source: 'STORED' | 'PROJECTED' | 'SYNTHETIC' | 'UNKNOWN';
 }
 export interface LifecycleMonitorPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;

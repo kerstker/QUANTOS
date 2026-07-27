@@ -34,13 +34,19 @@ const PAPER_TRACK_SLOT: Record<string, string> = {
 const mockRows: LifecycleRow[] = [
   { alpha_id: 'h_zscore_3', state: 'TESTING', generator: 'heuristic:zscore', days_in_state: null,
     backtest_ic: 0.047, sharpe: 0.13, pvalue: 0.18, net_sharpe: 1.99, deflated_sharpe: 0.21, turnover: 0.58,
-    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [] },
+    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [],
+    research_state: 'TESTING', deployment_state: 'OFFLINE', health_state: 'HEALTHY',
+    health_reason: 'NONE', triple_source: 'SYNTHETIC' },
   { alpha_id: 'h_accel_10', state: 'TESTING', generator: 'heuristic:accel', days_in_state: null,
     backtest_ic: -0.024, sharpe: -0.11, pvalue: 0.57, net_sharpe: -1.69, deflated_sharpe: -0.30, turnover: 0.58,
-    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [] },
+    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [],
+    research_state: 'TESTING', deployment_state: 'OFFLINE', health_state: 'HEALTHY',
+    health_reason: 'NONE', triple_source: 'SYNTHETIC' },
   { alpha_id: 'h_dist_from_high_20', state: 'VALIDATION', generator: 'heuristic:dist_from_high', days_in_state: null,
     backtest_ic: 0.031, sharpe: 0.42, pvalue: 0.09, net_sharpe: 0.88, deflated_sharpe: 0.11, turnover: 0.33,
-    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [] },
+    verdict: 'REQUIRES_HUMAN_REVIEW', live_ic: null, recommendation: 'NO_LIVE_DATA', alerts: [],
+    research_state: 'VALIDATED', deployment_state: 'OFFLINE', health_state: 'HEALTHY',
+    health_reason: 'NONE', triple_source: 'SYNTHETIC' },
 ];
 
 const mockPayload: LifecycleMonitorPayload['summary'] = {
@@ -64,6 +70,21 @@ export default function LifecycleMonitor() {
   const cols: Column<LifecycleRow>[] = [
     { key: 'alpha', header: bi('因子', 'Alpha'), render: r => <span className="mono text-ink">{r.alpha_id}</span> },
     { key: 'state', header: bi('状态', 'State'), render: r => <StatusChip value={r.state} /> },
+    { key: 'triple', header: bi('三态 研究/部署/健康', 'Machines R/D/H'), render: r => {
+      if (r.triple_source === 'UNKNOWN' || !r.research_state) return <span className="text-faint">—</span>;
+      const unhealthy = r.health_state !== null && r.health_state !== 'HEALTHY';
+      return (
+        <span className="flex flex-col gap-0.5 text-[11px] leading-tight" title={
+          bi(`三态来源:${r.triple_source}(STORED=双写列,PROJECTED=旧态投影,SYNTHETIC=合成)`,
+             `triple source: ${r.triple_source}`)}>
+          <span className="text-faint">{bi('研究', 'R')} <span className="mono text-ink">{r.research_state}</span></span>
+          <span className="text-faint">{bi('部署', 'D')} <span className="mono text-ink">{r.deployment_state}</span></span>
+          <span className="text-faint">{bi('健康', 'H')} <span className={`mono ${unhealthy ? 'text-neg' : 'text-ink'}`}>
+            {r.health_state}{r.health_reason && r.health_reason !== 'NONE' ? ` · ${r.health_reason}` : ''}
+          </span></span>
+        </span>
+      );
+    } },
     { key: 'gen', header: bi('生成器', 'Generator'), render: r => <Chip label={r.generator} tone="muted" /> },
     { key: 'bt_ic', header: bi('回测 IC', 'Backtest IC'), align: 'right', mono: true,
       render: r => r.backtest_ic === null ? <span className="text-faint">—</span> : signed(r.backtest_ic, 3) },

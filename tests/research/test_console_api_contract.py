@@ -447,6 +447,28 @@ def test_every_endpoint_satisfies_the_frontend_contract():
     assert not failures, "frontend contract drift:\n" + "\n".join(failures)
 
 
+def test_lifecycle_monitor_rows_expose_the_three_orthogonal_machines():
+    # 727 C4: every lifecycle row carries research/deployment/health next to the
+    # legacy mixed state, with an explicit provenance marker (STORED = dual-written
+    # columns, PROJECTED = derived from the legacy state, SYNTHETIC = fallback
+    # rows, UNKNOWN = unreadable). Never silently absent — the page renders the
+    # three machines only from these fields.
+    body = client.get("/api/v1/console/lifecycle-monitor").json()
+    assert body["rows"], "contract needs at least one row (synthetic fallback is fine)"
+    valid_sources = {"STORED", "PROJECTED", "SYNTHETIC", "UNKNOWN"}
+    for row in body["rows"]:
+        for key in ("research_state", "deployment_state", "health_state",
+                    "health_reason", "triple_source"):
+            assert key in row, f"lifecycle row missing C4 key '{key}'"
+        assert row["triple_source"] in valid_sources
+        if row["triple_source"] == "UNKNOWN":
+            assert row["research_state"] is None
+        else:
+            assert row["research_state"] is not None
+            assert row["deployment_state"] is not None
+            assert row["health_state"] is not None
+
+
 def test_query_bound_endpoints_echo_the_requested_alpha():
     # the page binds its selector to the echoed selected_alpha_id; if a VALID id
     # were not echoed faithfully the page would render the wrong alpha's data

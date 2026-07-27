@@ -13,6 +13,42 @@ from fastapi import APIRouter
 from services.console.api.common import short_hash
 
 
+def _triple_fields(a: Dict) -> Dict:
+    """727 C4: expose the three orthogonal lifecycle dimensions next to the
+    legacy mixed `state`. STORED = the C2/C3 columns are populated (the row went
+    through a dual-write); PROJECTED = pre-C2 row, derived from the legacy state
+    via the documented projection (sentinels included — never guessed);
+    UNKNOWN = the legacy state itself is unreadable."""
+    if a.get("research_state") is not None:
+        return {
+            "research_state": a.get("research_state"),
+            "deployment_state": a.get("deployment_state"),
+            "health_state": a.get("health_state"),
+            "health_reason": a.get("health_reason"),
+            "triple_source": "STORED",
+        }
+    try:
+        from quantos.contracts.research import AlphaState
+        from services.lifecycle import project
+
+        triple = project(AlphaState(str(a.get("state"))))
+    except Exception:
+        return {
+            "research_state": None,
+            "deployment_state": None,
+            "health_state": None,
+            "health_reason": None,
+            "triple_source": "UNKNOWN",
+        }
+    return {
+        "research_state": triple.research.value,
+        "deployment_state": triple.deployment.value,
+        "health_state": triple.health.state.value,
+        "health_reason": triple.health.reason.value,
+        "triple_source": "PROJECTED",
+    }
+
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _EXP_DB = os.path.join(_REPO_ROOT, "data", "cache", "experiment_registry.db")
 _PAPER_TRACK_DB = os.path.join(_REPO_ROOT, "data", "cache", "paper_track.db")
@@ -337,6 +373,7 @@ def _lifecycle_rows_real(st) -> List[Dict]:
                 "live_ic": live_ic,
                 "recommendation": recommendation,
                 "alerts": [],
+                **_triple_fields(a),
             }
         )
     return rows
@@ -364,6 +401,12 @@ def _lifecycle_rows_synthetic() -> List[Dict]:
                 "live_ic": None,
                 "recommendation": "NO_LIVE_DATA",
                 "alerts": [],
+                # Synthetic rows exercise the C4 shape honestly: the triple is
+                # derived from the synthetic legacy state and marked SYNTHETIC,
+                # never presented as a stored record (§18.2 provenance).
+                **_triple_fields(
+                    {"state": states[idx % len(states)], "research_state": None}
+                ) | {"triple_source": "SYNTHETIC"},
             }
         )
     return rows
