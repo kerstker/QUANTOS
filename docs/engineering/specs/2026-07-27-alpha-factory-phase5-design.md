@@ -4,11 +4,12 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §7(TrialRecord / Trial
   Ledger 规则 / 家族级多重检验)、§8(AI Alpha Factory:§8.1 可证伪假设 /
   §8.2 受限 DSL / §8.3 分层漏斗 / §8.4 多模型分工)
-- 状态:**P5-1 + P5-2 落地**——P5-1:Hypothesis 核心 + Hypothesis Store +
-  TrialProvenance 接线进两个 canonical 搜索入口(27 测试);P5-2(本提交):
-  candidate_compiler + constrained_search_space + candidate_deduplicator +
-  search_controller(§8.2/§8.3 漏斗前四层,30 测试,合计 57)。P5-3 未做,
-  切片计划见 §3。
+- 状态:**P5-1..P5-3 全部落地,Phase 5 完成**——P5-1:Hypothesis 核心 +
+  Hypothesis Store + TrialProvenance 接线进两个 canonical 搜索入口(27 测试);
+  P5-2:candidate_compiler + constrained_search_space + candidate_deduplicator +
+  search_controller(§8.2/§8.3 漏斗前四层,30 测试);P5-3(本提交):challenger +
+  challenge_council(§8.4 Deterministic Judge)+ champion_challenger(§10 第一刀,
+  26 测试,合计 83)。727 Phase 5 验收对照见 §6。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import、零 LLM 客户端;注册一个假设
   或一条 TrialRecord 不改变任何评估门禁、mandate 或 live 路径(诊断非门禁)。
@@ -88,7 +89,7 @@
 |---|---|---|
 | **P5-1** | `services/alpha_factory/`:hypothesis.py(§8.1 全字段 + 内容派生 id + fail-closed builder)+ hypothesis_store.py(append-only 哈希链)+ economic_rules.py(可复用规则面);TrialProvenance 接线进两个 canonical 入口;trial-ledger 证据诚实翻转 | **已落地**(27 测试) |
 | **P5-2** | candidate_compiler.py(Hypothesis → 受限 DSL 候选编译:canonicalize/serialize/alpha_id 三道 + 合成面板 evaluate 校验,只保形式合法 + 身份稳定不评优劣)+ constrained_search_space.py(§8.2 受限空间:五违规码,max_window 必填无默认=数据可用性上界,两层形态确定性枚举防爆炸)+ candidate_deduplicator.py(EXACT/NEAR/KEEP,首见保留与 run_alpha_factory._pending 同语义)+ search_controller.py(§8.3 漏斗前四层编排:假设违规拒开搜/语义淘汰 ELIMINATED_SEMANTIC+码/预算 BudgetExhausted/去重 ELIMINATED_DUPLICATE;**控制器不写库**,eliminations 供调用方经 P5-1 接线落账) | **本提交**(30 测试) |
-| P5-3 | challenger.py + challenge_council.py(§8.4:Statistical Challenger / Adversarial Reviewer 的**结构化意见**对象,机读、可审计;ELIMINATED_CHALLENGE 漏斗阶段)+ LLM 边界治理落地(假设/挑战只能作为结构化数据经 tools/ 进入,Deterministic Judge + Governance Plane 垄断最终状态转换) | 未做 |
+| **P5-3** | challenger.py(ChallengeObjection 结构化异议 + 确定性 statistical_challenger 七条攻击线 + external_objection 唯一入境口)+ challenge_council.py(convene 六条固定政策=§8.4 Deterministic Judge;EXTERNAL BLOCK 只到 REQUIRES_HUMAN_REVIEW 绝不直接 FAIL)+ champion_challenger.py(§10 第一刀:ChampionSnapshot 冻结销 + assert_frozen 漂移码 + §10.3 多指标固定政策对比,绝不只比总收益) | **本提交**(26 测试) |
 
 切分原则:每片独立可测、独立入库、不依赖后片;P5-1 不预留「将来一定这样」
 的抽象(P5-2 的编译器可能反过来修正 Hypothesis 的字段选择,届时显式评审)。
@@ -190,6 +191,40 @@
 - 数据可用性(store 层)/PIT-lag/粗筛及以后各层在 evaluator/gauntlet,
   刻意不在本切片。
 
+### 4.5 P5-3 实施记录(2026-07-27,本提交)
+
+- `challenger.py`:`ChallengeObjection`(role/code/severity/rationale/
+  evidence_hash/origin/creator_model/prompt_hash;evidence_hash = stable_hash
+  覆盖 role/code/severity/rationale/origin)。**两种来源一个形状**:
+  DETERMINISTIC(statistical_challenger 七条固定攻击线:DSR≤0→BLOCK/
+  PBO≥0.5→BLOCK/leakage→BLOCK/perturbation FAIL→BLOCK/regime<0.5→WARN
+  (UNCALIBRATED)/cost FAIL→WARN/concentration FAIL→WARN;全 None → 单条
+  INFO/INSUFFICIENT_EVIDENCE,**缺证据绝不静默通过**)与
+  EXTERNAL_STRUCTURED(`external_objection` = LLM/人工异议**唯一入境口**,
+  rationale≥20 字符 UNCALIBRATED、creator_model 必填、prompt_hash 可空
+  如实;services/ 永远不知道模型存在)。`ChallengeInput` 构造即 fail-closed
+  校验全部已知键(未知键/NaN/坏 verdict 直接拒)。
+- `challenge_council.py`:`convene` 六条固定政策(见模块 docstring 逐条
+  注释)——**EXTERNAL_STRUCTURED 的 BLOCK 只到 REQUIRES_HUMAN_REVIEW,
+  绝不直接 FAIL(§8.4 钉死,测试钉死)**;空 objections ≠ PASS;PASS 只在
+  全 INFO 非缺证据时可达。`decision_hash` 覆盖 verdict + 异议哈希序,
+  evaluated_at_ms 是 provenance 不进哈希。`judge_candidate` =
+  statistical_challenger + external_objections → convene,727 §8.4
+  Deterministic Judge 的落地:只读机器证据 + 固定政策。
+- `champion_challenger.py`(§10 第一刀):`ChampionSnapshot` 九字段冻结销
+  (frozen_at_ms 是冻结行为 provenance,不进 snapshot hash)+
+  `assert_frozen` → CHAMPION_CODE_DRIFT/CHAMPION_CONFIG_DRIFT(§10.1
+  「不得在线自动调参」的机器检查;未钉的销 = 无意见如实,绝不静默 PASS)+
+  `compare_champion_challenger`:§10.3 十键面板(缺键诚实 None)+
+  marginal_ir(有 IR+相关才算,没有 None)+ 固定政策(net_sharpe ∧
+  max_drawdown **双优**且无 guard 退化才 CHALLENGER_BETTER;缺关键指标/
+  混合画面/guard 退化 → INCONCLUSIVE;双键不优 → CHAMPION_STANDS——
+  **绝不只比总收益**,测试钉死单指标胜利 ≠ BETTER)。
+- **诚实边界**:本切片是 §10.2 流程的「机器生成对比证据包」一半;
+  Challenger 替换流程本身(真人批准、Micro-Live 渐进替换)在下游治理,
+  刻意不在此。convene 的 verdict 是 Deterministic Judge 给 Governance
+  Plane 的机读建议,不是生命周期状态转换本身。
+
 ## 5. LLM 边界治理原则(727 §8.4,P5-1 即钉死)
 
 1. **`services/` 永不持有模型客户端**。无网络 import 由治理扫描机器钉死;
@@ -202,3 +237,15 @@
    `creator_model` + `prompt_hash`;人类假设用 `creator_model="human"`。
    TrialRecord 的 model_name/prompt_hash 同理——「这个候选是谁造的」永远
    可审计。
+
+## 6. 727 Phase 5 验收对照表
+
+| 验收项 | 状态 | 承载 |
+|---|---|---|
+| 候选有经济假设和证伪标准 | ✓ | P5-1:Hypothesis §8.1 全字段 + fail-closed builder + economic_rules;「Sharpe 可能更高」构造即拒 |
+| 所有候选进 Trial Ledger | ✓(canonical 入口)/ PARTIAL(其余驱动器) | P5-1:两个 canonical 入口接线 + 证据诚实翻转(verdict 保持 PARTIAL,15+ 其他驱动器与历史 bare 总体全列 open_gaps) |
+| 语言模型不能推进部署状态 | ✓ 结构性 | services/ 零 LLM 客户端(治理扫描钉死);P5-3:EXTERNAL 异议只能到 REQUIRES_HUMAN_REVIEW(convene 规则 2 机器钉死),FAIL/PASS 只由机器证据 + 固定政策给出;最终生命周期转换在 Governance Plane |
+| 受限 DSL(§8.2) | ✓ | P5-2:SearchSpaceConstraints 五违规码 + 两层枚举 |
+| 分层漏斗淘汰写原因(§8.3 前四层) | ✓ 前四层 | P5-2:ELIMINATED_SEMANTIC/DUPLICATE 类型化记录;后续层在 evaluator/gauntlet(既有) |
+| Challenge 阶段(§8.3 独立 Challenge) | ✓ | P5-3:challenger + challenge_council(ELIMINATED_CHALLENGE 写账归调用方,与 P5-2 控制器同分工) |
+

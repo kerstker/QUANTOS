@@ -22,6 +22,26 @@ Boundaries (non-negotiable):
 - Dependency direction: this package must NOT import services/intelligence.
 """
 
+from .challenge_council import (
+    CouncilError,
+    CouncilVerdict,
+    convene,
+    judge_candidate,
+)
+from .challenger import (
+    ChallengeInput,
+    ChallengeObjection,
+    ObjectionError,
+    external_objection,
+    statistical_challenger,
+)
+from .champion_challenger import (
+    ChampionChallengerError,
+    ChampionSnapshot,
+    assert_frozen,
+    champion_snapshot_hash,
+    compare_champion_challenger,
+)
 from .candidate_compiler import (
     CandidateCompileError,
     CompiledCandidate,
@@ -63,7 +83,13 @@ from .search_controller import (
 __all__ = [
     "CandidateCompileError",
     "CandidateDeduplicator",
+    "ChallengeInput",
+    "ChallengeObjection",
+    "ChampionChallengerError",
+    "ChampionSnapshot",
     "CompiledCandidate",
+    "CouncilError",
+    "CouncilVerdict",
     "DEFAULT_ALLOWED_OPS",
     "DedupDecision",
     "DeduplicatorError",
@@ -73,17 +99,25 @@ __all__ = [
     "HypothesisError",
     "HypothesisNotFoundError",
     "HypothesisStoreError",
+    "ObjectionError",
     "SearchController",
     "SearchPlan",
     "SearchPlanError",
     "SearchSpaceConstraints",
     "SearchSpaceError",
     "SqliteHypothesisStore",
+    "assert_frozen",
+    "champion_snapshot_hash",
     "check_expression",
     "check_hypothesis_rules",
+    "compare_champion_challenger",
     "compile_candidate",
     "compile_from_hypothesis",
+    "convene",
     "create_hypothesis",
     "enumerate_space",
+    "external_objection",
     "hypothesis_content_hash",
+    "judge_candidate",
+    "statistical_challenger",
 ]

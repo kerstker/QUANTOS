@@ -358,7 +358,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   Phase 4 验收对照表(factor_id/version ✓ / 历史实时同逻辑 ✓ / 依赖失败传播
   暂停 ✓ / 物化 ✓ / 家族聚类 ✓)见设计文档 §9
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
-- `services/alpha_factory/` — **Alpha Factory P5-1+P5-2(727 §7/§8,2026-07-27,57 测试)**:
+- `services/alpha_factory/` — **Alpha Factory P5-1..P5-3(727 §7/§8,2026-07-27,83 测试,Phase 5 完成)**:
   `hypothesis.py`(§8.1 全字段 frozen Hypothesis + 内容派生 id「hyp_+sha256[:16]」+
   fail-closed builder——「Sharpe 可能更高」类候选构造即拒)+ `hypothesis_store.py`
   (append-only 哈希链预注册账本,register 幂等,同 id 不同内容 HypothesisConflictError
@@ -386,7 +386,19 @@ Real, tested backend engines (`*_TESTED` in the audit):
   SearchPlanError / 语义淘汰 ELIMINATED_SEMANTIC+码 / 预算 BudgetExhausted /
   去重 ELIMINATED_DUPLICATE;**控制器不写库**,SearchPlan.eliminations 供调用方
   经 P5-1 接线落账,e2e 测试真消费;数据可用性/粗筛及以后各层在 evaluator,
-  刻意不在本切片)。边界:services/ 零 LLM 客户端,假设只能作结构化
+  刻意不在本切片)。
+  **P5-3(§8.4 Deterministic Judge + §10 第一刀)**:`challenger.py`
+  (ChallengeObjection 结构化异议;确定性 statistical_challenger 七条攻击线
+  DSR≤0/PBO≥0.5/leakage/perturbation FAIL→BLOCK,regime/cost/concentration→WARN,
+  全 None→INSUFFICIENT_EVIDENCE 绝不静默通过;`external_objection` = LLM/人工
+  异议**唯一入境口**,creator_model 必填、rationale≥20 字符)+
+  `challenge_council.py`(convene 六条固定政策:**EXTERNAL_STRUCTURED BLOCK 只到
+  REQUIRES_HUMAN_REVIEW 绝不直接 FAIL,§8.4 机器钉死**;空 objections≠PASS;
+  `judge_candidate` = 机器证据 + 固定政策的 Deterministic Judge 落地)+
+  `champion_challenger.py`(§10:ChampionSnapshot 九字段冻结销 + assert_frozen
+  漂移码「不得在线自动调参」+ §10.3 十键面板固定政策对比——双优无 guard 退化
+  才 CHALLENGER_BETTER,**绝不只比总收益**;替换流程本身在下游治理,刻意不在)。
+  边界:services/ 零 LLM 客户端,假设只能作结构化
   数据经 tools/ 进入,最终状态转换归 Deterministic Judge + Governance(727 §8.4)。
   设计文档 `docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md`
   (P5-1..P5-3 切片计划)。诊断非门禁。
