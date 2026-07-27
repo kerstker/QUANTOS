@@ -34,7 +34,22 @@ from .definitions import (
     build_factor_definition,
     factor_content_hash,
 )
+from .dependency_graph import DependencyGraph
+from .health import (
+    DatasetHealth,
+    FactorHealthVerdict,
+    evaluate_factor_health,
+    propagate,
+)
 from .materializer import MATERIALIZER_VERSION, materialize_factor, materialize_many
+from .offline_online_parity import (
+    PARITY_INSUFFICIENT_OVERLAP,
+    PARITY_MISMATCH,
+    PARITY_OK,
+    ParityReport,
+    compare_panels,
+    compare_series,
+)
 from .registry import FactorGardenRegistry
 
 __all__ = [
@@ -44,17 +59,28 @@ __all__ = [
     "CARRY_QUANTILE_LIVE",
     "CARRY_QUANTILE_OFFLINE",
     "CROWD_CONTRA_EXPRESSION",
+    "DatasetHealth",
+    "DependencyGraph",
     "FUNDING_FIELD",
     "FactorDefinitionError",
     "FactorFamily",
     "FactorGardenRegistry",
+    "FactorHealthVerdict",
     "MATERIALIZER_VERSION",
+    "PARITY_INSUFFICIENT_OVERLAP",
+    "PARITY_MISMATCH",
+    "PARITY_OK",
+    "ParityReport",
     "TOP_CONTRA_EXPRESSION",
     "TREND_COMPOSITE_EXPRESSION",
     "build_factor_definition",
+    "compare_panels",
+    "compare_series",
+    "evaluate_factor_health",
     "factor_content_hash",
     "legs",
     "materialize_factor",
     "materialize_many",
+    "propagate",
     "register_canonical_factors",
 ]

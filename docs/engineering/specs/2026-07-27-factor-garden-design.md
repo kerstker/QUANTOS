@@ -4,11 +4,12 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §6(Factor Garden:
   §6.1 FactorDefinition / §6.2 FactorObservation / §6.3 offline-online 一致性 /
   §6.4 因子家族)、§8.1(无经济解释的表达式禁令)
-- 状态:**F1–F3 已落地**——F1:契约加宽 + `services/factor_garden/`
+- 状态:**F1–F4 已落地**——F1:契约加宽 + `services/factor_garden/`
   (definitions + registry 边界,22 测试);F2:canonical 因子收敛
-  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3(本提交):物化器 +
+  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3:物化器 +
   feature_values schema v2(`materializer.py` + value_store 四列,16 测试);
-  F4–F5 计划见 §3。
+  F4(本提交):offline_online_parity + dependency_graph + health(24 测试,
+  含真实双路径 parity 案例);F5 计划见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import;注册一个因子不改变任何评估
   门禁、mandate 或 live 路径(诊断非门禁)。
@@ -75,7 +76,7 @@
 | **F1** | 契约加宽(FeatureDefinition §6.1 字段 + FactorFamily)+ `services/factor_garden/`(definitions + registry 边界,store `all_items()` 只读加法) | **本提交** |
 | F2 | canonical 因子收敛:tools/ 双份定义(CARRY 双份、crowd_contra 决策行三套)移入 services 侧注册;QUANTILE 0.2 vs 0.3 分叉**诚实记录为两个版本**,不擅自统一 | **本提交** |
 | F3 | materializer + feature_values schema v2:§6.2 FactorObservation 落盘面(+computed_at/dataset_version/materializer_version/quality_verdict) | **本提交** |
-| F4 | offline_online_parity + dependency_graph + health:同一核心计算函数不同窗口适配器的 parity test;dataset BLOCK → factor STALE 传播(泛化 forward_track_advance 的语义) | 计划 |
+| F4 | offline_online_parity + dependency_graph + health:同一核心计算函数不同窗口适配器的 parity test;dataset BLOCK → factor STALE 传播(泛化 forward_track_advance 的语义) | **本提交** |
 | F5 | family_cluster:§6.4 家族维度聚类,接入 W3 簇图;显式建立 FactorFamily ↔ 组合风险维映射 | 计划 |
 
 切分原则:每片独立可测、独立入库、不依赖后片;F1 不预留「将来一定这样」的
@@ -242,7 +243,63 @@ leakage/质量检测(那是 F4 的事),绝不编造逐格判定。
   输入校验;materialize_many 隔离失败;registry→materializer 端到端
   (register_canonical_factors → get → materialize → PIT 读回 + v1 契约读一致)。
 
-## 7. 明确非目标(F1–F3 不做,单独评审)
+## 7. F4 实施记录(2026-07-27,parity + dependency graph + health)
+
+### 7.1 `offline_online_parity.py`(纯函数)
+
+- `ParityReport` 冻结 dataclass(factor_id/compared_cells/mismatches/max_abs_diff/
+  tolerance/verdict/detail);`compare_series`(key 交集排序 by repr 逐格比对,
+  |diff|>tolerance 计 mismatch,NaN≠NaN/inf≠finite 恒 mismatch、None==None 不计,
+  detail 确定性序前 10 条)+ `compare_panels`(形状不符 → MISMATCH 带形状 detail
+  不抛;空面板 → INSUFFICIENT_OVERLAP)。
+- **fail-closed 裁定:交集为空 → PARITY_INSUFFICIENT_OVERLAP,绝不谎报 OK**。
+- **真实 parity 案例**(test_parity.py,本切片最有价值的测试):6 币 × 20 期全填充
+  合成 panel,online = **真 live 路径** `live_track_advance._latest_weights_and_prices_for`
+  (未改动原函数,直接喂 panel_bundle),offline = **真干跑组合**
+  `ax.evaluate(expr, panel)` + `canonical.legs(sig[r], CARRY_QUANTILE_LIVE)`
+  (dry_run_crowd_contra_multi.py:139-157 的同一组合)——取 live 选中的同一决策行 r,
+  `compare_series(tolerance=0.0)` 对 crowd_contra 与 carry 各跑一遍,PARITY_OK、
+  max_abs_diff=0.0。**局限(诚实记录):三套行选择政策(live 回看 ≤7 行 + 覆盖率 /
+  前向 paper cadence / 干跑全历史周网格)未统一——parity 只在同一行选择政策下判定,
+  统一政策是行为变更,留评审。**
+
+### 7.2 `dependency_graph.py`(纯函数,不可变)
+
+- `DependencyGraph(factor_datasets, alpha_factors, known_datasets=None)` +
+  `from_definitions(defns, alpha_links, known_datasets)`;MappingProxyType 不可变,
+  全部读返回排序 tuple。`factors_for_dataset` / `datasets_for_factor` /
+  `dependents_of_dataset`(dataset 失败 → 直接 factors + 沿 factor→alpha 边传递的
+  alphas)/ `topo_factors`(诚实注:§6 图无 factor→factor 边,topo 即排序,
+  存在是为给调用方一个稳定评估序)/ `validate()`(悬空引用清单 fail-closed
+  供调用方拒;dataset 维悬空只在声明 known_datasets 时才判定——外部数据集宇宙
+  不是图能判的,诚实跳过)。
+
+### 7.3 `health.py`(纯核,事实注入)
+
+- `DatasetHealth`(PASS/BLOCK/STALE/UNKNOWN,**UNKNOWN 是诚实缺省:无事实 ≠ 健康**)
+  + `FactorHealthVerdict`(HEALTHY/STALE/PAUSED + blocking_datasets + reasons)。
+- `evaluate_factor_health`:任一依赖 BLOCK **或 UNKNOWN** → PAUSED(缺证据不放行,
+  fail-closed 钉死);仅 STALE → STALE;全 PASS → HEALTHY;无声明依赖/未知因子 →
+  PAUSED。`propagate`:全图评估,任一依赖 factor 非 HEALTHY → alpha PAUSED 带
+  blocking_factors 明细——forward_track_advance 的 raw_lineage_block_reason /
+  live_track_advance 的 batch_skip_reason 语义的图驱动泛化。
+- **事实注入裁定**:核心绝不自己读 db/json——三个权威源(admission_store verdict /
+  refresh_history 哈希链 / live_refresh_status.json 水印)由调用方/tools 读盘后注入。
+- **不写回 registry 裁定**:本切片纯评估;`set_status` 写回会留哈希链痕迹但也是
+  自动状态变更,留给驱动器显式调用(模块 docstring 明文)。
+
+### 7.4 测试(24)
+
+- test_parity.py(9):全等/容差内外/交集空 fail-closed/NaN-Inf-None 语义/形状不符
+  不抛/输入校验 + **2 个真实双路径 parity 案例**(crowd_contra、carry)。
+- test_dependency_graph.py(6):构建/读/传播到 alpha/两类悬空引用/构造校验 +
+  不可变/CANONICAL_FACTORS 实图。
+- test_health.py(9):全 PASS→HEALTHY;BLOCK→PAUSED 带明细;**无事实 → UNKNOWN →
+  PAUSED(fail-closed 钉死)**;STALE→STALE;BLOCK 优先于 STALE;无依赖/未知因子 →
+  PAUSED;DatasetHealth 校验;propagate 到 alpha(含 alphas 参数合流与图外因子
+  fail-closed)。
+
+## 8. 明确非目标(F1–F4 不做,单独评审)
 
 1. **不统一 QUANTILE 0.2 vs 0.3 分叉**——那是行为变更(两个数字背后是不同的
    前向证据积累),需人工决策;F2 已把两值以显式命名常量
@@ -251,13 +308,15 @@ leakage/质量检测(那是 F4 的事),绝不编造逐格判定。
 2. **不接 console**——Phase 11 的事;F1–F3 无 HTTP 面。
 3. **不迁移 factor_engine**——字符串 AST 编译器维持隔离/死码现状,删除或重建
    是独立决策(与 quarantined `trading/pre_trade_risk` 同款处置)。
-4. **不做逐格质量/leakage 检测**——F3 的 quality_verdict 是调用方/全局标记;
-   逐格检测与 dataset BLOCK → factor STALE 传播是 F4(offline_online_parity +
-   dependency_graph + health)的事。
-5. **不接任何晋级/下单路径**——诊断非门禁立场不变;物化只写 feature_values
-   观测,不改变任何评估门、mandate 或 live 路径。
+4. **不做逐格质量/leakage 检测与 verdict 自动写回**——F3 的 quality_verdict 是
+   调用方/全局标记;F4 的 health 是纯评估(UNKNOWN→PAUSED fail-closed),
+   set_status 写回留给驱动器显式调用;逐格 leakage 检测仍需独立评审。
+5. **不统一三套行选择政策**——live 回看/前向 cadence/干跑周网格各有语义,
+   parity 只在同一政策下判定;统一是行为变更,需评审。
+6. **不接任何晋级/下单路径**——诊断非门禁立场不变;物化只写 feature_values
+   观测,health 只产出 verdict,不改变任何评估门、mandate 或 live 路径。
 
-## 8. L2 边界声明
+## 9. L2 边界声明
 
 - 五个安全旗标、live-order 路径、凭证零触碰;`services/factor_garden` 零网络
   import(治理扫描机器钉死)。

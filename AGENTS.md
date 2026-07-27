@@ -297,8 +297,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
   (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
   有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
-- `services/factor_garden/` — **Factor Garden F1–F3(727 §6/Phase 4,2026-07-27 落地,
-  22+11+9 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+- `services/factor_garden/` — **Factor Garden F1–F4(727 §6/Phase 4,2026-07-27 落地,
+  22+11+9+24 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
   (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
   provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
   13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
@@ -329,10 +329,23 @@ Real, tested backend engines (`*_TESTED` in the audit):
   因子值在 t 可知,与 EOD 数据存储 kt=et 约定一致;从 panel PIT 契约推导非虚构。
   None 格不落盘(无观测)、NaN/Inf 跳过计数;幂等靠主键 INSERT OR IGNORE(重跑 0 新增);
   `materialize_many` 逐因子隔离失败。quality_verdict = 调用方/全局标记,
-  **逐格 leakage/质量检测不做**(F4)。物化只写观测,不驱动任何晋级/下单。
+  逐格 leakage/质量检测不做(独立评审)。物化只写观测,不驱动任何晋级/下单。
+  **F4 parity + dependency graph + health**:`offline_online_parity.py`
+  (ParityReport + compare_series/compare_panels,**交集为空 → INSUFFICIENT_OVERLAP
+  fail-closed 绝不谎报 OK**,形状不符不抛;真实双路径 parity 案例:真 live 函数
+  `_latest_weights_and_prices_for` vs 真干跑组合 evaluate+legs,同一决策行
+  tolerance=0 下 crowd/carry 均 PARITY_OK;三套行选择政策**不统一**,统一是行为
+  变更)+ `dependency_graph.py`(不可变 dataset→factor→alpha 邻接,
+  from_definitions/dependents_of_dataset 传播/validate 悬空引用清单 fail-closed;
+  topo_factors 诚实注:无 factor→factor 边,topo 即排序)+ `health.py`
+  (**纯核事实注入**,绝不自读 db/json——admission_store/refresh_history/
+  live_refresh_status 三权威源由调用方读盘注入;DatasetHealth UNKNOWN 是诚实
+  缺省,**BLOCK 或 UNKNOWN → factor PAUSED fail-closed**,STALE→STALE;
+  propagate 到 alpha:任一依赖 factor 非 HEALTHY → PAUSED 带明细——
+  forward_track_advance/live_track_advance 依赖失败→暂停语义的图驱动泛化)。
+  **verdict 不写回 registry**(纯评估;set_status 写回留驱动器显式决策)。
   确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁**。
-  F4–F5(offline_online_parity+dependency_graph+health/family_cluster)
-  计划见设计文档
+  F5(family_cluster)计划见设计文档
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
