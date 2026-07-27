@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 42,
+  "edge_count": 44,
   "edges": [
     {
       "references": [
@@ -85,6 +85,48 @@
       ],
       "source": "alpha",
       "target": "validation"
+    },
+    {
+      "references": [
+        {
+          "line": 23,
+          "module": "services.alpha.similarity",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_compiler.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        },
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/constrained_search_space.py"
+        },
+        {
+          "line": 30,
+          "module": "services.research.research_budget",
+          "path": "services/alpha_factory/search_controller.py"
+        },
+        {
+          "line": 36,
+          "module": "services.research.trial_provenance",
+          "path": "services/alpha_factory/search_controller.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "research"
     },
     {
       "references": [
@@ -1092,7 +1134,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "6fed3e1f98c98f2a00ac249bf0b8a29807812b56009a8f0b050aae9fd490c371",
+  "graph_sha256": "1db03664ccd2afd4dc5ebca0ce3e2bf2e6a417a7c73cfddd57a1d6f66aac6535",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1130,7 +1172,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 360,
+  "source_file_count": 364,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

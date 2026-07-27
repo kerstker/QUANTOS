@@ -22,6 +22,24 @@ Boundaries (non-negotiable):
 - Dependency direction: this package must NOT import services/intelligence.
 """
 
+from .candidate_compiler import (
+    CandidateCompileError,
+    CompiledCandidate,
+    compile_candidate,
+    compile_from_hypothesis,
+)
+from .candidate_deduplicator import (
+    CandidateDeduplicator,
+    DedupDecision,
+    DeduplicatorError,
+)
+from .constrained_search_space import (
+    DEFAULT_ALLOWED_OPS,
+    SearchSpaceConstraints,
+    SearchSpaceError,
+    check_expression,
+    enumerate_space,
+)
 from .economic_rules import check_hypothesis_rules
 from .hypothesis import (
     Hypothesis,
@@ -35,15 +53,37 @@ from .hypothesis_store import (
     HypothesisStoreError,
     SqliteHypothesisStore,
 )
+from .search_controller import (
+    EliminationRecord,
+    SearchController,
+    SearchPlan,
+    SearchPlanError,
+)
 
 __all__ = [
+    "CandidateCompileError",
+    "CandidateDeduplicator",
+    "CompiledCandidate",
+    "DEFAULT_ALLOWED_OPS",
+    "DedupDecision",
+    "DeduplicatorError",
+    "EliminationRecord",
     "Hypothesis",
     "HypothesisConflictError",
     "HypothesisError",
     "HypothesisNotFoundError",
     "HypothesisStoreError",
+    "SearchController",
+    "SearchPlan",
+    "SearchPlanError",
+    "SearchSpaceConstraints",
+    "SearchSpaceError",
     "SqliteHypothesisStore",
+    "check_expression",
     "check_hypothesis_rules",
+    "compile_candidate",
+    "compile_from_hypothesis",
     "create_hypothesis",
+    "enumerate_space",
     "hypothesis_content_hash",
 ]

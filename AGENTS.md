@@ -358,12 +358,12 @@ Real, tested backend engines (`*_TESTED` in the audit):
   Phase 4 验收对照表(factor_id/version ✓ / 历史实时同逻辑 ✓ / 依赖失败传播
   暂停 ✓ / 物化 ✓ / 家族聚类 ✓)见设计文档 §9
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
-- `services/alpha_factory/` — **Alpha Factory P5-1(727 §7/§8,2026-07-27,27 测试)**:
+- `services/alpha_factory/` — **Alpha Factory P5-1+P5-2(727 §7/§8,2026-07-27,57 测试)**:
   `hypothesis.py`(§8.1 全字段 frozen Hypothesis + 内容派生 id「hyp_+sha256[:16]」+
   fail-closed builder——「Sharpe 可能更高」类候选构造即拒)+ `hypothesis_store.py`
   (append-only 哈希链预注册账本,register 幂等,同 id 不同内容 HypothesisConflictError
   大声抛)+ `economic_rules.py`(可复用规则面:HYP_MECHANISM_TOO_SHORT/
-  HYP_VAGUE_FALSIFICATION(UNCALIBRATED 启发式)等 6 码,P5-2 search_controller
+  HYP_VAGUE_FALSIFICATION(UNCALIBRATED 启发式)等 6 码,search_controller
   重检非本构造假设用)。**TrialProvenance 零接线已消灭**:两个 canonical 搜索入口
   (`run_alpha_factory` / `run_registered_candidate_batch`)在注册时每候选写一条完整
   §7.1 TrialRecord(只做加法,旧签名逐位兼容;model_name 诚实——cs_genome-evolution /
@@ -372,7 +372,21 @@ Real, tested backend engines (`*_TESTED` in the audit):
   诚实翻转:新增 provenance_wiring 代码级验证段,open_gap 翻
   CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING,verdict 保持 PARTIAL(历史 2533
   bare trial 永久不可回溯 + 15+ 其他驱动器未接线,全列 open_gaps;不向生产账本
-  注合成 trial 污染 DSR 分母)。边界:services/ 零 LLM 客户端,假设只能作结构化
+  注合成 trial 污染 DSR 分母)。
+  **P5-2(§8.2/§8.3 漏斗前四层)**:`candidate_compiler.py`(canonicalize/serialize/
+  alpha_id 三道 + 合成面板 evaluate 校验——只保形式合法 + 身份稳定不评优劣;
+  `compile_from_hypothesis` 绑定编译,required_factors 零交集 →
+  HYPOTHESIS_FACTOR_MISMATCH **警告不硬拒**)+ `constrained_search_space.py`
+  (SearchSpaceConstraints fail-closed 构造,**max_window 必填无默认**=数据可用性
+  上界;五违规码 SPACE_FIELD_NOT_ALLOWED/OP_NOT_ALLOWED/TOO_DEEP/
+  WINDOW_OUT_OF_RANGE/ROOT_NOT_ECONOMIC;两层形态确定性枚举 + 几何窗口阶梯 +
+  硬截断防爆炸;cs_genome 一字未改,`_depth` 四行平行实现)+
+  `candidate_deduplicator.py`(EXACT/NEAR(0.85 UNCALIBRATED)/KEEP,首见保留与
+  run_alpha_factory._pending 同语义)+ `search_controller.py`(假设违规拒开搜
+  SearchPlanError / 语义淘汰 ELIMINATED_SEMANTIC+码 / 预算 BudgetExhausted /
+  去重 ELIMINATED_DUPLICATE;**控制器不写库**,SearchPlan.eliminations 供调用方
+  经 P5-1 接线落账,e2e 测试真消费;数据可用性/粗筛及以后各层在 evaluator,
+  刻意不在本切片)。边界:services/ 零 LLM 客户端,假设只能作结构化
   数据经 tools/ 进入,最终状态转换归 Deterministic Judge + Governance(727 §8.4)。
   设计文档 `docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md`
   (P5-1..P5-3 切片计划)。诊断非门禁。

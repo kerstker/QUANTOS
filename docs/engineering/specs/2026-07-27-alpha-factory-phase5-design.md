@@ -4,8 +4,10 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §7(TrialRecord / Trial
   Ledger 规则 / 家族级多重检验)、§8(AI Alpha Factory:§8.1 可证伪假设 /
   §8.2 受限 DSL / §8.3 分层漏斗 / §8.4 多模型分工)
-- 状态:**P5-1 落地(本提交)**——Hypothesis 核心 + Hypothesis Store +
-  TrialProvenance 接线进两个 canonical 搜索入口(27 测试);P5-2/P5-3 未做,
+- 状态:**P5-1 + P5-2 落地**——P5-1:Hypothesis 核心 + Hypothesis Store +
+  TrialProvenance 接线进两个 canonical 搜索入口(27 测试);P5-2(本提交):
+  candidate_compiler + constrained_search_space + candidate_deduplicator +
+  search_controller(§8.2/§8.3 漏斗前四层,30 测试,合计 57)。P5-3 未做,
   切片计划见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import、零 LLM 客户端;注册一个假设
@@ -84,8 +86,8 @@
 
 | 切片 | 内容 | 状态 |
 |---|---|---|
-| **P5-1** | `services/alpha_factory/`:hypothesis.py(§8.1 全字段 + 内容派生 id + fail-closed builder)+ hypothesis_store.py(append-only 哈希链)+ economic_rules.py(可复用规则面);TrialProvenance 接线进两个 canonical 入口;trial-ledger 证据诚实翻转 | **本提交**(27 测试) |
-| P5-2 | candidate_compiler.py(Hypothesis → 受限 DSL 候选,§8.2:只允许 time-series/cross-sectional/lagged/residualization/regime 五类变换,深层随机表达式结构性拒绝)+ constrained_search_space.py(声明式搜索空间,与 W10 ResearchBudget 对接)+ candidate_deduplicator.py(canonicalize 去重,ELIMINATED_DUPLICATE 真记账)+ search_controller.py(§8.3 分层漏斗编排:语义检查→数据可用性→PIT/lag→粗筛→…,每层淘汰写 ELIMINATED_* 原因进 TrialRecord,复用 economic_rules 重检非本构造假设) | 未做 |
+| **P5-1** | `services/alpha_factory/`:hypothesis.py(§8.1 全字段 + 内容派生 id + fail-closed builder)+ hypothesis_store.py(append-only 哈希链)+ economic_rules.py(可复用规则面);TrialProvenance 接线进两个 canonical 入口;trial-ledger 证据诚实翻转 | **已落地**(27 测试) |
+| **P5-2** | candidate_compiler.py(Hypothesis → 受限 DSL 候选编译:canonicalize/serialize/alpha_id 三道 + 合成面板 evaluate 校验,只保形式合法 + 身份稳定不评优劣)+ constrained_search_space.py(§8.2 受限空间:五违规码,max_window 必填无默认=数据可用性上界,两层形态确定性枚举防爆炸)+ candidate_deduplicator.py(EXACT/NEAR/KEEP,首见保留与 run_alpha_factory._pending 同语义)+ search_controller.py(§8.3 漏斗前四层编排:假设违规拒开搜/语义淘汰 ELIMINATED_SEMANTIC+码/预算 BudgetExhausted/去重 ELIMINATED_DUPLICATE;**控制器不写库**,eliminations 供调用方经 P5-1 接线落账) | **本提交**(30 测试) |
 | P5-3 | challenger.py + challenge_council.py(§8.4:Statistical Challenger / Adversarial Reviewer 的**结构化意见**对象,机读、可审计;ELIMINATED_CHALLENGE 漏斗阶段)+ LLM 边界治理落地(假设/挑战只能作为结构化数据经 tools/ 进入,Deterministic Judge + Governance Plane 垄断最终状态转换) | 未做 |
 
 切分原则:每片独立可测、独立入库、不依赖后片;P5-1 不预留「将来一定这样」
@@ -142,6 +144,51 @@
 - 门禁测试强化而非放松:artifact 测试新增 wiring 段钉死(两入口
   wired==true、wired_entry_count==2),篡改链仍 BLOCKED、bare 总体仍
   PARTIAL、全覆盖仍可 PASS 的全部旧断言一字未动。
+
+### 4.4 P5-2 实施记录(2026-07-27,本提交)
+
+- `candidate_compiler.py`:`CompiledCandidate`(canonical expression +
+  canonical_expression + expression_hash + hypothesis_id + params +
+  compile_warnings);`compile_candidate` 三道(canonicalize → serialize →
+  alpha_id)+ 合成面板 evaluate 校验——**编译不评优劣,只保形式合法 +
+  身份稳定**。校验三层模式平行实现自 factor_garden
+  `definitions.py::_validate_expression`(**刻意不抽共用**:那边
+  FactorDefinitionError 被 tests/factor_garden 钉死,这边
+  CandidateCompileError,合并要动已落地切片换不来行为收益;模式若变两处
+  同步,注释钉死)。
+- `compile_from_hypothesis` 绑定编译:required_factors 与表达式引用 fields
+  **零交集 → compile_warnings 加 HYPOTHESIS_FACTOR_MISMATCH 不硬拒**——
+  表达式可能经中间变换/派生字段触及假说机制,硬拒会误杀恰需要人工看的
+  候选;警告随候选走,审计可见而非静默放行。
+- `constrained_search_space.py`:`SearchSpaceConstraints`(fail-closed 构造;
+  **max_window 必填无默认** = §8.2「超出数据可用时间的窗口」默认拒绝,
+  数据可用性上界只有调用方知道;allowed_ops 默认 = cs_genome 可生成全集,
+  signed_power 刻意排除——DSL 支持但 cs_genome 永不生成,注释钉死)。
+  `check_expression` 五违规码固定检查序(root → depth → 前序遍历
+  op/field/window),去重确定性;`_depth` 四行平行实现(不 import
+  cs_genome 私有,**cs_genome 一字未改**)。`enumerate_space` 只枚举
+  (ts_op field w) 与 (cs_op (ts_op field w)) 两层形态,几何窗口阶梯
+  (min 起翻倍 + 恒含 max,刻意粗——细扫是 driver 预注册族的活),
+  alpha_id 去重 + max_candidates 硬截断,产出全部过 check_expression。
+- `candidate_deduplicator.py`:EXACT(hash 已见)/ NEAR(expression_similarity
+  ≥ near_threshold,**0.85 默认 UNCALIBRATED 工程默认**,取最高相似度、
+  平手取最早见)/ KEEP;`filter_batch` 首见保留、后者判重,与
+  run_alpha_factory._pending 首见语义一致(两条路径去重结果相同)。
+- `search_controller.py`:§8.3 漏斗前四层编排。§8.1 硬前置——
+  check_hypothesis_rules 有违规 → SearchPlanError(**无合格假设不开搜**);
+  compile 失败/space 违规 → ELIMINATED_SEMANTIC + 稳定码
+  (COMPILE_INVALID_DSL 的 expression_hash 诚实为 "");预算 =
+  run_registered_candidate_batch 同口径(trials_used=声明族大小,compute
+  不可计量声明即拒)→ BudgetExhausted 在任何 dedup 之前;去重 →
+  ELIMINATED_DUPLICATE(verdict + matched hash)。**控制器本身不写库**——
+  返回 SearchPlan(survivors + 类型化 EliminationRecord 元组 +
+  planned_at_ms),落账归调用方经 P5-1 接线(e2e 测试真消费:
+  survivors 写 RECORDED、eliminations 写各自 ELIMINATED_* + reasons,
+  重复候选与幸存者可同 config_hash 双行,链验证通过)。
+  `evaluate_stopping` 薄封装 evaluate_stopping_rules + max_trials 硬顶
+  (trial_count 独立参数:账本总体可多于有分 trial)。
+- 数据可用性(store 层)/PIT-lag/粗筛及以后各层在 evaluator/gauntlet,
+  刻意不在本切片。
 
 ## 5. LLM 边界治理原则(727 §8.4,P5-1 即钉死)
 
