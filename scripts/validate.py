@@ -169,6 +169,9 @@ CHECKS = [
             "tests/orchestration",
             # 2026-07-27:Factor Garden F1(727 §6/Phase 4,因子契约加宽 + 注册表边界)。
             "tests/factor_garden",
+            # 2026-07-27:Alpha Factory P5-1(727 §7/§8,Hypothesis 核心 + Store +
+            # TrialProvenance 接线进两个 canonical 搜索入口)。
+            "tests/alpha_factory",
             "tests/portfolio",
             "tests/risk",
             "tests/execution",

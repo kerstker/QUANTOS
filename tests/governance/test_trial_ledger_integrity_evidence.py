@@ -72,6 +72,27 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
         assert payload["open_gaps"], "PARTIAL must enumerate what is still open"
     for gap in payload["open_gaps"]:
         assert gap["id"] and gap["requirement"] and gap["state"] and gap["detail"]
+    # P5-1 honest status: the two canonical entries ARE wired (code-level),
+    # while ledger coverage stays PARTIAL — both halves must be declared.
+    wiring = payload["provenance_wiring"]
+    assert wiring["available"] is True
+    assert wiring["registry_record_api"] is True
+    assert wiring["wired_entry_count"] == 2
+    assert wiring["entries"]["run_alpha_factory"]["wired"] is True
+    assert wiring["entries"]["run_registered_candidate_batch"]["wired"] is True
+    assert wiring["role"] == "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE"
+
+
+def test_provenance_wiring_reports_both_canonical_entries() -> None:
+    """The wiring detector must keep seeing both canonical entries — if the
+    hypothesis binding is ever removed from either signature, the artifact
+    must stop claiming the wiring exists."""
+    from scripts.generate_trial_ledger_integrity import _provenance_wiring
+
+    wiring = _provenance_wiring()
+    assert wiring["available"] is True
+    assert wiring["wired_entry_count"] == 2
+    assert all(entry["wired"] for entry in wiring["entries"].values())
 
 
 def test_generator_does_not_mutate_the_ledger(tmp_path) -> None:

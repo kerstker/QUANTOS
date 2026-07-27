@@ -257,6 +257,55 @@ def _family_testing_available() -> dict[str, Any]:
     }
 
 
+def _provenance_wiring() -> dict[str, Any]:
+    """Which search entry points WRITE §7.1 TrialRecords (code-level, verified).
+
+    The ledger numbers alone cannot show this: the production ledger only gains
+    provenance rows when a driver next runs through a wired entry, and the
+    historical trial population stays bare forever. So the wiring itself is
+    verified at the code level (same pattern as _family_testing_available):
+    the two canonical entries must accept the provenance kwargs and the
+    registry facade must expose record_trial_provenance. Runtime behavior is
+    pinned by tests/alpha_factory/test_trial_provenance_wiring.py.
+    """
+    import inspect
+
+    try:
+        from services.intelligence.registered_candidate_batch import (
+            run_registered_candidate_batch,
+        )
+        from services.research.alpha_factory import run_alpha_factory
+        from services.research.experiment_registry.registry import (
+            ExperimentRegistry,
+        )
+    except Exception as exc:  # pragma: no cover - import failure is the report
+        return {"available": False, "reason": f"IMPORT_FAILED:{exc}"}
+
+    entries: dict[str, Any] = {}
+    for name, fn in (
+        ("run_alpha_factory", run_alpha_factory),
+        ("run_registered_candidate_batch", run_registered_candidate_batch),
+    ):
+        params = inspect.signature(fn).parameters
+        entries[name] = {
+            "wired": "hypothesis_by_candidate" in params,
+            "hypothesis_binding": "hypothesis_by_candidate" in params,
+            "code_hash_pin": "code_hash" in params,
+        }
+    return {
+        "available": True,
+        "registry_record_api": hasattr(
+            ExperimentRegistry, "record_trial_provenance"
+        ),
+        "entries": entries,
+        "wired_entry_count": sum(1 for e in entries.values() if e["wired"]),
+        # Honest: these are the TWO canonical entries. The 15+ other research
+        # drivers that register bare config hashes remain unwired — see
+        # open_gaps. This section is a code-level fact, not ledger coverage.
+        "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
+    }
+
+
 def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -310,6 +359,7 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
             connection.close()
 
     report["family_multiple_testing"] = _family_testing_available()
+    report["provenance_wiring"] = _provenance_wiring()
     report["trial_record_fields_required"] = list(_TRIAL_RECORD_FIELDS)
 
     guards = report["ledger"]["append_only_guards"]
@@ -340,12 +390,19 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
         {
             "id": "TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT",
             "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
-            "state": "MECHANISM_LANDED_CALLERS_PENDING",
+            "state": "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING",
             "detail": (
-                "record_trial_provenance() exists and is chain-verified, but the "
-                "research drivers still register bare config hashes. Until each "
-                "entry point writes a TrialRecord, bare_trials stays non-zero and "
-                "this artifact stays PARTIAL."
+                "P5-1: the two canonical search entries "
+                "(services.research.alpha_factory.run_alpha_factory and "
+                "services.intelligence.registered_candidate_batch."
+                "run_registered_candidate_batch) now write a full TrialRecord "
+                "per registered candidate at registration time, pinned by "
+                "tests/alpha_factory/test_trial_provenance_wiring.py and "
+                "visible in provenance_wiring. Production rows appear as "
+                "drivers re-run through them. Still open: the 15+ other "
+                "research drivers register bare config hashes, and the entire "
+                "pre-P5-1 historical trial population is permanently bare — "
+                "bare_trials stays non-zero and this artifact stays PARTIAL."
             ),
         },
         {

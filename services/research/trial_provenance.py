@@ -323,3 +323,17 @@ def chain_head(records: Sequence[TrialProvenance]) -> str:
         head = record.entry_hash(head)
     return head
 
+
+def trial_id_for_attempt(research_session_id: str, config_hash: str) -> str:
+    """Deterministic attempt id for the canonical search entries.
+
+    One attempt = one (session, config) pair: a search session registers each
+    distinct config at most once, so this id is unique per recorded attempt and
+    stable on replay — no uuid, no wall clock. Two DIFFERENT sessions attempting
+    the same config still produce two rows joined to one trial, exactly as §7.2
+    requires ("重复候选也必须记账").
+    """
+    if not research_session_id or not config_hash:
+        raise ValueError("research_session_id and config_hash must be non-empty")
+    return f"{research_session_id}:{config_hash}"
+

@@ -26,6 +26,7 @@ from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.factor_set import incremental_ir
 from services.validation.performance import generalization_gap, sharpe
@@ -35,8 +36,18 @@ from . import cs_genome
 from .alpha_pipeline import _fields, run_alpha_asset_pipeline
 from .carry_pnl import economic_return_series
 from .expression_leakage import compute_leakage_ok
+from .trial_provenance import (
+    ActorType,
+    TrialProvenance,
+    TrialStatus,
+    trial_id_for_attempt,
+)
 
 _NEG_INF = float("-inf")
+
+# Truthful generator label for factory-produced TrialRecords: the deterministic
+# cs_genome evolutionary engine, not a language model (prompt_hash stays "").
+_FACTORY_MODEL_NAME = "cs_genome-evolution"
 
 
 def _score_expr(expr, panel, fwd_horizon, quantile, with_funding, basis, basis_min_overlap,
@@ -104,12 +115,22 @@ def run_alpha_factory(
     search_kind: Optional[str] = None,
     search_source: Optional[str] = None,
     ephemeral: bool = False,
+    hypothesis_by_candidate: Optional[Mapping[str, str]] = None,
+    code_hash: str = "",
 ) -> dict:
     """Run a selection-bearing factory search with durable trial provenance.
 
     Production callers must provide an experiment registry and explicit search
     identity. Tests may opt into a process-local run with ``ephemeral=True``;
     omission is never interpreted as permission to discard the trial population.
+
+    ``hypothesis_by_candidate`` (optional, keyed by alpha_id) binds each
+    candidate to its pre-registered 727 §8.1 Hypothesis id; candidates without
+    an entry record ``hypothesis_id=""`` HONESTLY — no hypothesis is ever
+    fabricated for a legacy caller. ``code_hash`` is the caller-supplied code
+    version pin (e.g. a git sha resolved by the driver); the deterministic core
+    does no filesystem/git IO itself, so the default "" means UNPINNED, not
+    "unknown but filled in".
     """
     if search_registry is None:
         if not ephemeral:
@@ -118,6 +139,8 @@ def run_alpha_factory(
             )
         if any(value is not None for value in (search_id, search_kind, search_source)):
             raise ValueError("ephemeral search must not declare persistent search identity")
+        if hypothesis_by_candidate is not None or code_hash:
+            raise ValueError("ephemeral search must not declare durable provenance pins")
         effective_catalog = catalog if catalog is not None else AlphaCatalog()
         return _run_alpha_factory_impl(
             panel,
@@ -164,6 +187,47 @@ def run_alpha_factory(
             registered_at=timestamp,
         )
 
+    hypotheses = dict(hypothesis_by_candidate) if hypothesis_by_candidate else {}
+    record_provenance = getattr(search_registry, "record_trial_provenance", None)
+
+    def persist_provenance(definitions, exprs) -> None:
+        """Write the 727 §7.1 TrialRecord for every registered candidate.
+
+        RECORDED is the only status the factory can attest honestly: it
+        registers and scores candidates but tracks NO per-candidate elimination
+        stage (alpha_id de-duplication happens BEFORE ledger registration and is
+        deliberately not fabricated into an ELIMINATED_DUPLICATE record).
+        record_trial_provenance is idempotent on trial_id, so a replayed run
+        never double-counts.
+        """
+        if record_provenance is None:
+            return
+        for definition, expr in zip(definitions, exprs):
+            record_provenance(
+                TrialProvenance(
+                    trial_id=trial_id_for_attempt(
+                        search_id, definition.definition_hash
+                    ),
+                    research_session_id=search_id,
+                    config_hash=definition.definition_hash,
+                    actor_id=search_source,
+                    actor_type=ActorType.AUTOMATED_SEARCH,
+                    status=TrialStatus.RECORDED,
+                    started_at=timestamp,
+                    completed_at=timestamp,
+                    hypothesis_id=hypotheses.get(definition.alpha_id, ""),
+                    model_name=_FACTORY_MODEL_NAME,
+                    factor_ids=definition.factor_ids,
+                    alpha_expression=ax.serialize(expr),
+                    canonical_expression=ax.serialize(ax.canonicalize(expr)),
+                    expression_hash=ax.alpha_id(expr),
+                    parameter_set=dict(definition.params),
+                    parameter_hash=stable_hash(dict(definition.params)),
+                    dataset_versions=(dataset_version,),
+                    code_hash=code_hash,
+                )
+            )
+
     try:
         result = _run_alpha_factory_impl(
             panel,
@@ -183,6 +247,7 @@ def run_alpha_factory(
             max_workers=max_workers,
             catalog=effective_catalog,
             candidate_recorder=persist_candidates,
+            provenance_recorder=persist_provenance,
         )
         recorded_run_ids = []
         for asset in result["pipeline"]["registry"].all_latest():
@@ -244,6 +309,7 @@ def _run_alpha_factory_impl(
     max_workers: Optional[int],
     catalog: AlphaCatalog,
     candidate_recorder: Optional[Callable[[Sequence[str]], None]] = None,
+    provenance_recorder: Optional[Callable[[Sequence, Sequence], None]] = None,
 ) -> dict:
     """Evolve cs-alphas scored by economic L/S Sharpe, then run the full pipeline over the elite set.
     `use_funding` defaults to True when the panel carries a 'funding' matrix (score = carry economic
@@ -308,6 +374,10 @@ def _run_alpha_factory_impl(
         config_hashes = [definition.definition_hash for definition in definitions]
         if candidate_recorder is not None:
             candidate_recorder(config_hashes)
+        if provenance_recorder is not None:
+            # 727 §7.1 TrialRecord per candidate, written BEFORE scoring (same
+            # registration-time semantics as candidate_recorder).
+            provenance_recorder(definitions, [e for _aid, e in todo])
         for config_hash in config_hashes:
             catalog.register_trial(config_hash)
         if executor is None:

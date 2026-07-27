@@ -1,0 +1,157 @@
+# Alpha Factory Phase 5 设计与 P 系列切片计划(727 §7 / §8)
+
+- 日期:2026-07-27
+- 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §7(TrialRecord / Trial
+  Ledger 规则 / 家族级多重检验)、§8(AI Alpha Factory:§8.1 可证伪假设 /
+  §8.2 受限 DSL / §8.3 分层漏斗 / §8.4 多模型分工)
+- 状态:**P5-1 落地(本提交)**——Hypothesis 核心 + Hypothesis Store +
+  TrialProvenance 接线进两个 canonical 搜索入口(27 测试);P5-2/P5-3 未做,
+  切片计划见 §3。
+- readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
+  路径,不触碰凭证,`services/` 内零网络 import、零 LLM 客户端;注册一个假设
+  或一条 TrialRecord 不改变任何评估门禁、mandate 或 live 路径(诊断非门禁)。
+
+## 1. 问题:假设只是字符串,TrialRecord 字段齐但零接线
+
+727 §7/§8 要求「每一次尝试都有完整 TrialRecord」且「AI 先生成可证伪假设」。
+今天的现实:
+
+1. **hypothesis 只有字符串**。W10 研究预算(`research_budget.py`)把
+   `parent_hypothesis` 作为一段自由文本随 run artifact 落盘——无结构、无
+   证伪条件、无经济机制校验。「禁止只有 Sharpe 可能更高的候选」(§8.1)
+   今天没有任何机器承载。
+2. **TrialProvenance 字段齐但零接线**。`services/research/trial_provenance.py`
+   的 frozen dataclass + entry_hash 链早已实现 §7.1 全部字段,
+   `experiment_registry` 的 `record_trial_provenance`(append-only 表 +
+   哈希链 + `trial_provenance_chain_valid()`)也早已落地——**但没有任何
+   驱动器调用它**。治理证据 `evidence/trial_ledger_integrity.json` 自我申报
+   PARTIAL:「drivers still register bare config hashes」,生产账本 2533 条
+   trial 全部 bare。
+3. **§8.4 四个 LLM 角色全缺**。Proposer / Implementation Auditor /
+   Statistical Challenger / Adversarial Reviewer 无任何代码面;
+   Deterministic Judge 角色约九成已由既有机器承载(evaluator 机读证据 →
+   固定政策 verdict、晋升门、BH-FDR ranker),缺的恰是「LLM 产出如何进入、
+   谁能做最终状态转换」的边界治理。
+4. **§8.3 分层漏斗只在文档里**。现有搜索入口(cs_genome 进化 /
+   registered batch)有注册与评估,但语义检查、数据可用性、PIT/lag、
+   逐层淘汰原因记录(ELIMINATED_* 漏斗阶段)未按漏斗组织。
+
+## 2. 设计裁定
+
+1. **新包 `services/alpha_factory/`,不塞进 `services/research` 平铺层**。
+   727 §8 直接点名这个包路径(hypothesis.py / hypothesis_store.py /
+   candidate_compiler.py / … 九个模块)。现有 `services/research/alpha_factory.py`
+   是单文件搜索引擎(cs_genome 驱动),命名撞车是历史事实;新包承载 §8 的
+   *假设-编译-搜索-挑战* 层,与 `services/factor_garden/`(§6)对称:每个
+   727 大节一个 services 侧包,纯核 + 薄边界,平铺研究模块保持不动。
+   依赖方向钉死:`services/alpha_factory` 不得 import `services/intelligence`
+   (编排方向相反),不得含任何 LLM 客户端。
+2. **Hypothesis 是不可变预注册声明**。`hypothesis_id` 由内容派生
+   ("hyp_" + sha256(身份字段)[:16])——改任何内容字段 = 新 id,这正是
+   预注册语义(试验跑完后编辑过的假设不是试验所测的假设)。`created_at_ms` /
+   `prompt_hash` 是「写下假设」这一行为的 provenance、不是声明内容,不进身份
+   哈希(与 factor garden 的 content-hash 决定同款);`creator_model` 进哈希
+   ——同一声明由不同 proposer 写下是不同谱系。
+3. **Store 只有 append**。`SqliteHypothesisStore` 与 maintenance_store /
+   experiment_registry 同款开库语义(create=False + 缺失即错、WAL、
+   busy_timeout、开库验证 append-only 触发器)、no-update/no-delete 触发器、
+   record 级哈希链。register 幂等:同 id 同内容 → 返回既有行;同 id 不同
+   内容 → `HypothesisConflictError` 大声抛出(内容派生 id 下这只能是哈希
+   碰撞或伪造 id,绝不静默)。
+4. **TrialProvenance 接线只做加法**。两个 canonical 入口
+   (`run_alpha_factory` / `run_registered_candidate_batch`)只新增可选
+   kwarg(`hypothesis_by_candidate` / `code_hash`),旧签名逐位兼容,全部
+   既有测试零修改通过。未提供 hypothesis 的候选 `hypothesis_id=""` 诚实记录
+   ——**绝不为 legacy 调用方编造假设**。状态只记 `RECORDED`:两个入口今天
+   不追踪逐候选淘汰阶段(alpha_id 去重发生在账本注册之前),不把未知编造
+   成 ELIMINATED_*;§8.3 漏斗阶段归 P5-2。
+5. **code_hash 由调用方供给**。代码库唯一的 git sha 助手在
+   `services/research_runner/runner.py::_git_sha`(被该模块测试大量
+   monkeypatch 钉死),`services/research` 反向 import 它会颠倒依赖方向,
+   且确定性核心不应自读 .git。故两个入口接受 `code_hash: str = ""` 可选
+   参数,默认 "" = UNPINNED 诚实标记,driver(tools/)负责解析并传入。
+6. **证据诚实翻转,不造假覆盖**。`trial_ledger_integrity.json` 的 verdict
+   保持 PARTIAL——历史 2533 条 bare trial 永远无法回溯覆盖,bare_trials>0
+   就不是 PASS(§22.13)。翻转的是**内容**:新增 `provenance_wiring` 代码级
+   验证段(与 `_family_testing_available` 同款模式:签名检查两个入口的
+   provenance kwarg + registry 记录 API),第一个 open_gap 状态从
+   `MECHANISM_LANDED_CALLERS_PENDING` 翻为
+   `CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING`,明确列出剩余缺口
+   (15+ 其他驱动器 + 历史总体)。**不向生产账本注入合成 trial**——账本是
+   DSR/PBO/FDR 分母,为让证据好看而写入的合成候选会污染泄气计数。
+
+## 3. P 系列切片计划
+
+| 切片 | 内容 | 状态 |
+|---|---|---|
+| **P5-1** | `services/alpha_factory/`:hypothesis.py(§8.1 全字段 + 内容派生 id + fail-closed builder)+ hypothesis_store.py(append-only 哈希链)+ economic_rules.py(可复用规则面);TrialProvenance 接线进两个 canonical 入口;trial-ledger 证据诚实翻转 | **本提交**(27 测试) |
+| P5-2 | candidate_compiler.py(Hypothesis → 受限 DSL 候选,§8.2:只允许 time-series/cross-sectional/lagged/residualization/regime 五类变换,深层随机表达式结构性拒绝)+ constrained_search_space.py(声明式搜索空间,与 W10 ResearchBudget 对接)+ candidate_deduplicator.py(canonicalize 去重,ELIMINATED_DUPLICATE 真记账)+ search_controller.py(§8.3 分层漏斗编排:语义检查→数据可用性→PIT/lag→粗筛→…,每层淘汰写 ELIMINATED_* 原因进 TrialRecord,复用 economic_rules 重检非本构造假设) | 未做 |
+| P5-3 | challenger.py + challenge_council.py(§8.4:Statistical Challenger / Adversarial Reviewer 的**结构化意见**对象,机读、可审计;ELIMINATED_CHALLENGE 漏斗阶段)+ LLM 边界治理落地(假设/挑战只能作为结构化数据经 tools/ 进入,Deterministic Judge + Governance Plane 垄断最终状态转换) | 未做 |
+
+切分原则:每片独立可测、独立入库、不依赖后片;P5-1 不预留「将来一定这样」
+的抽象(P5-2 的编译器可能反过来修正 Hypothesis 的字段选择,届时显式评审)。
+
+## 4. P5-1 实施记录(2026-07-27)
+
+### 4.1 `services/alpha_factory/`(新包)
+
+- `hypothesis.py`:frozen `Hypothesis`(§8.1 全部 14 字段)+
+  `HypothesisError` + `create_hypothesis`(内容派生 id、构造即过
+  economic_rules、文本长度/空白/非负 int 全 fail-closed)+
+  `hypothesis_content_hash`(stable_hash 覆盖身份字段)。
+- `hypothesis_store.py`:`SqliteHypothesisStore`(register 幂等 / get /
+  has / all 注册序确定 / count / chain_valid)+ `HypothesisConflictError` /
+  `HypothesisNotFoundError`;表 `hypotheses` 六列 + 双触发器。
+- `economic_rules.py`:`check_hypothesis_rules` 返回违规码元组(空=通过):
+  HYP_MECHANISM_TOO_SHORT(≥20 字符)、HYP_NO_FALSIFICATION、
+  HYP_NO_DIRECTION、HYP_NO_FACTORS、HYP_VAGUE_FALSIFICATION(<10 字符或
+  无数字/比较符提示,**UNCALIBRATED 启发式**,文档钉死)、HYP_NO_PROVENANCE。
+  builder 构造时复用;独立成模块是为了 P5-2 的 search_controller 能重检
+  非本构造的假设(从 store 读回的、tools/ 传入的)。
+
+### 4.2 TrialProvenance 接线(两个 canonical 入口)
+
+- `run_alpha_factory`:新增可选 `hypothesis_by_candidate`(按 alpha_id 键)
+  与 `code_hash`;`_run_alpha_factory_impl` 新增 `provenance_recorder`
+  回调,与 `candidate_recorder` 同点(评分**之前**)触发——失败的评分器
+  同样抹不掉已记账的尝试。每候选一条 TrialRecord:
+  model_name="cs_genome-evolution"(真实生成器,非 LLM)、
+  canonical_expression=serialize(canonicalize(expr))、
+  parameter_hash=stable_hash(params)、dataset_versions=(dataset_version,)、
+  trial_id=`<search_id>:<config_hash>`(内容派生,重放幂等——
+  record_trial_provenance 同 id 返回 False)。
+- `run_registered_candidate_batch`:同款接线。DSL 候选经 deserialize →
+  canonicalize 派生 canonical_expression/expression_hash,**非 DSL 候选
+  诚实记 ""**(不编造表达式身份);model_name="" 诚实(本入口只评估,
+  生成器是外部 driver)。
+- 状态纪律:两个入口今天只 attests `RECORDED`——它们不追踪逐候选淘汰
+  阶段,不把未知编造成 ELIMINATED_*(§8.3 漏斗阶段归 P5-2)。
+- `services/research/trial_provenance.py` 新增 `trial_id_for_attempt`
+  纯函数,两个入口共享同一 id 约定;两个不同 session 尝试同一 config 仍
+  产生两行(§7.2「重复候选也必须记账」,测试钉死)。
+
+### 4.3 证据翻转(`evidence/trial_ledger_integrity.json`)
+
+- before:`open_gaps[0].state = "MECHANISM_LANDED_CALLERS_PENDING"`,
+  detail = "the research drivers still register bare config hashes"。
+- after:`open_gaps[0].state = "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING"`,
+  新增 `provenance_wiring` 段(两入口 wired=true、registry_record_api=true、
+  role=CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE)。
+- verdict **保持 PARTIAL**:bare_trials=2533 不变(历史总体永久 bare +
+  15+ 其他驱动器未接线,全部列入 open_gaps,不声称全覆盖)。
+- 门禁测试强化而非放松:artifact 测试新增 wiring 段钉死(两入口
+  wired==true、wired_entry_count==2),篡改链仍 BLOCKED、bare 总体仍
+  PARTIAL、全覆盖仍可 PASS 的全部旧断言一字未动。
+
+## 5. LLM 边界治理原则(727 §8.4,P5-1 即钉死)
+
+1. **`services/` 永不持有模型客户端**。无网络 import 由治理扫描机器钉死;
+   LLM 调用只能发生在 tools/(gate 外),产出只能是**结构化数据**
+   (Hypothesis 的 §8.1 字段、挑战意见的结构化对象)。
+2. **最终状态转换永远归 Deterministic Judge + Governance Plane**。
+   语言模型可以提议假设、提交挑战,但 PASS/FAIL、晋级、淘汰写账只能由
+   读机器证据、按固定政策判定的确定性组件完成——LLM 投票不是状态机输入。
+3. **provenance 强制**。LLM 产出的假设进入 store 时必须带
+   `creator_model` + `prompt_hash`;人类假设用 `creator_model="human"`。
+   TrialRecord 的 model_name/prompt_hash 同理——「这个候选是谁造的」永远
+   可审计。

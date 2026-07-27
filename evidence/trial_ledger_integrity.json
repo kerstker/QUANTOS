@@ -1,6 +1,6 @@
 {
   "block_reasons": [],
-  "commit": "3c990d67dd1c7d9c0b5f5ed9f22560dbf2c578ea",
+  "commit": "bb566c2ad32d8b13ce81622b70bb663e813b935a",
   "family_multiple_testing": {
     "available": true,
     "exported": [
@@ -13,7 +13,7 @@
     "role": "DIAGNOSTIC_NOT_GATE",
     "wired_into_promotion_gate": false
   },
-  "generated_at_ms": 1785126417634,
+  "generated_at_ms": 1785159311846,
   "ledger": {
     "append_only_guards": {
       "evaluations": "GUARDED",
@@ -39,10 +39,10 @@
   "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
   "open_gaps": [
     {
-      "detail": "record_trial_provenance() exists and is chain-verified, but the research drivers still register bare config hashes. Until each entry point writes a TrialRecord, bare_trials stays non-zero and this artifact stays PARTIAL.",
+      "detail": "P5-1: the two canonical search entries (services.research.alpha_factory.run_alpha_factory and services.intelligence.registered_candidate_batch.run_registered_candidate_batch) now write a full TrialRecord per registered candidate at registration time, pinned by tests/alpha_factory/test_trial_provenance_wiring.py and visible in provenance_wiring. Production rows appear as drivers re-run through them. Still open: the 15+ other research drivers register bare config hashes, and the entire pre-P5-1 historical trial population is permanently bare \u2014 bare_trials stays non-zero and this artifact stays PARTIAL.",
       "id": "TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT",
       "requirement": "727 \u00a77.2 \u2014 all AI, manual and sweep attempts enter one ledger",
-      "state": "MECHANISM_LANDED_CALLERS_PENDING"
+      "state": "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING"
     },
     {
       "detail": "services/alpha/family_testing.py implements the two-stage hierarchy, family-adjusted trial count and marginal IR. It is not yet the lens used by the promotion guard, which still applies the flat BH/BHY lens.",
@@ -69,6 +69,24 @@
     "reason": "PROVENANCE_SCHEMA_NOT_YET_MIGRATED",
     "status_counts": {},
     "table_present": false
+  },
+  "provenance_wiring": {
+    "available": true,
+    "entries": {
+      "run_alpha_factory": {
+        "code_hash_pin": true,
+        "hypothesis_binding": true,
+        "wired": true
+      },
+      "run_registered_candidate_batch": {
+        "code_hash_pin": true,
+        "hypothesis_binding": true,
+        "wired": true
+      }
+    },
+    "registry_record_api": true,
+    "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
+    "wired_entry_count": 2
   },
   "readiness": "L2_DRY_RUN_ONLY",
   "schema_version": 1,

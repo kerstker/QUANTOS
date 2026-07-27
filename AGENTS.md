@@ -358,6 +358,24 @@ Real, tested backend engines (`*_TESTED` in the audit):
   Phase 4 验收对照表(factor_id/version ✓ / 历史实时同逻辑 ✓ / 依赖失败传播
   暂停 ✓ / 物化 ✓ / 家族聚类 ✓)见设计文档 §9
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
+- `services/alpha_factory/` — **Alpha Factory P5-1(727 §7/§8,2026-07-27,27 测试)**:
+  `hypothesis.py`(§8.1 全字段 frozen Hypothesis + 内容派生 id「hyp_+sha256[:16]」+
+  fail-closed builder——「Sharpe 可能更高」类候选构造即拒)+ `hypothesis_store.py`
+  (append-only 哈希链预注册账本,register 幂等,同 id 不同内容 HypothesisConflictError
+  大声抛)+ `economic_rules.py`(可复用规则面:HYP_MECHANISM_TOO_SHORT/
+  HYP_VAGUE_FALSIFICATION(UNCALIBRATED 启发式)等 6 码,P5-2 search_controller
+  重检非本构造假设用)。**TrialProvenance 零接线已消灭**:两个 canonical 搜索入口
+  (`run_alpha_factory` / `run_registered_candidate_batch`)在注册时每候选写一条完整
+  §7.1 TrialRecord(只做加法,旧签名逐位兼容;model_name 诚实——cs_genome-evolution /
+  "" 非编造;状态只 RECORDED,不编造 ELIMINATED_*;`trial_id_for_attempt` 共享 id
+  约定,重复候选跨 session 双行记账 §7.2)。`evidence/trial_ledger_integrity.json`
+  诚实翻转:新增 provenance_wiring 代码级验证段,open_gap 翻
+  CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING,verdict 保持 PARTIAL(历史 2533
+  bare trial 永久不可回溯 + 15+ 其他驱动器未接线,全列 open_gaps;不向生产账本
+  注合成 trial 污染 DSR 分母)。边界:services/ 零 LLM 客户端,假设只能作结构化
+  数据经 tools/ 进入,最终状态转换归 Deterministic Judge + Governance(727 §8.4)。
+  设计文档 `docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md`
+  (P5-1..P5-3 切片计划)。诊断非门禁。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only
