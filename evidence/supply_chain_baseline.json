@@ -118,7 +118,7 @@
     "deploy/console.Dockerfile": "150758fff700f6e2ded912d5d49eee145b621085e4cf6158c4298e82e519ebcb",
     "evidence/event_schema_catalog.json": "e1ae52b636bcca9d978ee4f224dcea4209e231613fcbbc1ed9691b902a17eb7b",
     "evidence/reproducibility/container_build_latest.json": "43f58c4a27a6263bf8ad112704636d7b98ab06bfbffc794f87b08be653e39217",
-    "evidence/service_import_graph.json": "29685dda70e3a8c7df79f792f6a959680b7ede7579eb84747a0c03117ea84c79",
+    "evidence/service_import_graph.json": "123f5d14f71f1ea49dbca173b777d74a1dba0cf21981c26ca5808f4e2b3718a2",
     "evidence/vulnerability/actions_osv_latest.json": "d353c31fb30bfae01418b8deadb6bafe08d5440be8a258f63889c7031e78fcab",
     "evidence/vulnerability/container_trivy_latest.json": "bd1c6bd0f67ebf967271e40efb91206f8dce7035f2bb4414651229650e493ceb",
     "evidence/vulnerability/npm_audit_latest.json": "c111eba06e7739182708c9b76cde9ad1fd7052e2ac2045972d50de6fd757a1cf",

@@ -254,17 +254,6 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/{features,execution,monitoring,deployment}/` — leakage detector +
   feature registry; execution boundary + intent builder; hash-chained audit log +
   health; fail-closed deployment/version-pin gate. All tested.
-- `services/orchestration/` — **Autonomy Kernel(727 §2.5/§4.2,Phase 2,K1 已落地)**:
-  `command_envelope.py`(§4.2 CommandEnvelope 冻结值,payload_hash=stable_hash 强校验)+
-  `idempotency.py`(`SqliteCommandLog`:UNIQUE(command_type,idempotency_key) 幂等受理,
-  同 key 同 payload 重试返回既有行、异 payload 冲突即拒;RECEIVED→COMPLETED/FAILED
-  CAS 状态机,哈希链迁移重链,终态不可变,in_flight 上面崩溃悬挂命令,**绝不自动
-  重试**)+ `command_bus.py`(六步流:版本乐观锁(写日志前拒)→ 幂等 begin →
-  COMPLETED 重放直接回存证结果(handler 不跑 = 「重复命令不产生重复副作用」)→
-  handler → publish_once(causation_id=command_id,命令→事件因果链)→ complete;
-  事件无 bus 即拒)。确定性(时间全由调用方给)、无网络、单节点诚实边界(非跨主机
-  共识)。K2 leader_lease / K3 scheduler / K4 workflow·policy·recovery 见设计文档
-  `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`。
 - `services/lifecycle/` — **三个正交状态机(727 §3/§11,C1–C3 已落地)**:把混合的
   `AlphaState` 拆为 `research_state`(研究是否成立)/ `deployment_state`(跑在哪里,
   唯一带人类专属边的机器:进入 MICRO_LIVE/LIVE 必须真人 + Grant,L2 下
@@ -281,6 +270,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
   C4(console 三维展示)已落地:lifecycle-monitor 行带三态 + triple_source
   provenance(STORED/PROJECTED/SYNTHETIC/UNKNOWN),前端 R/D/H 列,契约测试锁定。
+- `services/orchestration/` — **727 §2.5 自治内核(K1+K2 已落地,41 测试)**:
+  K1 `command_envelope`(727 §4.2 信封,stable_hash fail-closed)+
+  `idempotency.py::SqliteCommandLog`(持久幂等命令日志,RECEIVED→COMPLETED/FAILED
+  CAS 状态机,重链哈希链,in_flight 只上面绝不自动重试)+ `command_bus.py`
+  (幂等受理→handler→publish_once 因果事件→落结果;重复命令不产生重复副作用)。
+  K2 `leader_lease.py::SqliteLeaderLeaseStore`(单实例 Leader + fencing token +
+  任务租约:token 单调递增释放不归零,stale leader 的 require_owner/renew/release
+  一律 fence,过期判定 now>=expires)。确定性核心(时间全为调用方 int ms)、
+  无网络、**单节点诚实边界——非跨主机共识(post-L2)**。设计文档
+  `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`(K 系列切片计划;
+  K3 scheduler/K4 workflow/recovery 未做)。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only

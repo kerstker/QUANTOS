@@ -3,8 +3,9 @@
 - 日期:2026-07-27
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §2.5(自治内核)、§4.2
   (CommandEnvelope)、§0.4.8(未知订单/在飞状态绝不盲目重试)
-- 状态:**K1 已落地**(command_envelope + idempotency 持久命令日志 + command_bus,
-  `services/orchestration/`,21 测试)。K2–K4 为后续切片,见 §3。
+- 状态:**K1、K2 已落地**(K1:command_envelope + idempotency 持久命令日志 +
+  command_bus;K2:leader_lease 单实例 Leader + fencing token + 任务租约,
+  `services/orchestration/`,41 测试)。K3–K4 为后续切片,见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import。
 
@@ -49,7 +50,7 @@
 | 切片 | 内容 | 状态 |
 |---|---|---|
 | **K1** | `command_envelope` + `idempotency`(SqliteCommandLog)+ `command_bus` | **本提交** |
-| K2 | `leader_lease`:单节点领导租约(多实例防双活;SQLite CAS,确定性时钟注入) | 未做 |
+| K2 | `leader_lease`:单节点领导租约(多实例防双活;SQLite CAS,确定性时钟注入) | **已落地(2026-07-27)** |
 | K3 | `scheduler`:持久化调度器,missed-run 补跑语义,与 leader_lease 联动 | 未做 |
 | K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | 未做 |
 
@@ -113,7 +114,34 @@ CommandBus 执行链上的崩溃窗口与裁决:
 结果保真度边界:重放路径返回 `json.loads` 后的值,结果必须 JSON 可往返
 (tuple 会变成 list)——调用方责任,已在 docstring 声明。
 
-## 6. 明确非目标(K1 不做,单独评审)
+## 6. K2 实施记录(leader_lease,2026-07-27)
+
+`services/orchestration/leader_lease.py` — `SqliteLeaderLeaseStore`,与
+`SqliteCommandLog` 同款打开语义与重链哈希链(每个 resource 一行,获得/续期/
+释放/易主重写该行并按 seq 级联重链;DELETE 触发器禁止;篡改库打开即拒,
+测试钉死)。表 `leader_leases` 可与 command log 共库(不同表)。
+
+语义裁定(逐条对应 727 §16「单实例 Leader + fencing token + 任务租约」):
+
+1. **同 owner acquire 幂等、不延期**:持有中同 owner 再 acquire 返回当前
+   lease,token 不变、expires 不动——延期只能走 `renew`,防止「隐式续命」
+   掩盖「忘记 renew」的 bug。
+2. **释放不删行、token 不归零**:released=1 保留行与 token;再获得(同/异
+   owner、过期易主同理)token 一律 +1。token 归零会让「旧 token 又被发出」
+   的 fencing 证明失效,这是 fencing 的数学根基,不可省。
+3. **过期判定 `now_ms >= expires_at_ms`**:到期瞬间即过期(测试钉死边界);
+   不引入 grace period——宽限期是部署策略,不属于原语。
+4. **fencing 闸门 = `require_owner`**:无 lease/易主/token 旧/已过期/已释放
+   一律 `LeaderLeaseFencedError`——stale leader 写不进。release 不卡过期
+   (自己的租约自己收尾),但 token 失配仍 fence。
+5. **单节点诚实边界**:防的是本机多实例/崩溃重启后的僵尸执行者,**不是**
+   跨主机共识(无 quorum、无网络);墙钟跳变会让「过期」判定失真,本机
+   单调性由部署环境保证;fencing token 是否写进下游 store 的 CAS 条件是
+   各消费方的事(K3 起接入)。
+6. 确定性核心:now_ms/lease_ms 全部调用方传入的非负/正整数,无墙钟、
+   无随机、无后台线程(不自动续约——续约节奏属于 K3 调度器)。
+
+## 7. 明确非目标(K1/K2 不做,单独评审)
 
 - **跨主机共识/真分布式选主**:单节点诚实边界;跨主机是 post-L2(Phase 14)。
 - **真调度器接生产任务**:K3 才建,且仍需人工评审其 missed-run 语义。
@@ -122,8 +150,9 @@ CommandBus 执行链上的崩溃窗口与裁决:
 - **自动恢复/自动重试**:见 §5 规则 3;恢复层是 K4 的独立设计。
 - **命令侧跨进程 outbox 派合**:事件发布复用既有 DurableEventBus(其自身
   at-least-once 语义不变),K1 不新增第六条 outbox。
+- **租约自动续约/看门狗线程**:确定性核心不起线程;续约节奏是 K3 调度器的事。
 
-## 7. L2 边界声明
+## 8. L2 边界声明
 
 - 五个安全旗标、live/order/凭证路径:**零触碰**。
 - `services/orchestration/` 仅 import stdlib + `quantos.contracts` +
