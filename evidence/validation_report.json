@@ -1,8 +1,8 @@
 {
-  "checks_manifest_sha256": "a75b4f94570b7bac27cbd90fa5c4976cde36b982eb7187ee280417f0b249e132",
-  "commit": "b0504ba49e3598cdcc3b8bf679d760853f59392f",
-  "duration_ms": 308166,
-  "generated_at_ms": 1785146430458,
+  "checks_manifest_sha256": "4ff69096a6ee208d7c59d1cbd8bf13cae8d3492f86b3ca982939e7d82f368229",
+  "commit": "fb904c0ab9ba8334ab7071bc75cbb2dc4c2b2e16",
+  "duration_ms": 216164,
+  "generated_at_ms": 1785154147454,
   "overall_status": "PASS",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -17,7 +17,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 149,
+      "duration_ms": 96,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -30,7 +30,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 108,
+      "duration_ms": 88,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -43,7 +43,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 153,
+      "duration_ms": 110,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -56,7 +56,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 126,
+      "duration_ms": 90,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -69,7 +69,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 119,
+      "duration_ms": 89,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -82,7 +82,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 289,
+      "duration_ms": 225,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -95,7 +95,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 827,
+      "duration_ms": 621,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -108,7 +108,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 268,
+      "duration_ms": 221,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -121,7 +121,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 260,
+      "duration_ms": 206,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -135,7 +135,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 522,
+      "duration_ms": 436,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -148,7 +148,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1474,
+      "duration_ms": 1267,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -161,7 +161,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 119,
+      "duration_ms": 74,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -173,7 +173,7 @@
         "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 372,
+      "duration_ms": 306,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -185,7 +185,7 @@
         "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1849,
+      "duration_ms": 1501,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -204,6 +204,7 @@
         "tests/alpha",
         "tests/lifecycle",
         "tests/orchestration",
+        "tests/factor_garden",
         "tests/portfolio",
         "tests/risk",
         "tests/execution",
@@ -218,7 +219,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 230266,
+      "duration_ms": 165419,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -235,7 +236,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 43396,
+      "duration_ms": 29627,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -248,7 +249,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4679,
+      "duration_ms": 2664,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -261,7 +262,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 8215,
+      "duration_ms": 4061,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -273,7 +274,7 @@
         "test"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 7868,
+      "duration_ms": 4571,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -286,7 +287,7 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 7097,
+      "duration_ms": 4483,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -317,7 +318,7 @@
     "frontend: production build"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1785146122292,
+  "started_at_ms": 1785153931290,
   "summary": {
     "errored": 0,
     "failed": 0,
@@ -326,5 +327,5 @@
     "timed_out": 0
   },
   "timeout_seconds": 1800.0,
-  "validate_script_sha256": "ea5fab3d71b251b53910f8e050f20512a5fa4631d726803172a8ff304191ce07"
+  "validate_script_sha256": "ea01fb2ac592519bc13e8dd9558b4f3b888af34e4e5a669575ea4180980475ed"
 }
