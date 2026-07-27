@@ -2,9 +2,9 @@
 
 - 日期：2026-07-27
 - 依据：[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §3（三个正交状态机）、§11（生命周期控制器）
-- 状态：**C1（核心机器 + 测试）、C2（双写持久化）与 C3（health 机器接入
-  维护链路）已落地**,C4（console 三维展示）待做。落地分 4 个独立提交,
-  见 §6;实施记录见 §7.1/§7.2/§7.3（C3 含行为变化评审清单）。
+- 状态：**C1–C4 全部落地**(C1 核心机器 / C2 双写持久化 / C3 health 机器接入
+  维护链路 / C4 console 三维展示)。落地分 4 个独立提交，见 §6；实施记录见
+  §7.1/§7.2/§7.3（C3 含行为变化评审清单）。
 - readiness：L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标，不新增任何真实下单路径。
 - 前置：[`2026-07-27-trial-provenance-and-family-fdr-design.md`](2026-07-27-trial-provenance-and-family-fdr-design.md) §9 把本项列为下一最高优先级。
 
@@ -352,6 +352,19 @@ C3 唯一真实调用者是 health 机器的 de-risk 耦合（内联实现）,�
 测试 `tests/lifecycle/test_c3_health_machine.py`（13）。旧套件
 （tests/alpha 185 + tests/tools + console 契约）**零修改通过** ——
 证明 legacy 可见行为逐位不变。
+
+## 7.4 C4 落地记录（2026-07-27）—— 只读展示
+
+- `/api/v1/console/lifecycle-monitor` 每行新增 `research_state` /
+  `deployment_state` / `health_state` / `health_reason` + `triple_source`
+  （STORED=双写列 / PROJECTED=旧态投影 / SYNTHETIC=合成行 / UNKNOWN=不可读,
+  字段诚实为 null)。当前 66 行未迁移库以 PROJECTED 服务 —— §18.2 的
+  provenance 要求落在行级。
+- 前端 `LifecycleMonitor.tsx` 新增「三态 研究/部署/健康」列(健康非 HEALTHY
+  标红、带原因码、tooltip 标来源);mock 行带 SYNTHETIC 标记。
+- 契约两侧同提交:TS `LifecycleRow` + `tests/research/
+  test_console_api_contract.py::test_lifecycle_monitor_rows_expose_the_three_orthogonal_machines`。
+- 零行为变化:纯只读投影,不触碰任何写路径。
 
 ## 8. 明确非目标
 

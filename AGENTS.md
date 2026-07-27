@@ -268,7 +268,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   HEALTHY 恢复刻意未接线(§11.3 人门)。持久化:C2 双写 + C3 `lossy_json` 第 7 列,
   发散三元组完整往返。行为变化评审清单见设计文档 §7.3
   `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
-  C4(console 三维展示)待做。
+  C4(console 三维展示)已落地:lifecycle-monitor 行带三态 + triple_source
+  provenance(STORED/PROJECTED/SYNTHETIC/UNKNOWN),前端 R/D/H 列,契约测试锁定。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only
