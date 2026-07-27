@@ -62,6 +62,10 @@ class SchedulerConflictError(SchedulerError):
     """A task_id re-registration carries different registration fields."""
 
 
+class SchedulerStateError(SchedulerError):
+    """An illegal scheduler state transition was attempted (e.g. reviving a live task)."""
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scheduler_tasks (
   seq INTEGER NOT NULL UNIQUE,
@@ -545,6 +549,50 @@ class SqliteSchedulerStore:
             ).fetchall()
             return tuple(self._task_from_row(row) for row in rows)
 
+    def revive(self, task_id: str, *, now_ms: int) -> ScheduledTask:
+        """DLQ 任务显式复活(recovery 层调用;人工驱动的显式动作,绝不自动)。
+
+        dead=0 / attempts=0;INTERVAL → next_due = now_ms + interval_ms;
+        ONE_SHOT → enabled=1, next_due = now_ms。非 dead → SchedulerStateError。
+        复活不是槽位兑现,**不进** scheduler_runs(outcome 枚举只承载兑现语义);
+        防篡改由 tasks 重链承担,复活后的行迁移完整入链。
+        """
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise ValueError("task_id must be a non-empty string")
+        now_ms = self._require_now(now_ms)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._verify_locked()
+                row = self._get_task_row_locked(task_id)
+                if row is None:
+                    raise SchedulerError(f"unknown task: {task_id}")
+                if not row["dead"]:
+                    raise SchedulerStateError(
+                        f"revive requires a dead (DLQ) task: {task_id}"
+                    )
+                if row["kind"] == "INTERVAL":
+                    self._conn.execute(
+                        "UPDATE scheduler_tasks SET dead=0, attempts=0, next_due_ms=?"
+                        " WHERE task_id=?",
+                        (now_ms + int(row["interval_ms"]), task_id),
+                    )
+                else:
+                    self._conn.execute(
+                        "UPDATE scheduler_tasks SET dead=0, attempts=0, enabled=1,"
+                        " next_due_ms=? WHERE task_id=?",
+                        (now_ms, task_id),
+                    )
+                self._rechain_tasks_locked(from_seq=int(row["seq"]))
+                self._conn.commit()
+                updated = self._get_task_row_locked(task_id)
+                assert updated is not None
+                return self._task_from_row(updated)
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
     # ------------------------------------------------------------------ 运行记录
 
     def record_run(
@@ -837,5 +885,6 @@ __all__ = [
     "SchedulerConflictError",
     "SchedulerError",
     "SchedulerRun",
+    "SchedulerStateError",
     "SqliteSchedulerStore",
 ]

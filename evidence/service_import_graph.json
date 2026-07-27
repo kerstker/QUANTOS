@@ -631,6 +631,11 @@
     {
       "references": [
         {
+          "line": 19,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/autonomy_kernel.py"
+        },
+        {
           "line": 41,
           "module": "services.monitoring.event_bus",
           "path": "services/orchestration/command_bus.py"
@@ -1045,7 +1050,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "cf065da230d3934dc89a69820afbb6f302a7239f6644ff77a09f3f1011af5cc8",
+  "graph_sha256": "a276492c7885480ab54012d7dfc4b855bc69b80b848ca7fb5d2a2d13525b9162",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 18,
   "nodes": [
@@ -1081,7 +1086,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 344,
+  "source_file_count": 347,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

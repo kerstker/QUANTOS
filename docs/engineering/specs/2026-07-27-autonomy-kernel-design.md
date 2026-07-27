@@ -3,11 +3,11 @@
 - 日期:2026-07-27
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §2.5(自治内核)、§4.2
   (CommandEnvelope)、§0.4.8(未知订单/在飞状态绝不盲目重试)
-- 状态:**K1–K3 + K4a 已落地**(K1:command_envelope + idempotency 持久命令日志 +
-  command_bus;K2:leader_lease 单实例 Leader + fencing token + 任务租约;
-  K3:scheduler 持久化确定性调度器;K4a:policy_engine + event_router,
-  `services/orchestration/`,84 测试)。K4b(workflow_engine / recovery /
-  autonomy_kernel 门面)为后续切片,见 §3。
+- 状态:**K1–K4 全部落地,727 Phase 2 自治内核完成**(K1:command_envelope +
+  idempotency 持久命令日志 + command_bus;K2:leader_lease;K3:scheduler;
+  K4a:policy_engine + event_router;K4b:workflow_engine + recovery +
+  autonomy_kernel 门面,`services/orchestration/`,106 测试)。Phase 2 验收
+  对照见 §11.4。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import。
 
@@ -54,7 +54,7 @@
 | **K1** | `command_envelope` + `idempotency`(SqliteCommandLog)+ `command_bus` | **本提交** |
 | K2 | `leader_lease`:单节点领导租约(多实例防双活;SQLite CAS,确定性时钟注入) | **已落地(2026-07-27)** |
 | K3 | `scheduler`:持久化调度器,missed-run 补跑语义,与 leader_lease 联动 | **已落地(2026-07-27)** |
-| K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | **K4a 已落地**(policy_engine + event_router,2026-07-27);K4b(workflow/recovery/门面)未做 |
+| K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | **全部落地**(K4a 2026-07-27;K4b 2026-07-27) |
 
 切分原则:每片独立可测、独立入库、不依赖后片;K1 不预留「将来一定这样」的
 抽象(K3 的调度语义可能反过来修正 K1 的 API,届时显式评审)。
@@ -268,3 +268,69 @@ DurableEventBus 已有 append/replay/subscribe/消费组;本模块补「类型�
 5. **replay_from 对账**:经 `bus.records(since_seq=)`(bus 自带先验链)
    逐条 dispatch,返回 {dispatched, scanned, last_seq} 供恢复层增量对账;
    中途异常原样中止,恢复层按 last_seq 重跑。
+
+## 11. K4b 实施记录(workflow_engine + recovery + autonomy_kernel,2026-07-27)
+
+### 11.1 workflow_engine(持久化多步工作流)
+
+`SqliteWorkflowStore` 三链:definitions(追加链,UPDATE/DELETE 双禁——定义
+注册后不可改,同 type 异 version/steps → WorkflowConflictError,运行中实例
+绑注册时的 version)、instances(重链链,DELETE 禁)、step_runs(追加链,
+双禁)。转换表机器钉死:PENDING→RUNNING;RUNNING→COMPLETED|FAILED|HALTED;
+FAILED→RUNNING(resume);HALTED→RUNNING(resume);COMPLETED 终态。
+
+语义裁定:
+
+1. **attempt 编 key**(与 K3 同法):command_id/idempotency_key =
+   `wf:{instance}:{step}:{attempt}`,attempt = 该 (instance, step_idx) 已失败
+   次数。K1 FAILED 终态不换 key 不重跑,attempt 编 key 后每次重试是逻辑新
+   命令,K1「每条命令至多执行一次」不变。
+2. **实例级隔离,不外抛**:步骤失败 → step_run FAILED + 实例 FAILED +
+   error=异常类型名,run_next 正常返回;一个实例失败不拖垮其他实例
+   (测试钉死)。
+3. **resume 必须显式**:FAILED/HALTED → RUNNING 只经 resume;run_next 对
+   FAILED/HALTED/COMPLETED 一律 WorkflowStateError——失败后的重跑永远是
+   一个可审计的显式动作,绝不是静默副作用。
+4. **崩溃恢复链(测试端到端钉死)**:命令卡 RECEIVED → run_next 上抛
+   CommandBusError(绝不盲目重跑)→ recovery.resolve_in_flight
+   (MARK_FAILED)→ run_next(撞 FAILED 终态,实例记 FAILED)→ resume →
+   run_next(attempt+1 新 key,executor 重跑)。每一步显式,没有一步自动。
+5. **HALTED 保留**:本切片无 halt API(人工暂停是未来需求);转换边与
+   resume 路径已钉死可用。
+6. start 的 actor 校验类型但不落库(实例表无 actor 列;步骤执行时的 actor
+   经 CommandEnvelope 进命令日志,那里才是承重审计)。
+
+### 11.2 recovery(上面 + 显式处置)
+
+`inspect_kernel` 纯读聚合四面:在飞命令 / DLQ 任务 / RUNNING 工作流 /
+活动租约(为 K2/K3 补了加法 API:`active_leases(now_ms)`、
+`SchedulerStateError` + `store.revive`)。`resolve_in_flight` 是在飞命令的
+**唯一**处置入口,本切片只支持 MARK_FAILED(error_class=
+"RECOVERY_MARKED")——**为什么不自动重跑**:卡 RECEIVED 的命令 handler
+副作用未知,§0.4.8「未知状态绝不盲目处置」;标失败 = 把「未知」显式降级
+为「已知失败」,重跑 = 换新 idempotency_key 显式重提(K1 已支持),是
+调用方/人工的决定。`revive_task` = DLQ 显式复活(人工驱动;复活不是槽位
+兑现,不进 scheduler_runs,防篡改由 tasks 重链承担)。
+
+### 11.3 autonomy_kernel(门面 = 组合根)
+
+`open_kernel(path, create=)` 共开一个 sqlite 文件装配全部组件;**显式偏差
+登记**:任务书规格列四个 store 共库,实际五个——event_bus 一并共库,让
+executor 产出的事件有处可去(kernel.router 可 replay_from 同一总线);各
+store 均 `CREATE TABLE IF NOT EXISTS`,表名互不冲突,依次打开即可。
+门面只转发(run_once → Scheduler 走 leader 门;recovery_report →
+inspect_kernel),不含新逻辑。
+
+### 11.4 727 Phase 2 验收对照
+
+| 727 Phase 2 验收 | 实现 | 钉死测试 |
+|---|---|---|
+| 命令幂等 | K1 SqliteCommandLog begin 幂等 + CommandBus 重放不回 handler | `test_execute_runs_handler_exactly_once_on_replay` 等 |
+| 事件可重放 | DurableEventBus records/replay(既有)+ K4a EventRouter.replay_from 增量对账 | `test_replay_since_seq_scans_only_new_events` 等 |
+| 状态转换有 guard | K4b 工作流转换表(机器钉死,非法即 WorkflowStateError)+ K1 命令 CAS 终态不可变 | `test_illegal_transitions_are_rejected`、`test_terminal_states_are_immutable` |
+| 单实例执行 | K2 fencing lease + K3/K4b 经 require_owner 门,非 leader 全 SKIPPED | `test_stale_leader_is_fenced_everywhere`、`test_non_leader_records_skipped_and_never_executes` |
+| 崩溃后恢复 | K1 in_flight 上面 + K4b recovery 显式处置链 + 各 store 重开持久化 | `test_crash_in_flight_recovers_via_explicit_path`、`test_persisted_across_reopen_shared_file` |
+
+Phase 2 任务清单八项全部有落点:Event Router(K4a)、Command Bus(K1)、
+Workflow Engine(K4b)、State Machine(K1 命令 CAS + K4b 工作流转换表)、
+Policy Engine(K4a)、Idempotency(K1)、Leader Lease(K2)、Recovery(K4b)。

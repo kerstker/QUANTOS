@@ -270,7 +270,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
   C4(console 三维展示)已落地:lifecycle-monitor 行带三态 + triple_source
   provenance(STORED/PROJECTED/SYNTHETIC/UNKNOWN),前端 R/D/H 列,契约测试锁定。
-- `services/orchestration/` — **727 §2.5 自治内核(K1–K3 + K4a 已落地,84 测试)**:
+- `services/orchestration/` — **727 §2.5 自治内核(K1–K4 全部落地,106 测试,
+  Phase 2 完成)**:
   K1 `command_envelope`(727 §4.2 信封,stable_hash fail-closed)+
   `idempotency.py::SqliteCommandLog`(持久幂等命令日志,RECEIVED→COMPLETED/FAILED
   CAS 状态机,重链哈希链,in_flight 只上面绝不自动重试)+ `command_bus.py`
@@ -285,10 +286,17 @@ Real, tested backend engines (`*_TESTED` in the audit):
   非法 verdict 绝不放行,ABSTAIN≠FAIL,evidence_hash 只经 create;不迁移任何
   现有判定器)+ `event_router.py`(声明式类型→handler 路由表,多 handler 注册序,
   RouterDispatchError 聚合不回滚,at-least-once 幂等是 handler 责任,replay_from
-  增量对账)。确定性核心(时间全为调用方
+  增量对账)。K4b `workflow_engine.py`(持久化多步工作流:三链存储 + 转换表
+  guard,PENDING→RUNNING→COMPLETED|FAILED|HALTED,resume 显式,attempt 编 key,
+  崩溃恢复链=in_flight 上面→MARK_FAILED→resume→新 key 重跑,实例级隔离不外抛)
+  + `recovery.py`(inspect_kernel 纯读聚合四悬挂面;resolve_in_flight 唯一处置
+  入口仅 MARK_FAILED——未知绝不盲目重跑;revive_task DLQ 显式复活)
+  + `autonomy_kernel.py`(组合根门面,五 store 共一 sqlite 文件,run_once/
+  recovery_report 转发,无新逻辑)。确定性核心(时间全为调用方
   int ms,不起线程)、无网络、**单节点诚实边界——非跨主机共识(post-L2)**。
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
-  (K 系列切片计划;K4b workflow/recovery/门面未做)。
+  (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
+  有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only

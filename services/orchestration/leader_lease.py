@@ -429,6 +429,17 @@ class SqliteLeaderLeaseStore:
                 return None
             return self._lease_from_row(row)
 
+    def active_leases(self, *, now_ms: int) -> tuple[LeaderLease, ...]:
+        """所有未释放且未过期的租约,按 resource 字典序(recovery 层审计面)。"""
+        now_ms = self._require_now(now_ms)
+        with self._lock:
+            self._verify_locked()
+            rows = self._conn.execute(
+                f"{_SELECT} WHERE released=0 AND expires_at_ms>? ORDER BY resource",
+                (now_ms,),
+            ).fetchall()
+            return tuple(self._lease_from_row(row) for row in rows)
+
     def _require_fenced_row_locked(
         self, lease: LeaderLease, *, now_ms: int
     ) -> sqlite3.Row:

@@ -11,11 +11,17 @@ Honest boundary(诚实边界):
 K1 = command_envelope + idempotency(持久命令日志)+ command_bus;
 K2 = leader_lease(单实例 Leader + fencing token + 任务租约);
 K3 = scheduler(持久化确定性调度器:leader 门控 + 幂等补跑 + 错过合并 + DLQ);
-K4a = policy_engine(统一策略评估接口 + 决策记录)+ event_router(声明式事件路由)。
-workflow_engine / recovery / autonomy_kernel 门面见设计文档 K 系列切片计划,尚未提供。
+K4a = policy_engine(统一策略评估接口)+ event_router(声明式事件路由);
+K4b = workflow_engine(持久化多步工作流,崩溃可恢复)+ recovery(上面+显式处置)
+     + autonomy_kernel 门面(组合根,五 store 共库)。727 Phase 2 内核完成。
 """
 from __future__ import annotations
 
+from services.orchestration.autonomy_kernel import (
+    KERNEL_RESOURCE,
+    AutonomyKernel,
+    open_kernel,
+)
 from services.orchestration.command_bus import (
     CommandBus,
     CommandBusError,
@@ -53,16 +59,38 @@ from services.orchestration.policy_engine import (
     PolicyError,
     PolicyNotFoundError,
 )
+from services.orchestration.recovery import (
+    RESOLUTIONS,
+    KernelRecoveryReport,
+    RecoveryError,
+    inspect_kernel,
+    resolve_in_flight,
+    revive_task,
+)
 from services.orchestration.scheduler import (
     ScheduledTask,
     Scheduler,
     SchedulerConflictError,
     SchedulerError,
     SchedulerRun,
+    SchedulerStateError,
     SqliteSchedulerStore,
+)
+from services.orchestration.workflow_engine import (
+    SqliteWorkflowStore,
+    WorkflowConflictError,
+    WorkflowDefinition,
+    WorkflowEngine,
+    WorkflowError,
+    WorkflowInstance,
+    WorkflowNotFoundError,
+    WorkflowStateError,
+    WorkflowStep,
+    WorkflowStepRun,
 )
 
 __all__ = [
+    "AutonomyKernel",
     "CommandBus",
     "CommandBusError",
     "CommandConflictError",
@@ -72,6 +100,8 @@ __all__ = [
     "CommandRecord",
     "CommandStateError",
     "EventRouter",
+    "KERNEL_RESOURCE",
+    "KernelRecoveryReport",
     "LeaderLease",
     "LeaderLeaseBusyError",
     "LeaderLeaseError",
@@ -81,6 +111,8 @@ __all__ = [
     "PolicyEngine",
     "PolicyError",
     "PolicyNotFoundError",
+    "RESOLUTIONS",
+    "RecoveryError",
     "RouterConflictError",
     "RouterDispatchError",
     "RouterError",
@@ -89,9 +121,24 @@ __all__ = [
     "SchedulerConflictError",
     "SchedulerError",
     "SchedulerRun",
+    "SchedulerStateError",
     "SqliteCommandLog",
     "SqliteLeaderLeaseStore",
     "SqliteSchedulerStore",
+    "SqliteWorkflowStore",
     "StateVersionConflictError",
     "VERDICTS",
+    "WorkflowConflictError",
+    "WorkflowDefinition",
+    "WorkflowEngine",
+    "WorkflowError",
+    "WorkflowInstance",
+    "WorkflowNotFoundError",
+    "WorkflowStateError",
+    "WorkflowStep",
+    "WorkflowStepRun",
+    "inspect_kernel",
+    "open_kernel",
+    "resolve_in_flight",
+    "revive_task",
 ]
