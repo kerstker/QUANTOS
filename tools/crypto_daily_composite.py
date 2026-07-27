@@ -34,7 +34,9 @@ from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 
 FWD_HORIZON = 1
 # the composite: the dominant trend-proximity family (+ a momentum leg for diversification)
-COMPOSITE = (("dist_from_high", 7), ("dist_from_high", 14), ("dist_from_high", 30), ("momentum", 7))
+# F2 (2026-07-27): MOVED to services/factor_garden/canonical.py (single source of truth,
+# shared with dry_run_trend_multi); re-exported here under the historical name.
+from services.factor_garden.canonical import TREND_COMPOSITE_EXPRESSION as COMPOSITE
 # single-factor pool the composite competes against in the OOS selection
 SINGLES = (("dist_from_high", 7), ("dist_from_high", 14), ("dist_from_high", 30),
            ("accel", 14), ("momentum", 7))

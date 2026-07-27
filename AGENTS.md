@@ -297,8 +297,8 @@ Real, tested backend engines (`*_TESTED` in the audit):
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
   (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
   有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
-- `services/factor_garden/` — **Factor Garden F1(727 §6/Phase 4,2026-07-27 落地,
-  22 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+- `services/factor_garden/` — **Factor Garden F1+F2(727 §6/Phase 4,2026-07-27 落地,
+  22+11 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
   (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
   provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
   13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
@@ -308,9 +308,19 @@ Real, tested backend engines (`*_TESTED` in the audit):
   只含身份字段,created_at_ms 不进哈希)+ `registry.py`(薄边界包
   `SqliteFeatureRegistryStore`——garden 不变量边界复检纵深防御,owner=creator_actor,
   content hash 进 lineage 审计;store 只加 `all_items()` 只读,持久化/哈希链全复用)。
+  **F2 canonical 因子收敛**:`canonical.py` —— 生产因子表达式的单一真源从 tools/ 移入
+  services 侧(CARRY/CROWD_CONTRA/TOP_CONTRA/TREND_COMPOSITE + 共享 `legs` 账本构造器 +
+  `FUNDING_FIELD`),消灭全部逐字双份(CARRY 3 份、CROWD_CONTRA 10 份、TOP_CONTRA 4 份、
+  trend 2 份、_legs 2 份;移动前逐位验证相同,15 个 tools 模块改为导入并以历史名
+  re-export,对象同一性测试钉死);`CANONICAL_FACTORS`(3 个 DSL 原生因子的 F1 garden
+  定义,真经济假说 + 真数据集 id)+ `register_canonical_factors`(幂等,冲突 raise,
+  驱动器调用非 import 时)。QUANTILE 0.2(离线)/0.3(live)分叉**不统一**,以
+  `CARRY_QUANTILE_OFFLINE`/`CARRY_QUANTILE_LIVE` 命名常量诚实记录(人工决策)。
+  诚实边界:trend 的生产形式是 SIGNAL_OPS pair-tuple(与 tuple DSL 不逐位等价),
+  故只收敛常量、**不在** CANONICAL_FACTORS(DSL 原生 trend 注册是独立评审切片)。
   确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁:注册因子不驱动任何晋级/下单**。
-  F2–F5(canonical 因子收敛/materializer §6.2/offline_online_parity+dependency_graph/
-  family_cluster)计划见设计文档
+  F3–F5(materializer §6.2/offline_online_parity+dependency_graph/family_cluster)
+  计划见设计文档
   `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —

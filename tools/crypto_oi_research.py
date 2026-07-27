@@ -31,14 +31,16 @@ _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _OI = os.path.join("data", "cache", "crypto_oi_metrics.json")
 _OUT = os.path.join("data", "cache", "crypto_oi_research.json")
 
-QUANTILE = 0.3            # top/bottom 30% — the OI universe is ~24 liquid majors (thinner than the 115)
+QUANTILE = 0.3            # top/bottom 30% — the OI universe is ~24 liquid majors (thinner than the 115);
+                          # = services.factor_garden.canonical.CARRY_QUANTILE_LIVE (the 0.2 offline-book
+                          # divergence is deliberately NOT unified — recorded in canonical.py)
 MIN_DAYS = 300           # only include a ticker with at least this many OI days
 OI_FIELDS = ("oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 
-FUND = ("field", "funding")
-def _zneg(op, w): return ("cs_zscore", ("neg", (op, FUND, w)))
-CARRY = ("div", ("add", ("add", _zneg("decay_linear", 3), _zneg("decay_linear", 7)),
-                 ("add", _zneg("decay_linear", 14), _zneg("ts_mean", 7))), ("const", 4.0))
+# F2 (2026-07-27): CARRY and the shared _legs book-builder MOVED to the single source of
+# truth services/factor_garden/canonical.py (identical to crypto_carry_strategy.COMPOSITE —
+# the verbatim duplicate is killed); re-exported here under the historical names.
+from services.factor_garden.canonical import CARRY_COMPOSITE_EXPRESSION as CARRY, legs as _legs
 
 # Positioning-factor hypotheses (economic priors), both directions where ambiguous. cs root => PIT-safe.
 def _f(name, expr, thesis): return {"name": name, "expr": expr, "thesis": thesis}
@@ -55,21 +57,6 @@ FACTORS = [
                                        ("ts_delta", ("log", ("field", "close")), 5))), "OI up while price flat/down = short build"),
     _f("dtop_ls5",     ("cs_zscore", ("ts_delta", ("field", "top_ls"), 5)),           "change in top-trader positioning"),
 ]
-
-
-def _legs(sig_row, q):
-    idx = [i for i, v in enumerate(sig_row) if v is not None]
-    if len(idx) < 4:
-        return {}
-    idx.sort(key=lambda i: sig_row[i])
-    k = max(1, int(round(len(idx) * q)))
-    longs, shorts = idx[-k:], idx[:k]
-    w = {}
-    for i in longs:
-        w[i] = 0.5 / len(longs)
-    for i in shorts:
-        w[i] = w.get(i, 0.0) - 0.5 / len(shorts)
-    return w
 
 
 def _returns(sig, px, fund_mat, q=QUANTILE):

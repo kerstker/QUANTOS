@@ -4,8 +4,9 @@
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §6(Factor Garden:
   §6.1 FactorDefinition / §6.2 FactorObservation / §6.3 offline-online 一致性 /
   §6.4 因子家族)、§8.1(无经济解释的表达式禁令)
-- 状态:**F1 已落地(本提交)**——契约加宽 + `services/factor_garden/`
-  (definitions + registry 边界,22 测试);F2–F5 计划见 §3。
+- 状态:**F1+F2 已落地**——F1:契约加宽 + `services/factor_garden/`
+  (definitions + registry 边界,22 测试);F2(本提交):canonical 因子收敛
+  (`canonical.py`,11 测试),tools/ 双份定义全部消灭;F3–F5 计划见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import;注册一个因子不改变任何评估
   门禁、mandate 或 live 路径(诊断非门禁)。
@@ -70,7 +71,7 @@
 | 切片 | 内容 | 状态 |
 |---|---|---|
 | **F1** | 契约加宽(FeatureDefinition §6.1 字段 + FactorFamily)+ `services/factor_garden/`(definitions + registry 边界,store `all_items()` 只读加法) | **本提交** |
-| F2 | canonical 因子收敛:tools/ 双份定义(CARRY 双份、crowd_contra 决策行三套)移入 services 侧注册;QUANTILE 0.2 vs 0.3 分叉**诚实记录为两个版本**,不擅自统一 | 计划 |
+| F2 | canonical 因子收敛:tools/ 双份定义(CARRY 双份、crowd_contra 决策行三套)移入 services 侧注册;QUANTILE 0.2 vs 0.3 分叉**诚实记录为两个版本**,不擅自统一 | **本提交** |
 | F3 | materializer + feature_values schema v2:§6.2 FactorObservation 落盘面(+computed_at/dataset_version/materializer_version/quality_verdict) | 计划 |
 | F4 | offline_online_parity + dependency_graph + health:同一核心计算函数不同窗口适配器的 parity test;dataset BLOCK → factor STALE 传播(泛化 forward_track_advance 的语义) | 计划 |
 | F5 | family_cluster:§6.4 家族维度聚类,接入 W3 簇图;显式建立 FactorFamily ↔ 组合风险维映射 | 计划 |
@@ -126,17 +127,77 @@
   (id, version) 拒、set_status 进哈希链历史、边界拒手工缺字段定义、
   跨重开持久化(tmp_path, create=False 重开)、content hash 进审计 lineage。
 
-## 5. 明确非目标(F1 不做,单独评审)
+## 5. F2 实施记录(2026-07-27,canonical 因子收敛)
+
+### 5.1 移动了什么(全部逐位不变,移动非调参)
+
+- 新模块 `services/factor_garden/canonical.py`(纯常量 + 纯函数,import 时零 IO):
+  `CARRY_COMPOSITE_EXPRESSION` / `CROWD_CONTRA_EXPRESSION` / `TOP_CONTRA_EXPRESSION` /
+  `TREND_COMPOSITE_EXPRESSION` / `FUNDING_FIELD` / `legs(sig_row, q)` /
+  `CANONICAL_FACTORS` / `register_canonical_factors`。
+- **消灭的双份/多份定义**(移动前已逐一验证逐位相同):
+  - `crypto_oi_research.CARRY` ≡ `crypto_carry_strategy.COMPOSITE`(serialize/alpha_id
+    均相同,机器验证)→ 两文件改为从 canonical 导入并以历史名 re-export;
+    `binance_usdc_alpha_retest.CARRY`(第三份 frozen 副本)同样收敛。
+  - `_legs` 两份副本(`crypto_oi_research` / `crypto_carry_strategy`)经
+    `inspect.getsource` 逐字节验证相同 → 唯一 `canonical.legs`,两文件别名 re-export。
+  - `CROWD_CONTRA` 10 份逐字副本(`crypto_oi_verify` + binance_usdc_alpha_retest/
+    crypto_combo_book/crypto_factory_{intraday,loop,orthogonal,overfit_ab}/
+    crypto_funding_interactions/crypto_oi_survivorship/crypto_positioning_divergence)
+    与 `TOP_CONTRA` 4 份(crypto_oi_verify/binance_usdc_alpha_retest/crypto_combo_book/
+    forward_track_advance)→ 全部改为 canonical 导入。
+  - 趋势 composite 双份(`crypto_daily_composite.COMPOSITE` ≡
+    `dry_run_trend_multi._COMPOSITE`)→ `TREND_COMPOSITE_EXPRESSION`。
+  - 对象同一性(非仅相等)由测试钉死:15 个 tools 模块的历史名全部 `is` canonical
+    常量,既有 importer/测试零改动。
+- `CANONICAL_FACTORS`(3 个 F1 garden 定义:carry_composite=FUNDING_CARRY /
+  crowd_contra、top_contra=POSITIONING_CROWDING):真经济假说、
+  required_datasets 指向工具实际消费的数据集 id(crypto_funding /
+  crypto_funding_rates / crypto_oi_metrics)、frequency=1d、universe 与
+  ic_panel_registry 口径一致、creator_actor="quantos-research"、created_at_ms=0。
+- `register_canonical_factors(registry, *, recorded_at_ms)`:幂等(同定义已注册 →
+  skip;同 (id, version) 不同定义 → raise);由驱动器调用,import 时不执行。
+
+### 5.2 QUANTILE 分叉记录(不统一,人工决策)
+
+- `CARRY_QUANTILE_OFFLINE = 0.2`(`crypto_carry_strategy.QUANTILE`,115 币资金费宇宙
+  离线 book)与 `CARRY_QUANTILE_LIVE = 0.3`(`crypto_oi_research.QUANTILE`,~24 币 OI
+  宇宙,经 live_track_advance 进 live 轨道)——两个数字背后是不同的前向证据积累,
+  F2 仅以两个显式命名常量记录于 canonical.py 模块 docstring,**不统一**;统一是行为
+  变更,留人工决策。
+
+### 5.3 诚实边界:trend 不在 CANONICAL_FACTORS
+
+趋势 composite 的生产形式是 `SIGNAL_OPS` (op, window) pair-tuple,经
+`ic_panel.signal_composite` 消费——其语义(缺口跳过式历史累积、all-or-nothing
+子信号门槛、≥3 有效才 z-score)与 tuple DSL 的 `ts_*` 矩阵行窗口**不逐位等价**;
+`build_factor_definition` 强制 DSL,把 trend 硬塞进 CANONICAL_FACTORS 会是再推导而非
+移动,违背本切片「逐位不变」纪律。故 F2 只把 pair-tuple 形式收敛为单一真源
+(`TREND_COMPOSITE_EXPRESSION`),DSL 原生 trend 因子的注册是另一个显式评审的切片。
+
+### 5.4 测试(`tests/factor_garden/test_canonical.py`,11)
+
+CANONICAL_FACTORS 过 F1 全不变量;expression_hash = 同 tuple 的 alpha_id(身份跨移动
+保持);**dedup 证明**(两 carry 名 resolve 到同一对象);trend/crowd/top 同名对象同一性;
+QUANTILE 分叉两值钉死;`legs` 语义合成数据钉死 + tools 别名同一性;
+register_canonical_factors 全新注册/幂等重开/冲突 raise/输入校验。
+回填验证:`tests/tools -k "carry or crowd or oi or trend or dry_run"`(95)、
+`tests/factor_garden + tests/tools + tests/research`、
+`tests/governance` 全绿。
+
+## 6. 明确非目标(F1/F2 不做,单独评审)
 
 1. **不统一 QUANTILE 0.2 vs 0.3 分叉**——那是行为变更(两个数字背后是不同的
-   前向证据积累),需人工决策;F2 只把两份定义注册为两个版本并诚实记录。
+   前向证据积累),需人工决策;F2 已把两值以显式命名常量
+   (`CARRY_QUANTILE_OFFLINE`/`CARRY_QUANTILE_LIVE`)诚实记录于 canonical.py,
+   统一留人工。
 2. **不接 console**——Phase 11 的事;F1 无 HTTP 面。
 3. **不迁移 factor_engine**——字符串 AST 编译器维持隔离/死码现状,删除或重建
    是独立决策(与 quarantined `trading/pre_trade_risk` 同款处置)。
 4. **不驱动物化**——F3 才落 §6.2;F1 的注册表只登记定义,不产生因子值。
 5. **不接任何晋级/下单路径**——诊断非门禁立场不变。
 
-## 6. L2 边界声明
+## 7. L2 边界声明
 
 - 五个安全旗标、live-order 路径、凭证零触碰;`services/factor_garden` 零网络
   import(治理扫描机器钉死)。

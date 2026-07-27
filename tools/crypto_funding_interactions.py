@@ -22,7 +22,8 @@ from services.intelligence.reward import generalization_gap
 from tools.crypto_oi_research import build_panel, _returns, _rank_ic, CARRY
 
 _OUT = os.path.join("data", "cache", "crypto_funding_interactions.json")
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
 
 FUND = ("field", "funding")
 # the smoothed carry z-score core, reused inside interactions

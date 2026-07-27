@@ -25,8 +25,11 @@ from services.alpha.population_optimizer import (
 from tools.crypto_oi_research import build_panel, CARRY
 from tools.crypto_oi_verify import _streams, _per_year
 
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
-TOP_CONTRA = ("cs_zscore", ("neg", ("field", "top_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import (
+    CROWD_CONTRA_EXPRESSION as CROWD_CONTRA,
+    TOP_CONTRA_EXPRESSION as TOP_CONTRA,
+)
 _OUT = os.path.join("data", "cache", "crypto_combo_book.json")
 
 

@@ -62,7 +62,8 @@ _SYSTEMIC_STALE_FRAC = 0.2                          # >20% ticker 落后 = 系�
 # gates.  Registering it here does not promote it or authorize trading; it only
 # lets a clean future data-admission run start a separately attributable paper
 # clock instead of silently dropping the third candidate.
-TOP_CONTRA = ("cs_zscore", ("neg", ("field", "top_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
 # 2026-07-24 预注册 crowd_contra 变体族(evidence/crowd_contra_variants.json;17 trial 含基线重跑,
 # 相对判定 7 个非基线 CANDIDATE)注册于此,只做**前向 paper 证据积累**——不晋级、不授权交易、不碰
 # live 轨道(_STRATEGIES/mandate/attestation 一字未动)。dict 值 = 变体 spec(expr/quantile/

@@ -16,6 +16,19 @@ Honest boundaries:
 """
 from quantos.contracts.feature import FactorFamily
 
+from .canonical import (
+    CANONICAL_FACTOR_VERSION,
+    CANONICAL_FACTORS,
+    CARRY_COMPOSITE_EXPRESSION,
+    CARRY_QUANTILE_LIVE,
+    CARRY_QUANTILE_OFFLINE,
+    CROWD_CONTRA_EXPRESSION,
+    FUNDING_FIELD,
+    TOP_CONTRA_EXPRESSION,
+    TREND_COMPOSITE_EXPRESSION,
+    legs,
+    register_canonical_factors,
+)
 from .definitions import (
     FactorDefinitionError,
     build_factor_definition,
@@ -24,9 +37,20 @@ from .definitions import (
 from .registry import FactorGardenRegistry
 
 __all__ = [
+    "CANONICAL_FACTOR_VERSION",
+    "CANONICAL_FACTORS",
+    "CARRY_COMPOSITE_EXPRESSION",
+    "CARRY_QUANTILE_LIVE",
+    "CARRY_QUANTILE_OFFLINE",
+    "CROWD_CONTRA_EXPRESSION",
+    "FUNDING_FIELD",
     "FactorDefinitionError",
     "FactorFamily",
     "FactorGardenRegistry",
+    "TOP_CONTRA_EXPRESSION",
+    "TREND_COMPOSITE_EXPRESSION",
     "build_factor_definition",
     "factor_content_hash",
+    "legs",
+    "register_canonical_factors",
 ]

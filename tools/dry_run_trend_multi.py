@@ -30,7 +30,9 @@ _DAILY_DB = os.path.join("data", "cache", "crypto_daily.db")
 _SNAP = os.path.join("data", "cache", "crypto_research_snapshot.json")
 _OUT = os.path.join("data", "cache", "dry_run.db")
 _AUM = 1_000_000.0
-_COMPOSITE = (("dist_from_high", 7), ("dist_from_high", 14), ("dist_from_high", 30), ("momentum", 7))
+# F2 (2026-07-27): the trend composite MOVED to services/factor_garden/canonical.py
+# (single source of truth, shared with crypto_daily_composite); alias keeps the local name.
+from services.factor_garden.canonical import TREND_COMPOSITE_EXPRESSION as _COMPOSITE
 _Q = 0.2
 _COST_BPS = 10.0  # representative liquid-crypto one-way (the daily tool swept 3–70bps; 10 is mid-realistic)
 

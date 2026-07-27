@@ -27,7 +27,8 @@ from tools.search_trial_registry import (
     production_experiment_registry,
 )
 
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
 FIELDS = ("close", "volume", "funding", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 WINDOWS = (3, 7, 14, 30)
 QUANTILE = 0.3

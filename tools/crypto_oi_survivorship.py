@@ -31,7 +31,8 @@ from tools.crypto_oi_research import _legs, _OI, MIN_DAYS
 SURVIVORS = set(DEFAULT_TICKERS)
 DEAD = ["LUNA", "FTT", "SRM", "ANT", "BTS", "SC", "RAY", "CVC", "BLZ", "FOOTBALL",
         "HNT", "TOMO", "AGIX", "MATIC", "OCEAN", "KEY", "CTK"]
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
 CAP = 0.50  # winsorize a daily leg return at +/-50% (a collapse short cannot realistically pay more)
 _OUTS = os.path.join("data", "cache", "crypto_oi_survivorship.json")
 

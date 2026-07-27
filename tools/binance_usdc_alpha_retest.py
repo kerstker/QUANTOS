@@ -77,22 +77,15 @@ DEFAULT_TAKER_BPS = 4.0
 DEFAULT_PARTICIPATION = 0.10
 DEFAULT_OUTPUT = os.path.join("data", "cache", "binance_usdc_alpha_retest.json")
 
-FUNDING = ("field", "funding")
-
-
-def _zneg(op: str, window: int):
-    return ("cs_zscore", ("neg", (op, FUNDING, window)))
-
-
-# This is the frozen expression used by the existing carry research path.
-CARRY = (
-    "div",
-    ("add", ("add", _zneg("decay_linear", 3), _zneg("decay_linear", 7)),
-     ("add", _zneg("decay_linear", 14), _zneg("ts_mean", 7))),
-    ("const", 4.0),
+# F2 (2026-07-27): the frozen CARRY/CROWD_CONTRA/TOP_CONTRA expressions MOVED to the single
+# source of truth services/factor_garden/canonical.py (they were verbatim duplicates of
+# crypto_oi_research.CARRY / crypto_oi_verify.CROWD_CONTRA/TOP_CONTRA); re-exported here
+# under the historical names — values stay tuple-identical, pinned by test.
+from services.factor_garden.canonical import (
+    CARRY_COMPOSITE_EXPRESSION as CARRY,
+    CROWD_CONTRA_EXPRESSION as CROWD_CONTRA,
+    TOP_CONTRA_EXPRESSION as TOP_CONTRA,
 )
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
-TOP_CONTRA = ("cs_zscore", ("neg", ("field", "top_ls")))
 EXPRESSIONS = {
     "carry_oi_majors": CARRY,
     "crowd_contra": CROWD_CONTRA,

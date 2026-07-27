@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "flow": "THREE_ALPHA_PAPER_FLOW",
-  "started_at": 1785149873587,
-  "finished_at": 1785149873803,
+  "started_at": 1785151193475,
+  "finished_at": 1785151193704,
   "readiness": "L2_DRY_RUN_ONLY",
   "stages": {
     "public_forward": {

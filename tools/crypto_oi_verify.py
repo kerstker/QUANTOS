@@ -29,8 +29,12 @@ from services.research.factor_set import select_synergistic_set, incremental_ir
 
 from tools.crypto_oi_research import build_panel, CARRY, _legs, _rank_ic, _OUT  # reuse the real pipeline
 
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
-TOP_CONTRA = ("cs_zscore", ("neg", ("field", "top_ls")))
+# F2 (2026-07-27): CROWD_CONTRA / TOP_CONTRA MOVED to the single source of truth
+# services/factor_garden/canonical.py; re-exported here under the historical names.
+from services.factor_garden.canonical import (
+    CROWD_CONTRA_EXPRESSION as CROWD_CONTRA,
+    TOP_CONTRA_EXPRESSION as TOP_CONTRA,
+)
 CROWD_FOLLOW = ("cs_rank", ("field", "global_ls"))
 _OUTV = os.path.join("data", "cache", "crypto_oi_verify.json")
 
