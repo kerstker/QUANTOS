@@ -634,6 +634,11 @@
           "line": 41,
           "module": "services.monitoring.event_bus",
           "path": "services/orchestration/command_bus.py"
+        },
+        {
+          "line": 31,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/event_router.py"
         }
       ],
       "source": "orchestration",
@@ -1040,7 +1045,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "e3b34ec93a96a61c66fc96ebac1da93f7bbf679575c5d4b3ae32ffc552f63e79",
+  "graph_sha256": "cf065da230d3934dc89a69820afbb6f302a7239f6644ff77a09f3f1011af5cc8",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 18,
   "nodes": [
@@ -1076,7 +1081,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 342,
+  "source_file_count": 344,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

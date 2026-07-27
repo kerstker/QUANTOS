@@ -10,8 +10,9 @@ Honest boundary(诚实边界):
 
 K1 = command_envelope + idempotency(持久命令日志)+ command_bus;
 K2 = leader_lease(单实例 Leader + fencing token + 任务租约);
-K3 = scheduler(持久化确定性调度器:leader 门控 + 幂等补跑 + 错过合并 + DLQ)。
-workflow_engine / recovery 等见设计文档 K 系列切片计划,本包尚未提供。
+K3 = scheduler(持久化确定性调度器:leader 门控 + 幂等补跑 + 错过合并 + DLQ);
+K4a = policy_engine(统一策略评估接口 + 决策记录)+ event_router(声明式事件路由)。
+workflow_engine / recovery / autonomy_kernel 门面见设计文档 K 系列切片计划,尚未提供。
 """
 from __future__ import annotations
 
@@ -23,6 +24,12 @@ from services.orchestration.command_bus import (
 from services.orchestration.command_envelope import (
     CommandEnvelope,
     CommandEnvelopeError,
+)
+from services.orchestration.event_router import (
+    EventRouter,
+    RouterConflictError,
+    RouterDispatchError,
+    RouterError,
 )
 from services.orchestration.idempotency import (
     CommandConflictError,
@@ -37,6 +44,14 @@ from services.orchestration.leader_lease import (
     LeaderLeaseError,
     LeaderLeaseFencedError,
     SqliteLeaderLeaseStore,
+)
+from services.orchestration.policy_engine import (
+    VERDICTS,
+    PolicyConflictError,
+    PolicyDecision,
+    PolicyEngine,
+    PolicyError,
+    PolicyNotFoundError,
 )
 from services.orchestration.scheduler import (
     ScheduledTask,
@@ -56,10 +71,19 @@ __all__ = [
     "CommandLogError",
     "CommandRecord",
     "CommandStateError",
+    "EventRouter",
     "LeaderLease",
     "LeaderLeaseBusyError",
     "LeaderLeaseError",
     "LeaderLeaseFencedError",
+    "PolicyConflictError",
+    "PolicyDecision",
+    "PolicyEngine",
+    "PolicyError",
+    "PolicyNotFoundError",
+    "RouterConflictError",
+    "RouterDispatchError",
+    "RouterError",
     "ScheduledTask",
     "Scheduler",
     "SchedulerConflictError",
@@ -69,4 +93,5 @@ __all__ = [
     "SqliteLeaderLeaseStore",
     "SqliteSchedulerStore",
     "StateVersionConflictError",
+    "VERDICTS",
 ]

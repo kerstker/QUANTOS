@@ -270,7 +270,7 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
   C4(console 三维展示)已落地:lifecycle-monitor 行带三态 + triple_source
   provenance(STORED/PROJECTED/SYNTHETIC/UNKNOWN),前端 R/D/H 列,契约测试锁定。
-- `services/orchestration/` — **727 §2.5 自治内核(K1–K3 已落地,65 测试)**:
+- `services/orchestration/` — **727 §2.5 自治内核(K1–K3 + K4a 已落地,84 测试)**:
   K1 `command_envelope`(727 §4.2 信封,stable_hash fail-closed)+
   `idempotency.py::SqliteCommandLog`(持久幂等命令日志,RECEIVED→COMPLETED/FAILED
   CAS 状态机,重链哈希链,in_flight 只上面绝不自动重试)+ `command_bus.py`
@@ -280,10 +280,15 @@ Real, tested backend engines (`*_TESTED` in the audit):
   一律 fence,过期判定 now>=expires)。K3 `scheduler.py`(持久化确定性调度器:
   leader 门控兑现 + SKIPPED_NOT_LEADER 审计、按计划时刻推进不漂移、错过补跑合并
   COALESCED 诚实留痕、幂等补跑=K1 重放(key 编 attempts)、确定性退避 + DLQ
-  只上面、未知结果大声抛出;三 store 可共库)。确定性核心(时间全为调用方
+  只上面、未知结果大声抛出;三 store 可共库)。K4a `policy_engine.py`(统一
+  策略评估接口:注册确定性纯函数,fail-closed 三规则——未注册/判定器异常/
+  非法 verdict 绝不放行,ABSTAIN≠FAIL,evidence_hash 只经 create;不迁移任何
+  现有判定器)+ `event_router.py`(声明式类型→handler 路由表,多 handler 注册序,
+  RouterDispatchError 聚合不回滚,at-least-once 幂等是 handler 责任,replay_from
+  增量对账)。确定性核心(时间全为调用方
   int ms,不起线程)、无网络、**单节点诚实边界——非跨主机共识(post-L2)**。
   设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
-  (K 系列切片计划;K4 workflow/recovery 未做)。
+  (K 系列切片计划;K4b workflow/recovery/门面未做)。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only

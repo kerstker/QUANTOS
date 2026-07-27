@@ -3,10 +3,11 @@
 - 日期:2026-07-27
 - 依据:[`docs/QUANTOS_727.md`](../../QUANTOS_727.md) §2.5(自治内核)、§4.2
   (CommandEnvelope)、§0.4.8(未知订单/在飞状态绝不盲目重试)
-- 状态:**K1–K3 已落地**(K1:command_envelope + idempotency 持久命令日志 +
+- 状态:**K1–K3 + K4a 已落地**(K1:command_envelope + idempotency 持久命令日志 +
   command_bus;K2:leader_lease 单实例 Leader + fencing token + 任务租约;
-  K3:scheduler 持久化确定性调度器,`services/orchestration/`,65 测试)。
-  K4 为后续切片,见 §3。
+  K3:scheduler 持久化确定性调度器;K4a:policy_engine + event_router,
+  `services/orchestration/`,84 测试)。K4b(workflow_engine / recovery /
+  autonomy_kernel 门面)为后续切片,见 §3。
 - readiness:L2_DRY_RUN_ONLY 不变。本方案不改五个安全旗标,不新增任何真实下单
   路径,不触碰凭证,`services/` 内零网络 import。
 
@@ -53,7 +54,7 @@
 | **K1** | `command_envelope` + `idempotency`(SqliteCommandLog)+ `command_bus` | **本提交** |
 | K2 | `leader_lease`:单节点领导租约(多实例防双活;SQLite CAS,确定性时钟注入) | **已落地(2026-07-27)** |
 | K3 | `scheduler`:持久化调度器,missed-run 补跑语义,与 leader_lease 联动 | **已落地(2026-07-27)** |
-| K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | 未做 |
+| K4 | `workflow_engine` / `policy_engine` / `event_router` / `recovery` / `autonomy_kernel` 门面 | **K4a 已落地**(policy_engine + event_router,2026-07-27);K4b(workflow/recovery/门面)未做 |
 
 切分原则:每片独立可测、独立入库、不依赖后片;K1 不预留「将来一定这样」的
 抽象(K3 的调度语义可能反过来修正 K1 的 API,届时显式评审)。
@@ -211,3 +212,59 @@ CommandBus 执行链上的崩溃窗口与裁决:
 9. **actor 调用方传入**:调度器不伪造身份(非人 actor 是常态,测试用
    SYSTEM);executor 与 CommandBus handler 同约定(result 或 (result, events),
    事件走 K1 publish_once 因果链)。
+
+## 10. K4a 实施记录(policy_engine + event_router,2026-07-27)
+
+**K4 为什么拆 a/b 两提交**:小批量原则——K4 原条目含五个组件,一次落地无法
+保持每片独立可测/独立评审。K4a 是两个**纯核/纯编排**组件(无表、无迁移、
+无状态机),先行;K4b(workflow_engine / recovery / autonomy_kernel 门面)
+涉及持久化与恢复语义,单独评审。
+
+### 10.1 policy_engine(纯核,无 IO)
+
+727 §2.5「不得由语言模型直接决定状态转换」的落地形状:策略 = 注册的确定性
+纯函数 `fn(context) -> (verdict, reasons)`,评估产出带证据哈希的不可变
+`PolicyDecision`。语义裁定:
+
+1. **不迁移任何现有判定器**:research_risk gate / pre_trade gate /
+   promotion_checks 等各域硬编码 fail-closed 判定保持原样。本模块只统一
+   注册/评估/记录形状;迁移是后续各域显式评审的事,绝不顺手搬。
+2. **fail-closed 三规则**(727 §9.2):未注册 → PolicyNotFoundError(绝不
+   默认 PASS);判定器抛异常或返回非法 verdict → verdict=FAIL +
+   `POLICY_ERROR:<类型名>`,**不向外抛**(判定器异常 = 拒);缺证据必须
+   FAIL 或 ABSTAIN——ABSTAIN 是「证据不足」,区别于 FAIL 的「明确拒绝」,
+   两者都不是放行。
+3. **engine 统一重封装**:fn 无论返回 PolicyDecision 还是 (verdict, reasons)
+   简写,engine 只取 (verdict, reasons),用注册版本 + now_ms + 本次 context
+   重算 evidence_hash——fn 无法伪造版本、时间或证据哈希(测试钉死:
+   fn 返回伪造版本的 decision 被归一)。
+4. **版本冲突显式**:同 policy_id 同 version 幂等(fn 身份按 id 不比——
+   同版本换实现是部署层的事);不同 version → PolicyConflictError,绝不
+   静默覆盖(与 trial ledger 诚实记账同源)。
+5. **evidence_hash 只经 create 计算**:stable_hash(policy_id, version,
+   verdict, reasons, stable_hash(context));context 本体不进决策记录
+   (可能很大),其哈希进。同输入同哈希、键序无关、与 evaluated_at 无关
+   (测试钉死)。
+
+### 10.2 event_router(纯编排,无 IO)
+
+DurableEventBus 已有 append/replay/subscribe/消费组;本模块补「类型→处理器
+的声明式路由表」。语义裁定:
+
+1. **多 handler 注册序**(显式偏差登记):任务书规格写「不同 handler →
+   RouterConflictError」,但其测试清单同时要求「多 handler 注册序」且
+   RouterDispatchError 的「已调用计数」只在多 handler 下有意义——故采用
+   多 handler 设计(注册序 = 分发序),冲突收窄为「同名(__name__)不同
+   身份」的静默替换防护;重复注册同一 handler(id 相同)幂等。
+2. **at-least-once 边界**:handler 抛异常 → RouterDispatchError(第一个
+   异常 + 已调用计数,含抛异常者),已调用的不回滚,dispatch/replay 立即
+   中止;重放因此可能重复调用 handler——**幂等是 handler 自己的责任**
+   (按 event_id 去重的惯用法有测试示例),路由层不替 handler 去重,正如
+   bus 不替 consumer 去重。
+3. **无匹配 = 0,非错误**:路由是声明式过滤,未订阅类型安静流过。
+4. **event_view 原样传递**:handler 收到 bus `records()` 的 record dict
+   ({seq, event, correlation_id, causation_id}),不重新包装;直接
+   dispatch 单个 Event 时行级因果无从得知,以 None/"" 诚实缺省,绝不伪造。
+5. **replay_from 对账**:经 `bus.records(since_seq=)`(bus 自带先验链)
+   逐条 dispatch,返回 {dispatched, scanned, last_seq} 供恢复层增量对账;
+   中途异常原样中止,恢复层按 last_seq 重跑。
