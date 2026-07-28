@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_ms": 1785232345063,
+  "generated_at_ms": 1785254181520,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
   "instrument_scope": [
@@ -30,8 +30,8 @@
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
       "exists": true,
-      "size_bytes": 21732,
-      "sha256": "00aeef4190cdaab0fe587713e3ecc31f398d78b34e6fc055cc89252f4dea8b48"
+      "size_bytes": 21744,
+      "sha256": "757b3ecdfe9232828a6f68b2c7031a6b556b8d0de32a15e63b561e15c6deec0e"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
@@ -54,14 +54,14 @@
     "refresh_status": {
       "path": "data/cache/live_refresh_status.json",
       "exists": true,
-      "size_bytes": 10514,
-      "sha256": "5e46e6eebdc0772cfbf0340e73885848708af380a71d8082f8d66cda4cae74f9"
+      "size_bytes": 9911,
+      "sha256": "0124e58a1c020c4e58305312069413308732c4e1074cc5eb8e303514be3cde75"
     },
     "raw_lineage_backfill": {
       "path": "evidence/raw_data_lineage_backfill.json",
       "exists": true,
       "size_bytes": 3518,
-      "sha256": "5f5785afb83320e5861f1b27c517600aa6ce03fb19035c6c6a9ea3393b8f9015"
+      "sha256": "1aa9069c468da59cca9aa3d42c9bd64dbfc23cbf71c0250a935f69efa7588e59"
     }
   },
   "sources": {
@@ -168,14 +168,7 @@
           "detail": "ok"
         }
       },
-      "rest_gap_fill_days": {
-        "UNI": [
-          1785110400000
-        ],
-        "XRP": [
-          1785110400000
-        ]
-      }
+      "rest_gap_fill_days": {}
     },
     "funding": {
       "passed": true,
@@ -363,16 +356,16 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 8414,
+    "observation_count": 9130,
     "invalid_observation_count": 0,
-    "object_count": 2968,
+    "object_count": 2970,
     "datasets": {
       "cross_exchange_snapshots": 24,
-      "funding": 1364,
-      "oi_metrics": 3099,
+      "funding": 1406,
+      "oi_metrics": 3435,
       "oi_metrics_rest_gap_fill": 56,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 3139,
+      "perp_mark_prices": 3477,
       "perp_mark_prices_rest_gap_fill": 86,
       "spot_klines": 583,
       "spot_klines_1d": 5
@@ -392,8 +385,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785232345063,
-    "aggregate_sha256": "949f6bb61be3198d71fb07e0cfd4a8343f45980cb900222e16235b40e67fa347",
+    "latest_observed_at_ms": 1785254181520,
+    "aggregate_sha256": "8a6cb3827277caf1c45199b69c5f70b05729ba19a1ed1e8bddec98e3c6a5d6b6",
     "errors": [],
     "path": "data/cache/raw_market_data"
   },
@@ -415,11 +408,11 @@
   "lineage_backfill": {
     "path": "evidence/raw_data_lineage_backfill.json",
     "exists": true,
-    "sha256": "5f5785afb83320e5861f1b27c517600aa6ce03fb19035c6c6a9ea3393b8f9015",
+    "sha256": "1aa9069c468da59cca9aa3d42c9bd64dbfc23cbf71c0250a935f69efa7588e59",
     "readable": true,
     "passed": true,
     "reasons": [],
-    "generated_at_ms": 1785232345063,
+    "generated_at_ms": 1785254181520,
     "verdict": "PASS",
     "instrument_scope": [
       "ADA",
@@ -451,8 +444,8 @@
   "lineage_verdict": "PASS",
   "refresh_observation": {
     "readable": true,
-    "run_id": "refresh-1785232345063",
-    "ran_at": 1785232345063,
+    "run_id": "refresh-1785254181520",
+    "ran_at": 1785254181520,
     "reports": [
       {
         "source": "prices",
@@ -489,17 +482,17 @@
       "schema_version": 1,
       "status": "PASS",
       "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-      "observation_count": 8186,
+      "observation_count": 8892,
       "invalid_observation_count": 0,
-      "object_count": 2968,
+      "object_count": 2970,
       "datasets": {
         "cross_exchange_snapshots": 24,
-        "funding": 1350,
-        "oi_metrics": 2987,
+        "funding": 1392,
+        "oi_metrics": 3323,
         "oi_metrics_rest_gap_fill": 56,
         "perp_klines_1d": 58,
-        "perp_mark_prices": 3039,
-        "perp_mark_prices_rest_gap_fill": 84,
+        "perp_mark_prices": 3365,
+        "perp_mark_prices_rest_gap_fill": 86,
         "spot_klines": 583,
         "spot_klines_1d": 5
       },
@@ -518,8 +511,8 @@
         "CANONICAL_JSON_UTF8",
         "HTTP_BODY_BYTES"
       ],
-      "latest_observed_at_ms": 1785232345063,
-      "aggregate_sha256": "7cb421ee953c9d819d725dccf20c8e5c12aecddfdbafb7d0d558cb606ae9e4bc",
+      "latest_observed_at_ms": 1785252987398,
+      "aggregate_sha256": "85036fd96669c16c5d08459a47a50b4551eb26796e5f099db63e303afdf0a653",
       "errors": []
     }
   },

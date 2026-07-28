@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import re
 import subprocess
 from types import SimpleNamespace
 import sys
@@ -90,10 +91,35 @@ def test_entrypoint_rejects_ambiguous_exit_code(tmp_path: Path, result: object) 
         )
 
 
+def test_entrypoint_hides_launcher_arguments_from_worker(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    code_root = tmp_path / "release"
+    seen = []
+    module = _module(code_root)
+    module.main = lambda: seen.append(tuple(sys.argv)) or 0
+    launcher_argv = ["l2_schedule_entrypoint.py", "domain_event_ops", "--stale"]
+    monkeypatch.setattr(sys, "argv", launcher_argv.copy())
+
+    assert (
+        run_scheduled_module(
+            "domain_event_ops",
+            code_root=code_root,
+            importer=lambda _name: module,
+        )
+        == 0
+    )
+    assert seen == [(str(Path(module.__file__).resolve()),)]
+    assert sys.argv == launcher_argv
+
+
 def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
     assert ALLOWED_L2_MODULES == frozenset(
         {
+            "alpha_paper_cycle",
             "alpha_maintenance_sweep",
+            "artifact_admission_seal",
             "crypto_factory_loop",
             "domain_event_ops",
             "domain_event_seal",
@@ -103,8 +129,23 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "ic_panel_research",
             "l2_backup",
             "l2_scheduler_watchdog",
+            "paper_health",
+            "paper_order_preview",
+            "paper_research_risk_bundle",
+            "paper_realtime",
+            "paper_realtime_10k",
         }
     )
+
+
+def test_every_registered_schedule_module_is_allowlisted() -> None:
+    registration = (
+        Path(__file__).resolve().parents[2] / "scripts" / "register_schedules.ps1"
+    ).read_text(encoding="utf-8")
+    registered = set(re.findall(r'-Module\s+"([a-z0-9_]+)"', registration))
+
+    assert registered
+    assert registered <= ALLOWED_L2_MODULES
 
 
 def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -> None:

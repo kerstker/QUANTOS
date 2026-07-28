@@ -48,7 +48,7 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
             pass
 
         def track(self, alpha_id):
-            return {}
+            return None
 
     now_ms = 1_700_000_000_000
     event_times = (now_ms - 14 * 86_400_000, now_ms - 7 * 86_400_000)
@@ -62,6 +62,11 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
 
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
+    monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
+        "schema_version": 1,
+        "observed_at_ms": now_ms,
+    })
     monkeypatch.setattr(driver, "ForwardLedger", Ledger)
     monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
@@ -91,6 +96,11 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
             "perp_mark_prices": 1,
         }},
     })
+    monkeypatch.setattr(
+        driver,
+        "refresh_lineage_backfill",
+        lambda **_kwargs: (True, {"status": "PASS"}, []),
+    )
     reference = ForwardAdmissionRef(
         admission_id="data-admission-test",
         evidence_sha256="a" * 64,
@@ -139,7 +149,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             return []
 
         def attested_pending(self, alpha_id):
-            return []
+            return list(self._decisions)
 
         def legacy_decisions(self):
             return []
@@ -149,7 +159,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             pass
 
         def track(self, alpha_id):
-            return {}
+            return None
 
     now_ms = 1_700_000_000_000
     event_times = (now_ms - 14 * 86_400_000, now_ms - 7 * 86_400_000)
@@ -166,6 +176,11 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
 
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
+    monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
+        "schema_version": 1,
+        "observed_at_ms": now_ms,
+    })
     monkeypatch.setattr(driver, "ForwardLedger", Ledger)
     monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
@@ -199,6 +214,11 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             "perp_mark_prices": 1,
         }},
     })
+    monkeypatch.setattr(
+        driver,
+        "refresh_lineage_backfill",
+        lambda **_kwargs: (True, {"status": "PASS"}, []),
+    )
 
     def authority(**kwargs):
         calls["authority"] += 1
@@ -221,4 +241,9 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     assert calls["realize"][0]["admission_ref"] is reference
     assert calls["realize"][0]["committed_at_ms"] == now_ms
     status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
-    assert status["alphas"]["alpha"]["evidence_state"] == "ATTESTED"
+    assert (
+        status["alphas"]["alpha"]["evidence_state"]
+        == "ATTESTED_PENDING_REALIZATION"
+    )
+    assert status["quality_evidence_current"] is True
+    assert status["raw_lineage_backfill"]["status"] == "PASS"

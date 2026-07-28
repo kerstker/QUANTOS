@@ -107,6 +107,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     ),
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
     "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
+    "QUANTOS_paper_research_risk_bundle": ExpectedTask(
+        "paper_research_risk_bundle", 2 * _DAY_MS
+    ),
     "QUANTOS_paper_order_preview": ExpectedTask(
         "paper_order_preview",
         2 * _DAY_MS,

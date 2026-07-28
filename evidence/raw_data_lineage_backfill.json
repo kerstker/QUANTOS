@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1785232345063,
+  "generated_at_ms": 1785254181520,
   "instrument_scope": [
     "ADA",
     "ATOM",
@@ -33,8 +33,8 @@
   "artifacts": {
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
-      "size_bytes": 21732,
-      "sha256": "00aeef4190cdaab0fe587713e3ecc31f398d78b34e6fc055cc89252f4dea8b48"
+      "size_bytes": 21744,
+      "sha256": "757b3ecdfe9232828a6f68b2c7031a6b556b8d0de32a15e63b561e15c6deec0e"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
@@ -52,9 +52,9 @@
       "source": "perp_mark_prices",
       "attempted_records": 112,
       "matched_records": 112,
-      "refetched_records": 110,
+      "refetched_records": 112,
       "replayed_records": 0,
-      "rest_refetched_records": 2,
+      "rest_refetched_records": 0,
       "rest_replayed_records": 0,
       "failures": [],
       "warnings": [],
@@ -90,16 +90,16 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 8414,
+    "observation_count": 9130,
     "invalid_observation_count": 0,
-    "object_count": 2968,
+    "object_count": 2970,
     "datasets": {
       "cross_exchange_snapshots": 24,
-      "funding": 1364,
-      "oi_metrics": 3099,
+      "funding": 1406,
+      "oi_metrics": 3435,
       "oi_metrics_rest_gap_fill": 56,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 3139,
+      "perp_mark_prices": 3477,
       "perp_mark_prices_rest_gap_fill": 86,
       "spot_klines": 583,
       "spot_klines_1d": 5
@@ -119,8 +119,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785232345063,
-    "aggregate_sha256": "949f6bb61be3198d71fb07e0cfd4a8343f45980cb900222e16235b40e67fa347",
+    "latest_observed_at_ms": 1785254181520,
+    "aggregate_sha256": "8a6cb3827277caf1c45199b69c5f70b05729ba19a1ed1e8bddec98e3c6a5d6b6",
     "errors": []
   },
   "verdict": "PASS",

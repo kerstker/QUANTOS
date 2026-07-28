@@ -153,6 +153,7 @@ $artifactAdmissionSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
 $paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
+$paperRiskBundleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:08"
 $paperPreviewTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:10"
 # Public-mark paper valuation is a short-lived L2 worker. It refreshes the
 # current paper account without creating a resident process or touching a
@@ -186,6 +187,8 @@ Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
   -Trigger $gonogoTrigger
 Register-L2Task -Name "QUANTOS_alpha_paper_cycle" -Module "alpha_paper_cycle" `
   -Trigger $paperCycleTrigger
+Register-L2Task -Name "QUANTOS_paper_research_risk_bundle" -Module "paper_research_risk_bundle" `
+  -Trigger $paperRiskBundleTrigger
 Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview" `
   -Trigger $paperPreviewTrigger
 Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `

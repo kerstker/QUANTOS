@@ -135,6 +135,7 @@ def _forward_evidence(now_ms: int | None = None) -> dict:
         state = "DATA_BLOCKED"
     return {
         "present": True,
+        "ran_at": observed_at_ms,
         "evidence_state": state,
         "attested_realizations": parsed_counts["attested_realizations"],
         "attested_pending": parsed_counts["attested_pending"],

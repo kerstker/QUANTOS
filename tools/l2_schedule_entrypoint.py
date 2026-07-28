@@ -17,7 +17,9 @@ from types import ModuleType
 
 ALLOWED_L2_MODULES = frozenset(
     {
+        "alpha_paper_cycle",
         "alpha_maintenance_sweep",
+        "artifact_admission_seal",
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
@@ -27,6 +29,11 @@ ALLOWED_L2_MODULES = frozenset(
         "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",
+        "paper_health",
+        "paper_order_preview",
+        "paper_research_risk_bundle",
+        "paper_realtime",
+        "paper_realtime_10k",
     }
 )
 
@@ -59,6 +66,7 @@ def run_scheduled_module(
     )
     release_tools = release_root / "tools"
     original_path = list(sys.path)
+    original_argv = list(sys.argv)
     try:
         sys.path.insert(0, str(release_root))
         module = importer(f"tools.{module_name}")
@@ -72,6 +80,10 @@ def run_scheduled_module(
         worker_main = getattr(module, "main", None)
         if not callable(worker_main):
             raise ScheduleEntrypointError("scheduled module has no callable main")
+        # Worker CLIs commonly parse ``sys.argv``. Hide the launcher's own
+        # module selector so the worker observes the same empty argument
+        # surface it would receive when invoked directly by the scheduler.
+        sys.argv[:] = [str(Path(module_file).resolve())]
         result = worker_main()
         if result is None:
             return 0
@@ -82,6 +94,7 @@ def run_scheduled_module(
         return result
     finally:
         sys.path[:] = original_path
+        sys.argv[:] = original_argv
 
 
 def main(argv: Sequence[str] | None = None) -> int:

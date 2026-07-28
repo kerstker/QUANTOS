@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import sys
 import time
 
@@ -39,6 +40,7 @@ from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.data_quality_admission import DATA_QUALITY_ADMISSION_DB, run_data_quality_admission
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
 from tools.cache_io import atomic_write_json
+from tools.forward_evidence_status import build_forward_evidence
 from tools.raw_data_lineage_backfill import run_backfill
 
 # 前向跟踪的 crypto alpha(crowd_contra/carry/top_contra)证据只依赖 Binance 系四源;
@@ -54,6 +56,8 @@ from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_FORWARD_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
+_AUTHORITY = DATA_QUALITY_ADMISSION_DB
 _LINEAGE_BACKFILL = os.path.join("evidence", "raw_data_lineage_backfill.json")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
 _LOCK_STALE_S = 600  # assume dead if lock held > 10 minutes
@@ -428,6 +432,14 @@ def _run() -> None:
             if lineage_block is not None:
                 refresh_evidence_available = False
                 alerts.append(lineage_block)
+            (
+                lineage_backfill_ok,
+                lineage_backfill_status,
+                lineage_backfill_alerts,
+            ) = refresh_lineage_backfill(now_ms=now_ms)
+            if not lineage_backfill_ok:
+                refresh_evidence_available = False
+            alerts.extend(lineage_backfill_alerts)
             admission_ref, admission_status, admission_alerts = (
                 authoritative_admission_status(now_ms=now_ms)
             )
@@ -619,17 +631,15 @@ def _run() -> None:
             evidence_state = "ATTESTED_PENDING_REALIZATION"
         else:
             evidence_state = "ADMISSION_READY_PENDING_DECISION"
-        track = store.track(alpha_id)
         status["alphas"][alpha_id] = {
-            "n_forward_periods": len(ledger.attested_realizations(alpha_id)),
-            "paper_sharpe": track.get("paper_sharpe"), "paper_ic": track.get("paper_ic"),
-            "cum_return": track.get("cum_return"),
+            "n_forward_periods": attested["n_forward_periods"],
+            "paper_sharpe": attested["paper_sharpe"],
+            "paper_ic": attested["paper_ic"],
+            "cum_return": attested["cum_return"],
             "backtest_reference_sharpe": ref_sharpe, "reference_weeks": ref_weeks,
-            "attested_pending_decisions": len(ledger.attested_pending(alpha_id)),
-            "legacy_unattested_decisions": len([
-                row for row in ledger.legacy_decisions() if row["alpha_id"] == alpha_id
-            ]),
-            "evidence_state": "DATA_BLOCKED" if admission_ref is None else "ATTESTED",
+            "attested_pending_decisions": attested["attested_pending_decisions"],
+            "legacy_unattested_decisions": attested["legacy_unattested_decisions"],
+            "evidence_state": evidence_state,
             "last_decision_ts": (ledger.decisions(alpha_id)[-1]["decided_ts"]
                                  if ledger.decisions(alpha_id) else None),
             "recorded_new_decision": recorded_new, "n_realized_this_run": out["n_realized"],
@@ -637,11 +647,20 @@ def _run() -> None:
         }
 
     status["refresh_evidence_available"] = refresh_evidence_available
+    status["quality_evidence_current"] = admission_ref is not None
+    status["raw_lineage_backfill"] = lineage_backfill_status
     status["data_quality_admission"] = admission_status
     status["forward_price_basis"] = "BINANCE_USDM_PERP_MARK_PRICE"
     status["blocked_instruments"] = sorted(blocked_instruments)
     status["alerts"] = alerts
     json.dump(status, open(_STATUS, "w", encoding="utf-8"), indent=2)
+    baseline = build_forward_evidence(
+        Path(__file__).resolve().parents[1],
+        observed_at_ms=now_ms,
+        database=_DB,
+        admission_database=_AUTHORITY,
+    )
+    atomic_write_json(_FORWARD_BASELINE, baseline, indent=2)
     emit(alerts, context="forward_track", now_ms=now_ms)
 
     print(f"=== 前向 paper-track · {time.strftime('%Y-%m-%d %H:%M', time.gmtime(now_ms/1000))}Z "
