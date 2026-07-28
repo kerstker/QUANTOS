@@ -53,6 +53,12 @@ _PAPER_10K_REALTIME = os.path.join(
 _PAPER_10K_HEALTH = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_health_10k.json"
 )
+_PAPER_SHADOW_AUTO = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_shadow_auto.json"
+)
+_PAPER_SHADOW_REALTIME = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_shadow_realtime_status.json"
+)
 _EVIDENCE_GATE_WEEKS = 8
 
 # The compact diagnostic routes live in their own bounded module.  Including
@@ -386,6 +392,93 @@ def _paper_profile_payload(
     }
 
 
+def _paper_shadow_payload() -> Dict:
+    """Expose the isolated, non-promotable automated shadow-paper account."""
+    auto = _load_json_object(_PAPER_SHADOW_AUTO)
+    realtime = _load_json_object(_PAPER_SHADOW_REALTIME)
+    auto_verdict = auto.get("verdict", {}) if auto else {}
+    realtime_verdict = realtime.get("verdict", {}) if realtime else {}
+    auto_safety = auto.get("safety", {}) if auto else {}
+    realtime_safety = realtime.get("safety", {}) if realtime else {}
+    persistence = realtime.get("persistence", {}) if realtime else {}
+    ledger = realtime.get("paper_ledger", {}) if realtime else {}
+    alphas = realtime.get("alphas", {}) if realtime else {}
+    previews = auto.get("alphas", {}) if auto else {}
+    history = realtime.get("history", []) if realtime else []
+    boundary_valid = bool(
+        auto
+        and realtime
+        and auto_safety.get("paper_only") is True
+        and auto_safety.get("broker_connectivity") is False
+        and auto_safety.get("broker_order_submission") is False
+        and auto_safety.get("credentials_accessed") is False
+        and realtime_safety.get("paper_only") is True
+        and realtime_safety.get("broker_connectivity") is False
+        and realtime_safety.get("broker_order_submission") is False
+        and realtime_safety.get("credentials_accessed") is False
+        and persistence.get("chain_valid") is True
+    )
+    running = bool(
+        boundary_valid
+        and auto_verdict.get("shadow_paper_running") is True
+        and realtime_verdict.get("shadow_paper_running") is True
+        and realtime_verdict.get("paper_mark_ready") is True
+        and isinstance(alphas, dict)
+        and len(alphas) == 3
+    )
+    return {
+        "source": "AUTOMATED_SHADOW_PAPER_ARTIFACTS",
+        "read_only": True,
+        "snapshot_present": bool(auto or realtime),
+        "execution_class": "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER",
+        "status": "RUNNING" if running else "SAFE_BLOCKED",
+        "generated_at": auto.get("generated_at") if auto else None,
+        "observed_at": realtime.get("observed_at") if realtime else None,
+        "provider": realtime.get("provider") if realtime else None,
+        "verdict": {
+            "shadow_paper_running": running,
+            "auto_rebalance_ready": bool(
+                boundary_valid
+                and auto_verdict.get("shadow_paper_running") is True
+            ),
+            "paper_mark_ready": bool(
+                boundary_valid
+                and realtime_verdict.get("paper_mark_ready") is True
+            ),
+            "boundary_valid": boundary_valid,
+            "official_paper_ready": False,
+            "promotion_eligible": False,
+            "forward_evidence_eligible": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "alphas": alphas if isinstance(alphas, dict) else {},
+        "previews": previews if isinstance(previews, dict) else {},
+        "history": history if isinstance(history, list) else [],
+        "totals": {
+            "equity": _paper_alpha_total(alphas, "equity"),
+            "net_pnl": _paper_alpha_total(alphas, "net_pnl"),
+            "funding_pnl": _paper_alpha_total(alphas, "funding_pnl"),
+        },
+        "paper_ledger": ledger if isinstance(ledger, dict) else {},
+        "persistence": {
+            "new_snapshots": int(persistence.get("new_snapshots", 0) or 0),
+            "chain_valid": bool(boundary_valid),
+        },
+        "errors": realtime.get("errors", {}) if realtime else {},
+        "safety": {
+            "paper_only": True,
+            "separate_from_official_paper": True,
+            "public_market_data_only": True,
+            "private_account_access": False,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+            "broker_order_submission": False,
+        },
+    }
+
+
 def _dry_run_payload() -> Dict:
     """Surface persisted dry-run pipeline results through a read-only route."""
     runs = []
@@ -627,6 +720,7 @@ def _dry_run_payload() -> Dict:
         "paper_order_preview": paper_preview,
         "paper_operator": paper_operator,
         "paper_realtime": paper_realtime,
+        "paper_shadow": _paper_shadow_payload(),
         "paper_health": paper_health,
         "forward_track": forward_track,
         "data_refresh": _data_refresh_payload(),

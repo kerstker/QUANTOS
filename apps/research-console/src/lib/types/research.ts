@@ -924,6 +924,56 @@ export interface PaperRealtimePayload {
   };
 }
 
+export interface PaperShadowPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  execution_class: 'AUTOMATED_NONPROMOTABLE_SHADOW_PAPER' | string;
+  status: string;
+  generated_at?: number | null;
+  observed_at?: number | null;
+  provider?: string | null;
+  verdict: {
+    shadow_paper_running: boolean;
+    auto_rebalance_ready: boolean;
+    paper_mark_ready: boolean;
+    boundary_valid: boolean;
+    official_paper_ready: false;
+    promotion_eligible: false;
+    forward_evidence_eligible: false;
+    deployment_eligible: false;
+    live_allowed: false;
+    order_submission_allowed: false;
+  };
+  alphas: Record<string, PaperRealtimeAlpha>;
+  previews: Record<string, PaperOrderPreviewAlpha>;
+  history: PaperRealtimeHistoryPoint[];
+  totals: {
+    equity?: number | null;
+    net_pnl?: number | null;
+    funding_pnl?: number | null;
+  };
+  paper_ledger: {
+    n_rows?: number;
+    n_decisions?: number;
+    latest_decision_ts?: number | null;
+  };
+  persistence: {
+    new_snapshots: number;
+    chain_valid: boolean;
+  };
+  errors: Record<string, string>;
+  safety: {
+    paper_only: true;
+    separate_from_official_paper: true;
+    public_market_data_only: true;
+    private_account_access: false;
+    credentials_accessed: false;
+    broker_connectivity: false;
+    broker_order_submission: false;
+  };
+}
+
 export interface PaperHealthPayload {
   source: string;
   read_only: boolean;
@@ -1094,6 +1144,7 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   paper_order_preview?: PaperOrderPreviewPayload;
   paper_operator?: L2PaperOperatorPayload;
   paper_realtime?: PaperRealtimePayload;
+  paper_shadow?: PaperShadowPayload;
   paper_health?: PaperHealthPayload;
   forward_track?: LiveTradingForwardTrack;
   data_refresh?: DataRefreshPayload | null;

@@ -364,6 +364,84 @@ def test_dry_run_surfaces_realtime_paper_marks_and_backtests_without_live_capabi
     assert realtime["safety"]["broker_order_submission"] is False
 
 
+def test_dry_run_surfaces_automated_shadow_paper_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    shadow = body["paper_shadow"]
+    assert shadow["read_only"] is True
+    assert shadow["execution_class"] == "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER"
+    assert isinstance(shadow["snapshot_present"], bool)
+    assert isinstance(shadow["verdict"]["shadow_paper_running"], bool)
+    assert isinstance(shadow["verdict"]["boundary_valid"], bool)
+    assert isinstance(shadow["alphas"], dict)
+    assert isinstance(shadow["previews"], dict)
+    assert isinstance(shadow["history"], list)
+    assert isinstance(shadow["totals"], dict)
+    assert shadow["verdict"]["official_paper_ready"] is False
+    assert shadow["verdict"]["promotion_eligible"] is False
+    assert shadow["verdict"]["forward_evidence_eligible"] is False
+    assert shadow["verdict"]["deployment_eligible"] is False
+    assert shadow["verdict"]["live_allowed"] is False
+    assert shadow["verdict"]["order_submission_allowed"] is False
+    assert shadow["safety"]["paper_only"] is True
+    assert shadow["safety"]["separate_from_official_paper"] is True
+    assert shadow["safety"]["credentials_accessed"] is False
+    assert shadow["safety"]["broker_connectivity"] is False
+    assert shadow["safety"]["broker_order_submission"] is False
+
+
+def test_shadow_paper_console_payload_fails_closed_on_tampered_safety(
+    tmp_path, monkeypatch
+):
+    auto_path = tmp_path / "auto.json"
+    realtime_path = tmp_path / "realtime.json"
+    auto_path.write_text(
+        json.dumps(
+            {
+                "verdict": {"shadow_paper_running": True},
+                "safety": {
+                    "paper_only": True,
+                    "broker_connectivity": True,
+                    "broker_order_submission": False,
+                    "credentials_accessed": False,
+                },
+                "alphas": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    realtime_path.write_text(
+        json.dumps(
+            {
+                "verdict": {
+                    "shadow_paper_running": True,
+                    "paper_mark_ready": True,
+                },
+                "safety": {
+                    "paper_only": True,
+                    "broker_connectivity": False,
+                    "broker_order_submission": False,
+                    "credentials_accessed": False,
+                },
+                "persistence": {"chain_valid": True},
+                "alphas": {"a": {}, "b": {}, "c": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifact_snapshots, "_PAPER_SHADOW_AUTO", str(auto_path))
+    monkeypatch.setattr(
+        artifact_snapshots, "_PAPER_SHADOW_REALTIME", str(realtime_path)
+    )
+
+    shadow = artifact_snapshots._paper_shadow_payload()
+
+    assert shadow["status"] == "SAFE_BLOCKED"
+    assert shadow["verdict"]["boundary_valid"] is False
+    assert shadow["verdict"]["shadow_paper_running"] is False
+    assert shadow["verdict"]["live_allowed"] is False
+    assert shadow["verdict"]["order_submission_allowed"] is False
+
+
 def test_dry_run_surfaces_semantic_paper_health_without_live_capability():
     body = client.get("/api/v1/console/dry-run").json()
     health = body["paper_health"]

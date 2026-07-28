@@ -119,6 +119,7 @@ export default function DryRunPipeline() {
   const paperPreview = p.paper_order_preview;
   const paperOperator = p.paper_operator;
   const paperRealtime = p.paper_realtime;
+  const paperShadow = p.paper_shadow;
   const paperHealth = p.paper_health;
   const forwardTrack = p.forward_track;
   const dataRefresh = p.data_refresh;
@@ -142,6 +143,16 @@ export default function DryRunPipeline() {
         : 'PAPER_BLOCKED';
   const cycleActive = cycleBusy || cycleRun?.status === 'queued' || cycleRun?.status === 'running';
   const cycleCanExecute = usingBackend && runnerOnline === true && Boolean(getRunnerToken()) && !cycleActive;
+  const shadowSchedulerChecks = (scheduler?.checks ?? []).filter(check =>
+    check.task_name === 'QUANTOS_paper_shadow_auto'
+    || check.task_name === 'QUANTOS_paper_shadow_realtime');
+  const shadowSchedulerHealthy = shadowSchedulerChecks.length === 2
+    && shadowSchedulerChecks.every(check => check.status === 'PASS');
+  const backgroundCycleState = paperShadow?.verdict.shadow_paper_running && shadowSchedulerHealthy
+    ? 'SCHEDULED_ACTIVE'
+    : paperShadow?.snapshot_present
+      ? 'SAFE_BLOCKED'
+      : 'NO_SHADOW_SNAPSHOT';
   const executePaperCycle = async (small_10k: boolean) => {
     setCycleProfile(small_10k ? 'small_10k' : 'default');
     setCycleError(null);
@@ -240,16 +251,22 @@ export default function DryRunPipeline() {
             </div>
           </div>
           <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
-            <div className="text-2xs text-muted">Runner / 执行服务</div>
+            <div className="text-2xs text-muted">手动 Runner（可选） / Manual runner</div>
             <div className={`mt-1 text-xs mono ${runnerOnline ? 'text-pos' : 'text-faint'}`}>
               {runnerOnline ? 'ONLINE · PAPER_ONLY' : runnerEnabled() ? 'OFFLINE' : 'NOT_CONFIGURED'}
             </div>
-            <div className="mt-1 text-2xs text-faint">{getRunnerToken() ? 'token present in this tab' : '需要本标签页 Runner Token'}</div>
+            <div className="mt-1 text-2xs text-faint">
+              {getRunnerToken() ? 'token present in this tab' : '后台自动调度不依赖 Runner Token'}
+            </div>
           </div>
           <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
-            <div className="text-2xs text-muted">最新周期 / Latest cycle</div>
-            <div className="mt-1 text-xs mono text-fg">{cycleRun?.status?.toUpperCase() ?? 'IDLE'}</div>
-            <div className="mt-1 text-2xs text-faint">{cycleRunId ? cycleRunId.slice(0, 16) : '尚未从页面触发'}</div>
+            <div className="text-2xs text-muted">自动纸面周期 / Automated cycle</div>
+            <div className={`mt-1 text-xs mono ${backgroundCycleState === 'SCHEDULED_ACTIVE' ? 'text-pos' : 'text-warn'}`}>
+              {cycleRun?.status?.toUpperCase() ?? backgroundCycleState}
+            </div>
+            <div className="mt-1 text-2xs text-faint">
+              {cycleRunId ? cycleRunId.slice(0, 16) : shadowSchedulerHealthy ? 'Windows scheduler · autonomous' : 'scheduler status unavailable'}
+            </div>
           </div>
           <div className="rounded-md border border-line bg-inset/40 px-3 py-2">
             <div className="text-2xs text-muted">安全边界 / Safety</div>
@@ -268,7 +285,7 @@ export default function DryRunPipeline() {
               ? 'border-info/50 text-info hover:bg-info/10' : 'cursor-not-allowed border-line text-faint'}`}>
             {cycleActive && cycleProfile === 'small_10k' ? '执行中…' : '执行 10K 隔离周期'}
           </button>
-          <span className="text-2xs text-muted">页面每 10 秒自动刷新检测；检测到过期或阻塞时，可在此触发一次固定配置周期。</span>
+          <span className="text-2xs text-muted">后台影子纸面已由调度器自动运行；按钮仅用于可选的人工补跑。</span>
         </div>
         {cycleRun && (
           <div className="mt-3 rounded-md border border-line bg-inset/30 px-3 py-2 text-2xs">
@@ -288,7 +305,7 @@ export default function DryRunPipeline() {
         )}
         {cycleError && <div className="mt-2 text-2xs text-neg">{cycleError}</div>}
         <div className="mt-2 text-2xs text-muted">
-          自动检测只读取健康快照；执行入口仅允许固定的公共行情纸面驱动器，不读取私钥、不连接券商、不产生真实订单。
+          页面每 10 秒刷新真实快照；后台自动调仓不需要浏览器保持打开。手动入口仅允许固定的公共行情纸面驱动器，不读取私钥、不连接券商、不产生真实订单。
         </div>
       </Panel>
 
@@ -426,9 +443,87 @@ export default function DryRunPipeline() {
         </Panel>
       )}
 
+      {paperShadow && (
+        <Panel eyebrow="AUTOMATED SHADOW PAPER"
+          title={bi('全自动影子纸面驾驶舱', 'Autonomous shadow-paper cockpit')}
+          right={<StatusChip value={paperShadow.verdict.shadow_paper_running ? 'RUNNING' : 'SAFE_BLOCKED'} />}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusChip value={paperShadow.verdict.auto_rebalance_ready ? 'AUTO_REBALANCE_READY' : 'REBALANCE_BLOCKED'} />
+            <StatusChip value={paperShadow.verdict.paper_mark_ready ? 'MARKS_READY' : 'MARKS_BLOCKED'} />
+            <StatusChip value={paperShadow.persistence.chain_valid ? 'CHAIN_PASS' : 'CHAIN_BLOCKED'} />
+            <StatusChip value={shadowSchedulerHealthy ? 'SCHEDULER_ACTIVE' : 'SCHEDULER_BLOCKED'} />
+            <span className="text-2xs text-muted">
+              {paperShadow.provider ?? 'PUBLIC_MARK_DATA'} · {paperShadow.observed_at ? stamp(paperShadow.observed_at) : '—'}
+            </span>
+          </div>
+
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              [bi('三策略总权益', 'Total equity'), fmtUsd(paperShadow.totals.equity ?? undefined), 'text-fg'],
+              [bi('合计净 PnL', 'Net PnL'), fmtUsd(paperShadow.totals.net_pnl ?? undefined),
+                (paperShadow.totals.net_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'],
+              [bi('累计资金费', 'Funding PnL'), fmtUsd(paperShadow.totals.funding_pnl ?? undefined),
+                (paperShadow.totals.funding_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'],
+              [bi('账本决策数', 'Ledger decisions'), String(paperShadow.paper_ledger.n_decisions ?? '—'), 'text-info'],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="rounded-md border border-line bg-inset/40 px-3 py-2">
+                <div className="text-2xs text-muted">{label}</div>
+                <div className={`mt-1 text-sm mono ${tone}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {Object.keys(paperShadow.alphas).length > 0 ? (
+            <DataTable
+              rows={Object.entries(paperShadow.alphas).map(([alpha, row]) => ({
+                alpha,
+                preview: paperShadow.previews[alpha],
+                ...row,
+              }))}
+              columns={[
+                { key: 'alpha', header: 'Alpha', mono: true, render: r => r.alpha },
+                { key: 'intents', header: bi('意图', 'Intents'), align: 'right', mono: true,
+                  render: r => r.preview?.n_intents ?? '—' },
+                { key: 'fills', header: bi('模拟成交', 'Paper fills'), align: 'right', mono: true,
+                  render: r => r.preview?.n_paper_fills ?? r.n_fills ?? '—' },
+                { key: 'positions', header: bi('持仓数', 'Positions'), align: 'right', mono: true,
+                  render: r => Object.keys(r.positions ?? {}).length },
+                { key: 'equity', header: bi('当前权益', 'Equity'), align: 'right', mono: true,
+                  render: r => fmtUsd(r.equity) },
+                { key: 'net', header: bi('净 PnL', 'Net PnL'), align: 'right', mono: true,
+                  render: r => <span className={(r.net_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.net_pnl)}</span> },
+                { key: 'funding', header: bi('资金费', 'Funding'), align: 'right', mono: true,
+                  render: r => <span className={(r.funding_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.funding_pnl)}</span> },
+                { key: 'residual', header: bi('对账残差', 'Residual'), align: 'right', mono: true,
+                  render: r => fmtResidual(r.reconciliation_residual) },
+              ] as Column<{ alpha: string; preview?: PaperOrderPreviewAlpha } & PaperRealtimeAlpha>[]}
+              getKey={r => r.alpha}
+            />
+          ) : (
+            <div className="text-2xs text-faint">{bi('尚无影子纸面快照', 'no shadow-paper snapshot yet')}</div>
+          )}
+
+          {paperShadow.history.length > 0 && (
+            <div className="mt-3 border-t border-line/60 pt-2">
+              <div className="mb-1 text-2xs text-muted">{bi('影子纸面净 PnL 历史', 'Shadow-paper net PnL history')}</div>
+              <EquityCurveChart height={150} series={paperSeries(paperShadow.history)}
+                yFormat={v => `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`} />
+            </div>
+          )}
+
+          <div className="mt-3 rounded-md border border-info/30 bg-info/[0.06] px-3 py-2 text-2xs text-muted">
+            {bi(
+              '这是独立、不可晋级的自动观察账户：与正式纸面账本物理隔离，不计入前向证据，不允许部署或实盘。',
+              'This is an isolated, non-promotable observation account: separate from official paper, excluded from forward evidence, deployment, and live trading.',
+            )}
+            <span className="ml-2 mono text-pos">live=false · broker=false · credentials=false</span>
+          </div>
+        </Panel>
+      )}
+
       {paperRealtime && (
-        <Panel eyebrow={bi('瀹炴椂绾搁潰鏍囪', 'REAL-TIME PAPER MARKS')}
-          title={bi('鍏紑琛屾儏鏍囪 + 鍥炴祴鍩哄噯', 'Public marks + backtest reference')}>
+        <Panel eyebrow={bi('正式纸面实时标记', 'OFFICIAL PAPER MARKS')}
+          title={bi('公开行情标记 + 回测基准', 'Public marks + backtest reference')}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusChip value={paperRealtime.verdict.cycle_completed ? 'PAPER_MARKS_READY' : 'PAPER_MARKS_BLOCKED'} />
             <StatusChip value={paperRealtime.readiness_class ?? 'PAPER_MARKS_BLOCKED'} />
@@ -444,23 +539,23 @@ export default function DryRunPipeline() {
               rows={Object.entries(paperRealtime.alphas).map(([alpha, row]) => ({ alpha, ...row }))}
               columns={[
                 { key: 'alpha', header: 'Alpha', mono: true, render: r => r.alpha },
-                { key: 'status', header: bi('鐘舵€?', 'State'), render: r => r.status ?? '—' },
-                { key: 'equity', header: bi('褰撳墠鏉冪泭', 'Equity'), align: 'right', mono: true, render: r => fmtUsd(r.equity) },
-                { key: 'net', header: bi('鍑€ PnL', 'Net PnL'), align: 'right', mono: true,
+                { key: 'status', header: bi('状态', 'State'), render: r => r.status ?? '—' },
+                { key: 'equity', header: bi('当前权益', 'Equity'), align: 'right', mono: true, render: r => fmtUsd(r.equity) },
+                { key: 'net', header: bi('净 PnL', 'Net PnL'), align: 'right', mono: true,
                   render: r => <span className={(r.net_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.net_pnl)}</span> },
-                { key: 'unrealized', header: bi('鏈疄鐜?', 'Unrealized'), align: 'right', mono: true,
+                { key: 'unrealized', header: bi('未实现', 'Unrealized'), align: 'right', mono: true,
                   render: r => <span className={(r.unrealized_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{fmtUsd(r.unrealized_pnl)}</span> },
                 { key: 'funding', header: bi('资金费', 'Funding'), align: 'right', mono: true,
                   render: r => <span className={(r.funding_pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}>{r.funding_data_complete === false ? '—' : fmtUsd(r.funding_pnl)}</span> },
-                { key: 'sharpe', header: bi('鍥炴祴 SR', 'Backtest SR'), align: 'right', mono: true,
+                { key: 'sharpe', header: bi('回测 SR', 'Backtest SR'), align: 'right', mono: true,
                   render: r => paperRealtime.backtests?.[r.alpha]?.sharpe == null ? '—' : signed(paperRealtime.backtests[r.alpha].sharpe!, 2) },
-                { key: 'resid', header: bi('瀵硅处娈嬪樊', 'Residual'), align: 'right', mono: true, render: r => fmtResidual(r.reconciliation_residual) },
+                { key: 'resid', header: bi('对账残差', 'Residual'), align: 'right', mono: true, render: r => fmtResidual(r.reconciliation_residual) },
               ] as Column<{ alpha: string } & PaperRealtimeAlpha>[]}
               getKey={r => r.alpha}
             />
-          ) : <div className="text-2xs text-faint">{bi('灏氭棤瀹炴椂鏍囪', 'no real-time paper mark yet')}</div>}
+          ) : <div className="text-2xs text-faint">{bi('尚无实时标记', 'no real-time paper mark yet')}</div>}
           <div className="mt-2 text-2xs text-muted">
-            {bi(`瀹炴椂=鍏紑 mark REST 杞 · 鏂版鏍囪 ${paperRealtime.persistence.new_snapshots} · 閾惧畬鏁?${paperRealtime.persistence.chain_valid ? 'PASS' : 'BLOCKED'} · 瀹炵洏绂佺敤`,
+            {bi(`实时=公开 mark REST 轮询 · 新增标记 ${paperRealtime.persistence.new_snapshots} · 链完整 ${paperRealtime.persistence.chain_valid ? 'PASS' : 'BLOCKED'} · 实盘禁用`,
               `real-time = public mark REST polling · new snapshots ${paperRealtime.persistence.new_snapshots} · chain ${paperRealtime.persistence.chain_valid ? 'PASS' : 'BLOCKED'} · live disabled`)}
           </div>
           {paperRealtime.history && paperRealtime.history.length > 0 && (
