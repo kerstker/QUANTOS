@@ -21,14 +21,17 @@ from services.research.paper_trading.forward_evidence import (
     FORWARD_L2_REALIZATION_SOURCE,
     ForwardAdmissionRef,
 )
-from services.research.ports.persistence import ForwardLedgerPort, PaperTrackStorePort
+from services.research.ports.persistence import (
+    ForwardLedgerPort,
+    PaperTrackStoreError,
+    PaperTrackStorePort,
+)
 
 _DAY_MS = 86_400_000
 # 周度节奏下的最小兑现间隔:6.5 天(容忍数据网格 ±半天抖动,同时排除任何提早兑现)
 DEFAULT_MIN_GAP_MS = int(6.5 * _DAY_MS)
 DEFAULT_MIN_COVERAGE = 0.8
 DEFAULT_EXTREME_ABS_RETURN = 0.20
-SOURCE_FORWARD_LIVE = "FORWARD_LIVE_PERP_MARK_GROSS_PLUS_FUNDING"
 
 
 def _spearman(pairs: Sequence[tuple]) -> Optional[float]:
@@ -53,15 +56,14 @@ def realize_due(
     *,
     timestamps: Sequence[int],
     prices: Mapping[int, Mapping[str, float]],
+    admission_ref: ForwardAdmissionRef,
+    committed_at_ms: int,
     funding_sum: Optional[Callable[[str, int, int], float]] = None,
     blocked_instruments: Collection[str] = (),
-    quality_evidence_current: bool = False,
-    admission_ref: ForwardAdmissionRef | None = None,
-    committed_at_ms: int | None = None,
     min_gap_ms: int = DEFAULT_MIN_GAP_MS,
     min_coverage: float = DEFAULT_MIN_COVERAGE,
     extreme_abs_return: float = DEFAULT_EXTREME_ABS_RETURN,
-    source: str = SOURCE_FORWARD_LIVE,
+    source: str = FORWARD_L2_REALIZATION_SOURCE,
     backtest_sharpe: Optional[float] = None,
 ) -> dict:
     """兑现所有到期的 pending 决策(catch-up 安全:逐条按各自的下一个可用截面兑现)。
@@ -69,7 +71,7 @@ def realize_due(
     每条决策 T:取第一个 >= T+min_gap_ms 的时间戳 T';
     ret = Σ_i w_i·(p_i(T')/p_i(T)−1) + Σ_i (−w_i)·funding_sum(i, T, T')(美元中性 L/S 周度 gross
     + 资金费现金流,与干跑口径一致,不含交易成本——source 字符串诚实标注)。
-    没有本轮质量证据或权重与 blocked_instruments 相交 → 不兑现、留 pending、报 alert。
+    权重与 blocked_instruments 相交 → 不兑现、留 pending、报 alert。
     覆盖率(两端都有价的名字数/权重名字数)< min_coverage → 不兑现、留 pending、报 alert。
     |ret| > extreme_abs_return → 照常记录但报 alert(真实的极端值要看见,不是拒绝)。
     """
@@ -78,37 +80,13 @@ def realize_due(
     n_realized = 0
     n_quality_blocked = 0
     blocked = {str(name) for name in blocked_instruments}
-    if admission_ref is not None:
-        pending_reader = getattr(ledger, "attested_pending", None)
-        if not callable(pending_reader) or committed_at_ms is None:
-            return {
-                "n_realized": 0,
-                "n_quality_blocked": 1,
-                "alerts": [
-                    f"{alpha_id}: attested ledger/commit clock unavailable - left pending"
-                ],
-            }
-        pending = pending_reader(alpha_id)
-        realization_source = (
-            FORWARD_L2_REALIZATION_SOURCE
-            if source == SOURCE_FORWARD_LIVE
-            else source
-        )
-    else:
-        pending = ledger.pending(alpha_id)
-        realization_source = source
-
-    for dec in pending:
+    for dec in ledger.attested_pending(alpha_id):
         t0 = int(dec["decided_ts"])
         weights = json.loads(dec["weights_json"])
         later = [t for t in ts_sorted if t >= t0 + min_gap_ms]
         if not later:
             continue  # 还没到期,静默等待
         t1 = later[0]
-        if admission_ref is None and quality_evidence_current is not True:
-            alerts.append(f"{alpha_id}@{t0}: current quality evidence unavailable — left pending")
-            n_quality_blocked += 1
-            continue
         failed = sorted(set(weights) & blocked)
         if failed:
             alerts.append(f"{alpha_id}@{t0}: ingestion quality unavailable/failed for {failed} — left pending")
@@ -129,43 +107,40 @@ def realize_due(
             name: {
                 "weight": float(weights[name]),
                 "price_return": float(per_name[name]),
-                "funding": (
-                    0.0
-                    if funding_sum is None
-                    else float(funding_sum(name, t0, t1))
-                ),
+                "funding": 0.0 if funding_sum is None else float(funding_sum(name, t0, t1)),
             }
             for name in sorted(names)
         }
         ret = sum(weights[n] * per_name[n] for n in names)
-        if funding_sum is not None:
-            ret += sum(-inputs[n]["weight"] * inputs[n]["funding"] for n in names)
+        ret += sum(-inputs[n]["weight"] * inputs[n]["funding"] for n in names)
         ic = None
         if dec["signals_json"]:
             sig = json.loads(dec["signals_json"])
             ic = _spearman([(float(sig[n]), per_name[n]) for n in names if n in sig])
         if abs(ret) > extreme_abs_return:
             alerts.append(f"{alpha_id}@{t1}: extreme weekly return {ret:+.4f} (recorded, review)")
-        if admission_ref is not None:
-            ledger.commit_realization(
-                alpha_id,
-                t0,
-                as_of_ts=t1,
-                realized_return=ret,
-                realized_ic=ic,
-                source=realization_source,
-                inputs=inputs,
-                admission_ref=admission_ref,
-                committed_at_ms=committed_at_ms,
-            )
-        else:
-            store.append_periods(alpha_id, [(t1, ret, ic, realization_source)])
-            ledger.mark_realized(alpha_id, t0)
-        n_realized += 1
+        if ledger.commit_realization(
+            alpha_id,
+            t0,
+            as_of_ts=t1,
+            realized_return=ret,
+            realized_ic=ic,
+            source=source,
+            inputs=inputs,
+            admission_ref=admission_ref,
+            committed_at_ms=committed_at_ms,
+        ):
+            n_realized += 1
+    projection_status = "CURRENT"
     if n_realized:
-        store.recompute_summary(alpha_id, backtest_sharpe=backtest_sharpe)
+        try:
+            store.recompute_summary(alpha_id, backtest_sharpe=backtest_sharpe)
+        except PaperTrackStoreError:
+            projection_status = "STALE"
+            alerts.append(f"{alpha_id}: paper-track projection stale")
     return {
         "n_realized": n_realized,
         "n_quality_blocked": n_quality_blocked,
         "alerts": alerts,
+        "projection_status": projection_status,
     }

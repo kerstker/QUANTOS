@@ -8,14 +8,19 @@ verifiable kind).
 """
 from __future__ import annotations
 
+import math
 from enum import Enum
-
-from pydantic import BaseModel, ConfigDict, Field
-
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .hashing import stable_hash
 from .research import AlphaState, ValidationVerdict
+from .validation import (
+    BatchPboEvidence,
+    CatalogEvidence,
+    PboAlignment,
+)
 
 
 class ActorKind(str, Enum):
@@ -84,12 +89,71 @@ class AlphaEvaluation(BaseModel):
                                               # set yet, or insufficient overlap with every member).
     crowding_score: Optional[float] = None    # public-factor R^2 (None = unknown)
     deflated_sharpe: float = Field(default=0.0, ge=0, le=1)
+    catalog_evidence: Optional[CatalogEvidence] = None
+    catalog_evidence_hash: str = ""
     pbo: float = Field(default=0.0, ge=0, le=1)
+    pbo_evidence: Optional[BatchPboEvidence] = None
+    pbo_evidence_hash: str = ""
     catalog_trial_count: int = Field(default=1, ge=1)
+    catalog_trial_set_hash: str = ""
     verdict: ValidationVerdict
     reasons: tuple[str, ...] = ()
     as_of: int = Field(default=0, ge=0)
+    dataset_version: str = ""
     reproducibility_hash: str = ""
+
+    @model_validator(mode="after")
+    def _validate_bound_evidence_fields(self) -> "AlphaEvaluation":
+        if self.catalog_evidence is None:
+            if self.catalog_evidence_hash:
+                raise ValueError(
+                    "catalog evidence hash cannot exist without retained evidence"
+                )
+        else:
+            evidence = self.catalog_evidence
+            if self.catalog_evidence_hash != evidence.evidence_hash:
+                raise ValueError("catalog evidence hash mismatch")
+            if evidence.subject_id != self.alpha_id:
+                raise ValueError("catalog evidence subject mismatch")
+            if not math.isclose(
+                self.observed_sr,
+                evidence.observed_sr,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise ValueError("observed Sharpe does not match catalog evidence")
+            if not math.isclose(
+                self.deflated_sharpe,
+                evidence.deflated_sharpe,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            ):
+                raise ValueError("Deflated Sharpe does not match catalog evidence")
+            if self.catalog_trial_count != evidence.trial_count:
+                raise ValueError("catalog trial count does not match evidence")
+            if (
+                self.catalog_trial_set_hash
+                != evidence.catalog_trial_set_hash
+            ):
+                raise ValueError("catalog trial-set hash does not match evidence")
+
+        if self.pbo_evidence is None:
+            if self.pbo_evidence_hash:
+                raise ValueError("PBO evidence hash cannot exist without retained evidence")
+            return self
+        if self.pbo_evidence_hash != self.pbo_evidence.evidence_hash:
+            raise ValueError("PBO evidence hash mismatch")
+        if not math.isclose(self.pbo, self.pbo_evidence.pbo, rel_tol=0.0, abs_tol=1e-12):
+            raise ValueError("PBO scalar does not match retained evidence")
+        if len(self.catalog_trial_set_hash) != 64:
+            raise ValueError("bound PBO evaluation requires a catalog trial-set digest")
+        if (
+            self.catalog_evidence is not None
+            and self.catalog_evidence.subject_definition_hash
+            not in self.pbo_evidence.candidate_definition_hashes
+        ):
+            raise ValueError("PBO evidence does not contain the catalog subject")
+        return self
 
 
 class AlphaCluster(BaseModel):

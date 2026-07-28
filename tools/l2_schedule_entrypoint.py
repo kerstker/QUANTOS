@@ -9,34 +9,21 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
-from datetime import datetime, timezone
 import importlib
 from pathlib import Path
 import sys
-import traceback
 from types import ModuleType
 
 
 ALLOWED_L2_MODULES = frozenset(
     {
-        # A 股微盘研究栈(只读公共数据取数/回填;no-arg main 与 argv-scrub 约定兼容)
-        "ashare_kline_fetch",
-        "ashare_ifind_fetch",
-        "ashare_paper_track",
         "alpha_maintenance_sweep",
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
-        "artifact_admission_seal",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",
-        "alpha_paper_cycle",
-        "paper_order_preview",
-        "paper_realtime",
-        "paper_realtime_10k",
-        "paper_health",
-        "l2_paper_operator",
         "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",
@@ -85,17 +72,7 @@ def run_scheduled_module(
         worker_main = getattr(module, "main", None)
         if not callable(worker_main):
             raise ScheduleEntrypointError("scheduled module has no callable main")
-        # The module name is the entrypoint's argument, not a worker argument.
-        # Clear it while invoking the worker so argparse-based L2 workers (for
-        # example l2_backup) do not interpret ``l2_backup`` as an unknown flag.
-        # Restore argv even when the worker raises; scheduled invocations never
-        # pass through arbitrary worker flags.
-        original_argv = sys.argv
-        try:
-            sys.argv = [f"tools.{module_name}"]
-            result = worker_main()
-        finally:
-            sys.argv = original_argv
+        result = worker_main()
         if result is None:
             return 0
         if isinstance(result, bool) or not isinstance(result, int):
@@ -107,52 +84,11 @@ def run_scheduled_module(
         sys.path[:] = original_path
 
 
-def _open_schedule_log(log_dir: str | Path, module_name: str):
-    """Open the per-worker log used by non-console scheduled invocations."""
-    path = Path(log_dir) / f"{module_name}.log"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a", encoding="utf-8", buffering=1)
-    started_at = datetime.now(timezone.utc).isoformat()
-    handle.write(f"\n[{started_at}] START module={module_name}\n")
-    handle.flush()
-    return handle
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an allowlisted QUANTOS L2 worker")
     parser.add_argument("module", choices=sorted(ALLOWED_L2_MODULES))
-    parser.add_argument(
-        "--log-dir",
-        type=Path,
-        default=None,
-        help="append stdout/stderr and tracebacks to <log-dir>/<module>.log",
-    )
     args = parser.parse_args(argv)
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
-    log_handle = None
-    if args.log_dir is not None:
-        log_handle = _open_schedule_log(args.log_dir, args.module)
-        sys.stdout = log_handle
-        sys.stderr = log_handle
-    try:
-        result = run_scheduled_module(args.module)
-        if log_handle is not None:
-            finished_at = datetime.now(timezone.utc).isoformat()
-            print(f"[{finished_at}] END module={args.module} exit_code={result}", flush=True)
-        return result
-    except BaseException:
-        if log_handle is not None:
-            traceback.print_exc()
-            finished_at = datetime.now(timezone.utc).isoformat()
-            print(f"[{finished_at}] END module={args.module} exception", flush=True)
-        raise
-    finally:
-        if log_handle is not None:
-            log_handle.flush()
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
-            log_handle.close()
+    return run_scheduled_module(args.module)
 
 
 if __name__ == "__main__":

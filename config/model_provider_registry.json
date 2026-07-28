@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "selection_env": "QUANTOS_MODEL_PROVIDER",
+  "default_provider_id": "offline_registered",
+  "providers": [
+    {
+      "provider_id": "offline_registered",
+      "transport": "CALLER_SUPPLIED_OFFLINE",
+      "enabled": true,
+      "endpoint": "",
+      "model": "research-agent-loop@v4",
+      "api_key_env": "",
+      "timeout_seconds": 0,
+      "max_response_bytes": 0,
+      "tls_mode": "NOT_APPLICABLE",
+      "runtime_model_ref": "research-agent-loop@v4",
+      "runtime_prompt_ref": "research-evaluation@v4",
+      "runtime_tool_manifest_ref": "research-agent-tools@v4",
+      "allowed_actions": ["EVALUATE"],
+      "prohibited_actions": [
+        "APPROVE",
+        "RESET_KILL_SWITCH",
+        "LIVE_TRADE",
+        "ORDER_SUBMISSION",
+        "ACCESS_CREDENTIALS"
+      ]
+    },
+    {
+      "provider_id": "sushuo_gpt_5_6_sol",
+      "transport": "OPENAI_COMPATIBLE_HTTPS",
+      "enabled": true,
+      "endpoint": "https://vip.sushuo.biz/v1/chat/completions",
+      "model": "gpt-5.6-sol",
+      "api_key_env": "NEW_API_KEY",
+      "timeout_seconds": 60,
+      "max_response_bytes": 262144,
+      "tls_mode": "SYSTEM_CA_HOSTNAME_VERIFIED",
+      "runtime_model_ref": "sushuo-gpt-5-6-sol@v1",
+      "runtime_prompt_ref": "external-provider-probe@v1",
+      "runtime_tool_manifest_ref": "external-provider-tools@v1",
+      "allowed_actions": ["EVALUATE"],
+      "prohibited_actions": [
+        "APPROVE",
+        "RESET_KILL_SWITCH",
+        "LIVE_TRADE",
+        "ORDER_SUBMISSION",
+        "ACCESS_CREDENTIALS"
+      ]
+    }
+  ]
+}

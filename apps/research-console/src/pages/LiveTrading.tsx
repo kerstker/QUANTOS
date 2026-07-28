@@ -7,12 +7,12 @@ import { money, pct, pctPoints, fixed, stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchLiveTradingSnapshot } from '@/lib/api/research-console-api';
 import type {
-  LiveTradingPayload, LiveTradingForwardAlpha, LiveTradingWouldSubmitOrder, LiveTradingTca,
+  LiveTradingPayload, LiveTradingWouldSubmitOrder, LiveTradingTca,
 } from '@/lib/types/research';
 
 /**
- * Live Trading — Stage 0(真前向 paper-track 证据钟)+ Stage 1(Binance 测试网执行栈)只读状态展示。
- * 聚合 tools/{forward_track_advance,live_track_advance}.py 写的真实 JSON 快照。
+ * L2 Forward Evidence — authority-bound paper evidence + Stage 1 testnet execution diagnostics.
+ * The forward card consumes only evidence/forward_evidence_baseline.json, never legacy cache counts.
  * 诚实边界:纯诊断,不驱动任何自动化或晋级;真钱 Go/No-Go 是 Phase 3A 人工评审。测试网是交易所
  * 官方沙盒零真实资本,不是真钱——L2_DRY_RUN_ONLY 全程未破。
  */
@@ -20,8 +20,8 @@ import type {
 const mockPayload: LiveTradingPayload = {
   source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, api_version: '0.1.0',
   data_provenance: 'SYNTHETIC_DETERMINISTIC', snapshot_present: false, verdict: 'NO_SNAPSHOT',
-  forward_track: { present: false }, execution_stack: { present: false },
-  honesty_note: '尚无实盘路线快照 — 运行 python -m tools.forward_track_advance / tools.live_track_advance。',
+  forward_track: { present: false, actions_allowed: false }, execution_stack: { present: false },
+  honesty_note: '尚无 L2 前向证据快照 — 运行 python tools/forward_evidence_status.py。',
 };
 
 const TIER_ZH: Record<string, string> = { AUTO: '自动执行', NEEDS_HUMAN_REVIEW: '需人工审查' };
@@ -31,35 +31,10 @@ export default function LiveTrading() {
   const { payload, apiState, error, usingBackend, snapshotState } = useConsoleSnapshot<LiveTradingPayload>(
     s => fetchLiveTradingSnapshot(s));
   const p: LiveTradingPayload = usingBackend ? payload! : mockPayload;
-  const ft = p.forward_track ?? { present: false };
+  const ft = p.forward_track ?? { present: false, actions_allowed: false };
   const lt = p.execution_stack ?? { present: false };
-  const alphas: LiveTradingForwardAlpha[] = ft.alphas ?? [];
   const wouldSubmit: LiveTradingWouldSubmitOrder[] = lt.would_submit ?? [];
   const gateWeeks = ft.evidence_gate_weeks ?? 8;
-
-  const alphaCols: Column<LiveTradingForwardAlpha>[] = [
-    { key: 'id', header: bi('因子', 'Alpha'), render: a => <span className="mono text-ink">{a.alpha_id}</span> },
-    { key: 'weeks', header: bi('证据钟', 'Evidence Clock'), align: 'right', render: a => {
-        const done = a.n_forward_periods ?? 0;
-        const ok = (a.weeks_to_go_no_go ?? gateWeeks) <= 0;
-        return <span className={ok ? 'text-pos' : 'text-info'}>{done}/{gateWeeks} {bi('周', 'wk')}</span>;
-      } },
-    { key: 'sharpe', header: bi('前向夏普', 'Paper Sharpe'), align: 'right', mono: true,
-      render: a => a.paper_sharpe == null ? <span className="text-faint">—</span> : (
-        <span className={a.paper_sharpe > 0 ? 'text-pos' : 'text-neg'}>{fixed(a.paper_sharpe, 2)}</span>) },
-    { key: 'ref', header: bi('历史参照', 'Backtest Ref'), align: 'right', mono: true,
-      render: a => a.backtest_reference_sharpe == null ? '—' :
-        `${fixed(a.backtest_reference_sharpe, 2)} (${a.reference_weeks ?? '—'}${bi('周', 'wk')})` },
-    { key: 'ic', header: bi('前向 IC', 'Paper IC'), align: 'right', mono: true,
-      render: a => a.paper_ic == null ? <span className="text-faint">—</span> : fixed(a.paper_ic, 3) },
-    { key: 'ret', header: bi('累计收益', 'Cum Return'), align: 'right', mono: true,
-      render: a => a.cum_return == null ? '—' : <span className={a.cum_return >= 0 ? 'text-pos' : 'text-neg'}>{pct(a.cum_return, 1)}</span> },
-    { key: 'pending', header: bi('待兑现', 'Pending'), align: 'right',
-      render: a => (a.pending_decisions ?? 0) > 0
-        ? <Chip label={a.pending_decisions} tone="warn" /> : <span className="text-faint">0</span> },
-    { key: 'last', header: bi('最后决策', 'Last Decision'), mono: true,
-      render: a => a.last_decision_ts ? stamp(a.last_decision_ts) : '—' },
-  ];
 
   const orderCols: Column<LiveTradingWouldSubmitOrder>[] = [
     { key: 'inst', header: bi('标的', 'Instrument'), render: o => <span className="mono text-ink">{o.instrument_id}</span> },
@@ -79,9 +54,9 @@ export default function LiveTrading() {
 
   return (
     <PageShell>
-      <PageHeader title="Live Trading" titleZh="实盘路线状态"
-        subtitle={bi('Stage 0 真前向证据钟 + Stage 1 测试网执行栈 · 只读诊断展示,不驱动任何自动化或晋级',
-          'Stage 0 true forward evidence clock + Stage 1 testnet execution stack · read-only diagnostic, drives no automation or promotion')} />
+      <PageHeader title="L2 Forward Evidence" titleZh="L2 前向证据"
+        subtitle={bi('认证前向证据 + 测试网执行栈 · 只读诊断展示,不驱动任何自动化或晋级',
+          'Attested forward evidence + testnet execution stack · read-only diagnostic, drives no automation or promotion')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
         realData={usingBackend && p.data_provenance === 'REAL_LIVE_TRADING_SNAPSHOT'}
         source={usingBackend ? (p.snapshot_present ? 'REAL_LIVE_TRADING_SNAPSHOT' : 'NO_LIVE_TRADING_SNAPSHOT')
@@ -106,26 +81,43 @@ export default function LiveTrading() {
           + 'the AUTO tier is mechanical execution within a human-signed mandate’s limits; NEEDS_HUMAN_REVIEW never submits.')}
       </Callout>
 
-      {/* --- Stage 0: 前向证据钟 --- */}
-      <Panel eyebrow={bi('Stage 0', 'STAGE 0')} title={bi('真前向 paper-track 证据钟', 'True Forward Paper-Track Evidence Clock')}
-        right={ft.present ? <Chip label={bi(`更新于 ${stamp(ft.ran_at)}`, `updated ${stamp(ft.ran_at)}`)} tone="info" /> : undefined}>
+      {/* --- L2 authority-bound forward evidence --- */}
+      <Panel eyebrow={bi('L2 证据', 'L2 EVIDENCE')} title={bi('L2 前向证据', 'L2 Forward Evidence')}
+        right={<Chip label={ft.evidence_state ?? 'UNAVAILABLE'} tone={ft.evidence_state === 'ATTESTED' ? 'pos' : 'warn'} />}>
         {ft.present ? (
-          <>
-            <DataTable rows={alphas} columns={alphaCols} getKey={a => a.alpha_id}
-              empty={bi('尚无前向决策', 'No forward decisions yet')} />
-            {(ft.alerts ?? []).length > 0 && (
-              <div className="mt-3 flex flex-col gap-1">
-                {ft.alerts!.map((a, i) => (
-                  <div key={i} className="rounded border border-warn/30 bg-warn/[0.06] px-2.5 py-1.5 text-2xs text-warn">
-                    ⚠ {a}
-                  </div>
-                ))}
+          <div className="flex flex-col gap-3">
+            <KpiStrip cols={3}>
+              <StatTile label={bi('认证前向', 'Attested Forward')}
+                value={`${ft.attested_realizations ?? 0}/${gateWeeks} ${bi('周', 'wk')}`} tone="info" />
+              <StatTile label={bi('认证待兑现', 'Attested Pending')}
+                value={String(ft.attested_pending ?? 0)} tone="muted" />
+              <StatTile label={bi('历史未认证', 'Legacy Unattested')}
+                value={String(ft.legacy_unattested_decisions ?? 0)}
+                tone={(ft.legacy_unattested_decisions ?? 0) > 0 ? 'warn' : 'muted'} />
+            </KpiStrip>
+            <div className="text-2xs text-muted">
+              {bi(`认证前向 ${ft.attested_realizations ?? 0}/${gateWeeks} 周 · 历史未认证 ${ft.legacy_unattested_decisions ?? 0}`,
+                `Attested forward ${ft.attested_realizations ?? 0}/${gateWeeks} wk · Legacy unattested ${ft.legacy_unattested_decisions ?? 0}`)}
+            </div>
+            {ft.evidence_state === 'DATA_BLOCKED' && (
+              <div className="rounded border border-warn/30 bg-warn/[0.06] px-2.5 py-1.5 text-2xs text-warn">
+                ⚠ DATA_BLOCKED — {bi('数据准入未通过，认证证据钟暂停。', 'data admission is blocked; the attested evidence clock is paused.')}
               </div>
             )}
-          </>
+            {(ft.legacy_unattested_decisions ?? 0) > 0 && (
+              <div className="rounded border border-warn/30 bg-warn/[0.06] px-2.5 py-1.5 text-2xs text-warn">
+                ⚠ LEGACY_UNATTESTED — {bi('历史记录单列展示，绝不计入认证门槛。', 'legacy rows are shown separately and never count toward the attested gate.')}
+              </div>
+            )}
+            <div className="text-2xs text-muted">
+              {bi(`门槛资格: ${ft.evidence_gate_eligible ? '仅供人工审阅' : '未达成'}；所有动作永久禁用。`,
+                `Gate eligibility: ${ft.evidence_gate_eligible ? 'human review only' : 'not met'}; all actions remain disabled.`)}
+            </div>
+          </div>
         ) : (
           <div className="py-6 text-center text-2xs text-faint">
-            {bi('尚无前向跟踪快照 — 运行 python -m tools.forward_track_advance', 'No forward-track snapshot yet — run python -m tools.forward_track_advance')}
+            {bi('认证前向证据不可用 — 无快照、无效或无法验证时保持 fail-closed。',
+              'Attested forward evidence unavailable — missing, invalid, or unverifiable evidence stays fail-closed.')}
           </div>
         )}
       </Panel>
@@ -315,9 +307,9 @@ export default function LiveTrading() {
       </Panel>
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
-        {bi('只读 · 两份离线快照(forward_track_status.json / live_track_status.json)· 分级授权(mandate)fail-closed 到底 · '
+        {bi('只读 · 认证前向证据基线 + 测试网离线快照 · 分级授权(mandate)fail-closed 到底 · '
           + '紧急减仓走独立 reduce-only 通道(2026-07-05 用户拍板;结构上只能减仓,治理测试钉死)',
-          'Read-only · two offline snapshots (forward_track_status.json / live_track_status.json) · tiered mandate authorization is fail-closed to the core · '
+          'Read-only · attested forward evidence baseline + testnet offline snapshot · tiered mandate authorization is fail-closed to the core · '
           + 'emergency flatten runs an independent reduce-only channel (user-approved 2026-07-05; structurally reduce-only, governance-pinned)')}
       </div>
       </LoadingVeil>

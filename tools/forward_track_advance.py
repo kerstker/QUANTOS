@@ -25,14 +25,17 @@ import time
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.paper_trading.forward import realize_due
-from services.research.paper_trading.attested_store import AttestedForwardLedger
-from services.research.paper_trading.forward_evidence import load_forward_admission_ref
+from services.research.paper_trading.forward_evidence import (
+    ForwardAdmissionRef,
+    load_forward_admission_ref,
+)
+from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
 from services.data.admission_store import DataQualityAdmissionStore
 from tools.alert_sink import emit
 from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
-from tools.data_quality_admission import _AUTHORITY, run_data_quality_admission
+from tools.data_quality_admission import DATA_QUALITY_ADMISSION_DB, run_data_quality_admission
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
 from tools.cache_io import atomic_write_json
 from tools.raw_data_lineage_backfill import run_backfill
@@ -108,16 +111,26 @@ def _alpha_spec(entry):
 
 
 def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,
-                          quality_evidence_current=False):
+                          admission_ref=None, refresh_evidence_available=False):
     """P1-8 决策门(纯 helper,镜像 live 驱动器 batch_skip_reason 范式)。返回 None=可落决策;返回原因串=
     数据不够干净,调用方暂停本轮决策(证据钟暂停=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进
     不可改写台账。复用 gate_decision_inputs 四项检查;staleness 判据与上面 :102 的告警**同判据**,只把'只告警'
     升成'挡决策'、不更激进。"""
+    if not isinstance(admission_ref, ForwardAdmissionRef):
+        return "decision blocked: data admission reference unavailable"
+    if refresh_evidence_available is not True:
+        return "decision blocked: current refresh evidence unavailable"
     rep = gate_decision_inputs(
-        weights=weights, prices=prices, decided_ts=decided_ts, now=now,
-        max_decision_age_ms=_MAX_DECISION_AGE_MS, staleness=stale, stale_limits=_FORWARD_STALE_LIMITS,
+        weights=weights,
+        prices=prices,
+        decided_ts=decided_ts,
+        now=now,
+        max_decision_age_ms=_MAX_DECISION_AGE_MS,
+        staleness=stale,
+        stale_limits=STALE_LIMITS,
         ingestion_quality_failed=tuple(quality_failed),
-        quality_evidence_current=quality_evidence_current)
+        quality_evidence_current=True,
+    )
     if rep.passed:
         return None
     failed = [c.name for c in rep.checks if not c.passed]
@@ -136,11 +149,20 @@ def raw_lineage_block_reason(raw_lineage) -> str | None:
     return None
 
 
-def authoritative_admission_status(*, now_ms: int, runner=None) -> tuple:
+def authoritative_admission_status(
+    *,
+    now_ms: int,
+    runner=None,
+    authority_path: str = DATA_QUALITY_ADMISSION_DB,
+) -> tuple:
     """Persist the admission decision and return a redacted load-bearing summary."""
     resolved_runner = runner or run_data_quality_admission
     try:
-        evidence, decision, inserted = resolved_runner(now_ms=now_ms)
+        evidence, decision, inserted = resolved_runner(
+            now_ms=now_ms,
+            authority_path=authority_path,
+            recorded_at_ms=now_ms,
+        )
         if (
             not isinstance(evidence, dict)
             or decision.verdict != evidence.get("verdict")
@@ -148,7 +170,6 @@ def authoritative_admission_status(*, now_ms: int, runner=None) -> tuple:
             or decision.lineage_verdict != evidence.get("lineage_verdict")
         ):
             raise ValueError("authority decision does not match evidence")
-        current = decision.verdict == "PASS"
         summary = {
             "status": "PASS",
             "admission_id": decision.admission_id,
@@ -159,13 +180,25 @@ def authoritative_admission_status(*, now_ms: int, runner=None) -> tuple:
             "decision_hash": decision.decision_hash,
             "inserted": bool(inserted),
         }
-        alerts = [] if current else [
+        if decision.verdict != "PASS":
+            return None, summary, [
             "data-quality admission BLOCK "
             f"(reasons={len(decision.block_reasons)})"
-        ]
-        return current, summary, alerts
+            ]
+        authority = DataQualityAdmissionStore(authority_path, create=False)
+        try:
+            ref = load_forward_admission_ref(
+                authority,
+                admission_id=decision.admission_id,
+                evidence_sha256=decision.evidence_sha256,
+                decision_hash=decision.decision_hash,
+                instruments=decision.instrument_scope,
+            )
+        finally:
+            authority.close()
+        return ref, summary, []
     except Exception as exc:
-        return False, {
+        return None, {
             "status": "BREACH",
             "error_type": type(exc).__name__,
         }, [
@@ -365,7 +398,7 @@ def _run() -> None:
     do_refresh = "--no-refresh" not in sys.argv
 
     blocked_instruments: set = set()
-    quality_evidence_current = False
+    refresh_evidence_available = False
     admission_ref = None
     admission_status = {"status": "SKIPPED"}
     lineage_backfill_status = {"status": "SKIPPED"}
@@ -375,8 +408,8 @@ def _run() -> None:
             reports = refresh.get("reports", [])
             expected_sources = {"prices", "funding", "oi_metrics", "perp_mark_prices"}
             observed_sources = {rep.get("source") for rep in reports}
-            quality_evidence_current = expected_sources.issubset(observed_sources)
-            if not quality_evidence_current:
+            refresh_evidence_available = expected_sources.issubset(observed_sources)
+            if not refresh_evidence_available:
                 missing = sorted(expected_sources - observed_sources)
                 alerts.append(f"refresh quality evidence incomplete; missing sources: {missing}")
             for rep in reports:
@@ -386,35 +419,19 @@ def _run() -> None:
                 for f in rep.get("failed", []):
                     alerts.append(f"refresh {rep['source']}: {f}")
                 if rep.get("failed") and not failed_tickers:
-                    quality_evidence_current = False
+                    refresh_evidence_available = False
                     alerts.append(
                         f"refresh {rep.get('source')}: unstructured failure; all evidence blocked"
                     )
             lineage_block = raw_lineage_block_reason(refresh.get("raw_lineage"))
             if lineage_block is not None:
-                quality_evidence_current = False
+                refresh_evidence_available = False
                 alerts.append(lineage_block)
-            backfill_current, lineage_backfill_status, backfill_alerts = (
-                refresh_lineage_backfill(now_ms=now_ms)
-            )
-            quality_evidence_current = (
-                quality_evidence_current and backfill_current
-            )
-            alerts.extend(backfill_alerts)
-            admission_current, admission_status, admission_alerts = (
+            admission_ref, admission_status, admission_alerts = (
                 authoritative_admission_status(now_ms=now_ms)
             )
-            quality_evidence_current = (
-                quality_evidence_current and admission_current
-            )
-            if quality_evidence_current:
-                admission_ref = _load_attested_admission_ref(
-                    admission_status,
-                    instruments=oi_fetch.FORWARD_MAJOR_TICKERS,
-                )
-                if admission_ref is None:
-                    quality_evidence_current = False
-                    alerts.append("data-quality admission reference unavailable; evidence clock paused")
+            if refresh_evidence_available is not True:
+                admission_ref = None
             alerts.extend(admission_alerts)
         except Exception as exc:
             emit([f"refresh CRASHED: {exc}"], context="forward_track", now_ms=now_ms)
@@ -529,9 +546,10 @@ def _run() -> None:
                     # P1-8 决策门:数据不够干净(源停更/决策过旧/加权名字缺价/接入质量不过)则**暂停证据钟**
                     # (本轮不落决策=留 pending,数据恢复下周期重试),绝不把脏数据当真决策记进不可改写台账。
                     block = decision_block_reason(weights=weights, prices=dec_prices, decided_ts=t_dec,
-                                                  now=now_ms, stale=stale,
-                                                  quality_failed=blocked_instruments,
-                                                  quality_evidence_current=quality_evidence_current)
+                                                      now=now_ms, stale=stale,
+                                                      quality_failed=blocked_instruments,
+                                                      admission_ref=admission_ref,
+                                                      refresh_evidence_available=refresh_evidence_available)
                     if block is not None:
                         alerts.append(f"{alpha_id}: {block}")
                         blocked = True
@@ -562,18 +580,27 @@ def _run() -> None:
 
         first_dec_ts = (decs[0]["decided_ts"] if decs
                         else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
-        ref_sharpe, ref_weeks = _reference_sharpe(sig, _cadence_rows(ev, spec["cadence_days"]),
-                                                  ev, insts, spot_prices, funding_sum,
-                                                  before_ts=first_dec_ts, quantile=spec["quantile"])
-        out = realize_due(ledger, store, alpha_id,
-                          timestamps=([int(ev[r]) for r in rows] if spec["cadence_days"] == 7
-                                      else [int(_t) for _t in ev]),
-                          prices=prices, funding_sum=funding_sum, backtest_sharpe=ref_sharpe,
-                          blocked_instruments=blocked_instruments,
-                          quality_evidence_current=quality_evidence_current,
-                          admission_ref=admission_ref,
-                          min_gap_ms=spec["min_gap_ms"],
-                          committed_at_ms=now_ms if admission_ref is not None else None)
+        ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, spot_prices, funding_sum,
+                                                  before_ts=first_dec_ts)
+        if admission_ref is None:
+            out = {
+                "alerts": ["forward realization blocked: current data admission unavailable"],
+                "n_realized": 0,
+                "n_quality_blocked": 0,
+            }
+        else:
+            out = realize_due(
+                ledger,
+                store,
+                alpha_id,
+                timestamps=[int(ev[r]) for r in rows],
+                prices=prices,
+                funding_sum=funding_sum,
+                backtest_sharpe=ref_sharpe,
+                blocked_instruments=blocked_instruments,
+                admission_ref=admission_ref,
+                committed_at_ms=now_ms,
+            )
         alerts.extend(out["alerts"])
 
         attested = _attested_snapshot(ledger, alpha_id)
@@ -592,26 +619,22 @@ def _run() -> None:
         else:
             evidence_state = "ADMISSION_READY_PENDING_DECISION"
         status["alphas"][alpha_id] = {
-            "n_forward_periods": attested["n_forward_periods"],
-            "paper_sharpe": attested["paper_sharpe"],
-            "paper_ic": attested["paper_ic"],
-            "cum_return": attested["cum_return"],
+            "n_forward_periods": len(ledger.attested_realizations(alpha_id)),
+            "paper_sharpe": track.get("paper_sharpe"), "paper_ic": track.get("paper_ic"),
+            "cum_return": track.get("cum_return"),
             "backtest_reference_sharpe": ref_sharpe, "reference_weeks": ref_weeks,
-            "pending_decisions": len(attested_pending),
-            "attested_pending_decisions": len(attested_pending),
-            "legacy_unattested_decisions": legacy_count,
-            "evidence_state": evidence_state,
+            "attested_pending_decisions": len(ledger.attested_pending(alpha_id)),
+            "legacy_unattested_decisions": len([
+                row for row in ledger.legacy_decisions() if row["alpha_id"] == alpha_id
+            ]),
+            "evidence_state": "DATA_BLOCKED" if admission_ref is None else "ATTESTED",
             "last_decision_ts": (ledger.decisions(alpha_id)[-1]["decided_ts"]
                                  if ledger.decisions(alpha_id) else None),
             "recorded_new_decision": recorded_new, "n_realized_this_run": out["n_realized"],
             "n_quality_blocked_this_run": out["n_quality_blocked"],
         }
 
-    status["refresh_evidence_available"] = quality_evidence_current
-    # Keep the pre-attestation name as a compatibility mirror. The attested
-    # row fields above remain authoritative for the forward gate.
-    status["quality_evidence_current"] = quality_evidence_current
-    status["raw_lineage_backfill"] = lineage_backfill_status
+    status["refresh_evidence_available"] = refresh_evidence_available
     status["data_quality_admission"] = admission_status
     status["forward_price_basis"] = "BINANCE_USDM_PERP_MARK_PRICE"
     status["blocked_instruments"] = sorted(blocked_instruments)
@@ -625,7 +648,9 @@ def _run() -> None:
         print(f"  {aid}: 决策{'+1' if s['recorded_new_decision'] else '·'} "
               f"兑现+{s['n_realized_this_run']} · 前向周数 {s['n_forward_periods']} "
               f"· paper_sharpe {s['paper_sharpe']} (参照 {s['backtest_reference_sharpe']}"
-              f"/{s['reference_weeks']}周) · pending {s['pending_decisions']}", flush=True)
+              f"/{s['reference_weeks']}周) · attested pending "
+              f"{s['attested_pending_decisions']} · legacy "
+              f"{s['legacy_unattested_decisions']}", flush=True)
     if alerts:
         print(f"  告警 {len(alerts)}: " + " | ".join(alerts[:5]), flush=True)
     print(f"-> {_STATUS}", flush=True)

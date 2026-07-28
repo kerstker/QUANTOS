@@ -8,9 +8,9 @@ import threading
 import pytest
 
 import services.alpha.promotion as promotion_mod
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
+from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
 from quantos.contracts.events import EVENT_ALPHA_PROMOTED
-from quantos.contracts.research import AlphaState, ValidationVerdict
+from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.guards import promotion_subject
 from services.alpha.lifecycle import AlphaLifecycleManager
@@ -23,15 +23,20 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 S = AlphaState
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
 
 
-def _eval_report(alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
-    return AlphaEvaluation(alpha_id=alpha_id, verdict=ValidationVerdict.PASS, deflated_sharpe=0.8,
-                           pbo=0.1, catalog_trial_count=trial_count, marginal_ir=0.5,
-                           net_sharpe=net_sharpe, reproducibility_hash=repro)
+def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
+    return bound_alpha_evaluation(
+        catalog,
+        alpha_id,
+        catalog_trial_count=trial_count,
+        net_sharpe=net_sharpe,
+        reproducibility_hash=repro,
+    )
 
 
 def _seed_registry(tmp_path, *, with_artifact=True):
@@ -39,14 +44,15 @@ def _seed_registry(tmp_path, *, with_artifact=True):
     registry = ExperimentRegistry(SqliteExperimentStore(str(tmp_path / "experiments_reg.db"), create=True))
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, "a1")
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report("a1", cc))
-    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report("a1", cc))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(cat, "a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(cat, "a1", cc))
     registry.save(cat, now=3)
     if with_artifact:
-        registry.record_evaluation(_eval_report("a1", cc), dataset_version="v1", recorded_ts=3)
+        registry.record_evaluation(_eval_report(cat, "a1", cc), dataset_version="v1", recorded_ts=3)
     return registry
 
 
@@ -90,7 +96,8 @@ def test_gather_evidence_from_real_artifacts(env):
     ev = gather_promotion_evidence(env["registry"], env["paper"], "a1")
     assert ev.backtest_sharpe == 1.2            # 来自 evaluation artifact 的 net_sharpe
     assert ev.paper_sharpe is not None          # 来自 paper_track.db track(a1)
-    assert ev.eval_trial_count == 1             # 来自 evaluation artifact 的 catalog_trial_count
+    assert ev.eval_trial_count == 2
+    assert ev.eval_catalog_evidence_hash is not None
     assert ev.notes == ()
 
 
@@ -193,12 +200,13 @@ def test_execute_promotion_different_request_ids_do_not_block_each_other(tmp_pat
     paper = PaperTrackStore(paper_path, create=True)
     for alpha_id in ("a1", "a2"):
         cat.register(AlphaDefinition(alpha_id=alpha_id, name=alpha_id, factor_ids=("f1",)))
+        seed_catalog_evidence(cat, alpha_id)
         mgr = AlphaLifecycleManager(cat)
         cc = cat.global_trial_count()
         mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)
-        mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(alpha_id, cc))
-        mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(alpha_id, cc))
-        registry.record_evaluation(_eval_report(alpha_id, cc), dataset_version="v1", recorded_ts=3)
+        mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(cat, alpha_id, cc))
+        mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(cat, alpha_id, cc))
+        registry.record_evaluation(_eval_report(cat, alpha_id, cc), dataset_version="v1", recorded_ts=3)
         paper.append_periods(alpha_id, [(1, 0.01, None, "t"), (2, 0.02, None, "t"), (3, 0.01, None, "t")])
         paper.recompute_summary(alpha_id, backtest_sharpe=1.2)
     registry.save(cat, now=3)

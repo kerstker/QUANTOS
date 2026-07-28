@@ -102,30 +102,38 @@ def _with_real_second_revision(evidence: dict[str, object]) -> dict[str, object]
         (
             record
             for record in artifacts
-            if record["artifact_id"].startswith("model-card:fx-stack-ridge:v")
+            if str(record["artifact_id"]).startswith("model-card:fx-stack-ridge:v")
         ),
-        key=lambda record: int(record["artifact_id"].rsplit(":v", 1)[1]),
+        key=lambda record: int(str(record["payload"]["version"])[1:]),
     )
     card_payload = copy.deepcopy(ridge_card["payload"])
-    next_version = f"v{int(ridge_card['artifact_id'].rsplit(':v', 1)[1]) + 1}"
+    next_version = f"v{int(str(card_payload['version'])[1:]) + 1}"
     card_payload["version"] = next_version
     artifacts.append(
-        _record(card_payload, "ModelCard", f"model-card:fx-stack-ridge:{next_version}")
+        _record(
+            card_payload,
+            "ModelCard",
+            f"model-card:fx-stack-ridge:{next_version}",
+        )
     )
 
     ridge_evaluation = max(
         (
             record
             for record in artifacts
-            if record["artifact_id"].startswith("evaluation:fx-ridge:v")
+            if str(record["artifact_id"]).startswith("evaluation:fx-ridge:v")
         ),
-        key=lambda record: int(record["artifact_id"].rsplit(":v", 1)[1]),
+        key=lambda record: int(str(record["payload"]["version"])[1:]),
     )
     evaluation_payload = copy.deepcopy(ridge_evaluation["payload"])
     evaluation_payload["version"] = next_version
     evaluation_payload["model_ref"] = f"fx-stack-ridge@{next_version}"
     artifacts.append(
-        _record(evaluation_payload, "OfflineEvaluation", f"evaluation:fx-ridge:{next_version}")
+        _record(
+            evaluation_payload,
+            "OfflineEvaluation",
+            f"evaluation:fx-ridge:{next_version}",
+        )
     )
     return revised
 

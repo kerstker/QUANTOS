@@ -103,3 +103,5 @@ def test_crowding_only_gate_does_not_create_unconfigured_tail_check():
     result = inputs.evaluate({"a": 0.5, "b": -0.5})
     assert result.status == "PASS"
     assert {check.name for check in result.checks} == {"crowding"}
+
+

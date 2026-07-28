@@ -13,8 +13,14 @@ CORE_MODULES = (
     RESEARCH / "paper_trading/forward.py",
 )
 
-SQLITE_ADAPTERS = {
+SQLITE_PERSISTENCE_OWNERS = {
     "services/research/experiment_registry/store.py",
+    "services/research/experiment_registry/family_schema_runtime.py",
+    "services/research/experiment_registry/family_schema_structural_verifiers.py",
+    "services/research/experiment_registry/family_schema_v2_activation.py",
+    "services/research/experiment_registry/family_schema_v2_semantics.py",
+    "services/research/experiment_registry/family_schema_v3_activation.py",
+    "services/research/experiment_registry/family_schema_v3_verifier.py",
     "services/research/run_registry/store.py",
     "services/research/paper_trading/store.py",
     "services/research/paper_trading/forward_store.py",
@@ -48,7 +54,7 @@ def test_registry_and_paper_core_do_not_import_concrete_stores():
     assert not offenders, offenders
 
 
-def test_sqlite_is_confined_to_declared_persistence_adapters():
+def test_sqlite_is_confined_to_declared_persistence_owners():
     actual = set()
     for path in sorted(RESEARCH.rglob("*.py")):
         if "tests" in path.parts:
@@ -57,7 +63,7 @@ def test_sqlite_is_confined_to_declared_persistence_adapters():
             modules = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""]
             if "sqlite3" in modules:
                 actual.add(path.relative_to(ROOT).as_posix())
-    assert actual == SQLITE_ADAPTERS
+    assert actual == SQLITE_PERSISTENCE_OWNERS
 
 
 def test_persistence_ports_are_leaf_interfaces():

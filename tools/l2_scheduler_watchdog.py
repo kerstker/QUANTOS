@@ -14,6 +14,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -416,14 +417,17 @@ def event_seal_configuration_ready(
     return bool(repo_drive and destination_drive and repo_drive != destination_drive)
 
 
-def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path) -> bool:
-    # ``scripts/register_schedules.ps1`` intentionally registers the
-    # non-console workers with ``pythonw.exe``.  Treating that exact
-    # executable as drift makes every otherwise-canonical L2 task report
-    # BREACH, so the watchdog can never attest the scheduler it installs.
-    # Both console and windowless Python launchers are valid here; the
-    # immutable ``l2_schedule_entrypoint.py`` and module/working-directory
-    # checks below remain the safety boundary.
+_LAUNCHER_ARGUMENTS = re.compile(
+    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+)$'
+)
+
+
+def _action_matches(
+    snapshot: TaskSnapshot,
+    spec: ExpectedTask,
+    state_root: Path,
+    code_root: Path,
+) -> bool:
     if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
         "python",
         "python.exe",
@@ -431,41 +435,17 @@ def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path)
         "pythonw.exe",
     }:
         return False
-    arguments = (snapshot.arguments or "").strip()
-    # L2 tasks must resolve workers through the immutable-root launcher.  The
-    # older ``-m tools.<module>`` action is intentionally rejected: it lets a
-    # mutable state checkout shadow the scheduled code and is therefore action
-    # drift, even though the module name itself looks correct.
-    if not arguments.startswith('"') or '" ' not in arguments:
+    match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
+    if match is None or match.group("module") != spec.module:
         return False
-    launcher_text, module = arguments[1:].split('" ', 1)
-    expected_launcher = repo_root / "tools" / "l2_schedule_entrypoint.py"
     try:
-        launcher_matches = Path(launcher_text).resolve(strict=False) == expected_launcher.resolve(strict=False)
+        launcher = Path(match.group("launcher")).resolve(strict=False)
+        expected_launcher = (
+            code_root / "tools" / "l2_schedule_entrypoint.py"
+        ).resolve(strict=False)
     except OSError:
-        launcher_matches = False
-    if not launcher_matches:
         return False
-    module_tail = module.strip()
-    module_matches = module_tail == spec.module
-    # The production registration script appends the fixed log sink so that
-    # windowless Task Scheduler workers retain an auditable stdout/stderr
-    # record.  It is part of the approved launcher contract, not arbitrary
-    # worker arguments.  Accept exactly that repository-local path and reject
-    # every other flag/path combination.
-    if not module_matches:
-        log_prefix = f"{spec.module} --log-dir "
-        if not module_tail.startswith(log_prefix):
-            return False
-        log_dir = module_tail[len(log_prefix) :].strip()
-        if len(log_dir) >= 2 and log_dir[0] == log_dir[-1] == '"':
-            log_dir = log_dir[1:-1]
-        try:
-            expected_log_dir = (repo_root / ".runtime" / "logs").resolve(strict=False)
-            module_matches = Path(log_dir).resolve(strict=False) == expected_log_dir
-        except OSError:
-            module_matches = False
-    if not module_matches:
+    if launcher != expected_launcher:
         return False
     if not snapshot.working_directory:
         return False
@@ -473,7 +453,7 @@ def _action_matches(snapshot: TaskSnapshot, spec: ExpectedTask, repo_root: Path)
         actual_working_directory = Path(snapshot.working_directory).resolve(strict=False)
     except OSError:
         return False
-    return actual_working_directory == repo_root.resolve()
+    return actual_working_directory == state_root.resolve()
 
 
 def _check_task(
@@ -483,7 +463,7 @@ def _check_task(
     spec: ExpectedTask,
     now_ms: int,
     repo_root: Path,
-    self_check: bool = False,
+    code_root: Path,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -494,7 +474,7 @@ def _check_task(
             "code": "NOT_ENABLED",
             "detail": f"task state is {snapshot.state}",
         }
-    if not _action_matches(snapshot, spec, repo_root):
+    if not _action_matches(snapshot, spec, repo_root, code_root):
         return {
             "task_name": name,
             "status": "BREACH",
@@ -610,6 +590,7 @@ def evaluate_schedule(
     *,
     now_ms: int,
     repo_root: str | Path,
+    code_root: str | Path | None = None,
     backup_ready: bool,
     backup_history_health: dict | None = None,
     heartbeat_ready: bool = False,
@@ -618,6 +599,7 @@ def evaluate_schedule(
     if now_ms < 0:
         raise ValueError("now_ms must be non-negative")
     root = Path(repo_root).resolve()
+    release_root = root if code_root is None else Path(code_root).resolve()
     by_name: dict[str, TaskSnapshot] = {}
     duplicates: set[str] = set()
     for snapshot in snapshots:
@@ -673,7 +655,7 @@ def evaluate_schedule(
             spec=spec,
             now_ms=now_ms,
             repo_root=root,
-            self_check=name == "QUANTOS_scheduler_watchdog",
+            code_root=release_root,
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)
@@ -744,6 +726,7 @@ def _alert_signature(result: dict) -> str:
 def run_scheduler_watchdog(
     *,
     repo_root: str | Path,
+    code_root: str | Path | None = None,
     status_path: str | Path,
     now_ms: int | None = None,
     backup_ready: bool | None = None,
@@ -785,6 +768,7 @@ def run_scheduler_watchdog(
             snapshots,
             now_ms=observed_at_ms,
             repo_root=repo_root,
+            code_root=code_root,
             backup_ready=backup_ready,
             backup_history_health=history_health,
             heartbeat_ready=heartbeat_ready,
@@ -832,8 +816,10 @@ def run_scheduler_watchdog(
 
 def main() -> None:
     repo_root = Path.cwd()
+    code_root = Path(__file__).resolve().parents[1]
     result = run_scheduler_watchdog(
         repo_root=repo_root,
+        code_root=code_root,
         status_path=repo_root / "data" / "cache" / "scheduler_watchdog_status.json",
     )
     print(json.dumps(result, sort_keys=True))

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "mode": "ALPHA_TRIAL_LEDGER_PORTABLE_SEAL",
+  "ledger_path": "data/cache/experiment_registry.db",
+  "history_path": "evidence/alpha_trial_ledger_history.json",
+  "snapshot_path": "evidence/alpha_trial_ledger_snapshot.db",
+  "history_sha256": "c61171f9dcb5dfdbe72923a6a579b6d5c4a23d743d3c001506a9876814e87271",
+  "snapshot_sha256": "270009147e553904ca6486d843988ad7eaeb73d06d49f58e1ad933dabd04f359",
+  "history_head_hash": "b62a93847387e2dd9da1fcb8ad66ec5f1dfbda072e9c9eea1fd74cd9c87d9451",
+  "record_count": 2,
+  "trial_count": 40,
+  "evaluation_count": 10,
+  "sealed_at_ms": 1784328276412
+}

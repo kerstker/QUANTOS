@@ -146,6 +146,30 @@ def test_l2_backup_and_scheduler_watchdog_have_no_broker_or_network_dependency()
     assert "--act" not in combined
 
 
+def test_l2_schedule_entrypoint_has_no_broker_network_or_secret_dependency():
+    entrypoint = ROOT / "tools" / "l2_schedule_entrypoint.py"
+    imports = _imports(entrypoint)
+    assert not imports & {
+        "ccxt",
+        "httpx",
+        "requests",
+        "socket",
+        "urllib",
+        "live.pipeline",
+        "live.exchange",
+    }
+    source = entrypoint.read_text(encoding="utf-8").lower()
+    for forbidden in (
+        "submit_order",
+        "cancel_order",
+        "credential",
+        "api_key",
+        "--submit",
+        "--act",
+    ):
+        assert forbidden not in source
+
+
 def test_scheduler_watchdog_does_not_import_any_monitored_worker():
     imports = _imports(ROOT / "tools" / "l2_scheduler_watchdog.py")
     monitored = {

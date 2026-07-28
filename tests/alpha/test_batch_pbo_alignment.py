@@ -50,13 +50,15 @@ def test_batch_pbo_excludes_the_non_overlapping_tail_that_carries_an_outlier():
                      for t in range(10, 10 + n_common)]
 
     candidates = [("early", cand1_periods), ("late", cand2_periods)]
-    pbo = batch_pbo(candidates, cost=_COST, quantile=0.5, target_aum=1e7)
-    assert pbo is not None
+    evidence = batch_pbo(candidates, cost=_COST, quantile=0.5, target_aum=1e7)
+    assert evidence is not None
     # the whole point of the fix: the outlier that only exists in candidate 1's NON-overlapping
     # tail must not be allowed to dominate the comparison via positional misalignment.
-    assert pbo < 1.0, f"expected a non-degenerate PBO (mild noisy overlap performance, no " \
+    assert evidence.pbo < 1.0, f"expected a non-degenerate PBO (mild noisy overlap performance, no " \
                       f"engineered anti-correlation) once the outlier tail is excluded by " \
-                      f"calendar alignment, got {pbo}"
+                      f"calendar alignment, got {evidence.pbo}"
+    assert evidence.alignment.value == "EVENT_TIME_INTERSECTION"
+    assert evidence.aligned_event_times == tuple(range(10, 10 + n_common))
 
 
 def test_batch_pbo_falls_back_to_positional_when_event_time_absent():
@@ -74,8 +76,9 @@ def test_batch_pbo_falls_back_to_positional_when_event_time_absent():
         ("a", [_legacy_period(i) for i in range(20)]),
         ("b", [_legacy_period(i) for i in range(20)]),
     ]
-    pbo = batch_pbo(candidates, cost=_COST, quantile=0.5, target_aum=1e7)
-    assert pbo is not None and 0.0 <= pbo <= 1.0   # still computes something sane, doesn't crash
+    evidence = batch_pbo(candidates, cost=_COST, quantile=0.5, target_aum=1e7)
+    assert evidence is not None and 0.0 <= evidence.pbo <= 1.0
+    assert evidence.alignment.value == "POSITIONAL_LEGACY"
 
 
 def test_batch_pbo_intersects_common_calendar_window_even_when_lengths_already_match():
@@ -91,5 +94,18 @@ def test_batch_pbo_intersects_common_calendar_window_even_when_lengths_already_m
 
     cand_a = [_period_at(t) for t in range(0, 20)]         # t = 0..19
     cand_b = [_period_at(t) for t in range(1000, 1020)]    # t = 1000..1019 (disjoint, same length!)
-    pbo = batch_pbo([("a", cand_a), ("b", cand_b)], cost=_COST, quantile=0.5, target_aum=1e7)
-    assert pbo is None   # zero real overlap -> honestly uncomputable, not a fabricated number
+    evidence = batch_pbo([("a", cand_a), ("b", cand_b)], cost=_COST, quantile=0.5, target_aum=1e7)
+    assert evidence is None   # zero real overlap -> honestly uncomputable, not a fabricated number
+
+
+def test_batch_pbo_rejects_duplicate_event_times_instead_of_last_write_wins():
+    candidate_a = [_period(t, 0.001, -0.001, 1) for t in range(8)]
+    candidate_a[1] = _period(0, 0.001, -0.001, 1)
+    candidate_b = [_period(t, 0.001, -0.001, 1) for t in range(8)]
+    evidence = batch_pbo(
+        [("a", candidate_a), ("b", candidate_b)],
+        cost=_COST,
+        quantile=0.5,
+        target_aum=1e7,
+    )
+    assert evidence is None

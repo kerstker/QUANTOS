@@ -15,6 +15,48 @@ def test_ci_actions_are_immutable_sha_pinned():
     assert all(_SHA_PIN.fullmatch(action) for action in actions), actions
 
 
+def test_supply_chain_manifest_self_binds_exact_byte_portability_controls():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        ".gitattributes",
+        "tests/governance/test_evidence_checkout_portability.py",
+    } <= set(_MANIFESTS)
+
+
+def test_supply_chain_manifest_binds_external_model_provider_governance_surface():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "config/model_provider_registry.json",
+        "quantos/contracts/external_model_provider.py",
+        "services/governance/external_model_provider_evidence.py",
+        "services/intelligence/external_provider_runtime.py",
+        "services/intelligence/provider_selection.py",
+        "tools/external_model_provider.py",
+        "tools/external_model_provider_probe.py",
+        "tests/governance/test_external_model_provider_boundary.py",
+        "tests/governance/test_external_model_provider_evidence.py",
+        "tests/intelligence/test_external_provider_runtime.py",
+        "tests/tools/test_external_model_provider.py",
+    } <= set(_MANIFESTS)
+
+
+def test_supply_chain_manifest_binds_catalog_pbo_evidence_surface():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "quantos/contracts/alpha.py",
+        "services/alpha/evaluator.py",
+        "services/alpha/factory.py",
+        "services/alpha/guards.py",
+        "services/alpha/lifecycle.py",
+        "services/research/experiment_registry/registry.py",
+        "services/validation/pbo_evidence.py",
+        "tests/alpha/test_pbo_evidence.py",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 
@@ -99,6 +141,7 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tests/tools/test_domain_event_ops.py",
         "tests/tools/test_domain_event_owner_migration.py",
         "tests/tools/test_domain_event_outbox_drain.py",
+        "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/data/test_refresh_event_outbox.py",
         "tests/risk/test_research_risk_events.py",
         "tools/live_data_refresh.py",
@@ -106,9 +149,9 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tools/domain_event_ops.py",
         "tools/domain_event_owner_migration.py",
         "tools/domain_event_outbox_drain.py",
-            "tools/domain_event_bus.py",
-            "tools/deployment_events.py",
-            "tools/provision_artifact_admission_authority.py",
+        "tools/l2_schedule_entrypoint.py",
+        "tools/domain_event_bus.py",
+        "tools/deployment_events.py",
         "scripts/generate_event_schema_catalog.py",
         "scripts/generate_strong_identity_evidence.py",
         "scripts/register_schedules.ps1",

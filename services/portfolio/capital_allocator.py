@@ -10,6 +10,12 @@ from dataclasses import dataclass
 import math
 from typing import Mapping, Sequence
 
+from .correlation_drift import (
+    CorrelationDriftPolicy,
+    correlation_drift_diagnostics,
+    evaluate_correlation_drift,
+    validate_correlation_drift_policy,
+)
 from .constrained_optimizer import OptimizerError, min_variance_weights
 from .constraints import InfeasibleConstraints, PortfolioConstraints
 from .optimizer import cost_aware_rebalance
@@ -34,6 +40,7 @@ class CapitalAllocatorConfig:
     min_positive_mean: float = 0.0
     cvar_penalty: float = 0.0        # Rank #10c: >0 adds a tail-aware CVaR penalty to the optimizer
     cvar_alpha: float = 0.95         # CVaR confidence level (tail = worst 1-alpha of scenarios)
+    correlation_drift_policy: CorrelationDriftPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,7 @@ class CapitalAllocationPlan:
     turnover: float
     reasons: tuple[str, ...]
     diagnostics: dict
+    correlation_gross_recommendation: float = 1.0
 
 
 def _is_finite_number(value: object) -> bool:
@@ -62,13 +70,19 @@ def _is_finite_number(value: object) -> bool:
     )
 
 
-def _blocked(reason: str, diagnostics: dict | None = None) -> CapitalAllocationPlan:
+def _blocked(
+    reason: str,
+    diagnostics: dict | None = None,
+    *,
+    gross_multiplier: float = 1.0,
+) -> CapitalAllocationPlan:
     return CapitalAllocationPlan(
         status=BLOCKED,
         allocations=(),
         turnover=0.0,
         reasons=(reason,),
         diagnostics=diagnostics or {},
+        correlation_gross_recommendation=gross_multiplier,
     )
 
 
@@ -91,6 +105,10 @@ def _validate_config(config: CapitalAllocatorConfig) -> str | None:
         return "invalid_cvar_alpha"
     if not _is_finite_number(config.min_positive_mean):
         return "invalid_min_positive_mean"
+    if config.correlation_drift_policy is not None:
+        policy_reason = validate_correlation_drift_policy(config.correlation_drift_policy)
+        if policy_reason is not None:
+            return f"invalid_correlation_drift_policy:{policy_reason}"
     return None
 
 
@@ -310,9 +328,25 @@ def allocate_capital(
             "observations": len(values),
         }
 
+    gross_multiplier = 1.0
+    contextual_diagnostics: dict = {"book_stats": book_stats}
+    if config.correlation_drift_policy is not None:
+        correlation_assessment = evaluate_correlation_drift(
+            clean_returns,
+            policy=config.correlation_drift_policy,
+        )
+        gross_multiplier = correlation_assessment.recommended_gross_multiplier
+        contextual_diagnostics["correlation_drift"] = correlation_drift_diagnostics(
+            correlation_assessment
+        )
+
     positive_books = {book_id for book_id, value in expected_by_book.items() if value > _EPS}
     if not positive_books:
-        return _blocked("no_positive_expected_return", {"book_stats": book_stats})
+        return _blocked(
+            "no_positive_expected_return",
+            contextual_diagnostics,
+            gross_multiplier=gross_multiplier,
+        )
 
     caps, capacity_caps, cap_reason = _effective_caps(
         book_ids,
@@ -322,11 +356,18 @@ def allocate_capital(
         config=config,
     )
     if cap_reason is not None:
-        return _blocked(cap_reason, {"book_stats": book_stats})
+        return _blocked(
+            cap_reason,
+            contextual_diagnostics,
+            gross_multiplier=gross_multiplier,
+        )
     if sum(caps.values()) < 1.0 - _CAP_TOL:
+        diagnostics = dict(contextual_diagnostics)
+        diagnostics.update({"capacity_caps": capacity_caps, "effective_caps": caps})
         return _blocked(
             "infeasible_capacity_caps",
-            {"book_stats": book_stats, "capacity_caps": capacity_caps, "effective_caps": caps},
+            diagnostics,
+            gross_multiplier=gross_multiplier,
         )
 
     try:
@@ -352,24 +393,38 @@ def allocate_capital(
             cvar_alpha=float(config.cvar_alpha),
         )
     except (ValueError, InfeasibleConstraints, OptimizerError, IndexError) as exc:
-        return _blocked(
-            "optimizer_failed",
+        diagnostics = dict(contextual_diagnostics)
+        diagnostics.update(
             {
-                "book_stats": book_stats,
                 "capacity_caps": capacity_caps,
                 "effective_caps": caps,
                 "error": str(exc),
-            },
+            }
+        )
+        return _blocked(
+            "optimizer_failed",
+            diagnostics,
+            gross_multiplier=gross_multiplier,
         )
 
     optimized = {ids[i]: raw_weights[i] for i in range(len(ids))}
     for book_id in book_ids:
         optimized.setdefault(book_id, 0.0)
     if any(not math.isfinite(optimized[book_id]) for book_id in book_ids):
-        return _blocked("optimizer_failed", {"book_stats": book_stats})
+        return _blocked(
+            "optimizer_failed",
+            contextual_diagnostics,
+            gross_multiplier=gross_multiplier,
+        )
     cleaned = _clean_weights(optimized, caps)
     if cleaned is None:
-        return _blocked("optimizer_failed", {"book_stats": book_stats, "effective_caps": caps})
+        diagnostics = dict(contextual_diagnostics)
+        diagnostics["effective_caps"] = caps
+        return _blocked(
+            "optimizer_failed",
+            diagnostics,
+            gross_multiplier=gross_multiplier,
+        )
     optimized = cleaned
 
     turnover = sum(abs(optimized.get(book_id, 0.0)) for book_id in book_ids)
@@ -377,7 +432,11 @@ def allocate_capital(
     if prev_weights is not None:
         prev_reason = _validate_prev_weights(prev_weights, known)
         if prev_reason is not None:
-            return _blocked(prev_reason, {"book_stats": book_stats})
+            return _blocked(
+                prev_reason,
+                contextual_diagnostics,
+                gross_multiplier=gross_multiplier,
+            )
         final_weights, turnover = cost_aware_rebalance(
             dict(prev_weights),
             optimized,
@@ -386,11 +445,21 @@ def allocate_capital(
         final_weights = {book_id: final_weights.get(book_id, 0.0) for book_id in book_ids}
         for book_id in book_ids:
             if final_weights[book_id] > caps[book_id] + _CAP_TOL:
-                return _blocked("post_rebalance_cap_violation", {"book_stats": book_stats, "effective_caps": caps})
+                diagnostics = dict(contextual_diagnostics)
+                diagnostics["effective_caps"] = caps
+                return _blocked(
+                    "post_rebalance_cap_violation",
+                    diagnostics,
+                    gross_multiplier=gross_multiplier,
+                )
 
     total_weight = sum(final_weights.values())
     if not math.isfinite(total_weight) or abs(total_weight - 1.0) > _WEIGHT_SUM_TOL:
-        return _blocked("allocation_not_normalized", {"book_stats": book_stats})
+        return _blocked(
+            "allocation_not_normalized",
+            contextual_diagnostics,
+            gross_multiplier=gross_multiplier,
+        )
 
     risk_contribution_pct = _risk_diagnostics(clean_returns, final_weights, config.min_observations)[0]
     diagnostics = {
@@ -406,6 +475,8 @@ def allocate_capital(
             "zero_variance": _EPS,
         },
     }
+    if "correlation_drift" in contextual_diagnostics:
+        diagnostics["correlation_drift"] = contextual_diagnostics["correlation_drift"]
 
     allocations = tuple(
         BookAllocation(
@@ -423,4 +494,5 @@ def allocate_capital(
         turnover=turnover,
         reasons=("capital_allocated",),
         diagnostics=diagnostics,
+        correlation_gross_recommendation=gross_multiplier,
     )

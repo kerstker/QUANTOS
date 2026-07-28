@@ -6,10 +6,12 @@ from quantos.contracts.alpha import (
     Actor, ActorKind, AlphaDefinition, UnauthorizedPromotion,
 )
 from quantos.contracts.governance import ApprovalRecord
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from quantos.contracts.alpha import AlphaEvaluation
-from services.alpha.catalog import AlphaCatalog
+from services.alpha.catalog import AlphaCatalog, CatalogSnapshot
 from services.alpha.lifecycle import AlphaLifecycleManager, GuardRejected
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 HUMAN = Actor(actor_id="alice", kind=ActorKind.HUMAN)
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
@@ -17,23 +19,31 @@ S = AlphaState
 GOOD_PAPER = {"backtest_sharpe": 1.1, "paper_sharpe": 1.0}
 
 
-def _eval(alpha_id, trial_count, verdict=ValidationVerdict.PASS, dsr=0.8, pbo=0.1, mir=0.5,
+def _eval(catalog, alpha_id, trial_count, verdict=ValidationVerdict.PASS, dsr=0.8, mir=0.5,
           ic_pvalue=None):
-    return AlphaEvaluation(alpha_id=alpha_id, verdict=verdict, deflated_sharpe=dsr, pbo=pbo,
-                           catalog_trial_count=trial_count, marginal_ir=mir, ic_pvalue=ic_pvalue)
+    return bound_alpha_evaluation(
+        catalog,
+        alpha_id,
+        verdict=verdict,
+        deflated_sharpe=dsr,
+        catalog_trial_count=trial_count,
+        marginal_ir=mir,
+        ic_pvalue=ic_pvalue,
+    )
 
 
 def _mgr():
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id="a1", name="A", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, "a1")
     return AlphaLifecycleManager(cat), cat
 
 
 def _to_paper(mgr, cat, t0=1):
     cc = cat.global_trial_count()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=t0)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=t0 + 1, evaluation=_eval("a1", cc))
-    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=t0 + 2, evaluation=_eval("a1", cc))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=t0 + 1, evaluation=_eval(cat, "a1", cc))
+    mgr.advance("a1", S.PAPER_TRADING, AGENT, timestamp=t0 + 2, evaluation=_eval(cat, "a1", cc))
 
 
 # --- only PASS advances ------------------------------------------------------
@@ -41,10 +51,11 @@ def _to_paper(mgr, cat, t0=1):
 def test_only_pass_advances_to_validated():
     mgr, cat = _mgr()
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    trial_count = cat.global_trial_count()
     for bad in (ValidationVerdict.WARN, ValidationVerdict.FAIL, ValidationVerdict.REQUIRES_HUMAN_REVIEW):
         with pytest.raises(GuardRejected):
-            mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, verdict=bad))
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=3, evaluation=_eval("a1", 1))
+            mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval(cat, "a1", trial_count, verdict=bad))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=3, evaluation=_eval(cat, "a1", trial_count))
     assert cat.state("a1") == S.VALIDATED
 
 
@@ -53,14 +64,14 @@ def test_insignificant_ic_pvalue_blocks_validation():
     cat.set_pvalue("a1", 0.9)                       # fails catalog-wide BH-FDR
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
     with pytest.raises(GuardRejected):              # FDR_NOT_SURVIVED
-        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, ic_pvalue=0.9))
+        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval(cat, "a1", cat.global_trial_count(), ic_pvalue=0.9))
 
 
 def test_significant_ic_pvalue_survives_fdr():
     mgr, cat = _mgr()
     cat.set_pvalue("a1", 0.001)
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1, ic_pvalue=0.001))
+    mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval(cat, "a1", cat.global_trial_count(), ic_pvalue=0.001))
     assert cat.state("a1") == S.VALIDATED
 
 
@@ -89,11 +100,49 @@ def test_family_fdr_is_an_additional_validation_gate(monkeypatch):
 
 def test_understated_trial_count_is_rejected():
     mgr, cat = _mgr()
+    evaluation = _eval(cat, "a1", cat.global_trial_count())
     for k in range(50):
-        cat.register_trial(f"c{k}")           # catalog grew to 51 after registration
+        cat.register_trial(stable_hash({"growth": k}))
     mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
-    with pytest.raises(GuardRejected):         # eval computed at trial_count=1
-        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=_eval("a1", 1))
+    with pytest.raises(GuardRejected):
+        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=evaluation)
+
+
+def test_missing_pbo_evidence_blocks_validation():
+    mgr, cat = _mgr()
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    unbound = AlphaEvaluation(
+        alpha_id="a1",
+        verdict=ValidationVerdict.PASS,
+        deflated_sharpe=0.8,
+        pbo=0.0,
+        catalog_trial_count=cat.global_trial_count(),
+        catalog_trial_set_hash=cat.trial_set_hash(),
+        marginal_ir=0.5,
+    )
+    with pytest.raises(GuardRejected) as exc_info:
+        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=unbound)
+    assert "PBO_EVIDENCE_UNBOUND" in exc_info.value.reasons
+
+
+def test_same_count_trial_set_substitution_blocks_validation():
+    mgr, cat = _mgr()
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+    evaluation = _eval(cat, "a1", cat.global_trial_count())
+    snapshot = cat.snapshot()
+    cat.restore(
+        CatalogSnapshot(
+            trials=tuple(
+                stable_hash({"substituted_trial": index})
+                for index in range(evaluation.catalog_trial_count)
+            ),
+            alphas=snapshot.alphas,
+        )
+    )
+    assert cat.global_trial_count() == evaluation.catalog_trial_count
+    with pytest.raises(GuardRejected) as exc_info:
+        mgr.advance("a1", S.VALIDATED, AGENT, timestamp=2, evaluation=evaluation)
+    assert "TRIAL_SET_MISMATCH" in exc_info.value.reasons
 
 
 # --- APPROVED is human-only --------------------------------------------------
@@ -171,7 +220,66 @@ def test_catalog_growth_after_paper_blocks_approval():
     mgr, cat = _mgr()
     _to_paper(mgr, cat)                                      # eval captured at trial_count=1
     for k in range(5):
-        cat.register_trial(f"c{k}")                          # catalog grows -> DSR now understated
+        cat.register_trial(stable_hash({"approval_growth": k}))
     ok = ApprovalRecord(approval_id="z", subject_id="a1", approver="alice", approved=True, timestamp=13)
     with pytest.raises(GuardRejected):                       # TRIAL_COUNT_UNDERSTATED_AT_APPROVAL
         mgr.advance("a1", S.APPROVED, HUMAN, timestamp=13, approval=ok, paper_evidence=GOOD_PAPER)
+
+
+def test_same_count_trial_set_substitution_after_paper_blocks_approval():
+    mgr, cat = _mgr()
+    _to_paper(mgr, cat)
+    snapshot = cat.snapshot()
+    cat.restore(
+        CatalogSnapshot(
+            trials=tuple(
+                stable_hash({"replacement_after_paper": index})
+                for index in range(cat.global_trial_count())
+            ),
+            alphas=snapshot.alphas,
+        )
+    )
+    ok = ApprovalRecord(
+        approval_id="z",
+        subject_id="a1",
+        approver="alice",
+        approved=True,
+        timestamp=13,
+    )
+    with pytest.raises(GuardRejected) as exc_info:
+        mgr.advance(
+            "a1",
+            S.APPROVED,
+            HUMAN,
+            timestamp=13,
+            approval=ok,
+            paper_evidence=GOOD_PAPER,
+        )
+    assert "TRIAL_SET_MISMATCH_AT_APPROVAL" in exc_info.value.reasons
+
+
+def test_same_trial_set_but_changed_catalog_returns_blocks_approval():
+    mgr, cat = _mgr()
+    _to_paper(mgr, cat)
+    support_id = "__evidence_support__:a1"
+    cat.set_returns(
+        support_id,
+        tuple(0.02 if index % 2 else -0.005 for index in range(400)),
+    )
+    approval = ApprovalRecord(
+        approval_id="z",
+        subject_id="a1",
+        approver="alice",
+        approved=True,
+        timestamp=13,
+    )
+    with pytest.raises(GuardRejected) as exc_info:
+        mgr.advance(
+            "a1",
+            S.APPROVED,
+            HUMAN,
+            timestamp=13,
+            approval=approval,
+            paper_evidence=GOOD_PAPER,
+        )
+    assert "CATALOG_SNAPSHOT_MISMATCH_AT_APPROVAL" in exc_info.value.reasons

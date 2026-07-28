@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEvaluation
-from quantos.contracts.research import AlphaState, ValidationVerdict
+from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition
+from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.guards import promotion_subject
 from services.alpha.lifecycle import AlphaLifecycleManager
@@ -34,20 +34,18 @@ from services.monitoring.audit_store import DurableAuditLog
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
 
 
 S = AlphaState
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
 
 
-def _eval_report(alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
-    return AlphaEvaluation(
-        alpha_id=alpha_id,
-        verdict=ValidationVerdict.PASS,
-        deflated_sharpe=0.8,
-        pbo=0.1,
+def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2, repro="r1"):
+    return bound_alpha_evaluation(
+        catalog,
+        alpha_id,
         catalog_trial_count=trial_count,
-        marginal_ir=0.5,
         net_sharpe=net_sharpe,
         reproducibility_hash=repro,
     )
@@ -102,15 +100,16 @@ def _seed_registry_with_alpha(tmp_path, alpha_id="test_alpha", *, with_artifact=
     )
     cat = AlphaCatalog()
     cat.register(AlphaDefinition(alpha_id=alpha_id, name="Test", factor_ids=("f1",)))
+    seed_catalog_evidence(cat, alpha_id)
     mgr = AlphaLifecycleManager(cat)
     cc = cat.global_trial_count()
     mgr.advance(alpha_id, S.TESTING, AGENT, timestamp=1)
-    mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(alpha_id, cc))
-    mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(alpha_id, cc))
+    mgr.advance(alpha_id, S.VALIDATED, AGENT, timestamp=2, evaluation=_eval_report(cat, alpha_id, cc))
+    mgr.advance(alpha_id, S.PAPER_TRADING, AGENT, timestamp=3, evaluation=_eval_report(cat, alpha_id, cc))
     registry.save(cat, now=3)
     if with_artifact:
         registry.record_evaluation(
-            _eval_report(alpha_id, cc), dataset_version="v1", recorded_ts=3
+            _eval_report(cat, alpha_id, cc), dataset_version="v1", recorded_ts=3
         )
     return registry
 

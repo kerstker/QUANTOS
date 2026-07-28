@@ -6,6 +6,7 @@ from quantos.contracts.alpha import Actor, ActorKind, AlphaDefinition, AlphaEval
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
 from services.alpha.factory import AlphaFactory
+from tests.alpha.fixtures import catalog_bound_evaluation
 
 
 class _StubEvaluator:
@@ -14,11 +15,28 @@ class _StubEvaluator:
         self.catalog = catalog
         self.verdict = verdict
 
+    def prepare_catalog_observation(self, alpha_id, periods):
+        del periods
+        offset = 0.001 * (len(self.catalog.all_ids()) + 1)
+        self.catalog.set_returns(
+            alpha_id, (0.01 + offset, 0.0, 0.02 + offset, -0.01)
+        )
+
     def evaluate(self, alpha_id, periods, **kw):
-        self.catalog.set_returns(alpha_id, (0.01, 0.0, 0.02, -0.01))
-        return AlphaEvaluation(alpha_id=alpha_id, verdict=self.verdict, deflated_sharpe=0.8,
-                               pbo=0.1, catalog_trial_count=self.catalog.global_trial_count(),
-                               marginal_ir=0.5)
+        pbo_evidence = kw.get("pbo_evidence")
+        if self.catalog.evidence(alpha_id) is None:
+            return AlphaEvaluation(
+                alpha_id=alpha_id,
+                verdict=self.verdict,
+                catalog_trial_count=self.catalog.global_trial_count(),
+                catalog_trial_set_hash=self.catalog.trial_set_hash(),
+            )
+        return catalog_bound_evaluation(
+            self.catalog,
+            alpha_id,
+            verdict=self.verdict,
+            pbo_evidence=pbo_evidence,
+        )
 
 
 def _factory(verdict):
@@ -33,8 +51,8 @@ def _cands(n=1):
 
 def test_pass_advances_to_paper_but_never_approved():
     fac, cat = _factory(ValidationVerdict.PASS)
-    report = fac.run(_cands(1))
-    assert report["a0"]["state"] == AlphaState.PAPER_TRADING
+    report = fac.run(_real_cands(2))
+    assert report["rc0"]["state"] == AlphaState.PAPER_TRADING
     # the safety invariant: nothing is APPROVED
     assert all(cat.state(a) != AlphaState.APPROVED for a in cat.all_ids())
 
@@ -59,14 +77,13 @@ def test_factory_must_run_as_non_human_actor():
 def test_factory_run_is_deterministic():
     r1, c1 = _factory(ValidationVerdict.PASS)
     r2, c2 = _factory(ValidationVerdict.PASS)
-    out1 = {k: v["state"] for k, v in r1.run(_cands(3)).items()}
-    out2 = {k: v["state"] for k, v in r2.run(_cands(3)).items()}
+    out1 = {k: v["state"] for k, v in r1.run(_real_cands(3)).items()}
+    out2 = {k: v["state"] for k, v in r2.run(_real_cands(3)).items()}
     assert out1 == out2 and all(s == AlphaState.PAPER_TRADING for s in out1.values())
 
 
 # --- real-evaluator integration: PBO wiring + fail-closed evidence (audit P0/P1) ---
 from services.alpha.panel_backtest import PanelPeriod
-from services.research.backtest_engine.costs import CostModel
 
 
 def _seeded_catalog():
@@ -112,19 +129,25 @@ def test_factory_computes_and_stamps_a_real_batch_pbo():
     assert len({round(p, 9) for p in pbos}) == 1          # one batch-level selection PBO, shared
     for aid in ("rc0", "rc1", "rc2"):                     # evidence present -> not parked for that
         assert all("NOT_ASSESSED" not in r for r in report[aid]["evaluation"].reasons)
+        assert report[aid]["evaluation"].pbo_evidence is not None
+        assert report[aid]["evaluation"].pbo_evidence_hash
 
 
-def test_batch_pbo_returns_none_for_single_candidate():
-    """单候选返回 None — 无法测量选择偏差，FAIL CLOSED（正确行为）。"""
-    from services.alpha.factory import batch_pbo
-    result = batch_pbo(_real_cands(1), cost=CostModel(), quantile=0.2, target_aum=1e7)
-    assert result is None
-
-
-def test_batch_pbo_narrows_exception_handling():
-    """batch_pbo 在无法计算 PBO 时应返回 None（fail-closed），
-    但不应吞没编程错误（如传入非候选的乱数据）。"""
-    from services.alpha.factory import batch_pbo
-    # 传入空列表 → 返回 None（正确行为：无法测量）
-    result = batch_pbo([], cost=CostModel(), quantile=0.2, target_aum=1e7)
-    assert result is None
+def test_factory_freezes_complete_catalog_before_first_dsr_verdict():
+    fac = AlphaFactory(catalog=_seeded_catalog())
+    evidence = {
+        aid: {"leakage_ok": True, "regime_profitable_frac": 1.0}
+        for aid in ("rc0", "rc1", "rc2")
+    }
+    report = fac.run(_real_cands(3), evidence=evidence)
+    catalog_evidence = [
+        report[aid]["evaluation"].catalog_evidence
+        for aid in ("rc0", "rc1", "rc2")
+    ]
+    assert all(item is not None for item in catalog_evidence)
+    assert len(
+        {item.catalog_snapshot_hash for item in catalog_evidence if item}
+    ) == 1
+    assert {
+        item.trial_count for item in catalog_evidence if item
+    } == {fac.catalog.global_trial_count()}

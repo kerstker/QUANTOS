@@ -13,11 +13,13 @@ Survivorship-free: RETIRED/REJECTED alphas remain queryable.
 """
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional, Sequence
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 
 from services.lifecycle import (
@@ -75,6 +77,8 @@ class AlphaCatalog:
         self._returns: dict[str, tuple[float, ...]] = {}
         self._sharpes: dict[str, float] = {}
         self._pvalues: dict[str, float] = {}
+        self._historical_returns: dict[str, tuple[float, ...]] = {}
+        self._historical_definition_hashes: dict[str, str] = {}
         self._historical_sharpes: dict[str, float] = {}
         self._historical_pvalues: dict[str, float] = {}
         self._seen_configs: set[str] = set()
@@ -90,7 +94,8 @@ class AlphaCatalog:
         aid = definition.alpha_id
         if aid in self._defs:
             raise ValueError(f"alpha already registered: {aid}")
-        self.register_trial(definition.definition_hash)
+        if definition.definition_hash not in self._seen_configs:
+            self.register_trial(definition.definition_hash)
         self._defs[aid] = definition
         self._state[aid] = AlphaState.DRAFT
         self._write_triple(aid, project(AlphaState.DRAFT))
@@ -105,6 +110,15 @@ class AlphaCatalog:
 
     def global_trial_count(self) -> int:
         return self._trial_count
+
+    def trial_set_hash(self) -> str:
+        """Digest the complete monotonic distinct-config population.
+
+        Count-only guards catch catalog growth but not a same-size substituted set.
+        The digest lets evaluation and lifecycle evidence bind the exact population.
+        """
+
+        return stable_hash(sorted(self._seen_configs))
 
     def catalog_var_sr(self) -> Optional[float]:
         """Population variance of per-observation Sharpe across the catalog.
@@ -122,8 +136,11 @@ class AlphaCatalog:
     # --- per-alpha data ------------------------------------------------------
 
     def set_returns(self, alpha_id: str, returns: Sequence[float]) -> None:
-        rs = tuple(returns)
+        rs = tuple(float(value) for value in returns)
+        if any(not math.isfinite(value) for value in rs):
+            raise ValueError("catalog returns must contain only finite values")
         self._returns[alpha_id] = rs
+        self._sharpes.pop(alpha_id, None)
         if len(rs) > 1:
             sd = statistics.pstdev(rs)
             if sd > 0:
@@ -131,6 +148,53 @@ class AlphaCatalog:
 
     def returns(self, alpha_id: str) -> tuple[float, ...]:
         return self._returns.get(alpha_id, ())
+
+    def evidence(self, alpha_id: str):
+        """Mint replayable catalog-wide DSR evidence for one current alpha.
+
+        The catalog owns both the monotonic trial ledger and all exact OOS return
+        observations.  Callers can consume this frozen value but cannot supply a
+        local trial-count/variance override.  Historical observations are keyed
+        by their definition hash; a current re-evaluation replaces the matching
+        historical observation rather than double-counting the same hypothesis.
+        """
+
+        if alpha_id not in self._defs or alpha_id not in self._returns:
+            return None
+        if alpha_id not in self._sharpes:
+            return None
+        if len({**self._historical_sharpes, **self._sharpes}) < 2:
+            return None
+
+        return_series_by_definition: dict[str, tuple[float, ...]] = {}
+        for historical_id, values in self._historical_returns.items():
+            definition_hash = self._historical_definition_hashes.get(
+                historical_id
+            )
+            if definition_hash is not None:
+                return_series_by_definition[definition_hash] = values
+        for current_id in sorted(self._returns):
+            definition = self._defs.get(current_id)
+            if definition is None:
+                continue
+            definition_hash = definition.definition_hash
+            values = self._returns[current_id]
+            existing = return_series_by_definition.get(definition_hash)
+            if existing is not None and existing != values:
+                raise ValueError(
+                    "one catalog definition has conflicting OOS return series"
+                )
+            return_series_by_definition[definition_hash] = values
+
+        from services.validation.catalog_evidence import create_catalog_evidence
+
+        definition_hash = self._defs[alpha_id].definition_hash
+        return create_catalog_evidence(
+            subject_id=alpha_id,
+            subject_definition_hash=definition_hash,
+            trial_definition_hashes=tuple(sorted(self._seen_configs)),
+            return_series_by_definition=return_series_by_definition,
+        )
 
     def set_pvalue(self, alpha_id: str, pvalue: Optional[float]) -> None:
         if pvalue is not None:
@@ -353,6 +417,8 @@ class AlphaCatalog:
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
+        self._historical_returns = {}
+        self._historical_definition_hashes = {}
         self._historical_sharpes = {}
         self._historical_pvalues = {}
         self._seen_configs = set(snap.trials)
@@ -374,6 +440,7 @@ class AlphaCatalog:
         trials: Sequence[str],
         historical_returns: Mapping[str, Sequence[float]],
         historical_pvalues: Mapping[str, float],
+        historical_definition_hashes: Optional[Mapping[str, str]] = None,
     ) -> None:
         """Restore multiple-testing state without stale lifecycle identities.
 
@@ -392,9 +459,16 @@ class AlphaCatalog:
         self._pvalues = {}
         self._seen_configs = set(trials)
         self._trial_count = len(self._seen_configs)
+        self._historical_returns = {}
+        self._historical_definition_hashes = dict(
+            historical_definition_hashes or {}
+        )
         self._historical_sharpes = {}
         for alpha_id, values in historical_returns.items():
             returns = tuple(float(value) for value in values)
+            if any(not math.isfinite(value) for value in returns):
+                raise ValueError("historical catalog returns must be finite")
+            self._historical_returns[alpha_id] = returns
             if len(returns) > 1:
                 standard_deviation = statistics.pstdev(returns)
                 if standard_deviation > 0:

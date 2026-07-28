@@ -67,18 +67,43 @@ class ResearchAgentLoop:
 
         report, review_queue = {}, []
         evidence = evidence or {}
+        active_candidates = []
+        for definition, periods in candidate_pool:
+            try:
+                self.catalog.register(definition)
+                active_candidates.append((definition, periods))
+            except Exception as exc:
+                report[definition.alpha_id] = {
+                    "error": type(exc).__name__,
+                    "state": self._state_of(definition.alpha_id),
+                }
+
+        prepare_observation = getattr(
+            self.evaluator, "prepare_catalog_observation", None
+        )
+        if callable(prepare_observation):
+            prepared_candidates = []
+            for definition, periods in active_candidates:
+                try:
+                    prepare_observation(definition.alpha_id, periods)
+                    prepared_candidates.append((definition, periods))
+                except Exception as exc:
+                    report[definition.alpha_id] = {
+                        "error": type(exc).__name__,
+                        "state": self._state_of(definition.alpha_id),
+                    }
+            active_candidates = prepared_candidates
         pbo_batch = batch_pbo(
-            candidate_pool, cost=getattr(self.evaluator, "cost", CostModel()),
+            active_candidates, cost=getattr(self.evaluator, "cost", CostModel()),
             quantile=getattr(self.evaluator, "quantile", 0.2),
             target_aum=getattr(self.evaluator, "target_aum", 1e7))
-        for defn, periods in candidate_pool:
+        for defn, periods in active_candidates:
             try:
                 assert_action_allowed(self.actor, AgentAction.EVALUATE)
-                self.catalog.register(defn)
                 ev_in = evidence.get(defn.alpha_id, {})
                 evaluation_args = {
                     "as_of": timestamp,
-                    "pbo": pbo_batch,
+                    "pbo_evidence": pbo_batch,
                     "leakage_ok": ev_in.get("leakage_ok"),
                     "regime_profitable_frac": ev_in.get("regime_profitable_frac"),
                 }

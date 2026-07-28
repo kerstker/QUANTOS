@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 from quantos.contracts.events import EventOutboxMessage
+
+if TYPE_CHECKING:
+    from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 
 
 class ExperimentStoreError(Exception):
@@ -38,6 +41,20 @@ class EvaluationAuditIntent:
     timestamp: int
     target: str
     metadata: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class EvaluationArtifactWrite:
+    """Prepared immutable evaluation payload for one store-owned transaction."""
+
+    run_id: str
+    alpha_id: str
+    dataset_version: str
+    recorded_ts: int
+    verdict: str
+    content_hash: str
+    evaluation_json: str
+    audit_intent: EvaluationAuditIntent | None = None
 
 
 @runtime_checkable
@@ -301,12 +318,37 @@ class ForwardLedgerPort(Protocol):
         *,
         recorded_at: int,
         weights: Mapping[str, float],
+        admission_ref: ForwardAdmissionRef,
         signals: Optional[Mapping[str, float]] = None,
-        source: str = "FORWARD_LIVE",
+        source: str = "FORWARD_L2_ATTESTED_DECISION",
     ) -> bool: ...
 
     def decisions(self, alpha_id: str) -> list[dict]: ...
 
     def pending(self, alpha_id: str) -> list[dict]: ...
+
+    def attested_pending(self, alpha_id: str) -> list[dict]: ...
+
+    def legacy_decisions(self) -> list[dict]: ...
+
+    def decision_chain_valid(self) -> bool: ...
+
+    def commit_realization(
+        self,
+        alpha_id: str,
+        decided_ts: int,
+        *,
+        as_of_ts: int,
+        realized_return: float,
+        realized_ic: Optional[float],
+        source: str,
+        inputs: Mapping[str, object],
+        admission_ref: ForwardAdmissionRef,
+        committed_at_ms: int,
+    ) -> bool: ...
+
+    def attested_realizations(self, alpha_id: str | None = None) -> list[dict]: ...
+
+    def realization_chain_valid(self) -> bool: ...
 
     def mark_realized(self, alpha_id: str, decided_ts: int) -> None: ...

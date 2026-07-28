@@ -44,13 +44,13 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | **4 ✓** | **协方差感知多 book 资本配置 primitive**(已做,fail-closed mean-variance AUM budget) | 4/8 | P1 / M | `services/portfolio/capital_allocator.py`、`constrained_optimizer`、风险模型 | 已落地纯函数 allocator:多策略收益流 + 可选容量/质量/前次权重 → `ALLOCATED/BLOCKED` 研究 AUM 权重建议; lower-confidence expected return + shrunk covariance + constrained mean-variance optimizer,容量/质量/历史证据异常 fail-closed。诚实边界:primitive only,不读 dry-run/run_registry,不自动调仓/干跑/晋级/下单;`quality_multiplier` 来源与容量衰减曲线留后续独立 primitive。 |
 | **5 ✓** | **Brinson-Fachler 归因 primitive**(已做,allocation/selection/interaction) | 4 | P2 / M | `services/portfolio/brinson.py`、`construction.py` 既有归因 | 已落地纯函数 benchmark-relative attribution: caller-supplied portfolio/benchmark weights + asset returns + group map → `ATTRIBUTED/BLOCKED`;输出 allocation/selection/interaction/active return 恒等式诊断。诚实边界:primitive only,不读写 DB、不接 dry-run/console/预交易/券商/生命周期;多层 sector/style/macro 适配器留后续。 |
 | **6 ✓** | **冲击模型校准 primitive**(已做,文献默认 + 敏感性参数包) | 5 | P1 / M | `services/research/realism/impact_calibration.py`、`impact.py`、`capacity_curve.py` | 已落地纯函数 calibration set: aggressive/base/conservative 三情景 + `UNCALIBRATED_PRINCIPLED` provenance + 可直接传给 `capacity_band` 的系数带。诚实边界:不是 venue/tick 实测校准,不改 dry-run 成本/成交/组合/下单;真实成交校准仍需 tick/LOB/执行数据。 |
-| 7 | 尾部感知组合构建(CVaR 优化) | 4 | P2 / M | `tail_risk.py`、约束优化器 | min-variance 忽略尾部;CVaR 最小化标准且代码量小 |
-| 8 | 动态相关漂移检测(滚动相关+regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | 静态收缩协方差错过 regime 切换(常态 0.3→压力 0.9) |
-| 9 | 全局多重检验预算账本(跨会话 trial 计数) | 3 | P2 / M | `experiment_registry`、DSR n_trials | 把「一共试了多少次」变成全局账,防跨会话选择偏差 |
+| **7 ✓** | **尾部感知组合构建(CVaR + 统一组合约束门)** | 4 | P2 / M | `services/portfolio/portfolio_constraints.py`、`tail_risk.py`、约束优化器 | **已完成 L2 版本：**经验 CVaR 尾部预算、firm gross/net/集中、容量瓶颈、拥挤证据统一成 fail-closed 结果，并在 optimizer、post-rebalance construction、signal adapter 可选承重；缺证据 `PENDING`、非法/超限 `BLOCK`、仅 `PASS` 放行。诚实边界：调用方提供场景与 ADV，仍不是 venue/margin 校准或盘中持久风控；机器顶级分数不因一个 primitive 自动上升。 |
+| **8 ✓** | **动态相关漂移检测**(PIT 滚动相关 + regime 断点告警) | 4 | P2 / M | `macro_regime.py`、协方差 | **检测与真实干跑诊断已完成；自动缩放被执行控制证伪，诚实保持关闭。** `correlation_drift.py` 用不重叠 52+8 周窗口和 exclusive `end_index` 输出 PASS/WARN/BLOCK + 建议倍数；allocator/driver 保留 provenance 与状态计数。无条件和上期双亏确认两种 overlay 均降低执行级 Sharpe，故 `scaled_periods=0`，不是把 null 结果伪装成风控提升。 |
+| **9 ✓** | 全局多重检验预算账本(跨会话 trial 计数) | 4 | P2 / M | `experiment_registry`、DSR n_trials、`evidence/alpha_trial_ledger_history.json` | **已完成**：官方搜索入口、五个 factory 驱动器和历史工具均绑定持久化 search identity；跨会话单调账本、候选/试验绑定、可移植封存快照及数据库追加保护已由独立治理检查验证。后续只维护账本证据，不再把它列为缺口。 |
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
 | **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
-| 13 | 数据漂移检测(分布/regime 漂移告警) | 3/6 | P2 / M | `macro_regime`、data quality | 生产化监控雏形 |
+| **13 ◑** | **数据漂移检测**(PIT 分布漂移告警) | 4/6 | P2 / M | `macro_regime`、data quality、特征值缓存 | **数据集与封存 PIT 特征分布均已升真：**60/20 窗口 KS 内核 + 真实 `crypto_daily.db` close-to-close 监控行已落地；新增 FX PIT bundle 的 3 个因果特征级重放，当前诊断 3/3 `BLOCK`。**仍缺：**物化特征值缓存、实时/纸面 feed、阈值校准和运营告警；该诊断不承重。 |
 
 ## 4. 需外部资源(钱与组织,非代码缺陷)
 
@@ -70,3 +70,11 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 
 ---
 *本路线图随开发推进更新;完成一项即在 Rank 行标注 ✓ 并附提交哈希。*
+> **2026-07-21 增量：** Rank #13 的下一小步已落地：复用 PIT trailing KS 内核，新增
+> `evaluate_feature_distribution_drift` 对声明 feature universe 做逐 feature 漂移诊断；缺失/多余
+> feature fail-closed，仍是 read-only diagnostic，不伪造 feature cache、实时 feed 或运营告警。
+
+> **2026-07-21 Rank #13 特征级证据：** `tools/feature_distribution_drift_research.py` 已从封存的
+> FX PIT bundle 重放三个因果 close 特征，并生成可确定性校验的
+> `evidence/feature_distribution_drift_baseline.json`。当前诊断为 `BLOCK`（三个特征均超出 KS
+> 阈值），但制品明确不承重；FeatureValue 缓存、实时/纸面 feed、校准和告警仍是开放项。

@@ -11,70 +11,24 @@ from __future__ import annotations
 import json
 from typing import Optional, Sequence
 
-from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
 from quantos.contracts.events import EventOutboxMessage
-from quantos.contracts.hashing import short_hash, stable_hash
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 from services.alpha.catalog import AlphaCatalog, AlphaStateRow, CatalogSnapshot
-from services.lifecycle import (
-    DeploymentState,
-    HealthReason,
-    HealthState,
-    HealthVerdict,
-    LifecycleTriple,
-    ResearchState,
-    project,
+from services.alpha.evaluation_evidence import (
+    bind_evaluation_reproducibility,
+    verify_evaluation_reproducibility,
+)
+from services.research.experiment_registry.evaluation_artifact import (
+    prepare_evaluation_artifact,
 )
 from services.research.ports.persistence import (
-    EvaluationAuditIntent,
     ExperimentStoreError,
     ExperimentStorePort,
 )
-from services.research.trial_provenance import TrialProvenance
-
-
-def _triple_db_fields(triple: LifecycleTriple) -> dict:
-    """727 C2 dual-write: persist the orthogonal machines next to the legacy
-    mixed state in the same row (same transaction upstream). C3 persists the
-    loss markers too — a triple that diverges from the projection is a fully
-    recorded row, and its (possibly empty) marker list must round-trip."""
-    return {
-        "research_state": triple.research.value,
-        "deployment_state": triple.deployment.value,
-        "health_state": triple.health.state.value,
-        "research_reason": None,  # reserved for C3+ transition notes
-        "deployment_reason": None,
-        "health_reason": triple.health.reason.value,
-        "lossy_json": json.dumps(list(triple.lossy)),
-    }
-
-
-def _triple_from_row(row: dict) -> LifecycleTriple:
-    """Read path for the C2 columns. A row whose triple columns are NULL predates
-    the dual-write (or came from a legacy-only caller) — fall back to the
-    projection of the legacy state instead of inventing dimensions. Fail-closed
-    on corrupt values, exactly like the legacy state column."""
-    legacy = AlphaState(row["state"])
-    if row.get("research_state") is None:
-        return project(legacy)
-    health_reason = row.get("health_reason") or HealthReason.NONE.value
-    lossy_json = row.get("lossy_json")
-    if lossy_json is None:
-        # A C2 dual-written row is an exact projection, so the legacy
-        # projection's loss markers are the honest metadata for it.
-        lossy = project(legacy).lossy
-    else:
-        # A C3-written row carries its own markers (possibly empty: a fully
-        # recorded divergent triple has nothing lost).
-        lossy = tuple(json.loads(lossy_json))
-    return LifecycleTriple(
-        research=ResearchState(row["research_state"]),
-        deployment=DeploymentState(row["deployment_state"]),
-        health=HealthVerdict(
-            HealthState(row["health_state"]), HealthReason(health_reason)
-        ),
-        lossy=lossy,
-    )
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
+from services.validation.catalog_evidence import verify_catalog_evidence
 
 
 class ExperimentRegistry:
@@ -321,11 +275,14 @@ class ExperimentRegistry:
         trials = tuple(self._store.all_trial_hashes())
         historical_returns = {}
         historical_pvalues = {}
+        historical_definition_hashes = {}
         try:
             for row in self._store.all_alphas():
                 # Validate the complete canonical row even though lifecycle state is
                 # deliberately not installed into the fresh evaluation catalog.
-                AlphaDefinition.model_validate(json.loads(row["definition_json"]))
+                definition = AlphaDefinition.model_validate(
+                    json.loads(row["definition_json"])
+                )
                 AlphaState(row["state"])
                 _triple_from_row(row)  # fail closed on corrupt C2 columns too
                 values = json.loads(row["returns_json"])
@@ -333,6 +290,9 @@ class ExperimentRegistry:
                     raise ValueError("returns_json must decode to a list")
                 historical_returns[row["alpha_id"]] = tuple(
                     float(value) for value in values
+                )
+                historical_definition_hashes[row["alpha_id"]] = (
+                    definition.definition_hash
                 )
                 if row["pvalue"] is not None:
                     historical_pvalues[row["alpha_id"]] = float(row["pvalue"])
@@ -344,6 +304,7 @@ class ExperimentRegistry:
             trials=trials,
             historical_returns=historical_returns,
             historical_pvalues=historical_pvalues,
+            historical_definition_hashes=historical_definition_hashes,
         )
 
     # --- immutable evaluation artifacts -------------------------------------
@@ -358,54 +319,66 @@ class ExperimentRegistry:
         config_hash: str | None = None,
         audit_log=None,
     ) -> str:
-        # run_id identity is derived from reproducibility_hash; an empty one (the
-        # contract default) would collide DISTINCT evaluations of the same alpha+
-        # dataset to one id and silently drop the later artifact (review ER-2).
-        if not evaluation.reproducibility_hash:
-            raise ValueError("evaluation.reproducibility_hash is empty; cannot form a unique run_id")
-        payload = evaluation.model_dump()
-        content_hash = stable_hash({"evaluation": payload, "dataset_version": dataset_version})
-        run_id = short_hash(
-            {
-                "alpha_id": evaluation.alpha_id,
-                "repro": evaluation.reproducibility_hash,
-                "dataset_version": dataset_version,
-            }
+        raw_evaluation = (
+            evaluation.model_dump()
+            if hasattr(evaluation, "model_dump")
+            else evaluation
         )
-        audit_intent = EvaluationAuditIntent(
-            event_id=f"exp-{run_id}",
-            actor="experiment-registry",
-            action="EXPERIMENT_RECORDED",
-            # The store replaces this proposal with the immutable artifact's
-            # timestamp under BEGIN IMMEDIATE. It is intentionally not decided
-            # by a transaction-external read here.
-            timestamp=recorded_ts,
-            target=evaluation.alpha_id,
-            metadata={
-                "run_id": run_id,
-                "content_hash": content_hash,
-                "verdict": evaluation.verdict.value,
-            },
+        parsed = AlphaEvaluation.model_validate(raw_evaluation)
+        if parsed.catalog_evidence is not None and not verify_catalog_evidence(
+            parsed.catalog_evidence
+        ):
+            raise ValueError("evaluation catalog evidence does not replay")
+        if parsed.pbo_evidence is not None and not verify_batch_pbo_evidence(
+            parsed.pbo_evidence
+        ):
+            raise ValueError("evaluation PBO evidence does not replay")
+        if parsed.verdict.value == "PASS" and (
+            parsed.catalog_evidence is None or parsed.pbo_evidence is None
+        ):
+            raise ValueError("PASS evaluation requires complete replayable evidence")
+        if (
+            config_hash is not None
+            and parsed.pbo_evidence is not None
+            and config_hash not in parsed.pbo_evidence.candidate_definition_hashes
+        ):
+            raise ValueError("evaluation PBO evidence is not bound to the search candidate")
+        if (
+            config_hash is not None
+            and parsed.catalog_evidence is not None
+            and config_hash
+            != parsed.catalog_evidence.subject_definition_hash
+        ):
+            raise ValueError(
+                "evaluation catalog evidence is not bound to the search candidate"
+            )
+        parsed = bind_evaluation_reproducibility(
+            parsed, dataset_version=dataset_version
+        )
+        write = prepare_evaluation_artifact(
+            parsed,
+            dataset_version,
+            recorded_ts,
         )
         self._store.insert_evaluation(
-            run_id=run_id,
-            alpha_id=evaluation.alpha_id,
-            dataset_version=dataset_version,
-            recorded_ts=recorded_ts,
-            verdict=evaluation.verdict.value,
-            content_hash=content_hash,
-            evaluation_json=json.dumps(payload, sort_keys=True, default=str),
+            run_id=write.run_id,
+            alpha_id=write.alpha_id,
+            dataset_version=write.dataset_version,
+            recorded_ts=write.recorded_ts,
+            verdict=write.verdict,
+            content_hash=write.content_hash,
+            evaluation_json=write.evaluation_json,
             search_id=search_id,
             config_hash=config_hash,
-            audit_intent=audit_intent,
+            audit_intent=write.audit_intent,
         )
         if audit_log is not None:
             self.recover_evaluation_audits(
                 audit_log,
                 dispatched_at=recorded_ts,
-                run_id=run_id,
+                run_id=write.run_id,
             )
-        return run_id
+        return write.run_id
 
     def pending_evaluation_audits(
         self,
@@ -532,9 +505,24 @@ class ExperimentRegistry:
             row = self._store.get_evaluation(run_id)
             if row is None:
                 return False
+            payload = json.loads(row["evaluation_json"])
             recomputed = stable_hash(
-                {"evaluation": json.loads(row["evaluation_json"]), "dataset_version": row["dataset_version"]}
+                {"evaluation": payload, "dataset_version": row["dataset_version"]}
             )
-            return recomputed == row["content_hash"]
+            if recomputed != row["content_hash"]:
+                return False
+            evaluation = AlphaEvaluation.model_validate(payload)
+            return (
+                evaluation.catalog_evidence is not None
+                and verify_catalog_evidence(evaluation.catalog_evidence)
+                and evaluation.pbo_evidence is not None
+                and verify_batch_pbo_evidence(evaluation.pbo_evidence)
+                and evaluation.catalog_evidence.subject_definition_hash
+                in evaluation.pbo_evidence.candidate_definition_hashes
+                and verify_evaluation_reproducibility(
+                    evaluation,
+                    dataset_version=row["dataset_version"],
+                )
+            )
         except Exception:
             return False

@@ -219,7 +219,7 @@ def signal_to_portfolio(signal: Mapping[str, Optional[float]], *,
             effective_constraints = replace(
                 portfolio_constraints,
                 position_notional_by_symbol={
-                    symbol: abs(weight) * float(aum)
+                    symbol: abs(weight) * aum
                     for symbol, weight in weights.items()
                 },
                 capacity_by_symbol=dict(adv_notional),

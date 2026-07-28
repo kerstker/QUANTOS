@@ -11,22 +11,73 @@ from services.research.experiment_registry.store import SqliteExperimentStore
 from tools.purge_demo_registry_contamination import apply_purge, plan_purge
 
 
-def _legacy_store(db_path: str):
+class _LegacyStoreFixture:
+    """Minimal pre-provenance writer; never invokes the current v2 migrator."""
+
+    def __init__(self, db_path: str) -> None:
+        self._conn = sqlite3.connect(db_path)
+        self._conn.executescript(
+            """
+            CREATE TABLE trials (
+                config_hash TEXT PRIMARY KEY,
+                first_seen_ts INTEGER NOT NULL
+            );
+            CREATE TABLE alpha_state (
+                alpha_id TEXT PRIMARY KEY,
+                definition_json TEXT NOT NULL,
+                state TEXT NOT NULL,
+                returns_json TEXT NOT NULL,
+                sharpe REAL,
+                pvalue REAL
+            );
+            CREATE TABLE evaluations (
+                run_id TEXT PRIMARY KEY,
+                alpha_id TEXT NOT NULL,
+                dataset_version TEXT NOT NULL,
+                recorded_ts INTEGER NOT NULL,
+                verdict TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                evaluation_json TEXT NOT NULL
+            );
+            PRAGMA user_version = 0;
+            """
+        )
+        self._conn.commit()
+
+    def add_trials(self, hashes, *, first_seen_ts: int) -> None:
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
+            ((config_hash, first_seen_ts) for config_hash in hashes),
+        )
+        self._conn.commit()
+
+    def upsert_alpha(
+        self,
+        alpha_id: str,
+        definition_json: str,
+        state: str,
+        returns_json: str,
+        sharpe,
+        pvalue,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO alpha_state(alpha_id, definition_json, state, "
+            "returns_json, sharpe, pvalue) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(alpha_id) DO UPDATE SET "
+            "definition_json=excluded.definition_json, state=excluded.state, "
+            "returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
+            "pvalue=excluded.pvalue",
+            (alpha_id, definition_json, state, returns_json, sharpe, pvalue),
+        )
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _legacy_store(db_path: str) -> _LegacyStoreFixture:
     """Model the pre-provenance database for which the one-off purge existed."""
-    store = SqliteExperimentStore(db_path, create=True)
-    store._conn.executescript(
-        """
-        DROP TRIGGER trials_no_update;
-        DROP TRIGGER trials_no_delete;
-        DROP TRIGGER evaluations_no_update;
-        DROP TRIGGER evaluations_no_delete;
-        DROP TABLE search_candidates;
-        DROP TABLE search_attempt_events;
-        PRAGMA user_version = 0;
-        """
-    )
-    store._conn.commit()
-    return store
+    return _LegacyStoreFixture(db_path)
 
 
 def _seed(db_path: str, *, legacy_ids=("h_a", "h_b", "hx_c"), real_ids=("carry_composite",)):
@@ -43,7 +94,7 @@ def _seed(db_path: str, *, legacy_ids=("h_a", "h_b", "hx_c"), real_ids=("carry_c
         defn = AlphaDefinition(alpha_id=aid, name=aid, factor_ids=("funding",), universe="cs_majors")
         store.add_trials([defn.definition_hash], first_seen_ts=now)
         store.upsert_alpha(aid, json.dumps(defn.model_dump()), "TESTING", "[]", None, None)
-    return store
+    store.close()
 
 
 def test_plan_purge_separates_legacy_from_real_and_never_mutates(tmp_path):
@@ -86,6 +137,7 @@ def test_apply_purge_never_deletes_a_trial_hash_shared_with_a_real_alpha(tmp_pat
     store.add_trials([shared.definition_hash], first_seen_ts=0)
     store.upsert_alpha("h_shared", json.dumps(shared.model_dump()), "TESTING", "[]", None, None)
     store.upsert_alpha("carry_composite", json.dumps(real_same_hash.model_dump()), "TESTING", "[]", None, None)
+    store.close()
 
     with pytest.raises(ValueError, match="refusing to purge"):
         plan_purge(db)
@@ -131,6 +183,7 @@ def test_plan_purge_refuses_when_an_orphan_trial_shares_a_legacy_hash(tmp_path):
     # the legacy alpha's own hash IS in trials (normal), PLUS an unrelated extra hash that has NO
     # alpha_state row of any kind — the orphan.
     store.add_trials([legacy.definition_hash, "orphan-hash-no-alpha-state-row"], first_seen_ts=0)
+    store.close()
 
     with pytest.raises(ValueError, match="orphan trials"):
         plan_purge(db)

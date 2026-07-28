@@ -10,6 +10,7 @@ import services.research.alpha_expression as ax
 import services.research.alpha_factory as alpha_factory
 from quantos.contracts.alpha import AlphaDefinition
 from services.intelligence import research_session as intelligence_session
+from services.research.experiment_registry import store as experiment_store
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import (
     ExperimentStoreError,
@@ -70,6 +71,11 @@ def test_search_attempt_and_candidates_are_append_only_and_queryable() -> None:
         registry._store._conn.execute(
             "UPDATE search_attempt_events SET status='FAILED' WHERE search_id='search-1'"
         )
+    # The direct SQL attack above is deliberately outside the store API and may
+    # leave SQLite inside a caller-owned transaction after the trigger aborts.
+    # Release that caller transaction before testing the store's terminal-state
+    # invariant; public mutators correctly refuse to interfere with it.
+    registry._store._conn.rollback()
     with pytest.raises(ExperimentStoreError, match="terminal"):
         registry.register_search_candidates(
             "search-1", ["hash-c"], registered_at=13
@@ -114,22 +120,10 @@ def test_failed_search_retains_started_candidates_and_failure() -> None:
 def test_search_schema_migrates_an_existing_valid_database(tmp_path) -> None:
     path = tmp_path / "legacy-experiments.db"
     with sqlite3.connect(path) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE trials(config_hash TEXT PRIMARY KEY, first_seen_ts INTEGER NOT NULL);
-            CREATE TABLE alpha_state(
-                alpha_id TEXT PRIMARY KEY, definition_json TEXT NOT NULL,
-                state TEXT NOT NULL, returns_json TEXT NOT NULL,
-                sharpe REAL, pvalue REAL
-            );
-            CREATE TABLE evaluations(
-                run_id TEXT PRIMARY KEY, alpha_id TEXT NOT NULL,
-                dataset_version TEXT NOT NULL, recorded_ts INTEGER NOT NULL,
-                verdict TEXT NOT NULL, content_hash TEXT NOT NULL,
-                evaluation_json TEXT NOT NULL
-            );
-            INSERT INTO trials(config_hash, first_seen_ts) VALUES ('legacy-hash', 1);
-            """
+        connection.executescript(experiment_store._SCHEMA)
+        connection.execute(
+            "INSERT INTO trials(config_hash, first_seen_ts) "
+            "VALUES ('legacy-hash', 1)"
         )
 
     registry = _registry(str(path), create=False)

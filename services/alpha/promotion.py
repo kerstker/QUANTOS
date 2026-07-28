@@ -88,6 +88,8 @@ class PromotionEvidence:
     backtest_sharpe: Optional[float] = None    # evaluation artifact 的 net_sharpe
     paper_sharpe: Optional[float] = None       # paper_track.db track(alpha_id).paper_sharpe
     eval_trial_count: Optional[int] = None     # evaluation artifact 的 catalog_trial_count
+    eval_trial_set_hash: Optional[str] = None  # exact catalog population bound at evaluation time
+    eval_catalog_evidence_hash: Optional[str] = None
     eval_run_id: str = ""
     notes: tuple = ()
 
@@ -115,6 +117,8 @@ def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> Promotion
     notes: list[str] = []
     bt: Optional[float] = None
     etc: Optional[int] = None
+    etsh: Optional[str] = None
+    catalog_evidence_hash: Optional[str] = None
     run_id = ""
     evals = registry.list_evaluations(alpha_id)
     if not evals:
@@ -128,6 +132,8 @@ def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> Promotion
             payload = json.loads(latest["evaluation_json"])
             bt = payload.get("net_sharpe")
             etc = payload.get("catalog_trial_count")
+            etsh = payload.get("catalog_trial_set_hash")
+            catalog_evidence_hash = payload.get("catalog_evidence_hash")
     pp: Optional[float] = None
     if paper_store is None:
         notes.append("NO_PAPER_TRACK_STORE")
@@ -138,6 +144,8 @@ def gather_promotion_evidence(registry, paper_store, alpha_id: str) -> Promotion
         else:
             pp = row["paper_sharpe"]
     return PromotionEvidence(backtest_sharpe=bt, paper_sharpe=pp, eval_trial_count=etc,
+                             eval_trial_set_hash=etsh,
+                             eval_catalog_evidence_hash=catalog_evidence_hash,
                              eval_run_id=run_id, notes=tuple(notes))
 
 
@@ -274,7 +282,11 @@ def _execute_promotion_locked(*, store, registry, audit, request_id: str, execut
             manager = AlphaLifecycleManager(catalog, config)
             manager.advance(alpha_id, dst, actor, timestamp=now, grant=consumed,
                             paper_evidence=evidence.paper_evidence(),
-                            eval_trial_count=evidence.eval_trial_count)
+                            eval_trial_count=evidence.eval_trial_count,
+                            eval_trial_set_hash=evidence.eval_trial_set_hash,
+                            eval_catalog_evidence_hash=(
+                                evidence.eval_catalog_evidence_hash
+                            ))
             promotion_event = alpha_promoted_event(
                 request_id=request_id,
                 alpha_id=alpha_id,

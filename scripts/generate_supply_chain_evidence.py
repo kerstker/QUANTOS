@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from quantos.contracts.hashing import source_file_sha256  # noqa: E402
 from services.governance.vulnerability_evidence import (  # noqa: E402
     verify_actions_audit_evidence,
     verify_container_audit_evidence,
@@ -50,12 +51,14 @@ _PINNED_REQUIREMENT = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9][A-Za-z0-9_.+
 _ACTION = re.compile(r"uses:\s*([^\s#]+)")
 _ACTION_SHA = re.compile(r"^([^@]+)@([0-9a-f]{40})$")
 _MANIFESTS = (
+    ".gitattributes",
     ".github/workflows/validate.yml",
     "apps/research-console/package-lock.json",
     "apps/research-console/package.json",
     "config/artifact_admission_policy_registry.json",
     "config/artifact_receipt_authority_registry.json",
     "config/identity_authorization_registry.json",
+    "config/model_provider_registry.json",
     "config/service_import_policy.json",
     "config/top_tier_requirements.json",
     "deploy/console.Dockerfile",
@@ -64,8 +67,10 @@ _MANIFESTS = (
     "pyproject.toml",
     "quantos/contracts/event_schemas.py",
     "quantos/contracts/events.py",
+    "quantos/contracts/external_model_provider.py",
     "quantos/contracts/identity.py",
     "quantos/contracts/paper.py",
+    "quantos/contracts/alpha.py",
     "requirements-dev.txt",
     "requirements.txt",
     "services/console/main.py",
@@ -73,6 +78,10 @@ _MANIFESTS = (
     "services/console/api/risk_port.py",
     "services/console/api/system_views.py",
     "services/alpha/events.py",
+    "services/alpha/evaluator.py",
+    "services/alpha/factory.py",
+    "services/alpha/guards.py",
+    "services/alpha/lifecycle.py",
     "services/alpha/maintenance_events.py",
     "services/alpha/maintenance_store.py",
     "services/alpha/promotion.py",
@@ -85,11 +94,14 @@ _MANIFESTS = (
     "services/governance/artifact_admission.py",
     "services/governance/artifact_admission_store.py",
     "services/governance/artifact_receipt_auth.py",
+    "services/governance/external_model_provider_evidence.py",
     "services/governance/identity_authorization.py",
     "services/governance/identity_authorization_store.py",
     "services/governance/service_import_graph.py",
     "services/governance/strong_identity.py",
     "services/governance/top_tier_assessment.py",
+    "services/intelligence/external_provider_runtime.py",
+    "services/intelligence/provider_selection.py",
     "services/execution/impact.py",
     "services/execution/impact_calibration.py",
     "services/execution/paper_reconciliation.py",
@@ -106,6 +118,7 @@ _MANIFESTS = (
     "services/research/experiment_registry/store.py",
     "services/research/robust_optimization.py",
     "services/research/ports/persistence.py",
+    "services/validation/pbo_evidence.py",
     "services/risk/pre_trade/events.py",
     "services/risk/pre_trade/kill_switch.py",
     "services/risk/pre_trade/kill_switch_runtime.py",
@@ -115,6 +128,7 @@ _MANIFESTS = (
     "live/governance/kill_switch_store.py",
     "tools/kill_switch_events.py",
     "tools/l2_backup.py",
+    "tools/l2_schedule_entrypoint.py",
     "tools/l2_scheduler_watchdog.py",
     "tools/live_backup.py",
     "tools/live_kill_switch_reset.py",
@@ -134,6 +148,8 @@ _MANIFESTS = (
     "tools/deployment_events.py",
     "tools/live_track_advance.py",
     "tools/external_heartbeat.py",
+    "tools/external_model_provider.py",
+    "tools/external_model_provider_probe.py",
     "tools/verify_artifact_admission.py",
     "tools/provision_artifact_admission_authority.py",
     "tools/crypto_robust_optimization.py",
@@ -142,12 +158,16 @@ _MANIFESTS = (
     "tests/governance/test_artifact_admission_store.py",
     "tests/governance/test_artifact_admission_provisioning.py",
     "tests/governance/test_artifact_receipt_auth.py",
+    "tests/governance/test_external_model_provider_boundary.py",
+    "tests/governance/test_external_model_provider_evidence.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
     "tests/governance/test_promotion_api_boundary.py",
     "tests/governance/test_promotion_api_endpoints.py",
     "tests/governance/test_strong_identity.py",
     "tests/governance/test_strong_identity_evidence.py",
+    "tests/intelligence/test_external_provider_runtime.py",
+    "tests/tools/test_external_model_provider.py",
     "evidence/vulnerability/npm_audit_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
     "evidence/vulnerability/actions_osv_latest.json",
@@ -172,10 +192,11 @@ _MANIFESTS = (
     "tests/governance/test_l2_operations_boundary.py",
     "tests/governance/test_top_tier_assessment.py",
     "tests/governance/test_supply_chain_evidence.py",
-    "tests/tools/test_live_testnet_smoke.py",
+    "tests/governance/test_evidence_checkout_portability.py",
     "tests/contracts/test_paper_execution_contract.py",
     "tests/contracts/test_event_schema_registry.py",
     "tests/alpha/test_maintenance_store.py",
+    "tests/alpha/test_pbo_evidence.py",
     "tests/execution/test_impact_ownership.py",
     "tests/execution/test_dry_run_store.py",
     "tests/deployment/test_deployment_store.py",
@@ -204,6 +225,7 @@ _MANIFESTS = (
     "tests/tools/test_domain_event_owner_migration.py",
     "tests/tools/test_domain_event_outbox_drain.py",
     "tests/tools/test_l2_backup.py",
+    "tests/tools/test_l2_schedule_entrypoint.py",
     "tests/tools/test_l2_scheduler_watchdog.py",
     "tests/tools/test_external_heartbeat.py",
     "tests/data/test_refresh_event_outbox.py",
@@ -220,7 +242,7 @@ def _sha256_bytes(content: bytes) -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    return _sha256_bytes(path.read_bytes())
+    return source_file_sha256(path)
 
 
 def _artifact_admission_authority_snapshot(

@@ -80,5 +80,3 @@ def load_forward_admission_ref(
         price_basis=decision.price_basis,
         instrument_scope=decision.instrument_scope,
     )
-
-

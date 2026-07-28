@@ -9,11 +9,14 @@ import tarfile
 
 import pytest
 
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import source_file_sha256, short_hash, stable_hash
 from scripts.generate_model_risk_evidence import build_model_risk_evidence
 from scripts.generate_model_risk_dataset import generate_bundle
 from scripts.generate_strong_identity_evidence import build_strong_identity_evidence
-from services.governance.model_risk_history import append_model_risk_revision
+from services.governance.model_risk_history import (
+    append_model_risk_revision,
+    build_model_risk_revision,
+)
 from services.governance.reproducibility_evidence import (
     build_container_reproducibility_evidence,
 )
@@ -93,6 +96,15 @@ def test_committed_registry_covers_all_eleven_domains():
         "frontend_console",
     }
     assert len(requirements) >= 22
+
+
+def test_paths_exist_requirements_never_pass_from_unversioned_local_cache():
+    requirements = load_requirements(REGISTRY)
+    for item in requirements:
+        if item["checker"] != "paths_exist":
+            continue
+        for path in item.get("checker_args", {}).get("paths", []):
+            assert not path.replace("\\", "/").startswith("data/cache/"), item["id"]
 
 
 @pytest.mark.parametrize(
@@ -563,7 +575,7 @@ def test_risk_recovery_checker_requires_all_recovery_and_fault_invariants(tmp_pa
 
     evidence.write_text(json.dumps(_valid_risk_recovery_evidence()), encoding="utf-8")
     result = assess_repository(tmp_path, registry)["requirements"][0]
-    assert result["status"] == "PASS"
+    assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
 
 
@@ -1034,7 +1046,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             }
         ],
         "actions_all_sha_pinned": True,
-        "manifest_sha256": {"requirements.txt": hashlib.sha256(b"demo==1.0\n").hexdigest()},
+        "manifest_sha256": {"requirements.txt": source_file_sha256(manifest)},
         "sast_gate_wired": True,
         "reproducible_inputs": True,
         "vulnerability_scan_status": ("PARTIAL_EXTERNAL_NPM_PYTHON_ACTIONS_CONTAINER_VERIFIED"),
@@ -1081,14 +1093,16 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "decision_store": 4,
         },
         "artifact_admission_policy_registry_ref": ("config/artifact_admission_policy_registry.json"),
-        "artifact_admission_policy_registry_sha256": hashlib.sha256(policy_registry_path.read_bytes()).hexdigest(),
+        "artifact_admission_policy_registry_sha256": source_file_sha256(
+            policy_registry_path
+        ),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
         "artifact_admission_policy_registry_generation": 0,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
-        "artifact_admission_receipt_authority_registry_sha256": hashlib.sha256(
-            receipt_authority_registry_path.read_bytes()
-        ).hexdigest(),
+        "artifact_admission_receipt_authority_registry_sha256": source_file_sha256(
+            receipt_authority_registry_path
+        ),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
         "artifact_admission_receipt_authority_registry_generation": 0,
         "artifact_admission_active_receipt_key_count": 0,
@@ -1126,7 +1140,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "artifact_admission_external_bundle_status": "NOT_PROVIDED",
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
         "artifact_admission_implementation_sha256": {
-            relative: hashlib.sha256((tmp_path / relative).read_bytes()).hexdigest()
+            relative: source_file_sha256(tmp_path / relative)
             for relative in (
                 "services/governance/artifact_admission.py",
                 "services/governance/artifact_admission_store.py",
@@ -1468,6 +1482,7 @@ def _write_valid_model_risk_evidence(
     *,
     with_bundle: bool = False,
     longitudinal_v2: bool = False,
+    release_version: str = "v6",
 ) -> Path:
     for relative, content in {
         "services/intelligence/agent_loop.py": b"agent-loop-fixture\n",
@@ -1547,6 +1562,7 @@ def _write_valid_model_risk_evidence(
         baseline_recorded_at=1,
         recorded_at=2,
         include_longitudinal_v2=longitudinal_v2,
+        release_version=release_version,
     )
     path = tmp_path / "model-risk.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
@@ -1599,6 +1615,103 @@ def test_model_risk_checker_verifies_baseline_but_keeps_m3_open(tmp_path):
     result = assess_repository(tmp_path, registry)["requirements"][0]
     assert result["status"] == "FAILED"
     assert "artifact_hash" in result["detail"]
+
+
+def test_committed_external_provider_stays_m2_without_passing_live_probe():
+    report = assess_repository(ROOT, REGISTRY)
+    results = {item["id"]: item for item in report["requirements"]}
+
+    ai_runtime = results["AI.MODEL.REGISTRY.REDTEAM"]
+    challenger_review = results["VALIDATION.CHALLENGER.MODEL_RISK"]
+    assert ai_runtime["status"] == "PARTIAL", ai_runtime["detail"]
+    assert ai_runtime["current_maturity"] == "M2"
+    assert "evidence/external_model_provider_baseline.json" not in ai_runtime["evidence"]
+    assert "no passing live HTTPS probe" in ai_runtime["detail"]
+    assert challenger_review["status"] == "PARTIAL"
+    assert challenger_review["current_maturity"] == "M2"
+    assert "strong reviewer identity remains open" in challenger_review["detail"]
+
+
+def test_model_risk_checker_promotes_ai_only_after_external_provider_verifier(
+    tmp_path, monkeypatch
+):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    external = tmp_path / "external-provider.json"
+    external.write_text("{}", encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "AI.MODEL.REGISTRY.REDTEAM",
+                domain="ai_agents",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "pass_maturity": "M2",
+                    "external_provider_path": external.name,
+                    "maturity_profile": "EXTERNAL_PROVIDER_RUNTIME_M3",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment.verify_external_model_provider_evidence",
+        lambda document, repo_root: {
+            "provider_id": "sushuo_gpt_5_6_sol",
+            "current_maturity": "M3",
+            "external_provider_exercised": True,
+            "review_identity_assurance": "PROCESS_ROLE_ONLY",
+            "evidence_paths": ["config/model_provider_registry.json"],
+        },
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PASS", result["detail"]
+    assert result["current_maturity"] == "M3"
+    assert "live HTTPS probe" in result["detail"]
+
+
+def test_model_risk_checker_keeps_challenger_review_m2_after_provider_probe(
+    tmp_path, monkeypatch
+):
+    evidence = _write_valid_model_risk_evidence(tmp_path)
+    external = tmp_path / "external-provider.json"
+    external.write_text("{}", encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence.name,
+                    "pass_maturity": "M2",
+                    "external_provider_path": external.name,
+                    "maturity_profile": "EXTERNAL_REVIEW_M3",
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment.verify_external_model_provider_evidence",
+        lambda document, repo_root: {
+            "provider_id": "sushuo_gpt_5_6_sol",
+            "current_maturity": "M3",
+            "external_provider_exercised": True,
+            "review_identity_assurance": "PROCESS_ROLE_ONLY",
+            "evidence_paths": ["config/model_provider_registry.json"],
+        },
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M2"
+    assert "strong external reviewer" in result["detail"]
 
 
 def test_model_risk_checker_recomputes_implementation_hashes(tmp_path):
@@ -1670,6 +1783,82 @@ def test_model_risk_checker_verifies_versioned_dataset_bundle(tmp_path):
     result = assess_repository(tmp_path, registry)["requirements"][0]
     assert result["status"] == "FAILED"
     assert "dataset_bundle_verification" in result["detail"]
+
+
+def test_model_risk_checker_accepts_retained_bundle_without_local_source_db(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["source_dataset_ref"] = "data/cache/source-not-retained.db"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "versioned PIT evaluation subset" in result["detail"]
+
+
+def test_model_risk_checker_accepts_all_retained_release_lineage(tmp_path):
+    evidence_path = _write_valid_model_risk_evidence(
+        tmp_path,
+        with_bundle=True,
+        longitudinal_v2=True,
+        release_version="v5",
+    )
+    previous = json.loads(evidence_path.read_text(encoding="utf-8"))
+    previous_snapshot = build_model_risk_revision(previous)["snapshot"]
+    (tmp_path / "services/intelligence/guardrails.py").write_text(
+        "guardrails-v6-fixture\n", encoding="utf-8"
+    )
+    current = build_model_risk_evidence(
+        tmp_path,
+        snapshot_path=tmp_path / "data/cache/ml_stack_snapshot.json",
+        dataset_path=tmp_path / "data/cache/fx.db",
+        dataset_bundle_path=tmp_path / "evidence/datasets/fx.jsonl.gz",
+        dataset_manifest_path=tmp_path / "evidence/datasets/fx.manifest.json",
+        baseline_recorded_at=3,
+        recorded_at=4,
+        include_longitudinal_v2=True,
+        prior_snapshot=previous_snapshot,
+        release_version="v6",
+    )
+    evidence_path.write_text(json.dumps(current), encoding="utf-8")
+    history, _ = append_model_risk_revision(None, previous)
+    history, _ = append_model_risk_revision(history, current)
+    history_path = tmp_path / "model-risk-history.json"
+    history_path.write_text(json.dumps(history), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={
+                    "path": evidence_path.name,
+                    "history_path": history_path.name,
+                    "pass_maturity": "M2",
+                },
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "multi-revision history" in result["detail"]
 
 
 def test_model_risk_checker_requires_current_revision_history_when_declared(tmp_path):
@@ -1746,7 +1935,7 @@ def test_model_risk_checker_requires_real_multi_revision_history_for_v2(tmp_path
     assert "revision_history_longitudinal" in result["detail"]
 
 
-def test_model_risk_checker_requires_all_v2_runtime_red_team_cases(tmp_path):
+def test_model_risk_checker_requires_all_current_runtime_red_team_cases(tmp_path):
     evidence = _write_valid_model_risk_evidence(
         tmp_path,
         with_bundle=True,
@@ -1756,7 +1945,8 @@ def test_model_risk_checker_requires_all_v2_runtime_red_team_cases(tmp_path):
     active_report = next(
         record
         for record in document["artifacts"]
-        if record["artifact_id"] == "red-team-report:research-agent-runtime-boundary-v2"
+        if record["artifact_id"]
+        == "red-team-report:research-agent-runtime-boundary-v7"
     )
     payload = active_report["payload"]
     payload["required_case_ids"] = [
@@ -1930,6 +2120,146 @@ def test_strong_identity_checker_rejects_pkce_invariant_removal_with_updated_has
     assert "pkce_one_time_transaction" in result["detail"]
 
 
+def _alpha_trial_store_wiring_source(
+    *,
+    include_evaluation_context: bool,
+    split_evaluation_connection: bool,
+    split_evaluation_commit: bool,
+    omit_registered_candidate_check: bool,
+    omit_locked_helper_lease_guard: bool,
+    bypass_locked_helper: bool,
+) -> str:
+    helper_connection = "self._other_conn" if split_evaluation_connection else "conn"
+    helper_lease_guard = (
+        ""
+        if omit_locked_helper_lease_guard
+        else "    self._require_write_lock(conn, lease)\n"
+    )
+    candidate_check = (
+        ""
+        if omit_registered_candidate_check
+        else """
+    candidate = conn.execute(
+        "SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?"
+    ).fetchone()
+    if candidate is None:
+        raise ExperimentStoreError("unregistered candidate")
+"""
+    )
+    split_commit = "    conn.commit()\n" if split_evaluation_commit else ""
+    wrapper_body = (
+        """
+        self._require_write_lock(conn, lease)
+        candidate = conn.execute(
+            "SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?"
+        ).fetchone()
+        if candidate is None:
+            raise ExperimentStoreError("unregistered candidate")
+        conn.execute("INSERT INTO evaluations")
+        conn.execute("INSERT INTO search_evaluations")
+        conn.execute("INSERT INTO evaluation_audit_outbox")
+        return True
+"""
+        if bypass_locked_helper
+        else f"""
+        return self._insert_evaluation_locked(
+            {helper_connection},
+            lease,
+            write,
+            search_id=search_id,
+            config_hash=config_hash,
+        )
+"""
+    )
+    save_evaluation_context = (
+        """
+
+def save_evaluation_catalog_snapshot(self):
+    pass
+"""
+        if include_evaluation_context
+        else ""
+    )
+    return f"""
+TRIAL_INSERT = "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)"
+IMMUTABLE_COLLISION = "ImmutableArtifactError"
+EVALUATION_DIGEST = "content_hash"
+SEARCH_EVALUATION_SCHEMA = "CREATE TABLE IF NOT EXISTS search_evaluations UNIQUE(search_id, run_id)"
+
+class _WriteLease:
+    def __init__(self, *, connection, generation, owner_thread):
+        self.connection = connection
+        self.generation = generation
+        self.owner_thread = owner_thread
+
+def _search_evaluation_hash(*, config_hash):
+    return {{"config_hash": config_hash}}
+
+@contextmanager
+def _immediate_transaction(self):
+    self._reject_write_ownership_conflict()
+    if self._active_write_lease is not None or self._conn.in_transaction:
+        raise ExperimentStoreError("nested store-owned transaction")
+    self._conn.execute("BEGIN IMMEDIATE")
+    lease = _WriteLease(
+        connection=self._conn,
+        generation=self._write_generation,
+        owner_thread=get_ident(),
+    )
+    self._active_write_lease = lease
+    try:
+        yield self._conn, lease
+        self._conn.commit()
+    except BaseException:
+        if self._conn.in_transaction:
+            self._conn.rollback()
+        raise
+    finally:
+        self._active_write_lease = None
+
+def _require_write_lock(self, conn, lease):
+    if not isinstance(lease, _WriteLease):
+        raise ExperimentStoreError("forged write lease")
+    if lease.owner_thread != get_ident():
+        raise ExperimentStoreError("wrong write-lease thread")
+    if (
+        conn is not self._conn
+        or lease is not self._active_write_lease
+        or lease.connection is not conn
+        or lease.generation != self._write_generation
+        or not conn.in_transaction
+    ):
+        raise ExperimentStoreError("invalid write lease")
+
+def register_search_candidates(self):
+    with self._immediate_transaction() as (conn, lease):
+        self._require_write_lock(conn, lease)
+        conn.execute("INSERT INTO search_candidates")
+        conn.execute("INSERT OR IGNORE INTO trials")
+
+def insert_evaluation(self):
+    write = EvaluationArtifactWrite()
+    search_id = "search-1"
+    config_hash = "1" * 64
+    with self._immediate_transaction() as (conn, lease):
+{wrapper_body}
+
+def _insert_evaluation_locked(
+    self,
+    conn,
+    lease,
+    write,
+    search_id=None,
+    config_hash=None,
+):
+{helper_lease_guard}{candidate_check}    conn.execute("INSERT INTO evaluations")
+{split_commit}    conn.execute("INSERT INTO search_evaluations")
+    conn.execute("INSERT INTO evaluation_audit_outbox")
+    return True
+{save_evaluation_context}
+"""
+
+
 def _write_alpha_trial_wiring(
     tmp_path: Path,
     *,
@@ -1940,6 +2270,11 @@ def _write_alpha_trial_wiring(
     omit_factory_helper_guard: bool = False,
     legacy_evaluation_api: bool = False,
     omit_exact_evaluation_binding: bool = False,
+    split_evaluation_connection: bool = False,
+    split_evaluation_commit: bool = False,
+    omit_registered_candidate_check: bool = False,
+    omit_locked_helper_lease_guard: bool = False,
+    bypass_locked_helper: bool = False,
 ) -> dict:
     factory_tools = [
         "tools/crypto_factory_intraday.py",
@@ -1978,15 +2313,6 @@ def _write_alpha_trial_wiring(
         self._store.all_trial_hashes()
         self._store.all_alphas()
         catalog.restore_evaluation_context()
-"""
-    )
-    store_evaluation_method = (
-        ""
-        if legacy_evaluation_api
-        else """
-
-def save_evaluation_catalog_snapshot(self):
-    pass
 """
     )
     port_evaluation_method = (
@@ -2046,29 +2372,14 @@ class ExperimentRegistry:
     def verify_evaluation(self, run_id):
         return stable_hash(self._store.get_evaluation(run_id))
 """,
-        "services/research/experiment_registry/store.py": f"""
-TRIAL_INSERT = "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)"
-IMMUTABLE_COLLISION = "ImmutableArtifactError"
-EVALUATION_DIGEST = "content_hash"
-SEARCH_EVALUATION_SCHEMA = "CREATE TABLE IF NOT EXISTS search_evaluations UNIQUE(search_id, run_id)"
-
-def _search_evaluation_hash(*, config_hash):
-    return {{"config_hash": config_hash}}
-
-def register_search_candidates(self):
-    self._conn.execute("BEGIN IMMEDIATE")
-    self._conn.execute("INSERT INTO search_candidates")
-    self._conn.execute("INSERT OR IGNORE INTO trials")
-    self._conn.commit()
-
-def insert_evaluation(self):
-    self._conn.execute("BEGIN IMMEDIATE")
-    self._conn.execute("SELECT config_hash FROM search_candidates WHERE search_id=? AND config_hash=?")
-    self._conn.execute("INSERT INTO evaluations")
-    self._conn.execute("INSERT INTO search_evaluations")
-    self._conn.commit()
-{store_evaluation_method}
-""",
+        "services/research/experiment_registry/store.py": _alpha_trial_store_wiring_source(
+            include_evaluation_context=not legacy_evaluation_api,
+            split_evaluation_connection=split_evaluation_connection,
+            split_evaluation_commit=split_evaluation_commit,
+            omit_registered_candidate_check=omit_registered_candidate_check,
+            omit_locked_helper_lease_guard=omit_locked_helper_lease_guard,
+            bypass_locked_helper=bypass_locked_helper,
+        ),
         "services/research/ports/persistence.py": f"""
 class ExperimentStorePort(Protocol):
     def save_catalog_snapshot(self): ...
@@ -2108,6 +2419,7 @@ def production_experiment_registry():
         "tests/research/test_session.py": "session persistence coverage\n",
         "tests/research/test_experiment_registry.py": "ledger integrity coverage\n",
         "tests/research/test_experiment_store.py": "evaluation definition conflict coverage\n",
+        "tests/research/test_experiment_store_locked_primitives.py": "lease and atomicity coverage\n",
         "tests/research/test_search_trial_provenance.py": "factory provenance coverage\n",
         "tests/intelligence/test_registered_candidate_batch.py": "lifecycle preservation coverage\n",
     }
@@ -2138,6 +2450,8 @@ def main():
     return {
         "evidence_path": "evidence/alpha_trial_ledger_history.json",
         "ledger_path": "data/cache/experiment_registry.db",
+        "snapshot_path": "evidence/alpha_trial_ledger_snapshot.db",
+        "seal_path": "evidence/alpha_trial_ledger_snapshot_seal.json",
         "entrypoint_path": "services/intelligence/research_session.py",
         "session_path": "services/research/session.py",
         "factory_path": "services/research/alpha_factory.py",
@@ -2150,6 +2464,7 @@ def main():
             "tests/research/test_session.py",
             "tests/research/test_experiment_registry.py",
             "tests/research/test_experiment_store.py",
+            "tests/research/test_experiment_store_locked_primitives.py",
             "tests/research/test_search_trial_provenance.py",
             "tests/intelligence/test_registered_candidate_batch.py",
         ],
@@ -2175,9 +2490,21 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
     evidence_path = tmp_path / checker_args["evidence_path"]
     for index, timestamp in ((1, 10), (2, 200)):
         dataset_version = f"dataset-v{index}"
-        evaluation = {"alpha_id": f"alpha-{index}", "catalog_trial_count": index}
+        evaluation = {
+            "alpha_id": f"alpha-{index}",
+            "catalog_trial_count": index,
+            "reproducibility_hash": str(index) * 64,
+            "verdict": "REQUIRES_HUMAN_REVIEW",
+        }
         content_hash = stable_hash(
             {"evaluation": evaluation, "dataset_version": dataset_version}
+        )
+        run_id = short_hash(
+            {
+                "alpha_id": evaluation["alpha_id"],
+                "repro": evaluation["reproducibility_hash"],
+                "dataset_version": dataset_version,
+            }
         )
         search_id = f"session-{index}"
         store = SqliteExperimentStore(str(ledger_path), create=False)
@@ -2195,7 +2522,7 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
                 registered_at=timestamp,
             )
             store.insert_evaluation(
-                run_id=f"run-{index}",
+                run_id=run_id,
                 alpha_id=f"alpha-{index}",
                 dataset_version=dataset_version,
                 recorded_ts=timestamp,
@@ -2219,7 +2546,38 @@ def _write_valid_alpha_trial_history(tmp_path: Path, checker_args: dict) -> Path
             ledger_path_label=checker_args["ledger_path"],
             recorded_at_ms=100 if index == 1 else 300,
         )
+    search_trial_ledger_history.seal_snapshot(
+        ledger_path=ledger_path,
+        history_path=evidence_path,
+        snapshot_path=tmp_path / checker_args["snapshot_path"],
+        seal_path=tmp_path / checker_args["seal_path"],
+        ledger_path_label=checker_args["ledger_path"],
+        history_path_label=checker_args["evidence_path"],
+        snapshot_path_label=checker_args["snapshot_path"],
+        sealed_at_ms=400,
+    )
     return evidence_path
+
+
+_ALPHA_TRIAL_PORTABLE_TRIGGERS = [
+    (f"{table}_no_{operation.lower()}", table, operation)
+    for table in (
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+    )
+    for operation in ("UPDATE", "DELETE")
+]
+
+
+def _refresh_alpha_trial_snapshot_hash(tmp_path: Path, checker_args: dict) -> None:
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
 
 
 def test_alpha_trial_ledger_checker_missing_history_is_m3_partial(tmp_path):
@@ -2289,6 +2647,87 @@ def test_alpha_trial_ledger_checker_requires_exact_search_evaluation_binding(
     assert "exact_search_candidate_binding" in result["detail"]
 
 
+def test_alpha_trial_ledger_checker_accepts_owned_transaction_locked_helper_graph(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+
+
+def test_alpha_trial_ledger_checker_rejects_split_evaluation_connection(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        split_evaluation_connection=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "same_connection_and_lease" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_split_evaluation_commit(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        split_evaluation_commit=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "split_commit" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_unregistered_candidate_path(tmp_path):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        omit_registered_candidate_check=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "registered_candidate_binding" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_helper_without_valid_lease_guard(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        omit_locked_helper_lease_guard=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "valid_lease_guard" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_wrapper_bypassing_locked_helper(
+    tmp_path,
+):
+    checker_args = _write_alpha_trial_wiring(
+        tmp_path,
+        bypass_locked_helper=True,
+    )
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert "locked_helper_delegation" in result["detail"]
+
+
 def test_alpha_trial_ledger_checker_requires_candidate_recorder_before_score(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path, omit_factory_recorder=True)
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
@@ -2333,16 +2772,190 @@ def test_alpha_trial_ledger_checker_requires_missing_file_guard_before_sqlite(tm
     assert "missing_file_guard_before_connect" in result["detail"]
 
 
-def test_alpha_trial_ledger_checker_verifies_append_only_history_and_live_store(tmp_path):
+def test_alpha_trial_ledger_checker_passes_from_portable_bundle_without_live_store(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
+    (tmp_path / checker_args["ledger_path"]).unlink()
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
 
     assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
-    assert "two-session" in result["detail"]
+    assert checker_args["snapshot_path"] in result["evidence"]
+    assert checker_args["seal_path"] in result["evidence"]
+
+
+@pytest.mark.parametrize("missing_key", ["snapshot_path", "seal_path"])
+def test_alpha_trial_ledger_checker_is_partial_without_portable_bundle_file(
+    tmp_path,
+    missing_key,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    (tmp_path / checker_args[missing_key]).unlink()
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL"
+    assert result["current_maturity"] == "M3"
+    assert "portable snapshot evidence is unavailable" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_bad_portable_seal_hash(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = "0" * 64
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert "portable seal failed" in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "mutation,detail",
+    [
+        ("extra_table", "ledger_tables"),
+        ("missing_trigger", "evaluations_no_delete_trigger"),
+    ],
+)
+def test_alpha_trial_ledger_checker_rejects_nonminimal_or_mutable_snapshot(
+    tmp_path,
+    mutation,
+    detail,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    if mutation == "extra_table":
+        connection.execute("CREATE TABLE forbidden_runtime_state(value TEXT)")
+    else:
+        connection.execute("DROP TRIGGER evaluations_no_delete")
+    connection.commit()
+    connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert detail in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "trigger_name,table,operation",
+    _ALPHA_TRIAL_PORTABLE_TRIGGERS,
+)
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "no_op_body",
+        "raise_ignore",
+        "raise_fail",
+        "wrong_name",
+        "wrong_target",
+        "extra_trigger",
+    ],
+)
+def test_alpha_trial_ledger_checker_rejects_noncanonical_append_only_trigger(
+    tmp_path,
+    trigger_name,
+    table,
+    operation,
+    mutation,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    if mutation == "extra_trigger":
+        connection.execute(
+            f"CREATE TRIGGER unexpected_{trigger_name} BEFORE {operation} ON {table} "
+            f"BEGIN SELECT RAISE(ABORT, '{table} is append-only'); END"
+        )
+    else:
+        connection.execute(f"DROP TRIGGER {trigger_name}")
+        actual_name = (
+            f"{trigger_name}_renamed" if mutation == "wrong_name" else trigger_name
+        )
+        actual_table = (
+            ("evaluations" if table != "evaluations" else "trials")
+            if mutation == "wrong_target"
+            else table
+        )
+        body = {
+            "no_op_body": "SELECT 1;",
+            "raise_ignore": "SELECT RAISE(IGNORE);",
+            "raise_fail": f"SELECT RAISE(FAIL, '{table} is append-only');",
+            "wrong_name": f"SELECT RAISE(ABORT, '{table} is append-only');",
+            "wrong_target": f"SELECT RAISE(ABORT, '{table} is append-only');",
+        }[mutation]
+        connection.execute(
+            f"CREATE TRIGGER {actual_name} BEFORE {operation} ON {actual_table} "
+            f"BEGIN {body} END"
+        )
+    connection.commit()
+    connection.close()
+    _refresh_alpha_trial_snapshot_hash(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED", (trigger_name, mutation, result["detail"])
+    assert result["current_maturity"] == "M2"
+    assert "trigger" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_rejects_unknown_portable_schema_version(tmp_path):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
+    connection.execute("PRAGMA user_version=3")
+    connection.close()
+    _refresh_alpha_trial_snapshot_hash(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert "ledger_schema_version" in result["detail"]
+
+
+def test_alpha_trial_ledger_checker_fails_closed_when_digest_read_fails(
+    tmp_path,
+    monkeypatch,
+):
+    checker_args = _write_alpha_trial_wiring(tmp_path)
+    _write_valid_alpha_trial_history(tmp_path, checker_args)
+    registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
+
+    def fail_digest_read(_path):
+        raise OSError("portable digest unavailable")
+
+    monkeypatch.setattr(
+        "services.governance.top_tier_assessment._sha256_file",
+        fail_digest_read,
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "FAILED"
+    assert result["current_maturity"] == "M2"
+    assert result["detail"].startswith("alpha trial-ledger portable seal failed:")
 
 
 def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_store(tmp_path):
@@ -2350,7 +2963,14 @@ def test_alpha_trial_ledger_checker_rejects_history_that_does_not_match_live_sto
     evidence_path = _write_valid_alpha_trial_history(tmp_path, checker_args)
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
     final = document["records"][-1]
-    final["evaluations"][-1]["content_hash"] = "f" * 64
+    final_session_run_id = final["session_provenance"]["evaluation_links"][0][
+        "run_id"
+    ]
+    next(
+        evaluation
+        for evaluation in final["evaluations"]
+        if evaluation["run_id"] == final_session_run_id
+    )["content_hash"] = "f" * 64
     final_without_hash = {key: value for key, value in final.items() if key != "record_hash"}
     final["record_hash"] = hashlib.sha256(
         json.dumps(final_without_hash, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -2378,6 +2998,11 @@ def test_alpha_trial_ledger_checker_rejects_self_reported_session_label(tmp_path
         ).encode("utf-8")
     ).hexdigest()
     evidence_path.write_text(json.dumps(document), encoding="utf-8")
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["history_sha256"] = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    seal["history_head_hash"] = final["record_hash"]
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2411,11 +3036,15 @@ def test_alpha_trial_ledger_checker_rejects_cross_session_candidate_link(tmp_pat
 def test_alpha_trial_ledger_checker_requires_database_append_only_guards(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
-    ledger_path = tmp_path / checker_args["ledger_path"]
-    connection = sqlite3.connect(ledger_path)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
     connection.execute("DROP TRIGGER evaluations_no_delete")
     connection.commit()
     connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2427,11 +3056,15 @@ def test_alpha_trial_ledger_checker_requires_database_append_only_guards(tmp_pat
 def test_alpha_trial_ledger_checker_requires_exact_link_append_only_guard(tmp_path):
     checker_args = _write_alpha_trial_wiring(tmp_path)
     _write_valid_alpha_trial_history(tmp_path, checker_args)
-    ledger_path = tmp_path / checker_args["ledger_path"]
-    connection = sqlite3.connect(ledger_path)
+    snapshot_path = tmp_path / checker_args["snapshot_path"]
+    connection = sqlite3.connect(snapshot_path)
     connection.execute("DROP TRIGGER search_evaluations_no_delete")
     connection.commit()
     connection.close()
+    seal_path = tmp_path / checker_args["seal_path"]
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    seal["snapshot_sha256"] = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+    seal_path.write_text(json.dumps(seal), encoding="utf-8")
     registry = _write_registry(tmp_path, [_alpha_trial_requirement(checker_args)])
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
@@ -2450,6 +3083,12 @@ def test_committed_alpha_trial_requirement_uses_semantic_checker():
     assert requirement["checker_args"]["evidence_path"] == (
         "evidence/alpha_trial_ledger_history.json"
     )
+    assert requirement["checker_args"]["snapshot_path"] == (
+        "evidence/alpha_trial_ledger_snapshot.db"
+    )
+    assert requirement["checker_args"]["seal_path"] == (
+        "evidence/alpha_trial_ledger_snapshot_seal.json"
+    )
     assert requirement["checker_args"]["persistence_port_path"] == (
         "services/research/ports/persistence.py"
     )
@@ -2459,7 +3098,7 @@ def test_committed_alpha_trial_requirement_uses_semantic_checker():
     } <= set(requirement["checker_args"]["verification_paths"])
 
 
-def test_committed_alpha_trial_requirement_uses_retained_history(tmp_path):
+def test_committed_alpha_trial_requirement_passes_with_portable_snapshot(tmp_path):
     requirement = next(
         item for item in load_requirements(REGISTRY)
         if item["id"] == "ALPHA.TRIAL.GLOBAL_LEDGER"
@@ -2468,6 +3107,29 @@ def test_committed_alpha_trial_requirement_uses_retained_history(tmp_path):
 
     result = assess_repository(ROOT, registry)["requirements"][0]
 
-    assert result["status"] == "PASS"
+    assert result["status"] == "PASS", result["detail"]
     assert result["current_maturity"] == "M4"
-    assert "two-session monotonic history chain" in result["detail"]
+    assert requirement["checker_args"]["snapshot_path"] in result["evidence"]
+    assert requirement["checker_args"]["seal_path"] in result["evidence"]
+
+
+def test_committed_alpha_trial_snapshot_has_minimal_table_surface():
+    snapshot = ROOT / "evidence/alpha_trial_ledger_snapshot.db"
+    connection = sqlite3.connect(snapshot.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    finally:
+        connection.close()
+    assert tables == {
+        "sqlite_sequence",
+        "trials",
+        "evaluations",
+        "search_attempt_events",
+        "search_candidates",
+        "search_evaluations",
+    }

@@ -5,6 +5,11 @@
 # venue submission, emergency trading action, credential-bearing API, or live
 # monitoring process. Legacy tasks with those capabilities are disabled (not
 # deleted) before the L2 jobs are registered.
+#
+# The script location is the immutable release code root. -StateRoot may point
+# at a separate mutable operational checkout containing data/cache; scheduled
+# imports still resolve only through tools/l2_schedule_entrypoint.py in this
+# release root.
 param([string]$StateRoot)
 
 Set-StrictMode -Version Latest
@@ -20,7 +25,7 @@ $launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   throw "L2 schedule entrypoint is unavailable"
 }
-$pythonCommand = Get-Command pythonw -ErrorAction Stop
+$pythonCommand = Get-Command python -ErrorAction Stop
 $py = $pythonCommand.Source
 
 function Disable-TaskIfPresent {
@@ -97,15 +102,15 @@ function Register-L2Task {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
     [Parameter(Mandatory = $true)][string]$Module,
-    [Parameter(Mandatory = $true)]$Trigger
+    [Parameter(Mandatory = $true)]$Trigger,
+    [TimeSpan]$ExecutionTimeLimit = (New-TimeSpan -Hours 6)
   )
 
   $logRoot = Join-Path $stateRoot ".runtime\logs"
   $action = New-ScheduledTaskAction -Execute $py `
-    -Argument "`"$launcher`" $Module --log-dir `"$logRoot`"" `
-    -WorkingDirectory $stateRoot
+    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
-    -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
+    -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
     -Settings $settings -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
     -Force | Out-Null
@@ -174,7 +179,7 @@ Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
   -Trigger $maintenanceTrigger
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
-  -Trigger $eventOpsTrigger
+  -Trigger $eventOpsTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdog" `
   -Trigger $schedulerWatchdogTrigger
 Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `

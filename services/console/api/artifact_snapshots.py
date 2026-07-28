@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 from typing import Any, Dict
 
 from fastapi import APIRouter
@@ -19,19 +20,11 @@ router = APIRouter()
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 IC_PANEL_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "ic_panel_snapshot.json")
 _DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
-_PAPER_ORDER_PREVIEW = os.path.join(_REPO_ROOT, "data", "cache", "paper_order_preview.json")
-_L2_PAPER_OPERATOR = os.path.join(_REPO_ROOT, "data", "cache", "l2_paper_operator.json")
-_PAPER_REALTIME = os.path.join(_REPO_ROOT, "data", "cache", "paper_realtime_status.json")
-_PAPER_HEALTH = os.path.join(_REPO_ROOT, "data", "cache", "paper_health.json")
-_LIVE_REFRESH_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_refresh_status.json")
-_SCHEDULER_WATCHDOG_STATUS = os.path.join(
-    _REPO_ROOT, "data", "cache", "scheduler_watchdog_status.json"
-)
-_PAPER_10K_REALTIME = os.path.join(
-    _REPO_ROOT, "data", "cache", "paper_realtime_10k_status.json"
-)
-_PAPER_10K_HEALTH = os.path.join(_REPO_ROOT, "data", "cache", "paper_health_10k.json")
-_FORWARD_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "forward_track_status.json")
+_CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "capacity_snapshot.json")
+_MACRO_REGIME_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "macro_regime_snapshot.json")
+_COMBO_BOOK_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "combo_book_snapshot.json")
+_LANCE_1M_VALIDATION_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "lance_1m_validation.json")
+_FORWARD_EVIDENCE_BASELINE = os.path.join(_REPO_ROOT, "evidence", "forward_evidence_baseline.json")
 _LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
 _LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
 _GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
@@ -634,3 +627,235 @@ async def dry_run() -> Dict:
     return _dry_run_payload()
 
 
+def _ic_panel_payload() -> Dict:
+    """Serve the cross-sectional IC diagnostic snapshot, not a promotion gate."""
+    present, rows, universes = False, [], {}
+    if os.path.exists(IC_PANEL_SNAPSHOT):
+        try:
+            with open(IC_PANEL_SNAPSHOT, encoding="utf-8") as fh:
+                snap = json.load(fh)
+            rows, universes = snap.get("rows", []), snap.get("universes", {})
+            present = bool(rows)
+        except Exception:
+            present, rows, universes = False, [], {}
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": ("REAL_IC_PANEL_OFFLINE_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC"),
+        "snapshot_present": present,
+        "verdict": "IC_PANEL_OK" if present else "NO_SNAPSHOT",
+        "rows": rows,
+        "universes": universes,
+        "honesty_note": (
+            "截面 IC 面板是初筛诊断工具,不是晋级门禁——真正的门禁是 services/alpha/evaluator "
+            "的 DSR/PBO/walk-forward。面板结果不驱动任何自动晋级。"
+        ),
+    }
+
+
+@router.get("/api/v1/console/ic-panel")
+async def ic_panel() -> Dict:
+    return _ic_panel_payload()
+
+
+def _research_findings_payload() -> Dict:
+    """Aggregate capacity, macro-regime, and diversification diagnostics."""
+    capacity = _load_json_snapshot(_CAPACITY_SNAPSHOT)
+    macro = _load_json_snapshot(_MACRO_REGIME_SNAPSHOT)
+    combo = _load_json_snapshot(_COMBO_BOOK_SNAPSHOT)
+    present = bool(capacity or macro or combo)
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": ("REAL_RESEARCH_FINDINGS" if present else "SYNTHETIC_DETERMINISTIC"),
+        "snapshot_present": present,
+        "verdict": "FINDINGS_OK" if present else "NO_SNAPSHOT",
+        "capacity": capacity or {},
+        "macro_regime": macro or {},
+        "combo": combo or {},
+        "honesty_note": (
+            "研究诊断聚合,非晋级门禁:容量为 UNCALIBRATED_PRINCIPLED 区间(冲击系数未校准)、"
+            "regime 标签为全样本分位(回顾性非 PIT 择时)、组合为 gross 收益流层面(RELATIVE "
+            "比较)。数字为准,均不驱动自动晋级/下单。"
+        ),
+    }
+
+
+@router.get("/api/v1/console/research-findings")
+async def research_findings() -> Dict:
+    return _research_findings_payload()
+
+
+def _lance_1m_validation_payload() -> Dict:
+    """Serve the independent validation of the user-supplied 1-minute strategy."""
+    snap = _load_json_snapshot(_LANCE_1M_VALIDATION_SNAPSHOT)
+    present = bool(snap)
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": ("REAL_LANCE_1M_VALIDATION" if present else "SYNTHETIC_DETERMINISTIC"),
+        "snapshot_present": present,
+        "verdict": "REFUTED" if present else "NO_SNAPSHOT",
+        "doc": (snap or {}).get("doc", "docs/test/lance_1m_strategy.md"),
+        "fee_sweep": (snap or {}).get("fee_sweep", {}),
+        "rolling_window_stress_1bps": (snap or {}).get("rolling_window_stress_full_dataset_1bps", {}),
+        "rolling_window_stress_5bps": (snap or {}).get("rolling_window_stress_full_dataset_5bps", {}),
+        "parameter_sensitivity_5bps": (snap or {}).get("parameter_sensitivity_5bps", {}),
+        "ohlc_ambiguity_comparison": (snap or {}).get("ohlc_ambiguity_comparison_doc_window_1bps", {}),
+        "honesty_note": (
+            "文档自称夏普5.01/总收益+17.9%(1bps手续费,138,755根K线,2025-12~2026-06);用"
+            "53.7万根真实1分钟BTC K线独立复核后,在文档自称窗口+文档自己最乐观的1bps假设下,"
+            "实测夏普为负(约-5至-6区间,非+5.01),4种窗口切分×5档手续费×107窗口滚动压力测试×"
+            "4参数±30%敏感性全部一致为负。已用合成数据验证引擎本身无bug,已剥离本模块自己的"
+            "OHLC歧义保守裁决重跑确认负号不是该工程决策导致的,已用0bps分解排除成本模型单位错误"
+            "的可能。诊断结论,非晋级门禁——该策略未注册进 AlphaCatalog、不驱动任何自动晋级/下单。"
+        ),
+    }
+
+
+@router.get("/api/v1/console/lance-1m-validation")
+async def lance_1m_validation() -> Dict:
+    return _lance_1m_validation_payload()
+
+
+def _nonnegative_int(mapping: Dict, key: str) -> int | None:
+    value = mapping.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _forward_track_from_evidence(now_ms: int) -> Dict:
+    """Expose only the attested baseline; never fall back to the legacy status cache."""
+    evidence = _load_json_object(_FORWARD_EVIDENCE_BASELINE)
+    unavailable = {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
+    if evidence is None:
+        return unavailable
+    counts = evidence.get("counts")
+    gate = evidence.get("evidence_gate")
+    admission = evidence.get("data_admission")
+    observed_at_ms = _nonnegative_int(evidence, "observed_at_ms")
+    max_age_ms = _nonnegative_int(evidence, "max_age_ms")
+    if (
+        not isinstance(counts, dict)
+        or not isinstance(gate, dict)
+        or not isinstance(admission, dict)
+        or observed_at_ms is None
+        or max_age_ms is None
+        or not isinstance(gate.get("minimum_weeks"), int)
+        or isinstance(gate.get("minimum_weeks"), bool)
+        or not isinstance(gate.get("eligible"), bool)
+    ):
+        return unavailable
+    parsed_counts = {key: _nonnegative_int(counts, key) for key in (
+        "attested_realizations", "attested_pending", "legacy_unattested_decisions",
+    )}
+    if any(value is None for value in parsed_counts.values()):
+        return unavailable
+    state = (
+        "STALE" if now_ms - observed_at_ms > max_age_ms
+        else "ATTESTED" if admission.get("status") == "CURRENT"
+        else "DATA_BLOCKED"
+    )
+    return {
+        "present": True,
+        "evidence_state": state,
+        "attested_realizations": parsed_counts["attested_realizations"],
+        "attested_pending": parsed_counts["attested_pending"],
+        "legacy_unattested_decisions": parsed_counts["legacy_unattested_decisions"],
+        "evidence_gate_weeks": gate["minimum_weeks"],
+        "evidence_gate_eligible": gate["eligible"],
+        "data_admission": admission,
+        "actions_allowed": False,
+    }
+
+
+def _live_trading_payload(now_ms: int | None = None) -> Dict:
+    """Aggregate forward-paper and testnet status as read-only diagnostics."""
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    forward_track = _forward_track_from_evidence(now)
+    lt = _load_json_snapshot(_LIVE_TRACK_STATUS)
+    risk = _load_json_snapshot(_LIVE_RISK_STATE)
+    present = bool(forward_track["present"] or lt)
+
+    execution_stack: Dict = {"present": False}
+    if lt:
+        execution_stack = {
+            "present": True,
+            "ran_at": lt.get("ran_at"),
+            "mode": lt.get("mode"),
+            "hard_stop": bool(lt.get("hard_stop", False)),
+            "tier": lt.get("tier"),
+            "n_submitted": lt.get("n_submitted"),
+            "n_pending_review": lt.get("n_pending_review"),
+            "n_rejected_by_gate": lt.get("n_rejected_by_gate"),
+            "n_dropped_by_filters": lt.get("n_dropped_by_filters"),
+            "n_submission_errors": lt.get("n_submission_errors"),
+            "n_ledger_write_errors": lt.get("n_ledger_write_errors"),
+            "reconciliation": lt.get("reconciliation", {}),
+            "risk_breach": lt.get("risk_breach"),
+            "aum": lt.get("aum"),
+            "peak_equity": (risk or {}).get("peak_equity"),
+            "would_submit": lt.get("would_submit", []),
+            "alerts": lt.get("alerts", []),
+            "venue": lt.get("venue"),
+            "tca": lt.get("tca"),
+            "order_stats": lt.get("order_stats"),
+            "parity": lt.get("parity"),
+            "emergency": lt.get("emergency"),
+        }
+
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": ("REAL_LIVE_TRADING_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC"),
+        "snapshot_present": present,
+        "verdict": "LIVE_TRADING_TRACKING_OK" if present else "NO_SNAPSHOT",
+        "forward_track": forward_track,
+        "execution_stack": execution_stack,
+        "honesty_note": (
+            "这是诊断展示,不驱动任何自动化或晋级;真钱 Go/No-Go 是 Phase 3A 人工评审。测试网执行"
+            "(execution_stack)与真前向纸面跟踪(forward_track)都在 L2_DRY_RUN_ONLY 边界内——测试网是"
+            "交易所官方沙盒零真实资本,不是真钱。"
+        ),
+    }
+
+
+@router.get("/api/v1/console/live-trading")
+async def live_trading() -> Dict:
+    return _live_trading_payload()
+
+
+def _gonogo_payload() -> Dict:
+    """Aggregate existing evidence without making a Go/No-Go decision."""
+    rep = _load_json_snapshot(_GONOGO_REPORT)
+    present = bool(rep)
+    rep = rep or {}
+    return {
+        "source": "BACKEND_COMPUTED_SNAPSHOT",
+        "read_only": True,
+        "api_version": "0.1.0",
+        "data_provenance": ("REAL_GONOGO_SNAPSHOT" if present else "SYNTHETIC_DETERMINISTIC"),
+        "snapshot_present": present,
+        "verdict": "GONOGO_EVIDENCE_READY" if present else "NO_SNAPSHOT",
+        "generated_at": rep.get("generated_at"),
+        "readiness": rep.get("readiness", "L2_DRY_RUN_ONLY"),
+        "forward_evidence": rep.get("forward_evidence", {"present": False}),
+        "execution_evidence": rep.get("execution_evidence", {}),
+        "incidents": rep.get("incidents", {}),
+        "honesty_note": rep.get(
+            "honesty_note",
+            "GoNoGo 证据包只聚合既有真实产物,不下结论——结论是 Phase 3A 人工评审;无快照时为合成占位。",
+        ),
+    }
+
+
+@router.get("/api/v1/console/gonogo")
+async def gonogo() -> Dict:
+    return _gonogo_payload()

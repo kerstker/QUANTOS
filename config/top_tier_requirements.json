@@ -73,6 +73,8 @@
                              "checker_args":  {
                                                   "evidence_path":  "evidence/alpha_trial_ledger_history.json",
                                                   "ledger_path":  "data/cache/experiment_registry.db",
+                                                  "snapshot_path":  "evidence/alpha_trial_ledger_snapshot.db",
+                                                  "seal_path":  "evidence/alpha_trial_ledger_snapshot_seal.json",
                                                   "entrypoint_path":  "services/intelligence/research_session.py",
                                                   "session_path":  "services/research/session.py",
                                                   "factory_path":  "services/research/alpha_factory.py",
@@ -91,6 +93,7 @@
                                                                                "tests/research/test_session.py",
                                                                                "tests/research/test_experiment_registry.py",
                                                                                "tests/research/test_experiment_store.py",
+                                                                               "tests/research/test_experiment_store_locked_primitives.py",
                                                                                "tests/research/test_search_trial_provenance.py",
                                                                                "tests/intelligence/test_registered_candidate_batch.py",
                                                                                "tests/governance/test_experiment_registry_isolation.py"
@@ -109,19 +112,37 @@
                              "required_evidence":  [
                                                        "implementation",
                                                        "verification",
+                                                       "data",
                                                        "governance",
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "paths_exist",
+                             "checker":  "multi_asset_research_evidence",
                              "checker_args":  {
-                                                  "paths":  [
-                                                                "tools/ic_panel_registry.py",
-                                                                "data/cache/equity_universe_snapshot.json"
-                                                            ],
+                                                  "evidence_path":  "evidence/multi_asset_research_baseline.json",
+                                                  "bundle_path":  "evidence/datasets/fx_pit_tradable_v1.jsonl.gz",
+                                                  "manifest_path":  "evidence/datasets/fx_pit_tradable_v1.manifest.json",
+                                                  "implementation_paths":  [
+                                                                               "quantos/contracts/multi_asset.py",
+                                                                               "tools/fx_pit_bundle.py",
+                                                                               "tools/ic_panel_registry.py",
+                                                                               "tools/ic_panel_research.py",
+                                                                               "services/research/ic_panel.py",
+                                                                               "services/research/signals.py",
+                                                                               "services/governance/model_risk_dataset.py",
+                                                                               "services/governance/multi_asset_research_evidence.py",
+                                                                               "scripts/generate_multi_asset_research_evidence.py"
+                                                                           ],
+                                                  "verification_paths":  [
+                                                                             "tests/research/test_fx_pit_bundle.py",
+                                                                             "tests/research/test_ic_panel.py",
+                                                                             "tests/research/test_ic_panel_registry.py",
+                                                                             "tests/governance/test_multi_asset_research_evidence.py",
+                                                                             "tests/governance/test_multi_asset_research_boundary.py"
+                                                                         ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add stronger non-crypto PIT universes"
+                             "next_action":  "Extend the retained PIT baseline to historically constituent-clean equities or futures without weakening the FX replay"
                          },
                          {
                              "id":  "VALIDATION.ANTIOVERFIT.GATE",
@@ -166,6 +187,8 @@
                              "checker_args":  {
                                                   "path":  "evidence/model_risk_baseline.json",
                                                   "history_path":  "evidence/model_risk_history.json",
+                                                  "external_provider_path":  "evidence/external_model_provider_baseline.json",
+                                                  "maturity_profile":  "EXTERNAL_REVIEW_M3",
                                                   "pass_maturity":  "M2",
                                                   "verification_paths":  [
                                                                              "tests/governance/test_model_risk_registry.py",
@@ -198,7 +221,7 @@
                                                             ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add portfolio-level tail budget"
+                             "next_action":  "Add calibrated firm-wide margin/funding and cross-book limits"
                          },
                          {
                              "id":  "PORTFOLIO.COST.CAPACITY.LOAD_BEARING",
@@ -378,6 +401,8 @@
                              "checker_args":  {
                                                   "path":  "evidence/model_risk_baseline.json",
                                                   "history_path":  "evidence/model_risk_history.json",
+                                                  "external_provider_path":  "evidence/external_model_provider_baseline.json",
+                                                  "maturity_profile":  "EXTERNAL_PROVIDER_RUNTIME_M3",
                                                   "pass_maturity":  "M2",
                                                   "verification_paths":  [
                                                                              "tests/governance/test_model_risk_registry.py",

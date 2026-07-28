@@ -1,18 +1,30 @@
 """Audit roadmap P0 — durable experiment registry: cross-session DSR trial
 counting, reproducible immutable evaluation artifacts, fail-closed load."""
 from concurrent.futures import ThreadPoolExecutor
+import json
 from threading import Event
 
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.canonical import canonical_sha256
+from quantos.contracts.hashing import short_hash, stable_hash
 from quantos.contracts.research import AlphaState, ValidationVerdict
 from services.alpha.catalog import AlphaCatalog
+from services.alpha.evaluation_evidence import evaluation_reproducibility_hash
 from services.monitoring.audit_log import GlobalAuditLog
-from services.research.experiment_registry.registry import ExperimentRegistry
+from services.research.experiment_registry.registry import (
+    ExperimentRegistry,
+    prepare_evaluation_artifact,
+)
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError,
 )
+from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
+
+
+_EVALUATION_DEFINITION = AlphaDefinition(alpha_id="a1", name="a1", factor_ids=("f1",))
+_EVALUATION_CONFIG_HASH = _EVALUATION_DEFINITION.definition_hash
 
 
 def _populated():
@@ -76,10 +88,70 @@ def test_load_into_corrupt_alpha_row_fails_closed():
         reg.load_into(AlphaCatalog())
 
 
+def test_load_for_evaluation_preserves_historical_definition_bound_returns():
+    registry = _reg()
+    source = _populated()
+    registry.save(source, now=1)
+
+    catalog = AlphaCatalog()
+    registry.load_for_evaluation(catalog)
+    definition = AlphaDefinition(
+        alpha_id="new",
+        name="new",
+        factor_ids=("new-factor",),
+    )
+    catalog.register(definition)
+    catalog.set_returns("new", (0.012, -0.004, 0.018, 0.001))
+
+    evidence = catalog.evidence("new")
+    assert evidence is not None
+    assert evidence.trial_count == 3
+    assert len(evidence.sharpe_observations) == 3
+    assert definition.definition_hash in {
+        item.observation_id for item in evidence.return_observations
+    }
+
+
 def _evaluation():
-    return AlphaEvaluation(alpha_id="a1", verdict=ValidationVerdict.PASS,
-                           deflated_sharpe=0.8, pbo=0.1, catalog_trial_count=3,
-                           reproducibility_hash="repro-1")
+    catalog = AlphaCatalog()
+    catalog.register(_EVALUATION_DEFINITION)
+    seed_catalog_evidence(catalog, "a1")
+    catalog.register_trial(stable_hash({"third_catalog_trial": True}))
+    return bound_alpha_evaluation(
+        catalog,
+        "a1",
+        reproducibility_hash="repro-1",
+    )
+
+
+def test_prepare_evaluation_artifact_preserves_exact_legacy_bytes_and_hashes():
+    evaluation = _evaluation()
+    payload = evaluation.model_dump()
+    expected_json = json.dumps(payload, sort_keys=True, default=str)
+    expected_content_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": "v1"}
+    )
+    expected_run_id = short_hash(
+        {
+            "alpha_id": evaluation.alpha_id,
+            "repro": evaluation.reproducibility_hash,
+            "dataset_version": "v1",
+        }
+    )
+
+    write = prepare_evaluation_artifact(evaluation, "v1", 10)
+
+    assert write.run_id == expected_run_id
+    assert write.content_hash == expected_content_hash
+    assert write.evaluation_json.encode("utf-8") == expected_json.encode("utf-8")
+    assert write.audit_intent is not None
+    assert write.audit_intent.event_id == f"exp-{expected_run_id}"
+    assert write.audit_intent.timestamp == 10
+    assert dict(write.audit_intent.metadata) == {
+        "run_id": expected_run_id,
+        "content_hash": expected_content_hash,
+        "verdict": "PASS",
+    }
 
 
 def test_record_evaluation_is_reproducible_and_immutable():
@@ -183,7 +255,7 @@ def test_same_immutable_evaluation_links_to_each_real_search_session():
         )
         reg.register_search_candidates(
             search_id,
-            ["same-candidate"],
+            [_EVALUATION_CONFIG_HASH],
             registered_at=timestamp,
         )
         run_ids.append(
@@ -192,7 +264,7 @@ def test_same_immutable_evaluation_links_to_each_real_search_session():
                 dataset_version="v1",
                 recorded_ts=timestamp,
                 search_id=search_id,
-                config_hash="same-candidate",
+                config_hash=_EVALUATION_CONFIG_HASH,
             )
         )
         reg.finish_search_attempt(
@@ -226,7 +298,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
         )
         setup.register_search_candidates(
             search_id,
-            ["same-candidate"],
+            [_EVALUATION_CONFIG_HASH],
             registered_at=timestamp,
         )
 
@@ -252,7 +324,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
                 dataset_version="v1",
                 recorded_ts=timestamp,
                 search_id=search_id,
-                config_hash="same-candidate",
+                config_hash=_EVALUATION_CONFIG_HASH,
             )
         finally:
             store.close()
@@ -275,7 +347,7 @@ def test_concurrent_search_links_share_first_artifact_audit_timestamp(tmp_path):
     assert {
         setup.search_evaluations(search_id)[0]["config_hash"]
         for search_id in ("first-search", "second-search")
-    } == {"same-candidate"}
+    } == {_EVALUATION_CONFIG_HASH}
     assert setup.search_history_valid()
 
 
@@ -322,6 +394,65 @@ def test_verify_evaluation_detects_a_tampered_content_hash():
     reg._store._conn.execute("UPDATE evaluations SET content_hash='deadbeef' WHERE run_id=?", (rid,))
     reg._store._conn.commit()
     assert reg.verify_evaluation(rid) is False
+
+
+def test_verify_evaluation_replays_pbo_after_attacker_recomputes_row_hash():
+    reg = _reg()
+    rid = reg.record_evaluation(_evaluation(), dataset_version="v1", recorded_ts=10)
+    row = reg.get_evaluation(rid)
+    payload = json.loads(row["evaluation_json"])
+    payload["pbo_evidence"]["performance_matrix"][0][0] += 1.0
+    tampered_json = json.dumps(payload, sort_keys=True, default=str)
+    tampered_hash = stable_hash({"evaluation": payload, "dataset_version": "v1"})
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
+    reg._store._conn.execute(
+        "UPDATE evaluations SET evaluation_json=?, content_hash=? WHERE run_id=?",
+        (tampered_json, tampered_hash, rid),
+    )
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False
+
+
+def test_verify_evaluation_replays_catalog_dsr_after_all_generic_hashes_change():
+    reg = _reg()
+    rid = reg.record_evaluation(
+        _evaluation(), dataset_version="v1", recorded_ts=10
+    )
+    row = reg.get_evaluation(rid)
+    payload = json.loads(row["evaluation_json"])
+    forged_dsr = 1.0 - payload["catalog_evidence"]["deflated_sharpe"]
+    payload["catalog_evidence"]["deflated_sharpe"] = forged_dsr
+    payload["deflated_sharpe"] = forged_dsr
+    payload["catalog_evidence_hash"] = canonical_sha256(
+        payload["catalog_evidence"]
+    )
+    payload["reproducibility_hash"] = ""
+    forged = AlphaEvaluation.model_validate(payload)
+    payload["reproducibility_hash"] = evaluation_reproducibility_hash(
+        forged, dataset_version="v1"
+    )
+    tampered_json = json.dumps(payload, sort_keys=True, default=str)
+    tampered_hash = stable_hash(
+        {"evaluation": payload, "dataset_version": "v1"}
+    )
+    reg._store._conn.execute("DROP TRIGGER evaluations_no_update")
+    reg._store._conn.execute(
+        "UPDATE evaluations SET evaluation_json=?, content_hash=? WHERE run_id=?",
+        (tampered_json, tampered_hash, rid),
+    )
+    reg._store._conn.commit()
+    assert reg.verify_evaluation(rid) is False
+
+
+def test_record_evaluation_rejects_foreign_search_candidate_binding():
+    reg = _reg()
+    with pytest.raises(ValueError, match="not bound"):
+        reg.record_evaluation(
+            _evaluation(),
+            dataset_version="v1",
+            recorded_ts=10,
+            config_hash="f" * 64,
+        )
 
 
 def test_verify_evaluation_unknown_run_id_fails_closed():

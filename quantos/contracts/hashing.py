@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 FLOAT_PRECISION = 10
@@ -32,3 +33,18 @@ def stable_hash(obj: Any) -> str:
 
 def short_hash(obj: Any, length: int = 16) -> str:
     return stable_hash(obj)[:length]
+
+
+def source_file_sha256(path: str | Path) -> str:
+    """Hash source text independently of checkout newline policy.
+
+    Git stores governed text as LF, while an editor on Windows can temporarily
+    materialize the same tracked source with CRLF without producing a Git diff.
+    Evidence must bind the logical source content, not that workstation detail.
+    This helper is intentionally for UTF-8 source/config text only; binary and
+    dataset evidence must continue to hash exact bytes.
+    """
+
+    content = Path(path).read_bytes()
+    canonical = content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical).hexdigest()

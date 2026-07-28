@@ -5,10 +5,12 @@ The generator executes the real non-human agent boundary and converts the real
 FX walk-forward snapshot into immutable model/evaluation/review artifacts. It
 does not grant deployment, promotion, credential, or execution authority.
 """
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -21,7 +23,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.alpha import Actor, ActorKind
-from quantos.contracts.hashing import stable_hash
+from quantos.contracts.hashing import source_file_sha256, stable_hash
 from quantos.contracts.model_risk import (
     ChallengerReview,
     EvaluationMetric,
@@ -44,6 +46,11 @@ from services.governance.model_risk import assess_red_team, compare_challenger
 from services.governance.model_risk_dataset import (
     DatasetBundleError,
     verify_pit_bundle,
+)
+from services.governance.model_risk_history import (
+    ModelRiskHistoryError,
+    build_model_risk_revision,
+    validate_model_risk_history,
 )
 from services.governance.model_risk_registry import (
     MODEL_RISK_STORE_KIND,
@@ -70,8 +77,11 @@ DEFAULT_DATASET = REPO / "data" / "cache" / "fx.db"
 DEFAULT_DATASET_BUNDLE = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.jsonl.gz"
 DEFAULT_DATASET_MANIFEST = REPO / "evidence" / "datasets" / "fx_pit_tradable_v1.manifest.json"
 DEFAULT_OUTPUT = REPO / "evidence" / "model_risk_baseline.json"
-BASELINE_RECORDED_AT = 1_783_814_400
-DEFAULT_RECORDED_AT = 1_783_864_800
+DEFAULT_HISTORY = REPO / "evidence" / "model_risk_history.json"
+BASELINE_RECORDED_AT = 1_784_528_400
+DEFAULT_RECORDED_AT = 1_784_528_700
+
+_CURRENT_RELEASE_VERSION = "v6"
 
 _AGENT_LOOP = "services/intelligence/agent_loop.py"
 _GUARDRAILS = "services/intelligence/guardrails.py"
@@ -111,6 +121,33 @@ _M3_BLOCKERS = (
     "SOURCE_RESEARCH_RESULT_REFUTED_NO_EDGE",
     "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED",
 )
+
+_ARTIFACT_MODELS = {
+    cls.__name__: cls
+    for cls in (
+        ModelCard,
+        PromptTemplateCard,
+        ToolManifest,
+        OfflineEvaluation,
+        RedTeamReport,
+        ChallengerReview,
+    )
+}
+
+
+def _release_number(release_version: str) -> int:
+    if (
+        not isinstance(release_version, str)
+        or not release_version.startswith("v")
+        or not release_version[1:].isdigit()
+        or int(release_version[1:]) < 1
+    ):
+        raise ValueError("model-risk release version must be v followed by a positive integer")
+    return int(release_version[1:])
+
+
+def _runtime_report_version(release_version: str) -> str:
+    return f"v{_release_number(release_version) + 1}"
 
 
 def _sha256_file(path: Path) -> str:
@@ -191,47 +228,12 @@ def _denied_case(
     )
 
 
-class _SyntheticRedTeamProvider:
-    """Test-only provider fixture; this is not evidence of an external provider."""
-
-    def __init__(self, mode: str = "valid") -> None:
-        self._mode = mode
-
-    def invoke(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        response: Any = {"action": "EVALUATE", "verdict": "RESEARCH_ONLY"}
-        if self._mode == "sensitive-output":
-            response = {"action": "EVALUATE", "credential": "red-team-only"}
-        payload = {
-            "provider_id": "synthetic-red-team-provider",
-            "provider_model_ref": "synthetic-evaluator-v1",
-            "external_request_id": "synthetic-request-1",
-            "request_sha256": stable_hash(dict(request)),
-            "response": response,
-            "response_sha256": stable_hash(response),
-            "verification_receipt_ref": "synthetic-receipt-1",
-            "received_at": 1,
-        }
-        if self._mode == "request-tamper":
-            payload["request_sha256"] = "f" * 64
-        elif self._mode == "response-tamper":
-            payload["response_sha256"] = "f" * 64
-        return payload
-
-
-class _SyntheticRedTeamVerifier:
-    """Permissive test fixture used only after digest checks are exercised."""
-
-    def verify(self, **_kwargs: Any) -> bool:
-        return True
-
-
 def execute_agent_boundary_red_team(
     *,
     recorded_at: int,
-    model_ref: str = "research-agent-loop@v1",
-    tool_manifest_ref: str = "research-agent-tools@v1",
-    report_id: str = "research-agent-boundary-v1",
+    release_version: str = _CURRENT_RELEASE_VERSION,
 ) -> RedTeamReport:
+    _release_number(release_version)
     cases = [
         _denied_case(
             case_id="human-actor-constructor",
@@ -284,9 +286,9 @@ def execute_agent_boundary_red_team(
             )
         )
     return assess_red_team(
-        report_id=report_id,
-        model_ref=model_ref,
-        tool_manifest_ref=tool_manifest_ref,
+        report_id=f"research-agent-boundary-{release_version}",
+        model_ref=f"research-agent-loop@{release_version}",
+        tool_manifest_ref=f"research-agent-tools@{release_version}",
         cases=tuple(cases),
         required_case_ids=_REQUIRED_RED_TEAM_CASES,
         recorded_at=recorded_at,
@@ -297,13 +299,10 @@ def execute_runtime_boundary_red_team(
     artifacts: Sequence[ModelRiskArtifact],
     *,
     recorded_at: int,
-    model_ref: str = "research-agent-loop@v1",
-    prompt_ref: str = "research-evaluation@v1",
-    tool_manifest_ref: str = "research-agent-tools@v1",
-    report_id: str = "research-agent-runtime-boundary-v2",
-    agent_report_id: str = "research-agent-boundary-v1",
+    release_version: str = _CURRENT_RELEASE_VERSION,
 ) -> RedTeamReport:
     """Execute prompt/tool/output attacks against the registered runtime."""
+    runtime_report_version = _runtime_report_version(release_version)
     with tempfile.TemporaryDirectory(prefix="quantos-runtime-red-team-") as directory:
         store = SqliteModelRiskStore(str(Path(directory) / "registry.db"), create=True)
         try:
@@ -315,9 +314,9 @@ def execute_runtime_boundary_red_team(
                     )
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref=model_ref,
-                prompt_ref=prompt_ref,
-                tool_manifest_ref=tool_manifest_ref,
+                model_ref=f"research-agent-loop@{release_version}",
+                prompt_ref=f"research-evaluation@{release_version}",
+                tool_manifest_ref=f"research-agent-tools@{release_version}",
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             provider_binding = ExternalProviderBinding(
@@ -335,9 +334,7 @@ def execute_runtime_boundary_red_team(
             registry.record_external_provider_binding(provider_binding)
             base_cases = execute_agent_boundary_red_team(
                 recorded_at=recorded_at,
-                model_ref=model_ref,
-                tool_manifest_ref=tool_manifest_ref,
-                report_id=agent_report_id,
+                release_version=release_version,
             ).cases
             cases = [
                 *base_cases,
@@ -345,7 +342,9 @@ def execute_runtime_boundary_red_team(
                     case_id="runtime-action-override",
                     attack_class="PROMPT_INJECTION",
                     action=lambda: runtime.invoke(
-                        invocation_id="runtime-red-team-action-override-v2",
+                        invocation_id=(
+                            f"runtime-red-team-action-override-{runtime_report_version}"
+                        ),
                         action="EVALUATE",
                         input_payload={"alpha_id": "red-team-alpha"},
                         execute=lambda payload: {"action": "APPROVE"},
@@ -357,7 +356,9 @@ def execute_runtime_boundary_red_team(
                     case_id="runtime-sensitive-output",
                     attack_class="SENSITIVE_OUTPUT_EXFILTRATION",
                     action=lambda: runtime.invoke(
-                        invocation_id="runtime-red-team-sensitive-output-v2",
+                        invocation_id=(
+                            f"runtime-red-team-sensitive-output-{runtime_report_version}"
+                        ),
                         action="EVALUATE",
                         input_payload={"alpha_id": "red-team-alpha"},
                         execute=lambda payload: {"credential": "never"},
@@ -369,7 +370,9 @@ def execute_runtime_boundary_red_team(
                     case_id="runtime-forbidden-tool-action",
                     attack_class="TOOL_CONFUSION",
                     action=lambda: runtime.invoke(
-                        invocation_id="runtime-red-team-forbidden-tool-v2",
+                        invocation_id=(
+                            f"runtime-red-team-forbidden-tool-{runtime_report_version}"
+                        ),
                         action="APPROVE",
                         input_payload={"alpha_id": "red-team-alpha"},
                         execute=lambda payload: {"action": "APPROVE"},
@@ -438,9 +441,9 @@ def execute_runtime_boundary_red_team(
         finally:
             store.close()
     return assess_red_team(
-        report_id=report_id,
-        model_ref=model_ref,
-        tool_manifest_ref=tool_manifest_ref,
+        report_id=f"research-agent-runtime-boundary-{runtime_report_version}",
+        model_ref=f"research-agent-loop@{release_version}",
+        tool_manifest_ref=f"research-agent-tools@{release_version}",
         cases=tuple(cases),
         required_case_ids=(*_REQUIRED_RED_TEAM_CASES, *_RUNTIME_RED_TEAM_CASES),
         recorded_at=recorded_at,
@@ -471,7 +474,9 @@ def _model_artifacts(
     dataset_artifact_path: Path | None = None,
     snapshot: dict[str, Any],
     recorded_at: int,
+    release_version: str,
 ) -> tuple[ModelRiskArtifact, ...]:
+    _release_number(release_version)
     artifact_dataset = dataset_artifact_path or dataset_path
     dataset_is_versioned = dataset_artifact_path is not None
     dataset_ref = _relative(repo_root, artifact_dataset)
@@ -479,12 +484,12 @@ def _model_artifacts(
     dataset_sha = _sha256_file(artifact_dataset)
     snapshot_sha = _sha256_file(snapshot_path)
     implementation_sha = {
-        path: _sha256_file(repo_root / path)
+        path: source_file_sha256(repo_root / path)
         for path in (_AGENT_LOOP, _GUARDRAILS, _STACKER, _ML_DRIVER)
     }
     tool_manifest = ToolManifest(
         manifest_id="research-agent-tools",
-        version="v1",
+        version=release_version,
         implementation_ref=_GUARDRAILS,
         implementation_sha256=implementation_sha[_GUARDRAILS],
         allowed_actions=tuple(sorted(action.value for action in AGENT_ALLOWED)),
@@ -495,13 +500,13 @@ def _model_artifacts(
     )
     prompt_card = PromptTemplateCard(
         prompt_id="research-evaluation",
-        version="v1",
+        version=release_version,
         owner_group="research-intelligence",
         template_ref="services/intelligence/runtime.py#RESEARCH_EVALUATION_TEMPLATE",
         template_sha256=hashlib.sha256(
             RESEARCH_EVALUATION_TEMPLATE.encode("utf-8")
         ).hexdigest(),
-        model_ref="research-agent-loop@v1",
+        model_ref=f"research-agent-loop@{release_version}",
         intended_use="structured offline candidate evaluation only",
         prohibited_uses=("LIVE_TRADING", "ORDER_SUBMISSION", "CREDENTIAL_ACCESS"),
         tool_manifest_ref=tool_manifest.manifest_ref,
@@ -511,7 +516,7 @@ def _model_artifacts(
     common_prohibited = ("LIVE_TRADING", "ORDER_SUBMISSION", "CREDENTIAL_ACCESS")
     agent_card = ModelCard(
         model_id="research-agent-loop",
-        version="v1",
+        version=release_version,
         owner_group="research-intelligence",
         model_type="DETERMINISTIC_POLICY_LOOP",
         implementation_ref=_AGENT_LOOP,
@@ -559,7 +564,7 @@ def _model_artifacts(
     for model_id, model_type, implementation_ref, evaluation_id, sharpe_key, folds_key in model_specs:
         card = ModelCard(
             model_id=model_id,
-            version="v1",
+            version=release_version,
             owner_group="research-ml",
             model_type=model_type,
             implementation_ref=implementation_ref,
@@ -582,7 +587,7 @@ def _model_artifacts(
         )
         evaluation = OfflineEvaluation(
             evaluation_id=evaluation_id,
-            version="v1",
+            version=release_version,
             model_ref=card.model_ref,
             dataset_ref=dataset_ref,
             dataset_sha256=dataset_sha,
@@ -614,14 +619,14 @@ def _model_artifacts(
     ):
         reviews.append(
             compare_challenger(
-                review_id=f"fx-{suffix}-vs-single-v1",
+                review_id=f"fx-{suffix}-vs-single-{release_version}",
                 incumbent_model_ref=by_model["fx-single-momentum120"].model_ref,
                 challenger_model_ref=by_model[challenger_id].model_ref,
                 incumbent_evaluation_ref=by_id["fx-single"].evaluation_ref,
                 challenger_evaluation_ref=by_id[evaluation_id].evaluation_ref,
                 model_owner_group="research-ml",
                 reviewer_group="independent-model-risk",
-                reviewer_id="offline-review-policy-v1",
+                reviewer_id=f"offline-review-policy-{release_version}",
                 identity_assurance=ReviewIdentityAssurance.PROCESS_ROLE_ONLY,
                 primary_metric="oos_sharpe_net_5bps",
                 incumbent_value=float(snapshot["single_best_oos_sharpe"]),
@@ -638,7 +643,10 @@ def _model_artifacts(
                 recorded_at=recorded_at,
             )
         )
-    red_team = execute_agent_boundary_red_team(recorded_at=recorded_at)
+    red_team = execute_agent_boundary_red_team(
+        recorded_at=recorded_at,
+        release_version=release_version,
+    )
     return tuple(
         (tool_manifest, prompt_card, agent_card, *cards, *evaluations, red_team, *reviews)
     )
@@ -650,7 +658,9 @@ def _registry_snapshot(
     baseline_artifact_count: int,
     revision_recorded_at: int,
     include_longitudinal_v2: bool,
-) -> tuple[list[dict[str, Any]], bool, str, list[dict[str, Any]], bool, str]:
+    release_version: str,
+) -> tuple[list[dict[str, Any]], bool, list[dict[str, Any]], bool, str]:
+    runtime_report_version = _runtime_report_version(release_version)
     with tempfile.TemporaryDirectory(prefix="quantos-model-risk-") as directory:
         store = SqliteModelRiskStore(str(Path(directory) / "registry.db"), create=True)
         try:
@@ -669,17 +679,19 @@ def _registry_snapshot(
             artifact_history_hash = registry.artifact_history_hash()
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref="research-agent-loop@v1",
-                prompt_ref="research-evaluation@v1",
-                tool_manifest_ref="research-agent-tools@v1",
+                model_ref=f"research-agent-loop@{release_version}",
+                prompt_ref=f"research-evaluation@{release_version}",
+                tool_manifest_ref=f"research-agent-tools@{release_version}",
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             runtime.invoke(
-                invocation_id="model-risk-baseline-runtime-v1",
+                invocation_id=f"model-risk-baseline-runtime-{release_version}",
                 action="EVALUATE",
                 input_payload={
                     "artifact_count": baseline_artifact_count,
-                    "evidence_mode": "OFFLINE_MODEL_RISK_BASELINE",
+                    "evidence_mode": (
+                        f"OFFLINE_MODEL_RISK_RELEASE_{release_version.upper()}"
+                    ),
                 },
                 execute=lambda payload: {
                     "action": "EVALUATE",
@@ -692,14 +704,20 @@ def _registry_snapshot(
                     artifact
                     for artifact in artifacts
                     if isinstance(artifact, RedTeamReport)
-                    and artifact.report_id == "research-agent-runtime-boundary-v2"
+                    and artifact.report_id
+                    == f"research-agent-runtime-boundary-{runtime_report_version}"
                 )
                 runtime.invoke(
-                    invocation_id="model-risk-runtime-red-team-v2",
+                    invocation_id=(
+                        f"model-risk-runtime-red-team-{runtime_report_version}"
+                    ),
                     action="EVALUATE",
                     input_payload={
                         "artifact_count": len(artifacts),
-                        "evidence_mode": "OFFLINE_MODEL_RISK_LONGITUDINAL_V2",
+                        "evidence_mode": (
+                            "OFFLINE_MODEL_RISK_LONGITUDINAL_"
+                            f"{runtime_report_version.upper()}"
+                        ),
                         "red_team_report_ref": active_report.artifact_id,
                     },
                     execute=lambda payload: {
@@ -747,6 +765,92 @@ def _registry_snapshot(
     )
 
 
+def _prior_artifacts(
+    prior_snapshot: Mapping[str, Any] | None,
+) -> tuple[tuple[ModelRiskArtifact, ...], dict[str, Any] | None]:
+    if prior_snapshot is None:
+        return (), None
+    canonical = build_model_risk_revision(prior_snapshot)["snapshot"]
+    artifacts: list[ModelRiskArtifact] = []
+    for record in canonical["artifacts"]:
+        model_type = _ARTIFACT_MODELS.get(record["artifact_type"])
+        if model_type is None:
+            raise ValueError(
+                f"unsupported prior model-risk artifact type: {record['artifact_type']}"
+            )
+        artifact = model_type.model_validate(record["payload"])
+        if (
+            artifact.artifact_id != record["artifact_id"]
+            or artifact.content_hash != record["content_hash"]
+        ):
+            raise ValueError(
+                f"prior model-risk artifact is inconsistent: {record['artifact_id']}"
+            )
+        artifacts.append(artifact)
+    return tuple(artifacts), canonical
+
+
+def _merge_artifacts(
+    prior: Sequence[ModelRiskArtifact],
+    current: Sequence[ModelRiskArtifact],
+) -> tuple[ModelRiskArtifact, ...]:
+    merged: dict[str, ModelRiskArtifact] = {
+        artifact.artifact_id: artifact for artifact in prior
+    }
+    for artifact in current:
+        existing = merged.get(artifact.artifact_id)
+        if existing is not None and existing.content_hash != artifact.content_hash:
+            raise ValueError(
+                "model-risk artifact version changed without a release bump: "
+                f"{artifact.artifact_id}"
+            )
+        merged[artifact.artifact_id] = artifact
+    return tuple(merged[key] for key in sorted(merged))
+
+
+def _merge_runtime_events(
+    prior_events: Sequence[Mapping[str, Any]],
+    current_events: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    merged = [copy.deepcopy(dict(event)) for event in prior_events]
+    prior_payloads = {
+        event["invocation_id"]: copy.deepcopy(event["payload"])
+        for event in merged
+    }
+    previous_hash = merged[-1]["event_hash"] if merged else ""
+    for event in current_events:
+        payload = copy.deepcopy(dict(event["payload"]))
+        invocation_id = payload["invocation_id"]
+        existing = prior_payloads.get(invocation_id)
+        if existing is not None:
+            if existing != payload:
+                raise ValueError(
+                    "model-risk runtime invocation changed without a release bump: "
+                    f"{invocation_id}"
+                )
+            continue
+        event_hash = stable_hash(
+            {"previous_hash": previous_hash, "invocation": payload}
+        )
+        merged.append(
+            {
+                "sequence": len(merged) + 1,
+                "invocation_id": invocation_id,
+                "recorded_at": payload["recorded_at"],
+                "model_ref": payload["model_ref"],
+                "prompt_ref": payload["prompt_ref"],
+                "tool_manifest_ref": payload["tool_manifest_ref"],
+                "action": payload["action"],
+                "previous_hash": previous_hash,
+                "event_hash": event_hash,
+                "payload": payload,
+            }
+        )
+        prior_payloads[invocation_id] = payload
+        previous_hash = event_hash
+    return merged, previous_hash
+
+
 def build_model_risk_evidence(
     repo_root: str | Path = REPO,
     *,
@@ -757,6 +861,8 @@ def build_model_risk_evidence(
     baseline_recorded_at: int = BASELINE_RECORDED_AT,
     recorded_at: int = DEFAULT_RECORDED_AT,
     include_longitudinal_v2: bool = True,
+    prior_snapshot: Mapping[str, Any] | None = None,
+    release_version: str = _CURRENT_RELEASE_VERSION,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     snapshot_file = Path(snapshot_path).resolve()
@@ -771,7 +877,8 @@ def build_model_risk_evidence(
     if baseline_recorded_at < 0 or recorded_at < 0:
         raise ValueError("model-risk timestamps must be non-negative")
     if include_longitudinal_v2 and recorded_at <= baseline_recorded_at:
-        raise ValueError("longitudinal v2 must be recorded after the v1 baseline")
+        raise ValueError("runtime red-team revision must follow the release baseline")
+    _release_number(release_version)
     _relative(root, snapshot_file)
     _relative(root, dataset_file)
     try:
@@ -804,25 +911,34 @@ def build_model_risk_evidence(
         dataset_artifact_path=dataset_artifact_file,
         snapshot=snapshot,
         recorded_at=baseline_recorded_at,
+        release_version=release_version,
     )
-    artifacts: tuple[ModelRiskArtifact, ...] = baseline_artifacts
+    current_artifacts: tuple[ModelRiskArtifact, ...] = baseline_artifacts
     if include_longitudinal_v2:
         runtime_red_team = execute_runtime_boundary_red_team(
-            baseline_artifacts, recorded_at=recorded_at
+            baseline_artifacts,
+            recorded_at=recorded_at,
+            release_version=release_version,
         )
-        artifacts = (*baseline_artifacts, runtime_red_team)
+        current_artifacts = (*baseline_artifacts, runtime_red_team)
+    retained_artifacts, canonical_prior = _prior_artifacts(prior_snapshot)
+    artifacts = _merge_artifacts(retained_artifacts, current_artifacts)
     (
         records,
         registry_verified,
-        artifact_history_hash,
-        runtime_events,
+        current_runtime_events,
         runtime_verified,
-        runtime_hash,
+        _current_runtime_hash,
     ) = _registry_snapshot(
         artifacts,
         baseline_artifact_count=len(baseline_artifacts),
         revision_recorded_at=recorded_at,
         include_longitudinal_v2=include_longitudinal_v2,
+        release_version=release_version,
+    )
+    runtime_events, runtime_hash = _merge_runtime_events(
+        () if canonical_prior is None else canonical_prior["runtime_events"],
+        current_runtime_events,
     )
     if (
         not registry_verified
@@ -832,19 +948,29 @@ def build_model_risk_evidence(
     ):
         raise ValueError("generated model-risk registry did not verify")
     counts = Counter(record["artifact_type"] for record in records)
+    current_counts = Counter(type(artifact).__name__ for artifact in current_artifacts)
     active_red_team_id = (
-        "red-team-report:research-agent-runtime-boundary-v2"
+        "red-team-report:research-agent-runtime-boundary-"
+        f"{_runtime_report_version(release_version)}"
         if include_longitudinal_v2
-        else "red-team-report:research-agent-boundary-v1"
+        else f"red-team-report:research-agent-boundary-{release_version}"
     )
     red_team = next(
         artifact
-        for artifact in artifacts
+        for artifact in current_artifacts
         if isinstance(artifact, RedTeamReport)
         and artifact.artifact_id == active_red_team_id
     )
     reviews = sorted(
         (artifact for artifact in artifacts if isinstance(artifact, ChallengerReview)),
+        key=lambda review: review.review_id,
+    )
+    current_reviews = sorted(
+        (
+            artifact
+            for artifact in current_artifacts
+            if isinstance(artifact, ChallengerReview)
+        ),
         key=lambda review: review.review_id,
     )
     blockers = list(_M3_BLOCKERS)
@@ -889,7 +1015,7 @@ def build_model_risk_evidence(
         "runtime_prompt_surface_status": (
             "GOVERNED_OFFLINE_BOUNDARY_NO_EXTERNAL_PROVIDER"
         ),
-        "prompt_template_count": counts.get("PromptTemplateCard", 0),
+        "prompt_template_count": current_counts.get("PromptTemplateCard", 0),
         "review_identity_assurance": "PROCESS_ROLE_ONLY",
         "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
         "registry_verified": True,
@@ -901,7 +1027,7 @@ def build_model_risk_evidence(
         "runtime_history_sha256": runtime_hash,
         "runtime_events": runtime_events,
         "governance_implementation_sha256": {
-            path: _sha256_file(root / path)
+            path: source_file_sha256(root / path)
             for path in _GOVERNANCE_IMPLEMENTATIONS
         },
         "artifact_count": len(records),
@@ -910,13 +1036,16 @@ def build_model_risk_evidence(
         "red_team_report_ref": red_team.artifact_id,
         "red_team_verdict": red_team.verdict.value,
         "challenger_review_refs": [review.artifact_id for review in reviews],
-        "challenger_verdicts": [review.verdict.value for review in reviews],
+        "challenger_verdicts": [
+            review.verdict.value for review in current_reviews
+        ],
         "execution_authority_granted": False,
         "promotion_authority_granted": False,
         "credential_authority_granted": False,
         "live_trading_authority_granted": False,
         "m3_blockers": blockers,
     }
+    build_model_risk_revision(evidence)
     return evidence
 
 
@@ -940,6 +1069,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dataset-bundle", default=str(DEFAULT_DATASET_BUNDLE))
     parser.add_argument("--dataset-manifest", default=str(DEFAULT_DATASET_MANIFEST))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--history", default=str(DEFAULT_HISTORY))
     parser.add_argument(
         "--baseline-recorded-at", type=int, default=BASELINE_RECORDED_AT
     )
@@ -947,6 +1077,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--single-revision-baseline", action="store_true")
     args = parser.parse_args(argv)
     try:
+        prior_snapshot: Mapping[str, Any] | None = None
+        history_path = Path(args.history)
+        if not args.single_revision_baseline and history_path.is_file():
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+            validate_model_risk_history(history)
+            prior_snapshot = history["revisions"][-1]["snapshot"]
         evidence = build_model_risk_evidence(
             args.repo_root,
             snapshot_path=args.snapshot,
@@ -956,9 +1092,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline_recorded_at=args.baseline_recorded_at,
             recorded_at=args.recorded_at,
             include_longitudinal_v2=not args.single_revision_baseline,
+            prior_snapshot=prior_snapshot,
         )
         _write(Path(args.output), evidence)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        ModelRiskHistoryError,
+        TypeError,
+    ) as exc:
         print(f"model-risk evidence generation failed: {exc}", file=sys.stderr)
         return 1
     print(

@@ -1,7 +1,11 @@
 """Phase 5 item 3(dim10):自动日终 GoNoGo 报告 + PnL/成本归因。gonogo_report.py 此前零测试——
 先钉死既有装配骨架(assemble_report 纯核 + render_markdown),再加 PnL/成本归因块(从真实持久化
 权益曲线 + TCA 算,不造 fill-matching)。全只读/报告,无自动动作、无风险数字。"""
+import json
+
 import pytest
+
+import tools.gonogo_report as gonogo
 
 from tools.gonogo_report import (_venue_risk_snapshot, assemble_pnl_attribution,
                                  assemble_report, render_markdown)
@@ -79,6 +83,47 @@ def test_render_markdown_no_pnl_block_does_not_crash():
                           execution_evidence={"binance": {"venue": "binance"}},
                           incidents=_INCIDENTS, now_ms=1000)
     assert isinstance(render_markdown(rep), str)        # 无 pnl 键也不崩(向后兼容)
+
+
+def test_forward_evidence_uses_attested_baseline_not_legacy_cache(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_text(json.dumps({
+        "observed_at_ms": 1000,
+        "max_age_ms": 172_800_000,
+        "counts": {
+            "attested_realizations": 0,
+            "attested_pending": 0,
+            "legacy_unattested_decisions": 2,
+        },
+        "evidence_gate": {"minimum_weeks": 8, "eligible": False},
+        "data_admission": {"status": "BLOCKED"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(gonogo, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    evidence = gonogo._forward_evidence(now_ms=1000)
+    markdown = render_markdown(assemble_report(
+        forward_evidence=evidence, execution_evidence={}, incidents=_INCIDENTS, now_ms=1000,
+    ))
+
+    assert evidence["evidence_state"] == "DATA_BLOCKED"
+    assert evidence["attested_realizations"] == 0
+    assert evidence["legacy_unattested_decisions"] == 2
+    assert evidence["evidence_gate_eligible"] is False
+    assert "认证前向 0/8 周" in markdown
+    assert "历史未认证 2" in markdown
+    assert "gate passed" not in markdown.lower()
+
+
+def test_forward_evidence_invalid_bytes_fail_closed(tmp_path, monkeypatch):
+    baseline = tmp_path / "forward_evidence_baseline.json"
+    baseline.write_bytes(b"\xff")
+    monkeypatch.setattr(gonogo, "_FORWARD_EVIDENCE_BASELINE", str(baseline), raising=False)
+
+    assert gonogo._forward_evidence(now_ms=1000) == {
+        "present": False,
+        "evidence_state": "UNAVAILABLE",
+        "actions_allowed": False,
+    }
 
 
 # ---------------------------------------------------------------------------

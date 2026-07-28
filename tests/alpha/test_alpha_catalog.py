@@ -42,6 +42,15 @@ def test_catalog_var_sr_is_none_below_two_populated_then_real():
     assert cat.catalog_var_sr() > 1e-4                   # reflects the population spread
 
 
+def test_replacing_returns_with_constant_series_clears_stale_sharpe():
+    cat = AlphaCatalog()
+    cat.register(_def("a1"))
+    cat.set_returns("a1", [0.01, -0.01, 0.02, -0.02])
+    assert "a1" in cat._sharpes
+    cat.set_returns("a1", [0.01, 0.01, 0.01, 0.01])
+    assert "a1" not in cat._sharpes
+
+
 def test_bh_fdr_survivors():
     cat = AlphaCatalog()
     for a in "abcde":

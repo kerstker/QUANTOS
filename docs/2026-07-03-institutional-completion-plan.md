@@ -46,7 +46,7 @@
 ### 编号说明(避免三套编号打架)
 
 - **本文编号延续 2026-07-03 核实版路线图**(Rank #7–19 语义不变,#20 起为本次复核新增)。
-- 旧《TOPTIER_REMEDIATION_ROADMAP》表中 #7–13 的七行**全部收编**:旧#7 CVaR → 本文 **#10c**;旧#8 相关漂移检测 → **backlog**(依赖 #14);旧#9 全局试验账本 → 已建成,残差即 **#12**;旧#10 可复现硬化 → **#19+#28**;旧#11 股票+基本面 → **#17**;旧#12 crowd_contra 送前向 paper-track → **研究决策 R-3**;旧#13 数据漂移检测 → **backlog**(依赖 #26)。
+- 旧《TOPTIER_REMEDIATION_ROADMAP》表中 #7–13 的七行**全部收编**:旧#7 CVaR → 本文 **#10c**;旧#8 相关漂移检测 → **已完成 PIT 检测与干跑诊断，自动缩放经执行控制证伪后保持关闭**;旧#9 全局试验账本 → 已建成,残差即 **#12**;旧#10 可复现硬化 → **#19+#28**;旧#11 股票+基本面 → **#17**;旧#12 crowd_contra 送前向 paper-track → **研究决策 R-3**;旧#13 数据漂移检测 → **已完成数据集分布诊断与真实 console 行，feature-level drift 仍待 #15 特征值缓存填充**。
 - 2026-07-02 外部评审未消化项收编:拥挤稀释修复/流动性维/跨 book 汇总/阈值校准 → **#10a、#25、R-1**;quality_multiplier 来源 → **R-2**;决策审计留痕 → **#20**;容量注水收敛 → **#10b**。
 
 ### 总表(✓=已完成;S≤2天 / M≤1周 / L>1周,单人+代理节奏)
@@ -63,9 +63,9 @@
 | **11 ✓** | 冲击成本进干跑 + 参与率门同源 ADV + TCA-lite 区间对比 | Ⅳ | P1/M | — | 已落地(cbf8609):pipeline 可选 AC 冲击成本(逐笔参与率驱动,缺 ADV 回退平 bps,恒等式残差不破)+ cost_model/cost_provenance/TCA-lite 落 detail;carry 驱动用 close*volume 同源喂冲击+参与率门(拒 95 笔真容量约束,曾 0)。活跑 IMPACT_AC/6365 笔/TCA in-band/残差 4e-9。crowd/combo(OI 无 spot volume)+ trend(volume 不可靠,#22)暂平 bps |
 | **13 ✓** | 9 引擎风控门承重(诚实分级:4 真引擎 fail-closed 断言) | Ⅲ | P1/M | #7 | 已落地(93fd065):`dry_run_guard.evaluate_dry_run_risk` 只跑 4 真引擎(market/drawdown/concentration/stress,各 fail-closed;stress 用 timestamps→REAL_HISTORICAL_REPLAY),5 引擎 SKIPPED_NO_HONEST_INPUT 绝不伪造;接进 crowd_contra 干跑落 detail(VT 序列 3/4,market-VaR 仅默认阈值日频紧未过,诚实标注)。晋级门 guard_to_paper 接线 + 5 引擎喂真输入 = 后续 |
 | **22 ◑** | 数据质量强制 + volume 量纲修复回填 | Ⅰ | P1/M | — | 强制机制已落地(e241c00):`_ingest_records/ingest_bars_csv/ingest_provider_rows` 加 `strict=`(质量不过 fail-closed,yahoo fetcher 接 strict=True)+ `quality.check_volume_units` 跨币量纲守卫(scenario_tail 用它作单一真源)。**volume 回填 + trend 容量重算需网络(coingecko,本环境被墙)= 待网络** |
-| **12 ◑** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | verify 半边已落地(c7d0e5e):`ExperimentRegistry.verify_evaluation` 重算 content_hash 抓篡改(改指标/改哈希/未知 id 全 fail-closed,4 测)。BHY 已接进晋级守卫(44a277d,`catalog.bhy_fdr_survivors`→`guard_to_validated`,比 plain BH 严,190 alpha 测过)。**剩:CatalogEvidence 封套绑 pbo/trial_count + effective_trials 相关性折减 + console 透出——较大设计改动,待做** |
+| **12 ✓** | 验证门端到端 provenance(CatalogEvidence + verify_evaluation + BHY/有效试验数接守卫) | Ⅱ | P1/M | — | **已完整落地(2026-07-20):** `CatalogEvidence` 精确绑定收益、Sharpe 总体、可比较相关矩阵、保守 effective-trials、DSR 与 catalog snapshot；`BatchPboEvidence` 精确绑定 CSCV 输入/PBO。evaluator/gate/pipeline 不再接受裸裁决数字；候选池先冻结再裁决；registry 独立重放 DSR/PBO/reproducibility；生命周期至最终人工批准均验证完整 snapshot。console 仅透出脱敏摘要。BHY 继续作为独立因子动物园 FDR 门。 |
 | **15 ◑** | 特征注册表持久化 + PIT 特征物化存储 | Ⅱ | P1/M | — | 持久层已落地(c5ae7a2):`SqliteFeatureRegistryStore`(镜像 run_registry,含 leakage_passed+code_version)+ `SqliteFeatureValueStore`(克隆 fundamental_store 双时点 + feature_version,PIT/截断不变/fail-closed,10 测)。采纳桥已落地(0e93684,`materialization.materialize_rolling_feature`:写通道 + PIT 读,实证 read==recompute bit-identical,4 测)。**剩:驱动器/console 优先读缓存 + 离线填充 = 增量采纳待做** |
-| **19 ◑** | 复现底座:evidence 数字指纹 + 离线重算 harness + 门测试 | Ⅵ | P1/M | — | 已落地(9cc4c25/478b5bb):`evidence/{dry_run_books,ic_panel,capacity}.json` 指纹(5 book 结论 + crowd_contra t-stat 4.32 + 容量 ~300× 发现,共享 extractor 保 build/verify 同源)+ `tools/build_evidence_digests.py` + 门测试(缓存在场重算断言/缺席诚实 skip,drift 实测会红)。rebuild 编排器已落地(f831f4e,`tools/rebuild_snapshots.py`:依赖序重算 + 缺缓存诚实 skip + 重建 digests,3 测)。**剩:digests 扩到 scenario_tail/macro_regime = 待做** |
+| **19 ✓** | 复现底座:evidence 数字指纹 + 离线重算 harness + 门测试 | Ⅵ | P1/M | — | **完整落地(2026-07-20):** `evidence/{dry_run_books,ic_panel,capacity,scenario_tail,macro_regime}.json` 覆盖 5 book 结论、crowd_contra IC、容量约束、历史危机/尾部风险和宏观 regime 互补/覆盖边界；共享 extractor 令 build/verify 同源，并对非真实 provenance 失败关闭。rebuild 编排器按依赖序离线重算；缓存在场逐项断言、缺席诚实 skip、数字漂移会红。另修 linked worktree 的 git SHA 解析，digest 不再落 `code_version=unknown`。 |
 | **24 ◑** | console_api 拆分(8 路由组)+ 前端测试地板(42/42) | Ⅵ | P1/M | — | 前端测试地板已落地(a4e4350,IA 重构):30/30 页注册表驱动冒烟 + App 集成 + `assertConsoleSnapshot` payload/provenance 守卫 + format(47 测);28/30 页带 ProvenanceRibbon。**剩:console_api 5167 行单体拆路由组=大重构,宜专注新会话做(契约测试作安全网)** |
 | **14 ✓** | PIT regime 分类器(扩展窗分位 + 免估计规则优先) | Ⅱ/Ⅲ | P1/M | — | 截断不变性测试过;信用维诚实标 `NON_PIT_INSUFFICIENT` 已落地(e7ba04f):`expanding_tercile_labels`(截断不变)+ `fixed_threshold_labels`(免估计,VIX 20/30)+ sign_regime;全样本 tercile 保留作回顾性;短序列(HY-OAS)暖启为 mid 诚实处理。7 测含截断不变性。 |
 | **23 ✓** | 企业行动总收益序列(backtest 侧组装) | Ⅰ | P2/S | — | 已落地(bdd2a79):`corporate_actions.total_return_series` 把拆股调整价 + PIT 分红再投资组装成总收益序列(分红收益率对前价 scale-free,无需 ex-date 参考价——补上 adjusted_close 推迟的 Phase-4 缺口);只用可知行动(无前视),5 测。价值/低波/股息因子可用总收益价 |
@@ -168,6 +168,14 @@ CLAUDE.md 计数刷新(endpoints 31→41、pages 37→42、portfolio 57→124、
 - **DoD**:每个晋级 alpha 的试验数/var_sr/DSR/PBO 可机器追溯到 catalog 且防篡改;守卫用因子动物园级校正。
 - **工作量/依赖**:M;无。
 - **诚实边界**:这仍是**进程内**溯源(受信代码可绕过)——出进程签名是 Phase 14;文档措辞与 `signing.py` 对齐。
+
+> **2026-07-20 Rank #12 完成：** 裸 `pbo` 已替换为版本化 `BatchPboEvidence`，更广义的
+> DSR/trial population 则由 catalog 独占铸造的 `CatalogEvidence` 承载。它保存精确收益序列哈希、
+> Sharpe 总体、可比较相关矩阵、原始/有效试验数、`var_sr`、DSR 与完整 snapshot 哈希；缺收益历史的
+> 试验按一项一个独立试验保守计数。工厂与智能体在第一个 verdict 前冻结完整候选池；standalone
+> pipeline 强制使用同一 catalog，不再有局部默认/override。实验制品验证会重放 DSR、PBO 和
+> exact-float reproducibility，生命周期直到最终人工批准都会比对完整 snapshot；同 trial-set 下
+> `1e-11` 收益漂移也 fail-closed。console 只展示脱敏 provenance 摘要。BHY 仍是独立承重门。
 
 #### Rank #15 — 特征注册表持久化 + PIT 特征物化
 - **为什么**:泄漏检测器真承重,但 `FeatureRegistry` 是**孤儿内存 dict**(`registry.py:9`,唯一消费方 `feature_set.py:11`;console 自认「no persisted FeatureRegistry yet」渲染合成特征,`main.py:1480,1510`);滚动特征每次从原始 bar 重算(`calculation.py:21`;驱动器 `ax.evaluate` 每 run 重算全面板)。

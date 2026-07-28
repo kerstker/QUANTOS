@@ -40,34 +40,16 @@ CONTRACT_SHA256 = hashlib.sha256(
 ).hexdigest()
 
 
-def test_configuration_reader_falls_back_to_persistent_windows_scope(monkeypatch):
-    monkeypatch.delenv("QUANTOS_EVENT_SEAL_DEST", raising=False)
-    calls = []
-
-    value = _configured_environment_value(
-        "QUANTOS_EVENT_SEAL_DEST",
-        persistent_reader=lambda name: calls.append(name) or "I:/external/seals",
-    )
-
-    assert value == "I:/external/seals"
-    assert calls == ["QUANTOS_EVENT_SEAL_DEST"]
+def _launcher_arguments(code_root: Path, module: str) -> str:
+    launcher = code_root / "tools" / "l2_schedule_entrypoint.py"
+    return f'"{launcher}" {module}'
 
 
-def test_configuration_reader_prefers_current_process_environment(monkeypatch):
-    monkeypatch.setenv("QUANTOS_EVENT_SEAL_DEST", "J:/process/seals")
-
-    value = _configured_environment_value(
-        "QUANTOS_EVENT_SEAL_DEST",
-        persistent_reader=lambda _name: (_ for _ in ()).throw(
-            AssertionError("persistent registry must not be consulted")
-        ),
-    )
-
-    assert value == "J:/process/seals"
-
-
-def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
+def _healthy_snapshot(
+    repo: Path, name: str, *, code_root: Path | None = None
+) -> TaskSnapshot:
     spec = EXPECTED_TASKS[name]
+    release = repo if code_root is None else code_root
     return TaskSnapshot(
         name=name,
         state="Ready",
@@ -75,7 +57,7 @@ def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
         last_result=0,
         next_run_ms=NOW_MS + 3_600_000,
         execute="C:/Python/python.exe",
-        arguments=f'"{repo / "tools" / "l2_schedule_entrypoint.py"}" {spec.module}',
+        arguments=_launcher_arguments(release, spec.module),
         working_directory=str(repo),
     )
 
@@ -208,18 +190,21 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
     }
 
 
-def test_schedule_evaluation_accepts_registered_windowless_python_launcher(tmp_path):
+def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
+    state_root = tmp_path / "state"
+    code_root = tmp_path / "release"
+    state_root.mkdir()
+    code_root.mkdir()
     snapshots = [
-        TaskSnapshot(**{**item.__dict__, "execute": "C:/Python/pythonw.exe"})
-        for item in _healthy_tasks(
-            tmp_path, include_backup=True, include_external=True
-        )
+        _healthy_snapshot(state_root, name, code_root=code_root)
+        for name in EXPECTED_TASKS
     ]
 
     result = evaluate_schedule(
         snapshots,
         now_ms=NOW_MS,
-        repo_root=tmp_path,
+        repo_root=state_root,
+        code_root=code_root,
         backup_ready=True,
         heartbeat_ready=True,
         event_seal_ready=True,
@@ -228,38 +213,18 @@ def test_schedule_evaluation_accepts_registered_windowless_python_launcher(tmp_p
     assert result["verdict"] == "PASS"
 
 
-def test_schedule_evaluation_accepts_fixed_schedule_log_sink(tmp_path):
+def test_schedule_evaluation_rejects_legacy_direct_module_action(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
     snapshots = [
         TaskSnapshot(
             **{
                 **item.__dict__,
-                "arguments": (
-                    f'"{tmp_path / "tools" / "l2_schedule_entrypoint.py"}" '
-                    f'{EXPECTED_TASKS[item.name].module} --log-dir '
-                    f'"{tmp_path / ".runtime" / "logs"}"'
-                ),
+                "arguments": "-m tools.domain_event_ops",
             }
         )
-        for item in _healthy_tasks(tmp_path, include_backup=True, include_external=True)
-    ]
-
-    result = evaluate_schedule(
-        snapshots,
-        now_ms=NOW_MS,
-        repo_root=tmp_path,
-        backup_ready=True,
-        heartbeat_ready=True,
-        event_seal_ready=True,
-    )
-
-    assert result["verdict"] == "PASS"
-
-
-def test_watchdog_does_not_self_latch_on_its_previous_failure(tmp_path):
-    snapshots = _healthy_tasks(tmp_path, include_backup=True, include_external=True)
-    snapshots = [
-        TaskSnapshot(**{**item.__dict__, "last_result": 1})
-        if item.name == "QUANTOS_scheduler_watchdog"
+        if item.name == "QUANTOS_domain_event_ops"
         else item
         for item in snapshots
     ]
@@ -273,72 +238,13 @@ def test_watchdog_does_not_self_latch_on_its_previous_failure(tmp_path):
         event_seal_ready=True,
     )
 
-    assert result["verdict"] == "PASS"
-    self_check = next(
-        check
-        for check in result["checks"]
-        if check["task_name"] == "QUANTOS_scheduler_watchdog"
+    check = next(
+        item
+        for item in result["checks"]
+        if item["task_name"] == "QUANTOS_domain_event_ops"
     )
-    assert self_check["code"] == "SELF_CHECK"
-
-
-def test_paper_safe_blocked_exit_is_partial_but_failure_exit_is_breach(tmp_path):
-    snapshots = _healthy_tasks(tmp_path, include_backup=True, include_external=True)
-    snapshots = [
-        TaskSnapshot(**{**item.__dict__, "last_result": 2})
-        if item.name
-        in {
-            "QUANTOS_paper_order_preview",
-            "QUANTOS_paper_realtime_10k",
-            "QUANTOS_paper_health",
-        }
-        else item
-        for item in snapshots
-    ]
-
-    result = evaluate_schedule(
-        snapshots,
-        now_ms=NOW_MS,
-        repo_root=tmp_path,
-        backup_ready=True,
-        heartbeat_ready=True,
-        event_seal_ready=True,
-    )
-    paper_checks = {
-        check["task_name"]: check
-        for check in result["checks"]
-        if check["task_name"]
-        in {
-            "QUANTOS_paper_order_preview",
-            "QUANTOS_paper_realtime_10k",
-            "QUANTOS_paper_health",
-        }
-    }
-    assert {check["status"] for check in paper_checks.values()} == {"PARTIAL"}
-    assert {check["code"] for check in paper_checks.values()} == {"RESULT_2"}
-    assert result["verdict"] == "PARTIAL"
-
-    failed = [
-        TaskSnapshot(**{**item.__dict__, "last_result": 1})
-        if item.name == "QUANTOS_paper_health"
-        else item
-        for item in snapshots
-    ]
-    failed_result = evaluate_schedule(
-        failed,
-        now_ms=NOW_MS,
-        repo_root=tmp_path,
-        backup_ready=True,
-        heartbeat_ready=True,
-        event_seal_ready=True,
-    )
-    failed_health = next(
-        check
-        for check in failed_result["checks"]
-        if check["task_name"] == "QUANTOS_paper_health"
-    )
-    assert failed_health["status"] == "BREACH"
-    assert failed_health["code"] == "RESULT_1"
+    assert check["status"] == "BREACH"
+    assert check["code"] == "ACTION_DRIFT"
 
 
 def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp_path):

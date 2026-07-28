@@ -201,3 +201,5 @@ def test_unified_result_is_deterministic():
         "max_capacity_usage": 0.80,
     }
     assert evaluate_portfolio_constraints(**kwargs) == evaluate_portfolio_constraints(**kwargs)
+
+

@@ -54,6 +54,33 @@ def test_contracts_is_a_leaf():
     assert not offenders, "quantos/contracts must not import services/live/tools:\n" + "\n".join(offenders)
 
 
+def test_contracts_do_not_hide_service_edges_in_dynamic_import_strings():
+    offenders = []
+    forbidden_roots = {"services", "live", "tools"}
+    for path in _all_py_files(os.path.join(_ROOT, "quantos", "contracts")):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            function = node.func
+            is_dynamic_import = (
+                isinstance(function, ast.Name) and function.id == "__import__"
+            ) or (
+                isinstance(function, ast.Attribute) and function.attr == "import_module"
+            )
+            module_name = node.args[0]
+            if (
+                is_dynamic_import
+                and isinstance(module_name, ast.Constant)
+                and isinstance(module_name.value, str)
+                and module_name.value.split(".")[0] in forbidden_roots
+            ):
+                offenders.append(f"{_rel(path)}:{node.lineno}: {module_name.value}")
+    assert not offenders, "quantos/contracts must not dynamically import services/live/tools:\n" + "\n".join(
+        offenders
+    )
+
+
 def test_services_data_does_not_import_other_service_domains():
     # services/data/ 是地基层(PIT store/universe/quality),不得 import 别的 services 域
     offenders = []

@@ -9,11 +9,19 @@ from typing import Callable, Dict, List
 from fastapi import APIRouter
 
 from services.console.api.data_catalog import _data_catalog_payload
+from services.console.api.data_port import data_catalog_runtime
 from services.console.api.model_evidence_views import (
     _model_risk_review_payload,
 )
 from services.console.api.review_access_views import (
     _reviewer_workflow_payload,
+)
+from services.data.distribution_drift import (
+    BLOCK as DISTRIBUTION_BLOCK,
+    PROVENANCE as DISTRIBUTION_PROVENANCE,
+    WARN as DISTRIBUTION_WARN,
+    DistributionDriftPolicy,
+    evaluate_distribution_drift,
 )
 
 
@@ -71,9 +79,21 @@ def _has_real_factors() -> bool:
     return monitoring_view_runtime.require().has_real_factors()
 
 
+def _distribution_series() -> Dict[str, List[float]]:
+    port = data_catalog_runtime.require()
+    getter = getattr(port, "enumerate_distribution_series", None)
+    if getter is None:
+        return {}
+    try:
+        return getter()
+    except Exception:
+        return {}
+
+
 def _monitoring_drift_payload() -> Dict:
     candidates = _alpha_candidates()
     data_catalog = _data_catalog_payload()
+    distribution_series = _distribution_series()
     model_risk = _model_risk_review_payload()
     reviewer_workflow = _reviewer_workflow_payload()
     monitors = []
@@ -147,6 +167,36 @@ def _monitoring_drift_payload() -> Dict:
             }
         )
 
+    distribution_policy = DistributionDriftPolicy()
+    distribution_status = {DISTRIBUTION_WARN: "WATCH", DISTRIBUTION_BLOCK: "BREACH"}
+    for idx, (subject_id, values) in enumerate(sorted(distribution_series.items())[:8]):
+        assessment = evaluate_distribution_drift(values, policy=distribution_policy)
+        status = distribution_status.get(assessment.status, "OK")
+        score = assessment.ks_distance if assessment.ks_distance is not None else 1.0
+        monitors.append(
+            {
+                "monitor_id": f"MON-DISTRIBUTION-{idx + 1:03d}",
+                "category": "DATA_DISTRIBUTION_DRIFT",
+                "subject_id": subject_id,
+                "metric": "ks_distance",
+                "baseline": assessment.baseline_mean if assessment.baseline_mean is not None else 0.0,
+                "current": assessment.recent_mean if assessment.recent_mean is not None else 0.0,
+                "drift_score": round(score, 3),
+                "warn_threshold": distribution_policy.warn_ks,
+                "breach_threshold": distribution_policy.block_ks,
+                "status": status,
+                "owner": "Data Platform",
+                "evidence_ref": f"{DISTRIBUTION_PROVENANCE}:{subject_id}:{assessment.end_index}",
+                "last_checked": base_time + 1_000 + idx * 240,
+                "provenance": DISTRIBUTION_PROVENANCE,
+                "remediation": (
+                    "Investigate PIT dataset distribution shift and rerun data quality checks"
+                    if status != "OK"
+                    else "Continue monitoring"
+                ),
+            }
+        )
+
     for idx, feature in enumerate(data_catalog["features"][:8]):
         baseline = feature["quality_score"]
         current = round(max(0.0, baseline - 0.012 * (idx % 4)), 3)
@@ -167,6 +217,7 @@ def _monitoring_drift_payload() -> Dict:
                 "owner": "Research Platform",
                 "evidence_ref": feature["lineage_hash"],
                 "last_checked": base_time + 2_000 + idx * 240,
+                "provenance": "SYNTHETIC_FEATURE_VALUES",
                 "remediation": "Run feature distribution audit and point-in-time sample check"
                 if status != "OK"
                 else "Continue monitoring",
@@ -292,6 +343,16 @@ def _monitoring_drift_payload() -> Dict:
             "requires_evidence_ref": True,
             "mutable_alerts": False,
             "authorizes_live_trading": False,
+            "distribution_drift": {
+                "available": bool(distribution_series),
+                "provenance": (
+                    DISTRIBUTION_PROVENANCE
+                    if distribution_series
+                    else "NO_HONEST_INPUT"
+                ),
+                "baseline_window": distribution_policy.baseline_window,
+                "recent_window": distribution_policy.recent_window,
+            },
         },
     }
 

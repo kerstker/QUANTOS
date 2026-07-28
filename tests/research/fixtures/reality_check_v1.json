@@ -1,0 +1,136 @@
+{
+  "cases": [
+    {
+      "name": "clearly_superior",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 81985529216486895,
+      "replication_count": 1000,
+      "prefix_replication_counts": [10, 100, 1000],
+      "benchmark": {"offset": 0.0, "amplitude": 0.001, "phase": 5},
+      "candidates": [
+        {"config_hash": "z-config", "offset": 0.018, "amplitude": 0.003, "phase": 0},
+        {"config_hash": "a-config", "offset": 0.006, "amplitude": 0.004, "phase": 3}
+      ],
+      "expected_rc_decision": "REJECT",
+      "expected_spa_consistent_decision": "REJECT"
+    },
+    {
+      "name": "clearly_superior_permuted",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 81985529216486895,
+      "replication_count": 1000,
+      "prefix_replication_counts": [10, 100, 1000],
+      "benchmark": {"offset": 0.0, "amplitude": 0.001, "phase": 5},
+      "candidates": [
+        {"config_hash": "a-config", "offset": 0.006, "amplitude": 0.004, "phase": 3},
+        {"config_hash": "z-config", "offset": 0.018, "amplitude": 0.003, "phase": 0}
+      ],
+      "expected_rc_decision": "REJECT",
+      "expected_spa_consistent_decision": "REJECT"
+    },
+    {
+      "name": "all_negative",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 37,
+      "replication_count": 1000,
+      "prefix_replication_counts": [100, 1000],
+      "benchmark": {"offset": 0.0, "amplitude": 0.001, "phase": 2},
+      "candidates": [
+        {"config_hash": "negative-a", "offset": -0.012, "amplitude": 0.004, "phase": 0},
+        {"config_hash": "negative-b", "offset": -0.021, "amplitude": 0.006, "phase": 4}
+      ],
+      "expected_rc_decision": "NON_REJECT",
+      "expected_spa_consistent_decision": "NON_REJECT"
+    },
+    {
+      "name": "many_poor_alternatives",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 424242,
+      "replication_count": 1000,
+      "prefix_replication_counts": [100, 1000],
+      "benchmark": {"offset": 0.0, "amplitude": 0.001, "phase": 1},
+      "candidates": [
+        {"config_hash": "good", "offset": 0.018, "amplitude": 0.004, "phase": 0},
+        {"config_hash": "poor-00", "offset": -0.030, "amplitude": 0.080, "phase": 0},
+        {"config_hash": "poor-01", "offset": -0.032, "amplitude": 0.085, "phase": 1},
+        {"config_hash": "poor-02", "offset": -0.034, "amplitude": 0.090, "phase": 2},
+        {"config_hash": "poor-03", "offset": -0.036, "amplitude": 0.095, "phase": 3},
+        {"config_hash": "poor-04", "offset": -0.038, "amplitude": 0.100, "phase": 4},
+        {"config_hash": "poor-05", "offset": -0.040, "amplitude": 0.105, "phase": 5},
+        {"config_hash": "poor-06", "offset": -0.042, "amplitude": 0.110, "phase": 6},
+        {"config_hash": "poor-07", "offset": -0.044, "amplitude": 0.115, "phase": 7},
+        {"config_hash": "poor-08", "offset": -0.046, "amplitude": 0.120, "phase": 8},
+        {"config_hash": "poor-09", "offset": -0.048, "amplitude": 0.125, "phase": 9}
+      ],
+      "expect_spa_p_below_rc": true
+    },
+    {
+      "name": "inclusive_tail_equality",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 99,
+      "replication_count": 100,
+      "prefix_replication_counts": [10, 100],
+      "benchmark": {"offset": 0.0, "amplitude": 0.0, "phase": 0},
+      "candidates": [
+        {"config_hash": "mirror-negative", "offset": 0.0, "amplitude": -0.004, "phase": 0},
+        {"config_hash": "mirror-positive", "offset": 0.0, "amplitude": 0.004, "phase": 0}
+      ],
+      "expect_inclusive_equalities": true
+    },
+    {
+      "name": "monte_carlo_ambiguity",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.5,
+      "seed": 123,
+      "replication_count": 31,
+      "prefix_replication_counts": [10, 31],
+      "benchmark": {"offset": 0.0, "amplitude": 0.001, "phase": 5},
+      "candidates": [
+        {"config_hash": "weak-a", "offset": 0.0015, "amplitude": 0.010, "phase": 0},
+        {"config_hash": "weak-b", "offset": 0.0005, "amplitude": 0.009, "phase": 3}
+      ],
+      "expect_any_primary_ambiguous": true
+    },
+    {
+      "name": "constant_candidate",
+      "period_count": 24,
+      "block_length": 4,
+      "alpha": 0.05,
+      "seed": 1,
+      "replication_count": 32,
+      "prefix_replication_counts": [32],
+      "benchmark": {"offset": 0.0, "amplitude": 0.0, "phase": 0},
+      "candidates": [
+        {"config_hash": "constant", "offset": 0.01, "amplitude": 0.0, "phase": 0},
+        {"config_hash": "variable", "offset": 0.01, "amplitude": 0.004, "phase": 0}
+      ],
+      "expect_input_error": true
+    },
+    {
+      "name": "omega_squared_degeneracy",
+      "period_count": 24,
+      "block_length": 12,
+      "alpha": 0.05,
+      "seed": 2,
+      "replication_count": 32,
+      "prefix_replication_counts": [32],
+      "benchmark": {"offset": 0.0, "amplitude": 0.0, "phase": 0},
+      "candidates": [
+        {"config_hash": "almost-deterministic", "offset": 0.0, "amplitude": 2.2227587494850775e-162, "phase": 0, "kind": "alternating"},
+        {"config_hash": "variable", "offset": 0.01, "amplitude": 0.004, "phase": 0}
+      ],
+      "expect_input_error": true
+    }
+  ]
+}

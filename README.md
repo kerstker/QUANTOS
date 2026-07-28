@@ -18,6 +18,8 @@ QUANTOS was developed with OpenAI Codex and GPT-5.6 as an AI-assisted engineerin
 - **Human-in-the-loop accountability:** The model never receives broker credentials, never imports a broker/CTP/FIX SDK, and cannot submit live orders or reach the `APPROVED` state. Human review remains required for governance decisions. Every change is checked with tests, governance scanning, and the single fail-closed entry point, `python scripts/validate.py`.
 - **Concrete AI-assisted outputs:** The repository contains the guarded `ResearchAgentLoop`, point-in-time research and validation engines, the dry-run pipeline, immutable evidence/audit artifacts, and a React console that exposes provenance and safety state rather than fabricating live-trading capability.
 
+
+
 ---
 
 ## 安全横幅

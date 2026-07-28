@@ -5,7 +5,7 @@
 fastapi==0.139.0
 starlette==1.3.1
 uvicorn==0.40.0
-pydantic==2.12.5
+pydantic==2.13.4
 PyJWT==2.13.0
 
 # research ML layer (deterministic stacking; non-network, no-RNG-leak — pinned to installed versions)
@@ -29,7 +29,7 @@ h11==0.16.0
 idna==3.18
 joblib==1.5.3
 pycparser==3.0
-pydantic-core==2.41.5
+pydantic-core==2.46.4
 scipy==1.18.0
 threadpoolctl==3.6.0
 typing-extensions==4.16.0

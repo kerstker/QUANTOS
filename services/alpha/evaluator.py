@@ -18,19 +18,22 @@ import math
 import statistics
 from typing import Optional, Sequence
 
-from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.alpha import AlphaEvaluation, BatchPboEvidence
 from quantos.contracts.cost import CostModel
-from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import ValidationVerdict
 from services.validation.factor_statistics import compute_ic
 from services.validation.gate import ValidationGate
 from services.validation.performance import sharpe
+from services.validation.pbo_evidence import verify_batch_pbo_evidence
+from services.validation.catalog_evidence import (
+    verify_catalog_evidence_against_catalog,
+)
 
 from .capacity import capacity_adjusted_sharpe, capacity_notional
 from .config import AlphaFactoryConfig
 from .correlation import max_abs_corr_to_set
 from .metrics import series_metrics
-from .multiple_testing import catalog_dsr
+from .evaluation_evidence import bind_evaluation_reproducibility
 from .orthogonalize import orthogonalize
 from .panel_backtest import PanelPeriod, run_panel_backtest
 from .walk_forward import walk_forward_oos
@@ -95,6 +98,40 @@ class AlphaEvaluator:
                                       n_regimes=2)
         return regime_profitable_frac(net, labels)
 
+    def prepare_catalog_observation(
+        self, alpha_id: str, periods: Sequence[PanelPeriod]
+    ) -> None:
+        """Populate the batch-frozen catalog context before any verdict.
+
+        Every candidate in a selection batch must contribute its exact OOS
+        return/IC observation before the first candidate's DSR is minted.  This
+        prevents early candidates from being judged against a partial Sharpe
+        population.  ``evaluate`` deterministically recomputes the same values;
+        the second write is therefore an equality-preserving refresh.
+        """
+
+        ic_series = [
+            compute_ic(list(period.signals), list(period.forward_returns)).get(
+                "ic_mean"
+            )
+            for period in periods
+        ]
+        breadths = [len(period.instruments) for period in periods]
+        metrics = series_metrics(
+            ic_series,
+            breadths,
+            min_periods=self.config.min_periods,
+            min_breadth=self.config.min_breadth,
+        )
+        result = run_panel_backtest(
+            periods,
+            cost=self.cost,
+            quantile=self.quantile,
+            target_aum=self.target_aum,
+        )
+        self.catalog.set_returns(alpha_id, result.period_returns)
+        self.catalog.set_pvalue(alpha_id, metrics["ic_pvalue"])
+
     def evaluate(
         self,
         alpha_id: str,
@@ -102,17 +139,40 @@ class AlphaEvaluator:
         *,
         leakage_ok: Optional[bool] = None,
         regime_profitable_frac: Optional[float] = None,
-        pbo: Optional[float] = None,
+        pbo_evidence: Optional[BatchPboEvidence] = None,
         as_of: int = 0,
         dataset_version: str = "",
     ) -> AlphaEvaluation:
-        # Evidence is fail-CLOSED: leakage_ok / pbo / regime_profitable_frac default
+        # Evidence is fail-CLOSED: leakage_ok / pbo evidence / regime_profitable_frac default
         # to None (= NOT ASSESSED), not to a passing value. An alpha that would
         # otherwise PASS but whose overfitting / leakage / regime evidence was never
         # computed routes to REQUIRES_HUMAN_REVIEW below, so the autonomous factory
         # cannot advance an unscored alpha to PAPER_TRADING on a silent default
         # (audit P0/P1: the previous leakage_ok=True / pbo=0.0 / regime=1.0 defaults
         # made the leakage, overfitting and regime guards inert on the agent path).
+        bound_pbo_evidence: Optional[BatchPboEvidence] = None
+        pbo: Optional[float] = None
+        pbo_evidence_reason: Optional[str] = None
+        if pbo_evidence is None:
+            pbo_evidence_reason = "OVERFIT_NOT_ASSESSED"
+        elif not verify_batch_pbo_evidence(pbo_evidence):
+            pbo_evidence_reason = "OVERFIT_EVIDENCE_INVALID"
+        else:
+            try:
+                definition_hash = self.catalog.get(alpha_id).definition_hash
+                trial_hashes = set(self.catalog.snapshot().trials)
+            except (KeyError, TypeError, ValueError):
+                pbo_evidence_reason = "OVERFIT_EVIDENCE_SUBJECT_MISMATCH"
+            else:
+                evidence_hashes = set(pbo_evidence.candidate_definition_hashes)
+                if definition_hash not in evidence_hashes:
+                    pbo_evidence_reason = "OVERFIT_EVIDENCE_SUBJECT_MISMATCH"
+                elif not evidence_hashes <= trial_hashes:
+                    pbo_evidence_reason = "OVERFIT_EVIDENCE_TRIAL_SET_MISMATCH"
+                else:
+                    bound_pbo_evidence = pbo_evidence
+                    pbo = float(pbo_evidence.pbo)
+
         # 1) per-period cross-sectional IC series + breadth
         ic_series = [compute_ic(list(p.signals), list(p.forward_returns)).get("ic_mean") for p in periods]
         breadths = [len(p.instruments) for p in periods]
@@ -159,10 +219,35 @@ class AlphaEvaluator:
         self.catalog.set_returns(alpha_id, net)
         self.catalog.set_pvalue(alpha_id, m["ic_pvalue"])
         trial_count = max(1, self.catalog.global_trial_count())
+        trial_set_hash = self.catalog.trial_set_hash()
 
-        # 3) catalog-wide Deflated Sharpe (None if the catalog lacks an honest
-        #    cross-trial variance estimate yet)
-        dsr_raw = catalog_dsr(observed_sr, max(len(net), 2), self.catalog) if len(net) >= 2 else None
+        # 3) catalog-wide Deflated Sharpe comes only from the catalog mint.  The
+        # exact ledger, return observations, effective-trial calculation, and
+        # output are retained together; callers can no longer inject a local
+        # trial count or variance scalar.
+        catalog_evidence = None
+        catalog_evidence_reason = None
+        if len(net) >= 2:
+            try:
+                candidate_evidence = self.catalog.evidence(alpha_id)
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                catalog_evidence_reason = "CATALOG_EVIDENCE_INVALID"
+            else:
+                if candidate_evidence is None:
+                    catalog_evidence_reason = "INSUFFICIENT_CATALOG_FOR_DSR"
+                elif not verify_catalog_evidence_against_catalog(
+                    candidate_evidence, self.catalog, alpha_id
+                ):
+                    catalog_evidence_reason = "CATALOG_EVIDENCE_INVALID"
+                else:
+                    catalog_evidence = candidate_evidence
+        else:
+            catalog_evidence_reason = "INSUFFICIENT_CATALOG_FOR_DSR"
+        dsr_raw = (
+            catalog_evidence.deflated_sharpe
+            if catalog_evidence is not None
+            else None
+        )
         dsr = _clamp01(dsr_raw) if dsr_raw is not None else 0.0
 
         # opt-in: derive regime_profitable_frac from the panel's OWN market state so the regime
@@ -178,12 +263,18 @@ class AlphaEvaluator:
         if not m["coverage_ok"]:
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("THIN_COVERAGE",)
         elif dsr_raw is None:
-            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, ("INSUFFICIENT_CATALOG_FOR_DSR",)
+            verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, (
+                catalog_evidence_reason or "INSUFFICIENT_CATALOG_FOR_DSR",
+            )
         elif (unassessed := tuple(
-            name for name, val in (("LEAKAGE_NOT_ASSESSED", leakage_ok),
-                                   ("OVERFIT_NOT_ASSESSED", pbo),
-                                   ("REGIME_NOT_ASSESSED", regime_profitable_frac))
-            if val is None)):
+            reason
+            for reason, assessed in (
+                ("LEAKAGE_NOT_ASSESSED", leakage_ok is not None),
+                (pbo_evidence_reason or "", pbo_evidence_reason is None),
+                ("REGIME_NOT_ASSESSED", regime_profitable_frac is not None),
+            )
+            if not assessed
+        )):
             # fail closed: never let an unscored alpha PASS on a silent default
             verdict, reasons = ValidationVerdict.REQUIRES_HUMAN_REVIEW, unassessed
         elif approved_set_nonempty and not ortho.ok:
@@ -214,29 +305,25 @@ class AlphaEvaluator:
                                          embargo=self.config.wf_embargo)
             vr = self.gate.evaluate(
                 alpha_id,
-                oos_sharpe=net_sharpe, deflated_sharpe=dsr, pbo=_clamp01(pbo),
-                trial_count=trial_count, leakage_ok=leakage_ok,
+                oos_sharpe=net_sharpe,
+                catalog_evidence=catalog_evidence,
+                pbo_evidence=bound_pbo_evidence,
+                leakage_ok=leakage_ok,
                 regime_profitable_frac=regime_profitable_frac, walk_forward_passed=wf_passed,
                 capacity_ratio=capacity_ratio,
             )
             verdict, reasons = vr.verdict, vr.reasons
 
-        repro = stable_hash({
-            "alpha_id": alpha_id,
-            "battery": {k: m[k] for k in ("icir", "ic_tstat", "hit_rate", "n_periods")},
-            "net_sharpe": round(net_sharpe, 10), "dsr": round(dsr, 10),
-            "trials": trial_count, "dataset_version": dataset_version,
-            # ``as_of`` is part of the immutable AlphaEvaluation payload.  Keep
-            # it in the artifact identity as well: a repeated factory round can
-            # evaluate the same expression at a later decision point, and those
-            # are two distinct reports even when the measured metrics happen to
-            # match.  Omitting it made the registry derive one run_id for both
-            # reports and then (correctly) reject the second write as an
-            # immutable-content conflict.
-            "as_of": as_of,
-        })
+        pbo_evidence_hash = (
+            bound_pbo_evidence.evidence_hash if bound_pbo_evidence is not None else ""
+        )
+        catalog_evidence_hash = (
+            catalog_evidence.evidence_hash
+            if catalog_evidence is not None
+            else ""
+        )
 
-        return AlphaEvaluation(
+        evaluation = AlphaEvaluation(
             alpha_id=alpha_id,
             ic_mean=m["mean_ic"], icir=m["icir"], ic_tstat=m["ic_tstat"], ic_pvalue=m["ic_pvalue"],
             hit_rate=m["hit_rate"], ic_autocorr=m["ic_autocorr"], mean_breadth=m["mean_breadth"],
@@ -244,7 +331,19 @@ class AlphaEvaluator:
             net_sharpe=net_sharpe, capacity_adj_sharpe=cap_adj_sharpe,
             observed_sr=observed_sr, turnover=turnover, marginal_ir=marginal_ir,
             max_corr_vs_approved=max_corr_vs_approved,
-            deflated_sharpe=dsr, pbo=_clamp01(pbo) if pbo is not None else 0.0,
+            deflated_sharpe=dsr,
+            catalog_evidence=catalog_evidence,
+            catalog_evidence_hash=catalog_evidence_hash,
+            pbo=_clamp01(pbo) if pbo is not None else 0.0,
+            pbo_evidence=bound_pbo_evidence,
+            pbo_evidence_hash=pbo_evidence_hash,
             catalog_trial_count=trial_count,
-            verdict=verdict, reasons=tuple(reasons), as_of=as_of, reproducibility_hash=repro,
+            catalog_trial_set_hash=trial_set_hash,
+            verdict=verdict,
+            reasons=tuple(reasons),
+            as_of=as_of,
+            dataset_version=dataset_version,
+        )
+        return bind_evaluation_reproducibility(
+            evaluation, dataset_version=dataset_version
         )

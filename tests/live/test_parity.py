@@ -10,11 +10,20 @@ import pytest
 
 from live.execution.filters import decision_prefix
 from live.execution.parity import paper_weights_from_forward_ledger, parity_report
+from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.paper_trading.forward_store import ForwardLedger
 
 _NOW = 1_700_000_000_000
 _PRICES = {"BTC": 60000.0, "ETH": 3000.0}
 _AUM = 6000.0
+_ADMISSION_REF = ForwardAdmissionRef(
+    admission_id="test-admission",
+    evidence_sha256="a" * 64,
+    decision_hash="b" * 64,
+    recorded_at_ms=_NOW,
+    price_basis="PERP_MARK_PRICE",
+    instrument_scope=("BTC", "ETH"),
+)
 
 
 def _orders_for(weights, statuses, strategy_id="crowd_contra", decided_ts=_NOW):
@@ -136,6 +145,7 @@ def test_paper_weights_loaded_from_recorded_forward_decision(tmp_path):
         recorded_at=_NOW + 500,
         weights={"BTC": 0.5, "ETH": -0.5},
         signals={"BTC": 1.0, "ETH": -1.0},
+        admission_ref=_ADMISSION_REF,
     )
     w = paper_weights_from_forward_ledger(fwd, "crowd_contra", _NOW)
     assert w == {"BTC": 0.5, "ETH": -0.5}
@@ -145,7 +155,14 @@ def test_paper_weights_missing_decision_returns_none(tmp_path):
     db = str(tmp_path / "paper_track.db")
     fwd = ForwardLedger(db, create=True)
     assert paper_weights_from_forward_ledger(fwd, "crowd_contra", _NOW) is None
-    fwd.record_decision("crowd_contra", _NOW, recorded_at=_NOW, weights={"BTC": 1.0}, signals={})
+    fwd.record_decision(
+        "crowd_contra",
+        _NOW,
+        recorded_at=_NOW,
+        weights={"BTC": 1.0},
+        signals={},
+        admission_ref=_ADMISSION_REF,
+    )
     assert paper_weights_from_forward_ledger(fwd, "crowd_contra", _NOW + 1) is None  # 不同期
     assert paper_weights_from_forward_ledger(fwd, "other_alpha", _NOW) is None  # 不同策略
 

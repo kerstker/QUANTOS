@@ -39,15 +39,15 @@
       "data/cache/crypto_oi_metrics.json": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
     }
   },
-  "evidence_sha256": "f8683f55c39d2324f4be58437af650119eb04cd7a35890dd30606010ccbc3b58",
+  "evidence_sha256": "8ee21a2e1ff83497b66efd034c047cabab505ae2d0d321bb50dda7959ec6b824",
   "implementation_sha256": {
-    "live/execution/crowding_score.py": "a4e9bfc80ad9755ba0c4d6fb13aa427a212024f1d0cbfdc9862bfb4a08e9ee82",
-    "services/portfolio/crowding_calibration.py": "b221b2e446625e7faf4aaf2e2137e8e3887357497ad20fee6a65034ad43d288b",
-    "services/portfolio/crowding_gate.py": "420e8656ff8b592f8d37b64e8405e602c8dca22007d36dd6177b93fb4d2945d3",
-    "tools/crowding_metric_research.py": "a5b1ea02eead9c67f779b80d4bd3537bcc5f854ac4c49e7c4f7dc4a50142cc8e",
-    "tools/dry_run_crowd_contra_multi.py": "1734f0d450efdda7b949cb5dafda3d013429f7c54bc06864639fdf60fdc37722",
-    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "916ea77f61d028b13030518c52f22ac3f50a672edc775810690c8ba731ff8abf",
-    "tools/live_track_advance.py": "85eb9649f8f0469dc85705ab370fcf226fe6f0fcdee613ab4c9afcec228299c8"
+    "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
+    "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
+    "services/portfolio/crowding_gate.py": "28d09e42404ffb51f552af4b7b0c9602b6058fc6f059b9305d1077f3e066d0cf",
+    "tools/crowding_metric_research.py": "d11dffcb8c6e4ea73518f2f23b7035d7b3fa19caf058bf87d0f513b6db17b089",
+    "tools/dry_run_crowd_contra_multi.py": "851c5abcf1f423180936e664206b7e0b6b8b24ae6fcf7acda00d290bbbc30648",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "486fc7c56fa2cf00b4f892c3b1c0d2edd14e1ae9b5c762d3804baf59e73a26bb",
+    "tools/live_track_advance.py": "322f0bb1fbf4992cd6c40d24ba1f7826855950e04a0a7d3e7acaf085eb4b6a0b"
   },
   "limitations": [
     "Sensitivity replay is historical and not causal proof of loss prevention.",

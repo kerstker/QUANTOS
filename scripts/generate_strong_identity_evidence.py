@@ -24,6 +24,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.alpha import Actor, ActorKind  # noqa: E402
+from quantos.contracts.hashing import source_file_sha256  # noqa: E402
 from quantos.contracts.identity import GovernanceRole  # noqa: E402
 from services.governance.approval import (  # noqa: E402
     ApprovalViolation,
@@ -83,11 +84,7 @@ _M4_BLOCKERS = (
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return source_file_sha256(path)
 
 
 def _thumbprint(certificate_der: bytes) -> str:

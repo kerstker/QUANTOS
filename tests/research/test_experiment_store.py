@@ -5,24 +5,38 @@ import sqlite3
 
 import pytest
 import services.research.experiment_registry.store as experiment_store
+from quantos.contracts.alpha import AlphaEvaluation
+from quantos.contracts.research import ValidationVerdict
+from services.research.experiment_registry.family_schema_v2_catalog import (
+    EXACT_V2_INHERITED_SCHEMA_CATALOG,
+)
+from services.research.experiment_registry.registry import prepare_evaluation_artifact
 from services.research.experiment_registry.store import (
     SqliteExperimentStore, ExperimentStoreError, ImmutableArtifactError,
 )
-from services.research.ports.persistence import EvaluationAuditIntent
 
 
 def _store():
     return SqliteExperimentStore(":memory:", create=True)
 
 
-def _audit_intent(run_id: str, *, timestamp: int) -> EvaluationAuditIntent:
-    return EvaluationAuditIntent(
-        event_id=f"exp-{run_id}",
-        actor="experiment-registry",
-        action="EXPERIMENT_RECORDED",
-        timestamp=timestamp,
-        target="a1",
-        metadata={"run_id": run_id, "content_hash": f"content-{run_id}"},
+def _evaluation_write(
+    *,
+    alpha_id: str = "a1",
+    dataset_version: str = "dataset-v1",
+    recorded_ts: int = 100,
+    reproducibility_hash: str = "repro-a",
+    net_sharpe: float = 0.0,
+):
+    return prepare_evaluation_artifact(
+        AlphaEvaluation(
+            alpha_id=alpha_id,
+            verdict=ValidationVerdict.PASS,
+            reproducibility_hash=reproducibility_hash,
+            net_sharpe=net_sharpe,
+        ),
+        dataset_version,
+        recorded_ts,
     )
 
 
@@ -36,20 +50,22 @@ def test_trials_dedup_by_hash_and_count():
 
 def test_evaluation_is_write_once():
     s = _store()
-    s.insert_evaluation(run_id="r1", alpha_id="a1", dataset_version="v1",
-                        recorded_ts=1, verdict="PASS", content_hash="c1",
-                        evaluation_json='{"x":1}')
-    s.insert_evaluation(run_id="r1", alpha_id="a1", dataset_version="v1",
-                        recorded_ts=1, verdict="PASS", content_hash="c1",
-                        evaluation_json='{"x":1}')          # identical -> no-op
-    assert s.get_evaluation("r1")["content_hash"] == "c1"
+    write = _evaluation_write(dataset_version="v1", recorded_ts=1)
+    s.insert_evaluation(**write.__dict__)
+    s.insert_evaluation(**write.__dict__)  # identical -> no-op
+    assert s.get_evaluation(write.run_id)["content_hash"] == write.content_hash
+    conflict = _evaluation_write(
+        dataset_version="v1",
+        recorded_ts=2,
+        net_sharpe=1.0,
+    )
+    assert conflict.run_id == write.run_id
     with pytest.raises(ImmutableArtifactError):
-        s.insert_evaluation(run_id="r1", alpha_id="a1", dataset_version="v1",
-                            recorded_ts=2, verdict="FAIL", content_hash="c2",
-                            evaluation_json='{"x":2}')       # conflicting -> raise
+        s.insert_evaluation(**conflict.__dict__)  # same identity, new bytes -> raise
     with pytest.raises(sqlite3.DatabaseError, match="append-only"):
         s._conn.execute(
-            "UPDATE evaluations SET verdict='FAIL' WHERE run_id='r1'"
+            "UPDATE evaluations SET verdict='FAIL' WHERE run_id=?",
+            (write.run_id,),
         )
 
 
@@ -97,31 +113,7 @@ def test_created_empty_store_reads_zero_legitimately():
 
 def _create_legacy_store(path) -> None:
     with sqlite3.connect(path) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE trials(
-                config_hash TEXT PRIMARY KEY,
-                first_seen_ts INTEGER NOT NULL
-            );
-            CREATE TABLE alpha_state(
-                alpha_id TEXT PRIMARY KEY,
-                definition_json TEXT NOT NULL,
-                state TEXT NOT NULL,
-                returns_json TEXT NOT NULL,
-                sharpe REAL,
-                pvalue REAL
-            );
-            CREATE TABLE evaluations(
-                run_id TEXT PRIMARY KEY,
-                alpha_id TEXT NOT NULL,
-                dataset_version TEXT NOT NULL,
-                recorded_ts INTEGER NOT NULL,
-                verdict TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                evaluation_json TEXT NOT NULL
-            );
-            """
-        )
+        connection.executescript(experiment_store._SCHEMA)
 
 
 def _create_v1_search_store(path) -> None:
@@ -153,56 +145,20 @@ def _create_v1_search_store(path) -> None:
     )
     with sqlite3.connect(path) as connection:
         connection.executescript(experiment_store._SCHEMA)
-        connection.executescript(
-            """
-            CREATE TABLE search_attempt_events (
-                event_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-                search_id TEXT NOT NULL,
-                search_kind TEXT NOT NULL,
-                source TEXT NOT NULL,
-                dataset_version TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('STARTED','FAILED','COMPLETED')),
-                recorded_at INTEGER NOT NULL CHECK(recorded_at >= 0),
-                prev_event_hash TEXT NOT NULL,
-                event_hash TEXT UNIQUE NOT NULL
-            );
-            CREATE INDEX search_attempt_events_by_search
-            ON search_attempt_events(search_id,event_seq);
-            CREATE TABLE search_candidates (
-                candidate_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-                search_id TEXT NOT NULL,
-                config_hash TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status = 'REGISTERED'),
-                registered_at INTEGER NOT NULL CHECK(registered_at >= 0),
-                prev_candidate_hash TEXT NOT NULL,
-                candidate_hash TEXT UNIQUE NOT NULL,
-                UNIQUE(search_id,config_hash)
-            );
-            CREATE INDEX search_candidates_by_search
-            ON search_candidates(search_id,candidate_seq);
-            CREATE TRIGGER search_attempt_events_no_update
-            BEFORE UPDATE ON search_attempt_events
-            BEGIN SELECT RAISE(ABORT, 'search_attempt_events is append-only'); END;
-            CREATE TRIGGER search_attempt_events_no_delete
-            BEFORE DELETE ON search_attempt_events
-            BEGIN SELECT RAISE(ABORT, 'search_attempt_events is append-only'); END;
-            CREATE TRIGGER search_candidates_no_update
-            BEFORE UPDATE ON search_candidates
-            BEGIN SELECT RAISE(ABORT, 'search_candidates is append-only'); END;
-            CREATE TRIGGER search_candidates_no_delete
-            BEFORE DELETE ON search_candidates
-            BEGIN SELECT RAISE(ABORT, 'search_candidates is append-only'); END;
-            CREATE TRIGGER trials_no_update BEFORE UPDATE ON trials
-            BEGIN SELECT RAISE(ABORT, 'trials is append-only'); END;
-            CREATE TRIGGER trials_no_delete BEFORE DELETE ON trials
-            BEGIN SELECT RAISE(ABORT, 'trials is append-only'); END;
-            CREATE TRIGGER evaluations_no_update BEFORE UPDATE ON evaluations
-            BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;
-            CREATE TRIGGER evaluations_no_delete BEFORE DELETE ON evaluations
-            BEGIN SELECT RAISE(ABORT, 'evaluations is append-only'); END;
-            PRAGMA user_version = 1;
-            """
-        )
+        v1_tables = {"search_attempt_events", "search_candidates"}
+        v1_trigger_tables = {*v1_tables, "trials", "evaluations"}
+        for object_type in ("table", "index", "trigger"):
+            for entry in EXACT_V2_INHERITED_SCHEMA_CATALOG.sqlite_schema_entries:
+                if entry.object_type != object_type or entry.sql is None:
+                    continue
+                if object_type == "table" and entry.name not in v1_tables:
+                    continue
+                if object_type == "index" and entry.table_name not in v1_tables:
+                    continue
+                if object_type == "trigger" and entry.table_name not in v1_trigger_tables:
+                    continue
+                connection.execute(entry.sql)
+        connection.execute("PRAGMA user_version = 1")
         connection.execute(
             "INSERT INTO trials(config_hash,first_seen_ts) VALUES (?,?)",
             ("v1-candidate", 110),
@@ -486,7 +442,9 @@ def test_evaluation_search_link_and_audit_intent_commit_atomically(monkeypatch):
     store.register_search_candidates(
         "bound-search", ["candidate-a"], registered_at=100
     )
-    intent = _audit_intent("run-a", timestamp=100)
+    write = _evaluation_write()
+    intent = write.audit_intent
+    assert intent is not None
 
     monkeypatch.setattr(
         store,
@@ -495,36 +453,22 @@ def test_evaluation_search_link_and_audit_intent_commit_atomically(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="injected write crash"):
         store.insert_evaluation(
-            run_id="run-a",
-            alpha_id="a1",
-            dataset_version="dataset-v1",
-            recorded_ts=100,
-            verdict="PASS",
-            content_hash="content-run-a",
-            evaluation_json='{"alpha_id":"a1"}',
+            **write.__dict__,
             search_id="bound-search",
             config_hash="candidate-a",
-            audit_intent=intent,
         )
-    assert store.get_evaluation("run-a") is None
+    assert store.get_evaluation(write.run_id) is None
     assert store.search_evaluations("bound-search") == []
     assert store.pending_evaluation_audits() == ()
 
     monkeypatch.setattr(store, "_evaluation_write_checkpoint", lambda _stage: None)
     assert store.insert_evaluation(
-        run_id="run-a",
-        alpha_id="a1",
-        dataset_version="dataset-v1",
-        recorded_ts=100,
-        verdict="PASS",
-        content_hash="content-run-a",
-        evaluation_json='{"alpha_id":"a1"}',
+        **write.__dict__,
         search_id="bound-search",
         config_hash="candidate-a",
-        audit_intent=intent,
     )
-    assert store.search_evaluations("bound-search")[0]["run_id"] == "run-a"
-    assert store.pending_evaluation_audits()[0]["event_id"] == "exp-run-a"
+    assert store.search_evaluations("bound-search")[0]["run_id"] == write.run_id
+    assert store.pending_evaluation_audits()[0]["event_id"] == intent.event_id
     store.finish_search_attempt(
         "bound-search", status="COMPLETED", recorded_at=100
     )
@@ -544,14 +488,9 @@ def test_search_evaluation_requires_exact_registered_config_and_retries_idempote
     store.register_search_candidates(
         "exact-search", ["candidate-a", "candidate-b"], registered_at=100
     )
+    write = _evaluation_write()
     values = {
-        "run_id": "run-a",
-        "alpha_id": "a1",
-        "dataset_version": "dataset-v1",
-        "recorded_ts": 100,
-        "verdict": "PASS",
-        "content_hash": "content-run-a",
-        "evaluation_json": '{"alpha_id":"a1"}',
+        **write.__dict__,
         "search_id": "exact-search",
     }
 
@@ -559,7 +498,7 @@ def test_search_evaluation_requires_exact_registered_config_and_retries_idempote
         store.insert_evaluation(**values)
     with pytest.raises(ExperimentStoreError, match="cannot bind"):
         store.insert_evaluation(**values, config_hash="not-registered")
-    assert store.get_evaluation("run-a") is None
+    assert store.get_evaluation(write.run_id) is None
 
     assert store.insert_evaluation(**values, config_hash="candidate-a") is True
     assert store.insert_evaluation(**values, config_hash="candidate-a") is False
@@ -584,14 +523,9 @@ def test_search_evaluation_link_is_append_only_and_tamper_evident():
     store.register_search_candidates(
         "bound-search", ["candidate-a"], registered_at=100
     )
+    write = _evaluation_write()
     store.insert_evaluation(
-        run_id="run-a",
-        alpha_id="a1",
-        dataset_version="dataset-v1",
-        recorded_ts=100,
-        verdict="PASS",
-        content_hash="content-run-a",
-        evaluation_json='{"alpha_id":"a1"}',
+        **write.__dict__,
         search_id="bound-search",
         config_hash="candidate-a",
     )
@@ -604,7 +538,9 @@ def test_search_evaluation_link_is_append_only_and_tamper_evident():
     assert not store.search_history_valid()
 
 
-def test_evaluation_audit_outbox_failure_rolls_back_evaluation_and_link():
+def test_evaluation_audit_outbox_failure_rolls_back_evaluation_and_link(
+    monkeypatch,
+):
     store = _store()
     store.begin_search_attempt(
         search_id="bound-search",
@@ -616,42 +552,28 @@ def test_evaluation_audit_outbox_failure_rolls_back_evaluation_and_link():
     store.register_search_candidates(
         "bound-search", ["candidate-a"], registered_at=100
     )
-    store._conn.execute(
-        "CREATE TRIGGER reject_evaluation_audit "
-        "BEFORE INSERT ON evaluation_audit_outbox "
-        "BEGIN SELECT RAISE(ABORT, 'reject evaluation audit'); END"
-    )
+    def reject_evaluation_audit(stage: str) -> None:
+        if stage == "after_link":
+            raise sqlite3.DatabaseError("reject evaluation audit")
 
+    monkeypatch.setattr(store, "_evaluation_write_checkpoint", reject_evaluation_audit)
+
+    write = _evaluation_write()
     with pytest.raises(sqlite3.DatabaseError, match="reject evaluation audit"):
         store.insert_evaluation(
-            run_id="run-a",
-            alpha_id="a1",
-            dataset_version="dataset-v1",
-            recorded_ts=100,
-            verdict="PASS",
-            content_hash="content-run-a",
-            evaluation_json='{"alpha_id":"a1"}',
+            **write.__dict__,
             search_id="bound-search",
             config_hash="candidate-a",
-            audit_intent=_audit_intent("run-a", timestamp=100),
         )
-    assert store.get_evaluation("run-a") is None
+    assert store.get_evaluation(write.run_id) is None
     assert store.search_evaluations("bound-search") == []
     assert store.pending_evaluation_audits() == ()
 
 
 def test_evaluation_audit_outbox_is_append_only_and_tamper_evident():
     store = _store()
-    store.insert_evaluation(
-        run_id="run-a",
-        alpha_id="a1",
-        dataset_version="dataset-v1",
-        recorded_ts=100,
-        verdict="PASS",
-        content_hash="content-run-a",
-        evaluation_json='{"alpha_id":"a1"}',
-        audit_intent=_audit_intent("run-a", timestamp=100),
-    )
+    write = _evaluation_write()
+    store.insert_evaluation(**write.__dict__)
     with pytest.raises(sqlite3.DatabaseError, match="append-only"):
         store._conn.execute("DELETE FROM evaluation_audit_outbox")
 
@@ -843,14 +765,13 @@ def test_shared_ledger_serializes_concurrent_candidate_batches_at_scale(tmp_path
             inserted = store.register_search_candidates(
                 search_id, hashes, registered_at=1_000
             )
-            store.insert_evaluation(
-                run_id=f"run-{worker}",
+            write = _evaluation_write(
                 alpha_id=f"alpha-{worker}",
-                dataset_version="dataset-v1",
                 recorded_ts=1_000,
-                verdict="PASS",
-                content_hash=f"content-{worker}",
-                evaluation_json=f'{{"worker":{worker}}}',
+                reproducibility_hash=f"repro-{worker}",
+            )
+            store.insert_evaluation(
+                **write.__dict__,
                 search_id=search_id,
                 config_hash=hashes[0],
             )
@@ -873,7 +794,13 @@ def test_shared_ledger_serializes_concurrent_candidate_batches_at_scale(tmp_path
         assert len(final.search_candidates(search_id)) == candidates_per_worker
         assert [
             row["run_id"] for row in final.search_evaluations(search_id)
-        ] == [f"run-{worker}"]
+        ] == [
+            _evaluation_write(
+                alpha_id=f"alpha-{worker}",
+                recorded_ts=1_000,
+                reproducibility_hash=f"repro-{worker}",
+            ).run_id
+        ]
         assert [
             row["status"] for row in final.search_attempt_events(search_id)
         ] == ["STARTED", "COMPLETED"]

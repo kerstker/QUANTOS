@@ -1207,33 +1207,16 @@ export interface Lance1mValidationPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
-export interface LiveTradingForwardAlpha {
-  alpha_id: string;
-  n_forward_periods: number | null;
-  weeks_to_go_no_go: number | null;
-  paper_sharpe: number | null;
-  paper_ic: number | null;
-  cum_return: number | null;
-  backtest_reference_sharpe: number | null;
-  reference_weeks: number | null;
-  pending_decisions: number | null;
-  attested_pending_decisions?: number | null;
-  evidence_state?: string;
-  last_decision_ts: number | null;
-}
 export interface LiveTradingForwardTrack {
   present: boolean;
-  ran_at?: number;
-  staleness_days?: Record<string, { freshest_days: number | null; worst_days: number | null; n_stale: number | null; n_total: number }>;
+  evidence_state?: "ATTESTED" | "DATA_BLOCKED" | "STALE" | "UNAVAILABLE" | string;
+  attested_realizations?: number;
+  attested_pending?: number;
+  legacy_unattested_decisions?: number;
   evidence_gate_weeks?: number;
-  quality_evidence_current?: boolean;
-  data_quality_admission?: {
-    verdict?: string;
-    quality_verdict?: string;
-    lineage_verdict?: string;
-  };
-  alphas?: LiveTradingForwardAlpha[];
-  alerts?: string[];
+  evidence_gate_eligible?: boolean;
+  data_admission?: Record<string, unknown>;
+  actions_allowed: false;
 }
 export interface LiveTradingReconciliation {
   drift?: Record<string, number>;
@@ -1503,6 +1486,11 @@ export interface AlphaZooRow {
   // full multi-dimensional evaluation (real persisted value or null when unassessed)
   ic?: number | null; icir?: number | null; ic_tstat?: number | null; hit_rate?: number | null;
   net_sharpe: number | null; deflated_sharpe: number | null; pbo?: number | null;
+  pbo_evidence_hash?: string | null; pbo_alignment?: string | null;
+  pbo_candidate_count?: number | null; catalog_trial_set_hash?: string | null;
+  catalog_evidence_hash?: string | null; catalog_snapshot_hash?: string | null;
+  catalog_trial_count?: number | null; catalog_effective_trial_count?: number | null;
+  catalog_mean_abs_correlation?: number | null; catalog_var_sr?: number | null;
   turnover?: number | null; marginal_ir?: number | null; crowding_score?: number | null;
   capacity_adj_sharpe?: number | null; mean_breadth?: number | null;
   // 时间/活体征: real forward paper-track summary (out-of-sample paper P&L / IC), or null when no track

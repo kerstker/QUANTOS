@@ -150,6 +150,16 @@ CHECKS = [
         REPO,
     ),
     (
+        "feature-distribution-drift-evidence:current",
+        [
+            sys.executable,
+            "-m",
+            "tools.feature_distribution_drift_research",
+            "--check",
+        ],
+        REPO,
+    ),
+    (
         "backup-evidence:current",
         [
             sys.executable,

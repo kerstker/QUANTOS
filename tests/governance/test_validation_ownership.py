@@ -1,5 +1,8 @@
 """Regression locks for domain-neutral validation ownership."""
 
+import ast
+from pathlib import Path
+
 
 def test_research_validation_compatibility_exports_preserve_identity():
     from services.research.backtest_engine.metrics import sharpe as legacy_sharpe
@@ -39,3 +42,37 @@ def test_factor_statistics_and_factor_set_compatibility_preserve_identity():
 
     assert legacy_ic is compute_ic
     assert legacy_selection is select_synergistic_set
+
+
+def test_reality_check_compatibility_exports_preserve_identity():
+    from services.research.validation.reality_check import (
+        RealityCheckInputError as LegacyInputError,
+        SplitMix64 as LegacySplitMix64,
+        block_length_grid_v1 as legacy_block_length_grid_v1,
+        compute_reality_check_and_spa as legacy_compute,
+        iter_stationary_bootstrap_indices as legacy_iter_indices,
+    )
+    from services.validation.reality_check import (
+        RealityCheckInputError,
+        SplitMix64,
+        block_length_grid_v1,
+        compute_reality_check_and_spa,
+        iter_stationary_bootstrap_indices,
+    )
+
+    assert LegacyInputError is RealityCheckInputError
+    assert LegacySplitMix64 is SplitMix64
+    assert legacy_block_length_grid_v1 is block_length_grid_v1
+    assert legacy_compute is compute_reality_check_and_spa
+    assert legacy_iter_indices is iter_stationary_bootstrap_indices
+
+
+def test_reality_check_compatibility_module_contains_no_second_implementation():
+    repository_root = Path(__file__).resolve().parents[2]
+    compatibility_path = repository_root / "services" / "research" / "validation" / "reality_check.py"
+    tree = ast.parse(compatibility_path.read_text(encoding="utf-8"))
+
+    assert not [node for node in ast.walk(tree) if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))]
+    imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)]
+    assert imports
+    assert {node.module for node in imports} == {"services.validation.reality_check"}

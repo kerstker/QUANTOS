@@ -350,6 +350,12 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert any(monitor["category"] == "ALPHA_DECAY" for monitor in payload["monitors"])
     assert any(monitor["category"] == "FEATURE_DRIFT" for monitor in payload["monitors"])
     assert any(monitor["category"] == "REVIEWER_SLA" for monitor in payload["monitors"])
+    assert payload["monitoring_policy"]["distribution_drift"]["available"] is False
+    assert all(
+        monitor.get("provenance") == "SYNTHETIC_FEATURE_VALUES"
+        for monitor in payload["monitors"]
+        if monitor["category"] == "FEATURE_DRIFT"
+    )
     first = payload["monitors"][0]
     assert first["evidence_ref"]
     assert first["warn_threshold"] <= first["breach_threshold"]
@@ -509,6 +515,21 @@ def test_alpha_zoo_is_multidimensional():
     for key in dims:
         assert key in row
     assert "generator" in row and "verdict" in row and isinstance(row["tags"], list)
+    assert {
+        "pbo_evidence_hash",
+        "pbo_alignment",
+        "pbo_candidate_count",
+        "catalog_evidence_hash",
+        "catalog_snapshot_hash",
+        "catalog_trial_count",
+        "catalog_effective_trial_count",
+        "catalog_mean_abs_correlation",
+        "catalog_var_sr",
+        "catalog_trial_set_hash",
+    } <= set(row)
+    assert "pbo_evidence" not in row
+    assert "performance_matrix" not in row
+    assert "return_observations" not in row
 
 
 def test_alpha_zoo_has_paper_track_time_dimensions():
