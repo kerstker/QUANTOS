@@ -124,6 +124,12 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         15 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
+    "QUANTOS_paper_shadow_auto": ExpectedTask(
+        "paper_shadow_auto", 2 * _DAY_MS, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
+    ),
+    "QUANTOS_paper_shadow_realtime": ExpectedTask(
+        "paper_shadow_realtime", 15 * 60_000, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
+    ),
     "QUANTOS_paper_health": ExpectedTask(
         "paper_health",
         15 * 60_000,

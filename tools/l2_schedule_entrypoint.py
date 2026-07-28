@@ -35,6 +35,8 @@ ALLOWED_L2_MODULES = frozenset(
         "paper_research_risk_bundle",
         "paper_realtime",
         "paper_realtime_10k",
+        "paper_shadow_auto",
+        "paper_shadow_realtime",
     }
 )
 

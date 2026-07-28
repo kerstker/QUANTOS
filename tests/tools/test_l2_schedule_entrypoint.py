@@ -135,6 +135,8 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "paper_research_risk_bundle",
             "paper_realtime",
             "paper_realtime_10k",
+            "paper_shadow_auto",
+            "paper_shadow_realtime",
         }
     )
 

@@ -44,6 +44,8 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "paper_order_preview",
         "paper_realtime",
         "paper_realtime_10k",
+        "paper_shadow_auto",
+        "paper_shadow_realtime",
         "paper_health",
         "ic_panel_research",
         "l2_backup",

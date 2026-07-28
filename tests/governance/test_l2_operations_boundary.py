@@ -187,6 +187,8 @@ def test_paper_evidence_producers_have_no_broker_network_or_order_surface():
     producers = (
         ROOT / "tools" / "paper_alpha_evaluation.py",
         ROOT / "tools" / "paper_research_risk_bundle.py",
+        ROOT / "tools" / "paper_shadow_auto.py",
+        ROOT / "tools" / "paper_shadow_realtime.py",
     )
     forbidden_import_roots = {
         "ccxt",

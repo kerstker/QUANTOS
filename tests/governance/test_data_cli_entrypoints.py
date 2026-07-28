@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
         "tools/paper_order_preview.py",
         "tools/three_alpha_paper_flow.py",
         "tools/paper_realtime_10k.py",
+        "tools/paper_shadow_auto.py",
+        "tools/paper_shadow_realtime.py",
         "tools/search_trial_ledger_history.py",
     ],
 )

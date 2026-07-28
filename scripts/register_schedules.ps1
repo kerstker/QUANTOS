@@ -157,6 +157,7 @@ $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
 $paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
 $paperRiskBundleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:08"
 $paperPreviewTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:10"
+$paperShadowAutoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:20"
 # Public-mark paper valuation is a short-lived L2 worker. It refreshes the
 # current paper account without creating a resident process or touching a
 # private venue/order path.
@@ -166,6 +167,8 @@ $paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes
 # offset from the default account so the two short-lived workers do not start
 # together.  The worker includes its own semantic health check.
 $paperRealtime10kTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(7) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$paperShadowRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Run the semantic paper health check one minute after the mark worker.  It is
 # also short-lived and returns non-zero when the paper artifacts are stale or
@@ -199,6 +202,10 @@ Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
   -Trigger $paperRealtimeTrigger
 Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `
   -Trigger $paperRealtime10kTrigger
+Register-L2Task -Name "QUANTOS_paper_shadow_auto" -Module "paper_shadow_auto" `
+  -Trigger $paperShadowAutoTrigger
+Register-L2Task -Name "QUANTOS_paper_shadow_realtime" -Module "paper_shadow_realtime" `
+  -Trigger $paperShadowRealtimeTrigger
 Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
   -Trigger $paperHealthTrigger
 
