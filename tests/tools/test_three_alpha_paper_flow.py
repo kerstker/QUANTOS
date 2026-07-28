@@ -50,6 +50,48 @@ def test_flow_executes_all_three_drivers_and_keeps_live_disabled(tmp_path):
     assert report["safety"]["credential_access"] is False
 
 
+def test_flow_does_not_rewrite_evidence_when_only_runtime_changes(tmp_path, monkeypatch):
+    output = tmp_path / "flow.json"
+    cycle_output = tmp_path / "cycle.json"
+    snapshots = {
+        alpha_id: {
+            "run_id": f"run-{alpha_id}",
+            "n_periods": 10,
+            "pnl": {"residual": 0.0},
+            "research_risk_decision": "PASS",
+        }
+        for alpha_id in ("carry_oi_majors", "crowd_contra", "top_contra")
+    }
+
+    def readiness(_alpha_id):
+        return {
+            "deployment": {
+                "research_packet_ready_for_paper": True,
+                "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
+                "blockers": [],
+            }
+        }
+
+    clock = iter((1.0, 2.0, 3.0, 4.0))
+    monkeypatch.setattr(paper_flow.time, "time", lambda: next(clock))
+    kwargs = {
+        "output_path": str(output),
+        "cycle_output_path": str(cycle_output),
+        "driver_runners": {alpha_id: (lambda: None) for alpha_id in snapshots},
+        "snapshot_loader": lambda alpha_id, _path: snapshots[alpha_id],
+        "cycle_builder": lambda: {"cycle": {}},
+        "readiness_builder": readiness,
+    }
+
+    first = run_flow(**kwargs)
+    first_bytes = output.read_bytes()
+    second = run_flow(**kwargs)
+
+    assert output.read_bytes() == first_bytes
+    assert second["started_at"] == first["started_at"]
+    assert second["finished_at"] == first["finished_at"]
+
+
 def test_flow_records_driver_failure_without_claiming_paper_ready(tmp_path):
     def failing():
         raise RuntimeError("paper driver failed")

@@ -62,6 +62,23 @@ def _load_json(path: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _write_report_if_changed(path: str, report: dict[str, Any]) -> dict[str, Any]:
+    """Avoid dirtying tracked evidence when only run timing changed."""
+    existing = _load_json(path)
+    if existing:
+        comparable_existing = dict(existing)
+        comparable_report = dict(report)
+        for field in ("started_at", "finished_at"):
+            comparable_existing.pop(field, None)
+            comparable_report.pop(field, None)
+        if comparable_existing == comparable_report:
+            report["started_at"] = existing.get("started_at")
+            report["finished_at"] = existing.get("finished_at")
+            return report
+    atomic_write_json(path, report, indent=2)
+    return report
+
+
 def _snapshot_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
     detail = record.get("detail")
     detail = detail if isinstance(detail, Mapping) else {}
@@ -357,8 +374,7 @@ def run_flow(
             "paper_only": True,
         },
     }
-    atomic_write_json(output_path, report, indent=2)
-    return report
+    return _write_report_if_changed(output_path, report)
 
 
 def main(argv: list[str] | None = None) -> int:

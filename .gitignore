@@ -24,6 +24,12 @@ coverage/
 .benchmarks/
 .claude/worktrees/
 .worktrees/
+.codex/
+.playwright-cli/
+.runtime/
+
+# Generated presentation workspace (canonical decks live under docs/)
+QUANTOS_Roadshow/
 
 # Logs & temp
 logs/
