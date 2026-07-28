@@ -10,12 +10,12 @@
     "top_contra:PAPER_EXECUTION_NOT_FILLED",
     "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
   ],
-  "commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+  "commit": "ffc888807e181f32e9d89729637c1f0defc45d04",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785251294107,
+  "generated_at_ms": 1785273466971,
   "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "1d8aabe53c8c76718ed49a9cf982aacab42bfe3f05f7d1bb4fcce4d101db2eb2",
+  "input_hash": "e65da7556aadd64cae40791d5b02d349863dd0a0a82d8bb2aeeaabd68e537444",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -50,7 +50,7 @@
     "tests/research": {
       "exists": true,
       "file_count": 139,
-      "files_sha256": "f429f179e248a0396e97a4bb12d75eb0af5ecbad2a9d0d3e27aaa9f40e10eb9a",
+      "files_sha256": "a5d699416c70219e39bc87476b2e9e06f33b5a05c73fa43b972b4392f4ef6662",
       "kind": "python_directory"
     }
   },
@@ -73,7 +73,7 @@
           "evidence_state": "ATTESTED_PENDING_REALIZATION",
           "n_forward_periods": 0,
           "paper_sharpe": null,
-          "pending_decisions": 1,
+          "pending_decisions": null,
           "periods_to_gate": 8
         },
         "crowd_contra": {
@@ -81,7 +81,7 @@
           "evidence_state": "ATTESTED_PENDING_REALIZATION",
           "n_forward_periods": 0,
           "paper_sharpe": null,
-          "pending_decisions": 1,
+          "pending_decisions": null,
           "periods_to_gate": 8
         },
         "top_contra": {
@@ -89,7 +89,7 @@
           "evidence_state": "ATTESTED_PENDING_REALIZATION",
           "n_forward_periods": 0,
           "paper_sharpe": null,
-          "pending_decisions": 1,
+          "pending_decisions": null,
           "periods_to_gate": 8
         }
       },
@@ -102,7 +102,7 @@
       "evidence_gate_periods": 8,
       "present": true,
       "quality_evidence_current": true,
-      "ran_at": 1785232345063
+      "ran_at": 1785268381091
     },
     "paper_mark_ready": true,
     "paper_preview_ready": false,
@@ -134,9 +134,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": false,
-    "head_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "head_commit": "ffc888807e181f32e9d89729637c1f0defc45d04",
     "overall_status": "FAIL",
-    "reported_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "reported_commit": "ffc888807e181f32e9d89729637c1f0defc45d04",
     "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
     "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"

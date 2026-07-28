@@ -35,6 +35,8 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "domain_event_ops",
         "domain_event_seal",
         "artifact_admission_seal",
+        "binance_realtime_market",
+        "binance_realtime_stream",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",

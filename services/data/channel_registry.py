@@ -63,6 +63,40 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "取每日最后一个 5 分钟指标；不把实时 OI 冒充历史 OI。",
     ),
     DataChannelSpec(
+        "binance_usdm_realtime_complete", "Binance", "binance_usdm",
+        "binance_realtime_market", "5m", "1m/5m/snapshot",
+        (
+            "mark_price", "index_price", "basis_bps", "funding_rate",
+            "bid", "bid_qty", "ask", "ask_qty", "spread_bps",
+            "open", "high", "low", "close", "volume",
+            "oi", "oi_value", "global_ls", "top_ls", "taker_ls",
+        ),
+        "data/cache/binance_realtime_market.db", "REAL_RECENT",
+        (
+            "funding_basis", "crowd_reversal", "liquidity_microstructure",
+            "spot_perp_basis", "event_regime",
+        ),
+        1, "public_rest",
+        "Complete public USD-M snapshots for the 14-ticker forward universe; "
+        "append-only, hash-chained, source-timestamped, and never account-backed.",
+    ),
+    DataChannelSpec(
+        "binance_usdm_websocket_stream", "Binance", "binance_usdm",
+        "binance_realtime_stream", "continuous->5s", "100ms/500ms/1s/1m",
+        (
+            "best_bid_ask", "depth20", "mark_price", "index_price",
+            "aggregate_trades", "kline_1m", "liquidation_orders",
+        ),
+        "data/cache/binance_realtime_stream.db", "REAL_RECENT",
+        (
+            "liquidity_microstructure", "event_regime", "crowd_reversal",
+            "funding_basis",
+        ),
+        1, "public_websocket",
+        "Routed Binance public and market WebSocket streams, reduced to "
+        "hash-chained five-second snapshots; REST remains the recovery baseline.",
+    ),
+    DataChannelSpec(
         "binance_spot_klines", "Binance", "binance_spot",
         "spot_klines", "daily", "1d",
         ("open", "high", "low", "close", "volume"),

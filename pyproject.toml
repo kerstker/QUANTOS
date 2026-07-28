@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn==0.40.0",
     "pydantic==2.13.4",
     "PyJWT==2.13.0",
+    "websockets==16.0",
 ]
 
 [project.optional-dependencies]

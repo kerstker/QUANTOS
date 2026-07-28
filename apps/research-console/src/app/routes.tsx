@@ -120,6 +120,8 @@ export const PAGES: readonly PageDef[] = [
   // ---- 治理与系统:审计、健康、诚实完整度 ----
   { path: '/research/promotion-queue', zh: '晋级审批', en: 'Promotion Queue', icon: 'PQ', group: 'system',
     load: () => import('@/pages/PromotionQueue') },
+  { path: '/research/agents', zh: 'AI Agent', en: 'AI Agents', icon: 'AI', group: 'system',
+    load: () => import('@/pages/Agents') },
   { path: '/research/events', zh: '事件流', en: 'Events', icon: 'EV', group: 'system',
     load: () => import('@/pages/Events') },
   { path: '/research/system-health', zh: '系统健康', en: 'Health', icon: 'SY', group: 'system',
@@ -143,7 +145,6 @@ export const REDIRECTS: readonly RedirectDef[] = [
   { from: '/research/incident-response', to: '/research/system-completeness' },
   { from: '/research/promotion-control', to: '/research/system-completeness' },
   { from: '/research/release-committee', to: '/research/system-completeness' },
-  { from: '/research/agents', to: '/research/system-completeness' },
   { from: '/research/phase-3a', to: '/research/system-completeness' },
   { from: '/research/scenario-stress', to: '/research/risk' },
   { from: '/research/backtest-explainability', to: '/research/backtest-results' },

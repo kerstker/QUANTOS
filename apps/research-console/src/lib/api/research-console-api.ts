@@ -1,5 +1,6 @@
 import type {
   AlphaLifecyclePayload,
+  AgentsPayload,
   AShareAlphaPayload,
   CryptoLivePayload,
   FxResearchPayload,
@@ -121,6 +122,10 @@ export function fetchOverviewSnapshot(signal?: AbortSignal) {
 
 export function fetchEventsSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<EventsPayload>('/api/v1/console/events', signal);
+}
+
+export function fetchAgentsSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<AgentsPayload>('/api/v1/console/agents', signal);
 }
 
 export function fetchExperimentsSnapshot(signal?: AbortSignal) {

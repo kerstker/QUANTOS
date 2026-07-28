@@ -1,6 +1,6 @@
 {
   "block_reasons": [],
-  "commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+  "commit": "ffc888807e181f32e9d89729637c1f0defc45d04",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -14,9 +14,9 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1785251294107,
+  "generated_at_ms": 1785273466971,
   "generator_sha256": "0d9738cc1ce4c5b65d5beb845a1208e50aa6d15a8fa7f7879a8562be94c631aa",
-  "input_hash": "ac85916954c81e1ed2289e2720762b13b0c6eb8e7180434b80726792fd87b038",
+  "input_hash": "6d1d7f5a47edbdd5ec158498975155fd101c708688be7b9b861dd4e4f76c5677",
   "ledger": {
     "append_only_guards": {
       "evaluations": "GUARDED",
@@ -30,15 +30,15 @@
     "exists": true,
     "path": "data/cache/experiment_registry.db",
     "row_counts": {
-      "evaluations": 212,
-      "search_attempt_events": 71,
-      "search_candidates": 17644,
-      "search_evaluations": 211,
+      "evaluations": 238,
+      "search_attempt_events": 89,
+      "search_candidates": 17670,
+      "search_evaluations": 237,
       "trial_oos_access": 0,
-      "trial_provenance": 0,
-      "trials": 2533
+      "trial_provenance": 26,
+      "trials": 2539
     },
-    "sha256": "a5d4179b044d33682a67184f8a3d00a1c1965403dbe801d448901c8923518288",
+    "sha256": "a9911961b6d9ddd67399aac6286563fec8ec394fa08c46ce9a777caccb3d6529",
     "sqlite_integrity": "ok",
     "user_version": 4
   },
@@ -60,16 +60,20 @@
     }
   ],
   "provenance": {
-    "actor_type_counts": {},
-    "attempts_recorded": 0,
+    "actor_type_counts": {
+      "AUTOMATED_SEARCH": 26
+    },
+    "attempts_recorded": 26,
     "bare_trials": 2533,
-    "chain_head": "",
+    "chain_head": "d9f9b4da77eda9aabbee69412e33f07491f383aa952b98d63f405450e2f800e8",
     "chain_valid": true,
-    "configs_with_provenance": 0,
-    "coverage_ratio": 0.0,
-    "max_oos_peek_count": null,
+    "configs_with_provenance": 6,
+    "coverage_ratio": 0.002363,
+    "max_oos_peek_count": 0,
     "reason": null,
-    "status_counts": {},
+    "status_counts": {
+      "RECORDED": 26
+    },
     "table_present": true
   },
   "provenance_wiring": {

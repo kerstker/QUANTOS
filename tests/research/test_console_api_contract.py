@@ -187,6 +187,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
 # marker. They still must be read-only snapshots; only the honesty label differs.
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
+    "/api/v1/console/agents": "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT",
     "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
     "/api/v1/console/safety-primitives": "REAL_SAFETY_PRIMITIVES",   # reads the real KillSwitch/gate/config
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",

@@ -163,6 +163,14 @@ $paperShadowAutoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "2
 # private venue/order path.
 $paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Collect the complete public Binance USD-M surface before paper valuation.
+# This task is market-data only and has no credential or broker capability.
+$binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$binanceRealtimeStreamTrigger = @(
+  (New-ScheduledTaskTrigger -AtStartup),
+  (New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "00:05")
+)
 # Keep the isolated 10,000 USD paper profile on the same five-minute cadence,
 # offset from the default account so the two short-lived workers do not start
 # together.  The worker includes its own semantic health check.
@@ -198,6 +206,10 @@ Register-L2Task -Name "QUANTOS_paper_research_risk_bundle" -Module "paper_resear
   -Trigger $paperRiskBundleTrigger
 Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview" `
   -Trigger $paperPreviewTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtime_market" `
+  -Trigger $binanceRealtimeMarketTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
+  -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
   -Trigger $paperRealtimeTrigger
 Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `

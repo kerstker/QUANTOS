@@ -93,10 +93,18 @@ def test_agents_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
-    assert payload["summary"]["active"] == 1
-    assert payload["summary"]["total_runs"] == 85
-    assert len(payload["agents"]) == 3
-    assert payload["agents"][0]["state"] == "RUNNING"
+    assert payload["data_provenance"] == "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT"
+    assert len(payload["agents"]) == 1
+    assert payload["summary"]["total_runs"] >= 0
+    assert payload["summary"]["agent_auto_approved"] == 0
+    assert payload["agents"][0]["can_reach_approved"] is False
+    assert payload["containment"]["order_submission"] is False
+    assert {engine["engine_id"] for engine in payload["engines"]} == {
+        "guided_search",
+        "evolutionary_search",
+        "gp_search",
+        "mcts_search",
+    }
 
 
 def test_events_snapshot_uses_backend_contract():

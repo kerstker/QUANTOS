@@ -1,5 +1,29 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance USD-M 公共实时数据流与 AI Agent 实况界面：** 新增
+> `tools/binance_realtime_market.py`（14 个前向主币、每 5 分钟完整 REST 快照）和
+> `tools/binance_realtime_stream.py`（按 Binance 新路由拆分 `/public` 与 `/market`
+> 双 WebSocket，采集 bookTicker、20 档深度、1 秒 mark/funding、aggTrade、1 分钟
+> kline 与全市场强平）。高频帧每 5 秒归并为逐币完整快照，写入追加式 SQLite 哈希链；
+> 连接重试、24 小时前主动轮换、事件时间/知识时间、覆盖率、延迟、拒绝帧与断线状态均
+> 显式记录。真实烟测为 14/14 核心覆盖、10,968 个事件、0 拒绝帧，Windows 长驻任务
+> 随后已启动并持续写入；REST 首轮同为 14/14 完整。两条路径只使用公开市场数据，
+> 不读取凭据、不连私有流/券商、不提交订单、不改变 L2 干跑边界。
+>
+> Console 数据目录新增 Binance 实时健康面板，只有状态文件在 30 秒内新鲜且两条连接
+> 都健康时才显示 `LIVE`，已结束烟测不会被误报在线；后端可通过仓库外
+> `QUANTOS_STATE_ROOT` 读取隔离运行目录。原 `/agents` 的三位虚构人格、固定运行次数和
+> 演示预算已删除，替换为真实 `RunRegistry` 活动、唯一 guardrailed
+> `ResearchAgentLoop`、四个已测试搜索引擎能力和硬隔离边界；Agent 自动批准恒为 0，
+> 无凭据、券商、下单或 live 能力。
+>
+> 本增量聚焦验证为后端 92 项、前端 124 项与生产构建全绿；Python audit（0 漏洞）、
+> event schema catalog 和 service import graph 已重生并通过 current 检查。全仓统一门
+> 仍被独立的既有供应链/运营证据阻断：当前 npm 外部审计保留 9 个高危开发依赖，
+> Trivy 容器证据字段不一致且重生需要外部扫描输入，本机 artifact-admission authority
+> 与新制品注册发生不可变冲突；恢复历史仅约 13 小时/6 次成功并保留 1 次真实失败，
+> 未达到 30 天。上述失败未被删除或降级，实时数据与 Agent 功能不据此冒充全仓绿色。
+
 > **2026-07-29 前向 Paper 九引擎输入自动化（保持 fail-closed）：** 新增
 > `tools/paper_alpha_evaluation.py`，为 `carry_oi_majors`、`crowd_contra`、
 > `top_contra` 铸造内容寻址的研究定义，并把评估契约、完整全局 trial 分母、DSR/PBO

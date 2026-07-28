@@ -1,9 +1,9 @@
 {
   "checks_manifest_sha256": "dc32e43fb90922f7bdcd4aeeb3d58d87abd4ee73ac8ea67179796f11d42d2cb2",
-  "commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+  "commit": "ffc888807e181f32e9d89729637c1f0defc45d04",
   "derived_refresh_manifest_sha256": "c49acfbe7cc2b131a758334a2c0a5bfa6643468c20c6dfdebd092f15e0473fcd",
-  "duration_ms": 909299,
-  "generated_at_ms": 1785246416396,
+  "duration_ms": 878602,
+  "generated_at_ms": 1785273466379,
   "overall_status": "FAIL",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -18,10 +18,10 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 223,
-      "returncode": 0,
+      "duration_ms": 169,
+      "returncode": 1,
       "stage": "python-audit-evidence:current",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -31,7 +31,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 198,
+      "duration_ms": 127,
       "returncode": 1,
       "stage": "npm-audit-evidence:current",
       "status": "FAIL",
@@ -44,7 +44,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 214,
+      "duration_ms": 163,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -57,7 +57,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 138,
+      "duration_ms": 118,
       "returncode": 1,
       "stage": "container-trivy-evidence:current",
       "status": "FAIL",
@@ -70,10 +70,10 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 166,
-      "returncode": 1,
+      "duration_ms": 125,
+      "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
-      "status": "FAIL",
+      "status": "PASS",
       "timeout_seconds": 1800.0
     },
     {
@@ -83,10 +83,10 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 709,
-      "returncode": 0,
+      "duration_ms": 565,
+      "returncode": 1,
       "stage": "event-schema-catalog:current",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -96,7 +96,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1463,
+      "duration_ms": 1173,
       "returncode": 1,
       "stage": "service-import-graph:current",
       "status": "FAIL",
@@ -108,10 +108,10 @@
         "H:\\code\\QUANTOS\\tools\\provision_artifact_admission_authority.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 439,
-      "returncode": 0,
+      "duration_ms": 405,
+      "returncode": 1,
       "stage": "artifact-admission-authority:provision",
-      "status": "PASS",
+      "status": "FAIL",
       "timeout_seconds": 1800.0
     },
     {
@@ -121,7 +121,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 598,
+      "duration_ms": 567,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -135,7 +135,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 935,
+      "duration_ms": 829,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -149,7 +149,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 7629,
+      "duration_ms": 6925,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -162,7 +162,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 97,
+      "duration_ms": 98,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -174,7 +174,7 @@
         "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 718,
+      "duration_ms": 690,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -186,7 +186,7 @@
         "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 2870,
+      "duration_ms": 2715,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -199,7 +199,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 628,
+      "duration_ms": 615,
       "returncode": 1,
       "stage": "supply-chain-baseline:current",
       "status": "FAIL",
@@ -212,7 +212,7 @@
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 12537,
+      "duration_ms": 11875,
       "returncode": 1,
       "stage": "top-tier-assessment-artifacts",
       "status": "FAIL",
@@ -248,7 +248,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 748716,
+      "duration_ms": 755166,
       "returncode": 1,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "FAIL",
@@ -265,7 +265,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 83034,
+      "duration_ms": 78303,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -278,7 +278,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 3676,
+      "duration_ms": 2797,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -291,7 +291,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 5387,
+      "duration_ms": 6027,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -303,7 +303,7 @@
         "test"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 6032,
+      "duration_ms": 4463,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -316,53 +316,9 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 6161,
+      "duration_ms": 4673,
       "returncode": 0,
       "stage": "frontend: production build",
-      "status": "PASS",
-      "timeout_seconds": 1800.0
-    },
-    {
-      "command": [
-        "H:\\miniconda\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
-        "--repo-root",
-        "H:\\code\\QUANTOS"
-      ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 3812,
-      "returncode": 0,
-      "stage": "phase13-readiness:refresh",
-      "status": "PASS",
-      "timeout_seconds": 1800.0
-    },
-    {
-      "command": [
-        "H:\\miniconda\\python.exe",
-        "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
-        "--repo-root",
-        "H:\\code\\QUANTOS",
-        "--check"
-      ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 3790,
-      "returncode": 0,
-      "stage": "phase13-readiness:current",
-      "status": "PASS",
-      "timeout_seconds": 1800.0
-    },
-    {
-      "command": [
-        "H:\\miniconda\\python.exe",
-        "-m",
-        "pytest",
-        "-q",
-        "H:\\code\\QUANTOS\\tests\\governance\\test_727_final_audit.py"
-      ],
-      "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 19033,
-      "returncode": 0,
-      "stage": "phase13-readiness:tests",
       "status": "PASS",
       "timeout_seconds": 1800.0
     }
@@ -390,18 +346,15 @@
     "frontend: typecheck",
     "frontend: eslint",
     "frontend: tests",
-    "frontend: production build",
-    "phase13-readiness:refresh",
-    "phase13-readiness:current",
-    "phase13-readiness:tests"
+    "frontend: production build"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1785245507096,
+  "started_at_ms": 1785272587777,
   "summary": {
     "errored": 0,
-    "failed": 7,
-    "passed": 18,
-    "selected": 25,
+    "failed": 9,
+    "passed": 13,
+    "selected": 22,
     "timed_out": 0
   },
   "timeout_seconds": 1800.0,

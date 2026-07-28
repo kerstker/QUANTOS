@@ -1,5 +1,6 @@
 import json
 
+from services.data.binance_realtime_store import BinanceRealtimeStore
 from tools.data_channel_inventory import build_inventory, write_inventory
 
 
@@ -19,6 +20,31 @@ def test_inventory_reads_json_artifact_without_promoting_status(tmp_path):
     inv = build_inventory(str(tmp_path), now_ms=1_700_000_000_001)
     row = next(item for item in inv["channels"] if item["channel_id"] == "cross_exchange_book")
     assert row["artifact"]["status"] == "REAL_SNAPSHOT"
+    assert row["artifact"]["last_observed_ms"] == 1_700_000_000_000
+
+
+def test_inventory_reads_binance_realtime_sqlite_watermark(tmp_path):
+    path = tmp_path / "data" / "cache"
+    path.mkdir(parents=True)
+    store = BinanceRealtimeStore(str(path / "binance_realtime_market.db"), create=True)
+    try:
+        store.append_snapshot(
+            {
+                "instrument_id": "BTCUSDT",
+                "event_time_ms": 1_700_000_000_000,
+                "knowledge_time_ms": 1_700_000_001_000,
+                "observed_at_ms": 1_700_000_001_000,
+            }
+        )
+    finally:
+        store.close()
+    inv = build_inventory(str(tmp_path), now_ms=1_700_000_001_001)
+    row = next(
+        item
+        for item in inv["channels"]
+        if item["channel_id"] == "binance_usdm_realtime_complete"
+    )
+    assert row["artifact"]["status"] == "REAL_RECENT"
     assert row["artifact"]["last_observed_ms"] == 1_700_000_000_000
 
 

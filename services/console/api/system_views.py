@@ -447,45 +447,94 @@ def _runtime_contract_payload() -> Dict:
 
 
 def _agents_payload() -> Dict:
-    candidates = _alpha_candidates()
-    approved_count = sum(1 for alpha in candidates if _validation_decision(alpha) == "APPROVED")
+    """Describe the real research-agent boundary and persisted run activity.
+
+    Search strategies are capabilities of one guardrailed ResearchAgentLoop,
+    not independent human-like personas.  Run counts come from the durable
+    research registry; approval and budget figures are deliberately not
+    inferred because agents cannot approve promotion and the registry does not
+    persist a monetary-agent budget contract.
+    """
+    try:
+        runs = _runs_registry().list(limit=500)
+        registry_status = "AVAILABLE"
+    except Exception:
+        runs = []
+        registry_status = "UNAVAILABLE"
+    status_counts = {
+        status: sum(1 for run in runs if run.status == status)
+        for status in ("queued", "running", "done", "error", "cancelled")
+    }
+    active = status_counts["queued"] + status_counts["running"]
+    terminal = status_counts["done"] + status_counts["error"] + status_counts["cancelled"]
+    latest = max(runs, key=lambda run: (run.created_ts, run.run_id)) if runs else None
+    kinds = sorted({run.kind for run in runs})
+    agent_state = "RUNNING" if active else ("IDLE" if registry_status == "AVAILABLE" else "FAILED")
     agents = [
         {
-            "agent_id": "agent-1",
-            "name": "Macro Analyst",
-            "state": "RUNNING",
-            "runs_completed": 42,
-            "alpha_approved": approved_count,
-            "performance_score": 0.78,
-            "budget_spent_cny": 150,
+            "agent_id": "research-agent-loop",
+            "name": "Guardrailed ResearchAgentLoop",
+            "state": agent_state,
+            "runs_completed": terminal,
+            "runs_active": active,
+            "runs_succeeded": status_counts["done"],
+            "runs_failed": status_counts["error"],
+            "last_run_id": latest.run_id if latest else None,
+            "last_run_kind": latest.kind if latest else None,
+            "last_run_at": latest.created_ts if latest else None,
+            "agent_auto_approved": 0,
+            "can_reach_approved": False,
+            "credentials_access": False,
+            "order_submission": False,
+        }
+    ]
+    engines = [
+        {
+            "engine_id": "guided_search",
+            "implementation": "services.intelligence.search_strategies.GuidedSearch",
+            "readiness": "AVAILABLE_TESTED",
         },
         {
-            "agent_id": "agent-2",
-            "name": "Factor Hunter",
-            "state": "REFLECTING",
-            "runs_completed": 28,
-            "alpha_approved": 3,
-            "performance_score": 0.62,
-            "budget_spent_cny": 280,
+            "engine_id": "evolutionary_search",
+            "implementation": "services.intelligence.search_strategies.EvolutionarySearch",
+            "readiness": "AVAILABLE_TESTED",
         },
         {
-            "agent_id": "agent-3",
-            "name": "Momentum Specialist",
-            "state": "IDLE",
-            "runs_completed": 15,
-            "alpha_approved": 2,
-            "performance_score": 0.55,
-            "budget_spent_cny": 95,
+            "engine_id": "gp_search",
+            "implementation": "services.intelligence.search_strategies.GPSearch",
+            "readiness": "AVAILABLE_TESTED",
+        },
+        {
+            "engine_id": "mcts_search",
+            "implementation": "services.intelligence.search_strategies.MCTSSearch",
+            "readiness": "AVAILABLE_TESTED",
         },
     ]
     return {
+        "data_provenance": "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT",
         "summary": {
-            "active": sum(1 for agent in agents if agent["state"] == "RUNNING"),
-            "total_runs": sum(agent["runs_completed"] for agent in agents),
-            "approved": sum(agent["alpha_approved"] for agent in agents),
-            "budget_spent_cny": sum(agent["budget_spent_cny"] for agent in agents),
+            "active": active,
+            "total_runs": len(runs),
+            "completed": terminal,
+            "succeeded": status_counts["done"],
+            "failed": status_counts["error"],
+            "cancelled": status_counts["cancelled"],
+            "agent_auto_approved": 0,
+            "registry_status": registry_status,
         },
         "agents": agents,
+        "engines": engines,
+        "observed_run_kinds": kinds,
+        "containment": {
+            "authorized_level": "L2_DRY_RUN_ONLY",
+            "research_only": True,
+            "human_approval_required": True,
+            "agent_can_reach_approved": False,
+            "credentials_access": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+            "live_trading": False,
+        },
     }
 
 

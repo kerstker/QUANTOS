@@ -41,6 +41,55 @@ export interface ResearchAgent {
   performance_score: number; budget_spent_cny: number;
 }
 
+export interface AgentRuntimeRecord {
+  agent_id: string;
+  name: string;
+  state: AgentState;
+  runs_completed: number;
+  runs_active: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  last_run_id: string | null;
+  last_run_kind: string | null;
+  last_run_at: number | null;
+  agent_auto_approved: number;
+  can_reach_approved: boolean;
+  credentials_access: boolean;
+  order_submission: boolean;
+}
+
+export interface AgentEngineRecord {
+  engine_id: string;
+  implementation: string;
+  readiness: string;
+}
+
+export interface AgentsPayload extends ConsolePayloadBase {
+  summary: {
+    active: number;
+    total_runs: number;
+    completed: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    agent_auto_approved: number;
+    registry_status: string;
+  };
+  agents: AgentRuntimeRecord[];
+  engines: AgentEngineRecord[];
+  observed_run_kinds: string[];
+  containment: {
+    authorized_level: string;
+    research_only: boolean;
+    human_approval_required: boolean;
+    agent_can_reach_approved: boolean;
+    credentials_access: boolean;
+    broker_connectivity: boolean;
+    order_submission: boolean;
+    live_trading: boolean;
+  };
+}
+
 export interface PaperRun {
   run_id: string; alpha_id: string; status: string;
   metrics: Record<string,number>; equity_curve: {timestamp:number;equity:number}[];
@@ -306,6 +355,52 @@ export interface DataChannel {
   notes: string;
   artifact: DataChannelArtifact;
 }
+export interface BinanceRealtimeCoverage {
+  requested?: number;
+  complete_core?: number;
+  persisted_this_flush?: number;
+  complete?: number;
+  inserted?: number;
+}
+export interface BinanceRealtimePayload {
+  verdict: string;
+  checked_at_ms: number;
+  universe_size: number;
+  stream: {
+    status_present: boolean;
+    effective_streaming: boolean;
+    reported_streaming: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    lag_ms: number | null;
+    coverage: BinanceRealtimeCoverage;
+    connections: Record<string, boolean>;
+    reconnects: Record<string, number>;
+    event_counts: Record<string, number>;
+    rejected_frames: number | null;
+    chain_valid: boolean | null;
+    routes: Record<string, string>;
+    source_path: string | null;
+  };
+  rest_snapshot: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    errors: number;
+    source_path: string | null;
+  };
+  safety: {
+    public_market_data_only: boolean;
+    credentials: boolean;
+    private_stream: boolean;
+    broker_connectivity: boolean;
+    order_submission: boolean;
+    live_trading: boolean;
+  };
+}
 export interface DataCatalogPayload extends ConsolePayloadBase {
   catalog_mode: string;
   feature_store_mode: string;
@@ -329,6 +424,7 @@ export interface DataCatalogPayload extends ConsolePayloadBase {
     summary: Record<string, unknown>;
     honesty?: string[];
   };
+  binance_realtime: BinanceRealtimePayload;
   quality_policy: {
     requires_dataset_hash: boolean;
     requires_event_timestamp: boolean;

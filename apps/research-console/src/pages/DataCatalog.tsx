@@ -113,6 +113,25 @@ const fallbackCatalog: DataCatalogPayload = {
     {from: 'feat-turnover-std-60', to: 'exp-alpha-5-v002', kind: 'FEATURE_TO_EXPERIMENT'},
   ],
   data_channels: { status: 'UNAVAILABLE', channels: [], summary: {} },
+  binance_realtime: {
+    verdict: 'UNAVAILABLE',
+    checked_at_ms: 0,
+    universe_size: 14,
+    stream: {
+      status_present: false, effective_streaming: false, reported_streaming: false,
+      fresh: false, age_ms: null, lag_ms: null, coverage: {}, connections: {},
+      reconnects: {}, event_counts: {}, rejected_frames: null, chain_valid: null,
+      routes: {}, source_path: null,
+    },
+    rest_snapshot: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, errors: 0, source_path: null,
+    },
+    safety: {
+      public_market_data_only: true, credentials: false, private_stream: false,
+      broker_connectivity: false, order_submission: false, live_trading: false,
+    },
+  },
   quality_policy: {
     requires_dataset_hash: true,
     requires_event_timestamp: true,
@@ -133,7 +152,7 @@ function qualityTone(v: number): Tone {
 
 function channelTone(status: string): Tone {
   if (status === 'REAL_HISTORY') return 'pos';
-  if (status === 'REAL_SNAPSHOT' || status === 'REAL_DIAGNOSTIC') return 'info';
+  if (status === 'REAL_SNAPSHOT' || status === 'REAL_DIAGNOSTIC' || status === 'REAL_RECENT') return 'info';
   if (status === 'PUBLIC_STREAM_REQUIRED') return 'warn';
   return 'neg';
 }
@@ -296,6 +315,11 @@ export default function DataCatalog() {
 
   const qPassRate = catalog.summary.quality_checks > 0
     ? catalog.summary.quality_passed / catalog.summary.quality_checks : 0;
+  const realtime = catalog.binance_realtime ?? fallbackCatalog.binance_realtime;
+  const streamCoverage = realtime.stream.coverage;
+  const restCoverage = realtime.rest_snapshot.coverage;
+  const streamEvents = Object.values(realtime.stream.event_counts)
+    .reduce((total, value) => total + value, 0);
 
   return (
     <PageShell>
@@ -324,6 +348,49 @@ export default function DataCatalog() {
         <StatTile label={bi('血缘边', 'Lineage Edges')} value={num(catalog.summary.lineage_edges)} />
         <StatTile label={bi('只读', 'Read-only')} value={catalog.read_only ? bi('是', 'YES') : bi('否', 'NO')} tone="pos" />
       </KpiStrip>
+
+      <Panel eyebrow="BINANCE USD-M REALTIME" title={bi('实时公共行情流', 'Real-time Public Market Stream')}
+        right={<StatusChip value={realtime.verdict} />}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('流状态', 'Stream')} value={realtime.stream.effective_streaming ? 'LIVE' : 'NOT LIVE'}
+            tone={realtime.stream.effective_streaming ? 'pos' : 'warn'} />
+          <StatTile label={bi('核心覆盖', 'Core Coverage')}
+            value={`${num(streamCoverage.complete_core ?? 0)}/${num(streamCoverage.requested ?? realtime.universe_size)}`}
+            tone={(streamCoverage.complete_core ?? 0) === realtime.universe_size ? 'pos' : 'warn'} />
+          <StatTile label={bi('接收延迟', 'Receive Lag')}
+            value={realtime.stream.lag_ms == null ? '—' : `${num(realtime.stream.lag_ms)}ms`}
+            tone={realtime.stream.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('累计事件', 'Events')} value={compact(streamEvents)} />
+          <StatTile label={bi('拒绝帧', 'Rejected')} value={num(realtime.stream.rejected_frames ?? 0)}
+            tone={(realtime.stream.rejected_frames ?? 0) === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('流哈希链', 'Stream Chain')} value={realtime.stream.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.stream.chain_valid ? 'pos' : 'warn'} />
+          <StatTile label={bi('REST 覆盖', 'REST Coverage')}
+            value={`${num(restCoverage.complete ?? 0)}/${num(restCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.rest_snapshot.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('REST 哈希链', 'REST Chain')} value={realtime.rest_snapshot.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.rest_snapshot.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <KeyValue cols={2} items={[
+            { k: 'Public route', v: realtime.stream.routes.public ?? '—' },
+            { k: 'Market route', v: realtime.stream.routes.market ?? '—' },
+            { k: bi('公共连接', 'Public link'), v: realtime.stream.connections.public ? 'CONNECTED' : 'DOWN' },
+            { k: bi('市场连接', 'Market link'), v: realtime.stream.connections.market ? 'CONNECTED' : 'DOWN' },
+          ]} />
+          <KeyValue cols={2} items={Object.entries(realtime.stream.event_counts).map(([key, value]) => ({
+            k: key, v: compact(value),
+          }))} />
+          <div className="flex flex-wrap content-start gap-2 rounded-lg border border-line bg-inset/40 p-3">
+            <Chip label="PUBLIC DATA ONLY" tone="pos" />
+            <Chip label="NO CREDENTIALS" tone="pos" />
+            <Chip label="NO PRIVATE STREAM" tone="pos" />
+            <Chip label="NO BROKER" tone="pos" />
+            <Chip label="NO ORDER SUBMISSION" tone="pos" />
+            <Chip label="L2 DRY-RUN ONLY" tone="info" />
+          </div>
+        </div>
+      </Panel>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel eyebrow={bi('构成', 'Composition')} title={bi('特征族分布', 'Feature Families')}

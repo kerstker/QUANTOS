@@ -119,6 +119,12 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
     "QUANTOS_paper_realtime": ExpectedTask("paper_realtime", 15 * 60_000),
+    "QUANTOS_binance_realtime_market": ExpectedTask(
+        "binance_realtime_market", 15 * 60_000
+    ),
+    "QUANTOS_binance_realtime_stream": ExpectedTask(
+        "binance_realtime_stream", 2 * _DAY_MS
+    ),
     "QUANTOS_paper_realtime_10k": ExpectedTask(
         "paper_realtime_10k",
         15 * 60_000,

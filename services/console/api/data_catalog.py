@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import statistics
+import time
 from typing import Dict, List
 
 from fastapi import APIRouter
@@ -12,10 +13,113 @@ from fastapi import APIRouter
 from services.console.api.common import short_hash as _short_hash
 from services.console.api.data_port import data_catalog_runtime
 
-_DATA_CHANNEL_INVENTORY = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-    "data", "cache", "data_channel_inventory.json",
+_PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 )
+_DATA_CHANNEL_INVENTORY = os.path.join(
+    _PROJECT_ROOT, "data", "cache", "data_channel_inventory.json"
+)
+_BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
+_BINANCE_REST_STATUS = "binance_realtime_market_status.json"
+
+
+def _status_candidates(filename: str) -> list[str]:
+    candidates: list[str] = []
+    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
+    if state_root:
+        candidates.append(os.path.join(os.path.abspath(state_root), "data", "cache", filename))
+    candidates.append(os.path.join(_PROJECT_ROOT, "data", "cache", filename))
+    return list(dict.fromkeys(candidates))
+
+
+def _read_latest_status(filename: str) -> tuple[Dict | None, str | None]:
+    valid: list[tuple[int, Dict, str]] = []
+    for path in _status_candidates(filename):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        generated_at_ms = payload.get("generated_at_ms")
+        if isinstance(generated_at_ms, int):
+            valid.append((generated_at_ms, payload, path))
+    if not valid:
+        return None, None
+    _, payload, path = max(valid, key=lambda item: item[0])
+    return payload, path
+
+
+def _binance_realtime_payload() -> Dict:
+    now_ms = int(time.time() * 1_000)
+    stream, stream_path = _read_latest_status(_BINANCE_STREAM_STATUS)
+    rest, rest_path = _read_latest_status(_BINANCE_REST_STATUS)
+
+    def age(payload: Dict | None) -> int | None:
+        generated = payload.get("generated_at_ms") if payload else None
+        return max(0, now_ms - generated) if isinstance(generated, int) else None
+
+    stream_age = age(stream)
+    rest_age = age(rest)
+    stream_fresh = stream_age is not None and stream_age <= 30_000
+    rest_fresh = rest_age is not None and rest_age <= 10 * 60_000
+    stream_coverage = (stream or {}).get("coverage", {})
+    rest_coverage = (rest or {}).get("coverage", {})
+    effective_streaming = bool(
+        stream_fresh
+        and stream
+        and stream.get("streaming")
+        and stream.get("verdict") == "PASS"
+    )
+    verdict = (
+        "PASS"
+        if effective_streaming and rest_fresh
+        else "STREAM_PASS"
+        if effective_streaming
+        else "STALE"
+        if stream or rest
+        else "UNAVAILABLE"
+    )
+    return {
+        "verdict": verdict,
+        "checked_at_ms": now_ms,
+        "stream": {
+            "status_present": stream is not None,
+            "effective_streaming": effective_streaming,
+            "reported_streaming": bool(stream and stream.get("streaming")),
+            "fresh": stream_fresh,
+            "age_ms": stream_age,
+            "lag_ms": (stream or {}).get("lag_ms"),
+            "coverage": stream_coverage,
+            "connections": (stream or {}).get("connections", {}),
+            "reconnects": (stream or {}).get("reconnects", {}),
+            "event_counts": (stream or {}).get("event_counts", {}),
+            "rejected_frames": (stream or {}).get("rejected_frames"),
+            "chain_valid": (stream or {}).get("store", {}).get("chain_valid"),
+            "routes": (stream or {}).get("routes", {}),
+            "source_path": stream_path,
+        },
+        "rest_snapshot": {
+            "status_present": rest is not None,
+            "fresh": rest_fresh,
+            "age_ms": rest_age,
+            "verdict": (rest or {}).get("verdict"),
+            "coverage": rest_coverage,
+            "chain_valid": (rest or {}).get("store", {}).get("chain_valid"),
+            "errors": len((rest or {}).get("errors", {})),
+            "source_path": rest_path,
+        },
+        "universe_size": 14,
+        "safety": {
+            "public_market_data_only": True,
+            "credentials": False,
+            "private_stream": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+            "live_trading": False,
+        },
+    }
 
 
 def _data_channel_payload() -> Dict:
@@ -182,6 +286,7 @@ def _unavailable_data_catalog_payload(reason: str) -> Dict:
         "features": [],
         "lineage_edges": [],
         "data_channels": _data_channel_payload(),
+        "binance_realtime": _binance_realtime_payload(),
         "quality_policy": {
             "requires_dataset_hash": True,
             "requires_event_timestamp": True,
@@ -366,6 +471,7 @@ def _data_catalog_payload() -> Dict:
         "features": features,
         "lineage_edges": lineage_edges,
         "data_channels": _data_channel_payload(),
+        "binance_realtime": _binance_realtime_payload(),
         "quality_policy": {
             "requires_dataset_hash": True,
             "requires_event_timestamp": True,
