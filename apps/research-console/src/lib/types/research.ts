@@ -1207,8 +1207,23 @@ export interface Lance1mValidationPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface LiveTradingForwardAlpha {
+  alpha_id: string;
+  n_forward_periods: number | null;
+  weeks_to_go_no_go: number | null;
+  paper_sharpe: number | null;
+  paper_ic: number | null;
+  cum_return: number | null;
+  backtest_reference_sharpe: number | null;
+  reference_weeks: number | null;
+  pending_decisions: number | null;
+  attested_pending_decisions?: number | null;
+  evidence_state?: string;
+  last_decision_ts: number | null;
+}
 export interface LiveTradingForwardTrack {
   present: boolean;
+  ran_at?: number;
   evidence_state?: "ATTESTED" | "DATA_BLOCKED" | "STALE" | "UNAVAILABLE" | string;
   attested_realizations?: number;
   attested_pending?: number;
@@ -1216,6 +1231,20 @@ export interface LiveTradingForwardTrack {
   evidence_gate_weeks?: number;
   evidence_gate_eligible?: boolean;
   data_admission?: Record<string, unknown>;
+  staleness_days?: Record<string, {
+    freshest_days: number | null;
+    worst_days: number | null;
+    n_stale: number | null;
+    n_total: number;
+  }>;
+  quality_evidence_current?: boolean;
+  data_quality_admission?: {
+    verdict?: string;
+    quality_verdict?: string;
+    lineage_verdict?: string;
+  };
+  alphas?: LiveTradingForwardAlpha[];
+  alerts?: string[];
   actions_allowed: false;
 }
 export interface LiveTradingReconciliation {

@@ -464,6 +464,7 @@ def _check_task(
     now_ms: int,
     repo_root: Path,
     code_root: Path,
+    self_check: bool = False,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -656,6 +657,7 @@ def evaluate_schedule(
             now_ms=now_ms,
             repo_root=root,
             code_root=release_root,
+            self_check=name == "QUANTOS_scheduler_watchdog",
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)

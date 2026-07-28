@@ -36,14 +36,14 @@ def test_versioned_refresh_retains_prior_artifacts_and_appends_runtime_history(t
     )
 
     assert refreshed["recorded_at"] == 3
-    assert refreshed["artifact_count"] == 25
+    assert refreshed["artifact_count"] == 26
     assert refreshed["runtime_invocation_count"] == 4
     assert refreshed["prompt_template_count"] == 2
-    assert refreshed["red_team_report_ref"] == "red-team-report:research-agent-runtime-boundary-v3"
+    assert refreshed["red_team_report_ref"] == "red-team-report:research-agent-runtime-boundary-v8"
     ids = {record["artifact_id"] for record in refreshed["artifacts"]}
-    assert "model-card:research-agent-loop:v1" in ids
-    assert "model-card:research-agent-loop:v2" in ids
-    assert "prompt-card:research-evaluation:v2" in ids
+    assert "model-card:research-agent-loop:v6" in ids
+    assert "model-card:research-agent-loop:v7" in ids
+    assert "prompt-card:research-evaluation:v7" in ids
     assert refreshed_history["revision_count"] == 2
     validate_model_risk_history(refreshed_history)
     assert refreshed_history["revisions"][0]["snapshot"]["runtime_events"] == refreshed["runtime_events"][:2]
@@ -90,9 +90,9 @@ def test_default_refresh_versions_advance_from_immutable_history(tmp_path: Path)
     )
 
     ids = {record["artifact_id"] for record in second["artifacts"]}
-    assert "model-card:research-agent-loop:v3" in ids
-    assert second["red_team_report_ref"] == "red-team-report:research-agent-runtime-boundary-v4"
-    assert second["artifact_count"] == 37
+    assert "model-card:research-agent-loop:v8" in ids
+    assert second["red_team_report_ref"] == "red-team-report:research-agent-runtime-boundary-v9"
+    assert second["artifact_count"] == 39
     assert second["runtime_invocation_count"] == 6
     assert second_history["revision_count"] == 3
     validate_model_risk_history(second_history)

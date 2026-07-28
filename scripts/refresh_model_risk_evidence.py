@@ -163,17 +163,26 @@ def _versioned_artifact(record: Mapping[str, Any], *, model_version: str, review
     """Clone a non-red-team artifact under a new immutable identity."""
     artifact_type = str(record.get("artifact_type"))
     payload = dict(record.get("payload") or {})
-    if artifact_type in {"ToolManifest", "ExternalProviderBinding"}:
-        return None  # The current tool boundary is unchanged and remains v1.
     if artifact_type == "RedTeamReport":
         return None  # Reports are regenerated below against the new runtime.
-    if artifact_type == "ModelCard":
+    if artifact_type == "ToolManifest":
+        payload["version"] = model_version
+    elif artifact_type == "ExternalProviderBinding":
+        payload["version"] = model_version
+        payload["model_ref"] = _replace_version(
+            str(payload["model_ref"]), model_version
+        )
+    elif artifact_type == "ModelCard":
         payload["version"] = model_version
         if payload.get("model_id") == "research-agent-loop":
             payload["prompt_template_ref"] = f"research-evaluation@{model_version}"
+            payload["tool_manifest_ref"] = (
+                f"research-agent-tools@{model_version}"
+            )
     elif artifact_type == "PromptTemplateCard":
         payload["version"] = model_version
         payload["model_ref"] = f"research-agent-loop@{model_version}"
+        payload["tool_manifest_ref"] = f"research-agent-tools@{model_version}"
     elif artifact_type == "OfflineEvaluation":
         payload["version"] = model_version
         payload["model_ref"] = _replace_version(str(payload["model_ref"]), model_version)
@@ -261,11 +270,15 @@ def refresh_model_risk_evidence(
                 raise ModelRiskHistoryError(f"refresh identity already exists: {artifact.artifact_id}")
             new_artifacts.append(artifact)
     tool = next(
-        (_record_to_artifact(record) for record in prior_records if record.get("artifact_type") == "ToolManifest"),
+        (
+            artifact
+            for artifact in new_artifacts
+            if isinstance(artifact, ToolManifest)
+        ),
         None,
     )
     if not isinstance(tool, ToolManifest):
-        raise ModelRiskHistoryError("prior evidence lacks the governed tool manifest")
+        raise ModelRiskHistoryError("fresh evidence lacks the governed tool manifest")
     base_for_red_team = [
         _record_to_artifact(record)
         for record in prior_records
@@ -276,7 +289,7 @@ def refresh_model_risk_evidence(
         recorded_at=current_recorded_at,
         model_ref=f"research-agent-loop@{model_version}",
         tool_manifest_ref=tool.manifest_ref,
-        report_id=f"research-agent-boundary-{report_version}",
+        report_id=f"research-agent-boundary-{model_version}",
     )
     new_runtime_report = execute_runtime_boundary_red_team(
         [*base_for_red_team, new_agent_report],
@@ -285,7 +298,7 @@ def refresh_model_risk_evidence(
         prompt_ref=f"research-evaluation@{model_version}",
         tool_manifest_ref=tool.manifest_ref,
         report_id=f"research-agent-runtime-boundary-{report_version}",
-        agent_report_id=f"research-agent-boundary-{report_version}",
+        agent_report_id=f"research-agent-boundary-{model_version}",
     )
     new_artifacts.extend((new_agent_report, new_runtime_report))
 
@@ -313,7 +326,7 @@ def refresh_model_risk_evidence(
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             runtime.invoke(
-                invocation_id=f"model-risk-baseline-runtime-{report_version}",
+                invocation_id=f"model-risk-baseline-runtime-{model_version}",
                 action="EVALUATE",
                 input_payload={
                     "artifact_count": len(all_artifacts),

@@ -224,7 +224,7 @@ class ConsumerGroupCoordinator:
                 "ON event_consumer_group_journal BEGIN SELECT RAISE(ABORT, "
                 "'event_consumer_group_journal is append-only'); END"
             )
-        self.verify_locked(force=False)
+        self.verify_locked()
 
     def _rows_locked(self) -> list[tuple]:
         try:

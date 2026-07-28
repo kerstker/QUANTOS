@@ -1034,8 +1034,14 @@ class DurableEventBus:
         lease_until_ms: int,
         error_type: str = "",
         error_fingerprint: str = "",
+        prev_record_hash: str | None = None,
     ) -> tuple[int, str]:
         frontier = self._frontiers["consumer"]
+        previous = (
+            frontier.last_record_hash
+            if prev_record_hash is None
+            else prev_record_hash
+        )
         digest = _consumer_record_hash(
             consumer_id=consumer_id,
             event_seq=event_seq,
@@ -1047,7 +1053,7 @@ class DurableEventBus:
             lease_until_ms=lease_until_ms,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
-            prev_record_hash=frontier.last_record_hash,
+            prev_record_hash=previous,
         )
         cursor = self._c.execute(
             "INSERT INTO event_consumer_journal"
@@ -1065,7 +1071,7 @@ class DurableEventBus:
                 lease_until_ms,
                 error_type,
                 error_fingerprint,
-                frontier.last_record_hash,
+                previous,
                 digest,
             ),
         )

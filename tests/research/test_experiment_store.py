@@ -237,13 +237,7 @@ def test_search_schema_migration_fault_rolls_back_partial_changes(
 
     monkeypatch.setattr(store, "_migration_checkpoint", fail_mid_migration)
     with pytest.raises(ExperimentStoreError, match="migration failed"):
-        store.begin_search_attempt(
-            search_id="faulted",
-            search_kind="TEST",
-            source="tests.research",
-            dataset_version="dataset-v1",
-            recorded_at=10,
-        )
+        store._ensure_search_schema(require_provenance=True)
 
     assert store._conn.execute("PRAGMA user_version").fetchone()[0] == 0
     search_objects = store._conn.execute(
@@ -254,6 +248,7 @@ def test_search_schema_migration_fault_rolls_back_partial_changes(
     assert search_objects == []
 
     monkeypatch.setattr(store, "_migration_checkpoint", lambda _stage: None)
+    store._ensure_search_schema(require_provenance=True)
     assert store.begin_search_attempt(
         search_id="after-retry",
         search_kind="TEST",
@@ -279,7 +274,7 @@ def test_real_v1_search_schema_migrates_to_current_without_rewriting_chains(
     store = SqliteExperimentStore(str(path), create=False)
     before = _v1_chain_rows(store._conn)
 
-    store._ensure_search_schema()
+    store._ensure_search_schema(require_provenance=True)
 
     assert (
         store._conn.execute("PRAGMA user_version").fetchone()[0]
@@ -313,7 +308,7 @@ def test_v1_migration_fault_is_atomic_and_preserves_existing_chains(
 
     monkeypatch.setattr(store, "_migration_checkpoint", fail_mid_migration)
     with pytest.raises(ExperimentStoreError, match="migration failed"):
-        store._ensure_search_schema()
+        store._ensure_search_schema(require_provenance=True)
 
     assert store._conn.execute("PRAGMA user_version").fetchone()[0] == 1
     assert _v1_chain_rows(store._conn) == before_chains
@@ -325,7 +320,7 @@ def test_v1_migration_fault_is_atomic_and_preserves_existing_chains(
     } == before_objects
 
     monkeypatch.setattr(store, "_migration_checkpoint", lambda _stage: None)
-    store._ensure_search_schema()
+    store._ensure_search_schema(require_provenance=True)
     assert (
         store._conn.execute("PRAGMA user_version").fetchone()[0]
         == experiment_store._SEARCH_SCHEMA_VERSION

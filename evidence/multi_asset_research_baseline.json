@@ -46,7 +46,7 @@
     "source_db_sha256": "98b9e79820c15e5c3ba090f48817403fbc6c7e5705ffc21ce392c06889b80b58"
   },
   "evidence_id": "quantos-multi-asset-research-fx-v1",
-  "evidence_sha256": "4ed6fc464986f1698c3d0cf72b0c5db917625747ff41947933dd3cc8e2ba95ba",
+  "evidence_sha256": "87583dc3b473fe446fe22acae5f2882349bed990795f4962784114b7474252c3",
   "factor_contract": [
     {
       "factor_id": "fx_momentum_120",
@@ -407,7 +407,7 @@
     "services/research/ic_panel.py": "26eb7e0681c7b51af211823030b84dec75fd44d681431ac5a61e609fca09d6e4",
     "services/research/signals.py": "ce1d4cc985b17b046f8c0ed3c13387ccf9a1b20dd1188011f645c40dc81a543f",
     "tools/fx_pit_bundle.py": "40f41e3293fd18eda0d90a62561e5f7d61923620e7b94327b2ab03abdfc22d82",
-    "tools/ic_panel_registry.py": "84fe5feac12aa1c8dcdf8c12376cea6b1fd79419d537159d1be0cab6e5021384",
+    "tools/ic_panel_registry.py": "2d0d5e76a54cc722e93747771995677c0e9da3bf161971ed30fc0df079e36c65",
     "tools/ic_panel_research.py": "128467ddc43b72490d898727c680372c6662af9589cd0114760262c5df4c0dce"
   },
   "limitations": [

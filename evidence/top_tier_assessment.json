@@ -36,7 +36,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "domain": "governance_security",
       "passed": 1,
       "red_lines_failed": 1,
@@ -567,9 +567,9 @@
         "path": "evidence/strong_identity_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "description": "OIDC mTLS RBAC and separation of duties are enforced",
-      "detail": "asymmetric OIDC verification, MFA, RFC 8705 mTLS binding, immutable subject identity, application-owned lifecycle authorization, durable authorization decisions, and three-party separation are load-bearing; browser Authorization Code + PKCE S256 is implemented with one-time state/nonce and memory-only access tokens; external OIDC, trusted TLS deployment, managed key custody, external identity lifecycle operations, and independent AI identity-exclusion evidence remain open; evidence does not meet target maturity",
+      "detail": "strong-identity baseline failed: implementation_digest:apps/research-console/src/pages/PromotionQueue.tsx, implementation_digest:services/governance/strong_identity.py",
       "domain": "governance_security",
       "evidence": [
         "evidence/strong_identity_baseline.json",
@@ -602,7 +602,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -871,7 +871,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
+      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -894,7 +894,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -950,12 +950,10 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M2",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "supply-chain baseline failed: artifact_admission_implementation_hashes, artifact_admission_verification_paths",
+      "detail": "supply-chain baseline failed: artifact_admission_decision_store_provisioning, artifact_admission_implementation_hashes, artifact_admission_policy_registry, artifact_admission_receipt_authority_registry, artifact_admission_verification_paths, container_vulnerability_evidence, manifest_digest:config/service_import_policy.json, manifest_digest:config/top_tier_requirements.json, manifest_digest:evidence/event_schema_catalog.json, manifest_digest:evidence/service_import_graph.json, manifest_digest:evidence/vulnerability/container_trivy_latest.json, manifest_digest:evidence/vulnerability/npm_audit_latest.json, manifest_digest:evidence/vulnerability/python_audit_latest.json, manifest_digest:pyproject.toml, manifest_digest:quantos/contracts/event_schemas.py, manifest_digest:quantos/contracts/events.py, manifest_digest:scripts/generate_event_schema_catalog.py, manifest_digest:scripts/generate_supply_chain_evidence.py, manifest_digest:scripts/register_schedules.ps1, manifest_digest:scripts/validate.py, manifest_digest:services/alpha/factory.py, manifest_digest:services/alpha/guards.py, manifest_digest:services/alpha/lifecycle.py, manifest_digest:services/console/api/system_views.py, manifest_digest:services/console/risk_console.py, manifest_digest:services/execution/dry_run_pipeline.py, manifest_digest:services/execution/dry_run_store.py, manifest_digest:services/governance/artifact_admission.py, manifest_digest:services/governance/strong_identity.py, manifest_digest:services/governance/top_tier_assessment.py, manifest_digest:services/monitoring/domain_event_runtime.py, manifest_digest:services/monitoring/event_bus.py, manifest_digest:services/research/experiment_registry/registry.py, manifest_digest:services/research/experiment_registry/store.py, manifest_digest:services/research/ports/persistence.py, manifest_digest:services/risk/research_risk/events.py, manifest_digest:tests/execution/test_dry_run_store.py, manifest_digest:tests/governance/test_console_composition_boundary.py, manifest_digest:tests/governance/test_event_bus_wiring.py, manifest_digest:tests/governance/test_event_schema_catalog.py, manifest_digest:tests/governance/test_external_operations_boundary.py, manifest_digest:tests/governance/test_l2_operations_boundary.py, manifest_digest:tests/governance/test_l2_schedule_boundary.py, manifest_digest:tests/governance/test_supply_chain_evidence.py, manifest_digest:tests/governance/test_top_tier_assessment.py, manifest_digest:tests/monitoring/test_event_consumer.py, manifest_digest:tests/monitoring/test_event_projection.py, manifest_digest:tests/risk/test_research_risk_events.py, manifest_digest:tests/tools/test_alpha_maintenance_sweep.py, manifest_digest:tests/tools/test_domain_event_bus.py, manifest_digest:tests/tools/test_domain_event_outbox_drain.py, manifest_digest:tests/tools/test_l2_scheduler_watchdog.py, manifest_digest:tools/alpha_maintenance_sweep.py, manifest_digest:tools/domain_event_bus.py, manifest_digest:tools/domain_event_outbox_drain.py, manifest_digest:tools/domain_event_owner_migration.py, manifest_digest:tools/domain_event_seal.py, manifest_digest:tools/external_heartbeat.py, manifest_digest:tools/l2_backup.py, manifest_digest:tools/l2_scheduler_watchdog.py, manifest_digest:tools/live_data_refresh.py, manifest_digest:tools/live_track_advance.py, npm_vulnerability_evidence, python_vulnerability_evidence",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
-        "config/artifact_admission_policy_registry.json",
-        "config/artifact_receipt_authority_registry.json",
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "evidence/vulnerability/actions_osv_latest.json",
@@ -1048,7 +1046,6 @@
         "services/research/experiment_registry/registry.py",
         "services/research/experiment_registry/store.py",
         "services/research/ports/persistence.py",
-        "services/research/robust_optimization.py",
         "services/risk/pre_trade/events.py",
         "services/risk/pre_trade/kill_switch.py",
         "services/risk/pre_trade/kill_switch_runtime.py",
@@ -1065,7 +1062,6 @@
         "tests/execution/test_impact_ownership.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
-        "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_console_composition_boundary.py",
@@ -1101,7 +1097,6 @@
         "tests/risk/test_kill_switch_state_store.py",
         "tests/risk/test_research_risk_events.py",
         "tests/tools/test_alpha_maintenance_sweep.py",
-        "tests/tools/test_artifact_admission_seal.py",
         "tests/tools/test_deployment_events.py",
         "tests/tools/test_domain_event_bus.py",
         "tests/tools/test_domain_event_health.py",
@@ -1114,10 +1109,7 @@
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
-        "tests/tools/test_live_testnet_smoke.py",
         "tools/alpha_maintenance_sweep.py",
-        "tools/artifact_admission_seal.py",
-        "tools/crypto_robust_optimization.py",
         "tools/deployment_events.py",
         "tools/domain_event_bus.py",
         "tools/domain_event_health.py",
@@ -1136,9 +1128,7 @@
         "tools/live_data_refresh.py",
         "tools/live_kill_switch_reset.py",
         "tools/live_risk_sentinel.py",
-        "tools/live_testnet_smoke.py",
         "tools/live_track_advance.py",
-        "tools/provision_artifact_admission_authority.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
         "tools/verify_artifact_admission.py"
@@ -1387,9 +1377,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 0,
-    "manual_evidence_required": 2,
-    "partial": 5,
+    "failed": 3,
+    "manual_evidence_required": 0,
+    "partial": 4,
     "passed": 15,
     "red_lines_failed": 3,
     "total": 22,

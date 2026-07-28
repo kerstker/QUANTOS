@@ -621,7 +621,13 @@ def test_paper_period_replay_is_idempotent_but_conflict_fails_closed(db):
 
 def test_mark_realized_requires_one_pending_decision(db):
     _, ledger = db
-    ledger.record_decision("a", _T0, recorded_at=_T0, weights={"BTC": 1.0})
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions("
+        "alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized"
+        ") VALUES (?,?,?,?,?,?,0)",
+        ("a", _T0, _T0, '{"BTC":1.0}', None, "LEGACY_FORWARD_DECISION"),
+    )
+    ledger._conn.commit()
 
     ledger.mark_realized("a", _T0)
 

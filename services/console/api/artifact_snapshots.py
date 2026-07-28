@@ -28,6 +28,31 @@ _FORWARD_EVIDENCE_BASELINE = os.path.join(_REPO_ROOT, "evidence", "forward_evide
 _LIVE_TRACK_STATUS = os.path.join(_REPO_ROOT, "data", "cache", "live_track_status.json")
 _LIVE_RISK_STATE = os.path.join(_REPO_ROOT, "data", "cache", "live_risk_state.json")
 _GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
+_FORWARD_TRACK_STATUS = os.path.join(
+    _REPO_ROOT, "data", "cache", "forward_track_status.json"
+)
+_LIVE_REFRESH_STATUS = os.path.join(
+    _REPO_ROOT, "data", "cache", "live_refresh_status.json"
+)
+_SCHEDULER_WATCHDOG_STATUS = os.path.join(
+    _REPO_ROOT, "data", "cache", "scheduler_watchdog_status.json"
+)
+_PAPER_ORDER_PREVIEW = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_order_preview.json"
+)
+_L2_PAPER_OPERATOR = os.path.join(
+    _REPO_ROOT, "data", "cache", "l2_paper_operator.json"
+)
+_PAPER_REALTIME = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_realtime_status.json"
+)
+_PAPER_HEALTH = os.path.join(_REPO_ROOT, "data", "cache", "paper_health.json")
+_PAPER_10K_REALTIME = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_realtime_10k_status.json"
+)
+_PAPER_10K_HEALTH = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_health_10k.json"
+)
 _EVIDENCE_GATE_WEEKS = 8
 
 # The compact diagnostic routes live in their own bounded module.  Including

@@ -3593,14 +3593,29 @@ def _model_risk_baseline_evidence(
         return _result("FAILED", "M1", [path], "model-risk evidence must be an object")
 
     failures: list[str] = []
-    current_release_version = "v6"
-    current_runtime_report_version = "v7"
-    current_release_number = int(current_release_version.removeprefix("v"))
+    release_numbers = []
+    for record in document.get("artifacts", []):
+        if not isinstance(record, dict) or record.get("artifact_type") != "ModelCard":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict) or payload.get("model_id") != "research-agent-loop":
+            continue
+        version = payload.get("version")
+        if isinstance(version, str) and re.fullmatch(r"v[1-9][0-9]*", version):
+            release_numbers.append(int(version[1:]))
+    if not release_numbers:
+        failures.append("current_release_version")
+        current_release_number = 1
+    else:
+        current_release_number = max(release_numbers)
+    current_release_version = f"v{current_release_number}"
+    current_runtime_report_version = f"v{current_release_number + 1}"
     current_agent_red_team_ref = (
-        "red-team-report:research-agent-boundary-v6"
+        f"red-team-report:research-agent-boundary-{current_release_version}"
     )
     current_runtime_red_team_ref = (
-        "red-team-report:research-agent-runtime-boundary-v7"
+        "red-team-report:research-agent-runtime-boundary-"
+        f"{current_runtime_report_version}"
     )
     active_red_team_ref = document.get("red_team_report_ref")
     is_longitudinal_v2 = active_red_team_ref == current_runtime_red_team_ref
@@ -3704,14 +3719,14 @@ def _model_risk_baseline_evidence(
         "SOURCE_RESEARCH_RESULT_REFUTED_NO_EDGE",
     }
     longitudinal_blocker = "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED"
-    if not is_longitudinal:
+    if not is_longitudinal_v2:
         required_blockers.add(longitudinal_blocker)
     if bundle_status == "HASH_IDENTIFIED_LOCAL_ONLY":
         required_blockers.add("RAW_DATASET_NOT_RETAINED_IN_VERSIONED_EVIDENCE")
     if not isinstance(blockers, list) or not required_blockers <= set(blockers):
         failures.append("m3_blockers")
     else:
-        if is_longitudinal and longitudinal_blocker in blockers:
+        if is_longitudinal_v2 and longitudinal_blocker in blockers:
             failures.append("stale_longitudinal_blocker")
         if (
             bundle_status == "VERSIONED_PIT_SUBSET_BUNDLE"
@@ -3837,11 +3852,11 @@ def _model_risk_baseline_evidence(
                 actual = source_file_sha256(repo_root / candidate)
             except OSError:
                 failures.append(f"implementation_missing:{artifact.implementation_ref}")
-            # Historical revisions intentionally retain the implementation
-            # digest that was valid when they were recorded.  The current
-            # digest check is applied to the latest artifact for each family
-            # below; checking every retained revision would make an honest
-            # immutable migration fail as soon as code evolves.
+            else:
+                if actual != artifact.implementation_sha256:
+                    failures.append(
+                        f"implementation_digest:{artifact.implementation_ref}"
+                    )
 
     artifact_count = document.get("artifact_count")
     if type(artifact_count) is not int or artifact_count != len(records):
@@ -4119,7 +4134,17 @@ def _model_risk_baseline_evidence(
         "agent-request-human-approval",
     }
     runtime_required_cases = {
-        *v1_required_cases,
+        *base_required_cases,
+        "runtime-action-override",
+        "runtime-sensitive-output",
+        "runtime-forbidden-tool-action",
+        "external-provider-unverified-receipt",
+        "external-provider-request-digest-tamper",
+        "external-provider-response-digest-tamper",
+        "external-provider-sensitive-output",
+    }
+    legacy_runtime_required_cases = {
+        *base_required_cases,
         "runtime-action-override",
         "runtime-sensitive-output",
         "runtime-forbidden-tool-action",
@@ -4137,8 +4162,16 @@ def _model_risk_baseline_evidence(
             f"research-agent-loop@{release}",
             f"research-agent-tools@{release}",
         )
-        expected_red_team_cases[boundary_ref] = v1_required_cases
-        expected_red_team_cases[runtime_ref] = runtime_required_cases
+        expected_red_team_cases[boundary_ref] = (base_required_cases,)
+        expected_red_team_cases[runtime_ref] = (
+            (runtime_required_cases,)
+            # External-provider receipt attacks entered the retained lineage at
+            # runtime report v8 (model release v7). Earlier reports are valid
+            # either as their retained pre-provider artifact or as a regenerated
+            # report under the stronger current harness.
+            if release_number >= 7
+            else (legacy_runtime_required_cases, runtime_required_cases)
+        )
         expected_red_team_lineage[boundary_ref] = lineage
         expected_red_team_lineage[runtime_ref] = lineage
     reports_by_id = {report.artifact_id: report for report in red_team_reports}
@@ -4151,12 +4184,17 @@ def _model_risk_baseline_evidence(
     ):
         failures.append("red_team_report_count")
     for report_ref, report in reports_by_id.items():
-        required_cases = expected_red_team_cases.get(report_ref, set())
+        required_case_options = expected_red_team_cases.get(report_ref, ())
+        observed_required_cases = set(report.required_case_ids)
+        observed_cases = {case.case_id for case in report.cases}
         expected_lineage = expected_red_team_lineage.get(report_ref)
         if (
             report.verdict != RedTeamVerdict.PASS
-            or set(report.required_case_ids) != required_cases
-            or {case.case_id for case in report.cases} != required_cases
+            or not any(
+                observed_required_cases == required_cases
+                and observed_cases == required_cases
+                for required_cases in required_case_options
+            )
             or any(case.boundary_breached for case in report.cases)
             or expected_lineage is None
             or (report.model_ref, report.tool_manifest_ref) != expected_lineage
@@ -4222,7 +4260,7 @@ def _model_risk_baseline_evidence(
     history_detail = "longitudinal multi-revision history remains open"
     history_path = args.get("history_path")
     if history_path is None:
-        if is_longitudinal:
+        if is_longitudinal_v2:
             failures.append("revision_history_required_for_v2")
     else:
         candidate = Path(history_path) if isinstance(history_path, str) else None
@@ -4245,7 +4283,7 @@ def _model_risk_baseline_evidence(
                 if not history_matches_evidence(history_document, document):
                     failures.append("revision_history_current")
                 elif history_summary["revision_count"] == 1:
-                    if is_longitudinal:
+                    if is_longitudinal_v2:
                         failures.append("revision_history_longitudinal")
                     history_detail = (
                         "a current tamper-evident single-revision history is verified; "

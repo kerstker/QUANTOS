@@ -510,9 +510,15 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
         )
     if not report["family_multiple_testing"].get("wired_into_promotion_gate"):
         block_reasons.append("FAMILY_FDR_GATE_NOT_WIRED")
-    if not report["provenance_wiring"]["entries"][
-        "run_research_session"
-    ].get("oos_access_binding"):
+    wiring_entries = report["provenance_wiring"].get("entries")
+    research_session_wiring = (
+        wiring_entries.get("run_research_session")
+        if isinstance(wiring_entries, dict)
+        else None
+    )
+    if not isinstance(research_session_wiring, dict) or not research_session_wiring.get(
+        "oos_access_binding"
+    ):
         block_reasons.append("OOS_ACCESS_CALLER_NOT_WIRED")
 
     # PARTIAL, not PASS: the mechanism is in place and verifiable, but most of

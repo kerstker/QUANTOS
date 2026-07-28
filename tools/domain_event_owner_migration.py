@@ -109,7 +109,8 @@ def _verify_dry_run(path: str) -> Mapping[str, object]:
 def _migrate_experiment(path: str) -> None:
     store = None
     try:
-        store = SqliteExperimentStore(path, create=True)
+        store = SqliteExperimentStore(path, create=False)
+        store.ensure_event_outbox_schema()
     finally:
         _close(store)
 

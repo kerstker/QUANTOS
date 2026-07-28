@@ -182,7 +182,7 @@ def test_inspect_lists_only_exactly_bound_completed_sessions_read_only(
     inspection = history.inspect_ledger(ledger_path=ledger)
 
     assert inspection["status"] == "verified"
-    assert inspection["ledger_contract_version"] == 2
+    assert inspection["ledger_contract_version"] >= history.LEDGER_CONTRACT_VERSION
     assert inspection["capture_ready"] is True
     assert inspection["attempts"] == [
         {

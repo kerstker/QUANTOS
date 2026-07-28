@@ -169,12 +169,16 @@ class AlphaLifecycleManager:
             # Rank #12: promotion requires surviving the arbitrary-dependence BHY FDR (stricter than
             # plain BH — correct when the catalog's edges are correlated), not just BH.
             fdr_ok = alpha_id in self.catalog.bhy_fdr_survivors(self.config.fdr_q)
+            family_fdr_ok = alpha_id in self.catalog.family_fdr_survivors(
+                self.config.fdr_q
+            )
             return guards.guard_to_validated(
                 evaluation,
                 self.config,
                 cc,
                 trial_set_hash,
                 bh_survived=fdr_ok,
+                family_fdr_survived=family_fdr_ok,
                 catalog_evidence_matches=catalog_evidence_matches,
             )
         if dst == AlphaState.PAPER_TRADING:

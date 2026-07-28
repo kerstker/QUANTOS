@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from quantos.contracts.multi_asset import RETAINED_FX_FACTOR_SPECS

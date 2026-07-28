@@ -5,7 +5,7 @@ import type { MonitoringDriftPayload, MonitoringDriftRecord } from '@/lib/types/
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, LoadingVeil, Callout, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { Donut, Histogram } from '@/ui/charts';
 import { num, pct, fixed, stamp, statusTone, type Tone } from '@/ui/format';

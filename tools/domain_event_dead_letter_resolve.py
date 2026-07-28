@@ -194,7 +194,7 @@ def resolve_dead_letters(
                             "dead-letter state changed during recovery preflight"
                         )
                     next_attempt = int(attempt) + 1
-                    bus._append_consumer_record_locked(  # noqa: SLF001
+                    _claim_sequence, claim_head = bus._append_consumer_record_locked(  # noqa: SLF001
                         consumer_id=consumer_id,
                         event_seq=int(event_seq),
                         event_id=str(event_id),
@@ -204,7 +204,7 @@ def resolve_dead_letters(
                         at_ms=int(resolved_now),
                         lease_until_ms=lease_until,
                     )
-                    bus._append_consumer_record_locked(  # noqa: SLF001
+                    ack_sequence, ack_head = bus._append_consumer_record_locked(  # noqa: SLF001
                         consumer_id=consumer_id,
                         event_seq=int(event_seq),
                         event_id=str(event_id),
@@ -213,6 +213,7 @@ def resolve_dead_letters(
                         worker_id=worker_id,
                         at_ms=int(resolved_now),
                         lease_until_ms=lease_until,
+                        prev_record_hash=claim_head,
                     )
                     resolved_events.append(
                         {
@@ -223,8 +224,16 @@ def resolve_dead_letters(
                             "resolution_attempt": next_attempt,
                         }
                     )
-                bus._c.commit()  # noqa: SLF001
-                bus._record_connection_state_locked()  # noqa: SLF001
+                if resolved_events:
+                    staged = bus._stage_frontier_locked(  # noqa: SLF001
+                        "consumer",
+                        last_sequence=ack_sequence,
+                        last_record_hash=ack_head,
+                        row_increment=2 * len(resolved_events),
+                    )
+                    bus._commit_staged_locked({"consumer": staged})  # noqa: SLF001
+                else:
+                    bus._commit_staged_locked({})  # noqa: SLF001
             except Exception:
                 if bus._c.in_transaction:  # noqa: SLF001
                     bus._c.rollback()  # noqa: SLF001

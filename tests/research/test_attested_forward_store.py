@@ -53,10 +53,20 @@ def test_legacy_rows_remain_legacy_and_cannot_count_as_attested(tmp_path):
     path = str(tmp_path / "paper_track.db")
     PaperTrackStore(path, create=True)
     legacy = ForwardLedger(path, create=True)
-    legacy.record_decision(
-        "crowd_contra", 1_700_000_000_000, recorded_at=1_700_000_000_100,
-        weights={"BTC": 1.0},
+    legacy._conn.execute(
+        "INSERT INTO forward_decisions("
+        "alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized"
+        ") VALUES (?,?,?,?,?,?,0)",
+        (
+            "crowd_contra",
+            1_700_000_000_000,
+            1_700_000_000_100,
+            '{"BTC":1.0}',
+            None,
+            "LEGACY_FORWARD_DECISION",
+        ),
     )
+    legacy._conn.commit()
     attested = AttestedForwardLedger(path, create=True)
     assert len(attested.legacy_decisions()) == 1
     assert attested.attested_decisions("crowd_contra") == []

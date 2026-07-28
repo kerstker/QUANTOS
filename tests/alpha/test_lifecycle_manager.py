@@ -92,7 +92,12 @@ def test_family_fdr_is_an_additional_validation_gate(monkeypatch):
             S.VALIDATED,
             AGENT,
             timestamp=2,
-            evaluation=_eval("a1", 1, ic_pvalue=0.001),
+            evaluation=_eval(
+                cat,
+                "a1",
+                cat.global_trial_count(),
+                ic_pvalue=0.001,
+            ),
         )
 
     assert rejected.value.reasons == ("FAMILY_FDR_NOT_SURVIVED",)

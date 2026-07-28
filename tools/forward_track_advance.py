@@ -25,6 +25,7 @@ import time
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
 from services.research.paper_trading.forward import realize_due
+from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.paper_trading.forward_evidence import (
     ForwardAdmissionRef,
     load_forward_admission_ref,
@@ -127,7 +128,7 @@ def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_fa
         now=now,
         max_decision_age_ms=_MAX_DECISION_AGE_MS,
         staleness=stale,
-        stale_limits=STALE_LIMITS,
+        stale_limits=_FORWARD_STALE_LIMITS,
         ingestion_quality_failed=tuple(quality_failed),
         quality_evidence_current=True,
     )
@@ -618,6 +619,7 @@ def _run() -> None:
             evidence_state = "ATTESTED_PENDING_REALIZATION"
         else:
             evidence_state = "ADMISSION_READY_PENDING_DECISION"
+        track = store.track(alpha_id)
         status["alphas"][alpha_id] = {
             "n_forward_periods": len(ledger.attested_realizations(alpha_id)),
             "paper_sharpe": track.get("paper_sharpe"), "paper_ic": track.get("paper_ic"),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 import services.research.alpha_expression as ax
 import services.research.alpha_factory as alpha_factory
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import short_hash, stable_hash
 from services.intelligence import research_session as intelligence_session
 from services.research.experiment_registry import store as experiment_store
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -358,25 +360,40 @@ def test_search_identity_is_stable_across_sessions_and_binds_evaluations(tmp_pat
     assert identity1["source"] == "tests.identity"
     assert identity1["dataset_version"] == "dataset-v1"
     assert len(identity1["identity_hash"]) == 64
+    evaluation = {
+        "alpha_id": "a1",
+        "reproducibility_hash": "repro-identity",
+        "verdict": "PASS",
+    }
+    evaluation_json = json.dumps(evaluation, sort_keys=True, default=str)
+    run_id = short_hash(
+        {
+            "alpha_id": "a1",
+            "repro": "repro-identity",
+            "dataset_version": "dataset-v1",
+        }
+    )
     registry1._store.insert_evaluation(
-        run_id="identity-run",
+        run_id=run_id,
         alpha_id="a1",
         dataset_version="dataset-v1",
         recorded_ts=100,
         verdict="PASS",
-        content_hash="content-identity",
-        evaluation_json='{"alpha_id":"a1"}',
+        content_hash=stable_hash(
+            {"evaluation": evaluation, "dataset_version": "dataset-v1"}
+        ),
+        evaluation_json=evaluation_json,
         search_id="identity-search",
         config_hash="candidate-a",
     )
-    binding = registry1.evaluation_binding("identity-run")
+    binding = registry1.evaluation_binding(run_id)
     assert binding is not None
     assert binding["search_identity_hash"] == identity1["identity_hash"]
     registry1._store.close()
 
     registry2 = ExperimentRegistry(SqliteExperimentStore(db_path, create=False))
     assert registry2.search_identity("identity-search") == identity1
-    assert registry2.evaluation_binding("identity-run") == binding
+    assert registry2.evaluation_binding(run_id) == binding
     registry2._store.close()
 
 

@@ -228,10 +228,47 @@ def _denied_case(
     )
 
 
+class _SyntheticRedTeamProvider:
+    """Test-only provider fixture; this is not evidence of an external provider."""
+
+    def __init__(self, mode: str = "valid") -> None:
+        self._mode = mode
+
+    def invoke(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        response: Any = {"action": "EVALUATE", "verdict": "RESEARCH_ONLY"}
+        if self._mode == "sensitive-output":
+            response = {"action": "EVALUATE", "credential": "red-team-only"}
+        payload = {
+            "provider_id": "synthetic-red-team-provider",
+            "provider_model_ref": "synthetic-evaluator-v1",
+            "external_request_id": "synthetic-request-1",
+            "request_sha256": stable_hash(dict(request)),
+            "response": response,
+            "response_sha256": stable_hash(response),
+            "verification_receipt_ref": "synthetic-receipt-1",
+            "received_at": 1,
+        }
+        if self._mode == "request-tamper":
+            payload["request_sha256"] = "f" * 64
+        elif self._mode == "response-tamper":
+            payload["response_sha256"] = "f" * 64
+        return payload
+
+
+class _SyntheticRedTeamVerifier:
+    """Permissive test fixture used only after digest checks are exercised."""
+
+    def verify(self, **_kwargs: Any) -> bool:
+        return True
+
+
 def execute_agent_boundary_red_team(
     *,
     recorded_at: int,
     release_version: str = _CURRENT_RELEASE_VERSION,
+    model_ref: str | None = None,
+    tool_manifest_ref: str | None = None,
+    report_id: str | None = None,
 ) -> RedTeamReport:
     _release_number(release_version)
     cases = [
@@ -286,9 +323,11 @@ def execute_agent_boundary_red_team(
             )
         )
     return assess_red_team(
-        report_id=f"research-agent-boundary-{release_version}",
-        model_ref=f"research-agent-loop@{release_version}",
-        tool_manifest_ref=f"research-agent-tools@{release_version}",
+        report_id=report_id or f"research-agent-boundary-{release_version}",
+        model_ref=model_ref or f"research-agent-loop@{release_version}",
+        tool_manifest_ref=(
+            tool_manifest_ref or f"research-agent-tools@{release_version}"
+        ),
         cases=tuple(cases),
         required_case_ids=_REQUIRED_RED_TEAM_CASES,
         recorded_at=recorded_at,
@@ -300,6 +339,11 @@ def execute_runtime_boundary_red_team(
     *,
     recorded_at: int,
     release_version: str = _CURRENT_RELEASE_VERSION,
+    model_ref: str | None = None,
+    prompt_ref: str | None = None,
+    tool_manifest_ref: str | None = None,
+    report_id: str | None = None,
+    agent_report_id: str | None = None,
 ) -> RedTeamReport:
     """Execute prompt/tool/output attacks against the registered runtime."""
     runtime_report_version = _runtime_report_version(release_version)
@@ -314,9 +358,11 @@ def execute_runtime_boundary_red_team(
                     )
             runtime = GovernedModelRuntime(
                 registry,
-                model_ref=f"research-agent-loop@{release_version}",
-                prompt_ref=f"research-evaluation@{release_version}",
-                tool_manifest_ref=f"research-agent-tools@{release_version}",
+                model_ref=model_ref or f"research-agent-loop@{release_version}",
+                prompt_ref=prompt_ref or f"research-evaluation@{release_version}",
+                tool_manifest_ref=(
+                    tool_manifest_ref or f"research-agent-tools@{release_version}"
+                ),
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
             provider_binding = ExternalProviderBinding(
@@ -335,6 +381,9 @@ def execute_runtime_boundary_red_team(
             base_cases = execute_agent_boundary_red_team(
                 recorded_at=recorded_at,
                 release_version=release_version,
+                model_ref=model_ref,
+                tool_manifest_ref=tool_manifest_ref,
+                report_id=agent_report_id,
             ).cases
             cases = [
                 *base_cases,
@@ -441,9 +490,13 @@ def execute_runtime_boundary_red_team(
         finally:
             store.close()
     return assess_red_team(
-        report_id=f"research-agent-runtime-boundary-{runtime_report_version}",
-        model_ref=f"research-agent-loop@{release_version}",
-        tool_manifest_ref=f"research-agent-tools@{release_version}",
+        report_id=(
+            report_id or f"research-agent-runtime-boundary-{runtime_report_version}"
+        ),
+        model_ref=model_ref or f"research-agent-loop@{release_version}",
+        tool_manifest_ref=(
+            tool_manifest_ref or f"research-agent-tools@{release_version}"
+        ),
         cases=tuple(cases),
         required_case_ids=(*_REQUIRED_RED_TEAM_CASES, *_RUNTIME_RED_TEAM_CASES),
         recorded_at=recorded_at,
@@ -659,7 +712,7 @@ def _registry_snapshot(
     revision_recorded_at: int,
     include_longitudinal_v2: bool,
     release_version: str,
-) -> tuple[list[dict[str, Any]], bool, list[dict[str, Any]], bool, str]:
+) -> tuple[list[dict[str, Any]], bool, str, list[dict[str, Any]], bool, str]:
     runtime_report_version = _runtime_report_version(release_version)
     with tempfile.TemporaryDirectory(prefix="quantos-model-risk-") as directory:
         store = SqliteModelRiskStore(str(Path(directory) / "registry.db"), create=True)
@@ -926,6 +979,7 @@ def build_model_risk_evidence(
     (
         records,
         registry_verified,
+        artifact_history_hash,
         current_runtime_events,
         runtime_verified,
         _current_runtime_hash,

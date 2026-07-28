@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.model_risk import (
     ExternalProviderBinding,
     ExternalProviderBindingStatus,

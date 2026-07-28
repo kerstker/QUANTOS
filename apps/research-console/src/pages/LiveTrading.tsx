@@ -3,7 +3,7 @@ import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, StatusChip, LoadingVeil, Callout,
   type Column,
 } from '@/ui/primitives';
-import { money, pct, pctPoints, fixed, stamp } from '@/ui/format';
+import { money, pctPoints, fixed, stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchLiveTradingSnapshot } from '@/lib/api/research-console-api';
 import type {

@@ -350,7 +350,7 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert any(monitor["category"] == "ALPHA_DECAY" for monitor in payload["monitors"])
     assert any(monitor["category"] == "FEATURE_DRIFT" for monitor in payload["monitors"])
     assert any(monitor["category"] == "REVIEWER_SLA" for monitor in payload["monitors"])
-    assert payload["monitoring_policy"]["distribution_drift"]["available"] is False
+    assert payload["monitoring_policy"]["distribution_drift"]["available"] is True
     assert all(
         monitor.get("provenance") == "SYNTHETIC_FEATURE_VALUES"
         for monitor in payload["monitors"]

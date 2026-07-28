@@ -16,6 +16,7 @@ import pytest
 from live.execution.filters import client_order_id
 from live.execution.position_ledger import LiveLedger
 from quantos.contracts.trading import OrderSide
+from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from services.research.paper_trading.forward_store import ForwardLedger
 from tools import live_degradation as ld
 
@@ -25,6 +26,14 @@ T0 = 1_780_000_000_000
 _CLOSE = {"BTC": [100.0, 110.0, 120.0, 130.0, 140.0],
           "ETH": [50.0, 48.0, 45.0, 47.0, 49.0]}
 _GRID = [T0 + i * DAY for i in range(5)]
+_ADMISSION_REF = ForwardAdmissionRef(
+    admission_id="live-degradation-test",
+    evidence_sha256="a" * 64,
+    decision_hash="b" * 64,
+    recorded_at_ms=T0,
+    price_basis="PERP_MARK_PRICE",
+    instrument_scope=("BTC", "ETH"),
+)
 
 
 def _panel():
@@ -65,7 +74,8 @@ def _seed_forward(path, *, decision=True):
     fwd = ForwardLedger(str(path), create=True)
     if decision:
         fwd.record_decision("crowd_contra", T0, recorded_at=T0 + 1000,
-                            weights={"BTC": 0.5, "ETH": -0.5}, source="FORWARD_LIVE")
+                            weights={"BTC": 0.5, "ETH": -0.5}, source="FORWARD_LIVE",
+                            admission_ref=_ADMISSION_REF)
     return str(path)
 
 
@@ -244,10 +254,12 @@ def test_unexecuted_paper_decision_is_replayed_and_disclosed(tmp_path):
     parity = _seed_parity(tmp / "live_parity_fv.jsonl")
     fwd = ForwardLedger(str(tmp / "paper_track.db"), create=True)
     fwd.record_decision("crowd_contra", T0, recorded_at=T0 + 1000,
-                        weights={"BTC": 0.5, "ETH": -0.5}, source="FORWARD_LIVE")
+                        weights={"BTC": 0.5, "ETH": -0.5}, source="FORWARD_LIVE",
+                        admission_ref=_ADMISSION_REF)
     # 第二个决策(T0+2d):live 从未执行(无对应订单)
     fwd.record_decision("crowd_contra", T0 + 2 * DAY, recorded_at=T0 + 2 * DAY + 1000,
-                        weights={"BTC": -0.5, "ETH": 0.5}, source="FORWARD_LIVE")
+                        weights={"BTC": -0.5, "ETH": 0.5}, source="FORWARD_LIVE",
+                        admission_ref=_ADMISSION_REF)
     artifact = ld.build_report(now_ms=1, venues=["fv"],
                                venues_registry={"fv": {"suffix": "_fv"}},
                                venue_paths_fn=lambda suffix: {"ledger": ledger, "parity": parity},

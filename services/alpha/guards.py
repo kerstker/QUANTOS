@@ -113,6 +113,7 @@ def _catalog_provenance_reasons(
 def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryConfig,
                        catalog_count: int, catalog_trial_set_hash: str,
                        bh_survived: bool = True,
+                       family_fdr_survived: bool = True,
                        catalog_evidence_matches: bool = False) -> tuple[bool, Reasons]:
     if evaluation is None:
         return False, ("NO_EVALUATION",)

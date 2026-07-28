@@ -10,12 +10,12 @@
     "top_contra:PAPER_EXECUTION_NOT_FILLED",
     "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
   ],
-  "commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
+  "commit": "51005f404ef9e0328e92e1fb1df0322435182642",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785237342763,
+  "generated_at_ms": 1785251294107,
   "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "5a08364d882e08ffd292ab6574ec99321a3a909fc1393f1922231bd641541000",
+  "input_hash": "1d8aabe53c8c76718ed49a9cf982aacab42bfe3f05f7d1bb4fcce4d101db2eb2",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -44,13 +44,13 @@
     "tests/live": {
       "exists": true,
       "file_count": 61,
-      "files_sha256": "2d4fed040cb5a79c1f777bf9bfc97b0c19d9d6281f46bbc122670b38c1fced75",
+      "files_sha256": "912cb063d772150e3fca782d4108014feee970a233041a2f80f22b9bf5a8d35b",
       "kind": "python_directory"
     },
     "tests/research": {
       "exists": true,
-      "file_count": 107,
-      "files_sha256": "a7dd329757d1c8cffa87b62230deae39a3af8eaabbdefe4d560a1baf53af40bf",
+      "file_count": 139,
+      "files_sha256": "f429f179e248a0396e97a4bb12d75eb0af5ecbad2a9d0d3e27aaa9f40e10eb9a",
       "kind": "python_directory"
     }
   },
@@ -133,13 +133,13 @@
   },
   "status": "READY_FOR_SHADOW",
   "validation": {
-    "current": true,
-    "head_commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
-    "overall_status": "PASS",
-    "reported_commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
-    "reported_validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241",
+    "current": false,
+    "head_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "overall_status": "FAIL",
+    "reported_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
-    "validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241"
+    "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"
   },
   "working_tree_dirty": true
 }

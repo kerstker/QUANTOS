@@ -20,6 +20,15 @@ from services.alpha.evaluation_evidence import (
     bind_evaluation_reproducibility,
     verify_evaluation_reproducibility,
 )
+from services.lifecycle import (
+    DeploymentState,
+    HealthReason,
+    HealthState,
+    HealthVerdict,
+    LifecycleTriple,
+    ResearchState,
+    project,
+)
 from services.research.experiment_registry.evaluation_artifact import (
     prepare_evaluation_artifact,
 )
@@ -29,6 +38,40 @@ from services.research.ports.persistence import (
 )
 from services.validation.pbo_evidence import verify_batch_pbo_evidence
 from services.validation.catalog_evidence import verify_catalog_evidence
+
+
+def _triple_db_fields(triple: LifecycleTriple) -> dict:
+    return {
+        "research_state": triple.research.value,
+        "deployment_state": triple.deployment.value,
+        "health_state": triple.health.state.value,
+        "research_reason": None,
+        "deployment_reason": None,
+        "health_reason": triple.health.reason.value,
+        "lossy_json": json.dumps(list(triple.lossy)),
+    }
+
+
+def _triple_from_row(row: dict) -> LifecycleTriple:
+    legacy = AlphaState(row["state"])
+    if row.get("research_state") is None:
+        return project(legacy)
+    health_reason = row.get("health_reason") or HealthReason.NONE.value
+    lossy_json = row.get("lossy_json")
+    lossy = (
+        project(legacy).lossy
+        if lossy_json is None
+        else tuple(json.loads(lossy_json))
+    )
+    return LifecycleTriple(
+        research=ResearchState(row["research_state"]),
+        deployment=DeploymentState(row["deployment_state"]),
+        health=HealthVerdict(
+            HealthState(row["health_state"]),
+            HealthReason(health_reason),
+        ),
+        lossy=lossy,
+    )
 
 
 class ExperimentRegistry:

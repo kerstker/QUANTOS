@@ -2,10 +2,12 @@
   "acceptance": {
     "external_approval": false,
     "live_authority": false,
-    "research_lifecycle": true
+    "research_lifecycle": false
   },
   "artifact": "QUANTOS_727_ALPHA_LIFECYCLE_STATUS",
-  "blockers": [],
+  "blockers": [
+    "FULL_VALIDATION_NOT_CURRENT_PASS"
+  ],
   "cockpit": {
     "alpha_count": 20,
     "derived_stage_counts": {
@@ -16,9 +18,9 @@
     "path": "evidence/alpha_lifecycle_cockpit.json",
     "sha256": "8a6371b773df4bcf096188d6a05a7e00ca941c972eac847f039329a1d7f35e00"
   },
-  "commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
+  "commit": "51005f404ef9e0328e92e1fb1df0322435182642",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785237342763,
+  "generated_at_ms": 1785251294107,
   "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
   "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
@@ -28,7 +30,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "0e56c84c275b88c6eef40658ce3b17c8c870efb2c0d31484ddf08f259b39a5d4",
+  "input_hash": "689da1007b736feac7587cad320f75e0eebba1835b9ae419528f646da8f7689f",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -56,8 +58,8 @@
     },
     "services/alpha": {
       "exists": true,
-      "file_count": 37,
-      "files_sha256": "4f53a553a5ab779cf6fdbb4e94583bcc0e217e2e91bc041db89f79c5c94831e8",
+      "file_count": 38,
+      "files_sha256": "82bfcd206527be60e1a820b68aef12f6c6d0983e1a0ce587f47c55c564f55d70",
       "kind": "python_directory"
     },
     "services/alpha_factory": {
@@ -68,8 +70,8 @@
     },
     "tests/alpha": {
       "exists": true,
-      "file_count": 38,
-      "files_sha256": "562ce3e58d48ba3bc264ea329f0e32f87618216ccbc8b16b34b9a295422f8bd9",
+      "file_count": 40,
+      "files_sha256": "a7ba3fb1d3973173d570fcc845d27a20775ce51f32249f191e8c5041c79cb0d0",
       "kind": "python_directory"
     },
     "tests/alpha_factory": {
@@ -95,15 +97,15 @@
   },
   "safety_verdict": "PASS",
   "schema_version": 1,
-  "status": "READY_FOR_RESEARCH_AUTONOMY",
+  "status": "NOT_READY",
   "validation": {
-    "current": true,
-    "head_commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
-    "overall_status": "PASS",
-    "reported_commit": "691832ceb2d2e3c78f98d508eeb70b34ead0be7e",
-    "reported_validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241",
+    "current": false,
+    "head_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "overall_status": "FAIL",
+    "reported_commit": "51005f404ef9e0328e92e1fb1df0322435182642",
+    "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
-    "validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241"
+    "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"
   },
   "working_tree_dirty": true
 }

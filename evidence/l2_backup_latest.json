@@ -1,9 +1,24 @@
 {
   "backed_up_sources": [
     {
+      "relative_path": "data/cache/alpha_maintenance.db",
+      "required": false,
+      "role": "alpha_maintenance"
+    },
+    {
+      "relative_path": "data/cache/artifact_admission.db",
+      "required": false,
+      "role": "artifact_admission_authority"
+    },
+    {
       "relative_path": "data/cache/data_quality_admission.db",
       "required": true,
       "role": "data_quality_admission"
+    },
+    {
+      "relative_path": "data/cache/deployment_state.db",
+      "required": false,
+      "role": "deployment_state"
     },
     {
       "relative_path": "data/cache/domain_event_projection.db",
@@ -36,6 +51,11 @@
       "role": "l2_restore_history_authority"
     },
     {
+      "relative_path": "data/cache/live_kill_switch.db",
+      "required": false,
+      "role": "kill_switch_authority"
+    },
+    {
       "relative_path": "data/cache/live_refresh_history.db",
       "required": true,
       "role": "data_refresh_history"
@@ -51,28 +71,25 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 2533,
+  "backup_elapsed_ms": 8576,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
-  "file_count": 10,
+  "file_count": 14,
   "history_authoritative": true,
-  "history_event_hash": "34b2e2cd0c9b7beaaf692a4d0f54a08c1b63ea6a62057b6b0f628c18d897c4b8",
-  "history_event_seq": 26,
+  "history_event_hash": "212aa8cce44e8dae2060bf5d4f1f7d8f4cc745b6b8fa7188a5c492b73ecfb17b",
+  "history_event_seq": 52,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
-    "data/cache/alpha_maintenance.db",
     "data/cache/approvals.db",
-    "data/cache/artifact_admission.db",
-    "data/cache/deployment_state.db",
     "data/cache/identity_authorization.db",
-    "data/cache/live_kill_switch.db"
+    "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1784487602801,
+  "observed_at_ms": 1785241713972,
   "required_source_count": 10,
-  "restore_elapsed_ms": 585,
+  "restore_elapsed_ms": 1400,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,
@@ -161,11 +178,16 @@
         "relative_path": "data/cache/research_runs.db",
         "required": true,
         "role": "research_run_registry"
+      },
+      {
+        "relative_path": "data/cache/vendor_delivery_history.db",
+        "required": false,
+        "role": "vendor_delivery_history_authority"
       }
     ],
     "version": 2
   },
-  "source_contract_sha256": "0d0fd6de23624434ef59b538fd08ae60cfd5d49d105652b39e80ae84aa9e43c5",
+  "source_contract_sha256": "9adfd8f06d038146492d80186700e638c500330e423b097ab8452181c8176bff",
   "source_contract_verified": true,
   "sqlite_integrity_verified": true,
   "verdict": "PASS"

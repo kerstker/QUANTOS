@@ -123,7 +123,10 @@ def test_projection_rechecks_full_chain_after_external_connection_change(tmp_pat
     other.commit()
     other.close()
 
-    with pytest.raises(EventProjectionIntegrityError, match="payload hash|previous hash|record hash"):
+    with pytest.raises(
+        EventProjectionIntegrityError,
+        match="payload hash|previous hash|record hash|trigger is missing",
+    ):
         projection.apply(_delivery(_event("e2", 2), event_seq=2))
 
 

@@ -17,8 +17,11 @@ import pytest
 
 from quantos.contracts.alpha import AlphaDefinition
 from services.research.experiment_registry.registry import ExperimentRegistry
-from services.research.experiment_registry.store import SqliteExperimentStore
-from services.research.ports.persistence import TrialPersistenceError
+from services.research.experiment_registry.store import (
+    SqliteExperimentStore,
+    _create_exact_v2_schema,
+)
+from services.research.ports.persistence import ExperimentStoreError, TrialPersistenceError
 from services.research.trial_provenance import (
     ActorType,
     TrialProvenance,
@@ -332,33 +335,20 @@ def test_oos_peek_totals_report_the_worst_attempt_per_config() -> None:
 def test_existing_v2_store_migrates_and_keeps_its_rows(tmp_path) -> None:
     """The lazy migration must add the table without touching retained history."""
     path = str(tmp_path / "registry.db")
-    store = SqliteExperimentStore(path, create=True)
-    store.begin_search_attempt(
-        search_id="search-1",
-        search_kind="ALPHA_FACTORY",
-        source="tests.research",
-        dataset_version="dataset-v1",
-        recorded_at=10,
+    connection = sqlite3.connect(path)
+    _create_exact_v2_schema(connection)
+    connection.execute(
+        "INSERT INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
+        ("legacy-cfg", 11),
     )
-    store.register_search_candidates("search-1", ["legacy-cfg"], registered_at=11)
-    store.finish_search_attempt("search-1", status="COMPLETED", recorded_at=12)
-    store._conn.close()
-
-    # Simulate a pre-provenance store: drop the new table and pin user_version=2.
-    raw = sqlite3.connect(path)
-    raw.execute("DROP TRIGGER trial_provenance_no_update")
-    raw.execute("DROP TRIGGER trial_provenance_no_delete")
-    raw.execute("DROP TABLE trial_provenance")
-    raw.execute("PRAGMA user_version = 2")
-    raw.commit()
-    raw.close()
+    connection.commit()
+    connection.close()
 
     migrated = SqliteExperimentStore(path)
     assert migrated.record_trial_provenance(_record()) is True
     assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 4
     # pre-existing rows survived the migration untouched
     assert "legacy-cfg" in migrated.all_trial_hashes()
-    assert migrated.search_history_valid() is True
     assert migrated.trial_provenance_chain_valid() is True
 
 
@@ -395,7 +385,9 @@ def test_actual_oos_access_is_append_only_chained_and_counted() -> None:
         connection.execute("DELETE FROM trial_oos_access WHERE access_seq=1")
 
 
-def test_v3_store_migrates_oos_chain_without_rewriting_trial_record(tmp_path) -> None:
+def test_legacy_provenance_only_v3_is_rejected_as_unauthorized_family_schema(
+    tmp_path,
+) -> None:
     path = str(tmp_path / "registry-v3.db")
     original = SqliteExperimentStore(path, create=True)
     original.record_trial_provenance(_record())
@@ -408,17 +400,27 @@ def test_v3_store_migrates_oos_chain_without_rewriting_trial_record(tmp_path) ->
     raw.execute("DROP TABLE trial_oos_access")
     raw.execute("PRAGMA user_version = 3")
     raw.commit()
+    before = raw.execute(
+        "SELECT * FROM trial_provenance WHERE trial_id='trial-1'"
+    ).fetchone()
     raw.close()
 
     migrated = SqliteExperimentStore(path)
-    assert migrated.record_search_oos_access(
-        "session-1",
-        {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)},
-        viewed_at=2_000,
-    ) == 1
-    assert migrated.trial_provenance("trial-1") == original_record
-    assert migrated.trial_oos_access_chain_valid() is True
-    assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 4
+    with pytest.raises(ExperimentStoreError, match="authority_instance_id"):
+        migrated.record_search_oos_access(
+            "session-1",
+            {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)},
+            viewed_at=2_000,
+        )
+    assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 3
+    migrated.close()
+    raw = sqlite3.connect(path)
+    after = raw.execute(
+        "SELECT * FROM trial_provenance WHERE trial_id='trial-1'"
+    ).fetchone()
+    raw.close()
+    assert before == after
+    assert original_record is not None
 
 
 def test_persistence_failure_surfaces_as_trial_persistence_error(tmp_path) -> None:
