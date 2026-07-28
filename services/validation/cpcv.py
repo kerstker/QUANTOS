@@ -55,8 +55,8 @@ def _quantile(sorted_vals, q: float) -> float:
     return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
 
 
-def cpcv_oos_distribution(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
-                          embargo: int = 0):
+def _cpcv_oos_details(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
+                      embargo: int = 0):
     """Return (oos_sharpes, selected_names): for each C(n_groups, k_test) split, the OOS Sharpe of the
     candidate selected by best TRAIN Sharpe (train purged+embargoed around the test groups), and which
     candidate that was. None if the data is too short / nothing is scorable (fail-closed)."""
@@ -83,6 +83,7 @@ def cpcv_oos_distribution(returns_by_candidate, *, n_groups: int = 6, k_test: in
     groups = _groups(t, n_groups)
     oos_sharpes: list = []
     selected: list = []
+    test_boundaries: list = []
     for test_g in itertools.combinations(range(n_groups), k_test):
         test_idx = set()
         purge = set()
@@ -108,9 +109,29 @@ def cpcv_oos_distribution(returns_by_candidate, *, n_groups: int = 6, k_test: in
             continue
         oos_sharpes.append(oos)
         selected.append(names[best_c])
+        test_boundaries.append([list(groups[g]) for g in test_g])
     if not oos_sharpes:
         return None
-    return oos_sharpes, selected
+    return oos_sharpes, selected, test_boundaries
+
+
+def cpcv_oos_distribution(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
+                          embargo: int = 0):
+    """Backward-compatible public distribution API.
+
+    The summary path retains the exact scored test boundaries for provenance;
+    callers of this established function still receive the original 2-tuple.
+    """
+    details = _cpcv_oos_details(
+        returns_by_candidate,
+        n_groups=n_groups,
+        k_test=k_test,
+        embargo=embargo,
+    )
+    if details is None:
+        return None
+    sharpes, selected, _ = details
+    return sharpes, selected
 
 
 def cpcv_summary(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
@@ -120,10 +141,15 @@ def cpcv_summary(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
     `selected_counts` count EVERY split; the moment fields (mean/median/std/p05/p95/min) use the finite
     Sharpes — a zero-variance positive test block scores +inf and is excluded from the moments only, so
     a fully-degenerate all-+inf distribution still returns a summary (with NaN moments), never None."""
-    res = cpcv_oos_distribution(returns_by_candidate, n_groups=n_groups, k_test=k_test, embargo=embargo)
+    res = _cpcv_oos_details(
+        returns_by_candidate,
+        n_groups=n_groups,
+        k_test=k_test,
+        embargo=embargo,
+    )
     if res is None:
         return None
-    sharpes, selected = res
+    sharpes, selected, test_boundaries = res
     finite = sorted(x for x in sharpes if math.isfinite(x))
     counts: dict = {}
     for nm in selected:
@@ -145,5 +171,6 @@ def cpcv_summary(returns_by_candidate, *, n_groups: int = 6, k_test: int = 2,
         "n_splits": len(sharpes),
         "frac_positive": round(sum(1 for x in sharpes if x > 0) / len(sharpes), 6),
         "selected_counts": counts,
+        "test_boundaries": test_boundaries,
         **moments,
     }

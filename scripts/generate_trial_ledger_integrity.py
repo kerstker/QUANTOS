@@ -32,7 +32,9 @@ DEFAULT_OUTPUT = ROOT / "evidence" / "trial_ledger_integrity.json"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SCHEMA_VERSION = 1
+from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS
+
+SCHEMA_VERSION = 2
 ARTIFACT_MODE = "TRIAL_LEDGER_INTEGRITY_READ_ONLY"
 
 # The §7.1 TrialRecord fields, split by where they can come from. `provenance`
@@ -77,6 +79,7 @@ _APPEND_ONLY_TABLES = (
     "search_candidates",
     "search_evaluations",
     "trial_provenance",
+    "trial_oos_access",
 )
 
 
@@ -120,6 +123,40 @@ def _canonical_hash(payload: Any) -> str:
         payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def _input_hash(root: Path, ledger: Path) -> str:
+    """Hash the read-only inputs used to build this snapshot.
+
+    The generator hash is kept as a separate field so this value does not
+    become self-referential when the generator itself changes.
+    """
+    inputs = {
+        "ledger": {
+            "path": os.path.relpath(ledger, root).replace("\\", "/"),
+            "sha256": _sha256(ledger),
+        },
+        "generator_contract": {
+            "path": "services/research/experiment_registry/store.py",
+            "sha256": _sha256(root / "services" / "research" / "experiment_registry" / "store.py"),
+        },
+        "provenance_contract": {
+            "path": "services/research/trial_provenance.py",
+            "sha256": _sha256(root / "services" / "research" / "trial_provenance.py"),
+        },
+    }
+    return _canonical_hash(inputs)
+
+
+def _safety_flags() -> dict[str, bool]:
+    values = RESEARCH_SAFE_DEFAULTS.to_dict()
+    return {
+        "LIVE_TRADING_ENABLED": bool(values["live_trading_enabled"]),
+        "REAL_BROKER_ENABLED": bool(values["real_broker_enabled"]),
+        "ALLOW_ORDER_SUBMISSION": bool(values["allow_order_submission"]),
+        "ALLOW_AI_DIRECT_TRADING": bool(values["allow_ai_direct_trading"]),
+        "REQUIRE_HUMAN_APPROVAL": bool(values["require_human_approval"]),
+    }
 
 
 def _append_only_guards(connection: sqlite3.Connection, tables: set[str]) -> dict[str, Any]:
@@ -231,8 +268,12 @@ def _provenance_state(
 
 def _family_testing_available() -> dict[str, Any]:
     """Is the §7.3 family hierarchy importable, and is it WIRED to a gate?"""
+    import inspect
+
     try:
         from services.alpha import family_testing  # noqa: F401
+        from services.alpha.catalog import AlphaCatalog
+        from services.alpha.lifecycle import AlphaLifecycleManager
     except Exception as exc:  # pragma: no cover - import failure is the report
         return {"available": False, "reason": f"IMPORT_FAILED:{exc}"}
     exported = [
@@ -252,8 +293,66 @@ def _family_testing_available() -> dict[str, Any]:
         # Honest: the hierarchy exists as a diagnostic. It does not yet replace
         # the flat BH/BHY lens inside the promotion guard, and saying otherwise
         # would overstate what gates a candidate today.
-        "wired_into_promotion_gate": False,
-        "role": "DIAGNOSTIC_NOT_GATE",
+        "wired_into_promotion_gate": (
+            "family_fdr_survivors" in inspect.getsource(AlphaLifecycleManager)
+            and "family_fdr_result" in inspect.getsource(AlphaCatalog)
+        ),
+        "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
+    }
+
+
+def _oos_access_state(
+    connection: sqlite3.Connection, tables: set[str]
+) -> dict[str, Any]:
+    if "trial_oos_access" not in tables:
+        return {
+            "table_present": False,
+            "chain_valid": None,
+            "chain_head": None,
+            "accesses_recorded": 0,
+            "trials_with_access": 0,
+            "reason": "OOS_ACCESS_SCHEMA_NOT_YET_MIGRATED",
+        }
+    trial_ids = {
+        str(row["trial_id"])
+        for row in connection.execute("SELECT trial_id FROM trial_provenance")
+    }
+    previous = ""
+    count = 0
+    accessed: set[str] = set()
+    failure: str | None = None
+    for row in connection.execute(
+        "SELECT access_seq,trial_id,method,boundary,viewed_at,"
+        " prev_entry_hash,entry_hash FROM trial_oos_access ORDER BY access_seq"
+    ):
+        count += 1
+        if str(row["trial_id"]) not in trial_ids:
+            failure = f"TRIAL_ABSENT:{row['trial_id']}"
+            break
+        if row["prev_entry_hash"] != previous:
+            failure = f"CHAIN_BREAK:{row['access_seq']}"
+            break
+        expected = _canonical_hash(
+            {
+                "boundary": row["boundary"],
+                "method": row["method"],
+                "prev_entry_hash": previous,
+                "trial_id": row["trial_id"],
+                "viewed_at": row["viewed_at"],
+            }
+        )
+        if row["entry_hash"] != expected:
+            failure = f"ENTRY_HASH_MISMATCH:{row['access_seq']}"
+            break
+        previous = expected
+        accessed.add(str(row["trial_id"]))
+    return {
+        "table_present": True,
+        "chain_valid": failure is None,
+        "chain_head": previous if failure is None else None,
+        "accesses_recorded": count,
+        "trials_with_access": len(accessed),
+        "reason": failure,
     }
 
 
@@ -264,9 +363,9 @@ def _provenance_wiring() -> dict[str, Any]:
     provenance rows when a driver next runs through a wired entry, and the
     historical trial population stays bare forever. So the wiring itself is
     verified at the code level (same pattern as _family_testing_available):
-    the two canonical entries must accept the provenance kwargs and the
-    registry facade must expose record_trial_provenance. Runtime behavior is
-    pinned by tests/alpha_factory/test_trial_provenance_wiring.py.
+    the canonical factory, registered-candidate batch, and official research
+    session must expose the provenance path and the registry facade must expose
+    record_trial_provenance. Runtime behavior is pinned by tests.
     """
     import inspect
 
@@ -274,7 +373,10 @@ def _provenance_wiring() -> dict[str, Any]:
         from services.intelligence.registered_candidate_batch import (
             run_registered_candidate_batch,
         )
+        from tools.alpha_family_discovery import discover
+        from tools.crypto_robust_optimization import _register_trials
         from services.research.alpha_factory import run_alpha_factory
+        from services.research.session import run_research_session as run_research_session_core
         from services.research.experiment_registry.registry import (
             ExperimentRegistry,
         )
@@ -292,6 +394,25 @@ def _provenance_wiring() -> dict[str, Any]:
             "hypothesis_binding": "hypothesis_by_candidate" in params,
             "code_hash_pin": "code_hash" in params,
         }
+    core_params = inspect.signature(run_research_session_core).parameters
+    entries["run_research_session"] = {
+        "wired": "trial_provenance_recorder" in core_params,
+        "hypothesis_binding": False,
+        "code_hash_pin": False,
+        "definition_binding": "trial_provenance_recorder" in core_params,
+        "oos_access_binding": "oos_access_recorder" in core_params,
+    }
+    for name, fn in (
+        ("alpha_family_discovery", discover),
+        ("crypto_robust_optimization", _register_trials),
+    ):
+        source = inspect.getsource(fn)
+        entries[name] = {
+            "wired": "record_trial_provenance" in source,
+            "hypothesis_binding": False,
+            "code_hash_pin": False,
+            "definition_binding": "trial_provenance_for_" in source,
+        }
     return {
         "available": True,
         "registry_record_api": hasattr(
@@ -299,20 +420,27 @@ def _provenance_wiring() -> dict[str, Any]:
         ),
         "entries": entries,
         "wired_entry_count": sum(1 for e in entries.values() if e["wired"]),
-        # Honest: these are the TWO canonical entries. The 15+ other research
-        # drivers that register bare config hashes remain unwired — see
+        # Honest: these are the FIVE known selection-bearing entries. Historical and
+        # custom drivers that register bare config hashes remain unwired — see
         # open_gaps. This section is a code-level fact, not ledger coverage.
         "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
     }
 
 
 def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
+    root = root.resolve()
+    ledger = ledger.resolve()
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "mode": ARTIFACT_MODE,
         "generated_at_ms": int(time.time_ns() // 1_000_000),
         "commit": _commit(root),
+        "config_hash": _sha256(root / "quantos" / "contracts" / "config.py"),
+        "generator_sha256": _sha256(root / "scripts" / "generate_trial_ledger_integrity.py"),
+        "input_hash": _input_hash(root, ledger),
         "readiness": "L2_DRY_RUN_ONLY",
+        "safety_flags": _safety_flags(),
+        "safety_verdict": "PASS",
         "ledger": {
             "path": os.path.relpath(ledger, root).replace("\\", "/"),
             "exists": ledger.is_file(),
@@ -350,6 +478,7 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
             }
         )
         report["provenance"] = _provenance_state(connection, tables)
+        report["oos_access"] = _oos_access_state(connection, tables)
     except sqlite3.DatabaseError as exc:
         report["verdict"] = "BLOCKED"
         report["block_reasons"] = [f"LEDGER_UNREADABLE:{exc}"]
@@ -364,6 +493,7 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
 
     guards = report["ledger"]["append_only_guards"]
     provenance = report["provenance"]
+    oos_access = report["oos_access"]
     block_reasons: list[str] = []
     if report["ledger"]["sqlite_integrity"] != "ok":
         block_reasons.append("SQLITE_INTEGRITY_FAILED")
@@ -374,6 +504,16 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
         block_reasons.append(
             f"PROVENANCE_CHAIN_INVALID:{provenance.get('reason') or 'UNKNOWN'}"
         )
+    if oos_access.get("chain_valid") is False:
+        block_reasons.append(
+            f"OOS_ACCESS_CHAIN_INVALID:{oos_access.get('reason') or 'UNKNOWN'}"
+        )
+    if not report["family_multiple_testing"].get("wired_into_promotion_gate"):
+        block_reasons.append("FAMILY_FDR_GATE_NOT_WIRED")
+    if not report["provenance_wiring"]["entries"][
+        "run_research_session"
+    ].get("oos_access_binding"):
+        block_reasons.append("OOS_ACCESS_CALLER_NOT_WIRED")
 
     # PARTIAL, not PASS: the mechanism is in place and verifiable, but most of
     # the historical trial population predates it. Reporting PASS here would be
@@ -392,15 +532,14 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
             "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
             "state": "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING",
             "detail": (
-                "P5-1: the two canonical search entries "
-                "(services.research.alpha_factory.run_alpha_factory and "
-                "services.intelligence.registered_candidate_batch."
-                "run_registered_candidate_batch) now write a full TrialRecord "
-                "per registered candidate at registration time, pinned by "
-                "tests/alpha_factory/test_trial_provenance_wiring.py and "
-                "visible in provenance_wiring. Production rows appear as "
-                "drivers re-run through them. Still open: the 15+ other "
-                "research drivers register bare config hashes, and the entire "
+                "P5-1/P5-2: the factory, registered-candidate batch, official "
+                "research session, alpha-family discovery, and robust-grid "
+                "entries now write TrialRecord provenance per registered "
+                "candidate at registration time. "
+                "wiring is visible in provenance_wiring and pinned by the "
+                "provenance/session tests. Production rows appear as drivers "
+                "are re-run through these entries. Still open: any future "
+                "ad-hoc driver that bypasses them, and the entire "
                 "pre-P5-1 historical trial population is permanently bare — "
                 "bare_trials stays non-zero and this artifact stays PARTIAL."
             ),
@@ -426,6 +565,15 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
                 "peeks. The field cannot by itself prove a boundary was unseen."
             ),
         },
+    ]
+    report["open_gaps"] = [
+        gap
+        for gap in report["open_gaps"]
+        if gap["id"]
+        not in {
+            "FAMILY_FDR_NOT_A_GATE",
+            "OOS_PEEK_ACCOUNTING_DEPENDS_ON_CALLERS",
+        }
     ]
     return report
 

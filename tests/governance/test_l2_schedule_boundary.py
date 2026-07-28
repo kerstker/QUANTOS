@@ -34,6 +34,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
+        "artifact_admission_seal",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",
@@ -52,6 +53,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_backup" in source
     assert "QUANTOS_external_heartbeat" in source
     assert "QUANTOS_domain_event_seal" in source
+    assert "QUANTOS_artifact_admission_seal" in source
 
 
 def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_tasks():
@@ -72,6 +74,7 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         "QUANTOS_backup",
         "QUANTOS_external_heartbeat",
         "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
     ):
         assert task_name in source
     assert "Disable-ScheduledTask" in source

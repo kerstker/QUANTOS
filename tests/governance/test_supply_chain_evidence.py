@@ -106,12 +106,14 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tools/domain_event_ops.py",
         "tools/domain_event_owner_migration.py",
         "tools/domain_event_outbox_drain.py",
-        "tools/domain_event_bus.py",
-        "tools/deployment_events.py",
+            "tools/domain_event_bus.py",
+            "tools/deployment_events.py",
+            "tools/provision_artifact_admission_authority.py",
         "scripts/generate_event_schema_catalog.py",
         "scripts/generate_strong_identity_evidence.py",
         "scripts/register_schedules.ps1",
-        "tests/governance/test_l2_schedule_boundary.py",
+            "tests/governance/test_l2_schedule_boundary.py",
+            "tests/governance/test_artifact_admission_provisioning.py",
         "tests/tools/test_deployment_events.py",
         "evidence/event_schema_catalog.json",
     } <= set(evidence["manifest_sha256"])
@@ -173,9 +175,24 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "VERIFY_ONLY_ED25519_AUTHORITY_REGISTRY_EMPTY_NO_EXTERNAL_RECEIPT"
     )
     assert evidence["artifact_admission_decision_store_status"] == (
-        "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
+        "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
     )
-    assert evidence["artifact_admission_decision_store_provisioning_status"] == ("NOT_PROVIDED")
+    assert evidence["artifact_admission_decision_store_provisioning_status"] == (
+        "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
+    )
+    assert evidence["artifact_admission_authority_snapshot"]["decision_count"] == 0
+    assert (
+        evidence["artifact_admission_authority_snapshot"][
+            "policy_registry_event_seq"
+        ]
+        == 1
+    )
+    assert (
+        evidence["artifact_admission_authority_snapshot"][
+            "receipt_authority_registry_event_seq"
+        ]
+        == 2
+    )
     assert evidence["artifact_admission_decision_store_worm_status"] == ("NOT_WORM_LOCAL_FILE_REPLACEABLE")
     assert evidence["artifact_admission_registry_history_status"] == (
         "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -190,7 +207,31 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
     )
     assert evidence["artifact_admission_read_consistency_status"] == ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT")
-    assert evidence["artifact_admission_decision_history_external_seal_status"] == ("NOT_PROVIDED")
+    assert evidence["artifact_admission_decision_history_external_seal_status"] == (
+        "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED"
+    )
+    assert evidence[
+        "artifact_admission_decision_history_external_seal_evidence_ref"
+    ] == "evidence/artifact_admission_seal_latest.json"
+    assert len(
+        evidence[
+            "artifact_admission_decision_history_external_seal_evidence_sha256"
+        ]
+    ) == 64
+    assert len(
+        evidence[
+            "artifact_admission_decision_history_external_anchor_sha256"
+        ]
+    ) == 64
+    assert evidence[
+        "artifact_admission_decision_history_external_destination_class"
+    ] in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+    assert evidence[
+        "artifact_admission_decision_history_external_signature_verified"
+    ] is False
+    assert evidence[
+        "artifact_admission_decision_history_external_worm_verified"
+    ] is False
     assert evidence["artifact_admission_valid_bundle_fixture_status"] == ("NOT_PROVIDED")
     assert evidence["artifact_admission_signing_capability_present"] is False
     assert evidence["artifact_admission_external_bundle_status"] == "NOT_PROVIDED"
@@ -200,12 +241,16 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "tools/verify_artifact_admission.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/artifact_admission_seal.py",
     }
     assert set(evidence["artifact_admission_verification_paths"]) == {
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
     }
     assert {
         "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
@@ -213,9 +258,12 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
         "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     } <= set(evidence["m4_blockers"])
+    assert (
+        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
+        not in evidence["m4_blockers"]
+    )
 
     requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

@@ -337,3 +337,100 @@ def trial_id_for_attempt(research_session_id: str, config_hash: str) -> str:
         raise ValueError("research_session_id and config_hash must be non-empty")
     return f"{research_session_id}:{config_hash}"
 
+
+def trial_provenance_for_config(
+    config_hash: str,
+    *,
+    research_session_id: str,
+    actor_id: str,
+    dataset_version: str = "",
+    recorded_at: int = 0,
+    actor_type: ActorType = ActorType.AUTOMATED_SEARCH,
+    status: TrialStatus = TrialStatus.RECORDED,
+    factor_ids: Sequence[str] = (),
+    parameter_set: Mapping[str, str] | None = None,
+    universe_version: str = "",
+    hypothesis_id: str = "",
+    model_name: str = "",
+    code_hash: str = "",
+) -> TrialProvenance:
+    """Build the honest minimum ``TrialRecord`` for a known config hash.
+
+    Some research drivers own a richer candidate object while others only
+    expose the canonical config hash.  The latter must still ledger the
+    attempt, but this helper deliberately leaves unavailable fields empty
+    instead of guessing an expression, model, or hypothesis.  Callers that do
+    have a definition should prefer :func:`trial_provenance_for_definition`.
+    All identity, time, and version values remain caller supplied.
+    """
+    if parameter_set is None:
+        parameter_set = {}
+    if not isinstance(parameter_set, Mapping):
+        raise ValueError("parameter_set must be a mapping")
+    normalized_parameters: dict[str, str] = {}
+    for key, value in parameter_set.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("parameter_set keys and values must be strings")
+        normalized_parameters[key] = value
+    return TrialProvenance(
+        trial_id=trial_id_for_attempt(research_session_id, config_hash),
+        research_session_id=research_session_id,
+        config_hash=config_hash,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        status=status,
+        started_at=recorded_at,
+        completed_at=recorded_at,
+        factor_ids=tuple(factor_ids),
+        parameter_set=normalized_parameters,
+        parameter_hash=stable_hash(normalized_parameters),
+        dataset_versions=(dataset_version,) if dataset_version else (),
+        universe_version=universe_version,
+        hypothesis_id=hypothesis_id,
+        model_name=model_name,
+        code_hash=code_hash,
+    )
+
+
+def trial_provenance_for_definition(
+    definition: Any,
+    *,
+    research_session_id: str,
+    actor_id: str,
+    dataset_version: str = "",
+    recorded_at: int = 0,
+    actor_type: ActorType = ActorType.AUTOMATED_SEARCH,
+    status: TrialStatus = TrialStatus.RECORDED,
+    hypothesis_id: str = "",
+    model_name: str = "",
+    code_hash: str = "",
+) -> TrialProvenance:
+    """Copy only auditable fields from an ``AlphaDefinition``-like value.
+
+    The helper intentionally does not infer a DSL expression from arbitrary
+    params.  A caller with a real expression can add it explicitly through a
+    richer ``TrialProvenance`` construction; this generic session path records
+    the definition hash, factors, universe, and exact string parameters.
+    """
+    try:
+        config_hash = definition.definition_hash
+        factor_ids = tuple(definition.factor_ids)
+        universe_version = definition.universe
+        parameter_set = dict(definition.params)
+    except AttributeError as exc:
+        raise ValueError("definition must expose definition_hash, factor_ids, universe, and params") from exc
+    return trial_provenance_for_config(
+        config_hash,
+        research_session_id=research_session_id,
+        actor_id=actor_id,
+        dataset_version=dataset_version,
+        recorded_at=recorded_at,
+        actor_type=actor_type,
+        status=status,
+        factor_ids=factor_ids,
+        parameter_set=parameter_set,
+        universe_version=universe_version,
+        hypothesis_id=hypothesis_id,
+        model_name=model_name,
+        code_hash=code_hash,
+    )

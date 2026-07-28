@@ -135,10 +135,24 @@ class AlphaLifecycleManager:
         if dst == AlphaState.TESTING:
             return guards.guard_to_testing(evaluation, self.config, cc)
         if dst == AlphaState.VALIDATED:
-            # Rank #12: promotion requires surviving the arbitrary-dependence BHY FDR (stricter than
-            # plain BH — correct when the catalog's edges are correlated), not just BH.
-            fdr_ok = alpha_id in self.catalog.bhy_fdr_survivors(self.config.fdr_q)
-            return guards.guard_to_validated(evaluation, self.config, cc, bh_survived=fdr_ok)
+            # Promotion requires BOTH the existing arbitrary-dependence BHY
+            # lens and 727 §7.3's family/within-family FDR.  Family accounting
+            # is additive: it cannot gift a smaller trial count or bypass BHY.
+            bhy_ok = alpha_id in self.catalog.bhy_fdr_survivors(
+                self.config.fdr_q
+            )
+            family_ok = alpha_id in self.catalog.family_fdr_survivors(
+                self.config.fdr_q,
+                rho_cut=self.config.rho_cut,
+                min_overlap=self.config.min_overlap,
+            )
+            return guards.guard_to_validated(
+                evaluation,
+                self.config,
+                cc,
+                bh_survived=bhy_ok,
+                family_fdr_survived=family_ok,
+            )
         if dst == AlphaState.PAPER_TRADING:
             return guards.guard_to_paper(evaluation, self.config, cc)
         if dst == AlphaState.APPROVED:

@@ -13,6 +13,11 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    settings: {
+      react: { version: '18.3' },
+    },
+  },
   reactPlugin.configs.flat.recommended,
   reactPlugin.configs.flat['jsx-runtime'],
   {
@@ -33,9 +38,6 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'warn',
       // 14 pre-existing `any` usages tracked for a later cleanup phase — warn, don't fail, for now.
       '@typescript-eslint/no-explicit-any': 'warn',
-    },
-    settings: {
-      react: { version: 'detect' },
     },
   },
   {

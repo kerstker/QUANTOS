@@ -64,6 +64,29 @@ def test_significant_ic_pvalue_survives_fdr():
     assert cat.state("a1") == S.VALIDATED
 
 
+def test_family_fdr_is_an_additional_validation_gate(monkeypatch):
+    mgr, cat = _mgr()
+    cat.set_pvalue("a1", 0.001)
+    monkeypatch.setattr(cat, "bhy_fdr_survivors", lambda _q: {"a1"})
+    monkeypatch.setattr(
+        cat,
+        "family_fdr_survivors",
+        lambda _q, **_kwargs: set(),
+    )
+    mgr.advance("a1", S.TESTING, AGENT, timestamp=1)
+
+    with pytest.raises(GuardRejected) as rejected:
+        mgr.advance(
+            "a1",
+            S.VALIDATED,
+            AGENT,
+            timestamp=2,
+            evaluation=_eval("a1", 1, ic_pvalue=0.001),
+        )
+
+    assert rejected.value.reasons == ("FAMILY_FDR_NOT_SURVIVED",)
+
+
 def test_understated_trial_count_is_rejected():
     mgr, cat = _mgr()
     for k in range(50):

@@ -16,6 +16,7 @@ from services.research.session import (
     run_research_session as _run_research_session_core,
 )
 from services.research.ports.persistence import TrialPersistenceError
+from services.research.trial_provenance import trial_provenance_for_definition
 
 
 _SEARCH_RUNTIME = ResearchSearchRuntime(
@@ -107,11 +108,41 @@ def run_research_session(*args, **kwargs):
                 f"candidate persistence unavailable: {exc}"
             ) from exc
 
+    def persist_provenance(definition) -> None:
+        try:
+            registry.record_trial_provenance(
+                trial_provenance_for_definition(
+                    definition,
+                    research_session_id=search_id,
+                    actor_id=search_source,
+                    dataset_version=dataset_version,
+                    recorded_at=timestamp,
+                )
+            )
+        except Exception as exc:
+            raise TrialPersistenceError(
+                f"trial provenance persistence unavailable: {exc}"
+            ) from exc
+
+    def persist_oos_access(accesses) -> None:
+        try:
+            registry.record_search_oos_access(
+                search_id,
+                accesses,
+                viewed_at=timestamp,
+            )
+        except Exception as exc:
+            raise TrialPersistenceError(
+                f"OOS access provenance persistence unavailable: {exc}"
+            ) from exc
+
     try:
         result = _run_research_session_core(
             *args,
             search_runtime=_SEARCH_RUNTIME,
             trial_recorder=persist_candidate,
+            trial_provenance_recorder=persist_provenance,
+            oos_access_recorder=persist_oos_access,
             search_id=search_id,
             **kwargs,
         )

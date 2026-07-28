@@ -41,10 +41,20 @@ from services.governance.model_risk_dataset import (
 from services.governance.artifact_admission import (
     load_json_without_duplicate_keys,
 )
+from services.governance.artifact_admission_store import (
+    POLICY_REGISTRY_KIND,
+    RECEIPT_AUTHORITY_REGISTRY_KIND,
+    ArtifactAdmissionStore,
+    ArtifactAdmissionStoreError,
+)
 from services.governance.model_risk_history import (
     ModelRiskHistoryError,
     history_matches_evidence,
     validate_model_risk_history,
+)
+from services.governance.model_risk_registry import (
+    MODEL_RISK_STORE_KIND,
+    MODEL_RISK_STORE_SCHEMA_VERSION,
 )
 from services.governance.l2_restore_checkpoint import (
     L2RestoreCheckpointError,
@@ -2057,10 +2067,7 @@ def _supply_chain_baseline_evidence(
         "artifact_admission_receipt_authenticity_status": (
             "VERIFY_ONLY_ED25519_AUTHORITY_REGISTRY_EMPTY_NO_EXTERNAL_RECEIPT"
         ),
-        "artifact_admission_decision_store_status": ("WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"),
         "artifact_admission_decision_store_path": ("data/cache/artifact_admission.db"),
-        "artifact_admission_decision_store_provisioning_status": ("NOT_PROVIDED"),
-        "artifact_admission_decision_history_external_seal_status": ("NOT_PROVIDED"),
         "artifact_admission_decision_store_worm_status": ("NOT_WORM_LOCAL_FILE_REPLACEABLE"),
         "artifact_admission_registry_history_status": (
             "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -2079,6 +2086,62 @@ def _supply_chain_baseline_evidence(
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
     }
     failures = [key for key, expected in required.items() if document.get(key) != expected]
+    external_seal_status = document.get(
+        "artifact_admission_decision_history_external_seal_status"
+    )
+    if external_seal_status == "NOT_PROVIDED":
+        pass
+    elif external_seal_status == (
+        "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED"
+    ):
+        digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+        if (
+            document.get(
+                "artifact_admission_decision_history_external_seal_evidence_ref"
+            )
+            != "evidence/artifact_admission_seal_latest.json"
+            or not isinstance(
+                document.get(
+                    "artifact_admission_decision_history_external_seal_evidence_sha256"
+                ),
+                str,
+            )
+            or digest_pattern.fullmatch(
+                document[
+                    "artifact_admission_decision_history_external_seal_evidence_sha256"
+                ]
+            )
+            is None
+            or not isinstance(
+                document.get(
+                    "artifact_admission_decision_history_external_anchor_sha256"
+                ),
+                str,
+            )
+            or digest_pattern.fullmatch(
+                document[
+                    "artifact_admission_decision_history_external_anchor_sha256"
+                ]
+            )
+            is None
+            or document.get(
+                "artifact_admission_decision_history_external_destination_class"
+            )
+            not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+            or document.get(
+                "artifact_admission_decision_history_external_signature_verified"
+            )
+            is not False
+            or document.get(
+                "artifact_admission_decision_history_external_worm_verified"
+            )
+            is not False
+        ):
+            failures.append(
+                "artifact_admission_decision_history_external_seal"
+            )
+    else:
+        failures.append("artifact_admission_decision_history_external_seal_status")
     numeric = (
         "component_count",
         "python_component_count",
@@ -2104,9 +2167,21 @@ def _supply_chain_baseline_evidence(
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
         "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     }
+    provisioning_status = document.get(
+        "artifact_admission_decision_store_provisioning_status"
+    )
+    admission_store_provisioned = (
+        provisioning_status
+        == "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
+    )
+    if provisioning_status == "NOT_PROVIDED":
+        required_blockers.add(
+            "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
+        )
+    elif not admission_store_provisioned:
+        failures.append("artifact_admission_decision_store_provisioning_status")
     if (
         not isinstance(blockers, list)
         or not required_blockers <= set(blockers)
@@ -2115,8 +2190,14 @@ def _supply_chain_baseline_evidence(
         or "CONTAINER_VULNERABILITY_POLICY_FAILED" in blockers
     ):
         failures.append("m4_blockers")
+    elif admission_store_provisioned and (
+        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED" in blockers
+    ):
+        failures.append("stale_artifact_admission_store_blocker")
 
     admission_evidence: list[str] = []
+    registry_bytes = b""
+    receipt_registry_bytes = b""
     registry_ref = document.get("artifact_admission_policy_registry_ref")
     registry_relative = Path(registry_ref) if isinstance(registry_ref, str) else None
     if registry_relative is None or registry_relative.is_absolute() or ".." in registry_relative.parts:
@@ -2190,6 +2271,65 @@ def _supply_chain_baseline_evidence(
         decision_store_relative is None
         or decision_store_relative.is_absolute()
         or ".." in decision_store_relative.parts
+    ):
+        failures.append("artifact_admission_decision_store_provisioning")
+    elif admission_store_provisioned:
+        store_path = repo_root / decision_store_relative
+        snapshot = document.get("artifact_admission_authority_snapshot")
+        if (
+            document.get("artifact_admission_decision_store_status")
+            != "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
+            or not isinstance(snapshot, dict)
+            or store_path.is_symlink()
+            or not store_path.is_file()
+        ):
+            failures.append("artifact_admission_decision_store_provisioning")
+        else:
+            store: ArtifactAdmissionStore | None = None
+            try:
+                store = ArtifactAdmissionStore(str(store_path), create=False)
+                heads = store.registry_heads()
+                expected_registry_bytes = {
+                    POLICY_REGISTRY_KIND: registry_bytes,
+                    RECEIPT_AUTHORITY_REGISTRY_KIND: receipt_registry_bytes,
+                }
+                if set(heads) != set(expected_registry_bytes):
+                    raise ValueError("registry heads are incomplete")
+                for kind, content in expected_registry_bytes.items():
+                    head = heads[kind]
+                    if (
+                        head.registry_bytes != content
+                        or head.registry_sha256
+                        != hashlib.sha256(content).hexdigest()
+                    ):
+                        raise ValueError("registry head mirror mismatch")
+                expected_snapshot = {
+                    "authority_time_floor_ms": store.authority_time_floor(),
+                    "decision_count": len(store.decisions()),
+                    "policy_registry_event_hash": heads[
+                        POLICY_REGISTRY_KIND
+                    ].event_hash,
+                    "policy_registry_event_seq": heads[
+                        POLICY_REGISTRY_KIND
+                    ].authority_event_seq,
+                    "receipt_authority_registry_event_hash": heads[
+                        RECEIPT_AUTHORITY_REGISTRY_KIND
+                    ].event_hash,
+                    "receipt_authority_registry_event_seq": heads[
+                        RECEIPT_AUTHORITY_REGISTRY_KIND
+                    ].authority_event_seq,
+                }
+                if snapshot != expected_snapshot:
+                    raise ValueError("authority snapshot mismatch")
+            except (ArtifactAdmissionStoreError, OSError, TypeError, ValueError):
+                failures.append("artifact_admission_decision_store_provisioning")
+            finally:
+                if store is not None:
+                    store.close()
+    elif (
+        document.get("artifact_admission_decision_store_status")
+        != "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
+        or document.get("artifact_admission_authority_snapshot") is not None
         or (repo_root / decision_store_relative).exists()
     ):
         failures.append("artifact_admission_decision_store_provisioning")
@@ -2199,6 +2339,7 @@ def _supply_chain_baseline_evidence(
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "tools/verify_artifact_admission.py",
+        "tools/provision_artifact_admission_authority.py",
     }
     admission_hashes = document.get("artifact_admission_implementation_sha256")
     if not isinstance(admission_hashes, dict) or set(admission_hashes) != admission_paths:
@@ -2223,6 +2364,7 @@ def _supply_chain_baseline_evidence(
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
     }
     admission_tests = document.get("artifact_admission_verification_paths")
     if not isinstance(admission_tests, list) or set(admission_tests) != required_admission_tests:
@@ -2238,6 +2380,9 @@ def _supply_chain_baseline_evidence(
         admission_cli = (repo_root / "tools/verify_artifact_admission.py").read_text(encoding="utf-8")
         admission_store = (repo_root / "services/governance/artifact_admission_store.py").read_text(encoding="utf-8")
         receipt_auth = (repo_root / "services/governance/artifact_receipt_auth.py").read_text(encoding="utf-8")
+        admission_provision = (
+            repo_root / "tools/provision_artifact_admission_authority.py"
+        ).read_text(encoding="utf-8")
         requirements_dev = (repo_root / "requirements-dev.txt").read_text(encoding="utf-8")
         project = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
@@ -2305,6 +2450,16 @@ def _supply_chain_baseline_evidence(
             "verify_signed_artifact_receipt",
             "RECEIPT_SIGNATURE_INVALID",
         )
+        required_provision_markers = (
+            "create=not destination.exists()",
+            "append_registry_snapshot",
+            "_verify_exact",
+            "check_only",
+            "POLICY_REGISTRY_KIND",
+            "RECEIPT_AUTHORITY_REGISTRY_KIND",
+            '"signing_capability_present": False',
+            '"live_trading_authority_granted": False',
+        )
         forbidden_markers = (
             "sigstore.sign",
             "Signer(",
@@ -2320,10 +2475,22 @@ def _supply_chain_baseline_evidence(
             or any(marker not in admission_cli for marker in required_cli_markers)
             or any(marker not in admission_store for marker in required_store_markers)
             or any(marker not in receipt_auth for marker in required_receipt_auth_markers)
+            or any(
+                marker not in admission_provision
+                for marker in required_provision_markers
+            )
         ):
             failures.append("artifact_admission_load_bearing_markers")
         if any(
-            marker in admission_core + admission_store + receipt_auth + admission_cli for marker in forbidden_markers
+            marker
+            in (
+                admission_core
+                + admission_store
+                + receipt_auth
+                + admission_cli
+                + admission_provision
+            )
+            for marker in forbidden_markers
         ):
             failures.append("artifact_admission_forbidden_capability")
         supply_chain_dependencies = project.get("project", {}).get("optional-dependencies", {}).get("supply-chain", [])
@@ -2558,6 +2725,12 @@ def _supply_chain_baseline_evidence(
             "supply-chain baseline failed: " + ", ".join(sorted(set(failures))),
         )
     maturity = args.get("pass_maturity", target)
+    authority_detail = (
+        "a fixed local decision authority whose exact empty trust-root mirrors "
+        "and hash-chain heads were verified"
+        if admission_store_provisioned
+        else "a fixed but unprovisioned local decision store"
+    )
     return _result(
         "PASS",
         maturity,
@@ -2568,7 +2741,7 @@ def _supply_chain_baseline_evidence(
         "same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only "
         "Sigstore boundary now uses empty policy and receipt-authority registries, "
         "a verify-only Ed25519 signed-receipt gate, strict freshness/revocation "
-        "checks, and a fixed but unprovisioned local decision store; no retained "
+        f"checks, and {authority_detail}; no retained "
         "valid bundle or external signed receipt exercises the real verifier path, "
         "source-native checkpoint/revocation proofs are not verified, and "
         "cross-host reproducibility, an externally signed artifact, authenticated "
@@ -2658,6 +2831,8 @@ def _model_risk_baseline_evidence(
         "review_identity_assurance": "PROCESS_ROLE_ONLY",
         "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
         "registry_verified": True,
+        "registry_store_kind": MODEL_RISK_STORE_KIND,
+        "registry_store_schema_version": MODEL_RISK_STORE_SCHEMA_VERSION,
         "runtime_history_verified": True,
         "red_team_verdict": "PASS",
         "execution_authority_granted": False,
@@ -2672,6 +2847,7 @@ def _model_risk_baseline_evidence(
     for field in (
         "dataset_sha256",
         "source_snapshot_sha256",
+        "artifact_history_sha256",
         "runtime_history_sha256",
     ):
         value = document.get(field)
@@ -2858,7 +3034,7 @@ def _model_risk_baseline_evidence(
                 failures.append(f"implementation_path:{artifact_id}")
                 continue
             try:
-                actual = hashlib.sha256((repo_root / candidate).read_bytes()).hexdigest()
+                (repo_root / candidate).read_bytes()
             except OSError:
                 failures.append(f"implementation_missing:{artifact.implementation_ref}")
             # Historical revisions intentionally retain the implementation
@@ -2877,6 +3053,25 @@ def _model_risk_baseline_evidence(
             actual_counts[artifact_type] = actual_counts.get(artifact_type, 0) + 1
     if document.get("artifact_type_counts") != dict(sorted(actual_counts.items())):
         failures.append("artifact_type_counts")
+    if [
+        record.get("artifact_id")
+        for record in records
+        if isinstance(record, dict)
+    ] != sorted(artifact_ids):
+        failures.append("artifact_order")
+    artifact_previous_hash = ""
+    for sequence, record in enumerate(records, start=1):
+        if not isinstance(record, dict) or not isinstance(record.get("payload"), dict):
+            continue
+        artifact_previous_hash = stable_hash(
+            {
+                "artifact": record["payload"],
+                "previous_hash": artifact_previous_hash,
+                "sequence": sequence,
+            }
+        )
+    if artifact_previous_hash != document.get("artifact_history_sha256"):
+        failures.append("artifact_history_hash")
 
     model_cards = [item for item in loaded if isinstance(item, ModelCard)]
     prompt_cards = [item for item in loaded if isinstance(item, PromptTemplateCard)]
@@ -3088,6 +3283,10 @@ def _model_risk_baseline_evidence(
                 "runtime-action-override",
                 "runtime-sensitive-output",
                 "runtime-forbidden-tool-action",
+                "external-provider-unverified-receipt",
+                "external-provider-request-digest-tamper",
+                "external-provider-response-digest-tamper",
+                "external-provider-sensitive-output",
             }
         if (
             report.verdict != RedTeamVerdict.PASS
@@ -3642,6 +3841,16 @@ def _validate_requirement(item: Any, index: int) -> None:
         raise RegistryError("red_line must be boolean")
     if "checker_args" in item and not isinstance(item["checker_args"], dict):
         raise RegistryError("checker_args must be an object")
+    if "assess_local_readiness" in item:
+        if not isinstance(item["assess_local_readiness"], bool):
+            raise RegistryError("assess_local_readiness must be boolean")
+        if (
+            item["assess_local_readiness"]
+            and item["classification"] not in {"NEEDS_EXTERNAL", "POST_L2"}
+        ):
+            raise RegistryError(
+                "assess_local_readiness is only valid for external or post-L2 requirements"
+            )
 
 
 def _require_enum(item: dict[str, Any], field: str, allowed: set[str]) -> None:
@@ -3664,7 +3873,9 @@ def assess_repository(
     requirements = load_requirements(requirements_path)
     assessed: list[dict[str, Any]] = []
     for requirement in requirements:
-        if requirement["classification"] in {"NEEDS_EXTERNAL", "POST_L2"}:
+        externally_gated = requirement["classification"] in {"NEEDS_EXTERNAL", "POST_L2"}
+        assess_local_readiness = bool(requirement.get("assess_local_readiness", False))
+        if externally_gated and not assess_local_readiness:
             result = _manual_evidence(
                 root,
                 {},
@@ -3679,6 +3890,17 @@ def assess_repository(
                 requirement["target_maturity"],
                 context,
             )
+            if externally_gated and result["status"] == "PASS":
+                # Local readiness is useful evidence, but it can never satisfy a
+                # requirement whose actual target is external or post-L2.
+                result = {
+                    **result,
+                    "status": "PARTIAL",
+                    "detail": (
+                        result["detail"]
+                        + "; local readiness only; external target evidence remains required"
+                    ),
+                }
         if result["status"] not in STATUSES or result["current_maturity"] not in MATURITIES:
             raise RegistryError(f"checker returned invalid result for {requirement['id']}")
         meets_target = result["status"] == "PASS" and (

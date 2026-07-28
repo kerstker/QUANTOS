@@ -136,6 +136,20 @@ class ExperimentStorePort(Protocol):
 
     def trial_provenance_head(self) -> str: ...
 
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses: Mapping[str, Sequence[str]],
+        *,
+        viewed_at: int,
+    ) -> int: ...
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]: ...
+
+    def trial_oos_access_chain_valid(self) -> bool: ...
+
+    def trial_oos_access_head(self) -> str: ...
+
     def oos_peek_totals(self) -> dict[str, int]: ...
 
     def upsert_alpha(

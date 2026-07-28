@@ -1,0 +1,110 @@
+{
+  "acceptance": {
+    "full_phase12_chaos_matrix": false,
+    "no_uncontrolled_orders_in_drills": true,
+    "replayable_recovery_path": true
+  },
+  "artifact": "QUANTOS_727_CHAOS_RECOVERY_STATUS",
+  "blockers": [
+    "CHAOS_SCENARIO_NOT_EVIDENCED:exchange_network_partition",
+    "CHAOS_SCENARIO_NOT_EVIDENCED:websocket_disconnect_and_replay",
+    "CHAOS_SCENARIO_NOT_EVIDENCED:partial_fill_and_reconciliation",
+    "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
+    "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
+  ],
+  "commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generated_at_ms": 1785235890906,
+  "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
+  "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
+  "input_hash": "20cf3937acb7a029cbc97befbc00d441bc3d923073775159b0d2b3a8d6bfb661",
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "tests/live/test_live_backup.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "16754dfa0ad81f7f795fd7449c69fe54b19678544a2697462ab97961f4fc12f3",
+      "size_bytes": 16882
+    },
+    "tests/live/test_order_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "154aaa68d69dd38ced5ed9936f4c49b56f193a3d9691a14bd84c7a83ee5cc038",
+      "size_bytes": 4701
+    },
+    "tests/live/test_restore_drill.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "4b24ea8444ec4914529a53bd5c7f304f1114ae6dca7f66ff2be7e9153015755d",
+      "size_bytes": 4418
+    },
+    "tests/live/test_risk_recovery_drill.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "2ee30e330cf7f3451299c7fbe438187c64cf145e1c0726e8e38d9cc45df31633",
+      "size_bytes": 5905
+    },
+    "tests/live/test_startup_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "18eec1206bcc9c1435c38b4bf6319d0d15a8c0ab46e8e69278bc8b15ce38d0d1",
+      "size_bytes": 3149
+    },
+    "tests/orchestration/test_leader_lease.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "8ae45f6d55af661acc4f84525849ea6697b229bed6f67c6acb5771b26f81740e",
+      "size_bytes": 9765
+    },
+    "tests/orchestration/test_recovery.py": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "f0e161d9e0a9b23e6f6da0f554b26fe7277483f0eb66809c98683f279bbc2bb8",
+      "size_bytes": 5725
+    }
+  },
+  "internal_drills": {
+    "restore": "PASS",
+    "risk_recovery": "PASS",
+    "verified_scenarios": {
+      "backup_restore": true,
+      "kill_switch_recovery": true,
+      "leader_fencing": true,
+      "startup_ordering": true,
+      "unknown_order": true
+    }
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "required_scenarios": {
+    "cross_process_kill_switch_authority": false,
+    "exchange_network_partition": false,
+    "partial_fill_and_reconciliation": false,
+    "rate_limit_backoff_and_dlq": false,
+    "websocket_disconnect_and_replay": false
+  },
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "status": "NOT_READY",
+  "validation": {
+    "current": true,
+    "head_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "overall_status": "PASS",
+    "reported_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "reported_validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241"
+  },
+  "working_tree_dirty": true
+}

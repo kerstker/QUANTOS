@@ -2,11 +2,12 @@
 """QUANTOS fail-closed validation entrypoint (Phase 0.5).
 
 Single command CI and humans run. Orchestrates, in order:
-  1. generated evidence and architecture drift checks,
-  2. a fresh isolated risk-state recovery drill,
-  3. the paper-to-live governance scanner,
-  4. backend and live-stack pytest suites, and
-  5. frontend typecheck, tests, and production build.
+  1. non-derived evidence, authority, recovery, and governance prerequisites,
+  2. supply-chain then top-tier derived-evidence refresh + readback checks,
+  3. backend and live-stack pytest suites,
+  4. frontend typecheck, tests, and production build,
+  5. primary report publication, and
+  6. Phase 13 refresh + readback against that report.
 
 Each suite group is run as a separate subprocess with the correct working
 directory, because the two `services` package trees collide in one process
@@ -14,6 +15,8 @@ directory, because the two `services` package trees collide in one process
 directly (not via the shell), so it is unaffected by any shell command hooks.
 
 Exit code is non-zero if ANY check fails (fail-closed).
+Derived evidence is rewritten only by a full canonical run and only after all
+non-derived prerequisites pass. Subset runs remain read-only.
 """
 import argparse
 import hashlib
@@ -102,6 +105,18 @@ CHECKS = [
         REPO,
     ),
     (
+        "artifact-admission-authority:provision",
+        [
+            sys.executable,
+            os.path.join(
+                REPO,
+                "tools",
+                "provision_artifact_admission_authority.py",
+            ),
+        ],
+        REPO,
+    ),
+    (
         "supply-chain-baseline:current",
         [
             sys.executable,
@@ -157,6 +172,11 @@ CHECKS = [
         "pytest: all suites (contracts, governance, research, trading)",
         [
             sys.executable, "-m", "pytest", "-q",
+            # Phase 13 consumes the completed primary validation report and is
+            # refreshed/tested in the post-report DAG below. Running its
+            # current-artifact assertion here creates an unavoidable first-run
+            # cycle after any validation change.
+            "--ignore=tests/governance/test_727_final_audit.py",
             "tests/contracts",
             "tests/data",
             "tests/features",
@@ -230,6 +250,87 @@ CHECKS = [
 
 DEFAULT_TIMEOUT_SECONDS = 1_800.0
 DEFAULT_REPORT = os.path.join(REPO, "evidence", "validation_report.json")
+DEFAULT_SUBSET_REPORT = os.path.join(REPO, "evidence", "validation_report_subset.json")
+
+
+def _summary(results: list[dict]) -> dict[str, int]:
+    return {
+        "selected": len(results),
+        "passed": sum(result["status"] == "PASS" for result in results),
+        "failed": sum(result["status"] == "FAIL" for result in results),
+        "timed_out": sum(result["status"] == "TIMEOUT" for result in results),
+        "errored": sum(result["status"] == "ERROR" for result in results),
+    }
+
+
+def _overall_status(summary: dict[str, int]) -> str:
+    return (
+        "PASS"
+        if summary["selected"] and summary["passed"] == summary["selected"]
+        else "FAIL"
+    )
+
+
+def _phase13_refresh_checks() -> list[tuple[str, list[str], str]]:
+    generator = os.path.join(REPO, "scripts", "generate_727_final_audit.py")
+    tests = os.path.join(REPO, "tests", "governance", "test_727_final_audit.py")
+    return [
+        (
+            "phase13-readiness:refresh",
+            [sys.executable, generator, "--repo-root", REPO],
+            REPO,
+        ),
+        (
+            "phase13-readiness:current",
+            [sys.executable, generator, "--repo-root", REPO, "--check"],
+            REPO,
+        ),
+        (
+            "phase13-readiness:tests",
+            [sys.executable, "-m", "pytest", "-q", tests],
+            REPO,
+        ),
+    ]
+
+
+def _derived_evidence_refresh_checks() -> list[
+    tuple[str, tuple[str, list[str], str]]
+]:
+    """Return the load-bearing derived-evidence DAG in dependency order.
+
+    These refreshes are used only by a full canonical run after every
+    non-derived check has passed. Subset validation remains read-only, and a
+    failing prerequisite can never overwrite tracked evidence.
+    """
+    return [
+        (
+            "supply-chain-baseline:current",
+            (
+                "supply-chain-baseline:refresh",
+                [
+                    sys.executable,
+                    os.path.join(REPO, "scripts", "generate_supply_chain_evidence.py"),
+                ],
+                REPO,
+            ),
+        ),
+        (
+            "top-tier-assessment-artifacts",
+            (
+                "top-tier-assessment:refresh",
+                [
+                    sys.executable,
+                    os.path.join(REPO, "scripts", "assess_top_tier.py"),
+                ],
+                REPO,
+            ),
+        ),
+    ]
+
+
+def _is_derived_evidence_consumer(stage_name: str) -> bool:
+    """Return whether a stage can assert against refreshed derived artifacts."""
+    return stage_name.startswith(("pytest:", "frontend:"))
 
 
 def _sha256_file(path: str) -> str | None:
@@ -397,53 +498,159 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
 
 
 def run(*, stages=None, json_report: str = DEFAULT_REPORT,
-        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS, checks=None) -> int:
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS, checks=None,
+        phase13_refresh_checks=None, derived_refresh_checks=None) -> int:
     """Run selected checks with live progress and a fail-closed machine report."""
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
     checks = list(checks or CHECKS)
     selected = _select_checks(stages, checks)
+    selection_scope = "ALL" if not stages or stages == ["all"] else "SUBSET"
+    derived_specs = (
+        list(derived_refresh_checks)
+        if derived_refresh_checks is not None
+        else _derived_evidence_refresh_checks()
+    )
+    derived_by_current = {
+        current_name: refresh_check
+        for current_name, refresh_check in derived_specs
+    }
+    if len(derived_by_current) != len(derived_specs):
+        raise ValueError("derived evidence refresh targets must be unique")
     started_at_ms = int(time.time() * 1000)
     started = time.monotonic()
-    results = [
-        _run_check(name, argv, cwd, timeout_seconds)
-        for name, argv, cwd in selected
-    ]
-    finished_at_ms = int(time.time() * 1000)
-    summary = {
-        "selected": len(results),
-        "passed": sum(result["status"] == "PASS" for result in results),
-        "failed": sum(result["status"] == "FAIL" for result in results),
-        "timed_out": sum(result["status"] == "TIMEOUT" for result in results),
-        "errored": sum(result["status"] == "ERROR" for result in results),
-    }
-    overall_status = (
-        "PASS"
-        if summary["selected"] and summary["passed"] == summary["selected"]
-        else "FAIL"
-    )
-    selected_names = [name for name, _, _ in selected]
-    report = {
-        "schema_version": 1,
-        "report_kind": "FAIL_CLOSED_VALIDATION",
-        "generated_at_ms": finished_at_ms,
-        "started_at_ms": started_at_ms,
-        "duration_ms": int((time.monotonic() - started) * 1000),
-        "commit": _git_commit(),
-        "readiness": "L2_DRY_RUN_ONLY",
-        "selection_scope": "ALL" if not stages or stages == ["all"] else "SUBSET",
-        "requested_stages": list(stages or ["all"]),
-        "selected_stages": selected_names,
-        "timeout_seconds": timeout_seconds,
-        "checks_manifest_sha256": _checks_manifest_hash(checks),
-        "validate_script_sha256": _sha256_file(__file__),
-        "summary": summary,
-        "overall_status": overall_status,
-        "results": results,
-    }
+    if selection_scope == "SUBSET":
+        # Subset validation is deliberately read-only and preserves the
+        # operator-requested order.
+        results = [
+            _run_check(name, argv, cwd, timeout_seconds)
+            for name, argv, cwd in selected
+        ]
+    else:
+        selected_derived = [
+            check for check in selected if check[0] in derived_by_current
+        ]
+        selected_non_derived = [
+            check for check in selected if check[0] not in derived_by_current
+        ]
+        prerequisite_checks = [
+            check
+            for check in selected_non_derived
+            if not _is_derived_evidence_consumer(check[0])
+        ]
+        consumer_checks = [
+            check
+            for check in selected_non_derived
+            if _is_derived_evidence_consumer(check[0])
+        ]
+        results = [
+            _run_check(name, argv, cwd, timeout_seconds)
+            for name, argv, cwd in prerequisite_checks
+        ]
+        prerequisites_passed = _overall_status(_summary(results)) == "PASS"
+        selected_derived_by_name = {
+            check[0]: check for check in selected_derived
+        }
+        if prerequisites_passed:
+            dependency_chain_passed = True
+            for current_name, refresh_check in derived_specs:
+                current_check = selected_derived_by_name.get(current_name)
+                if current_check is None:
+                    continue
+                if dependency_chain_passed:
+                    refresh_result = _run_check(*refresh_check, timeout_seconds)
+                    results.append(refresh_result)
+                    current_result = _run_check(*current_check, timeout_seconds)
+                    results.append(current_result)
+                    dependency_chain_passed = (
+                        refresh_result["status"] == "PASS"
+                        and current_result["status"] == "PASS"
+                    )
+                else:
+                    # Do not rewrite a downstream artifact from a failed or
+                    # stale upstream dependency. Its read-only check remains
+                    # observable and fail-closed in the report.
+                    results.append(_run_check(*current_check, timeout_seconds))
+        else:
+            # A failed prerequisite must never rewrite evidence. The current
+            # checks still run so drift remains visible in the report.
+            results.extend(
+                _run_check(name, argv, cwd, timeout_seconds)
+                for name, argv, cwd in selected_derived
+            )
+        # Governance tests and frontend checks consume generated evidence, so
+        # they run after the DAG and independently retain fail-closed status.
+        results.extend(
+            _run_check(name, argv, cwd, timeout_seconds)
+            for name, argv, cwd in consumer_checks
+        )
+
+    summary = _summary(results)
+    overall_status = _overall_status(summary)
+    selected_names = [result["stage"] for result in results]
+    effective_report = json_report
+    if (
+        selection_scope == "SUBSET"
+        and os.path.abspath(json_report) == os.path.abspath(DEFAULT_REPORT)
+    ):
+        effective_report = DEFAULT_SUBSET_REPORT
+
+    def build_report() -> dict:
+        return {
+            "schema_version": 1,
+            "report_kind": "FAIL_CLOSED_VALIDATION",
+            "generated_at_ms": int(time.time() * 1000),
+            "started_at_ms": started_at_ms,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+            "commit": _git_commit(),
+            "readiness": "L2_DRY_RUN_ONLY",
+            "selection_scope": selection_scope,
+            "requested_stages": list(stages or ["all"]),
+            "selected_stages": selected_names,
+            "timeout_seconds": timeout_seconds,
+            "checks_manifest_sha256": _checks_manifest_hash(checks),
+            "derived_refresh_manifest_sha256": _checks_manifest_hash(
+                [refresh_check for _, refresh_check in derived_specs]
+            ),
+            "validate_script_sha256": _sha256_file(__file__),
+            "summary": summary,
+            "overall_status": overall_status,
+            "results": results,
+        }
+
+    # Phase 13 readiness consumes this report.  Publish the completed primary
+    # result before refreshing those derived artifacts, otherwise the tracked
+    # readiness test and the validation report form a circular dependency:
+    # one failed attempt can poison every later attempt after the defect is fixed.
+    report = build_report()
+    report_written = True
     try:
-        _write_report(json_report, report)
-        print(f"[validate] report: {os.path.abspath(json_report)}", flush=True)
+        _write_report(effective_report, report)
+    except OSError as exc:
+        report_written = False
+        overall_status = "FAIL"
+        print(
+            f"[validate] ERROR cannot write preliminary validation report: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
+
+    if selection_scope == "ALL" and report_written:
+        refresh_checks = (
+            list(phase13_refresh_checks)
+            if phase13_refresh_checks is not None
+            else _phase13_refresh_checks()
+        )
+        for name, argv, cwd in refresh_checks:
+            results.append(_run_check(name, argv, cwd, timeout_seconds))
+            selected_names.append(name)
+        summary = _summary(results)
+        overall_status = _overall_status(summary)
+
+    report = build_report()
+    try:
+        _write_report(effective_report, report)
+        print(f"[validate] report: {os.path.abspath(effective_report)}", flush=True)
     except OSError as exc:
         print(
             f"[validate] ERROR cannot write validation report: {type(exc).__name__}: {exc}",

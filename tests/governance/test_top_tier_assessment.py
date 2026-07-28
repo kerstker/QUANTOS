@@ -131,6 +131,52 @@ def test_manual_and_external_requirements_never_auto_pass(tmp_path):
     assert report["summary"]["passed"] == 0
 
 
+def test_external_requirement_can_report_opt_in_local_readiness_but_never_pass(tmp_path):
+    (tmp_path / "simulated_sor.py").write_text("SIMULATION_ONLY = True\n", encoding="utf-8")
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "EXECUTION.MULTIVENUE.SOR",
+                classification="POST_L2",
+                target_maturity="M4",
+                checker="paths_exist",
+                checker_args={
+                    "paths": ["simulated_sor.py"],
+                    "pass_maturity": "M2",
+                },
+                assess_local_readiness=True,
+            )
+        ],
+    )
+
+    report = assess_repository(tmp_path, path)
+    requirement = report["requirements"][0]
+
+    assert requirement["status"] == "PARTIAL"
+    assert requirement["current_maturity"] == "M2"
+    assert requirement["meets_target"] is False
+    assert requirement["evidence"] == ["simulated_sor.py"]
+    assert "external target evidence remains required" in requirement["detail"]
+    assert report["summary"]["passed"] == 0
+
+
+def test_local_readiness_opt_in_is_rejected_for_l2_safe_requirement(tmp_path):
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "EXECUTION.LOCAL",
+                classification="L2_SAFE_NOW",
+                assess_local_readiness=True,
+            )
+        ],
+    )
+
+    with pytest.raises(RegistryError, match="only valid for external or post-L2"):
+        load_requirements(path)
+
+
 def test_all_tier_a_targets_can_reach_top_tier_research(tmp_path):
     (tmp_path / "proof.txt").write_text("real evidence", encoding="utf-8")
     path = _write_registry(
@@ -776,10 +822,20 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "_registry_mirror_reason "
             "denied_admission_decision\n"
         ),
+        "tools/provision_artifact_admission_authority.py": (
+            "ArtifactAdmissionStore create=not destination.exists() "
+            "append_registry_snapshot _verify_exact check_only "
+            "POLICY_REGISTRY_KIND RECEIPT_AUTHORITY_REGISTRY_KIND "
+            '"signing_capability_present": False '
+            '"live_trading_authority_granted": False\n'
+        ),
         "tests/governance/test_artifact_admission.py": "def test_core(): pass\n",
         "tests/governance/test_artifact_admission_cli.py": "def test_cli(): pass\n",
         "tests/governance/test_artifact_admission_store.py": ("def test_store(): pass\n"),
         "tests/governance/test_artifact_receipt_auth.py": ("def test_receipt_auth(): pass\n"),
+        "tests/governance/test_artifact_admission_provisioning.py": (
+            "def test_provisioning(): pass\n"
+        ),
     }
     for relative, content in admission_sources.items():
         path = tmp_path / relative
@@ -1076,6 +1132,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_admission_store.py",
                 "services/governance/artifact_receipt_auth.py",
                 "tools/verify_artifact_admission.py",
+                "tools/provision_artifact_admission_authority.py",
             )
         },
         "artifact_admission_verification_paths": [
@@ -1083,6 +1140,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "tests/governance/test_artifact_admission_cli.py",
             "tests/governance/test_artifact_admission_store.py",
             "tests/governance/test_artifact_receipt_auth.py",
+            "tests/governance/test_artifact_admission_provisioning.py",
         ],
         "m4_blockers": [
             "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",

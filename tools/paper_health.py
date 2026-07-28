@@ -17,6 +17,11 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from quantos.contracts.scheduled_worker import (
+    SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
+    SCHEDULE_EXIT_SUCCESS,
+)
 from tools.cache_io import atomic_write_json
 from tools.paper_order_preview import _full_research_risk_approved
 
@@ -443,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({"paper_ready": False, "error": str(exc)[:240]}))
-        return 1
+        return SCHEDULE_EXIT_FAILURE
     verdict = report["verdict"]
     print(
         json.dumps(
@@ -459,7 +464,11 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     print(f"-> {args.output}")
-    return 0 if verdict["paper_ready"] else 1
+    return (
+        SCHEDULE_EXIT_SUCCESS
+        if verdict["paper_ready"]
+        else SCHEDULE_EXIT_SAFE_BLOCKED
+    )
 
 
 if __name__ == "__main__":

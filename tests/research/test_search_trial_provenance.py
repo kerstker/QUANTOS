@@ -458,3 +458,44 @@ def test_official_research_session_requires_registry_or_explicit_ephemeral(
     )
     assert result["ephemeral"] is True
     assert "ephemeral" not in result["kwargs"]
+
+
+def test_official_research_session_persists_actual_oos_access(monkeypatch) -> None:
+    registry = _registry()
+    definition = AlphaDefinition(
+        alpha_id="oos-alpha",
+        name="OOS Alpha",
+        factor_ids=("close",),
+        universe="u",
+        params={"operator": "momentum", "window": "5"},
+    )
+
+    def core(*args, **kwargs):
+        kwargs["trial_recorder"](definition.definition_hash)
+        kwargs["trial_provenance_recorder"](definition)
+        kwargs["oos_access_recorder"](
+            {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)}
+        )
+        return {"oos": {"n_folds": 1}}
+
+    monkeypatch.setattr(intelligence_session, "_run_research_session_core", core)
+    monkeypatch.setattr(
+        intelligence_session, "adapt_research_market_data", lambda value: value
+    )
+    result = intelligence_session.run_research_session(
+        store=object(),
+        instruments=("BTC",),
+        event_times=tuple(range(30)),
+        registry=registry,
+        dataset_version="dataset-v1",
+        timestamp=100,
+        search_id="oos-search",
+        search_kind="GUIDED",
+        search_source="tests.oos",
+    )
+
+    assert result["oos"]["n_folds"] == 1
+    trial_id = f"oos-search:{definition.definition_hash}"
+    assert registry.trial_oos_access(trial_id)[0]["boundary"] == "index:[20,28)"
+    assert registry.trial_oos_access_chain_valid() is True
+    assert registry.search_attempt_events("oos-search")[-1]["status"] == "COMPLETED"

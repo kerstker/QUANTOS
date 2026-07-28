@@ -39,12 +39,23 @@ class ResearchSearchRuntime:
 class _TrialRecordingProvider:
     """Record a definition before the wrapped provider can inspect market data."""
 
-    def __init__(self, provider: Callable, catalog: AlphaCatalog) -> None:
+    def __init__(
+        self,
+        provider: Callable,
+        catalog: AlphaCatalog,
+        trial_provenance_recorder: Optional[Callable] = None,
+    ) -> None:
         self._provider = provider
         self._catalog = catalog
+        self._trial_provenance_recorder = trial_provenance_recorder
 
     def __call__(self, definition):
         self._catalog.register_trial(definition.definition_hash)
+        if self._trial_provenance_recorder is not None:
+            # Persist before touching market data.  A recorder failure is
+            # intentionally fatal: a candidate that escaped its immutable
+            # provenance boundary must not continue into evaluation.
+            self._trial_provenance_recorder(definition)
         return self._provider(definition)
 
     def __getattr__(self, name: str):
@@ -124,6 +135,34 @@ def _cpcv_validate(catalog, *, embargo: int = 1, n_groups: int = 6, k_test: int 
     return cpcv_summary(aligned, n_groups=n_groups, k_test=k_test, embargo=embargo)
 
 
+def _run_oos_validations(catalog, *, enabled: bool, embargo: int, recorder=None):
+    """Run validators, then account for only the boundaries they actually used."""
+    if not enabled:
+        return None, None
+    oos = _oos_validate(catalog, embargo=embargo)
+    cpcv = _cpcv_validate(catalog, embargo=embargo)
+    accesses: dict[str, tuple[str, ...]] = {}
+    if oos is not None:
+        accesses["WALK_FORWARD_NO_PEEK_SELECTION_OOS"] = tuple(
+            f"index:[{fold['test_range'][0]},{fold['test_range'][1]})"
+            for fold in oos.get("folds", ())
+        )
+    if cpcv is not None:
+        accesses["CPCV_OOS_DISTRIBUTION"] = tuple(
+            f"index:[{lo},{hi})"
+            for split in cpcv.get("test_boundaries", ())
+            for lo, hi in split
+        )
+    accesses = {
+        method: tuple(sorted(set(boundaries)))
+        for method, boundaries in accesses.items()
+        if boundaries
+    }
+    if accesses and recorder is not None:
+        recorder(accesses)
+    return oos, cpcv
+
+
 def _derive_dataset_version(
     store: VersionedMarketDataPort,
     instruments: Sequence[str],
@@ -146,6 +185,8 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
                          diversity_lambda: float = 0.0,
                          oos_validate: bool = False, oos_embargo: int = 1,
                          trial_recorder=None,
+                         trial_provenance_recorder=None,
+                         oos_access_recorder=None,
                          search_id: Optional[str] = None,
                          search_runtime: ResearchSearchRuntime) -> dict:
     if dataset_version is None:
@@ -170,6 +211,8 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
             synergistic_k=synergistic_k, regime_evidence=regime_evidence,
             oos_validate=oos_validate, oos_embargo=oos_embargo,
             search_id=search_id,
+            trial_provenance_recorder=trial_provenance_recorder,
+            oos_access_recorder=oos_access_recorder,
             search_runtime=search_runtime)
 
     if evolutionary or gp:
@@ -184,6 +227,8 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
             regime_evidence=regime_evidence, diversity_lambda=diversity_lambda,
             oos_validate=oos_validate, oos_embargo=oos_embargo,
             search_id=search_id,
+            trial_provenance_recorder=trial_provenance_recorder,
+            oos_access_recorder=oos_access_recorder,
             search_runtime=search_runtime)
 
     # opt-in unified search: with a fundamentals store + metrics, ONE bandit searches
@@ -199,7 +244,9 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
         effective_space = space
         provider = make_data_periods_provider(store, instruments, event_times=event_times,
                                               fwd_horizon=fwd_horizon, universe=universe)
-    provider = _TrialRecordingProvider(provider, catalog)
+    provider = _TrialRecordingProvider(
+        provider, catalog, trial_provenance_recorder
+    )
 
     loop = search_runtime.guided_search_loop(
         effective_space,
@@ -241,6 +288,12 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
             dataset_version=dataset_version,
         )
 
+    oos, cpcv = _run_oos_validations(
+        catalog,
+        enabled=oos_validate,
+        embargo=oos_embargo,
+        recorder=oos_access_recorder,
+    )
     return {
         "dataset_version": dataset_version,
         "mode": "guided",            # discriminator: guided has arm_means; evolutionary has best
@@ -252,8 +305,8 @@ def run_research_session(store: VersionedMarketDataPort, instruments: Sequence[s
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "factor_returns": _factor_returns(catalog),
-        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
-        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "oos": oos,
+        "cpcv": cpcv,
     }
 
 
@@ -286,6 +339,8 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                       redundancy_lambda=0.0, regime_evidence=False, diversity_lambda=0.0,
                       oos_validate=False, oos_embargo=1,
                       search_id=None,
+                      trial_provenance_recorder=None,
+                      oos_access_recorder=None,
                       search_runtime: ResearchSearchRuntime = None) -> dict:
     """Evolutionary mode: machine-discover alpha through the UNCHANGED guardrailed
     ResearchAgentLoop. Two genome families share the loop:
@@ -305,7 +360,9 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         fwd_horizon=fwd_horizon,
         universe=universe,
     )
-    provider = _TrialRecordingProvider(provider, catalog)
+    provider = _TrialRecordingProvider(
+        provider, catalog, trial_provenance_recorder
+    )
     if gp:
         ops = tuple(space.operators)
         windows = tuple(str(w) for w in space.windows)
@@ -351,6 +408,12 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
                               audit_log=audit_log)
     if registry is not None:
         registry.save_evaluation_context(catalog, now=timestamp)
+    oos, cpcv = _run_oos_validations(
+        catalog,
+        enabled=oos_validate,
+        embargo=oos_embargo,
+        recorder=oos_access_recorder,
+    )
     return {
         "dataset_version": dataset_version,
         "mode": "gp" if gp else "evolutionary",
@@ -362,8 +425,8 @@ def _run_evolutionary(store, instruments, *, event_times, fwd_horizon, space, me
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "factor_returns": _factor_returns(catalog),
-        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
-        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "oos": oos,
+        "cpcv": cpcv,
     }
 
 
@@ -372,6 +435,8 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
               iterations, gp=False, synergistic_k=8, regime_evidence=False,
               oos_validate=False, oos_embargo=1,
               search_id=None,
+              trial_provenance_recorder=None,
+              oos_access_recorder=None,
               search_runtime: ResearchSearchRuntime = None) -> dict:
     """MCTS/UCT mode: navigate the formula-tree space with UCT instead of generational GP.
     Same contained ResearchAgentLoop + multiple-testing honesty; seeds match the evolutionary
@@ -386,7 +451,9 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         fwd_horizon=fwd_horizon,
         universe=universe,
     )
-    provider = _TrialRecordingProvider(provider, catalog)
+    provider = _TrialRecordingProvider(
+        provider, catalog, trial_provenance_recorder
+    )
     if gp:
         ops = tuple(space.operators)
         windows = tuple(str(w) for w in space.windows)
@@ -422,6 +489,12 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
                               audit_log=audit_log)
     if registry is not None:
         registry.save_evaluation_context(catalog, now=timestamp)
+    oos, cpcv = _run_oos_validations(
+        catalog,
+        enabled=oos_validate,
+        embargo=oos_embargo,
+        recorder=oos_access_recorder,
+    )
     return {
         "dataset_version": dataset_version,
         "mode": "mcts",
@@ -433,6 +506,6 @@ def _run_mcts(store, instruments, *, event_times, fwd_horizon, space, metrics, m
         "data_gaps": data_gaps,
         "synergistic_set": _synergistic_set(catalog, synergistic_k),
         "factor_returns": _factor_returns(catalog),
-        "oos": _oos_validate(catalog, embargo=oos_embargo) if oos_validate else None,
-        "cpcv": _cpcv_validate(catalog, embargo=oos_embargo) if oos_validate else None,
+        "oos": oos,
+        "cpcv": cpcv,
     }

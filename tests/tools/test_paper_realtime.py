@@ -529,5 +529,25 @@ def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, 
         paper_realtime.main(
             ["--cycles", "1", "--health-check", "--output", str(status_path)]
         )
+        == 2
+    )
+
+
+def test_main_keeps_incomplete_cycle_as_operational_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        paper_realtime,
+        "run_operator",
+        lambda **_kwargs: _operator(),
+    )
+    monkeypatch.setattr(
+        paper_realtime,
+        "run_cycle",
+        lambda **_kwargs: {"verdict": {"cycle_completed": False}},
+    )
+
+    assert (
+        paper_realtime.main(
+            ["--cycles", "1", "--output", str(tmp_path / "status.json")]
+        )
         == 1
     )

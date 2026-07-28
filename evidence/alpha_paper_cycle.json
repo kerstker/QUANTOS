@@ -3,7 +3,7 @@
   "readiness": "L2_DRY_RUN_ONLY",
   "cycle": {
     "mode": "FORWARD_PAPER_ONLY",
-    "state": "BLOCKED_BY_DATA_AND_EVENT_GATES",
+    "state": "PENDING_FORWARD_EVIDENCE",
     "required_forward_periods": 8,
     "official_driver": "tools/forward_track_advance.py",
     "forward_return_semantics": {
@@ -83,12 +83,11 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 2,
-        "evidence_state": "DATA_BLOCKED",
+        "evidence_state": "ATTESTED_PENDING_REALIZATION",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
-        "DATA_ADMISSION_BLOCK",
         "DRY_RUN_RESEARCH_RISK_NOT_PASS",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
@@ -153,12 +152,11 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 2,
-        "evidence_state": "DATA_BLOCKED",
+        "evidence_state": "ATTESTED_PENDING_REALIZATION",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
-        "DATA_ADMISSION_BLOCK",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     },
@@ -224,21 +222,17 @@
         "pending_decisions": 1,
         "attested_pending_decisions": 1,
         "legacy_unattested_decisions": 1,
-        "evidence_state": "DATA_BLOCKED",
+        "evidence_state": "ATTESTED_PENDING_REALIZATION",
         "last_decision_ts": 1784592000000
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
-        "DATA_ADMISSION_BLOCK",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     }
   },
-  "common_blockers": [
-    "DATA_ADMISSION_BLOCK"
-  ],
+  "common_blockers": [],
   "next_actions": [
-    "wait for a clean recent-data admission and matching raw-lineage backfill",
     "run the official forward driver on each daily poll until every candidate has at least 8 realized periods",
     "keep top_contra research-only until its forward evidence reaches the required period count"
   ]

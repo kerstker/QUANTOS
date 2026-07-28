@@ -6,11 +6,16 @@ write an unverified invocation into the history ledger.
 """
 
 import hashlib
+import sqlite3
+from pathlib import Path
 
 import pytest
 
 from quantos.contracts.alpha import AlphaDefinition, AlphaEvaluation
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.model_risk import (
+    ExternalProviderBinding,
+    ExternalProviderBindingStatus,
     ModelCard,
     ModelUseStatus,
     PromptLineageStatus,
@@ -25,6 +30,7 @@ from services.intelligence.agent_loop import ResearchAgentLoop
 from services.intelligence.runtime import (
     GovernedModelRuntime,
     RESEARCH_EVALUATION_TEMPLATE,
+    RuntimeExecutionError,
     RuntimeGovernanceError,
 )
 
@@ -86,6 +92,55 @@ def _runtime(tmp_path):
         prompt_template=RESEARCH_EVALUATION_TEMPLATE,
     )
     return store, registry, runtime
+
+
+def _provider_binding(registry, runtime, *, provider_id="provider-a"):
+    binding = ExternalProviderBinding(
+        binding_id="research-provider",
+        version="v1",
+        provider_id=provider_id,
+        provider_model_ref="external-evaluator-v1",
+        model_ref=runtime.model.model_ref,
+        provider_deployment_ref="external-deployment-a",
+        verification_policy_ref="external-receipt-policy-v1",
+        allowed_actions=("EVALUATE",),
+        status=ExternalProviderBindingStatus.RESEARCH_ONLY,
+        recorded_at=1,
+    )
+    assert registry.record_external_provider_binding(binding) is True
+    return binding
+
+
+class _ExternalProvider:
+    def __init__(self, value=None, *, mutate=None, error=None):
+        self.value = value or {"action": "EVALUATE", "verdict": "RESEARCH_ONLY"}
+        self.mutate = mutate
+        self.error = error
+
+    def invoke(self, request):
+        if self.error is not None:
+            raise self.error
+        payload = {
+            "provider_id": "provider-a",
+            "provider_model_ref": "external-evaluator-v1",
+            "external_request_id": "external-request-1",
+            "request_sha256": stable_hash(dict(request)),
+            "response": self.value,
+            "response_sha256": stable_hash(self.value),
+            "verification_receipt_ref": "receipt:external-request-1",
+            "received_at": 2,
+        }
+        if self.mutate is not None:
+            self.mutate(payload)
+        return payload
+
+
+class _ExternalVerifier:
+    def verify(self, *, binding, response):
+        return (
+            binding.verification_policy_ref == "external-receipt-policy-v1"
+            and response.verification_receipt_ref == "receipt:external-request-1"
+        )
 
 
 def test_runtime_requires_registered_lineage_and_records_hash_chained_event(tmp_path):
@@ -163,14 +218,170 @@ def test_runtime_history_detects_tampering(tmp_path):
             execute=lambda payload: {"action": "EVALUATE"},
             recorded_at=1,
         )
-        store._conn.execute(
-            "UPDATE model_risk_runtime_events SET payload_json=? WHERE invocation_id=?",
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            store._conn.execute(
+                "UPDATE model_risk_runtime_events SET payload_json=? "
+                "WHERE invocation_id=?",
+                ('{"action":"APPROVE"}', "tamper"),
+            )
+        path = store.path
+        store.close()
+        connection = sqlite3.connect(path)
+        connection.execute("DROP TRIGGER model_risk_runtime_no_update")
+        connection.execute(
+            "UPDATE model_risk_runtime_events SET payload_json=? "
+            "WHERE invocation_id=?",
             ('{"action":"APPROVE"}', "tamper"),
         )
-        store._conn.commit()
-        assert registry.verify_runtime_history() is False
+        connection.commit()
+        connection.close()
+        from services.governance.model_risk_registry import ModelRiskStoreError
+
+        with pytest.raises(ModelRiskStoreError):
+            SqliteModelRiskStore(path, create=False)
+    finally:
+        try:
+            store.close()
+        except sqlite3.ProgrammingError:
+            pass
+
+
+def test_runtime_history_tail_truncation_is_detected_by_pinned_head(tmp_path):
+    store, _registry, runtime = _runtime(tmp_path)
+    path = store.path
+    runtime.invoke(
+        invocation_id="tail",
+        action="EVALUATE",
+        input_payload={"alpha_id": "a0"},
+        execute=lambda payload: {"action": "EVALUATE"},
+        recorded_at=1,
+    )
+    store.close()
+
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TRIGGER model_risk_runtime_no_delete")
+    connection.execute("DELETE FROM model_risk_runtime_events")
+    connection.execute(
+        "CREATE TRIGGER model_risk_runtime_no_delete "
+        "BEFORE DELETE ON model_risk_runtime_events "
+        "BEGIN SELECT RAISE(ABORT, 'model risk runtime history is append-only'); END"
+    )
+    connection.commit()
+    connection.close()
+    from services.governance.model_risk_registry import ModelRiskStoreError
+
+    with pytest.raises(ModelRiskStoreError, match="runtime head mismatch"):
+        SqliteModelRiskStore(path, create=False)
+
+
+def test_external_provider_requires_registered_binding_and_verified_receipt(tmp_path):
+    store, registry, runtime = _runtime(tmp_path)
+    try:
+        binding = _provider_binding(registry, runtime)
+        result = runtime.invoke_external(
+            invocation_id="external-1",
+            action="EVALUATE",
+            input_payload={"alpha_id": "a0", "timestamp": 1},
+            binding_ref=binding.binding_ref,
+            provider=_ExternalProvider(),
+            verifier=_ExternalVerifier(),
+            recorded_at=2,
+        )
+        assert result.value["verdict"] == "RESEARCH_ONLY"
+        assert result.invocation.output_sha256 == stable_hash(result.value)
+        assert len(registry.runtime_rows()) == 1
+        assert registry.verify_runtime_history() is True
     finally:
         store.close()
+
+
+def test_external_provider_default_verifier_denies_without_recording(tmp_path):
+    store, registry, runtime = _runtime(tmp_path)
+    try:
+        binding = _provider_binding(registry, runtime)
+        with pytest.raises(RuntimeGovernanceError, match="externally verified"):
+            runtime.invoke_external(
+                invocation_id="external-denied",
+                action="EVALUATE",
+                input_payload={"alpha_id": "a0"},
+                binding_ref=binding.binding_ref,
+                provider=_ExternalProvider(),
+                recorded_at=2,
+            )
+        assert registry.runtime_rows() == []
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("mutate", "match"),
+    [
+        (lambda payload: payload.update(provider_id="provider-b"), "identity mismatch"),
+        (lambda payload: payload.update(request_sha256="f" * 64), "request digest mismatch"),
+        (lambda payload: payload.update(response_sha256="f" * 64), "invalid response"),
+    ],
+)
+def test_external_provider_rejects_identity_and_digest_tampering_without_recording(
+    tmp_path, mutate, match
+):
+    store, registry, runtime = _runtime(tmp_path)
+    try:
+        binding = _provider_binding(registry, runtime)
+        with pytest.raises(RuntimeGovernanceError, match=match):
+            runtime.invoke_external(
+                invocation_id="external-tampered",
+                action="EVALUATE",
+                input_payload={"alpha_id": "a0"},
+                binding_ref=binding.binding_ref,
+                provider=_ExternalProvider(mutate=mutate),
+                verifier=_ExternalVerifier(),
+                recorded_at=2,
+            )
+        assert registry.runtime_rows() == []
+    finally:
+        store.close()
+
+
+def test_external_provider_failure_is_redacted_and_sensitive_output_is_denied(tmp_path):
+    store, registry, runtime = _runtime(tmp_path)
+    try:
+        binding = _provider_binding(registry, runtime)
+        with pytest.raises(RuntimeExecutionError) as captured:
+            runtime.invoke_external(
+                invocation_id="external-error",
+                action="EVALUATE",
+                input_payload={"alpha_id": "a0"},
+                binding_ref=binding.binding_ref,
+                provider=_ExternalProvider(error=RuntimeError("api_key=never-log")),
+                verifier=_ExternalVerifier(),
+                recorded_at=2,
+            )
+        assert "never-log" not in str(captured.value)
+
+        with pytest.raises(RuntimeGovernanceError, match="sensitive"):
+            runtime.invoke_external(
+                invocation_id="external-sensitive",
+                action="EVALUATE",
+                input_payload={"alpha_id": "a0"},
+                binding_ref=binding.binding_ref,
+                provider=_ExternalProvider(value={"order": {"symbol": "BTC"}}),
+                verifier=_ExternalVerifier(),
+                recorded_at=2,
+            )
+        assert registry.runtime_rows() == []
+    finally:
+        store.close()
+
+
+def test_external_runtime_boundary_has_no_network_or_provider_sdk_imports():
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "services"
+        / "intelligence"
+        / "runtime.py"
+    ).read_text(encoding="utf-8")
+    forbidden = ("import requests", "import httpx", "import openai", "import anthropic")
+    assert all(marker not in source for marker in forbidden)
 
 
 class _EvaluationStub:

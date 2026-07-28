@@ -27,6 +27,7 @@ ALLOWED_L2_MODULES = frozenset(
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
+        "artifact_admission_seal",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",

@@ -34,6 +34,8 @@ from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.data_quality_admission import _AUTHORITY, run_data_quality_admission
 from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
+from tools.cache_io import atomic_write_json
+from tools.raw_data_lineage_backfill import run_backfill
 
 # 前向跟踪的 crypto alpha(crowd_contra/carry/top_contra)证据只依赖 Binance 系四源;
 # MEXC 现货源(mexc_btc)是 btc_spot_trend 的数据面,不属于本驱动器的证据判据——
@@ -48,6 +50,7 @@ from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
 _STATUS = os.path.join("data", "cache", "forward_track_status.json")
+_LINEAGE_BACKFILL = os.path.join("evidence", "raw_data_lineage_backfill.json")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
 _LOCK_STALE_S = 600  # assume dead if lock held > 10 minutes
 _DAY_MS = 86_400_000
@@ -167,6 +170,41 @@ def authoritative_admission_status(*, now_ms: int, runner=None) -> tuple:
             "error_type": type(exc).__name__,
         }, [
         "data-quality admission authority BREACH: "
+            f"{type(exc).__name__}"
+        ]   
+
+
+def refresh_lineage_backfill(
+    *,
+    now_ms: int,
+    runner=None,
+    output_path: str = _LINEAGE_BACKFILL,
+) -> tuple[bool, dict, list[str]]:
+    """Bind recent lineage evidence to the just-refreshed canonical caches."""
+    resolved_runner = runner or run_backfill
+    try:
+        report = resolved_runner(now_ms=now_ms)
+        if not isinstance(report, dict):
+            raise TypeError("lineage backfill runner must return an object")
+        passed = report.get("verdict") == "PASS"
+        atomic_write_json(output_path, report, indent=2)
+        summary = {
+            "status": "PASS",
+            "verdict": report.get("verdict"),
+            "instrument_count": len(report.get("instrument_scope", ())),
+            "day_count": len(report.get("required_days", ())),
+        }
+        alerts = [] if passed else [
+            "raw-lineage backfill BLOCK "
+            f"(reasons={len(report.get('block_reasons', ()))})"
+        ]
+        return passed, summary, alerts
+    except Exception as exc:
+        return False, {
+            "status": "BREACH",
+            "error_type": type(exc).__name__,
+        }, [
+            "raw-lineage backfill BREACH: "
             f"{type(exc).__name__}"
         ]
 
@@ -330,6 +368,7 @@ def _run() -> None:
     quality_evidence_current = False
     admission_ref = None
     admission_status = {"status": "SKIPPED"}
+    lineage_backfill_status = {"status": "SKIPPED"}
     if do_refresh:
         try:
             refresh = run_refresh(now_ms=now_ms)
@@ -355,6 +394,13 @@ def _run() -> None:
             if lineage_block is not None:
                 quality_evidence_current = False
                 alerts.append(lineage_block)
+            backfill_current, lineage_backfill_status, backfill_alerts = (
+                refresh_lineage_backfill(now_ms=now_ms)
+            )
+            quality_evidence_current = (
+                quality_evidence_current and backfill_current
+            )
+            alerts.extend(backfill_alerts)
             admission_current, admission_status, admission_alerts = (
                 authoritative_admission_status(now_ms=now_ms)
             )
@@ -565,6 +611,7 @@ def _run() -> None:
     # Keep the pre-attestation name as a compatibility mirror. The attested
     # row fields above remain authoritative for the forward gate.
     status["quality_evidence_current"] = quality_evidence_current
+    status["raw_lineage_backfill"] = lineage_backfill_status
     status["data_quality_admission"] = admission_status
     status["forward_price_basis"] = "BINANCE_USDM_PERP_MARK_PRICE"
     status["blocked_instruments"] = sorted(blocked_instruments)

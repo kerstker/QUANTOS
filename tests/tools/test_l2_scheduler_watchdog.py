@@ -14,6 +14,7 @@ from services.governance.l2_restore_history import (
 from tools.l2_scheduler_watchdog import (
     EXPECTED_TASKS,
     TaskSnapshot,
+    _configured_environment_value,
     collect_windows_tasks,
     evaluate_schedule,
     read_restore_history_health,
@@ -39,6 +40,32 @@ CONTRACT_SHA256 = hashlib.sha256(
 ).hexdigest()
 
 
+def test_configuration_reader_falls_back_to_persistent_windows_scope(monkeypatch):
+    monkeypatch.delenv("QUANTOS_EVENT_SEAL_DEST", raising=False)
+    calls = []
+
+    value = _configured_environment_value(
+        "QUANTOS_EVENT_SEAL_DEST",
+        persistent_reader=lambda name: calls.append(name) or "I:/external/seals",
+    )
+
+    assert value == "I:/external/seals"
+    assert calls == ["QUANTOS_EVENT_SEAL_DEST"]
+
+
+def test_configuration_reader_prefers_current_process_environment(monkeypatch):
+    monkeypatch.setenv("QUANTOS_EVENT_SEAL_DEST", "J:/process/seals")
+
+    value = _configured_environment_value(
+        "QUANTOS_EVENT_SEAL_DEST",
+        persistent_reader=lambda _name: (_ for _ in ()).throw(
+            AssertionError("persistent registry must not be consulted")
+        ),
+    )
+
+    assert value == "J:/process/seals"
+
+
 def _healthy_snapshot(repo: Path, name: str) -> TaskSnapshot:
     spec = EXPECTED_TASKS[name]
     return TaskSnapshot(
@@ -62,6 +89,7 @@ def _healthy_tasks(
     conditional_external = {
         "QUANTOS_external_heartbeat",
         "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
     }
     return [
         _healthy_snapshot(repo, name)
@@ -252,6 +280,65 @@ def test_watchdog_does_not_self_latch_on_its_previous_failure(tmp_path):
         if check["task_name"] == "QUANTOS_scheduler_watchdog"
     )
     assert self_check["code"] == "SELF_CHECK"
+
+
+def test_paper_safe_blocked_exit_is_partial_but_failure_exit_is_breach(tmp_path):
+    snapshots = _healthy_tasks(tmp_path, include_backup=True, include_external=True)
+    snapshots = [
+        TaskSnapshot(**{**item.__dict__, "last_result": 2})
+        if item.name
+        in {
+            "QUANTOS_paper_order_preview",
+            "QUANTOS_paper_realtime_10k",
+            "QUANTOS_paper_health",
+        }
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+    paper_checks = {
+        check["task_name"]: check
+        for check in result["checks"]
+        if check["task_name"]
+        in {
+            "QUANTOS_paper_order_preview",
+            "QUANTOS_paper_realtime_10k",
+            "QUANTOS_paper_health",
+        }
+    }
+    assert {check["status"] for check in paper_checks.values()} == {"PARTIAL"}
+    assert {check["code"] for check in paper_checks.values()} == {"RESULT_2"}
+    assert result["verdict"] == "PARTIAL"
+
+    failed = [
+        TaskSnapshot(**{**item.__dict__, "last_result": 1})
+        if item.name == "QUANTOS_paper_health"
+        else item
+        for item in snapshots
+    ]
+    failed_result = evaluate_schedule(
+        failed,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+    failed_health = next(
+        check
+        for check in failed_result["checks"]
+        if check["task_name"] == "QUANTOS_paper_health"
+    )
+    assert failed_health["status"] == "BREACH"
+    assert failed_health["code"] == "RESULT_1"
 
 
 def test_schedule_evaluation_detects_missing_disabled_stale_and_action_drift(tmp_path):

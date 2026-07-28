@@ -134,53 +134,67 @@ mean_7d(global_ls)  mean_14d(global_ls)
 理由正是 §0.4.4/§22.13 —— 完全冗余时该比值数学上**未定义**，报 0.0 是
 「伪造一个没人做过的测量」。
 
-## 7. 制品诚实定位：PARTIAL 不是 PASS
+## 7. P5-2：官方 research session 接线
 
-`evidence/trial_ledger_integrity.json` 首跑结果：
+`services/intelligence/research_session.run_research_session` 现在在官方持久化路径中
+把候选定义传给 `trial_provenance_for_definition()`，并在 provider 读取市场数据前写入
+`TrialProvenance`。因此 guided、evolutionary/GP、MCTS 三条 session 路径共享同一接缝：
+
+- `search_candidates` 先登记 config hash；
+- provenance 写入失败会抛出 `TrialPersistenceError`，搜索不继续；
+- 能知道的 factor、universe、参数、dataset、actor 和时间戳写入；
+- 无法从通用 `AlphaDefinition` 可靠推导的表达式、hypothesis、code hash 保持为空，绝不猜测；
+- `trial_id = search_id:config_hash` 保持单 session/config 幂等，跨 session 仍分别计数。
+
+这使五类已知 selection-bearing entry（factory、registered batch、official research
+session、alpha-family discovery、robust grid）具备 provenance 写入能力，但不回填历史
+bare trials，当前制品仍可诚实保持 PARTIAL。
+
+## 8. 制品诚实定位：PARTIAL 不是 PASS
+
+`evidence/trial_ledger_integrity.json` 当前结果：
 
 ```text
 verdict           = PARTIAL
 attempts_recorded = 0
 bare_trials       = 2533
 coverage_ratio    = 0.0
-trial_provenance  = TABLE_ABSENT (生产库仍 user_version=2，惰性迁移未触发)
-其余 5 表         = 全部 GUARDED
+trial_provenance  = TABLE_PRESENT
+trial_oos_access  = TABLE_PRESENT (生产库已由 user_version=3 增量迁移到 v4)
+其余 append-only 表 = 全部 GUARDED
 ```
 
 **机制已落地并可验证，但生产账本 2533 个历史 trial 的 provenance 覆盖率是 0。**
-制品据此判 `PARTIAL` 并列出三条 `open_gaps`：
+制品据此判 `PARTIAL` 并仅保留一条 `open_gaps`：
 
-1. `TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT` —— 研究驱动器仍只登记裸
-   config hash。每个入口接线完成前，`bare_trials` 保持非零、制品保持 PARTIAL。
-2. `FAMILY_FDR_NOT_A_GATE` —— 层级已实现，但晋级守卫仍用 flat BH/BHY 透镜。
-   **诊断，非门禁。**
-3. `OOS_PEEK_ACCOUNTING_DEPENDS_ON_CALLERS` —— 字段存在且可查询，但不传的调用方记 0 次。
-   **字段本身不能证明某个边界未被看过。**
+1. `TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT` —— 五个已知的选择性研究入口
+   已接线，但历史入口和未来绕过 canonical registration 的 driver 仍可能只登记裸
+   config hash；`bare_trials` 保持非零、制品保持 PARTIAL。
+我**没有**为了让制品好看而回填历史 —— 那是 §0.4.3/§22.14 禁止的伪造证据。
+本次仅在精确的既有 production DB 上执行 v3→v4 schema migration；它只创建缺失的
+OOS access table/index/append-only triggers，未写入任何历史 provenance 或 OOS 行。
 
-我**没有**为了让制品好看而迁移生产库或回填历史 —— 那是 §0.4.3/§22.14 禁止的伪造证据。
-惰性迁移按设计在首次真实写入时触发。
+家族级 FDR 已作为 **BHY 之外的附加门**接入 `AlphaLifecycleManager`：候选必须同时通过
+既有全局 BHY 与 family-level/within-family FDR，绝不以家族门替换或弱化全局门。
+官方 research session 也已把 walk-forward 与 CPCV 实际返回的测试区间追加到独立
+`trial_oos_access` 哈希链；TrialRecord 仍在数据访问前写入且不可变。OOS 账本写失败时
+搜索按 `FAILED` 终止，不能带着未记账的 OOS 结果继续。
 
-## 8. 非目标（本次明确不做）
+## 9. 非目标（本次明确不做）
 
 - 不新建 `services/alpha_factory/` 包（账本已存在，见 §0）。
-- 不把家族 FDR 接进晋级门禁 —— 那会改变**什么能晋级**，属需人工拍板的门槛变更（§0.4.2）。
 - 不回填 2533 条历史 trial 的 provenance —— 那些字段当时没被记录，事后编造即伪造。
-- 不动 `AlphaState` 的三态拆分（§3）—— 独立且更大的工程，见下。
+- 不回滚或重做 `AlphaState` 的三态拆分（§3）—— C2/C3 已在
+  `services/lifecycle/`、`services/alpha/catalog.py`、experiment-registry 持久化与
+  console snapshot 中落地；本设计只记录 Trial Ledger 的真实缺口。
 
-## 9. 下一项唯一最高优先级
+## 10. 当前后续优先级（非本设计的已完成项）
 
-**§3 三个正交状态机。** 当前 `quantos/contracts/research.py::AlphaState` 是**一个混合字段**，
-10 个值把三种正交语义搅在一起：
+**补齐可审计的 provenance 覆盖与外部前向证据。** §3 的三个正交状态机已经存在，
+但历史 `AlphaState` 仍作为兼容投影保留，不能据此声称所有旧记录都有完整三态字段。
+当前可继续推进的顺序是：
 
-| 当前值 | §3 应属 |
-|---|---|
-| DRAFT / TESTING / VALIDATED / REJECTED / RETIRED | ResearchState |
-| PAPER_TRADING / SHADOW / APPROVED | DeploymentState |
-| DEGRADED / PAUSED | HealthState |
-
-§3 开篇即明令「不得再用一个状态字段混合研究、部署和健康」。这个混合让
-§3.4 的组合状态**根本无法表达** —— 例如「研究有效但交易所断线」
-（`VALIDATED + PAUSED + FAILED_EXECUTION`）在单字段模型里必须丢掉两维信息。
-
-该项影响 `catalog.py` / `lifecycle.py` / `promotion.py` / 持久化 / console 契约，
-是本轮之后的最大单项，需独立设计文档与迁移方案。
+1. 让所有新增 selection-bearing driver 复用五个已接线入口与官方 OOS 访问记录器；
+   不回填历史裸 trial。
+2. 获得真实 Paper 前向周期、MEXC 外部只读/`order/test` 以及 Phase 12 外部故障矩阵
+   证据；缺少外部条件时继续保持 `BLOCKED`。

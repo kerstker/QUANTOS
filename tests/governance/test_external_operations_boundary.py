@@ -38,6 +38,26 @@ def test_domain_event_seal_is_read_only_and_has_no_network_or_broker_boundary():
     assert "PARTIAL_EXTERNAL_WORM_UNVERIFIED" in source
 
 
+def test_artifact_admission_seal_is_read_only_and_has_no_network_or_broker_boundary():
+    path = ROOT / "tools" / "artifact_admission_seal.py"
+    source = path.read_text(encoding="utf-8")
+    lowered = source.lower()
+    assert not _import_roots(path) & {"httpx", "requests", "socket", "urllib", "ccxt"}
+    for forbidden in (
+        "submit_order",
+        "cancel_order",
+        "delete from",
+        "drop table",
+        "vacuum",
+        "--submit",
+        "--act",
+    ):
+        assert forbidden not in lowered
+    assert "?mode=ro" in source
+    assert 'open("xb")' in source
+    assert "PARTIAL_EXTERNAL_WORM_UNVERIFIED" in source
+
+
 def test_external_heartbeat_has_no_trading_or_credential_persistence_path():
     path = ROOT / "tools" / "external_heartbeat.py"
     source = path.read_text(encoding="utf-8")

@@ -15,6 +15,7 @@ import sqlite3
 
 import pytest
 
+from quantos.contracts.alpha import AlphaDefinition
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.ports.persistence import TrialPersistenceError
@@ -23,6 +24,8 @@ from services.research.trial_provenance import (
     TrialProvenance,
     TrialStatus,
     chain_head,
+    trial_provenance_for_config,
+    trial_provenance_for_definition,
 )
 
 
@@ -69,6 +72,40 @@ def test_passing_trial_needs_no_reason_and_is_not_eliminated() -> None:
     record = _record(status=TrialStatus.PASSED_TO_CATALOG)
     assert record.eliminated is False
     assert record.failure_reasons == ()
+
+
+def test_definition_and_hash_helpers_preserve_only_known_provenance() -> None:
+    definition = AlphaDefinition(
+        alpha_id="helper-alpha",
+        name="Helper Alpha",
+        factor_ids=("close",),
+        universe="cs-v1",
+        params={"operator": "momentum", "window": "5"},
+    )
+    from_definition = trial_provenance_for_definition(
+        definition,
+        research_session_id="helper-session",
+        actor_id="tests.provenance",
+        dataset_version="dataset-v1",
+        recorded_at=42,
+    )
+    assert from_definition.trial_id == (
+        f"helper-session:{definition.definition_hash}"
+    )
+    assert from_definition.parameter_set == {"operator": "momentum", "window": "5"}
+    assert from_definition.universe_version == "cs-v1"
+    assert from_definition.alpha_expression == ""
+    assert from_definition.canonical_expression == ""
+
+    hash_only = trial_provenance_for_config(
+        "hash-only",
+        research_session_id="helper-session",
+        actor_id="tests.provenance",
+        recorded_at=42,
+    )
+    assert hash_only.config_hash == "hash-only"
+    assert hash_only.parameter_set == {}
+    assert hash_only.dataset_versions == ()
 
 
 def test_canonical_payload_is_order_independent_and_hash_is_deterministic() -> None:
@@ -318,11 +355,70 @@ def test_existing_v2_store_migrates_and_keeps_its_rows(tmp_path) -> None:
 
     migrated = SqliteExperimentStore(path)
     assert migrated.record_trial_provenance(_record()) is True
-    assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 3
+    assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 4
     # pre-existing rows survived the migration untouched
     assert "legacy-cfg" in migrated.all_trial_hashes()
     assert migrated.search_history_valid() is True
     assert migrated.trial_provenance_chain_valid() is True
+
+
+def test_actual_oos_access_is_append_only_chained_and_counted() -> None:
+    registry = _registry()
+    registry.record_trial_provenance(
+        _record(viewed_oos_boundaries=("legacy-boundary",))
+    )
+    assert registry.record_search_oos_access(
+        "session-1",
+        {
+            "CPCV_OOS_DISTRIBUTION": ("index:[0,10)", "index:[10,20)"),
+            "WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[10,20)",),
+        },
+        viewed_at=2_000,
+    ) == 3
+
+    rows = registry.trial_oos_access("trial-1")
+    assert len(rows) == 3
+    assert rows[0]["prev_entry_hash"] == ""
+    assert rows[1]["prev_entry_hash"] == rows[0]["entry_hash"]
+    assert registry.trial_oos_access_head() == rows[-1]["entry_hash"]
+    assert registry.trial_oos_access_chain_valid() is True
+    # Method is part of access identity: the same index range inspected by two
+    # validators is two distinct peeks, plus the immutable legacy boundary.
+    assert registry.oos_peek_totals() == {"cfg-a": 4}
+
+    connection = registry._store._conn
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        connection.execute(
+            "UPDATE trial_oos_access SET boundary='forged' WHERE access_seq=1"
+        )
+    with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        connection.execute("DELETE FROM trial_oos_access WHERE access_seq=1")
+
+
+def test_v3_store_migrates_oos_chain_without_rewriting_trial_record(tmp_path) -> None:
+    path = str(tmp_path / "registry-v3.db")
+    original = SqliteExperimentStore(path, create=True)
+    original.record_trial_provenance(_record())
+    original_record = original.trial_provenance("trial-1")
+    original._conn.close()
+
+    raw = sqlite3.connect(path)
+    raw.execute("DROP TRIGGER trial_oos_access_no_update")
+    raw.execute("DROP TRIGGER trial_oos_access_no_delete")
+    raw.execute("DROP TABLE trial_oos_access")
+    raw.execute("PRAGMA user_version = 3")
+    raw.commit()
+    raw.close()
+
+    migrated = SqliteExperimentStore(path)
+    assert migrated.record_search_oos_access(
+        "session-1",
+        {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)},
+        viewed_at=2_000,
+    ) == 1
+    assert migrated.trial_provenance("trial-1") == original_record
+    assert migrated.trial_oos_access_chain_valid() is True
+    assert int(migrated._conn.execute("PRAGMA user_version").fetchone()[0]) == 4
 
 
 def test_persistence_failure_surfaces_as_trial_persistence_error(tmp_path) -> None:

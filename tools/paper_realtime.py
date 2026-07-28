@@ -25,6 +25,11 @@ from typing import Any
 from urllib.parse import urlencode
 
 from quantos.contracts.paper import FillMethod, OrderSide, PaperFill
+from quantos.contracts.scheduled_worker import (
+    SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
+    SCHEDULE_EXIT_SUCCESS,
+)
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.execution.paper_realtime_store import PaperRealtimeStore
 from services.execution.paper_reconciliation import reconcile
@@ -976,10 +981,10 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(args.interval_seconds)
     except KeyboardInterrupt:
         print("paper_realtime: stopped by operator")
-        return 0
+        return SCHEDULE_EXIT_SUCCESS
     except Exception as exc:
         print(f"paper_realtime: {type(exc).__name__}: {str(exc)[:240]}")
-        return 1
+        return SCHEDULE_EXIT_FAILURE
     cycle_ok = bool(report.get("verdict", {}).get("cycle_completed"))
     if args.health_check:
         health_ok = bool(
@@ -989,7 +994,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         health_ok = True
-    return 0 if cycle_ok and health_ok else 1
+    if not cycle_ok:
+        return SCHEDULE_EXIT_FAILURE
+    return SCHEDULE_EXIT_SUCCESS if health_ok else SCHEDULE_EXIT_SAFE_BLOCKED
 
 
 if __name__ == "__main__":

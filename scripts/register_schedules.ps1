@@ -120,7 +120,8 @@ $legacyLiveTasks = @(
   "QUANTOS_watchdog",
   "QUANTOS_backup",
   "QUANTOS_external_heartbeat",
-  "QUANTOS_domain_event_seal"
+  "QUANTOS_domain_event_seal",
+  "QUANTOS_artifact_admission_seal"
 )
 foreach ($taskName in $legacyLiveTasks) {
   Disable-TaskIfPresent -Name $taskName
@@ -143,6 +144,7 @@ $schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMin
 $externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
+$artifactAdmissionSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:40"
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
 $paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
@@ -208,8 +210,11 @@ $eventSealReadiness = Get-EventSealReadiness
 if ($eventSealReadiness.Ready) {
   Register-L2Task -Name "QUANTOS_domain_event_seal" -Module "domain_event_seal" `
     -Trigger $eventSealTrigger
+  Register-L2Task -Name "QUANTOS_artifact_admission_seal" `
+    -Module "artifact_admission_seal" -Trigger $artifactAdmissionSealTrigger
 } else {
   Write-Warning "QUANTOS_domain_event_seal remains disabled: $($eventSealReadiness.Reason)"
+  Write-Warning "QUANTOS_artifact_admission_seal remains disabled: $($eventSealReadiness.Reason)"
 }
 
 Write-Host ""

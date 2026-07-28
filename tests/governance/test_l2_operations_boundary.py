@@ -54,6 +54,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         "data/cache/live_refresh_history.db": ("data_refresh_history", True),
         "data/cache/paper_track.db": ("paper_track", True),
         "data/cache/research_runs.db": ("research_run_registry", True),
+        "data/cache/vendor_delivery_history.db": (
+            "vendor_delivery_history_authority",
+            False,
+        ),
     }
     assert all(path.startswith("data/cache/") for path in actual)
     assert all(not path.startswith("key/") for path in actual)
@@ -155,6 +159,7 @@ def test_scheduler_watchdog_does_not_import_any_monitored_worker():
             "ic_panel_research",
             "l2_backup",
             "domain_event_seal",
+            "artifact_admission_seal",
             "external_heartbeat",
         }
     }

@@ -148,6 +148,52 @@ def fetch_mexc_account(api_key: str, api_secret: str, *, http_request: Optional[
     return data
 
 
+# ---------------------------------------------------------------------------
+# Test Order(签名 POST /api/v3/order/test,727 §13 阶段 C / Phase 8 M2)
+# ---------------------------------------------------------------------------
+
+_TEST_ORDER_PATH = "/api/v3/order/test"
+
+
+def fetch_mexc_test_order(api_key: str, api_secret: str, *, order_params: dict,
+                          http_request: Optional[Callable] = None,
+                          clock: Optional[Callable[[], float]] = None,
+                          sleep: Optional[Callable[[float], None]] = None,
+                          max_retries: int = 2, retry_base_delay: float = 1.0,
+                          recv_window_ms: int = _DEFAULT_RECV_WINDOW_MS) -> tuple:
+    """签名 POST /api/v3/order/test——**只验证、永不进撮合**(MEXC 端语义:成功响应空
+    对象 `{}`)。阶段 C 要验的正是交易所侧对 签名/timestamp/recvWindow/参数/权限 的
+    回答,所以**非 2xx 不抛**——返回 (status, data),MEXC 错误体(code/msg)原样
+    交回调用方摆进证据;非 JSON body 仍 RuntimeError(网关故障无诊断价值)。
+
+    本函数是 `tools/mexc_readonly_smoke.py --test-order` 人工旗标的唯一出口。
+    治理 AST 钉死:本模块凡以 "/api/v3/order" 开头的字符串常量只能是
+    "/api/v3/order/test"——它结构上拼不出真实下单端点。"""
+    http = http_request or _default_http_request
+    clk = clock or time.time
+    slp = sleep or time.sleep
+    headers = {"X-MEXC-APIKEY": api_key,
+               "Content-Type": "application/x-www-form-urlencoded"}
+    url = MEXC_MAINNET_BASE + _TEST_ORDER_PATH
+
+    def _do():
+        # 签名串(含 timestamp)每次重试都重新算——退避可能跨越数秒(与适配器同款考量)。
+        params = dict(order_params)
+        params["timestamp"] = int(clk() * 1000)
+        params["recvWindow"] = recv_window_ms
+        status, raw = http("POST", url, body=_sign_query(params, api_secret).encode(),
+                           headers=headers)
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"non-JSON response (status {status})") from exc
+        return status, data
+
+    return call_with_backoff(_do, is_rate_limited=_is_rate_limited,
+                             max_retries=max_retries,
+                             base_delay=retry_base_delay, sleep=slp)
+
+
 @dataclass(frozen=True)
 class MexcKeySafetyResult:
     """结构化只读校验结果。`raw_fields` 只含布尔/计数类非密钥诊断字段,绝不转存整个响应体。"""

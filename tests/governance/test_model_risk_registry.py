@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 import pytest
 from pydantic import ValidationError
@@ -62,6 +63,7 @@ def test_registry_is_append_only_idempotent_and_detects_tamper(tmp_path):
     from services.governance.model_risk_registry import (
         GovernedModelRegistry,
         ImmutableModelRiskArtifact,
+        ModelRiskStoreError,
         SqliteModelRiskStore,
     )
 
@@ -82,12 +84,76 @@ def test_registry_is_append_only_idempotent_and_detects_tamper(tmp_path):
     ).fetchone()
     payload = json.loads(row[0])
     payload["owner_group"] = "tampered"
-    store._conn.execute(
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        store._conn.execute(
+            "UPDATE model_risk_artifacts SET payload_json=? WHERE artifact_id=?",
+            (json.dumps(payload, sort_keys=True), card.artifact_id),
+        )
+    path = store.path
+    store.close()
+
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TRIGGER model_risk_artifacts_no_update")
+    connection.execute(
         "UPDATE model_risk_artifacts SET payload_json=? WHERE artifact_id=?",
         (json.dumps(payload, sort_keys=True), card.artifact_id),
     )
-    store._conn.commit()
-    assert registry.verify_artifact(card.artifact_id) is False
+    connection.commit()
+    connection.close()
+    with pytest.raises(ModelRiskStoreError):
+        SqliteModelRiskStore(path, create=False)
+
+
+def test_registry_pins_durability_and_detects_tail_truncation(tmp_path):
+    from services.governance.model_risk_registry import (
+        GovernedModelRegistry,
+        ModelRiskStoreError,
+        SqliteModelRiskStore,
+    )
+
+    path = str(tmp_path / "model-risk.db")
+    store = SqliteModelRiskStore(path, create=True)
+    registry = GovernedModelRegistry(store)
+    registry.record_model_card(_model_card())
+    assert store._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert store._conn.execute("PRAGMA synchronous").fetchone()[0] == 2
+    assert len(registry.artifact_history_hash()) == 64
+    store.close()
+
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TRIGGER model_risk_artifacts_no_delete")
+    connection.execute("DELETE FROM model_risk_artifacts")
+    connection.execute(
+        "CREATE TRIGGER model_risk_artifacts_no_delete "
+        "BEFORE DELETE ON model_risk_artifacts "
+        "BEGIN SELECT RAISE(ABORT, 'model risk artifacts are append-only'); END"
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(ModelRiskStoreError, match="head mismatch"):
+        SqliteModelRiskStore(path, create=False)
+
+
+def test_registry_rejects_same_name_noop_trigger_and_schema_injection(tmp_path):
+    from services.governance.model_risk_registry import (
+        ModelRiskStoreError,
+        SqliteModelRiskStore,
+    )
+
+    path = str(tmp_path / "model-risk.db")
+    store = SqliteModelRiskStore(path, create=True)
+    store.close()
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TRIGGER model_risk_artifacts_no_update")
+    connection.execute(
+        "CREATE TRIGGER model_risk_artifacts_no_update "
+        "BEFORE UPDATE ON model_risk_artifacts BEGIN SELECT 1; END"
+    )
+    connection.execute("CREATE TABLE injected(value TEXT)")
+    connection.commit()
+    connection.close()
+    with pytest.raises(ModelRiskStoreError, match="schema|trigger"):
+        SqliteModelRiskStore(path, create=False)
 
 
 def test_red_team_requires_all_cases_and_fails_on_any_boundary_breach():

@@ -46,6 +46,10 @@ from live.exchange.binance_futures import BinanceFuturesAdapter
 from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.exchange.mexc_spot import MexcSpotAdapter
 from live.execution.position_ledger import LiveLedger
+from live.execution.order_recovery import (
+    SqliteOrderRecoveryStore,
+    resolve_unknown_orders as resolve_unknown_submission_orders,
+)
 from live.execution.crowding_score import compute_crowding_scores, crowding_zscore
 from live.execution.market_stats import average_daily_volume_units, realized_volatility
 from live.execution.day_pnl import compute_day_pnl
@@ -97,6 +101,8 @@ from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import AccountRiskState, MarketContext, RiskContext, StrategyApproval
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.pre_trade.kill_switch_runtime import arm_and_record
+from quantos.contracts.alpha import Actor, ActorKind
 from tools.alert_sink import emit
 from tools.coingecko_fetch import fetch_simple_price_observations
 from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
@@ -304,6 +310,7 @@ def _venue_paths(suffix: str, *, strategy_id: str = _STRATEGY_ID) -> dict:
     status_name = f"live_track_status{suffix}{strategy_part}.json"
     return {
         "ledger": os.path.join("data", "cache", f"live_track{suffix}.db"),
+        "order_recovery": os.path.join("data", "cache", f"live_order_recovery{suffix}.db"),
         "status": os.path.join("data", "cache", status_name),
         "risk_state": os.path.join("data", "cache", f"live_risk_state{suffix}.json"),
         # W6 回撤控制器快照(账户级,与 risk_state 同口径;独立文件的理由见
@@ -1307,6 +1314,36 @@ def main() -> None:
                                     expected_legs=expected_legs)
 
     ledger = LiveLedger(paths["ledger"], create=True)
+    order_recovery_store = SqliteOrderRecoveryStore(paths["order_recovery"], create=True)
+
+    # Durable §13.4 recovery runs before the older ledger snapshot recovery.
+    # The kill-switch callback writes the risk-owned SQLite authority in one
+    # transaction; a plain in-memory KillSwitch is never used here.
+    recovery_kill_switch_store = open_authoritative_kill_switch_store(paths["kill_switch"])
+    recovery_actor = Actor(actor_id="order-recovery", kind=ActorKind.SYSTEM)
+    try:
+        durable_recovery = resolve_unknown_submission_orders(
+            order_recovery_store, real_venue, now_ms=now,
+            kill_switch_arm=lambda reason, at: arm_and_record(
+                recovery_kill_switch_store, recovery_actor, reason, at=at),
+        )
+    finally:
+        recovery_kill_switch_store.close()
+    if durable_recovery["outcomes"]:
+        alerts.append(f"order-recovery: {durable_recovery['outcomes']}")
+    if order_recovery_store.deployment_blocked(strategy_id):
+        alerts.append(
+            f"ORDER_SUBMISSION_UNKNOWN: deployment {strategy_id} remains blocked; "
+            "manual venue reconciliation required"
+        )
+        emit(alerts, context="live_track", now_ms=now)
+        json.dump({
+            "ran_at": now, "mode": "submit" if submit else "preview",
+            "hard_stop": True, "strategy": strategy_id,
+            "order_recovery": durable_recovery, "alerts": alerts,
+        }, open(paths["status"], "w", encoding="utf-8"), indent=2)
+        order_recovery_store.close()
+        return
 
     # 崩溃恢复(2026-07-04):上一轮若在提交订单后、成交确认完成前被杀掉(如 Windows 定时任务被
     # 系统重启打断),本地账本可能停在一个非终态快照。在读仓位之前先核对+补记,否则这一轮会用
@@ -1344,6 +1381,7 @@ def main() -> None:
                   "strategy": strategy_id, "reconciliation": recon, "alerts": alerts},
                  open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: reconciliation drift {recon['drift']} -> {paths['status']}", flush=True)
+        order_recovery_store.close()
         return
 
     account = real_venue.account()
@@ -1403,6 +1441,7 @@ def main() -> None:
                   "alerts": alerts}, open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: kill-switch still tripped (incident={kill_switch.state.incident_id}) "
               f"-> {paths['status']}", flush=True)
+        order_recovery_store.close()
         return
 
     # 现货敞口上限口径(2026-07 MEXC 对接 1.4):期货形默认(net_cap=0.3×aum)是为多腿 L/S
@@ -1488,6 +1527,7 @@ def main() -> None:
                  open(paths["status"], "w", encoding="utf-8"), indent=2)
         print(f"HARD STOP: risk breach {breach.reasons} -> {risk_response['action']} "
               f"emergency={emergency_summary} -> {paths['status']}", flush=True)
+        order_recovery_store.close()
         return
 
     mandate = None
@@ -1692,6 +1732,7 @@ def main() -> None:
             mandate=mandate, validation_attestation=attestations.get(strategy_id),
             ledger=write_ledger, audit=audit, strategy_id=strategy_id,
             decided_ts=decided_ts, now=now, frozen=frozenset(frozen_names),
+            unknown_order_store=order_recovery_store,
             limit_pricing=limit_pricing,   # None 除非 --order-type limit(默认行为字节不变)
             poll_sleep=lambda: time.sleep(1.0))   # 真实驱动器必须真 sleep,否则轮询在撮合完成前打光
 
@@ -1801,6 +1842,7 @@ def main() -> None:
         status["limit_fill_stats"] = limit_fill_stats
     json.dump(status, open(paths["status"], "w", encoding="utf-8"), indent=2)
     emit(alerts, context="live_track", now_ms=now)
+    order_recovery_store.close()
     print(f"=== live_track ({'SUBMIT' if submit else 'PREVIEW'}) tier={result.tier} "
           f"submitted={len(result.submitted)} pending={len(result.pending_review)} "
           f"errors={len(result.submission_errors)} aum=${aum:.2f} -> {paths['status']}", flush=True)

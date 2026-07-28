@@ -51,8 +51,13 @@ def guard_to_testing(evaluation, config, catalog_count) -> tuple[bool, Reasons]:
     return True, ()   # registration is enough to begin testing
 
 
-def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFactoryConfig,
-                       catalog_count: int, bh_survived: bool = True) -> tuple[bool, Reasons]:
+def guard_to_validated(
+    evaluation: Optional[AlphaEvaluation],
+    config: AlphaFactoryConfig,
+    catalog_count: int,
+    bh_survived: bool = True,
+    family_fdr_survived: bool = True,
+) -> tuple[bool, Reasons]:
     if evaluation is None:
         return False, ("NO_EVALUATION",)
     reasons = []
@@ -70,6 +75,11 @@ def guard_to_validated(evaluation: Optional[AlphaEvaluation], config: AlphaFacto
     # alpha has an IC p-value it must survive the catalog FDR
     if evaluation.ic_pvalue is not None and not bh_survived:
         reasons.append("FDR_NOT_SURVIVED")
+    # 727 §7.3: correlated transforms of one economic/input family must also
+    # survive the family-level and within-family lens.  This is additive to
+    # BHY above; it never replaces or relaxes the existing catalog-wide gate.
+    if evaluation.ic_pvalue is not None and not family_fdr_survived:
+        reasons.append("FAMILY_FDR_NOT_SURVIVED")
     return (not reasons, tuple(reasons))
 
 

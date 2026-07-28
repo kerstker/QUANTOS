@@ -2,7 +2,21 @@
 
 本计划承接 `docs/QUANTOS_727.md`，当前范围限定在 L2 研究、干跑和纸面运行；任何真实资金、真实凭证、主网 broker 或真实订单能力仍然是结构性禁止项。
 
-## 当前执行切片：Phase 0/1
+## 当前执行状态（2026-07-28）
+
+Phase 0–13 的逐阶段裁决已由
+`docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md` 机器生成并覆盖测试。当前：
+
+- PASS：Phase 0、1、2、4、5、6、10、11、13；
+- PARTIAL：Phase 3（历史 bare trials 不可伪造回填）、Phase 7（Forward Paper
+  周期不足）、Phase 8（MEXC 代码完成但真实账户未验证）；
+- BLOCKED：Phase 9（缺外部 Deployment Grant/真实 broker/人工审查）、Phase 12
+  （缺真实网络、WebSocket、部分成交、限流和跨进程故障矩阵）。
+
+MEXC M1–M4 已实现公开行情、只读账户、`order/test`、未知订单恢复、启动恢复以及
+listen-key/private user stream 接缝；默认安全旗标仍关闭，不存在无人工批准可达的真实订单。
+
+## 已完成基线切片：Phase 0/1
 
 ### Phase 0：基线与安全冻结
 
@@ -24,9 +38,11 @@
 
 1. 生成并绑定三条 Alpha 的完整九引擎 Paper risk bundle；缺输入继续 `PAPER_BLOCKED`。
 2. 在同一 PIT 快照上累计至少 8 个有效前向周期，并保留决策、成交模拟、费用、资金费、对账和审计链。
-3. 完善跨会话、不可丢弃的 Trial Ledger 历史和模型风险审查身份；禁止改写既有历史制品。
+3. 所有新增研究继续通过统一 TrialRecord/OOS access 账本；2533 条历史 bare trial
+   保持诚实缺失，禁止事后回填。
 4. 继续补齐前端阻断原因、后台 Job Registry 和运行时间线，但保持前端只读、高风险操作走独立审批 API。
-5. 将外部身份、授权数据、tick/LOB 执行校准、跨主机恢复/封存和真实 broker 作为独立的 post-L2 外部项目，不用 mock 关闭这些门。
+5. 将外部身份、授权数据、tick/LOB 执行校准、跨主机恢复/封存、真实 MEXC
+   WebSocket smoke 和真实 broker 作为独立的 post-L2 外部项目，不用 mock 关闭这些门。
 
 ## 验收与证据
 

@@ -31,6 +31,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from quantos.contracts.portfolio import Position
+from quantos.contracts.scheduled_worker import (
+    SCHEDULE_EXIT_SAFE_BLOCKED,
+    SCHEDULE_EXIT_SUCCESS,
+)
 from services.execution.dry_run_pipeline import run_dry_run_pipeline
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.research.paper_trading.attested_store import AttestedForwardLedger
@@ -697,7 +701,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"-> {args.output}")
-    return 0 if report["verdict"]["paper_preview_ready"] else 1
+    return (
+        SCHEDULE_EXIT_SUCCESS
+        if report["verdict"]["paper_preview_ready"]
+        else SCHEDULE_EXIT_SAFE_BLOCKED
+    )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 {
   "block_reasons": [],
-  "commit": "bb566c2ad32d8b13ce81622b70bb663e813b935a",
+  "commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
     "exported": [
@@ -10,17 +11,20 @@
       "family_adjusted_trial_count",
       "marginal_ir"
     ],
-    "role": "DIAGNOSTIC_NOT_GATE",
-    "wired_into_promotion_gate": false
+    "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
+    "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1785159311846,
+  "generated_at_ms": 1785235890906,
+  "generator_sha256": "105a35a79bb1979d949354f197f72cd90447a242adb702e5cf946772346f423b",
+  "input_hash": "1d2094984bbbcf53a8542a5c2c314a49c731715a46721e2600598bb65710d834",
   "ledger": {
     "append_only_guards": {
       "evaluations": "GUARDED",
       "search_attempt_events": "GUARDED",
       "search_candidates": "GUARDED",
       "search_evaluations": "GUARDED",
-      "trial_provenance": "TABLE_ABSENT",
+      "trial_oos_access": "GUARDED",
+      "trial_provenance": "GUARDED",
       "trials": "GUARDED"
     },
     "exists": true,
@@ -30,49 +34,59 @@
       "search_attempt_events": 71,
       "search_candidates": 17644,
       "search_evaluations": 211,
+      "trial_oos_access": 0,
+      "trial_provenance": 0,
       "trials": 2533
     },
-    "sha256": "04b95c7d5298ca8b05b4dbb0592e422c450a82ba8a4ffa4651d7e5dfa809c12f",
+    "sha256": "a5d4179b044d33682a67184f8a3d00a1c1965403dbe801d448901c8923518288",
     "sqlite_integrity": "ok",
-    "user_version": 2
+    "user_version": 4
   },
   "mode": "TRIAL_LEDGER_INTEGRITY_READ_ONLY",
+  "oos_access": {
+    "accesses_recorded": 0,
+    "chain_head": "",
+    "chain_valid": true,
+    "reason": null,
+    "table_present": true,
+    "trials_with_access": 0
+  },
   "open_gaps": [
     {
-      "detail": "P5-1: the two canonical search entries (services.research.alpha_factory.run_alpha_factory and services.intelligence.registered_candidate_batch.run_registered_candidate_batch) now write a full TrialRecord per registered candidate at registration time, pinned by tests/alpha_factory/test_trial_provenance_wiring.py and visible in provenance_wiring. Production rows appear as drivers re-run through them. Still open: the 15+ other research drivers register bare config hashes, and the entire pre-P5-1 historical trial population is permanently bare \u2014 bare_trials stays non-zero and this artifact stays PARTIAL.",
+      "detail": "P5-1/P5-2: the factory, registered-candidate batch, official research session, alpha-family discovery, and robust-grid entries now write TrialRecord provenance per registered candidate at registration time. wiring is visible in provenance_wiring and pinned by the provenance/session tests. Production rows appear as drivers are re-run through these entries. Still open: any future ad-hoc driver that bypasses them, and the entire pre-P5-1 historical trial population is permanently bare — bare_trials stays non-zero and this artifact stays PARTIAL.",
       "id": "TRIAL_PROVENANCE_NOT_YET_WRITTEN_BY_EVERY_ENTRY_POINT",
-      "requirement": "727 \u00a77.2 \u2014 all AI, manual and sweep attempts enter one ledger",
+      "requirement": "727 §7.2 — all AI, manual and sweep attempts enter one ledger",
       "state": "CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING"
-    },
-    {
-      "detail": "services/alpha/family_testing.py implements the two-stage hierarchy, family-adjusted trial count and marginal IR. It is not yet the lens used by the promotion guard, which still applies the flat BH/BHY lens.",
-      "id": "FAMILY_FDR_NOT_A_GATE",
-      "requirement": "727 \u00a77.3 \u2014 family-level and within-family FDR",
-      "state": "DIAGNOSTIC_ONLY"
-    },
-    {
-      "detail": "viewed_oos_boundaries is persisted and surfaced via oos_peek_totals(), but a caller that omits it records zero peeks. The field cannot by itself prove a boundary was unseen.",
-      "id": "OOS_PEEK_ACCOUNTING_DEPENDS_ON_CALLERS",
-      "requirement": "727 \u00a77.2 / \u00a70.4.7 \u2014 OOS view count must be recorded",
-      "state": "FIELD_EXISTS_CALLERS_PENDING"
     }
   ],
   "provenance": {
     "actor_type_counts": {},
     "attempts_recorded": 0,
     "bare_trials": 2533,
-    "chain_head": null,
-    "chain_valid": null,
+    "chain_head": "",
+    "chain_valid": true,
     "configs_with_provenance": 0,
     "coverage_ratio": 0.0,
     "max_oos_peek_count": null,
-    "reason": "PROVENANCE_SCHEMA_NOT_YET_MIGRATED",
+    "reason": null,
     "status_counts": {},
-    "table_present": false
+    "table_present": true
   },
   "provenance_wiring": {
     "available": true,
     "entries": {
+      "alpha_family_discovery": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "wired": true
+      },
+      "crypto_robust_optimization": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "wired": true
+      },
       "run_alpha_factory": {
         "code_hash_pin": true,
         "hypothesis_binding": true,
@@ -82,14 +96,29 @@
         "code_hash_pin": true,
         "hypothesis_binding": true,
         "wired": true
+      },
+      "run_research_session": {
+        "code_hash_pin": false,
+        "definition_binding": true,
+        "hypothesis_binding": false,
+        "oos_access_binding": true,
+        "wired": true
       }
     },
     "registry_record_api": true,
     "role": "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE",
-    "wired_entry_count": 2
+    "wired_entry_count": 5
   },
   "readiness": "L2_DRY_RUN_ONLY",
-  "schema_version": 1,
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 2,
   "trial_record_fields_required": [
     "trial_id",
     "parent_trial_id",

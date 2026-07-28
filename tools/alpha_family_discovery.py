@@ -49,6 +49,7 @@ from services.research.alpha_family_catalog import AlphaFamilySpec, family_specs
 from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.trial_provenance import trial_provenance_for_definition
 from services.alpha.metrics import series_metrics
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
 from services.risk.pre_trade.config import RiskLimits
@@ -451,6 +452,16 @@ def discover(
     config_hashes = [definitions[s.candidate_id].definition_hash for s in supported]
     exp_registry.register_search_candidates(search_id, config_hashes, registered_at=now)
     for spec in supported:
+        exp_registry.record_trial_provenance(
+            trial_provenance_for_definition(
+                definitions[spec.candidate_id],
+                research_session_id=search_id,
+                actor_id="tools.alpha_family_discovery",
+                dataset_version=dataset_version,
+                recorded_at=now,
+                model_name="alpha-family-catalog",
+            )
+        )
         catalog.register(definitions[spec.candidate_id])
 
     evaluated: dict[str, dict] = {}

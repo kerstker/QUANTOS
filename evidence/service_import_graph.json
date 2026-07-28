@@ -438,7 +438,7 @@
     {
       "references": [
         {
-          "line": 29,
+          "line": 37,
           "module": "services.monitoring.audit_log",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -449,17 +449,17 @@
     {
       "references": [
         {
-          "line": 33,
+          "line": 41,
           "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 37,
+          "line": 45,
           "module": "services.risk.research_risk.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 38,
+          "line": 46,
           "module": "services.risk.research_risk.events",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -470,12 +470,12 @@
     {
       "references": [
         {
-          "line": 31,
+          "line": 39,
           "module": "services.trading.broker_adapter",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 32,
+          "line": 40,
           "module": "services.trading.dry_run_adapters.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -596,7 +596,7 @@
     {
       "references": [
         {
-          "line": 26,
+          "line": 31,
           "module": "services.governance.model_risk_registry",
           "path": "services/intelligence/runtime.py"
         }
@@ -684,6 +684,11 @@
         {
           "line": 18,
           "module": "services.research.ports.persistence",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 19,
+          "module": "services.research.trial_provenance",
           "path": "services/intelligence/research_session.py"
         }
       ],
@@ -1015,7 +1020,7 @@
           "path": "services/research/regime.py"
         },
         {
-          "line": 116,
+          "line": 127,
           "module": "services.validation.cpcv",
           "path": "services/research/session.py"
         },
@@ -1134,7 +1139,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "f85ef2ccc8308f197e832eb0b5b94e8efb42b64c49c6c14ee2e26f0c64ca76ab",
+  "graph_sha256": "e0838a21b002f902c57eae7f5061e4bd89818f795984a4f7c1003cd03eb25a07",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1172,7 +1177,7 @@
   "policy_sha256": "466b9289e04b1588542037fea247007cba89fcb9f8bae02601e070c7bcd5cb26",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 367,
+  "source_file_count": 371,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

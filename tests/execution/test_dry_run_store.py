@@ -1,8 +1,11 @@
+import json
 import sqlite3
+from decimal import Decimal
 
 import pytest
 
 from quantos.contracts.events import Event
+from quantos.contracts.trading import OrderIntent, OrderSide, OrderType
 from services.execution.dry_run_store import (
     DryRunOutboxEvent,
     DryRunRun,
@@ -10,6 +13,13 @@ from services.execution.dry_run_store import (
     DryRunStoreError,
 )
 from services.execution.events import dry_run_completed_event
+from services.execution.simulated_sor import (
+    BookLevel,
+    SORPolicy,
+    VenueBook,
+    route_simulated_intent,
+)
+from services.execution.simulated_tca import RouteExecution, build_route_tca
 from services.risk.research_risk.events import research_risk_evaluated_event
 
 
@@ -36,6 +46,58 @@ def _outbox(run_id="r1", *, run_hash=""):
         ),
         correlation_id=run_id,
         causation_id=f"started-{run_id}",
+    )
+
+
+def _routed_run(rid="routed"):
+    intent = OrderIntent(
+        instrument_id="BTC",
+        side=OrderSide.BUY,
+        quantity=10,
+        order_type=OrderType.MARKET,
+        strategy_id="carry",
+    )
+    plan = route_simulated_intent(
+        intent,
+        (
+            VenueBook(
+                venue_id="A",
+                observed_at_ms=1_000,
+                taker_fee_bps=Decimal("10"),
+                latency_ms=0,
+                asks=(BookLevel(Decimal("100"), 10),),
+            ),
+        ),
+        as_of_ms=1_000,
+        policy=SORPolicy(max_quote_age_ms=0),
+    )
+    tca = build_route_tca(
+        plan,
+        reference_price=Decimal("100"),
+        executions=(RouteExecution(0, "A", 10, Decimal("100")),),
+    )
+    return DryRunRun(
+        run_id=rid,
+        strategy_id="carry",
+        timestamp=1000,
+        n_intents=1,
+        n_approved=1,
+        n_rejected=0,
+        rejected_reasons=[],
+        pnl={"net": 0.0},
+        audit_root="abc123",
+        detail={
+            "routing_snapshot_id": "books:abc",
+            "route_tca_schema_version": 1,
+            "routing": [
+                {
+                    "instrument_id": "BTC",
+                    "side": "BUY",
+                    "status": "COMPLETE",
+                }
+            ],
+            "route_tca": [tca],
+        },
     )
 
 
@@ -96,6 +158,47 @@ def test_dry_run_rows_are_append_only():
         store._conn.execute("UPDATE dry_run SET strategy_id='evil'")
     with pytest.raises(sqlite3.DatabaseError, match="append-only"):
         store._conn.execute("DELETE FROM dry_run")
+
+
+def test_route_tca_is_verified_on_save_and_reopen(tmp_path):
+    path = str(tmp_path / "dry-run.db")
+    store = DryRunStore(path, create=True)
+    store.save_run(_routed_run())
+    store.close()
+
+    reopened = DryRunStore(path, create=False)
+    assert reopened.get_run("routed")["detail"]["route_tca"][0]["simulation_only"]
+    reopened.close()
+
+    connection = sqlite3.connect(path)
+    connection.execute("DROP TRIGGER dry_run_no_update")
+    detail = json.loads(
+        connection.execute(
+            "SELECT detail FROM dry_run WHERE run_id='routed'"
+        ).fetchone()[0]
+    )
+    detail["route_tca"][0]["filled_quantity"] = 9
+    connection.execute(
+        "UPDATE dry_run SET detail=? WHERE run_id='routed'",
+        (json.dumps(detail),),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(DryRunStoreError, match="route TCA record is invalid"):
+        DryRunStore(path, create=False)
+
+
+def test_route_tca_cannot_claim_an_unretained_route():
+    run = _routed_run()
+    changed = DryRunRun(
+        **{
+            **run.__dict__,
+            "detail": {**run.detail, "routing": []},
+        }
+    )
+    with pytest.raises(DryRunStoreError, match="does not bind"):
+        DryRunStore(":memory:", create=True).save_run(changed)
 
 
 def test_outbox_insert_failure_rolls_back_run_in_same_transaction():

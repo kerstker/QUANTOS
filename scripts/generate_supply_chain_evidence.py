@@ -28,8 +28,18 @@ from services.governance.vulnerability_evidence import (  # noqa: E402
 from services.governance.artifact_admission import (  # noqa: E402
     load_json_without_duplicate_keys,
 )
+from services.governance.artifact_admission_store import (  # noqa: E402
+    POLICY_REGISTRY_KIND,
+    RECEIPT_AUTHORITY_REGISTRY_KIND,
+    ArtifactAdmissionStore,
+    ArtifactAdmissionStoreError,
+)
 from services.governance.reproducibility_evidence import (  # noqa: E402
     verify_container_reproducibility_evidence,
+)
+from tools.artifact_admission_seal import (  # noqa: E402
+    ArtifactAdmissionSealError,
+    verify_artifact_admission_seal,
 )
 
 
@@ -116,17 +126,21 @@ _MANIFESTS = (
     "tools/domain_event_health.py",
     "tools/domain_event_ops.py",
     "tools/domain_event_seal.py",
+    "tools/artifact_admission_seal.py",
     "tools/domain_event_owner_migration.py",
     "tools/domain_event_outbox_drain.py",
     "tools/live_data_refresh.py",
+    "tools/live_testnet_smoke.py",
     "tools/deployment_events.py",
     "tools/live_track_advance.py",
     "tools/external_heartbeat.py",
     "tools/verify_artifact_admission.py",
+    "tools/provision_artifact_admission_authority.py",
     "tools/crypto_robust_optimization.py",
     "tests/governance/test_artifact_admission.py",
     "tests/governance/test_artifact_admission_cli.py",
     "tests/governance/test_artifact_admission_store.py",
+    "tests/governance/test_artifact_admission_provisioning.py",
     "tests/governance/test_artifact_receipt_auth.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
@@ -158,6 +172,7 @@ _MANIFESTS = (
     "tests/governance/test_l2_operations_boundary.py",
     "tests/governance/test_top_tier_assessment.py",
     "tests/governance/test_supply_chain_evidence.py",
+    "tests/tools/test_live_testnet_smoke.py",
     "tests/contracts/test_paper_execution_contract.py",
     "tests/contracts/test_event_schema_registry.py",
     "tests/alpha/test_maintenance_store.py",
@@ -185,6 +200,7 @@ _MANIFESTS = (
     "tests/tools/test_domain_event_health.py",
     "tests/tools/test_domain_event_ops.py",
     "tests/tools/test_domain_event_seal.py",
+    "tests/tools/test_artifact_admission_seal.py",
     "tests/tools/test_domain_event_owner_migration.py",
     "tests/tools/test_domain_event_outbox_drain.py",
     "tests/tools/test_l2_backup.py",
@@ -205,6 +221,109 @@ def _sha256_bytes(content: bytes) -> str:
 
 def _sha256_file(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
+
+
+def _artifact_admission_authority_snapshot(
+    root: Path,
+    *,
+    policy_registry_bytes: bytes,
+    receipt_authority_registry_bytes: bytes,
+) -> dict[str, Any] | None:
+    store_path = root / "data/cache/artifact_admission.db"
+    if not store_path.exists():
+        return None
+    if store_path.is_symlink() or not store_path.is_file():
+        raise ValueError("artifact-admission authority path is not a regular file")
+    try:
+        store = ArtifactAdmissionStore(str(store_path), create=False)
+        try:
+            heads = store.registry_heads()
+            expected = {
+                POLICY_REGISTRY_KIND: policy_registry_bytes,
+                RECEIPT_AUTHORITY_REGISTRY_KIND: receipt_authority_registry_bytes,
+            }
+            if set(heads) != set(expected):
+                raise ValueError("artifact-admission authority heads are incomplete")
+            for kind, content in expected.items():
+                head = heads[kind]
+                if (
+                    head.registry_bytes != content
+                    or head.registry_sha256 != _sha256_bytes(content)
+                ):
+                    raise ValueError(
+                        f"artifact-admission authority {kind} mirror mismatch"
+                    )
+            decisions = store.decisions()
+            return {
+                "authority_time_floor_ms": store.authority_time_floor(),
+                "decision_count": len(decisions),
+                "policy_registry_event_hash": heads[
+                    POLICY_REGISTRY_KIND
+                ].event_hash,
+                "policy_registry_event_seq": heads[
+                    POLICY_REGISTRY_KIND
+                ].authority_event_seq,
+                "receipt_authority_registry_event_hash": heads[
+                    RECEIPT_AUTHORITY_REGISTRY_KIND
+                ].event_hash,
+                "receipt_authority_registry_event_seq": heads[
+                    RECEIPT_AUTHORITY_REGISTRY_KIND
+                ].authority_event_seq,
+            }
+        finally:
+            store.close()
+    except ArtifactAdmissionStoreError as exc:
+        raise ValueError("artifact-admission authority verification failed") from exc
+
+
+def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
+    evidence_ref = "evidence/artifact_admission_seal_latest.json"
+    evidence_path = root / evidence_ref
+    if not evidence_path.is_file() or evidence_path.is_symlink():
+        return {"status": "NOT_PROVIDED"}
+    try:
+        evidence_bytes = evidence_path.read_bytes()
+        document = load_json_without_duplicate_keys(evidence_bytes)
+        if (
+            not isinstance(document, dict)
+            or document.get("operation_verdict") != "PASS"
+            or document.get("institutional_seal_status")
+            != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
+            or document.get("authority_mutated") is not False
+            or document.get("destination_class")
+            not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+            or document.get("external_signature_verified") is not False
+            or document.get("worm_retention_verified") is not False
+            or not isinstance(document.get("anchor_path"), str)
+        ):
+            raise ValueError("artifact-admission seal evidence contract is invalid")
+        verified = verify_artifact_admission_seal(
+            authority_path=root / "data/cache/artifact_admission.db",
+            anchor_path=document["anchor_path"],
+        )
+        if (
+            verified.get("verdict") != "PASS"
+            or verified.get("authority_extends_anchor") is not True
+            or verified.get("anchor_sha256") != document.get("anchor_sha256")
+        ):
+            raise ValueError("artifact-admission external anchor is not current")
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        ArtifactAdmissionSealError,
+    ) as exc:
+        raise ValueError("artifact-admission external seal verification failed") from exc
+    return {
+        "status": "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED",
+        "evidence_ref": evidence_ref,
+        "evidence_sha256": _sha256_bytes(evidence_bytes),
+        "anchor_sha256": document["anchor_sha256"],
+        "destination_class": document["destination_class"],
+        "external_signature_verified": False,
+        "worm_retention_verified": False,
+    }
 
 
 def _requirement_entries(path: Path, seen: set[Path] | None = None) -> list[str]:
@@ -430,18 +549,28 @@ def build_supply_chain_artifacts(
         for entry in receipt_authority_registry["keys"].values()
         if isinstance(entry, dict) and entry.get("status") == "ACTIVE"
     )
-    admission_store_provisioned = (root / "data/cache/artifact_admission.db").is_file()
+    admission_authority = _artifact_admission_authority_snapshot(
+        root,
+        policy_registry_bytes=policy_registry_bytes,
+        receipt_authority_registry_bytes=receipt_authority_registry_bytes,
+    )
+    admission_store_provisioned = admission_authority is not None
+    admission_external_seal = _artifact_admission_external_seal(root)
     admission_implementations = (
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "tools/verify_artifact_admission.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/artifact_admission_seal.py",
     )
     admission_verification = (
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
     )
     sbom = {
         "bomFormat": "CycloneDX",
@@ -581,9 +710,32 @@ def build_supply_chain_artifacts(
         ),
         "artifact_admission_decision_store_path": ("data/cache/artifact_admission.db"),
         "artifact_admission_decision_store_provisioning_status": (
-            "LOCAL_PROVISIONED_UNSEALED" if admission_store_provisioned else "NOT_PROVIDED"
+            "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
+            if admission_store_provisioned
+            else "NOT_PROVIDED"
         ),
-        "artifact_admission_decision_history_external_seal_status": ("NOT_PROVIDED"),
+        "artifact_admission_authority_snapshot": admission_authority,
+        "artifact_admission_decision_history_external_seal_status": (
+            admission_external_seal["status"]
+        ),
+        "artifact_admission_decision_history_external_seal_evidence_ref": (
+            admission_external_seal.get("evidence_ref")
+        ),
+        "artifact_admission_decision_history_external_seal_evidence_sha256": (
+            admission_external_seal.get("evidence_sha256")
+        ),
+        "artifact_admission_decision_history_external_anchor_sha256": (
+            admission_external_seal.get("anchor_sha256")
+        ),
+        "artifact_admission_decision_history_external_destination_class": (
+            admission_external_seal.get("destination_class")
+        ),
+        "artifact_admission_decision_history_external_signature_verified": (
+            admission_external_seal.get("external_signature_verified", False)
+        ),
+        "artifact_admission_decision_history_external_worm_verified": (
+            admission_external_seal.get("worm_retention_verified", False)
+        ),
         "artifact_admission_decision_store_worm_status": ("NOT_WORM_LOCAL_FILE_REPLACEABLE"),
         "artifact_admission_registry_history_status": (
             "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -611,7 +763,11 @@ def build_supply_chain_artifacts(
             "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
             "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
             "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-            "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
+            *(
+                []
+                if admission_store_provisioned
+                else ["ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"]
+            ),
             "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
             *(["CONTAINER_VULNERABILITY_POLICY_FAILED"] if not container_policy_passed else []),
             *(["PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED"] if unresolved_optional else []),

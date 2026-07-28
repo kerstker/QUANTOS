@@ -14,6 +14,7 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 from typing import Any, Mapping, Sequence
@@ -24,6 +25,7 @@ if str(REPO) not in sys.path:
 
 from quantos.contracts.model_risk import (
     ChallengerReview,
+    ExternalProviderBinding,
     ModelCard,
     ModelRiskArtifact,
     OfflineEvaluation,
@@ -43,6 +45,8 @@ from services.governance.model_risk_history import (
     validate_model_risk_history,
 )
 from services.governance.model_risk_registry import (
+    MODEL_RISK_STORE_KIND,
+    MODEL_RISK_STORE_SCHEMA_VERSION,
     GovernedModelRegistry,
     SqliteModelRiskStore,
 )
@@ -55,6 +59,7 @@ _ARTIFACT_TYPES: dict[str, type[ModelRiskArtifact]] = {
         ModelCard,
         PromptTemplateCard,
         ToolManifest,
+        ExternalProviderBinding,
         OfflineEvaluation,
         RedTeamReport,
         ChallengerReview,
@@ -67,6 +72,8 @@ _DEFAULT_SNAPSHOT = REPO / "data/cache/ml_stack_snapshot.json"
 _DEFAULT_DATASET = REPO / "data/cache/fx.db"
 _DEFAULT_BUNDLE = REPO / "evidence/datasets/fx_pit_tradable_v1.jsonl.gz"
 _DEFAULT_MANIFEST = REPO / "evidence/datasets/fx_pit_tradable_v1.manifest.json"
+_VERSION_PATTERN = re.compile(r"^v([1-9][0-9]*)$")
+_REPORT_VERSION_PATTERN = re.compile(r"-v([1-9][0-9]*)$")
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
@@ -103,6 +110,32 @@ def _replace_review_version(review_id: str, version: str) -> str:
     return _replace_report_version(review_id, version)
 
 
+def _next_model_version(records: Sequence[Mapping[str, Any]]) -> str:
+    versions: list[int] = []
+    for record in records:
+        payload = record.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        match = _VERSION_PATTERN.fullmatch(str(payload.get("version", "")))
+        if match is not None:
+            versions.append(int(match.group(1)))
+    return f"v{max(versions, default=0) + 1}"
+
+
+def _next_report_version(records: Sequence[Mapping[str, Any]]) -> str:
+    versions: list[int] = []
+    for record in records:
+        if record.get("artifact_type") != "RedTeamReport":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        match = _REPORT_VERSION_PATTERN.search(str(payload.get("report_id", "")))
+        if match is not None:
+            versions.append(int(match.group(1)))
+    return f"v{max(versions, default=0) + 1}"
+
+
 def _record_to_artifact(record: Mapping[str, Any]) -> ModelRiskArtifact:
     artifact_type = record.get("artifact_type")
     payload = record.get("payload")
@@ -130,7 +163,7 @@ def _versioned_artifact(record: Mapping[str, Any], *, model_version: str, review
     """Clone a non-red-team artifact under a new immutable identity."""
     artifact_type = str(record.get("artifact_type"))
     payload = dict(record.get("payload") or {})
-    if artifact_type == "ToolManifest":
+    if artifact_type in {"ToolManifest", "ExternalProviderBinding"}:
         return None  # The current tool boundary is unchanged and remains v1.
     if artifact_type == "RedTeamReport":
         return None  # Reports are regenerated below against the new runtime.
@@ -181,8 +214,8 @@ def refresh_model_risk_evidence(
     dataset_path: str | Path = _DEFAULT_DATASET,
     dataset_bundle_path: str | Path | None = None,
     dataset_manifest_path: str | Path | None = None,
-    model_version: str = "v2",
-    report_version: str = "v3",
+    model_version: str | None = None,
+    report_version: str | None = None,
     recorded_at: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(repo_root).resolve()
@@ -193,6 +226,15 @@ def refresh_model_risk_evidence(
     prior_events = prior.get("runtime_events")
     if not isinstance(prior_records, list) or not isinstance(prior_events, list) or not prior_events:
         raise ModelRiskHistoryError("prior model-risk evidence lacks artifacts or runtime events")
+    typed_prior_records = [
+        record for record in prior_records if isinstance(record, Mapping)
+    ]
+    model_version = model_version or _next_model_version(typed_prior_records)
+    report_version = report_version or _next_report_version(typed_prior_records)
+    if _VERSION_PATTERN.fullmatch(model_version) is None:
+        raise ModelRiskHistoryError("model_version must use canonical vN form")
+    if _VERSION_PATTERN.fullmatch(report_version) is None:
+        raise ModelRiskHistoryError("report_version must use canonical vN form")
     prior_ids = {record.get("artifact_id") for record in prior_records if isinstance(record, Mapping)}
     current_recorded_at = int(recorded_at if recorded_at is not None else int(prior.get("recorded_at", 0)) + 1)
     if current_recorded_at <= int(prior.get("recorded_at", -1)):
@@ -300,6 +342,7 @@ def refresh_model_risk_evidence(
                 raise ModelRiskHistoryError("refreshed registry failed integrity verification")
             events = _runtime_events(registry)
             runtime_hash = registry.runtime_history_hash()
+            artifact_history_hash = registry.artifact_history_hash()
         finally:
             store.close()
 
@@ -311,6 +354,9 @@ def refresh_model_risk_evidence(
             "recorded_at": current_recorded_at,
             "prompt_template_count": counts.get("PromptTemplateCard", 0),
             "runtime_invocation_count": len(events),
+            "registry_store_kind": MODEL_RISK_STORE_KIND,
+            "registry_store_schema_version": MODEL_RISK_STORE_SCHEMA_VERSION,
+            "artifact_history_sha256": artifact_history_hash,
             "runtime_history_sha256": runtime_hash,
             "runtime_events": events,
             "artifact_count": len(records),
@@ -347,8 +393,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dataset-manifest", default=str(_DEFAULT_MANIFEST))
     parser.add_argument("--output", default=str(_DEFAULT_OUTPUT))
     parser.add_argument("--history-output", default=str(_DEFAULT_HISTORY))
-    parser.add_argument("--model-version", default="v2")
-    parser.add_argument("--report-version", default="v3")
+    parser.add_argument("--model-version")
+    parser.add_argument("--report-version")
     parser.add_argument("--recorded-at", type=int)
     args = parser.parse_args(argv)
     try:
@@ -379,4 +425,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -28,12 +28,53 @@ from services.governance.l2_restore_history import (
     evaluate_cadence,
 )
 from services.governance.artifact_admission import load_json_without_duplicate_keys
+from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
 
 
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _RUNNING_RESULT = 267_009
 _PASSPHRASE_MIN_LENGTH = 12
+
+
+def _persistent_windows_environment(name: str) -> str | None:
+    """Read the same User/Machine environment scopes as schedule registration."""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+    locations = (
+        (winreg.HKEY_CURRENT_USER, "Environment"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    )
+    for hive, key_path in locations:
+        try:
+            with winreg.OpenKey(hive, key_path) as key:
+                value, _kind = winreg.QueryValueEx(key, name)
+        except OSError:
+            continue
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _configured_environment_value(
+    name: str,
+    *,
+    persistent_reader: Callable[[str], str | None] | None = None,
+) -> str | None:
+    """Prefer process state, then persistent Windows User/Machine state."""
+    value = os.environ.get(name)
+    if isinstance(value, str) and value.strip():
+        return value
+    reader = persistent_reader or _persistent_windows_environment
+    value = reader(name)
+    return value if isinstance(value, str) and value.strip() else None
 
 
 @dataclass(frozen=True)
@@ -65,10 +106,22 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     ),
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
     "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
-    "QUANTOS_paper_order_preview": ExpectedTask("paper_order_preview", 2 * _DAY_MS),
+    "QUANTOS_paper_order_preview": ExpectedTask(
+        "paper_order_preview",
+        2 * _DAY_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "QUANTOS_paper_realtime": ExpectedTask("paper_realtime", 15 * 60_000),
-    "QUANTOS_paper_realtime_10k": ExpectedTask("paper_realtime_10k", 15 * 60_000),
-    "QUANTOS_paper_health": ExpectedTask("paper_health", 15 * 60_000),
+    "QUANTOS_paper_realtime_10k": ExpectedTask(
+        "paper_realtime_10k",
+        15 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_paper_health": ExpectedTask(
+        "paper_health",
+        15 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "QUANTOS_scheduler_watchdog": ExpectedTask(
         "l2_scheduler_watchdog", 2 * _HOUR_MS, frozenset({2})
     ),
@@ -76,6 +129,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_external_heartbeat": ExpectedTask("external_heartbeat", 20 * 60_000),
     "QUANTOS_domain_event_seal": ExpectedTask(
         "domain_event_seal", 2 * _DAY_MS, frozenset({2})
+    ),
+    "QUANTOS_artifact_admission_seal": ExpectedTask(
+        "artifact_admission_seal", 2 * _DAY_MS, frozenset({2})
     ),
 }
 
@@ -290,12 +346,14 @@ def backup_configuration_ready(
     destination: str | None = None,
 ) -> bool:
     passphrase = (
-        os.environ.get("QUANTOS_BACKUP_PASSPHRASE")
+        _configured_environment_value("QUANTOS_BACKUP_PASSPHRASE")
         if passphrase is None
         else passphrase
     )
     destination = (
-        os.environ.get("QUANTOS_BACKUP_DEST") if destination is None else destination
+        _configured_environment_value("QUANTOS_BACKUP_DEST")
+        if destination is None
+        else destination
     )
     if not passphrase or len(passphrase.strip()) < _PASSPHRASE_MIN_LENGTH or not destination:
         return False
@@ -311,7 +369,11 @@ def backup_configuration_ready(
 
 
 def external_heartbeat_configuration_ready(endpoint: str | None = None) -> bool:
-    endpoint = os.environ.get("QUANTOS_HEARTBEAT_URL") if endpoint is None else endpoint
+    endpoint = (
+        _configured_environment_value("QUANTOS_HEARTBEAT_URL")
+        if endpoint is None
+        else endpoint
+    )
     if not endpoint:
         return False
     parsed = urllib.parse.urlsplit(endpoint)
@@ -337,7 +399,7 @@ def event_seal_configuration_ready(
     *, repo_root: str | Path, destination: str | None = None
 ) -> bool:
     destination = (
-        os.environ.get("QUANTOS_EVENT_SEAL_DEST")
+        _configured_environment_value("QUANTOS_EVENT_SEAL_DEST")
         if destination is None
         else destination
     )
@@ -574,6 +636,10 @@ def evaluate_schedule(
             "operator-owned HTTPS heartbeat endpoint is not configured",
         ),
         "QUANTOS_domain_event_seal": (
+            event_seal_ready,
+            "external event-seal destination is not configured",
+        ),
+        "QUANTOS_artifact_admission_seal": (
             event_seal_ready,
             "external event-seal destination is not configured",
         ),

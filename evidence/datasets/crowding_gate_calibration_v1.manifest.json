@@ -1,6 +1,6 @@
 {
   "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
-  "bundle_sha256": "86c7be77666af25aa023bc65e552c9cd2b79f52cf8847299acb8064cd2d88af1",
+  "bundle_sha256": "5bcc6d1089532129ff9d67e3ae6d03facf43f3f76fb3f0f219a2f3af9e331701",
   "instruments": [
     "AAVE",
     "ADA",
@@ -27,16 +27,16 @@
     "XLM",
     "XRP"
   ],
-  "manifest_sha256": "a7663f16048cda62671b63f3e0cf7f072ad73b56385155003400dcb6b71f7a7b",
+  "manifest_sha256": "e9f1a5af6d729a48eeb4b30945ed0628b712fe317d8224876f35c3918f9fe20d",
   "max_period": 1784764800000,
   "min_period": 1642636800000,
   "record_schema": "period,weights,dry_crowding,live_crowding,z_by_symbol,short_raw_gls,short_mean_z,short_max_z",
   "row_count": 236,
   "schema_version": 1,
   "source_sha256": {
-    "data/cache/crypto_funding.db": "0cb1024fca60f8cae7e251546f260872d32ae70b7bc9049b7d333cbc674b2f44",
-    "data/cache/crypto_funding_rates.json": "76679c094b3b3fa0af8a95710fb5bbb1ccbec91fb33a1879c93fb6a44d532b1b",
+    "data/cache/crypto_funding.db": "ef10f9f67f3cbae7c2213b582c520ae7af063a43acd439b1309ca1f59ddca758",
+    "data/cache/crypto_funding_rates.json": "ab4cac0fb858e4dabb9db51ed198e91199a4ca390dba5cf58eed298e2c6a2e33",
     "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
-    "data/cache/crypto_oi_metrics.json": "8ef40f04395e3540c1ccd788210dd2028501c8c87891522188aac78bd2fbc941"
+    "data/cache/crypto_oi_metrics.json": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
   }
 }

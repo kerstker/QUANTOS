@@ -138,3 +138,24 @@ def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):
     assert report["errors"]["crowd_contra"]["reason"] == (
         "FULL_RESEARCH_RISK_NOT_APPROVED"
     )
+
+
+def test_main_returns_safe_blocked_code_for_completed_not_ready_evaluation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        paper_preview,
+        "run_preview",
+        lambda **_kwargs: {
+            "verdict": {"paper_preview_ready": False},
+            "safety": {
+                "paper_only": True,
+                "broker_order_submission": False,
+            },
+        },
+    )
+
+    assert (
+        paper_preview.main(["--output", str(tmp_path / "preview.json")])
+        == 2
+    )

@@ -811,7 +811,14 @@ def test_system_completeness_snapshot_uses_backend_contract():
     assert inv["domains"] and inv["total_services_modules"] > 0
     assert payload["summary"]["total"] == len(payload["requirements"])
     assert len(payload["domains"]) == 11
-    assert any(item["status"] == "MANUAL_EVIDENCE_REQUIRED" for item in payload["requirements"])
+    externally_gated = [
+        item
+        for item in payload["requirements"]
+        if item["classification"] in {"NEEDS_EXTERNAL", "POST_L2"}
+    ]
+    assert externally_gated
+    assert all(item["status"] != "PASS" for item in externally_gated)
+    assert all(item["meets_target"] is False for item in externally_gated)
     assert payload["red_lines"]
     assert all("completion_score" not in item for item in payload["requirements"])
     assert payload["safety_boundary"]["execution_boundary"] == "LIVE_TRADING_DISALLOWED"

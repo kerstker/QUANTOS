@@ -3,10 +3,10 @@
 > 本报告由 `scripts/generate_autonomy_baseline.py` 生成。它是当前快照，
 > 不覆盖历史证据，也不授予任何真实资金或订单权限。
 
-- 生成时间（Unix ms）：`1785097957695`
-- commit：`3c990d67dd1c7d9c0b5f5ed9f22560dbf2c578ea`
+- 生成时间（Unix ms）：`1785213308476`
+- commit：`b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f`
 - 当前等级：`L2_DRY_RUN_ONLY`
-- 输入哈希：`7ca720fa0fa1ea1144c8e773a7bd636e0de7f1add1582e9a2110267d2451db61`
+- 输入哈希：`a6a417746e7e30f1edc289333ee6408c7b4ade1035e6930a5d3b7f57a4bc4d1c`
 - 配置哈希：`b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0`
 
 ## Phase 0/1 当前状态
@@ -21,7 +21,7 @@
 - Data Admission：`PASS`（quality=`PASS`, lineage=`PASS`）。
 - Raw lineage/backfill：`PASS`。
 - Paper 10k：`PAPER_MARKS_ONLY_REPLAY`；paper_ready=`False`，paper_mark_ready=`True`，paper_preview_ready=`False`。
-- Top-tier：`NOT_TOP_TIER`；摘要=`{"failed": 1, "manual_evidence_required": 2, "partial": 4, "passed": 15, "red_lines_failed": 3, "total": 22, "unverified": 0}`。
+- Top-tier：`NOT_TOP_TIER`；摘要=`{"failed": 1, "manual_evidence_required": 0, "partial": 6, "passed": 15, "red_lines_failed": 3, "total": 22, "unverified": 0}`。
 - Full validation report：scope=`ALL`，status=`PASS`。
 
 ## 安全边界
@@ -46,7 +46,7 @@
 ## 尚未完成的真实缺口
 
 - 完整九引擎 Paper 风险输入包与至少 8 个有效前向周期仍未满足；不能以默认值、旧快照或合成数据替代。
-- 全局 trial ledger、独立模型风险审查身份、外部 OIDC/mTLS、授权数据、跨场所执行和外部封存仍需真实证据。
+- 新研究入口已接入 TrialRecord 与 OOS access 哈希链；2533 条历史 bare trial 的缺失字段不可事后伪造。独立模型风险审查身份、外部 OIDC/mTLS、授权数据、跨场所执行和外部封存仍需真实证据。
 - 主网 broker、真实凭证和真实下单路径不属于当前 L2 开发范围，且必须继续保持结构性拒绝。
 
 ## 下一项唯一最高优先级

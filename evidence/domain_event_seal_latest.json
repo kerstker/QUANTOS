@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "operation_verdict": "PASS",
+  "institutional_seal_status": "PARTIAL_EXTERNAL_WORM_UNVERIFIED",
+  "observed_at_ms": 1785233962119,
+  "data_provenance": "VERIFIED_DOMAIN_EVENT_AUTHORITY_SNAPSHOT",
+  "authority_mutated": false,
+  "destination_class": "SEPARATE_VOLUME",
+  "anchor_created": true,
+  "anchor_path": "I:\\QUANTOS_L2_BACKUPS\\quantos-event-seals\\event-authority-b958fa39a67d5a443c468048276125ef80b0189b4ef923ebf2cbfa1a6325617e.json",
+  "anchor_sha256": "3f75986c510789b09ec3a81b23905e92fc870dda2319400426b18a1571507d7c",
+  "commitment": {
+    "schema_version": 1,
+    "event_records": 131980,
+    "event_max_seq": 131980,
+    "event_head_hash": "8e7668c78c4df6e36b86f85dba3c34dfa0575cd19e595026056e2518f26d6b2e",
+    "consumer_journal_records": 263985,
+    "consumer_journal_max_seq": 263985,
+    "consumer_journal_head_hash": "2421a89371d802ac517f8a7c23d8a02ca0d526581e6bcd1b701154cf80d88c4a",
+    "coordination_journal_records": 1257,
+    "coordination_journal_max_seq": 1257,
+    "coordination_journal_head_hash": "b63b79690221205f4eb375640e84a5113cb90e45f2b07e7ee162ad2bb545f444",
+    "overall_hash": "b958fa39a67d5a443c468048276125ef80b0189b4ef923ebf2cbfa1a6325617e"
+  },
+  "external_signature_verified": false,
+  "worm_retention_verified": false
+}

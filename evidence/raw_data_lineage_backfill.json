@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1785067533604,
+  "generated_at_ms": 1785232345063,
   "instrument_scope": [
     "ADA",
     "ATOM",
@@ -20,31 +20,31 @@
     "XRP"
   ],
   "required_days": [
-    1784332800000,
-    1784419200000,
     1784505600000,
     1784592000000,
     1784678400000,
     1784764800000,
     1784851200000,
-    1784937600000
+    1784937600000,
+    1785024000000,
+    1785110400000
   ],
   "archive_root": "data/cache/raw_market_data",
   "artifacts": {
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
-      "size_bytes": 19867,
-      "sha256": "a7492b873f5de0e88be135404ace566d253d3d2a37740b6164163d3ff30f225f"
+      "size_bytes": 21732,
+      "sha256": "00aeef4190cdaab0fe587713e3ecc31f398d78b34e6fc055cc89252f4dea8b48"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
-      "size_bytes": 7816189,
-      "sha256": "91a0d1bd087d80a206e0f8002dfe3c18d21faafff59ac8a7dbad508a3b845243"
+      "size_bytes": 7817132,
+      "sha256": "ab4cac0fb858e4dabb9db51ed198e91199a4ca390dba5cf58eed298e2c6a2e33"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
-      "size_bytes": 6853165,
-      "sha256": "534cac649b393d8f19079dd1c00e0d6f0c423cbea61aa354d1c6709538256fc3"
+      "size_bytes": 6856894,
+      "sha256": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
     }
   },
   "sources": {
@@ -52,9 +52,9 @@
       "source": "perp_mark_prices",
       "attempted_records": 112,
       "matched_records": 112,
-      "refetched_records": 112,
+      "refetched_records": 110,
       "replayed_records": 0,
-      "rest_refetched_records": 0,
+      "rest_refetched_records": 2,
       "rest_replayed_records": 0,
       "failures": [],
       "warnings": [],
@@ -90,19 +90,19 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 7556,
+    "observation_count": 8414,
     "invalid_observation_count": 0,
-    "object_count": 2786,
+    "object_count": 2968,
     "datasets": {
       "cross_exchange_snapshots": 24,
-      "funding": 1294,
-      "oi_metrics": 2749,
-      "oi_metrics_rest_gap_fill": 28,
+      "funding": 1364,
+      "oi_metrics": 3099,
+      "oi_metrics_rest_gap_fill": 56,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 2817,
-      "perp_mark_prices_rest_gap_fill": 28,
-      "spot_klines": 555,
-      "spot_klines_1d": 3
+      "perp_mark_prices": 3139,
+      "perp_mark_prices_rest_gap_fill": 86,
+      "spot_klines": 583,
+      "spot_klines_1d": 5
     },
     "providers": [
       "Binance + Bybit public synchronized market snapshot",
@@ -119,8 +119,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785067533604,
-    "aggregate_sha256": "1e915ad2a016cec5f896d20a47fdbfe6e9b695c71839d22c85e148a8e96a7f68",
+    "latest_observed_at_ms": 1785232345063,
+    "aggregate_sha256": "949f6bb61be3198d71fb07e0cfd4a8343f45980cb900222e16235b40e67fa347",
     "errors": []
   },
   "verdict": "PASS",

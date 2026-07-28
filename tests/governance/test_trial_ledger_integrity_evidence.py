@@ -72,14 +72,17 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
         assert payload["open_gaps"], "PARTIAL must enumerate what is still open"
     for gap in payload["open_gaps"]:
         assert gap["id"] and gap["requirement"] and gap["state"] and gap["detail"]
-    # P5-1 honest status: the two canonical entries ARE wired (code-level),
+    # P5-1/P5-2 honest status: the five known selection-bearing entries ARE wired (code-level),
     # while ledger coverage stays PARTIAL — both halves must be declared.
     wiring = payload["provenance_wiring"]
     assert wiring["available"] is True
     assert wiring["registry_record_api"] is True
-    assert wiring["wired_entry_count"] == 2
+    assert wiring["wired_entry_count"] == 5
     assert wiring["entries"]["run_alpha_factory"]["wired"] is True
     assert wiring["entries"]["run_registered_candidate_batch"]["wired"] is True
+    assert wiring["entries"]["run_research_session"]["wired"] is True
+    assert wiring["entries"]["alpha_family_discovery"]["wired"] is True
+    assert wiring["entries"]["crypto_robust_optimization"]["wired"] is True
     assert wiring["role"] == "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE"
 
 
@@ -91,7 +94,7 @@ def test_provenance_wiring_reports_both_canonical_entries() -> None:
 
     wiring = _provenance_wiring()
     assert wiring["available"] is True
-    assert wiring["wired_entry_count"] == 2
+    assert wiring["wired_entry_count"] == 5
     assert all(entry["wired"] for entry in wiring["entries"].values())
 
 
@@ -193,15 +196,42 @@ def test_config_escaping_the_trial_population_is_blocked(tmp_path) -> None:
     )
 
 
-def test_family_multiple_testing_is_declared_a_diagnostic_not_a_gate(tmp_path) -> None:
+def test_family_multiple_testing_is_an_additional_promotion_gate(tmp_path) -> None:
     """§7.3 exists as analysis. Claiming it gates promotion would overstate what
     actually stops a candidate today."""
     report = build_report(root=tmp_path, ledger=_ledger(tmp_path))
     family = report["family_multiple_testing"]
     assert family["available"] is True
-    assert family["wired_into_promotion_gate"] is False
-    assert family["role"] == "DIAGNOSTIC_NOT_GATE"
+    assert family["wired_into_promotion_gate"] is True
+    assert family["role"] == "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY"
     assert "hierarchical_fdr" in family["exported"]
+
+
+def test_oos_access_chain_is_reported_and_tampering_blocks(tmp_path) -> None:
+    ledger = _ledger(tmp_path)
+    store = SqliteExperimentStore(str(ledger))
+    store.record_search_oos_access(
+        "gov-session",
+        {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)},
+        viewed_at=300,
+    )
+    store._conn.close()
+
+    report = build_report(root=tmp_path, ledger=ledger)
+    assert report["oos_access"]["chain_valid"] is True
+    assert report["oos_access"]["accesses_recorded"] == 1
+
+    raw = sqlite3.connect(ledger)
+    raw.execute("DROP TRIGGER trial_oos_access_no_update")
+    raw.execute("UPDATE trial_oos_access SET boundary='forged' WHERE access_seq=1")
+    raw.commit()
+    raw.close()
+    blocked = build_report(root=tmp_path, ledger=ledger)
+    assert blocked["verdict"] == "BLOCKED"
+    assert any(
+        reason.startswith("OOS_ACCESS_CHAIN_INVALID")
+        for reason in blocked["block_reasons"]
+    )
 
 
 def test_cli_check_detects_drift(tmp_path) -> None:

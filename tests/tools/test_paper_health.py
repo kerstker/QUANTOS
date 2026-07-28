@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tools.paper_health as paper_health
 from tools.paper_health import ALPHA_IDS, DEFAULT_MAX_AGE_MS, evaluate_paper_health
 
 
@@ -237,3 +238,31 @@ def test_paper_health_blocks_missing_error_or_safety_fields():
     assert report["verdict"]["paper_ready"] is False
     assert "PAPER_REALTIME_REPORTED_ERRORS" in report["blockers"]
     assert "REALTIME_BROKER_CONNECTIVITY_ENABLED" in report["blockers"]
+
+
+def test_main_distinguishes_safe_not_ready_from_evaluation_failure(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        paper_health,
+        "build_report",
+        lambda **_kwargs: {
+            "verdict": {"paper_ready": False},
+            "age_ms": {},
+            "blockers": ["FORWARD_EVIDENCE_INSUFFICIENT"],
+            "forward_evidence": {"complete_for_all_three": False},
+        },
+    )
+    assert (
+        paper_health.main(["--output", str(tmp_path / "health.json")])
+        == 2
+    )
+
+    def fail(**_kwargs):
+        raise ValueError("corrupt input")
+
+    monkeypatch.setattr(paper_health, "build_report", fail)
+    assert (
+        paper_health.main(["--output", str(tmp_path / "health.json")])
+        == 1
+    )

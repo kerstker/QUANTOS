@@ -79,6 +79,78 @@ def _order_payload(**over):
     return d
 
 
+class _FakeSocket:
+    def __init__(self, frames):
+        self.frames = iter(frames)
+        self.sent = []
+        self.closed = False
+
+    def send(self, payload):
+        self.sent.append(payload)
+
+    def recv(self):
+        return next(self.frames)
+
+    def close(self):
+        self.closed = True
+
+
+def test_listen_key_lifecycle_is_api_key_only_and_never_exposes_secret():
+    client, transport = _client(
+        {"/api/v3/userDataStream": (200, {"listenKey": "listen-test-1"})}
+    )
+    key = client.create_listen_key()
+    client.keepalive_listen_key(key)
+    client.close_listen_key(key)
+
+    assert [call["method"] for call in transport.calls] == ["POST", "PUT", "DELETE"]
+    assert all(call["headers"]["X-MEXC-APIKEY"] == _KEY for call in transport.calls)
+    assert all(_SECRET not in call["url"] for call in transport.calls)
+    assert "listenKey=listen-test-1" in transport.calls[1]["url"]
+
+
+def test_user_stream_reconnects_only_after_rest_backfill_and_closes_key():
+    client, transport = _client(
+        {"/api/v3/userDataStream": (200, {"listenKey": "listen-test-2"})}
+    )
+    first = _FakeSocket([None])
+    second = _FakeSocket([b"event"])
+    sockets = iter([first, second])
+    actions = []
+
+    reconnects = client.user_stream(
+        ws_connect=lambda url: (actions.append(("connect", url)), next(sockets))[1],
+        decode=lambda frame: {"channel": "orders", "raw": frame.decode()},
+        on_event=lambda event: (actions.append(("event", event["channel"])), False)[1],
+        rest_backfill=lambda adapter: actions.append(("backfill", adapter.venue_name)),
+        max_reconnects=1,
+    )
+
+    assert reconnects == 1
+    assert [action[0] for action in actions] == [
+        "connect", "backfill", "connect", "event"
+    ]
+    assert first.closed is True and second.closed is True
+    assert "spot@private.orders.v3.api.pb" in first.sent[0]
+    assert [call["method"] for call in transport.calls] == ["POST", "PUT", "DELETE"]
+
+
+def test_user_stream_fails_closed_after_reconnect_budget():
+    client, _ = _client(
+        {"/api/v3/userDataStream": (200, {"listenKey": "listen-test-3"})}
+    )
+    backfills = []
+    with pytest.raises(ConnectionError, match="disconnected"):
+        client.user_stream(
+            ws_connect=lambda _url: _FakeSocket([None]),
+            decode=lambda _frame: {},
+            on_event=lambda _event: True,
+            rest_backfill=lambda _adapter: backfills.append("backfill"),
+            max_reconnects=0,
+        )
+    assert backfills == ["backfill"]
+
+
 # --- 构造安全 ---
 
 def test_mainnet_construction_refused_at_l2_default():

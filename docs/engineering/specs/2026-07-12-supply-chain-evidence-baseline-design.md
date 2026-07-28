@@ -31,9 +31,12 @@ domain, or operational freshness/revocation evidence.
 - `evidence/supply_chain_baseline.json`
 - `services/governance/top_tier_assessment.py`
 - `services/governance/artifact_admission.py`
+- `services/governance/artifact_admission_store.py`
 - `tools/verify_artifact_admission.py`
+- `tools/provision_artifact_admission_authority.py`
 - `tests/governance/test_artifact_admission.py`
 - `tests/governance/test_artifact_admission_cli.py`
+- `tests/governance/test_artifact_admission_provisioning.py`
 - `tests/governance/test_supply_chain_evidence.py`
 
 The generator contains no wall clock, randomness, network access, secret access,
@@ -85,9 +88,32 @@ and Ed25519 public-key digest rather than one short-lived receipt digest.
 keys. Both registries are intentionally empty under `L2_DRY_RUN_ONLY`, so the
 real repository admits no artifact. `ArtifactAdmissionStore` provides a fixed
 path, append-only, hash-chained SQLite decision authority, and the CLI commits
-before emitting an `ALLOW`. The production database is intentionally not
-provisioned, so this is a wired fail-closed code path rather than an operational
-admission service.
+before emitting an `ALLOW`.
+
+## 2026-07-28 Fixed Authority Provisioning Addendum
+
+`tools/provision_artifact_admission_authority.py` now initializes the fixed
+authority with the exact generation-0 policy and receipt-authority mirrors. It
+then closes and reopens the SQLite database and verifies schema, WAL/FULL
+durability, immutable triggers, registry bytes, registry digests, generations,
+and event-chain heads. Replaying identical mirrors is idempotent; a
+same-generation conflict, rollback, missing head, mirror drift, symlink, or
+tampered database fails closed.
+
+The canonical validation gate provisions this empty-trust-root authority before
+checking supply-chain evidence. The tracked evidence records both event heads
+and the current decision count, and the top-tier assessor independently opens
+the database and recomputes that snapshot. Provisioning grants no signing,
+deployment, execution, credential, order-submission, or live-trading authority.
+With zero active policies and zero trusted receipt keys, every attempted
+artifact admission remains denied.
+
+This closes only the local fixed-authority provisioning blocker. The SQLite file
+is still local, replaceable, and externally unsealed; there is still no real
+Sigstore bundle, external receipt authority, independent checkpoint/revocation
+source, cross-host reproduction, or independently deployed admission boundary.
+Therefore `PLATFORM.SUPPLY_CHAIN` remains M3/PARTIAL and its M4 red line stays
+open.
 
 The dynamic receipt is now carried in a domain-separated Ed25519 envelope and
 can rotate without policy-registry churn. Production code only verifies public

@@ -780,6 +780,102 @@ def test_evaluate_cadence_requires_exact_contract_and_nonempty_history(
     store.close()
 
 
+def test_contract_upgrade_starts_new_cadence_epoch_without_erasing_history(
+    tmp_path: Path,
+) -> None:
+    store = L2RestoreHistoryStore(
+        str(tmp_path / "upgrade.db"),
+        create=True,
+        clock_ms=lambda: 1_000,
+    )
+    _record_pass(
+        store,
+        _attempt(
+            "old-contract",
+            started_at_ms=50,
+            source_contract_sha256=OTHER_CONTRACT_SHA256,
+        ),
+    )
+    for index, timestamp in enumerate((100, 200, 300), start=1):
+        _record_pass(
+            store,
+            _attempt(f"current-{index}", started_at_ms=timestamp),
+        )
+
+    snapshot = store.read_snapshot()
+    health = evaluate_cadence(snapshot, _policy(), now_ms=350)
+
+    assert health.verdict == "PASS"
+    assert "SOURCE_CONTRACT_MISMATCH" not in health.reason_codes
+    assert health.attempt_count == 4
+    assert health.success_count == 3
+    assert health.history_span_ms == 200
+    assert len(snapshot.attempts) == 4
+    store.close()
+
+
+def test_contract_upgrade_resets_span_and_success_requirements(tmp_path: Path) -> None:
+    store = L2RestoreHistoryStore(
+        str(tmp_path / "upgrade-insufficient.db"),
+        create=True,
+        clock_ms=lambda: 1_000,
+    )
+    for index, timestamp in enumerate((50, 100, 150), start=1):
+        _record_pass(
+            store,
+            _attempt(
+                f"old-{index}",
+                started_at_ms=timestamp,
+                source_contract_sha256=OTHER_CONTRACT_SHA256,
+            ),
+        )
+    _record_pass(store, _attempt("current-1", started_at_ms=300))
+
+    health = evaluate_cadence(store.read_snapshot(), _policy(), now_ms=350)
+
+    assert health.verdict == "BREACH"
+    assert "SOURCE_CONTRACT_MISMATCH" not in health.reason_codes
+    assert "HISTORY_SPAN_INSUFFICIENT" in health.reason_codes
+    assert "SUCCESS_COUNT_INSUFFICIENT" in health.reason_codes
+    assert health.success_count == 1
+    assert health.history_span_ms == 0
+    store.close()
+
+
+def test_latest_attempt_cannot_roll_back_to_historical_contract(tmp_path: Path) -> None:
+    store = L2RestoreHistoryStore(
+        str(tmp_path / "contract-rollback.db"),
+        create=True,
+        clock_ms=lambda: 1_000,
+    )
+    _record_pass(store, _attempt("current", started_at_ms=100))
+    _record_pass(
+        store,
+        _attempt(
+            "rolled-back",
+            started_at_ms=200,
+            source_contract_sha256=OTHER_CONTRACT_SHA256,
+        ),
+    )
+
+    health = evaluate_cadence(
+        store.read_snapshot(),
+        _policy(
+            max_attempt_age_ms=1_000,
+            max_success_age_ms=1_000,
+            max_attempt_gap_ms=1_000,
+            max_success_gap_ms=1_000,
+            minimum_history_span_ms=0,
+            minimum_successes=1,
+        ),
+        now_ms=250,
+    )
+
+    assert health.verdict == "BREACH"
+    assert "SOURCE_CONTRACT_MISMATCH" in health.reason_codes
+    store.close()
+
+
 def test_public_store_contract_has_expected_kind_version_and_no_secret_fields() -> None:
     assert L2_RESTORE_HISTORY_STORE_KIND == "QUANTOS_L2_RESTORE_HISTORY_AUTHORITY"
     assert L2_RESTORE_HISTORY_STORE_SCHEMA_VERSION == 1

@@ -1,0 +1,67 @@
+{
+  "acceptance": {
+    "live_authority": false,
+    "research_autonomy": true
+  },
+  "artifact": "QUANTOS_727_AUTONOMY_READINESS",
+  "blockers": [],
+  "commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generated_at_ms": 1785235890906,
+  "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
+  "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders.",
+  "implementation": {
+    "autonomy_kernel": true,
+    "leader_lease_and_recovery": true,
+    "production_order_authority": false,
+    "workflow_event_policy_idempotency_scheduler": true
+  },
+  "input_hash": "77be32cc0ef769272e0fc185945bdc7c06f010d90cdf24cbb3d7eb1e202c4dd0",
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "docs/engineering/specs/2026-07-27-autonomy-kernel-design.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "9c9279a054c6274f4ede70e2a48eb82d7eef1f337d99fa4da38648e085796745",
+      "size_bytes": 21552
+    },
+    "services/orchestration": {
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "8a6c88568234f7c400f74baa2f49ff0570277d4cdf33ae16da4f32a5784ccd99",
+      "kind": "python_directory"
+    },
+    "tests/orchestration": {
+      "exists": true,
+      "file_count": 9,
+      "files_sha256": "14a42cebc0dd42ea60055eea7cf49a1aa3bc572f276b312fd271844a30616700",
+      "kind": "python_directory"
+    }
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "status": "READY_FOR_RESEARCH_AUTONOMY",
+  "validation": {
+    "current": true,
+    "head_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "overall_status": "PASS",
+    "reported_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "reported_validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241"
+  },
+  "working_tree_dirty": true
+}

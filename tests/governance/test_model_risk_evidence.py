@@ -121,6 +121,9 @@ def test_evidence_is_deterministic_honest_and_hash_verified(tmp_path):
     assert first["runtime_invocation_count"] == 2
     assert first["runtime_history_verified"] is True
     assert len(first["runtime_history_sha256"]) == 64
+    assert first["registry_store_kind"] == "QUANTOS_MODEL_RISK_AUTHORITY"
+    assert first["registry_store_schema_version"] == 2
+    assert len(first["artifact_history_sha256"]) == 64
     assert [event["sequence"] for event in first["runtime_events"]] == [1, 2]
     assert first["artifact_type_counts"]["RedTeamReport"] == 2
     assert first["red_team_report_ref"] == (
@@ -135,6 +138,10 @@ def test_evidence_is_deterministic_honest_and_hash_verified(tmp_path):
         "runtime-action-override",
         "runtime-sensitive-output",
         "runtime-forbidden-tool-action",
+        "external-provider-unverified-receipt",
+        "external-provider-request-digest-tamper",
+        "external-provider-response-digest-tamper",
+        "external-provider-sensitive-output",
     } <= set(active_report["payload"]["required_case_ids"])
     assert "LONGITUDINAL_REGISTRY_HISTORY_NOT_RETAINED" not in first["m3_blockers"]
     assert first["review_identity_assurance"] == "PROCESS_ROLE_ONLY"

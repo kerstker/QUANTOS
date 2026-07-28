@@ -123,9 +123,10 @@ _EXTRA_ALLOWED_BY_FILE = {
     # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用
     # tools/coingecko_fetch._http_get_json 的 urllib,已在 _ALLOWED_FETCHER 内)。
     "mexc_klines_fetch.py": {"argparse"},
-    # MEXC 只读首验:typing(注入签名)——签名 HMAC 走 tools/mexc_credentials 内部
-    # (同 verify_key_permissions 的 ungated 纯函数镜像设计),不实例化任何 gated 类。
-    "mexc_readonly_smoke.py": {"typing"},
+    # MEXC 只读首验:argparse/typing(CLI 与注入签名)——签名 HMAC 走
+    # tools/mexc_credentials 内部(同 verify_key_permissions 的 ungated 纯函数镜像设计),
+    # 不实例化任何 gated 类。
+    "mexc_readonly_smoke.py": {"argparse", "typing"},
     # SHADOW 轨道驱动器:math(有限数校验)+ argparse(CLI)+ typing(注入签名)+
     # `live`(live/execution/shadow 比较核 + shadow_store 账本 + live/exchange venue
     # 适配器——与 verify_key_permissions/binance_readonly_smoke 同款只读复用,

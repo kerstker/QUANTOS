@@ -8,8 +8,11 @@
   标签)、[`docs/MEXC_INTEGRATION.md`](../../MEXC_INTEGRATION.md)、
   [`2026-07-27-shadow-phase7-design.md`](2026-07-27-shadow-phase7-design.md)
   (Phase 7 SHADOW 侧;MEXC 现货 shadow 化是 §13 阶段 A 的单列任务)。
-- 状态:**M1 本提交落地**(只读账户端点三件套 + commission 解析 + 治理登记 +
-  文档漂移修正);M2(Test Order)/ M3(unknown 持久化 + 启动对账)为后续切片。
+- 状态:**M1/M2 代码面落地，M3 安全内核落地**。M1 是只读账户端点三件套 +
+  commission 解析;M2 是 MEXC `/api/v3/order/test` 的显式人工测试入口;M3 是
+  未知订单哈希链、deployment 阻断、显式重试授权、启动恢复编排与 pipeline
+  fail-closed 接缝。MEXC user stream/listen-key 仍按本设计 §4 推迟，故不会把
+  启动恢复标成 READY；M3 的测试使用 fake transport/注入回调，不触碰真实网络。
 - readiness:L2_DRY_RUN_ONLY 不变。M1 不新增任何下单路径(三个端点全是签名
   **GET** 只读),mainnet 构造闸门逐字节不动(未 arm 的 mainnet 构造即
   `SafetyViolation`),不触碰凭证;网络 import 仍只在
@@ -85,18 +88,18 @@ withdraw 字面量缺席、构造闸门——三者都与类数量无关)。**�
 | 切片 | 内容 | 对应 §13.1 层 | 状态 |
 |---|---|---|---|
 | **M1** | `open_orders(instrument_id=None)`(GET /api/v3/openOrders,签名,可选 symbol)+ `all_orders(instrument_id, *, limit=500)`(GET /api/v3/allOrders,symbol 必填,limit 钳 [1,1000],**7 天窗口**)+ `my_trades(instrument_id, *, limit=500)`(GET /api/v3/myTrades,limit 钳 [1,1000],**~1 月窗口**)——全 fail-loud;`exchange_filters()` 附 maker/taker commission 解析(ExchangeFilters 加法扩展,缺席 None);治理补登记 `tools/mexc_readonly_smoke.py` + `tools/mexc_klines_fetch.py` 入 `_FETCHERS`;`docs/MEXC_INTEGRATION.md` §3 方法面漂移修正(原列的 `get_open_orders`/`get_account`/`get_klines` 不存在) | MexcAccountReadOnlyAdapter(+ PublicMarketData 的费率部分) | **本提交**(适配器 +14 测试,45→59) |
-| **M2** | Test Order(§13.2 阶段 C):签名/时间戳/recvWindow/精度校验/minNotional/client_order_id/permission check 全链演练但**不得进入撮合**(MEXC 无 Binance 式 `/order/test` 端点——用 minNotional 之下的必拒单或独立子账户极小单 + 立即撤单实现,具体形态在 M2 切片内评审);**治理钉死 test-order 绝不在下单链上**(`submit_live_batch`/ops API argv 不可达,与 ops API「argv 绝不 `--submit`」同款结构性封锁) | MexcSpotTestOrderAdapter | 未做 |
-| **M3** | §13.4 未知订单状态持久化(ORDER_SUBMISSION_UNKNOWN → deployment 级停新单 → client_order_id 查询接管 → 确认不存在才允许重提 → 无法确认则 Kill Switch + 人工;**不得盲目重试**)+ §13.5 启动对账(时间同步 → 交易规则+真实费率 → 余额 → **openOrders** → **myTrades** 近期成交 → 重建本地账本 → 校验事件链 → 对账 → 才允许新订单——M1 三端点是它的交易所侧输入) | 四层共用 + Broker 层消费 | 未做 |
+| **M2** | Test Order(§13.2 阶段 C):签名/时间戳/recvWindow/精度校验/minNotional/client_order_id/permission check 全链演练但**不得进入撮合**——MEXC `/api/v3/order/test` 成功只返回空对象,不产生订单;`MexcSpotAdapter.test_order` 与 `place_order` 共享 `_order_params`,人工工具仅显式 `--test-order`;**治理钉死 test-order 绝不在下单链上**(`submit_live_batch`/ops API argv 不可达) | MexcSpotTestOrderAdapter | **已落地** |
+| **M3** | §13.4 `SqliteOrderRecoveryStore` 持久化 `ORDER_SUBMISSION_UNKNOWN` → deployment 级停新单 → client/exchange id 查询接管 → 明确不存在后仍需显式 `authorize_retry` → 查询不确定时 Kill Switch(若注入) + 人工;**不得盲目重试**。`run_startup_recovery` 按 §13.5 顺序执行,`submit_live_batch` 可注入 startup/recovery 硬门 | 四层共用 + Broker 层消费 | **安全内核已落地** |
 
 切分原则:每片独立可测、不依赖后片——M1 是纯只读能力(无消费方也成立,
 因为它同时是文档漂移修正与治理缺口的载体),M2 复用 M1 的签名/查询面做
 round-trip 验证,M3 是唯一消费 M1 三端点的切片(对账器)。
 
-## 4. 裁定:User Stream / WebSocket 推迟(立据)
+## 4. User Stream / WebSocket（M4 已落地）
 
 §13.2 阶段 B 清单含 `user stream` / `listen-key renewal` / `REST backfill after
 disconnect`;Phase 8 任务清单同样列了 User Stream 与断线补账。**本方案裁定:
-user stream/listenKey 推迟到 M3 之后的独立切片,REST 回填先行。** 依据:
+user stream/listenKey 在 M3 后作为独立 M4 切片落地，REST 回填仍是断线恢复的权威来源。**
 
 1. **与既有全仓裁定一致。** `docs/audit/2026-07-07-live-readiness-top-tier-gap-audit.md`
    已把「无 websocket」定性为**明确设计选择**——「weekly strategy 不需要」,
@@ -107,11 +110,10 @@ user stream/listenKey 推迟到 M3 之后的独立切片,REST 回填先行。** 
    (myTrades,~1 月)——REST 全能拉到;策略节奏(日/周)远小于最短的 7 天
    窗口,断连后用 REST 回填在数学上覆盖任何可达的缺口。user stream 在此只是
    延迟优化,不是正确性前提。
-3. **listenKey 是一套独立的运维状态机**(POST 创建 / PUT 续期 30min / DELETE
-   关闭,ws 连接 + 重连 + gap detection),把它和 M1 的只读 REST 混在一个切片
-   会把「已验证的签名 REST 面」和「未验证的长连接运维面」耦合进同一次评审。
-   listenKey REST 三端点 + ws 消费留作未来切片(若届时策略频率或 §13.5 的
-   「建立 WebSocket」步骤被重新评审为承重,再单独立项)。
+3. **listenKey 是独立运维状态机。** M4 实现 POST 创建 / PUT 续期 / DELETE
+   关闭、三类 private Protobuf channel 订阅、断线重连预算，以及每次重连前强制
+   REST backfill。WebSocket transport 与 Protobuf decoder 显式注入；仓库测试只用
+   假 transport，不声称已完成真实账户长连接验证。
 
 ## 5. §13.3 client_order_id 公式 vs 现有实现——字段映射差异诚实表
 
@@ -173,15 +175,47 @@ rebalance_id)。这不是漂移——幂等语义(「同一笔订单的重试去
 
 ## 7. Phase 8 验收对照(727 §13.2 阶段 B + Phase 8 验收条)
 
-| 要求 | M1 后状态 |
+| 要求 | M3 后状态 |
 |---|---|
 | balances | ✅ 既有 `account()`/`positions()` |
 | open orders | ✅ M1 `open_orders()` |
 | recent orders | ✅ M1 `all_orders()`(7 天窗口诚实注记) |
 | recent trades | ✅ M1 `my_trades()`(~1 月窗口诚实注记) |
 | commission / fee query | ✅ M1 exchangeInfo maker/taker commission 解析 |
-| user stream / listen-key renewal | ⏸ **推迟**(§4 立据;REST 回填等价覆盖) |
-| REST backfill after disconnect | 🟡 能力面已备(M1 三端点),消费方对账器在 M3 |
-| 无真实下单 | ✅ M1 纯签名 GET,下单链零改动,mainnet 构造闸门不变 |
-| 可从交易所重建账户状态 | 🟡 交易所侧输入齐了(M1),重建器在 M3 |
-| 丢包和断线可检测 | ⏸ 随 user stream 推迟;REST 轮询侧的 freshness 判定复用既有 price_check/funding_check 纪律 |
+| user stream / listen-key renewal | ✅ M4 `create/keepalive/close_listen_key` + `user_stream`;真实账户验证仍待外部凭证 |
+| REST backfill after disconnect | ✅ M3 启动恢复 + M4 每次 WebSocket 重连前强制 `rest_backfill` |
+| 无真实下单 | ✅ M2 `/order/test` 永不撮合;M3/恢复模块无网络写入口;mainnet 构造闸门不变 |
+| 可从交易所重建账户状态 | 🟡 M1 输入 + M3 `rebuild_local_ledger(account, open_orders, recent_trades)` 接缝已备;真实凭证/账户回填仍待人工外部验证 |
+| 丢包和断线可检测 | ✅ `recv() is None`/transport 异常触发 backfill→重连；重连预算耗尽 fail-closed |
+
+## 8. M2/M3 实施记录(2026-07-28)
+
+- M2:`MexcSpotAdapter.test_order()` 使用与 `place_order()` 相同的 `_order_params()`;
+  `tools/mexc_credentials.py::fetch_mexc_test_order` 与
+  `tools/mexc_readonly_smoke.py --test-order` 只访问 `/api/v3/order/test`。
+  该入口不在 `VenueAdapter`、`submit_live_batch` 或 ops API 固定 argv 中;治理测试
+  钉死它不可能变成真实下单路径。
+- M3:`live/execution/order_recovery.py::SqliteOrderRecoveryStore` 以 append-only
+  hash chain 持久化 `ORDER_SUBMISSION_UNKNOWN`、FOUND、CONFIRMED_ABSENT、
+  INDETERMINATE、KILL_SWITCHED、RESOLVED 和 `RETRY_AUTHORIZED`。deployment 有
+  未解决记录时 pipeline 直接返回 `NEEDS_HUMAN_REVIEW`;确认不存在也不会自动重提,
+  必须显式调用 `authorize_retry`;已 RESOLVED 的 deterministic client id 永久消耗。
+- M3:`live/execution/startup_recovery.py::run_startup_recovery` 是无网络、全依赖注入
+  的启动顺序编排器;`submit_live_batch(..., startup_recovery=..., unknown_order_store=...)`
+  提供两个 fail-closed 接缝。`tools/live_track_advance.py` 已持久化订单恢复 store,
+  在旧账本恢复前回查未知订单;查询不确定时经 risk-owned kill-switch authority
+  写入锁存事件并停止当前 deployment。
+- 针对性验证:`tests/live/test_order_recovery.py`、`test_startup_recovery.py`、
+  `test_pipeline_recovery_gates.py` 覆盖持久化、重启、查询接管、明确不存在、查询异常、
+  不盲重试、启动顺序、对账漂移和用户流缺失;M2/M3 相关 live/governance 回归均需通过。
+
+## 9. M4 User Stream 实施记录(2026-07-28)
+
+- `MexcSpotAdapter` 增加 API-key-only listen-key 生命周期：创建、续期、关闭。
+- `user_stream()` 订阅 account/orders/deals 三类 private Protobuf channel；decoder
+  必须由调用方显式注入，不提供不诚实的 JSON fallback。
+- 任一断线或解码/消费异常先调用 `rest_backfill(adapter)`，成功后才允许重连；
+  重连预算耗尽时原异常上抛，绝不静默继续。
+- clean stop 和异常退出均尝试关闭 listen key；错误消息不包含 key/secret。
+- 单元测试覆盖 API key 头、secret 不进入 URL、订阅、断线回填顺序、续期、重连和
+  fail-closed 预算；真实 WebSocket/Protobuf/账户事件仍需外部凭证 smoke 证明。

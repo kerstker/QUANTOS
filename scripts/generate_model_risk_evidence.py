@@ -14,17 +14,20 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from quantos.contracts.alpha import Actor, ActorKind
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.model_risk import (
     ChallengerReview,
     EvaluationMetric,
     EvaluationVerdict,
+    ExternalProviderBinding,
+    ExternalProviderBindingStatus,
     ModelCard,
     ModelRiskArtifact,
     ModelUseStatus,
@@ -43,6 +46,8 @@ from services.governance.model_risk_dataset import (
     verify_pit_bundle,
 )
 from services.governance.model_risk_registry import (
+    MODEL_RISK_STORE_KIND,
+    MODEL_RISK_STORE_SCHEMA_VERSION,
     GovernedModelRegistry,
     SqliteModelRiskStore,
 )
@@ -94,6 +99,10 @@ _RUNTIME_RED_TEAM_CASES = (
     "runtime-action-override",
     "runtime-sensitive-output",
     "runtime-forbidden-tool-action",
+    "external-provider-unverified-receipt",
+    "external-provider-request-digest-tamper",
+    "external-provider-response-digest-tamper",
+    "external-provider-sensitive-output",
 )
 _M3_BLOCKERS = (
     "RAW_DATASET_NOT_RETAINED_IN_VERSIONED_EVIDENCE",
@@ -180,6 +189,40 @@ def _denied_case(
         boundary_breached=True,
         observed_exception="",
     )
+
+
+class _SyntheticRedTeamProvider:
+    """Test-only provider fixture; this is not evidence of an external provider."""
+
+    def __init__(self, mode: str = "valid") -> None:
+        self._mode = mode
+
+    def invoke(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        response: Any = {"action": "EVALUATE", "verdict": "RESEARCH_ONLY"}
+        if self._mode == "sensitive-output":
+            response = {"action": "EVALUATE", "credential": "red-team-only"}
+        payload = {
+            "provider_id": "synthetic-red-team-provider",
+            "provider_model_ref": "synthetic-evaluator-v1",
+            "external_request_id": "synthetic-request-1",
+            "request_sha256": stable_hash(dict(request)),
+            "response": response,
+            "response_sha256": stable_hash(response),
+            "verification_receipt_ref": "synthetic-receipt-1",
+            "received_at": 1,
+        }
+        if self._mode == "request-tamper":
+            payload["request_sha256"] = "f" * 64
+        elif self._mode == "response-tamper":
+            payload["response_sha256"] = "f" * 64
+        return payload
+
+
+class _SyntheticRedTeamVerifier:
+    """Permissive test fixture used only after digest checks are exercised."""
+
+    def verify(self, **_kwargs: Any) -> bool:
+        return True
 
 
 def execute_agent_boundary_red_team(
@@ -277,6 +320,19 @@ def execute_runtime_boundary_red_team(
                 tool_manifest_ref=tool_manifest_ref,
                 prompt_template=RESEARCH_EVALUATION_TEMPLATE,
             )
+            provider_binding = ExternalProviderBinding(
+                binding_id="synthetic-red-team-provider",
+                version="v1",
+                provider_id="synthetic-red-team-provider",
+                provider_model_ref="synthetic-evaluator-v1",
+                model_ref=runtime.model.model_ref,
+                provider_deployment_ref="test-only-no-network",
+                verification_policy_ref="synthetic-red-team-policy-v1",
+                allowed_actions=("EVALUATE",),
+                status=ExternalProviderBindingStatus.RESEARCH_ONLY,
+                recorded_at=recorded_at,
+            )
+            registry.record_external_provider_binding(provider_binding)
             base_cases = execute_agent_boundary_red_team(
                 recorded_at=recorded_at,
                 model_ref=model_ref,
@@ -317,6 +373,61 @@ def execute_runtime_boundary_red_team(
                         action="APPROVE",
                         input_payload={"alpha_id": "red-team-alpha"},
                         execute=lambda payload: {"action": "APPROVE"},
+                        recorded_at=recorded_at,
+                    ),
+                    expected_exception=RuntimeGovernanceError,
+                ),
+                _denied_case(
+                    case_id="external-provider-unverified-receipt",
+                    attack_class="UNVERIFIED_EXTERNAL_RESPONSE",
+                    action=lambda: runtime.invoke_external(
+                        invocation_id="external-provider-unverified-v2",
+                        action="EVALUATE",
+                        input_payload={"alpha_id": "red-team-alpha"},
+                        binding_ref=provider_binding.binding_ref,
+                        provider=_SyntheticRedTeamProvider(),
+                        recorded_at=recorded_at,
+                    ),
+                    expected_exception=RuntimeGovernanceError,
+                ),
+                _denied_case(
+                    case_id="external-provider-request-digest-tamper",
+                    attack_class="REQUEST_SUBSTITUTION",
+                    action=lambda: runtime.invoke_external(
+                        invocation_id="external-provider-request-tamper-v2",
+                        action="EVALUATE",
+                        input_payload={"alpha_id": "red-team-alpha"},
+                        binding_ref=provider_binding.binding_ref,
+                        provider=_SyntheticRedTeamProvider("request-tamper"),
+                        verifier=_SyntheticRedTeamVerifier(),
+                        recorded_at=recorded_at,
+                    ),
+                    expected_exception=RuntimeGovernanceError,
+                ),
+                _denied_case(
+                    case_id="external-provider-response-digest-tamper",
+                    attack_class="RESPONSE_SUBSTITUTION",
+                    action=lambda: runtime.invoke_external(
+                        invocation_id="external-provider-response-tamper-v2",
+                        action="EVALUATE",
+                        input_payload={"alpha_id": "red-team-alpha"},
+                        binding_ref=provider_binding.binding_ref,
+                        provider=_SyntheticRedTeamProvider("response-tamper"),
+                        verifier=_SyntheticRedTeamVerifier(),
+                        recorded_at=recorded_at,
+                    ),
+                    expected_exception=RuntimeGovernanceError,
+                ),
+                _denied_case(
+                    case_id="external-provider-sensitive-output",
+                    attack_class="SENSITIVE_OUTPUT_EXFILTRATION",
+                    action=lambda: runtime.invoke_external(
+                        invocation_id="external-provider-sensitive-v2",
+                        action="EVALUATE",
+                        input_payload={"alpha_id": "red-team-alpha"},
+                        binding_ref=provider_binding.binding_ref,
+                        provider=_SyntheticRedTeamProvider("sensitive-output"),
+                        verifier=_SyntheticRedTeamVerifier(),
                         recorded_at=recorded_at,
                     ),
                     expected_exception=RuntimeGovernanceError,
@@ -539,18 +650,23 @@ def _registry_snapshot(
     baseline_artifact_count: int,
     revision_recorded_at: int,
     include_longitudinal_v2: bool,
-) -> tuple[list[dict[str, Any]], bool, list[dict[str, Any]], bool, str]:
+) -> tuple[list[dict[str, Any]], bool, str, list[dict[str, Any]], bool, str]:
     with tempfile.TemporaryDirectory(prefix="quantos-model-risk-") as directory:
         store = SqliteModelRiskStore(str(Path(directory) / "registry.db"), create=True)
         try:
             registry = GovernedModelRegistry(store)
-            for artifact in artifacts:
+            ordered_artifacts = sorted(
+                artifacts,
+                key=lambda item: item.artifact_id,
+            )
+            for artifact in ordered_artifacts:
                 if not registry.record_artifact(artifact):
                     raise ValueError(f"first registry write was not new: {artifact.artifact_id}")
-            for artifact in artifacts:
+            for artifact in ordered_artifacts:
                 if registry.record_artifact(artifact):
                     raise ValueError(f"idempotent registry write changed: {artifact.artifact_id}")
             verified = registry.verify_all()
+            artifact_history_hash = registry.artifact_history_hash()
             runtime = GovernedModelRuntime(
                 registry,
                 model_ref="research-agent-loop@v1",
@@ -621,7 +737,14 @@ def _registry_snapshot(
         }
         for artifact in sorted(artifacts, key=lambda item: item.artifact_id)
     ]
-    return records, verified, runtime_events, runtime_verified, runtime_hash
+    return (
+        records,
+        verified,
+        artifact_history_hash,
+        runtime_events,
+        runtime_verified,
+        runtime_hash,
+    )
 
 
 def build_model_risk_evidence(
@@ -691,6 +814,7 @@ def build_model_risk_evidence(
     (
         records,
         registry_verified,
+        artifact_history_hash,
         runtime_events,
         runtime_verified,
         runtime_hash,
@@ -700,7 +824,12 @@ def build_model_risk_evidence(
         revision_recorded_at=recorded_at,
         include_longitudinal_v2=include_longitudinal_v2,
     )
-    if not registry_verified or not runtime_verified or not runtime_hash:
+    if (
+        not registry_verified
+        or not artifact_history_hash
+        or not runtime_verified
+        or not runtime_hash
+    ):
         raise ValueError("generated model-risk registry did not verify")
     counts = Counter(record["artifact_type"] for record in records)
     active_red_team_id = (
@@ -764,6 +893,9 @@ def build_model_risk_evidence(
         "review_identity_assurance": "PROCESS_ROLE_ONLY",
         "registry_snapshot_mode": "CANONICAL_JSON_EXPORT_FROM_EPHEMERAL_SQLITE",
         "registry_verified": True,
+        "registry_store_kind": MODEL_RISK_STORE_KIND,
+        "registry_store_schema_version": MODEL_RISK_STORE_SCHEMA_VERSION,
+        "artifact_history_sha256": artifact_history_hash,
         "runtime_invocation_count": len(runtime_events),
         "runtime_history_verified": runtime_verified,
         "runtime_history_sha256": runtime_hash,

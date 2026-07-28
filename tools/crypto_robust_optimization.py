@@ -40,6 +40,7 @@ from services.research.robust_optimization import (
     select_stable_regions,
     strict_backtest_gate,
 )
+from services.research.trial_provenance import trial_provenance_for_config
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -593,7 +594,9 @@ def _aggregate_candidates(cells: list[dict[str, Any]], bundle: dict[str, Any]) -
     return records
 
 
-def _register_trials(config_hashes: list[str], dataset_version: str, registry_path: str) -> dict[str, Any]:
+def _register_trials(
+    candidates: list[CandidateSpec], dataset_version: str, registry_path: str
+) -> dict[str, Any]:
     from services.research.experiment_registry.registry import ExperimentRegistry
     from services.research.experiment_registry.store import SqliteExperimentStore
 
@@ -605,8 +608,29 @@ def _register_trials(config_hashes: list[str], dataset_version: str, registry_pa
     registry = ExperimentRegistry(store)
     try:
         before = store.trial_count()
+        config_hashes = [candidate_config_hash(candidate) for candidate in candidates]
         registry.begin_search_attempt(search_id=search_id, search_kind="ROBUST_CRYPTO_GRID", source="tools.crypto_robust_optimization", dataset_version=dataset_version, recorded_at=started)
         inserted = registry.register_search_candidates(search_id, config_hashes, registered_at=started)
+        for candidate in candidates:
+            registry.record_trial_provenance(
+                trial_provenance_for_config(
+                    candidate_config_hash(candidate),
+                    research_session_id=search_id,
+                    actor_id="tools.crypto_robust_optimization",
+                    dataset_version=dataset_version,
+                    recorded_at=started,
+                    factor_ids=ALPHA_IDS,
+                    parameter_set={
+                        "candidate": json.dumps(
+                            candidate.as_dict(),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        )
+                    },
+                    model_name="deterministic-robust-grid",
+                )
+            )
         after = store.trial_count()
         registry.finish_search_attempt(search_id, status="COMPLETED", recorded_at=max(started, int(time.time() * 1000)))
         return {"status": "PASS", "search_id": search_id, "before": before, "registered": inserted, "after": after, "config_hashes": len(config_hashes), "persistent": True}
@@ -795,7 +819,7 @@ def run(*, report_path: str = DEFAULT_REPORT, cells_path: str = DEFAULT_CELLS, r
             "missing": ["alpha_evaluation_metadata", "complete_pit_price_funding_intervals", "exchange_filters"],
             "provenance": "REAL_INPUTS_ONLY_FAIL_CLOSED",
         }
-        registry = _register_trials([candidate_config_hash(candidate) for candidate in iter_candidate_specs()], dataset_version, registry_path)
+        registry = _register_trials(list(iter_candidate_specs()), dataset_version, registry_path)
         report["experiment_registry"] = registry
         gpu, cells = _gpu_screen(bundle)
         report["gpu"] = {"status": "PASS", **gpu}

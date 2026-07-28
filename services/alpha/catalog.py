@@ -156,6 +156,77 @@ class AlphaCatalog:
         survivors = benjamini_hochberg_yekutieli([pvalues[a] for a in ids], q=q)
         return {ids[i] for i in survivors}
 
+    def family_fdr_result(
+        self,
+        q: float = 0.10,
+        *,
+        rho_cut: float = 0.70,
+        min_overlap: int = 60,
+    ):
+        """Run the 727 §7.3 family/within-family FDR lens.
+
+        Family identity is fail-closed and deterministic:
+
+        * an explicit ``economic_family``/``family_id`` candidate parameter wins;
+        * otherwise candidates with the same factor dependency set share one
+          declared input family (the rank/zscore/window variants in §7.3);
+        * definitions without usable dependency metadata fall back to return
+          correlation;
+        * historical p-values restored without their definitions/returns are
+          charged as unique singleton families, never guessed into a discount.
+
+        This result is an ADDITIONAL promotion lens.  The existing catalog-wide
+        BHY test and flat global trial count remain mandatory, so family
+        accounting cannot weaken the current gate or un-deflate DSR.
+        """
+        from .family_testing import assign_families, hierarchical_fdr
+
+        pvalues = {**self._historical_pvalues, **self._pvalues}
+        return_series: dict[str, tuple[float, ...]] = {}
+        declared: dict[str, str] = {}
+        for alpha_id in sorted(pvalues):
+            return_series[alpha_id] = self._returns.get(alpha_id, ())
+            definition = self._defs.get(alpha_id)
+            if definition is None:
+                # The evaluation-only restore path intentionally does not
+                # rehydrate stale definitions/returns.  Treat every such row as
+                # a singleton instead of inventing an economic relationship.
+                declared[alpha_id] = f"legacy-singleton:{alpha_id}"
+                continue
+            explicit = (
+                definition.params.get("economic_family")
+                or definition.params.get("family_id")
+                or ""
+            )
+            if isinstance(explicit, str) and explicit.strip():
+                declared[alpha_id] = f"economic:{explicit.strip()}"
+            elif definition.factor_ids:
+                dependencies = ",".join(sorted(set(definition.factor_ids)))
+                declared[alpha_id] = f"inputs:{dependencies}"
+
+        families = assign_families(
+            return_series=return_series,
+            declared_families=declared,
+            rho_cut=rho_cut,
+            min_overlap=min_overlap,
+        )
+        return hierarchical_fdr(pvalues=pvalues, families=families, q=q)
+
+    def family_fdr_survivors(
+        self,
+        q: float = 0.10,
+        *,
+        rho_cut: float = 0.70,
+        min_overlap: int = 60,
+    ) -> set[str]:
+        return set(
+            self.family_fdr_result(
+                q,
+                rho_cut=rho_cut,
+                min_overlap=min_overlap,
+            ).survivors
+        )
+
     # --- state (low-level; the lifecycle manager is the validated chokepoint) -
 
     def get(self, alpha_id: str) -> AlphaDefinition:

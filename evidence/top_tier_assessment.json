@@ -15,14 +15,14 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M2",
       "domain": "data_moat",
       "passed": 1,
       "red_lines_failed": 0,
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "execution_microstructure",
       "passed": 1,
       "red_lines_failed": 0,
@@ -43,7 +43,7 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "domain": "platform_engineering",
       "passed": 1,
       "red_lines_failed": 1,
@@ -154,7 +154,7 @@
       ],
       "id": "AI.MODEL.REGISTRY.REDTEAM",
       "meets_target": false,
-      "next_action": "Govern an external model provider through the registered runtime and independent external review",
+      "next_action": "Configure a real external provider and externally verified receipts through the registered runtime; complete independent strong-identity review",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -301,17 +301,37 @@
       "tier": "A"
     },
     {
-      "checker": "manual_evidence",
-      "checker_args": {},
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M2",
+        "paths": [
+          "quantos/contracts/vendor_data.py",
+          "services/data/vendor_admission.py",
+          "services/data/vendor_delivery_history.py",
+          "tests/data/test_vendor_admission.py",
+          "tests/data/test_vendor_delivery_history.py",
+          "tests/governance/test_vendor_data_boundary.py",
+          "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+        ]
+      },
       "classification": "NEEDS_EXTERNAL",
-      "current_maturity": "M1",
+      "current_maturity": "M2",
       "description": "Licensed tick and order-book data with SLA",
-      "detail": "requires external or human-verified evidence",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
       "domain": "data_moat",
-      "evidence": [],
+      "evidence": [
+        "quantos/contracts/vendor_data.py",
+        "services/data/vendor_admission.py",
+        "services/data/vendor_delivery_history.py",
+        "tests/data/test_vendor_admission.py",
+        "tests/data/test_vendor_delivery_history.py",
+        "tests/governance/test_vendor_data_boundary.py",
+        "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+      ],
       "id": "DATA.VENDOR.DEPTH",
       "meets_target": false,
-      "next_action": "Acquire licensed source and record SLA evidence",
+      "next_action": "Acquire a genuine licensed tick/order-book source; provision an external license verifier; operate the append-only delivery authority with real deliveries, SLA incidents and remediation; retain contractual rights and legal review",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -319,7 +339,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "MANUAL_EVIDENCE_REQUIRED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -356,17 +376,43 @@
       "tier": "A"
     },
     {
-      "checker": "manual_evidence",
-      "checker_args": {},
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "services/execution/simulated_sor.py",
+          "services/execution/simulated_tca.py",
+          "services/execution/dry_run_pipeline.py",
+          "services/execution/dry_run_store.py",
+          "tests/execution/test_simulated_sor.py",
+          "tests/execution/test_simulated_tca.py",
+          "tests/execution/test_dry_run_pipeline.py",
+          "tests/execution/test_dry_run_store.py",
+          "tests/execution/test_execution_import_boundary.py",
+          "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+        ]
+      },
       "classification": "POST_L2",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "Multi-venue SOR and production microstructure",
-      "detail": "requires external or human-verified evidence",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
       "domain": "execution_microstructure",
-      "evidence": [],
+      "evidence": [
+        "services/execution/simulated_sor.py",
+        "services/execution/simulated_tca.py",
+        "services/execution/dry_run_pipeline.py",
+        "services/execution/dry_run_store.py",
+        "tests/execution/test_simulated_sor.py",
+        "tests/execution/test_simulated_tca.py",
+        "tests/execution/test_dry_run_pipeline.py",
+        "tests/execution/test_dry_run_store.py",
+        "tests/execution/test_execution_import_boundary.py",
+        "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+      ],
       "id": "EXECUTION.MULTIVENUE.SOR",
       "meets_target": false,
-      "next_action": "Keep simulated until post-L2 approval",
+      "next_action": "Retain longitudinal route-level dry-run TCA while awaiting post-L2 approval; then prove real multi-venue broker connectivity, fill quality, outage behavior and production TCA",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -374,7 +420,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "MANUAL_EVIDENCE_REQUIRED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -603,6 +649,11 @@
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority"
             }
           ],
           "version": 2
@@ -744,6 +795,11 @@
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority"
             }
           ],
           "version": 2
@@ -774,7 +830,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, SUCCESS_GAP_EXCEEDED, HISTORY_SPAN_INSUFFICIENT",
+      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -812,6 +868,7 @@
           "actions-osv-evidence:current",
           "container-trivy-evidence:current",
           "service-import-graph:current",
+          "artifact-admission-authority:provision",
           "model-risk-history:current",
           "risk-recovery-drill:fresh",
           "frontend: typecheck",
@@ -850,22 +907,14 @@
         "path": "evidence/supply_chain_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M2",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed but unprovisioned local decision store; no retained valid bundle or external signed receipt exercises the real verifier path, source-native checkpoint/revocation proofs are not verified, and cross-host reproducibility, an externally signed artifact, authenticated receipts, independent deployment, and an external history seal remain open; evidence does not meet target maturity",
+      "detail": "supply-chain baseline failed: artifact_admission_implementation_hashes, artifact_admission_verification_paths",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
         "config/artifact_admission_policy_registry.json",
         "config/artifact_receipt_authority_registry.json",
-        "services/governance/artifact_admission.py",
-        "services/governance/artifact_admission_store.py",
-        "services/governance/artifact_receipt_auth.py",
-        "tools/verify_artifact_admission.py",
-        "tests/governance/test_artifact_admission.py",
-        "tests/governance/test_artifact_admission_cli.py",
-        "tests/governance/test_artifact_admission_store.py",
-        "tests/governance/test_artifact_receipt_auth.py",
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "evidence/vulnerability/actions_osv_latest.json",
@@ -962,6 +1011,7 @@
         "tests/execution/test_impact_ownership.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_console_composition_boundary.py",
@@ -993,6 +1043,7 @@
         "tests/risk/test_kill_switch_state_store.py",
         "tests/risk/test_research_risk_events.py",
         "tests/tools/test_alpha_maintenance_sweep.py",
+        "tests/tools/test_artifact_admission_seal.py",
         "tests/tools/test_deployment_events.py",
         "tests/tools/test_domain_event_bus.py",
         "tests/tools/test_domain_event_health.py",
@@ -1003,7 +1054,9 @@
         "tests/tools/test_external_heartbeat.py",
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_live_testnet_smoke.py",
         "tools/alpha_maintenance_sweep.py",
+        "tools/artifact_admission_seal.py",
         "tools/crypto_robust_optimization.py",
         "tools/deployment_events.py",
         "tools/domain_event_bus.py",
@@ -1020,14 +1073,16 @@
         "tools/live_data_refresh.py",
         "tools/live_kill_switch_reset.py",
         "tools/live_risk_sentinel.py",
+        "tools/live_testnet_smoke.py",
         "tools/live_track_advance.py",
+        "tools/provision_artifact_admission_authority.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
         "tools/verify_artifact_admission.py"
       ],
       "id": "PLATFORM.SUPPLY_CHAIN",
       "meets_target": false,
-      "next_action": "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; provision the fixed admission authority and externally seal its chain head at an independently deployed boundary",
+      "next_action": "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; externally seal the provisioned authority chain head at an independently deployed boundary",
       "red_line": true,
       "required_evidence": [
         "implementation",
@@ -1035,7 +1090,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1267,9 +1322,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 1,
-    "manual_evidence_required": 2,
-    "partial": 4,
+    "failed": 2,
+    "manual_evidence_required": 0,
+    "partial": 5,
     "passed": 15,
     "red_lines_failed": 3,
     "total": 22,

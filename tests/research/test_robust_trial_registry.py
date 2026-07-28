@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.robust_optimization import CandidateSpec
+from tools.crypto_robust_optimization import _register_trials
 
 
 def test_robust_trial_budget_survives_store_reopen(tmp_path) -> None:
@@ -30,3 +32,34 @@ def test_robust_trial_budget_survives_store_reopen(tmp_path) -> None:
         assert second.trial_count() == 3
     finally:
         second.close()
+
+
+def test_robust_grid_registers_immutable_provenance(tmp_path) -> None:
+    path = str(tmp_path / "experiment_registry.db")
+    candidates = [
+        CandidateSpec((1.0, 0.0, 0.0), 1.0, 0.10),
+        CandidateSpec((0.0, 1.0, 0.0), 1.0, 0.10),
+    ]
+    bootstrap = SqliteExperimentStore(path, create=True)
+    bootstrap.close()
+    result = _register_trials(candidates, "data-v1", path)
+    assert result["registered"] == 2
+
+    store = SqliteExperimentStore(path, create=False)
+    try:
+        registry = ExperimentRegistry(store)
+        records = [
+            row["record"]
+            for candidate in candidates
+            for row in registry.trial_provenance_for_config(candidate.config_hash)
+        ]
+        assert len(records) == len(candidates)
+        assert {record["actor_id"] for record in records} == {
+            "tools.crypto_robust_optimization"
+        }
+        assert all(
+            record["parameter_set"]["candidate"] for record in records
+        )
+        assert registry.trial_provenance_chain_valid() is True
+    finally:
+        store.close()

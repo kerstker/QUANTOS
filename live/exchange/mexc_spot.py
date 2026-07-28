@@ -165,6 +165,7 @@ class MexcSpotAdapter:
     mainnet 在默认 SafetyConfig 下构造即 SafetyViolation(见模块 docstring)。"""
 
     MAINNET_BASE = "https://api.mexc.com"
+    USER_STREAM_BASE = "wss://wbs-api.mexc.com/ws"
     venue_name = "mexc"       # mandate 交易所域匹配(mandate.exchange 必须等于它)
 
     def __init__(self, *, api_key: str, api_secret: str, base_url: str,
@@ -263,6 +264,25 @@ class MexcSpotAdapter:
             return status, self._parse_json(status, body)
         return call_with_backoff(_do, is_rate_limited=_is_rate_limited, max_retries=self._max_retries,
                                  base_delay=self._retry_base_delay, sleep=self._sleep)
+
+    def _api_key_request(self, method: str, path: str, params: Optional[dict] = None):
+        """API-key-only request used by MEXC listen-key lifecycle endpoints."""
+        headers = {"X-MEXC-APIKEY": self._api_key}
+        params = params or {}
+
+        def _do():
+            query = urllib.parse.urlencode(params)
+            url = self._base_url + path + (f"?{query}" if query else "")
+            status, body = self._http(method, url, body=None, headers=headers)
+            return status, self._parse_json(status, body)
+
+        return call_with_backoff(
+            _do,
+            is_rate_limited=_is_rate_limited,
+            max_retries=self._max_retries,
+            base_delay=self._retry_base_delay,
+            sleep=self._sleep,
+        )
 
     # --- 公开(无签名) ---
 
@@ -456,6 +476,35 @@ class MexcSpotAdapter:
                 raise RuntimeError(
                     f"spot reduce-only SELL rejected locally: qty {order.quantity} exceeds free "
                     f"balance {free} of {order.instrument_id} — refusing to submit")
+        status, data = self._post_signed("/api/v3/order", self._order_params(order))
+        if not (200 <= status < 300):
+            raise RuntimeError(f"place_order failed: {status} {data}")
+        return self._to_order_result(data, order.instrument_id, order.client_order_id)
+
+    def test_order(self, order: LiveOrderRequest) -> dict:
+        """**此端点永不进撮合**(MEXC 端语义:`POST /api/v3/order/test` 只创建并校验订单、
+        不送入撮合引擎,成功响应空对象 `{}`)——仅用于 727 §13 阶段 C / Phase 8 M2 的链路
+        验证(签名/timestamp/recvWindow/参数校验/权限的交易所侧回答)。
+
+        参数构造经 `_order_params` 与 `place_order` **逐字段共享**——「测的就是会发的」
+        由机器证明(参数一致性测试钉死),不是纪律声明。**端点级薄封装**:精度/最小名义
+        预校验归管线(`apply_exchange_filters`),reduce_only 余额检查归 `place_order`
+        本地——本方法不复制任何预校验,给什么 LiveOrderRequest 就验证什么。
+
+        结构性隔离(never-matching 双保险):本方法**不进** VenueAdapter Protocol;
+        `submit_live_batch`/ops API/任何下单路径绝不引用它(治理 AST 钉死);真实
+        mainnet 首次调用是人工专属步骤(tools/mexc_readonly_smoke.py --test-order)。
+        非 2xx -> RuntimeError 带 MEXC 错误码原文(与 place_order 同错误语义)。"""
+        status, data = self._post_signed("/api/v3/order/test", self._order_params(order))
+        if not (200 <= status < 300):
+            raise RuntimeError(f"test_order failed: {status} {data}")
+        return {"validated": True, "client_order_id": order.client_order_id,
+                "exchange_response": data}
+
+    @staticmethod
+    def _order_params(order: LiveOrderRequest) -> dict:
+        """LiveOrderRequest -> MEXC 下单参数。place_order 与 test_order 的唯一共享构造点
+        ——保证「测的就是会发的」(Phase 8 M2);place_order 行为逐位不变。"""
         params = {
             "symbol": order.instrument_id + "USDT",
             "side": order.side.value,
@@ -466,10 +515,7 @@ class MexcSpotAdapter:
         if order.order_type == "LIMIT":
             params["price"] = _format_qty(order.limit_price)
             params["timeInForce"] = "GTC"      # 现货无 GTX;post_only 字段预留、驱动器不接
-        status, data = self._post_signed("/api/v3/order", params)
-        if not (200 <= status < 300):
-            raise RuntimeError(f"place_order failed: {status} {data}")
-        return self._to_order_result(data, order.instrument_id, order.client_order_id)
+        return params
 
     def get_order(self, instrument_id: str, client_order_id: str) -> Optional[VenueOrderResult]:
         params = {"symbol": instrument_id + "USDT", "origClientOrderId": client_order_id}
@@ -491,6 +537,110 @@ class MexcSpotAdapter:
         if isinstance(data, dict) and data.get("code") in (_CANCEL_REJECTED_CODE, _ORDER_NOT_FOUND_CODE):
             return None
         raise RuntimeError(f"cancel_order failed: {status} {data}")
+
+    # --- User stream (M4; transport/Protobuf decoder injected) ---
+
+    def create_listen_key(self) -> str:
+        status, data = self._api_key_request("POST", "/api/v3/userDataStream")
+        key = data.get("listenKey") if isinstance(data, dict) else None
+        if not (200 <= status < 300) or not isinstance(key, str) or not key:
+            raise RuntimeError(f"create listen key failed: {status}")
+        return key
+
+    def keepalive_listen_key(self, listen_key: str) -> None:
+        if not isinstance(listen_key, str) or not listen_key:
+            raise ValueError("listen_key must be non-empty")
+        status, _ = self._api_key_request(
+            "PUT", "/api/v3/userDataStream", {"listenKey": listen_key}
+        )
+        if not (200 <= status < 300):
+            raise RuntimeError(f"keepalive listen key failed: {status}")
+
+    def close_listen_key(self, listen_key: str) -> None:
+        if not isinstance(listen_key, str) or not listen_key:
+            raise ValueError("listen_key must be non-empty")
+        status, _ = self._api_key_request(
+            "DELETE", "/api/v3/userDataStream", {"listenKey": listen_key}
+        )
+        if not (200 <= status < 300):
+            raise RuntimeError(f"close listen key failed: {status}")
+
+    def user_stream(
+        self,
+        *,
+        ws_connect: Callable[[str], object],
+        decode: Callable[[object], dict],
+        on_event: Callable[[dict], object],
+        rest_backfill: Callable[["MexcSpotAdapter"], None],
+        max_reconnects: int = 3,
+    ) -> int:
+        """Consume private account/order/deal events with fail-closed recovery.
+
+        MEXC currently emits Protobuf frames, so the transport and decoder are
+        explicit dependencies; there is no permissive JSON fallback. Every
+        disconnect runs the authoritative REST backfill before reconnecting.
+        `on_event` returns False for a clean operator stop. The listen key is
+        always invalidated on exit.
+        """
+        if max_reconnects < 0:
+            raise ValueError("max_reconnects must be >= 0")
+        for value, name in (
+            (ws_connect, "ws_connect"),
+            (decode, "decode"),
+            (on_event, "on_event"),
+            (rest_backfill, "rest_backfill"),
+        ):
+            if not callable(value):
+                raise TypeError(f"{name} must be callable")
+        listen_key = self.create_listen_key()
+        reconnects = 0
+        channels = (
+            "spot@private.account.v3.api.pb",
+            "spot@private.orders.v3.api.pb",
+            "spot@private.deals.v3.api.pb",
+        )
+        try:
+            while True:
+                socket = None
+                try:
+                    socket = ws_connect(
+                        f"{self.USER_STREAM_BASE}?listenKey={listen_key}"
+                    )
+                    socket.send(
+                        json.dumps(
+                            {"method": "SUBSCRIPTION", "params": list(channels)},
+                            separators=(",", ":"),
+                        )
+                    )
+                    while True:
+                        frame = socket.recv()
+                        if frame is None:
+                            raise ConnectionError("MEXC user stream disconnected")
+                        event = decode(frame)
+                        if not isinstance(event, dict):
+                            raise RuntimeError("MEXC user stream decoder returned non-object")
+                        if event.get("msg") == "PING":
+                            socket.send('{"method":"PING"}')
+                            continue
+                        if on_event(event) is False:
+                            return reconnects
+                except Exception:
+                    rest_backfill(self)
+                    if reconnects >= max_reconnects:
+                        raise
+                    reconnects += 1
+                    self.keepalive_listen_key(listen_key)
+                finally:
+                    if socket is not None:
+                        try:
+                            socket.close()
+                        except Exception:
+                            pass
+        finally:
+            try:
+                self.close_listen_key(listen_key)
+            except Exception:
+                pass
 
     # --- 内部辅助 ---
 

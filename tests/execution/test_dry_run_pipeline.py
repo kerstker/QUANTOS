@@ -1,3 +1,6 @@
+from dataclasses import replace
+from decimal import Decimal
+
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.events import (
     EVENT_DRY_RUN_COMPLETED,
@@ -11,6 +14,13 @@ from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from
                                                  plan_target_quantities, reconcile_run, run_dry_run_pipeline,
                                                  run_multi_period_dry_run, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
+from services.execution.simulated_sor import (
+    BookLevel,
+    SORPolicy,
+    VenueBook,
+    route_simulated_intent,
+)
+from services.execution.simulated_tca import verify_route_tca_record
 from services.monitoring.event_bus import DurableEventBus
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
@@ -93,6 +103,212 @@ def test_simulate_fills_with_cost_charges_commission():
     out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunAdapterEngine(),
                          run_id="r1", timestamp=1000, cost_bps=5.0)
     assert round(out["fills"][0].commission, 6) == 0.5  # notional 1000 * 5bps = 0.5
+
+
+def _sor_for_intent(intent, *, price=100, quantity=None, fee_bps="10"):
+    quantity = int(quantity if quantity is not None else intent.quantity)
+    book = VenueBook(
+        venue_id="VENUE_A",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal(fee_bps),
+        latency_ms=2,
+        bids=(BookLevel(Decimal(str(price - 1)), quantity),),
+        asks=(BookLevel(Decimal(str(price)), quantity),),
+    )
+    return route_simulated_intent(
+        intent,
+        [book],
+        as_of_ms=1000,
+        policy=SORPolicy(
+            max_quote_age_ms=0,
+            latency_penalty_bps_per_ms=Decimal("0.1"),
+        ),
+    )
+
+
+def test_simulate_fills_consumes_sor_slices_and_charges_route_costs():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    first = VenueBook(
+        venue_id="A",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal("10"),
+        latency_ms=0,
+        bids=(BookLevel(Decimal("99"), 10),),
+        asks=(BookLevel(Decimal("100"), 4),),
+    )
+    second = VenueBook(
+        venue_id="B",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal("0"),
+        latency_ms=0,
+        bids=(BookLevel(Decimal("98"), 10),),
+        asks=(BookLevel(Decimal("101"), 6),),
+    )
+    plan = route_simulated_intent(
+        intent,
+        [second, first],
+        as_of_ms=1000,
+        policy=SORPolicy(max_quote_age_ms=0),
+    )
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 999.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-r1",
+        timestamp=1000,
+        route_planner=lambda _intent: plan,
+    )
+
+    assert [(fill.quantity, fill.price) for fill in out["fills"]] == [
+        (4, 100.0),
+        (6, 101.0),
+    ]
+    assert round(sum(fill.commission for fill in out["fills"]), 6) == 0.4
+    assert round(out["route_cost_total"], 6) == 0.4
+    assert out["routing"][0]["slices"][0]["venue_id"] == "A"
+    assert out["route_rejections"] == []
+    assert len(out["route_tca"]) == 1
+    assert out["route_tca"][0]["filled_quantity"] == 10
+    assert verify_route_tca_record(out["route_tca"][0]) is True
+    assert all(
+        report.live_trading_allowed is False and report.dry_run is True
+        for report in out["reports"]
+    )
+    pnl = reconcile_run(out["fills"], {"BTC": 101.0}, initial_capital=1e7)
+    assert pnl["total_pnl"] == 3.6
+    assert pnl["residual"] < 1e-6
+
+
+def test_tampered_sor_plan_is_rejected_before_adapter():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    plan = _sor_for_intent(intent)
+    tampered = replace(plan, expected_fees=Decimal("0"))
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-tampered",
+        timestamp=1000,
+        route_planner=lambda _intent: tampered,
+    )
+
+    assert out["fills"] == []
+    assert out["reports"] == []
+    assert out["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["ROUTE_TOTALS_MISMATCH"],
+    }]
+
+
+def test_rejected_or_failed_route_planner_produces_zero_fills():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    rejected = _sor_for_intent(intent, quantity=5)
+
+    denied = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-denied",
+        timestamp=1000,
+        route_planner=lambda _intent: rejected,
+    )
+
+    assert denied["fills"] == []
+    assert denied["routing"][0]["status"] == "REJECTED"
+    assert denied["route_rejections"][0]["reasons"] == ["ROUTE_REJECTED"]
+
+    def broken(_intent):
+        raise RuntimeError("venue snapshot unavailable: do not leak payload")
+
+    failed = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-error",
+        timestamp=1000,
+        route_planner=broken,
+    )
+    assert failed["fills"] == []
+    assert failed["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["ROUTE_PLANNER_ERROR:RuntimeError"],
+    }]
+
+
+def test_single_pipeline_requires_and_binds_routing_snapshot_id():
+    def planner(intent):
+        return _sor_for_intent(intent, quantity=int(intent.quantity))
+
+    with _pytest.raises(ValueError, match="routing_snapshot_id is required"):
+        run_dry_run_pipeline(
+            weights={"BTC": 0.001},
+            prices={"BTC": 100.0},
+            current_positions={},
+            aum=1e6,
+            gate=_gate(),
+            ctx_factory=_ctx_factory({"BTC": 100.0}),
+            adapter=DryRunAdapterEngine(),
+            strategy_id="carry",
+            timestamp=1000,
+            route_planner=planner,
+        )
+
+    routed = run_dry_run_pipeline(
+        weights={"BTC": 0.001},
+        prices={"BTC": 100.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 100.0},
+        route_planner=planner,
+        routing_snapshot_id="books-sha256:abc",
+    )
+    legacy = run_dry_run_pipeline(
+        weights={"BTC": 0.001},
+        prices={"BTC": 100.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 100.0},
+    )
+
+    assert routed.run_id != legacy.run_id
+    assert routed.detail["routing_snapshot_id"] == "books-sha256:abc"
+    assert routed.detail["routing"][0]["status"] == "COMPLETE"
+    assert verify_route_tca_record(routed.detail["route_tca"][0]) is True
+    assert routed.detail["n_fills"] == 1
+    assert routed.pnl["costs"] > 0
+
+
+def test_routed_fill_without_positive_tca_reference_fails_closed():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    plan = _sor_for_intent(intent)
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-no-reference",
+        timestamp=1000,
+        route_planner=lambda _intent: plan,
+    )
+
+    assert out["fills"] == []
+    assert out["route_tca"] == []
+    assert out["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["TCA_REFERENCE_PRICE_MISSING"],
+    }]
 
 
 def test_reconcile_run_returns_pnl_summary():
@@ -419,6 +635,53 @@ def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None,
         ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
         cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target,
         event_bus=event_bus, research_risk_config=research_risk_config)
+
+
+def test_multi_period_pipeline_consumes_period_bound_sor_plans():
+    def planner(intent, prices, period):
+        price = Decimal(str(prices[intent.instrument_id]))
+        quantity = int(intent.quantity)
+        book = VenueBook(
+            venue_id="PERIOD_VENUE",
+            observed_at_ms=int(period),
+            taker_fee_bps=Decimal("5"),
+            latency_ms=0,
+            bids=(BookLevel(price, quantity),),
+            asks=(BookLevel(price + Decimal("0.1"), quantity),),
+        )
+        return route_simulated_intent(
+            intent,
+            [book],
+            as_of_ms=int(period),
+            policy=SORPolicy(max_quote_age_ms=0),
+        )
+
+    routed = run_multi_period_dry_run(
+        periods=_PERIODS,
+        weights_by_period=_W,
+        prices_by_period=_PX,
+        gate=_gate(),
+        ctx_factory=_mp_ctx,
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        aum=1e6,
+        route_planner=planner,
+        routing_snapshot_id="weekly-books:v1",
+    )
+
+    assert routed.detail["routing_snapshot_id"] == "weekly-books:v1"
+    assert routed.detail["routing"]
+    assert {item["period"] for item in routed.detail["routing"]}.issubset(
+        set(_PERIODS)
+    )
+    assert routed.detail["route_tca"]
+    assert all(
+        item["period"] in _PERIODS and verify_route_tca_record(item["tca"])
+        for item in routed.detail["route_tca"]
+    )
+    assert routed.detail["sor_route_cost"] > 0
+    assert routed.detail["route_rejections"] == []
+    assert routed.pnl["residual"] < 1e-6
 
 
 def test_multi_period_benign_curve():

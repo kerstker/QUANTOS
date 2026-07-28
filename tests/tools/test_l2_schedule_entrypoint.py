@@ -124,6 +124,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "crypto_factory_loop",
             "domain_event_ops",
             "domain_event_seal",
+            "artifact_admission_seal",
             "external_heartbeat",
             "forward_track_advance",
             "gonogo_report",

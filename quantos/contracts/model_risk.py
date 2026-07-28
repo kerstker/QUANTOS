@@ -69,6 +69,11 @@ class RuntimeInvocationOutcome(str, Enum):
     ERROR = "ERROR"
 
 
+class ExternalProviderBindingStatus(str, Enum):
+    RESEARCH_ONLY = "RESEARCH_ONLY"
+    DISABLED = "DISABLED"
+
+
 def _canonical_payload(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
@@ -234,6 +239,69 @@ class ToolManifest(_FrozenContract):
     @property
     def artifact_id(self) -> str:
         return f"tool-manifest:{self.manifest_id}:{self.version}"
+
+
+class ExternalProviderBinding(_FrozenContract):
+    binding_id: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    provider_id: str = Field(min_length=1)
+    provider_model_ref: str = Field(min_length=1)
+    model_ref: str = Field(min_length=1)
+    provider_deployment_ref: str = Field(min_length=1)
+    verification_policy_ref: str = Field(min_length=1)
+    allowed_actions: tuple[str, ...] = Field(min_length=1)
+    status: ExternalProviderBindingStatus
+    recorded_at: int = Field(ge=0)
+
+    @field_validator("allowed_actions")
+    @classmethod
+    def _validate_allowed_actions(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _unique_nonempty(value, "allowed_actions")
+
+    @model_validator(mode="after")
+    def _reject_credential_material(self) -> "ExternalProviderBinding":
+        payload = " ".join(
+            (
+                self.provider_id,
+                self.provider_model_ref,
+                self.provider_deployment_ref,
+                self.verification_policy_ref,
+            )
+        ).lower()
+        forbidden = ("api_key", "api-key", "secret=", "token=", "password=")
+        if any(marker in payload for marker in forbidden):
+            raise ValueError("provider bindings cannot contain credential material")
+        return self
+
+    @property
+    def binding_ref(self) -> str:
+        return f"{self.binding_id}@{self.version}"
+
+    @property
+    def artifact_id(self) -> str:
+        return f"provider-binding:{self.binding_id}:{self.version}"
+
+
+class ExternalProviderResponse(_FrozenContract):
+    provider_id: str = Field(min_length=1)
+    provider_model_ref: str = Field(min_length=1)
+    external_request_id: str = Field(min_length=1)
+    request_sha256: str
+    response: Any
+    response_sha256: str
+    verification_receipt_ref: str = Field(min_length=1)
+    received_at: int = Field(ge=0)
+
+    @field_validator("request_sha256", "response_sha256", mode="before")
+    @classmethod
+    def _validate_digest(cls, value: str) -> str:
+        return _normalize_digest(value)
+
+    @model_validator(mode="after")
+    def _validate_response_digest(self) -> "ExternalProviderResponse":
+        if stable_hash(self.response) != self.response_sha256:
+            raise ValueError("provider response digest does not match its payload")
+        return self
 
 
 class RuntimeInvocation(_FrozenContract):
@@ -439,6 +507,7 @@ ModelRiskArtifact = (
     ModelCard
     | PromptTemplateCard
     | ToolManifest
+    | ExternalProviderBinding
     | OfflineEvaluation
     | RedTeamReport
     | ChallengerReview
@@ -450,6 +519,9 @@ __all__ = [
     "ChallengerVerdict",
     "EvaluationMetric",
     "EvaluationVerdict",
+    "ExternalProviderBinding",
+    "ExternalProviderBindingStatus",
+    "ExternalProviderResponse",
     "MetricDirection",
     "ModelCard",
     "ModelRiskArtifact",

@@ -89,6 +89,11 @@ DEFAULT_SOURCES = (
         "identity_authorization_authority",
         False,
     ),
+    BackupSource(
+        "data/cache/vendor_delivery_history.db",
+        "vendor_delivery_history_authority",
+        False,
+    ),
 )
 
 

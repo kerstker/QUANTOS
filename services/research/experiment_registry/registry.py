@@ -186,6 +186,26 @@ class ExperimentRegistry:
     def trial_provenance_head(self) -> str:
         return self._store.trial_provenance_head()
 
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses,
+        *,
+        viewed_at: int,
+    ) -> int:
+        return self._store.record_search_oos_access(
+            search_id, accesses, viewed_at=viewed_at
+        )
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]:
+        return self._store.trial_oos_access(trial_id)
+
+    def trial_oos_access_chain_valid(self) -> bool:
+        return self._store.trial_oos_access_chain_valid()
+
+    def trial_oos_access_head(self) -> str:
+        return self._store.trial_oos_access_head()
+
     def oos_peek_totals(self) -> dict[str, int]:
         return self._store.oos_peek_totals()
 

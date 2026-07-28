@@ -1,0 +1,109 @@
+{
+  "acceptance": {
+    "external_approval": false,
+    "live_authority": false,
+    "research_lifecycle": true
+  },
+  "artifact": "QUANTOS_727_ALPHA_LIFECYCLE_STATUS",
+  "blockers": [],
+  "cockpit": {
+    "alpha_count": 20,
+    "derived_stage_counts": {
+      "DRY_RUN": 2,
+      "LIVE_TRACK": 1,
+      "PAPER_TRACKED": 17
+    },
+    "path": "evidence/alpha_lifecycle_cockpit.json",
+    "sha256": "8a6371b773df4bcf096188d6a05a7e00ca941c972eac847f039329a1d7f35e00"
+  },
+  "commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generated_at_ms": 1785235890906,
+  "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
+  "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
+  "implementation": {
+    "degradation_pause_retirement": true,
+    "deployment_state_machine": true,
+    "health_state_machine": true,
+    "promotion_and_grant": true,
+    "research_state_machine": true
+  },
+  "input_hash": "0e56c84c275b88c6eef40658ce3b17c8c870efb2c0d31484ddf08f259b39a5d4",
+  "inputs": {
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "797534d21b5db2736346363ccf72e75d2488af503eaa012321e2b6ea8c23a4bd",
+      "size_bytes": 18708
+    },
+    "evidence/alpha_lifecycle_cockpit.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "8a6371b773df4bcf096188d6a05a7e00ca941c972eac847f039329a1d7f35e00",
+      "size_bytes": 79322
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "8a96314633ec9f540e606a95ca789159f3b39cd7480b08d066b3e735bedb40f4",
+      "size_bytes": 7984
+    },
+    "services/alpha": {
+      "exists": true,
+      "file_count": 37,
+      "files_sha256": "4f53a553a5ab779cf6fdbb4e94583bcc0e217e2e91bc041db89f79c5c94831e8",
+      "kind": "python_directory"
+    },
+    "services/alpha_factory": {
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "2012e8cda6cc11d3371127c69a77491b9d3f5a6c443e9272120e3553fbb4910e",
+      "kind": "python_directory"
+    },
+    "tests/alpha": {
+      "exists": true,
+      "file_count": 38,
+      "files_sha256": "562ce3e58d48ba3bc264ea329f0e32f87618216ccbc8b16b34b9a295422f8bd9",
+      "kind": "python_directory"
+    },
+    "tests/alpha_factory": {
+      "exists": true,
+      "file_count": 11,
+      "files_sha256": "ecb609265d86cf41237cce542cbca4c9dbf36cac9edf56431439acbb2e67a553",
+      "kind": "python_directory"
+    },
+    "tests/lifecycle": {
+      "exists": true,
+      "file_count": 4,
+      "files_sha256": "71553fd73bb6b92435341a948d8b5b9f5a06ce7f3db383193b24a248768cf555",
+      "kind": "python_directory"
+    }
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "status": "READY_FOR_RESEARCH_AUTONOMY",
+  "validation": {
+    "current": true,
+    "head_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "overall_status": "PASS",
+    "reported_commit": "b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f",
+    "reported_validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "e3bc98c4a93601324eea51b7b4649ad0f54fc0371e8698596dcded1697bab241"
+  },
+  "working_tree_dirty": true
+}

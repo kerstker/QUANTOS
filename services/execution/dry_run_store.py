@@ -17,6 +17,7 @@ from quantos.contracts.events import (
     Event,
     event_timestamp_from_milliseconds,
 )
+from services.execution.simulated_tca import verify_route_tca_record
 
 
 class DryRunStoreError(RuntimeError):
@@ -200,8 +201,64 @@ class DryRunStore:
         if tables & outbox_tables and not outbox_tables <= tables:
             raise DryRunStoreError("dry-run outbox schema is partial")
         self._has_outbox = outbox_tables <= tables
+        self._validate_retained_route_tca()
         if self._has_outbox:
             self._refresh_outbox_heads()
+
+    @staticmethod
+    def _validate_run_route_tca(run: DryRunRun) -> None:
+        detail = run.detail
+        if not isinstance(detail, Mapping):
+            raise DryRunStoreError("dry-run detail must be an object")
+        schema_version = detail.get("route_tca_schema_version")
+        if schema_version is None:
+            return
+        if schema_version != 1 or not detail.get("routing_snapshot_id"):
+            raise DryRunStoreError("route TCA schema or snapshot binding is invalid")
+        routing = detail.get("routing")
+        records = detail.get("route_tca")
+        if not isinstance(routing, list) or not isinstance(records, list):
+            raise DryRunStoreError("route TCA collections are invalid")
+        multi_period = detail.get("mode") == "multi_period"
+        verified: list[tuple[int | None, Mapping[str, object]]] = []
+        for retained in records:
+            period = None
+            tca = retained
+            if multi_period:
+                if (
+                    not isinstance(retained, Mapping)
+                    or set(retained) != {"period", "tca"}
+                    or type(retained["period"]) is not int
+                ):
+                    raise DryRunStoreError("multi-period route TCA envelope is invalid")
+                period = retained["period"]
+                tca = retained["tca"]
+            if not verify_route_tca_record(tca):
+                raise DryRunStoreError("route TCA record is invalid")
+            verified.append((period, tca))
+        expected = [
+            (
+                item.get("period") if multi_period else None,
+                item.get("instrument_id"),
+                item.get("status"),
+            )
+            for item in routing
+            if isinstance(item, Mapping) and item.get("status") != "REJECTED"
+        ]
+        actual = [
+            (period, tca.get("instrument_id"), tca.get("route_status"))
+            for period, tca in verified
+        ]
+        if sorted(expected, key=str) != sorted(actual, key=str):
+            raise DryRunStoreError("route TCA does not bind the retained route plans")
+
+    def _validate_retained_route_tca(self) -> None:
+        try:
+            rows = self._conn.execute("SELECT * FROM dry_run ORDER BY run_id").fetchall()
+            for row in rows:
+                self._validate_run_route_tca(DryRunRun(**self._row(row)))
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise DryRunStoreError("retained dry-run snapshot is invalid") from exc
 
     def _require_outbox(self) -> None:
         if not self._has_outbox:
@@ -422,6 +479,7 @@ class DryRunStore:
         return run.as_record()
 
     def _write_run_locked(self, run: DryRunRun) -> bool:
+        self._validate_run_route_tca(run)
         existing = self._conn.execute(
             "SELECT * FROM dry_run WHERE run_id=?", (run.run_id,)
         ).fetchone()

@@ -145,6 +145,7 @@ _SEARCH_ACTIVITY_TABLES = (
     "search_attempt_recoveries",
     "search_evaluations",
     "trial_provenance",
+    "trial_oos_access",
 )
 _EVALUATION_AUDIT_TABLES = ("evaluation_audit_outbox", "evaluation_audit_dispatch")
 _SEARCH_TERMINAL_STATUSES = frozenset({"FAILED", "COMPLETED"})
@@ -152,7 +153,7 @@ _SEARCH_RECOVERY_REASON = "STALE_STARTED_TIMEOUT"
 # v3 adds trial_provenance (727 §7.1 TrialRecord). The migration replays the
 # whole _SEARCH_SCHEMA script and every statement is CREATE ... IF NOT EXISTS,
 # so a v2 store gains only the new table + triggers and keeps every existing row.
-_SEARCH_SCHEMA_VERSION = 3
+_SEARCH_SCHEMA_VERSION = 4
 _SEARCH_APPEND_ONLY_TRIGGERS = {
     "search_attempt_events_no_update": ("search_attempt_events", "update"),
     "search_attempt_events_no_delete": ("search_attempt_events", "delete"),
@@ -174,6 +175,8 @@ _SEARCH_APPEND_ONLY_TRIGGERS = {
     "evaluation_audit_dispatch_no_delete": ("evaluation_audit_dispatch", "delete"),
     "trial_provenance_no_update": ("trial_provenance", "update"),
     "trial_provenance_no_delete": ("trial_provenance", "delete"),
+    "trial_oos_access_no_update": ("trial_oos_access", "update"),
+    "trial_oos_access_no_delete": ("trial_oos_access", "delete"),
 }
 
 _SEARCH_SCHEMA = """
@@ -341,6 +344,24 @@ BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trial_provenance_no_delete
 BEFORE DELETE ON trial_provenance
 BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
+CREATE TABLE IF NOT EXISTS trial_oos_access (
+    access_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    boundary TEXT NOT NULL,
+    viewed_at INTEGER NOT NULL CHECK(viewed_at >= 0),
+    prev_entry_hash TEXT NOT NULL,
+    entry_hash TEXT UNIQUE NOT NULL,
+    UNIQUE(trial_id, method, boundary)
+);
+CREATE INDEX IF NOT EXISTS trial_oos_access_by_trial
+ON trial_oos_access(trial_id, access_seq);
+CREATE TRIGGER IF NOT EXISTS trial_oos_access_no_update
+BEFORE UPDATE ON trial_oos_access
+BEGIN SELECT RAISE(ABORT, 'trial_oos_access is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trial_oos_access_no_delete
+BEFORE DELETE ON trial_oos_access
+BEGIN SELECT RAISE(ABORT, 'trial_oos_access is append-only'); END;
 """
 
 
@@ -475,6 +496,25 @@ def _search_evaluation_hash(
             "recorded_at": recorded_at,
             "run_id": run_id,
             "search_id": search_id,
+        }
+    )
+
+
+def _trial_oos_access_hash(
+    *,
+    trial_id: str,
+    method: str,
+    boundary: str,
+    viewed_at: int,
+    prev_entry_hash: str,
+) -> str:
+    return _canonical_hash(
+        {
+            "boundary": boundary,
+            "method": method,
+            "prev_entry_hash": prev_entry_hash,
+            "trial_id": trial_id,
+            "viewed_at": viewed_at,
         }
     )
 
@@ -1448,18 +1488,173 @@ class SqliteExperimentStore:
         ).fetchone()
         return "" if row is None else str(row["entry_hash"])
 
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses: Mapping[str, Sequence[str]],
+        *,
+        viewed_at: int,
+    ) -> int:
+        """Append actual OOS boundaries viewed by every trial in a search.
+
+        TrialRecord is written before data access and remains immutable. This
+        companion chain records only boundaries returned by completed OOS
+        validators. A persistence failure is fatal so OOS cannot be consumed
+        without accounting for the peek.
+        """
+        search_id = self._require_text(search_id, "search_id")
+        viewed_at = self._require_time(viewed_at, "viewed_at")
+        normalized: list[tuple[str, str]] = []
+        for method, boundaries in sorted(accesses.items()):
+            method = self._require_text(method, "method")
+            for boundary in sorted(set(boundaries)):
+                normalized.append(
+                    (method, self._require_text(boundary, "boundary"))
+                )
+        if not normalized:
+            return 0
+        self._ensure_search_schema()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._verified_search_state()
+            trials = [
+                str(row["trial_id"])
+                for row in self._conn.execute(
+                    "SELECT trial_id FROM trial_provenance"
+                    " WHERE research_session_id=? ORDER BY provenance_seq",
+                    (search_id,),
+                )
+            ]
+            if not trials:
+                raise TrialPersistenceError(
+                    f"search {search_id} viewed OOS data without retained trials"
+                )
+            head_row = self._conn.execute(
+                "SELECT entry_hash FROM trial_oos_access"
+                " ORDER BY access_seq DESC LIMIT 1"
+            ).fetchone()
+            head = "" if head_row is None else str(head_row["entry_hash"])
+            inserted = 0
+            for trial_id in trials:
+                for method, boundary in normalized:
+                    existing = self._conn.execute(
+                        "SELECT entry_hash FROM trial_oos_access"
+                        " WHERE trial_id=? AND method=? AND boundary=?",
+                        (trial_id, method, boundary),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
+                    entry = _trial_oos_access_hash(
+                        trial_id=trial_id,
+                        method=method,
+                        boundary=boundary,
+                        viewed_at=viewed_at,
+                        prev_entry_hash=head,
+                    )
+                    self._conn.execute(
+                        "INSERT INTO trial_oos_access("
+                        " trial_id,method,boundary,viewed_at,prev_entry_hash,entry_hash)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (trial_id, method, boundary, viewed_at, head, entry),
+                    )
+                    head = entry
+                    inserted += 1
+            self._conn.commit()
+            return inserted
+        except TrialPersistenceError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise TrialPersistenceError(
+                f"OOS access provenance could not be retained: {exc}"
+            ) from exc
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]:
+        trial_id = self._require_text(trial_id, "trial_id")
+        self._require_search_schema()
+        return [
+            dict(row)
+            for row in self._conn.execute(
+                "SELECT access_seq,trial_id,method,boundary,viewed_at,"
+                " prev_entry_hash,entry_hash FROM trial_oos_access"
+                " WHERE trial_id=? ORDER BY access_seq",
+                (trial_id,),
+            )
+        ]
+
+    def trial_oos_access_chain_valid(self) -> bool:
+        try:
+            self._require_search_schema()
+            trial_ids = {
+                str(row["trial_id"])
+                for row in self._conn.execute("SELECT trial_id FROM trial_provenance")
+            }
+            previous = ""
+            for row in self._conn.execute(
+                "SELECT access_seq,trial_id,method,boundary,viewed_at,"
+                " prev_entry_hash,entry_hash FROM trial_oos_access"
+                " ORDER BY access_seq"
+            ):
+                if row["trial_id"] not in trial_ids:
+                    return False
+                if row["prev_entry_hash"] != previous:
+                    return False
+                expected = _trial_oos_access_hash(
+                    trial_id=row["trial_id"],
+                    method=row["method"],
+                    boundary=row["boundary"],
+                    viewed_at=row["viewed_at"],
+                    prev_entry_hash=previous,
+                )
+                if row["entry_hash"] != expected:
+                    return False
+                previous = expected
+            return True
+        except Exception:
+            return False
+
+    def trial_oos_access_head(self) -> str:
+        self._require_search_schema()
+        row = self._conn.execute(
+            "SELECT entry_hash FROM trial_oos_access"
+            " ORDER BY access_seq DESC LIMIT 1"
+        ).fetchone()
+        return "" if row is None else str(row["entry_hash"])
+
     def oos_peek_totals(self) -> dict[str, int]:
         """Max distinct OOS boundaries any single attempt at each config had
         already viewed. §0.4.7 forbids calling re-inspected OOS data "unseen";
         this surfaces the number instead of leaving it unrecorded."""
         self._require_search_schema()
-        return {
-            str(row["config_hash"]): int(row["peeks"])
-            for row in self._conn.execute(
-                "SELECT config_hash, MAX(oos_peek_count) AS peeks"
-                " FROM trial_provenance GROUP BY config_hash"
-            )
-        }
+        per_config: dict[str, int] = {}
+        for row in self._conn.execute(
+            "SELECT trial_id,config_hash,record_json FROM trial_provenance"
+            " ORDER BY provenance_seq"
+        ):
+            try:
+                initial = set(
+                    json.loads(row["record_json"]).get(
+                        "viewed_oos_boundaries", ()
+                    )
+                )
+            except Exception as exc:
+                raise ExperimentStoreError(
+                    f"trial provenance {row['trial_id']} record is corrupt"
+                ) from exc
+            appended = {
+                f"{access['method']}:{access['boundary']}"
+                for access in self._conn.execute(
+                    "SELECT method,boundary FROM trial_oos_access WHERE trial_id=?",
+                    (row["trial_id"],),
+                )
+            }
+            count = len(initial | appended)
+            config_hash = str(row["config_hash"])
+            per_config[config_hash] = max(per_config.get(config_hash, 0), count)
+        return per_config
 
     def begin_search_attempt(
         self,

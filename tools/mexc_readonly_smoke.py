@@ -16,13 +16,22 @@ mexc-readiness 的 UNVERIFIED_MAINNET_RESPONSE 解除步骤)。
 **不在**本工具校验范围——那要等人工复审的 ≤$100 首单,证据里诚实标注
 `UNVERIFIED_UNTIL_FIRST_FILL`。
 
+可选第 4 项(727 §13 阶段 C / Phase 8 M2,**人工显式旗标**,默认不跑):
+`--test-order` 追加 `POST /api/v3/order/test` 链路验证——签名/timestamp/recvWindow/
+参数校验/权限的交易所侧回答。**该端点只验证、永不进撮合**(MEXC 端语义,成功响应
+空对象 `{}`);探测单是固定保守参数的小额 LIMIT;非 2xx 时 MEXC 错误码原文摆进证据。
+本工具(含该旗标)绝不向 `/api/v3/order` 真实下单端点发任何字节(治理 AST 钉死:
+`tools/mexc_credentials.py` 凡以 "/api/v3/order" 开头的字面量只能是 order/test)。
+
 人工运行(需要 MEXC_API_KEY/MEXC_API_SECRET env 或 key/mexc_spot.json;AI 绝不运行本工具,
 绝不触碰真实凭证):
 
     python -m tools.mexc_readonly_smoke
+    python -m tools.mexc_readonly_smoke --test-order   # 阶段 C 链路验证(never-matching)
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import time
@@ -31,7 +40,8 @@ from typing import Callable, Optional
 from tools.cache_io import atomic_write_json
 from tools.coingecko_fetch import _http_get_json
 from tools.mexc_credentials import (MEXC_MAINNET_BASE, MexcCredentialError,
-                                    fetch_mexc_account, load_mexc_credentials)
+                                    fetch_mexc_account, fetch_mexc_test_order,
+                                    load_mexc_credentials)
 
 EVIDENCE_PATH = os.path.join("evidence", "mexc_mainnet_smoke.json")
 
@@ -153,11 +163,46 @@ def _check_account(api_key: str, api_secret: str, *, http_request: Optional[Call
                   can_trade=can_trade, can_withdraw=can_withdraw)
 
 
+# 727 §13 阶段 C 探测单(仅 --test-order 人工旗标使用):固定保守参数——quantity 取
+# LOT_SIZE 整数倍、notional(0.001×50000=50 USDT)≥ MIN_NOTIONAL(5),LIMIT 价格远离
+# 任何「万一」情景;即便如此,order/test 端点语义上**永不进撮合**,该单不可能成交。
+_TEST_ORDER_PROBE_PARAMS = {
+    "symbol": "BTCUSDT", "side": "BUY", "type": "LIMIT", "timeInForce": "GTC",
+    "quantity": "0.001", "price": "50000", "newClientOrderId": "mexc-stagec-probe",
+}
+
+
+def _check_test_order(api_key: str, api_secret: str, *, http_request: Optional[Callable],
+                      clock: Callable[[], float], sleep: Optional[Callable]) -> dict:
+    """阶段 C 链路验证:POST /api/v3/order/test(只验证、永不进撮合)。非 2xx 时把
+    MEXC 错误体 code/msg 原文摆进证据——那正是要验的信息(签名/权限/参数校验的
+    交易所侧回答),不是需要掩盖的失败。"""
+    try:
+        status, payload = fetch_mexc_test_order(api_key, api_secret,
+                                                order_params=_TEST_ORDER_PROBE_PARAMS,
+                                                http_request=http_request, clock=clock,
+                                                sleep=sleep)
+    except Exception as exc:
+        return _check("test_order", False, f"request failed: {type(exc).__name__}")
+    if 200 <= status < 300 and isinstance(payload, dict):
+        return _check("test_order", True,
+                      f"order/test validated (HTTP {status}, response keys={sorted(payload)})",
+                      http_status=status)
+    code = payload.get("code") if isinstance(payload, dict) else None
+    msg = payload.get("msg") if isinstance(payload, dict) else None
+    return _check("test_order", False,
+                  f"order/test rejected: HTTP {status} code={code} msg={msg}",
+                  http_status=status, mexc_code=code)
+
+
 def run_smoke(api_key: str, api_secret: str, *, http_get: Callable = _http_get_json,
               http_request: Optional[Callable] = None,
               clock: Callable[[], float] = time.time,
-              sleep: Optional[Callable] = None, now_ms: Optional[int] = None) -> dict:
-    """三个只读检查 → 证据 dict(纯拼装,transport/clock 全注入,测试零真网)。"""
+              sleep: Optional[Callable] = None, now_ms: Optional[int] = None,
+              include_test_order: bool = False) -> dict:
+    """三个只读检查 → 证据 dict(纯拼装,transport/clock 全注入,测试零真网)。
+    `include_test_order=True`(仅 --test-order 人工旗标)追加第 4 项 order/test 链路验证
+    (never-matching)。"""
     if now_ms is None:
         now_ms = int(clock() * 1000)
     checks = [
@@ -166,7 +211,17 @@ def run_smoke(api_key: str, api_secret: str, *, http_get: Callable = _http_get_j
         _check_account(api_key, api_secret, http_request=http_request,
                        clock=clock, sleep=sleep),
     ]
+    if include_test_order:
+        checks.append(_check_test_order(api_key, api_secret, http_request=http_request,
+                                        clock=clock, sleep=sleep))
     verdict = "PASS" if all(c["status"] == "PASS" for c in checks) else "FAIL"
+    notes = [
+        "read-only checks only; this tool never places orders and never prints credentials",
+        "IP-whitelist binding is not verifiable via MEXC v3 API — confirm at the console",
+    ]
+    if include_test_order:
+        notes.append("test_order check hits /api/v3/order/test ONLY — validates without "
+                     "matching (MEXC-side semantics); this tool never touches /api/v3/order")
     return {
         "schema_version": 1,
         "provenance": "REAL_MEXC_MAINNET_READONLY_SMOKE",
@@ -175,24 +230,27 @@ def run_smoke(api_key: str, api_secret: str, *, http_get: Callable = _http_get_j
         "checks": checks,
         "verdict": verdict,
         # 下单/成交响应形状(orderId/executedQty/cummulativeQuoteQty)只有真实首单才能验证——
-        # 首单是人工复审的 ≤$100 步骤,不本工具范围内,诚实标注。
+        # 首单是人工复审的 ≤$100 步骤,不本工具范围内,诚实标注。order/test 验证的是链路
+        # (签名/参数/权限),不是成交响应形状,故本标注不因 --test-order 改变。
         "order_response_shape": "UNVERIFIED_UNTIL_FIRST_FILL",
-        "notes": [
-            "read-only checks only; this tool never places orders and never prints credentials",
-            "IP-whitelist binding is not verifiable via MEXC v3 API — confirm at the console",
-        ],
+        "notes": notes,
     }
 
 
 def main(argv: Optional[list] = None) -> int:
-    _ = argv
+    parser = argparse.ArgumentParser(
+        description="MEXC mainnet 只读首验(人工执行;AI 绝不运行本工具)")
+    parser.add_argument("--test-order", action="store_true",
+                        help="追加 727 §13 阶段 C 链路验证:POST /api/v3/order/test "
+                             "(只验证、永不进撮合;绝不触 /api/v3/order 真实下单端点)")
+    args = parser.parse_args(argv)
     try:
         api_key, api_secret = load_mexc_credentials()
     except MexcCredentialError as exc:
         print(f"[mexc_readonly_smoke] credentials unavailable: {type(exc).__name__} — "
               "place key/mexc_spot.json or set MEXC_API_KEY/MEXC_API_SECRET (human step)", flush=True)
         return 2
-    result = run_smoke(api_key, api_secret)
+    result = run_smoke(api_key, api_secret, include_test_order=args.test_order)
     atomic_write_json(EVIDENCE_PATH, result, indent=2)
     for check in result["checks"]:
         print(f"[{check['status']}] {check['name']}: {check['detail']}", flush=True)
