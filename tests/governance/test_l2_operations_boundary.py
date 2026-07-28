@@ -23,6 +23,19 @@ def _imports(path: Path) -> set[str]:
     }
 
 
+def _calls(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    calls: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            calls.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            calls.add(node.func.attr)
+    return calls
+
+
 def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
     actual = {
         source.relative_path.replace("\\", "/"): (source.role, source.required)
@@ -168,6 +181,34 @@ def test_l2_schedule_entrypoint_has_no_broker_network_or_secret_dependency():
         "--act",
     ):
         assert forbidden not in source
+
+
+def test_paper_evidence_producers_have_no_broker_network_or_order_surface():
+    producers = (
+        ROOT / "tools" / "paper_alpha_evaluation.py",
+        ROOT / "tools" / "paper_research_risk_bundle.py",
+    )
+    forbidden_import_roots = {
+        "ccxt",
+        "httpx",
+        "requests",
+        "socket",
+        "urllib",
+        "live.pipeline",
+        "live.exchange",
+    }
+    for producer in producers:
+        imports = _imports(producer)
+        assert not imports & forbidden_import_roots
+        calls = {name.lower() for name in _calls(producer)}
+        assert not calls & {
+            "submit_order",
+            "place_order",
+            "cancel_order",
+            "withdraw",
+            "transfer",
+            "connect_broker",
+        }
 
 
 def test_scheduler_watchdog_does_not_import_any_monitored_worker():

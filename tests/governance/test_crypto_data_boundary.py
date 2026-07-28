@@ -100,6 +100,8 @@ _EXTRA_ALLOWED_BY_FILE = {
     # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
     # terminates it on deadline. Both imports are stdlib and add no network/trade capability.
     "live_data_refresh.py": {"math", "multiprocessing", "queue"},
+    # Local artifact paths only; pathlib is stdlib and adds no network/trade capability.
+    "forward_track_advance.py": {"pathlib"},
     # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
     "fred_fetch.py": {"csv", "quantos"},
     "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要

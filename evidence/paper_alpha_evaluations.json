@@ -1,0 +1,77 @@
+{
+  "schema_version": "paper_alpha_evaluations.v1",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "generated_at": 1785258230470,
+  "dataset_version": "14eb7b1af0b604aa7fede92691131d46445353c617c033e918cd3b1716032792",
+  "search_id": "search-cf16d8c8f994dc213017c4c5",
+  "status": "VERIFIED",
+  "alphas": {
+    "carry_oi_majors": {
+      "deployed_alpha_id": "carry_oi_majors",
+      "research_alpha_id": "paper_carry_oi_majors_10dc2442f4153454",
+      "definition_hash": "10dc2442f415345404916de61f593e6ec4a3b5a82cc549002bcecb9c0e94b14a",
+      "evaluation": {
+        "run_id": "c19cb10b24fa94bc",
+        "verified": true,
+        "verdict": "FAIL",
+        "deflated_sharpe": 1.0912450528310913e-05,
+        "pbo": 0.02857142857142857,
+        "as_of": 1785258230470,
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.00<0.6); multiple-testing",
+          "HIGH_TRIAL_COUNT (2539); review overfitting risk"
+        ],
+        "dataset_version": "14eb7b1af0b604aa7fede92691131d46445353c617c033e918cd3b1716032792",
+        "content_hash": "57638450f83230fbcfe9c30666b72cee65a66a112bf4a5b79753215ad78c7596"
+      },
+      "status": "VERIFIED"
+    },
+    "crowd_contra": {
+      "deployed_alpha_id": "crowd_contra",
+      "research_alpha_id": "paper_crowd_contra_6820061ce3fa9bf6",
+      "definition_hash": "6820061ce3fa9bf6e4e66f78c069c65a82ba012b34d6db09e46930767ead92d3",
+      "evaluation": {
+        "run_id": "26803a007de8775c",
+        "verified": true,
+        "verdict": "FAIL",
+        "deflated_sharpe": 0.02032950761245156,
+        "pbo": 0.02857142857142857,
+        "as_of": 1785258230470,
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.02<0.6); multiple-testing",
+          "HIGH_TRIAL_COUNT (2539); review overfitting risk"
+        ],
+        "dataset_version": "14eb7b1af0b604aa7fede92691131d46445353c617c033e918cd3b1716032792",
+        "content_hash": "5ed7f2625405efc3c12dfbfd6b51dcdc97e10a1c2e36a5d911867911e352b1b0"
+      },
+      "status": "VERIFIED"
+    },
+    "top_contra": {
+      "deployed_alpha_id": "top_contra",
+      "research_alpha_id": "paper_top_contra_3aa3664e1cdc7791",
+      "definition_hash": "3aa3664e1cdc77918717ba389269c447e86d2634fd2a71db8e937306c3bd98a0",
+      "evaluation": {
+        "run_id": "1b0d721f7ef50b5e",
+        "verified": true,
+        "verdict": "FAIL",
+        "deflated_sharpe": 0.19835077772318577,
+        "pbo": 0.02857142857142857,
+        "as_of": 1785258230470,
+        "reasons": [
+          "DEFLATED_SHARPE_BELOW_MIN (0.20<0.6); multiple-testing",
+          "HIGH_TRIAL_COUNT (2539); review overfitting risk"
+        ],
+        "dataset_version": "14eb7b1af0b604aa7fede92691131d46445353c617c033e918cd3b1716032792",
+        "content_hash": "0039678aef26afe9ed72b5ac4a783dc6e83bbf066935be98b6ff9ff533948798"
+      },
+      "status": "VERIFIED"
+    }
+  },
+  "safety": {
+    "paper_only": true,
+    "live_allowed": false,
+    "order_submission_allowed": false,
+    "credentials_accessed": false,
+    "broker_connectivity": false
+  }
+}

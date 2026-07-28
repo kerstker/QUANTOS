@@ -30,6 +30,7 @@ ALLOWED_L2_MODULES = frozenset(
         "l2_backup",
         "l2_scheduler_watchdog",
         "paper_health",
+        "paper_alpha_evaluation",
         "paper_order_preview",
         "paper_research_risk_bundle",
         "paper_realtime",

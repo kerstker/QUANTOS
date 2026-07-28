@@ -237,8 +237,7 @@ def _prepare_top_from_existing(panel) -> AlphaSchedule:
         adv[timestamp] = {
             instrument: panel.matrices["close"][row][index] * panel.matrices["volume"][row][index]
             for index, instrument in enumerate(panel.instruments)
-            if instrument in weights[timestamp]
-            and panel.matrices["close"][row][index]
+            if panel.matrices["close"][row][index]
             and panel.matrices["volume"][row][index]
             and panel.matrices["close"][row][index] > 0
             and panel.matrices["volume"][row][index] > 0

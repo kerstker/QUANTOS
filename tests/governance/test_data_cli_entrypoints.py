@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
     [
         "tools/data_quality_admission.py",
         "tools/raw_data_lineage_backfill.py",
+        "tools/paper_alpha_evaluation.py",
         "tools/paper_research_risk_bundle.py",
         "tools/paper_order_preview.py",
         "tools/three_alpha_paper_flow.py",

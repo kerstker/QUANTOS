@@ -130,6 +130,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "l2_backup",
             "l2_scheduler_watchdog",
             "paper_health",
+            "paper_alpha_evaluation",
             "paper_order_preview",
             "paper_research_risk_bundle",
             "paper_realtime",

@@ -53,7 +53,7 @@
     {
       "references": [
         {
-          "line": 189,
+          "line": 209,
           "module": "services.validation.catalog_evidence",
           "path": "services/alpha/catalog.py"
         },
@@ -1209,7 +1209,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "60fb0c9af1e4f958eec8e315b4782d25aad0475f31f1f70f17c045372a7db528",
+  "graph_sha256": "c4f122509b617e73af07985bd17fbc7e368c56577be57b3ff354bd066a6408e6",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [

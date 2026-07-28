@@ -39,6 +39,8 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "forward_track_advance",
         "gonogo_report",
         "alpha_paper_cycle",
+        "paper_alpha_evaluation",
+        "paper_research_risk_bundle",
         "paper_order_preview",
         "paper_realtime",
         "paper_realtime_10k",

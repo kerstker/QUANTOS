@@ -1,5 +1,9 @@
 """Phase 6 step 5a — dollar-neutral net-of-cost cross-sectional long/short
 panel backtest (critique P0-4)."""
+import os
+import subprocess
+import sys
+
 import pytest
 
 from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest, _dollar_neutral_weights
@@ -60,6 +64,36 @@ def test_panel_backtest_is_deterministic():
     a = run_panel_backtest(periods, cost=CostModel(2, 3))
     b = run_panel_backtest(periods, cost=CostModel(2, 3))
     assert a.period_returns == b.period_returns
+
+
+def test_panel_backtest_is_bit_identical_across_python_hash_seeds():
+    script = """
+from services.alpha.panel_backtest import PanelPeriod, run_panel_backtest
+from services.research.backtest_engine.costs import CostModel
+names = tuple(f"asset_{index}" for index in range(17))
+periods = []
+for row in range(9):
+    signals = tuple(float((index * (row + 3)) % 19) for index in range(17))
+    returns = tuple(((-1.0) ** index) * (index + row + 1) / 10000.0 for index in range(17))
+    periods.append(PanelPeriod(names, signals, returns))
+result = run_panel_backtest(periods, cost=CostModel(2.3, 4.7), quantile=0.29)
+print([value.hex() for value in result.period_returns])
+"""
+    outputs = []
+    for seed in ("1", "17", "103"):
+        environment = dict(os.environ)
+        environment["PYTHONHASHSEED"] = seed
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        outputs.append(completed.stdout)
+
+    assert len(set(outputs)) == 1
 
 
 def test_rejects_duplicate_instruments_and_nonfinite_signals():

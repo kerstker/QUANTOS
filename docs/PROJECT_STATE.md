@@ -1,5 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 前向 Paper 九引擎输入自动化（保持 fail-closed）：** 新增
+> `tools/paper_alpha_evaluation.py`，为 `carry_oi_majors`、`crowd_contra`、
+> `top_contra` 铸造内容寻址的研究定义，并把评估契约、完整全局 trial 分母、DSR/PBO
+> 与精确 OOS 收益绑定进生产 experiment registry；三份评估均可独立重放验证，但在
+> 2539 次全局试验分母下 verdict 均为 `FAIL`，不会被伪装成可部署 Alpha。修复了
+> `panel_backtest` 跨 `PYTHONHASHSEED` 的浮点累加次序漂移，并将旧 16-hex trial token
+> 一对一命名空间哈希为完整 SHA-256 证据 ID，原始追加账本与试验数不变。
+> `tools/paper_research_risk_bundle.py` 已从真实 PIT ADV、Frankfurter/ECB CNY 汇率、
+> 对齐历史 Alpha 收益、VIX regime、维护状态、前向账本和已验证评估生成同决策绑定包；
+> 当前三条决策的六类输入中，容量、成交量、AUM、收益和 regime 已真实填充，只剩
+> `alpha_metadata`。这是刻意的时间因果门：当前决策早于新评估，禁止事后证据回填。
+> Windows 调度已增加每周日 20:45 评估，并在 21:00 前向推进前完成；风险包、预览、
+> 10k/健康和 watchdog 继续接受安全的 partial exit code。当前仍为 `PAPER_BLOCKED`：
+> 前向周期为 0/8、三份验证 verdict 不达门槛，且不增加网络、凭据、broker、下单或
+> live 能力。
+
 > **2026-07-21 路线图校正：** Rank #9「全局多重检验预算账本」已经完成，不再是待开发项。机器评估与能力矩阵均为 `ALPHA.TRIAL.GLOBAL_LEDGER = M4/PASS`；可移植历史链、封存快照、精确评估绑定和追加保护证据见 `evidence/alpha_trial_ledger_history.json`、`evidence/alpha_trial_ledger_snapshot.db`、`evidence/alpha_trial_ledger_snapshot_seal.json`。后续工作仅是持续维护证据，不把内部已完成能力冒充外部成熟度。
 
 > **2026-07-21 组合级统一约束门落地（L2 可用增量）：** 新增纯函数

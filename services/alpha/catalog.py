@@ -37,6 +37,24 @@ from services.lifecycle import (
 _VAR_SR_FLOOR = 1e-4
 
 
+def _evidence_trial_id(value: str) -> str:
+    """Return a SHA-256 identity for current and legacy trial tokens.
+
+    Early production registries retained 16-hex trial tokens. They are still
+    real, distinct trials and must remain in the multiple-testing denominator,
+    but the replayable evidence contract now requires full SHA-256 identities.
+    Namespace hashing is one-to-one for the retained tokens and leaves the raw
+    persistence ledger untouched.
+    """
+    token = str(value)
+    lowered = token.lower()
+    if len(lowered) == 64 and all(ch in "0123456789abcdef" for ch in lowered):
+        return lowered
+    if len(lowered) == 16 and all(ch in "0123456789abcdef" for ch in lowered):
+        return stable_hash({"legacy_catalog_trial_token": lowered})
+    return token
+
+
 @dataclass(frozen=True)
 class AlphaStateRow:
     alpha_id: str
@@ -82,6 +100,7 @@ class AlphaCatalog:
         self._historical_sharpes: dict[str, float] = {}
         self._historical_pvalues: dict[str, float] = {}
         self._seen_configs: set[str] = set()
+        self._evidence_trials: set[str] = set()
         self._trial_count: int = 0
         self._trial_recorder = trial_recorder
 
@@ -106,6 +125,7 @@ class AlphaCatalog:
             self._trial_recorder(config_hash)
         if config_hash not in self._seen_configs:
             self._seen_configs.add(config_hash)
+            self._evidence_trials.add(_evidence_trial_id(config_hash))
             self._trial_count += 1
 
     def global_trial_count(self) -> int:
@@ -118,7 +138,7 @@ class AlphaCatalog:
         The digest lets evaluation and lifecycle evidence bind the exact population.
         """
 
-        return stable_hash(sorted(self._seen_configs))
+        return stable_hash(sorted(self._evidence_trials))
 
     def catalog_var_sr(self) -> Optional[float]:
         """Population variance of per-observation Sharpe across the catalog.
@@ -192,7 +212,7 @@ class AlphaCatalog:
         return create_catalog_evidence(
             subject_id=alpha_id,
             subject_definition_hash=definition_hash,
-            trial_definition_hashes=tuple(sorted(self._seen_configs)),
+            trial_definition_hashes=tuple(sorted(self._evidence_trials)),
             return_series_by_definition=return_series_by_definition,
         )
 
@@ -422,6 +442,9 @@ class AlphaCatalog:
         self._historical_sharpes = {}
         self._historical_pvalues = {}
         self._seen_configs = set(snap.trials)
+        self._evidence_trials = {
+            _evidence_trial_id(value) for value in self._seen_configs
+        }
         self._trial_count = len(self._seen_configs)
         for row in snap.alphas:
             self._defs[row.alpha_id] = row.definition
@@ -458,6 +481,9 @@ class AlphaCatalog:
         self._sharpes = {}
         self._pvalues = {}
         self._seen_configs = set(trials)
+        self._evidence_trials = {
+            _evidence_trial_id(value) for value in self._seen_configs
+        }
         self._trial_count = len(self._seen_configs)
         self._historical_returns = {}
         self._historical_definition_hashes = dict(

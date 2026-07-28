@@ -98,7 +98,11 @@ def run_panel_backtest(
 
         gross_r = sum(w[inst] * p.forward_returns[i] for i, inst in enumerate(p.instruments))
 
-        names = set(w) | set(prev_w)
+        # Stable accumulation order is part of the immutable evaluation
+        # contract. Iterating a set made cost totals differ by ~1e-18 across
+        # PYTHONHASHSEED values, so an exact catalog rerun appeared to contain
+        # a conflicting OOS return history.
+        names = sorted(set(w) | set(prev_w))
         base_bps = cost.fee_bps + cost.slippage_bps
         cst = 0.0
         turnover = 0.0

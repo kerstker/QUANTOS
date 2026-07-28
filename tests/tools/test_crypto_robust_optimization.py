@@ -2,10 +2,47 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from services.research.robust_optimization import ALPHA_IDS, CandidateSpec, StressSpec, screen_reference
-from tools.crypto_robust_optimization import GpuUnavailable, _cpu_replay_candidate, _gpu_screen, _require_cuda
+from tools.crypto_robust_optimization import (
+    GpuUnavailable,
+    _cpu_replay_candidate,
+    _gpu_screen,
+    _prepare_top_from_existing,
+    _require_cuda,
+)
+
+
+def test_top_schedule_retains_real_adv_for_names_outside_current_legs(monkeypatch) -> None:
+    from tools import top_contra_dry_run_diagnostic
+
+    monkeypatch.setattr(
+        top_contra_dry_run_diagnostic,
+        "_prepare",
+        lambda _panel: (
+            [100],
+            {100: {"BTC": 1.0}},
+            {100: {}},
+            {100: {}},
+            [],
+        ),
+    )
+    panel = SimpleNamespace(
+        event_times=[100],
+        instruments=("BTC", "ETH"),
+        matrices={
+            "close": [[100.0, 50.0]],
+            "volume": [[10.0, 20.0]],
+            "funding": [[0.0, 0.0]],
+        },
+    )
+
+    schedule = _prepare_top_from_existing(panel)
+
+    assert schedule.adv_by_period[100] == {"BTC": 1_000.0, "ETH": 1_000.0}
 
 
 def test_cpu_replay_never_invents_full_research_inputs_or_exchange_filters() -> None:

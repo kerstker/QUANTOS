@@ -100,6 +100,9 @@ class TaskSnapshot:
 EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_factory_loop": ExpectedTask("crypto_factory_loop", 9 * _DAY_MS),
     "QUANTOS_ic_panel_refresh": ExpectedTask("ic_panel_research", 9 * _DAY_MS),
+    "QUANTOS_paper_alpha_evaluation": ExpectedTask(
+        "paper_alpha_evaluation", 9 * _DAY_MS, frozenset({2})
+    ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_domain_event_ops": ExpectedTask(
@@ -108,7 +111,7 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
     "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
     "QUANTOS_paper_research_risk_bundle": ExpectedTask(
-        "paper_research_risk_bundle", 2 * _DAY_MS
+        "paper_research_risk_bundle", 2 * _DAY_MS, frozenset({2})
     ),
     "QUANTOS_paper_order_preview": ExpectedTask(
         "paper_order_preview",

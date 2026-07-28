@@ -136,6 +136,8 @@ $factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:00"
 $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
+$paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Sunday -At "20:45"
 # Poll daily after the expected public-data close so a newly available
 # watermark is consumed promptly; the worker's internal seven-day due check
 # remains authoritative.
@@ -175,6 +177,8 @@ Register-L2Task -Name "QUANTOS_factory_loop" -Module "crypto_factory_loop" `
   -Trigger $factoryTrigger
 Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
   -Trigger $icTrigger
+Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_evaluation" `
+  -Trigger $paperAlphaEvaluationTrigger
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
