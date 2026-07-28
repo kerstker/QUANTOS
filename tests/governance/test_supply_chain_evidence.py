@@ -197,12 +197,12 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert evidence["artifact_admission_policy_registry_status"] == (
         "L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"
     )
-    assert evidence["artifact_admission_policy_registry_generation"] == 0
+    assert evidence["artifact_admission_policy_registry_generation"] == 1
     assert evidence["artifact_admission_active_policy_count"] == 0
     assert evidence["artifact_admission_receipt_authority_registry_status"] == (
         "L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"
     )
-    assert evidence["artifact_admission_receipt_authority_registry_generation"] == 0
+    assert evidence["artifact_admission_receipt_authority_registry_generation"] == 1
     assert evidence["artifact_admission_active_receipt_key_count"] == 0
     assert evidence["artifact_admission_library"] == "sigstore"
     assert evidence["artifact_admission_library_version"] == "4.4.0"
@@ -228,13 +228,13 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         evidence["artifact_admission_authority_snapshot"][
             "policy_registry_event_seq"
         ]
-        == 1
+        == 3
     )
     assert (
         evidence["artifact_admission_authority_snapshot"][
             "receipt_authority_registry_event_seq"
         ]
-        == 2
+        == 4
     )
     assert evidence["artifact_admission_decision_store_worm_status"] == ("NOT_WORM_LOCAL_FILE_REPLACEABLE")
     assert evidence["artifact_admission_registry_history_status"] == (

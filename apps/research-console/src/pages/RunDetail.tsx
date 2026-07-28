@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from '@/lib/router';
 import { fetchResearchRun } from '@/lib/api/research-console-api';
 import { cancelRun, runnerEnabled } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';

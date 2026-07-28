@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '@/lib/router';
 import { bi } from '@/lib/i18n/bilingual';
 import { PageShell, PageHeader, Panel, Chip } from '@/ui/primitives';
 import { PAGES, GROUPS, type GroupId } from '@/app/routes';

@@ -1097,14 +1097,14 @@ def _write_valid_supply_chain_evidence(tmp_path):
             policy_registry_path
         ),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
-        "artifact_admission_policy_registry_generation": 0,
+        "artifact_admission_policy_registry_generation": 1,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
         "artifact_admission_receipt_authority_registry_sha256": source_file_sha256(
             receipt_authority_registry_path
         ),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
-        "artifact_admission_receipt_authority_registry_generation": 0,
+        "artifact_admission_receipt_authority_registry_generation": 1,
         "artifact_admission_active_receipt_key_count": 0,
         "artifact_admission_library": "sigstore",
         "artifact_admission_library_version": "4.4.0",
@@ -1802,6 +1802,29 @@ def test_model_risk_checker_accepts_retained_bundle_without_local_source_db(tmp_
     document = json.loads(evidence.read_text(encoding="utf-8"))
     document["source_dataset_ref"] = "data/cache/source-not-retained.db"
     evidence.write_text(json.dumps(document), encoding="utf-8")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "versioned PIT evaluation subset" in result["detail"]
+
+
+def test_model_risk_checker_accepts_retained_bundle_after_source_db_advances(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    source = tmp_path / "data/cache/fx.db"
+    source.write_bytes(source.read_bytes() + b"new-source-revision")
 
     result = assess_repository(tmp_path, registry)["requirements"][0]
 

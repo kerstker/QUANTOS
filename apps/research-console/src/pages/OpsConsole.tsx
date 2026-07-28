@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '@/lib/router';
 import { GROUPS } from '@/app/routes';
 import { bi } from '@/lib/i18n/bilingual';
 import { STAGE_AUTOMATION } from '@/ui/automation-map';

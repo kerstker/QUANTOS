@@ -225,7 +225,7 @@
         {
           "line": 14,
           "module": "services.execution.dry_run_store",
-          "path": "services/console/api/artifact_snapshots.py"
+          "path": "services/console/api/artifact_paper_views.py"
         },
         {
           "line": 33,
@@ -1209,7 +1209,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "53f8014048ebc2b76b97075ed778d3fb620b950a1084f17c320953d2ee34be80",
+  "graph_sha256": "3a0a4985af31f9aa485e75927f55a4657a2c84633db8ad8e11cc778d8186a968",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1247,7 +1247,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 409,
+  "source_file_count": 410,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

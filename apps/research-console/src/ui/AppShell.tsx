@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from '@/lib/router';
 import { bi } from '@/lib/i18n/bilingual';
 import { Chip } from './primitives';
 import { ConfirmDialogHost } from './dialog';

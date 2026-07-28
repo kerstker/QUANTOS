@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from '@/lib/router';
 import { AppShell, type NavGroup } from '@/ui/AppShell';
 import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
 import { ErrorBoundary } from '@/ui/primitives';

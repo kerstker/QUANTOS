@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '@/lib/router';
 import { fetchResearchRuns } from '@/lib/api/research-console-api';
 import { triggerRun, runnerEnabled, RUNNABLE_KINDS, getOperator, setOperator, getRunnerToken, setRunnerToken, type RunParamSpec } from '@/lib/api/research-runner-api';
 import { bi } from '@/lib/i18n/bilingual';

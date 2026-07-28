@@ -3866,102 +3866,6 @@
       "version": "1.0.7"
     },
     {
-      "bom-ref": "npm:balanced-match@1.0.2:node_modules/@eslint/config-array/node_modules/balanced-match",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "de849e50ed13315ebb84dd4099b5ec2b8c9aa94eed8e21e56f144364ea47d0a5bdf82797e1b440697d009f1b74b71d8cae94695b041a3f02252121098585393f"
-        }
-      ],
-      "name": "balanced-match",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/balanced-match@1.0.2",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.0.2"
-    },
-    {
-      "bom-ref": "npm:balanced-match@1.0.2:node_modules/@eslint/eslintrc/node_modules/balanced-match",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "de849e50ed13315ebb84dd4099b5ec2b8c9aa94eed8e21e56f144364ea47d0a5bdf82797e1b440697d009f1b74b71d8cae94695b041a3f02252121098585393f"
-        }
-      ],
-      "name": "balanced-match",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/balanced-match@1.0.2",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.0.2"
-    },
-    {
-      "bom-ref": "npm:balanced-match@1.0.2:node_modules/eslint-plugin-react/node_modules/balanced-match",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "de849e50ed13315ebb84dd4099b5ec2b8c9aa94eed8e21e56f144364ea47d0a5bdf82797e1b440697d009f1b74b71d8cae94695b041a3f02252121098585393f"
-        }
-      ],
-      "name": "balanced-match",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/balanced-match@1.0.2",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.0.2"
-    },
-    {
-      "bom-ref": "npm:balanced-match@1.0.2:node_modules/eslint/node_modules/balanced-match",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "de849e50ed13315ebb84dd4099b5ec2b8c9aa94eed8e21e56f144364ea47d0a5bdf82797e1b440697d009f1b74b71d8cae94695b041a3f02252121098585393f"
-        }
-      ],
-      "name": "balanced-match",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/balanced-match@1.0.2",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.0.2"
-    },
-    {
       "bom-ref": "npm:balanced-match@4.0.4:node_modules/balanced-match",
       "hashes": [
         {
@@ -4034,11 +3938,11 @@
       "version": "2.3.0"
     },
     {
-      "bom-ref": "npm:brace-expansion@1.1.16:node_modules/@eslint/config-array/node_modules/brace-expansion",
+      "bom-ref": "npm:brace-expansion@5.0.8:node_modules/brace-expansion",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "203c38f0adbfda446483d2dd271babbeade557768182ad11118f3d76e12a151b618e53dd5c728c8fb12740e5d5724c73822b229dfde71dfadc13616e7c52d733"
+          "content": "259c83caadc3e005227ca4cf381ec310b7fa5ec07759d3ee3710ada1bd6f1573ec49785d0221c1589fed27c1c073d687f3804afb924564b36424ac771bd93342"
         }
       ],
       "name": "brace-expansion",
@@ -4052,106 +3956,10 @@
           "value": "package-lock.json"
         }
       ],
-      "purl": "pkg:npm/brace-expansion@1.1.16",
+      "purl": "pkg:npm/brace-expansion@5.0.8",
       "scope": "optional",
       "type": "library",
-      "version": "1.1.16"
-    },
-    {
-      "bom-ref": "npm:brace-expansion@1.1.16:node_modules/@eslint/eslintrc/node_modules/brace-expansion",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "203c38f0adbfda446483d2dd271babbeade557768182ad11118f3d76e12a151b618e53dd5c728c8fb12740e5d5724c73822b229dfde71dfadc13616e7c52d733"
-        }
-      ],
-      "name": "brace-expansion",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/brace-expansion@1.1.16",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.1.16"
-    },
-    {
-      "bom-ref": "npm:brace-expansion@1.1.16:node_modules/eslint-plugin-react/node_modules/brace-expansion",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "203c38f0adbfda446483d2dd271babbeade557768182ad11118f3d76e12a151b618e53dd5c728c8fb12740e5d5724c73822b229dfde71dfadc13616e7c52d733"
-        }
-      ],
-      "name": "brace-expansion",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/brace-expansion@1.1.16",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.1.16"
-    },
-    {
-      "bom-ref": "npm:brace-expansion@1.1.16:node_modules/eslint/node_modules/brace-expansion",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "203c38f0adbfda446483d2dd271babbeade557768182ad11118f3d76e12a151b618e53dd5c728c8fb12740e5d5724c73822b229dfde71dfadc13616e7c52d733"
-        }
-      ],
-      "name": "brace-expansion",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/brace-expansion@1.1.16",
-      "scope": "optional",
-      "type": "library",
-      "version": "1.1.16"
-    },
-    {
-      "bom-ref": "npm:brace-expansion@5.0.7:node_modules/brace-expansion",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "ee8172ef4dddc5f637fcd2f10b57e1d925024341fdae6018fb91290d57d78d44d3b3e1c4c11da761aa8bbfe196713b2e9b0c4f7e2cfa0b308d9305f0054c2a08"
-        }
-      ],
-      "name": "brace-expansion",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/brace-expansion@5.0.7",
-      "scope": "optional",
-      "type": "library",
-      "version": "5.0.7"
+      "version": "5.0.8"
     },
     {
       "bom-ref": "npm:braces@3.0.3:node_modules/braces",
@@ -4514,30 +4322,6 @@
       "version": "4.1.1"
     },
     {
-      "bom-ref": "npm:concat-map@0.0.1:node_modules/concat-map",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "fd2aefe1db30c903417e8846a73f68e986f71b3dd2ad40ea047e6b4ee84647b6a1b656d82a7571c366c214c4658da03b1171da5d9f30b07768745bdb9212a6aa"
-        }
-      ],
-      "name": "concat-map",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/concat-map@0.0.1",
-      "scope": "optional",
-      "type": "library",
-      "version": "0.0.1"
-    },
-    {
       "bom-ref": "npm:convert-source-map@2.0.0:node_modules/convert-source-map",
       "hashes": [
         {
@@ -4560,30 +4344,6 @@
       "scope": "optional",
       "type": "library",
       "version": "2.0.0"
-    },
-    {
-      "bom-ref": "npm:cookie@1.1.1:node_modules/cookie",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "7a2f00a2cee36b4c1e469173267100f541c9ffb5d09aa8256d1c277f60138dc07d5aaf3be15287f647e38e2acce94854dbf1397c561a77297284595d72a4a275"
-        }
-      ],
-      "name": "cookie",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/cookie@1.1.1",
-      "scope": "required",
-      "type": "library",
-      "version": "1.1.1"
     },
     {
       "bom-ref": "npm:cross-spawn@7.0.6:node_modules/cross-spawn",
@@ -8450,11 +8210,11 @@
       "version": "1.0.1"
     },
     {
-      "bom-ref": "npm:minimatch@10.2.5:node_modules/minimatch",
+      "bom-ref": "npm:minimatch@10.2.6:node_modules/minimatch",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "3142e454b7ca1980c561e8cfd3b40ebab0cb2d0a5c8e4ec5c3eee35d2d91d9ccd1433479eb21d1bde5393432443af887fa111364a4a4224e5cf93db71a315432"
+          "content": "be92d012cf952c2af59d4d015d2d3b99a628170943007d209e042ebadb71230bad0c510c1ead9b957fbcbe98310dd2b72753f08c22627a9efb3a2b536782e5d4"
         }
       ],
       "name": "minimatch",
@@ -8468,106 +8228,10 @@
           "value": "package-lock.json"
         }
       ],
-      "purl": "pkg:npm/minimatch@10.2.5",
+      "purl": "pkg:npm/minimatch@10.2.6",
       "scope": "optional",
       "type": "library",
-      "version": "10.2.5"
-    },
-    {
-      "bom-ref": "npm:minimatch@3.1.5:node_modules/@eslint/config-array/node_modules/minimatch",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "5608d652c9e74fa9fe35493a799abbef37857695b62d60f33facc51ab09b1d789836e9790f3aa4d871d0e6e147d83356e576e9f3e8d5cda78db7de2cb04125e3"
-        }
-      ],
-      "name": "minimatch",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/minimatch@3.1.5",
-      "scope": "optional",
-      "type": "library",
-      "version": "3.1.5"
-    },
-    {
-      "bom-ref": "npm:minimatch@3.1.5:node_modules/@eslint/eslintrc/node_modules/minimatch",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "5608d652c9e74fa9fe35493a799abbef37857695b62d60f33facc51ab09b1d789836e9790f3aa4d871d0e6e147d83356e576e9f3e8d5cda78db7de2cb04125e3"
-        }
-      ],
-      "name": "minimatch",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/minimatch@3.1.5",
-      "scope": "optional",
-      "type": "library",
-      "version": "3.1.5"
-    },
-    {
-      "bom-ref": "npm:minimatch@3.1.5:node_modules/eslint-plugin-react/node_modules/minimatch",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "5608d652c9e74fa9fe35493a799abbef37857695b62d60f33facc51ab09b1d789836e9790f3aa4d871d0e6e147d83356e576e9f3e8d5cda78db7de2cb04125e3"
-        }
-      ],
-      "name": "minimatch",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/minimatch@3.1.5",
-      "scope": "optional",
-      "type": "library",
-      "version": "3.1.5"
-    },
-    {
-      "bom-ref": "npm:minimatch@3.1.5:node_modules/eslint/node_modules/minimatch",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "5608d652c9e74fa9fe35493a799abbef37857695b62d60f33facc51ab09b1d789836e9790f3aa4d871d0e6e147d83356e576e9f3e8d5cda78db7de2cb04125e3"
-        }
-      ],
-      "name": "minimatch",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/minimatch@3.1.5",
-      "scope": "optional",
-      "type": "library",
-      "version": "3.1.5"
+      "version": "10.2.6"
     },
     {
       "bom-ref": "npm:ms@2.1.3:node_modules/ms",
@@ -8618,11 +8282,11 @@
       "version": "2.7.0"
     },
     {
-      "bom-ref": "npm:nanoid@3.3.12:node_modules/nanoid",
+      "bom-ref": "npm:nanoid@3.3.16:node_modules/nanoid",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "641f511ffdfdaa9ab956ee98f8d99468585047aa69f8cd97b7be970671300da19c540aa196fc6b9770766ca4b90f7347dd047beafdda4ab29a17f2a2cbb944b5"
+          "content": "6f394a4f2349efe2dd188230cbc8a316922a11022f69f6a157b798ca427c0af878d8474978e0e827a814257a5026f7a3d4175d1fc3aa4d764d13f29f6d602ef1"
         }
       ],
       "name": "nanoid",
@@ -8636,10 +8300,10 @@
           "value": "package-lock.json"
         }
       ],
-      "purl": "pkg:npm/nanoid@3.3.12",
+      "purl": "pkg:npm/nanoid@3.3.16",
       "scope": "optional",
       "type": "library",
-      "version": "3.3.12"
+      "version": "3.3.16"
     },
     {
       "bom-ref": "npm:natural-compare@1.4.0:node_modules/natural-compare",
@@ -9554,11 +9218,11 @@
       "version": "4.2.0"
     },
     {
-      "bom-ref": "npm:postcss@8.5.15:node_modules/postcss",
+      "bom-ref": "npm:postcss@8.5.24:node_modules/postcss",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "15f47cb237787a6d93e9f6f723633000953b1d654cafdcdb6be7a799079e5857c26e6f94382ff45f80d2f17b6951333058c19b8ca60fef18df35e933c86981dc"
+          "content": "f11c95925ab4a305d44dae31969ceee25f40695288750bc070e1d959a321f7c1e0c92b14b714557ff72145edddb122ea6fa8b8d01cc647311475d45a23ef534b"
         }
       ],
       "name": "postcss",
@@ -9572,10 +9236,10 @@
           "value": "package-lock.json"
         }
       ],
-      "purl": "pkg:npm/postcss@8.5.15",
+      "purl": "pkg:npm/postcss@8.5.24",
       "scope": "optional",
       "type": "library",
-      "version": "8.5.15"
+      "version": "8.5.24"
     },
     {
       "bom-ref": "npm:prelude-ls@1.2.1:node_modules/prelude-ls",
@@ -9792,54 +9456,6 @@
       "scope": "optional",
       "type": "library",
       "version": "0.17.0"
-    },
-    {
-      "bom-ref": "npm:react-router-dom@7.18.0:node_modules/react-router-dom",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "162d3263a920b4a69efd3876c626dd58ad0a49d619e01e771b27fac11b6898e296829366ec7efe0f27c386771dcfd14a6e94bed63983860dc5e16a0627ec8538"
-        }
-      ],
-      "name": "react-router-dom",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/react-router-dom@7.18.0",
-      "scope": "required",
-      "type": "library",
-      "version": "7.18.0"
-    },
-    {
-      "bom-ref": "npm:react-router@7.18.0:node_modules/react-router",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "a534c6b7c27e8e2d4d3a66278f34fe6c0272ff5cc3f89a78ce23ba70bed3dd92ef5cab6eb0eec1a45aa54578adaa970f56a965b085c51d132dfb6fe4dd79fa1d"
-        }
-      ],
-      "name": "react-router",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/react-router@7.18.0",
-      "scope": "required",
-      "type": "library",
-      "version": "7.18.0"
     },
     {
       "bom-ref": "npm:react@18.3.1:node_modules/react",
@@ -10416,30 +10032,6 @@
       "scope": "optional",
       "type": "library",
       "version": "7.8.5"
-    },
-    {
-      "bom-ref": "npm:set-cookie-parser@2.7.2:node_modules/set-cookie-parser",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "a1e33596953f52f853c70fa0ddc21fc571f225173fba275ddf22b53f6e368331ddb34b9d401633b37cbc8f8802096f9927b69dd3272d95df1160ef9b76eae5bf"
-        }
-      ],
-      "name": "set-cookie-parser",
-      "properties": [
-        {
-          "name": "quantos:ecosystem",
-          "value": "npm"
-        },
-        {
-          "name": "quantos:manifest",
-          "value": "package-lock.json"
-        }
-      ],
-      "purl": "pkg:npm/set-cookie-parser@2.7.2",
-      "scope": "required",
-      "type": "library",
-      "version": "2.7.2"
     },
     {
       "bom-ref": "npm:set-function-length@1.2.2:node_modules/set-function-length",

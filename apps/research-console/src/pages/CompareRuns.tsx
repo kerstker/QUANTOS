@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '@/lib/router';
 import { fetchResearchRuns, fetchResearchRunsCompare } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { ResearchRunsComparePayload, ResearchRunsPayload, ResearchRunSummary } from '@/lib/types/research';

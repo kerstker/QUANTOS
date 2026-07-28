@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '@/lib/router';
 import { describe, expect, it, vi } from 'vitest';
 import AShareAlpha from '@/pages/AShareAlpha';
 import type { AShareAlphaPayload } from '@/lib/types/research';

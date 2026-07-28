@@ -2824,11 +2824,11 @@ def _supply_chain_baseline_evidence(
         },
         "artifact_admission_policy_registry_ref": ("config/artifact_admission_policy_registry.json"),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
-        "artifact_admission_policy_registry_generation": 0,
+        "artifact_admission_policy_registry_generation": 1,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
-        "artifact_admission_receipt_authority_registry_generation": 0,
+        "artifact_admission_receipt_authority_registry_generation": 1,
         "artifact_admission_active_receipt_key_count": 0,
         "artifact_admission_library": "sigstore",
         "artifact_admission_library_version": "4.4.0",
@@ -3672,22 +3672,12 @@ def _model_risk_baseline_evidence(
         ):
             failures.append("dataset_bundle_fields")
         else:
-            source_candidate = Path(source_ref)
-            source_for_verification = (
-                source_ref
-                if (
-                    not source_candidate.is_absolute()
-                    and ".." not in source_candidate.parts
-                    and (repo_root / source_candidate).is_file()
-                )
-                else None
-            )
             try:
                 bundle_manifest = verify_pit_bundle(
                     bundle_ref,
                     manifest_ref,
                     repo_root=repo_root,
-                    source_db_path=source_for_verification,
+                    source_db_path=None,
                 )
             except DatasetBundleError:
                 failures.append("dataset_bundle_verification")
@@ -3697,6 +3687,7 @@ def _model_risk_baseline_evidence(
                     or bundle_manifest.get("bundle_sha256") != document.get("dataset_bundle_sha256")
                     or bundle_manifest.get("manifest_sha256") != document.get("dataset_bundle_manifest_sha256")
                     or bundle_manifest.get("row_count") != document.get("dataset_bundle_row_count")
+                    or bundle_manifest.get("source_db_sha256") != document.get("source_dataset_sha256")
                 ):
                     failures.append("dataset_bundle_manifest")
                 bundle_evidence.extend((bundle_ref, manifest_ref))
@@ -4249,7 +4240,10 @@ def _model_risk_baseline_evidence(
         source_dataset_relative = Path(source_dataset_ref)
         if source_dataset_relative.is_absolute() or ".." in source_dataset_relative.parts:
             failures.append("source_dataset_ref")
-        elif (repo_root / source_dataset_relative).is_file():
+        elif (
+            bundle_status == "HASH_IDENTIFIED_LOCAL_ONLY"
+            and (repo_root / source_dataset_relative).is_file()
+        ):
             actual_source_dataset = hashlib.sha256((repo_root / source_dataset_relative).read_bytes()).hexdigest()
             if actual_source_dataset != document.get("source_dataset_sha256"):
                 failures.append("source_dataset_digest")

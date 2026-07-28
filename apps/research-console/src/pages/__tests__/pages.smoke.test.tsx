@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '@/lib/router';
 import { PAGES, GROUPS, REDIRECTS } from '@/app/routes';
 import { ConfirmDialogHost } from '@/ui/dialog';
 import { ToastProvider } from '@/ui/toast';

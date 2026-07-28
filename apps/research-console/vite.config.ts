@@ -9,7 +9,7 @@ export default defineConfig({
   server: { port: 3100, open: '/research' },
   build: {
     // Keep React/Router in a stable vendor chunk; route-level React.lazy splits the per-page chunks.
-    rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom', 'react-router-dom'] } } },
+    rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'] } } },
   },
   define: {
     'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || ''),
