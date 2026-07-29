@@ -249,6 +249,15 @@ class RunRequest(BaseModel):
     refresh: bool = False
 
 
+def _no_window_creationflags() -> int:
+    """Prevent preview/read-only helper processes from opening Windows consoles."""
+    return (
+        getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if os.name == "nt"
+        else 0
+    )
+
+
 def _build_run_cmd(venue: str, refresh: bool) -> list:
     """固定 argv(绝无 shell/自由字符串):驱动器 CLI 与人工执行完全同一入口。
     **2026-07-24 治理收紧:ops API 的 argv 绝不携带 `--submit`**——真提交只留给人工 CLI;
@@ -276,6 +285,7 @@ def _run_driver(venue: str, refresh: bool) -> None:
     cmd = _build_run_cmd(venue, refresh)
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800,
+                              creationflags=_no_window_creationflags(),
                               cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _RUN_STATE.update({"returncode": proc.returncode,
                            "tail": (proc.stdout + proc.stderr)[-2000:]})
@@ -367,6 +377,7 @@ async def preview(req: PreviewRequest) -> dict:
             proc = await asyncio.to_thread(
                 subprocess.run, cmd, capture_output=True, text=True,
                 timeout=_PREVIEW_TIMEOUT_S,
+                creationflags=_no_window_creationflags(),
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             ok = proc.returncode == 0
             returncode = proc.returncode
@@ -403,6 +414,7 @@ async def demo_funds(req: DemoFundsRequest) -> dict:
     # 都会被这一个请求挂起。
     proc = await asyncio.to_thread(
         subprocess.run, cmd, capture_output=True, text=True, timeout=120,
+        creationflags=_no_window_creationflags(),
         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return {"returncode": proc.returncode, "output": (proc.stdout + proc.stderr)[-500:]}
 

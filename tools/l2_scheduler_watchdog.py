@@ -332,6 +332,11 @@ def collect_windows_tasks(
         timeout=30,
         shell=False,
         check=False,
+        creationflags=(
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if os.name == "nt"
+            else 0
+        ),
     )
     if completed.returncode != 0:
         raise SchedulerInspectionError("Task Scheduler query failed")

@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 终端弹窗根因收口：**
+> L2 计划任务虽然已统一为 `pythonw.exe`，但 `QUANTOS_scheduler_watchdog`
+> 每 15 分钟仍会用普通 `powershell.exe` 查询 Task Scheduler，形成周期性终端闪窗；
+> 现已对该子进程强制 Windows `CREATE_NO_WINDOW`。8440 Ops API 的只读
+> run/preview/demo-funds 子进程也采用同一无窗口约束。旧的可见 `cmd/python.exe`
+> 常驻前端、Console API、Runner 与 Ops API 进程已按精确 PID 停止，并分别通过
+> `tools/local_console_stack.py` 的无窗口管理器和 `pythonw.exe` 重启；3105/8400/
+> 8420/8440 均恢复监听。前三项日志与 PID manifest 在
+> `.runtime/console-stack/`，Ops 与计划任务日志在 `.runtime/logs/`，可直接从 IDE
+> 查看。手动触发 watchdog 已正常回到 Ready；退出码 1 来自既有
+> `RESTORE_HISTORY_FAILURE_IN_CLEAN_LOOKBACK` breach，不是进程启动故障。
+
 > **2026-07-29 Binance 合约规则与 24h 市场统计进入自动纸面执行：**
 > 5 分钟公共 USD-M 快照新增 `/fapi/v1/exchangeInfo` 与
 > `/fapi/v1/ticker/24hr`，对 14 个前向标的逐一验证 `TRADING`、`PERPETUAL`、

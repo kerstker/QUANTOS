@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+import tools.l2_scheduler_watchdog as watchdog
 from services.governance.l2_restore_history import (
     L2RestoreHistoryStore,
     RestoreAttempt,
@@ -386,6 +387,11 @@ def test_windows_collector_uses_fixed_powershell_command_without_shell(tmp_path)
     command, kwargs = calls[0]
     assert command[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
     assert kwargs["shell"] is False
+    assert kwargs["creationflags"] == (
+        getattr(watchdog.subprocess, "CREATE_NO_WINDOW", 0)
+        if watchdog.os.name == "nt"
+        else 0
+    )
 
 
 def test_watchdog_writes_status_and_deduplicates_unchanged_alerts(tmp_path):
