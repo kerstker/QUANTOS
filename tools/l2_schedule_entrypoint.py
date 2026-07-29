@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 import importlib
 from pathlib import Path
 import sys
@@ -48,6 +49,25 @@ ALLOWED_L2_MODULES = frozenset(
 
 class ScheduleEntrypointError(RuntimeError):
     """A scheduled worker could not be resolved to the approved release root."""
+
+
+_HEADLESS_STREAMS: list[object] = []
+
+
+def _configure_headless_logging(module_name: str) -> None:
+    """Route pythonw output to an IDE-readable per-worker log."""
+    if Path(sys.executable).stem.lower() != "pythonw":
+        return
+    log_root = Path.cwd() / ".runtime" / "logs"
+    log_root.mkdir(parents=True, exist_ok=True)
+    stream = (log_root / f"{module_name}.log").open(
+        "a",
+        encoding="utf-8",
+        buffering=1,
+    )
+    _HEADLESS_STREAMS.append(stream)
+    sys.stdout = stream
+    sys.stderr = stream
 
 
 def _is_within(path: Path, parent: Path) -> bool:
@@ -109,7 +129,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an allowlisted QUANTOS L2 worker")
     parser.add_argument("module", choices=sorted(ALLOWED_L2_MODULES))
     args = parser.parse_args(argv)
-    return run_scheduled_module(args.module)
+    _configure_headless_logging(args.module)
+    started_at = datetime.now(timezone.utc).isoformat()
+    print(
+        f"[l2-schedule] START module={args.module} at={started_at}",
+        flush=True,
+    )
+    try:
+        result = run_scheduled_module(args.module)
+    except Exception as exc:
+        print(
+            f"[l2-schedule] END module={args.module} status=ERROR "
+            f"error_type={type(exc).__name__}",
+            flush=True,
+        )
+        raise
+    print(
+        f"[l2-schedule] END module={args.module} exit_code={result}",
+        flush=True,
+    )
+    return result
 
 
 if __name__ == "__main__":
@@ -119,5 +158,6 @@ if __name__ == "__main__":
 __all__ = [
     "ALLOWED_L2_MODULES",
     "ScheduleEntrypointError",
+    "_configure_headless_logging",
     "run_scheduled_module",
 ]

@@ -71,6 +71,7 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
     assert "StateRoot" in source
     assert "l2_schedule_entrypoint.py" in source
     assert "Get-Command python" in source
+    assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
     assert "-MultipleInstances IgnoreNew" in source
     assert "-WorkingDirectory $stateRoot" in source
@@ -99,6 +100,7 @@ def test_schedule_registration_separates_release_code_from_mutable_state():
     assert "$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot \"..\")).Path" in source
     assert "$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path" in source
     assert '$launcher = Join-Path $codeRoot "tools\\l2_schedule_entrypoint.py"' in source
+    assert '-Execute $pythonw' in source
     assert '-Argument "`"$launcher`" $Module"' in source
     assert '-m tools.$Module' not in source
 

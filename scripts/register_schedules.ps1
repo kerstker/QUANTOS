@@ -27,6 +27,10 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 }
 $pythonCommand = Get-Command python -ErrorAction Stop
 $py = $pythonCommand.Source
+$pythonw = Join-Path (Split-Path -Parent $py) "pythonw.exe"
+if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
+  throw "pythonw.exe is unavailable beside the configured Python runtime"
+}
 
 function Disable-TaskIfPresent {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -107,7 +111,7 @@ function Register-L2Task {
   )
 
   $logRoot = Join-Path $stateRoot ".runtime\logs"
-  $action = New-ScheduledTaskAction -Execute $py `
+  $action = New-ScheduledTaskAction -Execute $pythonw `
     -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
@@ -263,6 +267,6 @@ if ($eventSealReadiness.Ready) {
 }
 
 Write-Host ""
-Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $py"
+Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $pythonw"
 Write-Host "Mutable operational state root: $stateRoot"
 Write-Host "No live submission or broker-capable task was registered."

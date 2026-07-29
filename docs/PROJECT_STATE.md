@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 L2 自动任务改为无窗口后台运行：**
+> `scripts/register_schedules.ps1` 不再让 Windows Task Scheduler 直接调用会弹控制台的
+> `python.exe`，而是固定调用同一运行时旁的 `pythonw.exe`。承重入口
+> `tools/l2_schedule_entrypoint.py` 在 pythonw 模式下把 stdout/stderr 逐 worker 追加到
+> `.runtime/logs/<module>.log`，并记录 START/END/exit code；因此桌面不再被终端框打断，
+> 日志可直接在 IDE 内查看，Task Scheduler 仍保留真实退出码。现有 L2 任务已全部重新
+> 注册，实时流已切换到无窗口实例；实测 `binance_realtime_features.log` 记录完整 PASS
+> 与 exit_code=0，实时数据总状态恢复 PASS。该变更只改变进程呈现与日志接收，不扩大
+> 任何网络、凭证、券商、订单或实盘权限。
+
 > **2026-07-29 Binance 公共实时仓位面补齐：**
 > `tools/binance_realtime_market.py` 的 5 分钟全量快照新增官方公开
 > `/fapi/v1/openInterest` 当前 OI 与

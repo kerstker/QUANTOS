@@ -10,6 +10,7 @@ import pytest
 from tools.l2_schedule_entrypoint import (
     ALLOWED_L2_MODULES,
     ScheduleEntrypointError,
+    _configure_headless_logging,
     run_scheduled_module,
 )
 
@@ -114,6 +115,45 @@ def test_entrypoint_hides_launcher_arguments_from_worker(
     assert sys.argv == launcher_argv
 
 
+def test_headless_logging_is_only_enabled_for_pythonw(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python.exe"))
+
+    _configure_headless_logging("domain_event_ops")
+
+    assert sys.stdout is original_stdout
+    assert sys.stderr is original_stderr
+    assert not (tmp_path / ".runtime" / "logs").exists()
+
+
+def test_pythonw_mode_routes_output_to_worker_log(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    code = (
+        "import sys\n"
+        "from tools.l2_schedule_entrypoint import _configure_headless_logging\n"
+        "sys.executable = r'C:\\\\Python\\\\pythonw.exe'\n"
+        "_configure_headless_logging('domain_event_ops')\n"
+        "print('headless-worker-marker', flush=True)\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root)},
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert (
+        tmp_path / ".runtime" / "logs" / "domain_event_ops.log"
+    ).read_text(encoding="utf-8").strip() == "headless-worker-marker"
+
+
 def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
     assert ALLOWED_L2_MODULES == frozenset(
         {
@@ -184,5 +224,7 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     )
 
     assert completed.returncode == 0
-    assert completed.stdout.strip() == "RELEASE"
+    assert "RELEASE" in completed.stdout.splitlines()
+    assert "[l2-schedule] START module=domain_event_ops" in completed.stdout
+    assert "[l2-schedule] END module=domain_event_ops exit_code=0" in completed.stdout
     assert "DIRTY" not in completed.stdout
