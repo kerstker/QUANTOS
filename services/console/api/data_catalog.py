@@ -16,6 +16,10 @@ from services.data.binance_api_coverage import (
     BinanceApiCoverageError,
     assess_coverage,
 )
+from services.data.binance_stream_coverage import (
+    BinanceStreamCoverageError,
+    assess_stream_coverage,
+)
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -31,6 +35,9 @@ _BINANCE_FEATURE_STATUS = "binance_realtime_feature_status.json"
 _BINANCE_DRIFT_ALERT_STATUS = "binance_realtime_drift_alert_status.json"
 _BINANCE_API_COVERAGE_CONTRACT = os.path.join(
     _PROJECT_ROOT, "config", "binance_usdm_market_data_coverage.json"
+)
+_BINANCE_STREAM_COVERAGE_CONTRACT = os.path.join(
+    _PROJECT_ROOT, "config", "binance_usdm_ws_stream_coverage.json"
 )
 
 
@@ -81,6 +88,38 @@ def _binance_api_coverage_payload() -> Dict:
             "accounted_endpoint_count": 0,
             "accounted_ratio": 0.0,
             "load_bearing_endpoint_count": 0,
+            "gap_count": 0,
+            "gaps": [],
+            "error_type": type(exc).__name__,
+        }
+    report["status"] = "VALIDATED_OFFICIAL_CATALOG"
+    return report
+
+
+def _binance_stream_coverage_payload() -> Dict:
+    try:
+        with open(
+            _BINANCE_STREAM_COVERAGE_CONTRACT,
+            encoding="utf-8",
+        ) as handle:
+            contract = json.load(handle)
+        if not isinstance(contract, dict):
+            raise BinanceStreamCoverageError(
+                "stream coverage contract is not an object"
+            )
+        report = assess_stream_coverage(contract)
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        BinanceStreamCoverageError,
+    ) as exc:
+        return {
+            "status": "INVALID",
+            "catalog_stream_count": 0,
+            "accounted_stream_count": 0,
+            "accounted_ratio": 0.0,
+            "load_bearing_stream_count": 0,
             "gap_count": 0,
             "gaps": [],
             "error_type": type(exc).__name__,
@@ -297,6 +336,7 @@ def _binance_realtime_payload() -> Dict:
             "source_path": drift_alert_path,
         },
         "api_coverage": _binance_api_coverage_payload(),
+        "stream_coverage": _binance_stream_coverage_payload(),
         "universe_size": 14,
         "safety": {
             "public_market_data_only": True,

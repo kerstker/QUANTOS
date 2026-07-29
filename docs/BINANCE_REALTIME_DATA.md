@@ -23,9 +23,10 @@
 
 实现遵循新路由拆分：
 
-- `wss://fstream.binance.com/public`：`bookTicker`、`depth20@500ms`
+- `wss://fstream.binance.com/public`：`bookTicker`、`depth20@500ms`、
+  `rpiDepth@500ms`
 - `wss://fstream.binance.com/market`：`markPrice@1s`、`aggTrade`、
-  `kline_1m`、`!forceOrder@arr`
+  `kline_1m`、`!forceOrder@arr`、`!contractInfo`
 
 连接在 23 小时后主动退出，由调度器轮换，早于官方 24 小时强制断开；异常采用上限
 30 秒的指数退避重连。收到带 `st` 的迁移后事件时，只接受 `st=1` 的 USD-M 数据。
@@ -64,6 +65,25 @@ Market Data 目录的 34 个接口。`python -m tools.binance_api_coverage` 会�
 该覆盖率是“官方市场数据接口的工程账本”，不是 Alpha、实盘或生产成熟度评分。Account、
 Trade、User Data Stream 等私有接口不在本契约范围，也不会被自动工作器读取。
 
+## 官方 WebSocket 流覆盖契约
+
+`config/binance_usdm_ws_stream_coverage.json` 逐项登记官方 USD-M Public 5 类与
+Market 15 类 WebSocket 市场流。`python -m tools.binance_stream_coverage` 通过
+`services/data/binance_stream_coverage.py` 对数量、唯一性、路由、状态和承载实现做
+fail-closed 校验。当前结果：
+
+- 20/20 官方公开市场流已逐项解释
+- 8 类直接承载当前实时数据面
+- 9 类因固定 14 币宇宙已有等价且更窄的数据流而明确冗余
+- 3 类不适用于当前单一 USDT 抵押的普通加密永续宇宙
+- 0 个未解释缺口
+
+新增承载面包括 `rpiDepth@500ms` 与 `!contractInfo`。RPI 差分逐事件验证
+`U/u/pu` 并统计连续性、更新/删除档位及最近增量；完整 1000 档恢复基线仍来自独立
+REST 快照。RPI 报价只作为流动性诊断，明确 `paper_fill_eligible=false`，不假设可成交。
+`!contractInfo` 保留上市、结算、合约状态和可选 notional bracket 变更；它是变更触发型流，
+连接后没有事件不等于故障。私有账户流、WebSocket API 下单和用户数据流始终不在本契约。
+
 ## 低频系统风险与参考市场
 
 `python -m tools.binance_systemic_risk`
@@ -90,7 +110,8 @@ RPI 接口只有固定 1000 档、单币 IP weight 20。系统将其隔离为小
 `python -m tools.binance_realtime_stream`
 
 高频帧在内存中按币种归并，每 5 秒写入一份可消费快照。快照包含 20 档盘口、最优
-盘口、mark/funding、当前 1 分钟 K 线、该窗口成交聚合和强平聚合。状态文件公开：
+盘口、RPI 差分窗口与连续性、mark/funding、当前 1 分钟 K 线、该窗口成交聚合、
+强平聚合，以及最近发生的合约状态/档位变更。状态文件公开：
 
 - 双连接状态与重连次数
 - 最后接收时间和接收延迟

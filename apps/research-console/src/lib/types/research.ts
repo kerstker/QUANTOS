@@ -515,6 +515,22 @@ export interface BinanceRealtimePayload {
     }>;
     error_type?: string;
   };
+  stream_coverage: {
+    status: string;
+    catalog_stream_count: number;
+    accounted_stream_count: number;
+    accounted_ratio: number;
+    load_bearing_stream_count: number;
+    gap_count: number;
+    gaps: Array<{
+      id: string;
+      title: string;
+      route: string;
+      stream: string;
+      reason: string;
+    }>;
+    error_type?: string;
+  };
   safety: {
     public_market_data_only: boolean;
     credentials: boolean;

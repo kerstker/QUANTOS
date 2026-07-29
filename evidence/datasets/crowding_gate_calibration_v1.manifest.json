@@ -27,16 +27,16 @@
     "XLM",
     "XRP"
   ],
-  "manifest_sha256": "e9f1a5af6d729a48eeb4b30945ed0628b712fe317d8224876f35c3918f9fe20d",
+  "manifest_sha256": "3a0ea2c62c1186d041d628886ce15eaa2808bd1d80ac9533c9e4cfe087b24e54",
   "max_period": 1784764800000,
   "min_period": 1642636800000,
   "record_schema": "period,weights,dry_crowding,live_crowding,z_by_symbol,short_raw_gls,short_mean_z,short_max_z",
   "row_count": 236,
   "schema_version": 1,
   "source_sha256": {
-    "data/cache/crypto_funding.db": "ef10f9f67f3cbae7c2213b582c520ae7af063a43acd439b1309ca1f59ddca758",
-    "data/cache/crypto_funding_rates.json": "ab4cac0fb858e4dabb9db51ed198e91199a4ca390dba5cf58eed298e2c6a2e33",
+    "data/cache/crypto_funding.db": "c37b29412e62b10fc492a0c1f98dbca861e95af740bd0cd7119540ae4b4bc69a",
+    "data/cache/crypto_funding_rates.json": "48813602bc7ef151575dc01fabfab46328ee609d864a0af5ce65449c9f6dd2c5",
     "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
-    "data/cache/crypto_oi_metrics.json": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
+    "data/cache/crypto_oi_metrics.json": "b3609cd12b545f999a7585159b86febde63b4461952d404ff59204260b5e8a30"
   }
 }

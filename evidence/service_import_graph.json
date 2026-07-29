@@ -203,6 +203,11 @@
         },
         {
           "line": 19,
+          "module": "services.data.binance_stream_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
+          "line": 19,
           "module": "services.data.distribution_drift",
           "path": "services/console/api/monitoring_views.py"
         },
@@ -1219,7 +1224,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "da0873d2e323455dfa2b7a644d76198603906c30793d57687eda5f6707e2bd50",
+  "graph_sha256": "b889fb9b5d36af906a395d8093a98b15033059977cc996bae192ce35cf4bd44e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1257,7 +1262,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 419,
+  "source_file_count": 420,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

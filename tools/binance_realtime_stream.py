@@ -1,8 +1,9 @@
 """Resilient public Binance USD-M WebSocket stream for L2 paper research.
 
 The worker follows Binance's routed WebSocket split:
-``/public`` carries book/depth and ``/market`` carries trades, marks, klines,
-and liquidation events.  It accepts no credentials and has no order methods.
+``/public`` carries book/depth/RPI-depth and ``/market`` carries trades, marks,
+klines, liquidation events, and contract-status changes.  It accepts no
+credentials and has no order methods.
 High-frequency events are reduced into deterministic five-second snapshots so
 the durable store remains useful instead of becoming an unbounded packet dump.
 """
@@ -45,7 +46,11 @@ def stream_urls(tickers: Sequence[str]) -> dict[str, str]:
     public = [
         stream
         for ticker in selected
-        for stream in (f"{ticker}usdt@bookTicker", f"{ticker}usdt@depth20@500ms")
+        for stream in (
+            f"{ticker}usdt@bookTicker",
+            f"{ticker}usdt@depth20@500ms",
+            f"{ticker}usdt@rpiDepth@500ms",
+        )
     ]
     market = [
         stream
@@ -56,7 +61,7 @@ def stream_urls(tickers: Sequence[str]) -> dict[str, str]:
             f"{ticker}usdt@kline_1m",
         )
     ]
-    market.append("!forceOrder@arr")
+    market.extend(("!forceOrder@arr", "!contractInfo"))
     return {
         "public": f"{BASE_WSS}/public/stream?streams={'/'.join(public)}",
         "market": f"{BASE_WSS}/market/stream?streams={'/'.join(market)}",
@@ -85,8 +90,13 @@ def _integer(value: object, field: str) -> int:
     return result
 
 
-def _depth_levels(value: object, field: str) -> list[list[float]]:
-    if not isinstance(value, list) or not value:
+def _depth_levels(
+    value: object,
+    field: str,
+    *,
+    allow_empty: bool = False,
+) -> list[list[float]]:
+    if not isinstance(value, list) or (not value and not allow_empty):
         raise BinanceStreamDataError(f"{field} has no levels")
     output = []
     for row in value:
@@ -110,6 +120,8 @@ class StreamState:
         }
         self.trade_buckets: dict[str, dict[str, float | int]] = {}
         self.liquidation_buckets: dict[str, dict[str, float | int]] = {}
+        self.rpi_delta_buckets: dict[str, dict[str, Any]] = {}
+        self.rpi_last_update_ids: dict[str, int] = {}
         self.event_counts: dict[str, int] = {}
         self.rejected_frames = 0
         self.last_received_at_ms: int | None = None
@@ -135,11 +147,19 @@ class StreamState:
             self._count("forceOrder")
             self.last_received_at_ms = received_at_ms
             return
+        if stream == "!contractInfo" or event == "contractInfo":
+            self._handle_contract_info(data)
+            self._count("contractInfo")
+            self.last_received_at_ms = received_at_ms
+            return
         symbol = str(data.get("s", "")).upper()
         if symbol not in self.symbols:
             return
         slot = self.latest[symbol]
-        if "@bookTicker" in stream:
+        if "@rpiDepth" in stream:
+            self._handle_rpi_depth(symbol, data)
+            self._count("rpiDepth")
+        elif "@bookTicker" in stream:
             event_time = _integer(data.get("E", data.get("T")), "book.event_time")
             bid = _finite(data.get("b"), "book.bid", positive=True)
             ask = _finite(data.get("a"), "book.ask", positive=True)
@@ -239,6 +259,131 @@ class StreamState:
             raise BinanceStreamDataError(f"unsupported stream {stream}")
         self.last_received_at_ms = received_at_ms
 
+    def _handle_rpi_depth(
+        self,
+        symbol: str,
+        data: Mapping[str, Any],
+    ) -> None:
+        event_time = _integer(data.get("E"), "rpi_depth.event_time")
+        transaction_time = _integer(
+            data.get("T"), "rpi_depth.transaction_time"
+        )
+        first_update_id = _integer(
+            data.get("U"), "rpi_depth.first_update_id"
+        )
+        final_update_id = _integer(
+            data.get("u"), "rpi_depth.final_update_id"
+        )
+        previous_final_update_id = _integer(
+            data.get("pu"), "rpi_depth.previous_final_update_id"
+        )
+        if final_update_id < first_update_id:
+            raise BinanceStreamDataError("RPI depth update range is invalid")
+        bids = _depth_levels(
+            data.get("b"), "rpi_depth.bids", allow_empty=True
+        )
+        asks = _depth_levels(
+            data.get("a"), "rpi_depth.asks", allow_empty=True
+        )
+        previous = self.rpi_last_update_ids.get(symbol)
+        continuity_break = previous is not None and previous_final_update_id != previous
+        bucket = self.rpi_delta_buckets.setdefault(
+            symbol,
+            {
+                "event_count": 0,
+                "bid_update_count": 0,
+                "ask_update_count": 0,
+                "bid_delete_count": 0,
+                "ask_delete_count": 0,
+                "continuity_breaks": 0,
+            },
+        )
+        bucket["event_count"] = int(bucket["event_count"]) + 1
+        bucket["bid_update_count"] = int(bucket["bid_update_count"]) + len(bids)
+        bucket["ask_update_count"] = int(bucket["ask_update_count"]) + len(asks)
+        bucket["bid_delete_count"] = int(bucket["bid_delete_count"]) + sum(
+            1 for _, quantity in bids if quantity == 0
+        )
+        bucket["ask_delete_count"] = int(bucket["ask_delete_count"]) + sum(
+            1 for _, quantity in asks if quantity == 0
+        )
+        bucket["continuity_breaks"] = int(bucket["continuity_breaks"]) + int(
+            continuity_break
+        )
+        bucket.update(
+            {
+                "event_time_ms": event_time,
+                "transaction_time_ms": transaction_time,
+                "first_update_id": first_update_id,
+                "final_update_id": final_update_id,
+                "previous_final_update_id": previous_final_update_id,
+                "latest_bid_updates": bids,
+                "latest_ask_updates": asks,
+            }
+        )
+        self.rpi_last_update_ids[symbol] = final_update_id
+        self.latest[symbol]["rpi_depth"] = {
+            "event_time_ms": event_time,
+            "transaction_time_ms": transaction_time,
+            "first_update_id": first_update_id,
+            "final_update_id": final_update_id,
+            "previous_final_update_id": previous_final_update_id,
+            "continuity_ok": not continuity_break,
+            "rpi_orders_included": True,
+            "book_reconstruction": False,
+            "paper_fill_eligible": False,
+        }
+
+    def _handle_contract_info(self, data: Mapping[str, Any]) -> None:
+        symbol = str(data.get("s", "")).upper()
+        if symbol not in self.symbols:
+            return
+        status = str(data.get("cs", "")).upper()
+        contract_type = str(data.get("ct", "")).upper()
+        if not status or not contract_type:
+            raise BinanceStreamDataError("contract info identity is incomplete")
+        brackets_payload = data.get("bks", [])
+        if not isinstance(brackets_payload, list):
+            raise BinanceStreamDataError("contract brackets are malformed")
+        brackets: list[dict[str, float | int]] = []
+        for raw in brackets_payload:
+            if not isinstance(raw, Mapping):
+                raise BinanceStreamDataError("contract bracket is malformed")
+            floor = _finite(raw.get("bnf"), "contract.bracket.floor")
+            cap = _finite(raw.get("bnc"), "contract.bracket.cap")
+            ratio = _finite(raw.get("mmr"), "contract.bracket.maintenance_ratio")
+            if floor < 0 or cap < floor or ratio < 0:
+                raise BinanceStreamDataError("contract bracket range is invalid")
+            brackets.append(
+                {
+                    "bracket": _integer(raw.get("bs"), "contract.bracket.number"),
+                    "floor_notional": floor,
+                    "cap_notional": cap,
+                    "maintenance_margin_ratio": ratio,
+                    "cum": _finite(raw.get("cf"), "contract.bracket.cum"),
+                    "min_leverage": _integer(
+                        raw.get("mi"), "contract.bracket.min_leverage"
+                    ),
+                    "max_leverage": _integer(
+                        raw.get("ma"), "contract.bracket.max_leverage"
+                    ),
+                }
+            )
+        self.latest[symbol]["contract_info"] = {
+            "event_time_ms": _integer(data.get("E"), "contract.event_time"),
+            "contract_type": contract_type,
+            "delivery_time_ms": _integer(
+                data.get("dt"), "contract.delivery_time"
+            ),
+            "onboard_time_ms": _integer(
+                data.get("ot"), "contract.onboard_time"
+            ),
+            "contract_status": status,
+            "notional_brackets": brackets,
+            "brackets_updated": bool(brackets),
+            "paper_eligible": contract_type == "PERPETUAL" and status == "TRADING",
+        }
+
     def _handle_liquidation(self, data: Mapping[str, Any]) -> None:
         order = data.get("o")
         if not isinstance(order, Mapping):
@@ -281,7 +426,13 @@ class StreamState:
         for symbol, latest in self.latest.items():
             missing = [
                 channel
-                for channel in ("book", "depth20", "mark", "kline_1m")
+                for channel in (
+                    "book",
+                    "depth20",
+                    "rpi_depth",
+                    "mark",
+                    "kline_1m",
+                )
                 if channel not in latest
             ]
             times = [
@@ -304,9 +455,13 @@ class StreamState:
                 "liquidation_window": dict(
                     self.liquidation_buckets.get(symbol, {})
                 ),
+                "rpi_depth_window": dict(
+                    self.rpi_delta_buckets.get(symbol, {})
+                ),
                 "quality": {
                     "complete_core": not missing,
                     "missing_channels": missing,
+                    "rpi_diagnostic_only": True,
                     "private_access": False,
                     "broker_connectivity": False,
                     "order_submission": False,
@@ -314,6 +469,7 @@ class StreamState:
             }
         self.trade_buckets.clear()
         self.liquidation_buckets.clear()
+        self.rpi_delta_buckets.clear()
         return output
 
 

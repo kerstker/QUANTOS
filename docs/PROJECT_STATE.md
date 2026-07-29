@@ -1,5 +1,20 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 官方 USD-M WebSocket 市场流 20/20 收口：**
+> 新增 `config/binance_usdm_ws_stream_coverage.json` 与纯验证器
+> `services/data/binance_stream_coverage.py`，逐项登记官方 Public 5 类 + Market
+> 15 类流；当前 20/20 accounted、8 load-bearing、9 redundant、3
+> not-applicable、0 GAP。现有双路长驻流新增 14 币
+> `{symbol}@rpiDepth@500ms` 和全市场 `!contractInfo`：前者逐事件校验
+> `U/u/pu` 连续性并把 RPI 更新/删除窗口写入 5 秒哈希链快照，明确不重建完整盘口、
+> 不假设纸面可成交；完整 RPI 恢复基线仍由小时 REST 1000 档快照承担。后者在真实发生
+> 上市、结算、状态或 notional bracket 变更时保留事件，稀疏无事件不冒充故障。
+> 真实 20 秒 14 币烟测 PASS：28,155 事件，其中 RPI 515、14/14 完整、0 连续性断点、
+> 0 拒绝帧、双连接与存储链有效；后台长驻任务已无窗口切换到新版本并持续 PASS。
+> Data Catalog API/页面新增 Official WS Catalog 20/20、承载流 8、缺口 0 与契约
+> VALID。全链仍为公开市场数据、L2 研究/纸面专用，不读取凭证、账户或用户流，不连接
+> broker，也不提交订单。
+
 > **2026-07-29 Binance 官方 USD-M 市场目录 34/34 收口：**
 > 新增独立低频公开数据 worker `tools/binance_systemic_risk.py` 与
 > `tools/binance_rpi_depth.py`。前者每 30 分钟保存 14 币官方 ADL risk、完整可用

@@ -14,6 +14,10 @@ def test_local_stack_is_l2_console_only(monkeypatch):
     assert "services.console.main:app" in commands
     assert "services.research_runner.main:app" in commands
     assert all("live" not in str(part).lower() for part in commands)
+    frontend_command = [str(part).lower() for part in specs[2]["command"]]
+    assert frontend_command[0].endswith(("node", "node.exe"))
+    assert frontend_command[1].replace("\\", "/").endswith("/vite/bin/vite.js")
+    assert all("npm" not in part and "cmd.exe" not in part for part in frontend_command)
     assert specs[0]["cors_probe"].endswith("/health")
     assert set(specs[0]["cors_origins"]) == {
         f"http://127.0.0.1:{specs[2]['port']}",

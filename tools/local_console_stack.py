@@ -40,11 +40,20 @@ def _headless_creationflags() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
-def _npm() -> str:
-    candidate = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+def _node() -> str:
+    candidate = shutil.which("node.exe" if os.name == "nt" else "node")
     if candidate:
         return candidate
-    raise RuntimeError("npm is not available on PATH; install Node.js before starting the frontend")
+    raise RuntimeError("node is not available on PATH; install Node.js before starting the frontend")
+
+
+def _vite_script() -> Path:
+    candidate = ROOT / "apps" / "research-console" / "node_modules" / "vite" / "bin" / "vite.js"
+    if candidate.is_file():
+        return candidate
+    raise RuntimeError(
+        "Vite is unavailable; run npm install in apps/research-console before starting the frontend"
+    )
 
 
 def _port_available(port: int) -> bool:
@@ -109,7 +118,17 @@ def service_specs() -> list[dict[str, Any]]:
             "name": "frontend",
             "port": frontend_port,
             "cwd": ROOT / "apps" / "research-console",
-            "command": [_npm(), "run", "dev", "--", "--host", "127.0.0.1", "--port", str(frontend_port)],
+            # Invoke Vite through Node directly.  On Windows npm.cmd necessarily
+            # adds one or more cmd.exe processes; those shells can flash a
+            # console even when the parent requested CREATE_NO_WINDOW.
+            "command": [
+                _node(),
+                str(_vite_script()),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(frontend_port),
+            ],
             "health": f"http://127.0.0.1:{frontend_port}/",
             "env": {
                 "VITE_API_URL": "http://127.0.0.1:8400",

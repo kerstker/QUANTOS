@@ -162,6 +162,15 @@ const fallbackCatalog: DataCatalogPayload = {
       gap_count: 0,
       gaps: [],
     },
+    stream_coverage: {
+      status: 'INVALID',
+      catalog_stream_count: 0,
+      accounted_stream_count: 0,
+      accounted_ratio: 0,
+      load_bearing_stream_count: 0,
+      gap_count: 0,
+      gaps: [],
+    },
     safety: {
       public_market_data_only: true, credentials: false, private_stream: false,
       broker_connectivity: false, order_submission: false, live_trading: false,
@@ -422,6 +431,19 @@ export default function DataCatalog() {
             tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('官方流目录', 'Official WS Catalog')}
+            value={`${num(realtime.stream_coverage.accounted_stream_count)}/${num(realtime.stream_coverage.catalog_stream_count)}`}
+            tone={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'info' : 'warn'} />
+          <StatTile label={bi('承载实时流', 'Load-bearing Streams')}
+            value={num(realtime.stream_coverage.load_bearing_stream_count)} tone="pos" />
+          <StatTile label={bi('实时流缺口', 'WS Explicit Gaps')}
+            value={num(realtime.stream_coverage.gap_count)}
+            tone={realtime.stream_coverage.gap_count === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('实时流契约', 'WS Coverage Contract')}
+            value={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
+            tone={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatTile label={bi('系统风险通道', 'Systemic Risk')}
             value={realtime.systemic_risk.verdict ?? 'UNAVAILABLE'}
             tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
@@ -451,6 +473,13 @@ export default function DataCatalog() {
           <div className="mt-3 flex flex-wrap gap-2">
             {realtime.api_coverage.gaps.map(gap => (
               <Chip key={gap.id} label={`${gap.title} · ${gap.path}`} tone="warn" />
+            ))}
+          </div>
+        ) : null}
+        {realtime.stream_coverage.gaps.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {realtime.stream_coverage.gaps.map(gap => (
+              <Chip key={gap.id} label={`${gap.title} · ${gap.route} · ${gap.stream}`} tone="warn" />
             ))}
           </div>
         ) : null}

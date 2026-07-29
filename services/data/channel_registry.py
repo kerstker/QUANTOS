@@ -92,6 +92,8 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         (
             "best_bid_ask", "depth20", "mark_price", "index_price",
             "aggregate_trades", "kline_1m", "liquidation_orders",
+            "rpi_depth_updates", "rpi_sequence_continuity",
+            "contract_status_updates", "notional_bracket_updates",
         ),
         "data/cache/binance_realtime_stream.db", "REAL_RECENT",
         (
@@ -99,8 +101,10 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
             "funding_basis",
         ),
         1, "public_websocket",
-        "Routed Binance public and market WebSocket streams, reduced to "
-        "hash-chained five-second snapshots; REST remains the recovery baseline.",
+        "Routed Binance public and market WebSocket streams, including "
+        "RPI-inclusive depth deltas and contract-info changes, reduced to "
+        "hash-chained five-second snapshots; REST remains the recovery baseline "
+        "and RPI data is diagnostic-only for paper fills.",
     ),
     DataChannelSpec(
         "binance_usdm_systemic_risk", "Binance", "binance_usdm",
