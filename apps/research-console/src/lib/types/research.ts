@@ -78,6 +78,22 @@ export interface AgentsPayload extends ConsolePayloadBase {
   agents: AgentRuntimeRecord[];
   engines: AgentEngineRecord[];
   observed_run_kinds: string[];
+  realtime_inputs: {
+    status: 'AVAILABLE' | 'STALE' | 'UNAVAILABLE';
+    fresh: boolean;
+    age_ms: number | null;
+    source: string;
+    feature_version: string | null;
+    feature_count: number;
+    instrument_count: number;
+    retained_value_count: number;
+    drift_status: string | null;
+    drift_status_counts: Record<string, number>;
+    batch_chain_valid: boolean;
+    consumption_mode: 'READ_ONLY_DIAGNOSTIC_CONTEXT';
+    automatic_action: false;
+    promotion_authority: false;
+  };
   containment: {
     authorized_level: string;
     research_only: boolean;
@@ -390,6 +406,23 @@ export interface BinanceRealtimePayload {
     coverage: BinanceRealtimeCoverage;
     chain_valid: boolean | null;
     errors: number;
+    source_path: string | null;
+  };
+  feature_projection: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    status: string | null;
+    feature_version: string | null;
+    feature_count: number;
+    instrument_count: number;
+    retained_value_count: number;
+    drift_status: string | null;
+    drift_status_counts: Record<string, number>;
+    drift_series_count: number;
+    batch_chain_valid: boolean | null;
+    calibration: string | null;
+    load_bearing: boolean;
     source_path: string | null;
   };
   safety: {

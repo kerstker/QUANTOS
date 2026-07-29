@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 实时 FeatureValue 与 Agent 输入可视化：** 新增纯投影
+> `services/features/binance_realtime_projection.py`，把 14 币 WebSocket 完整快照物化为
+> mid、spread、5 档深度不平衡、mark basis、funding、5 秒 taker imbalance、5 秒
+> liquidation imbalance 共 7 类、98 条 PIT `FeatureValue` 序列。物化缓存 append-only，
+> 每批同时绑定源快照摘要并写入独立禁止更新/删除的哈希链
+> `binance_realtime_feature_batches.db`。`tools/binance_realtime_features.py` 每 5 分钟重放
+> 最近 3,500 个真实快照、幂等补写特征并消费 60/20 KS 窗口；首次真实运行写入 24,500
+> 个值，98/98 序列结构完整，结果为 30 PASS / 19 WARN / 49 BLOCK。BLOCK 是未校准阈值下
+> 的真实诊断，不是 worker 故障，也没有被删改。Data Catalog 与 AI Agent 页均显示特征
+> 新鲜度、保留值、漂移分布和批次链；Agent 只能把它视为只读诊断上下文，自动动作与晋级
+> 权限恒为 false。当前仍缺阈值校准和独立告警交付，绝不据此宣称 Rank #13 全部完成。
+
 > **2026-07-29 真实公共订单簿到多场所纸面 SOR 已自动化：** 新增
 > `tools/paper_multivenue_sor.py`，从现有 Binance USD-M WebSocket 哈希链读取
 > DOGE/XRP/ADA/DOT 的真实 20 档深度，并从 Bybit V5 公共接口取得对应 linear

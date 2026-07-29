@@ -121,6 +121,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "alpha_maintenance_sweep",
             "artifact_admission_seal",
             "binance_realtime_market",
+            "binance_realtime_features",
             "binance_realtime_stream",
             "crypto_factory_loop",
             "domain_event_ops",

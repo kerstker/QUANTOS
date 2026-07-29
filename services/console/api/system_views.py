@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List
@@ -32,6 +33,10 @@ from services.monitoring.event_projection import DomainEventProjection
 
 CONSOLE_API_VERSION = os.getenv("QUANTOS_CONSOLE_API_VERSION", "0.1.0")
 RUNTIME_CONTRACT_VERSION = "console-runtime.v1"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_BINANCE_REALTIME_FEATURE_STATUS = (
+    _PROJECT_ROOT / "data" / "cache" / "binance_realtime_feature_status.json"
+)
 
 
 _DOMAIN_EVENT_PROJECTION_DB = os.path.join(
@@ -446,6 +451,67 @@ def _runtime_contract_payload() -> Dict:
     }
 
 
+def _realtime_agent_input_payload() -> Dict:
+    candidates: list[Path] = []
+    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
+    if state_root:
+        candidates.append(
+            Path(state_root)
+            / "data"
+            / "cache"
+            / "binance_realtime_feature_status.json"
+        )
+    candidates.append(_BINANCE_REALTIME_FEATURE_STATUS)
+    statuses = []
+    for path in dict.fromkeys(candidates):
+        try:
+            candidate = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(candidate, dict) and isinstance(
+            candidate.get("generated_at_ms"), int
+        ):
+            statuses.append(candidate)
+    status = (
+        max(statuses, key=lambda item: item["generated_at_ms"])
+        if statuses
+        else {}
+    )
+    generated_at_ms = status.get("generated_at_ms")
+    now_ms = int(time.time() * 1_000)
+    age_ms = (
+        max(0, now_ms - generated_at_ms)
+        if isinstance(generated_at_ms, int)
+        else None
+    )
+    fresh = age_ms is not None and age_ms <= 10 * 60_000
+    features = status.get("features", {})
+    drift = status.get("drift", {})
+    batch = status.get("batch", {})
+    return {
+        "status": (
+            "AVAILABLE"
+            if fresh and status.get("status") == "PASS"
+            else "STALE"
+            if status
+            else "UNAVAILABLE"
+        ),
+        "fresh": fresh,
+        "age_ms": age_ms,
+        "source": "BINANCE_PUBLIC_USDM_WEBSOCKET",
+        "feature_version": features.get("feature_version"),
+        "feature_count": len(features.get("feature_ids", [])),
+        "instrument_count": features.get("instrument_count", 0),
+        "retained_value_count": features.get("retained_value_count", 0),
+        "drift_status": drift.get("status"),
+        "drift_status_counts": drift.get("status_counts", {}),
+        "batch_chain_valid": bool(batch.get("chain_valid", False)),
+        "consumption_mode": "READ_ONLY_DIAGNOSTIC_CONTEXT",
+        "automatic_action": False,
+        "promotion_authority": False,
+    }
+
+
 def _agents_payload() -> Dict:
     """Describe the real research-agent boundary and persisted run activity.
 
@@ -525,6 +591,7 @@ def _agents_payload() -> Dict:
         "agents": agents,
         "engines": engines,
         "observed_run_kinds": kinds,
+        "realtime_inputs": _realtime_agent_input_payload(),
         "containment": {
             "authorized_level": "L2_DRY_RUN_ONLY",
             "research_only": True,

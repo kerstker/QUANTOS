@@ -86,6 +86,17 @@ class SqliteFeatureValueStore:
         if not rows:
             raise DataStoreError("feature value store uninitialized; missing 'feature_values' table")
 
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def row_count(self) -> int:
+        with self._lock:
+            self._require_schema()
+            return int(
+                self._conn.execute("SELECT COUNT(*) FROM feature_values").fetchone()[0]
+            )
+
     def add(self, fv: FeatureValue, *, version: str, computed_at_ms=None,
             dataset_version=None, materializer_version=None, quality_verdict=None) -> bool:
         return self.add_many((fv,), version=version, computed_at_ms=computed_at_ms,

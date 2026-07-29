@@ -167,6 +167,8 @@ $paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes
 # This task is market-data only and has no credential or broker capability.
 $binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+$binanceRealtimeFeaturesTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -AtStartup),
   (New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "00:05")
@@ -212,6 +214,8 @@ Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview
   -Trigger $paperPreviewTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtime_market" `
   -Trigger $binanceRealtimeMarketTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realtime_features" `
+  -Trigger $binanceRealtimeFeaturesTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `

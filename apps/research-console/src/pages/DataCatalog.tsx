@@ -127,6 +127,13 @@ const fallbackCatalog: DataCatalogPayload = {
       status_present: false, fresh: false, age_ms: null, verdict: null,
       coverage: {}, chain_valid: null, errors: 0, source_path: null,
     },
+    feature_projection: {
+      status_present: false, fresh: false, age_ms: null, status: null,
+      feature_version: null, feature_count: 0, instrument_count: 0,
+      retained_value_count: 0, drift_status: null, drift_status_counts: {},
+      drift_series_count: 0, batch_chain_valid: null, calibration: null,
+      load_bearing: false, source_path: null,
+    },
     safety: {
       public_market_data_only: true, credentials: false, private_stream: false,
       broker_connectivity: false, order_submission: false, live_trading: false,
@@ -370,6 +377,34 @@ export default function DataCatalog() {
             tone={realtime.rest_snapshot.fresh ? 'pos' : 'warn'} />
           <StatTile label={bi('REST 哈希链', 'REST Chain')} value={realtime.rest_snapshot.chain_valid ? 'VALID' : 'UNKNOWN'}
             tone={realtime.rest_snapshot.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('实时特征', 'Realtime Features')}
+            value={num(realtime.feature_projection.feature_count)}
+            tone={realtime.feature_projection.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('特征标的', 'Feature Instruments')}
+            value={num(realtime.feature_projection.instrument_count)} />
+          <StatTile label={bi('保留值', 'Retained Values')}
+            value={compact(realtime.feature_projection.retained_value_count)} />
+          <StatTile label={bi('漂移序列', 'Drift Series')}
+            value={num(realtime.feature_projection.drift_series_count)} />
+          <StatTile label={bi('漂移状态', 'Drift Status')}
+            value={realtime.feature_projection.drift_status ?? '—'}
+            tone={realtime.feature_projection.drift_status === 'BLOCK' ? 'warn' : 'info'} />
+          <StatTile label={bi('稳定', 'Stable')}
+            value={num(realtime.feature_projection.drift_status_counts.PASS ?? 0)} tone="pos" />
+          <StatTile label={bi('警告/阻断', 'Warn / Block')}
+            value={`${num(realtime.feature_projection.drift_status_counts.WARN ?? 0)} / ${num(realtime.feature_projection.drift_status_counts.BLOCK ?? 0)}`}
+            tone="warn" />
+          <StatTile label={bi('特征批次链', 'Feature Batch Chain')}
+            value={realtime.feature_projection.batch_chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.feature_projection.batch_chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-2 text-2xs text-muted">
+          {bi(
+            '实时漂移阈值仍为未校准诊断，不驱动晋级、仓位或订单。',
+            'Realtime drift thresholds remain uncalibrated diagnostics and never drive promotion, positions, or orders.',
+          )}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
           <KeyValue cols={2} items={[

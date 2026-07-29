@@ -21,6 +21,7 @@ _DATA_CHANNEL_INVENTORY = os.path.join(
 )
 _BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
 _BINANCE_REST_STATUS = "binance_realtime_market_status.json"
+_BINANCE_FEATURE_STATUS = "binance_realtime_feature_status.json"
 
 
 def _status_candidates(filename: str) -> list[str]:
@@ -55,6 +56,7 @@ def _binance_realtime_payload() -> Dict:
     now_ms = int(time.time() * 1_000)
     stream, stream_path = _read_latest_status(_BINANCE_STREAM_STATUS)
     rest, rest_path = _read_latest_status(_BINANCE_REST_STATUS)
+    features, feature_path = _read_latest_status(_BINANCE_FEATURE_STATUS)
 
     def age(payload: Dict | None) -> int | None:
         generated = payload.get("generated_at_ms") if payload else None
@@ -62,8 +64,10 @@ def _binance_realtime_payload() -> Dict:
 
     stream_age = age(stream)
     rest_age = age(rest)
+    feature_age = age(features)
     stream_fresh = stream_age is not None and stream_age <= 30_000
     rest_fresh = rest_age is not None and rest_age <= 10 * 60_000
+    feature_fresh = feature_age is not None and feature_age <= 10 * 60_000
     stream_coverage = (stream or {}).get("coverage", {})
     rest_coverage = (rest or {}).get("coverage", {})
     effective_streaming = bool(
@@ -109,6 +113,44 @@ def _binance_realtime_payload() -> Dict:
             "chain_valid": (rest or {}).get("store", {}).get("chain_valid"),
             "errors": len((rest or {}).get("errors", {})),
             "source_path": rest_path,
+        },
+        "feature_projection": {
+            "status_present": features is not None,
+            "fresh": feature_fresh,
+            "age_ms": feature_age,
+            "status": (features or {}).get("status"),
+            "feature_version": (features or {}).get("features", {}).get(
+                "feature_version"
+            ),
+            "feature_count": len(
+                (features or {}).get("features", {}).get("feature_ids", [])
+            ),
+            "instrument_count": (features or {}).get("features", {}).get(
+                "instrument_count", 0
+            ),
+            "retained_value_count": (features or {}).get("features", {}).get(
+                "retained_value_count", 0
+            ),
+            "drift_status": (features or {}).get("drift", {}).get("status"),
+            "drift_status_counts": (features or {}).get("drift", {}).get(
+                "status_counts", {}
+            ),
+            "drift_series_count": (features or {}).get("drift", {}).get(
+                "series_count", 0
+            ),
+            "batch_chain_valid": (features or {}).get("batch", {}).get(
+                "chain_valid"
+            ),
+            "calibration": (features or {}).get("drift", {}).get(
+                "calibration"
+            )
+            or (features or {}).get("drift", {}).get("policy", {}).get(
+                "calibration"
+            ),
+            "load_bearing": bool(
+                (features or {}).get("safety", {}).get("load_bearing", False)
+            ),
+            "source_path": feature_path,
         },
         "universe_size": 14,
         "safety": {

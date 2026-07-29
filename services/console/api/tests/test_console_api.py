@@ -99,6 +99,9 @@ def test_agents_snapshot_uses_backend_contract():
     assert payload["summary"]["agent_auto_approved"] == 0
     assert payload["agents"][0]["can_reach_approved"] is False
     assert payload["containment"]["order_submission"] is False
+    assert payload["realtime_inputs"]["source"] == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+    assert payload["realtime_inputs"]["automatic_action"] is False
+    assert payload["realtime_inputs"]["promotion_authority"] is False
     assert {engine["engine_id"] for engine in payload["engines"]} == {
         "guided_search",
         "evolutionary_search",
@@ -199,6 +202,9 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert any(edge["kind"] == "FEATURE_TO_EXPERIMENT" for edge in payload["lineage_edges"])
     assert payload["quality_policy"]["blocks_future_leakage"] is True
     assert payload["quality_policy"]["mutable_raw_inputs"] is False
+    projection = payload["binance_realtime"]["feature_projection"]
+    assert projection["load_bearing"] is False
+    assert isinstance(projection["drift_status_counts"], dict)
     # G2: catalog content hashes + PIT-safety now come from the real data layer.
     assert payload["data_backend"] == "PIT_DATA_LAYER_v1"
     assert all(dataset["point_in_time_safe"] for dataset in payload["datasets"])

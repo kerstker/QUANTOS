@@ -22,6 +22,22 @@ const fallback: AgentsPayload = {
   agents: [],
   engines: [],
   observed_run_kinds: [],
+  realtime_inputs: {
+    status: 'UNAVAILABLE',
+    fresh: false,
+    age_ms: null,
+    source: 'BINANCE_PUBLIC_USDM_WEBSOCKET',
+    feature_version: null,
+    feature_count: 0,
+    instrument_count: 0,
+    retained_value_count: 0,
+    drift_status: null,
+    drift_status_counts: {},
+    batch_chain_valid: false,
+    consumption_mode: 'READ_ONLY_DIAGNOSTIC_CONTEXT',
+    automatic_action: false,
+    promotion_authority: false,
+  },
   containment: {
     authorized_level: 'L2_DRY_RUN_ONLY',
     research_only: true,
@@ -128,6 +144,28 @@ export default function Agents() {
             ]} />
           </Panel>
         </div>
+
+        <Panel eyebrow="REALTIME INPUT" title={bi('实时特征上下文', 'Realtime Feature Context')}
+          right={<StatusChip value={model.realtime_inputs.status} />}>
+          <KpiStrip cols={6}>
+            <StatTile label={bi('特征', 'Features')} value={num(model.realtime_inputs.feature_count)} />
+            <StatTile label={bi('标的', 'Instruments')} value={num(model.realtime_inputs.instrument_count)} />
+            <StatTile label={bi('保留值', 'Retained Values')} value={num(model.realtime_inputs.retained_value_count)} />
+            <StatTile label={bi('漂移状态', 'Drift')} value={model.realtime_inputs.drift_status ?? '—'}
+              tone={model.realtime_inputs.drift_status === 'BLOCK' ? 'warn' : 'info'} />
+            <StatTile label={bi('批次链', 'Batch Chain')}
+              value={model.realtime_inputs.batch_chain_valid ? 'VALID' : 'UNKNOWN'}
+              tone={model.realtime_inputs.batch_chain_valid ? 'pos' : 'warn'} />
+            <StatTile label={bi('自动动作', 'Automatic Action')}
+              value={model.realtime_inputs.automatic_action ? 'YES' : 'NO'} tone="pos" />
+          </KpiStrip>
+          <div className="mt-3 text-2xs text-muted">
+            {bi(
+              'Binance 公共实时特征仅作为只读诊断上下文；当前漂移阈值未校准，不驱动 Agent 自动晋级、仓位或订单。',
+              'Binance public realtime features are read-only diagnostic context. Uncalibrated drift thresholds never drive agent promotion, positions, or orders.',
+            )}
+          </div>
+        </Panel>
 
         <Panel eyebrow="OBSERVED" title={bi('持久化运行类型', 'Observed Persisted Run Kinds')}>
           <div className="flex flex-wrap gap-2">
