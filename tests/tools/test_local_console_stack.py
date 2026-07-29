@@ -34,9 +34,34 @@ def test_listener_pid_parser_tracks_the_real_child(monkeypatch):
     class Completed:
         stdout = "TCP    127.0.0.1:3110    0.0.0.0:0    LISTENING    4321\n"
 
-    monkeypatch.setattr(stack.subprocess, "run", lambda *args, **kwargs: Completed())
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Completed()
+
+    monkeypatch.setattr(stack.subprocess, "run", run)
     monkeypatch.setattr(stack.os, "name", "nt")
+    monkeypatch.setattr(stack.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     assert stack._listening_pid(3110) == 4321
+    assert calls[0][1]["creationflags"] == 0x08000000
+
+
+def test_windows_kill_is_headless(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        stack.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(stack.os, "name", "nt")
+    monkeypatch.setattr(stack.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    stack._kill(4321)
+
+    assert calls[0][0][0] == ["taskkill", "/PID", "4321", "/T", "/F"]
+    assert calls[0][1]["creationflags"] == 0x08000000
 
 
 def test_pid_alive_treats_windows_permission_denied_as_alive(monkeypatch):

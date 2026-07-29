@@ -33,6 +33,13 @@ MANIFEST = RUNTIME / "manifest.json"
 LOGS = RUNTIME / "logs"
 
 
+def _headless_creationflags() -> int:
+    """Prevent helper subprocesses from flashing a console on Windows."""
+    if os.name != "nt":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 def _npm() -> str:
     candidate = shutil.which("npm.cmd" if os.name == "nt" else "npm")
     if candidate:
@@ -148,6 +155,7 @@ def _listening_pid(port: int) -> int | None:
             capture_output=True,
             text=True,
             check=False,
+            creationflags=_headless_creationflags(),
         )
         target = f":{int(port)}"
         for line in result.stdout.splitlines():
@@ -257,8 +265,13 @@ def _wait_cors(url: str, origin: str, *, timeout: float = 30.0) -> None:
 
 def _kill(pid: int) -> None:
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            creationflags=_headless_creationflags(),
+        )
         return
     try:
         os.kill(pid, 15)
@@ -326,7 +339,10 @@ def start() -> dict[str, Any]:
     started: list[dict[str, Any]] = []
     flags = 0
     if os.name == "nt":
-        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        flags = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | _headless_creationflags()
+        )
     try:
         for spec in specs:
             env = os.environ.copy()
