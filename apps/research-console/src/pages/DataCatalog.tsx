@@ -125,7 +125,7 @@ const fallbackCatalog: DataCatalogPayload = {
     },
     rest_snapshot: {
       status_present: false, fresh: false, age_ms: null, verdict: null,
-      coverage: {}, chain_valid: null, errors: 0, source_path: null,
+      coverage: {}, chain_valid: null, errors: 0, fields: [], source_path: null,
     },
     feature_projection: {
       status_present: false, fresh: false, age_ms: null, status: null,
@@ -436,6 +436,11 @@ export default function DataCatalog() {
             '实时漂移阈值来自当前窗口之外的 PIT 经验校准；独立告警只通知运营，不驱动晋级、仓位或订单。外部通道未配置时明确显示 UNCONFIGURED。',
             'Realtime thresholds use pre-current PIT empirical calibration. Independent alerts notify operators only and never drive promotion, positions, or orders; an absent external channel is explicit as UNCONFIGURED.',
           )}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {realtime.rest_snapshot.fields.map(field => (
+            <Chip key={field} label={field} tone="muted" />
+          ))}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
           <KeyValue cols={2} items={[

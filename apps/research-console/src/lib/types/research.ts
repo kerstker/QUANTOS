@@ -419,6 +419,7 @@ export interface BinanceRealtimePayload {
     coverage: BinanceRealtimeCoverage;
     chain_valid: boolean | null;
     errors: number;
+    fields: string[];
     source_path: string | null;
   };
   feature_projection: {

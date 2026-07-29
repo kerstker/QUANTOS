@@ -208,6 +208,8 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert payload["quality_policy"]["blocks_future_leakage"] is True
     assert payload["quality_policy"]["mutable_raw_inputs"] is False
     projection = payload["binance_realtime"]["feature_projection"]
+    rest_snapshot = payload["binance_realtime"]["rest_snapshot"]
+    assert isinstance(rest_snapshot["fields"], list)
     assert projection["load_bearing"] is False
     assert isinstance(projection["drift_status_counts"], dict)
     assert projection["calibration_window_count"] >= 0

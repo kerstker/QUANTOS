@@ -120,6 +120,7 @@ def _binance_realtime_payload() -> Dict:
             "coverage": rest_coverage,
             "chain_valid": (rest or {}).get("store", {}).get("chain_valid"),
             "errors": len((rest or {}).get("errors", {})),
+            "fields": (rest or {}).get("fields", []),
             "source_path": rest_path,
         },
         "feature_projection": {

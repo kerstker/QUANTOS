@@ -82,6 +82,12 @@ def _fake_http(url):
                 "markPrice": "98",
             }
         ]
+    if path == "/fapi/v1/openInterest":
+        return {
+            "symbol": symbol,
+            "openInterest": "205",
+            "time": _NOW - 1_500,
+        }
     if path == "/futures/data/openInterestHist":
         return [
             {
@@ -95,6 +101,8 @@ def _fake_http(url):
         return [{"symbol": symbol, "longShortRatio": "1.4", "timestamp": _NOW - 5 * 60_000}]
     if path == "/futures/data/topLongShortPositionRatio":
         return [{"symbol": symbol, "longShortRatio": "1.2", "timestamp": _NOW - 5 * 60_000}]
+    if path == "/futures/data/topLongShortAccountRatio":
+        return [{"symbol": symbol, "longShortRatio": "1.3", "timestamp": _NOW - 5 * 60_000}]
     if path == "/futures/data/takerlongshortRatio":
         return [
             {
@@ -130,7 +138,12 @@ def test_refresh_persists_complete_public_snapshot_and_status(tmp_path):
     row = status["latest"]["BTC"]
     assert row["book"]["spread_bps"] == pytest.approx(20.0)
     assert row["perpetual"]["basis_bps"] > 0
+    assert row["perpetual"]["current_open_interest"] == 205.0
+    assert row["perpetual"]["open_interest"] == 200.0
+    assert row["perpetual"]["open_interest_value"] == 20_000.0
     assert row["positioning"]["global_long_short_ratio"] == 1.4
+    assert row["positioning"]["top_position_long_short_ratio"] == 1.2
+    assert row["positioning"]["top_account_long_short_ratio"] == 1.3
     assert row["last_settled_funding"]["rate"] == 0.0002
     assert row["closed_1m"]["trade_count"] == 22
     assert row["quality"]["order_submission"] is False

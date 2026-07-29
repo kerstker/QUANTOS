@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 公共实时仓位面补齐：**
+> `tools/binance_realtime_market.py` 的 5 分钟全量快照新增官方公开
+> `/fapi/v1/openInterest` 当前 OI 与
+> `/futures/data/topLongShortAccountRatio` 大户账户多空比；原 5 分钟历史
+> OI/OI 名义价值字段保持兼容，不改变既有消费口径。两项均执行 symbol、数值域、
+> source time 与新鲜度 fail-closed 校验，并与盘口、mark/index/funding、K 线、
+> 全市场/大户持仓比、taker 流一起进入原 append-only SQLite 哈希链和原始响应归档。
+> 真实 Binance 首跑 14/14 完整、14 条新记录、链有效；Data Catalog API/页面展示
+> 当前 REST 字段清单。数据仍为无凭证公共行情，只服务 L2 研究与纸面交易，不接私有
+> 账户、券商或订单。外部模型 Provider 探针也已真实执行，但现有本地凭证返回 401，
+> 因而未生成 PASS 证据，`AI.MODEL.REGISTRY.REDTEAM` 仍诚实保持 PARTIAL。
+
 > **2026-07-29 Rank #13 收口——实时漂移经验校准 + 独立运营告警：**
 > `services/data/distribution_drift_calibration.py` 现在把每条实时序列的最新 60+20
 > 评估窗完全隔离，只在更早的 PIT 块内做确定性 60/20 置换，汇总经验同分布 KS

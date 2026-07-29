@@ -159,6 +159,7 @@ def _fetch_ticker(
     requests = {
         "kline_1m": ("/fapi/v1/klines", {"symbol": symbol, "interval": "1m", "limit": 2}),
         "funding": ("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 3}),
+        "oi_current": ("/fapi/v1/openInterest", {"symbol": symbol}),
         "oi": (
             "/futures/data/openInterestHist",
             {"symbol": symbol, "period": PERIOD, "limit": 3},
@@ -169,6 +170,10 @@ def _fetch_ticker(
         ),
         "top_ls": (
             "/futures/data/topLongShortPositionRatio",
+            {"symbol": symbol, "period": PERIOD, "limit": 3},
+        ),
+        "top_account_ls": (
+            "/futures/data/topLongShortAccountRatio",
             {"symbol": symbol, "period": PERIOD, "limit": 3},
         ),
         "taker": (
@@ -214,9 +219,17 @@ def parse_snapshot(
     kline_time = _timestamp(kline[6], "kline_close_time")
     _fresh(kline_time, observed_at_ms, MAX_CANDLE_AGE_MS, "kline")
     funding = _latest_row(payloads["funding"][1], "funding")
+    oi_current = payloads["oi_current"][1]
+    if not isinstance(oi_current, Mapping):
+        raise BinanceRealtimeDataError("current oi response is not an object")
+    if str(oi_current.get("symbol", "")).upper() != symbol:
+        raise BinanceRealtimeDataError("current oi symbol mismatch")
     oi = _latest_row(payloads["oi"][1], "oi")
     global_ls = _latest_row(payloads["global_ls"][1], "global_ls")
     top_ls = _latest_row(payloads["top_ls"][1], "top_ls")
+    top_account_ls = _latest_row(
+        payloads["top_account_ls"][1], "top_account_ls"
+    )
     taker = _latest_row(payloads["taker"][1], "taker")
 
     source_times = {
@@ -224,13 +237,25 @@ def parse_snapshot(
         "mark": mark_time,
         "kline_1m": kline_time,
         "funding": _timestamp(funding.get("fundingTime"), "funding_time"),
+        "oi_current": _timestamp(
+            oi_current.get("time"), "oi_current_time"
+        ),
         "oi": _timestamp(oi.get("timestamp"), "oi_time"),
         "global_ls": _timestamp(global_ls.get("timestamp"), "global_ls_time"),
         "top_ls": _timestamp(top_ls.get("timestamp"), "top_ls_time"),
+        "top_account_ls": _timestamp(
+            top_account_ls.get("timestamp"), "top_account_ls_time"
+        ),
         "taker": _timestamp(taker.get("timestamp"), "taker_time"),
     }
     _fresh(source_times["funding"], observed_at_ms, MAX_FUNDING_AGE_MS, "funding")
-    for field in ("oi", "global_ls", "top_ls", "taker"):
+    _fresh(
+        source_times["oi_current"],
+        observed_at_ms,
+        MAX_BOOK_AGE_MS,
+        "oi_current",
+    )
+    for field in ("oi", "global_ls", "top_ls", "top_account_ls", "taker"):
         _fresh(source_times[field], observed_at_ms, MAX_POSITIONING_AGE_MS, field)
 
     next_funding_time = _timestamp(mark.get("nextFundingTime"), "next_funding_time")
@@ -263,7 +288,12 @@ def parse_snapshot(
                 mark.get("lastFundingRate"), "last_funding_rate"
             ),
             "next_funding_time_ms": next_funding_time,
-            "open_interest": _positive(oi.get("sumOpenInterest"), "open_interest"),
+            "current_open_interest": _positive(
+                oi_current.get("openInterest"), "open_interest"
+            ),
+            "open_interest": _positive(
+                oi.get("sumOpenInterest"), "open_interest"
+            ),
             "open_interest_value": _positive(
                 oi.get("sumOpenInterestValue"), "open_interest_value"
             ),
@@ -274,6 +304,10 @@ def parse_snapshot(
             ),
             "top_position_long_short_ratio": _positive(
                 top_ls.get("longShortRatio"), "top_position_long_short_ratio"
+            ),
+            "top_account_long_short_ratio": _positive(
+                top_account_ls.get("longShortRatio"),
+                "top_account_long_short_ratio",
             ),
             "taker_buy_sell_ratio": _nonnegative(
                 taker.get("buySellRatio"), "taker_buy_sell_ratio"
@@ -453,9 +487,11 @@ def run_refresh(
             "mark/index/basis/funding",
             "best_bid_ask_and_qty",
             "closed_1m_ohlcv",
-            "open_interest_and_value",
+            "current_open_interest",
+            "open_interest_and_value_5m",
             "global_long_short_ratio",
             "top_position_long_short_ratio",
+            "top_account_long_short_ratio",
             "taker_buy_sell_volume",
             "last_settled_funding",
         ],
