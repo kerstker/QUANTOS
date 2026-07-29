@@ -224,6 +224,11 @@
       "references": [
         {
           "line": 14,
+          "module": "services.execution.paper_tca_history",
+          "path": "services/console/api/artifact_paper_views.py"
+        },
+        {
+          "line": 15,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/artifact_paper_views.py"
         },
@@ -1209,7 +1214,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "3a0a4985af31f9aa485e75927f55a4657a2c84633db8ad8e11cc778d8186a968",
+  "graph_sha256": "c96b4b766b685c2df85a12df4582e0fb055f39679781a240e52d48b7cbb62bfc",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1247,7 +1252,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 410,
+  "source_file_count": 411,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

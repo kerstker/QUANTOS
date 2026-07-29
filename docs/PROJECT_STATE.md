@@ -1,5 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 证据修复与纵向纸面 TCA 增量：** 上一条状态中列出的 npm、Trivy
+> 与 artifact-admission 阻断已完成修复：前端生产依赖审计为 0 漏洞，运行镜像
+> Trivy 证据为 0 漏洞，制品授权注册表已按不可变历史轮换至 generation 1；强身份
+> 实现摘要重生后恢复为 M3/PARTIAL，供应链检查器也已改为绑定当前注册表 generation、
+> 当前 seal 实现与测试，不再硬编码旧 generation 0。Top-tier 当前实况为
+> **15 PASS / 6 PARTIAL / 1 FAILED**；唯一 FAILED 是恢复演练的自然历史仍未满足
+> 30 天干净回看与成功次数，既有失败没有被删除或伪造。
+>
+> 多场所纸面执行新增 `services/execution/paper_tca_history.py`：直接读取 append-only
+> `DryRunStore` 中已有的逐路由 TCA，逐条复验 SHA-256、路由绑定与算术恒等式，再生成
+> 跨运行的 route/venue 时间序列、名义额加权 implementation shortfall 和场所归因。
+> 一个时间点只标 `SINGLE_SNAPSHOT`，至少两个不同运行时间才标
+> `LONGITUDINAL_READY`；普通单场所干跑明确显示 `NO_ROUTE_TCA`。该只读投影已进入
+> `/api/v1/console/dry-run` 和干跑页的“多场所纸面 TCA”面板。它只证明 L2 仿真工程
+> 准备度，不连接券商、不提交订单，也不冒充生产多场所成交证据。
+
 > **2026-07-29 Binance USD-M 公共实时数据流与 AI Agent 实况界面：** 新增
 > `tools/binance_realtime_market.py`（14 个前向主币、每 5 分钟完整 REST 快照）和
 > `tools/binance_realtime_stream.py`（按 Binance 新路由拆分 `/public` 与 `/market`
@@ -19,10 +35,8 @@
 >
 > 本增量聚焦验证为后端 92 项、前端 124 项与生产构建全绿；Python audit（0 漏洞）、
 > event schema catalog 和 service import graph 已重生并通过 current 检查。全仓统一门
-> 仍被独立的既有供应链/运营证据阻断：当前 npm 外部审计保留 9 个高危开发依赖，
-> Trivy 容器证据字段不一致且重生需要外部扫描输入，本机 artifact-admission authority
-> 与新制品注册发生不可变冲突；恢复历史仅约 13 小时/6 次成功并保留 1 次真实失败，
-> 未达到 30 天。上述失败未被删除或降级，实时数据与 Agent 功能不据此冒充全仓绿色。
+> 当时仍被独立的供应链/运营证据阻断；这些供应链项已由上方更新修复。恢复历史仍保留
+> 真实失败且未达到 30 天，上述实时数据与 Agent 功能不据此冒充全仓绿色。
 
 > **2026-07-29 前向 Paper 九引擎输入自动化（保持 fail-closed）：** 新增
 > `tools/paper_alpha_evaluation.py`，为 `carry_oi_majors`、`crowd_contra`、

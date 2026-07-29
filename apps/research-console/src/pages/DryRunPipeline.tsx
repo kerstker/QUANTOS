@@ -124,6 +124,7 @@ export default function DryRunPipeline() {
   const forwardTrack = p.forward_track;
   const dataRefresh = p.data_refresh;
   const scheduler = p.scheduler_watchdog;
+  const routeTca = p.route_tca_history;
   const paperProfiles = Object.values(p.paper_profiles ?? {}) as PaperProfilePayload[];
   const paperAlphaRows: PaperAlphaRow[] = Object.entries(paperPreview?.alphas ?? {}).map(([alpha, row]) => ({
     alpha,
@@ -789,6 +790,43 @@ export default function DryRunPipeline() {
           </>
         ) : (
           <div className="text-2xs text-faint">{bi('无干跑记录 —— 门外跑 tools/dry_run_carry.py 生成', 'no dry-run records — run tools/dry_run_carry.py off-gate')}</div>)}
+      </Panel>
+
+      <Panel eyebrow={bi('多场所纸面 TCA', 'MULTI-VENUE PAPER TCA')}
+        title={bi('纵向路由成交质量（只读、仿真）', 'Longitudinal route execution quality (read-only simulation)')}>
+        <KpiStrip cols={4}>
+          <StatTile label={bi('状态', 'Status')} value={routeTca?.status ?? 'NO_ROUTE_TCA'}
+            tone={routeTca?.status === 'LONGITUDINAL_READY' ? 'pos' : routeTca?.status === 'INVALID_RETAINED_EVIDENCE' ? 'neg' : 'muted'} />
+          <StatTile label={bi('路由运行', 'Routed runs')} value={String(routeTca?.run_count ?? 0)} tone="info" />
+          <StatTile label={bi('TCA 记录', 'TCA records')} value={String(routeTca?.record_count ?? 0)} tone="muted" />
+          <StatTile label={bi('加权短缺', 'Weighted shortfall')}
+            value={routeTca?.weighted_shortfall_bps == null ? '—' : `${Number(routeTca.weighted_shortfall_bps).toFixed(2)} bps`}
+            tone="warn" />
+        </KpiStrip>
+        {(routeTca?.venues.length ?? 0) > 0 ? (
+          <DataTable
+            rows={routeTca!.venues}
+            getKey={row => row.venue_id}
+            density="compact"
+            columns={[
+              { key: 'venue', header: bi('场所', 'Venue'), render: row => <span className="mono text-xs">{row.venue_id}</span> },
+              { key: 'records', header: bi('记录', 'Records'), align: 'right', render: row => row.record_count },
+              { key: 'qty', header: bi('成交量', 'Filled qty'), align: 'right', render: row => row.filled_quantity },
+              { key: 'notional', header: bi('参考名义额', 'Reference notional'), align: 'right', render: row => `$${Number(row.reference_notional).toLocaleString('en-US', { maximumFractionDigits: 0 })}` },
+              { key: 'shortfall', header: bi('加权短缺', 'Weighted shortfall'), align: 'right', render: row => row.weighted_shortfall_bps == null ? '—' : `${Number(row.weighted_shortfall_bps).toFixed(2)} bps` },
+              { key: 'last', header: bi('最近', 'Latest'), align: 'right', render: row => stamp(row.last_timestamp) },
+            ]}
+          />
+        ) : (
+          <div className="text-2xs text-faint">
+            {bi('尚无启用 SOR 的纸面运行；不会把普通干跑伪装成多场所 TCA。',
+              'No SOR-enabled paper runs yet; ordinary dry-runs are not presented as multi-venue TCA.')}
+          </div>
+        )}
+        <div className="mt-2 text-2xs text-muted">
+          {bi('数据来自 append-only DryRunStore；每条记录先校验 SHA-256、路由绑定和算术恒等式。仅公开行情驱动的纸面仿真，不连接券商。',
+            'Backed by append-only DryRunStore; every record is verified for SHA-256, route binding and arithmetic identities. Public-market-data paper simulation only; no broker connectivity.')}
+        </div>
       </Panel>
 
       <div className="rounded-lg border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">

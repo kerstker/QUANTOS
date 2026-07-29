@@ -36,14 +36,14 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "governance_security",
       "passed": 1,
       "red_lines_failed": 1,
       "requirements": 2
     },
     {
-      "current_maturity": "M2",
+      "current_maturity": "M3",
       "domain": "platform_engineering",
       "passed": 1,
       "red_lines_failed": 1,
@@ -424,10 +424,12 @@
         "paths": [
           "services/execution/simulated_sor.py",
           "services/execution/simulated_tca.py",
+          "services/execution/paper_tca_history.py",
           "services/execution/dry_run_pipeline.py",
           "services/execution/dry_run_store.py",
           "tests/execution/test_simulated_sor.py",
           "tests/execution/test_simulated_tca.py",
+          "tests/execution/test_paper_tca_history.py",
           "tests/execution/test_dry_run_pipeline.py",
           "tests/execution/test_dry_run_store.py",
           "tests/execution/test_execution_import_boundary.py",
@@ -442,10 +444,12 @@
       "evidence": [
         "services/execution/simulated_sor.py",
         "services/execution/simulated_tca.py",
+        "services/execution/paper_tca_history.py",
         "services/execution/dry_run_pipeline.py",
         "services/execution/dry_run_store.py",
         "tests/execution/test_simulated_sor.py",
         "tests/execution/test_simulated_tca.py",
+        "tests/execution/test_paper_tca_history.py",
         "tests/execution/test_dry_run_pipeline.py",
         "tests/execution/test_dry_run_store.py",
         "tests/execution/test_execution_import_boundary.py",
@@ -567,9 +571,9 @@
         "path": "evidence/strong_identity_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "OIDC mTLS RBAC and separation of duties are enforced",
-      "detail": "strong-identity baseline failed: implementation_digest:apps/research-console/src/pages/PromotionQueue.tsx, implementation_digest:services/governance/strong_identity.py",
+      "detail": "asymmetric OIDC verification, MFA, RFC 8705 mTLS binding, immutable subject identity, application-owned lifecycle authorization, durable authorization decisions, and three-party separation are load-bearing; browser Authorization Code + PKCE S256 is implemented with one-time state/nonce and memory-only access tokens; external OIDC, trusted TLS deployment, managed key custody, external identity lifecycle operations, and independent AI identity-exclusion evidence remain open; evidence does not meet target maturity",
       "domain": "governance_security",
       "evidence": [
         "evidence/strong_identity_baseline.json",
@@ -602,7 +606,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -948,12 +952,26 @@
         "path": "evidence/supply_chain_baseline.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M2",
+      "current_maturity": "M3",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "supply-chain baseline failed: artifact_admission_implementation_hashes, artifact_admission_policy_registry, artifact_admission_receipt_authority_registry, artifact_admission_verification_paths",
+      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed local decision authority whose exact empty trust-root mirrors and hash-chain heads were verified; no retained valid bundle or external signed receipt exercises the real verifier path, source-native checkpoint/revocation proofs are not verified, and cross-host reproducibility, an externally signed artifact, authenticated receipts, independent deployment, and an external history seal remain open; evidence does not meet target maturity",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
+        "config/artifact_admission_policy_registry.json",
+        "config/artifact_receipt_authority_registry.json",
+        "services/governance/artifact_admission.py",
+        "services/governance/artifact_admission_store.py",
+        "services/governance/artifact_receipt_auth.py",
+        "tools/artifact_admission_seal.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/verify_artifact_admission.py",
+        "tests/governance/test_artifact_admission.py",
+        "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
+        "tests/governance/test_artifact_admission_store.py",
+        "tests/governance/test_artifact_receipt_auth.py",
+        "tests/tools/test_artifact_admission_seal.py",
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "evidence/vulnerability/actions_osv_latest.json",
@@ -1150,7 +1168,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1384,9 +1402,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 3,
+    "failed": 1,
     "manual_evidence_required": 0,
-    "partial": 4,
+    "partial": 6,
     "passed": 15,
     "red_lines_failed": 3,
     "total": 22,

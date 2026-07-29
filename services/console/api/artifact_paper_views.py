@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from services.execution.paper_tca_history import build_paper_tca_history
 from services.execution.dry_run_store import DryRunStore
 from .artifact_diagnostic_views import router as diagnostic_router
 
@@ -494,6 +495,22 @@ def _dry_run_payload() -> Dict:
             present, runs = False, []
     has = bool(present and runs)
     latest = runs[-1] if runs else {}
+    try:
+        route_tca_history = build_paper_tca_history(runs)
+    except Exception:
+        route_tca_history = {
+            "schema_version": 1,
+            "simulation_only": True,
+            "status": "INVALID_RETAINED_EVIDENCE",
+            "run_count": 0,
+            "record_count": 0,
+            "venue_count": 0,
+            "first_timestamp": None,
+            "last_timestamp": None,
+            "weighted_shortfall_bps": None,
+            "points": [],
+            "venues": [],
+        }
     paper_artifact = _load_json_object(_PAPER_ORDER_PREVIEW)
     paper_verdict = paper_artifact.get("verdict", {}) if paper_artifact else {}
     paper_safety = paper_artifact.get("safety", {}) if paper_artifact else {}
@@ -721,6 +738,7 @@ def _dry_run_payload() -> Dict:
         "n_runs": len(runs),
         "latest": latest,
         "runs": runs,
+        "route_tca_history": route_tca_history,
         "paper_order_preview": paper_preview,
         "paper_operator": paper_operator,
         "paper_realtime": paper_realtime,

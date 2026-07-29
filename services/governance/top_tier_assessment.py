@@ -2824,11 +2824,9 @@ def _supply_chain_baseline_evidence(
         },
         "artifact_admission_policy_registry_ref": ("config/artifact_admission_policy_registry.json"),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
-        "artifact_admission_policy_registry_generation": 1,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
-        "artifact_admission_receipt_authority_registry_generation": 1,
         "artifact_admission_active_receipt_key_count": 0,
         "artifact_admission_library": "sigstore",
         "artifact_admission_library_version": "4.4.0",
@@ -2999,7 +2997,10 @@ def _supply_chain_baseline_evidence(
                 or set(registry) != {"schema_version", "readiness", "generation", "policies"}
                 or registry.get("schema_version") != 2
                 or registry.get("readiness") != "L2_DRY_RUN_ONLY"
-                or registry.get("generation") != 0
+                or type(registry.get("generation")) is not int
+                or registry["generation"] < 0
+                or document.get("artifact_admission_policy_registry_generation")
+                != registry["generation"]
                 or registry.get("policies") != {}
             ):
                 failures.append("artifact_admission_policy_registry")
@@ -3035,7 +3036,12 @@ def _supply_chain_baseline_evidence(
                 or set(receipt_registry) != {"schema_version", "readiness", "generation", "keys"}
                 or receipt_registry.get("schema_version") != 2
                 or receipt_registry.get("readiness") != "L2_DRY_RUN_ONLY"
-                or receipt_registry.get("generation") != 0
+                or type(receipt_registry.get("generation")) is not int
+                or receipt_registry["generation"] < 0
+                or document.get(
+                    "artifact_admission_receipt_authority_registry_generation"
+                )
+                != receipt_registry["generation"]
                 or receipt_registry.get("keys") != {}
             ):
                 failures.append("artifact_admission_receipt_authority_registry")
@@ -3117,6 +3123,7 @@ def _supply_chain_baseline_evidence(
         "services/governance/artifact_receipt_auth.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
+        "tools/artifact_admission_seal.py",
     }
     admission_hashes = document.get("artifact_admission_implementation_sha256")
     if not isinstance(admission_hashes, dict) or set(admission_hashes) != admission_paths:
@@ -3142,6 +3149,7 @@ def _supply_chain_baseline_evidence(
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_artifact_admission_provisioning.py",
+        "tests/tools/test_artifact_admission_seal.py",
     }
     admission_tests = document.get("artifact_admission_verification_paths")
     if not isinstance(admission_tests, list) or set(admission_tests) != required_admission_tests:

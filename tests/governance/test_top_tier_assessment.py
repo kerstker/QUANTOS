@@ -841,12 +841,19 @@ def _write_valid_supply_chain_evidence(tmp_path):
             '"signing_capability_present": False '
             '"live_trading_authority_granted": False\n'
         ),
+        "tools/artifact_admission_seal.py": (
+            "ArtifactAdmissionStore create=False "
+            "verify_artifact_admission_seal create_once\n"
+        ),
         "tests/governance/test_artifact_admission.py": "def test_core(): pass\n",
         "tests/governance/test_artifact_admission_cli.py": "def test_cli(): pass\n",
         "tests/governance/test_artifact_admission_store.py": ("def test_store(): pass\n"),
         "tests/governance/test_artifact_receipt_auth.py": ("def test_receipt_auth(): pass\n"),
         "tests/governance/test_artifact_admission_provisioning.py": (
             "def test_provisioning(): pass\n"
+        ),
+        "tests/tools/test_artifact_admission_seal.py": (
+            "def test_artifact_admission_seal(): pass\n"
         ),
     }
     for relative, content in admission_sources.items():
@@ -1097,14 +1104,14 @@ def _write_valid_supply_chain_evidence(tmp_path):
             policy_registry_path
         ),
         "artifact_admission_policy_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"),
-        "artifact_admission_policy_registry_generation": 1,
+        "artifact_admission_policy_registry_generation": 0,
         "artifact_admission_active_policy_count": 0,
         "artifact_admission_receipt_authority_registry_ref": ("config/artifact_receipt_authority_registry.json"),
         "artifact_admission_receipt_authority_registry_sha256": source_file_sha256(
             receipt_authority_registry_path
         ),
         "artifact_admission_receipt_authority_registry_status": ("L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"),
-        "artifact_admission_receipt_authority_registry_generation": 1,
+        "artifact_admission_receipt_authority_registry_generation": 0,
         "artifact_admission_active_receipt_key_count": 0,
         "artifact_admission_library": "sigstore",
         "artifact_admission_library_version": "4.4.0",
@@ -1147,6 +1154,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_receipt_auth.py",
                 "tools/verify_artifact_admission.py",
                 "tools/provision_artifact_admission_authority.py",
+                "tools/artifact_admission_seal.py",
             )
         },
         "artifact_admission_verification_paths": [
@@ -1155,6 +1163,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "tests/governance/test_artifact_admission_store.py",
             "tests/governance/test_artifact_receipt_auth.py",
             "tests/governance/test_artifact_admission_provisioning.py",
+            "tests/tools/test_artifact_admission_seal.py",
         ],
         "m4_blockers": [
             "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",

@@ -345,10 +345,12 @@
                                                   "paths":  [
                                                                 "services/execution/simulated_sor.py",
                                                                 "services/execution/simulated_tca.py",
+                                                                "services/execution/paper_tca_history.py",
                                                                 "services/execution/dry_run_pipeline.py",
                                                                 "services/execution/dry_run_store.py",
                                                                 "tests/execution/test_simulated_sor.py",
                                                                 "tests/execution/test_simulated_tca.py",
+                                                                "tests/execution/test_paper_tca_history.py",
                                                                 "tests/execution/test_dry_run_pipeline.py",
                                                                 "tests/execution/test_dry_run_store.py",
                                                                 "tests/execution/test_execution_import_boundary.py",

@@ -80,6 +80,14 @@ completion event bind the complete detail through
 `DryRunRun.reproducibility_hash`.  Missing or non-positive TCA reference prices
 produce zero fills for that intent.
 
+`services/execution/paper_tca_history.py` adds the missing longitudinal,
+read-only projection over those immutable records.  It verifies every retained
+TCA record before producing timestamped route points and notional-weighted
+venue statistics.  One timestamp is honestly labelled `SINGLE_SNAPSHOT`;
+`LONGITUDINAL_READY` requires at least two distinct retained run timestamps.
+The dry-run console surfaces this projection and displays `NO_ROUTE_TCA` rather
+than treating ordinary single-venue dry-runs as multi-venue evidence.
+
 ## Verification
 
 `tests/execution/test_simulated_sor.py` covers fee-aware and latency-aware
@@ -97,6 +105,9 @@ BUY/SELL shortfall direction, venue reconciliation, deterministic records,
 adapter-rejection residuals, exact plan-slice binding and tamper rejection.
 `tests/execution/test_dry_run_store.py` proves save/reopen verification and
 detects retained TCA mutation after a trigger is removed.
+`tests/execution/test_paper_tca_history.py` proves deterministic longitudinal
+aggregation, venue attribution, honest single-snapshot status, non-routed-run
+exclusion and fail-closed handling of tampered retained evidence.
 
 The top-tier assessment reports this as M3/PARTIAL local readiness.  It is
 structurally impossible for the local readiness checker to produce PASS for a

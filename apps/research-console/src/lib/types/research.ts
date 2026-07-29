@@ -1237,6 +1237,29 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   n_runs: number;
   latest: DryRunRunRow | Record<string, never>;
   runs: DryRunRunRow[];
+  route_tca_history?: {
+    schema_version: number;
+    simulation_only: true;
+    status: 'NO_ROUTE_TCA' | 'SINGLE_SNAPSHOT' | 'LONGITUDINAL_READY' | 'INVALID_RETAINED_EVIDENCE';
+    run_count: number;
+    record_count: number;
+    venue_count: number;
+    first_timestamp: number | null;
+    last_timestamp: number | null;
+    weighted_shortfall_bps: string | null;
+    points: {
+      run_id: string; strategy_id: string; timestamp: number; routing_snapshot_id: string;
+      record_index: number; period: number | null; instrument_id: string; side: string;
+      route_status: string; requested_quantity: number; filled_quantity: number;
+      fill_fraction: string; reference_notional: string;
+      implementation_shortfall_bps: string; venues: string[];
+    }[];
+    venues: {
+      venue_id: string; record_count: number; filled_quantity: number;
+      reference_notional: string; weighted_shortfall_bps: string | null;
+      first_timestamp: number; last_timestamp: number;
+    }[];
+  };
   paper_order_preview?: PaperOrderPreviewPayload;
   paper_operator?: L2PaperOperatorPayload;
   paper_realtime?: PaperRealtimePayload;
