@@ -37,6 +37,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "artifact_admission_seal",
         "binance_realtime_market",
         "binance_realtime_features",
+        "binance_realtime_drift_alerts",
         "binance_realtime_stream",
         "external_heartbeat",
         "forward_track_advance",

@@ -1,5 +1,22 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Rank #13 收口——实时漂移经验校准 + 独立运营告警：**
+> `services/data/distribution_drift_calibration.py` 现在把每条实时序列的最新 60+20
+> 评估窗完全隔离，只在更早的 PIT 块内做确定性 60/20 置换，汇总经验同分布 KS
+> 空分布的 95/99 分位；历史不足、非有限值、阈值退化均 fail-closed，不回退成伪校准。
+> 首次真实运行覆盖 98 条序列、8,232 个校准窗，得到 Warn=0.3167 /
+> Block=0.3833，内容寻址 calibration id
+> `401fb51176389cb70dda2f2ab98a711aceb0370e0947810064195c44bbb82230`；
+> 当前独立评估为 41 PASS / 8 WARN / 49 BLOCK，完整保留。新增独立 5 分钟 worker
+> `tools/binance_realtime_drift_alerts.py`：只读特征状态，按 OPENED/ESCALATED/
+> DEESCALATED/RECOVERED 去重，事件与投递结果写入禁止修改/删除的 SQLite 哈希链，
+> 同时投递既有 operator JSONL；本地投递失败时任务非零退出并持续重试，成功后才去重。
+> 首条 BLOCK 已 `DELIVERED`，重复运行
+> `DEDUPLICATED`，链 2/2 有效。Telegram 未配置则明确 `UNCONFIGURED`，不冒充外部
+> 送达。Data Catalog 与 AI Agent 页显示校准阈值、校准窗、独立 worker、本地/外部
+> 投递和告警链。该闭环完成 Rank #13 的 L2 范围，但始终 diagnostic-only，
+> 不驱动 Agent 晋级、仓位、订单或实盘。
+
 > **2026-07-29 Binance 实时 FeatureValue 与 Agent 输入可视化：** 新增纯投影
 > `services/features/binance_realtime_projection.py`，把 14 币 WebSocket 完整快照物化为
 > mid、spread、5 档深度不平衡、mark basis、funding、5 秒 taker imbalance、5 秒
@@ -10,7 +27,7 @@
 > 个值，98/98 序列结构完整，结果为 30 PASS / 19 WARN / 49 BLOCK。BLOCK 是未校准阈值下
 > 的真实诊断，不是 worker 故障，也没有被删改。Data Catalog 与 AI Agent 页均显示特征
 > 新鲜度、保留值、漂移分布和批次链；Agent 只能把它视为只读诊断上下文，自动动作与晋级
-> 权限恒为 false。当前仍缺阈值校准和独立告警交付，绝不据此宣称 Rank #13 全部完成。
+> 权限恒为 false。该首次未校准状态已由上方经验校准与独立告警增量收口。
 
 > **2026-07-29 真实公共订单簿到多场所纸面 SOR 已自动化：** 新增
 > `tools/paper_multivenue_sor.py`，从现有 Binance USD-M WebSocket 哈希链读取

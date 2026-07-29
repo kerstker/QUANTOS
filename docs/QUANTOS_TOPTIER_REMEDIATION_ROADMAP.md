@@ -50,7 +50,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
 | **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
-| **13 ◑** | **数据漂移检测**(PIT 分布漂移告警) | 5/6 | P2 / M | `macro_regime`、data quality、实时特征值缓存 | **数据集、封存 PIT 特征分布与实时特征窗口均已升真：**60/20 窗口 KS 内核 + 真实 `crypto_daily.db` close-to-close 监控行已落地；FX PIT bundle 的 3 个因果特征级重放当前 3/3 `BLOCK`。Binance USD-M 14 币公开 REST + 双路 WebSocket 已长驻采集并以哈希链持久化；实时帧现已物化为 7 类 × 14 币 = 98 条 `FeatureValue` 序列（mid/spread/depth imbalance/basis/funding/taker/liquidation），以追加 PIT store、来源摘要和独立批次哈希链留痕，并每 5 分钟消费为 60/20 KS 漂移。首次真实窗口 30 PASS / 19 WARN / 49 BLOCK，完整保留而不粉饰。**仍缺：**阈值校准和独立运营告警交付；该诊断不承重、不驱动 Agent 晋级、仓位或订单。 |
+| **13 ✓** | **数据漂移检测**(PIT 分布漂移告警) | 6/6 | P2 / M | `macro_regime`、data quality、实时特征值缓存 | **L2 闭环已完成：**60/20 KS 内核、真实 dataset/FX 特征重放、Binance 14 币双 WebSocket、7 类 × 14 币 = 98 条追加 PIT `FeatureValue` 与批次哈希链均已落地。阈值不再是固定假设：当前 60+20 评估窗完全隔离，只用更早 PIT 块的确定性置换空分布取 95/99 分位；首次真实校准 8,232 窗，Warn=0.3167、Block=0.3833，当前 41 PASS / 8 WARN / 49 BLOCK。独立 5 分钟告警 worker 按 incident 状态去重，事件/投递结果进追加 SQLite 哈希链并送 operator JSONL；本地投递失败非零退出且持续重试，首条 BLOCK 已 DELIVERED、复跑 DEDUPLICATED，外部 Telegram 未配置诚实标 `UNCONFIGURED`。Console 与 Agent 页均可见。诊断仍不承重、不驱动 Agent 晋级、仓位或订单。 |
 
 ## 4. 需外部资源(钱与组织,非代码缺陷)
 
@@ -77,13 +77,15 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 > **2026-07-21 Rank #13 特征级证据：** `tools/feature_distribution_drift_research.py` 已从封存的
 > FX PIT bundle 重放三个因果 close 特征，并生成可确定性校验的
 > `evidence/feature_distribution_drift_baseline.json`。当前诊断为 `BLOCK`（三个特征均超出 KS
-> 阈值），但制品明确不承重；FeatureValue 缓存、实时/纸面 feed、校准和告警仍是开放项。
+> 阈值），但制品明确不承重；当时 FeatureValue 缓存、实时/纸面 feed、校准和告警仍是
+> 开放项，现已由 2026-07-29 Rank #13 实时闭环收口。
 
 > **2026-07-29 Rank #13 实时输入底座：** Binance USD-M 公开行情已建立 14 币 REST
 > 完整快照与 `/public`、`/market` 双 WebSocket 长驻流，覆盖最优盘口、20 档深度、
 > mark/index/funding、逐笔聚合成交、1 分钟 K 线、强平及 REST 的 OI/多空比/taker
 > 指标。数据以追加 SQLite 哈希链和状态水位持久化，调度、重连、新鲜度和 Console 健康
-> 可视化已完成。该增量关闭“无实时原始 feed”，但不冒充已完成实时特征缓存或漂移告警。
+> 可视化已完成。该增量当时只关闭“无实时原始 feed”；实时特征缓存与漂移告警随后由
+> 2026-07-29 Rank #13 收口增量完成。
 >
 > **2026-07-29 L2 多场所执行金丝雀：** Binance 真实 WebSocket 20 档深度现已与
 > Bybit V5 真实公共 order book 同步进入 deterministic paper SOR；跨场所快照和逐场所

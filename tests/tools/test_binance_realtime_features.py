@@ -59,7 +59,7 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     source_path = tmp_path / "source.db"
     source = BinanceRealtimeStore(str(source_path), create=True)
     try:
-        for index in range(80):
+        for index in range(300):
             for ticker in ("AAA", "BBB"):
                 source.append_snapshot(_snapshot(f"{ticker}USDT", index))
     finally:
@@ -72,13 +72,21 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         feature_store_path=str(feature_path),
         batch_store_path=str(tmp_path / "batches.db"),
         status_path=str(tmp_path / "status.json"),
-        source_row_limit=160,
+        source_row_limit=600,
     )
     assert result["status"] == "PASS"
     assert result["features"]["instrument_count"] == 2
-    assert result["features"]["new_value_count"] == 2 * 80 * 7
+    assert result["features"]["new_value_count"] == 2 * 300 * 7
     assert result["drift"]["series_count"] == 2 * 7
     assert result["drift"]["structurally_ready"] is True
+    assert result["drift"]["calibration"]["status"] == "READY"
+    assert result["drift"]["calibration"]["calibration_id"]
+    assert result["drift"]["policy"]["calibration"] == (
+        "EMPIRICALLY_CALIBRATED_PIT_V1"
+    )
+    assert result["drift"]["policy"]["warn_ks"] < (
+        result["drift"]["policy"]["block_ks"]
+    )
     assert result["batch"]["chain_valid"] is True
     assert result["agent_input"]["automatic_action"] is False
 
@@ -90,7 +98,7 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
             "AAAUSDT",
             20_000,
         )
-        assert len(rows) == 80
+        assert len(rows) == 300
     finally:
         store.close()
 

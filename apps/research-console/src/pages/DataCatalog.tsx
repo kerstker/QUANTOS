@@ -132,7 +132,16 @@ const fallbackCatalog: DataCatalogPayload = {
       feature_version: null, feature_count: 0, instrument_count: 0,
       retained_value_count: 0, drift_status: null, drift_status_counts: {},
       drift_series_count: 0, batch_chain_valid: null, calibration: null,
+      calibration_id: null, warn_ks: null, block_ks: null,
+      calibration_window_count: 0,
       load_bearing: false, source_path: null,
+    },
+    drift_alerting: {
+      status_present: false, fresh: false, age_ms: null, status: null,
+      current_severity: null, reason: null, transition: null,
+      deduplicated: false, local_delivery: null, external_delivery: null,
+      independent_worker: false, event_count: 0, chain_valid: null,
+      source_path: null,
     },
     safety: {
       public_market_data_only: true, credentials: false, private_stream: false,
@@ -400,10 +409,32 @@ export default function DataCatalog() {
             value={realtime.feature_projection.batch_chain_valid ? 'VALID' : 'UNKNOWN'}
             tone={realtime.feature_projection.batch_chain_valid ? 'pos' : 'warn'} />
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('漂移校准', 'Drift Calibration')}
+            value={realtime.feature_projection.calibration === 'EMPIRICALLY_CALIBRATED_PIT_V1' ? 'CALIBRATED' : 'UNAVAILABLE'}
+            tone={realtime.feature_projection.calibration_id ? 'pos' : 'warn'} />
+          <StatTile label={bi('校准窗口', 'Calibration Windows')}
+            value={num(realtime.feature_projection.calibration_window_count)} />
+          <StatTile label={bi('警告阈值', 'Warn KS')}
+            value={realtime.feature_projection.warn_ks == null ? '—' : realtime.feature_projection.warn_ks.toFixed(3)} />
+          <StatTile label={bi('阻断阈值', 'Block KS')}
+            value={realtime.feature_projection.block_ks == null ? '—' : realtime.feature_projection.block_ks.toFixed(3)} />
+          <StatTile label={bi('独立告警', 'Alert Worker')}
+            value={realtime.drift_alerting.independent_worker ? 'RUNNING' : 'UNAVAILABLE'}
+            tone={realtime.drift_alerting.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('本地投递', 'Local Delivery')}
+            value={realtime.drift_alerting.local_delivery ?? '—'}
+            tone={realtime.drift_alerting.local_delivery === 'DELIVERED' ? 'pos' : 'info'} />
+          <StatTile label={bi('外部投递', 'External Delivery')}
+            value={realtime.drift_alerting.external_delivery ?? '—'} />
+          <StatTile label={bi('告警链', 'Alert Chain')}
+            value={realtime.drift_alerting.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.drift_alerting.chain_valid ? 'pos' : 'warn'} />
+        </div>
         <div className="mt-2 text-2xs text-muted">
           {bi(
-            '实时漂移阈值仍为未校准诊断，不驱动晋级、仓位或订单。',
-            'Realtime drift thresholds remain uncalibrated diagnostics and never drive promotion, positions, or orders.',
+            '实时漂移阈值来自当前窗口之外的 PIT 经验校准；独立告警只通知运营，不驱动晋级、仓位或订单。外部通道未配置时明确显示 UNCONFIGURED。',
+            'Realtime thresholds use pre-current PIT empirical calibration. Independent alerts notify operators only and never drive promotion, positions, or orders; an absent external channel is explicit as UNCONFIGURED.',
           )}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">

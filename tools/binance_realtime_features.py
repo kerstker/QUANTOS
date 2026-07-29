@@ -22,8 +22,13 @@ from quantos.contracts.scheduled_worker import (
 )
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.data.distribution_drift import (
-    DistributionDriftPolicy,
     evaluate_feature_distribution_drift,
+)
+from services.data.distribution_drift_calibration import (
+    READY as CALIBRATION_READY,
+    DriftCalibrationPolicy,
+    DriftCalibrationResult,
+    calibrate_distribution_drift,
 )
 from services.features.binance_realtime_projection import (
     FEATURE_IDS,
@@ -52,12 +57,13 @@ DEFAULT_STATUS = os.path.join(
     "data", "cache", "binance_realtime_feature_status.json"
 )
 SOURCE_ROW_LIMIT = 3_500
-DRIFT_POLICY = DistributionDriftPolicy(
+CALIBRATION_POLICY = DriftCalibrationPolicy(
     baseline_window=60,
     recent_window=20,
-    min_observations=20,
-    warn_ks=0.20,
-    block_ks=0.35,
+    stride=20,
+    min_calibration_windows=100,
+    warn_quantile=0.95,
+    block_quantile=0.99,
 )
 
 
@@ -101,11 +107,11 @@ def _source_snapshots(
     return rows
 
 
-def _drift_snapshot(
+def _feature_values(
     store: SqliteFeatureValueStore,
     *,
     as_of_ms: int,
-) -> dict[str, Any]:
+) -> dict[str, list[float]]:
     values_by_series: dict[str, list[float]] = {}
     instruments = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
     for instrument_id in instruments:
@@ -122,11 +128,24 @@ def _drift_snapshot(
                 for row in rows
                 if row.value is not None
             ]
+    return values_by_series
+
+
+def _drift_snapshot(
+    values_by_series: dict[str, list[float]],
+    *,
+    calibration: DriftCalibrationResult,
+) -> dict[str, Any]:
+    if calibration.status != CALIBRATION_READY:
+        raise BinanceRealtimeFeatureError(
+            "realtime feature drift calibration is not ready: "
+            + ",".join(calibration.reasons)
+        )
     expected = tuple(sorted(values_by_series))
     aggregate = evaluate_feature_distribution_drift(
         values_by_series,
         expected_features=expected,
-        policy=DRIFT_POLICY,
+        policy=calibration.drift_policy(),
     )
     result = aggregate.as_dict()
     assessments = result["assessments"]
@@ -140,8 +159,8 @@ def _drift_snapshot(
         isinstance(item, dict)
         and item.get("ks_distance") is not None
         and item.get("sample_counts") == [
-            DRIFT_POLICY.baseline_window,
-            DRIFT_POLICY.recent_window,
+            calibration.policy.baseline_window,
+            calibration.policy.recent_window,
         ]
         for item in assessments.values()
     )
@@ -155,12 +174,23 @@ def _drift_snapshot(
         },
         "structurally_ready": structurally_ready,
         "policy": {
-            "baseline_window": DRIFT_POLICY.baseline_window,
-            "recent_window": DRIFT_POLICY.recent_window,
-            "warn_ks": DRIFT_POLICY.warn_ks,
-            "block_ks": DRIFT_POLICY.block_ks,
-            "calibration": "UNCALIBRATED_PRINCIPLED",
+            "baseline_window": calibration.policy.baseline_window,
+            "recent_window": calibration.policy.recent_window,
+            "warn_ks": calibration.warn_ks,
+            "block_ks": calibration.block_ks,
+            "calibration": calibration.calibration,
+            "calibration_id": calibration.calibration_id,
+            "provenance": calibration.provenance,
+            "window_count": calibration.window_count,
+            "series_count": calibration.series_count,
+            "held_out_observations_per_series": (
+                calibration.held_out_observations_per_series
+            ),
+            "source_digest": calibration.source_digest,
+            "warn_quantile": calibration.policy.warn_quantile,
+            "block_quantile": calibration.policy.block_quantile,
         },
+        "calibration": calibration.as_dict(),
     }
 
 
@@ -204,7 +234,15 @@ def execute(
             quality_verdict="SOURCE_CHAIN_VERIFIED_COMPLETE_CORE",
         )
         row_count = feature_store.row_count()
-        drift = _drift_snapshot(feature_store, as_of_ms=now)
+        values_by_series = _feature_values(feature_store, as_of_ms=now)
+        calibration = calibrate_distribution_drift(
+            values_by_series,
+            policy=CALIBRATION_POLICY,
+        )
+        drift = _drift_snapshot(
+            values_by_series,
+            calibration=calibration,
+        )
     finally:
         feature_store.close()
     if drift["structurally_ready"] is not True:
@@ -240,6 +278,14 @@ def execute(
             "projected_value_count": len(projected),
         },
         "drift_sha256": _sha256(drift),
+        "calibration": {
+            "calibration_id": calibration.calibration_id,
+            "source_digest": calibration.source_digest,
+            "warn_ks": calibration.warn_ks,
+            "block_ks": calibration.block_ks,
+            "window_count": calibration.window_count,
+            "provenance": calibration.provenance,
+        },
         "safety": {
             "diagnostic_only": True,
             "load_bearing": False,
@@ -261,7 +307,7 @@ def execute(
         raise BinanceRealtimeFeatureError("feature batch chain is invalid")
 
     status = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_ms": now,
         "status": "PASS",
         "mode": "L2_REALTIME_FEATURE_DIAGNOSTIC",

@@ -89,7 +89,20 @@ export interface AgentsPayload extends ConsolePayloadBase {
     retained_value_count: number;
     drift_status: string | null;
     drift_status_counts: Record<string, number>;
+    drift_calibration: string | null;
+    drift_calibration_id: string | null;
+    drift_warn_ks: number | null;
+    drift_block_ks: number | null;
     batch_chain_valid: boolean;
+    alerting: {
+      status: string;
+      current_severity: string | null;
+      local_delivery: string | null;
+      external_delivery: string | null;
+      independent_worker: boolean;
+      journal_chain_valid: boolean;
+      event_count: number;
+    };
     consumption_mode: 'READ_ONLY_DIAGNOSTIC_CONTEXT';
     automatic_action: false;
     promotion_authority: false;
@@ -422,7 +435,27 @@ export interface BinanceRealtimePayload {
     drift_series_count: number;
     batch_chain_valid: boolean | null;
     calibration: string | null;
+    calibration_id: string | null;
+    warn_ks: number | null;
+    block_ks: number | null;
+    calibration_window_count: number;
     load_bearing: boolean;
+    source_path: string | null;
+  };
+  drift_alerting: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    status: string | null;
+    current_severity: string | null;
+    reason: string | null;
+    transition: string | null;
+    deduplicated: boolean;
+    local_delivery: string | null;
+    external_delivery: string | null;
+    independent_worker: boolean;
+    event_count: number;
+    chain_valid: boolean | null;
     source_path: string | null;
   };
   safety: {

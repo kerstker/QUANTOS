@@ -33,7 +33,20 @@ const fallback: AgentsPayload = {
     retained_value_count: 0,
     drift_status: null,
     drift_status_counts: {},
+    drift_calibration: null,
+    drift_calibration_id: null,
+    drift_warn_ks: null,
+    drift_block_ks: null,
     batch_chain_valid: false,
+    alerting: {
+      status: 'UNAVAILABLE',
+      current_severity: null,
+      local_delivery: null,
+      external_delivery: null,
+      independent_worker: false,
+      journal_chain_valid: false,
+      event_count: 0,
+    },
     consumption_mode: 'READ_ONLY_DIAGNOSTIC_CONTEXT',
     automatic_action: false,
     promotion_authority: false,
@@ -159,10 +172,32 @@ export default function Agents() {
             <StatTile label={bi('自动动作', 'Automatic Action')}
               value={model.realtime_inputs.automatic_action ? 'YES' : 'NO'} tone="pos" />
           </KpiStrip>
+          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <StatTile label={bi('漂移校准', 'Drift Calibration')}
+              value={model.realtime_inputs.drift_calibration === 'EMPIRICALLY_CALIBRATED_PIT_V1' ? 'CALIBRATED' : 'UNAVAILABLE'}
+              tone={model.realtime_inputs.drift_calibration ? 'pos' : 'warn'} />
+            <StatTile label={bi('警告阈值', 'Warn KS')}
+              value={model.realtime_inputs.drift_warn_ks == null ? '—' : model.realtime_inputs.drift_warn_ks.toFixed(3)} />
+            <StatTile label={bi('阻断阈值', 'Block KS')}
+              value={model.realtime_inputs.drift_block_ks == null ? '—' : model.realtime_inputs.drift_block_ks.toFixed(3)} />
+            <StatTile label={bi('告警进程', 'Alert Worker')}
+              value={model.realtime_inputs.alerting.independent_worker ? 'INDEPENDENT' : 'UNAVAILABLE'}
+              tone={model.realtime_inputs.alerting.independent_worker ? 'pos' : 'warn'} />
+            <StatTile label={bi('本地投递', 'Local Delivery')}
+              value={model.realtime_inputs.alerting.local_delivery ?? '—'}
+              tone={model.realtime_inputs.alerting.local_delivery === 'DELIVERED' ? 'pos' : 'info'} />
+            <StatTile label={bi('外部投递', 'External Delivery')}
+              value={model.realtime_inputs.alerting.external_delivery ?? '—'} />
+            <StatTile label={bi('告警链', 'Alert Chain')}
+              value={model.realtime_inputs.alerting.journal_chain_valid ? 'VALID' : 'UNKNOWN'}
+              tone={model.realtime_inputs.alerting.journal_chain_valid ? 'pos' : 'warn'} />
+            <StatTile label={bi('告警事件', 'Alert Events')}
+              value={num(model.realtime_inputs.alerting.event_count)} />
+          </div>
           <div className="mt-3 text-2xs text-muted">
             {bi(
-              'Binance 公共实时特征仅作为只读诊断上下文；当前漂移阈值未校准，不驱动 Agent 自动晋级、仓位或订单。',
-              'Binance public realtime features are read-only diagnostic context. Uncalibrated drift thresholds never drive agent promotion, positions, or orders.',
+              'Binance 公开实时特征仅作为只读诊断上下文；经验校准漂移和独立告警仍不驱动 Agent 自动晋级、仓位或订单。',
+              'Binance public realtime features remain read-only diagnostic context. Empirically calibrated drift and independent alerts never drive agent promotion, positions, or orders.',
             )}
           </div>
         </Panel>

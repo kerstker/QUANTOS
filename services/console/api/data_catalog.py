@@ -22,6 +22,7 @@ _DATA_CHANNEL_INVENTORY = os.path.join(
 _BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
 _BINANCE_REST_STATUS = "binance_realtime_market_status.json"
 _BINANCE_FEATURE_STATUS = "binance_realtime_feature_status.json"
+_BINANCE_DRIFT_ALERT_STATUS = "binance_realtime_drift_alert_status.json"
 
 
 def _status_candidates(filename: str) -> list[str]:
@@ -57,6 +58,9 @@ def _binance_realtime_payload() -> Dict:
     stream, stream_path = _read_latest_status(_BINANCE_STREAM_STATUS)
     rest, rest_path = _read_latest_status(_BINANCE_REST_STATUS)
     features, feature_path = _read_latest_status(_BINANCE_FEATURE_STATUS)
+    drift_alerts, drift_alert_path = _read_latest_status(
+        _BINANCE_DRIFT_ALERT_STATUS
+    )
 
     def age(payload: Dict | None) -> int | None:
         generated = payload.get("generated_at_ms") if payload else None
@@ -65,9 +69,13 @@ def _binance_realtime_payload() -> Dict:
     stream_age = age(stream)
     rest_age = age(rest)
     feature_age = age(features)
+    drift_alert_age = age(drift_alerts)
     stream_fresh = stream_age is not None and stream_age <= 30_000
     rest_fresh = rest_age is not None and rest_age <= 10 * 60_000
     feature_fresh = feature_age is not None and feature_age <= 10 * 60_000
+    drift_alert_fresh = (
+        drift_alert_age is not None and drift_alert_age <= 10 * 60_000
+    )
     stream_coverage = (stream or {}).get("coverage", {})
     rest_coverage = (rest or {}).get("coverage", {})
     effective_streaming = bool(
@@ -142,15 +150,62 @@ def _binance_realtime_payload() -> Dict:
                 "chain_valid"
             ),
             "calibration": (features or {}).get("drift", {}).get(
-                "calibration"
-            )
-            or (features or {}).get("drift", {}).get("policy", {}).get(
-                "calibration"
-            ),
+                "policy", {}
+            ).get("calibration"),
+            "calibration_id": (features or {}).get("drift", {}).get(
+                "policy", {}
+            ).get("calibration_id"),
+            "warn_ks": (features or {}).get("drift", {}).get(
+                "policy", {}
+            ).get("warn_ks"),
+            "block_ks": (features or {}).get("drift", {}).get(
+                "policy", {}
+            ).get("block_ks"),
+            "calibration_window_count": (features or {}).get(
+                "drift", {}
+            ).get("policy", {}).get("window_count", 0),
             "load_bearing": bool(
                 (features or {}).get("safety", {}).get("load_bearing", False)
             ),
             "source_path": feature_path,
+        },
+        "drift_alerting": {
+            "status_present": drift_alerts is not None,
+            "fresh": drift_alert_fresh,
+            "age_ms": drift_alert_age,
+            "status": (drift_alerts or {}).get("status"),
+            "current_severity": (drift_alerts or {}).get(
+                "current", {}
+            ).get("status"),
+            "reason": (drift_alerts or {}).get("current", {}).get(
+                "reason"
+            ),
+            "transition": (drift_alerts or {}).get("incident", {}).get(
+                "transition"
+            ),
+            "deduplicated": bool(
+                (drift_alerts or {}).get("incident", {}).get(
+                    "deduplicated", False
+                )
+            ),
+            "local_delivery": (drift_alerts or {}).get(
+                "delivery", {}
+            ).get("local_status"),
+            "external_delivery": (drift_alerts or {}).get(
+                "delivery", {}
+            ).get("external_status"),
+            "independent_worker": bool(
+                (drift_alerts or {}).get("delivery", {}).get(
+                    "independent_worker", False
+                )
+            ),
+            "event_count": (drift_alerts or {}).get("journal", {}).get(
+                "event_count", 0
+            ),
+            "chain_valid": (drift_alerts or {}).get(
+                "journal", {}
+            ).get("chain_valid"),
+            "source_path": drift_alert_path,
         },
         "universe_size": 14,
         "safety": {
