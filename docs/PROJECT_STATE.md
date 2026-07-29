@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 真实公共订单簿到多场所纸面 SOR 已自动化：** 新增
+> `tools/paper_multivenue_sor.py`，从现有 Binance USD-M WebSocket 哈希链读取
+> DOGE/XRP/ADA/DOT 的真实 20 档深度，并从 Bybit V5 公共接口取得对应 linear
+> order book；两场所都必须新鲜、完整且时间偏差不超过 10 分钟，否则 fail-closed。
+> 跨场所快照写入 append-only、禁止更新/删除且逐行哈希链保护的
+> `cross_venue_order_books.db`，再通过已有 pre-trade gate、`DryRunAdapterEngine`、
+> deterministic SOR 和 `DryRunStore` 生成逐场所纸面成交及 route TCA。5 分钟 Windows
+> 调度、watchdog、只读 API 和干跑页状态均已接入。真实烟测连续两次 PASS，每次 4 个
+> route plan / 4 条 TCA，均覆盖 `binance_usdm + bybit_linear`，纵向投影已达到
+> `LONGITUDINAL_READY`。这是执行质量金丝雀，不是 Alpha，不声明策略边；费用为
+> `public-paper-fees.v1 / UNCALIBRATED_RESEARCH_ASSUMPTION`，延迟惩罚为 0（未伪造测量）。
+> 全链无凭证、无私有账户、无 broker 连接、无订单提交，绝不升级为生产 SOR/TCA。
+
 > **2026-07-29 证据修复与纵向纸面 TCA 增量：** 上一条状态中列出的 npm、Trivy
 > 与 artifact-admission 阻断已完成修复：前端生产依赖审计为 0 漏洞，运行镜像
 > Trivy 证据为 0 漏洞，制品授权注册表已按不可变历史轮换至 generation 1；强身份

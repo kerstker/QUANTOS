@@ -47,6 +47,9 @@ _L2_PAPER_OPERATOR = os.path.join(
 _PAPER_REALTIME = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_realtime_status.json"
 )
+_PAPER_MULTIVENUE_SOR = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_multivenue_sor_status.json"
+)
 _PAPER_HEALTH = os.path.join(_REPO_ROOT, "data", "cache", "paper_health.json")
 _PAPER_10K_REALTIME = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_realtime_10k_status.json"
@@ -739,6 +742,7 @@ def _dry_run_payload() -> Dict:
         "latest": latest,
         "runs": runs,
         "route_tca_history": route_tca_history,
+        "paper_multivenue_sor": _load_json_object(_PAPER_MULTIVENUE_SOR),
         "paper_order_preview": paper_preview,
         "paper_operator": paper_operator,
         "paper_realtime": paper_realtime,

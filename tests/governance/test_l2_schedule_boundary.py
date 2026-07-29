@@ -42,6 +42,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "gonogo_report",
         "alpha_paper_cycle",
         "paper_alpha_evaluation",
+        "paper_multivenue_sor",
         "paper_research_risk_bundle",
         "paper_order_preview",
         "paper_realtime",

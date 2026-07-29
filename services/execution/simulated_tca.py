@@ -23,6 +23,7 @@ from services.execution.simulated_sor import (
 
 _BPS = Decimal("10000")
 _ZERO = Decimal("0")
+_ARITHMETIC_TOLERANCE = Decimal("1e-24")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -66,6 +67,12 @@ def _canonical(value: object) -> str:
 
 def _digest(payload: Mapping[str, object]) -> str:
     return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
+def _arithmetically_equal(left: Decimal, right: Decimal) -> bool:
+    """Compare derived decimal ratios within the active 28-digit context."""
+    scale = max(abs(left), abs(right), Decimal("1"))
+    return abs(left - right) <= _ARITHMETIC_TOLERANCE * scale
 
 
 def _decimal(name: str, value: object, *, positive: bool = False) -> Decimal:
@@ -329,7 +336,10 @@ def verify_route_tca_record(record: object) -> bool:
             venue_cost += _decimal("route_cost", venue["route_cost"])
         if venue_ids != sorted(set(venue_ids)) or venue_quantity != filled:
             return False
-        if venue_raw != realized_raw_vwap * filled or venue_cost != realized_cost:
+        if (
+            not _arithmetically_equal(venue_raw, realized_raw_vwap * filled)
+            or venue_cost != realized_cost
+        ):
             return False
         realized_all_in = realized_all_in_vwap * filled
         expected_all_in = (
@@ -337,7 +347,7 @@ def verify_route_tca_record(record: object) -> bool:
             if record["side"] == OrderSide.BUY.value
             else venue_raw - realized_cost
         )
-        if realized_all_in != expected_all_in:
+        if not _arithmetically_equal(realized_all_in, expected_all_in):
             return False
         reference_notional = reference * filled
         expected_shortfall = (
@@ -351,7 +361,7 @@ def verify_route_tca_record(record: object) -> bool:
             if reference_notional
             else _ZERO
         )
-        return shortfall == expected_shortfall
+        return _arithmetically_equal(shortfall, expected_shortfall)
     except (ArithmeticError, SimulatedTCAError, TypeError, ValueError):
         return False
 

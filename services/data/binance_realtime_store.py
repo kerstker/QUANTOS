@@ -171,6 +171,41 @@ class BinanceRealtimeStore:
         ).fetchone()
         return None if row is None else self._decode(row)
 
+    def latest_for_provider(
+        self,
+        instrument_id: str,
+        provider: str,
+        *,
+        as_of_ms: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the latest verified row for one exact public provider."""
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError("provider must be a non-empty string")
+        if as_of_ms is not None and (
+            isinstance(as_of_ms, bool)
+            or not isinstance(as_of_ms, int)
+            or as_of_ms < 0
+        ):
+            raise ValueError("as_of_ms must be a non-negative integer")
+        if as_of_ms is None:
+            query = (
+                "SELECT * FROM binance_market_snapshots WHERE instrument_id=? "
+                "ORDER BY seq DESC"
+            )
+            args = (str(instrument_id).upper(),)
+        else:
+            query = (
+                "SELECT * FROM binance_market_snapshots WHERE instrument_id=? "
+                "AND observed_at_ms<=? ORDER BY seq DESC"
+            )
+            args = (str(instrument_id).upper(), as_of_ms)
+        rows = self._conn.execute(query, args)
+        for row in rows:
+            payload = self._decode(row)
+            if payload.get("provider") == provider:
+                return payload
+        return None
+
     def recent_rows(self, limit: int = 100) -> list[dict[str, Any]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("limit must be a positive integer")

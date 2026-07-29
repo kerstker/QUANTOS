@@ -1260,6 +1260,25 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
       first_timestamp: number; last_timestamp: number;
     }[];
   };
+  paper_multivenue_sor?: {
+    schema_version: number;
+    generated_at_ms: number;
+    status: 'PASS' | 'BLOCKED';
+    mode: 'L2_PAPER_EXECUTION_CANARY';
+    simulation_only: true;
+    strategy_edge_claim?: false;
+    snapshot_id?: string;
+    run_id?: string;
+    instruments?: string[];
+    venues?: string[];
+    route_plan_count?: number;
+    route_tca_count?: number;
+    book_bundle_count?: number;
+    fee_policy_version?: string;
+    fee_calibration?: string;
+    error_type?: string;
+    error?: string;
+  } | null;
   paper_order_preview?: PaperOrderPreviewPayload;
   paper_operator?: L2PaperOperatorPayload;
   paper_realtime?: PaperRealtimePayload;

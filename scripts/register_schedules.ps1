@@ -171,6 +171,10 @@ $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -AtStartup),
   (New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "00:05")
 )
+# Exercise public-book multi-venue routing after the resident Binance stream
+# has flushed fresh depth. This remains simulation-only and has no credentials.
+$paperMultiVenueSorTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Keep the isolated 10,000 USD paper profile on the same five-minute cadence,
 # offset from the default account so the two short-lived workers do not start
 # together.  The worker includes its own semantic health check.
@@ -210,6 +214,8 @@ Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtim
   -Trigger $binanceRealtimeMarketTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
+Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `
+  -Trigger $paperMultiVenueSorTrigger
 Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
   -Trigger $paperRealtimeTrigger
 Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `

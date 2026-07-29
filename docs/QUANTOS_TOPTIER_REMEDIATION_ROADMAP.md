@@ -84,3 +84,9 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 > mark/index/funding、逐笔聚合成交、1 分钟 K 线、强平及 REST 的 OI/多空比/taker
 > 指标。数据以追加 SQLite 哈希链和状态水位持久化，调度、重连、新鲜度和 Console 健康
 > 可视化已完成。该增量关闭“无实时原始 feed”，但不冒充已完成实时特征缓存或漂移告警。
+>
+> **2026-07-29 L2 多场所执行金丝雀：** Binance 真实 WebSocket 20 档深度现已与
+> Bybit V5 真实公共 order book 同步进入 deterministic paper SOR；跨场所快照和逐场所
+> route TCA 均追加持久化，5 分钟调度、watchdog、API 与 Console 已接通。连续两次真实
+> 快照运行达到 `LONGITUDINAL_READY`。该证据只证明公开行情驱动的仿真链路，费用仍为
+> 未校准研究假设，绝不关闭“生产多场所 SOR / 真实成交 TCA”外部缺口。

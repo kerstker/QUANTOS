@@ -524,7 +524,7 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                                 timestamp=timestamp, cost_bps=cost_bps,
                                 route_planner=route_planner)
     for f in filled["fills"]:
-        audit.append(event_id=_det_id("fill", run_id, f.instrument_id), actor=f"dry_run:{strategy_id}",
+        audit.append(event_id=_det_id("fill", run_id, f.fill_id), actor=f"dry_run:{strategy_id}",
                      action="DRY_RUN_FILL", timestamp=timestamp, target=f.instrument_id,
                      metadata={"qty": str(f.quantity), "price": str(f.price), "side": f.side.value})
     pnl = reconcile_run(filled["fills"], marks or prices, initial_capital)

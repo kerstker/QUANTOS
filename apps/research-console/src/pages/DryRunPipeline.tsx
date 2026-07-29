@@ -125,6 +125,7 @@ export default function DryRunPipeline() {
   const dataRefresh = p.data_refresh;
   const scheduler = p.scheduler_watchdog;
   const routeTca = p.route_tca_history;
+  const multiVenueSor = p.paper_multivenue_sor;
   const paperProfiles = Object.values(p.paper_profiles ?? {}) as PaperProfilePayload[];
   const paperAlphaRows: PaperAlphaRow[] = Object.entries(paperPreview?.alphas ?? {}).map(([alpha, row]) => ({
     alpha,
@@ -823,6 +824,18 @@ export default function DryRunPipeline() {
               'No SOR-enabled paper runs yet; ordinary dry-runs are not presented as multi-venue TCA.')}
           </div>
         )}
+        <div className="mt-2 text-2xs text-muted">
+          {multiVenueSor ? (
+            <span className={multiVenueSor.status === 'PASS' ? 'text-pos' : 'text-neg'}>
+              {bi('公共订单簿 SOR 金丝雀', 'Public-book SOR canary')}: {multiVenueSor.status}
+              {' · '}{(multiVenueSor.venues ?? []).join(' + ') || '—'}
+              {' · '}{multiVenueSor.route_tca_count ?? 0} TCA
+              {' · '}{multiVenueSor.fee_calibration ?? '—'}
+            </span>
+          ) : (
+            <span>{bi('公共订单簿 SOR 金丝雀尚无快照。', 'No public-book SOR canary snapshot yet.')}</span>
+          )}
+        </div>
         <div className="mt-2 text-2xs text-muted">
           {bi('数据来自 append-only DryRunStore；每条记录先校验 SHA-256、路由绑定和算术恒等式。仅公开行情驱动的纸面仿真，不连接券商。',
             'Backed by append-only DryRunStore; every record is verified for SHA-256, route binding and arithmetic identities. Public-market-data paper simulation only; no broker connectivity.')}
