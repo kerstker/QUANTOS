@@ -72,12 +72,12 @@ def _frontend_port() -> int:
         if not (1024 <= port <= 65535) or not _port_available(port):
             raise RuntimeError(f"requested frontend port is unavailable: {port}")
         return port
-    # Keep the documented 3100 first; this Windows host currently excludes
-    # 3005-3104, so the helper will select 3110 without changing project code.
-    for port in (3100, 3110, 3120, 3130, 3140):
+    # Keep the documented 3100 first and preserve the established 3105 local
+    # console URL before moving to the wider fallback range.
+    for port in (3100, 3105, 3110, 3120, 3130, 3140):
         if _port_available(port):
             return port
-    raise RuntimeError("no available local frontend port in 3100/3110-3140")
+    raise RuntimeError("no available local frontend port in 3100/3105/3110-3140")
 
 
 def service_specs() -> list[dict[str, Any]]:

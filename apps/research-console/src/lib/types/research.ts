@@ -422,6 +422,47 @@ export interface BinanceRealtimePayload {
     fields: string[];
     source_path: string | null;
   };
+  systemic_risk: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    row_count: number;
+    row_counts: Record<string, number>;
+    inserted: Record<string, number>;
+    latest: Record<string, {
+      adl_risk?: string;
+      basis_rate?: number;
+      constituent_count?: number;
+      constituent_dispersion_bps?: number;
+      insurance_asset_count?: number;
+    }>;
+    errors: number;
+    fields: string[];
+    source_path: string | null;
+  };
+  rpi_depth: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    row_count: number;
+    inserted: number;
+    latest: Record<string, {
+      bid_level_count?: number;
+      ask_level_count?: number;
+      spread_bps?: number;
+      notional_imbalance?: number;
+    }>;
+    errors: number;
+    request_policy: Record<string, string | number>;
+    fields: string[];
+    source_path: string | null;
+  };
   feature_projection: {
     status_present: boolean;
     fresh: boolean;

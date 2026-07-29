@@ -25,6 +25,8 @@ _DATA_CHANNEL_INVENTORY = os.path.join(
 )
 _BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
 _BINANCE_REST_STATUS = "binance_realtime_market_status.json"
+_BINANCE_SYSTEMIC_STATUS = "binance_systemic_risk_status.json"
+_BINANCE_RPI_STATUS = "binance_rpi_depth_status.json"
 _BINANCE_FEATURE_STATUS = "binance_realtime_feature_status.json"
 _BINANCE_DRIFT_ALERT_STATUS = "binance_realtime_drift_alert_status.json"
 _BINANCE_API_COVERAGE_CONTRACT = os.path.join(
@@ -91,6 +93,8 @@ def _binance_realtime_payload() -> Dict:
     now_ms = int(time.time() * 1_000)
     stream, stream_path = _read_latest_status(_BINANCE_STREAM_STATUS)
     rest, rest_path = _read_latest_status(_BINANCE_REST_STATUS)
+    systemic, systemic_path = _read_latest_status(_BINANCE_SYSTEMIC_STATUS)
+    rpi, rpi_path = _read_latest_status(_BINANCE_RPI_STATUS)
     features, feature_path = _read_latest_status(_BINANCE_FEATURE_STATUS)
     drift_alerts, drift_alert_path = _read_latest_status(
         _BINANCE_DRIFT_ALERT_STATUS
@@ -102,10 +106,22 @@ def _binance_realtime_payload() -> Dict:
 
     stream_age = age(stream)
     rest_age = age(rest)
+    systemic_age = age(systemic)
+    rpi_age = age(rpi)
     feature_age = age(features)
     drift_alert_age = age(drift_alerts)
     stream_fresh = stream_age is not None and stream_age <= 30_000
     rest_fresh = rest_age is not None and rest_age <= 10 * 60_000
+    systemic_fresh = (
+        systemic_age is not None
+        and systemic_age <= 2 * 60 * 60_000
+        and bool(systemic and systemic.get("complete"))
+    )
+    rpi_fresh = (
+        rpi_age is not None
+        and rpi_age <= 2 * 60 * 60_000
+        and bool(rpi and rpi.get("complete"))
+    )
     feature_fresh = feature_age is not None and feature_age <= 10 * 60_000
     drift_alert_fresh = (
         drift_alert_age is not None and drift_alert_age <= 10 * 60_000
@@ -156,6 +172,44 @@ def _binance_realtime_payload() -> Dict:
             "errors": len((rest or {}).get("errors", {})),
             "fields": (rest or {}).get("fields", []),
             "source_path": rest_path,
+        },
+        "systemic_risk": {
+            "status_present": systemic is not None,
+            "fresh": systemic_fresh,
+            "age_ms": systemic_age,
+            "verdict": (systemic or {}).get("verdict"),
+            "coverage": (systemic or {}).get("coverage", {}),
+            "chain_valid": (systemic or {}).get("store", {}).get(
+                "chain_valid"
+            ),
+            "row_count": (systemic or {}).get("store", {}).get(
+                "row_count", 0
+            ),
+            "row_counts": (systemic or {}).get("store", {}).get(
+                "row_counts", {}
+            ),
+            "inserted": (systemic or {}).get("store", {}).get(
+                "inserted", {}
+            ),
+            "latest": (systemic or {}).get("latest", {}),
+            "errors": len((systemic or {}).get("errors", {})),
+            "fields": (systemic or {}).get("fields", []),
+            "source_path": systemic_path,
+        },
+        "rpi_depth": {
+            "status_present": rpi is not None,
+            "fresh": rpi_fresh,
+            "age_ms": rpi_age,
+            "verdict": (rpi or {}).get("verdict"),
+            "coverage": (rpi or {}).get("coverage", {}),
+            "chain_valid": (rpi or {}).get("store", {}).get("chain_valid"),
+            "row_count": (rpi or {}).get("store", {}).get("row_count", 0),
+            "inserted": (rpi or {}).get("store", {}).get("inserted", 0),
+            "latest": (rpi or {}).get("latest", {}),
+            "errors": len((rpi or {}).get("errors", {})),
+            "request_policy": (rpi or {}).get("request_policy", {}),
+            "fields": (rpi or {}).get("fields", []),
+            "source_path": rpi_path,
         },
         "feature_projection": {
             "status_present": features is not None,

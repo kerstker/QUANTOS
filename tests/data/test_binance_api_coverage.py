@@ -21,16 +21,10 @@ def test_checked_in_catalog_accounts_for_all_official_market_endpoints():
     )
 
     assert report["catalog_endpoint_count"] == 34
-    assert report["accounted_endpoint_count"] == 29
-    assert report["load_bearing_endpoint_count"] == 18
-    assert report["gap_count"] == 5
-    assert {gap["id"] for gap in report["gaps"]} == {
-        "adl_risk",
-        "basis",
-        "index_constituents",
-        "insurance_balance",
-        "rpi_order_book",
-    }
+    assert report["accounted_endpoint_count"] == 34
+    assert report["load_bearing_endpoint_count"] == 23
+    assert report["gap_count"] == 0
+    assert report["gaps"] == []
     assert report["safety"] == {
         "public_market_data_only": True,
         "credentials_loaded": False,

@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 官方 USD-M 市场目录 34/34 收口：**
+> 新增独立低频公开数据 worker `tools/binance_systemic_risk.py` 与
+> `tools/binance_rpi_depth.py`。前者每 30 分钟保存 14 币官方 ADL risk、完整可用
+> 30 天小时 perpetual basis、指数成分价格/权重/离散度和保险基金资产余额；后者因
+> 官方 RPI endpoint 固定 1000 档且单币 IP weight 20，隔离为小时级完整快照。
+> 两条通道均使用 append-only SHA-256 SQLite 链、原始响应归档、源事件时间与接收知识时间，
+> 无凭证、无账户、无 broker、无订单能力。真实首轮均为 14/14 PASS；systemic basis
+> 回填 10,080 条小时记录，RPI 保留交易所实际返回档数（例如 ATOM bid 340/ask 1000，
+> 不补造）。官方 34 项 REST Market Data 覆盖契约现为 34/34 accounted、23 load-bearing、
+> 0 GAP；这只证明公开市场数据工程覆盖，不代表实盘或生产成熟度。
+
 > **2026-07-29 Binance 官方市场目录覆盖与参考价面补齐：**
 > 5 分钟 USD-M 公共快照新增 `/fapi/v1/fundingInfo`、`/fapi/v1/markPriceKlines`、
 > `/fapi/v1/indexPriceKlines`、`/fapi/v1/premiumIndexKlines`。每个标的保存最近闭合
@@ -8,7 +19,8 @@
 > 不猜测。真实 BTC smoke PASS，三套参考价 bar 的 close time 完全对齐，观测到当前
 > cap/floor 为 ±0.003、interval 8h。新增机器可读
 > `config/binance_usdm_market_data_coverage.json`，逐项登记官方 Market Data 34 个 REST
-> 接口并由纯校验器 fail-closed；当前 29/34 已解释、18 个承载、5 个真实缺口。Data
+> 接口并由纯校验器 fail-closed；该阶段当时为 29/34 已解释、18 个承载、5 个真实缺口，
+> 现已由上方 34/34 增量收口。Data
 > Catalog 已显示总覆盖、承载数及缺口路径。全链仍是无凭证公开数据、L2 研究/纸面专用；
 > Account/Trade/User Data Stream 未纳入，实盘权限没有扩大。
 >

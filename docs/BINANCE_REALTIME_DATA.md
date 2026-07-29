@@ -57,13 +57,33 @@ Market Data 目录的 34 个接口。`python -m tools.binance_api_coverage` 会�
 `services/data/binance_api_coverage.py` 严格校验数量、唯一性、安全类型、状态和承载实现，
 再生成机器可读状态。Data Catalog 直接读取同一契约，当前显示：
 
-- 29/34 已解释（真实承载、等价冗余、不适用或因凭证边界阻断）
-- 18 个接口直接承载当前数据/纸面流程
-- 5 个诚实缺口：ADL risk、官方 basis 序列、index constituents、insurance balance、
-  RPI order book
+- 34/34 已解释（真实承载、等价冗余、不适用或因凭证边界阻断）
+- 23 个接口直接承载当前数据/纸面流程
+- 0 个未解释缺口；Account、Trade、User Data Stream 仍明确不在公开市场数据范围
 
 该覆盖率是“官方市场数据接口的工程账本”，不是 Alpha、实盘或生产成熟度评分。Account、
 Trade、User Data Stream 等私有接口不在本契约范围，也不会被自动工作器读取。
+
+## 低频系统风险与参考市场
+
+`python -m tools.binance_systemic_risk`
+
+独立 30 分钟 worker 为 14 币前向宇宙保存：
+
+- 官方 symbol ADL risk；真实响应中的 `MIDDLE` 原值保留，并规范化为 `MEDIUM`
+- 官方可用的完整 30 天、1 小时 perpetual basis 历史；按已闭合小时增量水位补齐
+- 指数成分交易场所、价格、权重、加权价格和跨场所离散度
+- 保险基金覆盖合约、资产余额与交易所更新时间
+
+全部记录进入 `binance_systemic_risk.db` 的 append-only SHA-256 链。首轮真实运行
+14/14 PASS，basis 回填 10,080 个小时观测（720 × 14），且不把这些诊断字段直接驱动
+晋级、仓位或订单。
+
+`python -m tools.binance_rpi_depth`
+
+RPI 接口只有固定 1000 档、单币 IP weight 20。系统将其隔离为小时 worker，完整保存
+交易所实际返回的 bid/ask 档位和源时间，并派生 spread、两侧名义深度和不平衡；不补造
+不足 1000 档的一侧。首轮真实运行 14/14 PASS、哈希链有效。
 
 ## WebSocket 高频流
 
@@ -87,6 +107,10 @@ Trade、User Data Stream 等私有接口不在本契约范围，也不会被自�
 - `data/cache/binance_realtime_market_status.json`
 - `data/cache/binance_realtime_stream.db`
 - `data/cache/binance_realtime_stream_status.json`
+- `data/cache/binance_systemic_risk.db`
+- `data/cache/binance_systemic_risk_status.json`
+- `data/cache/binance_rpi_depth.db`
+- `data/cache/binance_rpi_depth_status.json`
 
 生产式本机 Paper 运行使用仓库外状态根。Console API 启动时设置
 `QUANTOS_STATE_ROOT`，数据目录会选择该目录与仓库目录中 `generated_at_ms` 最新的
@@ -96,6 +120,8 @@ Trade、User Data Stream 等私有接口不在本契约范围，也不会被自�
 Windows 调度：
 
 - `QUANTOS_binance_realtime_market`：每 5 分钟
+- `QUANTOS_binance_systemic_risk`：每 30 分钟
+- `QUANTOS_binance_rpi_depth`：每 1 小时
 - `QUANTOS_binance_realtime_stream`：开机启动 + 每日轮换
 
 统一注册由 `scripts/register_schedules.ps1` 完成；调度入口与 watchdog 均在 L2

@@ -19,6 +19,8 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_market.py"),
+             os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
+             os.path.join(_ROOT, "tools", "binance_rpi_depth.py"),
              os.path.join(_ROOT, "tools", "binance_realtime_stream.py"),
              # REST gap-fill(2026-07-26,消除 Data Vision 发布滞后的每日死窗):fapi 公共只读
              # markPriceKlines + futures/data 指标族,无 key、绝不下单——同一条边界钉住它。
@@ -98,6 +100,12 @@ _EXTRA_ALLOWED_BY_FILE = {
     "binance_funding_fetch.py": {"math"},
     "binance_perp_mark_fetch.py": {"math"},
     "binance_realtime_market.py": {
+        "collections", "math", "pathlib", "quantos", "typing"
+    },
+    "binance_systemic_risk.py": {
+        "collections", "math", "pathlib", "quantos", "typing"
+    },
+    "binance_rpi_depth.py": {
         "collections", "math", "pathlib", "quantos", "typing"
     },
     "binance_realtime_stream.py": {

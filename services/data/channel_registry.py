@@ -103,6 +103,40 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "hash-chained five-second snapshots; REST remains the recovery baseline.",
     ),
     DataChannelSpec(
+        "binance_usdm_systemic_risk", "Binance", "binance_usdm",
+        "binance_systemic_risk", "30m", "30m/1h/snapshot",
+        (
+            "adl_risk", "basis", "basis_rate", "annualized_basis_rate",
+            "index_constituent_price", "index_constituent_weight",
+            "index_dispersion_bps", "insurance_asset",
+            "insurance_margin_balance",
+        ),
+        "data/cache/binance_systemic_risk.db", "REAL_RECENT",
+        (
+            "funding_basis", "liquidity_microstructure", "event_regime",
+            "crowd_reversal",
+        ),
+        2, "public_rest",
+        "Official 30-minute ADL ratings, incremental 30-day hourly perpetual "
+        "basis history, index constituents, and insurance-fund balances; "
+        "append-only, hash-chained, public-only, and diagnostic for L2 paper.",
+    ),
+    DataChannelSpec(
+        "binance_usdm_rpi_depth", "Binance", "binance_usdm",
+        "binance_rpi_depth", "1h", "1000 levels/snapshot",
+        (
+            "rpi_bid_price", "rpi_bid_quantity", "rpi_ask_price",
+            "rpi_ask_quantity", "spread_bps", "bid_notional",
+            "ask_notional", "notional_imbalance",
+        ),
+        "data/cache/binance_rpi_depth.db", "REAL_RECENT",
+        ("liquidity_microstructure", "event_regime"),
+        2, "public_rest",
+        "Complete official 1000-level RPI-inclusive snapshots sampled hourly; "
+        "separate from the five-minute execution book because each symbol costs "
+        "IP weight 20 and the payload is intentionally large.",
+    ),
+    DataChannelSpec(
         "binance_spot_klines", "Binance", "binance_spot",
         "spot_klines", "daily", "1d",
         ("open", "high", "low", "close", "volume"),

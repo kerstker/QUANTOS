@@ -36,6 +36,8 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "domain_event_seal",
         "artifact_admission_seal",
         "binance_realtime_market",
+        "binance_systemic_risk",
+        "binance_rpi_depth",
         "binance_realtime_features",
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",

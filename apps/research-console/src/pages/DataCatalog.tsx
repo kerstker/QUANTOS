@@ -127,6 +127,16 @@ const fallbackCatalog: DataCatalogPayload = {
       status_present: false, fresh: false, age_ms: null, verdict: null,
       coverage: {}, chain_valid: null, errors: 0, fields: [], source_path: null,
     },
+    systemic_risk: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, row_count: 0, row_counts: {},
+      inserted: {}, latest: {}, errors: 0, fields: [], source_path: null,
+    },
+    rpi_depth: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, row_count: 0, inserted: 0,
+      latest: {}, errors: 0, request_policy: {}, fields: [], source_path: null,
+    },
     feature_projection: {
       status_present: false, fresh: false, age_ms: null, status: null,
       feature_version: null, feature_count: 0, instrument_count: 0,
@@ -343,6 +353,8 @@ export default function DataCatalog() {
   const realtime = catalog.binance_realtime ?? fallbackCatalog.binance_realtime;
   const streamCoverage = realtime.stream.coverage;
   const restCoverage = realtime.rest_snapshot.coverage;
+  const systemicCoverage = realtime.systemic_risk.coverage;
+  const rpiCoverage = realtime.rpi_depth.coverage;
   const streamEvents = Object.values(realtime.stream.event_counts)
     .reduce((total, value) => total + value, 0);
 
@@ -409,6 +421,32 @@ export default function DataCatalog() {
             value={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
             tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('系统风险通道', 'Systemic Risk')}
+            value={realtime.systemic_risk.verdict ?? 'UNAVAILABLE'}
+            tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('系统风险覆盖', 'Systemic Coverage')}
+            value={`${num(systemicCoverage.complete ?? 0)}/${num(systemicCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('系统风险记录', 'Systemic Rows')}
+            value={compact(realtime.systemic_risk.row_count)} />
+          <StatTile label={bi('系统风险链', 'Systemic Chain')}
+            value={realtime.systemic_risk.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.systemic_risk.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('RPI 深度', 'RPI Depth')}
+            value={realtime.rpi_depth.verdict ?? 'UNAVAILABLE'}
+            tone={realtime.rpi_depth.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('RPI 覆盖', 'RPI Coverage')}
+            value={`${num(rpiCoverage.complete ?? 0)}/${num(rpiCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.rpi_depth.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('RPI 快照', 'RPI Snapshots')}
+            value={compact(realtime.rpi_depth.row_count)} />
+          <StatTile label={bi('RPI 哈希链', 'RPI Chain')}
+            value={realtime.rpi_depth.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.rpi_depth.chain_valid ? 'pos' : 'warn'} />
+        </div>
         {realtime.api_coverage.gaps.length ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {realtime.api_coverage.gaps.map(gap => (
@@ -469,6 +507,12 @@ export default function DataCatalog() {
         <div className="mt-3 flex flex-wrap gap-2">
           {realtime.rest_snapshot.fields.map(field => (
             <Chip key={field} label={field} tone="muted" />
+          ))}
+          {realtime.systemic_risk.fields.map(field => (
+            <Chip key={`systemic-${field}`} label={field} tone="info" />
+          ))}
+          {realtime.rpi_depth.fields.map(field => (
+            <Chip key={`rpi-${field}`} label={field} tone="special" />
           ))}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">

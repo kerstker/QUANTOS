@@ -171,6 +171,15 @@ $paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes
 # This task is market-data only and has no credential or broker capability.
 $binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Binance publishes symbol ADL risk every 30 minutes.  The same low-frequency
+# public worker incrementally maintains 30-day basis history, index constituents,
+# and insurance-fund snapshots without burdening the five-minute paper loop.
+$binanceSystemicRiskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(8) `
+  -RepetitionInterval (New-TimeSpan -Minutes 30)
+# The official RPI endpoint is fixed at 1000 levels and IP weight 20 per
+# symbol.  Keep the complete response on an independent hourly cadence.
+$binanceRpiDepthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10) `
+  -RepetitionInterval (New-TimeSpan -Hours 1)
 $binanceRealtimeFeaturesTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $binanceRealtimeDriftAlertsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
@@ -220,6 +229,10 @@ Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview
   -Trigger $paperPreviewTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtime_market" `
   -Trigger $binanceRealtimeMarketTrigger
+Register-L2Task -Name "QUANTOS_binance_systemic_risk" -Module "binance_systemic_risk" `
+  -Trigger $binanceSystemicRiskTrigger
+Register-L2Task -Name "QUANTOS_binance_rpi_depth" -Module "binance_rpi_depth" `
+  -Trigger $binanceRpiDepthTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realtime_features" `
   -Trigger $binanceRealtimeFeaturesTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
