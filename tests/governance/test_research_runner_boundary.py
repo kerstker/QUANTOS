@@ -90,6 +90,16 @@ def test_current_runner_launchers_reference_the_adapter_domain():
         assert new_entrypoint in source, path
 
 
+def test_console_launcher_creates_no_interactive_window():
+    path = os.path.join(_ROOT, "scripts", "start_console.ps1")
+    source = open(path, encoding="utf-8").read()
+
+    assert "Start-Process" not in source
+    assert "$launch.UseShellExecute = $false" in source
+    assert "$launch.CreateNoWindow = $true" in source
+    assert "ProcessWindowStyle]::Hidden" in source
+
+
 def test_runner_no_broker_sdk_or_trading_import_or_order_call():
     for p in _pyfiles():
         roots = _import_roots(p)

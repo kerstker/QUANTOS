@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -18,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
@@ -39,6 +40,7 @@ BASIS_PERIOD = "1h"
 HOUR_MS = 60 * 60_000
 DAY_MS = 24 * HOUR_MS
 BASIS_LOOKBACK_MS = 30 * DAY_MS
+BASIS_REFRESH_BUDGET = 4
 MAX_ADL_AGE_MS = 2 * HOUR_MS
 MAX_BASIS_AGE_MS = 3 * HOUR_MS
 MAX_CONSTITUENT_AGE_MS = HOUR_MS
@@ -49,9 +51,15 @@ ADL_RATING_NORMALIZATION = {
     "MEDIUM": "MEDIUM",
     "HIGH": "HIGH",
 }
-DEFAULT_REQUEST_INTERVAL_SECONDS = 0.25
+DEFAULT_REQUEST_INTERVAL_SECONDS = 3.0
 DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 120
-ENDPOINT_WEIGHT_PER_SYMBOL = 4
+# ADL and insurance are optional-symbol endpoints. Fetch each complete public
+# snapshot once per cycle (weight 1 each), then bind the selected row to every
+# requested symbol. Only constituents (weight 2) remains symbol-scoped; basis
+# has documented IP weight 0.
+SHARED_ENDPOINT_WEIGHT = 2
+ENDPOINT_WEIGHT_PER_SYMBOL = 2
+_BAN_UNTIL_PATTERN = re.compile(r"\bbanned\s+until\s+(\d{13})\b", re.IGNORECASE)
 
 
 class BinanceSystemicRiskError(RuntimeError):
@@ -61,11 +69,18 @@ class BinanceSystemicRiskError(RuntimeError):
 class BinanceSystemicRateLimitError(BinanceSystemicRiskError):
     """Binance rejected the IP budget or a local cooldown is active."""
 
-    def __init__(self, status_code: int, retry_after_seconds: int) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        retry_after_seconds: int,
+        endpoint: str | None = None,
+    ) -> None:
         self.status_code = int(status_code)
         self.retry_after_seconds = max(1, int(retry_after_seconds))
+        self.endpoint = endpoint
+        suffix = f" at {endpoint}" if endpoint else ""
         super().__init__(
-            f"Binance HTTP {self.status_code}; public REST cooldown "
+            f"Binance HTTP {self.status_code}{suffix}; public REST cooldown "
             f"{self.retry_after_seconds}s"
         )
 
@@ -101,13 +116,31 @@ def _http_get_json(url: str) -> _HttpResult:
         )
 
 
-def _retry_after_seconds(error: urllib.error.HTTPError) -> int:
+def _rate_limit_deadline(
+    error: urllib.error.HTTPError,
+    *,
+    now_ms: int,
+) -> tuple[int, int]:
     raw = error.headers.get("Retry-After") if error.headers is not None else None
     try:
-        parsed = int(raw)
+        header_seconds = max(1, int(raw))
     except (TypeError, ValueError):
-        parsed = DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
-    return max(1, parsed)
+        header_seconds = DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
+    ban_until_ms = int(now_ms) + header_seconds * 1_000
+    try:
+        body = error.read().decode("utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        body = ""
+    match = _BAN_UNTIL_PATTERN.search(body)
+    if match is not None:
+        body_deadline = int(match.group(1))
+        if body_deadline > int(now_ms):
+            ban_until_ms = max(ban_until_ms, body_deadline)
+    retry_after_seconds = max(
+        1,
+        math.ceil((ban_until_ms - int(now_ms)) / 1_000),
+    )
+    return retry_after_seconds, ban_until_ms
 
 
 class _RateLimitedHttpGet:
@@ -120,6 +153,10 @@ class _RateLimitedHttpGet:
         min_interval_seconds: float,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        wall_clock_ms: Callable[[], int] = lambda: int(time.time() * 1_000),
+        initial_ban_until_ms: int | None = None,
+        initial_status_code: int | None = None,
+        initial_endpoint: str | None = None,
     ) -> None:
         interval = float(min_interval_seconds)
         if not math.isfinite(interval) or interval < 0:
@@ -128,12 +165,29 @@ class _RateLimitedHttpGet:
         self._interval = interval
         self._clock = clock
         self._sleep = sleep
+        self._wall_clock_ms = wall_clock_ms
         self._lock = threading.Lock()
         self._next_request_at = 0.0
         self._blocked_until = 0.0
-        self._last_status_code: int | None = None
+        self._last_status_code: int | None = initial_status_code
         self._retry_after_seconds = 0
+        self._rate_limited_endpoint: str | None = initial_endpoint
+        self._ban_until_ms: int | None = None
         self._max_used_weights: dict[str, int] = {}
+        if (
+            initial_ban_until_ms is not None
+            and int(initial_ban_until_ms) > self._wall_clock_ms()
+        ):
+            self._ban_until_ms = int(initial_ban_until_ms)
+            self._retry_after_seconds = max(
+                1,
+                math.ceil(
+                    (self._ban_until_ms - self._wall_clock_ms()) / 1_000
+                ),
+            )
+            self._blocked_until = (
+                self._clock() + self._retry_after_seconds
+            )
 
     def __call__(self, url: str) -> object:
         with self._lock:
@@ -143,6 +197,7 @@ class _RateLimitedHttpGet:
                 raise BinanceSystemicRateLimitError(
                     self._last_status_code or 429,
                     remaining,
+                    self._rate_limited_endpoint,
                 )
             delay = max(0.0, self._next_request_at - now)
             if delay:
@@ -153,13 +208,19 @@ class _RateLimitedHttpGet:
             except urllib.error.HTTPError as exc:
                 if exc.code not in {418, 429}:
                     raise
-                retry_after = _retry_after_seconds(exc)
+                retry_after, ban_until_ms = _rate_limit_deadline(
+                    exc,
+                    now_ms=self._wall_clock_ms(),
+                )
                 self._last_status_code = int(exc.code)
                 self._retry_after_seconds = retry_after
+                self._rate_limited_endpoint = urlsplit(url).path
+                self._ban_until_ms = ban_until_ms
                 self._blocked_until = self._clock() + retry_after
                 raise BinanceSystemicRateLimitError(
                     exc.code,
                     retry_after,
+                    self._rate_limited_endpoint,
                 ) from exc
             if isinstance(result, _HttpResult):
                 for name, value in result.used_weights.items():
@@ -177,8 +238,45 @@ class _RateLimitedHttpGet:
             "cooldown_active": now < self._blocked_until,
             "last_status_code": self._last_status_code,
             "retry_after_seconds": self._retry_after_seconds,
+            "rate_limited_endpoint": self._rate_limited_endpoint,
+            "ban_until_ms": self._ban_until_ms,
             "max_used_weights": dict(sorted(self._max_used_weights.items())),
         }
+
+
+def _persisted_cooldown(
+    status_path: str,
+    *,
+    now_ms: int,
+) -> tuple[int | None, int | None, str | None]:
+    try:
+        document = json.loads(Path(status_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None, None, None
+    if (
+        not isinstance(document, Mapping)
+        or document.get("provider") != "BINANCE_PUBLIC_USDM"
+    ):
+        return None, None, None
+    telemetry = document.get("request_rate_limit")
+    if not isinstance(telemetry, Mapping):
+        return None, None, None
+    try:
+        ban_until_ms = int(telemetry.get("ban_until_ms"))
+    except (TypeError, ValueError):
+        return None, None, None
+    if ban_until_ms <= int(now_ms):
+        return None, None, None
+    try:
+        status_code = int(telemetry.get("last_status_code"))
+    except (TypeError, ValueError):
+        status_code = 418
+    endpoint = telemetry.get("rate_limited_endpoint")
+    return (
+        ban_until_ms,
+        status_code,
+        endpoint if isinstance(endpoint, str) and endpoint else None,
+    )
 
 
 def _url(path: str, params: Mapping[str, object] | None = None) -> str:
@@ -474,6 +572,93 @@ def parse_insurance_balance(
     return observation
 
 
+def _shared_adl_by_symbol(
+    payload: object,
+    symbols: Sequence[str],
+) -> dict[str, Mapping[str, Any]]:
+    rows = [payload] if isinstance(payload, Mapping) else payload
+    if not isinstance(rows, list):
+        raise BinanceSystemicRiskError("shared ADL snapshot is not a list")
+    indexed: dict[str, Mapping[str, Any]] = {}
+    for raw in rows:
+        if not isinstance(raw, Mapping):
+            raise BinanceSystemicRiskError("shared ADL row is not an object")
+        symbol = str(raw.get("symbol", "")).upper()
+        if not symbol:
+            raise BinanceSystemicRiskError("shared ADL row has no symbol")
+        if symbol in indexed:
+            raise BinanceSystemicRiskError(
+                f"shared ADL snapshot duplicates {symbol}"
+            )
+        indexed[symbol] = raw
+    missing = [symbol for symbol in symbols if symbol not in indexed]
+    if missing:
+        raise BinanceSystemicRiskError(
+            "shared ADL snapshot is missing " + ", ".join(missing)
+        )
+    return {symbol: indexed[symbol] for symbol in symbols}
+
+
+def _shared_insurance_by_symbol(
+    payload: object,
+    symbols: Sequence[str],
+) -> dict[str, Mapping[str, Any]]:
+    rows = [payload] if isinstance(payload, Mapping) else payload
+    if not isinstance(rows, list):
+        raise BinanceSystemicRiskError(
+            "shared insurance snapshot is not a list"
+        )
+    indexed: dict[str, Mapping[str, Any]] = {}
+    requested = set(symbols)
+    for raw in rows:
+        if not isinstance(raw, Mapping):
+            raise BinanceSystemicRiskError(
+                "shared insurance row is not an object"
+            )
+        covered = raw.get("symbols")
+        if not isinstance(covered, list):
+            raise BinanceSystemicRiskError(
+                "shared insurance row has no symbol list"
+            )
+        for item in covered:
+            symbol = str(item).upper()
+            if symbol not in requested:
+                continue
+            if symbol in indexed:
+                raise BinanceSystemicRiskError(
+                    f"shared insurance snapshot duplicates {symbol}"
+                )
+            indexed[symbol] = raw
+    missing = [symbol for symbol in symbols if symbol not in indexed]
+    if missing:
+        raise BinanceSystemicRiskError(
+            "shared insurance snapshot is missing " + ", ".join(missing)
+        )
+    return {symbol: indexed[symbol] for symbol in symbols}
+
+
+def _fetch_shared_snapshots(
+    symbols: Sequence[str],
+    *,
+    http_get: Callable[[str], object],
+    knowledge_clock_ms: Callable[[], int],
+) -> dict[str, Any]:
+    adl = _get("/fapi/v1/symbolAdlRisk", None, http_get)
+    adl_knowledge_time_ms = int(knowledge_clock_ms())
+    insurance = _get("/fapi/v1/insuranceBalance", None, http_get)
+    insurance_knowledge_time_ms = int(knowledge_clock_ms())
+    return {
+        "adl": adl,
+        "insurance": insurance,
+        "adl_knowledge_time_ms": adl_knowledge_time_ms,
+        "insurance_knowledge_time_ms": insurance_knowledge_time_ms,
+        "adl_by_symbol": _shared_adl_by_symbol(adl[1], symbols),
+        "insurance_by_symbol": _shared_insurance_by_symbol(
+            insurance[1], symbols
+        ),
+    }
+
+
 def _fetch_basis_pages(
     symbol: str,
     *,
@@ -518,55 +703,90 @@ def _fetch_symbol(
     *,
     basis_start_ms: int,
     observed_at_ms: int,
+    fetch_basis: bool,
     http_get: Callable[[str], object],
+    knowledge_clock_ms: Callable[[], int],
 ) -> dict[str, Any]:
     symbol = f"{ticker}USDT"
-    adl = _get("/fapi/v1/symbolAdlRisk", {"symbol": symbol}, http_get)
     constituents = _get(
         "/fapi/v1/constituents", {"symbol": symbol}, http_get
     )
-    insurance = _get(
-        "/fapi/v1/insuranceBalance", {"symbol": symbol}, http_get
+    constituents_knowledge_time_ms = int(knowledge_clock_ms())
+    basis = (
+        _fetch_basis_pages(
+            symbol,
+            start_time_ms=basis_start_ms,
+            end_time_ms=observed_at_ms,
+            http_get=http_get,
+        )
+        if fetch_basis
+        else []
     )
-    basis = _fetch_basis_pages(
-        symbol,
-        start_time_ms=basis_start_ms,
-        end_time_ms=observed_at_ms,
-        http_get=http_get,
-    )
+    basis_knowledge_time_ms = int(knowledge_clock_ms())
     return {
-        "adl": adl,
         "constituents": constituents,
-        "insurance": insurance,
+        "constituents_knowledge_time_ms": constituents_knowledge_time_ms,
         "basis": basis,
+        "basis_knowledge_time_ms": basis_knowledge_time_ms,
     }
 
 
-def _archive(
+def _archive_shared(
     *,
-    ticker: str,
-    observed_at_ms: int,
     fetched: Mapping[str, Any],
     archive_root: str,
 ) -> None:
-    rows: list[tuple[str, str, object]] = [
-        ("adl_risk", fetched["adl"][0], fetched["adl"][1]),
+    for dataset, (source_uri, payload), knowledge_time_ms in (
+        ("adl_risk", fetched["adl"], int(fetched["adl_knowledge_time_ms"])),
+        (
+            "insurance_balance",
+            fetched["insurance"],
+            int(fetched["insurance_knowledge_time_ms"]),
+        ),
+    ):
+        input_rows = len(payload) if isinstance(payload, list) else 1
+        archive_json_response(
+            root=archive_root,
+            payload=payload,
+            source_uri=source_uri,
+            provider="Binance public USD-M market data",
+            dataset_id=f"binance_systemic_{dataset}",
+            instrument_id="ALL",
+            observed_at_ms=knowledge_time_ms,
+            parse_diagnostics={
+                "status": "ACCEPTED",
+                "input_rows": input_rows,
+                "accepted_rows": input_rows,
+                "rejected_rows": 0,
+                "duplicate_rows": 0,
+            },
+        )
+
+
+def _archive_symbol(
+    *,
+    ticker: str,
+    fetched: Mapping[str, Any],
+    archive_root: str,
+) -> None:
+    rows: list[tuple[str, str, object, int]] = [
         (
             "index_constituents",
             fetched["constituents"][0],
             fetched["constituents"][1],
-        ),
-        (
-            "insurance_balance",
-            fetched["insurance"][0],
-            fetched["insurance"][1],
+            int(fetched["constituents_knowledge_time_ms"]),
         ),
     ]
     rows.extend(
-        ("basis_1h", source_uri, payload)
+        (
+            "basis_1h",
+            source_uri,
+            payload,
+            int(fetched["basis_knowledge_time_ms"]),
+        )
         for source_uri, payload in fetched["basis"]
     )
-    for dataset, source_uri, payload in rows:
+    for dataset, source_uri, payload, knowledge_time_ms in rows:
         input_rows = len(payload) if isinstance(payload, list) else 1
         archive_json_response(
             root=archive_root,
@@ -575,7 +795,7 @@ def _archive(
             provider="Binance public USD-M market data",
             dataset_id=f"binance_systemic_{dataset}",
             instrument_id=f"{ticker}USDT",
-            observed_at_ms=observed_at_ms,
+            observed_at_ms=knowledge_time_ms,
             parse_diagnostics={
                 "status": "ACCEPTED",
                 "input_rows": input_rows,
@@ -612,6 +832,26 @@ def _append_observation(
     return store.append(observation)
 
 
+def _basis_refresh_tickers(
+    starts: Mapping[str, int],
+    *,
+    observed_at_ms: int,
+    budget: int = BASIS_REFRESH_BUDGET,
+) -> tuple[str, ...]:
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget <= 0:
+        raise ValueError("basis refresh budget must be a positive integer")
+    # ``start`` identifies the next hourly period start. Binance may expose
+    # that open period immediately, but it is not immutable until one full hour
+    # has elapsed. Request only periods that can actually pass parse_basis_rows.
+    due = [
+        (int(start), ticker)
+        for ticker, start in starts.items()
+        if int(start) + HOUR_MS <= int(observed_at_ms)
+    ]
+    due.sort(key=lambda item: (item[0], item[1]))
+    return tuple(ticker for _, ticker in due[:budget])
+
+
 def run_refresh(
     *,
     tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
@@ -622,11 +862,19 @@ def run_refresh(
     now_ms: int | None = None,
     max_workers: int = 1,
     request_interval_seconds: float | None = None,
+    basis_refresh_budget: int = BASIS_REFRESH_BUDGET,
+    knowledge_clock_ms: Callable[[], int] | None = None,
 ) -> dict[str, Any]:
     selected = tuple(dict.fromkeys(str(item).upper() for item in tickers))
     if not selected or any(not ticker.isalnum() for ticker in selected):
         raise BinanceSystemicRiskError("systemic-risk universe is invalid")
     observed_at_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    if knowledge_clock_ms is None:
+        knowledge_clock_ms = (
+            (lambda: int(time.time() * 1000))
+            if now_ms is None
+            else (lambda: observed_at_ms)
+        )
     interval = (
         DEFAULT_REQUEST_INTERVAL_SECONDS
         if request_interval_seconds is None and http_get is _http_get_json
@@ -634,9 +882,15 @@ def run_refresh(
         if request_interval_seconds is None
         else float(request_interval_seconds)
     )
+    prior_ban_until_ms, prior_status_code, prior_endpoint = (
+        _persisted_cooldown(status_path, now_ms=observed_at_ms)
+    )
     limited_http_get = _RateLimitedHttpGet(
         http_get,
         min_interval_seconds=interval,
+        initial_ban_until_ms=prior_ban_until_ms,
+        initial_status_code=prior_status_code,
+        initial_endpoint=prior_endpoint,
     )
     Path(store_path).parent.mkdir(parents=True, exist_ok=True)
     store = BinanceSystemicStore(store_path, create=True)
@@ -652,30 +906,59 @@ def run_refresh(
             else:
                 starts[ticker] = latest + HOUR_MS
 
+        basis_refresh_tickers = _basis_refresh_tickers(
+            starts,
+            observed_at_ms=observed_at_ms,
+            budget=basis_refresh_budget,
+        )
+        basis_refresh_set = set(basis_refresh_tickers)
         fetched: dict[str, dict[str, Any]] = {}
         errors: dict[str, dict[str, str]] = {}
-        with ThreadPoolExecutor(
-            max_workers=max(1, min(int(max_workers), len(selected)))
-        ) as pool:
-            futures = {
-                pool.submit(
-                    _fetch_symbol,
-                    ticker,
-                    basis_start_ms=starts[ticker],
-                    observed_at_ms=observed_at_ms,
-                    http_get=limited_http_get,
-                ): ticker
-                for ticker in selected
-            }
-            for future in as_completed(futures):
-                ticker = futures[future]
-                try:
-                    fetched[ticker] = future.result()
-                except Exception as exc:  # noqa: BLE001 - isolate one symbol
-                    errors[ticker] = {
-                        "error_type": type(exc).__name__,
-                        "message": str(exc)[:240],
-                    }
+        symbols = tuple(f"{ticker}USDT" for ticker in selected)
+        shared: dict[str, Any] | None = None
+        try:
+            shared = _fetch_shared_snapshots(
+                symbols,
+                http_get=limited_http_get,
+                knowledge_clock_ms=knowledge_clock_ms,
+            )
+            if archive_root is not None:
+                _archive_shared(
+                    fetched=shared,
+                    archive_root=archive_root,
+                )
+        except Exception as exc:  # noqa: BLE001 - shared snapshot is load-bearing
+            for ticker in selected:
+                errors[ticker] = {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:240],
+                }
+
+        if shared is not None:
+            with ThreadPoolExecutor(
+                max_workers=max(1, min(int(max_workers), len(selected)))
+            ) as pool:
+                futures = {
+                    pool.submit(
+                        _fetch_symbol,
+                        ticker,
+                        basis_start_ms=starts[ticker],
+                        observed_at_ms=observed_at_ms,
+                        fetch_basis=ticker in basis_refresh_set,
+                        http_get=limited_http_get,
+                        knowledge_clock_ms=knowledge_clock_ms,
+                    ): ticker
+                    for ticker in selected
+                }
+                for future in as_completed(futures):
+                    ticker = futures[future]
+                    try:
+                        fetched[ticker] = future.result()
+                    except Exception as exc:  # noqa: BLE001 - isolate one symbol
+                        errors[ticker] = {
+                            "error_type": type(exc).__name__,
+                            "message": str(exc)[:240],
+                        }
 
         inserted_by_dataset = {
             "adl_risk": 0,
@@ -692,28 +975,31 @@ def run_refresh(
             try:
                 adl = parse_adl_risk(
                     symbol,
-                    source["adl"][1],
-                    knowledge_time_ms=observed_at_ms,
+                    shared["adl_by_symbol"][symbol],
+                    knowledge_time_ms=int(shared["adl_knowledge_time_ms"]),
                 )
                 constituents = parse_constituents(
                     symbol,
                     source["constituents"][1],
-                    knowledge_time_ms=observed_at_ms,
+                    knowledge_time_ms=int(
+                        source["constituents_knowledge_time_ms"]
+                    ),
                 )
                 insurance = parse_insurance_balance(
                     symbol,
-                    source["insurance"][1],
-                    knowledge_time_ms=observed_at_ms,
+                    shared["insurance_by_symbol"][symbol],
+                    knowledge_time_ms=int(
+                        shared["insurance_knowledge_time_ms"]
+                    ),
                 )
                 basis = parse_basis_rows(
                     symbol,
                     [payload for _, payload in source["basis"]],
-                    knowledge_time_ms=observed_at_ms,
+                    knowledge_time_ms=int(source["basis_knowledge_time_ms"]),
                 )
                 if archive_root is not None:
-                    _archive(
+                    _archive_symbol(
                         ticker=ticker,
-                        observed_at_ms=observed_at_ms,
                         fetched=source,
                         archive_root=archive_root,
                     )
@@ -782,8 +1068,17 @@ def run_refresh(
             "chain_valid": chain_valid,
         },
         "request_rate_limit": {
-            "planned_ip_weight": len(selected) * ENDPOINT_WEIGHT_PER_SYMBOL,
+            "planned_ip_weight": (
+                SHARED_ENDPOINT_WEIGHT
+                + len(selected) * ENDPOINT_WEIGHT_PER_SYMBOL
+            ),
+            "planned_request_count": (
+                2 + len(selected) + len(basis_refresh_tickers)
+            ),
+            "shared_endpoint_weight": SHARED_ENDPOINT_WEIGHT,
             "endpoint_weight_per_symbol": ENDPOINT_WEIGHT_PER_SYMBOL,
+            "basis_refresh_budget": basis_refresh_budget,
+            "basis_refresh_tickers": list(basis_refresh_tickers),
             "configured_max_workers": max(
                 1, min(int(max_workers), len(selected))
             ),

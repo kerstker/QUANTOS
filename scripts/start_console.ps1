@@ -18,6 +18,20 @@ if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
 
 # The manager and all resident children stay outside a visible console. Runtime
 # output is written under .runtime/console-stack/logs for IDE inspection.
-Start-Process -FilePath $pythonw `
-  -ArgumentList "-m", "tools.local_console_stack", "start" `
-  -WorkingDirectory $root -WindowStyle Hidden | Out-Null
+#
+# Avoid the PowerShell process-spawning cmdlet here. Apart from this machine's
+# Path/PATH collision, that path can briefly allocate an interactive console
+# host before applying its requested window style. ProcessStartInfo carries the
+# no-window contract into process creation itself.
+$launch = [System.Diagnostics.ProcessStartInfo]::new()
+$launch.FileName = $pythonw
+$launch.Arguments = "-m tools.local_console_stack start"
+$launch.WorkingDirectory = $root
+$launch.UseShellExecute = $false
+$launch.CreateNoWindow = $true
+$launch.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+$manager = [System.Diagnostics.Process]::Start($launch)
+if ($null -eq $manager) {
+  throw "failed to start the headless QUANTOS console manager"
+}
+$manager.Dispose()

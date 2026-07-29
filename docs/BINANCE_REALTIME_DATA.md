@@ -102,16 +102,30 @@ REST 快照。RPI 报价只作为流动性诊断，明确 `paper_fill_eligible=f
 该 worker 还承载 Binance 官方 IP 限流合同。根据
 [USD-M General Info](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info)，
 每个响应的 `X-MBX-USED-WEIGHT-*` 是当前 IP 使用量，HTTP 429 必须退避，继续请求会触发
-HTTP 418 自动封禁。当前每币调用的四个端点权重分别为 ADL 1、basis 0、指数成分 2、
-保险基金 1，因此 14 币一轮计划权重为 56。worker 固定单并发、请求间隔 250ms；
-收到 429/418 时读取 `Retry-After`（缺失则使用 120 秒）并在本地打开整轮冷却，禁止同轮
-继续撞限流。状态文件与 Data Catalog 同时展示计划权重、实际
-`X-MBX-USED-WEIGHT-*`、并发、节奏、最近状态码及冷却剩余时间。
+HTTP 418 自动封禁。ADL 与保险基金的 `symbol` 均为可选参数，系统按官方契约各抓一份
+全市场共享快照（权重各 1），再严格映射到 14 个目标合约；每币只保留指数成分（权重 2）
+请求，因此整轮计划权重由 56 降为 30。basis 增量仅在“下一个小时起点 + 1h 已闭合”
+时才允许请求，并按最旧水位每轮最多补 4 币；30 分钟 cadence 可在 2 小时内轮转 14 币，
+仍小于 3 小时 freshness gate。普通半小时轮次不再发出 14 个注定被解析器丢弃的开放小时
+basis 请求。worker 固定单并发、请求间隔 3 秒；收到 429/418 时优先解析响应正文的
+`IP banned until <epoch-ms>`，否则读取
+`Retry-After`（两者均缺失才使用 120 秒），并把封禁截止时间持久化到状态文件。后续独立
+调度进程在截止前零网络请求，禁止每 30 分钟重新撞限流。状态文件与 Data Catalog 同时
+展示计划权重、实际 `X-MBX-USED-WEIGHT-*`、并发、节奏、触发限流的公开端点、最近状态码
+及封禁截止时间。
 
-真实运行曾在旧的 8 并发实现下收到 HTTP 418，并在 11/14 时 fail-closed。改为上述合同后，
-任务恢复为 14/14 PASS、零失败、哈希链有效；最近轮次计划权重 56，观测到的
-`X-MBX-USED-WEIGHT-1M` 随同机其他公共 worker 共享并如实报告，不能误解为本 worker
-独占消耗。
+真实运行曾在旧的 8 并发实现下收到 HTTP 418，并在 11/14 时 fail-closed。随后单并发
+250ms 仍间歇失败；2026-07-30 的端点级遥测进一步确认触发点是独立限流域
+`/futures/data/basis`，而非 ADL、保险基金或指数成分。根因还包括旧 worker 每 30 分钟
+对全部 14 币请求尚未闭合的当前小时，随后又把这些开放行全部丢弃。上述共享快照、
+闭合小时预算、3 秒节奏和跨进程封禁截止时间是对此真实运行证据的收敛，不把历史
+14/14 成功轮次冒充当前持续健康。解禁后首轮还发现 PIT 接收时间不能固定为整轮启动
+时间：串行轮次后半段的指数成分响应可能自然晚于启动时刻。现按每个响应真正接收完成
+的时刻记录 `knowledge_time`，并保留“事件时间不得晚于接收时间”的 fail-closed 校验。
+最终 S4U 后台真实复验为 14/14 PASS、0 失败、链有效，计划权重 30，实际观测
+`X-MBX-USED-WEIGHT-1M=131`，且未触发 429/418；Data Catalog 总体状态同步为 PASS。
+`X-MBX-USED-WEIGHT-1M` 与同机其他公共 worker 及同公网 IP 客户端共享，必须如实报告，
+不能误解为本 worker 独占消耗。
 
 `python -m tools.binance_rpi_depth`
 

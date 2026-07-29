@@ -1,5 +1,23 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-30 Binance systemic 限流域真实收敛（14/14 已复验）：**
+> 30 分钟 systemic worker 的间歇性 418 经端点级遥测定位到
+> `/futures/data/basis`，不是 ADL、保险基金或指数成分。按 Binance 当前官方契约，
+> `symbolAdlRisk` 与 `insuranceBalance` 均改为每轮一次的无 symbol 全市场共享快照，
+> 再 fail-closed 映射到 14 个目标合约；计划 IP weight 从 56 降为 30，请求间隔由
+> 250ms 放宽到 3 秒。旧实现还会请求尚未闭合的当前小时 basis，再由解析器全部丢弃；
+> 现只补 `next_start + 1h <= now` 的不可变小时，并按最旧水位每轮最多 4 币，30 分钟
+> cadence 在 2 小时内轮转 14 币且满足 3 小时 freshness gate。429/418 现在解析正文
+> `IP banned until <epoch-ms>`，并把真实
+> 截止时间和触发端点跨调度进程持久化；截止前的新轮次零网络请求，避免旧实现仅凭
+> 缺失的 `Retry-After` 猜 120 秒后反复撞限流。解禁后首轮又暴露一个独立 PIT
+> 时间问题：3 秒串行轮次后半段的指数成分响应发生在轮次启动时刻之后，旧代码却把
+> 启动时刻误作知识时间，因而错误判为“来自未来”。现以每个 HTTP 响应真正接收完成
+> 的时刻记录 `knowledge_time`，同时继续拒绝晚于接收时刻的交易所事件时间。34 项
+> 聚焦回归通过；S4U 后台真实复验为 14/14 PASS、0 失败、哈希链有效、计划 IP weight
+> 30、实际 `X-MBX-USED-WEIGHT-1M=131`，Console Data Catalog 总体 PASS。全部仍是
+> 无凭据 USD-M 公共市场数据，不增加账户、broker、订单或 live trading 能力。
+>
 > **2026-07-29 Windows 后台任务彻底隔离交互桌面：**
 > 复查确认所有 L2 任务虽然已使用 `pythonw.exe`，但注册时仍继承默认
 > `InteractiveToken`，因此并未从结构上排除未来子进程触达当前桌面会话。
