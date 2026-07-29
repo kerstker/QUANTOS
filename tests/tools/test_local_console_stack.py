@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import tools.local_console_stack as stack
 from tools.local_console_stack import service_specs
 
@@ -13,11 +15,14 @@ def test_local_stack_is_l2_console_only(monkeypatch):
     commands = [part for spec in specs for part in spec["command"]]
     assert "services.console.main:app" in commands
     assert "services.research_runner.main:app" in commands
+    if stack.os.name == "nt":
+        assert Path(specs[0]["command"][0]).name.lower() == "pythonw.exe"
+        assert Path(specs[1]["command"][0]).name.lower() == "pythonw.exe"
     assert all("live" not in str(part).lower() for part in commands)
     frontend_command = [str(part).lower() for part in specs[2]["command"]]
-    assert frontend_command[0].endswith(("node", "node.exe"))
-    assert frontend_command[1].replace("\\", "/").endswith("/vite/bin/vite.js")
-    assert all("npm" not in part and "cmd.exe" not in part for part in frontend_command)
+    assert frontend_command[0].endswith(("python", "python3", "python.exe", "pythonw.exe"))
+    assert "tools.local_frontend_server" in frontend_command
+    assert all("node" not in part and "npm" not in part and "cmd.exe" not in part for part in frontend_command)
     assert specs[0]["cors_probe"].endswith("/health")
     assert set(specs[0]["cors_origins"]) == {
         f"http://127.0.0.1:{specs[2]['port']}",
@@ -30,7 +35,7 @@ def test_frontend_port_override_is_explicit_and_fail_closed(monkeypatch):
     monkeypatch.setattr(stack, "_port_available", lambda port: True)
     specs = service_specs()
     assert specs[2]["port"] == 3111
-    assert specs[2]["env"]["VITE_API_URL"].endswith(":8400")
+    assert specs[2]["command"][-1] == "3111"
     assert "3111" in specs[0]["env"]["QUANTOS_CONSOLE_CORS_ORIGINS"]
 
 
@@ -66,6 +71,35 @@ def test_windows_kill_is_headless(monkeypatch):
 
     assert calls[0][0][0] == ["taskkill", "/PID", "4321", "/T", "/F"]
     assert calls[0][1]["creationflags"] == 0x08000000
+
+
+def test_windows_startupinfo_forces_hidden_window(monkeypatch):
+    class StartupInfo:
+        def __init__(self):
+            self.dwFlags = 0
+            self.wShowWindow = None
+
+    monkeypatch.setattr(stack.os, "name", "nt")
+    monkeypatch.setattr(stack.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(stack.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    monkeypatch.setattr(stack.subprocess, "SW_HIDE", 0, raising=False)
+
+    startupinfo = stack._headless_startupinfo()
+
+    assert startupinfo is not None
+    assert startupinfo.dwFlags & 1
+    assert startupinfo.wShowWindow == 0
+
+
+def test_windows_python_worker_uses_pythonw_sibling(monkeypatch, tmp_path):
+    python = tmp_path / "python.exe"
+    pythonw = tmp_path / "pythonw.exe"
+    python.write_bytes(b"")
+    pythonw.write_bytes(b"")
+    monkeypatch.setattr(stack.os, "name", "nt")
+    monkeypatch.setattr(stack.sys, "executable", str(python))
+
+    assert stack._python_worker() == str(pythonw)
 
 
 def test_pid_alive_treats_windows_permission_denied_as_alive(monkeypatch):

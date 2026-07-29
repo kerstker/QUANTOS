@@ -10,4 +10,14 @@
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path "$PSScriptRoot\..").Path
 Set-Location $root
-rtk python -m tools.local_console_stack start
+$pythonCommand = Get-Command python -ErrorAction Stop
+$pythonw = Join-Path (Split-Path -Parent $pythonCommand.Source) "pythonw.exe"
+if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
+  throw "pythonw.exe is unavailable beside the configured Python runtime"
+}
+
+# The manager and all resident children stay outside a visible console. Runtime
+# output is written under .runtime/console-stack/logs for IDE inspection.
+Start-Process -FilePath $pythonw `
+  -ArgumentList "-m", "tools.local_console_stack", "start" `
+  -WorkingDirectory $root -WindowStyle Hidden | Out-Null

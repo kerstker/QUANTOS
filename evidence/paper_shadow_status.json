@@ -3,19 +3,29 @@
   "blockers": [
     "PAPER_ORDER_PREVIEW_NOT_READY",
     "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+    "PAPER_ORDER_ALPHA_SET_INCOMPLETE",
     "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
+    "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "carry_oi_majors:PAPER_ORDER_REJECTED",
+    "carry_oi_majors:PAPER_ORDER_RECONCILIATION_FAILED",
     "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
     "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
+    "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "crowd_contra:PAPER_ORDER_REJECTED",
+    "crowd_contra:PAPER_ORDER_RECONCILIATION_FAILED",
     "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
     "top_contra:PAPER_EXECUTION_NOT_FILLED",
+    "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "top_contra:PAPER_ORDER_REJECTED",
+    "top_contra:PAPER_ORDER_RECONCILIATION_FAILED",
     "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
   ],
-  "commit": "579505c0ccc63bd713fa483af2105138f1fe78b7",
+  "commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785330142074,
+  "generated_at_ms": 1785343441634,
   "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "e65da7556aadd64cae40791d5b02d349863dd0a0a82d8bb2aeeaabd68e537444",
+  "input_hash": "b3656cd2f4968033cae862cf80191f6e5c921810c5a31c8bdcf9d6a10de3164f",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -49,8 +59,8 @@
     },
     "tests/research": {
       "exists": true,
-      "file_count": 139,
-      "files_sha256": "a5d699416c70219e39bc87476b2e9e06f33b5a05c73fa43b972b4392f4ef6662",
+      "file_count": 140,
+      "files_sha256": "3775d184a7cf4b959b57ebebc27d4ba006c151e5877385f8fa5533eeb2fd1b58",
       "kind": "python_directory"
     }
   },
@@ -58,19 +68,44 @@
     "blockers": [
       "PAPER_ORDER_PREVIEW_NOT_READY",
       "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+      "PAPER_ORDER_ALPHA_SET_INCOMPLETE",
       "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
+      "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "carry_oi_majors:PAPER_ORDER_REJECTED",
+      "carry_oi_majors:PAPER_ORDER_RECONCILIATION_FAILED",
       "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
       "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
+      "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "crowd_contra:PAPER_ORDER_REJECTED",
+      "crowd_contra:PAPER_ORDER_RECONCILIATION_FAILED",
       "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
       "top_contra:PAPER_EXECUTION_NOT_FILLED",
+      "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "top_contra:PAPER_ORDER_REJECTED",
+      "top_contra:PAPER_ORDER_RECONCILIATION_FAILED",
       "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
     ],
     "forward_evidence": {
-      "alerts": [],
+      "alerts": [
+        "data-quality admission BLOCK (reasons=1)",
+        "crowd_contra: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable",
+        "carry_oi_majors: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable",
+        "top_contra: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable"
+      ],
       "alphas": {
         "carry_oi_majors": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED_PENDING_REALIZATION",
+          "evidence_state": "DATA_BLOCKED",
           "n_forward_periods": 0,
           "paper_sharpe": null,
           "pending_decisions": null,
@@ -78,7 +113,7 @@
         },
         "crowd_contra": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED_PENDING_REALIZATION",
+          "evidence_state": "DATA_BLOCKED",
           "n_forward_periods": 0,
           "paper_sharpe": null,
           "pending_decisions": null,
@@ -86,7 +121,7 @@
         },
         "top_contra": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED_PENDING_REALIZATION",
+          "evidence_state": "DATA_BLOCKED",
           "n_forward_periods": 0,
           "paper_sharpe": null,
           "pending_decisions": null,
@@ -95,14 +130,14 @@
       },
       "complete_for_all_three": false,
       "data_quality_admission": {
-        "lineage_verdict": "PASS",
+        "lineage_verdict": "BLOCK",
         "quality_verdict": "PASS",
-        "verdict": "PASS"
+        "verdict": "BLOCK"
       },
       "evidence_gate_periods": 8,
       "present": true,
-      "quality_evidence_current": true,
-      "ran_at": 1785268381091
+      "quality_evidence_current": false,
+      "ran_at": 1785330001375
     },
     "paper_mark_ready": true,
     "paper_preview_ready": false,
@@ -134,9 +169,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "579505c0ccc63bd713fa483af2105138f1fe78b7",
+    "head_commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
     "overall_status": "PASS",
-    "reported_commit": "579505c0ccc63bd713fa483af2105138f1fe78b7",
+    "reported_commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
     "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
     "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"

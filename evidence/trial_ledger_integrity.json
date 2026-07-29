@@ -1,6 +1,6 @@
 {
   "block_reasons": [],
-  "commit": "579505c0ccc63bd713fa483af2105138f1fe78b7",
+  "commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -14,7 +14,7 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1785330142074,
+  "generated_at_ms": 1785343441634,
   "generator_sha256": "0d9738cc1ce4c5b65d5beb845a1208e50aa6d15a8fa7f7879a8562be94c631aa",
   "input_hash": "6d1d7f5a47edbdd5ec158498975155fd101c708688be7b9b861dd4e4f76c5677",
   "ledger": {

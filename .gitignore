@@ -51,6 +51,7 @@ data/backup/
 # Secrets / live config (must never be committed — see blueprint §1.1, §5.2, §14)
 .env
 .env.*
+!apps/research-console/.env.localhost
 config/live.yaml
 *.secret.yaml
 *.secret.yml

@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -40,20 +39,29 @@ def _headless_creationflags() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
-def _node() -> str:
-    candidate = shutil.which("node.exe" if os.name == "nt" else "node")
-    if candidate:
-        return candidate
-    raise RuntimeError("node is not available on PATH; install Node.js before starting the frontend")
+def _headless_startupinfo() -> subprocess.STARTUPINFO | None:
+    """Hide a Windows child even if its executable requests a show state."""
+    if os.name != "nt":
+        return None
+    startupinfo_type = getattr(subprocess, "STARTUPINFO", None)
+    use_show_window = getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+    hide_window = getattr(subprocess, "SW_HIDE", 0)
+    if startupinfo_type is None or not use_show_window:
+        raise RuntimeError("Windows hidden-process startup information is unavailable")
+    startupinfo = startupinfo_type()
+    startupinfo.dwFlags |= use_show_window
+    startupinfo.wShowWindow = hide_window
+    return startupinfo
 
 
-def _vite_script() -> Path:
-    candidate = ROOT / "apps" / "research-console" / "node_modules" / "vite" / "bin" / "vite.js"
+def _python_worker() -> str:
+    """Use the windowless sibling interpreter for resident Windows APIs."""
+    if os.name != "nt":
+        return sys.executable
+    candidate = Path(sys.executable).with_name("pythonw.exe")
     if candidate.is_file():
-        return candidate
-    raise RuntimeError(
-        "Vite is unavailable; run npm install in apps/research-console before starting the frontend"
-    )
+        return str(candidate)
+    raise RuntimeError("pythonw.exe is unavailable beside the configured Python runtime")
 
 
 def _port_available(port: int) -> bool:
@@ -93,12 +101,13 @@ def service_specs() -> list[dict[str, Any]]:
     """Return the only processes this helper is allowed to start."""
     frontend_port = _frontend_port()
     frontend_origin = f"http://127.0.0.1:{frontend_port},http://localhost:{frontend_port}"
+    python_worker = _python_worker()
     return [
         {
             "name": "console_api",
             "port": 8400,
             "cwd": ROOT,
-            "command": [sys.executable, "-m", "uvicorn", "services.console.main:app",
+            "command": [python_worker, "-m", "uvicorn", "services.console.main:app",
                         "--host", "127.0.0.1", "--port", "8400"],
             "health": "http://127.0.0.1:8400/openapi.json",
             "cors_probe": "http://127.0.0.1:8400/health",
@@ -109,7 +118,7 @@ def service_specs() -> list[dict[str, Any]]:
             "name": "research_runner",
             "port": 8420,
             "cwd": ROOT,
-            "command": [sys.executable, "-m", "uvicorn", "services.research_runner.main:app",
+            "command": [python_worker, "-m", "uvicorn", "services.research_runner.main:app",
                         "--host", "127.0.0.1", "--port", "8420"],
             "health": "http://127.0.0.1:8420/health",
             "env": {"QUANTOS_RUNNER_CORS_ORIGINS": frontend_origin},
@@ -117,24 +126,21 @@ def service_specs() -> list[dict[str, Any]]:
         {
             "name": "frontend",
             "port": frontend_port,
-            "cwd": ROOT / "apps" / "research-console",
-            # Invoke Vite through Node directly.  On Windows npm.cmd necessarily
-            # adds one or more cmd.exe processes; those shells can flash a
-            # console even when the parent requested CREATE_NO_WINDOW.
+            "cwd": ROOT,
+            # Serve the built SPA through pythonw.  Node/Vite is a build-time
+            # IDE tool only; a resident node.exe can allocate conhost.exe even
+            # when its parent requested CREATE_NO_WINDOW.
             "command": [
-                _node(),
-                str(_vite_script()),
+                python_worker,
+                "-m",
+                "tools.local_frontend_server",
                 "--host",
                 "127.0.0.1",
                 "--port",
                 str(frontend_port),
             ],
             "health": f"http://127.0.0.1:{frontend_port}/",
-            "env": {
-                "VITE_API_URL": "http://127.0.0.1:8400",
-                "VITE_RUNNER_URL": "http://127.0.0.1:8420",
-                "VITE_MOCK_MODE": "false",
-            },
+            "env": {},
         },
     ]
 
@@ -356,12 +362,8 @@ def start() -> dict[str, Any]:
         raise RuntimeError(f"refusing to start: local ports already in use: {busy}")
     LOGS.mkdir(parents=True, exist_ok=True)
     started: list[dict[str, Any]] = []
-    flags = 0
-    if os.name == "nt":
-        flags = (
-            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | _headless_creationflags()
-        )
+    flags = _headless_creationflags()
+    startupinfo = _headless_startupinfo()
     try:
         for spec in specs:
             env = os.environ.copy()
@@ -377,6 +379,7 @@ def start() -> dict[str, Any]:
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     creationflags=flags,
+                    startupinfo=startupinfo,
                 )
             finally:
                 log.close()

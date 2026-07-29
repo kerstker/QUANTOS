@@ -1380,3 +1380,17 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > `PIT_FEATURE_TRAILING_KS_DRIFT_V1` / `UNCALIBRATED_PRINCIPLED`。它不读取数据库、不持久化告警、
 > 不改仓位/晋级/交易路径，故机器顶级判定仍诚实为 **15/22、NOT_TOP_TIER**；后续仍需填充真实
 > feature-value cache 并提供独立调度运营证据。
+
+> **2026-07-30 local console stack is fully headless:**
+> After scheduled workers moved to `pythonw.exe + S4U`, a process-tree audit
+> still found `conhost.exe` attached to the local 8400/8420 APIs and the 3105
+> Vite process. `tools/local_console_stack.py` now fixes both APIs to
+> `pythonw.exe`, while `tools/local_frontend_server.py` serves the built React
+> SPA through `pythonw.exe`; resident operation no longer needs Node/npm/cmd.
+> Windows children also carry `CREATE_NO_WINDOW` plus
+> `STARTF_USESHOWWINDOW/SW_HIDE`. The tracked `.env.localhost` and
+> `npm run build:localhost` bind the bundle to the real 8400/8420 local APIs;
+> the static server rejects a stale mock bundle instead of silently serving it.
+> A real restart verified all three listeners as `pythonw.exe` with no
+> `conhost.exe` children, and Data Catalog showed `REAL_API / CONNECTED` with
+> Binance 14/14 LIVE/PASS.
