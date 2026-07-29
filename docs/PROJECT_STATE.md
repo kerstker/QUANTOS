@@ -1,5 +1,39 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Windows 后台任务彻底隔离交互桌面：**
+> 复查确认所有 L2 任务虽然已使用 `pythonw.exe`，但注册时仍继承默认
+> `InteractiveToken`，因此并未从结构上排除未来子进程触达当前桌面会话。
+> `scripts/register_schedules.ps1` 现统一使用 S4U 非交互 principal，并保持
+> `pythonw.exe` 与 IDE 内日志；`tools/l2_schedule_entrypoint.py` 另在 pythonw
+> 模式为任何后续 `subprocess.Popen` 强制追加 Windows `CREATE_NO_WINDOW`，显式
+> `CREATE_NEW_CONSOLE` 请求会 fail-closed。全部计划任务已按新 principal 重新注册，
+> XML 实况为 `<LogonType>S4U</LogonType>`；真实 Binance REST 轮次在该身份下
+> 14/14 PASS，长驻 WebSocket 状态水位继续更新。该变更只隔离窗口与日志呈现，
+> 不改变 L2 数据、纸面执行、凭证或实盘权限。
+
+> **2026-07-29 Binance systemic worker 限流合同与 Console 可观测性：**
+> 真实 30 分钟 worker 暴露了 HTTP 418（旧实现 8 并发，轮次停在 11/14），现按官方
+> IP 限流合同改为单并发、250ms 请求间隔，并采集每个响应的
+> `X-MBX-USED-WEIGHT-*`；HTTP 429/418 会读取 `Retry-After`、打开共享冷却并阻止
+> 同轮后续网络请求。四端点每币计划权重为 4，14 币整轮为 56。真实恢复轮次已
+> 14/14 PASS、零失败、链有效；API/Console 现展示计划/观测权重、并发、节奏、
+> 状态码与冷却状态。全部仍是无凭据 USD-M 公共市场数据。
+>
+> **2026-07-29 paper SOR TCA 精确对账修复：**
+> 连续 143 个 PASS 周期后，XRPUSDT 930 数量的序列化 VWAP 除法舍入被数量放大，
+> 导致 verifier 在 `1e-24` 边界误报 `route TCA record is invalid`。校验器现复用已经
+> 独立验证的逐场所原始成交名义额与成本重建 exact all-in，而不再用已序列化 VWAP
+> 反推总额；真实任务重跑返回 0，回归样本固定该数量级。该修复只提高纸面 TCA
+> 恒等式稳定性，不改变路由、费用假设或任何实盘能力。
+
+> **2026-07-29 Binance 低频 worker 的 watchdog 契约收口：**
+> 已正式注册的 `QUANTOS_binance_systemic_risk`（30 分钟）与
+> `QUANTOS_binance_rpi_depth`（1 小时）此前遗漏于
+> `tools/l2_scheduler_watchdog.py::EXPECTED_TASKS`，因此会被每 15 分钟健康检查误报为
+> `UNEXPECTED_ENABLED_TASK`。现已按各自真实调度频率固定 module/action 与最大新鲜度
+> （90 分钟 / 3 小时），并新增回归测试防止计划任务注册表与 watchdog 允许清单再次漂移。
+> 该修复只纠正 L2 公共市场数据 worker 的运行监控，不改变数据权限、纸面逻辑或实盘边界。
+>
 > **2026-07-29 Binance 官方 USD-M WebSocket 市场流 20/20 收口：**
 > 新增 `config/binance_usdm_ws_stream_coverage.json` 与纯验证器
 > `services/data/binance_stream_coverage.py`，逐项登记官方 Public 5 类 + Market

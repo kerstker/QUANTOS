@@ -183,3 +183,58 @@ def test_record_is_deterministic() -> None:
         executions=tuple(reversed(_executions(plan))),
     )
     assert first == second
+
+
+def test_shortfall_verification_uses_exact_venue_totals_after_vwap_rounding() -> None:
+    """Regression for the real XRP paper-SOR snapshot observed on 2026-07-29."""
+
+    intent = OrderIntent(
+        instrument_id="XRPUSDT",
+        side=OrderSide.BUY,
+        quantity=930,
+        order_type=OrderType.MARKET,
+        strategy_id="tca-rounding-regression",
+    )
+    books = (
+        VenueBook(
+            venue_id="binance_usdm",
+            observed_at_ms=1_000,
+            taker_fee_bps=D("5"),
+            latency_ms=0,
+            bids=(BookLevel(D("1.0748"), 930),),
+            asks=(BookLevel(D("1.0749"), 372),),
+        ),
+        VenueBook(
+            venue_id="bybit_linear",
+            observed_at_ms=1_000,
+            taker_fee_bps=D("5.5"),
+            latency_ms=0,
+            bids=(BookLevel(D("1.0739"), 930),),
+            asks=(
+                BookLevel(D("1.0740"), 557),
+                BookLevel(D("1.0994"), 1),
+            ),
+        ),
+    )
+    plan = route_simulated_intent(
+        intent,
+        books,
+        as_of_ms=1_000,
+        policy=SORPolicy(
+            max_quote_age_ms=10,
+            min_fill_fraction=D("1"),
+            max_venue_fraction=D("0.60"),
+            latency_penalty_bps_per_ms=D("0"),
+        ),
+    )
+    record = build_route_tca(
+        plan,
+        reference_price=D("1.07485"),
+        executions=_executions(plan),
+    )
+
+    assert record["filled_quantity"] == 930
+    assert record["implementation_shortfall_bps"] == (
+        "0.9929464526433045671288967053"
+    )
+    assert verify_route_tca_record(record) is True

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -113,6 +114,16 @@ def test_refresh_backfills_and_persists_all_systemic_surfaces(tmp_path):
     assert status["latest"]["BTC"]["basis_rate"] == 0.005
     assert status["latest"]["BTC"]["constituent_count"] == 2
     assert status["latest"]["BTC"]["insurance_asset_count"] == 2
+    assert status["request_rate_limit"] == {
+        "planned_ip_weight": 4,
+        "endpoint_weight_per_symbol": 4,
+        "configured_max_workers": 1,
+        "min_request_interval_ms": 0,
+        "cooldown_active": False,
+        "last_status_code": None,
+        "retry_after_seconds": 0,
+        "max_used_weights": {},
+    }
     assert json.loads((tmp_path / "status.json").read_text())["complete"] is True
 
     store = BinanceSystemicStore(store_path)
@@ -242,3 +253,61 @@ def test_append_accepts_pre_raw_rating_equivalent_without_rewrite(tmp_path):
         assert store.chain_valid() is True
     finally:
         store.close()
+
+
+def test_rate_limiter_honors_retry_after_and_stops_further_network_calls():
+    calls = []
+    now = [100.0]
+
+    def banned(url: str):
+        calls.append(url)
+        raise urllib.error.HTTPError(
+            url,
+            418,
+            "auto-banned",
+            {"Retry-After": "7"},
+            None,
+        )
+
+    limited = systemic._RateLimitedHttpGet(
+        banned,
+        min_interval_seconds=0,
+        clock=lambda: now[0],
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(systemic.BinanceSystemicRateLimitError) as first:
+        limited("https://fapi.binance.com/first")
+    with pytest.raises(systemic.BinanceSystemicRateLimitError) as second:
+        limited("https://fapi.binance.com/second")
+
+    assert first.value.status_code == second.value.status_code == 418
+    assert first.value.retry_after_seconds == second.value.retry_after_seconds == 7
+    assert calls == ["https://fapi.binance.com/first"]
+    assert limited.telemetry()["cooldown_active"] is True
+
+
+def test_rate_limiter_retains_maximum_binance_used_weight_headers():
+    responses = iter(
+        (
+            systemic._HttpResult(
+                {"ok": 1},
+                {"X-MBX-USED-WEIGHT-1M": 12},
+            ),
+            systemic._HttpResult(
+                {"ok": 2},
+                {"X-MBX-USED-WEIGHT-1M": 9, "X-MBX-USED-WEIGHT-1D": 30},
+            ),
+        )
+    )
+    limited = systemic._RateLimitedHttpGet(
+        lambda _url: next(responses),
+        min_interval_seconds=0,
+    )
+
+    assert limited("first") == {"ok": 1}
+    assert limited("second") == {"ok": 2}
+    assert limited.telemetry()["max_used_weights"] == {
+        "X-MBX-USED-WEIGHT-1D": 30,
+        "X-MBX-USED-WEIGHT-1M": 12,
+    }

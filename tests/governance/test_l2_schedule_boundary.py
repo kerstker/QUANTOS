@@ -75,6 +75,9 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
     assert "Get-Command python" in source
     assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
+    assert "New-ScheduledTaskPrincipal" in source
+    assert "-LogonType S4U" in source
+    assert "-Principal $l2Principal" in source
     assert "-MultipleInstances IgnoreNew" in source
     assert "-WorkingDirectory $stateRoot" in source
     assert "-ExecutionTimeLimit (New-TimeSpan -Minutes 5)" in source

@@ -349,12 +349,17 @@ def verify_route_tca_record(record: object) -> bool:
         )
         if not _arithmetically_equal(realized_all_in, expected_all_in):
             return False
+        # ``realized_all_in_vwap`` is a derived ratio serialized under the
+        # active Decimal context.  Multiplying it back by a large quantity can
+        # amplify the final digit's rounding beyond the shortfall tolerance.
+        # Venue raw notionals and route costs are retained exact reconciliation
+        # inputs, so use their already-verified sum for the shortfall identity.
         reference_notional = reference * filled
         expected_shortfall = (
             (
-                realized_all_in - reference_notional
+                expected_all_in - reference_notional
                 if record["side"] == OrderSide.BUY.value
-                else reference_notional - realized_all_in
+                else reference_notional - expected_all_in
             )
             / reference_notional
             * _BPS

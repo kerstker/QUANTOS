@@ -156,6 +156,15 @@ def _binance_realtime_payload() -> Dict:
         and systemic_age <= 2 * 60 * 60_000
         and bool(systemic and systemic.get("complete"))
     )
+    systemic_rate_limit = (
+        systemic.get("request_rate_limit", {})
+        if isinstance(systemic, dict)
+        and isinstance(systemic.get("request_rate_limit"), dict)
+        else {}
+    )
+    systemic_used_weights = systemic_rate_limit.get("max_used_weights", {})
+    if not isinstance(systemic_used_weights, dict):
+        systemic_used_weights = {}
     rpi_fresh = (
         rpi_age is not None
         and rpi_age <= 2 * 60 * 60_000
@@ -232,6 +241,30 @@ def _binance_realtime_payload() -> Dict:
             ),
             "latest": (systemic or {}).get("latest", {}),
             "errors": len((systemic or {}).get("errors", {})),
+            "request_rate_limit": {
+                "planned_ip_weight": systemic_rate_limit.get(
+                    "planned_ip_weight", 0
+                ),
+                "endpoint_weight_per_symbol": systemic_rate_limit.get(
+                    "endpoint_weight_per_symbol", 0
+                ),
+                "configured_max_workers": systemic_rate_limit.get(
+                    "configured_max_workers", 0
+                ),
+                "min_request_interval_ms": systemic_rate_limit.get(
+                    "min_request_interval_ms", 0
+                ),
+                "cooldown_active": bool(
+                    systemic_rate_limit.get("cooldown_active", False)
+                ),
+                "last_status_code": systemic_rate_limit.get(
+                    "last_status_code"
+                ),
+                "retry_after_seconds": systemic_rate_limit.get(
+                    "retry_after_seconds", 0
+                ),
+                "max_used_weights": systemic_used_weights,
+            },
             "fields": (systemic or {}).get("fields", []),
             "source_path": systemic_path,
         },

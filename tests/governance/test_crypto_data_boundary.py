@@ -103,7 +103,8 @@ _EXTRA_ALLOWED_BY_FILE = {
         "collections", "math", "pathlib", "quantos", "typing"
     },
     "binance_systemic_risk.py": {
-        "collections", "math", "pathlib", "quantos", "typing"
+        "collections", "dataclasses", "math", "pathlib", "quantos",
+        "threading", "typing"
     },
     "binance_rpi_depth.py": {
         "collections", "math", "pathlib", "quantos", "typing"

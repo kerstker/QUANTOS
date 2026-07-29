@@ -11,6 +11,7 @@ from tools.l2_schedule_entrypoint import (
     ALLOWED_L2_MODULES,
     ScheduleEntrypointError,
     _configure_headless_logging,
+    _install_headless_subprocess_guard,
     run_scheduled_module,
 )
 
@@ -152,6 +153,44 @@ def test_pythonw_mode_routes_output_to_worker_log(tmp_path: Path) -> None:
     assert (
         tmp_path / ".runtime" / "logs" / "domain_event_ops.log"
     ).read_text(encoding="utf-8").strip() == "headless-worker-marker"
+
+
+def test_pythonw_mode_forces_child_processes_to_stay_headless(monkeypatch) -> None:
+    observed = []
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            observed.append((args, kwargs))
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010, raising=False)
+
+    _install_headless_subprocess_guard(
+        executable=r"H:\miniconda\pythonw.exe",
+        platform_name="nt",
+    )
+    subprocess.Popen(["helper.exe"], creationflags=0x00000200)
+
+    assert observed[0][1]["creationflags"] == 0x08000200
+
+
+def test_pythonw_mode_rejects_child_request_for_new_console(monkeypatch) -> None:
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010, raising=False)
+
+    _install_headless_subprocess_guard(
+        executable=r"H:\miniconda\pythonw.exe",
+        platform_name="nt",
+    )
+
+    with pytest.raises(ScheduleEntrypointError, match="interactive console"):
+        subprocess.Popen(["helper.exe"], creationflags=0x00000010)
 
 
 def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:

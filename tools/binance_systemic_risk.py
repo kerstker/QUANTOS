@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -46,13 +49,34 @@ ADL_RATING_NORMALIZATION = {
     "MEDIUM": "MEDIUM",
     "HIGH": "HIGH",
 }
+DEFAULT_REQUEST_INTERVAL_SECONDS = 0.25
+DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 120
+ENDPOINT_WEIGHT_PER_SYMBOL = 4
 
 
 class BinanceSystemicRiskError(RuntimeError):
     """A public systemic-risk response is malformed, stale, or inconsistent."""
 
 
-def _http_get_json(url: str) -> object:
+class BinanceSystemicRateLimitError(BinanceSystemicRiskError):
+    """Binance rejected the IP budget or a local cooldown is active."""
+
+    def __init__(self, status_code: int, retry_after_seconds: int) -> None:
+        self.status_code = int(status_code)
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+        super().__init__(
+            f"Binance HTTP {self.status_code}; public REST cooldown "
+            f"{self.retry_after_seconds}s"
+        )
+
+
+@dataclass(frozen=True)
+class _HttpResult:
+    payload: object
+    used_weights: Mapping[str, int]
+
+
+def _http_get_json(url: str) -> _HttpResult:
     request = urllib.request.Request(
         url,
         headers={
@@ -62,7 +86,99 @@ def _http_get_json(url: str) -> object:
         method="GET",
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+        used_weights: dict[str, int] = {}
+        for name, value in response.headers.items():
+            normalized = str(name).upper()
+            if not normalized.startswith("X-MBX-USED-WEIGHT-"):
+                continue
+            try:
+                used_weights[normalized] = int(value)
+            except (TypeError, ValueError):
+                continue
+        return _HttpResult(
+            payload=json.loads(response.read().decode("utf-8")),
+            used_weights=used_weights,
+        )
+
+
+def _retry_after_seconds(error: urllib.error.HTTPError) -> int:
+    raw = error.headers.get("Retry-After") if error.headers is not None else None
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        parsed = DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS
+    return max(1, parsed)
+
+
+class _RateLimitedHttpGet:
+    """Serialize public REST calls and stop the cycle after 418/429."""
+
+    def __init__(
+        self,
+        delegate: Callable[[str], object],
+        *,
+        min_interval_seconds: float,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        interval = float(min_interval_seconds)
+        if not math.isfinite(interval) or interval < 0:
+            raise ValueError("min_interval_seconds must be finite and non-negative")
+        self._delegate = delegate
+        self._interval = interval
+        self._clock = clock
+        self._sleep = sleep
+        self._lock = threading.Lock()
+        self._next_request_at = 0.0
+        self._blocked_until = 0.0
+        self._last_status_code: int | None = None
+        self._retry_after_seconds = 0
+        self._max_used_weights: dict[str, int] = {}
+
+    def __call__(self, url: str) -> object:
+        with self._lock:
+            now = self._clock()
+            if now < self._blocked_until:
+                remaining = max(1, math.ceil(self._blocked_until - now))
+                raise BinanceSystemicRateLimitError(
+                    self._last_status_code or 429,
+                    remaining,
+                )
+            delay = max(0.0, self._next_request_at - now)
+            if delay:
+                self._sleep(delay)
+            self._next_request_at = self._clock() + self._interval
+            try:
+                result = self._delegate(url)
+            except urllib.error.HTTPError as exc:
+                if exc.code not in {418, 429}:
+                    raise
+                retry_after = _retry_after_seconds(exc)
+                self._last_status_code = int(exc.code)
+                self._retry_after_seconds = retry_after
+                self._blocked_until = self._clock() + retry_after
+                raise BinanceSystemicRateLimitError(
+                    exc.code,
+                    retry_after,
+                ) from exc
+            if isinstance(result, _HttpResult):
+                for name, value in result.used_weights.items():
+                    self._max_used_weights[name] = max(
+                        int(value),
+                        self._max_used_weights.get(name, 0),
+                    )
+                return result.payload
+            return result
+
+    def telemetry(self) -> dict[str, Any]:
+        now = self._clock()
+        return {
+            "min_request_interval_ms": round(self._interval * 1_000),
+            "cooldown_active": now < self._blocked_until,
+            "last_status_code": self._last_status_code,
+            "retry_after_seconds": self._retry_after_seconds,
+            "max_used_weights": dict(sorted(self._max_used_weights.items())),
+        }
 
 
 def _url(path: str, params: Mapping[str, object] | None = None) -> str:
@@ -504,12 +620,24 @@ def run_refresh(
     archive_root: str | None = DEFAULT_RAW_ARCHIVE,
     http_get: Callable[[str], object] = _http_get_json,
     now_ms: int | None = None,
-    max_workers: int = 8,
+    max_workers: int = 1,
+    request_interval_seconds: float | None = None,
 ) -> dict[str, Any]:
     selected = tuple(dict.fromkeys(str(item).upper() for item in tickers))
     if not selected or any(not ticker.isalnum() for ticker in selected):
         raise BinanceSystemicRiskError("systemic-risk universe is invalid")
     observed_at_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    interval = (
+        DEFAULT_REQUEST_INTERVAL_SECONDS
+        if request_interval_seconds is None and http_get is _http_get_json
+        else 0.0
+        if request_interval_seconds is None
+        else float(request_interval_seconds)
+    )
+    limited_http_get = _RateLimitedHttpGet(
+        http_get,
+        min_interval_seconds=interval,
+    )
     Path(store_path).parent.mkdir(parents=True, exist_ok=True)
     store = BinanceSystemicStore(store_path, create=True)
     try:
@@ -535,7 +663,7 @@ def run_refresh(
                     ticker,
                     basis_start_ms=starts[ticker],
                     observed_at_ms=observed_at_ms,
-                    http_get=http_get,
+                    http_get=limited_http_get,
                 ): ticker
                 for ticker in selected
             }
@@ -652,6 +780,14 @@ def run_refresh(
             "row_counts": row_counts,
             "inserted": inserted_by_dataset,
             "chain_valid": chain_valid,
+        },
+        "request_rate_limit": {
+            "planned_ip_weight": len(selected) * ENDPOINT_WEIGHT_PER_SYMBOL,
+            "endpoint_weight_per_symbol": ENDPOINT_WEIGHT_PER_SYMBOL,
+            "configured_max_workers": max(
+                1, min(int(max_workers), len(selected))
+            ),
+            **limited_http_get.telemetry(),
         },
         "fields": [
             "symbol_adl_risk_30m",

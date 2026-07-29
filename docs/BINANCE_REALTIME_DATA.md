@@ -99,6 +99,20 @@ REST 快照。RPI 报价只作为流动性诊断，明确 `paper_fill_eligible=f
 14/14 PASS，basis 回填 10,080 个小时观测（720 × 14），且不把这些诊断字段直接驱动
 晋级、仓位或订单。
 
+该 worker 还承载 Binance 官方 IP 限流合同。根据
+[USD-M General Info](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info)，
+每个响应的 `X-MBX-USED-WEIGHT-*` 是当前 IP 使用量，HTTP 429 必须退避，继续请求会触发
+HTTP 418 自动封禁。当前每币调用的四个端点权重分别为 ADL 1、basis 0、指数成分 2、
+保险基金 1，因此 14 币一轮计划权重为 56。worker 固定单并发、请求间隔 250ms；
+收到 429/418 时读取 `Retry-After`（缺失则使用 120 秒）并在本地打开整轮冷却，禁止同轮
+继续撞限流。状态文件与 Data Catalog 同时展示计划权重、实际
+`X-MBX-USED-WEIGHT-*`、并发、节奏、最近状态码及冷却剩余时间。
+
+真实运行曾在旧的 8 并发实现下收到 HTTP 418，并在 11/14 时 fail-closed。改为上述合同后，
+任务恢复为 14/14 PASS、零失败、哈希链有效；最近轮次计划权重 56，观测到的
+`X-MBX-USED-WEIGHT-1M` 随同机其他公共 worker 共享并如实报告，不能误解为本 worker
+独占消耗。
+
 `python -m tools.binance_rpi_depth`
 
 RPI 接口只有固定 1000 档、单币 IP weight 20。系统将其隔离为小时 worker，完整保存

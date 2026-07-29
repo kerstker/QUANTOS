@@ -122,6 +122,12 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_binance_realtime_market": ExpectedTask(
         "binance_realtime_market", 15 * 60_000
     ),
+    "QUANTOS_binance_systemic_risk": ExpectedTask(
+        "binance_systemic_risk", 90 * 60_000
+    ),
+    "QUANTOS_binance_rpi_depth": ExpectedTask(
+        "binance_rpi_depth", 3 * _HOUR_MS
+    ),
     "QUANTOS_binance_realtime_features": ExpectedTask(
         "binance_realtime_features", 15 * 60_000
     ),

@@ -12,6 +12,17 @@ import {
 import { Donut, Histogram } from '@/ui/charts';
 import { num, pct, fixed, compact, shortHash, type Tone } from '@/ui/format';
 
+const emptySystemicRateLimit = {
+  planned_ip_weight: 0,
+  endpoint_weight_per_symbol: 0,
+  configured_max_workers: 0,
+  min_request_interval_ms: 0,
+  cooldown_active: false,
+  last_status_code: null,
+  retry_after_seconds: 0,
+  max_used_weights: {},
+};
+
 const fallbackCatalog: DataCatalogPayload = {
   source: 'FRONTEND_DATA_CATALOG_FALLBACK',
   read_only: true,
@@ -130,7 +141,9 @@ const fallbackCatalog: DataCatalogPayload = {
     systemic_risk: {
       status_present: false, fresh: false, age_ms: null, verdict: null,
       coverage: {}, chain_valid: null, row_count: 0, row_counts: {},
-      inserted: {}, latest: {}, errors: 0, fields: [], source_path: null,
+      inserted: {}, latest: {}, errors: 0,
+      request_rate_limit: emptySystemicRateLimit,
+      fields: [], source_path: null,
     },
     rpi_depth: {
       status_present: false, fresh: false, age_ms: null, verdict: null,
@@ -363,6 +376,12 @@ export default function DataCatalog() {
   const streamCoverage = realtime.stream.coverage;
   const restCoverage = realtime.rest_snapshot.coverage;
   const systemicCoverage = realtime.systemic_risk.coverage;
+  const systemicRateLimit = realtime.systemic_risk.request_rate_limit
+    ?? emptySystemicRateLimit;
+  const systemicUsedWeight = Math.max(
+    0,
+    ...Object.values(systemicRateLimit.max_used_weights),
+  );
   const rpiCoverage = realtime.rpi_depth.coverage;
   const streamEvents = Object.values(realtime.stream.event_counts)
     .reduce((total, value) => total + value, 0);
@@ -443,7 +462,7 @@ export default function DataCatalog() {
             value={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
             tone={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <StatTile label={bi('系统风险通道', 'Systemic Risk')}
             value={realtime.systemic_risk.verdict ?? 'UNAVAILABLE'}
             tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
@@ -455,6 +474,21 @@ export default function DataCatalog() {
           <StatTile label={bi('系统风险链', 'Systemic Chain')}
             value={realtime.systemic_risk.chain_valid ? 'VALID' : 'UNKNOWN'}
             tone={realtime.systemic_risk.chain_valid ? 'pos' : 'warn'} />
+          <StatTile label={bi('计划 IP 权重', 'Planned IP Weight')}
+            value={num(systemicRateLimit.planned_ip_weight)}
+            sub={`${num(systemicRateLimit.endpoint_weight_per_symbol)}/symbol`} />
+          <StatTile label={bi('观测 IP 权重', 'Observed IP Weight')}
+            value={num(systemicUsedWeight)}
+            sub={Object.keys(systemicRateLimit.max_used_weights)[0] ?? 'header unavailable'} />
+          <StatTile label={bi('请求节奏', 'Request Pacing')}
+            value={`${num(systemicRateLimit.min_request_interval_ms)}ms`}
+            sub={`${num(systemicRateLimit.configured_max_workers)} worker`} />
+          <StatTile label={bi('限流冷却', 'Rate-limit Cooldown')}
+            value={systemicRateLimit.cooldown_active ? 'ACTIVE' : 'CLEAR'}
+            tone={systemicRateLimit.cooldown_active ? 'neg' : 'pos'}
+            sub={systemicRateLimit.cooldown_active
+              ? `${num(systemicRateLimit.retry_after_seconds)}s / HTTP ${systemicRateLimit.last_status_code ?? '—'}`
+              : '429/418 guard ready'} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatTile label={bi('RPI 深度', 'RPI Depth')}

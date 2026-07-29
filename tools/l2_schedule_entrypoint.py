@@ -11,7 +11,9 @@ import argparse
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 import importlib
+import os
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -70,6 +72,46 @@ def _configure_headless_logging(module_name: str) -> None:
     _HEADLESS_STREAMS.append(stream)
     sys.stdout = stream
     sys.stderr = stream
+
+
+def _install_headless_subprocess_guard(
+    *,
+    executable: str | None = None,
+    platform_name: str | None = None,
+) -> None:
+    """Force subprocesses created by a Windows pythonw worker to stay headless.
+
+    Scheduled modules normally do not create child processes.  This guard
+    protects the operator desktop if an allowlisted worker (or a helper it
+    imports) adds one later.  An explicit request for a new console is rejected
+    instead of silently weakening the no-window contract.
+    """
+    current_executable = sys.executable if executable is None else executable
+    current_platform = os.name if platform_name is None else platform_name
+    executable_stem = os.path.splitext(os.path.basename(current_executable))[0].lower()
+    if current_platform != "nt" or executable_stem != "pythonw":
+        return
+    current_popen = subprocess.Popen
+    if getattr(current_popen, "_quantos_headless_guard", False):
+        return
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    new_console = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+    if not no_window:
+        raise ScheduleEntrypointError("Windows no-window process flag is unavailable")
+
+    class HeadlessPopen(current_popen):  # type: ignore[misc, valid-type]
+        _quantos_headless_guard = True
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            creationflags = int(kwargs.get("creationflags", 0))
+            if new_console and creationflags & new_console:
+                raise ScheduleEntrypointError(
+                    "scheduled L2 worker attempted to create an interactive console"
+                )
+            kwargs["creationflags"] = creationflags | no_window
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = HeadlessPopen
 
 
 def _is_within(path: Path, parent: Path) -> bool:
@@ -132,6 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("module", choices=sorted(ALLOWED_L2_MODULES))
     args = parser.parse_args(argv)
     _configure_headless_logging(args.module)
+    _install_headless_subprocess_guard()
     started_at = datetime.now(timezone.utc).isoformat()
     print(
         f"[l2-schedule] START module={args.module} at={started_at}",
@@ -161,5 +204,6 @@ __all__ = [
     "ALLOWED_L2_MODULES",
     "ScheduleEntrypointError",
     "_configure_headless_logging",
+    "_install_headless_subprocess_guard",
     "run_scheduled_module",
 ]

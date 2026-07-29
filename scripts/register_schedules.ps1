@@ -31,6 +31,15 @@ $pythonw = Join-Path (Split-Path -Parent $py) "pythonw.exe"
 if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
   throw "pythonw.exe is unavailable beside the configured Python runtime"
 }
+# Keep every L2 worker outside the interactive desktop session.  pythonw.exe
+# removes the ordinary console host, while S4U also prevents a future child
+# process regression from surfacing a window in the signed-in operator session.
+# These workers use only local state and unauthenticated public HTTPS data; they
+# do not require an interactive token, stored password, broker credential, or
+# mapped network share.
+$l2Principal = New-ScheduledTaskPrincipal `
+  -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+  -LogonType S4U -RunLevel Limited
 
 function Disable-TaskIfPresent {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -116,7 +125,8 @@ function Register-L2Task {
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
-    -Settings $settings -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
+    -Settings $settings -Principal $l2Principal `
+    -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
     -Force | Out-Null
   Write-Host "${Name}: registered tools.$Module"
 }

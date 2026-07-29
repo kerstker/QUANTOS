@@ -191,6 +191,16 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
     }
 
 
+def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
+    systemic = EXPECTED_TASKS["QUANTOS_binance_systemic_risk"]
+    rpi = EXPECTED_TASKS["QUANTOS_binance_rpi_depth"]
+
+    assert systemic.module == "binance_systemic_risk"
+    assert systemic.max_age_ms == 90 * 60_000
+    assert rpi.module == "binance_rpi_depth"
+    assert rpi.max_age_ms == 3 * 3_600_000
+
+
 def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
     state_root = tmp_path / "state"
     code_root = tmp_path / "release"

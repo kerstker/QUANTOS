@@ -440,6 +440,16 @@ export interface BinanceRealtimePayload {
       insurance_asset_count?: number;
     }>;
     errors: number;
+    request_rate_limit?: {
+      planned_ip_weight: number;
+      endpoint_weight_per_symbol: number;
+      configured_max_workers: number;
+      min_request_interval_ms: number;
+      cooldown_active: boolean;
+      last_status_code: number | null;
+      retry_after_seconds: number;
+      max_used_weights: Record<string, number>;
+    };
     fields: string[];
     source_path: string | null;
   };
