@@ -12,6 +12,10 @@ from fastapi import APIRouter
 
 from services.console.api.common import short_hash as _short_hash
 from services.console.api.data_port import data_catalog_runtime
+from services.data.binance_api_coverage import (
+    BinanceApiCoverageError,
+    assess_coverage,
+)
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -23,6 +27,9 @@ _BINANCE_STREAM_STATUS = "binance_realtime_stream_status.json"
 _BINANCE_REST_STATUS = "binance_realtime_market_status.json"
 _BINANCE_FEATURE_STATUS = "binance_realtime_feature_status.json"
 _BINANCE_DRIFT_ALERT_STATUS = "binance_realtime_drift_alert_status.json"
+_BINANCE_API_COVERAGE_CONTRACT = os.path.join(
+    _PROJECT_ROOT, "config", "binance_usdm_market_data_coverage.json"
+)
 
 
 def _status_candidates(filename: str) -> list[str]:
@@ -51,6 +58,33 @@ def _read_latest_status(filename: str) -> tuple[Dict | None, str | None]:
         return None, None
     _, payload, path = max(valid, key=lambda item: item[0])
     return payload, path
+
+
+def _binance_api_coverage_payload() -> Dict:
+    try:
+        with open(_BINANCE_API_COVERAGE_CONTRACT, encoding="utf-8") as handle:
+            contract = json.load(handle)
+        if not isinstance(contract, dict):
+            raise BinanceApiCoverageError("coverage contract is not an object")
+        report = assess_coverage(contract)
+    except (
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+        BinanceApiCoverageError,
+    ) as exc:
+        return {
+            "status": "INVALID",
+            "catalog_endpoint_count": 0,
+            "accounted_endpoint_count": 0,
+            "accounted_ratio": 0.0,
+            "load_bearing_endpoint_count": 0,
+            "gap_count": 0,
+            "gaps": [],
+            "error_type": type(exc).__name__,
+        }
+    report["status"] = "VALIDATED_OFFICIAL_CATALOG"
+    return report
 
 
 def _binance_realtime_payload() -> Dict:
@@ -208,6 +242,7 @@ def _binance_realtime_payload() -> Dict:
             ).get("chain_valid"),
             "source_path": drift_alert_path,
         },
+        "api_coverage": _binance_api_coverage_payload(),
         "universe_size": 14,
         "safety": {
             "public_market_data_only": True,

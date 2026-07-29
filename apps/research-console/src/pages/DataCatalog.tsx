@@ -143,6 +143,15 @@ const fallbackCatalog: DataCatalogPayload = {
       independent_worker: false, event_count: 0, chain_valid: null,
       source_path: null,
     },
+    api_coverage: {
+      status: 'INVALID',
+      catalog_endpoint_count: 0,
+      accounted_endpoint_count: 0,
+      accounted_ratio: 0,
+      load_bearing_endpoint_count: 0,
+      gap_count: 0,
+      gaps: [],
+    },
     safety: {
       public_market_data_only: true, credentials: false, private_stream: false,
       broker_connectivity: false, order_submission: false, live_trading: false,
@@ -387,6 +396,26 @@ export default function DataCatalog() {
           <StatTile label={bi('REST 哈希链', 'REST Chain')} value={realtime.rest_snapshot.chain_valid ? 'VALID' : 'UNKNOWN'}
             tone={realtime.rest_snapshot.chain_valid ? 'pos' : 'warn'} />
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('官方目录', 'Official Catalog')}
+            value={`${num(realtime.api_coverage.accounted_endpoint_count)}/${num(realtime.api_coverage.catalog_endpoint_count)}`}
+            tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'info' : 'warn'} />
+          <StatTile label={bi('承载接口', 'Load-bearing APIs')}
+            value={num(realtime.api_coverage.load_bearing_endpoint_count)} tone="pos" />
+          <StatTile label={bi('明确缺口', 'Explicit Gaps')}
+            value={num(realtime.api_coverage.gap_count)}
+            tone={realtime.api_coverage.gap_count === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('覆盖契约', 'Coverage Contract')}
+            value={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
+            tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
+        </div>
+        {realtime.api_coverage.gaps.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {realtime.api_coverage.gaps.map(gap => (
+              <Chip key={gap.id} label={`${gap.title} · ${gap.path}`} tone="warn" />
+            ))}
+          </div>
+        ) : null}
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <StatTile label={bi('实时特征', 'Realtime Features')}
             value={num(realtime.feature_projection.feature_count)}

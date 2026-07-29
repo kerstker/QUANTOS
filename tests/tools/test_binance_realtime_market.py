@@ -93,6 +93,58 @@ def _fake_http(url):
                 "count": 1234,
             }
         ]
+    if path == "/fapi/v1/fundingInfo":
+        return [
+            {
+                "symbol": "BTCUSDT",
+                "adjustedFundingRateCap": "0.025",
+                "adjustedFundingRateFloor": "-0.025",
+                "fundingIntervalHours": 4,
+                "disclaimer": False,
+            }
+        ]
+    if path in {
+        "/fapi/v1/markPriceKlines",
+        "/fapi/v1/indexPriceKlines",
+        "/fapi/v1/premiumIndexKlines",
+    }:
+        assert (
+            symbol == "BTCUSDT"
+            or parse_qs(urlparse(url).query).get("pair") == ["BTCUSDT"]
+        )
+        if path == "/fapi/v1/premiumIndexKlines":
+            first = ("-0.0002", "-0.0001", "-0.0003", "-0.00015")
+            second = ("-0.00015", "0.0001", "-0.0002", "0.00005")
+        elif path == "/fapi/v1/indexPriceKlines":
+            first = ("99", "100", "98", "99.5")
+            second = ("99.5", "101", "99", "100.0")
+        else:
+            first = ("99.5", "100.5", "99", "100")
+            second = ("100", "101.5", "99.5", "100.5")
+        return [
+            [
+                _NOW - 120_000,
+                *first,
+                "0",
+                _NOW - 60_001,
+                "0",
+                0,
+                "0",
+                "0",
+                "0",
+            ],
+            [
+                _NOW - 60_000,
+                *second,
+                "0",
+                _NOW - 1,
+                "0",
+                0,
+                "0",
+                "0",
+                "0",
+            ],
+        ]
     assert symbol == "BTCUSDT"
     if path == "/fapi/v1/klines":
         return [
@@ -201,6 +253,16 @@ def test_refresh_persists_complete_public_snapshot_and_status(tmp_path):
     assert row["positioning"]["top_position_long_short_ratio"] == 1.2
     assert row["positioning"]["top_account_long_short_ratio"] == 1.3
     assert row["last_settled_funding"]["rate"] == 0.0002
+    assert row["funding_policy"] == {
+        "adjusted": True,
+        "adjusted_rate_cap": 0.025,
+        "adjusted_rate_floor": -0.025,
+        "interval_hours": 4,
+    }
+    assert row["reference_1m"]["mark"]["close"] == 100.5
+    assert row["reference_1m"]["index"]["close"] == 100.0
+    assert row["reference_1m"]["premium"]["close"] == 0.00005
+    assert row["reference_1m"]["mark_index_basis_bps"] == pytest.approx(50.0)
     assert row["closed_1m"]["trade_count"] == 22
     assert row["quality"]["order_submission"] is False
     assert json.loads((tmp_path / "status.json").read_text())["complete"] is True
@@ -258,3 +320,49 @@ def test_refresh_blocks_missing_execution_filter(tmp_path):
 
     assert status["verdict"] == "BLOCK"
     assert "required exchange filter is missing" in status["errors"]["BTC"]["message"]
+
+
+def test_refresh_records_absent_adjustment_as_unknown_defaults(tmp_path):
+    def no_adjustment_http(url):
+        if urlparse(url).path == "/fapi/v1/fundingInfo":
+            return []
+        return _fake_http(url)
+
+    status = realtime.run_refresh(
+        tickers=("BTC",),
+        store_path=str(tmp_path / "market.db"),
+        status_path=str(tmp_path / "status.json"),
+        archive_root=None,
+        http_get=no_adjustment_http,
+        now_ms=_NOW,
+        max_workers=1,
+    )
+
+    assert status["verdict"] == "PASS"
+    assert status["latest"]["BTC"]["funding_policy"] == {
+        "adjusted": False,
+        "adjusted_rate_cap": None,
+        "adjusted_rate_floor": None,
+        "interval_hours": None,
+    }
+
+
+def test_refresh_blocks_invalid_reference_kline(tmp_path):
+    def invalid_reference_http(url):
+        payload = _fake_http(url)
+        if urlparse(url).path == "/fapi/v1/markPriceKlines":
+            payload[-1][2] = "99"
+        return payload
+
+    status = realtime.run_refresh(
+        tickers=("BTC",),
+        store_path=str(tmp_path / "market.db"),
+        status_path=str(tmp_path / "status.json"),
+        archive_root=None,
+        http_get=invalid_reference_http,
+        now_ms=_NOW,
+        max_workers=1,
+    )
+
+    assert status["verdict"] == "BLOCK"
+    assert "mark_kline_1m OHLC is invalid" in status["errors"]["BTC"]["message"]

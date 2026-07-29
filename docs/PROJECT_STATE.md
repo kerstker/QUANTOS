@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 官方市场目录覆盖与参考价面补齐：**
+> 5 分钟 USD-M 公共快照新增 `/fapi/v1/fundingInfo`、`/fapi/v1/markPriceKlines`、
+> `/fapi/v1/indexPriceKlines`、`/fapi/v1/premiumIndexKlines`。每个标的保存最近闭合
+> 1 分钟 mark/index/premium OHLC、同分钟 mark-index basis，以及交易所明确返回的资金费
+> cap/floor/interval 调整；adjustment-only 接口未返回某标的时保留 unknown defaults，
+> 不猜测。真实 BTC smoke PASS，三套参考价 bar 的 close time 完全对齐，观测到当前
+> cap/floor 为 ±0.003、interval 8h。新增机器可读
+> `config/binance_usdm_market_data_coverage.json`，逐项登记官方 Market Data 34 个 REST
+> 接口并由纯校验器 fail-closed；当前 29/34 已解释、18 个承载、5 个真实缺口。Data
+> Catalog 已显示总覆盖、承载数及缺口路径。全链仍是无凭证公开数据、L2 研究/纸面专用；
+> Account/Trade/User Data Stream 未纳入，实盘权限没有扩大。
+>
+
 > **2026-07-29 终端弹窗根因收口：**
 > L2 计划任务虽然已统一为 `pythonw.exe`，但 `QUANTOS_scheduler_watchdog`
 > 每 15 分钟仍会用普通 `powershell.exe` 查询 Task Scheduler，形成周期性终端闪窗；

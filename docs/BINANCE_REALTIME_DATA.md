@@ -12,6 +12,8 @@
 ## 官方协议依据
 
 - 开发者总览：<https://developers.binance.com/zh-CN/docs/introduction>
+- USD-M REST 市场数据目录：
+  <https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data>
 - USD-M WebSocket 连接与路由：
   <https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect>
 - Public 高频流：
@@ -35,6 +37,10 @@
 每 5 分钟对 14 个合约形成同一观察时刻的完整快照：
 
 - mark/index/estimated-settle/basis/current funding/next funding
+- 最近已闭合 1 分钟 mark-price、index-price、premium-index OHLC，以及同分钟
+  mark-index basis
+- 资金费率调整策略：cap、floor、interval；官方 adjustment-only 响应未包含某标的时，
+  明确保存 `adjusted=false` 和空默认值，不猜测交易所默认参数
 - best bid/ask、数量、mid、spread bps
 - 最近已闭合 1 分钟 OHLCV、成交笔数、taker buy volume
 - open interest 与 open-interest value
@@ -43,6 +49,21 @@
 - 最近已结算 funding rate/time/mark
 
 任一币种缺字段或超过对应 freshness gate 都不算完整；14/14 完整才返回调度成功。
+
+## 官方 API 覆盖契约
+
+`config/binance_usdm_market_data_coverage.json` 逐项登记官方 USD-M REST
+Market Data 目录的 34 个接口。`python -m tools.binance_api_coverage` 会先由
+`services/data/binance_api_coverage.py` 严格校验数量、唯一性、安全类型、状态和承载实现，
+再生成机器可读状态。Data Catalog 直接读取同一契约，当前显示：
+
+- 29/34 已解释（真实承载、等价冗余、不适用或因凭证边界阻断）
+- 18 个接口直接承载当前数据/纸面流程
+- 5 个诚实缺口：ADL risk、官方 basis 序列、index constituents、insurance balance、
+  RPI order book
+
+该覆盖率是“官方市场数据接口的工程账本”，不是 Alpha、实盘或生产成熟度评分。Account、
+Trade、User Data Stream 等私有接口不在本契约范围，也不会被自动工作器读取。
 
 ## WebSocket 高频流
 

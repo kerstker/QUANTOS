@@ -459,6 +459,21 @@ export interface BinanceRealtimePayload {
     chain_valid: boolean | null;
     source_path: string | null;
   };
+  api_coverage: {
+    status: string;
+    catalog_endpoint_count: number;
+    accounted_endpoint_count: number;
+    accounted_ratio: number;
+    load_bearing_endpoint_count: number;
+    gap_count: number;
+    gaps: Array<{
+      id: string;
+      title: string;
+      path: string;
+      reason: string;
+    }>;
+    error_type?: string;
+  };
   safety: {
     public_market_data_only: boolean;
     credentials: boolean;

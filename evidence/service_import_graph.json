@@ -197,6 +197,11 @@
     {
       "references": [
         {
+          "line": 15,
+          "module": "services.data.binance_api_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
           "line": 19,
           "module": "services.data.distribution_drift",
           "path": "services/console/api/monitoring_views.py"
@@ -1214,7 +1219,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "8d3ec94462929ac5d9d85abb28348f6807f98bef11fa091613c2eade83216bb8",
+  "graph_sha256": "c75c94f39395f38b740b8f2c5ee44f429da98daf6ad272cb56def7b1bf879f3e",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1252,7 +1257,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 417,
+  "source_file_count": 418,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",

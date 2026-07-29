@@ -67,6 +67,9 @@ DATA_CHANNELS: tuple[DataChannelSpec, ...] = (
         "binance_realtime_market", "5m", "1m/5m/snapshot",
         (
             "mark_price", "index_price", "basis_bps", "funding_rate",
+            "mark_1m_ohlc", "index_1m_ohlc", "premium_1m_ohlc",
+            "funding_rate_cap", "funding_rate_floor",
+            "funding_interval_hours",
             "bid", "bid_qty", "ask", "ask_qty", "spread_bps",
             "open", "high", "low", "close", "volume",
             "contract_status", "tick_size", "step_size", "min_qty",
