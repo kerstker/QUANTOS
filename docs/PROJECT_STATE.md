@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-29 Binance 合约规则与 24h 市场统计进入自动纸面执行：**
+> 5 分钟公共 USD-M 快照新增 `/fapi/v1/exchangeInfo` 与
+> `/fapi/v1/ticker/24hr`，对 14 个前向标的逐一验证 `TRADING`、`PERPETUAL`、
+> USDT quote、`PRICE_FILTER`、`MARKET_LOT_SIZE/LOT_SIZE` 和
+> `MIN_NOTIONAL`，并保存合约生命周期、tick/step/min/max quantity、最小名义额、
+> 24 小时 OHLC、加权均价、base/quote volume 与成交笔数。任一标的缺失、规则异常或
+> 24h 行情超过 5 分钟即阻断整轮完整性。`paper_order_preview` 在完整九引擎研究风险
+> 获批后，必须读取 15 分钟内的该快照，并把真实 step/minQty/minNotional 传入同一
+> 干跑量化器；规则缺失、过期、停牌或非永续均不产生纸面成交。真实 Binance 首跑
+> 14/14 PASS、14 条新哈希链记录、链有效；BTC 当次规则为 tick 0.1、step/minQty
+> 0.001、minNotional 50 USDT。全程为无凭证公开数据，不扩大实盘权限。
+
 > **2026-07-29 L2 自动任务改为无窗口后台运行：**
 > `scripts/register_schedules.ps1` 不再让 Windows Task Scheduler 直接调用会弹控制台的
 > `python.exe`，而是固定调用同一运行时旁的 `pythonw.exe`。承重入口

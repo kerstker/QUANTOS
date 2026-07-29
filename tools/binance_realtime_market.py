@@ -33,6 +33,7 @@ DEFAULT_STATUS = os.path.join("data", "cache", "binance_realtime_market_status.j
 PERIOD = "5m"
 MAX_BOOK_AGE_MS = 5 * 60_000
 MAX_CANDLE_AGE_MS = 5 * 60_000
+MAX_ROLLING_TICKER_AGE_MS = 5 * 60_000
 MAX_POSITIONING_AGE_MS = 15 * 60_000
 MAX_FUNDING_AGE_MS = 12 * 60 * 60_000
 
@@ -150,6 +151,96 @@ def _closed_kline(payload: object, observed_at_ms: int) -> Sequence[object]:
     return candidates[-1]
 
 
+def _filter_map(contract: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    raw = contract.get("filters")
+    if not isinstance(raw, list):
+        raise BinanceRealtimeDataError("exchange filters are missing")
+    result: dict[str, Mapping[str, Any]] = {}
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        filter_type = str(item.get("filterType", ""))
+        if filter_type:
+            result[filter_type] = item
+    return result
+
+
+def _parse_contract(contract: Mapping[str, Any], symbol: str) -> dict[str, Any]:
+    if str(contract.get("symbol", "")).upper() != symbol:
+        raise BinanceRealtimeDataError("contract symbol mismatch")
+    if str(contract.get("status", "")).upper() != "TRADING":
+        raise BinanceRealtimeDataError("contract is not trading")
+    if str(contract.get("contractType", "")).upper() != "PERPETUAL":
+        raise BinanceRealtimeDataError("contract is not perpetual")
+    if str(contract.get("quoteAsset", "")).upper() != "USDT":
+        raise BinanceRealtimeDataError("contract quote asset is not USDT")
+
+    filters = _filter_map(contract)
+    lot = filters.get("MARKET_LOT_SIZE") or filters.get("LOT_SIZE")
+    price = filters.get("PRICE_FILTER")
+    notional = filters.get("MIN_NOTIONAL")
+    if lot is None or price is None or notional is None:
+        raise BinanceRealtimeDataError("required exchange filter is missing")
+    return {
+        "status": "TRADING",
+        "contract_type": "PERPETUAL",
+        "base_asset": str(contract.get("baseAsset", "")).upper(),
+        "quote_asset": "USDT",
+        "margin_asset": str(contract.get("marginAsset", "")).upper(),
+        "onboard_time_ms": _timestamp(contract.get("onboardDate"), "onboard_date"),
+        "delivery_time_ms": _timestamp(contract.get("deliveryDate"), "delivery_date"),
+        "price_precision": _timestamp(
+            contract.get("pricePrecision"), "price_precision"
+        ),
+        "quantity_precision": _timestamp(
+            contract.get("quantityPrecision"), "quantity_precision"
+        ),
+        "tick_size": _positive(price.get("tickSize"), "tick_size"),
+        "step_size": _positive(lot.get("stepSize"), "step_size"),
+        "min_qty": _positive(lot.get("minQty"), "min_qty"),
+        "max_qty": _positive(lot.get("maxQty"), "max_qty"),
+        "min_notional": _positive(
+            notional.get("notional"), "min_notional"
+        ),
+    }
+
+
+def _parse_rolling_24h(
+    row: Mapping[str, Any],
+    symbol: str,
+    observed_at_ms: int,
+) -> tuple[dict[str, Any], int]:
+    if str(row.get("symbol", "")).upper() != symbol:
+        raise BinanceRealtimeDataError("24h ticker symbol mismatch")
+    close_time = _timestamp(row.get("closeTime"), "24h_close_time")
+    _fresh(
+        close_time,
+        observed_at_ms,
+        MAX_ROLLING_TICKER_AGE_MS,
+        "24h_ticker",
+    )
+    return {
+        "open_time_ms": _timestamp(row.get("openTime"), "24h_open_time"),
+        "close_time_ms": close_time,
+        "open": _positive(row.get("openPrice"), "24h_open"),
+        "high": _positive(row.get("highPrice"), "24h_high"),
+        "low": _positive(row.get("lowPrice"), "24h_low"),
+        "last": _positive(row.get("lastPrice"), "24h_last"),
+        "weighted_average_price": _positive(
+            row.get("weightedAvgPrice"), "24h_weighted_average_price"
+        ),
+        "price_change": _finite(row.get("priceChange"), "24h_price_change"),
+        "price_change_percent": _finite(
+            row.get("priceChangePercent"), "24h_price_change_percent"
+        ),
+        "base_volume": _nonnegative(row.get("volume"), "24h_base_volume"),
+        "quote_volume": _nonnegative(
+            row.get("quoteVolume"), "24h_quote_volume"
+        ),
+        "trade_count": _timestamp(row.get("count"), "24h_trade_count"),
+    }, close_time
+
+
 def _fetch_ticker(
     ticker: str,
     *,
@@ -192,6 +283,8 @@ def parse_snapshot(
     *,
     mark: Mapping[str, Any],
     book: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    rolling_24h: Mapping[str, Any],
     payloads: Mapping[str, tuple[str, object]],
     observed_at_ms: int,
 ) -> dict[str, Any]:
@@ -214,6 +307,10 @@ def parse_snapshot(
     mid = (bid + ask) / 2.0
     mark_price = _positive(mark.get("markPrice"), "mark_price")
     index_price = _positive(mark.get("indexPrice"), "index_price")
+    contract_rules = _parse_contract(contract, symbol)
+    rolling_stats, rolling_time = _parse_rolling_24h(
+        rolling_24h, symbol, observed_at_ms
+    )
 
     kline = _closed_kline(payloads["kline_1m"][1], observed_at_ms)
     kline_time = _timestamp(kline[6], "kline_close_time")
@@ -247,6 +344,7 @@ def parse_snapshot(
             top_account_ls.get("timestamp"), "top_account_ls_time"
         ),
         "taker": _timestamp(taker.get("timestamp"), "taker_time"),
+        "rolling_24h": rolling_time,
     }
     _fresh(source_times["funding"], observed_at_ms, MAX_FUNDING_AGE_MS, "funding")
     _fresh(
@@ -276,6 +374,8 @@ def parse_snapshot(
             "mid": mid,
             "spread_bps": (ask - bid) / mid * 10_000.0,
         },
+        "contract": contract_rules,
+        "rolling_24h": rolling_stats,
         "perpetual": {
             "mark_price": mark_price,
             "index_price": index_price,
@@ -402,8 +502,14 @@ def run_refresh(
 
     mark_url, mark_payload = _get("/fapi/v1/premiumIndex", None, http_get)
     book_url, book_payload = _get("/fapi/v1/ticker/bookTicker", None, http_get)
+    exchange_url, exchange_payload = _get("/fapi/v1/exchangeInfo", None, http_get)
+    rolling_url, rolling_payload = _get("/fapi/v1/ticker/24hr", None, http_get)
     marks = _symbol_rows(mark_payload, selected, "mark")
     books = _symbol_rows(book_payload, selected, "book")
+    if not isinstance(exchange_payload, Mapping):
+        raise BinanceRealtimeDataError("exchange info response is not an object")
+    contracts = _symbol_rows(exchange_payload.get("symbols"), selected, "exchange info")
+    rolling_rows = _symbol_rows(rolling_payload, selected, "24h ticker")
 
     fetched: dict[str, dict[str, tuple[str, object]]] = {}
     errors: dict[str, dict[str, str]] = {}
@@ -436,6 +542,8 @@ def run_refresh(
                     ticker,
                     mark=marks[ticker],
                     book=books[ticker],
+                    contract=contracts[ticker],
+                    rolling_24h=rolling_rows[ticker],
                     payloads=fetched[ticker],
                     observed_at_ms=observed_at_ms,
                 )
@@ -449,6 +557,38 @@ def run_refresh(
                         book=books[ticker],
                         payloads=fetched[ticker],
                         archive_root=archive_root,
+                    )
+                    archive_json_response(
+                        root=archive_root,
+                        payload=contracts[ticker],
+                        source_uri=exchange_url,
+                        provider="Binance public USD-M market data",
+                        dataset_id="binance_realtime_exchange_info",
+                        instrument_id=f"{ticker}USDT",
+                        observed_at_ms=observed_at_ms,
+                        parse_diagnostics={
+                            "status": "ACCEPTED",
+                            "input_rows": 1,
+                            "accepted_rows": 1,
+                            "rejected_rows": 0,
+                            "duplicate_rows": 0,
+                        },
+                    )
+                    archive_json_response(
+                        root=archive_root,
+                        payload=rolling_rows[ticker],
+                        source_uri=rolling_url,
+                        provider="Binance public USD-M market data",
+                        dataset_id="binance_realtime_ticker_24h",
+                        instrument_id=f"{ticker}USDT",
+                        observed_at_ms=observed_at_ms,
+                        parse_diagnostics={
+                            "status": "ACCEPTED",
+                            "input_rows": 1,
+                            "accepted_rows": 1,
+                            "rejected_rows": 0,
+                            "duplicate_rows": 0,
+                        },
                     )
                 inserted += int(store.append_snapshot(snapshot))
                 snapshots[ticker] = snapshot
@@ -487,6 +627,8 @@ def run_refresh(
             "mark/index/basis/funding",
             "best_bid_ask_and_qty",
             "closed_1m_ohlcv",
+            "contract_lifecycle_and_exchange_filters",
+            "rolling_24h_price_volume_and_trade_count",
             "current_open_interest",
             "open_interest_and_value_5m",
             "global_long_short_ratio",

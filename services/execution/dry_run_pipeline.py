@@ -449,6 +449,7 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                          current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
                          adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
                          initial_capital: float = 1e7, cost_bps: float = 0.0,
+                         filters: Optional[Dict[str, tuple[float, float, float]]] = None,
                          route_planner: Callable | None = None,
                          routing_snapshot_id: str = "",
                          event_bus=None, publish_completion_event: bool = True,
@@ -471,6 +472,8 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
     if route_planner is None and routing_snapshot_id:
         raise ValueError("routing_snapshot_id requires route_planner")
     run_id_parts = [strategy_id, timestamp, tuple(sorted(weights.items()))]
+    if filters is not None:
+        run_id_parts.append(("exchange_filters", tuple(sorted(filters.items()))))
     if risk_identity:
         run_id_parts.append(risk_identity)
     if routing_snapshot_id:
@@ -492,7 +495,7 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                  timestamp=timestamp, target=run_id,
                  metadata={"aum": str(aum), "n_weights": str(len(weights))})
 
-    targets = plan_target_quantities(weights, prices, aum)
+    targets = plan_target_quantities(weights, prices, aum, filters=filters)
     intents = build_intents(targets, current_positions, strategy_id=strategy_id)
     screened = screen_intents(intents, gate=gate, ctx_factory=ctx_factory)
     if event_bus is not None:

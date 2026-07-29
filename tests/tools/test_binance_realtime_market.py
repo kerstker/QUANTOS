@@ -41,6 +41,58 @@ def _fake_http(url):
                 "time": _NOW - 2_000,
             }
         ]
+    if path == "/fapi/v1/exchangeInfo":
+        return {
+            "serverTime": _NOW - 1_000,
+            "symbols": [
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "TRADING",
+                    "contractType": "PERPETUAL",
+                    "baseAsset": "BTC",
+                    "quoteAsset": "USDT",
+                    "marginAsset": "USDT",
+                    "onboardDate": 1_600_000_000_000,
+                    "deliveryDate": 4_133_404_800_000,
+                    "pricePrecision": 1,
+                    "quantityPrecision": 3,
+                    "filters": [
+                        {
+                            "filterType": "PRICE_FILTER",
+                            "tickSize": "0.1",
+                        },
+                        {
+                            "filterType": "MARKET_LOT_SIZE",
+                            "minQty": "0.001",
+                            "maxQty": "1000",
+                            "stepSize": "0.001",
+                        },
+                        {
+                            "filterType": "MIN_NOTIONAL",
+                            "notional": "5",
+                        },
+                    ],
+                }
+            ],
+        }
+    if path == "/fapi/v1/ticker/24hr":
+        return [
+            {
+                "symbol": "BTCUSDT",
+                "priceChange": "2",
+                "priceChangePercent": "2.0",
+                "weightedAvgPrice": "100",
+                "lastPrice": "101",
+                "openPrice": "99",
+                "highPrice": "103",
+                "lowPrice": "97",
+                "volume": "1000",
+                "quoteVolume": "100000",
+                "openTime": _NOW - 24 * 60 * 60_000,
+                "closeTime": _NOW - 1_000,
+                "count": 1234,
+            }
+        ]
     assert symbol == "BTCUSDT"
     if path == "/fapi/v1/klines":
         return [
@@ -137,6 +189,10 @@ def test_refresh_persists_complete_public_snapshot_and_status(tmp_path):
     }
     row = status["latest"]["BTC"]
     assert row["book"]["spread_bps"] == pytest.approx(20.0)
+    assert row["contract"]["step_size"] == 0.001
+    assert row["contract"]["min_notional"] == 5.0
+    assert row["rolling_24h"]["quote_volume"] == 100_000.0
+    assert row["rolling_24h"]["trade_count"] == 1234
     assert row["perpetual"]["basis_bps"] > 0
     assert row["perpetual"]["current_open_interest"] == 205.0
     assert row["perpetual"]["open_interest"] == 200.0
@@ -177,3 +233,28 @@ def test_refresh_blocks_stale_positioning_without_writing_a_row(tmp_path):
     assert status["verdict"] == "BLOCK"
     assert status["coverage"]["complete"] == 0
     assert "timestamp is stale" in status["errors"]["BTC"]["message"]
+
+
+def test_refresh_blocks_missing_execution_filter(tmp_path):
+    def missing_filter_http(url):
+        payload = _fake_http(url)
+        if urlparse(url).path == "/fapi/v1/exchangeInfo":
+            payload["symbols"][0]["filters"] = [
+                item
+                for item in payload["symbols"][0]["filters"]
+                if item["filterType"] != "MIN_NOTIONAL"
+            ]
+        return payload
+
+    status = realtime.run_refresh(
+        tickers=("BTC",),
+        store_path=str(tmp_path / "market.db"),
+        status_path=str(tmp_path / "status.json"),
+        archive_root=None,
+        http_get=missing_filter_http,
+        now_ms=_NOW,
+        max_workers=1,
+    )
+
+    assert status["verdict"] == "BLOCK"
+    assert "required exchange filter is missing" in status["errors"]["BTC"]["message"]

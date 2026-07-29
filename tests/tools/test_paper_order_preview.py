@@ -93,6 +93,54 @@ def test_build_alpha_preview_does_not_fill_rebalance_without_full_research_risk(
         )
 
 
+def test_exchange_filters_require_fresh_complete_public_snapshot(tmp_path):
+    path = tmp_path / "realtime.json"
+    path.write_text(
+        json.dumps(
+            {
+                "verdict": "PASS",
+                "complete": True,
+                "generated_at_ms": DECISION_TS,
+                "latest": {
+                    "BTC": {
+                        "contract": {
+                            "status": "TRADING",
+                            "contract_type": "PERPETUAL",
+                            "step_size": 0.001,
+                            "min_qty": 0.001,
+                            "min_notional": 5.0,
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert paper_preview._load_exchange_filters(
+        str(path), {"BTC"}, now_ms=DECISION_TS + 1_000
+    ) == {"BTC": (0.001, 0.001, 5.0)}
+    with pytest.raises(RuntimeError, match="stale"):
+        paper_preview._load_exchange_filters(
+            str(path),
+            {"BTC"},
+            now_ms=DECISION_TS + paper_preview.MAX_EXCHANGE_FILTER_AGE_MS + 1,
+        )
+
+
+def test_build_preview_applies_exchange_step_size_to_targets():
+    result = build_alpha_preview(
+        "crowd_contra",
+        _pending({"BTC": 0.125}),
+        mark_by_ticker={"BTC": {DECISION_TS: 50_000.0}},
+        status=STATUS,
+        aum=1_000_000.0,
+        generated_at_ms=DECISION_TS + 2_000,
+        exchange_filters={"BTC": (2.0, 1.0, 50.0)},
+    )
+
+    assert result["orders"][0]["quantity"] == 2
+
+
 def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tmp_path):
     output = tmp_path / "preview.json"
     report = run_preview(

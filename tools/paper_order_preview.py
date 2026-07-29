@@ -63,10 +63,14 @@ DEFAULT_PAPER_STORE = os.path.join("data", "cache", "paper_order_ledger.db")
 DEFAULT_RESEARCH_RISK_BUNDLE = os.path.join(
     "data", "cache", "paper_research_risk_inputs.json"
 )
+DEFAULT_REALTIME_MARKET_STATUS = os.path.join(
+    "data", "cache", "binance_realtime_market_status.json"
+)
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
 MAX_DECISION_AGE_DAYS = 8
+MAX_EXCHANGE_FILTER_AGE_MS = 15 * 60_000
 FULL_RESEARCH_RISK_ENGINES = frozenset(
     {
         "market",
@@ -142,6 +146,54 @@ def _full_research_risk_approved(risk: object) -> bool:
         and risk.get("engines_skipped") == {}
         and risk.get("engines_pending") == {}
     )
+
+
+def _load_exchange_filters(
+    path: str,
+    instruments: set[str],
+    *,
+    now_ms: int,
+) -> dict[str, tuple[float, float, float]]:
+    """Load current Binance execution filters from the verified public snapshot."""
+    status = _load_json(path)
+    if status.get("verdict") != "PASS" or status.get("complete") is not True:
+        raise RuntimeError("Binance realtime exchange filters are not PASS")
+    generated_at = status.get("generated_at_ms")
+    if (
+        isinstance(generated_at, bool)
+        or not isinstance(generated_at, int)
+        or generated_at < 0
+        or now_ms - generated_at < 0
+        or now_ms - generated_at > MAX_EXCHANGE_FILTER_AGE_MS
+    ):
+        raise RuntimeError("Binance realtime exchange filters are stale")
+    latest = status.get("latest")
+    if not isinstance(latest, Mapping):
+        raise RuntimeError("Binance realtime exchange filters are missing")
+    result: dict[str, tuple[float, float, float]] = {}
+    for instrument in sorted(instruments):
+        snapshot = latest.get(instrument)
+        contract = snapshot.get("contract") if isinstance(snapshot, Mapping) else None
+        if not isinstance(contract, Mapping):
+            raise RuntimeError(f"Binance exchange filters are missing for {instrument}")
+        try:
+            step_size = float(contract["step_size"])
+            min_qty = float(contract["min_qty"])
+            min_notional = float(contract["min_notional"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Binance exchange filters are malformed for {instrument}"
+            ) from exc
+        if (
+            not all(math.isfinite(value) and value > 0 for value in (
+                step_size, min_qty, min_notional
+            ))
+            or contract.get("status") != "TRADING"
+            or contract.get("contract_type") != "PERPETUAL"
+        ):
+            raise RuntimeError(f"Binance exchange filters are invalid for {instrument}")
+        result[instrument] = (step_size, min_qty, min_notional)
+    return result
 
 
 def _latest_attested_pending(path: str, alpha_id: str) -> tuple[dict[str, Any], int]:
@@ -238,6 +290,7 @@ def build_alpha_preview(
     research_risk_inputs: DryRunResearchRiskInputs | None = None,
     research_risk_bundle_status: Mapping[str, Any] | None = None,
     require_full_research_risk: bool = True,
+    exchange_filters: dict[str, tuple[float, float, float]] | None = None,
 ) -> dict[str, Any]:
     """Run one attested decision through the real paper execution chain.
 
@@ -327,6 +380,7 @@ def build_alpha_preview(
         marks=prices,
         initial_capital=float(aum),
         cost_bps=float(cost_bps),
+        filters=exchange_filters,
         event_bus=None,
         publish_completion_event=False,
         research_risk_inputs=research_risk_inputs,
@@ -483,6 +537,7 @@ def run_preview(
     output_path: str = DEFAULT_OUTPUT,
     paper_store_path: str = DEFAULT_PAPER_STORE,
     research_risk_bundle_path: str = DEFAULT_RESEARCH_RISK_BUNDLE,
+    realtime_market_status_path: str = DEFAULT_REALTIME_MARKET_STATUS,
     aum: float = DEFAULT_AUM,
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
@@ -611,6 +666,19 @@ def run_preview(
                     generated_at_ms=generated_at_ms,
                     research_risk_inputs=bundle_result.inputs,
                     research_risk_bundle_status=bundle_result.status,
+                    exchange_filters=(
+                        _load_exchange_filters(
+                            realtime_market_status_path,
+                            set(json.loads(str(pending["weights_json"]))),
+                            now_ms=int(
+                                generated_at_ms
+                                if generated_at_ms is not None
+                                else time.time() * 1000
+                            ),
+                        )
+                        if bundle_result.inputs is not None
+                        else None
+                    ),
                 )
                 if preview.get("paper_execution") == "PAPER_FILLED":
                     store.append_preview(preview)
