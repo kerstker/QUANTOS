@@ -8,7 +8,11 @@
 > source time 与新鲜度 fail-closed 校验，并与盘口、mark/index/funding、K 线、
 > 全市场/大户持仓比、taker 流一起进入原 append-only SQLite 哈希链和原始响应归档。
 > 真实 Binance 首跑 14/14 完整、14 条新记录、链有效；Data Catalog API/页面展示
-> 当前 REST 字段清单。数据仍为无凭证公共行情，只服务 L2 研究与纸面交易，不接私有
+> 当前 REST 字段清单。实时 WebSocket 重启还暴露并修复了一个运营缺口：启动初期的
+> incomplete-core 快照会诚实留在源哈希链，但特征 worker 现在只投影其中
+> `complete_core=true` 的行，并在任何标的没有完整行时继续 fail-closed，避免一条保留的
+> 重启诊断记录永久堵塞后续特征物化。真实恢复运行写入 3,213 个新特征值，98 条漂移
+> 序列完整，特征批次链有效。数据仍为无凭证公共行情，只服务 L2 研究与纸面交易，不接私有
 > 账户、券商或订单。外部模型 Provider 探针也已真实执行，但现有本地凭证返回 401，
 > 因而未生成 PASS 证据，`AI.MODEL.REGISTRY.REDTEAM` 仍诚实保持 PARTIAL。
 

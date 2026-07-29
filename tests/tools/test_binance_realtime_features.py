@@ -1,6 +1,8 @@
 import ast
 from pathlib import Path
 
+import pytest
+
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.features.value_store import SqliteFeatureValueStore
 from tools import binance_realtime_features as realtime
@@ -62,6 +64,10 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         for index in range(300):
             for ticker in ("AAA", "BBB"):
                 source.append_snapshot(_snapshot(f"{ticker}USDT", index))
+        incomplete = _snapshot("AAAUSDT", 301)
+        incomplete["quality"]["complete_core"] = False
+        incomplete["quality"]["missing_channels"] = ["depth20"]
+        source.append_snapshot(incomplete)
     finally:
         source.close()
 
@@ -72,7 +78,7 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         feature_store_path=str(feature_path),
         batch_store_path=str(tmp_path / "batches.db"),
         status_path=str(tmp_path / "status.json"),
-        source_row_limit=600,
+        source_row_limit=601,
     )
     assert result["status"] == "PASS"
     assert result["features"]["instrument_count"] == 2
@@ -101,6 +107,33 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         assert len(rows) == 300
     finally:
         store.close()
+
+
+def test_source_snapshot_selection_keeps_incomplete_restart_rows_as_evidence(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        complete = _snapshot("AAAUSDT", 1)
+        source.append_snapshot(complete)
+        incomplete = _snapshot("BBBUSDT", 1)
+        incomplete["quality"]["complete_core"] = False
+        incomplete["quality"]["missing_channels"] = ["mark"]
+        source.append_snapshot(incomplete)
+
+        with pytest.raises(
+            realtime.BinanceRealtimeFeatureError,
+            match="missing instruments",
+        ):
+            realtime._source_snapshots(source, limit=2)
+
+        assert source.row_count() == 2
+        assert source.chain_valid() is True
+    finally:
+        source.close()
 
 
 def test_realtime_feature_worker_has_no_network_or_execution_surface():

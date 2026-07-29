@@ -96,6 +96,8 @@ def _source_snapshots(
         row
         for row in store.recent_rows(limit)
         if row.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+        and isinstance(row.get("quality"), dict)
+        and row["quality"].get("complete_core") is True
     ]
     expected = {f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS}
     observed = {str(row.get("instrument_id", "")).upper() for row in rows}
