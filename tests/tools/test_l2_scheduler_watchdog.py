@@ -15,7 +15,6 @@ from services.governance.l2_restore_history import (
 from tools.l2_scheduler_watchdog import (
     EXPECTED_TASKS,
     TaskSnapshot,
-    _configured_environment_value,
     collect_windows_tasks,
     evaluate_schedule,
     read_restore_history_health,
@@ -189,6 +188,48 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
         "UNAVAILABLE": 0,
         "BREACH": 0,
     }
+
+
+def test_running_task_ignores_prior_overlap_result_until_current_instance_completes(
+    tmp_path,
+):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    stream_index = next(
+        index
+        for index, row in enumerate(snapshots)
+        if row.name == "QUANTOS_binance_realtime_stream"
+    )
+    prior = snapshots[stream_index]
+    snapshots[stream_index] = TaskSnapshot(
+        name=prior.name,
+        state="Running",
+        last_run_ms=prior.last_run_ms,
+        last_result=2_147_946_720,
+        next_run_ms=prior.next_run_ms,
+        execute=prior.execute,
+        arguments=prior.arguments,
+        working_directory=prior.working_directory,
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_binance_realtime_stream"
+    )
+    assert check["status"] == "PASS"
+    assert check["code"] == "RUNNING"
+    assert result["verdict"] == "PASS"
 
 
 def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():

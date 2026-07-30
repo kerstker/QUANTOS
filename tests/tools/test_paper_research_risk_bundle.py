@@ -121,3 +121,49 @@ def test_metadata_rejects_evaluation_recorded_after_decision() -> None:
         assert "predate" in str(exc)
     else:
         raise AssertionError("post-decision evaluation must be rejected")
+
+
+def test_high_trial_review_reason_is_not_an_observed_overfit_flag() -> None:
+    row = {
+        "evaluation": {
+            "as_of": 100,
+            "deflated_sharpe": 0.2,
+            "pbo": 0.03,
+            "verdict": "FAIL",
+            "reasons": [
+                "HIGH_TRIAL_COUNT (2539); review overfitting risk",
+            ],
+        }
+    }
+
+    metadata = bundle._metadata_from_evaluation(
+        deployed_alpha_id="crowd_contra",
+        evaluation_row=row,
+        decision_recorded_at=100,
+        forward_periods=1,
+        maintenance={"strategies": {}},
+    )
+
+    assert metadata["overfit_flag"] is False
+
+
+def test_pbo_above_half_is_an_observed_overfit_flag() -> None:
+    row = {
+        "evaluation": {
+            "as_of": 100,
+            "deflated_sharpe": 0.8,
+            "pbo": 0.51,
+            "verdict": "FAIL",
+            "reasons": [],
+        }
+    }
+
+    metadata = bundle._metadata_from_evaluation(
+        deployed_alpha_id="crowd_contra",
+        evaluation_row=row,
+        decision_recorded_at=100,
+        forward_periods=8,
+        maintenance={"strategies": {}},
+    )
+
+    assert metadata["overfit_flag"] is True

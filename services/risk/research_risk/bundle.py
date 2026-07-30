@@ -294,6 +294,25 @@ def load_research_risk_bundle(
         if lengths and len(labels) not in lengths:
             reasons.append("regime_labels_unaligned")
 
+    timestamps = inputs.get("timestamps")
+    if timestamps is not None:
+        if (
+            not isinstance(timestamps, Sequence)
+            or isinstance(timestamps, (str, bytes))
+            or not timestamps
+        ):
+            reasons.append("timestamps_invalid")
+        elif (
+            any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                for value in timestamps
+            )
+            or list(timestamps) != sorted(set(timestamps))
+        ):
+            reasons.append("timestamps_invalid")
+        elif isinstance(labels, Sequence) and len(timestamps) != len(labels):
+            reasons.append("timestamps_unaligned")
+
     metadata = inputs.get("alpha_metadata")
     if not isinstance(metadata, Sequence) or isinstance(metadata, (str, bytes)) or not metadata:
         reasons.append("alpha_metadata_invalid")
@@ -330,6 +349,11 @@ def load_research_risk_bundle(
             },
             regime_labels=tuple(str(label) for label in labels),
             alpha_metadata=[dict(item) for item in metadata],
+            timestamps=(
+                tuple(int(value) for value in timestamps)
+                if timestamps is not None
+                else None
+            ),
         ),
         status=status,
     )

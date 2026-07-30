@@ -23,35 +23,35 @@ from pathlib import Path
 import sys
 import time
 
+from services.data.panel_quality import gate_decision_inputs
+from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
 from services.research import alpha_expression as ax
 from services.research.backtest_engine.metrics import sharpe
-from services.research.paper_trading.forward import realize_due
 from services.research.paper_trading.attested_store import AttestedForwardLedger
+from services.research.paper_trading.forward import realize_due
 from services.research.paper_trading.forward_evidence import (
     ForwardAdmissionRef,
     load_forward_admission_ref,
 )
-from services.research.paper_trading.forward_store import ForwardLedger
 from services.research.paper_trading.store import PaperTrackStore
 from services.data.admission_store import DataQualityAdmissionStore
+from tools import binance_oi_metrics_fetch as oi_fetch
 from tools.alert_sink import emit
+from tools.binance_perp_mark_fetch import load_mark_prices
+from tools.cache_io import atomic_write_json
 from tools.crypto_oi_research import CARRY, QUANTILE, _legs, build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.data_quality_admission import DATA_QUALITY_ADMISSION_DB, run_data_quality_admission
-from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
-from tools.cache_io import atomic_write_json
 from tools.forward_evidence_status import build_forward_evidence
+from tools.live_data_refresh import STALE_LIMITS, run_refresh, staleness_days
 from tools.raw_data_lineage_backfill import run_backfill
+from tools.signal_quality import rows_with_acceptable_coverage
 
 # 前向跟踪的 crypto alpha(crowd_contra/carry/top_contra)证据只依赖 Binance 系四源;
 # MEXC 现货源(mexc_btc)是 btc_spot_trend 的数据面,不属于本驱动器的证据判据——
 # live_data_refresh 第 5 源加入 STALE_LIMITS 后必须显式收窄,否则 MEXC 数据停更会
 # 误挡 crowd/carry 的证据钟(2026-07 MEXC 对接审查发现)。
 _FORWARD_STALE_LIMITS = {k: v for k, v in STALE_LIMITS.items() if k != "mexc_btc"}
-from tools import binance_oi_metrics_fetch as oi_fetch
-from tools.binance_perp_mark_fetch import load_mark_prices
-from tools.signal_quality import rows_with_acceptable_coverage
-from services.data.panel_quality import gate_decision_inputs   # P1-8 决策门(纯跨标的门)
 
 _DB = os.path.join("data", "cache", "paper_track.db")
 _FUND = os.path.join("data", "cache", "crypto_funding_rates.json")
@@ -74,7 +74,6 @@ _SYSTEMIC_STALE_FRAC = 0.2                          # >20% ticker 落后 = 系�
 # lets a clean future data-admission run start a separately attributable paper
 # clock instead of silently dropping the third candidate.
 # F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
-from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
 # 2026-07-24 预注册 crowd_contra 变体族(evidence/crowd_contra_variants.json;17 trial 含基线重跑,
 # 相对判定 7 个非基线 CANDIDATE)注册于此,只做**前向 paper 证据积累**——不晋级、不授权交易、不碰
 # live 轨道(_STRATEGIES/mandate/attestation 一字未动)。dict 值 = 变体 spec(expr/quantile/
@@ -285,6 +284,23 @@ def _cadence_rows(event_times, cadence_days):
 
 def _weekly_rows(event_times) -> list:
     return _cadence_rows(event_times, 7)
+
+
+def _realization_timestamps(event_times, cadence_rows) -> list[int]:
+    """Return weekly evidence anchors plus the latest closed observation.
+
+    Decisions may bootstrap or rebalance on the freshest clean daily row.  If
+    realization only scans the fixed weekly anchors, a decision made between
+    anchors can remain pending after its true 6.5-day horizon and overlap the
+    next decision.  The latest closed row is still genuine forward data; adding
+    it only lets ``realize_due`` settle an already-mature decision and does not
+    alter the weekly return horizon or admit an early realization.
+    """
+    if not event_times:
+        return []
+    timestamps = {int(event_times[row]) for row in cadence_rows}
+    timestamps.add(int(event_times[-1]))
+    return sorted(timestamps)
 
 
 def _weights_and_signals(sig_row, insts, quantile=QUANTILE):
@@ -606,7 +622,7 @@ def _run() -> None:
                 ledger,
                 store,
                 alpha_id,
-                timestamps=[int(ev[r]) for r in rows],
+                timestamps=_realization_timestamps(ev, rows),
                 prices=prices,
                 funding_sum=funding_sum,
                 backtest_sharpe=ref_sharpe,

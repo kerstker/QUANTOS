@@ -542,12 +542,15 @@ def _check_task(
             "code": "STALE",
             "detail": f"last run is stale by policy ({age_ms}ms > {spec.max_age_ms}ms)",
         }
-    if snapshot.state == "Running" and snapshot.last_result == _RUNNING_RESULT:
+    if snapshot.state == "Running":
         return {
             "task_name": name,
             "status": "PASS",
             "code": "RUNNING",
-            "detail": "task is currently running with the expected action",
+            "detail": (
+                "task is currently running with the expected action; "
+                "the previous result is not a completion result for this instance"
+            ),
         }
     if snapshot.last_result in spec.partial_results:
         return {

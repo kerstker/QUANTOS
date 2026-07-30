@@ -41,6 +41,7 @@ from services.trading.dry_run_adapters.domain.models import DryRunCommand
 from services.risk.research_risk.dry_run_guard import (
     DryRunResearchRiskInputs,
     evaluate_dry_run_risk,
+    full_research_risk_approved,
 )
 from services.risk.research_risk.domain.models import RiskConfig
 from services.risk.research_risk.events import research_risk_evaluated_event
@@ -87,6 +88,9 @@ def _research_risk_identity(
                 },
                 "regime_labels": list(inputs.regime_labels),
                 "alpha_metadata": [dict(item) for item in inputs.alpha_metadata],
+                "timestamps": (
+                    list(inputs.timestamps) if inputs.timestamps is not None else None
+                ),
             }
         except Exception:
             # The evaluator will return a strict PENDING result for malformed
@@ -456,12 +460,21 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                          research_risk_inputs: Optional[DryRunResearchRiskInputs] = None,
                          research_risk_config: Optional[RiskConfig] = None,
                          require_full_research_risk: bool = False,
+                         research_risk_returns: Optional[Sequence[float]] = None,
+                         research_risk_equity_curve: Optional[Sequence[float]] = None,
+                         research_risk_timestamps: Optional[Sequence[int]] = None,
                          publish_research_risk_event: Optional[bool] = None) -> DryRunRun:
     """端到端干跑编排器(薄、确定性):权重→目标手数→意图→门 chokepoint(fail-closed)→干跑受理(不真发)
     →纸面成交→对账→哈希链审计→DryRunRun。墙钟/seed 在调用方边界(timestamp/adapter)注入;此函数无 RNG/墙钟。
     kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。
     route_planner 为可选研究/干跑 SOR；启用时必须提供内容绑定的 routing_snapshot_id。"""
     strict_research_risk = bool(require_full_research_risk or research_risk_inputs is not None)
+    if (research_risk_returns is None) != (research_risk_equity_curve is None):
+        raise ValueError(
+            "research_risk_returns and research_risk_equity_curve must be provided together"
+        )
+    if research_risk_timestamps is not None and research_risk_returns is None:
+        raise ValueError("research_risk_timestamps requires research_risk_returns")
     risk_identity = _research_risk_identity(
         research_risk_inputs, research_risk_config, strict_research_risk
     )
@@ -476,6 +489,19 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         run_id_parts.append(("exchange_filters", tuple(sorted(filters.items()))))
     if risk_identity:
         run_id_parts.append(risk_identity)
+    if research_risk_returns is not None:
+        run_id_parts.append(
+            (
+                "research_risk_series",
+                tuple(float(value) for value in research_risk_returns),
+                tuple(float(value) for value in research_risk_equity_curve or ()),
+                (
+                    tuple(int(value) for value in research_risk_timestamps)
+                    if research_risk_timestamps is not None
+                    else None
+                ),
+            )
+        )
     if routing_snapshot_id:
         run_id_parts.append(("sor", routing_snapshot_id))
     run_id = _det_id(*run_id_parts)
@@ -513,10 +539,38 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                      action="INTENT_REJECTED", timestamp=timestamp, target=intent.instrument_id,
                      metadata={"reasons": ",".join(str(r) for r in reasons)})
 
-    if strict_research_risk and research_risk_inputs is None:
-        # An explicit request for the complete nine-engine contract without its
-        # evidence is fail-closed even in dry-run mode: do not simulate fills
-        # that a caller could mistake for admitted research output.
+    pre_fill_research_risk = None
+    if strict_research_risk and research_risk_returns is not None:
+        pre_fill_research_risk = _evaluate_research_risk(
+            returns=[float(value) for value in research_risk_returns],
+            weights=weights,
+            equity_curve=[
+                float(value) for value in research_risk_equity_curve or ()
+            ],
+            timestamps=(
+                [int(value) for value in research_risk_timestamps]
+                if research_risk_timestamps is not None
+                else None
+            ),
+            inputs=research_risk_inputs,
+            config=research_risk_config,
+            require_full=True,
+            series="aligned_pit_history",
+        )
+        pre_fill_research_risk["scope"] = "PRE_FILL_RESEARCH_EVIDENCE"
+
+    fill_admitted = (
+        not strict_research_risk
+        or (
+            pre_fill_research_risk is not None
+            and full_research_risk_approved(pre_fill_research_risk)
+        )
+    )
+    if not fill_admitted:
+        # Strict paper execution requires a complete approval computed from an
+        # explicit aligned history before any simulated fill.  Missing,
+        # post-fill-only, or rejected evidence is observable but cannot mutate
+        # the paper position projection.
         filled = {
             "fills": [], "reports": [], "impact_trades": [],
             "n_impact": 0, "n_flat": 0, "routing": [],
@@ -536,15 +590,34 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         if isinstance(initial_capital, (int, float)) and initial_capital > 0
         else float("nan")
     )
-    research_risk = _evaluate_research_risk(
-        returns=[single_return],
+    risk_returns = (
+        [float(value) for value in research_risk_returns]
+        if research_risk_returns is not None
+        else [single_return]
+    )
+    risk_equity_curve = (
+        [float(value) for value in research_risk_equity_curve]
+        if research_risk_equity_curve is not None
+        else [float(pnl["equity"])]
+    )
+    risk_timestamps = (
+        [int(value) for value in research_risk_timestamps]
+        if research_risk_timestamps is not None
+        else ([int(timestamp)] if research_risk_returns is None else None)
+    )
+    research_risk = pre_fill_research_risk or _evaluate_research_risk(
+        returns=risk_returns,
         weights=weights,
-        equity_curve=[float(pnl["equity"])],
-        timestamps=[int(timestamp)],
+        equity_curve=risk_equity_curve,
+        timestamps=risk_timestamps,
         inputs=research_risk_inputs,
         config=research_risk_config,
         require_full=strict_research_risk,
-        series="single_period",
+        series=(
+            "aligned_pit_history"
+            if research_risk_returns is not None
+            else "single_period"
+        ),
     )
     audit_root = audit.seal().head_hash
 
@@ -557,10 +630,11 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                 "n_adapter_rejected": filled.get("n_adapter_rejected", 0),
                 "routing_snapshot_id": routing_snapshot_id or None,
                 "route_tca_schema_version": 1 if route_planner is not None else None,
-                "routing": filled.get("routing", []),
-                "route_rejections": filled.get("route_rejections", []),
-                "route_tca": filled.get("route_tca", []),
-                "research_risk": research_risk})
+                 "routing": filled.get("routing", []),
+                 "route_rejections": filled.get("route_rejections", []),
+                 "route_tca": filled.get("route_tca", []),
+                 "research_risk_fill_admitted": fill_admitted,
+                 "research_risk": research_risk})
     should_publish_risk = (
         bool(publish_research_risk_event)
         if publish_research_risk_event is not None

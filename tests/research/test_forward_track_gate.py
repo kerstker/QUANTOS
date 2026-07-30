@@ -7,6 +7,7 @@ from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from tools.forward_track_advance import (
     _mark_price_map,
     _candidate_advances_ledger,
+    _realization_timestamps,
     authoritative_admission_status,
     decision_block_reason,
     refresh_lineage_backfill,
@@ -75,6 +76,24 @@ def test_new_admission_cannot_backdate_behind_legacy_ledger_rows():
     assert _candidate_advances_ledger(100, [100]) is False
     assert _candidate_advances_ledger(99, [100]) is False
     assert _candidate_advances_ledger(100, []) is True
+
+
+def test_realization_grid_includes_latest_closed_row_between_weekly_anchors():
+    event_times = [_NOW - 8 * _DAY, _NOW - 7 * _DAY, _NOW - _DAY, _NOW]
+
+    assert _realization_timestamps(event_times, [0, 1]) == [
+        _NOW - 8 * _DAY,
+        _NOW - 7 * _DAY,
+        _NOW,
+    ]
+
+
+def test_realization_grid_deduplicates_latest_weekly_anchor_and_handles_empty():
+    assert _realization_timestamps([_NOW - _DAY, _NOW], [0, 1]) == [
+        _NOW - _DAY,
+        _NOW,
+    ]
+    assert _realization_timestamps([], []) == []
 
 
 def test_raw_lineage_requires_integrity_and_all_forward_datasets():

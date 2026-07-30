@@ -65,7 +65,9 @@ class RiskApprovalGate:
         specs = (
             ("market", lambda: self._engines["market"].evaluate(returns, config),
              lambda r: f"Market risk: vol={r.volatility:.3f}, VaR={r.var_95:.4f}, CVaR={r.cvar_95:.4f}"),
-            ("liquidity", lambda: self._engines["liquidity"].evaluate(weights, capacity_cny, daily_volume_cny, config),
+            ("liquidity", lambda: self._engines["liquidity"].evaluate(
+                weights, capacity_cny, daily_volume_cny, total_aum, config
+            ),
              lambda r: f"Liquidity: usage={r.avg_daily_volume_usage:.4f}, liq_days={r.liquidation_days}"),
             ("concentration", lambda: self._engines["concentration"].evaluate(weights, clusters, config),
              lambda r: f"Concentration: HHI={r.hhi:.4f}, max_single={r.max_single_alpha:.3f}"),
@@ -80,7 +82,13 @@ class RiskApprovalGate:
             ("capacity", lambda: self._engines["capacity"].evaluate(weights, capacity_cny, total_aum, config),
              lambda r: f"Capacity: usage={r.capacity_usage:.2f}"),
             ("model_alpha", lambda: self._engines["model_alpha"].evaluate(alpha_metadata or [], config),
-             lambda r: f"Model/Alpha: decay={r.alphas_with_decay}, overfit={r.alphas_with_overfitting_flags}"),
+             lambda r: (
+                 "Model/Alpha: "
+                 f"decay={r.alphas_with_decay}, "
+                 f"overfit={r.alphas_with_overfitting_flags}, "
+                 f"validation_conf={r.min_validation_confidence:.3f}, "
+                 f"paper_conf={r.min_paper_confidence:.3f}"
+             )),
         )
         for name, thunk, reason_fn in specs:
             try:

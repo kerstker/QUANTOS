@@ -111,6 +111,7 @@ class ModelAlphaRiskReport:
     passed: bool = True; avg_alpha_age_days: float = 0.0
     alphas_with_decay: int = 0; alphas_with_overfitting_flags: int = 0
     alphas_with_leakage_flags: int = 0; min_validation_confidence: float = 0.0
+    min_paper_confidence: float = 0.0
 
 @dataclass
 class ResearchRiskDecision:

@@ -5,6 +5,8 @@ import json
 import pytest
 
 import tools.paper_order_preview as paper_preview
+from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
+from services.risk.research_risk.domain.models import RiskConfig
 from tools.paper_order_preview import build_alpha_preview, run_preview
 
 
@@ -25,6 +27,10 @@ def _pending(weights):
         "weights_json": json.dumps(weights),
         "source": "FORWARD_L2_ATTESTED_DECISION",
     }
+
+
+def test_public_exports_are_resolvable():
+    assert all(hasattr(paper_preview, name) for name in paper_preview.__all__)
 
 
 def test_build_alpha_preview_requires_complete_research_risk():
@@ -49,6 +55,73 @@ def test_build_alpha_preview_requires_complete_research_risk():
     assert result["paper_only"] is True
     assert result["live_allowed"] is False
     assert {row["instrument"] for row in result["orders"]} == {"BTC", "ETH"}
+
+
+def test_build_alpha_preview_uses_aligned_pit_history_for_full_risk():
+    periods = 24
+    week_ms = 7 * 24 * 60 * 60 * 1_000
+    timestamps = [
+        DECISION_TS - (periods - index) * week_ms for index in range(periods)
+    ]
+    inputs = DryRunResearchRiskInputs(
+        capacity_cny={"BTC": 1.0e12, "ETH": 1.0e12},
+        daily_volume_cny=1.0e12,
+        total_aum=1.0e6,
+        alpha_returns={
+            "crowd_contra": [
+                0.001 if index % 2 else -0.0002 for index in range(periods)
+            ],
+            "peer_alpha": [
+                0.0003 if index % 3 else -0.0001 for index in range(periods)
+            ],
+        },
+        regime_labels=["normal"] * periods,
+        alpha_metadata=[
+            {
+                "alpha_id": "crowd_contra",
+                "age_days": 1.0,
+                "validation_confidence": 0.9,
+                "paper_confidence": 0.9,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+            {
+                "alpha_id": "peer_alpha",
+                "age_days": 1.0,
+                "validation_confidence": 0.9,
+                "paper_confidence": 0.9,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+        ],
+        timestamps=timestamps,
+    )
+
+    result = build_alpha_preview(
+        "crowd_contra",
+        _pending({"BTC": 0.125, "ETH": -0.125}),
+        mark_by_ticker={
+            "BTC": {DECISION_TS: 50_000.0},
+            "ETH": {DECISION_TS: 2_000.0},
+        },
+        status=STATUS,
+        aum=1_000_000.0,
+        generated_at_ms=DECISION_TS + 2_000,
+        research_risk_inputs=inputs,
+    )
+
+    risk = result["research_risk"]
+    assert risk["series"] == "aligned_pit_history"
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["gates_run"] == 9
+    assert not risk["engines_pending"]
+    assert risk["config_provenance"] == RiskConfig(
+        periods_per_year=paper_preview.OFFICIAL_PAPER_PERIODS_PER_YEAR
+    ).compute_hash()
+    assert risk["reports"]["stress"]["provenance"] == "REAL_HISTORICAL_REPLAY"
+    assert risk["scope"] == "PRE_FILL_RESEARCH_EVIDENCE"
 
 
 def test_build_alpha_preview_rejects_non_major_or_missing_price():

@@ -108,15 +108,24 @@ class LiquidityRiskEngine:
         weights: Dict[str, float],
         capacity_cny: Dict[str, float],
         daily_volume_cny: float,
+        total_aum: float,
         config: RiskConfig,
     ) -> LiquidityRiskReport:
         if not weights:
             return LiquidityRiskReport(passed=False)   # no book -> not evaluable, fail closed
         gross = sum(abs(value) for value in weights.values())
-        min_capacity = min(capacity_cny.values()) if capacity_cny else 0.0
-        avg_daily_volume_usage = gross / max(daily_volume_cny / 100_000_000, 1.0)
-        participation_rate = gross / max(len(weights), 1)
-        liquidation_days = int(math.ceil((gross * 100_000_000) / max(min_capacity, 1.0))) if gross else 0
+        gross_notional = gross * max(float(total_aum), 0.0)
+        avg_daily_volume_usage = gross_notional / max(float(daily_volume_cny), 1.0)
+        # ``capacity_cny`` is the producer's 10%-of-ADV executable daily
+        # capacity.  Recover per-name ADV from that explicit contract instead
+        # of treating portfolio weights as participation rates.
+        usages = {
+            key: abs(weight) * float(total_aum) / max(float(capacity_cny.get(key, 0.0)), 1.0)
+            for key, weight in weights.items()
+        }
+        capacity_usage = max(usages.values(), default=0.0)
+        participation_rate = min(1.0, 0.10 * capacity_usage)
+        liquidation_days = int(math.ceil(capacity_usage)) if gross else 0
         cost_to_liquidate_bps = participation_rate * 100
         liquidity_stress_score = avg_daily_volume_usage + participation_rate + liquidation_days / 100
         passed = (
@@ -367,4 +376,5 @@ class ModelAlphaRiskEngine:
             alphas_with_overfitting_flags=overfit,
             alphas_with_leakage_flags=leakage,
             min_validation_confidence=min_validation,
+            min_paper_confidence=min_paper,
         )

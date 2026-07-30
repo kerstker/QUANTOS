@@ -39,7 +39,12 @@ from services.execution.dry_run_pipeline import run_dry_run_pipeline
 from services.execution.paper_execution_store import PaperExecutionStore
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.risk.research_risk.bundle import load_research_risk_bundle
-from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
+from services.risk.research_risk.dry_run_guard import (
+    DryRunResearchRiskInputs,
+    FULL_RESEARCH_RISK_ENGINES,
+    full_research_risk_approved,
+)
+from services.risk.research_risk.domain.models import RiskConfig
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (
     AccountRiskState,
@@ -69,23 +74,9 @@ DEFAULT_REALTIME_MARKET_STATUS = os.path.join(
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
+OFFICIAL_PAPER_PERIODS_PER_YEAR = 52.0
 MAX_DECISION_AGE_DAYS = 8
 MAX_EXCHANGE_FILTER_AGE_MS = 15 * 60_000
-FULL_RESEARCH_RISK_ENGINES = frozenset(
-    {
-        "market",
-        "liquidity",
-        "concentration",
-        "correlation",
-        "drawdown",
-        "regime",
-        "stress",
-        "capacity",
-        "model_alpha",
-    }
-)
-
-
 def _load_json(path: str) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -133,19 +124,7 @@ def _full_research_risk_approved(risk: object) -> bool:
     """
     if not isinstance(risk, Mapping):
         return False
-    engines_run = risk.get("engines_run")
-    return (
-        risk.get("decision") == "RISK_APPROVED"
-        and risk.get("status") == "APPROVED"
-        and risk.get("provenance") == "REAL_RESEARCH_RISK_FULL"
-        and risk.get("gates_run") == len(FULL_RESEARCH_RISK_ENGINES)
-        and risk.get("gates_passed") == len(FULL_RESEARCH_RISK_ENGINES)
-        and isinstance(engines_run, Mapping)
-        and set(engines_run) == set(FULL_RESEARCH_RISK_ENGINES)
-        and all(value is True for value in engines_run.values())
-        and risk.get("engines_skipped") == {}
-        and risk.get("engines_pending") == {}
-    )
+    return full_research_risk_approved(risk)
 
 
 def _load_exchange_filters(
@@ -277,6 +256,42 @@ def _paper_gate(*, alpha_id: str, instruments: set[str], aum: float) -> PreTrade
     return PreTradeRiskGate(limits, kill_switch=KillSwitch())
 
 
+def _aligned_full_risk_series(
+    *,
+    alpha_id: str,
+    inputs: DryRunResearchRiskInputs,
+    initial_capital: float,
+) -> tuple[list[float], list[float], list[int] | None]:
+    """Build the portfolio curve aligned with the bundle's PIT risk evidence."""
+    raw = inputs.alpha_returns.get(alpha_id)
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise RuntimeError(f"research-risk bundle has no return history for {alpha_id}")
+    returns = [float(value) for value in raw]
+    if any(not math.isfinite(value) or value <= -1.0 for value in returns):
+        raise RuntimeError(f"research-risk return history is invalid for {alpha_id}")
+    if len(returns) != len(inputs.regime_labels):
+        raise RuntimeError(
+            f"research-risk return/regime history is unaligned for {alpha_id}"
+        )
+    equity: list[float] = []
+    level = float(initial_capital)
+    for value in returns:
+        level *= 1.0 + value
+        if not math.isfinite(level) or level <= 0.0:
+            raise RuntimeError(f"research-risk equity history is invalid for {alpha_id}")
+        equity.append(level)
+    timestamps = (
+        [int(value) for value in inputs.timestamps]
+        if inputs.timestamps is not None
+        else None
+    )
+    if timestamps is not None and len(timestamps) != len(returns):
+        raise RuntimeError(
+            f"research-risk return/timestamp history is unaligned for {alpha_id}"
+        )
+    return returns, equity, timestamps
+
+
 def build_alpha_preview(
     alpha_id: str,
     pending: Mapping[str, Any],
@@ -328,6 +343,15 @@ def build_alpha_preview(
         )
     instruments = set(weights) | set(held)
     gate = _paper_gate(alpha_id=alpha_id, instruments=instruments, aum=float(aum))
+    risk_returns: list[float] | None = None
+    risk_equity_curve: list[float] | None = None
+    risk_timestamps: list[int] | None = None
+    if research_risk_inputs is not None:
+        risk_returns, risk_equity_curve, risk_timestamps = _aligned_full_risk_series(
+            alpha_id=alpha_id,
+            inputs=research_risk_inputs,
+            initial_capital=float(aum),
+        )
     account_positions = tuple(
         Position(
             instrument_id=instrument,
@@ -384,7 +408,13 @@ def build_alpha_preview(
         event_bus=None,
         publish_completion_event=False,
         research_risk_inputs=research_risk_inputs,
+        research_risk_config=RiskConfig(
+            periods_per_year=OFFICIAL_PAPER_PERIODS_PER_YEAR
+        ),
         require_full_research_risk=bool(require_full_research_risk),
+        research_risk_returns=risk_returns,
+        research_risk_equity_curve=risk_equity_curve,
+        research_risk_timestamps=risk_timestamps,
     )
     targets = {
         str(name): int(quantity)

@@ -394,6 +394,64 @@ def test_single_pipeline_persists_full_research_risk_and_publishes_canonical_eve
     assert events[3].payload["provenance"] == "REAL_RESEARCH_RISK_FULL"
 
 
+def test_single_pipeline_accepts_explicit_aligned_research_risk_history():
+    periods = 8
+    inputs = _full_research_risk_inputs(periods)
+    returns = [0.001 for _ in range(periods)]
+    equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.1, "ETH": -0.1},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        research_risk_inputs=inputs,
+        research_risk_returns=returns,
+        research_risk_equity_curve=equity,
+    )
+
+    risk = run.detail["research_risk"]
+    assert risk["series"] == "aligned_pit_history"
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["gates_run"] == 9
+    assert risk["decision"] == "RISK_APPROVED"
+    assert risk["scope"] == "PRE_FILL_RESEARCH_EVIDENCE"
+    assert run.detail["research_risk_fill_admitted"] is True
+    assert run.detail["n_fills"] == 2
+
+
+def test_single_pipeline_rejected_explicit_full_risk_has_zero_fills():
+    periods = 8
+    inputs = _full_research_risk_inputs(periods)
+    returns = [0.001 for _ in range(periods)]
+    equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.25, "ETH": -0.25},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        research_risk_inputs=inputs,
+        research_risk_returns=returns,
+        research_risk_equity_curve=equity,
+    )
+
+    assert run.detail["research_risk"]["decision"] == "RISK_REJECTED"
+    assert run.detail["research_risk_fill_admitted"] is False
+    assert run.detail["n_fills"] == 0
+    assert run.pnl["positions"] == {}
+
+
 def test_multi_period_strict_research_risk_without_evidence_is_pending_and_fail_closed():
     bus = DurableEventBus(":memory:")
     run = run_multi_period_dry_run(

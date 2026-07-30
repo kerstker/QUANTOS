@@ -306,8 +306,14 @@ def _metadata_from_evaluation(
             0.0, min(1.0, int(forward_periods) / REQUIRED_FORWARD_PERIODS)
         ),
         "decay_flag": maintenance_state in {"DEGRADED", "PAUSED", "RETIRED"},
+        # A high catalog trial count is a multiple-testing/review condition, not
+        # itself an observed overfit event.  Only PBO or an explicit machine
+        # overfit finding may set this flag.
         "overfit_flag": float(pbo) > 0.50
-        or any("OVERFIT" in reason for reason in reasons),
+        or any(
+            "OVERFIT_DETECTED" in reason or "OVERFIT_CONFIRMED" in reason
+            for reason in reasons
+        ),
         "leakage_flag": any("LEAKAGE" in reason for reason in reasons),
         "deployed_alpha_id": deployed_alpha_id,
         "research_alpha_id": evaluation_row.get("research_alpha_id"),
@@ -345,10 +351,14 @@ def build_research_risk_bundle(
     robust_version, robust_hashes = _dataset_version()
     labels = research.get("state_labels")
     returns = research.get("alpha_returns")
+    timestamps = research.get("periods")
     if (
         not isinstance(labels, Sequence)
         or any(not isinstance(value, str) or not value for value in labels)
         or not isinstance(returns, Mapping)
+        or not isinstance(timestamps, Sequence)
+        or len(timestamps) != len(labels)
+        or any(not isinstance(value, int) or value < 0 for value in timestamps)
     ):
         raise RuntimeError("aligned PIT return/regime evidence is incomplete")
     evaluation_rows = _verified_evaluation_rows(Path(evaluations))
@@ -400,6 +410,7 @@ def build_research_risk_bundle(
                     str(key): list(value) for key, value in returns.items()
                 },
                 "regime_labels": list(labels),
+                "timestamps": list(timestamps),
             }
             missing: list[str] = []
             missing_reasons: dict[str, str] = {}

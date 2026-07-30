@@ -45,6 +45,7 @@ def _bundle(pending: dict) -> dict:
                         "crowd_contra": [0.02, 0.01],
                     },
                     "regime_labels": ["normal", "stress"],
+                    "timestamps": [DECISION_TS - 7 * 86_400_000, DECISION_TS],
                     "alpha_metadata": [
                         {
                             "age_days": 120.0,
@@ -108,6 +109,10 @@ def test_valid_bundle_returns_only_explicit_inputs(tmp_path):
     assert result.inputs is not None
     assert result.inputs.capacity_cny["BTC"] == 10_000_000.0
     assert tuple(result.inputs.alpha_returns["crowd_contra"]) == (0.02, 0.01)
+    assert tuple(result.inputs.timestamps or ()) == (
+        DECISION_TS - 7 * 86_400_000,
+        DECISION_TS,
+    )
 
 
 def test_missing_required_metadata_is_pending_not_defaulted(tmp_path):
@@ -160,3 +165,19 @@ def test_bundle_requires_current_alpha_return_and_hex_config_hash(tmp_path):
     assert result.inputs is None
     assert result.status["status"] == "BLOCKED"
     assert "risk_config_hash_invalid" in result.status["reasons"]
+
+
+def test_bundle_rejects_unordered_or_unaligned_timestamps(tmp_path):
+    pending = _pending()
+    document = _bundle(pending)
+    inputs = document["alphas"]["crowd_contra"]["inputs"]
+    inputs["timestamps"] = [DECISION_TS, DECISION_TS - 7 * 86_400_000]
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    result = load_research_risk_bundle(
+        str(path), alpha_id="crowd_contra", pending=pending
+    )
+
+    assert result.inputs is None
+    assert "timestamps_invalid" in result.status["reasons"]

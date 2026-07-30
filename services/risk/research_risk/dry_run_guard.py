@@ -25,6 +25,19 @@ from .domain.risk_modules import (ConcentrationRiskEngine, DrawdownRiskEngine,
 
 # engines the dry-run seam CANNOT honestly feed — skipped, never run on fabricated inputs
 _SKIPPED = ("liquidity", "correlation", "regime", "capacity", "model_alpha")
+FULL_RESEARCH_RISK_ENGINES = frozenset(
+    {
+        "market",
+        "liquidity",
+        "concentration",
+        "correlation",
+        "drawdown",
+        "regime",
+        "stress",
+        "capacity",
+        "model_alpha",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,24 @@ class DryRunResearchRiskInputs:
     alpha_returns: Mapping[str, Sequence[float]]
     regime_labels: Sequence[str]
     alpha_metadata: Sequence[Mapping[str, Any]]
+    timestamps: Sequence[int] | None = None
+
+
+def full_research_risk_approved(risk: Mapping[str, Any]) -> bool:
+    """Return whether the exact nine-engine admission contract approved."""
+    engines_run = risk.get("engines_run")
+    return bool(
+        risk.get("decision") == "RISK_APPROVED"
+        and risk.get("status") == "APPROVED"
+        and risk.get("provenance") == "REAL_RESEARCH_RISK_FULL"
+        and risk.get("gates_run") == len(FULL_RESEARCH_RISK_ENGINES)
+        and risk.get("gates_passed") == len(FULL_RESEARCH_RISK_ENGINES)
+        and isinstance(engines_run, Mapping)
+        and set(engines_run) == set(FULL_RESEARCH_RISK_ENGINES)
+        and all(value is True for value in engines_run.values())
+        and risk.get("engines_skipped") == {}
+        and risk.get("engines_pending") == {}
+    )
 
 
 def _finite_number(value: object) -> bool:
@@ -222,6 +253,7 @@ def _summary(name: str, report) -> dict:
             "alphas_with_overfitting_flags": int(report.alphas_with_overfitting_flags),
             "alphas_with_leakage_flags": int(report.alphas_with_leakage_flags),
             "min_validation_confidence": round(float(report.min_validation_confidence), 6),
+            "min_paper_confidence": round(float(report.min_paper_confidence), 6),
         })
     return out
 
@@ -347,4 +379,9 @@ def evaluate_dry_run_risk(returns: List[float], weights: Dict[str, float], equit
     }
 
 
-__all__ = ["DryRunResearchRiskInputs", "evaluate_dry_run_risk"]
+__all__ = [
+    "DryRunResearchRiskInputs",
+    "FULL_RESEARCH_RISK_ENGINES",
+    "evaluate_dry_run_risk",
+    "full_research_risk_approved",
+]

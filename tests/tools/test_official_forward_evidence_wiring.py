@@ -67,7 +67,6 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
         "schema_version": 1,
         "observed_at_ms": now_ms,
     })
-    monkeypatch.setattr(driver, "ForwardLedger", Ledger)
     monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
     monkeypatch.setattr(driver, "_ALPHAS", {"alpha": object()})
@@ -181,7 +180,6 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
         "schema_version": 1,
         "observed_at_ms": now_ms,
     })
-    monkeypatch.setattr(driver, "ForwardLedger", Ledger)
     monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
     monkeypatch.setattr(driver, "_ALPHAS", {"alpha": object()})
