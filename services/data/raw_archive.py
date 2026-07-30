@@ -305,9 +305,27 @@ def load_archived_response(
     }
 
 
-def summarize_archive(root: str) -> dict:
-    """Verify all observations and referenced objects, then return a compact manifest."""
+def summarize_archive(
+    root: str,
+    *,
+    dataset_ids: set[str] | frozenset[str] | None = None,
+    instrument_ids: set[str] | frozenset[str] | None = None,
+) -> dict:
+    """Verify observations and return a compact full-archive or scoped manifest."""
     root = os.path.abspath(root)
+    if dataset_ids is not None:
+        dataset_ids = frozenset(
+            _require_text("dataset_id", value) for value in dataset_ids
+        )
+        if not dataset_ids:
+            raise RawArchiveError("dataset_ids must not be empty")
+    if instrument_ids is not None:
+        instrument_ids = frozenset(
+            _require_text("instrument_id", value) for value in instrument_ids
+        )
+        if not instrument_ids:
+            raise RawArchiveError("instrument_ids must not be empty")
+    scoped = dataset_ids is not None or instrument_ids is not None
     observation_root = os.path.join(root, "observations", "sha256")
     paths = []
     if os.path.isdir(observation_root):
@@ -344,9 +362,14 @@ def summarize_archive(root: str) -> dict:
     observation_ids = []
     for path in paths:
         observation_id = os.path.splitext(os.path.basename(path))[0]
-        observation_ids.append(observation_id)
+        if not scoped:
+            observation_ids.append(observation_id)
         observation, load_error = _load_observation(path)
         if load_error is not None:
+            if scoped:
+                # The unfiltered admission summary remains load-bearing for
+                # malformed observations that cannot be attributed safely.
+                continue
             errors.append({"observation_sha256": observation_id, "kind": load_error})
             invalid.add(observation_id)
             continue
@@ -354,12 +377,25 @@ def summarize_archive(root: str) -> dict:
         try:
             _validate_observation_schema(observation)
         except (RawArchiveError, TypeError):
+            if scoped:
+                continue
             errors.append({
                 "observation_sha256": observation_id,
                 "kind": "OBSERVATION_SCHEMA_INVALID",
             })
             invalid.add(observation_id)
             continue
+
+        if (
+            dataset_ids is not None
+            and observation["dataset_id"] not in dataset_ids
+        ) or (
+            instrument_ids is not None
+            and observation["instrument_id"] not in instrument_ids
+        ):
+            continue
+        if scoped:
+            observation_ids.append(observation_id)
 
         artifact_sha = observation.get("artifact_sha256")
         expected_object = (
@@ -401,12 +437,27 @@ def summarize_archive(root: str) -> dict:
         if isinstance(at, int) and not isinstance(at, bool):
             observed_at.append(at)
 
+    if not observation_ids:
+        return {
+            "schema_version": 1,
+            "status": "MISSING",
+            "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
+            "observation_count": 0,
+            "invalid_observation_count": 0,
+            "object_count": 0,
+            "datasets": {},
+            "providers": [],
+            "representations": [],
+            "latest_observed_at_ms": None,
+            "aggregate_sha256": None,
+            "errors": [],
+        }
     aggregate = _sha256(_json_bytes(sorted(observation_ids), label="observation index"))
     return {
         "schema_version": 1,
         "status": "BLOCK" if errors else "PASS",
         "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-        "observation_count": len(paths),
+        "observation_count": len(observation_ids),
         "invalid_observation_count": len(invalid),
         "object_count": len(objects),
         "datasets": dict(sorted(datasets.items())),

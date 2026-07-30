@@ -45,6 +45,13 @@ _MARK = os.path.join("data", "cache", "crypto_perp_mark_prices.json")
 _FUNDING = os.path.join("data", "cache", "crypto_funding_rates.json")
 _OI = os.path.join("data", "cache", "crypto_oi_metrics.json")
 _OUTPUT = os.path.join("evidence", "raw_data_lineage_backfill.json")
+RAW_LINEAGE_BACKFILL_DATASETS = frozenset({
+    "funding",
+    "oi_metrics",
+    REST_DATASET_OI,
+    "perp_mark_prices",
+    REST_DATASET_MARK,
+})
 
 
 class LineageBackfillError(RuntimeError):
@@ -454,7 +461,15 @@ def run_backfill(
         "oi_metrics": oi_report,
         "funding": funding_report,
     }
-    raw_lineage = summarize_archive(archive_root)
+    lineage_scope = {
+        "dataset_ids": sorted(RAW_LINEAGE_BACKFILL_DATASETS),
+        "instrument_ids": scope,
+    }
+    raw_lineage = summarize_archive(
+        archive_root,
+        dataset_ids=RAW_LINEAGE_BACKFILL_DATASETS,
+        instrument_ids=frozenset(scope),
+    )
     required_datasets = set(sources)
     missing_datasets = sorted(required_datasets - set(raw_lineage.get("datasets", {})))
     block_reasons = [
@@ -478,6 +493,7 @@ def run_backfill(
             "oi_metrics": _artifact(oi_path),
         },
         "sources": sources,
+        "raw_lineage_scope": lineage_scope,
         "raw_lineage": raw_lineage,
         "verdict": "PASS" if not block_reasons else "BLOCK",
         "block_reasons": block_reasons,

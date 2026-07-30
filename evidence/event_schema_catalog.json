@@ -22,7 +22,7 @@
     "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
     "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
     "services/risk/research_risk/events.py": "2dc8cb40160254a07d38817c1f5bb9c4410ad45520c475fe6a32e454809f82b1",
-    "tools/data_quality_admission.py": "40ba0dfc187974bb9ef62e9b8dd59239516e999485d52e7eb528622a1dd8e58c"
+    "tools/data_quality_admission.py": "38ef162d65d7c80624c12dab5d96e15d2871a4fb1366b9bf89ee11b528040061"
   },
   "latest_consumer_versions": {
     "data.market.refresh.recorded": "1.0.0",

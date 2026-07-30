@@ -1,5 +1,24 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 前向数据血缘并发一致性与单实例锁修复：**
+> 前向刷新曾把回填证据绑定到持续增长的整库 raw-archive 聚合；实时 Binance depth/trade
+> 在回填与 admission 之间追加合法观测时，会把有效的必需数据误判为
+> `BACKFILL_ARCHIVE_MISMATCH`。现回填与 admission 共同绑定明确的数据集 × 14 标的
+> scope，整库摘要仍独立承担全归档完整性门，既消除无关实时流竞争也不放松 fail-closed
+> 校验；前向编排复用同一轮已验证摘要，避免重复全库扫描。单实例锁同时改为 PID 存活
+> 权威：活进程无论运行多久都不可被 10 分钟阈值驱逐，死亡 PID 立即恢复，只有不可解析
+> 的旧锁才按时限回收。研究风险、前向周期和真人生产门均未绕过。
+>
+> **2026-07-31 恢复历史合同 epoch 与运行健康分层修复：**
+> 恢复权威本来允许 source contract 升级后开启新的 cadence epoch，但 clean-lookback
+> 失败统计误扫了所有历史合同，导致旧合同首次配置失败持续污染当前合同。现只统计当前
+> 合同绑定的 attempt；真实权威复核为当前合同 9 次成功、0 次失败、0 个超时开放尝试、
+> 最新恢复 PASS，旧失败仍完整保留在 append-only 链中。Watchdog 同时把仅由
+> `HISTORY_SPAN_INSUFFICIENT` / `SUCCESS_COUNT_INSUFFICIENT` 构成的状态标为
+> `PARTIAL / RESTORE_HISTORY_MATURING`，而当前失败、陈旧、间隔超限、链损坏和超时仍为
+> `BREACH`。计划任务真实上下文复跑为 20 PASS、0 BREACH；M4 顶级门仍诚实等待 30 天、
+> 至少 16 次成功、独立 Ed25519 checkpoint 与 90 天 WORM 回执，不宣称提前完成。
+
 > **2026-07-30 实时纸面控制面与公共行情运行闭环修复：**
 > Data Catalog 每 5 秒读取真实 console API，默认只呈现实时流核心指标；API/WS 全目录、
 > systemic/RPI、漂移、限流、数据集、特征与血缘保留在可展开审计区。本地 SPA 对

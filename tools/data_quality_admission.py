@@ -28,6 +28,7 @@ from tools.binance_perp_mark_fetch import (load_mark_prices,
 from tools.binance_rest_gap_fill import PROVENANCE_REST_GAP_FILL
 from tools.cache_io import atomic_write_json
 from tools.live_data_refresh import oi_quality_failures
+from tools.raw_data_lineage_backfill import RAW_LINEAGE_BACKFILL_DATASETS
 
 _DAY_MS = 86_400_000
 _PRICE = os.path.join("data", "cache", "crypto_perp_mark_prices.json")
@@ -62,6 +63,29 @@ def _artifact(path: str) -> dict:
         "size_bytes": os.path.getsize(path) if digest is not None else None,
         "sha256": digest,
     }
+
+
+def _lineage_snapshot(value: dict | None, *, label: str) -> dict | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != 1
+        or value.get("status") not in {"PASS", "BLOCK", "MISSING"}
+        or isinstance(value.get("observation_count"), bool)
+        or not isinstance(value.get("observation_count"), int)
+        or value.get("observation_count") < 0
+    ):
+        raise ValueError(f"{label} is not a valid raw-lineage summary")
+    aggregate = value.get("aggregate_sha256")
+    if aggregate is not None and (
+        not isinstance(aggregate, str)
+        or len(aggregate) != 64
+        or aggregate.lower() != aggregate
+        or any(char not in "0123456789abcdef" for char in aggregate)
+    ):
+        raise ValueError(f"{label} aggregate is invalid")
+    return dict(value)
 
 
 def _check_prices(path: str, instruments: list[str], *, now_ms: int,
@@ -316,6 +340,7 @@ def _lineage_backfill_observation(
     required_days: list[int],
     artifacts: dict,
     raw_lineage: dict,
+    scoped_raw_lineage: dict,
 ) -> dict:
     evidence_sha = _sha256(path)
     result = {
@@ -342,6 +367,7 @@ def _lineage_backfill_observation(
     result["verdict"] = payload.get("verdict")
     result["instrument_scope"] = payload.get("instrument_scope")
     result["required_days"] = payload.get("required_days")
+    result["raw_lineage_scope"] = payload.get("raw_lineage_scope")
 
     if payload.get("schema_version") != 1 \
             or payload.get("readiness") != "L2_DRY_RUN_ONLY" \
@@ -385,7 +411,21 @@ def _lineage_backfill_observation(
         evidence_lineage.get("aggregate_sha256")
         if isinstance(evidence_lineage, dict) else None
     )
-    if evidence_aggregate != raw_lineage.get("aggregate_sha256"):
+    expected_lineage_scope = {
+        "dataset_ids": sorted(RAW_LINEAGE_BACKFILL_DATASETS),
+        "instrument_ids": scope,
+    }
+    observed_lineage_scope = payload.get("raw_lineage_scope")
+    if observed_lineage_scope is None:
+        # Backward-compatible verification for retained v1 evidence. New
+        # evidence always binds the stable scoped archive witness below.
+        observed_archive_aggregate = raw_lineage.get("aggregate_sha256")
+    elif observed_lineage_scope != expected_lineage_scope:
+        result["reasons"].append("LINEAGE:BACKFILL_ARCHIVE_SCOPE_MISMATCH")
+        observed_archive_aggregate = None
+    else:
+        observed_archive_aggregate = scoped_raw_lineage.get("aggregate_sha256")
+    if evidence_aggregate != observed_archive_aggregate:
         result["reasons"].append("LINEAGE:BACKFILL_ARCHIVE_MISMATCH")
     result["passed"] = not result["reasons"]
     return result
@@ -400,6 +440,8 @@ def build_data_quality_evidence(*, now_ms: int | None = None,
                                 refresh_status_path: str = _REFRESH,
                                 raw_archive_path: str = _RAW_ARCHIVE,
                                 lineage_backfill_path: str = _LINEAGE_BACKFILL,
+                                raw_lineage_snapshot: dict | None = None,
+                                scoped_raw_lineage_snapshot: dict | None = None,
                                 price_basis: str = "PERP_MARK_PRICE") -> dict:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -440,8 +482,23 @@ def build_data_quality_evidence(*, now_ms: int | None = None,
     }
     artifacts = {name: _artifact(path) for name, path in artifact_paths.items()}
 
-    raw_lineage = summarize_archive(raw_archive_path)
+    raw_lineage = _lineage_snapshot(
+        raw_lineage_snapshot,
+        label="raw_lineage_snapshot",
+    )
+    if raw_lineage is None:
+        raw_lineage = summarize_archive(raw_archive_path)
     raw_lineage["path"] = raw_archive_path.replace("\\", "/")
+    scoped_raw_lineage = _lineage_snapshot(
+        scoped_raw_lineage_snapshot,
+        label="scoped_raw_lineage_snapshot",
+    )
+    if scoped_raw_lineage is None:
+        scoped_raw_lineage = summarize_archive(
+            raw_archive_path,
+            dataset_ids=RAW_LINEAGE_BACKFILL_DATASETS,
+            instrument_ids=frozenset(scope),
+        )
     required_lineage_datasets = sorted({
         "perp_mark_prices" if price_basis == "PERP_MARK_PRICE" else "spot_klines",
         "funding",
@@ -469,6 +526,7 @@ def build_data_quality_evidence(*, now_ms: int | None = None,
         required_days=required_lineage_days,
         artifacts=artifacts,
         raw_lineage=raw_lineage,
+        scoped_raw_lineage=scoped_raw_lineage,
     )
     lineage_reasons.extend(lineage_backfill["reasons"])
     lineage_verdict = "PASS" if not lineage_reasons else "BLOCK"

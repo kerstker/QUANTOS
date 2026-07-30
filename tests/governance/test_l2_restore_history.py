@@ -788,7 +788,7 @@ def test_contract_upgrade_starts_new_cadence_epoch_without_erasing_history(
         create=True,
         clock_ms=lambda: 1_000,
     )
-    _record_pass(
+    _record_failure(
         store,
         _attempt(
             "old-contract",
@@ -807,6 +807,8 @@ def test_contract_upgrade_starts_new_cadence_epoch_without_erasing_history(
 
     assert health.verdict == "PASS"
     assert "SOURCE_CONTRACT_MISMATCH" not in health.reason_codes
+    assert "FAILURE_IN_CLEAN_LOOKBACK" not in health.reason_codes
+    assert health.failure_count_in_clean_window == 0
     assert health.attempt_count == 4
     assert health.success_count == 3
     assert health.history_span_ms == 200

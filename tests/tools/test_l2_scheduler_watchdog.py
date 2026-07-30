@@ -623,6 +623,36 @@ def test_history_failure_remains_breach_after_later_success_and_stale_is_breach(
     assert "LATEST_SUCCESS_STALE" in stale["reason_codes"]
 
 
+def test_longitudinal_restore_maturity_is_partial_not_operational_breach():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "PASS",
+        "code": "HEALTHY",
+        "detail": "enabled, action-pinned, fresh, and successful",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": (
+            "HISTORY_SPAN_INSUFFICIENT",
+            "SUCCESS_COUNT_INSUFFICIENT",
+        ),
+        "latest_terminal_verdict": "PASS",
+        "failure_count_in_clean_window": 0,
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "RESTORE_HISTORY_MATURING",
+        "detail": (
+            "current restore evidence is healthy; longitudinal maturity "
+            "is incomplete "
+            "(HISTORY_SPAN_INSUFFICIENT,SUCCESS_COUNT_INSUFFICIENT)"
+        ),
+    }
+
+
 def test_healthy_scheduler_and_history_pass_and_history_alert_is_deduplicated(
     tmp_path,
 ):

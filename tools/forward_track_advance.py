@@ -34,6 +34,7 @@ from services.research.paper_trading.forward_evidence import (
     load_forward_admission_ref,
 )
 from services.research.paper_trading.store import PaperTrackStore
+from services.orchestration.process_liveness import process_is_alive
 from services.data.admission_store import DataQualityAdmissionStore
 from tools import binance_oi_metrics_fetch as oi_fetch
 from tools.alert_sink import emit
@@ -60,7 +61,7 @@ _FORWARD_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _AUTHORITY = DATA_QUALITY_ADMISSION_DB
 _LINEAGE_BACKFILL = os.path.join("evidence", "raw_data_lineage_backfill.json")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
-_LOCK_STALE_S = 600  # assume dead if lock held > 10 minutes
+_LOCK_STALE_S = 600  # malformed legacy locks expire after 10 minutes
 _DAY_MS = 86_400_000
 _WEEK_MS = 7 * _DAY_MS
 _DECISION_DUE_MS = _WEEK_MS - 12 * 3600 * 1000      # 7 天 − 12h 容差(数据网格抖动)
@@ -158,15 +159,24 @@ def authoritative_admission_status(
     now_ms: int,
     runner=None,
     authority_path: str = DATA_QUALITY_ADMISSION_DB,
+    raw_lineage_snapshot: dict | None = None,
+    scoped_raw_lineage_snapshot: dict | None = None,
 ) -> tuple:
     """Persist the admission decision and return a redacted load-bearing summary."""
     resolved_runner = runner or run_data_quality_admission
     try:
-        evidence, decision, inserted = resolved_runner(
-            now_ms=now_ms,
-            authority_path=authority_path,
-            recorded_at_ms=now_ms,
-        )
+        runner_kwargs = {
+            "now_ms": now_ms,
+            "authority_path": authority_path,
+            "recorded_at_ms": now_ms,
+        }
+        if raw_lineage_snapshot is not None:
+            runner_kwargs["raw_lineage_snapshot"] = raw_lineage_snapshot
+        if scoped_raw_lineage_snapshot is not None:
+            runner_kwargs["scoped_raw_lineage_snapshot"] = (
+                scoped_raw_lineage_snapshot
+            )
+        evidence, decision, inserted = resolved_runner(**runner_kwargs)
         if (
             not isinstance(evidence, dict)
             or decision.verdict != evidence.get("verdict")
@@ -382,10 +392,20 @@ def _attested_snapshot(ledger, alpha_id: str) -> dict:
 
 
 def _try_acquire_lock() -> bool:
-    """Atomically acquire the single-run lock; return False if another run is active."""
+    """Atomically acquire the lock without evicting a live long-running owner."""
     try:
-        if time.time() - os.path.getmtime(_LOCK_FILE) > _LOCK_STALE_S:
-            os.unlink(_LOCK_FILE)  # stale lock from a crashed previous run
+        with open(_LOCK_FILE, encoding="ascii") as handle:
+            owner_pid = int(handle.read().strip())
+        if process_is_alive(owner_pid):
+            return False
+        os.unlink(_LOCK_FILE)
+    except ValueError:
+        try:
+            if time.time() - os.path.getmtime(_LOCK_FILE) <= _LOCK_STALE_S:
+                return False
+            os.unlink(_LOCK_FILE)
+        except (FileNotFoundError, OSError):
+            pass
     except (FileNotFoundError, OSError):
         pass
     try:
@@ -456,8 +476,21 @@ def _run() -> None:
             if not lineage_backfill_ok:
                 refresh_evidence_available = False
             alerts.extend(lineage_backfill_alerts)
+            scoped_lineage_snapshot = None
+            if lineage_backfill_ok:
+                try:
+                    with open(_LINEAGE_BACKFILL, encoding="utf-8") as handle:
+                        retained_backfill = json.load(handle)
+                    scoped_lineage_snapshot = retained_backfill.get("raw_lineage")
+                except (OSError, ValueError, json.JSONDecodeError, AttributeError):
+                    refresh_evidence_available = False
+                    alerts.append("raw-lineage backfill receipt unreadable")
             admission_ref, admission_status, admission_alerts = (
-                authoritative_admission_status(now_ms=now_ms)
+                authoritative_admission_status(
+                    now_ms=now_ms,
+                    raw_lineage_snapshot=refresh.get("raw_lineage"),
+                    scoped_raw_lineage_snapshot=scoped_lineage_snapshot,
+                )
             )
             if refresh_evidence_available is not True:
                 admission_ref = None

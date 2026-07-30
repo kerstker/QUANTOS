@@ -184,6 +184,12 @@ _RESTORE_POLICY_FIELDS = (
     "clean_lookback_ms",
     "attempt_timeout_ms",
 )
+_RESTORE_HISTORY_MATURITY_REASONS = frozenset(
+    {
+        "HISTORY_SPAN_INSUFFICIENT",
+        "SUCCESS_COUNT_INSUFFICIENT",
+    }
+)
 
 
 def _restore_policy_and_path(repo_root: Path) -> tuple[RestoreCadencePolicy, Path]:
@@ -613,6 +619,22 @@ def _merge_backup_history(check: dict, health: dict | None) -> dict:
             "status": "PARTIAL",
             "code": "RESTORE_HISTORY_BACKUP_IN_PROGRESS",
             "detail": "the first recorded backup attempt is still in progress",
+        }
+    if (
+        valid_reasons
+        and set(reasons).issubset(_RESTORE_HISTORY_MATURITY_REASONS)
+        and health.get("latest_terminal_verdict") == "PASS"
+        and health.get("failure_count_in_clean_window") == 0
+        and health.get("overdue_open_count") == 0
+    ):
+        return {
+            "task_name": "QUANTOS_backup",
+            "status": "PARTIAL",
+            "code": "RESTORE_HISTORY_MATURING",
+            "detail": (
+                "current restore evidence is healthy; longitudinal maturity "
+                f"is incomplete ({','.join(reasons)})"
+            ),
         }
     code = (
         reason

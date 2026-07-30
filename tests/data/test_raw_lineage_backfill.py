@@ -102,6 +102,16 @@ def test_backfill_archives_and_reconciles_all_required_sources(tmp_path):
     assert report["raw_lineage"]["datasets"] == {
         "funding": 1, "oi_metrics": 1, "perp_mark_prices": 1,
     }
+    assert report["raw_lineage_scope"] == {
+        "dataset_ids": [
+            "funding",
+            "oi_metrics",
+            "oi_metrics_rest_gap_fill",
+            "perp_mark_prices",
+            "perp_mark_prices_rest_gap_fill",
+        ],
+        "instrument_ids": ["BTC"],
+    }
 
 
 def test_backfill_blocks_source_value_mismatch(tmp_path):

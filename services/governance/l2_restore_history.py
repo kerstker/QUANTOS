@@ -1629,6 +1629,7 @@ def evaluate_cadence(
         item
         for item in all_outcomes
         if item.outcome.verdict == "FAIL"
+        and item.outcome.attempt_id in matching_ids
         and item.outcome.completed_at_ms >= clean_floor
     ]
     if clean_failures:

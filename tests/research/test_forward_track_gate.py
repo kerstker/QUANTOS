@@ -1,7 +1,9 @@
 """forward_track_advance 的决策门 helper decision_block_reason(P1-8):把喂前向证据钟的坏/停更数据从
 '只告警'升成'挡决策'(证据钟暂停=留 pending)。镜像 live 驱动器 batch_skip_reason 的可测纯 helper 范式。"""
 import json
+import os
 
+import tools.forward_track_advance as forward_track
 from services.data.admission_store import DataQualityAdmissionStore
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from tools.forward_track_advance import (
@@ -24,6 +26,24 @@ _ADMISSION_REF = ForwardAdmissionRef(
     price_basis="PERP_MARK_PRICE",
     instrument_scope=("BTC", "ETH"),
 )
+
+
+def test_live_lock_owner_is_not_evicted_by_age_and_dead_owner_is_recovered(
+    tmp_path,
+    monkeypatch,
+):
+    lock = tmp_path / "forward.lock"
+    monkeypatch.setattr(forward_track, "_LOCK_FILE", str(lock))
+    lock.write_text(str(os.getpid()), encoding="ascii")
+    os.utime(lock, (0, 0))
+
+    assert forward_track._try_acquire_lock() is False
+    assert lock.read_text(encoding="ascii") == str(os.getpid())
+
+    lock.write_text(str(2**31 - 1), encoding="ascii")
+    assert forward_track._try_acquire_lock() is True
+    assert lock.read_text(encoding="ascii") == str(os.getpid())
+    forward_track._release_lock()
 
 
 def _evidence(*, verdict="PASS"):
