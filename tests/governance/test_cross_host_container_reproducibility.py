@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import copy
 from datetime import datetime, timezone
 import gzip
@@ -8,6 +7,8 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tarfile
 
 import pytest
@@ -32,22 +33,27 @@ BUILD_TOOL = {
 }
 
 
-def test_claim_module_has_no_top_level_sigstore_dependency() -> None:
-    module_path = (
-        Path(__file__).resolve().parents[2]
-        / "services/governance/cross_host_container_reproducibility.py"
+def test_claim_module_imports_without_site_packages() -> None:
+    root = Path(__file__).resolve().parents[2]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            (
+                "from services.governance."
+                "cross_host_container_reproducibility "
+                "import build_container_build_claim; print('IMPORT_OK')"
+            ),
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
     )
-    tree = ast.parse(module_path.read_text(encoding="utf-8"))
-    top_level_imports = {
-        node.module
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
 
-    assert all(
-        not name.startswith(("cryptography", "sigstore"))
-        for name in top_level_imports
-    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "IMPORT_OK"
 
 
 def _iso(epoch: int) -> str:

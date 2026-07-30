@@ -9,7 +9,7 @@ import re
 import stat
 from typing import Any, Mapping, Sequence
 
-from services.governance.artifact_admission import (
+from services.governance.json_integrity import (
     load_json_without_duplicate_keys,
 )
 from services.governance.reproducibility_evidence import (
