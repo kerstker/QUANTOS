@@ -103,9 +103,11 @@ jobs:
           BUILDX_VERSION="$(docker buildx version)"
           BUILDKIT_VERSION="$(
             docker buildx inspect quantos-cross-host --bootstrap |
-              sed -n 's/^BuildKit version: //p' |
+              sed -n \
+                's/^[[:space:]]*BuildKit version:[[:space:]]*//p' |
               head -n 1
           )"
+          printf 'Observed BuildKit version: %s\n' "${BUILDKIT_VERSION}"
           test "${BUILDKIT_VERSION}" = "v0.26.2"
           python scripts/generate_cross_host_container_evidence.py claim \
             --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \
@@ -156,9 +158,11 @@ jobs:
           BUILDX_VERSION="$(docker buildx version)"
           BUILDKIT_VERSION="$(
             docker buildx inspect quantos-cross-host --bootstrap |
-              sed -n 's/^BuildKit version: //p' |
+              sed -n \
+                's/^[[:space:]]*BuildKit version:[[:space:]]*//p' |
               head -n 1
           )"
+          printf 'Observed BuildKit version: %s\n' "${BUILDKIT_VERSION}"
           test "${BUILDKIT_VERSION}" = "v0.26.2"
           python scripts/generate_cross_host_container_evidence.py claim \
             --archive "${RUNNER_TEMP}/quantos-console.oci.tar" \

@@ -65,6 +65,10 @@ def test_external_sigstore_workflow_proves_cross_host_container_reproduction() -
     assert "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL" in source
     assert "quantos-console-cross-host.sigstore.json" in source
     assert "cross-host-container-evidence-" in source
+    assert source.count(
+        "s/^[[:space:]]*BuildKit version:[[:space:]]*//p"
+    ) == 2
+    assert source.count("Observed BuildKit version:") == 2
 
 
 def test_external_sigstore_contract_is_in_supply_chain_manifest() -> None:
