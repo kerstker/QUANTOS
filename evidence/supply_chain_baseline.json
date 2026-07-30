@@ -91,14 +91,7 @@
   "artifact_admission_active_receipt_key_count": 0,
   "artifact_admission_allow_cas_status": "EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED",
   "artifact_admission_authority_clock_status": "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY",
-  "artifact_admission_authority_snapshot": {
-    "authority_time_floor_ms": 1785275317995,
-    "decision_count": 0,
-    "policy_registry_event_hash": "06695747b9d79b4141bafe5068e98136a5db14f38425d0846e5f9b75684b524d",
-    "policy_registry_event_seq": 3,
-    "receipt_authority_registry_event_hash": "0e3f1e33f6ab6b22b2cf5adb7bb0b243fd65d1531dfe0764bf8776a4b80b75eb",
-    "receipt_authority_registry_event_seq": 4
-  },
+  "artifact_admission_authority_snapshot": null,
   "artifact_admission_contract_versions": {
     "decision": 4,
     "decision_store": 4,
@@ -111,13 +104,13 @@
   "artifact_admission_decision_history_external_anchor_sha256": "c6044d2075ebcb132f2eb21511bc85e3d4bc5409972bb15004bf65271a28d1bd",
   "artifact_admission_decision_history_external_destination_class": "SEPARATE_VOLUME",
   "artifact_admission_decision_history_external_seal_evidence_ref": "evidence/artifact_admission_seal_latest.json",
-  "artifact_admission_decision_history_external_seal_evidence_sha256": "4f900d4c5d3af233c55a0e1093f0133980b915781ac00164d2dfdfe186b1c64b",
+  "artifact_admission_decision_history_external_seal_evidence_sha256": "d28767fbd7b92b7068f6d46a105ce6ede25d4b74932cdfc93e32c3bacfa01896",
   "artifact_admission_decision_history_external_seal_status": "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED",
   "artifact_admission_decision_history_external_signature_verified": false,
   "artifact_admission_decision_history_external_worm_verified": false,
   "artifact_admission_decision_store_path": "data/cache/artifact_admission.db",
-  "artifact_admission_decision_store_provisioning_status": "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED",
-  "artifact_admission_decision_store_status": "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
+  "artifact_admission_decision_store_provisioning_status": "NOT_PROVIDED",
+  "artifact_admission_decision_store_status": "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
   "artifact_admission_decision_store_worm_status": "NOT_WORM_LOCAL_FILE_REPLACEABLE",
   "artifact_admission_external_bundle_evidence": {
     "artifact_bytes_retained_in_repository": false,
@@ -211,6 +204,7 @@
     "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
     "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
     "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
+    "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
     "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
   ],
   "manifest_sha256": {
