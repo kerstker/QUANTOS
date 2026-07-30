@@ -166,34 +166,33 @@ export function PipelineFlow({ activeGroup, compact = false, className = '' }: {
   const groups = GROUPS;
   if (compact) {
     return (
-      <div className={`flex items-stretch overflow-x-auto ${className}`} role="navigation"
+      <div className={`grid grid-cols-7 items-stretch ${className}`} role="navigation"
+        data-layout="compact-grid"
         aria-label={bi('研究全流程管道', 'research lifecycle pipeline')}>
-        {groups.map((g, i) => {
+        {groups.map((g) => {
           const active = g.id === activeGroup;
           return (
-            <React.Fragment key={g.id}>
-              {i > 0 && <FlowArrow active={active} />}
-              <Link to={firstPathOf(g.id)}
-                className={`group flex shrink-0 items-center gap-2.5 px-3.5 py-2 transition-colors duration-100 ${
-                  active ? 'text-ink' : 'text-muted hover:text-ink'}`}>
-                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded text-[11px] font-bold ${
-                  active ? 'text-accent-ink' : 'text-faint group-hover:text-muted'}`}
-                  style={active
-                    ? { background: 'var(--grad)' }
-                    : { background: 'var(--inset)', boxShadow: 'inset 0 0 0 1px var(--line)' }}>
-                  {STAGE_ICONS[g.id]}
-                </span>
-                <span className="flex min-w-0 flex-col leading-tight">
-                  <span className="whitespace-nowrap text-[13px] font-semibold">
-                    {g.zh} <span className="hidden text-3xs font-normal uppercase tracking-[0.12em] text-faint lg:inline">{g.en}</span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <StageMetric spec={STAGE_METRICS[g.id]} compact />
-                    <AutoHumanBadge id={g.id} compact />
-                  </span>
-                </span>
-              </Link>
-            </React.Fragment>
+            <Link key={g.id} to={firstPathOf(g.id)}
+              aria-label={bi(g.zh, g.en)}
+              aria-current={active ? 'step' : undefined}
+              className={`group relative flex min-w-0 items-center justify-center gap-2 border-r border-line/50 px-1.5 py-2 transition-colors duration-100 last:border-r-0 sm:px-2 ${
+                active ? 'bg-elevated/45 text-ink' : 'text-muted hover:bg-elevated/25 hover:text-ink'}`}>
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded text-[11px] font-bold ${
+                active ? 'text-accent-ink' : 'text-faint group-hover:text-muted'}`}
+                style={active
+                  ? { background: 'var(--grad)' }
+                  : { background: 'var(--inset)', boxShadow: 'inset 0 0 0 1px var(--line)' }}>
+                {STAGE_ICONS[g.id]}
+              </span>
+              <span className="hidden min-w-0 flex-1 leading-tight sm:block">
+                <span className="block truncate text-[12px] font-semibold">{g.zh}</span>
+                <span className="hidden truncate text-[9px] uppercase tracking-[0.1em] text-faint 2xl:block">{g.en}</span>
+              </span>
+              <span className="hidden shrink-0 lg:block">
+                <StageMetric spec={STAGE_METRICS[g.id]} compact />
+              </span>
+              {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
+            </Link>
           );
         })}
       </div>

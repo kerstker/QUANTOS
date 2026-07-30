@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from '@/lib/router';
 import App from '@/App';
 import { GROUPS } from '@/app/routes';
@@ -36,5 +36,23 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
     fireEvent.click(search);
     expect(await screen.findByRole('dialog', { name: 'global search' })).toBeTruthy();
     expect(screen.getByPlaceholderText(/Search pages|搜索页面/)).toBeTruthy();
+  });
+
+  it('keeps the lifecycle rail compact and moves section pages behind disclosure', async () => {
+    render(<MemoryRouter initialEntries={['/research/dry-run']}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: /全自动影子纸面驾驶舱/ })).toBeTruthy();
+
+    const lifecycle = screen.getByRole('navigation', { name: 'lifecycle pipeline' });
+    expect(lifecycle.querySelector('[data-layout="compact-grid"]')).toBeTruthy();
+    expect(within(lifecycle).queryByText(/auto \d/i)).toBeNull();
+
+    const section = screen.getByRole('navigation', { name: 'section pages' });
+    const menu = within(section).getByRole('button', { name: /All pages|全部页面/ });
+    expect(menu.getAttribute('aria-expanded')).toBe('false');
+    expect(within(section).queryByRole('link', { name: /GoNoGo Evidence/ })).toBeNull();
+
+    fireEvent.click(menu);
+    expect(menu.getAttribute('aria-expanded')).toBe('true');
+    expect(within(section).getByRole('link', { name: /GoNoGo Evidence/ })).toBeTruthy();
   });
 });

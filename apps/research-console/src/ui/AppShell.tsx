@@ -135,24 +135,26 @@ function SessionClock() {
    the full viewport width belongs to content.
    --------------------------------------------------------------------------- */
 
-function SectionPill({ item }: { item: NavItem }) {
+function SectionMenuItem({ item, onSelect }: { item: NavItem; onSelect: () => void }) {
   return (
-    <NavLink to={item.to} end={item.end}
+    <NavLink to={item.to} end={item.end} onClick={onSelect}
       className={({ isActive }) =>
-        `flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-[13px] transition-colors duration-100 ${
-          isActive ? 'text-ink' : 'text-muted hover:bg-elevated/50 hover:text-ink'}`}>
+        `flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-[12px] transition-colors duration-100 ${
+          isActive ? 'bg-elevated text-ink' : 'text-muted hover:bg-elevated/50 hover:text-ink'}`}>
       {({ isActive }) => (
         <>
-          <span className={`grid h-5 w-5 shrink-0 place-items-center rounded text-[8px] font-bold ${
+          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded text-[8px] font-bold ${
             isActive ? 'text-accent-ink' : 'text-faint'}`}
             style={isActive
               ? { background: 'var(--grad)' }
               : { background: 'var(--inset)', boxShadow: 'inset 0 0 0 1px var(--line)' }}>
             {item.icon}
           </span>
-          <span className="whitespace-nowrap font-medium">{item.zh}</span>
-          <span className="hidden whitespace-nowrap text-2xs text-faint xl:inline">{item.en}</span>
-          {isActive && <span className="ml-0.5 h-1.5 w-1.5 rounded-full" style={{ background: 'var(--accent)' }} />}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{item.zh}</span>
+            <span className="block truncate text-3xs text-faint">{item.en}</span>
+          </span>
+          {isActive && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
         </>
       )}
     </NavLink>
@@ -219,6 +221,7 @@ export function AppShell({ nav, tape, children }:
   const { pathname } = useLocation();
   const runtimeHandshake = useConsoleSnapshot<RuntimeContractPayload>(fetchRuntimeContract);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState(false);
   const activeGroup = useMemo(
     () => nav.find(g => g.items.some(it => pathname === it.to || pathname.startsWith(`${it.to}/`)))
        ?? nav.find(g => g.items.length > 0),
@@ -226,6 +229,20 @@ export function AppShell({ nav, tape, children }:
   const activeGroupId: GroupId | null = useMemo(
     () => (activeGroup ? GROUPS.find(g => g.zh === activeGroup.zh)?.id ?? null : null),
     [activeGroup]);
+  const activeItemIndex = activeGroup?.items.findIndex(
+    item => pathname === item.to || pathname.startsWith(`${item.to}/`),
+  ) ?? -1;
+  const activeItem = activeGroup?.items[activeItemIndex >= 0 ? activeItemIndex : 0] ?? null;
+  const previousItem = activeGroup && activeItemIndex > 0
+    ? activeGroup.items[activeItemIndex - 1]
+    : null;
+  const nextItem = activeGroup && activeItemIndex >= 0 && activeItemIndex < activeGroup.items.length - 1
+    ? activeGroup.items[activeItemIndex + 1]
+    : null;
+
+  useEffect(() => {
+    setSectionOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -290,19 +307,63 @@ export function AppShell({ nav, tape, children }:
 
             {/* ══ ZONE 2 · lifecycle pipeline stepper: the 7 stages as a connected,
                   live-instrumented flow (each node pulls one real metric) ══ */}
-            <nav className="hidden border-t border-line/60 px-2 md:block sm:px-4" aria-label="lifecycle pipeline">
+            <nav className="border-t border-line/60 px-1 sm:px-3" aria-label="lifecycle pipeline">
               <PipelineFlow compact activeGroup={activeGroupId} />
             </nav>
 
             {/* ══ ZONE 3 · section navigation: pages inside the active zone ══ */}
             {activeGroup && (
-              <nav className="flex items-center gap-1 overflow-x-auto border-t border-line/60 bg-surface/60 px-3 py-1.5 sm:px-5"
+              <nav className="relative flex h-11 items-center gap-2 border-t border-line/60 bg-surface/60 px-3 sm:px-5"
                 aria-label="section pages">
-                <span className="mr-1 hidden shrink-0 text-3xs font-semibold uppercase tracking-[0.16em] text-faint lg:inline">
+                <span className="hidden shrink-0 text-3xs font-semibold uppercase tracking-[0.14em] text-faint md:inline">
                   {activeGroup.zh} <span className="opacity-50">{activeGroup.en}</span>
                 </span>
-                <span className="mr-1 hidden h-3.5 w-px shrink-0 bg-line-strong lg:inline-block" />
-                {activeGroup.items.map(item => <SectionPill key={item.to} item={item} />)}
+                <span className="hidden h-3.5 w-px shrink-0 bg-line-strong md:inline-block" />
+                {activeItem && (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-elevated text-[8px] font-bold text-accent">
+                      {activeItem.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-semibold text-ink">{activeItem.zh}</span>
+                      <span className="hidden truncate text-3xs text-faint sm:block">{activeItem.en}</span>
+                    </span>
+                  </span>
+                )}
+                <span className="ml-auto flex shrink-0 items-center gap-1">
+                  {previousItem && (
+                    <NavLink to={previousItem.to}
+                      aria-label={bi(`上一页：${previousItem.zh}`, `Previous: ${previousItem.en}`)}
+                      className="grid h-7 w-7 place-items-center rounded border border-line bg-inset text-xs text-muted hover:border-line-strong hover:text-ink">
+                      ←
+                    </NavLink>
+                  )}
+                  {nextItem && (
+                    <NavLink to={nextItem.to}
+                      aria-label={bi(`下一页：${nextItem.zh}`, `Next: ${nextItem.en}`)}
+                      className="grid h-7 w-7 place-items-center rounded border border-line bg-inset text-xs text-muted hover:border-line-strong hover:text-ink">
+                      →
+                    </NavLink>
+                  )}
+                  <button type="button"
+                    aria-expanded={sectionOpen}
+                    aria-controls="section-page-menu"
+                    aria-label={bi('全部页面', 'All pages')}
+                    onClick={() => setSectionOpen(open => !open)}
+                    className="ml-1 flex h-7 items-center gap-1.5 rounded border border-line bg-inset px-2.5 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
+                    <span>{bi('全部页面', 'All pages')}</span>
+                    <span className="ticker-num text-faint">{activeGroup.items.length}</span>
+                    <span aria-hidden className="text-[9px]">{sectionOpen ? '▲' : '▼'}</span>
+                  </button>
+                </span>
+                {sectionOpen && (
+                  <div id="section-page-menu" aria-label={bi('分区页面菜单', 'Section page menu')}
+                    className="absolute right-3 top-[calc(100%+6px)] z-50 grid max-h-[65vh] w-[min(560px,calc(100vw-24px))] grid-cols-1 gap-1 overflow-y-auto rounded-lg border border-line bg-panel p-2 shadow-2xl sm:right-5 sm:grid-cols-2">
+                    {activeGroup.items.map(item => (
+                      <SectionMenuItem key={item.to} item={item} onSelect={() => setSectionOpen(false)} />
+                    ))}
+                  </div>
+                )}
               </nav>
             )}
           </header>
