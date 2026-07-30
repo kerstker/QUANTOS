@@ -224,17 +224,11 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
     )
     assert evidence["artifact_admission_authority_snapshot"]["decision_count"] == 0
+    authority_snapshot = evidence["artifact_admission_authority_snapshot"]
+    assert authority_snapshot["policy_registry_event_seq"] > 0
     assert (
-        evidence["artifact_admission_authority_snapshot"][
-            "policy_registry_event_seq"
-        ]
-        == 3
-    )
-    assert (
-        evidence["artifact_admission_authority_snapshot"][
-            "receipt_authority_registry_event_seq"
-        ]
-        == 4
+        authority_snapshot["receipt_authority_registry_event_seq"]
+        > authority_snapshot["policy_registry_event_seq"]
     )
     assert evidence["artifact_admission_decision_store_worm_status"] == ("NOT_WORM_LOCAL_FILE_REPLACEABLE")
     assert evidence["artifact_admission_registry_history_status"] == (

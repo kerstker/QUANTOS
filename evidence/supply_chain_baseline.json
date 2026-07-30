@@ -129,7 +129,7 @@
     "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
   ],
   "manifest_sha256": {
-    ".gitattributes": "e2ed38590d4f35ab15115937c69d3abe7842905c8e90b1c0a2612b77759926c4",
+    ".gitattributes": "c8a87c174f9da8aa58090b4fd68a638682ace6224217f0f9677b841bd32a4da8",
     ".github/workflows/validate.yml": "121bc15526626c3c142268afa4ea027ad2a96ad13cda8d004ca2e012821d5b1a",
     "apps/research-console/package-lock.json": "a8e8da88ce227205581d6296ac76d4e435e9200d090fc99d0e824b9044635fee",
     "apps/research-console/package.json": "69d4de660ef18ed8d1fd632667aec7d3cec2fecb0a403d5c75a6b637d0a966e0",
@@ -255,7 +255,7 @@
     "tests/governance/test_service_import_graph.py": "9db115cc58e63f7f4dc8aad9434094775994ad374ca72856d97933a4417eda2a",
     "tests/governance/test_strong_identity.py": "912b2a0602b82415d366936b98afeb05dafc9150d3c41492ee55082058fc841d",
     "tests/governance/test_strong_identity_evidence.py": "e9c2fad209c32ae8d76ab5189c9fa3052c53bd97682481213b8d9603f6d802f6",
-    "tests/governance/test_supply_chain_evidence.py": "7a9b333232fa251c2234f7ee332be5f8f181fc5bded4d36acbefa80f52f85af8",
+    "tests/governance/test_supply_chain_evidence.py": "c6f84991b7c7f079071a0c3364a5e850e8350af691451757ea4f02fff24d8e5a",
     "tests/governance/test_top_tier_assessment.py": "a401245da2f58d365047b75fee5b3ad769a61b3ed977f76e82c19b316ba9ef4d",
     "tests/intelligence/test_external_provider_runtime.py": "b2772ee1538b0703ca8e8fbc2c915ad1c8de856b89eb246799355d73c64933a8",
     "tests/live/test_kill_switch_reset_cli.py": "199ec67f07f1869fb59a9b5d85503d5f9a8d8e6d67cb1b698ec9b4b79e941518",
