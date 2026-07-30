@@ -75,6 +75,48 @@ def test_provisioning_retains_exact_empty_registry_heads_and_survives_restart(
     assert checked["inserted"] == {}
 
 
+def test_provisioning_replays_repository_pinned_history_on_cold_start(
+    tmp_path: Path,
+):
+    policy_0, receipt_0 = _registries(tmp_path)
+    policy_1 = tmp_path / "policy-registry-1.json"
+    receipt_1 = tmp_path / "receipt-registry-1.json"
+    policy_document = json.loads(policy_0.read_text(encoding="utf-8"))
+    receipt_document = json.loads(receipt_0.read_text(encoding="utf-8"))
+    policy_document["generation"] = 1
+    receipt_document["generation"] = 1
+    policy_1.write_text(json.dumps(policy_document), encoding="utf-8")
+    receipt_1.write_text(json.dumps(receipt_document), encoding="utf-8")
+    store_path = tmp_path / "artifact-admission.db"
+
+    result = provision_artifact_admission_authority(
+        policy_registry_path=policy_1,
+        receipt_authority_registry_path=receipt_1,
+        policy_registry_history_paths=(policy_0,),
+        receipt_authority_registry_history_paths=(receipt_0,),
+        store_path=store_path,
+        observed_at_ms=1_000,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["policy_registry_head"]["generation"] == 1
+    assert result["receipt_authority_registry_head"]["generation"] == 1
+    store = ArtifactAdmissionStore(str(store_path), create=False)
+    try:
+        assert [
+            snapshot.generation
+            for snapshot in store.registry_snapshots(POLICY_REGISTRY_KIND)
+        ] == [0, 1]
+        assert [
+            snapshot.generation
+            for snapshot in store.registry_snapshots(
+                RECEIPT_AUTHORITY_REGISTRY_KIND
+            )
+        ] == [0, 1]
+    finally:
+        store.close()
+
+
 def test_provisioning_is_idempotent_and_rejects_same_generation_conflict(
     tmp_path: Path,
 ):

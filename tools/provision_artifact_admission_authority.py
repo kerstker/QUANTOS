@@ -29,6 +29,12 @@ DEFAULT_POLICY_REGISTRY = REPO / "config" / "artifact_admission_policy_registry.
 DEFAULT_RECEIPT_AUTHORITY_REGISTRY = (
     REPO / "config" / "artifact_receipt_authority_registry.json"
 )
+DEFAULT_POLICY_REGISTRY_HISTORY = (
+    REPO / "config" / "artifact_admission_policy_registry.generation-0.json",
+)
+DEFAULT_RECEIPT_AUTHORITY_REGISTRY_HISTORY = (
+    REPO / "config" / "artifact_receipt_authority_registry.generation-0.json",
+)
 DEFAULT_STORE = REPO / "data" / "cache" / "artifact_admission.db"
 _MAX_REGISTRY_BYTES = 1024 * 1024
 
@@ -60,6 +66,20 @@ def _read_registry(path: Path) -> bytes:
     ):
         raise ValueError("registry mirror changed while it was read")
     return content
+
+
+def _declared_generation(content: bytes) -> int:
+    try:
+        generation = json.loads(content.decode("utf-8"))["generation"]
+    except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("registry mirror generation is invalid") from exc
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 0
+    ):
+        raise ValueError("registry mirror generation is invalid")
+    return generation
 
 
 def _head_document(head: Any) -> dict[str, Any]:
@@ -112,6 +132,8 @@ def provision_artifact_admission_authority(
     *,
     policy_registry_path: str | Path = DEFAULT_POLICY_REGISTRY,
     receipt_authority_registry_path: str | Path = DEFAULT_RECEIPT_AUTHORITY_REGISTRY,
+    policy_registry_history_paths: Sequence[str | Path] | None = None,
+    receipt_authority_registry_history_paths: Sequence[str | Path] | None = None,
     store_path: str | Path = DEFAULT_STORE,
     observed_at_ms: int,
     check_only: bool = False,
@@ -122,8 +144,29 @@ def provision_artifact_admission_authority(
         or observed_at_ms < 0
     ):
         raise ValueError("observed_at_ms must be a non-negative integer")
-    policy_bytes = _read_registry(Path(policy_registry_path))
-    receipt_bytes = _read_registry(Path(receipt_authority_registry_path))
+    policy_path = Path(policy_registry_path)
+    receipt_path = Path(receipt_authority_registry_path)
+    policy_bytes = _read_registry(policy_path)
+    receipt_bytes = _read_registry(receipt_path)
+    if policy_registry_history_paths is None:
+        policy_registry_history_paths = (
+            DEFAULT_POLICY_REGISTRY_HISTORY
+            if policy_path.resolve() == DEFAULT_POLICY_REGISTRY.resolve()
+            else ()
+        )
+    if receipt_authority_registry_history_paths is None:
+        receipt_authority_registry_history_paths = (
+            DEFAULT_RECEIPT_AUTHORITY_REGISTRY_HISTORY
+            if receipt_path.resolve() == DEFAULT_RECEIPT_AUTHORITY_REGISTRY.resolve()
+            else ()
+        )
+    policy_history = tuple(
+        _read_registry(Path(path)) for path in policy_registry_history_paths
+    )
+    receipt_history = tuple(
+        _read_registry(Path(path))
+        for path in receipt_authority_registry_history_paths
+    )
     destination = Path(store_path)
     if destination.is_symlink():
         raise ValueError("artifact-admission authority cannot be a symlink")
@@ -136,22 +179,32 @@ def provision_artifact_admission_authority(
         )
         try:
             mirrors = (
-                (POLICY_REGISTRY_KIND, policy_bytes),
-                (RECEIPT_AUTHORITY_REGISTRY_KIND, receipt_bytes),
+                (POLICY_REGISTRY_KIND, (*policy_history, policy_bytes)),
+                (
+                    RECEIPT_AUTHORITY_REGISTRY_KIND,
+                    (*receipt_history, receipt_bytes),
+                ),
             )
-            for kind, content in mirrors:
-                heads = store.registry_heads()
-                current = heads.get(kind)
-                _head, was_inserted = store.append_registry_snapshot(
-                    kind,
-                    content,
-                    recorded_at_ms=max(
-                        observed_at_ms,
-                        store.authority_time_floor() or observed_at_ms,
-                    ),
-                    expected_head=current,
-                )
-                inserted[kind] = was_inserted
+            for kind, snapshots in mirrors:
+                inserted[kind] = False
+                for content in snapshots:
+                    heads = store.registry_heads()
+                    current = heads.get(kind)
+                    if (
+                        current is not None
+                        and _declared_generation(content) < current.generation
+                    ):
+                        continue
+                    _head, was_inserted = store.append_registry_snapshot(
+                        kind,
+                        content,
+                        recorded_at_ms=max(
+                            observed_at_ms,
+                            store.authority_time_floor() or observed_at_ms,
+                        ),
+                        expected_head=current,
+                    )
+                    inserted[kind] = inserted[kind] or was_inserted
         finally:
             store.close()
 
