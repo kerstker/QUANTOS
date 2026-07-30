@@ -1032,6 +1032,31 @@ export interface PaperOrderPreviewAlpha {
   paper_execution?: string;
   reconciliation_residual?: number;
   replayed_from_store?: boolean;
+  research_risk?: {
+    decision?: string;
+    status?: string;
+    gates_passed?: number;
+    gates_run?: number;
+    engines_run?: Record<string, boolean>;
+    reasons?: string[];
+    provenance?: string;
+    scope?: string;
+    reports?: {
+      capacity?: {
+        passed?: boolean;
+        capacity_usage?: number;
+        bottleneck_alpha?: string;
+      };
+      model_alpha?: {
+        passed?: boolean;
+        alphas_with_decay?: number;
+        alphas_with_overfitting_flags?: number;
+        alphas_with_leakage_flags?: number;
+        min_validation_confidence?: number;
+        min_paper_confidence?: number;
+      };
+    };
+  };
 }
 
 export interface PaperOrderPreviewPayload {

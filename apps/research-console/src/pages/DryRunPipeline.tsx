@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/research-console-api';
 import type {
   DryRunPipelinePayload,
+  PaperOrderPreviewAlpha,
   PaperRealtimeAlpha,
   PaperRealtimeHistoryPoint,
 } from '@/lib/types/research';
@@ -191,6 +192,63 @@ function StrategyRow({
   );
 }
 
+function FormalRiskRow({
+  alpha,
+  preview,
+}: {
+  alpha: string;
+  preview?: PaperOrderPreviewAlpha;
+}) {
+  const risk = preview?.research_risk;
+  const model = risk?.reports?.model_alpha;
+  const capacity = risk?.reports?.capacity;
+  const gatesPassed = risk?.gates_passed ?? 0;
+  const gatesRun = risk?.gates_run ?? 9;
+  const failedEngines = Object.entries(risk?.engines_run ?? {})
+    .filter(([, passed]) => !passed)
+    .map(([engine]) => engine);
+  const validation = model?.min_validation_confidence;
+  const paper = model?.min_paper_confidence;
+  const approved = risk?.decision === 'RISK_APPROVED';
+
+  return (
+    <div className="grid gap-2 border-b border-line/70 py-3 last:border-b-0 sm:grid-cols-[minmax(150px,1.2fr)_repeat(3,minmax(90px,1fr))] sm:items-center">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-xs font-semibold text-ink">{alpha}</span>
+          <Chip label={`${gatesPassed}/${gatesRun}`} tone={approved ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-1 truncate text-3xs text-faint">
+          {failedEngines.length ? `blocked by ${failedEngines.join(', ')}` : risk?.status ?? 'NO RISK SNAPSHOT'}
+        </div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Capacity</div>
+        <div className={`ticker-num mt-1 text-sm ${capacity?.passed ? 'text-pos' : 'text-warn'}`}>
+          {capacity?.capacity_usage == null ? '--' : `${(capacity.capacity_usage * 100).toFixed(1)}%`}
+        </div>
+        <div className="mt-1 truncate text-3xs text-faint">{capacity?.bottleneck_alpha ?? 'no bottleneck'}</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">DSR confidence</div>
+        <div className={`ticker-num mt-1 text-sm ${(validation ?? 0) >= 0.3 ? 'text-pos' : 'text-warn'}`}>
+          {validation == null ? '--' : validation.toFixed(3)}
+        </div>
+        <div className="mt-1 text-3xs text-faint">minimum 0.300</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Forward confidence</div>
+        <div className={`ticker-num mt-1 text-sm ${(paper ?? 0) >= 0.3 ? 'text-pos' : 'text-warn'}`}>
+          {paper == null ? '--' : paper.toFixed(3)}
+        </div>
+        <div className="mt-1 text-3xs text-faint">
+          {model?.alphas_with_decay ? `${model.alphas_with_decay} decay flag` : 'minimum 0.300'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DryRunPipeline() {
   const [refreshTick, setRefreshTick] = useState(0);
   useEffect(() => {
@@ -221,6 +279,7 @@ export default function DryRunPipeline() {
     Math.abs(alpha.reconciliation_residual ?? Number.POSITIVE_INFINITY) < 1e-6);
   const forwardByAlpha = health?.forward_evidence?.alphas ?? {};
   const bundleByAlpha = health?.research_risk_bundles ?? {};
+  const formalPreviewByAlpha = data.paper_order_preview?.alphas ?? {};
   const totalPositions = alphaRows.reduce(
     (sum, [, alpha]) => sum + Object.values(alpha.positions ?? {}).filter(qty => qty !== 0).length,
     0,
@@ -360,7 +419,12 @@ export default function DryRunPipeline() {
                     value={value}
                     forwardPeriods={forward?.n_forward_periods}
                     periodsToGate={forward?.periods_to_gate}
-                    riskReasons={bundle?.reasons ?? bundle?.missing ?? []}
+                    riskReasons={
+                      formalPreviewByAlpha[alpha]?.research_risk?.reasons
+                      ?? bundle?.reasons
+                      ?? bundle?.missing
+                      ?? []
+                    }
                   />
                 );
               }) : (
@@ -407,6 +471,17 @@ export default function DryRunPipeline() {
                 detail="human-only boundary"
                 tone="neg"
               />
+            </div>
+            <div className="mt-4 rounded-lg border border-line bg-inset/35 px-3">
+              {Object.keys(formalPreviewByAlpha).length
+                ? Object.entries(formalPreviewByAlpha).map(([alpha, preview]) => (
+                  <FormalRiskRow key={alpha} alpha={alpha} preview={preview} />
+                ))
+                : (
+                  <div className="py-4 text-xs text-faint">
+                    No formal pre-fill risk snapshot.
+                  </div>
+                )}
             </div>
             <Callout
               summary={health?.next_action ?? '等待前向周期与研究风险证据满足正式纸面门禁'}

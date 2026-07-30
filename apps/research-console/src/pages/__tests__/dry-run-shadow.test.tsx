@@ -97,6 +97,57 @@ const state = vi.hoisted(() => ({
         },
       ],
     },
+    paper_order_preview: {
+      source: 'PAPER_ORDER_PREVIEW',
+      read_only: true,
+      snapshot_present: true,
+      verdict: {
+        paper_preview_ready: false,
+        live_allowed: false,
+        order_submission_allowed: false,
+      },
+      alphas: {
+        crowd_contra: {
+          alpha_id: 'crowd_contra',
+          paper_execution: 'PAPER_BLOCKED',
+          research_risk: {
+            decision: 'RISK_REJECTED',
+            status: 'REJECTED',
+            gates_passed: 8,
+            gates_run: 9,
+            engines_run: {
+              capacity: true,
+              model_alpha: false,
+            },
+            reasons: [
+              'Model/Alpha: validation_conf=0.020, paper_conf=0.125',
+            ],
+            reports: {
+              capacity: {
+                passed: true,
+                capacity_usage: 0.782512,
+                bottleneck_alpha: 'ATOM',
+              },
+              model_alpha: {
+                passed: false,
+                alphas_with_decay: 0,
+                alphas_with_overfitting_flags: 0,
+                alphas_with_leakage_flags: 0,
+                min_validation_confidence: 0.02033,
+                min_paper_confidence: 0.125,
+              },
+            },
+          },
+        },
+      },
+      errors: {},
+      safety: {
+        paper_only: true,
+        broker_connectivity: false,
+        broker_order_submission: false,
+        credentials_accessed: false,
+      },
+    },
     safety_note: 'L2 only.',
   } as DryRunPipelinePayload,
 }));
@@ -127,6 +178,11 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('$2,956,000')).toBeInTheDocument();
     expect(screen.getByText('$-44,000')).toBeInTheDocument();
     expect(screen.getByText(/独立、不可晋级的自动观察账户/)).toBeInTheDocument();
+    expect(screen.getByText('8/9')).toBeInTheDocument();
+    expect(screen.getByText('78.3%')).toBeInTheDocument();
+    expect(screen.getByText('0.020')).toBeInTheDocument();
+    expect(screen.getByText('0.125')).toBeInTheDocument();
+    expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
     expect(screen.queryByText('IDLE')).not.toBeInTheDocument();
   });
 });
