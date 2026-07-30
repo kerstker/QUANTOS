@@ -251,7 +251,7 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     )
     assert evidence["artifact_admission_read_consistency_status"] == ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT")
     assert evidence["artifact_admission_decision_history_external_seal_status"] == (
-        "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED"
+        "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED"
     )
     assert evidence[
         "artifact_admission_decision_history_external_seal_evidence_ref"

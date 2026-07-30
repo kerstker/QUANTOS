@@ -30,10 +30,15 @@ def _csv_text(rows):
 
 
 def _stdout_for(csv_path, total):
+    notice_path = (
+        csv_path.replace(os.sep, chr(92) * 2)
+        if os.name == "nt"
+        else csv_path
+    )
     inner = json.dumps({
         "is_success": "wind, Wind historical price fetched for 1 ticker(s)",
         "data_preview": "trade_date,wind_code,...(truncated)",
-        "notice": (f"Detailed and complete data saved to {csv_path.replace(os.sep, chr(92) * 2)}. "
+        "notice": (f"Detailed and complete data saved to {notice_path}. "
                    f"Total records: {total}."),
     })
     repr_text = repr({"type": "text", "text": inner})

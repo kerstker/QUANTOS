@@ -60,9 +60,9 @@ def _python_worker() -> str:
     """Use the windowless sibling interpreter for resident Windows APIs."""
     if os.name != "nt":
         return sys.executable
-    candidate = Path(sys.executable).with_name("pythonw.exe")
-    if candidate.is_file():
-        return str(candidate)
+    candidate = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    if os.path.isfile(candidate):
+        return candidate
     raise RuntimeError("pythonw.exe is unavailable beside the configured Python runtime")
 
 

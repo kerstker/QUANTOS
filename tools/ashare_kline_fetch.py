@@ -62,7 +62,10 @@ RATELIMIT_SLEEP_S = 35.0         # backoff when the gateway says "Too many reque
 class RateLimitError(RuntimeError):
     """Gateway quota exhaustion ("Too many requests") — back off hard."""
 
-_NOTICE_PATH_RE = re.compile(r"(C:\\+[^\s\"']*?\.csv)", re.IGNORECASE)
+_NOTICE_PATH_RE = re.compile(
+    r"((?:[A-Za-z]:\\+|/)[^\r\n\"']*?\.csv)",
+    re.IGNORECASE,
+)
 _TOTAL_RE = re.compile(r"Total records:\s*(\d+)")
 
 

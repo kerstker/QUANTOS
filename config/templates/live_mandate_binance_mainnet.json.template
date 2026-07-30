@@ -1,0 +1,22 @@
+{
+  "mandate_id": "binance-mainnet-futures-001",
+  "venue": "mainnet",
+  "exchange": "binance",
+  "allowed_instruments": [
+    "BTC",
+    "ETH"
+  ],
+  "max_single_order_notional": 100.0,
+  "max_gross_notional": 100.0,
+  "max_net_notional": 100.0,
+  "per_instrument_max_notional": {
+    "BTC": 100.0,
+    "ETH": 100.0
+  },
+  "approved_by": [
+    "<HUMAN_OPERATOR_MUST_REPLACE>"
+  ],
+  "issued_at": 0,
+  "expires_at": 0,
+  "_comment": "Format-only template. Copy to key/live_mandate_binance_mainnet.json and replace every placeholder through the human-controlled workflow. expires_at=0 is intentionally expired and fail-closed. No credential or approval is stored here."
+}

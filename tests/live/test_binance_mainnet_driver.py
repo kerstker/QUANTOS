@@ -146,7 +146,12 @@ def test_mainnet_key_safety_skip_reason_binance_mainnet_safe_passes(monkeypatch)
 
 # --- mandate 模板(venue/exchange 域钉死 + load_mandate 加载语义) ---
 
-_TEMPLATE = os.path.join(_ROOT, "key", "live_mandate_binance_mainnet.json.template")
+_TEMPLATE = os.path.join(
+    _ROOT,
+    "config",
+    "templates",
+    "live_mandate_binance_mainnet.json.template",
+)
 
 
 def _load_template() -> dict:

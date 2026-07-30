@@ -11,6 +11,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 import importlib
+import ntpath
 import os
 from pathlib import Path
 import subprocess
@@ -60,7 +61,7 @@ _HEADLESS_STREAMS: list[object] = []
 
 def _configure_headless_logging(module_name: str) -> None:
     """Route pythonw output to an IDE-readable per-worker log."""
-    if Path(sys.executable).stem.lower() != "pythonw":
+    if os.path.splitext(ntpath.basename(sys.executable))[0].lower() != "pythonw":
         return
     log_root = Path.cwd() / ".runtime" / "logs"
     log_root.mkdir(parents=True, exist_ok=True)
@@ -88,7 +89,7 @@ def _install_headless_subprocess_guard(
     """
     current_executable = sys.executable if executable is None else executable
     current_platform = os.name if platform_name is None else platform_name
-    executable_stem = os.path.splitext(os.path.basename(current_executable))[0].lower()
+    executable_stem = os.path.splitext(ntpath.basename(current_executable))[0].lower()
     if current_platform != "nt" or executable_stem != "pythonw":
         return
     current_popen = subprocess.Popen

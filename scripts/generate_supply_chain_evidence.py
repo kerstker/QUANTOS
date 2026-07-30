@@ -38,12 +38,6 @@ from services.governance.artifact_admission_store import (  # noqa: E402
 from services.governance.reproducibility_evidence import (  # noqa: E402
     verify_container_reproducibility_evidence,
 )
-from tools.artifact_admission_seal import (  # noqa: E402
-    ArtifactAdmissionSealError,
-    verify_artifact_admission_seal,
-)
-
-
 DEFAULT_SBOM = REPO / "evidence" / "sbom.cdx.json"
 DEFAULT_EVIDENCE = REPO / "evidence" / "supply_chain_baseline.json"
 DEFAULT_NPM_AUDIT = REPO / "evidence" / "vulnerability" / "npm_audit_latest.json"
@@ -62,6 +56,7 @@ _MANIFESTS = (
     "config/identity_authorization_registry.json",
     "config/model_provider_registry.json",
     "config/service_import_policy.json",
+    "config/templates/live_mandate_binance_mainnet.json.template",
     "config/top_tier_requirements.json",
     "deploy/console.Dockerfile",
     "evidence/service_import_graph.json",
@@ -321,26 +316,18 @@ def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
             or not isinstance(document.get("anchor_path"), str)
         ):
             raise ValueError("artifact-admission seal evidence contract is invalid")
-        verified = verify_artifact_admission_seal(
-            authority_path=root / "data/cache/artifact_admission.db",
-            anchor_path=document["anchor_path"],
-        )
-        if (
-            verified.get("verdict") != "PASS"
-            or verified.get("authority_extends_anchor") is not True
-            or verified.get("anchor_sha256") != document.get("anchor_sha256")
-        ):
-            raise ValueError("artifact-admission external anchor is not current")
     except (
         OSError,
         TypeError,
         ValueError,
         json.JSONDecodeError,
-        ArtifactAdmissionSealError,
     ) as exc:
         raise ValueError("artifact-admission external seal verification failed") from exc
     return {
-        "status": "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED",
+        # The external anchor deliberately lives outside the repository. A
+        # clean checkout can validate this retained declaration and digest,
+        # but cannot honestly re-open the operator-owned external object.
+        "status": "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED",
         "evidence_ref": evidence_ref,
         "evidence_sha256": _sha256_bytes(evidence_bytes),
         "anchor_sha256": document["anchor_sha256"],
