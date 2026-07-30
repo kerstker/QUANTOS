@@ -3,6 +3,61 @@
     {
       "reference": "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
       "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "sha_pinned": true,
+      "workflow": ".github/workflows/sigstore-evidence.yml"
+    },
+    {
+      "reference": "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+      "sha_pinned": true,
       "workflow": ".github/workflows/validate.yml"
     },
     {
@@ -29,9 +84,9 @@
   "actions_all_sha_pinned": true,
   "actions_vulnerability_count": 0,
   "actions_vulnerability_evidence_ref": "evidence/vulnerability/actions_osv_latest.json",
-  "actions_vulnerability_evidence_sha256": "7609e8f7dfe6ea229e0ac185f075a6a73fcbe2515b03589c8b249757b14ca854",
+  "actions_vulnerability_evidence_sha256": "daa473fe32d9f68ea9c42a149d7838c59bb073633e8a3a6a45bc82748775b56c",
   "actions_vulnerability_evidence_status": "VERIFIED_EXTERNAL_ZERO_KNOWN",
-  "actions_vulnerability_observed_at": 1784497891,
+  "actions_vulnerability_observed_at": 1785411183,
   "artifact_admission_active_policy_count": 0,
   "artifact_admission_active_receipt_key_count": 0,
   "artifact_admission_allow_cas_status": "EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED",
@@ -130,6 +185,7 @@
   ],
   "manifest_sha256": {
     ".gitattributes": "c8a87c174f9da8aa58090b4fd68a638682ace6224217f0f9677b841bd32a4da8",
+    ".github/workflows/sigstore-evidence.yml": "3c34c2158eb453067e310ead33993d0aa802019266236f6f4097b4e0056ab0e9",
     ".github/workflows/validate.yml": "121bc15526626c3c142268afa4ea027ad2a96ad13cda8d004ca2e012821d5b1a",
     "apps/research-console/package-lock.json": "a8e8da88ce227205581d6296ac76d4e435e9200d090fc99d0e824b9044635fee",
     "apps/research-console/package.json": "69d4de660ef18ed8d1fd632667aec7d3cec2fecb0a403d5c75a6b637d0a966e0",
@@ -143,10 +199,11 @@
     "config/templates/live_mandate_binance_mainnet.json.template": "c822c6041a7346db50da8dac2a718d743ad5a320b3e10b50f957e622dfa0177b",
     "config/top_tier_requirements.json": "cc46f40aad3784af0f3e0e47e2aae1fac5483e7ff02dbad9c29f78e35635558d",
     "deploy/console.Dockerfile": "4d287da5d65ab3164ff128e1d138bcd3a461868ec2a84347468d5c15648afa6b",
+    "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md": "d6b6a7dc875e91ec30e57604262b427d89955adc639416f8e1ad08eea3e4f1ef",
     "evidence/event_schema_catalog.json": "2c986ea96b55ef3657ab8a5b64cea28ea514711a995ad4f6573921e4884caa4a",
     "evidence/reproducibility/container_build_latest.json": "f857ff480ae882d99c75073d5a9581178dece14c97300c8d09448b6e5932287f",
     "evidence/service_import_graph.json": "8199cd5b287d951422988a44aa4517ad5241e3bc2d9969cb72f970b909179c18",
-    "evidence/vulnerability/actions_osv_latest.json": "7609e8f7dfe6ea229e0ac185f075a6a73fcbe2515b03589c8b249757b14ca854",
+    "evidence/vulnerability/actions_osv_latest.json": "daa473fe32d9f68ea9c42a149d7838c59bb073633e8a3a6a45bc82748775b56c",
     "evidence/vulnerability/container_trivy_latest.json": "bbf0ec72b528906762925eed4ad507a07f8dec61968757a3a12b7b60e5278f99",
     "evidence/vulnerability/npm_audit_latest.json": "036ded1df11f1cf3a3fc347a5c6974bd2d753eb8608641a5394432fa26360ce9",
     "evidence/vulnerability/python_audit_latest.json": "aa972077f94d5d308dabf54abe78fc80ef8a75148f82fb9d71cd9cf3815ae713",
@@ -169,7 +226,7 @@
     "scripts/generate_python_audit_evidence.py": "1cdca71af564789e6fb07f48b7d46d669c6ed617b36e158722481cf6cb7d503f",
     "scripts/generate_service_import_graph.py": "013d781f4d1a4025ef5d97256dab300b64892e5054dd8761e6e0e63aef3a9863",
     "scripts/generate_strong_identity_evidence.py": "312d056ad706a5824d82e722d8ec0f1c8c2bda24bed0f7d8b269aa428097c2c2",
-    "scripts/generate_supply_chain_evidence.py": "d39a21a8758d1bd65f3515d9682463500eb38c8d8d1d4ac37373be7135160d8c",
+    "scripts/generate_supply_chain_evidence.py": "b21065967d21892e7b2db358b978a3b9a733683e41d5c1fe89ea02d6038ed22a",
     "scripts/register_schedules.ps1": "6c5cc43c5cd9bb3dea903399c6cbb11f19cb43720b832378419adea0750b9508",
     "scripts/validate.py": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "services/alpha/evaluator.py": "cdcca5b9f8925c1877c889ac43d6c477428959afbe091965a2f3190edf5a9877",
@@ -245,6 +302,7 @@
     "tests/governance/test_external_model_provider_boundary.py": "1c2359b0553a9a98b22ff969ac3dba2653a506ac6bded1a5da929729f89ccda0",
     "tests/governance/test_external_model_provider_evidence.py": "b78fc1cb7fdfae3ab88270f98860a6cf76d049a6c305c8fdb4c2dfcc7db61572",
     "tests/governance/test_external_operations_boundary.py": "ca1d3a9a6698fe6c87e1eca97aa7f3651803ea2270d1b1f037d6c8354d059dde",
+    "tests/governance/test_external_sigstore_workflow.py": "235dc845e6567baeaba82f2ea5b685baeadfb5eed0b2d8f8d76def9f1206c4c5",
     "tests/governance/test_identity_authorization.py": "08d882dfe01bc85b461958dde4ca63cd25a51f5c4bffa05d8bb9217ab34c497d",
     "tests/governance/test_identity_authorization_store.py": "8e56bd3a7a4168be5d9c2064d1476db0008f66c0240e5ed0a8eb1dc2f63e5811",
     "tests/governance/test_l2_operations_boundary.py": "7bc55ceb7e7bcbbbc339fafe057a90ea12db69a87a98f9e9011c872218d0d839",
@@ -284,8 +342,10 @@
     "tests/tools/test_l2_backup.py": "3677473ed1125dab894fa8edec859abea75dc06f99621c8d7ec6e1dd011b2510",
     "tests/tools/test_l2_schedule_entrypoint.py": "dd048d0a1c3017bc1c9fcc2cb56e2bd183eecb8e969ee19c6785c599460a45aa",
     "tests/tools/test_l2_scheduler_watchdog.py": "1c5b85a9c791be04ee6abf9dc7e7cdfbba44529c143786267f1bf35a619aeb1d",
+    "tests/tools/test_reproducible_source_bundle.py": "b6993076a825ed0ad7b7c3b09cca761312bf13d9af4810e7ba32e19a69b86681",
     "tools/alpha_maintenance_sweep.py": "5e2aa93d086fdf3da5d0d5cea7075dfe53b471342e89c970d516e32a18399395",
     "tools/artifact_admission_seal.py": "6acdfa3c110629cb437923aecbe5ba2502599fd629ff478609187a90c27ef765",
+    "tools/build_reproducible_source_bundle.py": "fcbb0fbb6c9b210e97ba1afcc23f2ba036c72ce3137a88bdfc520f997f5586fa",
     "tools/crypto_robust_optimization.py": "645685e2ca19193b1f0c2f66c564e9153ad0c87682d4c7b58e717d4f4bd4fd72",
     "tools/deployment_events.py": "e1e3380510c04fb8856ee45d783d2ca750a355266f119b035aa81981042f2eb1",
     "tools/domain_event_bus.py": "3e482b2d19f13b266afaf276b304398d3490391343c477ebd8f0abde6f566b7e",

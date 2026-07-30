@@ -46,6 +46,7 @@ _ACTION = re.compile(r"uses:\s*([^\s#]+)")
 _ACTION_SHA = re.compile(r"^([^@]+)@([0-9a-f]{40})$")
 _MANIFESTS = (
     ".gitattributes",
+    ".github/workflows/sigstore-evidence.yml",
     ".github/workflows/validate.yml",
     "apps/research-console/package-lock.json",
     "apps/research-console/package.json",
@@ -149,6 +150,7 @@ _MANIFESTS = (
     "tools/external_model_provider_probe.py",
     "tools/verify_artifact_admission.py",
     "tools/provision_artifact_admission_authority.py",
+    "tools/build_reproducible_source_bundle.py",
     "tools/crypto_robust_optimization.py",
     "tests/governance/test_artifact_admission.py",
     "tests/governance/test_artifact_admission_cli.py",
@@ -163,8 +165,11 @@ _MANIFESTS = (
     "tests/governance/test_promotion_api_endpoints.py",
     "tests/governance/test_strong_identity.py",
     "tests/governance/test_strong_identity_evidence.py",
+    "tests/governance/test_external_sigstore_workflow.py",
     "tests/intelligence/test_external_provider_runtime.py",
+    "tests/tools/test_reproducible_source_bundle.py",
     "tests/tools/test_external_model_provider.py",
+    "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md",
     "evidence/vulnerability/npm_audit_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
     "evidence/vulnerability/actions_osv_latest.json",
