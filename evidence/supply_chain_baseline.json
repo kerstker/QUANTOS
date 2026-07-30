@@ -136,14 +136,7 @@
   "artifact_admission_active_receipt_key_count": 0,
   "artifact_admission_allow_cas_status": "EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED",
   "artifact_admission_authority_clock_status": "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY",
-  "artifact_admission_authority_snapshot": {
-    "authority_time_floor_ms": 1785449132526,
-    "decision_count": 0,
-    "policy_registry_event_hash": "bdc839c584300378b3daf9a5f24f682b27d97e5106a81a23b46bd0776f75bd0a",
-    "policy_registry_event_seq": 2,
-    "receipt_authority_registry_event_hash": "1a7a578208fd2030cadb6f3ee6a162e89bf2db076d54f8acda0b77809f8b8fe7",
-    "receipt_authority_registry_event_seq": 4
-  },
+  "artifact_admission_authority_snapshot": null,
   "artifact_admission_contract_versions": {
     "decision": 4,
     "decision_store": 4,
@@ -161,8 +154,8 @@
   "artifact_admission_decision_history_external_signature_verified": false,
   "artifact_admission_decision_history_external_worm_verified": false,
   "artifact_admission_decision_store_path": "data/cache/artifact_admission.db",
-  "artifact_admission_decision_store_provisioning_status": "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED",
-  "artifact_admission_decision_store_status": "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
+  "artifact_admission_decision_store_provisioning_status": "NOT_PROVIDED",
+  "artifact_admission_decision_store_status": "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE",
   "artifact_admission_decision_store_worm_status": "NOT_WORM_LOCAL_FILE_REPLACEABLE",
   "artifact_admission_external_bundle_evidence": {
     "artifact_bytes_retained_in_repository": false,
@@ -256,6 +249,7 @@
     "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
     "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
     "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
+    "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
     "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
   ],
   "manifest_sha256": {
@@ -339,7 +333,7 @@
     "services/governance/artifact_admission.py": "b5fb4fb1d3e27b0644fc6c6ec223ae4e6cd2fc94ee40441959de541d99f38a38",
     "services/governance/artifact_admission_store.py": "c28433b3596bb4987a2da9f517c3690e386ea57b1dbed23a95a79a189ac9a804",
     "services/governance/artifact_receipt_auth.py": "95a259d30a36b217f39e3906371da9c8021cf8053245fa5ef3bfd871e2b09446",
-    "services/governance/cross_host_container_reproducibility.py": "50a0495755d327c089b3517dfb360be37985ac63a1b277417bff8036dbf20eba",
+    "services/governance/cross_host_container_reproducibility.py": "cc67dca52321a1095283cb36937e6a7f3d6958530659e1d93c6a5c6c34cba20e",
     "services/governance/external_model_provider_evidence.py": "13c32e543d11867c5189043160b10592810f38748483e37d9641b6fce0d0c121",
     "services/governance/external_sigstore_evidence.py": "3ba4af8eeb1828800b5b3a40cf96370583d649f989a2286c0cd01cd71bc491aa",
     "services/governance/identity_authorization.py": "43fac24d630ae91dc4360a939ebf17940d4cf822603f451f13746fbc441e7a2b",
@@ -381,7 +375,7 @@
     "tests/governance/test_artifact_admission_store.py": "6742a9b1e1e057cfd71edc193da970086deb8b9adaeae4ecb171fc4e437b863f",
     "tests/governance/test_artifact_receipt_auth.py": "1b9947898c840f0eb8557bf296c41d90a147204984902cb26f5a4596ec5eea96",
     "tests/governance/test_console_composition_boundary.py": "298ee8918f96dd3490eb44c2f0cde7fbabb68f04154682a1bbf6bdd80a3ba118",
-    "tests/governance/test_cross_host_container_reproducibility.py": "12ad9eea2acfe8ee2fe3da2a2f9c12dd6db46507175003a2771a9ebdb8e5a52b",
+    "tests/governance/test_cross_host_container_reproducibility.py": "0d883929492b921cf91196ff63e60b3e8a9ab683c25a2ff1f8ccbfe9899b0ad5",
     "tests/governance/test_event_bus_wiring.py": "537386091d153fc88d4f520ac4f458a365b52d6e69369fb1f1a7b19bfdb252e9",
     "tests/governance/test_event_schema_catalog.py": "c1fff1fd3bd2cd6b3267724db09dd119c58c6c1637883607b6fd60384aa7d12a",
     "tests/governance/test_evidence_checkout_portability.py": "c53aa9e8bb126800e70b051b1b8b443b9f2e83ffa5a830fa8d594cba4b0ce40a",

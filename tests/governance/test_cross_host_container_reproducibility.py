@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 from datetime import datetime, timezone
 import gzip
@@ -29,6 +30,24 @@ BUILD_TOOL = {
     "buildkit_version": "v0.26.2",
     "buildkit_image_ref": "moby/buildkit@sha256:" + "d" * 64,
 }
+
+
+def test_claim_module_has_no_top_level_sigstore_dependency() -> None:
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "services/governance/cross_host_container_reproducibility.py"
+    )
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    top_level_imports = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+
+    assert all(
+        not name.startswith(("cryptography", "sigstore"))
+        for name in top_level_imports
+    )
 
 
 def _iso(epoch: int) -> str:

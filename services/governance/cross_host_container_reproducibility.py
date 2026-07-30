@@ -9,12 +9,6 @@ import re
 import stat
 from typing import Any, Mapping, Sequence
 
-from cryptography.hazmat.primitives.serialization import Encoding
-from sigstore.errors import VerificationError
-from sigstore.models import Bundle, InvalidBundle, TrustedRoot
-from sigstore.verify import Verifier
-from sigstore.verify.policy import Identity
-
 from services.governance.artifact_admission import (
     load_json_without_duplicate_keys,
 )
@@ -615,6 +609,17 @@ def verify_signed_cross_host_container_evidence(
     trusted_root_path: str | Path,
 ) -> dict[str, Any]:
     """Cryptographically verify the retained OIDC/Sigstore container proof."""
+    try:
+        from cryptography.hazmat.primitives.serialization import Encoding
+        from sigstore.errors import VerificationError
+        from sigstore.models import Bundle, InvalidBundle, TrustedRoot
+        from sigstore.verify import Verifier
+        from sigstore.verify.policy import Identity
+    except ImportError as exc:
+        raise CrossHostContainerEvidenceError(
+            "cross-host Sigstore verification dependencies are unavailable"
+        ) from exc
+
     root = Path(evidence_directory)
     if root.is_symlink() or not root.is_dir():
         raise CrossHostContainerEvidenceError(
