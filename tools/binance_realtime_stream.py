@@ -35,6 +35,7 @@ DEFAULT_STATUS = os.path.join("data", "cache", "binance_realtime_stream_status.j
 DEFAULT_DURATION_SECONDS = 23 * 60 * 60
 FLUSH_SECONDS = 5.0
 MAX_STREAM_LAG_MS = 10_000
+CHAIN_VERIFY_INTERVAL_SECONDS = 5 * 60.0
 
 
 class BinanceStreamDataError(RuntimeError):
@@ -526,7 +527,8 @@ def _status(
     snapshots: Mapping[str, Mapping[str, Any]],
     store_path: str,
     row_count: int,
-    chain_valid: bool,
+    chain_valid: bool | None,
+    chain_verified_at_ms: int | None,
 ) -> dict[str, Any]:
     complete = sum(
         1
@@ -543,7 +545,7 @@ def _status(
         and all(state.connections.values())
         and lag_ms is not None
         and lag_ms <= MAX_STREAM_LAG_MS
-        and chain_valid
+        and chain_valid is True
     )
     return {
         "schema_version": 1,
@@ -568,6 +570,7 @@ def _status(
             "path": store_path,
             "row_count": row_count,
             "chain_valid": chain_valid,
+            "chain_verified_at_ms": chain_verified_at_ms,
         },
         "routes": {
             "public": f"{BASE_WSS}/public",
@@ -582,6 +585,15 @@ def _status(
             "live_trading": False,
         },
     }
+
+
+def _verify_store_chain(store_path: str) -> bool:
+    """Verify the full append-only chain on an isolated read connection."""
+    verifier = BinanceRealtimeStore(store_path)
+    try:
+        return verifier.chain_valid()
+    finally:
+        verifier.close()
 
 
 async def run_stream(
@@ -604,6 +616,8 @@ async def run_stream(
     stop = asyncio.Event()
     deadline = time.monotonic() + duration_seconds
     latest_status: dict[str, Any] = {}
+    chain_valid: bool | None = None
+    chain_verified_at_ms: int | None = None
 
     async def flush_loop() -> None:
         nonlocal latest_status
@@ -620,17 +634,33 @@ async def run_stream(
                     snapshots=snapshots,
                     store_path=store_path,
                     row_count=store.row_count(),
-                    chain_valid=store.chain_valid(),
+                    chain_valid=chain_valid,
+                    chain_verified_at_ms=chain_verified_at_ms,
                 )
                 atomic_write_json(status_path, latest_status, indent=2)
         finally:
             stop.set()
+
+    async def verify_chain_loop() -> None:
+        nonlocal chain_valid, chain_verified_at_ms
+        while not stop.is_set() and time.monotonic() < deadline:
+            chain_valid = await asyncio.to_thread(_verify_store_chain, store_path)
+            chain_verified_at_ms = int(time.time() * 1_000)
+            remaining = max(0.0, deadline - time.monotonic())
+            wait_seconds = min(CHAIN_VERIFY_INTERVAL_SECONDS, remaining)
+            if wait_seconds <= 0:
+                break
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=wait_seconds)
+            except TimeoutError:
+                continue
 
     try:
         await asyncio.gather(
             _consume("public", urls["public"], state=state, stop=stop, deadline=deadline),
             _consume("market", urls["market"], state=state, stop=stop, deadline=deadline),
             flush_loop(),
+            verify_chain_loop(),
         )
     finally:
         store.close()

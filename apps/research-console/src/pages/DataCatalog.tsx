@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchDataCatalogSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type {
@@ -221,8 +221,16 @@ function checkStats(dataset: DataCatalogDataset): { passed: number; total: numbe
 }
 
 export default function DataCatalog() {
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setRefreshTick(value => value + 1), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DataCatalogPayload>(
-    s => fetchDataCatalogSnapshot(s));
+    s => fetchDataCatalogSnapshot(s),
+    [refreshTick],
+  );
 
   const catalog = usingBackend ? payload! : fallbackCatalog;
 
@@ -436,6 +444,11 @@ export default function DataCatalog() {
           <StatTile label={bi('REST 哈希链', 'REST Chain')} value={realtime.rest_snapshot.chain_valid ? 'VALID' : 'UNKNOWN'}
             tone={realtime.rest_snapshot.chain_valid ? 'pos' : 'warn'} />
         </div>
+        <details className="mt-4 rounded-lg border border-line bg-inset/30">
+          <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold text-muted">
+            Market-data diagnostics and full evidence
+          </summary>
+          <div className="border-t border-line px-4 pb-4">
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatTile label={bi('官方目录', 'Official Catalog')}
             value={`${num(realtime.api_coverage.accounted_endpoint_count)}/${num(realtime.api_coverage.catalog_endpoint_count)}`}
@@ -597,8 +610,15 @@ export default function DataCatalog() {
             <Chip label="L2 DRY-RUN ONLY" tone="info" />
           </div>
         </div>
+          </div>
+        </details>
       </Panel>
 
+      <details className="rounded-xl border border-line bg-surface/40">
+        <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+          Datasets, features, and lineage evidence
+        </summary>
+        <div className="space-y-4 border-t border-line p-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel eyebrow={bi('构成', 'Composition')} title={bi('特征族分布', 'Feature Families')}
           right={<Chip label={bi(`${familySegments.length} 族`, `${familySegments.length} fam.`)} tone="muted" />}>
@@ -659,7 +679,6 @@ export default function DataCatalog() {
         <DataTable columns={featureCols} rows={catalog.features} getKey={f => f.feature_id} dense />
       </Panel>
 
-      </LoadingVeil>
       <Panel eyebrow={bi('血缘', 'Lineage')} title={bi('特征血缘链路', 'Feature Lineage Chain')}
         right={<Chip label={bi('数据集 → 特征 → 实验', 'dataset → feature → experiment')} tone="muted" />}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -686,6 +705,9 @@ export default function DataCatalog() {
           ))}
         </div>
       </Panel>
+        </div>
+      </details>
+      </LoadingVeil>
     </PageShell>
   );
 }

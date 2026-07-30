@@ -54,6 +54,15 @@ def _sha256(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
+def _event_content(observation: Mapping[str, Any]) -> dict[str, Any]:
+    """Return immutable event content without receipt-time provenance."""
+    return {
+        str(key): value
+        for key, value in observation.items()
+        if key != "knowledge_time_ms"
+    }
+
+
 class BinanceSystemicStore:
     """Durable, idempotent, tamper-evident public observations."""
 
@@ -123,7 +132,7 @@ class BinanceSystemicStore:
         try:
             self._conn.execute("BEGIN IMMEDIATE")
             existing = self._conn.execute(
-                "SELECT payload_sha256 FROM binance_systemic_observations "
+                "SELECT * FROM binance_systemic_observations "
                 "WHERE dataset=? AND instrument_id=? AND event_time_ms=?",
                 (dataset, instrument_id, event_time_ms),
             ).fetchone()
@@ -131,8 +140,16 @@ class BinanceSystemicStore:
                 if existing["payload_sha256"] == payload_sha256:
                     self._conn.rollback()
                     return False
+                existing_payload = self._decode(existing)
+                if _event_content(existing_payload) == _event_content(payload):
+                    # A later fetch of the same immutable exchange event has a
+                    # later receipt time. Preserve the earliest knowledge time
+                    # and treat the replay as idempotent.
+                    self._conn.rollback()
+                    return False
                 raise BinanceSystemicStoreError(
-                    "observation identity reused with different content"
+                    "observation identity reused with different content: "
+                    f"{dataset}/{instrument_id}/{event_time_ms}"
                 )
             previous = self._conn.execute(
                 "SELECT row_hash FROM binance_systemic_observations "

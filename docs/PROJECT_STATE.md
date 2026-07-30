@@ -1,5 +1,27 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-30 实时纸面控制面与公共行情运行闭环修复：**
+> Data Catalog 每 5 秒读取真实 console API，默认只呈现实时流核心指标；API/WS 全目录、
+> systemic/RPI、漂移、限流、数据集、特征与血缘保留在可展开审计区。本地 SPA 对
+> `index.html` 强制 `no-store`，不再长期持有旧 mock 构建。163,240 行实时库的全链复验
+> 单次已耗 18.6 秒，现移入独立线程每 5 分钟执行，5 秒快照不再被阻塞，并保留最近验证
+> 时刻。Binance `insuranceBalance` 会在保留粗粒度 `updateTime` 时修改余额，现以接收
+> 时刻作为可追加快照身份并保存 `source_update_time_ms`；basis 越过 `startTime` 返回的
+> 已封存旧行也会被过滤。真实复验：5 分钟触发器自动拉起 stream；stream 14/14、age
+> 0.8 秒、链有效；systemic 14/14、0 error、任务返回 0；纸面 SOR 计数持续增长。全链仍
+> 仅为无凭证公共行情与 L2 纸面交易，`live_allowed=false`、
+> `order_submission_allowed=false`。
+
+> **2026-07-30 Binance 长驻流自愈调度修复：**
+> 真实运行发现 `binance_realtime_stream` 固定 23 小时正常退出，但旧触发器仅为
+> AtStartup + 每日 00:05；当 00:05 到来时旧实例仍在运行，
+> `MultipleInstances=IgnoreNew` 会吞掉当天唯一重启触发，实例随后白天退出后便可留下
+> 近 24 小时空窗。实况中 Binance book 自 13:42 UTC 起过期，paper SOR 连续
+> fail-closed，手工重启公共 WebSocket 后立即恢复 4/4 intents、8 fills、4 条 TCA、
+> residual=0。现将第二触发器改为每 5 分钟轮询：运行中仍忽略重复，正常退出或崩溃后
+> 最多一个 paper cadence 自动拉起；watchdog 对已退出 stream 的 freshness 也由 2 天
+> 收紧到 15 分钟。全程公共行情、paper-only，不增加凭证、broker 或订单权限。
+>
 > **2026-07-30 外部 GitHub OIDC Sigstore 与跨主机源码复现实证：**
 > GitHub Actions run `30540314233` 已在固定的 `ubuntu-22.04` 与
 > `ubuntu-24.04` 托管执行器上，从同一 Git commit 的 blob 独立构造 canonical

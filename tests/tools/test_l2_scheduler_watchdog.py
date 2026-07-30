@@ -242,6 +242,13 @@ def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
     assert rpi.max_age_ms == 3 * 3_600_000
 
 
+def test_resident_binance_stream_exit_is_stale_within_three_paper_cadences():
+    stream = EXPECTED_TASKS["QUANTOS_binance_realtime_stream"]
+
+    assert stream.module == "binance_realtime_stream"
+    assert stream.max_age_ms == 15 * 60_000
+
+
 def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
     state_root = tmp_path / "state"
     code_root = tmp_path / "release"

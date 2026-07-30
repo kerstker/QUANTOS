@@ -110,6 +110,23 @@ def test_schedule_registration_separates_release_code_from_mutable_state():
     assert '-m tools.$Module' not in source
 
 
+def test_resident_binance_stream_has_bounded_restart_poll():
+    source = _source()
+    trigger = re.search(
+        r"\$binanceRealtimeStreamTrigger\s*=\s*@\((.*?)\n\)",
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert trigger is not None
+    contract = trigger.group(1)
+    assert "New-ScheduledTaskTrigger -AtStartup" in contract
+    assert "New-ScheduledTaskTrigger -Once" in contract
+    assert "New-TimeSpan -Minutes 5" in contract
+    assert "New-ScheduledTaskTrigger -Daily" not in contract
+    assert "-MultipleInstances IgnoreNew" in source
+
+
 def test_backup_registration_never_embeds_a_secret_or_local_default_destination():
     source = _source()
     assert "QUANTOS_BACKUP_PASSPHRASE" in source

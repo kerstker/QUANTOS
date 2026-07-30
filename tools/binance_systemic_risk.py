@@ -394,6 +394,7 @@ def parse_basis_rows(
     payloads: Sequence[object],
     *,
     knowledge_time_ms: int,
+    min_event_time_ms: int | None = None,
 ) -> list[dict[str, Any]]:
     observations: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -408,6 +409,14 @@ def parse_basis_rows(
             if str(raw.get("contractType", "")).upper() != "PERPETUAL":
                 raise BinanceSystemicRiskError("basis contract type mismatch")
             event_time_ms = _timestamp(raw.get("timestamp"), "basis timestamp")
+            if (
+                min_event_time_ms is not None
+                and event_time_ms < int(min_event_time_ms)
+            ):
+                # Binance may return rows preceding startTime. They are already
+                # sealed in the append-only store and must not be replayed as
+                # if they were new observations.
+                continue
             # The API timestamp is the period start. Persist only completed
             # hourly observations so a later refresh cannot revise an identity.
             if event_time_ms + HOUR_MS > knowledge_time_ms:
@@ -559,11 +568,16 @@ def parse_insurance_balance(
         MAX_INSURANCE_AGE_MS,
         "insurance balance",
     )
+    # ``insuranceBalance`` is a mutable point-in-time snapshot: Binance can
+    # change balances while retaining the assets' coarse updateTime. Use the
+    # receipt time as the observation event identity and preserve the exchange
+    # timestamp separately, so every observed revision remains append-only.
     observation = _base_observation(
-        "insurance_balance", symbol, event_time_ms, knowledge_time_ms
+        "insurance_balance", symbol, knowledge_time_ms, knowledge_time_ms
     )
     observation.update(
         {
+            "source_update_time_ms": event_time_ms,
             "covered_symbols": normalized_symbols,
             "assets": normalized_assets,
             "asset_count": len(normalized_assets),
@@ -996,6 +1010,7 @@ def run_refresh(
                     symbol,
                     [payload for _, payload in source["basis"]],
                     knowledge_time_ms=int(source["basis_knowledge_time_ms"]),
+                    min_event_time_ms=starts[ticker],
                 )
                 if archive_root is not None:
                     _archive_symbol(

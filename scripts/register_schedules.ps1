@@ -196,7 +196,13 @@ $binanceRealtimeDriftAlertsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Dat
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -AtStartup),
-  (New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "00:05")
+  # The worker exits cleanly after 23 hours. A daily fixed-time trigger can be
+  # swallowed by MultipleInstances=IgnoreNew while the prior instance is
+  # still running, leaving a many-hour gap after that instance exits. Polling
+  # every five minutes preserves single-instance ownership while bounding
+  # both clean-exit and crash recovery to one paper cadence.
+  (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5))
 )
 # Exercise public-book multi-venue routing after the resident Binance stream
 # has flushed fresh depth. This remains simulation-only and has no credentials.

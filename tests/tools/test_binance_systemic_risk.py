@@ -408,6 +408,15 @@ def test_basis_parser_drops_open_hour_and_rejects_nonfinite_values():
         "BTCUSDT", [payload], knowledge_time_ms=_NOW
     )
     assert len(rows) == 2
+    filtered = systemic.parse_basis_rows(
+        "BTCUSDT",
+        [payload],
+        knowledge_time_ms=_NOW,
+        min_event_time_ms=int(rows[-1]["event_time_ms"]),
+    )
+    assert [row["event_time_ms"] for row in filtered] == [
+        rows[-1]["event_time_ms"]
+    ]
 
     payload[0]["basisRate"] = "NaN"
     with pytest.raises(systemic.BinanceSystemicRiskError, match="not finite"):
@@ -429,6 +438,27 @@ def test_adl_middle_is_preserved_and_normalized_to_medium():
 
     assert observation["raw_rating"] == "MIDDLE"
     assert observation["rating"] == "MEDIUM"
+
+
+def test_insurance_snapshot_uses_receipt_identity_and_preserves_source_time():
+    observation = systemic.parse_insurance_balance(
+        "BTCUSDT",
+        {
+            "symbols": ["BTCUSDT"],
+            "assets": [
+                {
+                    "asset": "USDT",
+                    "marginBalance": "12.5",
+                    "updateTime": _NOW - 1_000,
+                }
+            ],
+        },
+        knowledge_time_ms=_NOW,
+    )
+
+    assert observation["event_time_ms"] == _NOW
+    assert observation["knowledge_time_ms"] == _NOW
+    assert observation["source_update_time_ms"] == _NOW - 1_000
 
 
 def test_append_accepts_pre_raw_rating_equivalent_without_rewrite(tmp_path):

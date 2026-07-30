@@ -1,4 +1,10 @@
-from tools.binance_realtime_stream import StreamState, stream_urls
+from services.data.binance_realtime_store import BinanceRealtimeStore
+from tools.binance_realtime_stream import (
+    StreamState,
+    _status,
+    _verify_store_chain,
+    stream_urls,
+)
 
 
 _NOW = 10_000
@@ -20,6 +26,30 @@ def test_stream_urls_use_official_routed_public_and_market_endpoints():
     assert "!forceOrder@arr" in urls["market"]
     assert "!contractInfo" in urls["market"]
     assert "/private/" not in urls["public"] + urls["market"]
+
+
+def test_full_chain_verification_uses_an_isolated_connection_and_is_timestamped(
+    tmp_path,
+):
+    path = str(tmp_path / "stream.db")
+    store = BinanceRealtimeStore(path, create=True)
+    store.close()
+
+    assert _verify_store_chain(path) is True
+
+    state = StreamState(("BTC",))
+    status = _status(
+        state,
+        observed_at_ms=_NOW,
+        snapshots={},
+        store_path=path,
+        row_count=0,
+        chain_valid=None,
+        chain_verified_at_ms=None,
+    )
+    assert status["verdict"] == "WARMING_OR_RECONNECTING"
+    assert status["store"]["chain_valid"] is None
+    assert status["store"]["chain_verified_at_ms"] is None
 
 
 def test_state_reduces_complete_stream_surface_into_one_snapshot():

@@ -44,12 +44,28 @@ def test_store_rejects_identity_reuse_and_mutation(tmp_path):
     store = BinanceSystemicStore(path, create=True)
     try:
         store.append(_observation())
-        with pytest.raises(BinanceSystemicStoreError, match="different content"):
+        with pytest.raises(
+            BinanceSystemicStoreError,
+            match=r"different content: adl_risk/BTCUSDT/1000",
+        ):
             store.append(_observation(value="HIGH"))
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             store._conn.execute(  # noqa: SLF001 - adversarial storage contract test
                 "UPDATE binance_systemic_observations SET instrument_id='ETHUSDT'"
             )
+    finally:
+        store.close()
+
+
+def test_store_deduplicates_same_event_received_again_later(tmp_path):
+    store = BinanceSystemicStore(str(tmp_path / "systemic.db"), create=True)
+    try:
+        first = _observation()
+        replay = {**first, "knowledge_time_ms": 2500}
+        assert store.append(first) is True
+        assert store.append(replay) is False
+        assert store.row_count() == 1
+        assert store.latest("adl_risk", "BTCUSDT")["knowledge_time_ms"] == 2000
     finally:
         store.close()
 

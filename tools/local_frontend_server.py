@@ -51,11 +51,26 @@ def _spa_target(request_path: str, *, dist: Path = DIST) -> str | None:
     return path
 
 
+def _cache_control_for_path(path: str) -> str | None:
+    """Keep the SPA shell current while allowing hashed assets to cache."""
+    request_path = urlsplit(path).path
+    if request_path == "/" or request_path.endswith(".html"):
+        return "no-store, max-age=0"
+    return None
+
+
 class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
     """Static-file handler with safe React client-route fallback."""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, directory=str(DIST), **kwargs)
+
+    def end_headers(self) -> None:
+        cache_control = _cache_control_for_path(self.path)
+        if cache_control is not None:
+            self.send_header("Cache-Control", cache_control)
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
         if self._proxy_target() is not None:

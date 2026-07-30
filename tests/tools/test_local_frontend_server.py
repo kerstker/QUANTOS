@@ -3,6 +3,7 @@ from __future__ import annotations
 from tools.local_frontend_server import (
     REQUIRED_LOCAL_API_MARKERS,
     SpaRequestHandler,
+    _cache_control_for_path,
     _has_real_local_api_contract,
     _spa_target,
 )
@@ -22,6 +23,13 @@ def test_spa_target_serves_assets_and_falls_back_for_routes(tmp_path):
 
 def test_spa_target_rejects_path_traversal(tmp_path):
     assert _spa_target("/../secret", dist=tmp_path) is None
+
+
+def test_spa_shell_is_never_cached_but_hashed_assets_may_cache():
+    assert _cache_control_for_path("/") == "no-store, max-age=0"
+    assert _cache_control_for_path("/index.html") == "no-store, max-age=0"
+    assert _cache_control_for_path("/index.html?build=current") == "no-store, max-age=0"
+    assert _cache_control_for_path("/assets/index-content-hash.js") is None
 
 
 def test_real_local_api_contract_rejects_mock_bundle(tmp_path):
