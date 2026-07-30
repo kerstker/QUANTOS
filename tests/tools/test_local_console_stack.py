@@ -28,6 +28,32 @@ def test_local_stack_is_l2_console_only(monkeypatch):
         f"http://127.0.0.1:{specs[2]['port']}",
         f"http://localhost:{specs[2]['port']}",
     }
+    assert specs[0]["env"]["QUANTOS_BUILD_SHA"] != "dirty"
+
+
+def test_source_revision_distinguishes_clean_and_dirty_worktrees(monkeypatch):
+    class Completed:
+        def __init__(self, stdout=b"", returncode=0):
+            self.stdout = stdout
+            self.returncode = returncode
+
+    clean = [
+        Completed("a" * 40 + "\n"),
+        Completed(),
+        Completed(),
+    ]
+    monkeypatch.setattr(stack.subprocess, "run", lambda *args, **kwargs: clean.pop(0))
+    assert stack._source_revision() == "a" * 40
+
+    dirty = [
+        Completed("a" * 40 + "\n"),
+        Completed(b"diff --git a/x b/x\n"),
+        Completed(),
+    ]
+    monkeypatch.setattr(stack.subprocess, "run", lambda *args, **kwargs: dirty.pop(0))
+    revision = stack._source_revision()
+    assert revision.startswith("a" * 40 + "+worktree.")
+    assert len(revision.rsplit(".", 1)[1]) == 16
 
 
 def test_frontend_port_override_is_explicit_and_fail_closed(monkeypatch):

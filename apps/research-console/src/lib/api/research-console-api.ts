@@ -41,7 +41,12 @@ import type {
   ValidationDashboardPayload,
 } from '@/lib/types/research';
 
-export const RESEARCH_CONSOLE_API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const SAME_ORIGIN_MARKER = '__QUANTOS_SAME_ORIGIN__';
+const configuredConsoleBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+export const RESEARCH_CONSOLE_API_BASE = configuredConsoleBase === SAME_ORIGIN_MARKER
+  ? (typeof window === 'undefined' ? '' : window.location.origin)
+  : configuredConsoleBase;
 
 /**
  * The console has three deliberately explicit runtime modes.  A missing API

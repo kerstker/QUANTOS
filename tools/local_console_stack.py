@@ -14,8 +14,10 @@ processes started by this helper.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -97,11 +99,58 @@ def _frontend_port() -> int:
     raise RuntimeError("no available local frontend port in 3100/3105/3110-3140")
 
 
+def _source_revision() -> str:
+    """Bind the runtime to the exact local source state without claiming clean Git."""
+    run_options = {
+        "cwd": ROOT,
+        "capture_output": True,
+        "check": False,
+        "creationflags": _headless_creationflags(),
+        "timeout": 10,
+    }
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            text=True,
+            **run_options,
+        )
+        if head.returncode != 0:
+            return "unknown"
+        commit = head.stdout.strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            return "unknown"
+        diff = subprocess.run(
+            ["git", "diff", "--binary", "HEAD", "--", "."],
+            **run_options,
+        )
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            **run_options,
+        )
+        if diff.returncode != 0 or untracked.returncode != 0:
+            return "unknown"
+        paths = sorted(path for path in untracked.stdout.split(b"\0") if path)
+        if not diff.stdout and not paths:
+            return commit
+        digest = hashlib.sha256()
+        digest.update(diff.stdout)
+        for encoded_path in paths:
+            path = ROOT / encoded_path.decode("utf-8", errors="strict")
+            digest.update(encoded_path)
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+        return f"{commit}+worktree.{digest.hexdigest()[:16]}"
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return "unknown"
+
+
 def service_specs() -> list[dict[str, Any]]:
     """Return the only processes this helper is allowed to start."""
     frontend_port = _frontend_port()
     frontend_origin = f"http://127.0.0.1:{frontend_port},http://localhost:{frontend_port}"
     python_worker = _python_worker()
+    source_revision = _source_revision()
     return [
         {
             "name": "console_api",
@@ -112,7 +161,10 @@ def service_specs() -> list[dict[str, Any]]:
             "health": "http://127.0.0.1:8400/openapi.json",
             "cors_probe": "http://127.0.0.1:8400/health",
             "cors_origins": [f"http://127.0.0.1:{frontend_port}", f"http://localhost:{frontend_port}"],
-            "env": {"QUANTOS_CONSOLE_CORS_ORIGINS": frontend_origin},
+            "env": {
+                "QUANTOS_CONSOLE_CORS_ORIGINS": frontend_origin,
+                "QUANTOS_BUILD_SHA": source_revision,
+            },
         },
         {
             "name": "research_runner",

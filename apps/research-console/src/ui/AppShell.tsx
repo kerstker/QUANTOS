@@ -246,7 +246,7 @@ export function AppShell({ nav, tape, children }:
 
           {/* ══ ZONE 1 · command bar: brand · search · tape · session/safety ══ */}
           <header className="glass sticky top-0 z-40 border-b border-line">
-            <div className="flex h-14 items-center gap-4 px-4 sm:px-6">
+            <div className="flex h-14 items-center gap-2 px-3 sm:gap-4 sm:px-6">
               <div className="flex shrink-0 items-center gap-2.5">
                 <span className="grid h-8 w-8 place-items-center rounded text-[15px] font-black text-accent-ink"
                   style={{ background: 'var(--grad)' }}>Q</span>
@@ -279,9 +279,9 @@ export function AppShell({ nav, tape, children }:
                 <span className="sm:hidden"><Chip label="L2" tone="info" /></span>
                 <span className="hidden sm:inline-flex"><Chip label="L2_DRY_RUN_ONLY" tone="warn" /></span>
                 <span className="hidden md:inline-flex"><Chip label={bi('只读', 'READ_ONLY')} tone="info" /></span>
-                <span className="sm:hidden"><Chip label="LIVE OFF" tone="neg" /></span>
+                <span className="hidden sm:inline-flex"><Chip label={bi('实盘关闭', 'LIVE OFF')} tone="neg" /></span>
                 <span className="hidden sm:inline-flex"><Chip label={bi('实盘门禁 · 人工批准', 'LIVE_GATED_HUMAN')} tone="neg" /></span>
-                <Chip label={mode} tone={mode === 'REAL_API' ? 'pos' : 'warn'} />
+                <span className="hidden xs:inline-flex"><Chip label={mode} tone={mode === 'REAL_API' ? 'pos' : 'warn'} /></span>
                 <span className="hidden lg:inline-flex">
                   <RuntimeHandshake state={runtimeHandshake} />
                 </span>
@@ -290,7 +290,7 @@ export function AppShell({ nav, tape, children }:
 
             {/* ══ ZONE 2 · lifecycle pipeline stepper: the 7 stages as a connected,
                   live-instrumented flow (each node pulls one real metric) ══ */}
-            <nav className="border-t border-line/60 px-2 sm:px-4" aria-label="lifecycle pipeline">
+            <nav className="hidden border-t border-line/60 px-2 md:block sm:px-4" aria-label="lifecycle pipeline">
               <PipelineFlow compact activeGroup={activeGroupId} />
             </nav>
 
@@ -310,7 +310,7 @@ export function AppShell({ nav, tape, children }:
           <RuntimeHandshakeNotice state={runtimeHandshake} />
 
           {/* ══ ZONE 4 · main canvas — full width, generous margins ══ */}
-          <main className="min-w-0 flex-1 overflow-x-hidden px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+          <main className="min-w-0 flex-1 overflow-x-hidden px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
             {children}
           </main>
         </div>

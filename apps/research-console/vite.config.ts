@@ -5,7 +5,11 @@ import path from 'path';
 
 export default defineConfig(({ mode }) => {
   const fileEnv = loadEnv(mode, __dirname, 'VITE_');
-  const env = (name: string, fallback = '') => process.env[name] ?? fileEnv[name] ?? fallback;
+  const env = (name: string, fallback = '') => {
+    const value = process.env[name] ?? fileEnv[name];
+    return value == null || value.trim() === '' ? fallback : value;
+  };
+  const localGatewayDefault = mode === 'production' ? '__QUANTOS_SAME_ORIGIN__' : '';
   return {
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
@@ -15,11 +19,11 @@ export default defineConfig(({ mode }) => {
     rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'] } } },
   },
   define: {
-    'import.meta.env.VITE_API_URL': JSON.stringify(env('VITE_API_URL')),
+    'import.meta.env.VITE_API_URL': JSON.stringify(env('VITE_API_URL', localGatewayDefault)),
     // Real API is the safe product default.  Mock mode must be explicitly
     // requested for isolated demos/tests so a stale fixture cannot look live.
     'import.meta.env.VITE_MOCK_MODE': JSON.stringify(env('VITE_MOCK_MODE', 'false')),
-    'import.meta.env.VITE_RUNNER_URL': JSON.stringify(env('VITE_RUNNER_URL')),
+    'import.meta.env.VITE_RUNNER_URL': JSON.stringify(env('VITE_RUNNER_URL', localGatewayDefault)),
     'import.meta.env.VITE_CONSOLE_API_VERSION': JSON.stringify(env('VITE_CONSOLE_API_VERSION', '0.1.0')),
   },
   // Phase 8: real UI test config — the audit flagged its absence (jsdom + @testing-library were
