@@ -86,6 +86,10 @@ def _repo_ref(path: Path, root: Path) -> str:
     return os.path.relpath(path, root).replace("\\", "/")
 
 
+def calibration_sources_available(repo_root: Path) -> bool:
+    return all((repo_root / reference).is_file() for reference in _SOURCE_REFS)
+
+
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -413,8 +417,14 @@ def check(repo_root: Path = _ROOT) -> dict:
     records = verify_calibration_bundle(
         bundle, manifest_path, repo_root=repo_root, check_sources=False
     )
-    current_records, _ = build_calibration_records()
-    verify_append_only_source_replay(records, current_records)
+    # CI intentionally does not carry the large local PIT caches. In that
+    # environment the retained bundle remains fully self-verifying, but a
+    # source replay would be fabricated. When every declared source is
+    # available (operator/research hosts), additionally prove that its frozen
+    # historical prefix has not changed while allowing later appends.
+    if calibration_sources_available(repo_root):
+        current_records, _ = build_calibration_records()
+        verify_append_only_source_replay(records, current_records)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected = build_calibration_evidence(records, manifest, repo_root=repo_root)
     try:

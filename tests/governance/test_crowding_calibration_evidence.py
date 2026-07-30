@@ -5,6 +5,7 @@ import pytest
 
 from tools.crowding_metric_research import (
     CrowdingCalibrationEvidenceError,
+    calibration_sources_available,
     check,
     verify_append_only_source_replay,
     verify_calibration_bundle,
@@ -103,6 +104,10 @@ def test_source_replay_rejects_historical_mutation():
         match="historical prefix drifted",
     ):
         verify_append_only_source_replay(frozen, mutated)
+
+
+def test_source_replay_requires_every_declared_source(tmp_path):
+    assert calibration_sources_available(tmp_path) is False
 
 
 def test_repository_crowding_calibration_evidence_is_current():

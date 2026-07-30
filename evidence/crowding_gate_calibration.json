@@ -39,12 +39,12 @@
       "data/cache/crypto_oi_metrics.json": "9d60f9d69d4d56acee80afa24630873e6d29135c9a92aba49bf4f5392d8423aa"
     }
   },
-  "evidence_sha256": "e307e87dd71d7b11bbd83232235fccbe34054e855f08118e79a2ddb136719c93",
+  "evidence_sha256": "dad7d572d72cef7737dae2050bd2879fee9da6b6d83c346a0364d99418711081",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
     "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
     "services/portfolio/crowding_gate.py": "28d09e42404ffb51f552af4b7b0c9602b6058fc6f059b9305d1077f3e066d0cf",
-    "tools/crowding_metric_research.py": "407d4a29aaf9017dd79348f818cb1d197c7ae36b1091fe1ec5d03e3729aba3f0",
+    "tools/crowding_metric_research.py": "f7bbe196e34f43fd882f44677073b6039a70769bdd2b22938997fb87fc14c297",
     "tools/dry_run_crowd_contra_multi.py": "1bf04d044c2eb5913788f25e824053b0a850327b91b2556a2db4d2b1a1dbc885",
     "tools/dry_run_crowd_contra_signal_adapter_multi.py": "e87ec50ae01442ef82f36b2baa51abd5279c5b348de40e6b4cdaa5e912e1e2ad",
     "tools/live_track_advance.py": "c46306bb2ebc9e7536b800690ccc36990e8bfcbc0a02530d7d4b918c056fa8b1"
