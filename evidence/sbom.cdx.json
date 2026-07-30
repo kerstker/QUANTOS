@@ -12240,6 +12240,24 @@
       "scope": "required",
       "type": "library",
       "version": "0.40.0"
+    },
+    {
+      "bom-ref": "pypi:websockets@16.0",
+      "name": "websockets",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "pypi"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "requirements.txt"
+        }
+      ],
+      "purl": "pkg:pypi/websockets@16.0",
+      "scope": "required",
+      "type": "library",
+      "version": "16.0"
     }
   ],
   "metadata": {

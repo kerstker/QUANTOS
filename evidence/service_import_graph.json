@@ -509,12 +509,12 @@
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 45,
+          "line": 46,
           "module": "services.risk.research_risk.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 46,
+          "line": 47,
           "module": "services.risk.research_risk.events",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -1224,7 +1224,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "b889fb9b5d36af906a395d8093a98b15033059977cc996bae192ce35cf4bd44e",
+  "graph_sha256": "9bb7a4214399da548a0439bad6eeb98d7d0bb6d29d029c312594ef84b87017a5",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
