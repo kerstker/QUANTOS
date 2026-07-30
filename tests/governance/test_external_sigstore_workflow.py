@@ -52,6 +52,21 @@ def test_external_sigstore_workflow_proves_two_host_reproduction_and_dsse() -> N
     assert "retention-days: 90" in source
 
 
+def test_external_sigstore_workflow_proves_cross_host_container_reproduction() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert (
+        "docker/setup-buildx-action@"
+        "4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd"
+    ) in source
+    assert source.count("generate_cross_host_container_evidence.py claim") == 2
+    assert "generate_cross_host_container_evidence.py aggregate" in source
+    assert "quantos-console-ubuntu-22" in source
+    assert "quantos-console-ubuntu-24" in source
+    assert "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL" in source
+    assert "quantos-console-cross-host.sigstore.json" in source
+    assert "cross-host-container-evidence-" in source
+
+
 def test_external_sigstore_contract_is_in_supply_chain_manifest() -> None:
     generator = (ROOT / "scripts" / "generate_supply_chain_evidence.py").read_text(
         encoding="utf-8"

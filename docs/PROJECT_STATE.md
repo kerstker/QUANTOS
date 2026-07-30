@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 跨主机 deployable-container 复现切片：**
+> 新增配方绑定的 OCI 单构建声明与跨主机聚合校验器；GitHub 外部工作流现由
+> `ubuntu-22.04` / `ubuntu-24.04` 两个独立 hosted runner 使用 full-SHA 固定的
+> setup-buildx action、digest 固定的 BuildKit 与应用基础镜像做无缓存 OCI 构建。
+> 每个 runner 在本机完整校验 archive/blob/manifest/config/layer/diff-id/重写时间戳，
+> 仅上传自哈希声明；OIDC 作业要求 archive 字节与完整 image graph 逐位一致，再用
+> Sigstore/Fulcio/Rekor 签署聚合证明并保留 90 天 GitHub artifact。当前代码与契约测试
+> 已落地，必须等外部 workflow 真跑成功并回收签名制品后，才把
+> `CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN` 从能力矩阵移除。独立组织、
+> 外部 receipt authority 与 WORM/object-lock 仍明确开放；L2/实盘门禁零变化。
+
 > **2026-07-31 机构控制面导航收敛：**
 > 顶部外壳不再同时平铺 7 个阶段的实时指标、自动/人工计数和当前分区全部页面。
 > 一级生命周期改为固定 7 等分 rail，只保留阶段、一个真实读数和当前态；二级只呈现
