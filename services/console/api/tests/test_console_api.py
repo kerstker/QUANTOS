@@ -389,6 +389,32 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["monitoring_policy"]["authorizes_live_trading"] is False
 
 
+def test_monitoring_drift_uses_tracked_pit_evidence_without_local_cache(monkeypatch):
+    import services.console.api.monitoring_views as monitoring_views
+
+    monkeypatch.setattr(monitoring_views, "_distribution_series", lambda: {})
+    response = client.get("/api/v1/console/monitoring-drift")
+    assert response.status_code == 200
+    payload = response.json()
+    policy = payload["monitoring_policy"]["distribution_drift"]
+    assert policy == {
+        "available": True,
+        "provenance": "REAL_PIT_FEATURE_DISTRIBUTION_DRIFT_V1",
+        "realtime": False,
+        "load_bearing": False,
+        "baseline_window": 60,
+        "recent_window": 20,
+    }
+    evidence_monitors = [
+        monitor
+        for monitor in payload["monitors"]
+        if monitor["monitor_id"].startswith("MON-DISTRIBUTION-EVIDENCE-")
+    ]
+    assert evidence_monitors
+    assert all(monitor["realtime"] is False for monitor in evidence_monitors)
+    assert all(monitor["load_bearing"] is False for monitor in evidence_monitors)
+
+
 def test_lifecycle_monitor_is_read_only_and_honest_about_live(tmp_path, monkeypatch):
     # Pin the paper-track source to an absent path so this test exercises the no-live-feed honesty
     # contract (the real paper_track.db, when present, is covered by the dedicated tests below).
