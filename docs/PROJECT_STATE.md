@@ -1485,3 +1485,16 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > A real restart verified all three listeners as `pythonw.exe` with no
 > `conhost.exe` children, and Data Catalog showed `REAL_API / CONNECTED` with
 > Binance 14/14 LIVE/PASS.
+> **2026-07-31 cross-host container source-input binding hardening:**
+> GitHub Actions run `30584226012` completed cold OCI builds on independent
+> `ubuntu-22.04` / `ubuntu-24.04` hosted runners, byte-identical complete image
+> graph verification, and GitHub OIDC + Fulcio/SCT/Rekor signing. Full repository
+> CI run `30584230979` also passed. A subsequent evidence audit found that the v1
+> claim bound the recipe, toolchain and final image but did not let the local
+> verifier explicitly bind the current `services/` / `quantos/` bytes to that
+> external build. Schema v2 now binds a deterministic complete container-input
+> content root through each claim, aggregate proof, signed receipt and offline
+> verifier. Any source change makes prior proof fail closed. The blocker remains
+> until the published v2 code completes a fresh two-runner run and the new signed
+> artifacts are retained. L2 and live-trading gates are unchanged.
+>

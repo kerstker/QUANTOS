@@ -372,6 +372,7 @@ jobs:
               "mode": proof["mode"],
               "builders": proof["builders"],
               "archive_sha256": proof["archive_sha256"],
+              "container_input_sha256": proof["container_input_sha256"],
               "manifest_digest": proof["manifest_digest"],
               "evidence_sha256": digest(
                   root / "quantos-console-cross-host.json"

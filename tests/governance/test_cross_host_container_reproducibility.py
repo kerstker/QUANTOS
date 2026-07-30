@@ -57,6 +57,12 @@ def _write_recipe(root: Path) -> None:
     )
     (root / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
     (root / ".dockerignore").write_text(".git/\n", encoding="utf-8")
+    services = root / "services"
+    services.mkdir()
+    (services / "console.py").write_text("APP = 'console'\n", encoding="utf-8")
+    quantos = root / "quantos"
+    quantos.mkdir()
+    (quantos / "__init__.py").write_text("", encoding="utf-8")
 
 
 def _add_member(
@@ -172,9 +178,13 @@ def test_distinct_runner_claims_produce_recipe_bound_cross_host_evidence(
     assert verify_container_build_claim(claim_22, tmp_path)["verdict"] == "PASS"
     assert evidence["builders"] == ["ubuntu-22.04", "ubuntu-24.04"]
     assert evidence["archive_byte_identical"] is True
+    assert evidence["container_input_sha256"] == claim_22[
+        "container_input_sha256"
+    ]
     assert verify_cross_host_container_evidence(evidence, tmp_path) == {
         "archive_sha256": claim_22["archive"]["sha256"],
         "builders": ["ubuntu-22.04", "ubuntu-24.04"],
+        "container_input_sha256": claim_22["container_input_sha256"],
         "manifest_digest": claim_22["image"]["manifest_digest"],
         "observed_at": EPOCH,
         "source_commit": COMMIT,
@@ -236,3 +246,33 @@ def test_verifiers_reject_claim_and_aggregate_tampering(tmp_path: Path) -> None:
     tampered_evidence["builders"].reverse()
     with pytest.raises(CrossHostContainerEvidenceError):
         verify_cross_host_container_evidence(tampered_evidence, tmp_path)
+
+
+def test_claim_and_aggregate_reject_changed_container_source(tmp_path: Path) -> None:
+    _write_recipe(tmp_path)
+    first = tmp_path / "first.oci.tar"
+    second = tmp_path / "second.oci.tar"
+    _write_oci(first)
+    _write_oci(second)
+    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
+    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    evidence = build_cross_host_container_evidence(
+        tmp_path,
+        claims=[claim_22, claim_24],
+        observed_at=EPOCH,
+        workflow_ref="kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@x",
+        workflow_run="https://github.com/kerstker/QUANTOS/actions/runs/123",
+    )
+
+    (tmp_path / "services/console.py").write_text(
+        "APP = 'changed'\n", encoding="utf-8"
+    )
+
+    with pytest.raises(
+        CrossHostContainerEvidenceError, match="content root"
+    ):
+        verify_container_build_claim(claim_22, tmp_path)
+    with pytest.raises(
+        CrossHostContainerEvidenceError, match="content root"
+    ):
+        verify_cross_host_container_evidence(evidence, tmp_path)

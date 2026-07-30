@@ -17,8 +17,11 @@ Both jobs use:
 
 Each runner locally parses the complete OCI archive before emitting a compact
 claim. The claim binds the source commit, runner/job identity, recipe files,
+the complete byte content of every file under `services/` and `quantos/`,
 toolchain, archive bytes, manifest, config, compressed layers, uncompressed
-diff IDs, and rewritten timestamps. Claims include a canonical content hash.
+diff IDs, and rewritten timestamps. The complete build-input set is represented
+by a deterministic content root; claims include that root and a canonical claim
+hash.
 
 A third job has GitHub OIDC permission. It accepts exactly one claim from each
 approved runner, validates both against the checked-out recipe, and requires
@@ -47,6 +50,8 @@ Generation fails closed when:
 - a runner label is not one of the two approved labels;
 - both claims came from the same runner;
 - any recipe or toolchain binding differs;
+- the retained complete-input content root differs from the current deployable
+  console source tree;
 - archive bytes or any parsed image identity differs;
 - the OCI archive is malformed, truncated, contains duplicate names, has
   mismatched blob digests, or lacks rewritten timestamps;
