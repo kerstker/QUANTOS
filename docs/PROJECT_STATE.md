@@ -1,5 +1,19 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-30 外部 GitHub OIDC Sigstore 与跨主机源码复现实证：**
+> GitHub Actions run `30540314233` 已在固定的 `ubuntu-22.04` 与
+> `ubuntu-24.04` 托管执行器上，从同一 Git commit 的 blob 独立构造 canonical
+> PAX+gzip 源码包并逐字节比对通过；随后由最小权限的 GitHub ambient OIDC
+> workload identity 通过 Fulcio 签发、SCT 与 Rekor v1 透明日志签入
+> `sigstore==4.4.0` DSSE/SLSA v1 bundle。仓库保留 receipt、manifest、bundle、
+> predicate 与 signer 使用的 trusted root，离线 verifier 独立复验 GitHub
+> identity、证书链、SCT、Rekor inclusion proof、DSSE subject、源码 commit、
+> 两个 builder 和所有哈希绑定；GitHub artifact `8758408888` 的 ZIP digest 与
+> 90 天到期时间也被固定。供应链成熟度因此由 M2 升至 M3，但仍不宣称 M4/PASS：
+> 跨主机证明目前是源码包而非 deployable container，GitHub artifact 不是 WORM，
+> 且尚无独立准入部署、外部回执权威、撤销源或外部权威链头封存。该工作流无仓库写、
+> secret、部署、broker、订单或实盘权限，L2 边界不变。
+>
 > **2026-07-30 Binance systemic 限流域真实收敛（14/14 已复验）：**
 > 30 分钟 systemic worker 的间歇性 418 经端点级遥测定位到
 > `/futures/data/basis`，不是 ADL、保险基金或指数成分。按 Binance 当前官方契约，

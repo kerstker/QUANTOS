@@ -181,9 +181,11 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert "BASE_IMAGE_VULNERABILITY_EVIDENCE_MISSING" not in evidence["m4_blockers"]
     assert "CONTAINER_BUILD_REPRODUCIBILITY_NOT_PROVEN" not in evidence["m4_blockers"]
     assert "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN" in evidence["m4_blockers"]
-    assert evidence["artifact_signature_status"] == ("VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING")
+    assert evidence["artifact_signature_status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+    )
     assert evidence["artifact_admission_verifier_status"] == (
-        "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+        "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED"
     )
     assert evidence["artifact_admission_contract_versions"] == {
         "policy": 3,
@@ -269,14 +271,25 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert evidence[
         "artifact_admission_decision_history_external_worm_verified"
     ] is False
-    assert evidence["artifact_admission_valid_bundle_fixture_status"] == ("NOT_PROVIDED")
+    assert evidence["artifact_admission_valid_bundle_fixture_status"] == (
+        "VERIFIED_RETAINED_EXTERNAL_SIGSTORE_DSSE_BUNDLE"
+    )
     assert evidence["artifact_admission_signing_capability_present"] is False
-    assert evidence["artifact_admission_external_bundle_status"] == "NOT_PROVIDED"
+    assert evidence["artifact_admission_external_bundle_status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+    )
+    assert evidence["artifact_admission_external_bundle_evidence_ref"] == (
+        "evidence/external_sigstore/2026-07-30"
+    )
+    assert evidence["artifact_admission_external_bundle_evidence"]["status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+    )
     assert evidence["artifact_admission_independent_deployment_status"] == ("NOT_PROVIDED")
     assert set(evidence["artifact_admission_implementation_sha256"]) == {
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/external_sigstore_evidence.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
@@ -286,17 +299,21 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
     }
     assert {
-        "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
-        "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
         "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     } <= set(evidence["m4_blockers"])
+    assert (
+        "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING"
+        not in evidence["m4_blockers"]
+    )
+    assert "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED" not in evidence["m4_blockers"]
     assert (
         "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
         not in evidence["m4_blockers"]

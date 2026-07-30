@@ -6,6 +6,7 @@ import pytest
 from tools.crowding_metric_research import (
     CrowdingCalibrationEvidenceError,
     check,
+    verify_append_only_source_replay,
     verify_calibration_bundle,
     write_calibration_bundle,
 )
@@ -80,6 +81,28 @@ def test_calibration_bundle_rejects_bundle_tampering(tmp_path):
 
     with pytest.raises(CrowdingCalibrationEvidenceError):
         verify_calibration_bundle(bundle, manifest, repo_root=tmp_path)
+
+
+def test_source_replay_allows_strictly_later_append():
+    frozen = _records()
+    later = {
+        **_records()[0],
+        "period": 2,
+        "short_raw_gls": 4.0,
+    }
+
+    verify_append_only_source_replay(frozen, [*frozen, later])
+
+
+def test_source_replay_rejects_historical_mutation():
+    frozen = _records()
+    mutated = [{**frozen[0], "short_raw_gls": 99.0}]
+
+    with pytest.raises(
+        CrowdingCalibrationEvidenceError,
+        match="historical prefix drifted",
+    ):
+        verify_append_only_source_replay(frozen, mutated)
 
 
 def test_repository_crowding_calibration_evidence_is_current():

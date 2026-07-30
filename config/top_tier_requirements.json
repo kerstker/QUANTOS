@@ -515,7 +515,7 @@
                                                   "path":  "evidence/supply_chain_baseline.json",
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; externally seal the provisioned authority chain head at an independently deployed boundary"
+                             "next_action":  "Prove cross-host deployable-container reproducibility; retain an authenticated external receipt and WORM copy; operate independent admission, checkpoint, and revocation sources; externally seal the provisioned authority chain head at an independently deployed boundary"
                          },
                          {
                              "id":  "OPS.BACKUP.ENCRYPTED",

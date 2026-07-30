@@ -42,6 +42,10 @@ from services.governance.external_model_provider_evidence import (
     ExternalModelProviderEvidenceError,
     verify_external_model_provider_evidence,
 )
+from services.governance.external_sigstore_evidence import (
+    ExternalSigstoreEvidenceError,
+    verify_external_sigstore_evidence,
+)
 from services.governance.multi_asset_research_evidence import (
     MultiAssetResearchEvidenceError,
     verify_multi_asset_research_evidence,
@@ -59,10 +63,6 @@ from services.governance.model_risk_history import (
     ModelRiskHistoryError,
     history_matches_evidence,
     validate_model_risk_history,
-)
-from services.governance.model_risk_registry import (
-    MODEL_RISK_STORE_KIND,
-    MODEL_RISK_STORE_SCHEMA_VERSION,
 )
 from services.governance.l2_restore_checkpoint import (
     L2RestoreCheckpointError,
@@ -2788,6 +2788,13 @@ def _supply_chain_baseline_evidence(
     if not isinstance(document, dict):
         return _result("FAILED", "M1", [path], "supply-chain evidence must be an object")
 
+    external_sigstore_status = document.get(
+        "artifact_admission_external_bundle_status"
+    )
+    external_sigstore_verified = (
+        external_sigstore_status
+        == "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+    )
     required = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -2809,9 +2816,15 @@ def _supply_chain_baseline_evidence(
         "container_vulnerability_evidence_status": ("VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN"),
         "container_runtime_vulnerability_count": 0,
         "container_reproducibility_evidence_status": ("VERIFIED_LOCAL_TWO_COLD_BUILDS_BYTE_IDENTICAL"),
-        "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+        "artifact_signature_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+            if external_sigstore_verified
+            else "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING"
+        ),
         "artifact_admission_verifier_status": (
-            "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+            "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED"
+            if external_sigstore_verified
+            else "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
         ),
         "artifact_admission_contract_versions": {
             "policy": 3,
@@ -2854,12 +2867,65 @@ def _supply_chain_baseline_evidence(
             "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
         ),
         "artifact_admission_read_consistency_status": ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT"),
-        "artifact_admission_valid_bundle_fixture_status": "NOT_PROVIDED",
+        "artifact_admission_valid_bundle_fixture_status": (
+            "VERIFIED_RETAINED_EXTERNAL_SIGSTORE_DSSE_BUNDLE"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
         "artifact_admission_signing_capability_present": False,
-        "artifact_admission_external_bundle_status": "NOT_PROVIDED",
+        "artifact_admission_external_bundle_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
     }
     failures = [key for key, expected in required.items() if document.get(key) != expected]
+    external_sigstore_evidence: list[str] = []
+    if external_sigstore_verified:
+        external_ref = document.get(
+            "artifact_admission_external_bundle_evidence_ref"
+        )
+        external_relative = (
+            Path(external_ref) if isinstance(external_ref, str) else None
+        )
+        if (
+            external_relative is None
+            or external_relative.is_absolute()
+            or ".." in external_relative.parts
+        ):
+            failures.append("artifact_admission_external_bundle_evidence_ref")
+        else:
+            try:
+                external_report = verify_external_sigstore_evidence(
+                    repo_root / external_relative
+                )
+            except ExternalSigstoreEvidenceError:
+                failures.append("artifact_admission_external_bundle_evidence")
+            else:
+                external_sigstore_evidence.extend(
+                    str(path.relative_to(repo_root)).replace("\\", "/")
+                    for path in sorted(
+                        (repo_root / external_relative).glob("*"),
+                        key=lambda item: item.name,
+                    )
+                )
+                if (
+                    document.get(
+                        "artifact_admission_external_bundle_evidence"
+                    )
+                    != external_report
+                ):
+                    failures.append(
+                        "artifact_admission_external_bundle_evidence"
+                    )
+    elif (
+        document.get("artifact_admission_external_bundle_evidence_ref")
+        is not None
+        or document.get("artifact_admission_external_bundle_evidence")
+        is not None
+    ):
+        failures.append("stale_artifact_admission_external_bundle_evidence")
     external_seal_status = document.get(
         "artifact_admission_decision_history_external_seal_status"
     )
@@ -2935,14 +3001,19 @@ def _supply_chain_baseline_evidence(
 
     blockers = document.get("m4_blockers")
     required_blockers = {
-        "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
         "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
-        "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
         "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     }
+    if not external_sigstore_verified:
+        required_blockers.update(
+            {
+                "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
+                "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+            }
+        )
     provisioning_status = document.get(
         "artifact_admission_decision_store_provisioning_status"
     )
@@ -3121,6 +3192,7 @@ def _supply_chain_baseline_evidence(
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/external_sigstore_evidence.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
@@ -3149,6 +3221,7 @@ def _supply_chain_baseline_evidence(
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_artifact_admission_provisioning.py",
+        "tests/governance/test_external_sigstore_evidence.py",
         "tests/tools/test_artifact_admission_seal.py",
     }
     admission_tests = document.get("artifact_admission_verification_paths")
@@ -3303,7 +3376,7 @@ def _supply_chain_baseline_evidence(
     ):
         failures.append("action_pins")
 
-    evidence = [path, *admission_evidence]
+    evidence = [path, *admission_evidence, *external_sigstore_evidence]
     npm_audit_ref = document.get("npm_vulnerability_evidence_ref")
     npm_audit_relative = Path(npm_audit_ref) if isinstance(npm_audit_ref, str) else None
     if npm_audit_relative is None or npm_audit_relative.is_absolute() or ".." in npm_audit_relative.parts:
@@ -3505,9 +3578,16 @@ def _supply_chain_baseline_evidence(
     if failures:
         return _result(
             "FAILED",
-            "M2",
+            "M3" if external_sigstore_verified else "M2",
             evidence,
-            "supply-chain baseline failed: " + ", ".join(sorted(set(failures))),
+            "supply-chain baseline failed: "
+            + ", ".join(sorted(set(failures)))
+            + (
+                "; external GitHub OIDC Sigstore identity, Fulcio/SCT/Rekor-v1 "
+                "bundle, and cross-host source reproduction independently verified"
+                if external_sigstore_verified
+                else ""
+            ),
         )
     maturity = args.get("pass_maturity", target)
     authority_detail = (
@@ -3526,11 +3606,17 @@ def _supply_chain_baseline_evidence(
         "same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only "
         "Sigstore boundary now uses empty policy and receipt-authority registries, "
         "a verify-only Ed25519 signed-receipt gate, strict freshness/revocation "
-        f"checks, and {authority_detail}; no retained "
-        "valid bundle or external signed receipt exercises the real verifier path, "
-        "source-native checkpoint/revocation proofs are not verified, and "
-        "cross-host reproducibility, an externally signed artifact, authenticated "
-        "receipts, independent deployment, and an external history seal remain open",
+        f"checks, and {authority_detail}; "
+        + (
+            "a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 DSSE bundle and "
+            "byte-identical Ubuntu 22.04/24.04 source artifact are independently "
+            "verified; "
+            if external_sigstore_verified
+            else "no retained valid bundle exercises the real verifier path; "
+        )
+        + "an external signed receipt authority, source-native checkpoint/revocation "
+        "proofs, cross-host deployable-container reproduction, independent admission "
+        "deployment, WORM retention, and an external history seal remain open",
     )
 
 

@@ -819,6 +819,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "artifact_receipt_signing_payload verify_signed_artifact_receipt "
             "RECEIPT_SIGNATURE_INVALID\n"
         ),
+        "services/governance/external_sigstore_evidence.py": (
+            "def verify_external_sigstore_evidence(): pass\n"
+        ),
         "tools/verify_artifact_admission.py": (
             "TrustedRoot.from_file Verifier(trusted_root= Identity( "
             "verify_dsse POLICY_REGISTRY_PATH _policy_registry_decision "
@@ -851,6 +854,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "tests/governance/test_artifact_receipt_auth.py": ("def test_receipt_auth(): pass\n"),
         "tests/governance/test_artifact_admission_provisioning.py": (
             "def test_provisioning(): pass\n"
+        ),
+        "tests/governance/test_external_sigstore_evidence.py": (
+            "def test_external_sigstore(): pass\n"
         ),
         "tests/tools/test_artifact_admission_seal.py": (
             "def test_artifact_admission_seal(): pass\n"
@@ -1152,6 +1158,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_admission.py",
                 "services/governance/artifact_admission_store.py",
                 "services/governance/artifact_receipt_auth.py",
+                "services/governance/external_sigstore_evidence.py",
                 "tools/verify_artifact_admission.py",
                 "tools/provision_artifact_admission_authority.py",
                 "tools/artifact_admission_seal.py",
@@ -1163,6 +1170,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "tests/governance/test_artifact_admission_store.py",
             "tests/governance/test_artifact_receipt_auth.py",
             "tests/governance/test_artifact_admission_provisioning.py",
+            "tests/governance/test_external_sigstore_evidence.py",
             "tests/tools/test_artifact_admission_seal.py",
         ],
         "m4_blockers": [

@@ -9,6 +9,15 @@
 > `python scripts/assess_top_tier.py --check`,并按红线、证据缺口、目标成熟度和
 > `L2_SAFE_NOW / NEEDS_EXTERNAL / POST_L2` 分类排序。
 
+> **2026-07-30 供应链增量：** GitHub Actions run `30540314233` 已在
+> `ubuntu-22.04`/`ubuntu-24.04` 对同一 commit 生成逐字节一致的 canonical 源码包，
+> 并以 GitHub ambient OIDC + Fulcio/SCT/Rekor v1 生成真实 Sigstore DSSE/SLSA v1
+> bundle；仓库内离线 verifier 已复验身份、透明日志、subject、commit、双 builder
+> 与哈希绑定。因此“外部身份签名”和“跨主机源码复现”不再是缺口，机器成熟度升为 M3。
+> 剩余供应链缺口是 deployable-container 跨主机复现、独立准入、认证外部回执/WORM、
+> checkpoint/revocation 独立运营以及外部权威链头封存；在这些外部边界完成前仍为
+> `NOT_TOP_TIER`，不以一个成功工作流冒充组织级持续运营。
+>
 > **生成:** 2026-07-01,多代理并行对标(8 维;4 维由工作流深度对标 + web 检索,4 维由 2026-06-29 基线报告 + 本会话更新补齐)。
 > **对标对象:** 顶级 AI 量化(RenTech / Two Sigma / Citadel / HRT / Jane Street + 现代 ML 基金)。
 > **打分基准:** 作为「研究/干跑平台」(非「能赚钱的实盘基金」)——两套基准差数量级,下文区分。

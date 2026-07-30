@@ -1,0 +1,41 @@
+{
+  "artifact": {
+    "artifact_id": 8758408888,
+    "created_at": "2026-07-30T11:54:11Z",
+    "digest": "sha256:d5c3c04b4db0b8c9f6d65be15750789166553121449036093ac1ee09355ac373",
+    "expires_at": "2026-10-28T11:53:32Z",
+    "name": "external-sigstore-evidence-30540314233-1",
+    "retention_days": 90,
+    "size_in_bytes": 17231983
+  },
+  "authority": {
+    "credential_access": false,
+    "deployment": false,
+    "execution": false,
+    "live_trading": false,
+    "order_submission": false
+  },
+  "download_verification": {
+    "downloaded_size_in_bytes": 17231983,
+    "downloaded_zip_sha256": "d5c3c04b4db0b8c9f6d65be15750789166553121449036093ac1ee09355ac373",
+    "status": "VERIFIED"
+  },
+  "limitations": {
+    "external_chain_head_seal": "NOT_PROVIDED",
+    "external_receipt_authority": "NOT_PROVIDED",
+    "independent_admission_boundary": "NOT_PROVIDED",
+    "revocation_operations": "NOT_PROVIDED",
+    "worm_retention": "GITHUB_ARTIFACT_RETENTION_ONLY"
+  },
+  "repository": "kerstker/QUANTOS",
+  "schema_version": 1,
+  "source_branch": "codex/top-tier-wave0",
+  "source_commit": "6042317f913569a912a34fb54d7879cbbbcf4d0c",
+  "status": "RETAINED_EXTERNAL_GITHUB_ACTIONS_ARTIFACT",
+  "workflow": {
+    "attempt": 1,
+    "event": "push",
+    "run_id": 30540314233,
+    "url": "https://github.com/kerstker/QUANTOS/actions/runs/30540314233"
+  }
+}

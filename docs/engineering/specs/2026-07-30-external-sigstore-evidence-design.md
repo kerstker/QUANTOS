@@ -77,3 +77,25 @@ Therefore this slice alone cannot turn `PLATFORM.SUPPLY_CHAIN` to `PASS`.
   privilege, two-host comparison, Rekor v1, SLSA v1, and no signing secrets;
 - canonical validation gate;
 - a real GitHub workflow run and retained workflow artifact.
+
+## Real execution record
+
+The design was executed on 2026-07-30:
+
+- GitHub Actions run: `30540314233`;
+- signed source commit: `6042317f913569a912a34fb54d7879cbbbcf4d0c`;
+- hosted builders: `ubuntu-22.04` and `ubuntu-24.04`;
+- GitHub artifact ID: `8758408888`;
+- signed archive SHA-256:
+  `4f9562489953a7a54da40120c789365e9a3079ef3448598f327cf0c49bfc012a`;
+- Sigstore bundle SHA-256:
+  `87856c6e0f2aae7395047a80bdea6e8153658fc4c0ff85861fdec89d953e68dc`;
+- uploaded ZIP SHA-256:
+  `d5c3c04b4db0b8c9f6d65be15750789166553121449036093ac1ee09355ac373`.
+
+All three jobs completed successfully, the two archives were byte-identical,
+and the retained bundle passed a second offline identity verification after
+download. The repository retains the compact verification material under
+`evidence/external_sigstore/2026-07-30/`; the 17 MB subject archive remains in
+the GitHub Actions artifact and the local ignored runtime cache. GitHub's
+90-day artifact retention is explicitly not represented as WORM storage.

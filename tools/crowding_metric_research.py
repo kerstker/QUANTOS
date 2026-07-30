@@ -263,6 +263,36 @@ def verify_calibration_bundle(
     return records
 
 
+def verify_append_only_source_replay(
+    frozen_records: Sequence[Mapping[str, object]],
+    current_records: Sequence[Mapping[str, object]],
+) -> None:
+    """Require the current PIT source to replay the frozen historical prefix.
+
+    The source SQLite files are append-only operational stores. Hashing the
+    complete database container makes a valid calibration become stale when a
+    realtime worker appends a later observation. The frozen bundle already
+    binds the exact consumed rows; this check rejects mutations or deletions in
+    that historical prefix while allowing observations strictly after its
+    maximum period.
+    """
+    if not frozen_records:
+        raise CrowdingCalibrationEvidenceError("frozen calibration replay is empty")
+    cutoff = frozen_records[-1].get("period")
+    if not isinstance(cutoff, int) or isinstance(cutoff, bool):
+        raise CrowdingCalibrationEvidenceError("frozen calibration cutoff is invalid")
+    current_prefix = [
+        dict(record)
+        for record in current_records
+        if isinstance(record.get("period"), int) and record["period"] <= cutoff
+    ]
+    expected = [dict(record) for record in frozen_records]
+    if current_prefix != expected:
+        raise CrowdingCalibrationEvidenceError(
+            "calibration source historical prefix drifted"
+        )
+
+
 def _numeric_assignment(path: Path, name: str) -> float:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in tree.body:
@@ -381,8 +411,10 @@ def check(repo_root: Path = _ROOT) -> dict:
     manifest_path = repo_root / _MANIFEST
     evidence_path = repo_root / _EVIDENCE
     records = verify_calibration_bundle(
-        bundle, manifest_path, repo_root=repo_root, check_sources=True
+        bundle, manifest_path, repo_root=repo_root, check_sources=False
     )
+    current_records, _ = build_calibration_records()
+    verify_append_only_source_replay(records, current_records)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected = build_calibration_evidence(records, manifest, repo_root=repo_root)
     try:

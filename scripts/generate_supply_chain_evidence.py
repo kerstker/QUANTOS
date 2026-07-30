@@ -38,6 +38,10 @@ from services.governance.artifact_admission_store import (  # noqa: E402
 from services.governance.reproducibility_evidence import (  # noqa: E402
     verify_container_reproducibility_evidence,
 )
+from services.governance.external_sigstore_evidence import (  # noqa: E402
+    ExternalSigstoreEvidenceError,
+    verify_external_sigstore_evidence,
+)
 DEFAULT_SBOM = REPO / "evidence" / "sbom.cdx.json"
 DEFAULT_EVIDENCE = REPO / "evidence" / "supply_chain_baseline.json"
 DEFAULT_NPM_AUDIT = REPO / "evidence" / "vulnerability" / "npm_audit_latest.json"
@@ -175,6 +179,14 @@ _MANIFESTS = (
     "evidence/vulnerability/actions_osv_latest.json",
     "evidence/vulnerability/container_trivy_latest.json",
     "evidence/reproducibility/container_build_latest.json",
+    "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+    "evidence/external_sigstore/2026-07-30/github-artifact.json",
+    "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+    "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+    "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+    "evidence/external_sigstore/2026-07-30/trusted-root.json",
+    "services/governance/external_sigstore_evidence.py",
+    "tests/governance/test_external_sigstore_evidence.py",
     "services/governance/reproducibility_evidence.py",
     "services/governance/vulnerability_evidence.py",
     "scripts/generate_npm_audit_evidence.py",
@@ -572,10 +584,23 @@ def build_supply_chain_artifacts(
     )
     admission_store_provisioned = admission_authority is not None
     admission_external_seal = _artifact_admission_external_seal(root)
+    external_sigstore_ref = "evidence/external_sigstore/2026-07-30"
+    external_sigstore_directory = root / external_sigstore_ref
+    external_sigstore_report: dict[str, Any] | None = None
+    if external_sigstore_directory.exists():
+        try:
+            external_sigstore_report = verify_external_sigstore_evidence(
+                external_sigstore_directory
+            )
+        except ExternalSigstoreEvidenceError as exc:
+            raise ValueError(
+                f"retained external Sigstore evidence is invalid: {exc}"
+            ) from exc
     admission_implementations = (
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/external_sigstore_evidence.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
@@ -585,6 +610,7 @@ def build_supply_chain_artifacts(
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
     )
@@ -607,6 +633,7 @@ def build_supply_chain_artifacts(
     validate_source = (root / "scripts" / "validate.py").read_text(encoding="utf-8")
     workflow_source = (root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     actions_pinned = bool(actions) and all(item["sha_pinned"] for item in actions)
+    external_sigstore_verified = external_sigstore_report is not None
     evidence = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -675,9 +702,15 @@ def build_supply_chain_artifacts(
         "container_reproducible_archive_sha256": reproducibility_summary["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility_summary["manifest_digest"],
         "container_reproducibility_buildkit_version": reproducibility_summary["buildkit_version"],
-        "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+        "artifact_signature_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+            if external_sigstore_verified
+            else "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING"
+        ),
         "artifact_admission_verifier_status": (
-            "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+            "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED"
+            if external_sigstore_verified
+            else "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
         ),
         "artifact_admission_contract_versions": {
             "policy": 3,
@@ -764,9 +797,21 @@ def build_supply_chain_artifacts(
             "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
         ),
         "artifact_admission_read_consistency_status": ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT"),
-        "artifact_admission_valid_bundle_fixture_status": "NOT_PROVIDED",
+        "artifact_admission_valid_bundle_fixture_status": (
+            "VERIFIED_RETAINED_EXTERNAL_SIGSTORE_DSSE_BUNDLE"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
         "artifact_admission_signing_capability_present": False,
-        "artifact_admission_external_bundle_status": "NOT_PROVIDED",
+        "artifact_admission_external_bundle_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
+        "artifact_admission_external_bundle_evidence_ref": (
+            external_sigstore_ref if external_sigstore_verified else None
+        ),
+        "artifact_admission_external_bundle_evidence": external_sigstore_report,
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
         "artifact_admission_implementation_sha256": {
             path: _sha256_file(root / path) for path in admission_implementations
@@ -774,8 +819,14 @@ def build_supply_chain_artifacts(
         "artifact_admission_verification_paths": list(admission_verification),
         "m4_blockers": [
             "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
-            "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
-            "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+            *(
+                []
+                if external_sigstore_verified
+                else [
+                    "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
+                    "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+                ]
+            ),
             "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
             "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
             "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
