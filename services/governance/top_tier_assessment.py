@@ -46,6 +46,10 @@ from services.governance.external_sigstore_evidence import (
     ExternalSigstoreEvidenceError,
     verify_external_sigstore_evidence,
 )
+from services.governance.cross_host_container_reproducibility import (
+    CrossHostContainerEvidenceError,
+    verify_signed_cross_host_container_evidence,
+)
 from services.governance.multi_asset_research_evidence import (
     MultiAssetResearchEvidenceError,
     verify_multi_asset_research_evidence,
@@ -2795,6 +2799,12 @@ def _supply_chain_baseline_evidence(
         external_sigstore_status
         == "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
     )
+    cross_host_container_status = document.get(
+        "cross_host_container_reproducibility_status"
+    )
+    cross_host_container_verified = cross_host_container_status == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
+    )
     required = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -2882,6 +2892,7 @@ def _supply_chain_baseline_evidence(
     }
     failures = [key for key, expected in required.items() if document.get(key) != expected]
     external_sigstore_evidence: list[str] = []
+    external_relative: Path | None = None
     if external_sigstore_verified:
         external_ref = document.get(
             "artifact_admission_external_bundle_evidence_ref"
@@ -2926,6 +2937,71 @@ def _supply_chain_baseline_evidence(
         is not None
     ):
         failures.append("stale_artifact_admission_external_bundle_evidence")
+    cross_host_container_evidence: list[str] = []
+    if cross_host_container_verified:
+        cross_host_ref = document.get(
+            "cross_host_container_reproducibility_evidence_ref"
+        )
+        cross_host_relative = (
+            Path(cross_host_ref) if isinstance(cross_host_ref, str) else None
+        )
+        if (
+            cross_host_relative is None
+            or cross_host_relative.is_absolute()
+            or ".." in cross_host_relative.parts
+            or external_relative is None
+        ):
+            failures.append(
+                "cross_host_container_reproducibility_evidence_ref"
+            )
+        else:
+            try:
+                cross_host_report = (
+                    verify_signed_cross_host_container_evidence(
+                        repo_root / cross_host_relative,
+                        repo_root=repo_root,
+                        trusted_root_path=(
+                            repo_root / external_relative / "trusted-root.json"
+                        ),
+                    )
+                )
+            except CrossHostContainerEvidenceError:
+                failures.append(
+                    "cross_host_container_reproducibility_evidence"
+                )
+            else:
+                cross_host_container_evidence.extend(
+                    str(item.relative_to(repo_root)).replace("\\", "/")
+                    for item in sorted(
+                        (repo_root / cross_host_relative).glob("*"),
+                        key=lambda item: item.name,
+                    )
+                )
+                if (
+                    document.get(
+                        "cross_host_container_reproducibility_evidence"
+                    )
+                    != cross_host_report
+                ):
+                    failures.append(
+                        "cross_host_container_reproducibility_evidence"
+                    )
+    elif cross_host_container_status == "NOT_PROVIDED":
+        if (
+            document.get(
+                "cross_host_container_reproducibility_evidence_ref"
+            )
+            is not None
+            or document.get(
+                "cross_host_container_reproducibility_evidence"
+            )
+            is not None
+        ):
+            failures.append(
+                "stale_cross_host_container_reproducibility_evidence"
+            )
+    else:
+        failures.append("cross_host_container_reproducibility_status")
     external_seal_status = document.get(
         "artifact_admission_decision_history_external_seal_status"
     )
@@ -3001,12 +3077,15 @@ def _supply_chain_baseline_evidence(
 
     blockers = document.get("m4_blockers")
     required_blockers = {
-        "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
         "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     }
+    if not cross_host_container_verified:
+        required_blockers.add(
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
+        )
     if not external_sigstore_verified:
         required_blockers.update(
             {
@@ -3193,6 +3272,8 @@ def _supply_chain_baseline_evidence(
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/json_integrity.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
@@ -3224,6 +3305,10 @@ def _supply_chain_baseline_evidence(
         "tests/governance/test_external_sigstore_evidence.py",
         "tests/tools/test_artifact_admission_seal.py",
     }
+    if cross_host_container_verified:
+        required_admission_tests.add(
+            "tests/governance/test_cross_host_container_sigstore_evidence.py"
+        )
     admission_tests = document.get("artifact_admission_verification_paths")
     if not isinstance(admission_tests, list) or set(admission_tests) != required_admission_tests:
         failures.append("artifact_admission_verification_paths")
@@ -3376,7 +3461,12 @@ def _supply_chain_baseline_evidence(
     ):
         failures.append("action_pins")
 
-    evidence = [path, *admission_evidence, *external_sigstore_evidence]
+    evidence = [
+        path,
+        *admission_evidence,
+        *external_sigstore_evidence,
+        *cross_host_container_evidence,
+    ]
     npm_audit_ref = document.get("npm_vulnerability_evidence_ref")
     npm_audit_relative = Path(npm_audit_ref) if isinstance(npm_audit_ref, str) else None
     if npm_audit_relative is None or npm_audit_relative.is_absolute() or ".." in npm_audit_relative.parts:
@@ -3614,9 +3704,16 @@ def _supply_chain_baseline_evidence(
             if external_sigstore_verified
             else "no retained valid bundle exercises the real verifier path; "
         )
+        + (
+            "the deployable container is byte-identical across Ubuntu 22.04/24.04 "
+            "and its complete build-input root is bound by a retained GitHub OIDC/"
+            "Fulcio/SCT/Rekor-v1 signature; "
+            if cross_host_container_verified
+            else "cross-host deployable-container reproduction is not proven; "
+        )
         + "an external signed receipt authority, source-native checkpoint/revocation "
-        "proofs, cross-host deployable-container reproduction, independent admission "
-        "deployment, WORM retention, and an external history seal remain open",
+        "proofs, independent admission deployment, WORM retention, and an external "
+        "history seal remain open",
     )
 
 

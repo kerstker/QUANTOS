@@ -38,6 +38,10 @@ from services.governance.artifact_admission_store import (  # noqa: E402
 from services.governance.reproducibility_evidence import (  # noqa: E402
     verify_container_reproducibility_evidence,
 )
+from services.governance.cross_host_container_reproducibility import (  # noqa: E402
+    CrossHostContainerEvidenceError,
+    verify_signed_cross_host_container_evidence,
+)
 from services.governance.external_sigstore_evidence import (  # noqa: E402
     ExternalSigstoreEvidenceError,
     verify_external_sigstore_evidence,
@@ -188,6 +192,7 @@ _MANIFESTS = (
     "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
     "evidence/external_sigstore/2026-07-30/trusted-root.json",
     "services/governance/external_sigstore_evidence.py",
+    "services/governance/json_integrity.py",
     "tests/governance/test_external_sigstore_evidence.py",
     "services/governance/reproducibility_evidence.py",
     "services/governance/cross_host_container_reproducibility.py",
@@ -600,11 +605,32 @@ def build_supply_chain_artifacts(
             raise ValueError(
                 f"retained external Sigstore evidence is invalid: {exc}"
             ) from exc
+    cross_host_container_ref = "evidence/external_sigstore/2026-07-31-container"
+    cross_host_container_directory = root / cross_host_container_ref
+    cross_host_container_report: dict[str, Any] | None = None
+    if cross_host_container_directory.exists():
+        try:
+            cross_host_container_report = (
+                verify_signed_cross_host_container_evidence(
+                    cross_host_container_directory,
+                    repo_root=root,
+                    trusted_root_path=(
+                        external_sigstore_directory / "trusted-root.json"
+                    ),
+                )
+            )
+        except CrossHostContainerEvidenceError as exc:
+            raise ValueError(
+                f"retained cross-host container evidence is invalid: {exc}"
+            ) from exc
+    cross_host_container_verified = cross_host_container_report is not None
     admission_implementations = (
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/json_integrity.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
@@ -617,6 +643,11 @@ def build_supply_chain_artifacts(
         "tests/governance/test_external_sigstore_evidence.py",
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
+        *(
+            ("tests/governance/test_cross_host_container_sigstore_evidence.py",)
+            if cross_host_container_verified
+            else ()
+        ),
     )
     sbom = {
         "bomFormat": "CycloneDX",
@@ -633,7 +664,20 @@ def build_supply_chain_artifacts(
         "components": components,
     }
     sbom_sha256 = _sha256_bytes(_canonical_bytes(sbom))
-    manifests = {path: _sha256_file(root / path) for path in _MANIFESTS}
+    manifest_paths = (
+        *_MANIFESTS,
+        *(
+            (
+                "tests/governance/test_cross_host_container_sigstore_evidence.py",
+                "evidence/external_sigstore/2026-07-31-container/cross-host-container-receipt.json",
+                "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.json",
+                "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.sigstore.json",
+            )
+            if cross_host_container_verified
+            else ()
+        ),
+    )
+    manifests = {path: _sha256_file(root / path) for path in manifest_paths}
     validate_source = (root / "scripts" / "validate.py").read_text(encoding="utf-8")
     workflow_source = (root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     actions_pinned = bool(actions) and all(item["sha_pinned"] for item in actions)
@@ -706,6 +750,17 @@ def build_supply_chain_artifacts(
         "container_reproducible_archive_sha256": reproducibility_summary["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility_summary["manifest_digest"],
         "container_reproducibility_buildkit_version": reproducibility_summary["buildkit_version"],
+        "cross_host_container_reproducibility_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
+            if cross_host_container_verified
+            else "NOT_PROVIDED"
+        ),
+        "cross_host_container_reproducibility_evidence_ref": (
+            cross_host_container_ref if cross_host_container_verified else None
+        ),
+        "cross_host_container_reproducibility_evidence": (
+            cross_host_container_report
+        ),
         "artifact_signature_status": (
             "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
             if external_sigstore_verified
@@ -822,7 +877,11 @@ def build_supply_chain_artifacts(
         },
         "artifact_admission_verification_paths": list(admission_verification),
         "m4_blockers": [
-            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
+            *(
+                []
+                if cross_host_container_verified
+                else ["CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"]
+            ),
             *(
                 []
                 if external_sigstore_verified

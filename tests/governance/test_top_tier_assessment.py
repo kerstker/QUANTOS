@@ -822,6 +822,12 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "services/governance/external_sigstore_evidence.py": (
             "def verify_external_sigstore_evidence(): pass\n"
         ),
+        "services/governance/json_integrity.py": (
+            "def load_json_without_duplicate_keys(): pass\n"
+        ),
+        "services/governance/cross_host_container_reproducibility.py": (
+            "def verify_signed_cross_host_container_evidence(): pass\n"
+        ),
         "tools/verify_artifact_admission.py": (
             "TrustedRoot.from_file Verifier(trusted_root= Identity( "
             "verify_dsse POLICY_REGISTRY_PATH _policy_registry_decision "
@@ -1092,6 +1098,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "container_reproducible_archive_sha256": reproducibility["builds"][0]["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility["image"]["manifest_digest"],
         "container_reproducibility_buildkit_version": "v0.26.2",
+        "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+        "cross_host_container_reproducibility_evidence_ref": None,
+        "cross_host_container_reproducibility_evidence": None,
         "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
         "artifact_admission_verifier_status": (
             "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
@@ -1159,6 +1168,8 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_admission_store.py",
                 "services/governance/artifact_receipt_auth.py",
                 "services/governance/external_sigstore_evidence.py",
+                "services/governance/json_integrity.py",
+                "services/governance/cross_host_container_reproducibility.py",
                 "tools/verify_artifact_admission.py",
                 "tools/provision_artifact_admission_authority.py",
                 "tools/artifact_admission_seal.py",

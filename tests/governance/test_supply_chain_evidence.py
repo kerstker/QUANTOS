@@ -180,7 +180,37 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert "PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED" not in evidence["m4_blockers"]
     assert "BASE_IMAGE_VULNERABILITY_EVIDENCE_MISSING" not in evidence["m4_blockers"]
     assert "CONTAINER_BUILD_REPRODUCIBILITY_NOT_PROVEN" not in evidence["m4_blockers"]
-    assert "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN" in evidence["m4_blockers"]
+    cross_host_verified = (
+        evidence["cross_host_container_reproducibility_status"]
+        == "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
+    )
+    if cross_host_verified:
+        assert (
+            evidence["cross_host_container_reproducibility_evidence"][
+                "builders"
+            ]
+            == ["ubuntu-22.04", "ubuntu-24.04"]
+        )
+        assert (
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
+            not in evidence["m4_blockers"]
+        )
+    else:
+        assert (
+            evidence["cross_host_container_reproducibility_status"]
+            == "NOT_PROVIDED"
+        )
+        assert (
+            evidence["cross_host_container_reproducibility_evidence_ref"]
+            is None
+        )
+        assert (
+            evidence["cross_host_container_reproducibility_evidence"] is None
+        )
+        assert (
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
+            in evidence["m4_blockers"]
+        )
     assert evidence["artifact_signature_status"] == (
         "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
     )
@@ -290,11 +320,13 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/json_integrity.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
         "tools/provision_artifact_admission_authority.py",
         "tools/artifact_admission_seal.py",
     }
-    assert set(evidence["artifact_admission_verification_paths"]) == {
+    expected_admission_verification_paths = {
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
@@ -303,6 +335,13 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
     }
+    if cross_host_verified:
+        expected_admission_verification_paths.add(
+            "tests/governance/test_cross_host_container_sigstore_evidence.py"
+        )
+    assert set(evidence["artifact_admission_verification_paths"]) == (
+        expected_admission_verification_paths
+    )
     assert {
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
