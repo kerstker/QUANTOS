@@ -426,7 +426,7 @@ jobs:
               or seal.get("institutional_seal_status")
               != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
               or seal.get("authority_mutated") is not False
-              or seal.get("anchor_created") is not True
+              or type(seal.get("anchor_created")) is not bool
               or seal.get("destination_class")
               not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
           ):

@@ -70,3 +70,4 @@ def test_external_sigstore_workflow_signs_and_verifies_chain_head() -> None:
     assert "retention-days: 90" in source
     assert "worm_object_lock" in source
     assert "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK" in source
+    assert 'type(seal.get("anchor_created")) is not bool' in source
