@@ -1,7 +1,7 @@
 {
   "archive_byte_identical":true,
-  "archive_sha256":"a66096ead6069e5967f896a0c6c0d2dc1f9c70de5f90b7b2e14dc99467eeb681",
-  "archive_size":130378752,
+  "archive_sha256":"48e2d1be328247ed6e7ce722a8da1e777f8d7020dad81d57d8f780f2225edbbe",
+  "archive_size":130379264,
   "build_tool":{
     "buildkit_image_ref":"moby/buildkit@sha256:2be0a5be7ae3cd9268f6836782e9690cce7bc4124142f7700f1641af5ccca8de",
     "buildkit_version":"v0.26.2",
@@ -13,14 +13,14 @@
     "ubuntu-24.04"
   ],
   "claim_sha256":{
-    "ubuntu-22.04":"0bb2d6d53e6d8617bf83d36e9e0fa8547e6d8d91125a327e7973b4145ac517f0",
-    "ubuntu-24.04":"92d46634faabea514423def2a0064fceed7f918c3963d4a8f3848cb0d42949b0"
+    "ubuntu-22.04":"ccf58e5858ba690f3ba629586fa3303543596ea9a4eea6d16d60534662bd5b6c",
+    "ubuntu-24.04":"75ed6749e159e8680abd3376866cb7080fac4903b0d204f57c4ebf0caa649468"
   },
-  "config_digest":"sha256:67d8357e800f8bd73321654653a61e637f8fa19bc9f1b20808548bebcfdea342",
-  "container_input_sha256":"81b853185079783d8b8e9aa8539cc1bf2f3d47831c31821cbb51d86b6a97e446",
+  "config_digest":"sha256:64afdff8a9585248a5868611f7695a6a27f3ba4c758a7a99d6a16a947cdd296e",
+  "container_input_sha256":"e38805f8a103d61cd17d125a163ed23eabab70292557b3c10a63878ab4ccf072",
   "image":{
     "architecture":"amd64",
-    "config_digest":"sha256:67d8357e800f8bd73321654653a61e637f8fa19bc9f1b20808548bebcfdea342",
+    "config_digest":"sha256:64afdff8a9585248a5868611f7695a6a27f3ba4c758a7a99d6a16a947cdd296e",
     "config_size":8094,
     "created":"2026-06-16T00:20:04Z",
     "diff_ids":[
@@ -32,7 +32,7 @@
       "sha256:fc2984ce96dffa6729625973791f813d3081f6c2bc4959f242162eea4aa6a4aa",
       "sha256:5e3bd9b7874fa5a5924148dab86d320d35506644ecf3535b49ed2e39806fea8e",
       "sha256:0ab260ff080ff59afabe51ea6c576bf63a73f98c1ea5ce5d64da8bb5d990a373",
-      "sha256:dbf7c6425f2450133fc989f21c52b13ea7966e063ce20f0e8e35b2c2bea36cfd",
+      "sha256:ffeb1271c2cc8fedeb0d134796ecbdabce7d47eb9b00ff06b42b1e3c749b8d09",
       "sha256:e79e9ba3301740ba2c61238aa2980f84d0c77e300a5270823ee6a72e9c4a5383",
       "sha256:fd9a1f57889535e6fc96a88fb9b37d301b90c0a085d8cf854bbbfbdd69fe619b"
     ],
@@ -78,9 +78,9 @@
         "size":1725128
       },
       {
-        "digest":"sha256:ed48b756af16a05a3622eac295446b9c942bde940ee55fb13d9b3dc19d4047c8",
+        "digest":"sha256:a672acc0082cf105bda631a3cb7636b6a65ed57f05c22d130e9e3f788382b6f1",
         "rewritten_timestamp":true,
-        "size":1221010
+        "size":1221205
       },
       {
         "digest":"sha256:d1ac8c15fc78e27ffbcc62a672fded3f7fe92250a19131293957cd1746058453",
@@ -93,7 +93,7 @@
         "size":908
       }
     ],
-    "manifest_digest":"sha256:b08050f2a3560d4e535d9b4c14b4b3c45f9f112fcc5de3678fcc9bb197f5d1bd",
+    "manifest_digest":"sha256:65a17a1a7a5718c71ee221957c8661e80fb7a6d15d82f9aec004045ef5d6fbd6",
     "manifest_size":2983,
     "os":"linux",
     "rewritten_timestamp_layer_count":7
@@ -103,9 +103,9 @@
     "AUTHENTICATED_EXTERNAL_RECEIPT_NOT_YET_BOUND",
     "WORM_RETENTION_NOT_PROVEN"
   ],
-  "manifest_digest":"sha256:b08050f2a3560d4e535d9b4c14b4b3c45f9f112fcc5de3678fcc9bb197f5d1bd",
+  "manifest_digest":"sha256:65a17a1a7a5718c71ee221957c8661e80fb7a6d15d82f9aec004045ef5d6fbd6",
   "mode":"CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL",
-  "observed_at":1785460471,
+  "observed_at":1785466613,
   "recipe":{
     "base_image_ref":"public.ecr.aws/docker/library/python@sha256:aa679aa4eed6eb56c1dc6ad3f1b98b7d2d788fd961596779d188fdedad97fb38",
     "dockerfile":{
@@ -127,8 +127,8 @@
     "target_platform":"linux/amd64"
   },
   "schema_version":2,
-  "source_commit":"5af379581ce91f0f52fbff6f9be672ecd6eb8ddc",
+  "source_commit":"fc211ac6d4bdd1db879397b8022cf9198b8ed4cb",
   "verdict":"PASS",
   "workflow_ref":"kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@refs/heads/codex/top-tier-wave0",
-  "workflow_run":"https://github.com/kerstker/QUANTOS/actions/runs/30595407050/attempts/1"
+  "workflow_run":"https://github.com/kerstker/QUANTOS/actions/runs/30599904036/attempts/1"
 }

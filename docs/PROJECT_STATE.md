@@ -1499,7 +1499,7 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > artifacts are retained. L2 and live-trading gates are unchanged.
 >
 > **2026-07-31 signed cross-host deployable-container evidence closed:**
-> GitHub Actions run `30595407050` completed cold OCI builds on independently
+> GitHub Actions run `30599904036` completed cold OCI builds on independently
 > provisioned `ubuntu-22.04` and `ubuntu-24.04` runners. The complete archives,
 > manifests, configs, layers and diff IDs were byte-identical. Schema v2 also
 > bound the exact Docker-context input root (`services/`, `quantos/`, recipe and

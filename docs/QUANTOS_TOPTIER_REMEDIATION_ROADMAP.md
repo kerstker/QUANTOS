@@ -14,7 +14,7 @@
 > 并以 GitHub ambient OIDC + Fulcio/SCT/Rekor v1 生成真实 Sigstore DSSE/SLSA v1
 > bundle；仓库内离线 verifier 已复验身份、透明日志、subject、commit、双 builder
 > 与哈希绑定。因此“外部身份签名”和“跨主机源码复现”不再是缺口，机器成熟度升为 M3。
-> deployable-container 跨主机复现已由 GitHub Actions run `30595407050` 的
+> deployable-container 跨主机复现已由 GitHub Actions run `30599904036` 的
 > Ubuntu 22.04/24.04 冷 OCI 字节一致性、完整输入内容根和 OIDC/Fulcio/SCT/Rekor
 > 签名证据关闭。剩余供应链缺口是独立准入、认证外部回执/WORM、
 > checkpoint/revocation 独立运营以及外部权威链头封存；在这些外部边界完成前仍为
