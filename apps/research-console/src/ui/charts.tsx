@@ -493,22 +493,38 @@ export function TickerTape({ items, durationSec = 40, className = '' }:
   { items: ReadonlyArray<{ symbol: string; price: number | string; changePct?: number }>;
     durationSec?: number; className?: string }) {
   if (!items.length) return null;
+  const item = (
+    it: { symbol: string; price: number | string; changePct?: number },
+    key: string | number,
+    margin = 'mx-4',
+  ) => {
+    const up = (it.changePct ?? 0) >= 0;
+    return (
+      <span key={key} className={`${margin} flex items-center gap-2 text-2xs ticker-num`}>
+        <span className="font-semibold text-muted">{it.symbol}</span>
+        <span className="text-ink">{typeof it.price === 'number' ? it.price.toLocaleString('en-US') : it.price}</span>
+        {it.changePct !== undefined && (
+          <span style={{ color: up ? 'var(--pos)' : 'var(--neg)' }}>
+            {up ? '▲' : '▼'} {Math.abs(it.changePct).toFixed(2)}%
+          </span>
+        )}
+      </span>
+    );
+  };
+  if (items.length === 1) {
+    return (
+      <div
+        className={`flex min-w-0 flex-1 items-center overflow-hidden ${className}`}
+        role="status"
+        aria-label="market status"
+      >
+        {item(items[0], 'single', 'mx-2')}
+      </div>
+    );
+  }
   const seq = (key: string) => (
     <div key={key} className="flex shrink-0 items-center">
-      {items.map((it, i) => {
-        const up = (it.changePct ?? 0) >= 0;
-        return (
-          <span key={i} className="mx-4 flex items-center gap-2 text-2xs ticker-num">
-            <span className="font-semibold text-muted">{it.symbol}</span>
-            <span className="text-ink">{typeof it.price === 'number' ? it.price.toLocaleString('en-US') : it.price}</span>
-            {it.changePct !== undefined && (
-              <span style={{ color: up ? 'var(--pos)' : 'var(--neg)' }}>
-                {up ? '▲' : '▼'} {Math.abs(it.changePct).toFixed(2)}%
-              </span>
-            )}
-          </span>
-        );
-      })}
+      {items.map((it, i) => item(it, i))}
     </div>
   );
   return (
