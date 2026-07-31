@@ -78,6 +78,11 @@ _CONTAINER_INPUT_FILES = (
     "deploy/console.Dockerfile",
     "requirements.txt",
 )
+_IGNORED_CONTAINER_DIRECTORY_NAMES = {
+    "__pycache__",
+    ".pytest_cache",
+    "node_modules",
+}
 _CLAIM_FIELDS = {
     "schema_version",
     "verdict",
@@ -195,12 +200,19 @@ def _container_input_sha256(root: Path) -> str:
             base = Path(directory)
             for name in tuple(directory_names):
                 candidate = base / name
+                if name in _IGNORED_CONTAINER_DIRECTORY_NAMES:
+                    directory_names.remove(name)
+                    continue
                 if candidate.is_symlink():
                     raise CrossHostContainerEvidenceError(
                         "symlink container input is not accepted: "
                         f"{candidate.relative_to(root)}"
                     )
-            paths.extend(base / name for name in file_names)
+            paths.extend(
+                base / name
+                for name in file_names
+                if not _docker_ignores_container_file(name)
+            )
     records = [
         _source_file_record(path, root)
         for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix())
@@ -216,6 +228,16 @@ def _container_input_sha256(root: Path) -> str:
             "mode": "DEPLOYABLE_CONSOLE_COMPLETE_INPUT_SET",
             "files": records,
         }
+    )
+
+
+def _docker_ignores_container_file(name: str) -> bool:
+    return (
+        name == ".env"
+        or name.startswith(".env.")
+        or name.endswith((".db", ".pyo", ".secret.yaml"))
+        or name.endswith(".pyc")
+        or ".pyc." in name
     )
 
 

@@ -301,3 +301,32 @@ def test_claim_and_aggregate_reject_changed_container_source(tmp_path: Path) -> 
         CrossHostContainerEvidenceError, match="content root"
     ):
         verify_cross_host_container_evidence(evidence, tmp_path)
+
+
+def test_verifier_ignores_files_excluded_from_docker_context(
+    tmp_path: Path,
+) -> None:
+    _write_recipe(tmp_path)
+    first = tmp_path / "first.oci.tar"
+    second = tmp_path / "second.oci.tar"
+    _write_oci(first)
+    _write_oci(second)
+    claim_22 = _claim(tmp_path, first, "ubuntu-22.04")
+    claim_24 = _claim(tmp_path, second, "ubuntu-24.04")
+    evidence = build_cross_host_container_evidence(
+        tmp_path,
+        claims=[claim_22, claim_24],
+        observed_at=EPOCH,
+        workflow_ref="kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@x",
+        workflow_run="https://github.com/kerstker/QUANTOS/actions/runs/123",
+    )
+    cache = tmp_path / "services/__pycache__"
+    cache.mkdir()
+    (cache / "console.cpython-312.pyc").write_bytes(b"runner-specific")
+    (tmp_path / "services/local.db").write_bytes(b"not-in-build-context")
+
+    assert verify_container_build_claim(claim_22, tmp_path)["verdict"] == "PASS"
+    assert (
+        verify_cross_host_container_evidence(evidence, tmp_path)["verdict"]
+        == "PASS"
+    )
