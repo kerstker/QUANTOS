@@ -1,3 +1,5 @@
+@import '@fontsource-variable/noto-sans-sc';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -55,7 +57,7 @@
   --shadow-lift:  0 1px 0 0 rgba(255,255,255,.05) inset, 0 16px 36px -20px rgba(0,0,0,.85), 0 4px 14px -10px rgba(240,185,11,.10);
   --glow-accent:  0 0 0 1px rgba(240,185,11,.28), 0 6px 20px -10px rgba(240,185,11,.30);
 
-  --font-sans: "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-sans: "Noto Sans SC Variable", "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
 
   font-family: var(--font-sans);
