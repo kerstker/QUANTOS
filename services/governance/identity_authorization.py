@@ -24,6 +24,8 @@ from pydantic import (
 
 from quantos.contracts.identity import GovernanceRole, VerifiedIdentity
 
+from .identity_access_review import IdentityAccessReviewAttestation
+
 
 _HUMAN_ONLY_ROLES = frozenset(
     {
@@ -75,6 +77,7 @@ class IdentityAuthorizationGrant(_FrozenContract):
     roles: tuple[GovernanceRole, ...] = Field(min_length=1)
     tokens_valid_after_ms: int = Field(ge=0)
     access_review_expires_at_ms: int = Field(ge=0)
+    access_review: IdentityAccessReviewAttestation | None = None
 
     @field_validator("roles", mode="before")
     @classmethod
@@ -100,6 +103,17 @@ class IdentityAuthorizationGrant(_FrozenContract):
             raise ValueError("a revoked principal cannot remain enabled")
         if self.principal_kind == "WORKLOAD" and set(self.roles) & _HUMAN_ONLY_ROLES:
             raise ValueError("a workload cannot be granted a human governance role")
+        if self.enabled and not self.revoked and self.access_review is None:
+            raise ValueError("an enabled principal requires an access review attestation")
+        if self.access_review is not None:
+            if self.access_review.subject_actor_id != self.actor_id:
+                raise ValueError("access review subject does not match the grant")
+            if self.access_review.subject_principal_kind != self.principal_kind:
+                raise ValueError("access review principal kind does not match the grant")
+            if self.access_review.subject_roles != self.roles:
+                raise ValueError("access review reviewed roles do not match the grant")
+            if self.access_review.expires_at_ms != self.access_review_expires_at_ms:
+                raise ValueError("access review expiry does not match the grant")
         return self
 
     @property
@@ -159,6 +173,9 @@ class IdentityAuthorizationDecision(_FrozenContract):
     token_expires_at_ms: int = Field(ge=0)
     tokens_valid_after_ms: int | None = Field(default=None, ge=0)
     access_review_expires_at_ms: int | None = Field(default=None, ge=0)
+    access_review_id: StrictStr | None = Field(default=None, pattern=r"^iar-[0-9a-f]{32}$")
+    access_review_content_sha256: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    access_reviewed_by_actor_id: StrictStr | None = None
     evaluated_at_ms: int = Field(ge=0)
     execution_authority_granted: Literal[False] = False
     deployment_authority_granted: Literal[False] = False
@@ -179,6 +196,9 @@ class IdentityAuthorizationDecision(_FrozenContract):
             or self.requested_role not in self.granted_roles
             or self.tokens_valid_after_ms is None
             or self.access_review_expires_at_ms is None
+            or self.access_review_id is None
+            or self.access_review_content_sha256 is None
+            or self.access_reviewed_by_actor_id is None
             or self.token_issued_at_ms < self.tokens_valid_after_ms
             or self.evaluated_at_ms < self.token_issued_at_ms
             or self.evaluated_at_ms >= self.access_review_expires_at_ms
@@ -293,6 +313,13 @@ def evaluate_authorization(
         "token_expires_at_ms": identity.expires_at * 1_000,
         "tokens_valid_after_ms": grant.tokens_valid_after_ms if grant else None,
         "access_review_expires_at_ms": (grant.access_review_expires_at_ms if grant else None),
+        "access_review_id": grant.access_review.review_id if grant and grant.access_review else None,
+        "access_review_content_sha256": (
+            grant.access_review.content_sha256 if grant and grant.access_review else None
+        ),
+        "access_reviewed_by_actor_id": (
+            grant.access_review.reviewer_actor_id if grant and grant.access_review else None
+        ),
         "evaluated_at_ms": evaluated_at_ms,
     }
 

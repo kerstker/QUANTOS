@@ -2095,9 +2095,14 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "services/governance/strong_identity.py": (
             "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values\n"
         ),
+        "services/governance/identity_access_review.py": (
+            "ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN MAX_ACCESS_REVIEW_VALIDITY_MS "
+            "reviewer_certificate_sha256 stable_hash\n"
+        ),
         "services/governance/identity_authorization.py": (
             "evaluate_authorization tokens_valid_after_ms "
-            "access_review_expires_at_ms WORKLOAD_HUMAN_ACTION_FORBIDDEN "
+            "access_review_expires_at_ms access_review_content_sha256 "
+            "WORKLOAD_HUMAN_ACTION_FORBIDDEN "
             "TOKEN_ROLE_REQUIRED\n"
         ),
         "services/governance/identity_authorization_store.py": (
@@ -2120,6 +2125,7 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
+        "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",
         "tests/governance/test_promotion_api_boundary.py": "tests\n",

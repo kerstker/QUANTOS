@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 强身份访问复核证明承重化：**
+> 治理授权不再把 `access_review_expires_at_ms` 当成可单独手填的充分证据；所有启用且未撤销的
+> `IdentityAuthorizationGrant` 现在必须携带内容寻址的 `IdentityAccessReviewAttestation`。证明精确绑定
+> `issuer|subject`、HUMAN/WORKLOAD、完整角色集、独立复核人、OIDC+mTLS+MFA assurance、token ID、
+> 客户端证书摘要、复核时刻和最长 90 天到期；复核人必须持 reviewer 角色、令牌在复核时有效且不可自审。
+> 授权决策保留 review ID/content hash/reviewer actor，注册表快照则把整份证明纳入既有 CAS 头与追加式
+> 哈希链。无证明、角色/主体/到期漂移、超期、过期 reviewer 或自审均 fail-closed；紧急撤销刻意允许无新鲜
+> 复核，避免复核系统故障阻止撤权。强身份基线现含 20 个对抗案例。该增量只闭合本地承重证据，外部 OIDC、
+> 可信 mTLS 终止、托管密钥/证书轮换、真实 joiner/mover/leaver 与独立组织复核仍未提供，故矩阵诚实保持
+> `GOV.IDENTITY.STRONG_AUTH=M3/PARTIAL`、全局 15/22 与 `L2_DRY_RUN_ONLY`。
+
 > **2026-07-31 实盘前阻断队列与高级证据分层：**
 > `SystemCompleteness` 默认视图不再把 22 项 Tier A/B 证据表、域成熟度、红线、仓库清单和
 > L2 边界同时平铺。页面直接消费 `TOP_TIER_EVIDENCE_ASSESSMENT`，只投影机器判定的未完成项，

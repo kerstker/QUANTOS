@@ -12,6 +12,7 @@ from quantos.contracts.identity import (
     StrongIdentityAssurance,
     VerifiedIdentity,
 )
+from services.governance.identity_access_review import create_identity_access_review
 from services.governance.identity_authorization import (
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -58,6 +59,31 @@ def _identity() -> VerifiedIdentity:
 def _registry(generation: int, *, revoked: bool = False) -> IdentityAuthorizationRegistry:
     if generation == 0:
         return IdentityAuthorizationRegistry(generation=0)
+    access_review = None
+    if not revoked:
+        access_review = create_identity_access_review(
+            subject_issuer=ISSUER,
+            subject="alice",
+            principal_kind="HUMAN",
+            roles=(GovernanceRole.PROMOTION_APPROVER,),
+            reviewer=VerifiedIdentity(
+                issuer=ISSUER,
+                subject="independent-reviewer",
+                audience="quantos-governance",
+                roles=(GovernanceRole.PROMOTION_REVIEWER,),
+                assurance=StrongIdentityAssurance.OIDC_MTLS_MFA,
+                acr="urn:quantos:aal2",
+                amr=("pwd", "mfa"),
+                issued_at=10,
+                not_before=10,
+                authentication_time=9,
+                expires_at=60,
+                token_id="token-independent-reviewer",
+                certificate_sha256="b" * 64,
+            ),
+            reviewed_at_ms=20_000,
+            expires_at_ms=60_000,
+        )
     grant = IdentityAuthorizationGrant(
         issuer=ISSUER,
         subject="alice",
@@ -67,6 +93,7 @@ def _registry(generation: int, *, revoked: bool = False) -> IdentityAuthorizatio
         roles=(GovernanceRole.PROMOTION_APPROVER,),
         tokens_valid_after_ms=30_000,
         access_review_expires_at_ms=60_000,
+        access_review=access_review,
     )
     return IdentityAuthorizationRegistry(
         generation=generation,

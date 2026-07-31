@@ -10,6 +10,7 @@ from quantos.contracts.identity import (
     StrongIdentityAssurance,
     VerifiedIdentity,
 )
+from services.governance.identity_access_review import create_identity_access_review
 from services.governance.identity_authorization import (
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -61,6 +62,23 @@ def _grant(
     tokens_valid_after_ms: int = 30_000,
     access_review_expires_at_ms: int = 60_000,
 ) -> IdentityAuthorizationGrant:
+    access_review = None
+    if enabled and not revoked:
+        access_review = create_identity_access_review(
+            subject_issuer=ISSUER,
+            subject=subject,
+            principal_kind=principal_kind,
+            roles=roles,
+            reviewer=_identity(
+                subject="independent-reviewer",
+                roles=(GovernanceRole.PROMOTION_REVIEWER,),
+                issued_at=10,
+                not_before=10,
+                expires_at=60,
+            ),
+            reviewed_at_ms=20_000,
+            expires_at_ms=access_review_expires_at_ms,
+        )
     return IdentityAuthorizationGrant(
         issuer=ISSUER,
         subject=subject,
@@ -70,6 +88,7 @@ def _grant(
         roles=roles,
         tokens_valid_after_ms=tokens_valid_after_ms,
         access_review_expires_at_ms=access_review_expires_at_ms,
+        access_review=access_review,
     )
 
 

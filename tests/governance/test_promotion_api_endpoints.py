@@ -24,6 +24,7 @@ from services.research.experiment_registry.registry import ExperimentRegistry
 from services.research.experiment_registry.store import SqliteExperimentStore
 from services.research.paper_trading.store import PaperTrackStore
 from tests.alpha.fixtures import bound_alpha_evaluation, seed_catalog_evidence
+from services.governance.identity_access_review import create_identity_access_review
 from services.governance.identity_authorization import (
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -39,6 +40,8 @@ S = AlphaState
 AGENT = Actor(actor_id="research-agent", kind=ActorKind.AGENT)
 ISSUER = "https://identity.example.test"
 ALL_ROLES = tuple(GovernanceRole)
+ACCESS_REVIEWED_AT_MS = 1_780_000_000_000
+ACCESS_REVIEW_EXPIRES_AT_MS = ACCESS_REVIEWED_AT_MS + 90 * 24 * 60 * 60 * 1_000
 
 
 def _eval_report(catalog, alpha_id, trial_count, net_sharpe=1.2):
@@ -101,6 +104,26 @@ def _identity_dependency(authorization: str = Header(default=None, alias="Author
 
 
 def _seed_identity_authorization(tmp_path: Path) -> tuple[Path, Path]:
+    reviewer = _verified_identity(
+        "independent-access-reviewer",
+        (GovernanceRole.PROMOTION_REVIEWER,),
+    )
+
+    def review_for(
+        subject: str,
+        principal_kind: str,
+        roles: tuple[GovernanceRole, ...],
+    ):
+        return create_identity_access_review(
+            subject_issuer=ISSUER,
+            subject=subject,
+            principal_kind=principal_kind,
+            roles=roles,
+            reviewer=reviewer,
+            reviewed_at_ms=ACCESS_REVIEWED_AT_MS,
+            expires_at_ms=ACCESS_REVIEW_EXPIRES_AT_MS,
+        )
+
     grants = {
         subject: IdentityAuthorizationGrant(
             issuer=ISSUER,
@@ -110,7 +133,12 @@ def _seed_identity_authorization(tmp_path: Path) -> tuple[Path, Path]:
             revoked=subject == "revoked",
             roles=ALL_ROLES,
             tokens_valid_after_ms=0,
-            access_review_expires_at_ms=2_000_000_000_000,
+            access_review_expires_at_ms=ACCESS_REVIEW_EXPIRES_AT_MS,
+            access_review=(
+                None
+                if subject == "revoked"
+                else review_for(subject, "HUMAN", ALL_ROLES)
+            ),
         )
         for subject in ("alice", "bob", "carol", "reader", "requester", "revoked")
     }
@@ -122,7 +150,12 @@ def _seed_identity_authorization(tmp_path: Path) -> tuple[Path, Path]:
         revoked=False,
         roles=(GovernanceRole.PROMOTION_READER,),
         tokens_valid_after_ms=0,
-        access_review_expires_at_ms=2_000_000_000_000,
+        access_review_expires_at_ms=ACCESS_REVIEW_EXPIRES_AT_MS,
+        access_review=review_for(
+            "research-agent",
+            "WORKLOAD",
+            (GovernanceRole.PROMOTION_READER,),
+        ),
     )
     grants["research-agent"] = workload
     registry = IdentityAuthorizationRegistry(
