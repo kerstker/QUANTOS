@@ -515,7 +515,7 @@
                                                   "path":  "evidence/supply_chain_baseline.json",
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Prove cross-host deployable-container reproducibility; retain an authenticated external receipt and WORM copy; operate independent admission, checkpoint, and revocation sources; externally seal the provisioned authority chain head at an independently deployed boundary"
+                             "next_action":  "Retain an authenticated external receipt and 90-day WORM object-lock copy; operate independently deployed admission, checkpoint, and revocation authorities"
                          },
                          {
                              "id":  "OPS.BACKUP.ENCRYPTED",
