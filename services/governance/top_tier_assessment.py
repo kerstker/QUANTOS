@@ -2538,6 +2538,25 @@ def _l2_restore_history_evidence(
             evidence,
             "restore-history authority has no operational attempts",
         )
+    maturity_reason_codes = frozenset(
+        {
+            "HISTORY_SPAN_INSUFFICIENT",
+            "SUCCESS_COUNT_INSUFFICIENT",
+        }
+    )
+    if (
+        health.verdict != "PASS"
+        and health.reason_codes
+        and set(health.reason_codes).issubset(maturity_reason_codes)
+    ):
+        return _result(
+            "PARTIAL",
+            "M3",
+            evidence,
+            "restore-history authority is healthy but longitudinal maturity "
+            "is incomplete: "
+            + ", ".join(health.reason_codes),
+        )
     if health.verdict != "PASS":
         return _result(
             "FAILED",

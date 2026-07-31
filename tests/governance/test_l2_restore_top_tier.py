@@ -249,6 +249,32 @@ def test_clean_history_and_exact_external_checkpoint_reach_m4(tmp_path: Path) ->
     assert result["meets_target"] is True
 
 
+def test_healthy_restore_history_that_is_still_maturing_remains_partial(
+    tmp_path: Path,
+) -> None:
+    store = _seed_history(tmp_path)
+    store.close()
+    requirement = _requirement()
+    requirement["checker_args"]["minimum_history_span_ms"] = 201
+    requirement["checker_args"]["minimum_successes"] = 4
+    registry = tmp_path / "requirements.json"
+    registry.write_text(
+        json.dumps({"schema_version": 1, "requirements": [requirement]}),
+        encoding="utf-8",
+    )
+
+    result = assess_repository(
+        tmp_path,
+        registry,
+        as_of_ms=350,
+    )["requirements"][0]
+
+    assert result["status"] == "PARTIAL"
+    assert result["current_maturity"] == "M3"
+    assert "HISTORY_SPAN_INSUFFICIENT" in result["detail"]
+    assert "SUCCESS_COUNT_INSUFFICIENT" in result["detail"]
+
+
 def test_history_freshness_is_deterministic_at_boundary_and_fails_one_ms_after(
     tmp_path: Path,
 ) -> None:
