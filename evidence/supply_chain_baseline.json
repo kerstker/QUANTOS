@@ -303,7 +303,7 @@
     "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json": "e1b6f7bf04fb23860f91523f7957a97bf24fa5e4f214fa1f4f55c310b938c8f7",
     "evidence/external_sigstore/2026-07-31-admission/trusted-root.json": "a7752f49a4ae0076c5b85eace5bfbb6f58b6cb0dec31ba71803f25d20987d12e",
     "evidence/reproducibility/container_build_latest.json": "f857ff480ae882d99c75073d5a9581178dece14c97300c8d09448b6e5932287f",
-    "evidence/service_import_graph.json": "08b5bfc4f2ed3de66062a0533d490ea2af49d0f4601175920d08858a55174ea0",
+    "evidence/service_import_graph.json": "48e865d02ed8acc618ff3cbd5203ed9d70d4dff6b2d21ad87462690a410da61d",
     "evidence/vulnerability/actions_osv_latest.json": "cd60d1c0b6ba164b6804d1d603605b6097f250f70a5d432145e75856800b20b6",
     "evidence/vulnerability/container_trivy_latest.json": "bbf0ec72b528906762925eed4ad507a07f8dec61968757a3a12b7b60e5278f99",
     "evidence/vulnerability/npm_audit_latest.json": "036ded1df11f1cf3a3fc347a5c6974bd2d753eb8608641a5394432fa26360ce9",
