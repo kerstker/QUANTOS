@@ -2093,7 +2093,13 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
     sources = {
         "quantos/contracts/identity.py": "identity contract\n",
         "services/governance/strong_identity.py": (
-            "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values\n"
+            "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values "
+            "QUANTOS_OIDC_KEY_REGISTRY_SHA256 QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION "
+            "select_oidc_verification_key\n"
+        ),
+        "services/governance/oidc_key_registry.py": (
+            "OIDC_KEY_REACTIVATION_FORBIDDEN OIDC_KEY_REGISTRY_ROLLBACK "
+            "OIDC_KEY_REVOKED load_pem_public_key\n"
         ),
         "services/governance/identity_access_review.py": (
             "ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN MAX_ACCESS_REVIEW_VALIDITY_MS "
@@ -2125,6 +2131,7 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
+        "tests/governance/test_oidc_key_registry.py": "tests\n",
         "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",

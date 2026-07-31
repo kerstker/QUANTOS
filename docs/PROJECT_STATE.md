@@ -1,5 +1,23 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 OIDC 验证密钥轮换/撤销承重化：**
+> 强身份验证器不再接受单个静态 `QUANTOS_OIDC_PUBLIC_KEY_FILE`。新 `OidcKeyRegistry` 要求 JWT
+> `kid` 精确选键、算法与注册项一致、Ed25519/≥2048-bit RSA 公钥类型正确、显式有效期且状态为 ACTIVE；
+> 缺/未知 `kid`、撤销、算法错配、未生效或过期均在解 JWT 前 fail-closed。注册表代际连续且不可回滚，旧
+> `kid` 不可删除、换材料/算法/有效期或撤销后复活；运行时同时要求文件 SHA-256 与最低 generation 两个
+> operator pin，拒绝 symlink、digest/issuer 漂移和低代际。强身份基线由 20 增至 23 个对抗案例，服务仍不
+> 含 JWKS 网络抓取、私钥或签名能力。该增量使本地轮换/撤销接缝承重，但外部 IdP、托管 HSM/证书生命周期
+> 与独立运营证据仍不存在，因此 `GOV.IDENTITY.STRONG_AUTH` 保持 M3/PARTIAL、总矩阵保持 15/22。
+
+> **2026-07-31 OIDC 验证密钥轮换/撤销承重化：**
+> 强身份验证器不再接受单个静态 `QUANTOS_OIDC_PUBLIC_KEY_FILE`。新 `OidcKeyRegistry` 要求 JWT
+> `kid` 精确选键、算法与注册项一致、Ed25519/≥2048-bit RSA 公钥类型正确、显式有效期且状态为 ACTIVE；
+> 缺/未知 `kid`、撤销、算法错配、未生效或过期均在解 JWT 前 fail-closed。注册表代际连续且不可回滚，旧
+> `kid` 不可删除、换材料/算法/有效期或撤销后复活；运行时同时要求文件 SHA-256 与最低 generation 两个
+> operator pin，拒绝 symlink、digest/issuer 漂移和低代际。强身份基线由 20 增至 23 个对抗案例，服务仍不
+> 含 JWKS 网络抓取、私钥或签名能力。该增量使本地轮换/撤销接缝承重，但外部 IdP、托管 HSM/证书生命周期
+> 与独立运营证据仍不存在，因此 `GOV.IDENTITY.STRONG_AUTH` 保持 M3/PARTIAL、总矩阵保持 15/22。
+
 > **2026-07-31 强身份访问复核证明承重化：**
 > 治理授权不再把 `access_review_expires_at_ms` 当成可单独手填的充分证据；所有启用且未撤销的
 > `IdentityAuthorizationGrant` 现在必须携带内容寻址的 `IdentityAccessReviewAttestation`。证明精确绑定

@@ -8,6 +8,7 @@ def _fixture_repo(tmp_path: Path) -> None:
     sources = {
         "quantos/contracts/identity.py": "identity contract\n",
         "services/governance/strong_identity.py": "strong verifier\n",
+        "services/governance/oidc_key_registry.py": "OIDC rotating key registry\n",
         "services/governance/identity_access_review.py": "access review attestation\n",
         "services/governance/identity_authorization.py": "authorization core\n",
         "services/governance/identity_authorization_store.py": "authorization store\n",
@@ -24,6 +25,7 @@ def _fixture_repo(tmp_path: Path) -> None:
         "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
+        "tests/governance/test_oidc_key_registry.py": "tests\n",
         "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",
@@ -56,6 +58,9 @@ def test_strong_identity_evidence_is_deterministic_and_contains_no_key_material(
     assert first["access_review_attestation_status"] == (
         "HASH_BOUND_INDEPENDENT_STRONG_IDENTITY_REVIEW_ENFORCED_LOCAL_AUTHORITY"
     )
+    assert first["oidc_key_registry_status"] == (
+        "KID_SELECTED_DIGEST_AND_MIN_GENERATION_PINNED_ROTATION_REVOCATION_ENFORCED"
+    )
     assert first["external_oidc_deployment_status"] == "NOT_PROVIDED"
     assert first["trusted_mtls_deployment_status"] == "NOT_PROVIDED"
     assert first["browser_pkce_or_bff_status"] == ("AUTHORIZATION_CODE_PKCE_S256_IMPLEMENTED_EXTERNAL_IDP_NOT_PROVIDED")
@@ -77,6 +82,7 @@ def test_strong_identity_evidence_hashes_every_load_bearing_source(tmp_path):
     assert set(evidence["implementation_sha256"]) == {
         "quantos/contracts/identity.py",
         "services/governance/strong_identity.py",
+        "services/governance/oidc_key_registry.py",
         "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
@@ -89,6 +95,7 @@ def test_strong_identity_evidence_hashes_every_load_bearing_source(tmp_path):
     }
     assert set(evidence["verification_paths"]) == {
         "tests/governance/test_strong_identity.py",
+        "tests/governance/test_oidc_key_registry.py",
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
