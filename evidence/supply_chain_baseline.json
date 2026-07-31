@@ -137,11 +137,11 @@
   "artifact_admission_allow_cas_status": "EXACT_POLICY_AND_RECEIPT_AUTHORITY_HEADS_TRANSACTIONALLY_ENFORCED",
   "artifact_admission_authority_clock_status": "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY",
   "artifact_admission_authority_snapshot": {
-    "authority_time_floor_ms": 1785458955808,
+    "authority_time_floor_ms": 1785460964398,
     "decision_count": 0,
-    "policy_registry_event_hash": "d4e7390fd07c2f86b9268592f556323fadc2fe8b29d0675242418bd05dabcdfc",
+    "policy_registry_event_hash": "4ff6977bcdadb1bcc81b11c022ffc556f0a2d4ec25a22fe546d91b417ae0eeee",
     "policy_registry_event_seq": 2,
-    "receipt_authority_registry_event_hash": "7e12cca52718051dd112167d8a876887c4cc261637f21aedd3aaafc0e4d31e6b",
+    "receipt_authority_registry_event_hash": "4220a9b8f2ac957ef7c8a02fbd9ac2251a0bb9bcd04cba3136f4606ed31c5155",
     "receipt_authority_registry_event_seq": 4
   },
   "artifact_admission_contract_versions": {
@@ -234,7 +234,8 @@
     "tests/governance/test_artifact_receipt_auth.py",
     "tests/governance/test_external_sigstore_evidence.py",
     "tests/tools/test_artifact_admission_seal.py",
-    "tests/governance/test_artifact_admission_provisioning.py"
+    "tests/governance/test_artifact_admission_provisioning.py",
+    "tests/governance/test_cross_host_container_sigstore_evidence.py"
   ],
   "artifact_admission_verifier_status": "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED",
   "artifact_signature_status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST",
@@ -253,11 +254,35 @@
   "container_vulnerability_evidence_sha256": "bbf0ec72b528906762925eed4ad507a07f8dec61968757a3a12b7b60e5278f99",
   "container_vulnerability_evidence_status": "VERIFIED_EXTERNAL_BASE_REMEDIATED_RUNTIME_ZERO_KNOWN",
   "container_vulnerability_observed_at": 1785275713,
-  "cross_host_container_reproducibility_evidence": null,
-  "cross_host_container_reproducibility_evidence_ref": null,
-  "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+  "cross_host_container_reproducibility_evidence": {
+    "archive_byte_identical": true,
+    "archive_sha256": "a66096ead6069e5967f896a0c6c0d2dc1f9c70de5f90b7b2e14dc99467eeb681",
+    "builders": [
+      "ubuntu-22.04",
+      "ubuntu-24.04"
+    ],
+    "bundle_sha256": "e3199a076dd079b9c873e120ebf38266d282129c9d0092fac0d559c87f29cfac",
+    "certificate_identity": "https://github.com/kerstker/QUANTOS/.github/workflows/sigstore-evidence.yml@refs/heads/codex/top-tier-wave0",
+    "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+    "certificate_sha256": "17e4c2780c59654ed9f949c5b809e0acad7375470ea481043ea9962a041f430f",
+    "container_input_sha256": "81b853185079783d8b8e9aa8539cc1bf2f3d47831c31821cbb51d86b6a97e446",
+    "evidence_sha256": "a74927a082471c3981d384b67d631581c7ecd98f6d959cf3b67454e43add9855",
+    "limitations": {
+      "external_receipt_authority": "NOT_PROVIDED",
+      "independent_admission_boundary": "NOT_PROVIDED",
+      "worm_retention": "GITHUB_ARTIFACT_RETENTION_ONLY"
+    },
+    "manifest_digest": "sha256:b08050f2a3560d4e535d9b4c14b4b3c45f9f112fcc5de3678fcc9bb197f5d1bd",
+    "signed_certificate_timestamp_verified": true,
+    "source_commit": "5af379581ce91f0f52fbff6f9be672ecd6eb8ddc",
+    "status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST_CONTAINER",
+    "transparency_integrated_at_ms": 1785460476000,
+    "transparency_log_verified": true,
+    "workflow_run": "https://github.com/kerstker/QUANTOS/actions/runs/30595407050/attempts/1"
+  },
+  "cross_host_container_reproducibility_evidence_ref": "evidence/external_sigstore/2026-07-31-container",
+  "cross_host_container_reproducibility_status": "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL",
   "m4_blockers": [
-    "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
     "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
     "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
     "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
@@ -288,6 +313,9 @@
     "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json": "87856c6e0f2aae7395047a80bdea6e8153658fc4c0ff85861fdec89d953e68dc",
     "evidence/external_sigstore/2026-07-30/slsa-predicate.json": "2a6bb38bdfc74a20d292229c079846a489eab50aba751c4b15b922b9d7739908",
     "evidence/external_sigstore/2026-07-30/trusted-root.json": "a7752f49a4ae0076c5b85eace5bfbb6f58b6cb0dec31ba71803f25d20987d12e",
+    "evidence/external_sigstore/2026-07-31-container/cross-host-container-receipt.json": "9f45fa212f6f43ea0e5836a8b0c076ddd41914a7dcdcc0f39c5d26c586882849",
+    "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.json": "a74927a082471c3981d384b67d631581c7ecd98f6d959cf3b67454e43add9855",
+    "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.sigstore.json": "e3199a076dd079b9c873e120ebf38266d282129c9d0092fac0d559c87f29cfac",
     "evidence/reproducibility/container_build_latest.json": "f857ff480ae882d99c75073d5a9581178dece14c97300c8d09448b6e5932287f",
     "evidence/service_import_graph.json": "c31832474c184df86833448ad928fe6cd002c212dd96fc9b7fd447469bd25152",
     "evidence/vulnerability/actions_osv_latest.json": "fe981899af21e091180c7e5f4addb7ddc63c7075fc78dadd21853320c42a219d",
@@ -388,6 +416,7 @@
     "tests/governance/test_artifact_receipt_auth.py": "1b9947898c840f0eb8557bf296c41d90a147204984902cb26f5a4596ec5eea96",
     "tests/governance/test_console_composition_boundary.py": "298ee8918f96dd3490eb44c2f0cde7fbabb68f04154682a1bbf6bdd80a3ba118",
     "tests/governance/test_cross_host_container_reproducibility.py": "f9034568bcbca64b8ee841c348bad259a173bab73300696c35894fb55357f2a3",
+    "tests/governance/test_cross_host_container_sigstore_evidence.py": "8c94a48692e2f59b54346644cdcfc9d937bc5b4c34eb8b5f88e0331d243ba2f1",
     "tests/governance/test_event_bus_wiring.py": "537386091d153fc88d4f520ac4f458a365b52d6e69369fb1f1a7b19bfdb252e9",
     "tests/governance/test_event_schema_catalog.py": "c1fff1fd3bd2cd6b3267724db09dd119c58c6c1637883607b6fd60384aa7d12a",
     "tests/governance/test_evidence_checkout_portability.py": "c53aa9e8bb126800e70b051b1b8b443b9f2e83ffa5a830fa8d594cba4b0ce40a",

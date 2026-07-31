@@ -1498,3 +1498,18 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > until the published v2 code completes a fresh two-runner run and the new signed
 > artifacts are retained. L2 and live-trading gates are unchanged.
 >
+> **2026-07-31 signed cross-host deployable-container evidence closed:**
+> GitHub Actions run `30595407050` completed cold OCI builds on independently
+> provisioned `ubuntu-22.04` and `ubuntu-24.04` runners. The complete archives,
+> manifests, configs, layers and diff IDs were byte-identical. Schema v2 also
+> bound the exact Docker-context input root (`services/`, `quantos/`, recipe and
+> dependency files) and rejected runner-local files excluded by `.dockerignore`.
+> The aggregate was signed through GitHub ambient OIDC and independently verified
+> against Fulcio identity, SCT and Rekor v1 inclusion. The signed bundle, receipt
+> and aggregate are retained under
+> `evidence/external_sigstore/2026-07-31-container/`; offline verification is
+> load-bearing in the supply-chain generator and top-tier checker. The
+> `CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN` blocker is closed. Independent
+> admission deployment, external receipt authority, WORM/object-lock retention
+> and external history seals remain open. L2 and live-trading gates are unchanged.
+>
