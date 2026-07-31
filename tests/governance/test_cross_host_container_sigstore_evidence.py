@@ -26,6 +26,7 @@ def test_retained_cross_host_container_sigstore_evidence_verifies_offline() -> N
         EVIDENCE,
         repo_root=ROOT,
         trusted_root_path=TRUSTED_ROOT,
+        require_current_input=False,
     )
 
     assert result["status"] == (
@@ -60,6 +61,7 @@ def test_retained_signature_rejects_evidence_tampering(tmp_path: Path) -> None:
             copied,
             repo_root=ROOT,
             trusted_root_path=TRUSTED_ROOT,
+            require_current_input=False,
         )
 
 
@@ -82,4 +84,5 @@ def test_retained_signature_rejects_receipt_tampering(tmp_path: Path) -> None:
             copied,
             repo_root=ROOT,
             trusted_root_path=TRUSTED_ROOT,
+            require_current_input=False,
         )

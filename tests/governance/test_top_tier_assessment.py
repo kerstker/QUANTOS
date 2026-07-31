@@ -1227,6 +1227,55 @@ def test_supply_chain_checker_verifies_baseline_but_keeps_m4_red_line_open(tmp_p
     assert "manifest_digest" in result["detail"]
 
 
+def test_supply_chain_checker_accepts_honest_nonportable_external_anchor_as_partial(
+    tmp_path,
+):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document.update(
+        {
+            "artifact_admission_decision_history_external_seal_status": (
+                "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED"
+            ),
+            "artifact_admission_decision_history_external_seal_evidence_ref": (
+                "evidence/artifact_admission_seal_latest.json"
+            ),
+            "artifact_admission_decision_history_external_seal_evidence_sha256": (
+                "a" * 64
+            ),
+            "artifact_admission_decision_history_external_anchor_sha256": (
+                "b" * 64
+            ),
+            "artifact_admission_decision_history_external_destination_class": (
+                "SEPARATE_VOLUME"
+            ),
+            "artifact_admission_decision_history_external_signature_verified": False,
+            "artifact_admission_decision_history_external_worm_verified": False,
+        }
+    )
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+    assert "does not meet target maturity" in result["detail"]
+
+
 def test_supply_chain_checker_rejects_tampered_npm_audit_evidence(tmp_path):
     evidence = _write_valid_supply_chain_evidence(tmp_path)
     registry = _write_registry(

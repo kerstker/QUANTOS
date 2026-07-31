@@ -3008,7 +3008,7 @@ def _supply_chain_baseline_evidence(
     if external_seal_status == "NOT_PROVIDED":
         pass
     elif external_seal_status == (
-        "SEPARATE_VOLUME_CREATE_ONCE_VERIFIED_WORM_UNVERIFIED"
+        "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED"
     ):
         digest_pattern = re.compile(r"^[0-9a-f]{64}$")
         if (

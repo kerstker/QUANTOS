@@ -40,6 +40,7 @@ from services.governance.reproducibility_evidence import (  # noqa: E402
 )
 from services.governance.cross_host_container_reproducibility import (  # noqa: E402
     CrossHostContainerEvidenceError,
+    CrossHostContainerInputMismatchError,
     verify_signed_cross_host_container_evidence,
 )
 from services.governance.external_sigstore_evidence import (  # noqa: E402
@@ -619,6 +620,12 @@ def build_supply_chain_artifacts(
                     ),
                 )
             )
+        except CrossHostContainerInputMismatchError:
+            # A previously verified proof is expected to become stale after a
+            # legitimate container-input change.  Keep delivery two-phased:
+            # publish the code with the blocker restored, then retain the new
+            # externally signed proof in an evidence-only follow-up.
+            cross_host_container_report = None
         except CrossHostContainerEvidenceError as exc:
             raise ValueError(
                 f"retained cross-host container evidence is invalid: {exc}"

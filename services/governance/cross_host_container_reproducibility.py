@@ -29,6 +29,10 @@ class CrossHostContainerEvidenceError(ValueError):
     """A build claim or cross-host aggregate is malformed or inconsistent."""
 
 
+class CrossHostContainerInputMismatchError(CrossHostContainerEvidenceError):
+    """Valid retained evidence targets a different container input root."""
+
+
 CLAIM_MODE = "SINGLE_COLD_OCI_BUILD_RECIPE_BOUND"
 EVIDENCE_MODE = "CROSS_HOST_TWO_RUNNERS_BYTE_IDENTICAL"
 EXPECTED_BUILDERS = ("ubuntu-22.04", "ubuntu-24.04")
@@ -442,7 +446,7 @@ def verify_container_build_claim(
         or _HEX.fullmatch(container_input_sha256) is None
         or container_input_sha256 != _container_input_sha256(root)
     ):
-        raise CrossHostContainerEvidenceError(
+        raise CrossHostContainerInputMismatchError(
             "container input content root is inconsistent"
         )
     recipe = _verify_recipe(claim.get("recipe"), root)
@@ -555,7 +559,10 @@ def build_cross_host_container_evidence(
 
 
 def verify_cross_host_container_evidence(
-    document: Mapping[str, Any], repo_root: str | Path
+    document: Mapping[str, Any],
+    repo_root: str | Path,
+    *,
+    require_current_input: bool = True,
 ) -> dict[str, Any]:
     """Verify a cross-host aggregate without treating it as signed external proof."""
     evidence = _object(document, "cross-host container evidence")
@@ -587,8 +594,11 @@ def verify_cross_host_container_evidence(
             "cross-host container evidence is invalid"
         )
     root = Path(repo_root).resolve()
-    if evidence["container_input_sha256"] != _container_input_sha256(root):
-        raise CrossHostContainerEvidenceError(
+    if (
+        require_current_input
+        and evidence["container_input_sha256"] != _container_input_sha256(root)
+    ):
+        raise CrossHostContainerInputMismatchError(
             "container input content root is inconsistent"
         )
     recipe = _verify_recipe(evidence.get("recipe"), root)
@@ -629,6 +639,7 @@ def verify_signed_cross_host_container_evidence(
     *,
     repo_root: str | Path,
     trusted_root_path: str | Path,
+    require_current_input: bool = True,
 ) -> dict[str, Any]:
     """Cryptographically verify the retained OIDC/Sigstore container proof."""
     try:
@@ -676,7 +687,14 @@ def verify_signed_cross_host_container_evidence(
     evidence = _json_object(evidence_bytes, "cross-host evidence")
     bundle_document = _json_object(bundle_bytes, "Sigstore bundle")
     receipt = _json_object(receipt_bytes, "cross-host receipt")
-    summary = verify_cross_host_container_evidence(evidence, repo_root)
+    # Verify the signed historical claim before checking whether it targets the
+    # current container input.  This prevents a stale input root from masking a
+    # tampered bundle or receipt during two-phase delivery.
+    summary = verify_cross_host_container_evidence(
+        evidence,
+        repo_root,
+        require_current_input=False,
+    )
     evidence_sha256 = hashlib.sha256(evidence_bytes).hexdigest()
     bundle_sha256 = hashlib.sha256(bundle_bytes).hexdigest()
 
@@ -770,6 +788,8 @@ def verify_signed_cross_host_container_evidence(
     certificate_sha256 = hashlib.sha256(
         bundle.signing_certificate.public_bytes(Encoding.DER)
     ).hexdigest()
+    if require_current_input:
+        verify_cross_host_container_evidence(evidence, repo_root)
     return {
         "status": SIGNED_RECEIPT_STATUS,
         "source_commit": summary["source_commit"],
@@ -795,6 +815,7 @@ __all__ = [
     "CLAIM_MODE",
     "EVIDENCE_MODE",
     "CrossHostContainerEvidenceError",
+    "CrossHostContainerInputMismatchError",
     "build_container_build_claim",
     "build_cross_host_container_evidence",
     "verify_container_build_claim",

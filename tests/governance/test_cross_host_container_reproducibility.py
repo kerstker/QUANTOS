@@ -15,6 +15,7 @@ import pytest
 
 from services.governance.cross_host_container_reproducibility import (
     CrossHostContainerEvidenceError,
+    CrossHostContainerInputMismatchError,
     build_container_build_claim,
     build_cross_host_container_evidence,
     verify_container_build_claim,
@@ -294,11 +295,11 @@ def test_claim_and_aggregate_reject_changed_container_source(tmp_path: Path) -> 
     )
 
     with pytest.raises(
-        CrossHostContainerEvidenceError, match="content root"
+        CrossHostContainerInputMismatchError, match="content root"
     ):
         verify_container_build_claim(claim_22, tmp_path)
     with pytest.raises(
-        CrossHostContainerEvidenceError, match="content root"
+        CrossHostContainerInputMismatchError, match="content root"
     ):
         verify_cross_host_container_evidence(evidence, tmp_path)
 
