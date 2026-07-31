@@ -26,6 +26,8 @@ coverage/
 .worktrees/
 .codex/
 .playwright-cli/
+playwright-report/
+test-results/
 .runtime/
 
 # Generated presentation workspace (canonical decks live under docs/)

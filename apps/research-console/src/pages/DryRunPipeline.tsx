@@ -349,22 +349,24 @@ export default function DryRunPipeline() {
     ...(data.data_refresh?.alerts ?? []),
   ];
   const chartSeries = useMemo(() => paperSeries(shadow?.history ?? []), [shadow?.history]);
-  const transportLabel = apiState === 'loading'
+  const transportLabel = initialLoading
     ? 'CONNECTING'
+    : apiState === 'loading' && usingBackend
+      ? 'REFRESHING'
     : apiState === 'connected' && usingBackend
       ? 'REAL API'
       : 'API UNAVAILABLE';
-  const transportTone: Tone = apiState === 'loading'
+  const transportTone: Tone = initialLoading || apiState === 'loading'
     ? 'info'
     : apiState === 'connected' && usingBackend
       ? 'pos'
       : 'neg';
-  const automationLabel = apiState === 'loading'
+  const automationLabel = initialLoading
     ? 'CONNECTING'
     : shadowRunning
       ? 'SCHEDULED_ACTIVE'
       : 'SAFE_BLOCKED';
-  const automationTone: Tone = apiState === 'loading' ? 'info' : shadowRunning ? 'pos' : 'neg';
+  const automationTone: Tone = initialLoading ? 'info' : shadowRunning ? 'pos' : 'neg';
 
   return (
     <PageShell>

@@ -202,4 +202,18 @@ describe('automated shadow-paper cockpit', () => {
       state.usingBackend = true;
     }
   });
+
+  it('labels retained data as refreshing without downgrading healthy automation', () => {
+    state.apiState = 'loading';
+    state.usingBackend = true;
+    try {
+      render(<DryRunPipeline />);
+      expect(screen.getByText('REFRESHING')).toBeInTheDocument();
+      expect(screen.getByText('SCHEDULED_ACTIVE')).toBeInTheDocument();
+      expect(screen.queryByText('CONNECTING')).not.toBeInTheDocument();
+    } finally {
+      state.apiState = 'connected';
+      state.usingBackend = true;
+    }
+  });
 });

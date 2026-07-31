@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-  server: { port: 3100, open: '/research' },
+  server: { port: 3100, open: mode === 'e2e' ? false : '/research' },
   build: {
     // Keep React/Router in a stable vendor chunk; route-level React.lazy splits the per-page chunks.
     rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'] } } },

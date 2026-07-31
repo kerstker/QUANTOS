@@ -136,7 +136,7 @@ function SessionClock() {
   const label = now
     ? `${p(now.getUTCHours())}:${p(now.getUTCMinutes())}:${p(now.getUTCSeconds())} UTC`
     : '--:--:-- UTC';
-  return <span className="ticker-num text-xs text-muted">{label}</span>;
+  return <span data-testid="session-clock" className="ticker-num text-xs text-muted">{label}</span>;
 }
 
 /* ---------------------------------------------------------------------------
@@ -283,7 +283,7 @@ export function AppShell({ nav, tape, children }:
   return (
     <ToastProvider>
       <ConfirmDialogHost>
-        <div className="flex min-h-screen flex-col text-ink">
+        <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden text-ink">
 
           {/* ══ ZONE 1 · command bar: brand · search · tape · session/safety ══ */}
           <header className="glass sticky top-0 z-40 border-b border-line">
@@ -314,16 +314,14 @@ export function AppShell({ nav, tape, children }:
               </div>
               <div className="min-w-0 flex-1 lg:hidden" />
 
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-2">
                 <span className="hidden xl:inline-flex"><SessionClock /></span>
                 <span className="hidden xl:inline-flex h-3.5 w-px bg-line-strong" />
                 <span className="sm:hidden"><Chip label="L2" tone="info" /></span>
                 <span className="hidden sm:inline-flex"><Chip label="L2_DRY_RUN_ONLY" tone="warn" /></span>
-                <span className="hidden md:inline-flex"><Chip label={bi('只读', 'READ_ONLY')} tone="info" /></span>
                 <span className="hidden sm:inline-flex"><Chip label={bi('实盘关闭', 'LIVE OFF')} tone="neg" /></span>
-                <span className="hidden sm:inline-flex"><Chip label={bi('实盘门禁 · 人工批准', 'LIVE_GATED_HUMAN')} tone="neg" /></span>
-                <span className="hidden xs:inline-flex"><Chip label={mode} tone={mode === 'REAL_API' ? 'pos' : 'warn'} /></span>
-                <span className="hidden lg:inline-flex">
+                <span className="hidden md:inline-flex"><Chip label={mode} tone={mode === 'REAL_API' ? 'pos' : 'warn'} /></span>
+                <span className="hidden min-w-0 lg:inline-flex">
                   <RuntimeHandshake state={runtimeHandshake} />
                 </span>
               </div>

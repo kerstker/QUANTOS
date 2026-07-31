@@ -29,7 +29,8 @@
   /* ink */
   --ink:    #e8eaf0;
   --muted:  #9aa3b2;
-  --faint:  #5f6773;
+  /* Lowest-emphasis copy still clears WCAG AA against elevated/panel/inset. */
+  --faint:  #808a98;
 
   /* signature amber accent + exchange semantics */
   --accent:     #f0b90b;   /* institutional amber primary */
