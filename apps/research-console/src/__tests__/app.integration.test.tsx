@@ -10,7 +10,7 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
   // 断言用「页面独有内容」而非页名——页名同时出现在导航栏里,findByText 会撞多元素。
   it('lands on Command Center and exposes only five primary operations by default', async () => {
     render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
+    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
     const primary = screen.getByRole('navigation', { name: 'primary operations' });
     expect(within(primary).getAllByRole('link')).toHaveLength(5);
     expect(screen.queryByRole('navigation', { name: 'lifecycle pipeline' })).toBeNull();
@@ -32,12 +32,12 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
 
   it('redirects the bare /research route to the operator command center', async () => {
     render(<MemoryRouter initialEntries={['/research']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
+    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
   });
 
   it('Command Center is still reachable at its own route', async () => {
     render(<MemoryRouter initialEntries={['/research/command']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
+    expect(await screen.findByText(/一屏只回答四件事/)).toBeTruthy();
   });
   it('opens the global route search instead of a decorative placeholder', async () => {
     render(<MemoryRouter initialEntries={['/research/getting-started']}><App /></MemoryRouter>);

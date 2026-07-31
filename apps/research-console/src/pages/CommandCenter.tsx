@@ -1,229 +1,236 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@/lib/router';
-import {
-  fetchResearchRuns, fetchOverviewSnapshot, fetchCryptoLiveSnapshot,
-  fetchSafetyPrimitivesSnapshot, fetchPopulationOptimizerSnapshot, fetchEventsSnapshot,
-} from '@/lib/api/research-console-api';
+import { fetchDryRunSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
+import type { DryRunPipelinePayload } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
-import type {
-  ResearchRunsPayload, OverviewPayload, CryptoLivePayload,
-  SafetyPrimitivesPayload, PopulationOptimizerPayload, EventsPayload,
-} from '@/lib/types/research';
-import { PageShell, PageHeader, Panel, StatusChip, Chip, LoadingVeil, Button, SectionHeader } from '@/ui/primitives';
-import { PipelineFlow } from '@/ui/PipelineFlow';
+import {
+  Chip,
+  LoadingVeil,
+  PageHeader,
+  PageShell,
+  Panel,
+} from '@/ui/primitives';
 
-/**
- * Command Center — the single-pane research cockpit. Draggable (reorder) + resizable (width/height) tiles
- * on a 12-column grid, each tile a live summary of a REAL endpoint (research runs / overview funnel /
- * crypto-live factors / safety primitives / de-redundant set). Layout (order + spans) persists to
- * localStorage so the operator keeps their arrangement. Read-only; no run is triggered from here.
- */
+type Tone = 'pos' | 'neg' | 'warn' | 'info' | 'accent';
 
-type Span = { w: number; h: number };
-const SIZES: Span[] = [{ w: 3, h: 1 }, { w: 4, h: 1 }, { w: 6, h: 1 }, { w: 6, h: 2 }, { w: 12, h: 1 }];
-const LS_KEY = 'quantos.commandcenter.layout.v1';
+function fmtUsd(value?: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: Math.abs(value) >= 1_000_000 ? 'compact' : 'standard',
+    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 2 : 0,
+  }).format(value);
+}
 
-interface TileDef { id: string; title: string; titleZh: string; to: string; render: () => React.ReactNode; }
+function fmtAge(ageMs: number | null): string {
+  if (ageMs == null) return '—';
+  if (ageMs < 60_000) return `${Math.floor(ageMs / 1_000)}s`;
+  return `${Math.floor(ageMs / 60_000)}m`;
+}
 
-const TONE: Record<string, string> = {
-  ink: 'text-ink', accent: 'text-accent', pos: 'text-pos', info: 'text-info', cyan: 'text-cyan', warn: 'text-warn',
-};
-function Metric({ label, value, tone = 'ink' }: { label: string; value: React.ReactNode; tone?: string }) {
+function Metric({
+  label,
+  value,
+  detail,
+  tone = 'info',
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: Tone;
+}) {
+  const toneClass: Record<Tone, string> = {
+    pos: 'text-pos',
+    neg: 'text-neg',
+    warn: 'text-warn',
+    info: 'text-info',
+    accent: 'text-accent',
+  };
   return (
-    <div className="flex flex-col">
-      <span className="text-2xs text-faint">{label}</span>
-      <span className={`mono text-lg font-semibold ${TONE[tone] ?? 'text-ink'}`}>{value}</span>
+    <div className="min-w-0">
+      <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">{label}</div>
+      <div className={`ticker-num mt-1 truncate text-xl font-semibold ${toneClass[tone]}`}>{value}</div>
+      <div className="mt-1 truncate text-3xs text-faint">{detail}</div>
     </div>
   );
 }
 
-function RunsTile() {
-  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<ResearchRunsPayload>(s => fetchResearchRuns(s));
-  const runs = usingBackend ? (payload?.runs ?? []) : [];
-  const done = runs.filter(r => r.status === 'done').length;
-  const active = runs.filter(r => r.status === 'queued' || r.status === 'running').length;
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
+function QuickLink({ to, zh, en }: { to: string; zh: string; en: string }) {
   return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-end gap-5">
-        <Metric label={bi('运行总数', 'Total runs')} value={runs.length || '—'} tone="accent" />
-        <Metric label={bi('完成', 'Done')} value={done} tone="pos" />
-        <Metric label={bi('进行中', 'Active')} value={active} tone="info" />
-        {runs[0] && <div className="text-2xs text-muted">{bi('最新', 'latest')}: {runs[0].title}</div>}
-      </div>
-    </LoadingVeil>
+    <Link to={to}
+      className="flex items-center justify-between rounded-md border border-line bg-inset/50 px-3 py-2 text-xs text-muted transition-colors hover:border-accent/40 hover:text-ink">
+      <span>{bi(zh, en)}</span>
+      <span aria-hidden className="text-accent">→</span>
+    </Link>
   );
-}
-
-function OverviewTile() {
-  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<OverviewPayload>(s => fetchOverviewSnapshot(s));
-  const f = usingBackend ? (payload?.funnel ?? []) : [];
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
-  return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-end gap-4">
-        {f.length ? f.map(x => <Metric key={x.id} label={x.label} value={x.value} />)
-          : <span className="text-2xs text-faint">{bi('未连后端', 'backend offline')}</span>}
-      </div>
-    </LoadingVeil>
-  );
-}
-
-function CryptoTile() {
-  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<CryptoLivePayload>(s => fetchCryptoLiveSnapshot(s));
-  const factors = usingBackend ? (payload?.factors ?? []) : [];
-  const top = [...factors].sort((a, b) => (b.net_sharpe ?? -9) - (a.net_sharpe ?? -9))[0];
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
-  return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-end gap-5">
-        <Metric label={bi('真实因子', 'Real factors')} value={factors.length || '—'} tone="cyan" />
-        {top && <Metric label={bi('最佳净夏普', 'Top net SR')} value={top.net_sharpe?.toFixed(2) ?? '—'} tone="pos" />}
-        {top && <div className="text-2xs text-muted">{top.name ?? top.alpha_id}</div>}
-      </div>
-    </LoadingVeil>
-  );
-}
-
-function SafetyTile() {
-  const { payload, apiState, error } = useConsoleSnapshot<SafetyPrimitivesPayload>(s => fetchSafetyPrimitivesSnapshot(s));
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
-  if (!payload) return <span className="text-2xs text-faint">{bi('载入中…', 'loading…')}</span>;
-  return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-center gap-3">
-        <StatusChip value={payload.kill_switch?.is_active ? 'KILL_TRIPPED' : 'KILL_CLEAR'} />
-        <Metric label={bi('盘前检查', 'Pre-trade checks')} value={payload.pre_trade_gate?.checks_registered ?? '—'} tone="info" />
-        <Chip label="LIVE_DISALLOWED" tone="neg" />
-        <Chip label={payload.safety_config?.require_human_approval ? 'HUMAN_APPROVAL' : 'NO_APPROVAL'}
-          tone={payload.safety_config?.require_human_approval ? 'pos' : 'neg'} />
-      </div>
-    </LoadingVeil>
-  );
-}
-
-function OptimizerTile() {
-  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<PopulationOptimizerPayload>(s => fetchPopulationOptimizerSnapshot(s));
-  const d = usingBackend ? payload : null;
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
-  return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-end gap-5">
-        <Metric label={bi('已选', 'Selected')} value={d?.selected?.length ?? '—'} tone="pos" />
-        <Metric label={bi('剔除', 'Excluded')} value={d?.excluded?.length ?? '—'} tone="warn" />
-        <Metric label={bi('多样性', 'Diversity')} value={d?.diversity ?? '—'} tone="info" />
-      </div>
-    </LoadingVeil>
-  );
-}
-
-function ActivityTile() {
-  const { payload, usingBackend, apiState, error } = useConsoleSnapshot<EventsPayload>(s => fetchEventsSnapshot(s));
-  const events = usingBackend ? (payload?.events ?? []) : [];
-  const health = usingBackend ? payload?.event_bus_health : null;
-  if (apiState === 'error') return <span className="text-2xs text-warn">{error ?? bi('加载失败', 'load error')}</span>;
-  return (
-    <LoadingVeil active={apiState === 'loading'}>
-      <div className="flex flex-wrap items-start gap-5">
-        <Metric label={bi('事件总数', 'Events')} value={(health?.event_records ?? events.length) || '—'} tone="accent" />
-        <Metric label={bi('待处理', 'Pending')} value={health?.pending_events ?? '—'} tone="info" />
-        <Metric label={bi('死信', 'Dead letters')} value={health?.dead_letter_count ?? '—'} tone={health?.dead_letter_count ? 'warn' : 'pos'} />
-        <div className="min-w-[14rem] flex-1 text-2xs text-muted">
-          <div className="mb-1 flex items-center gap-2"><StatusChip value={health?.verdict ?? 'UNKNOWN'} /> <span>{bi('后台活动 / 最近事件', 'background activity / latest events')}</span></div>
-          <div className="space-y-0.5 text-faint">
-            {events.slice(0, 3).map(event => <div key={event.event_id} className="truncate">{event.event_type} · {event.source}</div>)}
-            {!events.length && <span>{bi('暂无事件记录', 'no event records')}</span>}
-          </div>
-        </div>
-      </div>
-    </LoadingVeil>
-  );
-}
-
-const TILES: TileDef[] = [
-  { id: 'activity', title: 'Background Activity', titleZh: '后台活动', to: '/research/events', render: () => <ActivityTile /> },
-  { id: 'runs', title: 'Research Runs', titleZh: '研究运行', to: '/research/runs', render: () => <RunsTile /> },
-  { id: 'overview', title: 'Research Funnel', titleZh: '研究漏斗', to: '/research/alpha-zoo', render: () => <OverviewTile /> },
-  { id: 'crypto', title: 'Crypto Live', titleZh: '加密实盘', to: '/research/crypto-live', render: () => <CryptoTile /> },
-  { id: 'safety', title: 'Safety Primitives', titleZh: '安全原语', to: '/research/risk', render: () => <SafetyTile /> },
-  { id: 'optimizer', title: 'De-redundant Set', titleZh: '去冗余选集', to: '/research/population-optimizer', render: () => <OptimizerTile /> },
-];
-
-interface Layout { order: string[]; spans: Record<string, number> }   // spans = index into SIZES
-
-function loadLayout(): Layout {
-  const defaults = { order: TILES.map(t => t.id), spans: Object.fromEntries(TILES.map(t => [t.id, 1])) };
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<Layout>;
-      const savedOrder = Array.isArray(saved.order) ? saved.order.filter(id => TILES.some(tile => tile.id === id)) : [];
-      const order = [...savedOrder, ...defaults.order.filter(id => !savedOrder.includes(id))];
-      return { order, spans: { ...defaults.spans, ...(saved.spans ?? {}) } };
-    }
-  } catch { /* ignore */ }
-  return defaults;
 }
 
 export default function CommandCenter() {
-  const [layout, setLayout] = useState<Layout>(loadLayout);
-  const [drag, setDrag] = useState<string | null>(null);
-  useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(layout)); } catch { /* ignore */ } }, [layout]);
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    if (!isResearchConsoleApiEnabled()) return undefined;
+    const timer = window.setInterval(() => setRefreshTick(value => value + 1), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const ordered = useMemo(() => layout.order.map(id => TILES.find(t => t.id === id)).filter(Boolean) as TileDef[], [layout.order]);
-
-  function reorder(targetId: string) {
-    if (!drag || drag === targetId) return;
-    setLayout(l => {
-      const order = [...l.order];
-      const from = order.indexOf(drag), to = order.indexOf(targetId);
-      order.splice(to, 0, order.splice(from, 1)[0]);
-      return { ...l, order };
-    });
-  }
-  function cycleSize(id: string) {
-    setLayout(l => ({ ...l, spans: { ...l.spans, [id]: ((l.spans[id] ?? 1) + 1) % SIZES.length } }));
-  }
-  function resetLayout() { setLayout({ order: TILES.map(t => t.id), spans: Object.fromEntries(TILES.map(t => [t.id, 1])) }); }
+  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DryRunPipelinePayload>(
+    signal => fetchDryRunSnapshot(signal),
+    [refreshTick],
+  );
+  const data = usingBackend ? payload : null;
+  const shadow = data?.paper_shadow;
+  const health = data?.paper_health;
+  const scheduler = data?.scheduler_watchdog;
+  const observedAt = shadow?.observed_at ?? null;
+  const observedAgeMs = observedAt == null ? null : Math.max(0, Date.now() - observedAt);
+  const markFresh = observedAgeMs != null && observedAgeMs <= (health?.max_age_ms ?? 300_000);
+  const paperRunning = Boolean(
+    shadow?.verdict.shadow_paper_running
+    && shadow.verdict.paper_mark_ready
+    && markFresh
+    && shadow.persistence.chain_valid,
+  );
+  const alphaRows = Object.entries(shadow?.alphas ?? {});
+  const positionCount = alphaRows.reduce(
+    (total, [, alpha]) => total + Object.values(alpha.positions ?? {}).filter(quantity => quantity !== 0).length,
+    0,
+  );
+  const reconciled = alphaRows.length > 0 && alphaRows.every(
+    ([, alpha]) => Math.abs(alpha.reconciliation_residual ?? Number.POSITIVE_INFINITY) < 1e-6,
+  );
+  const forwardRows = Object.values(health?.forward_evidence?.alphas ?? {});
+  const forwardPeriods = forwardRows.length
+    ? Math.min(...forwardRows.map(row => row.n_forward_periods ?? 0))
+    : 0;
+  const forwardTarget = health?.forward_evidence?.evidence_gate_periods ?? 8;
+  const schedulerSummary = scheduler?.summary ?? {};
+  const schedulerBreaches = schedulerSummary.BREACH ?? 0;
+  const issueLines = useMemo(
+    () => [
+      ...(health?.blockers ?? []),
+      ...Object.entries(shadow?.errors ?? {}).map(([alpha, issue]) => `${alpha}: ${issue}`),
+    ],
+    [health?.blockers, shadow?.errors],
+  );
+  const transportOk = apiState === 'connected' && usingBackend;
 
   return (
     <PageShell>
-      <PageHeader title="Command Center" titleZh="指挥中心"
-        subtitle={bi('研究全流程一张图:七个阶段连成一条可视化管道,每个节点实时显示该阶段的真实读数;点击进入任一阶段。下方磁贴可拖拽重排 / 点击缩放 · 布局自动保存 · 全部真实数据(只读)',
-          'The whole research lifecycle on one canvas: seven stages wired into a visual pipeline, each node showing a live real reading; click to enter any stage. Tiles below: drag to reorder / click to resize · layout auto-saved · all real data (read-only)')}
-        actions={<Button onClick={resetLayout} variant="muted">{bi('重置布局', 'reset layout')}</Button>} />
+      <PageHeader
+        title="Operations Command"
+        titleZh="纸面交易指挥中心"
+        subtitle={bi(
+          '一屏只回答四件事：纸面是否在跑、证据是否成熟、数据与调度是否健康、安全边界是否完整。每 10 秒读取真实聚合 API。',
+          'One screen answers four questions: is paper running, is evidence mature, are data and schedules healthy, and is the safety boundary intact. Real aggregate API, polled every 10 seconds.',
+        )}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip label={transportOk ? 'REAL API' : apiState === 'loading' ? 'CONNECTING' : 'API UNAVAILABLE'}
+              tone={transportOk ? 'pos' : apiState === 'loading' ? 'info' : 'neg'} />
+            <Chip label={paperRunning ? 'PAPER ACTIVE' : 'PAPER GATED'} tone={paperRunning ? 'pos' : 'warn'} />
+            <Chip label="LIVE OFF" tone="neg" />
+          </div>
+        )}
+      />
 
-      {/* ── 全流程可视化管道:数据 → 研究 → 验证 → 组合 → 执行 → 治理 ── */}
-      <PipelineFlow activeGroup="overview" />
+      {error && (
+        <div role="alert" className="mb-4 rounded-lg border border-neg/30 bg-neg/10 px-4 py-3 text-xs text-neg">
+          {error}
+        </div>
+      )}
 
-      <SectionHeader title={bi('实时磁贴', 'LIVE TILES')}
-        sub={bi('拖拽重排 · ⤢ 缩放 · 打开进入对应页面', 'drag to reorder · ⤢ resize · open jumps to the page')} />
-
-      <div className="grid grid-cols-12 gap-4">
-        {ordered.map(tile => {
-          const span = SIZES[layout.spans[tile.id] ?? 1];
-          const col = ['', 'col-span-3', '', 'col-span-3', 'col-span-4', '', 'col-span-6', '', '', '', '', '', 'col-span-12'][span.w] || 'col-span-6';
-          return (
-            <div key={tile.id} className={`${col} ${span.h > 1 ? 'row-span-2' : ''}`}
-              draggable onDragStart={() => setDrag(tile.id)} onDragEnd={() => setDrag(null)}
-              onDragOver={e => { e.preventDefault(); reorder(tile.id); }}>
-              <Panel eyebrow={bi('磁贴', 'Tile')} title={bi(tile.titleZh, tile.title)}
-                className="terminal-panel" bodyClass="density-compact"
-                right={<div className="flex items-center gap-1.5">
-                  <button onClick={() => cycleSize(tile.id)} title={bi('缩放', 'resize')}
-                    aria-label={bi('缩放磁贴', 'resize tile')}
-                    className="rounded border border-line px-1.5 py-0.5 text-2xs text-muted hover:text-ink">⤢</button>
-                  <Link to={tile.to} className="text-2xs text-accent hover:underline">{bi('打开', 'open')}</Link>
-                  <span className="cursor-grab text-faint" role="img" title={bi('拖动重排', 'drag to reorder')}
-                    aria-label={bi('拖动重排', 'drag to reorder')}>⠿</span>
-                </div>}>
-                <div className={span.h > 1 ? 'min-h-[8rem]' : ''}>{tile.render()}</div>
-              </Panel>
+      <LoadingVeil active={apiState === 'loading'}>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Panel title={bi('实时纸面运行', 'Live paper operation')} eyebrow="01 · PAPER"
+            right={<Chip label={paperRunning ? 'RUNNING' : 'CHECK'} tone={paperRunning ? 'pos' : 'warn'} />}
+            bodyClass="p-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Metric label="Equity" value={fmtUsd(shadow?.totals.equity)}
+                detail={`${alphaRows.length} isolated books`} tone="accent" />
+              <Metric label="Net PnL" value={fmtUsd(shadow?.totals.net_pnl)}
+                detail={`funding ${fmtUsd(shadow?.totals.funding_pnl)}`}
+                tone={(shadow?.totals.net_pnl ?? 0) >= 0 ? 'pos' : 'neg'} />
+              <Metric label="Positions" value={positionCount}
+                detail={`${alphaRows.reduce((sum, [, alpha]) => sum + (alpha.n_fills ?? 0), 0)} paper fills`} />
+              <Metric label="Reconciliation" value={reconciled ? 'CLEAN' : 'CHECK'}
+                detail={shadow?.persistence.chain_valid ? 'hash chain valid' : 'chain unavailable'}
+                tone={reconciled && shadow?.persistence.chain_valid ? 'pos' : 'neg'} />
             </div>
-          );
-        })}
-      </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-3xs text-faint">
+              <span>{shadow?.provider ?? 'NO_PROVIDER'}</span>
+              <span>·</span>
+              <span>{bi('快照年龄', 'snapshot age')} {fmtAge(observedAgeMs)}</span>
+              <span>·</span>
+              <span>{shadow?.execution_class ?? 'NO_EXECUTION_CLASS'}</span>
+            </div>
+          </Panel>
+
+          <Panel title={bi('证据与风险门', 'Evidence and risk gate')} eyebrow="02 · EVIDENCE"
+            right={<Chip label={health?.verdict.paper_ready ? 'READY' : 'MATURING'}
+              tone={health?.verdict.paper_ready ? 'pos' : 'warn'} />}
+            bodyClass="p-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Metric label="Forward" value={`${forwardPeriods}/${forwardTarget}`}
+                detail="independent periods" tone={forwardPeriods >= forwardTarget ? 'pos' : 'warn'} />
+              <Metric label="Risk bundles" value={health?.research_risk_bundle_complete ? '3/3' : 'CHECK'}
+                detail="nine-engine inputs" tone={health?.research_risk_bundle_complete ? 'pos' : 'warn'} />
+              <Metric label="Official paper" value={health?.verdict.paper_ready ? 'READY' : 'GATED'}
+                detail={health?.readiness_class ?? 'NO_HEALTH'} tone={health?.verdict.paper_ready ? 'pos' : 'warn'} />
+              <Metric label="Promotion" value="HUMAN"
+                detail="structurally non-automatic" tone="neg" />
+            </div>
+            <div className="mt-4 rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
+              <div className="font-medium text-ink">{health?.next_action ?? 'Await fresh forward evidence.'}</div>
+              <div className="mt-1 truncate text-faint">
+                {issueLines.length ? `${issueLines.length} active gate reasons · ${issueLines[0]}` : 'No active blocker reported.'}
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title={bi('数据与调度', 'Data and scheduling')} eyebrow="03 · OPERATIONS"
+            right={<Chip label={schedulerBreaches === 0 ? 'NO BREACH' : `${schedulerBreaches} BREACH`}
+              tone={schedulerBreaches === 0 ? 'pos' : 'neg'} />}
+            bodyClass="p-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Metric label="Refresh" value={data?.data_refresh?.outcome ?? '—'}
+                detail={`${data?.data_refresh?.failed_total ?? 0} failures`}
+                tone={(data?.data_refresh?.failed_total ?? 0) === 0 ? 'pos' : 'neg'} />
+              <Metric label="Scheduler" value={scheduler?.verdict ?? '—'}
+                detail={`${schedulerSummary.PASS ?? 0} checks pass`}
+                tone={schedulerBreaches === 0 ? 'pos' : 'neg'} />
+              <Metric label="Dry runs" value={data?.n_runs ?? 0}
+                detail="append-only records" />
+              <Metric label="TCA" value={data?.route_tca_history?.record_count ?? 0}
+                detail={data?.route_tca_history?.status ?? 'NO HISTORY'}
+                tone={data?.route_tca_history?.status === 'LONGITUDINAL_READY' ? 'pos' : 'warn'} />
+            </div>
+          </Panel>
+
+          <Panel title={bi('安全边界', 'Safety boundary')} eyebrow="04 · CONTROL"
+            right={<Chip label="L2 PAPER ONLY" tone="info" />}
+            bodyClass="p-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Metric label="Public data" value={shadow?.safety.public_market_data_only ? 'ONLY' : 'CHECK'}
+                detail="no private account API" tone={shadow?.safety.public_market_data_only ? 'pos' : 'neg'} />
+              <Metric label="Credentials" value={shadow?.safety.credentials_accessed ? 'TOUCHED' : 'NONE'}
+                detail="paper worker boundary" tone={shadow?.safety.credentials_accessed ? 'neg' : 'pos'} />
+              <Metric label="Broker" value={shadow?.safety.broker_connectivity ? 'CONNECTED' : 'OFF'}
+                detail="no venue session" tone={shadow?.safety.broker_connectivity ? 'neg' : 'pos'} />
+              <Metric label="Submission" value={shadow?.safety.broker_order_submission ? 'ENABLED' : 'BLOCKED'}
+                detail="live structurally closed" tone={shadow?.safety.broker_order_submission ? 'neg' : 'pos'} />
+            </div>
+          </Panel>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickLink to="/research/dry-run" zh="打开纸面驾驶舱" en="Open paper cockpit" />
+          <QuickLink to="/research/risk" zh="查看风险门" en="Inspect risk gates" />
+          <QuickLink to="/research/data-catalog" zh="检查数据状态" en="Inspect data state" />
+          <QuickLink to="/research/system-health" zh="查看系统健康" en="Open system health" />
+        </div>
+      </LoadingVeil>
     </PageShell>
   );
 }
