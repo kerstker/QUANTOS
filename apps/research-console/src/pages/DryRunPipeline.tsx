@@ -8,7 +8,7 @@ import {
   StatusChip,
 } from '@/ui/primitives';
 import { EquityCurveChart, type EquitySeries } from '@/ui/workbench';
-import { type Tone } from '@/ui/format';
+import { stamp, type Tone } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   fetchDryRunSnapshot,
@@ -583,7 +583,9 @@ export default function DryRunPipeline() {
               <Metric
                 label="Forward"
                 value={Object.values(forwardByAlpha)[0]?.n_forward_periods ?? 0}
-                detail={`target ${health?.forward_evidence?.evidence_gate_periods ?? 8}`}
+                detail={health?.forward_evidence?.evidence_maturing
+                  ? `next ${stamp(health.forward_evidence.next_realization_eligible_at)} UTC`
+                  : `target ${health?.forward_evidence?.evidence_gate_periods ?? 8}`}
                 tone="warn"
               />
               <Metric
@@ -605,7 +607,9 @@ export default function DryRunPipeline() {
                 )}
             </div>
             <Callout
-              summary={health?.next_action ?? '等待前向周期与研究风险证据满足正式纸面门禁'}
+              summary={health?.next_action === 'continue_scheduled_forward_evidence_and_review_remaining_risk_gates'
+                ? `前向证据按计划成熟中 · 下一次最早可兑现 ${stamp(health.forward_evidence?.next_realization_eligible_at)} UTC`
+                : health?.next_action ?? '等待前向周期与研究风险证据满足正式纸面门禁'}
               tone={health?.verdict.paper_ready ? 'pos' : 'warn'}
             >
               {issueLines.length

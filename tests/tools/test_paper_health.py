@@ -94,7 +94,7 @@ def _preview() -> dict:
     }
 
 
-def _forward_track(*, periods: int = 0) -> dict:
+def _forward_track(*, periods: int = 0, last_decision_ts: int | None = None) -> dict:
     return {
         "ran_at": 1_500,
         "evidence_gate_weeks": 8,
@@ -111,6 +111,7 @@ def _forward_track(*, periods: int = 0) -> dict:
                 "attested_pending_decisions": 1,
                 "evidence_state": "ATTESTED_PENDING_REALIZATION",
                 "paper_sharpe": None,
+                "last_decision_ts": last_decision_ts,
             }
             for alpha in ALPHA_IDS
         },
@@ -154,6 +155,59 @@ def test_paper_health_distinguishes_mark_only_replay_from_order_ready():
     assert report["verdict"]["paper_ready"] is False
     assert report["readiness_class"] == "PAPER_MARKS_ONLY_REPLAY"
     assert report["next_action"] == "resolve_research_risk_and_create_new_decision"
+
+
+def test_paper_health_reports_attested_forward_clock_as_maturing_not_broken():
+    realtime = _realtime()
+    realtime["operator_mode"] = "EXISTING_FILLED_PAPER_LEDGER_REPLAY"
+    preview = _preview()
+    preview["verdict"]["paper_preview_ready"] = False
+    for row in preview["alphas"].values():
+        row["research_risk_bundle"] = {
+            "status": "READY",
+            "provenance": "REAL_RESEARCH_RISK_INPUT_BUNDLE",
+        }
+        row["research_risk"] = {
+            "decision": "RISK_REJECTED",
+            "status": "REJECTED",
+            "gates_passed": 8,
+            "gates_run": 9,
+            "engines_run": {"model_alpha": True},
+            "engines_skipped": {},
+            "engines_pending": {},
+            "provenance": "REAL_RESEARCH_RISK_FULL",
+            "reasons": ["Model/Alpha: paper_conf=0.125"],
+        }
+        row["paper_execution"] = "PAPER_BLOCKED"
+        row["n_paper_fills"] = 0
+    report = evaluate_paper_health(
+        realtime,
+        preview,
+        now_ms=2_000,
+        forward_track=_forward_track(periods=1, last_decision_ts=1_000),
+    )
+
+    forward = report["forward_evidence"]
+    assert report["readiness_class"] == "PAPER_FORWARD_EVIDENCE_MATURING"
+    assert report["next_action"] == (
+        "continue_scheduled_forward_evidence_and_review_remaining_risk_gates"
+    )
+    assert forward["maturity_state"] == "FORWARD_EVIDENCE_MATURING"
+    assert forward["evidence_maturing"] is True
+    assert forward["max_periods_to_gate"] == 7
+    assert forward["next_realization_eligible_at"] == 1_000 + paper_health.DEFAULT_MIN_GAP_MS
+    assert forward["wait_ms"] == paper_health.DEFAULT_MIN_GAP_MS - 1_000
+    assert forward["alphas"]["top_contra"]["last_decision_ts"] == 1_000
+
+
+def test_forward_clock_fails_closed_when_quality_or_pending_attestation_is_missing():
+    forward = _forward_track(periods=1, last_decision_ts=1_000)
+    forward["quality_evidence_current"] = False
+    report = evaluate_paper_health(
+        _realtime(), _preview(), now_ms=2_000, forward_track=forward
+    )
+    assert report["forward_evidence"]["evidence_maturing"] is False
+    assert report["forward_evidence"]["maturity_state"] == "FORWARD_EVIDENCE_BLOCKED"
 
 
 def test_paper_health_marks_forward_evidence_complete_only_after_all_periods():

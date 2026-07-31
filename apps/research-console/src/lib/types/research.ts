@@ -1263,6 +1263,7 @@ export interface PaperHealthPayload {
   };
   readiness_class?:
     | 'PAPER_READY'
+    | 'PAPER_FORWARD_EVIDENCE_MATURING'
     | 'PAPER_MARKS_ONLY_REPLAY'
     | 'PAPER_MARKS_READY_PENDING_RISK'
     | 'PAPER_MARKS_READY_PENDING_HEALTH'
@@ -1285,6 +1286,15 @@ export interface PaperHealthPayload {
     ran_at?: number;
     evidence_gate_periods?: number;
     complete_for_all_three?: boolean;
+    maturity_state?:
+      | 'FORWARD_EVIDENCE_MATURING'
+      | 'FORWARD_EVIDENCE_COMPLETE'
+      | 'FORWARD_EVIDENCE_BLOCKED'
+      | string;
+    evidence_maturing?: boolean;
+    next_realization_eligible_at?: number | null;
+    wait_ms?: number | null;
+    max_periods_to_gate?: number;
     quality_evidence_current?: boolean;
     data_quality_admission?: {
       verdict?: string;
@@ -1298,6 +1308,8 @@ export interface PaperHealthPayload {
       attested_pending_decisions?: number | null;
       evidence_state?: string;
       paper_sharpe?: number | null;
+      last_decision_ts?: number | null;
+      next_realization_eligible_at?: number | null;
     }>;
     alerts?: string[];
   };

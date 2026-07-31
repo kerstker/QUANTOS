@@ -80,19 +80,26 @@ const state = vi.hoisted(() => ({
         live_allowed: false,
         order_submission_allowed: false,
       },
-      readiness_class: 'PAPER_MARKS_ONLY_REPLAY',
-      next_action: 'accumulate independent forward periods',
+      readiness_class: 'PAPER_FORWARD_EVIDENCE_MATURING',
+      next_action: 'continue_scheduled_forward_evidence_and_review_remaining_risk_gates',
       blockers: ['MODEL_ALPHA_EVIDENCE_INSUFFICIENT'],
       research_risk_bundle_complete: true,
       forward_evidence: {
         present: true,
         evidence_gate_periods: 8,
         complete_for_all_three: false,
+        maturity_state: 'FORWARD_EVIDENCE_MATURING',
+        evidence_maturing: true,
+        next_realization_eligible_at: 1_785_758_400_000,
+        wait_ms: 100_000,
+        max_periods_to_gate: 7,
         alphas: {
           crowd_contra: {
             n_forward_periods: 1,
             periods_to_gate: 7,
             evidence_state: 'ATTESTED',
+            last_decision_ts: 1_785_196_800_000,
+            next_realization_eligible_at: 1_785_758_400_000,
           },
         },
       },
@@ -132,6 +139,8 @@ describe('operations command center', () => {
     expect(screen.getByText('$3M')).toBeInTheDocument();
     expect(screen.getByText('-$44,000')).toBeInTheDocument();
     expect(screen.getByText('1/8')).toBeInTheDocument();
+    expect(screen.getAllByText(/2026-08-03 12:00 UTC/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/前向证据按计划成熟中/)).toBeInTheDocument();
     expect(screen.getByText('NO BREACH')).toBeInTheDocument();
     expect(screen.getByText('BINANCE_PUBLIC_MARK_PRICE')).toBeInTheDocument();
     expect(screen.getByText('BLOCKED')).toBeInTheDocument();

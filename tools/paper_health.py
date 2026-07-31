@@ -22,6 +22,7 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
+from services.research.paper_trading.forward import DEFAULT_MIN_GAP_MS
 from tools.cache_io import atomic_write_json
 from tools.paper_order_preview import _full_research_risk_approved
 
@@ -68,7 +69,11 @@ def _explicitly_false(value: object) -> bool:
     return value is False
 
 
-def _forward_evidence_summary(status: Mapping[str, Any] | None) -> dict[str, Any]:
+def _forward_evidence_summary(
+    status: Mapping[str, Any] | None,
+    *,
+    now_ms: int,
+) -> dict[str, Any]:
     """Summarize forward evidence without making it a paper-health blocker."""
     snapshot = status if isinstance(status, Mapping) else {}
     raw_alphas = snapshot.get("alphas")
@@ -98,29 +103,78 @@ def _forward_evidence_summary(status: Mapping[str, Any] | None) -> dict[str, Any
             "attested_pending_decisions": raw.get("attested_pending_decisions"),
             "evidence_state": raw.get("evidence_state"),
             "paper_sharpe": raw.get("paper_sharpe"),
+            "last_decision_ts": raw.get("last_decision_ts"),
+            "next_realization_eligible_at": (
+                raw["last_decision_ts"] + DEFAULT_MIN_GAP_MS
+                if isinstance(raw.get("last_decision_ts"), int)
+                and not isinstance(raw.get("last_decision_ts"), bool)
+                else None
+            ),
         }
     complete = bool(rows) and all(
         row["n_forward_periods"] is not None
         and row["n_forward_periods"] >= required_periods
         for row in rows.values()
     )
+    alerts = snapshot.get("alerts", [])
+    alerts = alerts if isinstance(alerts, list) else []
+    admission = (
+        {
+            "verdict": (snapshot.get("data_quality_admission") or {}).get("verdict"),
+            "quality_verdict": (snapshot.get("data_quality_admission") or {}).get("quality_verdict"),
+            "lineage_verdict": (snapshot.get("data_quality_admission") or {}).get("lineage_verdict"),
+        }
+        if isinstance(snapshot.get("data_quality_admission"), Mapping)
+        else {}
+    )
+    incomplete = [
+        row
+        for row in rows.values()
+        if row["n_forward_periods"] is None
+        or row["n_forward_periods"] < required_periods
+    ]
+    pending_eligibility = [
+        row["next_realization_eligible_at"]
+        for row in incomplete
+        if isinstance(row.get("next_realization_eligible_at"), int)
+        and isinstance(row.get("attested_pending_decisions"), int)
+        and row["attested_pending_decisions"] > 0
+    ]
+    evidence_maturing = bool(incomplete) and len(pending_eligibility) == len(incomplete) and (
+        snapshot.get("quality_evidence_current") is True
+        and admission.get("verdict") == "PASS"
+        and admission.get("quality_verdict") == "PASS"
+        and admission.get("lineage_verdict") == "PASS"
+        and not alerts
+    )
+    next_eligible_at = min(pending_eligibility) if pending_eligibility else None
     return {
         "present": bool(status),
         "ran_at": snapshot.get("ran_at"),
         "evidence_gate_periods": required_periods,
         "complete_for_all_three": complete,
         "quality_evidence_current": snapshot.get("quality_evidence_current"),
-        "data_quality_admission": (
-            {
-                "verdict": (snapshot.get("data_quality_admission") or {}).get("verdict"),
-                "quality_verdict": (snapshot.get("data_quality_admission") or {}).get("quality_verdict"),
-                "lineage_verdict": (snapshot.get("data_quality_admission") or {}).get("lineage_verdict"),
-            }
-            if isinstance(snapshot.get("data_quality_admission"), Mapping)
-            else {}
+        "data_quality_admission": admission,
+        "maturity_state": (
+            "FORWARD_EVIDENCE_MATURING"
+            if evidence_maturing
+            else "FORWARD_EVIDENCE_COMPLETE"
+            if complete
+            else "FORWARD_EVIDENCE_BLOCKED"
+        ),
+        "evidence_maturing": evidence_maturing,
+        "next_realization_eligible_at": next_eligible_at,
+        "wait_ms": (
+            max(0, next_eligible_at - now_ms)
+            if next_eligible_at is not None
+            else None
+        ),
+        "max_periods_to_gate": max(
+            (row["periods_to_gate"] or 0 for row in rows.values()),
+            default=0,
         ),
         "alphas": rows,
-        "alerts": snapshot.get("alerts", []) if isinstance(snapshot.get("alerts", []), list) else [],
+        "alerts": alerts,
     }
 
 
@@ -131,6 +185,8 @@ def _readiness_class(
     preview_ready: bool,
     realtime_verdict: Mapping[str, Any],
     operator_mode: object,
+    forward_evidence: Mapping[str, Any],
+    research_risk_bundle_complete: bool,
 ) -> tuple[str, str]:
     """Return a machine-readable state and the only safe next action.
 
@@ -142,6 +198,16 @@ def _readiness_class(
     """
     if paper_ready:
         return "PAPER_READY", "continue_forward_paper_track"
+    if (
+        paper_mark_ready
+        and operator_mode == "EXISTING_FILLED_PAPER_LEDGER_REPLAY"
+        and research_risk_bundle_complete
+        and forward_evidence.get("evidence_maturing") is True
+    ):
+        return (
+            "PAPER_FORWARD_EVIDENCE_MATURING",
+            "continue_scheduled_forward_evidence_and_review_remaining_risk_gates",
+        )
     if paper_mark_ready and operator_mode == "EXISTING_FILLED_PAPER_LEDGER_REPLAY":
         return "PAPER_MARKS_ONLY_REPLAY", "resolve_research_risk_and_create_new_decision"
     if paper_mark_ready and not preview_ready:
@@ -346,7 +412,7 @@ def evaluate_paper_health(
                 block(f"{source}_{name.upper()}_ENABLED")
 
     ready = not blockers
-    forward_evidence = _forward_evidence_summary(forward_track)
+    forward_evidence = _forward_evidence_summary(forward_track, now_ms=now_ms)
     research_risk_bundle_complete = bool(research_risk_bundles) and all(
         row.get("status") == "READY" for row in research_risk_bundles.values()
     )
@@ -364,6 +430,8 @@ def evaluate_paper_health(
         preview_ready=paper_preview_ready,
         realtime_verdict=realtime_verdict,
         operator_mode=realtime_status.get("operator_mode"),
+        forward_evidence=forward_evidence,
+        research_risk_bundle_complete=research_risk_bundle_complete,
     )
     return {
         "schema_version": 1,

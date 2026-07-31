@@ -112,6 +112,50 @@ const state = vi.hoisted(() => ({
         broker_order_submission: false,
       },
     },
+    paper_health: {
+      source: 'PAPER_HEALTH',
+      read_only: true,
+      snapshot_present: true,
+      max_age_ms: 300_000,
+      verdict: {
+        paper_ready: false,
+        paper_mark_ready: true,
+        paper_preview_ready: false,
+        backtest_reference_present_for_all_three: true,
+        live_allowed: false,
+        order_submission_allowed: false,
+      },
+      readiness_class: 'PAPER_FORWARD_EVIDENCE_MATURING',
+      next_action: 'continue_scheduled_forward_evidence_and_review_remaining_risk_gates',
+      blockers: ['crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL'],
+      research_risk_bundle_complete: true,
+      research_risk_bundles: {
+        crowd_contra: { status: 'READY' },
+      },
+      forward_evidence: {
+        present: true,
+        evidence_gate_periods: 8,
+        complete_for_all_three: false,
+        evidence_maturing: true,
+        maturity_state: 'FORWARD_EVIDENCE_MATURING',
+        next_realization_eligible_at: 1_785_758_400_000,
+        max_periods_to_gate: 7,
+        alphas: {
+          crowd_contra: {
+            n_forward_periods: 1,
+            periods_to_gate: 7,
+            attested_pending_decisions: 1,
+          },
+        },
+      },
+      safety: {
+        paper_only: true,
+        public_market_data_only: true,
+        broker_connectivity: false,
+        credentials_accessed: false,
+        broker_order_submission: false,
+      },
+    },
     scheduler_watchdog: {
       snapshot_present: true,
       verdict: 'PASS',
@@ -217,6 +261,8 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('0.020')).toBeInTheDocument();
     expect(screen.getByText('0.125')).toBeInTheDocument();
     expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
+    expect(screen.getAllByText(/2026-08-03 12:00 UTC/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/前向证据按计划成熟中/)).toBeInTheDocument();
     expect(screen.getByText('纸面执行质量')).toBeInTheDocument();
     expect(screen.getByText('6.07 bps')).toBeInTheDocument();
     expect(screen.getByText('BINANCE_SIM')).toBeInTheDocument();
