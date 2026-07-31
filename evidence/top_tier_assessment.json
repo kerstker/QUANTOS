@@ -505,22 +505,34 @@
       "checker_args": {
         "pass_maturity": "M3",
         "paths": [
+          ".github/workflows/validate.yml",
           "apps/research-console/src/app/routes.tsx",
-          "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+          "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+          "apps/research-console/playwright.config.ts",
+          "apps/research-console/e2e/paper-cockpit.spec.ts",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+          "tests/governance/test_frontend_institutional_e2e_gate.py"
         ]
       },
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
-      "description": "Routes navigation and smoke tests share registry",
+      "description": "Routes navigation and smoke tests share registry; the paper cockpit has a deterministic cross-platform accessibility, overflow, and visual-regression gate",
       "detail": "all declared evidence paths exist",
       "domain": "frontend_console",
       "evidence": [
+        ".github/workflows/validate.yml",
         "apps/research-console/src/app/routes.tsx",
-        "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+        "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+        "apps/research-console/playwright.config.ts",
+        "apps/research-console/e2e/paper-cockpit.spec.ts",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+        "tests/governance/test_frontend_institutional_e2e_gate.py"
       ],
       "id": "FRONTEND.ROUTES.SINGLE_SOURCE",
       "meets_target": true,
-      "next_action": "Add E2E accessibility and visual regression",
+      "next_action": "Sustain the pinned Windows/Linux accessibility, overflow, and visual-regression gate as the cockpit evolves",
       "red_line": false,
       "required_evidence": [
         "implementation",
