@@ -3,6 +3,7 @@ import { Link } from '@/lib/router';
 import { fetchDryRunSnapshot, isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { DryRunPipelinePayload } from '@/lib/types/research';
+import { stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   Chip,
@@ -111,6 +112,14 @@ export default function CommandCenter() {
     ? Math.min(...forwardRows.map(row => row.n_forward_periods ?? 0))
     : 0;
   const forwardTarget = health?.forward_evidence?.evidence_gate_periods ?? 8;
+  const nextForwardAt = health?.forward_evidence?.next_realization_eligible_at;
+  const forwardMaturing = health?.forward_evidence?.evidence_maturing === true;
+  const evidenceAction = health?.next_action === 'continue_scheduled_forward_evidence_and_review_remaining_risk_gates'
+    ? bi(
+      `前向证据按计划成熟中；下一次最早可兑现 ${stamp(nextForwardAt)} UTC，继续自动调度并复核剩余风险门。`,
+      `Forward evidence is maturing on schedule; next eligible realization ${stamp(nextForwardAt)} UTC. Continue automation and review remaining risk gates.`,
+    )
+    : health?.next_action ?? 'Await fresh forward evidence.';
   const schedulerSummary = scheduler?.summary ?? {};
   const schedulerBreaches = schedulerSummary.BREACH ?? 0;
   const issueLines = useMemo(
@@ -179,7 +188,8 @@ export default function CommandCenter() {
             bodyClass="p-4">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Metric label="Forward" value={`${forwardPeriods}/${forwardTarget}`}
-                detail="independent periods" tone={forwardPeriods >= forwardTarget ? 'pos' : 'warn'} />
+                detail={forwardMaturing ? `next ${stamp(nextForwardAt)} UTC` : 'independent periods'}
+                tone={forwardPeriods >= forwardTarget ? 'pos' : 'warn'} />
               <Metric label="Risk bundles" value={health?.research_risk_bundle_complete ? '3/3' : 'CHECK'}
                 detail="nine-engine inputs" tone={health?.research_risk_bundle_complete ? 'pos' : 'warn'} />
               <Metric label="Official paper" value={health?.verdict.paper_ready ? 'READY' : 'GATED'}
@@ -188,7 +198,7 @@ export default function CommandCenter() {
                 detail="structurally non-automatic" tone="neg" />
             </div>
             <div className="mt-4 rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">
-              <div className="font-medium text-ink">{health?.next_action ?? 'Await fresh forward evidence.'}</div>
+              <div className="font-medium text-ink">{evidenceAction}</div>
               <div className="mt-1 truncate text-faint">
                 {issueLines.length ? `${issueLines.length} active gate reasons · ${issueLines[0]}` : 'No active blocker reported.'}
               </div>
