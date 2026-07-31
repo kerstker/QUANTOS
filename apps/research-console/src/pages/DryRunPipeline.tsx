@@ -371,6 +371,8 @@ export default function DryRunPipeline() {
   const shadow = data.paper_shadow;
   const health = data.paper_health;
   const scheduler = data.scheduler_watchdog;
+  const alphaPipeline = data.alpha_pipeline;
+  const pipelineCandidates = alphaPipeline?.candidates ?? [];
   const alphaRows = Object.entries(shadow?.alphas ?? {});
   const observedAt = shadow?.observed_at ?? health?.observed_at;
   const observedAgeMs = observedAt == null ? null : Math.max(0, Date.now() - observedAt);
@@ -513,6 +515,95 @@ export default function DryRunPipeline() {
             detail={health?.readiness_class ?? 'no health snapshot'}
             tone={health?.verdict.paper_ready ? 'pos' : 'warn'}
           />
+        </div>
+
+        <div className="mt-4">
+          <Panel
+            title="Alpha pipeline"
+            eyebrow="Discovery -> forward paper -> execution paper"
+            right={
+              <Chip
+                label={alphaPipeline?.handoff.status ?? 'NO PIPELINE'}
+                tone={alphaPipeline?.handoff.status === 'CONNECTED' ? 'pos' : 'warn'}
+              />
+            }
+            bodyClass="p-4"
+          >
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Metric
+                label="Factory"
+                value={alphaPipeline?.factory.survivors ?? 0}
+                detail={`${alphaPipeline?.factory.data_dimensions ?? 0} data dimensions / ${alphaPipeline?.factory.rounds ?? 0} rounds`}
+                tone="special"
+              />
+              <Metric
+                label="Forward paper"
+                value={alphaPipeline?.counts.forward_paper ?? 0}
+                detail="attested OOS challengers"
+                tone="info"
+              />
+              <Metric
+                label="Execution paper"
+                value={alphaPipeline?.counts.execution_paper ?? 0}
+                detail="real-time marked books"
+                tone="accent"
+              />
+              <Metric
+                label="Forward only"
+                value={alphaPipeline?.counts.forward_only ?? 0}
+                detail="waiting for dynamic risk handoff"
+                tone={(alphaPipeline?.counts.forward_only ?? 0) > 0 ? 'warn' : 'pos'}
+              />
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
+              <table className="w-full table-fixed text-left text-xs" aria-label="alpha paper pipeline">
+                <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
+                  <tr>
+                    <th className="w-[30%] px-3 py-2 font-medium">Alpha</th>
+                    <th className="w-[18%] px-3 py-2 font-medium">Stage</th>
+                    <th className="px-3 py-2 text-right font-medium">OOS</th>
+                    <th className="px-3 py-2 text-right font-medium">Pending</th>
+                    <th className="px-3 py-2 text-right font-medium">Return</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/70">
+                  {pipelineCandidates.length ? pipelineCandidates.map(candidate => (
+                    <tr key={candidate.alpha_id}>
+                      <td className="truncate px-3 py-2 font-semibold text-ink" title={candidate.blockers.join(', ')}>
+                        {candidate.alpha_id}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Chip
+                          label={candidate.execution_paper ? 'EXECUTION' : 'FORWARD'}
+                          tone={candidate.execution_paper ? 'pos' : 'info'}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right ticker-num text-muted">
+                        {candidate.n_forward_periods ?? 0}/{alphaPipeline?.counts.forward_paper ? (data.forward_track?.evidence_gate_weeks ?? 8) : 8}
+                      </td>
+                      <td className="px-3 py-2 text-right ticker-num text-muted">
+                        {candidate.attested_pending_decisions ?? candidate.pending_decisions ?? 0}
+                      </td>
+                      <td className={`px-3 py-2 text-right ticker-num ${(candidate.cum_return ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>
+                        {fmtPct(candidate.cum_return)}
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-5 text-center text-faint">No attested forward-paper candidates.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {alphaPipeline?.handoff.gap_codes.length ? (
+              <Callout summary="Pipeline handoff is not fully connected" tone="warn">
+                {alphaPipeline.handoff.gap_codes.map(code => <div key={code}>- {code}</div>)}
+                {alphaPipeline.factory.verdict ? <div>- Factory: {alphaPipeline.factory.verdict}</div> : null}
+              </Callout>
+            ) : null}
+          </Panel>
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.7fr)]">
