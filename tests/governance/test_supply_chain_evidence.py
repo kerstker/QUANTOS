@@ -320,6 +320,7 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/artifact_admission_external_seal.py",
         "services/governance/json_integrity.py",
         "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
@@ -332,6 +333,7 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
     }

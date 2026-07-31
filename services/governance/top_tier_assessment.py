@@ -46,6 +46,11 @@ from services.governance.external_sigstore_evidence import (
     ExternalSigstoreEvidenceError,
     verify_external_sigstore_evidence,
 )
+from services.governance.artifact_admission_external_seal import (
+    STATUS as ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
+    ArtifactAdmissionExternalSealError,
+    verify_artifact_admission_external_seal,
+)
 from services.governance.cross_host_container_reproducibility import (
     CrossHostContainerEvidenceError,
     verify_signed_cross_host_container_evidence,
@@ -3024,6 +3029,7 @@ def _supply_chain_baseline_evidence(
     external_seal_status = document.get(
         "artifact_admission_decision_history_external_seal_status"
     )
+    external_admission_seal_verified = False
     if external_seal_status == "NOT_PROVIDED":
         pass
     elif external_seal_status == (
@@ -3075,6 +3081,94 @@ def _supply_chain_baseline_evidence(
             failures.append(
                 "artifact_admission_decision_history_external_seal"
             )
+    elif external_seal_status == ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS:
+        external_ref = document.get(
+            "artifact_admission_decision_history_external_seal_evidence_ref"
+        )
+        external_relative = (
+            Path(external_ref) if isinstance(external_ref, str) else None
+        )
+        if (
+            external_relative is None
+            or external_relative.as_posix()
+            != "evidence/external_sigstore/2026-07-31-admission"
+            or external_relative.is_absolute()
+            or ".." in external_relative.parts
+        ):
+            failures.append(
+                "artifact_admission_decision_history_external_seal_evidence_ref"
+            )
+        else:
+            try:
+                external_report = verify_artifact_admission_external_seal(
+                    repo_root / external_relative
+                )
+                local_seal_sha256 = source_file_sha256(
+                    repo_root / "evidence/artifact_admission_seal_latest.json"
+                )
+            except (
+                ArtifactAdmissionExternalSealError,
+                OSError,
+            ):
+                failures.append(
+                    "artifact_admission_decision_history_external_seal"
+                )
+            else:
+                if (
+                    external_report.get("status")
+                    != ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
+                    or external_report.get("seal_sha256")
+                    != local_seal_sha256
+                    or document.get(
+                        "artifact_admission_decision_history_external_seal_evidence_sha256"
+                    )
+                    != external_report.get("receipt_sha256")
+                    or document.get(
+                        "artifact_admission_decision_history_external_anchor_sha256"
+                    )
+                    != external_report.get("local_anchor_sha256")
+                    or document.get(
+                        "artifact_admission_decision_history_external_destination_class"
+                    )
+                    != "GITHUB_ACTIONS_REKOR"
+                    or document.get(
+                        "artifact_admission_decision_history_external_signature_verified"
+                    )
+                    is not True
+                    or document.get(
+                        "artifact_admission_decision_history_external_transparency_verified"
+                    )
+                    is not True
+                    or document.get(
+                        "artifact_admission_decision_history_external_workflow_run"
+                    )
+                    != external_report.get("workflow_run")
+                    or document.get(
+                        "artifact_admission_decision_history_external_source_commit"
+                    )
+                    != external_report.get("source_commit")
+                    or document.get(
+                        "artifact_admission_decision_history_external_integrated_at_ms"
+                    )
+                    != external_report.get("transparency_integrated_at_ms")
+                    or document.get(
+                        "artifact_admission_decision_history_external_worm_verified"
+                    )
+                    is not False
+                ):
+                    failures.append(
+                        "artifact_admission_decision_history_external_seal"
+                    )
+                else:
+                    external_admission_seal_verified = True
+                    evidence.extend(
+                        str(item.relative_to(repo_root)).replace("\\", "/")
+                        for item in sorted(
+                            (repo_root / external_relative).iterdir(),
+                            key=lambda item: item.name,
+                        )
+                        if item.is_file()
+                    )
     else:
         failures.append("artifact_admission_decision_history_external_seal_status")
     numeric = (
@@ -3099,8 +3193,11 @@ def _supply_chain_baseline_evidence(
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-        "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
     }
+    if not external_admission_seal_verified:
+        required_blockers.add(
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+        )
     if not cross_host_container_verified:
         required_blockers.add(
             "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
@@ -3291,6 +3388,7 @@ def _supply_chain_baseline_evidence(
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/artifact_admission_external_seal.py",
         "services/governance/json_integrity.py",
         "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
@@ -3322,6 +3420,7 @@ def _supply_chain_baseline_evidence(
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
         "tests/tools/test_artifact_admission_seal.py",
     }
     if cross_host_container_verified:
@@ -3730,9 +3829,16 @@ def _supply_chain_baseline_evidence(
             if cross_host_container_verified
             else "cross-host deployable-container reproduction is not proven; "
         )
+        + (
+            "the artifact-admission authority chain head is bound to the source "
+            "commit by a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 signature; "
+            if external_admission_seal_verified
+            else "the artifact-admission authority history has no verified "
+            "external chain-head seal; "
+        )
         + "an external signed receipt authority, source-native checkpoint/revocation "
-        "proofs, independent admission deployment, WORM retention, and an external "
-        "history seal remain open",
+        "proofs, independent admission deployment, and WORM object-lock retention "
+        "remain open",
     )
 
 

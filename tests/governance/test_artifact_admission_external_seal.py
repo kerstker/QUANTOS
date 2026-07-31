@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from services.governance.artifact_admission_external_seal import (
+    AUTHORITY,
+    LIMITATIONS,
+    RETENTION,
+    STATUS,
+    ArtifactAdmissionExternalSealError,
+    verify_artifact_admission_external_seal,
+)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github" / "workflows" / "sigstore-evidence.yml"
+
+
+def test_external_chain_head_verifier_fails_closed_without_evidence(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ArtifactAdmissionExternalSealError,
+        match="directory is unavailable",
+    ):
+        verify_artifact_admission_external_seal(tmp_path / "missing")
+
+
+def test_external_chain_head_contract_has_no_operational_authority() -> None:
+    assert STATUS == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+        "ARTIFACT_ADMISSION_CHAIN_HEAD"
+    )
+    assert AUTHORITY == {
+        "credential_access": False,
+        "deployment": False,
+        "execution": False,
+        "live_trading": False,
+        "order_submission": False,
+    }
+    assert RETENTION == {
+        "github_artifact_days": 90,
+        "rekor_transparency_log": True,
+        "worm_object_lock": False,
+    }
+    assert "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK" in LIMITATIONS
+
+
+def test_external_sigstore_workflow_signs_and_verifies_chain_head() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "Build artifact-admission chain-head receipt" in source
+    assert "evidence/artifact_admission_seal_latest.json" in source
+    assert (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+        in source
+    )
+    assert "ARTIFACT_ADMISSION_CHAIN_HEAD" in source
+    assert (
+        "artifact-admission-external-receipt.sigstore.json"
+        in source
+    )
+    assert "verify_artifact_admission_external_seal" in source
+    assert (
+        "artifact-admission-chain-head-${{ github.run_id }}-"
+        "${{ github.run_attempt }}"
+        in source
+    )
+    assert "retention-days: 90" in source
+    assert "worm_object_lock" in source
+    assert "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK" in source

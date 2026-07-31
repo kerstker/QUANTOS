@@ -47,6 +47,11 @@ from services.governance.external_sigstore_evidence import (  # noqa: E402
     ExternalSigstoreEvidenceError,
     verify_external_sigstore_evidence,
 )
+from services.governance.artifact_admission_external_seal import (  # noqa: E402
+    STATUS as ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
+    ArtifactAdmissionExternalSealError,
+    verify_artifact_admission_external_seal,
+)
 DEFAULT_SBOM = REPO / "evidence" / "sbom.cdx.json"
 DEFAULT_EVIDENCE = REPO / "evidence" / "supply_chain_baseline.json"
 DEFAULT_NPM_AUDIT = REPO / "evidence" / "vulnerability" / "npm_audit_latest.json"
@@ -193,8 +198,10 @@ _MANIFESTS = (
     "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
     "evidence/external_sigstore/2026-07-30/trusted-root.json",
     "services/governance/external_sigstore_evidence.py",
+    "services/governance/artifact_admission_external_seal.py",
     "services/governance/json_integrity.py",
     "tests/governance/test_external_sigstore_evidence.py",
+    "tests/governance/test_artifact_admission_external_seal.py",
     "services/governance/reproducibility_evidence.py",
     "services/governance/cross_host_container_reproducibility.py",
     "services/governance/vulnerability_evidence.py",
@@ -350,6 +357,41 @@ def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
         json.JSONDecodeError,
     ) as exc:
         raise ValueError("artifact-admission external seal verification failed") from exc
+    external_ref = "evidence/external_sigstore/2026-07-31-admission"
+    external_path = root / external_ref
+    if external_path.exists():
+        try:
+            report = verify_artifact_admission_external_seal(external_path)
+        except ArtifactAdmissionExternalSealError as exc:
+            raise ValueError(
+                "artifact-admission signed external seal verification failed"
+            ) from exc
+        if (
+            report.get("status") != ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
+            or report.get("seal_sha256") != _sha256_bytes(evidence_bytes)
+            or report.get("local_anchor_sha256") != document["anchor_sha256"]
+            or report.get("external_signature_verified") is not True
+            or report.get("transparency_log_verified") is not True
+            or report.get("worm_retention_verified") is not False
+        ):
+            raise ValueError(
+                "artifact-admission signed external seal is inconsistent"
+            )
+        return {
+            "status": ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
+            "evidence_ref": external_ref,
+            "evidence_sha256": report["receipt_sha256"],
+            "anchor_sha256": report["local_anchor_sha256"],
+            "destination_class": "GITHUB_ACTIONS_REKOR",
+            "external_signature_verified": True,
+            "external_transparency_verified": True,
+            "external_workflow_run": report["workflow_run"],
+            "external_source_commit": report["source_commit"],
+            "transparency_integrated_at_ms": (
+                report["transparency_integrated_at_ms"]
+            ),
+            "worm_retention_verified": False,
+        }
     return {
         # The external anchor deliberately lives outside the repository. A
         # clean checkout can validate this retained declaration and digest,
@@ -636,6 +678,7 @@ def build_supply_chain_artifacts(
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
         "services/governance/external_sigstore_evidence.py",
+        "services/governance/artifact_admission_external_seal.py",
         "services/governance/json_integrity.py",
         "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
@@ -648,6 +691,7 @@ def build_supply_chain_artifacts(
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
         "tests/tools/test_artifact_admission_seal.py",
         "tests/governance/test_artifact_admission_provisioning.py",
         *(
@@ -848,6 +892,18 @@ def build_supply_chain_artifacts(
         "artifact_admission_decision_history_external_signature_verified": (
             admission_external_seal.get("external_signature_verified", False)
         ),
+        "artifact_admission_decision_history_external_transparency_verified": (
+            admission_external_seal.get("external_transparency_verified", False)
+        ),
+        "artifact_admission_decision_history_external_workflow_run": (
+            admission_external_seal.get("external_workflow_run")
+        ),
+        "artifact_admission_decision_history_external_source_commit": (
+            admission_external_seal.get("external_source_commit")
+        ),
+        "artifact_admission_decision_history_external_integrated_at_ms": (
+            admission_external_seal.get("transparency_integrated_at_ms")
+        ),
         "artifact_admission_decision_history_external_worm_verified": (
             admission_external_seal.get("worm_retention_verified", False)
         ),
@@ -905,7 +961,14 @@ def build_supply_chain_artifacts(
                 if admission_store_provisioned
                 else ["ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"]
             ),
-            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
+            *(
+                []
+                if admission_external_seal["status"]
+                == ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
+                else [
+                    "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+                ]
+            ),
             *(["CONTAINER_VULNERABILITY_POLICY_FAILED"] if not container_policy_passed else []),
             *(["PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED"] if unresolved_optional else []),
         ],

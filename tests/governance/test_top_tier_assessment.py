@@ -822,6 +822,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "services/governance/external_sigstore_evidence.py": (
             "def verify_external_sigstore_evidence(): pass\n"
         ),
+        "services/governance/artifact_admission_external_seal.py": (
+            "def verify_artifact_admission_external_seal(): pass\n"
+        ),
         "services/governance/json_integrity.py": (
             "def load_json_without_duplicate_keys(): pass\n"
         ),
@@ -863,6 +866,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
         ),
         "tests/governance/test_external_sigstore_evidence.py": (
             "def test_external_sigstore(): pass\n"
+        ),
+        "tests/governance/test_artifact_admission_external_seal.py": (
+            "def test_external_chain_head(): pass\n"
         ),
         "tests/tools/test_artifact_admission_seal.py": (
             "def test_artifact_admission_seal(): pass\n"
@@ -1168,6 +1174,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_admission_store.py",
                 "services/governance/artifact_receipt_auth.py",
                 "services/governance/external_sigstore_evidence.py",
+                "services/governance/artifact_admission_external_seal.py",
                 "services/governance/json_integrity.py",
                 "services/governance/cross_host_container_reproducibility.py",
                 "tools/verify_artifact_admission.py",
@@ -1182,6 +1189,7 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "tests/governance/test_artifact_receipt_auth.py",
             "tests/governance/test_artifact_admission_provisioning.py",
             "tests/governance/test_external_sigstore_evidence.py",
+            "tests/governance/test_artifact_admission_external_seal.py",
             "tests/tools/test_artifact_admission_seal.py",
         ],
         "m4_blockers": [

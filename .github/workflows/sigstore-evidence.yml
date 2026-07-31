@@ -399,6 +399,129 @@ jobs:
               encoding="utf-8",
           )
           PY
+      - name: Build artifact-admission chain-head receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+          QUANTOS_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUANTOS_RUN_ID: ${{ github.run_id }}
+          QUANTOS_SERVER_URL: ${{ github.server_url }}
+          QUANTOS_REPOSITORY: ${{ github.repository }}
+          QUANTOS_SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+
+          source = Path("evidence/artifact_admission_seal_latest.json")
+          target = Path("external-sigstore/artifact-admission-external")
+          target.mkdir(parents=True, exist_ok=True)
+          seal_bytes = source.read_bytes()
+          seal = json.loads(seal_bytes)
+          if (
+              seal.get("schema_version") != 1
+              or seal.get("operation_verdict") != "PASS"
+              or seal.get("institutional_seal_status")
+              != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
+              or seal.get("authority_mutated") is not False
+              or seal.get("anchor_created") is not True
+              or seal.get("destination_class")
+              not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+          ):
+              raise SystemExit("artifact-admission local seal is invalid")
+          receipt = {
+              "schema_version": 1,
+              "status": (
+                  "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+                  "ARTIFACT_ADMISSION_CHAIN_HEAD"
+              ),
+              "source_commit": os.environ["QUANTOS_SOURCE_COMMIT"],
+              "workflow_run": (
+                  f"{os.environ['QUANTOS_SERVER_URL']}/"
+                  f"{os.environ['QUANTOS_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['QUANTOS_RUN_ID']}/attempts/"
+                  f"{os.environ['QUANTOS_RUN_ATTEMPT']}"
+              ),
+              "certificate_identity": os.environ[
+                  "QUANTOS_CERTIFICATE_IDENTITY"
+              ],
+              "certificate_oidc_issuer": (
+                  "https://token.actions.githubusercontent.com"
+              ),
+              "sigstore_version": "4.4.0",
+              "rekor_version": 1,
+              "seal_sha256": hashlib.sha256(seal_bytes).hexdigest(),
+              "local_anchor_sha256": seal["anchor_sha256"],
+              "commitment": seal["commitment"],
+              "retention": {
+                  "github_artifact_days": 90,
+                  "rekor_transparency_log": True,
+                  "worm_object_lock": False,
+              },
+              "limitations": [
+                  "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK",
+                  "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVIDED",
+                  "SOURCE_NATIVE_CHECKPOINT_REVOCATION_NOT_PROVIDED",
+              ],
+              "authority": {
+                  "credential_access": False,
+                  "deployment": False,
+                  "execution": False,
+                  "live_trading": False,
+                  "order_submission": False,
+              },
+          }
+          (target / "artifact-admission-seal.json").write_bytes(seal_bytes)
+          (target / "artifact-admission-external-receipt.json").write_text(
+              json.dumps(
+                  receipt,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  indent=2,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          shutil.copyfile(
+              "external-sigstore/trusted-root.json",
+              target / "trusted-root.json",
+          )
+          PY
+      - name: Sign artifact-admission chain head through GitHub ambient OIDC
+        run: >-
+          python -m sigstore sign
+          --rekor-version 1
+          --bundle
+          external-sigstore/artifact-admission-external/artifact-admission-external-receipt.sigstore.json
+          external-sigstore/artifact-admission-external/artifact-admission-external-receipt.json
+      - name: Verify external artifact-admission chain-head receipt
+        env:
+          QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: |
+          python -m sigstore verify identity \
+            --offline \
+            --bundle \
+              external-sigstore/artifact-admission-external/artifact-admission-external-receipt.sigstore.json \
+            --cert-identity "${QUANTOS_CERTIFICATE_IDENTITY}" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            external-sigstore/artifact-admission-external/artifact-admission-external-receipt.json
+          python - <<'PY'
+          from services.governance.artifact_admission_external_seal import (
+              verify_artifact_admission_external_seal,
+          )
+
+          report = verify_artifact_admission_external_seal(
+              "external-sigstore/artifact-admission-external"
+          )
+          if (
+              report["external_signature_verified"] is not True
+              or report["transparency_log_verified"] is not True
+              or report["worm_retention_verified"] is not False
+          ):
+              raise SystemExit("external chain-head verification is incomplete")
+          PY
       - name: Record honest external evidence receipt
         env:
           QUANTOS_CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
@@ -470,5 +593,11 @@ jobs:
             external-sigstore/quantos-console-cross-host.json
             external-sigstore/quantos-console-cross-host.sigstore.json
             external-sigstore/cross-host-container-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: artifact-admission-chain-head-${{ github.run_id }}-${{ github.run_attempt }}
+          path: external-sigstore/artifact-admission-external/
           if-no-files-found: error
           retention-days: 90
