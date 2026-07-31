@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import re
 import stat
@@ -145,6 +146,22 @@ def _object(content: bytes, label: str) -> dict[str, Any]:
 
 def _digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def artifact_admission_seal_contract_sha256(
+    value: Mapping[str, Any],
+) -> str:
+    """Hash one seal contract independently of checkout line endings."""
+    if not isinstance(value, Mapping):
+        raise TypeError("artifact-admission seal contract must be an object")
+    return _digest(
+        json.dumps(
+            dict(value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
 
 
 def _verify_commitment(value: Any) -> dict[str, Any]:
@@ -320,6 +337,9 @@ def verify_artifact_admission_external_seal(
         "source_commit": receipt["source_commit"],
         "workflow_run": receipt["workflow_run"],
         "seal_sha256": receipt["seal_sha256"],
+        "seal_contract_sha256": (
+            artifact_admission_seal_contract_sha256(seal)
+        ),
         "receipt_sha256": _digest(receipt_bytes),
         "local_anchor_sha256": receipt["local_anchor_sha256"],
         "commitment": commitment,
@@ -346,5 +366,6 @@ __all__ = [
     "RETENTION",
     "STATUS",
     "ArtifactAdmissionExternalSealError",
+    "artifact_admission_seal_contract_sha256",
     "verify_artifact_admission_external_seal",
 ]

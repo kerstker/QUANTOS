@@ -16,6 +16,9 @@ from services.governance.artifact_admission_external_seal import (
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "sigstore-evidence.yml"
+EVIDENCE = (
+    ROOT / "evidence" / "external_sigstore" / "2026-07-31-admission"
+)
 
 
 def test_external_chain_head_verifier_fails_closed_without_evidence(
@@ -71,3 +74,25 @@ def test_external_sigstore_workflow_signs_and_verifies_chain_head() -> None:
     assert "worm_object_lock" in source
     assert "GITHUB_ARTIFACT_IS_NOT_WORM_OBJECT_LOCK" in source
     assert 'type(seal.get("anchor_created")) is not bool' in source
+
+
+def test_retained_external_chain_head_is_cryptographically_verified() -> None:
+    report = verify_artifact_admission_external_seal(EVIDENCE)
+
+    assert report["status"] == STATUS
+    assert report["source_commit"] == (
+        "fd860b3b3ab80a8e17aa31dbfc329b5297214352"
+    )
+    assert report["workflow_run"] == (
+        "https://github.com/kerstker/QUANTOS/actions/runs/"
+        "30608526530/attempts/1"
+    )
+    assert report["external_signature_verified"] is True
+    assert report["transparency_log_verified"] is True
+    assert report["signed_certificate_timestamp_verified"] is True
+    assert report["worm_retention_verified"] is False
+    assert report["commitment"]["event_count"] == 4
+    assert report["commitment"]["decision_count"] == 0
+    assert report["commitment"]["overall_hash"] == (
+        "9e2ba2d3add5642a376dbcbfd5cf4adb61a9649ae727e03925d890ed6cb229b7"
+    )

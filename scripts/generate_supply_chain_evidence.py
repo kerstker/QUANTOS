@@ -50,6 +50,7 @@ from services.governance.external_sigstore_evidence import (  # noqa: E402
 from services.governance.artifact_admission_external_seal import (  # noqa: E402
     STATUS as ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
     ArtifactAdmissionExternalSealError,
+    artifact_admission_seal_contract_sha256,
     verify_artifact_admission_external_seal,
 )
 DEFAULT_SBOM = REPO / "evidence" / "sbom.cdx.json"
@@ -197,6 +198,10 @@ _MANIFESTS = (
     "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
     "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
     "evidence/external_sigstore/2026-07-30/trusted-root.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+    "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
     "services/governance/external_sigstore_evidence.py",
     "services/governance/artifact_admission_external_seal.py",
     "services/governance/json_integrity.py",
@@ -368,7 +373,8 @@ def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
             ) from exc
         if (
             report.get("status") != ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
-            or report.get("seal_sha256") != _sha256_bytes(evidence_bytes)
+            or report.get("seal_contract_sha256")
+            != artifact_admission_seal_contract_sha256(document)
             or report.get("local_anchor_sha256") != document["anchor_sha256"]
             or report.get("external_signature_verified") is not True
             or report.get("transparency_log_verified") is not True

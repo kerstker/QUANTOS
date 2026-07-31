@@ -276,12 +276,20 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
     )
     assert evidence["artifact_admission_read_consistency_status"] == ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT")
-    assert evidence["artifact_admission_decision_history_external_seal_status"] == (
-        "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED"
+    external_chain_head_verified = (
+        evidence["artifact_admission_decision_history_external_seal_status"]
+        == (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+            "ARTIFACT_ADMISSION_CHAIN_HEAD"
+        )
     )
     assert evidence[
         "artifact_admission_decision_history_external_seal_evidence_ref"
-    ] == "evidence/artifact_admission_seal_latest.json"
+    ] == (
+        "evidence/external_sigstore/2026-07-31-admission"
+        if external_chain_head_verified
+        else "evidence/artifact_admission_seal_latest.json"
+    )
     assert len(
         evidence[
             "artifact_admission_decision_history_external_seal_evidence_sha256"
@@ -294,10 +302,17 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     ) == 64
     assert evidence[
         "artifact_admission_decision_history_external_destination_class"
-    ] in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+    ] in (
+        {"GITHUB_ACTIONS_REKOR"}
+        if external_chain_head_verified
+        else {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+    )
     assert evidence[
         "artifact_admission_decision_history_external_signature_verified"
-    ] is False
+    ] is external_chain_head_verified
+    assert evidence[
+        "artifact_admission_decision_history_external_transparency_verified"
+    ] is external_chain_head_verified
     assert evidence[
         "artifact_admission_decision_history_external_worm_verified"
     ] is False
@@ -344,12 +359,29 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert set(evidence["artifact_admission_verification_paths"]) == (
         expected_admission_verification_paths
     )
-    assert {
+    required_m4_blockers = {
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-        "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
-    } <= set(evidence["m4_blockers"])
+    }
+    if external_chain_head_verified:
+        assert (
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+            not in evidence["m4_blockers"]
+        )
+        assert evidence[
+            "artifact_admission_decision_history_external_workflow_run"
+        ].startswith("https://github.com/kerstker/QUANTOS/actions/runs/")
+        assert len(
+            evidence[
+                "artifact_admission_decision_history_external_source_commit"
+            ]
+        ) == 40
+    else:
+        required_m4_blockers.add(
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+        )
+    assert required_m4_blockers <= set(evidence["m4_blockers"])
     assert (
         "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING"
         not in evidence["m4_blockers"]

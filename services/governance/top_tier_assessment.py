@@ -49,6 +49,7 @@ from services.governance.external_sigstore_evidence import (
 from services.governance.artifact_admission_external_seal import (
     STATUS as ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
     ArtifactAdmissionExternalSealError,
+    artifact_admission_seal_contract_sha256,
     verify_artifact_admission_external_seal,
 )
 from services.governance.cross_host_container_reproducibility import (
@@ -3030,6 +3031,7 @@ def _supply_chain_baseline_evidence(
         "artifact_admission_decision_history_external_seal_status"
     )
     external_admission_seal_verified = False
+    external_admission_seal_evidence: list[str] = []
     if external_seal_status == "NOT_PROVIDED":
         pass
     elif external_seal_status == (
@@ -3103,12 +3105,19 @@ def _supply_chain_baseline_evidence(
                 external_report = verify_artifact_admission_external_seal(
                     repo_root / external_relative
                 )
-                local_seal_sha256 = source_file_sha256(
-                    repo_root / "evidence/artifact_admission_seal_latest.json"
+                local_seal_document = load_json_without_duplicate_keys(
+                    (
+                        repo_root
+                        / "evidence/artifact_admission_seal_latest.json"
+                    ).read_bytes()
                 )
             except (
                 ArtifactAdmissionExternalSealError,
                 OSError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                TypeError,
+                ValueError,
             ):
                 failures.append(
                     "artifact_admission_decision_history_external_seal"
@@ -3117,8 +3126,11 @@ def _supply_chain_baseline_evidence(
                 if (
                     external_report.get("status")
                     != ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
-                    or external_report.get("seal_sha256")
-                    != local_seal_sha256
+                    or not isinstance(local_seal_document, dict)
+                    or external_report.get("seal_contract_sha256")
+                    != artifact_admission_seal_contract_sha256(
+                        local_seal_document
+                    )
                     or document.get(
                         "artifact_admission_decision_history_external_seal_evidence_sha256"
                     )
@@ -3161,7 +3173,7 @@ def _supply_chain_baseline_evidence(
                     )
                 else:
                     external_admission_seal_verified = True
-                    evidence.extend(
+                    external_admission_seal_evidence.extend(
                         str(item.relative_to(repo_root)).replace("\\", "/")
                         for item in sorted(
                             (repo_root / external_relative).iterdir(),
@@ -3584,6 +3596,7 @@ def _supply_chain_baseline_evidence(
         *admission_evidence,
         *external_sigstore_evidence,
         *cross_host_container_evidence,
+        *external_admission_seal_evidence,
     ]
     npm_audit_ref = document.get("npm_vulnerability_evidence_ref")
     npm_audit_relative = Path(npm_audit_ref) if isinstance(npm_audit_ref, str) else None
