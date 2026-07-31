@@ -4757,6 +4757,9 @@ def _strong_identity_baseline_evidence(
         "current_maturity": "M3",
         "authentication_profile": "OIDC_ASYMMETRIC_MTLS_MFA",
         "allowed_algorithms": ["EdDSA", "RS256"],
+        "oidc_key_registry_status": (
+            "KID_SELECTED_DIGEST_AND_MIN_GENERATION_PINNED_ROTATION_REVOCATION_ENFORCED"
+        ),
         "token_binding_standard": "RFC8705_CNF_X5T_S256",
         "actor_source": "OIDC_ISSUER_AND_IMMUTABLE_SUBJECT",
         "valid_identity_path_passed": True,
@@ -4783,7 +4786,7 @@ def _strong_identity_baseline_evidence(
         "browser_pkce_invariants_verified": True,
         "external_key_custody_status": "NOT_PROVIDED",
         "identity_lifecycle_evidence_status": (
-            "LOCAL_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
+            "LOCAL_OIDC_KEY_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
         ),
         "ai_human_identity_exclusion_status": ("LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN"),
         "live_trading_authority_granted": False,
@@ -4816,6 +4819,9 @@ def _strong_identity_baseline_evidence(
         "stale-authentication": "STALE_AUTHENTICATION",
         "missing-mfa": "AMR_REQUIRED",
         "wrong-certificate-binding": "CERTIFICATE_BINDING_MISMATCH",
+        "missing-key-id": "OIDC_KEY_ID_REQUIRED",
+        "unknown-key-id": "OIDC_KEY_NOT_TRUSTED",
+        "revoked-key-id": "OIDC_KEY_REVOKED",
         "reader-role-escalation": "ROLE_REQUIRED",
         "token-role-self-enrollment": "PRINCIPAL_NOT_REGISTERED",
         "token-role-self-escalation": "ROLE_NOT_GRANTED",
@@ -4881,6 +4887,7 @@ def _strong_identity_baseline_evidence(
     required_implementations = {
         "quantos/contracts/identity.py",
         "services/governance/strong_identity.py",
+        "services/governance/oidc_key_registry.py",
         "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
@@ -4918,6 +4925,7 @@ def _strong_identity_baseline_evidence(
 
     required_verification = {
         "tests/governance/test_strong_identity.py",
+        "tests/governance/test_oidc_key_registry.py",
         "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
@@ -4954,6 +4962,9 @@ def _strong_identity_baseline_evidence(
     try:
         promotion_source = (repo_root / "services/promotion_api/main.py").read_text(encoding="utf-8")
         verifier_source = (repo_root / "services/governance/strong_identity.py").read_text(encoding="utf-8")
+        oidc_key_registry_source = (repo_root / "services/governance/oidc_key_registry.py").read_text(
+            encoding="utf-8"
+        )
         access_review_source = (repo_root / "services/governance/identity_access_review.py").read_text(
             encoding="utf-8"
         )
@@ -5033,9 +5044,24 @@ def _strong_identity_baseline_evidence(
                 "x5t#S256",
                 "client_cert_chain_verified",
                 "required_amr_values",
+                "QUANTOS_OIDC_KEY_REGISTRY_SHA256",
+                "QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION",
+                "select_oidc_verification_key",
             )
         ):
             failures.append("verifier_markers")
+        if "QUANTOS_OIDC_PUBLIC_KEY_FILE" in verifier_source:
+            failures.append("legacy_static_oidc_key_configuration")
+        if not all(
+            marker in oidc_key_registry_source
+            for marker in (
+                "OIDC_KEY_REACTIVATION_FORBIDDEN",
+                "OIDC_KEY_REGISTRY_ROLLBACK",
+                "OIDC_KEY_REVOKED",
+                "load_pem_public_key",
+            )
+        ):
+            failures.append("oidc_key_registry_markers")
         if "Authorization" not in frontend_source or "Bearer" not in frontend_source:
             failures.append("frontend_bearer_identity")
         pkce_markers = (

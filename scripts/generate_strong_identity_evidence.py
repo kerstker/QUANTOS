@@ -43,6 +43,10 @@ from services.governance.identity_authorization import (  # noqa: E402
     evaluate_authorization,
     load_identity_authorization_registry,
 )
+from services.governance.oidc_key_registry import (  # noqa: E402
+    OidcKeyRegistry,
+    OidcVerificationKey,
+)
 from services.governance.strong_identity import (  # noqa: E402
     OidcMtlsVerifier,
     OidcTrustPolicy,
@@ -61,6 +65,7 @@ AUDIENCE = "quantos-governance"
 _IMPLEMENTATION_PATHS = (
     "quantos/contracts/identity.py",
     "services/governance/strong_identity.py",
+    "services/governance/oidc_key_registry.py",
     "services/governance/identity_access_review.py",
     "services/governance/identity_authorization.py",
     "services/governance/identity_authorization_store.py",
@@ -73,6 +78,7 @@ _IMPLEMENTATION_PATHS = (
 )
 _VERIFICATION_PATHS = (
     "tests/governance/test_strong_identity.py",
+    "tests/governance/test_oidc_key_registry.py",
     "tests/governance/test_identity_access_review.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
@@ -138,8 +144,19 @@ def _claims(certificate_der: bytes, *, subject: str = "alice", **updates: Any) -
     return claims
 
 
-def _token(key: Ed25519PrivateKey, claims: dict[str, Any], *, typ: str = "at+jwt") -> str:
-    return jwt.encode(claims, key, algorithm="EdDSA", headers={"typ": typ})
+def _token(
+    key: Ed25519PrivateKey,
+    claims: dict[str, Any],
+    *,
+    typ: str = "at+jwt",
+    kid: str = "evidence-key-1",
+) -> str:
+    return jwt.encode(
+        claims,
+        key,
+        algorithm="EdDSA",
+        headers={"typ": typ, "kid": kid},
+    )
 
 
 def _observe(
@@ -215,7 +232,20 @@ def build_strong_identity_evidence(
     policy = OidcTrustPolicy(
         issuer=ISSUER,
         audience=AUDIENCE,
-        public_key_pem=public_pem,
+        key_registry=OidcKeyRegistry(
+            issuer=ISSUER,
+            generation=1,
+            keys=(
+                OidcVerificationKey(
+                    kid="evidence-key-1",
+                    algorithm="EdDSA",
+                    public_key_pem=public_pem,
+                    status="ACTIVE",
+                    not_before=NOW - 100,
+                    not_after=NOW + 1_000,
+                ),
+            ),
+        ),
         allowed_algorithms=("EdDSA",),
         required_acr_values=("urn:quantos:aal2",),
         required_amr_values=("mfa",),
@@ -322,6 +352,42 @@ def build_strong_identity_evidence(
     )
 
     attacker_key = Ed25519PrivateKey.generate()
+    attacker_public_pem = (
+        attacker_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("ascii")
+    )
+    revoked_verifier = OidcMtlsVerifier(
+        policy.model_copy(
+            update={
+                "key_registry": OidcKeyRegistry(
+                    issuer=ISSUER,
+                    generation=2,
+                    keys=(
+                        OidcVerificationKey(
+                            kid="evidence-key-1",
+                            algorithm="EdDSA",
+                            public_key_pem=public_pem,
+                            status="REVOKED",
+                            not_before=NOW - 100,
+                            not_after=NOW + 1_000,
+                        ),
+                        OidcVerificationKey(
+                            kid="evidence-key-2",
+                            algorithm="EdDSA",
+                            public_key_pem=attacker_public_pem,
+                            status="ACTIVE",
+                            not_before=NOW - 100,
+                            not_after=NOW + 1_000,
+                        ),
+                    ),
+                )
+            }
+        )
+    )
     reader_identity = verify_claims(
         _claims(
             certificate_der,
@@ -410,7 +476,7 @@ def build_strong_identity_evidence(
                     _claims(certificate_der),
                     "ephemeral-attacker-value-at-least-32-bytes",
                     algorithm="HS256",
-                    headers={"typ": "at+jwt"},
+                    headers={"typ": "at+jwt", "kid": "evidence-key-1"},
                 ),
                 client_certificate_der=certificate_der,
                 now=NOW,
@@ -452,6 +518,36 @@ def build_strong_identity_evidence(
             "DENIED",
             lambda: verify_claims(_claims(certificate_der), cert=b"different-certificate"),
             expected_code="CERTIFICATE_BINDING_MISMATCH",
+        ),
+        _observe(
+            "missing-key-id",
+            "DENIED",
+            lambda: verifier.verify(
+                _token(idp_key, _claims(certificate_der), kid=""),
+                client_certificate_der=certificate_der,
+                now=NOW,
+            ),
+            expected_code="OIDC_KEY_ID_REQUIRED",
+        ),
+        _observe(
+            "unknown-key-id",
+            "DENIED",
+            lambda: verifier.verify(
+                _token(idp_key, _claims(certificate_der), kid="unknown"),
+                client_certificate_der=certificate_der,
+                now=NOW,
+            ),
+            expected_code="OIDC_KEY_NOT_TRUSTED",
+        ),
+        _observe(
+            "revoked-key-id",
+            "DENIED",
+            lambda: revoked_verifier.verify(
+                _token(idp_key, _claims(certificate_der)),
+                client_certificate_der=certificate_der,
+                now=NOW,
+            ),
+            expected_code="OIDC_KEY_REVOKED",
         ),
         _observe(
             "reader-role-escalation",
@@ -640,6 +736,9 @@ def build_strong_identity_evidence(
         "recorded_at": recorded_at,
         "authentication_profile": "OIDC_ASYMMETRIC_MTLS_MFA",
         "allowed_algorithms": ["EdDSA", "RS256"],
+        "oidc_key_registry_status": (
+            "KID_SELECTED_DIGEST_AND_MIN_GENERATION_PINNED_ROTATION_REVOCATION_ENFORCED"
+        ),
         "token_binding_standard": "RFC8705_CNF_X5T_S256",
         "actor_source": "OIDC_ISSUER_AND_IMMUTABLE_SUBJECT",
         "governance_roles": [role.value for role in GovernanceRole],
@@ -675,7 +774,7 @@ def build_strong_identity_evidence(
         "browser_pkce_invariants_verified": True,
         "external_key_custody_status": "NOT_PROVIDED",
         "identity_lifecycle_evidence_status": (
-            "LOCAL_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
+            "LOCAL_OIDC_KEY_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
         ),
         "ai_human_identity_exclusion_status": ("LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN"),
         "live_trading_authority_granted": False,

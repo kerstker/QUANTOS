@@ -7,6 +7,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
 
+from services.governance.oidc_key_registry import (
+    OidcKeyRegistry,
+    OidcVerificationKey,
+)
+
 
 NOW = 10_000
 CERTIFICATE_DER = b"verified-client-certificate-der-fixture"
@@ -28,7 +33,20 @@ def identity_fixture():
     policy = OidcTrustPolicy(
         issuer="https://identity.example.test",
         audience="quantos-governance",
-        public_key_pem=public_pem,
+        key_registry=OidcKeyRegistry(
+            issuer="https://identity.example.test",
+            generation=1,
+            keys=(
+                OidcVerificationKey(
+                    kid="key-1",
+                    algorithm="EdDSA",
+                    public_key_pem=public_pem,
+                    status="ACTIVE",
+                    not_before=NOW - 100,
+                    not_after=NOW + 1_000,
+                ),
+            ),
+        ),
         allowed_algorithms=("EdDSA",),
         required_acr_values=("urn:quantos:aal2",),
         required_amr_values=("mfa",),
@@ -60,12 +78,12 @@ def _claims(**updates):
     return claims
 
 
-def _token(private_key, claims=None, *, algorithm="EdDSA", typ="at+jwt"):
+def _token(private_key, claims=None, *, algorithm="EdDSA", typ="at+jwt", kid="key-1"):
     return jwt.encode(
         claims or _claims(),
         private_key,
         algorithm=algorithm,
-        headers={"typ": typ},
+        headers={"typ": typ, "kid": kid},
     )
 
 
@@ -129,7 +147,7 @@ def test_verifier_rejects_wrong_signature_and_algorithm(identity_fixture):
         _claims(),
         "attacker-secret-value-at-least-32-bytes",
         algorithm="HS256",
-        headers={"typ": "at+jwt"},
+        headers={"typ": "at+jwt", "kid": "key-1"},
     )
     with pytest.raises(StrongIdentityError, match="algorithm"):
         verifier.verify(symmetric, client_certificate_der=CERTIFICATE_DER, now=NOW)
@@ -145,6 +163,139 @@ def test_verifier_rejects_wrong_token_type(identity_fixture):
             client_certificate_der=CERTIFICATE_DER,
             now=NOW,
         )
+
+
+def test_verifier_requires_registered_kid_and_rejects_revoked_rotation_key():
+    from services.governance.strong_identity import (
+        OidcMtlsVerifier,
+        OidcTrustPolicy,
+        StrongIdentityError,
+    )
+
+    old_private = Ed25519PrivateKey.generate()
+    new_private = Ed25519PrivateKey.generate()
+
+    def public_pem(private_key: Ed25519PrivateKey) -> str:
+        return private_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+
+    registry = OidcKeyRegistry(
+        issuer="https://identity.example.test",
+        generation=2,
+        keys=(
+            OidcVerificationKey(
+                kid="new",
+                algorithm="EdDSA",
+                public_key_pem=public_pem(new_private),
+                status="ACTIVE",
+                not_before=NOW - 100,
+                not_after=NOW + 1_000,
+            ),
+            OidcVerificationKey(
+                kid="old",
+                algorithm="EdDSA",
+                public_key_pem=public_pem(old_private),
+                status="REVOKED",
+                not_before=NOW - 100,
+                not_after=NOW + 1_000,
+            ),
+        ),
+    )
+    verifier = OidcMtlsVerifier(
+        OidcTrustPolicy(
+            issuer="https://identity.example.test",
+            audience="quantos-governance",
+            key_registry=registry,
+            allowed_algorithms=("EdDSA",),
+            required_acr_values=("urn:quantos:aal2",),
+            required_amr_values=("mfa",),
+            maximum_authentication_age_seconds=300,
+            maximum_token_lifetime_seconds=600,
+            clock_skew_seconds=0,
+        )
+    )
+
+    identity = verifier.verify(
+        _token(new_private, kid="new"),
+        client_certificate_der=CERTIFICATE_DER,
+        now=NOW,
+    )
+    assert identity.subject == "human-alice-immutable-id"
+
+    cases = (
+        (_token(new_private, kid=""), "OIDC_KEY_ID_REQUIRED"),
+        (_token(new_private, kid="unknown"), "OIDC_KEY_NOT_TRUSTED"),
+        (_token(old_private, kid="old"), "OIDC_KEY_REVOKED"),
+    )
+    for token, code in cases:
+        with pytest.raises(StrongIdentityError) as error:
+            verifier.verify(
+                token,
+                client_certificate_der=CERTIFICATE_DER,
+                now=NOW,
+            )
+        assert error.value.code == code
+
+
+def test_environment_loader_requires_digest_and_generation_pinned_registry(tmp_path):
+    from services.governance.strong_identity import (
+        StrongIdentityUnavailable,
+        load_oidc_policy_from_environment,
+    )
+
+    private_key = Ed25519PrivateKey.generate()
+    public_pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+    registry = OidcKeyRegistry(
+        issuer="https://identity.example.test",
+        generation=3,
+        keys=(
+            OidcVerificationKey(
+                kid="current",
+                algorithm="EdDSA",
+                public_key_pem=public_pem,
+                status="ACTIVE",
+                not_before=NOW - 100,
+                not_after=NOW + 1_000,
+            ),
+        ),
+    )
+    registry_bytes = (registry.model_dump_json(indent=2) + "\n").encode("utf-8")
+    registry_path = tmp_path / "oidc-key-registry.json"
+    registry_path.write_bytes(registry_bytes)
+    environ = {
+        "QUANTOS_OIDC_ISSUER": registry.issuer,
+        "QUANTOS_OIDC_AUDIENCE": "quantos-governance",
+        "QUANTOS_OIDC_KEY_REGISTRY_FILE": str(registry_path),
+        "QUANTOS_OIDC_KEY_REGISTRY_SHA256": hashlib.sha256(registry_bytes).hexdigest(),
+        "QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION": "3",
+        "QUANTOS_OIDC_ALGORITHMS": "EdDSA",
+    }
+
+    assert load_oidc_policy_from_environment(environ).key_registry == registry
+
+    bad_digest = {**environ, "QUANTOS_OIDC_KEY_REGISTRY_SHA256": "0" * 64}
+    with pytest.raises(StrongIdentityUnavailable) as digest_error:
+        load_oidc_policy_from_environment(bad_digest)
+    assert digest_error.value.code == "OIDC_KEY_REGISTRY_DIGEST_MISMATCH"
+
+    rollback = {**environ, "QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION": "4"}
+    with pytest.raises(StrongIdentityUnavailable) as rollback_error:
+        load_oidc_policy_from_environment(rollback)
+    assert rollback_error.value.code == "OIDC_KEY_REGISTRY_ROLLBACK"
+
+    legacy_static_key_only = {
+        "QUANTOS_OIDC_ISSUER": registry.issuer,
+        "QUANTOS_OIDC_AUDIENCE": "quantos-governance",
+        "QUANTOS_OIDC_PUBLIC_KEY_FILE": str(registry_path),
+    }
+    with pytest.raises(StrongIdentityUnavailable) as legacy_error:
+        load_oidc_policy_from_environment(legacy_static_key_only)
+    assert legacy_error.value.code == "IDENTITY_POLICY_UNAVAILABLE"
 
 
 def test_trusted_tls_scope_is_required_and_headers_are_irrelevant():
