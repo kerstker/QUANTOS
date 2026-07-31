@@ -58,7 +58,7 @@
   --glow-accent:  0 0 0 1px rgba(240,185,11,.28), 0 6px 20px -10px rgba(240,185,11,.30);
 
   --font-sans: "Noto Sans SC Variable", "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, "Noto Sans SC Variable", monospace;
 
   font-family: var(--font-sans);
 }
