@@ -14,7 +14,10 @@ from services.governance.cross_host_container_reproducibility import (
 
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = (
-    ROOT / "evidence" / "external_sigstore" / "2026-07-31-container"
+    ROOT
+    / "evidence"
+    / "external_sigstore"
+    / "2026-07-31-container-548ff"
 )
 TRUSTED_ROOT = (
     ROOT / "evidence" / "external_sigstore" / "2026-07-30" / "trusted-root.json"
@@ -33,10 +36,10 @@ def test_retained_cross_host_container_sigstore_evidence_verifies_offline() -> N
         "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST_CONTAINER"
     )
     assert result["source_commit"] == (
-        "0667d9805723cc9d7b0db7e23448e67b4571fdf7"
+        "548ffdaa68289319578338e1ecb9181ab3c1aca2"
     )
     assert result["container_input_sha256"] == (
-        "ba569d12b17d68ab49f39d56d4a990b4b528501e3f1d863507ff7b093ec85aeb"
+        "f63d0ef5a6778455dda07af44e167b829a136a1b7e785740348daade0f34b2f3"
     )
     assert result["builders"] == ["ubuntu-22.04", "ubuntu-24.04"]
     assert result["archive_byte_identical"] is True

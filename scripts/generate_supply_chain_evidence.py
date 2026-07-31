@@ -654,7 +654,9 @@ def build_supply_chain_artifacts(
             raise ValueError(
                 f"retained external Sigstore evidence is invalid: {exc}"
             ) from exc
-    cross_host_container_ref = "evidence/external_sigstore/2026-07-31-container"
+    cross_host_container_ref = (
+        "evidence/external_sigstore/2026-07-31-container-548ff"
+    )
     cross_host_container_directory = root / cross_host_container_ref
     cross_host_container_report: dict[str, Any] | None = None
     if cross_host_container_directory.exists():
