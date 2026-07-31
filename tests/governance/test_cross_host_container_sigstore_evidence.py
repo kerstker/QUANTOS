@@ -33,10 +33,10 @@ def test_retained_cross_host_container_sigstore_evidence_verifies_offline() -> N
         "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST_CONTAINER"
     )
     assert result["source_commit"] == (
-        "fc211ac6d4bdd1db879397b8022cf9198b8ed4cb"
+        "0667d9805723cc9d7b0db7e23448e67b4571fdf7"
     )
     assert result["container_input_sha256"] == (
-        "e38805f8a103d61cd17d125a163ed23eabab70292557b3c10a63878ab4ccf072"
+        "ba569d12b17d68ab49f39d56d4a990b4b528501e3f1d863507ff7b093ec85aeb"
     )
     assert result["builders"] == ["ubuntu-22.04", "ubuntu-24.04"]
     assert result["archive_byte_identical"] is True
