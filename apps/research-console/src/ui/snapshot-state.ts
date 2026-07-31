@@ -52,9 +52,12 @@ export function normalizeSnapshotDisplayState(value: unknown): SnapshotDisplaySt
  * resolved before the ordinary mock/backend/real distinction.
  */
 export function deriveSnapshotDisplayState(input: SnapshotStateInput): SnapshotDisplayState {
-  if (input.dataStatus) return input.dataStatus;
+  // Transport state is authoritative during refresh/failure.  A retained REAL
+  // payload may still be rendered for continuity, but it must not keep actions
+  // enabled until revalidation completes.
   if (input.apiState === 'loading') return 'LOADING';
   if (input.apiState === 'error') return 'UNAVAILABLE';
+  if (input.dataStatus) return input.dataStatus;
   if (!input.usingBackend) return 'MOCK';
   if (input.noDataYet) return 'NO_SNAPSHOT';
   if (input.evidenceData) return 'EVIDENCE';

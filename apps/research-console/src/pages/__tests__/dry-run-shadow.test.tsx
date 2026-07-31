@@ -4,6 +4,8 @@ import type { DryRunPipelinePayload } from '@/lib/types/research';
 import DryRunPipeline from '@/pages/DryRunPipeline';
 
 const state = vi.hoisted(() => ({
+  apiState: 'connected' as 'connected' | 'loading',
+  usingBackend: true,
   payload: {
     source: 'BACKEND_COMPUTED_SNAPSHOT',
     read_only: true,
@@ -155,9 +157,9 @@ const state = vi.hoisted(() => ({
 vi.mock('@/ui/useConsoleSnapshot', () => ({
   useConsoleSnapshot: () => ({
     payload: state.payload,
-    apiState: 'connected',
+    apiState: state.apiState,
     error: null,
-    usingBackend: true,
+    usingBackend: state.usingBackend,
     snapshotState: 'real',
   }),
 }));
@@ -184,5 +186,20 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('0.125')).toBeInTheDocument();
     expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
     expect(screen.queryByText('IDLE')).not.toBeInTheDocument();
+  });
+
+  it('uses a neutral initial loading state instead of flashing false alarms', () => {
+    state.apiState = 'loading';
+    state.usingBackend = false;
+    try {
+      render(<DryRunPipeline />);
+      expect(screen.getByText('正在建立只读纸面快照')).toBeInTheDocument();
+      expect(screen.queryByText('chain invalid')).not.toBeInTheDocument();
+      expect(screen.queryByText('NO REAL PROVIDER')).not.toBeInTheDocument();
+      expect(screen.queryByText('CHECK')).not.toBeInTheDocument();
+    } finally {
+      state.apiState = 'connected';
+      state.usingBackend = true;
+    }
   });
 });

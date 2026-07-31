@@ -142,6 +142,36 @@ function FlowStep({
   );
 }
 
+function PaperLoadingState() {
+  return (
+    <div
+      className="mt-4 rounded-lg border border-line bg-panel p-5"
+      aria-live="polite"
+      aria-label="paper snapshot loading"
+    >
+      <div className="flex items-center gap-3">
+        <span className="q-live h-2.5 w-2.5 rounded-full bg-info" />
+        <div>
+          <div className="text-sm font-semibold text-ink">正在建立只读纸面快照</div>
+          <div className="mt-1 text-3xs text-faint">
+            Connecting to the paper ledger, scheduler, market marks and risk evidence.
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+        {['Equity', 'PnL', 'Positions', 'Reconciliation', 'Official gate'].map(label => (
+          <div key={label} className="rounded-md border border-line/70 bg-inset/40 p-3">
+            <div className="text-3xs uppercase tracking-wider text-faint">{label}</div>
+            <div className="mt-3 h-5 w-2/3 animate-pulse rounded bg-line/60" />
+            <div className="mt-2 h-2.5 w-1/2 animate-pulse rounded bg-line/40" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 h-28 animate-pulse rounded-lg border border-line/70 bg-inset/30" />
+    </div>
+  );
+}
+
 function StrategyRow({
   alpha,
   value,
@@ -261,6 +291,7 @@ export default function DryRunPipeline() {
     signal => fetchDryRunSnapshot(signal),
     [refreshTick],
   );
+  const initialLoading = apiState === 'loading' && !usingBackend;
   const data = usingBackend ? payload! : mockPayload;
   const shadow = data.paper_shadow;
   const health = data.paper_health;
@@ -340,7 +371,9 @@ export default function DryRunPipeline() {
       <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full ${shadowRunning ? 'q-live bg-pos' : 'bg-neg'}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${
+              initialLoading ? 'q-live bg-info' : shadowRunning ? 'q-live bg-pos' : 'bg-neg'
+            }`} />
             <span className="text-3xs font-semibold uppercase tracking-[0.16em] text-faint">Paper Operations</span>
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-[30px]">
@@ -359,12 +392,23 @@ export default function DryRunPipeline() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-inset/50 px-3 py-2 text-3xs text-faint">
         <Chip label={transportLabel} tone={transportTone} />
-        <span>{shadow?.provider ?? 'NO REAL PROVIDER'}</span>
+        <span>{initialLoading ? 'AWAITING READ-ONLY SNAPSHOT' : shadow?.provider ?? 'NO REAL PROVIDER'}</span>
         <span className="hidden text-line-strong sm:inline">|</span>
-        <span>更新 {fmtTime(observedAt)} · {fmtAge(observedAgeMs)} ago</span>
-        <span className="ml-auto">{error ? <span className="text-neg">{error}</span> : data.data_provenance}</span>
+        <span>
+          {initialLoading
+            ? 'transport handshake in progress'
+            : <>更新 {fmtTime(observedAt)} · {fmtAge(observedAgeMs)} ago</>}
+        </span>
+        <span className="ml-auto">
+          {error
+            ? <span className="text-neg">{error}</span>
+            : initialLoading ? 'NO DECISION DATA YET' : data.data_provenance}
+        </span>
       </div>
 
+      {initialLoading ? (
+        <PaperLoadingState />
+      ) : (
       <LoadingVeil active={apiState === 'loading'}>
         <div className="grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-panel px-4 py-4 md:grid-cols-5">
           <Metric
@@ -508,6 +552,7 @@ export default function DryRunPipeline() {
           </Panel>
         </div>
       </LoadingVeil>
+      )}
     </PageShell>
   );
 }

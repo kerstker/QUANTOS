@@ -49,6 +49,15 @@ describe('snapshot display state contract', () => {
     })).toBe('BLOCKED');
   });
 
+  it('lets transport revalidation override a retained positive snapshot', () => {
+    expect(deriveSnapshotDisplayState({
+      apiState: 'loading', usingBackend: true, realData: true, dataStatus: 'REAL',
+    })).toBe('LOADING');
+    expect(deriveSnapshotDisplayState({
+      apiState: 'error', usingBackend: true, evidenceData: true, dataStatus: 'EVIDENCE',
+    })).toBe('UNAVAILABLE');
+  });
+
   it('only permits the positive snapshot states; blocked/stale/offline states fail closed', () => {
     const denied: SnapshotDisplayState[] = [
       'MOCK', 'BLOCKED', 'STALE', 'UNAVAILABLE', 'NO_SNAPSHOT', 'LOADING',

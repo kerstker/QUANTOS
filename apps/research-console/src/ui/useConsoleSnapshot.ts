@@ -10,11 +10,11 @@ import {
 export type ConsoleApiState = 'disabled' | 'loading' | 'connected' | 'error';
 
 export interface SnapshotResult<T> {
-  /** Backend payload when connected, else null (caller falls back to mock). */
+  /** Latest backend payload, retained while a refresh is in flight. */
   payload: T | null;
   apiState: ConsoleApiState;
   error: string | null;
-  /** True only when a live backend snapshot is in hand. */
+  /** True when a backend snapshot is in hand, including during revalidation. */
   usingBackend: boolean;
   /** Normalized admission state derived from the transport and payload. */
   snapshotState?: SnapshotDisplayState;
@@ -65,7 +65,12 @@ export function useConsoleSnapshot<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiEnabled, ...deps]);
 
-  const usingBackend = apiState === 'connected' && payload !== null;
+  // Keep the last verified snapshot visible while a periodic refresh is in
+  // flight.  The display state remains LOADING, so mutating actions stay
+  // fail-closed, but operators never see a fabricated zero/mock flash between
+  // two healthy read-only snapshots.
+  const usingBackend = payload !== null
+    && (apiState === 'connected' || apiState === 'loading');
   const payloadRecord = payload as Record<string, unknown> | null;
   const quality = payloadRecord?.data_quality;
   const qualityRecord = quality && typeof quality === 'object'
