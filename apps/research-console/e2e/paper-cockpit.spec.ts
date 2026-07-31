@@ -215,12 +215,71 @@ const dryRunSnapshot = {
   safety_note: 'L2 only.',
 };
 
+function blocker(
+  id: string,
+  classification: 'L2_SAFE_NOW' | 'NEEDS_EXTERNAL' | 'POST_L2',
+  currentMaturity: string,
+  targetMaturity: string,
+) {
+  return {
+    id,
+    domain: id.split('.')[0].toLowerCase(),
+    tier: 'B',
+    target_maturity: targetMaturity,
+    current_maturity: currentMaturity,
+    classification,
+    description: `${id} institutional evidence requirement`,
+    required_evidence: ['implementation', 'verification', 'governance'],
+    red_line: false,
+    checker: 'e2e_fixed_contract',
+    next_action: `Retain and independently verify the next evidence for ${id}.`,
+    status: 'PARTIAL',
+    meets_target: false,
+    evidence: [`evidence/${id.toLowerCase().replaceAll('.', '_')}.json`],
+    detail: `${currentMaturity} evidence is valid but remains below ${targetMaturity}.`,
+  };
+}
+
+const systemCompletenessSnapshot = {
+  source: 'BACKEND_COMPUTED_SNAPSHOT',
+  read_only: true,
+  api_version: '0.1.0',
+  data_provenance: 'TOP_TIER_EVIDENCE_ASSESSMENT',
+  assessment: { schema_version: 1, verdict: 'NOT_TOP_TIER' },
+  summary: {
+    total: 22, passed: 15, partial: 7, failed: 0, unverified: 0,
+    manual_evidence_required: 0, red_lines_failed: 0,
+  },
+  domains: [],
+  requirements: [
+    blocker('AI.MODEL.REGISTRY.REDTEAM', 'L2_SAFE_NOW', 'M2', 'M3'),
+    blocker('GOV.IDENTITY.STRONG_AUTH', 'L2_SAFE_NOW', 'M3', 'M4'),
+    blocker('OPS.RESTORE.DRILL', 'L2_SAFE_NOW', 'M3', 'M4'),
+    blocker('PLATFORM.SUPPLY_CHAIN', 'L2_SAFE_NOW', 'M3', 'M4'),
+    blocker('VALIDATION.CHALLENGER.MODEL_RISK', 'L2_SAFE_NOW', 'M2', 'M3'),
+    blocker('DATA.VENDOR.DEPTH', 'NEEDS_EXTERNAL', 'M2', 'M4'),
+    blocker('EXECUTION.MULTIVENUE.SOR', 'POST_L2', 'M3', 'M4'),
+  ],
+  red_lines: [],
+  safety_boundary: {
+    read_only_console: true,
+    execution_boundary: 'LIVE_TRADING_DISALLOWED',
+    authorized_level: 'L2_DRY_RUN_ONLY',
+    live_trading_authorized: false,
+  },
+  inventory: {
+    domains: [], total_services_modules: 320, total_services_loc: 80_000,
+    n_test_files: 400, n_test_functions: 2_000, n_console_pages: 24, n_console_endpoints: 30,
+  },
+};
+
 async function installFixedApi(page: Page) {
   await page.addInitScript(fixedNow => {
     Date.now = () => fixedNow;
   }, OBSERVED_AT + 30_000);
   await page.route('**/api/v1/console/runtime-contract', route => route.fulfill({ json: runtimeContract }));
   await page.route('**/api/v1/console/dry-run', route => route.fulfill({ json: dryRunSnapshot }));
+  await page.route('**/api/v1/console/system-completeness', route => route.fulfill({ json: systemCompletenessSnapshot }));
 }
 
 test.beforeEach(async ({ page }) => {
@@ -253,4 +312,30 @@ test('paper cockpit visual contract', async ({ page }) => {
     element.style.visibility = 'hidden';
   });
   await expect(page).toHaveScreenshot('paper-cockpit.png');
+});
+
+test('pre-live blocker queue is accessible, concise, and never overflows', async ({ page }) => {
+  await page.goto('/research/system-completeness');
+  await expect(page.getByRole('heading', { name: '系统完整度审查' })).toBeVisible();
+  await expect(page.getByText('Pre-live blocker queue')).toBeVisible();
+  await expect(page.getByTestId('prelive-blocker')).toHaveCount(7);
+  await expect(page.getByText('5 work now')).toBeVisible();
+  await expect(page.getByText('1 external')).toBeVisible();
+  await expect(page.getByText('1 after L2')).toBeVisible();
+
+  const geometry = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    document: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(geometry.document).toBeLessThanOrEqual(geometry.viewport);
+  expect(geometry.body).toBeLessThanOrEqual(geometry.viewport);
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(
+    results.violations,
+    results.violations.map(item => `${item.id}: ${item.help}`).join('\n'),
+  ).toEqual([]);
 });

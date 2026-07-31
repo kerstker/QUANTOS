@@ -1,5 +1,23 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 实盘前阻断队列与高级证据分层：**
+> `SystemCompleteness` 默认视图不再把 22 项 Tier A/B 证据表、域成熟度、红线、仓库清单和
+> L2 边界同时平铺。页面直接消费 `TOP_TIER_EVIDENCE_ASSESSMENT`，只投影机器判定的未完成项，
+> 并按 `L2_SAFE_NOW → NEEDS_EXTERNAL → POST_L2` 固定排序为 `WORK NOW / EXTERNAL / AFTER L2`；
+> 每项仅显示当前→目标成熟度、真实 detail 和 registry 的 next_action。完整 22 项矩阵、证据路径、
+> 域清单和安全边界仍保留在 `Advanced evidence matrix` disclosure，未删除审计信息，也未引入
+> 手写完成率。固定 Chromium 门禁新增该页面：7 项真实形状 blocker、1440×1000 零横向溢出、
+> WCAG 2.0/2.1 A+AA 零违规；纸面驾驶舱视觉基线保持不变。现场外部探针再次使用仓库外
+> `key/key.txt` 执行无业务数据 echo，Provider 仍返回 HTTP 401，未生成 PASS 证据；最新 GitHub
+> Actions `30628839808` 两个 job 均为 0 steps，官方 annotation 明确是账户付款/额度在调度前拒绝，
+> 不是代码失败。`crowd_contra` 虽有正 embargoed OOS Sharpe，但全局 2539 trials 校正后的 DSR
+> 仅 0.0203、正式 evaluator=FAIL，因此未冒充正向 challenger。矩阵继续诚实保持 15/22、
+> `NOT_TOP_TIER`。完整门禁同时抓到一个只在实时运行时出现的 Phase 13 竞态：生成审计制品后，
+> 5 分钟 paper worker 更新输入会令静态逐字段测试失败。现把 `paper_health_10k.json` 与
+> `shadow_status.json` 明确列为动态输入并纳入 `input_hash`；检查器只允许这两个声明输入的快照漂移，
+> 同时继续逐位核对代码、配置、其余静态输入、安全标志、派生状态和内部哈希，篡改
+> `ALLOW_ORDER_SUBMISSION` 的负控制会立即失败。实时纸面无需停机即可稳定跑统一门禁，L2 边界不变。
+
 > **2026-07-31 正式纸面前向证据时钟与成熟态可视化：**
 > 现场审计确认自动 canary SOR 持续增长至 692 runs，三条正式策略也持续盯市、资金费与
 > 对账，但九引擎 pre-fill 风险门按设计拒绝新 fills：crowd/top 各过 8/9，carry 过 7/9；

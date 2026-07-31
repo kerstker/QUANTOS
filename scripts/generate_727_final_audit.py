@@ -47,6 +47,15 @@ SAFETY_FLAG_NAMES = (
     "ALLOW_AI_DIRECT_TRADING",
     "REQUIRE_HUMAN_APPROVAL",
 )
+_DYNAMIC_REPORT_INPUTS = {
+    "evidence/paper_shadow_status.json": frozenset(
+        {
+            "data/cache/paper_health_10k.json",
+            "evidence/shadow_status.json",
+        }
+    ),
+}
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -445,6 +454,7 @@ def _paper_shadow(root: Path, now_ms: int, flags: dict[str, bool], validation: d
     paths = [
         "docs/QUANTOS_727.md",
         "docs/engineering/specs/2026-07-27-shadow-phase7-design.md",
+        "data/cache/paper_health_10k.json",
         "evidence/shadow_status.json",
         "evidence/alpha_paper_cycle.json",
         "tests/live",
@@ -701,6 +711,85 @@ def _strip_markdown_volatile(text: str) -> str:
     )
 
 
+def _valid_snapshot_file_bundle(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"kind", "exists", "size_bytes", "sha256"}
+        and value.get("kind") == "file"
+        and value.get("exists") is True
+        and isinstance(value.get("size_bytes"), int)
+        and not isinstance(value.get("size_bytes"), bool)
+        and value["size_bytes"] >= 0
+        and isinstance(value.get("sha256"), str)
+        and _SHA256_PATTERN.fullmatch(value["sha256"]) is not None
+    )
+
+
+def phase13_artifact_matches(
+    relative_path: str,
+    actual: Any,
+    expected: Any,
+) -> bool:
+    """Compare a Phase 13 artifact without racing declared live projections.
+
+    Static reports remain byte-semantic after volatile timestamps are removed.
+    The paper/shadow report may lag only the two explicitly declared live JSON
+    sources. Its embedded input manifest must remain self-consistent, every
+    static input and common control field must match current code, and the L2
+    safety/status invariants are re-evaluated from the retained snapshot.
+    """
+
+    if _strip_json_volatile(actual) == _strip_json_volatile(expected):
+        return True
+    dynamic_inputs = _DYNAMIC_REPORT_INPUTS.get(relative_path)
+    if dynamic_inputs is None or not isinstance(actual, dict) or not isinstance(expected, dict):
+        return False
+    actual_inputs = actual.get("inputs")
+    expected_inputs = expected.get("inputs")
+    if not isinstance(actual_inputs, dict) or not isinstance(expected_inputs, dict):
+        return False
+    if set(actual_inputs) != set(expected_inputs) or not dynamic_inputs <= set(actual_inputs):
+        return False
+    if actual.get("input_hash") != _canonical_hash(actual_inputs):
+        return False
+    if any(not _valid_snapshot_file_bundle(actual_inputs.get(path)) for path in dynamic_inputs):
+        return False
+    for path in set(actual_inputs) - dynamic_inputs:
+        if actual_inputs[path] != expected_inputs[path]:
+            return False
+
+    ignored = {
+        "generated_at_ms",
+        "commit",
+        "status",
+        "blockers",
+        "paper",
+        "shadow",
+        "inputs",
+        "input_hash",
+    }
+    actual_common = {key: value for key, value in actual.items() if key not in ignored}
+    expected_common = {key: value for key, value in expected.items() if key not in ignored}
+    if actual_common != expected_common or not _safety_ok(actual.get("safety_flags", {})):
+        return False
+    if actual.get("safety_verdict") != "PASS":
+        return False
+
+    paper = actual.get("paper")
+    shadow = actual.get("shadow")
+    if not isinstance(paper, dict) or not isinstance(shadow, dict):
+        return False
+    paper_ready = paper.get("paper_ready")
+    shadow_ready = shadow.get("shadow_ready")
+    if type(paper_ready) is not bool or type(shadow_ready) is not bool:
+        return False
+    if paper.get("status") != ("READY_FOR_FORWARD_PAPER" if paper_ready else "NOT_READY"):
+        return False
+    if shadow.get("status") != ("READY_FOR_SHADOW" if shadow_ready else "NOT_READY"):
+        return False
+    return actual.get("status") == ("READY_FOR_SHADOW" if shadow_ready else "NOT_READY")
+
+
 def render_final_audit(reports: dict[str, dict[str, Any]], *, now_ms: int) -> str:
     rows = [
         ("Autonomy Kernel", reports["evidence/autonomy_readiness.json"]["status"]),
@@ -889,7 +978,7 @@ def main(argv: list[str] | None = None) -> int:
             except (OSError, ValueError) as exc:
                 print(f"unreadable Phase 13 artifact {relative_path}: {exc}", file=sys.stderr)
                 return 1
-            if _strip_json_volatile(actual) != _strip_json_volatile(expected):
+            if not phase13_artifact_matches(relative_path, actual, expected):
                 print(f"drifted Phase 13 artifact: {relative_path}", file=sys.stderr)
                 return 1
         if not markdown_path.is_file() or _strip_markdown_volatile(markdown_path.read_text(encoding="utf-8")) != _strip_markdown_volatile(markdown):

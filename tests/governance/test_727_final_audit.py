@@ -8,6 +8,7 @@ from scripts.generate_727_final_audit import (
     ALLOWED_STATUSES,
     OUTPUTS,
     build_phase13,
+    phase13_artifact_matches,
 )
 
 
@@ -38,10 +39,11 @@ def test_phase13_current_artifacts_match_read_only_generator() -> None:
     reports, markdown = build_phase13(root=ROOT)
     for relative_path, expected in reports.items():
         actual = json.loads((ROOT / relative_path).read_text(encoding="utf-8-sig"))
-        for key in ("generated_at_ms", "commit"):
-            actual.pop(key, None)
-            expected.pop(key, None)
-        assert actual == expected, f"regenerate {relative_path}"
+        assert phase13_artifact_matches(
+            relative_path,
+            actual,
+            expected,
+        ), f"regenerate {relative_path}"
     actual_markdown = (ROOT / "docs/reports/QUANTOS_AUTONOMY_FINAL_AUDIT.md").read_text(
         encoding="utf-8"
     )
@@ -49,6 +51,30 @@ def test_phase13_current_artifacts_match_read_only_generator() -> None:
     assert "当前总状态：`NOT_READY`" in actual_markdown
     assert "READY_FOR_LIVE" not in actual_markdown
     assert "READY_FOR_LIVE" not in markdown
+
+
+def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> None:
+    reports, _ = build_phase13(root=ROOT, now_ms=1_800_000_000_000)
+    path = "evidence/paper_shadow_status.json"
+    expected = reports[path]
+    actual = json.loads(json.dumps(expected))
+    actual["inputs"]["data/cache/paper_health_10k.json"]["sha256"] = "f" * 64
+    actual["paper"]["forward_evidence"] = {"present": True, "n_forward_periods": 2}
+    actual["input_hash"] = _canonical_hash(actual["inputs"])
+
+    assert phase13_artifact_matches(path, actual, expected)
+
+    actual["safety_flags"]["ALLOW_ORDER_SUBMISSION"] = True
+    assert not phase13_artifact_matches(path, actual, expected)
+
+
+def _canonical_hash(value: object) -> str:
+    import hashlib
+
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def test_trial_ledger_remains_partial_when_provenance_is_incomplete() -> None:
