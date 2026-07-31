@@ -32,6 +32,10 @@ from services.governance.approval import (  # noqa: E402
     open_request,
     review,
 )
+from services.governance.identity_access_review import (  # noqa: E402
+    IdentityAccessReviewError,
+    create_identity_access_review,
+)
 from services.governance.identity_authorization import (  # noqa: E402
     IdentityAuthorizationGrant,
     IdentityAuthorizationRegistry,
@@ -57,6 +61,7 @@ AUDIENCE = "quantos-governance"
 _IMPLEMENTATION_PATHS = (
     "quantos/contracts/identity.py",
     "services/governance/strong_identity.py",
+    "services/governance/identity_access_review.py",
     "services/governance/identity_authorization.py",
     "services/governance/identity_authorization_store.py",
     "config/identity_authorization_registry.json",
@@ -68,6 +73,7 @@ _IMPLEMENTATION_PATHS = (
 )
 _VERIFICATION_PATHS = (
     "tests/governance/test_strong_identity.py",
+    "tests/governance/test_identity_access_review.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
     "tests/governance/test_promotion_api_boundary.py",
@@ -230,16 +236,46 @@ def build_strong_identity_evidence(
         subject: verify_claims(_claims(certificate_der, subject=subject)) for subject in ("alice", "bob", "carol")
     }
     valid_identity_path_passed = all(identity.assurance.value == "OIDC_MTLS_MFA" for identity in identities.values())
+
+    def reviewed_grant(
+        *,
+        subject: str,
+        principal_kind: str,
+        roles: tuple[GovernanceRole, ...],
+        enabled: bool = True,
+        revoked: bool = False,
+        tokens_valid_after_ms: int = 0,
+        access_review_expires_at_ms: int = (NOW + 1_000) * 1_000,
+    ) -> IdentityAuthorizationGrant:
+        reviewer = identities["alice"] if subject != "alice" else identities["bob"]
+        access_review = None
+        if enabled and not revoked:
+            access_review = create_identity_access_review(
+                subject_issuer=ISSUER,
+                subject=subject,
+                principal_kind=principal_kind,
+                roles=roles,
+                reviewer=reviewer,
+                reviewed_at_ms=(NOW - 10) * 1_000,
+                expires_at_ms=access_review_expires_at_ms,
+            )
+        return IdentityAuthorizationGrant(
+            issuer=ISSUER,
+            subject=subject,
+            principal_kind=principal_kind,
+            enabled=enabled,
+            revoked=revoked,
+            roles=roles,
+            tokens_valid_after_ms=tokens_valid_after_ms,
+            access_review_expires_at_ms=access_review_expires_at_ms,
+            access_review=access_review,
+        )
+
     authorization_grants = {
-        identity.actor_id: IdentityAuthorizationGrant(
-            issuer=identity.issuer,
+        identity.actor_id: reviewed_grant(
             subject=identity.subject,
             principal_kind="HUMAN",
-            enabled=True,
-            revoked=False,
             roles=tuple(GovernanceRole),
-            tokens_valid_after_ms=0,
-            access_review_expires_at_ms=(NOW + 1_000) * 1_000,
         )
         for identity in identities.values()
     }
@@ -317,63 +353,42 @@ def build_strong_identity_evidence(
         )
 
     self_escalation_registry = one_grant_registry(
-        IdentityAuthorizationGrant(
-            issuer=ISSUER,
+        reviewed_grant(
             subject="self-escalator",
             principal_kind="HUMAN",
-            enabled=True,
-            revoked=False,
             roles=(GovernanceRole.PROMOTION_READER,),
-            tokens_valid_after_ms=0,
-            access_review_expires_at_ms=(NOW + 1_000) * 1_000,
         )
     )
     revoked_registry = one_grant_registry(
-        IdentityAuthorizationGrant(
-            issuer=ISSUER,
+        reviewed_grant(
             subject="self-escalator",
             principal_kind="HUMAN",
             enabled=False,
             revoked=True,
             roles=(GovernanceRole.PROMOTION_APPROVER,),
-            tokens_valid_after_ms=0,
-            access_review_expires_at_ms=(NOW + 1_000) * 1_000,
         )
     )
     stale_review_registry = one_grant_registry(
-        IdentityAuthorizationGrant(
-            issuer=ISSUER,
+        reviewed_grant(
             subject="self-escalator",
             principal_kind="HUMAN",
-            enabled=True,
-            revoked=False,
             roles=(GovernanceRole.PROMOTION_APPROVER,),
-            tokens_valid_after_ms=0,
             access_review_expires_at_ms=NOW * 1_000,
         )
     )
     old_token_registry = one_grant_registry(
-        IdentityAuthorizationGrant(
-            issuer=ISSUER,
+        reviewed_grant(
             subject="self-escalator",
             principal_kind="HUMAN",
-            enabled=True,
-            revoked=False,
             roles=(GovernanceRole.PROMOTION_APPROVER,),
             tokens_valid_after_ms=(NOW - 5) * 1_000,
-            access_review_expires_at_ms=(NOW + 1_000) * 1_000,
         )
     )
     workload_registry = one_grant_registry(
-        IdentityAuthorizationGrant(
-            issuer=ISSUER,
+        reviewed_grant(
             subject="research-agent",
             principal_kind="WORKLOAD",
-            enabled=True,
-            revoked=False,
             roles=(GovernanceRole.PROMOTION_READER,),
-            tokens_valid_after_ms=0,
-            access_review_expires_at_ms=(NOW + 1_000) * 1_000,
         )
     )
     attack_cases = [
@@ -473,6 +488,21 @@ def build_strong_identity_evidence(
                 registry=revoked_registry,
             ),
             expected_code="PRINCIPAL_REVOKED",
+        ),
+        _observe(
+            "self-approved-access-review",
+            "DENIED",
+            lambda: create_identity_access_review(
+                subject_issuer=ISSUER,
+                subject="alice",
+                principal_kind="HUMAN",
+                roles=(GovernanceRole.PROMOTION_APPROVER,),
+                reviewer=identities["alice"],
+                reviewed_at_ms=NOW * 1_000,
+                expires_at_ms=(NOW + 1_000) * 1_000,
+            ),
+            expected_code="ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN",
+            expected_exception=IdentityAccessReviewError,
         ),
         _observe(
             "expired-application-access-review",
@@ -619,6 +649,9 @@ def build_strong_identity_evidence(
         "application_authorization_decision_authority_status": ("LOCAL_SINGLE_SQLITE_REGISTRY_DECISION_CAS_UNSEALED"),
         "application_authorization_principal_classes": ["HUMAN", "WORKLOAD"],
         "application_authorization_token_role_mode": ("TOKEN_AND_APPLICATION_GRANT_INTERSECTION"),
+        "access_review_attestation_status": (
+            "HASH_BOUND_INDEPENDENT_STRONG_IDENTITY_REVIEW_ENFORCED_LOCAL_AUTHORITY"
+        ),
         "three_party_identity_separation_passed": True,
         "three_party_case": three_party,
         "attack_cases": attack_cases,
@@ -642,7 +675,7 @@ def build_strong_identity_evidence(
         "browser_pkce_invariants_verified": True,
         "external_key_custody_status": "NOT_PROVIDED",
         "identity_lifecycle_evidence_status": (
-            "LOCAL_REVOCATION_TOKEN_EPOCH_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
+            "LOCAL_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
         ),
         "ai_human_identity_exclusion_status": ("LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN"),
         "live_trading_authority_granted": False,

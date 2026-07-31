@@ -4765,6 +4765,9 @@ def _strong_identity_baseline_evidence(
         "application_authorization_decision_authority_status": ("LOCAL_SINGLE_SQLITE_REGISTRY_DECISION_CAS_UNSEALED"),
         "application_authorization_principal_classes": ["HUMAN", "WORKLOAD"],
         "application_authorization_token_role_mode": ("TOKEN_AND_APPLICATION_GRANT_INTERSECTION"),
+        "access_review_attestation_status": (
+            "HASH_BOUND_INDEPENDENT_STRONG_IDENTITY_REVIEW_ENFORCED_LOCAL_AUTHORITY"
+        ),
         "three_party_identity_separation_passed": True,
         "all_attack_cases_passed": True,
         "legacy_shared_token_accepted": False,
@@ -4780,7 +4783,7 @@ def _strong_identity_baseline_evidence(
         "browser_pkce_invariants_verified": True,
         "external_key_custody_status": "NOT_PROVIDED",
         "identity_lifecycle_evidence_status": (
-            "LOCAL_REVOCATION_TOKEN_EPOCH_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
+            "LOCAL_REVOCATION_TOKEN_EPOCH_HASH_BOUND_ACCESS_REVIEW_ENFORCED_EXTERNAL_OPERATIONS_NOT_PROVIDED"
         ),
         "ai_human_identity_exclusion_status": ("LOCAL_HUMAN_WORKLOAD_CLASS_ENFORCED_NOT_EXTERNALLY_PROVEN"),
         "live_trading_authority_granted": False,
@@ -4817,6 +4820,7 @@ def _strong_identity_baseline_evidence(
         "token-role-self-enrollment": "PRINCIPAL_NOT_REGISTERED",
         "token-role-self-escalation": "ROLE_NOT_GRANTED",
         "revoked-application-principal": "PRINCIPAL_REVOKED",
+        "self-approved-access-review": "ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN",
         "expired-application-access-review": "ACCESS_REVIEW_EXPIRED",
         "token-before-application-epoch": "TOKEN_ISSUED_BEFORE_AUTHORIZATION",
         "workload-human-governance-action": "WORKLOAD_HUMAN_ACTION_FORBIDDEN",
@@ -4877,6 +4881,7 @@ def _strong_identity_baseline_evidence(
     required_implementations = {
         "quantos/contracts/identity.py",
         "services/governance/strong_identity.py",
+        "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
         "config/identity_authorization_registry.json",
@@ -4913,6 +4918,7 @@ def _strong_identity_baseline_evidence(
 
     required_verification = {
         "tests/governance/test_strong_identity.py",
+        "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
         "tests/governance/test_promotion_api_boundary.py",
@@ -4948,6 +4954,9 @@ def _strong_identity_baseline_evidence(
     try:
         promotion_source = (repo_root / "services/promotion_api/main.py").read_text(encoding="utf-8")
         verifier_source = (repo_root / "services/governance/strong_identity.py").read_text(encoding="utf-8")
+        access_review_source = (repo_root / "services/governance/identity_access_review.py").read_text(
+            encoding="utf-8"
+        )
         authorization_source = (repo_root / "services/governance/identity_authorization.py").read_text(encoding="utf-8")
         authorization_store_source = (repo_root / "services/governance/identity_authorization_store.py").read_text(
             encoding="utf-8"
@@ -4984,11 +4993,22 @@ def _strong_identity_baseline_evidence(
             for marker in (
                 "tokens_valid_after_ms",
                 "access_review_expires_at_ms",
+                "access_review_content_sha256",
                 "WORKLOAD_HUMAN_ACTION_FORBIDDEN",
                 "TOKEN_ROLE_REQUIRED",
             )
         ):
             failures.append("application_authorization_markers")
+        if not all(
+            marker in access_review_source
+            for marker in (
+                "ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN",
+                "MAX_ACCESS_REVIEW_VALIDITY_MS",
+                "reviewer_certificate_sha256",
+                "stable_hash",
+            )
+        ):
+            failures.append("access_review_attestation_markers")
         if not all(
             marker in authorization_store_source
             for marker in (
