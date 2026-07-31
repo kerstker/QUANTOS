@@ -1,5 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-07-31 机构级纸面驾驶舱与跨平台前端门禁：**
+> 纸面控制面已收敛为 5 个一级工作区（指挥、纸面、风险、数据、健康），完整长尾页面
+> 保留在 Advanced 菜单与搜索中；顶部单行情状态不再复制滚动，1440×1000 下零横向
+> 溢出。新增精确固定的 Playwright 1.62.1 + axe 4.12.1 门禁：固定 UTC/locale/viewport，
+> WCAG 2.0/2.1 A+AA 零违规，Windows/Linux 双平台视觉基线，失败制品由 SHA 固定的
+> upload-artifact 保留；内嵌 Noto Sans SC variable font 消除 Linux CJK 方框。治理测试
+> 把配置、CI、双基线与依赖钉入 top-tier requirements，矩阵不再把 E2E 误列为待办。
+> 真实 `DryRunStore` route-TCA 投影也由小标签升级成纸面执行质量面板：现场连续增长至
+> 666 routed runs / 2,664 verified records / 2 simulated venues，加权 shortfall 6.08bps，
+> 并逐位标注 `SIMULATION_ONLY · verified on read`。本机 canonical fail-closed gate 全绿，
+> Windows 与本机 Playwright Linux 容器 E2E 均通过；GitHub hosted Actions 当前因账户
+> 额度/付款状态拒绝启动 job，独立 Codespace 云端复验等待 CLI `codespace` scope。
+> 全自动影子纸面继续读取 Binance 公共 mark，实盘、下单、凭据、私有账户访问均为 false；
+> 能力矩阵仍诚实为 15/22、`NOT_TOP_TIER`，外部身份、供应链 WORM、30/90 天历史、
+> 真实授权数据/场所与正向 OOS challenger 不因前端完成而提前关闭。
+
 > **2026-07-31 跨主机 deployable-container 复现切片：**
 > 新增配方绑定的 OCI 单构建声明与跨主机聚合校验器；GitHub 外部工作流现由
 > `ubuntu-22.04` / `ubuntu-24.04` 两个独立 hosted runner 使用 full-SHA 固定的
