@@ -16,11 +16,17 @@ type Tone = 'pos' | 'neg' | 'warn' | 'info' | 'accent';
 
 function fmtUsd(value?: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—';
+  if (Math.abs(value) >= 1_000_000) {
+    const sign = value < 0 ? '-' : '';
+    const compact = (Math.abs(value) / 1_000_000)
+      .toFixed(2)
+      .replace(/\.?0+$/, '');
+    return `${sign}$${compact}M`;
+  }
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    notation: Math.abs(value) >= 1_000_000 ? 'compact' : 'standard',
-    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 2 : 0,
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
