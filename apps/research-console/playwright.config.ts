@@ -7,7 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: 'line',
-  snapshotPathTemplate: '{testDir}/__snapshots__/{arg}{ext}',
+  snapshotPathTemplate: `{testDir}/__snapshots__/{arg}-${process.platform}{ext}`,
   expect: {
     toHaveScreenshot: {
       animations: 'disabled',

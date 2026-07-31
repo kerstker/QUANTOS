@@ -74,6 +74,30 @@
       "version": "3.2.0"
     },
     {
+      "bom-ref": "npm:@axe-core/playwright@4.12.1:node_modules/@axe-core/playwright",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "acc77bc6b8a9b6a2a93fec39dbae62e07764bf65f991bbbaba2062fc1d88eee7f786279104cdea0c27da28fb717e261bda62977c5fb22ce0c9c08c7e26fd460f"
+        }
+      ],
+      "name": "@axe-core/playwright",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/%40axe-core/playwright@4.12.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "4.12.1"
+    },
+    {
       "bom-ref": "npm:@babel/code-frame@7.29.7:node_modules/@babel/code-frame",
       "hashes": [
         {
@@ -1848,6 +1872,30 @@
       "scope": "optional",
       "type": "library",
       "version": "1.2.8"
+    },
+    {
+      "bom-ref": "npm:@playwright/test@1.62.1:node_modules/@playwright/test",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "0d371473caa28be7291efb4ec2080cb4144c8ca6475d859dc3cb32458bb6bedceeab85b1a61aaae0d7c2b3966de382fa980f2b7c37e3f8f1e7c4573f15e2ba99"
+        }
+      ],
+      "name": "@playwright/test",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/%40playwright/test@1.62.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "1.62.1"
     },
     {
       "bom-ref": "npm:@rolldown/pluginutils@1.0.0-beta.27:node_modules/@rolldown/pluginutils",
@@ -3864,6 +3912,30 @@
       "scope": "optional",
       "type": "library",
       "version": "1.0.7"
+    },
+    {
+      "bom-ref": "npm:axe-core@4.12.1:node_modules/axe-core",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "b3b8867f919a54cc441b410d37dc7ec53afb1856426f564fff5b804d4a4210ad97efc9c30774706ed142a3da4601ff6bbbe570a10e3ae0391a2c4791334f3024"
+        }
+      ],
+      "name": "axe-core",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/axe-core@4.12.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "4.12.1"
     },
     {
       "bom-ref": "npm:balanced-match@4.0.4:node_modules/balanced-match",
@@ -5952,6 +6024,30 @@
       "scope": "optional",
       "type": "library",
       "version": "5.3.4"
+    },
+    {
+      "bom-ref": "npm:fsevents@2.3.2:node_modules/playwright/node_modules/fsevents",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c62a8c411e3101e1d3b81f6e5a6f9f1517083a02813223813fe7978b24fb8ec8150aad5b915ca0b74d28012a3007b11db6938769a3e02adf35d8ff5a6fe0c328"
+        }
+      ],
+      "name": "fsevents",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/fsevents@2.3.2",
+      "scope": "optional",
+      "type": "library",
+      "version": "2.3.2"
     },
     {
       "bom-ref": "npm:fsevents@2.3.3:node_modules/fsevents",
@@ -9048,6 +9144,54 @@
       "scope": "optional",
       "type": "library",
       "version": "4.0.7"
+    },
+    {
+      "bom-ref": "npm:playwright-core@1.62.1:node_modules/playwright-core",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c0f612c0404963d187ada2125eacaab71d276b42e93b75c45fb8cd0e19ed6dec7bb73512ee42e766c3a516bb85241e078bfae10cc8d71aa1dec0367af2761957"
+        }
+      ],
+      "name": "playwright-core",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/playwright-core@1.62.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "1.62.1"
+    },
+    {
+      "bom-ref": "npm:playwright@1.62.1:node_modules/playwright",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d0cf8bdcb003f3f9e6e79e0b3a56bd032c748f4b66159d0505ca10ec5d55b951e933f5e9882f11703cc1401f16e7e840f0bdb64c7c442f3785fb659c533bdc2e"
+        }
+      ],
+      "name": "playwright",
+      "properties": [
+        {
+          "name": "quantos:ecosystem",
+          "value": "npm"
+        },
+        {
+          "name": "quantos:manifest",
+          "value": "package-lock.json"
+        }
+      ],
+      "purl": "pkg:npm/playwright@1.62.1",
+      "scope": "optional",
+      "type": "library",
+      "version": "1.62.1"
     },
     {
       "bom-ref": "npm:possible-typed-array-names@1.1.0:node_modules/possible-typed-array-names",
