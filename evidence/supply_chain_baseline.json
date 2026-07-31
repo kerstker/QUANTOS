@@ -312,7 +312,7 @@
     "config/model_provider_registry.json": "212c4bb555e0cacba0658b308c3a4f2cf5f70699497c5bfd1211540331ec8217",
     "config/service_import_policy.json": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
     "config/templates/live_mandate_binance_mainnet.json.template": "c822c6041a7346db50da8dac2a718d743ad5a320b3e10b50f957e622dfa0177b",
-    "config/top_tier_requirements.json": "58dc05d3b993ceb73df463acc222f8bbfc5e90ac9fc83601e38d78bf2f5c2d6a",
+    "config/top_tier_requirements.json": "d4019d5148611ec0e6d39c8a5f37c6f2a99e1781f4734ef040aa687947927912",
     "deploy/console.Dockerfile": "4d287da5d65ab3164ff128e1d138bcd3a461868ec2a84347468d5c15648afa6b",
     "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md": "56b42c7ef4776d7028a68e6b482f65ef36727dd12c61bd455f70f24719cacfb2",
     "docs/engineering/specs/2026-07-31-cross-host-container-reproducibility.md": "3ca5a14210074b0509e9a4cf968ba590ca7b7f7134c21f68445dd3fcfb04f627",
