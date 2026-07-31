@@ -138,7 +138,7 @@ export const PAGES: readonly PageDef[] = [
 
 /** 旧路由 → 语义就近的新目标(书签不断链;蓝图页统一去「系统完整度」——那里诚实说明哪些子系统尚未建成)。 */
 export const REDIRECTS: readonly RedirectDef[] = [
-  { from: '/research', to: '/research/getting-started' },
+  { from: '/research', to: '/research/command' },
   { from: '/research/model-risk-review', to: '/research/system-completeness' },
   { from: '/research/reviewer-workflow', to: '/research/system-completeness' },
   { from: '/research/access-control', to: '/research/system-completeness' },

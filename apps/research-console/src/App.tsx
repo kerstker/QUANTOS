@@ -44,7 +44,7 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/research/getting-started" replace />} />
+            <Route path="/" element={<Navigate to="/research/command" replace />} />
             {REDIRECTS.map(r => (
               <Route key={r.from} path={r.from} element={<Navigate to={r.to} replace />} />
             ))}

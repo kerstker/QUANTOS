@@ -17,6 +17,20 @@ import { useConsoleSnapshot, type SnapshotResult } from './useConsoleSnapshot';
 export interface NavItem { to: string; zh: string; en: string; icon: string; end?: boolean }
 export interface NavGroup { zh: string; en: string; items: NavItem[] }
 
+const PRIMARY_OPERATIONS = [
+  { to: '/research/command', zh: '指挥', en: 'Command' },
+  { to: '/research/dry-run', zh: '纸面', en: 'Paper' },
+  { to: '/research/risk', zh: '风险', en: 'Risk' },
+  { to: '/research/data-catalog', zh: '数据', en: 'Data' },
+  { to: '/research/system-health', zh: '健康', en: 'Health' },
+] as const;
+
+function isPrimaryOperationsPath(pathname: string): boolean {
+  return pathname === '/'
+    || pathname === '/research'
+    || PRIMARY_OPERATIONS.some(item => item.to === pathname);
+}
+
 const mode: ConsoleRuntimeMode = getConsoleRuntimeMode();
 const clientApiVersion = import.meta.env.VITE_CONSOLE_API_VERSION || '0.1.0';
 type RuntimeHandshakeState = Pick<SnapshotResult<RuntimeContractPayload>, 'payload' | 'apiState' | 'error'>;
@@ -222,6 +236,15 @@ export function AppShell({ nav, tape, children }:
   const runtimeHandshake = useConsoleSnapshot<RuntimeContractPayload>(fetchRuntimeContract);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(() => !isPrimaryOperationsPath(pathname));
+  const primaryItems = useMemo(() => {
+    const allItems = nav.flatMap(group => group.items);
+    return PRIMARY_OPERATIONS.map(primary => ({
+      ...primary,
+      icon: allItems.find(item => item.to === primary.to)?.icon ?? '--',
+    }));
+  }, [nav]);
+  const isPrimaryRoute = isPrimaryOperationsPath(pathname);
   const activeGroup = useMemo(
     () => nav.find(g => g.items.some(it => pathname === it.to || pathname.startsWith(`${it.to}/`)))
        ?? nav.find(g => g.items.length > 0),
@@ -242,7 +265,8 @@ export function AppShell({ nav, tape, children }:
 
   useEffect(() => {
     setSectionOpen(false);
-  }, [pathname]);
+    if (!isPrimaryRoute) setAdvancedOpen(true);
+  }, [isPrimaryRoute, pathname]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -305,14 +329,54 @@ export function AppShell({ nav, tape, children }:
               </div>
             </div>
 
-            {/* ══ ZONE 2 · lifecycle pipeline stepper: the 7 stages as a connected,
-                  live-instrumented flow (each node pulls one real metric) ══ */}
-            <nav className="border-t border-line/60 px-1 sm:px-3" aria-label="lifecycle pipeline">
-              <PipelineFlow compact activeGroup={activeGroupId} />
-            </nav>
+            <div className="flex min-h-12 items-stretch border-t border-line/60 bg-surface/70 px-2 sm:px-4">
+              <nav className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto py-1.5"
+                aria-label="primary operations">
+                {primaryItems.map(item => (
+                  <NavLink key={item.to} to={item.to} end
+                    className={({ isActive }) =>
+                      `flex min-w-[92px] items-center justify-center gap-2 rounded-md px-3 py-1.5 transition-colors ${
+                        isActive
+                          ? 'bg-elevated text-ink shadow-sm'
+                          : 'text-muted hover:bg-elevated/50 hover:text-ink'
+                      }`}>
+                    {({ isActive }) => (
+                      <>
+                        <span className={`grid h-6 w-6 place-items-center rounded text-[8px] font-bold ${
+                          isActive ? 'bg-accent/15 text-accent' : 'bg-inset text-faint'
+                        }`}>
+                          {item.icon}
+                        </span>
+                        <span className="text-left leading-tight">
+                          <span className="block text-[12px] font-semibold">{item.zh}</span>
+                          <span className="block text-3xs text-faint">{item.en}</span>
+                        </span>
+                      </>
+                    )}
+                  </NavLink>
+                ))}
+              </nav>
+              <div className="my-2 ml-2 w-px shrink-0 bg-line-strong" />
+              <button type="button"
+                aria-expanded={advancedOpen}
+                aria-controls="advanced-workbench-navigation"
+                onClick={() => setAdvancedOpen(open => !open)}
+                className="my-1.5 ml-2 flex shrink-0 items-center gap-2 rounded-md border border-line bg-inset/70 px-3 text-[11px] font-medium text-muted hover:border-line-strong hover:text-ink">
+                <span className="hidden sm:inline">{bi('高级工作台', 'Advanced')}</span>
+                <span className="sm:hidden">{bi('高级', 'More')}</span>
+                <span aria-hidden className="text-[9px]">{advancedOpen ? '▲' : '▼'}</span>
+              </button>
+            </div>
 
-            {/* ══ ZONE 3 · section navigation: pages inside the active zone ══ */}
-            {activeGroup && (
+            {advancedOpen && (
+              <div id="advanced-workbench-navigation">
+                {/* Full lifecycle and page navigation remains available for researchers,
+                    reviewers, and operators who explicitly enter the advanced workbench. */}
+                <nav className="border-t border-line/60 px-1 sm:px-3" aria-label="lifecycle pipeline">
+                  <PipelineFlow compact activeGroup={activeGroupId} />
+                </nav>
+
+                {activeGroup && (
               <nav className="relative flex h-11 items-center gap-2 border-t border-line/60 bg-surface/60 px-3 sm:px-5"
                 aria-label="section pages">
                 <span className="hidden shrink-0 text-3xs font-semibold uppercase tracking-[0.14em] text-faint md:inline">
@@ -365,6 +429,8 @@ export function AppShell({ nav, tape, children }:
                   </div>
                 )}
               </nav>
+                )}
+              </div>
             )}
           </header>
 

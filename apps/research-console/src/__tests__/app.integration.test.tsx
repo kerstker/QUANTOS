@@ -5,15 +5,24 @@ import App from '@/App';
 import { GROUPS } from '@/app/routes';
 
 // App 级集成:完整外壳(AppShell + 注册表派生的导航 + lazy 路由 + 重定向)在 jsdom 里真渲染。
-// 冒烟测试盖单页;这里盖「组装」——导航 7 组齐全、落地页重定向、删除页的旧路由落到语义就近目标。
+// 冒烟测试盖单页;这里盖「组装」——五入口操作面默认简洁、完整导航按需可达、旧路由语义重定向。
 describe('App shell integration (registry-derived nav + redirects)', () => {
   // 断言用「页面独有内容」而非页名——页名同时出现在导航栏里,findByText 会撞多元素。
-  it('renders all nav groups and lands on Getting Started at /', async () => {
+  it('lands on Command Center and exposes only five primary operations by default', async () => {
     render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>);
+    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
+    const primary = screen.getByRole('navigation', { name: 'primary operations' });
+    expect(within(primary).getAllByRole('link')).toHaveLength(5);
+    expect(screen.queryByRole('navigation', { name: 'lifecycle pipeline' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'section pages' })).toBeNull();
+
+    const advanced = screen.getByRole('button', { name: /Advanced|高级工作台/ });
+    expect(advanced.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(advanced);
+    expect(advanced.getAttribute('aria-expanded')).toBe('true');
     for (const group of GROUPS) {
       expect(screen.getAllByText(group.zh).length, group.id).toBeGreaterThan(0);
     }
-    expect(await screen.findByText(/5 分钟最短路径/)).toBeTruthy();
   });
 
   it('redirects a removed blueprint route to the honest completeness page', async () => {
@@ -21,9 +30,9 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
     expect(await screen.findByText('System Completeness Audit')).toBeTruthy();
   });
 
-  it('redirects the bare /research route to the Getting Started landing page', async () => {
+  it('redirects the bare /research route to the operator command center', async () => {
     render(<MemoryRouter initialEntries={['/research']}><App /></MemoryRouter>);
-    expect(await screen.findByText(/5 分钟最短路径/)).toBeTruthy();
+    expect(await screen.findByText(/研究全流程一张图/)).toBeTruthy();
   });
 
   it('Command Center is still reachable at its own route', async () => {
@@ -41,6 +50,10 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
   it('keeps the lifecycle rail compact and moves section pages behind disclosure', async () => {
     render(<MemoryRouter initialEntries={['/research/dry-run']}><App /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: /全自动影子纸面驾驶舱/ })).toBeTruthy();
+
+    const advanced = screen.getByRole('button', { name: /Advanced|高级工作台/ });
+    expect(advanced.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(advanced);
 
     const lifecycle = screen.getByRole('navigation', { name: 'lifecycle pipeline' });
     expect(lifecycle.querySelector('[data-layout="compact-grid"]')).toBeTruthy();
