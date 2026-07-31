@@ -16,6 +16,38 @@ const state = vi.hoisted(() => ({
     n_runs: 0,
     latest: {},
     runs: [],
+    route_tca_history: {
+      schema_version: 1,
+      simulation_only: true,
+      status: 'LONGITUDINAL_READY',
+      run_count: 664,
+      record_count: 2656,
+      venue_count: 2,
+      first_timestamp: 1_785_288_893_251,
+      last_timestamp: 1_785_494_047_051,
+      weighted_shortfall_bps: '6.073508244770515195597415338',
+      points: [],
+      venues: [
+        {
+          venue_id: 'BINANCE_SIM',
+          record_count: 1328,
+          filled_quantity: 12_400,
+          reference_notional: '5200000',
+          weighted_shortfall_bps: '5.81',
+          first_timestamp: 1_785_288_893_251,
+          last_timestamp: 1_785_494_047_051,
+        },
+        {
+          venue_id: 'BYBIT_SIM',
+          record_count: 1328,
+          filled_quantity: 11_900,
+          reference_notional: '4800000',
+          weighted_shortfall_bps: '6.36',
+          first_timestamp: 1_785_288_893_251,
+          last_timestamp: 1_785_494_047_051,
+        },
+      ],
+    },
     paper_shadow: {
       source: 'AUTOMATED_SHADOW_PAPER_ARTIFACTS',
       read_only: true,
@@ -185,6 +217,11 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('0.020')).toBeInTheDocument();
     expect(screen.getByText('0.125')).toBeInTheDocument();
     expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
+    expect(screen.getByText('纸面执行质量')).toBeInTheDocument();
+    expect(screen.getByText('6.07 bps')).toBeInTheDocument();
+    expect(screen.getByText('BINANCE_SIM')).toBeInTheDocument();
+    expect(screen.getByText('BYBIT_SIM')).toBeInTheDocument();
+    expect(screen.getByText('2,656')).toBeInTheDocument();
     expect(screen.queryByText('IDLE')).not.toBeInTheDocument();
   });
 

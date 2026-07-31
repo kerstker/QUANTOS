@@ -52,6 +52,24 @@ function fmtAge(ageMs?: number | null): string {
   return `${Math.floor(ageMs / 60_000)}m`;
 }
 
+function fmtBps(value?: string | null): string {
+  if (value == null) return '—';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? `${parsed.toFixed(2)} bps` : '—';
+}
+
+function fmtCompactUsd(value?: string | null): string {
+  if (value == null) return '—';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(parsed);
+}
+
 function fmtTime(value?: number | null): string {
   if (value == null) return '—';
   return new Date(value).toLocaleTimeString('zh-CN', {
@@ -104,6 +122,63 @@ function Metric({
       <div className={`ticker-num mt-1 truncate text-xl font-semibold ${toneClass[tone]}`}>{value}</div>
       <div className="mt-1 truncate text-3xs text-faint">{detail}</div>
     </div>
+  );
+}
+
+type RouteTcaHistory = NonNullable<DryRunPipelinePayload['route_tca_history']>;
+
+function TcaHistoryPanel({ history }: { history?: RouteTcaHistory }) {
+  const ready = history?.status === 'LONGITUDINAL_READY';
+  const venues = history?.venues ?? [];
+  const range = history?.first_timestamp != null && history.last_timestamp != null
+    ? `${new Date(history.first_timestamp).toLocaleDateString('zh-CN')} — ${new Date(history.last_timestamp).toLocaleDateString('zh-CN')}`
+    : 'no retained range';
+
+  return (
+    <Panel
+      title="纸面执行质量"
+      eyebrow="Route-level TCA · simulation only"
+      right={<Chip label={history?.status ?? 'NO_ROUTE_TCA'} tone={ready ? 'pos' : 'warn'} />}
+      bodyClass="p-4"
+    >
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Weighted shortfall" value={fmtBps(history?.weighted_shortfall_bps)} detail="notional weighted" tone={ready ? 'pos' : 'warn'} />
+        <Metric label="Routed runs" value={(history?.run_count ?? 0).toLocaleString('en-US')} detail="append-only evidence" tone="info" />
+        <Metric label="Route records" value={(history?.record_count ?? 0).toLocaleString('en-US')} detail="verified records" tone="info" />
+        <Metric label="Venues" value={history?.venue_count ?? 0} detail={range} tone="special" />
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
+        <table className="w-full table-fixed text-left text-xs" aria-label="paper route TCA by venue">
+          <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
+            <tr>
+              <th className="w-[34%] px-3 py-2 font-medium">Venue</th>
+              <th className="px-3 py-2 text-right font-medium">Records</th>
+              <th className="px-3 py-2 text-right font-medium">Notional</th>
+              <th className="px-3 py-2 text-right font-medium">Shortfall</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line/70">
+            {venues.length ? venues.map(venue => (
+              <tr key={venue.venue_id}>
+                <td className="truncate px-3 py-2 font-semibold text-ink">{venue.venue_id}</td>
+                <td className="px-3 py-2 text-right ticker-num text-muted">{venue.record_count.toLocaleString('en-US')}</td>
+                <td className="px-3 py-2 text-right ticker-num text-muted">{fmtCompactUsd(venue.reference_notional)}</td>
+                <td className="px-3 py-2 text-right ticker-num text-ink">{fmtBps(venue.weighted_shortfall_bps)}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={4} className="px-3 py-5 text-center text-faint">No verified route-level TCA retained.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-3xs text-faint">
+        <span>{range}</span>
+        <span>SIMULATION_ONLY · verified on read</span>
+      </div>
+    </Panel>
   );
 }
 
@@ -549,9 +624,13 @@ export default function DryRunPipeline() {
               <Metric label="Ledger rows" value={shadow?.paper_ledger.n_rows ?? 0} detail={`${shadow?.paper_ledger.n_decisions ?? 0} decisions`} tone="info" />
               <Metric label="Snapshots" value={shadow?.persistence.new_snapshots ?? 0} detail="append-only cycle" tone="info" />
               <Metric label="Data refresh" value={data.data_refresh?.outcome ?? '—'} detail={`${data.data_refresh?.failed_total ?? 0} failures`} tone={(data.data_refresh?.failed_total ?? 0) === 0 ? 'pos' : 'neg'} />
-              <Metric label="TCA history" value={data.route_tca_history?.status ?? '—'} detail={`${data.route_tca_history?.record_count ?? 0} records`} tone={data.route_tca_history?.status === 'LONGITUDINAL_READY' ? 'pos' : 'warn'} />
+              <Metric label="Broker path" value="OFF" detail="public data only" tone="neg" />
             </div>
           </Panel>
+        </div>
+
+        <div className="mt-4">
+          <TcaHistoryPanel history={data.route_tca_history} />
         </div>
       </LoadingVeil>
       )}
