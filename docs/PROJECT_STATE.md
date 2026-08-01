@@ -24,6 +24,10 @@
 > 浮点仍 fail-closed，从而保证非零结果也落成 `FAILED + NONZERO_EXIT` 完整回执。旧同根调度缺口已
 > 关闭；**WP0 整体仍不宣称闭合**，剩余是把每轮输入数据快照/证据集合进一步绑定进 release receipt，
 > 以及外部 WORM/独立回执权威，而不是再次回退到开发工作树运行。
+> 同一 release/state 契约也已扩展到本地控制台三进程：显式状态根必须与精确 clean release
+> commit 成对提供，console API、research runner 和静态前端均以 state root 为 cwd，并通过
+> `python -P` 与 release-first `PYTHONPATH` 固定代码来源；manifest/log 改写入 state root。
+> 因此浏览器、runner 与调度器消费同一运行状态，同时状态目录中的代码副本不能遮蔽 release。
 > `carry_oi_majors`、`crowd_contra`、`top_contra` 同时被明确标为
 > `LEGACY_DIAGNOSTIC_PAPER`：仍可接收公共实时标记与产出 PnL，但不计入新候选执行 Paper，
 > 永远不具部署资格。前端漏斗已拆分 Candidate Paper 与 Legacy Paper，避免把三条历史 book

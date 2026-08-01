@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import tools.local_console_stack as stack
 from tools.local_console_stack import service_specs
 
@@ -29,6 +31,59 @@ def test_local_stack_is_l2_console_only(monkeypatch):
         f"http://localhost:{specs[2]['port']}",
     }
     assert specs[0]["env"]["QUANTOS_BUILD_SHA"] != "dirty"
+    assert all(spec["cwd"] == stack.STATE_ROOT for spec in specs)
+    assert all(spec["command"][1] == "-P" for spec in specs)
+    assert all(spec["env"]["QUANTOS_STATE_ROOT"] == str(stack.STATE_ROOT) for spec in specs)
+    assert all(spec["env"]["PYTHONPATH"].split(stack.os.pathsep)[0] == str(stack.ROOT) for spec in specs)
+
+
+def test_explicit_state_root_requires_exact_clean_release_identity(
+    monkeypatch,
+    tmp_path,
+):
+    release = tmp_path / "release"
+    state = tmp_path / "state"
+    release.mkdir()
+    state.mkdir()
+    commit = "b" * 40
+    monkeypatch.setattr(stack, "ROOT", release)
+    monkeypatch.setattr(stack, "STATE_ROOT", state)
+    monkeypatch.setattr(stack, "_source_revision", lambda: commit)
+    monkeypatch.setattr(stack, "_frontend_port", lambda: 3111)
+    monkeypatch.setattr(stack, "_python_worker", lambda: "pythonw.exe")
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state))
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", commit)
+
+    specs = service_specs()
+
+    assert all(spec["cwd"] == state for spec in specs)
+    assert all(spec["release_commit"] == commit for spec in specs)
+    assert all(spec["env"]["QUANTOS_RELEASE_ROOT"] == str(release) for spec in specs)
+    assert all(spec["env"]["QUANTOS_RELEASE_COMMIT"] == commit for spec in specs)
+
+
+def test_explicit_state_root_rejects_missing_or_dirty_release_identity(
+    monkeypatch,
+    tmp_path,
+):
+    release = tmp_path / "release"
+    state = tmp_path / "state"
+    release.mkdir()
+    state.mkdir()
+    monkeypatch.setattr(stack, "ROOT", release)
+    monkeypatch.setattr(stack, "STATE_ROOT", state)
+    monkeypatch.setattr(stack, "_source_revision", lambda: "a" * 40 + "+worktree.dirty")
+    monkeypatch.setattr(stack, "_frontend_port", lambda: 3111)
+    monkeypatch.setattr(stack, "_python_worker", lambda: "pythonw.exe")
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state))
+    monkeypatch.delenv("QUANTOS_RELEASE_COMMIT", raising=False)
+
+    with pytest.raises(RuntimeError, match="configured together"):
+        service_specs()
+
+    monkeypatch.setenv("QUANTOS_RELEASE_COMMIT", "a" * 40)
+    with pytest.raises(RuntimeError, match="dirty or does not match"):
+        service_specs()
 
 
 def test_source_revision_distinguishes_clean_and_dirty_worktrees(monkeypatch):
