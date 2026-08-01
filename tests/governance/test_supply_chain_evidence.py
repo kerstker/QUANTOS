@@ -57,6 +57,23 @@ def test_supply_chain_manifest_binds_catalog_pbo_evidence_surface():
     } <= set(_MANIFESTS)
 
 
+def test_supply_chain_manifest_binds_automatic_alpha_candidate_handoff():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "apps/research-console/src/lib/types/research.ts",
+        "apps/research-console/src/pages/DryRunPipeline.tsx",
+        "services/console/api/artifact_paper_views.py",
+        "services/research/paper_candidate_registry.py",
+        "tools/alpha_candidate_admission.py",
+        "tools/crypto_factory_loop.py",
+        "tools/forward_track_advance.py",
+        "tests/research/test_paper_candidate_registry.py",
+        "tests/tools/test_alpha_candidate_admission.py",
+        "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 

@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from services.console.main import app
 from services.console.api import artifact_snapshots
+from services.console.api import artifact_paper_views
 
 client = TestClient(app)
 
@@ -363,6 +364,63 @@ def test_dry_run_surfaces_realtime_paper_marks_and_backtests_without_live_capabi
     assert realtime["safety"]["paper_only"] is True
     assert realtime["safety"]["public_market_data_only"] is True
     assert realtime["safety"]["broker_order_submission"] is False
+
+
+def test_dry_run_separates_factory_forward_and_execution_paper_populations(
+    tmp_path, monkeypatch
+):
+    factory_path = tmp_path / "factory.json"
+    factory_path.write_text(
+        json.dumps(
+            {
+                "fields": ["close", "funding", "global_ls"],
+                "rounds": 2,
+                "dry_limit": 2,
+                "discovered_chain": [],
+                "verdict": "no orthogonal survivor",
+                "containment": "research; auto_approved=0; drives no lifecycle",
+                "generated_at": 1_785_000_000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        artifact_paper_views, "_FACTORY_LOOP_STATUS", str(factory_path)
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    forward = {
+        "alphas": [
+            {"alpha_id": f"alpha-{index}", "n_forward_periods": 1}
+            for index in range(10)
+        ]
+    }
+    realtime = {
+        "alphas": {f"alpha-{index}": {"status": "PAPER_MARKED"} for index in range(3)}
+    }
+
+    payload = artifact_paper_views._alpha_pipeline_payload(forward, realtime)
+
+    assert payload["counts"] == {
+        "forward_paper": 10,
+        "execution_paper": 3,
+        "forward_only": 7,
+        "factory_survivors": 0,
+    }
+    assert payload["factory"]["data_dimensions"] == 3
+    assert payload["factory"]["generated_at"] == 1_785_000_000_000
+    assert payload["handoff"]["status"] == "GAPPED"
+    assert payload["handoff"]["gap_codes"] == [
+        "FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED",
+        "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
+    ]
+    assert sum(row["stage"] == "EXECUTION_PAPER" for row in payload["candidates"]) == 3
+    assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
+    assert payload["safety"]["live_allowed"] is False
+    assert payload["safety"]["order_submission_allowed"] is False
 
 
 def test_dry_run_surfaces_automated_shadow_paper_without_live_capability():

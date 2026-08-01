@@ -1370,6 +1370,45 @@ export interface PaperProfilePayload {
   };
 }
 
+export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
+  stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | string;
+  execution_paper: boolean;
+  blockers: string[];
+}
+
+export interface AlphaPipelinePayload {
+  source: string;
+  read_only: true;
+  factory: {
+    snapshot_present: boolean;
+    generated_at?: number | null;
+    rounds?: number | null;
+    dry_limit?: number | null;
+    data_dimensions: number;
+    survivors: number;
+    verdict?: string | null;
+    containment?: string | null;
+  };
+  counts: {
+    forward_paper: number;
+    execution_paper: number;
+    forward_only: number;
+    factory_survivors: number;
+  };
+  candidates: AlphaPipelineCandidate[];
+  handoff: {
+    factory_to_forward_registry_connected: boolean;
+    forward_to_execution_dynamic: boolean;
+    status: 'CONNECTED' | 'GAPPED';
+    gap_codes: string[];
+  };
+  safety: {
+    paper_only: true;
+    live_allowed: false;
+    order_submission_allowed: false;
+  };
+}
+
 export interface DataRefreshSourcePayload {
   source: string;
   outcome: string | null;
@@ -1468,6 +1507,7 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   paper_order_preview?: PaperOrderPreviewPayload;
   paper_operator?: L2PaperOperatorPayload;
   paper_realtime?: PaperRealtimePayload;
+  alpha_pipeline?: AlphaPipelinePayload;
   paper_shadow?: PaperShadowPayload;
   paper_health?: PaperHealthPayload;
   forward_track?: LiveTradingForwardTrack;

@@ -34,6 +34,7 @@ from services.research.paper_trading.forward_evidence import (
     load_forward_admission_ref,
 )
 from services.research.paper_trading.store import PaperTrackStore
+from services.research.paper_candidate_registry import PaperCandidateRegistry
 from services.orchestration.process_liveness import process_is_alive
 from services.data.admission_store import DataQualityAdmissionStore
 from tools import binance_oi_metrics_fetch as oi_fetch
@@ -60,6 +61,7 @@ _STATUS = os.path.join("data", "cache", "forward_track_status.json")
 _FORWARD_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _AUTHORITY = DATA_QUALITY_ADMISSION_DB
 _LINEAGE_BACKFILL = os.path.join("evidence", "raw_data_lineage_backfill.json")
+_CANDIDATE_REGISTRY = os.path.join("data", "cache", "paper_candidate_registry.db")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
 _LOCK_STALE_S = 600  # malformed legacy locks expire after 10 minutes
 _DAY_MS = 86_400_000
@@ -113,6 +115,40 @@ def _alpha_spec(entry):
     spec.setdefault("decision_due_ms", cadence * _DAY_MS - 12 * 3600 * 1000)
     spec.setdefault("min_gap_ms", cadence * _DAY_MS - 12 * 3600 * 1000)
     return spec
+
+
+def _registered_alphas() -> tuple[dict[str, object], tuple[str, ...]]:
+    """Merge static challengers with verified factory PASS admissions.
+
+    A missing dynamic registry is a valid empty state.  An existing registry
+    with a broken chain or conflicting identity is a hard error so a scheduled
+    run cannot silently drop or replace an admitted forward-paper candidate.
+    """
+    merged: dict[str, object] = dict(_ALPHAS)
+    dynamic_ids: list[str] = []
+    if not Path(_CANDIDATE_REGISTRY).is_file():
+        return merged, ()
+    with PaperCandidateRegistry(_CANDIDATE_REGISTRY, create=False) as registry:
+        if not registry.chain_valid():
+            raise RuntimeError("paper candidate registry hash chain is invalid")
+        candidates = registry.all()
+    for candidate in candidates:
+        expression = ax.deserialize(candidate.expression)
+        existing = merged.get(candidate.alpha_id)
+        if existing is not None:
+            existing_expression = _alpha_spec(existing)["expr"]
+            if ax.serialize(existing_expression) != candidate.expression:
+                raise RuntimeError(
+                    f"paper candidate identity conflicts with static alpha: {candidate.alpha_id}"
+                )
+            continue
+        merged[candidate.alpha_id] = {
+            "expr": expression,
+            "quantile": candidate.quantile,
+            "cadence_days": candidate.cadence_days,
+        }
+        dynamic_ids.append(candidate.alpha_id)
+    return merged, tuple(dynamic_ids)
 
 
 def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,
@@ -540,9 +576,21 @@ def _run() -> None:
 
     ledger = AttestedForwardLedger(_DB, create=True)
     store = PaperTrackStore(_DB, create=True)
-    status = {"ran_at": now_ms, "staleness_days": stale, "alphas": {}}
+    registered_alphas, dynamic_alpha_ids = _registered_alphas()
+    status = {
+        "ran_at": now_ms,
+        "staleness_days": stale,
+        "alphas": {},
+        "alpha_universe": {
+            "registered_count": len(registered_alphas),
+            "static_count": len(_ALPHAS),
+            "dynamic_factory_count": len(dynamic_alpha_ids),
+            "dynamic_factory_ids": list(dynamic_alpha_ids),
+            "source": "STATIC_PLUS_VERIFIED_FACTORY_PASS_REGISTRY",
+        },
+    }
 
-    for alpha_id, entry in _ALPHAS.items():
+    for alpha_id, entry in registered_alphas.items():
         spec = _alpha_spec(entry)
         sig = ax.evaluate(spec["expr"], panel)
         r_last = latest_event_row

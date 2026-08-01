@@ -32,6 +32,12 @@ _GONOGO_REPORT = os.path.join(_REPO_ROOT, "data", "cache", "gonogo_report.json")
 _FORWARD_TRACK_STATUS = os.path.join(
     _REPO_ROOT, "data", "cache", "forward_track_status.json"
 )
+_FACTORY_LOOP_STATUS = os.path.join(
+    _REPO_ROOT, "data", "cache", "crypto_factory_loop.json"
+)
+_CANDIDATE_ADMISSION_STATUS = os.path.join(
+    _REPO_ROOT, "data", "cache", "alpha_candidate_admission.json"
+)
 _LIVE_REFRESH_STATUS = os.path.join(
     _REPO_ROOT, "data", "cache", "live_refresh_status.json"
 )
@@ -167,6 +173,107 @@ def _forward_track_payload() -> Dict:
         },
         "alphas": rows,
         "alerts": snapshot.get("alerts", []) if isinstance(snapshot.get("alerts", []), list) else [],
+    }
+
+
+def _alpha_pipeline_payload(
+    forward_track: Dict,
+    paper_realtime: Dict,
+) -> Dict:
+    """Expose the actual discovery-to-paper funnel without collapsing stages.
+
+    Forward-paper challengers and execution-grade paper books are intentionally
+    different populations.  This projection makes the current hand-off break
+    machine-readable: the scheduled factory produces research evidence, but
+    its retained artifact explicitly does not drive lifecycle admission.
+    """
+    factory = _load_json_object(_FACTORY_LOOP_STATUS) or {}
+    admission = _load_json_object(_CANDIDATE_ADMISSION_STATUS) or {}
+    discovered = factory.get("discovered_chain")
+    discovered = discovered if isinstance(discovered, list) else []
+    raw_forward = forward_track.get("alphas")
+    forward_rows = raw_forward if isinstance(raw_forward, list) else []
+    realtime_alphas = paper_realtime.get("alphas")
+    realtime_alphas = realtime_alphas if isinstance(realtime_alphas, dict) else {}
+    execution_ids = set(str(alpha_id) for alpha_id in realtime_alphas)
+
+    candidates: list[dict[str, Any]] = []
+    for row in forward_rows:
+        if not isinstance(row, dict) or not isinstance(row.get("alpha_id"), str):
+            continue
+        alpha_id = str(row["alpha_id"])
+        execution_paper = alpha_id in execution_ids
+        blockers = [] if execution_paper else [
+            "NOT_IN_EXECUTION_PAPER_UNIVERSE",
+            "FULL_NINE_ENGINE_RISK_PACKET_NOT_WIRED_FOR_DYNAMIC_CANDIDATE",
+        ]
+        candidates.append(
+            {
+                **row,
+                "stage": "EXECUTION_PAPER" if execution_paper else "FORWARD_PAPER",
+                "execution_paper": execution_paper,
+                "blockers": blockers,
+            }
+        )
+
+    factory_generated = factory.get("generated_at")
+    if isinstance(factory_generated, (int, float)) and not isinstance(factory_generated, bool):
+        factory_generated_ms = int(factory_generated)
+        if factory_generated_ms < 10_000_000_000:
+            factory_generated_ms *= 1000
+    else:
+        factory_generated_ms = None
+    containment = str(factory.get("containment", ""))
+    admission_registry = admission.get("registry")
+    admission_registry = admission_registry if isinstance(admission_registry, dict) else {}
+    handoff_connected = bool(
+        factory.get("schema_version") == 2
+        and factory.get("handoff_contract") == "VERIFIED_FACTORY_PASS_TO_FORWARD_PAPER"
+        and admission.get("status") == "PASS"
+        and admission_registry.get("status") == "VERIFIED"
+    )
+    forward_count = len(candidates)
+    execution_count = sum(row["execution_paper"] for row in candidates)
+    return {
+        "source": "BACKEND_COMPUTED_ALPHA_PIPELINE",
+        "read_only": True,
+        "factory": {
+            "snapshot_present": bool(factory),
+            "generated_at": factory_generated_ms,
+            "rounds": factory.get("rounds"),
+            "dry_limit": factory.get("dry_limit"),
+            "data_dimensions": len(factory.get("fields", []))
+            if isinstance(factory.get("fields"), list)
+            else 0,
+            "survivors": len(discovered),
+            "verdict": factory.get("verdict"),
+            "containment": containment or None,
+        },
+        "counts": {
+            "forward_paper": forward_count,
+            "execution_paper": execution_count,
+            "forward_only": max(0, forward_count - execution_count),
+            "factory_survivors": len(discovered),
+        },
+        "candidates": candidates,
+        "handoff": {
+            "factory_to_forward_registry_connected": handoff_connected,
+            "forward_to_execution_dynamic": forward_count == execution_count and forward_count > 0,
+            "status": "CONNECTED" if handoff_connected and forward_count == execution_count else "GAPPED",
+            "gap_codes": [
+                code
+                for code, present in (
+                    ("FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED", bool(factory) and not handoff_connected),
+                    ("FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER", forward_count > execution_count),
+                )
+                if present
+            ],
+        },
+        "safety": {
+            "paper_only": True,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
     }
 
 
@@ -746,6 +853,7 @@ def _dry_run_payload() -> Dict:
         "paper_order_preview": paper_preview,
         "paper_operator": paper_operator,
         "paper_realtime": paper_realtime,
+        "alpha_pipeline": _alpha_pipeline_payload(forward_track, paper_realtime),
         "paper_shadow": _paper_shadow_payload(),
         "paper_health": paper_health,
         "forward_track": forward_track,

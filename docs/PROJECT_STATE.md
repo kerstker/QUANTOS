@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-01 自动 Alpha 候选交接与真实漏斗可视化：**
+> “只有 3 个 Alpha”经现场追踪确认是展示与执行集合混淆，不是研究候选丢失：官方前向台账实际包含
+> 10 个已证明身份的 OOS challenger，而实时估值/模拟成交账本仍是 3 个。现已把 factory 输出升级为
+> schema v2；只有实验注册表中逐项验签、结果为 PASS、且 search/dataset/definition 身份完全一致的幸存者，
+> 才会自动写入新的追加式、哈希链接、禁止 UPDATE/DELETE 的 L2 `PaperCandidateRegistry`。前向调度器每轮
+> 合并静态候选与该动态注册表，注册表缺失按空集合处理，链损坏或身份冲突则 fail-closed。当前 factory
+> 真实运行在 24 币、9 数据维、2 轮、248 次评估上，没有发现新的正交 PASS Alpha，因此没有伪造新增候选；
+> factory→forward 接缝已验证，自动晋级、实盘、订单和凭证权限仍全部关闭。纸面驾驶舱现在按
+> `factory survivors / forward paper / execution paper / forward-only` 分层显示，现场为 `0 / 10 / 3 / 7`，
+> 并逐项显示前向周期、待兑现决策和累计收益。剩余唯一流水线接缝是动态候选的独立 evaluator 元数据、
+> 九引擎风险输入与执行纸面消费；7 个变体目前仅 1/8 前向周期，不能为了数量绕过多重检验和成熟门。
+> 设计与边界见 `docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md`。
+
 > **2026-07-31 OIDC 验证密钥轮换/撤销承重化：**
 > 强身份验证器不再接受单个静态 `QUANTOS_OIDC_PUBLIC_KEY_FILE`。新 `OidcKeyRegistry` 要求 JWT
 > `kid` 精确选键、算法与注册项一致、Ed25519/≥2048-bit RSA 公钥类型正确、显式有效期且状态为 ACTIVE；
