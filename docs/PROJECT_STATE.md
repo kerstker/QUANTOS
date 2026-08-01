@@ -14,8 +14,16 @@
 > 绑定 `QUANTOS_RELEASE_COMMIT`、`QUANTOS_RELEASE_ROOT`、`QUANTOS_STATE_ROOT`，每次运行在
 > state root 的 `.runtime/l2-release-runs/` 写哈希凭证，分别记录 release 验证结果与 worker
 > 退出结果。实时 Alpha 发现、前向 shadow、前向证据基线与控制台纸面投影已切到该 state
-> root，避免数据库回写 clean release。现有 Windows 任务仍是旧的同根、未固定 commit action，
-> 必须在本轮代码提交并建立独立 clean release 后重新注册；因此 **WP0 尚未宣称闭合**。
+> root，避免数据库回写 clean release。该边界已在真实 Windows Task Scheduler 上激活：首个迁移
+> 基线为 GitHub commit `2d4ca1227ddecc96eb39a2799cc6d8404f564466`，release root 与
+> `H:\QUANTOS_STATE` 完全分离；状态迁移排除 `pytest-basetemp` 后逐路径核对 447,339 个文件、
+> 10,963,519,184 bytes，0 缺失/多余/大小漂移，5 座关键 SQLite 库只读 `quick_check=PASS`。
+> 33 个 QUANTOS 任务中 28 个 L2 action 已固定 release commit/state root，5 个旧实盘/运维任务
+> 保持 `Disabled`。首次真实 watchdog 运行进一步暴露 worker `main()` 调用 `sys.exit(code)` 会绕过
+> launcher 最终回执；launcher 现已把 `SystemExit(None|int)` 规范化为 worker 退出码，布尔/字符串/
+> 浮点仍 fail-closed，从而保证非零结果也落成 `FAILED + NONZERO_EXIT` 完整回执。旧同根调度缺口已
+> 关闭；**WP0 整体仍不宣称闭合**，剩余是把每轮输入数据快照/证据集合进一步绑定进 release receipt，
+> 以及外部 WORM/独立回执权威，而不是再次回退到开发工作树运行。
 > `carry_oi_majors`、`crowd_contra`、`top_contra` 同时被明确标为
 > `LEGACY_DIAGNOSTIC_PAPER`：仍可接收公共实时标记与产出 PnL，但不计入新候选执行 Paper，
 > 永远不具部署资格。前端漏斗已拆分 Candidate Paper 与 Legacy Paper，避免把三条历史 book

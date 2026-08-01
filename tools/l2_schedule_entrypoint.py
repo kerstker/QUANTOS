@@ -283,12 +283,20 @@ def run_scheduled_module(
         # module selector so the worker observes the same empty argument
         # surface it would receive when invoked directly by the scheduler.
         sys.argv[:] = [str(Path(module_file).resolve())]
-        result = worker_main()
+        try:
+            result = worker_main()
+        except SystemExit as exc:
+            # Tool CLIs commonly use ``sys.exit(code)`` inside ``main`` rather
+            # than returning the code.  Normalize that narrow control-flow
+            # signal so the launcher can always finalize its release receipt.
+            # KeyboardInterrupt and other BaseException subclasses still pass
+            # through unchanged.
+            result = 0 if exc.code is None else exc.code
         if result is None:
             return 0
         if isinstance(result, bool) or not isinstance(result, int):
             raise ScheduleEntrypointError(
-                "scheduled module returned an ambiguous exit code"
+                "scheduled module produced an ambiguous exit code"
             )
         return result
     finally:
