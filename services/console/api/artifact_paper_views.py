@@ -38,6 +38,12 @@ _FACTORY_LOOP_STATUS = os.path.join(
 _CANDIDATE_ADMISSION_STATUS = os.path.join(
     _REPO_ROOT, "data", "cache", "alpha_candidate_admission.json"
 )
+_FORWARD_CANDIDATE_EVALUATIONS = os.path.join(
+    _REPO_ROOT, "data", "cache", "forward_alpha_evaluations.json"
+)
+_PAPER_RESEARCH_RISK_BUNDLE = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_research_risk_inputs.json"
+)
 _LIVE_REFRESH_STATUS = os.path.join(
     _REPO_ROOT, "data", "cache", "live_refresh_status.json"
 )
@@ -189,13 +195,27 @@ def _alpha_pipeline_payload(
     """
     factory = _load_json_object(_FACTORY_LOOP_STATUS) or {}
     admission = _load_json_object(_CANDIDATE_ADMISSION_STATUS) or {}
+    evaluations = _load_json_object(_FORWARD_CANDIDATE_EVALUATIONS) or {}
+    evaluation_rows = evaluations.get("alphas")
+    evaluation_rows = evaluation_rows if isinstance(evaluation_rows, dict) else {}
+    risk_bundle = _load_json_object(_PAPER_RESEARCH_RISK_BUNDLE) or {}
+    risk_rows = risk_bundle.get("alphas")
+    risk_rows = risk_rows if isinstance(risk_rows, dict) else {}
     discovered = factory.get("discovered_chain")
     discovered = discovered if isinstance(discovered, list) else []
     raw_forward = forward_track.get("alphas")
     forward_rows = raw_forward if isinstance(raw_forward, list) else []
     realtime_alphas = paper_realtime.get("alphas")
     realtime_alphas = realtime_alphas if isinstance(realtime_alphas, dict) else {}
-    execution_ids = set(str(alpha_id) for alpha_id in realtime_alphas)
+    # The realtime artifact also carries visible FORWARD_PENDING challenger
+    # rows.  Only a persisted mark row is an execution-paper account; presence
+    # in the candidate map alone must never inflate execution counts.
+    execution_ids = {
+        str(alpha_id)
+        for alpha_id, realtime_row in realtime_alphas.items()
+        if isinstance(realtime_row, dict)
+        and realtime_row.get("status") == "PAPER_MARKED"
+    }
 
     candidates: list[dict[str, Any]] = []
     for row in forward_rows:
@@ -203,16 +223,50 @@ def _alpha_pipeline_payload(
             continue
         alpha_id = str(row["alpha_id"])
         execution_paper = alpha_id in execution_ids
-        blockers = [] if execution_paper else [
-            "NOT_IN_EXECUTION_PAPER_UNIVERSE",
-            "FULL_NINE_ENGINE_RISK_PACKET_NOT_WIRED_FOR_DYNAMIC_CANDIDATE",
-        ]
+        evaluation_row = evaluation_rows.get(alpha_id)
+        evaluation_row = evaluation_row if isinstance(evaluation_row, dict) else {}
+        evaluation_ref = evaluation_row.get("evaluation")
+        evaluation_ref = evaluation_ref if isinstance(evaluation_ref, dict) else {}
+        risk_row = risk_rows.get(alpha_id)
+        risk_row = risk_row if isinstance(risk_row, dict) else {}
+        maturity = row.get("n_forward_periods")
+        try:
+            maturity_periods = int(maturity) if maturity is not None else None
+        except (TypeError, ValueError):
+            maturity_periods = None
+        blockers: list[str] = []
+        if not execution_paper:
+            if evaluation_row.get("status") != "VERIFIED" or evaluation_ref.get("verified") is not True:
+                blockers.append("INDEPENDENT_EVALUATION_PENDING")
+            if evaluation_ref.get("verdict") != "PASS":
+                blockers.append("INDEPENDENT_EVALUATION_NOT_PASS")
+            if maturity_periods is None or maturity_periods < _EVIDENCE_GATE_WEEKS:
+                blockers.append("FORWARD_EVIDENCE_MATURITY_PENDING")
+            if risk_row.get("status") != "READY":
+                blockers.append("FULL_NINE_ENGINE_RISK_PACKET_PENDING")
+            if not blockers:
+                blockers.append("NOT_IN_EXECUTION_PAPER_UNIVERSE")
         candidates.append(
             {
                 **row,
                 "stage": "EXECUTION_PAPER" if execution_paper else "FORWARD_PAPER",
                 "execution_paper": execution_paper,
                 "blockers": blockers,
+                "independent_evaluation": {
+                    "status": evaluation_row.get("status", "NOT_AVAILABLE"),
+                    "verified": evaluation_ref.get("verified") is True,
+                    "verdict": evaluation_ref.get("verdict"),
+                    "run_id": evaluation_ref.get("run_id"),
+                },
+                "risk_packet": {
+                    "status": risk_row.get("status", "NOT_AVAILABLE"),
+                    "missing": list(risk_row.get("missing_inputs") or []),
+                    "reasons": dict(risk_row.get("missing_reasons") or {}),
+                },
+                "maturity": {
+                    "observed_periods": maturity_periods,
+                    "required_periods": _EVIDENCE_GATE_WEEKS,
+                },
             }
         )
 

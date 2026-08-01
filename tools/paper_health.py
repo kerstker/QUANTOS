@@ -301,10 +301,14 @@ def evaluate_paper_health(
         if isinstance(realtime_status.get("alphas"), Mapping)
         else {}
     )
-    if set(realtime_alphas) != set(ALPHA_IDS):
+    realtime_candidate_ids = tuple(
+        ALPHA_IDS
+        + tuple(sorted(alpha_id for alpha_id in realtime_alphas if alpha_id not in ALPHA_IDS))
+    )
+    if not set(ALPHA_IDS).issubset(set(realtime_alphas)):
         block("PAPER_REALTIME_ALPHA_SET_INCOMPLETE")
     alpha_report: dict[str, dict[str, Any]] = {}
-    for alpha_id in ALPHA_IDS:
+    for alpha_id in realtime_candidate_ids:
         row = realtime_alphas.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
         residual = _finite_number(row.get("reconciliation_residual"))
@@ -334,9 +338,9 @@ def evaluate_paper_health(
         if isinstance(realtime_status.get("backtests"), Mapping)
         else {}
     )
-    if set(backtests) != set(ALPHA_IDS):
+    if not set(ALPHA_IDS).issubset(set(backtests)):
         block("BACKTEST_ALPHA_SET_INCOMPLETE")
-    for alpha_id in ALPHA_IDS:
+    for alpha_id in realtime_candidate_ids:
         row = backtests.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
         if row.get("provenance") != "REAL_AUTHORITATIVE_L2_DRY_RUN":
@@ -351,7 +355,7 @@ def evaluate_paper_health(
         if isinstance(order_preview.get("alphas"), Mapping)
         else {}
     )
-    if set(preview_alphas) != set(ALPHA_IDS):
+    if not set(ALPHA_IDS).issubset(set(preview_alphas)):
         block("PAPER_ORDER_ALPHA_SET_INCOMPLETE")
     preview_research_risk_complete = True
     research_risk_bundles: dict[str, dict[str, Any]] = {}

@@ -559,7 +559,7 @@ export default function DryRunPipeline() {
             <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
               <table className="w-full table-fixed text-left text-xs" aria-label="alpha paper pipeline">
                 <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
-                  <tr>
+              <tr>
                     <th className="w-[30%] px-3 py-2 font-medium">Alpha</th>
                     <th className="w-[18%] px-3 py-2 font-medium">Stage</th>
                     <th className="px-3 py-2 text-right font-medium">OOS</th>
@@ -575,9 +575,18 @@ export default function DryRunPipeline() {
                       </td>
                       <td className="px-3 py-2">
                         <Chip
-                          label={candidate.execution_paper ? 'EXECUTION' : 'FORWARD'}
+                          label={candidate.execution_paper
+                            ? 'EXECUTION'
+                            : candidate.independent_evaluation?.status === 'VERIFIED'
+                              ? 'EVALUATED'
+                              : 'FORWARD'}
                           tone={candidate.execution_paper ? 'pos' : 'info'}
                         />
+                        {!candidate.execution_paper ? (
+                          <div className="mt-1 text-3xs text-faint">
+                            Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Risk {candidate.risk_packet?.status ?? 'PENDING'}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2 text-right ticker-num text-muted">
                         {candidate.n_forward_periods ?? 0}/{alphaPipeline?.counts.forward_paper ? (data.forward_track?.evidence_gate_weeks ?? 8) : 8}

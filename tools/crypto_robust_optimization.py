@@ -153,12 +153,22 @@ def _prepare_carry() -> AlphaSchedule:
     return AlphaSchedule("carry_oi_majors", periods, weights, prices, rates, adv, {})
 
 
-def _prepare_oi_alpha(panel, alpha_id: str, expression) -> AlphaSchedule:
+def _prepare_oi_alpha(
+    panel,
+    alpha_id: str,
+    expression,
+    *,
+    quantile: float | None = None,
+) -> AlphaSchedule:
     """Build one positioning sleeve from the existing PIT OI panel."""
     from live.execution.crowding_score import crowding_zscore
     from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
     from services.research import alpha_expression as ax
     from tools.crypto_oi_research import QUANTILE, _legs
+
+    selected_quantile = QUANTILE if quantile is None else float(quantile)
+    if not math.isfinite(selected_quantile) or not 0.0 < selected_quantile <= 0.5:
+        raise ValueError("quantile must be finite and in (0, 0.5]")
 
     instruments = panel.instruments
     close = panel.matrices["close"]
@@ -177,7 +187,7 @@ def _prepare_oi_alpha(panel, alpha_id: str, expression) -> AlphaSchedule:
     gate_decisions = []
     previous: dict[str, float] | None = None
     for row in rows:
-        legs = _legs(signal[row], QUANTILE)
+        legs = _legs(signal[row], selected_quantile)
         if not legs:
             continue
         timestamp = int(event_times[row])

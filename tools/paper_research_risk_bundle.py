@@ -40,6 +40,8 @@ ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_FORWARD_DB = Path("data/cache/paper_track.db")
 DEFAULT_DATASET_EVIDENCE = Path("evidence/crypto_robust_optimization.json")
 DEFAULT_EVALUATIONS = Path("evidence/paper_alpha_evaluations.json")
+DEFAULT_FORWARD_EVALUATIONS = Path("data/cache/forward_alpha_evaluations.json")
+DEFAULT_FORWARD_STATUS = Path("data/cache/forward_track_status.json")
 DEFAULT_FX_DB = Path("data/cache/fx.db")
 DEFAULT_MAINTENANCE = Path("data/cache/alpha_maintenance_status.json")
 DEFAULT_OUTPUT = Path("data/cache/paper_research_risk_inputs.json")
@@ -271,6 +273,125 @@ def _verified_evaluation_rows(path: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _verified_forward_evaluation_rows(
+    path: Path,
+    alpha_ids: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    """Verify independent challenger evaluations against the registry."""
+    document = _read_object(path)
+    if document.get("schema_version") != "forward_alpha_evaluations.v1":
+        return {}
+    rows = document.get("alphas")
+    if not isinstance(rows, Mapping):
+        return {}
+    from tools.search_trial_registry import production_experiment_registry
+
+    result: dict[str, dict[str, Any]] = {}
+    with production_experiment_registry() as registry:
+        for alpha_id in alpha_ids:
+            summary = rows.get(alpha_id)
+            evaluation_ref = (
+                summary.get("evaluation") if isinstance(summary, Mapping) else None
+            )
+            run_id = (
+                evaluation_ref.get("run_id")
+                if isinstance(evaluation_ref, Mapping)
+                else None
+            )
+            if not isinstance(run_id, str) or not registry.verify_evaluation(run_id):
+                continue
+            stored = registry.get_evaluation(run_id)
+            if not isinstance(stored, Mapping):
+                continue
+            try:
+                evaluation = json.loads(str(stored["evaluation_json"]))
+            except (KeyError, TypeError, json.JSONDecodeError):
+                continue
+            if (
+                isinstance(summary, Mapping)
+                and evaluation.get("alpha_id") == summary.get("research_alpha_id")
+                and stored.get("dataset_version") == document.get("dataset_version")
+            ):
+                result[str(alpha_id)] = {
+                    "evaluation": evaluation,
+                    "run_id": run_id,
+                    "research_alpha_id": summary.get("research_alpha_id"),
+                    "definition_hash": summary.get("definition_hash"),
+                    "dataset_version": stored.get("dataset_version"),
+                    "content_hash": stored.get("content_hash"),
+                    "quantile": summary.get("quantile"),
+                    "cadence_days": summary.get("cadence_days"),
+                }
+    return result
+
+
+def _forward_periods(path: Path, alpha_id: str, ledger: AttestedForwardLedger) -> int:
+    document = _read_object(path)
+    rows = document.get("alphas")
+    row = rows.get(alpha_id) if isinstance(rows, Mapping) else None
+    value = row.get("n_forward_periods") if isinstance(row, Mapping) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return int(value)
+    return len(ledger.attested_realizations(alpha_id))
+
+
+def _dynamic_candidate_schedule(panel, alpha_id: str):
+    """Build a real PIT schedule for a forward challenger when needed."""
+    from tools.crypto_robust_optimization import _prepare_oi_alpha
+    from tools.forward_track_advance import _alpha_spec, _registered_alphas
+
+    registered, _dynamic_ids = _registered_alphas()
+    entry = registered.get(alpha_id)
+    if entry is None:
+        raise RuntimeError(f"forward candidate specification is missing: {alpha_id}")
+    spec = _alpha_spec(entry)
+    return _prepare_oi_alpha(
+        panel,
+        alpha_id,
+        spec["expr"],
+        quantile=float(spec["quantile"]),
+    )
+
+
+def _candidate_risk_history(
+    candidate_schedule,
+    reference_schedule,
+    base_research: Mapping[str, Any],
+) -> tuple[dict[str, tuple[float, ...]], list[str], list[int]]:
+    """Align candidate and a real peer on common PIT ISO weeks."""
+    from tools.crypto_robust_optimization import _schedule_return_map, _week_key
+
+    candidate_by_week = {
+        _week_key(timestamp): int(timestamp)
+        for timestamp in candidate_schedule.periods
+    }
+    reference_by_week = {
+        _week_key(timestamp): int(timestamp)
+        for timestamp in reference_schedule.periods
+    }
+    common = sorted(set(candidate_by_week) & set(reference_by_week))
+    candidate_returns, _ = _schedule_return_map(candidate_schedule, [candidate_by_week[week] for week in common])
+    reference_returns, _ = _schedule_return_map(reference_schedule, [reference_by_week[week] for week in common])
+    valid = sorted(set(candidate_returns) & set(reference_returns))
+    if len(valid) < 16:
+        raise RuntimeError(f"fewer than 16 common PIT return weeks: {len(valid)}")
+    candidate_id = candidate_schedule.alpha_id
+    reference_id = reference_schedule.alpha_id
+    periods = [max(candidate_by_week[week], reference_by_week[week]) for week in valid]
+    label_map = {
+        _week_key(timestamp): str(label)
+        for timestamp, label in zip(
+            base_research.get("periods", ()),
+            base_research.get("state_labels", ()),
+        )
+    }
+    labels = [label_map.get(week, "UNKNOWN") for week in valid]
+    return {
+        candidate_id: tuple(float(candidate_returns[week]) for week in valid),
+        reference_id: tuple(float(reference_returns[week]) for week in valid),
+    }, labels, periods
+
+
 def _metadata_from_evaluation(
     *,
     deployed_alpha_id: str,
@@ -490,6 +611,287 @@ def build_research_risk_bundle(
     }
 
 
+def build_automatic_research_risk_bundle(
+    *,
+    forward_db: str | Path = DEFAULT_FORWARD_DB,
+    dataset_evidence: str | Path = DEFAULT_DATASET_EVIDENCE,
+    evaluations: str | Path = DEFAULT_EVALUATIONS,
+    forward_evaluations: str | Path = DEFAULT_FORWARD_EVALUATIONS,
+    forward_status: str | Path = DEFAULT_FORWARD_STATUS,
+    fx_db: str | Path = DEFAULT_FX_DB,
+    maintenance: str | Path = DEFAULT_MAINTENANCE,
+    alpha_ids: Sequence[str] = ALPHA_IDS,
+    paper_aum_usd: float = DEFAULT_PAPER_AUM_USD,
+) -> dict[str, Any]:
+    """Extend the static bundle with every forward challenger.
+
+    Dynamic challengers are deliberately more restrictive than the legacy
+    three-book artifact: they need an independently verified evaluation with
+    a PASS verdict and the full eight-period forward evidence gate before a
+    real PIT risk input row can become READY.  Before maturity, the artifact
+    still records an explicit row and blocker, allowing the operator and UI to
+    show that the candidate is running rather than silently dropping it.
+    """
+    selected = tuple(alpha_ids)
+    if selected != tuple(dict.fromkeys(selected)) or not selected:
+        raise ValueError("alpha_ids must be a non-empty unique sequence")
+    static_selected = tuple(alpha for alpha in selected if alpha in ALPHA_IDS)
+    dynamic_selected = tuple(alpha for alpha in selected if alpha not in ALPHA_IDS)
+    base = (
+        build_research_risk_bundle(
+            forward_db=forward_db,
+            evaluations=evaluations,
+            fx_db=fx_db,
+            maintenance=maintenance,
+            alpha_ids=static_selected,
+            paper_aum_usd=paper_aum_usd,
+        )
+        if static_selected
+        else {
+            "schema_version": BUNDLE_SCHEMA_VERSION,
+            "provenance": BUNDLE_PROVENANCE,
+            "status": "PENDING",
+            "producer": "tools.paper_research_risk_bundle",
+            "producer_contract": "REAL_PIT_INPUTS_NO_SYNTHETIC_DEFAULTS",
+            "config_hash": _config_hash(),
+            "alphas": {},
+            "missing_inputs": [],
+            "synthetic_defaults": False,
+            "execution_authority_granted": False,
+            "order_submission_allowed": False,
+        }
+    )
+    if not dynamic_selected:
+        return base
+
+    evaluation_rows = _verified_forward_evaluation_rows(
+        Path(forward_evaluations), dynamic_selected
+    )
+    maintenance_document = _read_object(Path(maintenance))
+    config_hash = str(base.get("config_hash") or _config_hash())
+    ledger = AttestedForwardLedger(str(forward_db), create=False)
+    dynamic_rows: dict[str, dict[str, Any]] = {}
+    dynamic_missing: list[str] = []
+    dataset_components: list[dict[str, Any]] = []
+    panel = None
+    base_schedules = None
+    base_research = None
+    try:
+        for alpha_id in dynamic_selected:
+            pending_rows = ledger.attested_pending(alpha_id)
+            if len(pending_rows) != 1:
+                reason = (
+                    "attested_pending_decision_missing"
+                    if not pending_rows
+                    else f"attested_pending_decision_backlog:{len(pending_rows)}"
+                )
+                dynamic_missing.append("forward_decision")
+                dynamic_rows[alpha_id] = {
+                    "binding": {"alpha_id": alpha_id, "config_hash": config_hash},
+                    "missing_inputs": ["forward_decision"],
+                    "missing_reasons": {"forward_decision": reason},
+                    "status": "PENDING",
+                    "maturity": {"forward_periods": None, "required": REQUIRED_FORWARD_PERIODS},
+                    "provenance": {
+                        "independent_evaluation": "PENDING",
+                        "synthetic_defaults": False,
+                    },
+                }
+                continue
+
+            pending = dict(pending_rows[0])
+            pending["alpha_id"] = alpha_id
+            decision_ts = int(pending["decided_ts"])
+            binding = {
+                "alpha_id": alpha_id,
+                "decision_ts": decision_ts,
+                "decision_payload_sha256": forward_decision_payload_sha256(pending),
+                "config_hash": config_hash,
+                "dataset_version": "PENDING",
+            }
+            forward_periods = _forward_periods(Path(forward_status), alpha_id, ledger)
+            row_missing: list[str] = []
+            missing_reasons: dict[str, str] = {}
+            evaluation_row = evaluation_rows.get(alpha_id)
+            evaluation = (
+                evaluation_row.get("evaluation")
+                if isinstance(evaluation_row, Mapping)
+                else None
+            )
+            if forward_periods < REQUIRED_FORWARD_PERIODS:
+                row_missing.append("alpha_metadata")
+                missing_reasons["alpha_metadata"] = (
+                    f"forward_evidence_maturity:{forward_periods}/{REQUIRED_FORWARD_PERIODS}"
+                )
+            elif evaluation_row is None or not isinstance(evaluation, Mapping):
+                row_missing.append("alpha_metadata")
+                missing_reasons["alpha_metadata"] = "independent_evaluation_missing"
+            elif evaluation.get("verdict") != "PASS":
+                row_missing.append("alpha_metadata")
+                missing_reasons["alpha_metadata"] = "independent_evaluation_not_pass"
+
+            # No candidate-specific history is built until the candidate has
+            # crossed the evidence clock and the independent evaluator has
+            # actually passed.  This avoids treating an immature observation
+            # as a complete risk packet and keeps the current operator cheap.
+            inputs: dict[str, Any] = {}
+            provenance: dict[str, Any] = {
+                "independent_evaluation": (
+                    evaluation_row.get("run_id")
+                    if isinstance(evaluation_row, Mapping)
+                    else None
+                ),
+                "forward_periods": forward_periods,
+                "required_forward_periods": REQUIRED_FORWARD_PERIODS,
+                "synthetic_defaults": False,
+            }
+            if not row_missing:
+                try:
+                    if panel is None:
+                        from tools.crypto_oi_research import build_panel
+                        from tools.crypto_robust_optimization import (
+                            _build_bundle,
+                            load_alpha_schedules,
+                        )
+
+                        base_schedules, schedule_identity = load_alpha_schedules()
+                        base_research = _build_bundle(base_schedules)
+                        panel, _ = build_panel()
+                    schedule = _dynamic_candidate_schedule(panel, alpha_id)
+                    reference_id = (
+                        "carry_oi_majors"
+                        if alpha_id == "crowd_contra"
+                        else "crowd_contra"
+                    )
+                    reference = base_schedules[reference_id]
+                    returns, labels, timestamps = _candidate_risk_history(
+                        schedule,
+                        reference,
+                        base_research,
+                    )
+                    cny_per_usd, fx_identity = _cny_per_usd_as_of(
+                        Path(fx_db), decision_ts
+                    )
+                    liquidity = _decision_adv_inputs(
+                        schedule=schedule,
+                        decision_ts=decision_ts,
+                        weights=json.loads(str(pending["weights_json"])),
+                        cny_per_usd=cny_per_usd,
+                        paper_aum_usd=float(paper_aum_usd),
+                    )
+                    metadata = _metadata_from_evaluation(
+                        deployed_alpha_id=alpha_id,
+                        evaluation_row=evaluation_row,
+                        decision_recorded_at=int(pending["recorded_at"]),
+                        forward_periods=forward_periods,
+                        maintenance=maintenance_document,
+                    )
+                    inputs = {
+                        "capacity_cny": liquidity["capacity_cny"],
+                        "daily_volume_cny": liquidity["daily_volume_cny"],
+                        "total_aum": liquidity["total_aum"],
+                        "alpha_returns": {key: list(value) for key, value in returns.items()},
+                        "regime_labels": labels,
+                        "timestamps": timestamps,
+                        "alpha_metadata": [metadata],
+                    }
+                    provenance.update(
+                        {
+                            "schedule_identity": schedule_identity,
+                            "reference_alpha_id": reference_id,
+                            "fx": fx_identity,
+                            "liquidity": liquidity["liquidity_provenance"],
+                        }
+                    )
+                    schedule_digest = hashlib.sha256(
+                        json.dumps(
+                            {
+                                "alpha_id": alpha_id,
+                                "returns": {
+                                    str(key): list(value)
+                                    for key, value in returns.items()
+                                },
+                                "labels": labels,
+                                "timestamps": timestamps,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    dataset_components.append(
+                        {
+                            "alpha_id": alpha_id,
+                            "decision_ts": decision_ts,
+                            "forward_periods": forward_periods,
+                            "evaluation_content_hash": evaluation_row.get("content_hash"),
+                            "schedule_digest": schedule_digest,
+                            "fx": fx_identity,
+                            "liquidity": liquidity["liquidity_provenance"],
+                        }
+                    )
+                except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                    row_missing.extend(REQUIRED_INPUT_FIELDS)
+                    missing_reasons["candidate_schedule"] = str(exc)[:240]
+                    inputs = {}
+            dynamic_missing.extend(row_missing)
+            dynamic_rows[alpha_id] = {
+                "binding": binding,
+                "inputs": inputs,
+                "missing_inputs": list(dict.fromkeys(row_missing)),
+                "missing_reasons": missing_reasons,
+                "status": "READY" if not row_missing else "PENDING",
+                "maturity": {
+                    "forward_periods": forward_periods,
+                    "required": REQUIRED_FORWARD_PERIODS,
+                },
+                "provenance": provenance,
+            }
+    finally:
+        ledger.close()
+
+    combined_rows = dict(base.get("alphas") or {})
+    combined_rows.update(dynamic_rows)
+    combined_missing = list(dict.fromkeys(
+        list(base.get("missing_inputs") or []) + dynamic_missing
+    ))
+    dataset_version = hashlib.sha256(
+        json.dumps(
+            {
+                "base": base.get("dataset_version"),
+                "forward_evaluations": _read_object(Path(forward_evaluations)).get("dataset_version"),
+                "dynamic_components": dataset_components,
+                "candidate_ids": list(dynamic_selected),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    for row in combined_rows.values():
+        binding = row.get("binding") if isinstance(row, Mapping) else None
+        if isinstance(binding, dict):
+            binding["dataset_version"] = dataset_version
+    ready = not combined_missing and all(
+        isinstance(row, Mapping) and row.get("status") == "READY"
+        for row in combined_rows.values()
+    )
+    return {
+        **base,
+        "status": "READY" if ready else "PENDING",
+        "dataset_version": dataset_version,
+        "alphas": combined_rows,
+        "missing_inputs": combined_missing,
+        "producer_contract": "REAL_PIT_INPUTS_NO_SYNTHETIC_DEFAULTS_DYNAMIC_FORWARD_GATE",
+        "candidate_universe": {
+            "static": list(static_selected),
+            "dynamic": list(dynamic_selected),
+            "count": len(selected),
+        },
+        "execution_authority_granted": False,
+        "order_submission_allowed": False,
+    }
+
+
 def _write(path: Path, document: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -505,17 +907,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--forward-db", default=str(DEFAULT_FORWARD_DB))
     parser.add_argument("--dataset-evidence", default=str(DEFAULT_DATASET_EVIDENCE))
     parser.add_argument("--evaluations", default=str(DEFAULT_EVALUATIONS))
+    parser.add_argument("--forward-evaluations", default=str(DEFAULT_FORWARD_EVALUATIONS))
+    parser.add_argument("--forward-status", default=str(DEFAULT_FORWARD_STATUS))
     parser.add_argument("--fx-db", default=str(DEFAULT_FX_DB))
     parser.add_argument("--maintenance", default=str(DEFAULT_MAINTENANCE))
     parser.add_argument("--paper-aum-usd", type=float, default=DEFAULT_PAPER_AUM_USD)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     args = parser.parse_args(argv)
     try:
-        document = build_research_risk_bundle(
+        from tools.paper_candidate_universe import paper_candidate_ids
+
+        document = build_automatic_research_risk_bundle(
             forward_db=args.forward_db,
+            dataset_evidence=args.dataset_evidence,
             evaluations=args.evaluations,
+            forward_evaluations=args.forward_evaluations,
+            forward_status=args.forward_status,
             fx_db=args.fx_db,
             maintenance=args.maintenance,
+            alpha_ids=paper_candidate_ids(
+                forward_status=args.forward_status,
+                evaluations=args.forward_evaluations,
+            ),
             paper_aum_usd=args.paper_aum_usd,
         )
         _write(Path(args.output), document)
