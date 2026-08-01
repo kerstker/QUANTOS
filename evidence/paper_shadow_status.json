@@ -22,9 +22,9 @@
     "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
     "crowd_contra:PAPER_EXECUTION_NOT_FILLED"
   ],
-  "commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
+  "commit": "3af55925603b10fec9c3f9a44e1468075ea66f52",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785621054635,
+  "generated_at_ms": 1785625828469,
   "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
   "input_hash": "830d3d569c9d7e9688654cb1c70b5eb45ecf412d86aed96923d946b2a31febef",
@@ -180,9 +180,9 @@
   "status": "READY_FOR_SHADOW",
   "validation": {
     "current": true,
-    "head_commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
+    "head_commit": "3af55925603b10fec9c3f9a44e1468075ea66f52",
     "overall_status": "PASS",
-    "reported_commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
+    "reported_commit": "3af55925603b10fec9c3f9a44e1468075ea66f52",
     "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
     "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"

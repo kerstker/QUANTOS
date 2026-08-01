@@ -112,6 +112,55 @@ def test_entrypoint_rejects_ambiguous_exit_code(tmp_path: Path, result: object) 
         )
 
 
+@pytest.mark.parametrize(
+    ("exit_code", "expected"),
+    [(None, 0), (0, 0), (1, 1), (2, 2)],
+)
+def test_entrypoint_normalizes_system_exit_to_worker_result(
+    tmp_path: Path,
+    exit_code: int | None,
+    expected: int,
+) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root)
+
+    def exit_from_main() -> None:
+        raise SystemExit(exit_code)
+
+    module.main = exit_from_main
+
+    assert run_scheduled_module(
+        "domain_event_ops",
+        code_root=code_root,
+        expected_release_commit=COMMIT,
+        release_verifier=_accept_release,
+        importer=lambda _name: module,
+    ) == expected
+
+
+@pytest.mark.parametrize("exit_code", [True, "failure", 1.5])
+def test_entrypoint_rejects_ambiguous_system_exit_code(
+    tmp_path: Path,
+    exit_code: object,
+) -> None:
+    code_root = tmp_path / "release"
+    module = _module(code_root)
+
+    def exit_from_main() -> None:
+        raise SystemExit(exit_code)
+
+    module.main = exit_from_main
+
+    with pytest.raises(ScheduleEntrypointError, match="exit code"):
+        run_scheduled_module(
+            "domain_event_ops",
+            code_root=code_root,
+            expected_release_commit=COMMIT,
+            release_verifier=_accept_release,
+            importer=lambda _name: module,
+        )
+
+
 def test_entrypoint_hides_launcher_arguments_from_worker(
     tmp_path: Path,
     monkeypatch,
@@ -445,7 +494,9 @@ def test_script_entrypoint_ignores_dirty_state_root_pythonpath(tmp_path: Path) -
     assert receipt["verified_at"] is not None
 
 
-def test_script_receipt_distinguishes_verified_worker_failure(tmp_path: Path) -> None:
+def test_script_receipt_distinguishes_verified_system_exit_failure(
+    tmp_path: Path,
+) -> None:
     source_launcher = Path(__file__).resolve().parents[2] / "tools" / "l2_schedule_entrypoint.py"
     release = tmp_path / "release"
     state = tmp_path / "state"
@@ -454,7 +505,7 @@ def test_script_receipt_distinguishes_verified_worker_failure(tmp_path: Path) ->
     state.mkdir()
     (tools / "__init__.py").write_text("", encoding="utf-8")
     (tools / "domain_event_ops.py").write_text(
-        "def main():\n    return 7\n",
+        "def main():\n    raise SystemExit(7)\n",
         encoding="utf-8",
     )
     launcher = tools / "l2_schedule_entrypoint.py"
