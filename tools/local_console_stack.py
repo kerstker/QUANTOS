@@ -27,11 +27,16 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from quantos.runtime_paths import STATE_ROOT_ENV, runtime_state_root
+
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME = ROOT / ".runtime" / "console-stack"
+STATE_ROOT = runtime_state_root(cwd=ROOT)
+RUNTIME = STATE_ROOT / ".runtime" / "console-stack"
 MANIFEST = RUNTIME / "manifest.json"
 LOGS = RUNTIME / "logs"
+_RELEASE_COMMIT_ENV = "QUANTOS_RELEASE_COMMIT"
+_RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
 
 
 def _headless_creationflags() -> int:
@@ -145,45 +150,95 @@ def _source_revision() -> str:
         return "unknown"
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _runtime_identity(state_root: Path, source_revision: str) -> tuple[str, dict[str, str]]:
+    """Bind an explicit operational state root to an exact clean release."""
+    configured_state = os.getenv(STATE_ROOT_ENV, "").strip()
+    expected_commit = os.getenv(_RELEASE_COMMIT_ENV, "").strip()
+    if bool(configured_state) != bool(expected_commit):
+        raise RuntimeError(
+            f"{STATE_ROOT_ENV} and {_RELEASE_COMMIT_ENV} must be configured together"
+        )
+    if not state_root.is_dir():
+        raise RuntimeError(f"console state root is unavailable: {state_root}")
+    if configured_state:
+        if not re.fullmatch(r"[0-9a-f]{40}", expected_commit):
+            raise RuntimeError("console release commit must be an exact 40-character SHA")
+        if source_revision != expected_commit:
+            raise RuntimeError("console release root is dirty or does not match the expected commit")
+        release_root = ROOT.resolve()
+        if (
+            state_root == release_root
+            or _is_within(state_root, release_root)
+            or _is_within(release_root, state_root)
+        ):
+            raise RuntimeError("console release and state roots must be separate and non-overlapping")
+
+    python_path = str(ROOT.resolve())
+    inherited_python_path = os.getenv("PYTHONPATH", "").strip()
+    if inherited_python_path:
+        python_path = os.pathsep.join((python_path, inherited_python_path))
+    runtime_env = {
+        STATE_ROOT_ENV: str(state_root),
+        _RELEASE_ROOT_ENV: str(ROOT.resolve()),
+        "PYTHONPATH": python_path,
+    }
+    if expected_commit:
+        runtime_env[_RELEASE_COMMIT_ENV] = expected_commit
+    return expected_commit or source_revision, runtime_env
+
+
 def service_specs() -> list[dict[str, Any]]:
     """Return the only processes this helper is allowed to start."""
     frontend_port = _frontend_port()
     frontend_origin = f"http://127.0.0.1:{frontend_port},http://localhost:{frontend_port}"
     python_worker = _python_worker()
     source_revision = _source_revision()
+    release_identity, runtime_env = _runtime_identity(STATE_ROOT, source_revision)
     return [
         {
             "name": "console_api",
             "port": 8400,
-            "cwd": ROOT,
-            "command": [python_worker, "-m", "uvicorn", "services.console.main:app",
+            "cwd": STATE_ROOT,
+            "command": [python_worker, "-P", "-m", "uvicorn", "services.console.main:app",
                         "--host", "127.0.0.1", "--port", "8400"],
             "health": "http://127.0.0.1:8400/openapi.json",
             "cors_probe": "http://127.0.0.1:8400/health",
             "cors_origins": [f"http://127.0.0.1:{frontend_port}", f"http://localhost:{frontend_port}"],
             "env": {
+                **runtime_env,
                 "QUANTOS_CONSOLE_CORS_ORIGINS": frontend_origin,
-                "QUANTOS_BUILD_SHA": source_revision,
+                "QUANTOS_BUILD_SHA": release_identity,
             },
+            "release_commit": release_identity,
         },
         {
             "name": "research_runner",
             "port": 8420,
-            "cwd": ROOT,
-            "command": [python_worker, "-m", "uvicorn", "services.research_runner.main:app",
+            "cwd": STATE_ROOT,
+            "command": [python_worker, "-P", "-m", "uvicorn", "services.research_runner.main:app",
                         "--host", "127.0.0.1", "--port", "8420"],
             "health": "http://127.0.0.1:8420/health",
-            "env": {"QUANTOS_RUNNER_CORS_ORIGINS": frontend_origin},
+            "env": {**runtime_env, "QUANTOS_RUNNER_CORS_ORIGINS": frontend_origin},
+            "release_commit": release_identity,
         },
         {
             "name": "frontend",
             "port": frontend_port,
-            "cwd": ROOT,
+            "cwd": STATE_ROOT,
             # Serve the built SPA through pythonw.  Node/Vite is a build-time
             # IDE tool only; a resident node.exe can allocate conhost.exe even
             # when its parent requested CREATE_NO_WINDOW.
             "command": [
                 python_worker,
+                "-P",
                 "-m",
                 "tools.local_frontend_server",
                 "--host",
@@ -192,7 +247,8 @@ def service_specs() -> list[dict[str, Any]]:
                 str(frontend_port),
             ],
             "health": f"http://127.0.0.1:{frontend_port}/",
-            "env": {},
+            "env": dict(runtime_env),
+            "release_commit": release_identity,
         },
     ]
 
@@ -397,6 +453,8 @@ def status() -> dict[str, Any]:
             "pid_alive": _pid_alive(service.get("pid")),
             "port_listening": _port_busy(int(port)) if isinstance(port, int) else False,
             "log": service.get("log"),
+            "release_commit": service.get("release_commit"),
+            "state_root": service.get("state_root"),
         })
     return {"running": bool(rows) and all(row["pid_alive"] and row["port_listening"] for row in rows),
             "services": rows, "manifest": str(MANIFEST)}
@@ -436,9 +494,10 @@ def start() -> dict[str, Any]:
             finally:
                 log.close()
             record = {"name": spec["name"], "pid": process.pid, "launcher_pid": process.pid,
-                      "port": spec["port"], "health": spec["health"], "log": str(log_path)}
+                      "port": spec["port"], "health": spec["health"], "log": str(log_path),
+                      "release_commit": spec["release_commit"], "state_root": str(spec["cwd"])}
             started.append(record)
-            _write_json(MANIFEST, {"schema_version": 1, "started_at": int(time.time()),
+            _write_json(MANIFEST, {"schema_version": 2, "started_at": int(time.time()),
                                    "services": started})
             _wait_health(spec["health"])
             cors_probe = spec.get("cors_probe")
@@ -450,7 +509,7 @@ def start() -> dict[str, Any]:
             listener_pid = _listening_pid(int(spec["port"]))
             if listener_pid is not None:
                 record["pid"] = listener_pid
-                _write_json(MANIFEST, {"schema_version": 1, "started_at": int(time.time()),
+                _write_json(MANIFEST, {"schema_version": 2, "started_at": int(time.time()),
                                        "services": started})
     except BaseException:
         for service in started:
