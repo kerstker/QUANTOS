@@ -35,6 +35,11 @@ _HOP_BY_HOP_HEADERS = {
 }
 
 
+def _is_event_stream_response(response: http.client.HTTPResponse) -> bool:
+    content_type = str(response.getheader("Content-Type", ""))
+    return content_type.partition(";")[0].strip().lower() == "text/event-stream"
+
+
 def _spa_target(request_path: str, *, dist: Path = DIST) -> str | None:
     """Return an index fallback for a missing extensionless local route."""
     path = unquote(urlsplit(request_path).path)
@@ -125,6 +130,20 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
         try:
             connection.request(self.command, upstream_path, body=body, headers=headers)
             response = connection.getresponse()
+            if _is_event_stream_response(response) and connection.sock is not None:
+                # The upstream emits a heartbeat every 15 seconds.  Keep a
+                # wider read timeout so the proxy never races the heartbeat.
+                connection.sock.settimeout(45)
+            self._relay_response(response)
+        except OSError as exc:
+            self.send_error(502, f"local upstream unavailable: {type(exc).__name__}")
+        finally:
+            connection.close()
+
+    def _relay_response(self, response: http.client.HTTPResponse) -> None:
+        """Relay ordinary payloads eagerly and SSE payloads line by line."""
+        is_event_stream = _is_event_stream_response(response)
+        if not is_event_stream:
             payload = response.read()
             self.send_response(response.status)
             for key, value in response.getheaders():
@@ -134,10 +153,28 @@ class SpaRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(payload)
-        except OSError as exc:
-            self.send_error(502, f"local upstream unavailable: {type(exc).__name__}")
-        finally:
-            connection.close()
+            return
+
+        self.send_response(response.status)
+        for key, value in response.getheaders():
+            if key.lower() not in _HOP_BY_HOP_HEADERS | {"content-length"}:
+                self.send_header(key, value)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.close_connection = True
+        if self.command == "HEAD":
+            return
+        while True:
+            try:
+                line = response.readline()
+                if not line:
+                    return
+                self.wfile.write(line)
+                self.wfile.flush()
+            except OSError:
+                # Browser disconnects and idle upstreams are normal for SSE;
+                # EventSource reconnects and receives a fresh verified snapshot.
+                return
 
 
 class LocalThreadingServer(http.server.ThreadingHTTPServer):

@@ -7,10 +7,11 @@ order submission, emergency trading action, or a live operations API.
 
 ## Scheduled Jobs
 
-Register from a clean, validated release checkout. For a single-root install,
-run `powershell -ExecutionPolicy Bypass -File scripts/register_schedules.ps1`
-from that checkout. When mutable operational state lives in a different root,
-keep the release checkout clean and pass the state root explicitly:
+Registration requires two absolute, different, non-overlapping roots. The code
+root is a clean, validated release checkout; the state root is the mutable
+operational tree that owns `data/cache`, `evidence`, and `.runtime`. A
+single-root installation is rejected rather than treated as a production-paper
+release:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -18,29 +19,52 @@ powershell -ExecutionPolicy Bypass `
   -StateRoot H:\path\to\operational-state
 ```
 
-The script location is the code root; it is never caller-selected. Each task
-executes the absolute `tools/l2_schedule_entrypoint.py` from that root, which
-allows only the modules in the table below and verifies the imported worker
-also came from the release. The Task Scheduler working directory remains the
-state root, preserving all `data/cache` contracts without importing Python from
-a dirty operational checkout. The independent watchdog pins the Python
-executable class, launcher path, module, and state root; legacy direct
-`-m tools.*` actions fail closed as `ACTION_DRIFT`. `QUANTOS_domain_event_ops`
-also has a five-minute execution limit and `IgnoreNew` overlap policy.
+The script location is the code root; it is never caller-selected. Registration
+fails unless Git `HEAD` is a 40-character commit and the release has no tracked
+or untracked changes. Each task action carries that exact commit through
+`--release-commit`. Before every import, `tools/l2_schedule_entrypoint.py`
+rechecks the release `HEAD`, verifies full cleanliness, rejects overlapping
+release/state roots, and binds `QUANTOS_RELEASE_COMMIT`,
+`QUANTOS_RELEASE_ROOT`, and `QUANTOS_STATE_ROOT` into the worker. The imported
+module must also resolve under the release `tools` directory.
+
+The Task Scheduler working directory remains the state root. Mutable default
+paths resolve there, including the autonomous realtime discovery and forward
+shadow stores; the console uses the same `QUANTOS_STATE_ROOT`. Every invocation
+writes a hash-bearing receipt under `.runtime/l2-release-runs/`. The receipt
+separates release verification from worker outcome, so a verified release plus
+a non-zero worker exit is recorded as `release_verified=true`, `status=FAILED`.
+The independent watchdog pins the Python executable class, launcher path,
+module, state root, and release commit; legacy direct `-m tools.*`, unpinned, or
+same-root actions fail closed as `ACTION_DRIFT`. Existing tasks must therefore
+be re-registered from a clean release after adopting this contract.
 
 | Task | Cadence | Module |
 |---|---|---|
 | `QUANTOS_factory_loop` | Sunday 20:00 | `tools.crypto_factory_loop` |
 | `QUANTOS_ic_panel_refresh` | Sunday 20:30 | `tools.ic_panel_research` |
+| `QUANTOS_paper_alpha_evaluation` | Sunday 20:45 | `tools.paper_alpha_evaluation` |
 | `QUANTOS_forward_track` | Daily 21:00 poll (7-day internal due gate) | `tools.forward_track_advance` |
 | `QUANTOS_alpha_maintenance` | Monday 09:05 | `tools.alpha_maintenance_sweep` |
 | `QUANTOS_domain_event_ops` | Hourly | `tools.domain_event_ops` |
 | `QUANTOS_scheduler_watchdog` | Every 15 minutes | `tools.l2_scheduler_watchdog` |
 | `QUANTOS_gonogo_report` | Daily 23:00 | `tools.gonogo_report` |
 | `QUANTOS_alpha_paper_cycle` | Daily 23:05 (after Go/No-Go) | `tools.alpha_paper_cycle` |
+| `QUANTOS_paper_research_risk_bundle` | Daily 23:08 | `tools.paper_research_risk_bundle` |
 | `QUANTOS_paper_order_preview` | Daily 23:10 (after paper cycle) | `tools.paper_order_preview` |
+| `QUANTOS_binance_realtime_market` | Every 5 minutes | `tools.binance_realtime_market` |
+| `QUANTOS_binance_systemic_risk` | Every 30 minutes | `tools.binance_systemic_risk` |
+| `QUANTOS_binance_rpi_depth` | Hourly | `tools.binance_rpi_depth` |
+| `QUANTOS_binance_realtime_features` | Every 5 minutes | `tools.binance_realtime_features` |
+| `QUANTOS_binance_realtime_drift_alerts` | Every 5 minutes | `tools.binance_realtime_drift_alerts` |
+| `QUANTOS_realtime_alpha_discovery` | Hourly | `tools.realtime_alpha_discovery` |
+| `QUANTOS_realtime_alpha_forward_shadow` | Every minute | `tools.realtime_alpha_forward_shadow` |
+| `QUANTOS_binance_realtime_stream` | Startup + 5-minute restart check | `tools.binance_realtime_stream` |
+| `QUANTOS_paper_multivenue_sor` | Every 5 minutes | `tools.paper_multivenue_sor` |
 | `QUANTOS_paper_realtime` | Every 5 minutes (short-lived worker) | `tools.paper_realtime` |
 | `QUANTOS_paper_realtime_10k` | Every 5 minutes (short-lived worker, offset) | `tools.paper_realtime_10k` |
+| `QUANTOS_paper_shadow_auto` | Daily 21:20 | `tools.paper_shadow_auto` |
+| `QUANTOS_paper_shadow_realtime` | Every 5 minutes | `tools.paper_shadow_realtime` |
 | `QUANTOS_paper_health` | Every 5 minutes (one minute after marks) | `tools.paper_health` |
 | `QUANTOS_backup` | Daily 03:00, only when configuration passes | `tools.l2_backup` |
 | `QUANTOS_external_heartbeat` | Every 5 minutes, only when configured | `tools.external_heartbeat` |
@@ -51,8 +75,12 @@ also has a five-minute execution limit and `IgnoreNew` overlap policy.
 The operator-level paper flow is a single idempotent, L2-only command. It runs
 the authoritative dry-run seam for `carry_oi_majors`, `crowd_contra`, and
 `top_contra`, rebuilds the shared paper-cycle/readiness evidence, then runs the
-same pre-trade gate and dry-run adapter for the paper order preview. It never
-reads private credentials or submits an order:
+same pre-trade gate and dry-run adapter for the paper order preview. These three
+pre-unified-workflow books are explicitly classified as
+`LEGACY_DIAGNOSTIC_PAPER`: they may continue receiving public realtime marks and
+producing PnL diagnostics, but they cannot count as a new-pipeline candidate or
+obtain deployment eligibility. It never reads private credentials or submits
+an order:
 
 ```powershell
 rtk python -m tools.l2_paper_operator

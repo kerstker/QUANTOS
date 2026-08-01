@@ -47,6 +47,11 @@ def test_projects_complete_public_snapshot_with_pit_times():
     assert by_id["rt_mark_basis_bps"] == pytest.approx(100.0)
     assert by_id["rt_taker_imbalance_5s"] == pytest.approx(0.5)
     assert by_id["rt_liquidation_imbalance_5s"] == pytest.approx(-0.5)
+    bid_notional = sum((99 - index) * (index + 1) for index in range(5))
+    ask_notional = sum((101 + index) * (index + 2) for index in range(5))
+    assert by_id["rt_executable_depth_5_usd"] == pytest.approx(
+        min(bid_notional, ask_notional)
+    )
 
 
 def test_projection_rejects_incomplete_or_future_source():

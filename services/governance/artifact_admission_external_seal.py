@@ -151,12 +151,21 @@ def _digest(content: bytes) -> str:
 def artifact_admission_seal_contract_sha256(
     value: Mapping[str, Any],
 ) -> str:
-    """Hash one seal contract independently of checkout line endings."""
+    """Hash the stable authority contract, excluding local observation time.
+
+    The retained Sigstore bundle still authenticates every byte of the signed
+    seal, including its original timestamp.  This comparison digest exists to
+    match that signed checkpoint to a later local observation of the *same*
+    authority head; a scheduler refresh must not invalidate the checkpoint
+    merely because ``observed_at_ms`` advanced.
+    """
     if not isinstance(value, Mapping):
         raise TypeError("artifact-admission seal contract must be an object")
+    contract = dict(value)
+    contract.pop("observed_at_ms", None)
     return _digest(
         json.dumps(
-            dict(value),
+            contract,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

@@ -1371,8 +1371,10 @@ export interface PaperProfilePayload {
 }
 
 export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
-  stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | string;
+  stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER' | string;
+  paper_class: 'FORWARD_CHALLENGER' | 'CANDIDATE_EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER';
   execution_paper: boolean;
+  deployment_eligible: false;
   blockers: string[];
   independent_evaluation?: {
     status?: string | null;
@@ -1407,6 +1409,8 @@ export interface AlphaPipelinePayload {
   counts: {
     forward_paper: number;
     execution_paper: number;
+    candidate_execution_paper: number;
+    legacy_diagnostic_paper: number;
     forward_only: number;
     factory_survivors: number;
   };
@@ -1419,6 +1423,7 @@ export interface AlphaPipelinePayload {
   };
   safety: {
     paper_only: true;
+    deployment_eligible: false;
     live_allowed: false;
     order_submission_allowed: false;
   };
@@ -1469,6 +1474,151 @@ export interface SchedulerWatchdogPayload {
   checks: SchedulerWatchdogCheckPayload[];
   external_heartbeat_configured?: boolean;
   event_seal_configured?: boolean;
+}
+export interface RealtimeAlphaCandidatePayload {
+  candidate_id: string;
+  family_id?: string | null;
+  mechanism?: string | null;
+  horizon_ms?: number | null;
+  status?: string | null;
+  n_periods?: number | null;
+  mean_breadth?: number | null;
+  mean_ic?: number | null;
+  ic_t_stat?: number | null;
+  net_sharpe?: number | null;
+  holdout_net_sharpe?: number | null;
+  net_return?: number | null;
+  max_drawdown?: number | null;
+  walk_forward_positive_frac?: number | null;
+  spread_regime_positive_frac?: number | null;
+  diagnostic_lead?: boolean;
+  gate_pass?: boolean;
+  gate_reasons?: string[];
+  deflated_sharpe?: number | null;
+  pbo?: number | null;
+  promotion_eligible: false;
+  live_allowed: false;
+}
+export interface RealtimeAlphaAutonomyPayload {
+  source: string;
+  read_only: true;
+  snapshot_present: boolean;
+  boundary_valid: boolean;
+  status: string;
+  mode: string;
+  generated_at_ms?: number | null;
+  dataset_version?: string | null;
+  search_id?: string | null;
+  autonomy: {
+    worker?: string | null;
+    scheduler_task?: string | null;
+    autonomous_search_running: boolean;
+    requires_developer_ai: false;
+    next_cycle_expected_ms?: number | null;
+  };
+  data_admission: {
+    status?: string;
+    quality_status?: string;
+    common_start_ms?: number | null;
+    common_end_ms?: number | null;
+    common_span_ms?: number;
+    feature_age_ms?: number | null;
+    common_instruments?: string[];
+    missing_features?: string[];
+    thin_features?: string[];
+    reasons?: string[];
+    exploration_allowed?: boolean;
+    formal_validation_allowed?: boolean;
+    shadow_admission_allowed?: boolean;
+  };
+  feature_quality: {
+    status?: string | null;
+    generated_at_ms?: number | null;
+    drift_status?: string | null;
+  };
+  executable_depth_capacity: {
+    status?: string;
+    passed?: boolean;
+    evidence_ready?: boolean;
+    target_aum_passed?: boolean;
+    shadow_sizing_ready?: boolean;
+    history_span_ms?: number;
+    feature_age_ms?: number | null;
+    instrument_count?: number;
+    conservative_depth_usd?: number | null;
+    max_supported_aum_usd?: number | null;
+    target_aum_usd?: number | null;
+    shadow_aum_usd?: number | null;
+    participation_rate?: number;
+    legs_per_side?: number;
+    reasons?: string[];
+  };
+  funnel: {
+    pre_registered: number;
+    evaluated: number;
+    diagnostic_leads: number;
+    formal_passes: number;
+    shadow_candidates: number;
+  };
+  families: Array<{
+    family_id: string;
+    priority?: string;
+    hypothesis_count?: number;
+  }>;
+  top_candidates: RealtimeAlphaCandidatePayload[];
+  global_trial_count?: number | null;
+  registry: { chain_valid: boolean; event_count?: number | null };
+  remaining_gates: string[];
+  blockers: string[];
+  forward_shadow: {
+    snapshot_present: boolean;
+    boundary_valid: boolean;
+    status: string;
+    generated_at_ms?: number | null;
+    eligible_candidates: string[];
+    feature_input: { ready?: boolean; status?: string; generated_at_ms?: number | null };
+    cycle: {
+      new_admissions?: number;
+      new_decisions?: number;
+      new_realizations?: number;
+    };
+    tracks: Record<string, {
+      n_decisions?: number;
+      n_pending?: number;
+      n_realizations?: number;
+      cum_return?: number | null;
+      max_drawdown?: number | null;
+    }>;
+    errors: Record<string, string>;
+    ledger: { append_only: boolean; chain_valid: boolean; event_count?: number };
+    verdict: {
+      forward_shadow_running: boolean;
+      promotion_eligible: false;
+      forward_evidence_credit: false;
+      deployment_eligible: false;
+      live_allowed: false;
+      order_submission_allowed: false;
+    };
+    blockers: string[];
+    safety: {
+      paper_only: true;
+      public_market_data_only: true;
+      separate_from_official_paper: true;
+      credentials_accessed: false;
+      broker_connectivity: false;
+      broker_order_submission: false;
+      allow_ai_direct_trading: false;
+    };
+  };
+  safety: {
+    paper_only: true;
+    live_trading_enabled: false;
+    real_broker_enabled: false;
+    allow_order_submission: false;
+    allow_ai_direct_trading: false;
+    promotion_eligible: false;
+    credentials_accessed: false;
+  };
 }
 export interface DryRunPipelinePayload extends ConsolePayloadBase {
   data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
@@ -1523,6 +1673,7 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   paper_operator?: L2PaperOperatorPayload;
   paper_realtime?: PaperRealtimePayload;
   alpha_pipeline?: AlphaPipelinePayload;
+  realtime_alpha_autonomy?: RealtimeAlphaAutonomyPayload;
   paper_shadow?: PaperShadowPayload;
   paper_health?: PaperHealthPayload;
   forward_track?: LiveTradingForwardTrack;

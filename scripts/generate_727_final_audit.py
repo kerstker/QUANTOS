@@ -48,6 +48,11 @@ SAFETY_FLAG_NAMES = (
     "REQUIRE_HUMAN_APPROVAL",
 )
 _DYNAMIC_REPORT_INPUTS = {
+    "evidence/trial_ledger_integrity.json": frozenset(
+        {
+            "data/cache/experiment_registry.db",
+        }
+    ),
     "evidence/paper_shadow_status.json": frozenset(
         {
             "data/cache/paper_health_10k.json",
@@ -725,6 +730,127 @@ def _valid_snapshot_file_bundle(value: Any) -> bool:
     )
 
 
+def _non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _valid_chain_head(value: Any, *, count: int) -> bool:
+    if count == 0:
+        return value == ""
+    return isinstance(value, str) and _SHA256_PATTERN.fullmatch(value) is not None
+
+
+def _trial_snapshot_matches(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    """Accept only a self-consistent, append-only prior trial-ledger snapshot."""
+
+    dynamic_fields = {
+        "generated_at_ms",
+        "commit",
+        "inputs",
+        "input_hash",
+        "ledger",
+        "provenance",
+        "oos_access",
+        "verdict",
+        "block_reasons",
+    }
+    actual_common = {key: value for key, value in actual.items() if key not in dynamic_fields}
+    expected_common = {key: value for key, value in expected.items() if key not in dynamic_fields}
+    if actual_common != expected_common or not _safety_ok(actual.get("safety_flags", {})):
+        return False
+    if actual.get("safety_verdict") != "PASS" or actual.get("block_reasons") != []:
+        return False
+
+    ledger = actual.get("ledger")
+    expected_ledger = expected.get("ledger")
+    if not isinstance(ledger, dict) or not isinstance(expected_ledger, dict):
+        return False
+    static_ledger_fields = {"path", "exists", "sqlite_integrity", "user_version", "append_only_guards"}
+    if any(ledger.get(key) != expected_ledger.get(key) for key in static_ledger_fields):
+        return False
+    if ledger.get("exists") is not True or ledger.get("sqlite_integrity") != "ok":
+        return False
+    guards = ledger.get("append_only_guards")
+    if not isinstance(guards, dict) or not guards or any(value != "GUARDED" for value in guards.values()):
+        return False
+    ledger_hash = ledger.get("sha256")
+    if not isinstance(ledger_hash, str) or _SHA256_PATTERN.fullmatch(ledger_hash) is None:
+        return False
+    inputs = actual.get("inputs")
+    ledger_path = ledger.get("path")
+    if not isinstance(inputs, dict) or not isinstance(ledger_path, str):
+        return False
+    ledger_input = inputs.get(ledger_path)
+    if not _valid_snapshot_file_bundle(ledger_input) or ledger_input.get("sha256") != ledger_hash:
+        return False
+
+    row_counts = ledger.get("row_counts")
+    expected_counts = expected_ledger.get("row_counts")
+    if not isinstance(row_counts, dict) or not isinstance(expected_counts, dict):
+        return False
+    if set(row_counts) != set(expected_counts):
+        return False
+    if any(not _non_negative_int(value) for value in row_counts.values()):
+        return False
+    if any(row_counts[key] > expected_counts[key] for key in row_counts):
+        return False
+
+    provenance = actual.get("provenance")
+    if not isinstance(provenance, dict) or set(provenance) != set(expected.get("provenance", {})):
+        return False
+    if (
+        provenance.get("table_present") is not True
+        or provenance.get("chain_valid") is not True
+        or provenance.get("reason") is not None
+    ):
+        return False
+    attempts = provenance.get("attempts_recorded")
+    covered = provenance.get("configs_with_provenance")
+    bare = provenance.get("bare_trials")
+    total_trials = row_counts.get("trials")
+    if not all(_non_negative_int(value) for value in (attempts, covered, bare, total_trials)):
+        return False
+    if attempts != row_counts.get("trial_provenance") or covered > total_trials:
+        return False
+    if bare != total_trials - covered:
+        return False
+    expected_coverage = round(covered / total_trials, 6) if total_trials else 0.0
+    if provenance.get("coverage_ratio") != expected_coverage:
+        return False
+    actor_counts = provenance.get("actor_type_counts")
+    status_counts = provenance.get("status_counts")
+    if not isinstance(actor_counts, dict) or not isinstance(status_counts, dict):
+        return False
+    if any(not _non_negative_int(value) for value in (*actor_counts.values(), *status_counts.values())):
+        return False
+    if sum(actor_counts.values()) != attempts or sum(status_counts.values()) != attempts:
+        return False
+    max_peeks = provenance.get("max_oos_peek_count")
+    if (attempts == 0 and max_peeks is not None) or (
+        attempts > 0 and not _non_negative_int(max_peeks)
+    ):
+        return False
+    if not _valid_chain_head(provenance.get("chain_head"), count=attempts):
+        return False
+
+    oos = actual.get("oos_access")
+    if not isinstance(oos, dict) or set(oos) != set(expected.get("oos_access", {})):
+        return False
+    if oos.get("table_present") is not True or oos.get("chain_valid") is not True or oos.get("reason") is not None:
+        return False
+    accesses = oos.get("accesses_recorded")
+    accessed_trials = oos.get("trials_with_access")
+    if not _non_negative_int(accesses) or not _non_negative_int(accessed_trials):
+        return False
+    if accesses != row_counts.get("trial_oos_access") or accessed_trials > accesses:
+        return False
+    if not _valid_chain_head(oos.get("chain_head"), count=accesses):
+        return False
+
+    expected_verdict = "PARTIAL" if bare > 0 else "PASS"
+    return actual.get("verdict") == expected_verdict
+
+
 def phase13_artifact_matches(
     relative_path: str,
     actual: Any,
@@ -733,10 +859,10 @@ def phase13_artifact_matches(
     """Compare a Phase 13 artifact without racing declared live projections.
 
     Static reports remain byte-semantic after volatile timestamps are removed.
-    The paper/shadow report may lag only the two explicitly declared live JSON
-    sources. Its embedded input manifest must remain self-consistent, every
-    static input and common control field must match current code, and the L2
-    safety/status invariants are re-evaluated from the retained snapshot.
+    The paper/shadow and trial-ledger reports may lag only their explicitly
+    declared live inputs. Embedded manifests must remain self-consistent, every
+    static input and common control field must match current code, and safety /
+    append-only invariants are re-evaluated from the retained snapshot.
     """
 
     if _strip_json_volatile(actual) == _strip_json_volatile(expected):
@@ -757,6 +883,9 @@ def phase13_artifact_matches(
     for path in set(actual_inputs) - dynamic_inputs:
         if actual_inputs[path] != expected_inputs[path]:
             return False
+
+    if relative_path == "evidence/trial_ledger_integrity.json":
+        return _trial_snapshot_matches(actual, expected)
 
     ignored = {
         "generated_at_ms",

@@ -1062,6 +1062,18 @@ def test_real_quantos_canonical_module_dependency_can_be_source_closed() -> None
     assert len(evidence.bindings) == 136
 
 
+def test_canonical_manifest_value_preserves_python_slice_components() -> None:
+    module = _module()
+
+    assert module._canonical_manifest_value(slice(2, None, -1)) == {
+        "python_slice": {
+            "start": 2,
+            "stop": None,
+            "step": -1,
+        }
+    }
+
+
 def test_unsealed_manifest_body_covers_every_required_exact_v3_input() -> None:
     module = _module()
     composition = compose_family_schema_v3()

@@ -139,7 +139,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/carry-readiness": ("", ("snapshot_present", "verdict", "strategy", "robustness",
                                              "capacity", "deployment_gaps", "honesty_note")),
     # dry-run pipeline: end-to-end runs (gate as runtime chokepoint) from DryRunStore; synthetic-empty in CI
-    "/api/v1/console/dry-run": ("", ("snapshot_present", "verdict", "n_runs", "latest", "runs", "safety_note")),
+    "/api/v1/console/dry-run": ("", ("snapshot_present", "verdict", "n_runs", "latest", "runs", "realtime_alpha_autonomy", "safety_note")),
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
@@ -183,6 +183,11 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
                                                "hash_scheme", "portfolio_views", "summary", "venues",
                                                "amendments", "unknown_fields", "honesty_note")),
 }
+
+# Streaming transports are console endpoints, but deliberately do not map to a
+# single frontend *Payload JSON contract. Their event bodies are validated by
+# test_console_live_stream.py before the EventSource hook accepts them.
+NON_JSON_STREAM_ROUTES = {"/api/v1/console/stream/dry-run"}
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
 # marker. They still must be read-only snapshots; only the honesty label differs.
@@ -274,12 +279,15 @@ def test_every_frontend_payload_type_has_an_endpoint():
     # if a *Payload type ever maps to a route not under contract, this fails loudly
     routed = {path for path, operations in app.openapi()["paths"].items() if "get" in operations}
     routed = {p for p in routed if p.startswith("/api/v1/console/")}
-    assert routed == set(CONTRACT), f"contract/route mismatch: {routed ^ set(CONTRACT)}"
+    expected = set(CONTRACT) | NON_JSON_STREAM_ROUTES
+    assert routed == expected, f"contract/route mismatch: {routed ^ expected}"
 
 
 def test_architecture_inventory_counts_included_router_endpoints():
     body = client.get("/api/v1/console/architecture").json()
-    assert body["inventory"]["n_console_endpoints"] == len(CONTRACT)
+    assert body["inventory"]["n_console_endpoints"] == (
+        len(CONTRACT) + len(NON_JSON_STREAM_ROUTES)
+    )
 
 
 def test_health_endpoint_is_read_only():
@@ -366,6 +374,64 @@ def test_dry_run_surfaces_realtime_paper_marks_and_backtests_without_live_capabi
     assert realtime["safety"]["broker_order_submission"] is False
 
 
+def test_dry_run_surfaces_system_native_realtime_alpha_discovery_fail_closed():
+    body = client.get("/api/v1/console/dry-run").json()
+    autonomy = body["realtime_alpha_autonomy"]
+    assert autonomy["read_only"] is True
+    assert isinstance(autonomy["snapshot_present"], bool)
+    assert autonomy["autonomy"]["requires_developer_ai"] is False
+    assert autonomy["forward_shadow"]["verdict"]["promotion_eligible"] is False
+    assert autonomy["forward_shadow"]["verdict"]["live_allowed"] is False
+    assert autonomy["forward_shadow"]["verdict"]["order_submission_allowed"] is False
+    assert autonomy["safety"]["paper_only"] is True
+    assert autonomy["safety"]["live_trading_enabled"] is False
+    assert autonomy["safety"]["real_broker_enabled"] is False
+    assert autonomy["safety"]["allow_order_submission"] is False
+    assert autonomy["safety"]["allow_ai_direct_trading"] is False
+    assert autonomy["safety"]["promotion_eligible"] is False
+    assert autonomy["safety"]["credentials_accessed"] is False
+    if autonomy["snapshot_present"]:
+        assert isinstance(autonomy["funnel"]["pre_registered"], int)
+        assert isinstance(autonomy["top_candidates"], list)
+    else:
+        assert autonomy["status"] == "NO_SNAPSHOT"
+        assert autonomy["autonomy"]["autonomous_search_running"] is False
+
+
+def test_realtime_alpha_console_projection_blocks_tampered_authority(tmp_path):
+    path = tmp_path / "tampered-autonomy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
+                "generated_at_ms": 123,
+                "autonomy": {"requires_developer_ai": False},
+                "registry": {"chain_valid": True},
+                "safety": {
+                    "paper_only": True,
+                    "live_trading_enabled": False,
+                    "real_broker_enabled": False,
+                    "allow_order_submission": True,
+                    "allow_ai_direct_trading": False,
+                    "promotion_eligible": False,
+                    "credentials_accessed": False,
+                },
+                "top_candidates": [{"candidate_id": "must-not-surface"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    autonomy = artifact_paper_views._realtime_alpha_autonomy_payload(str(path))
+
+    assert autonomy["snapshot_present"] is True
+    assert autonomy["boundary_valid"] is False
+    assert autonomy["status"] == "SAFE_BLOCKED"
+    assert autonomy["top_candidates"] == []
+    assert "AUTONOMY_SAFETY_ALLOW_ORDER_SUBMISSION_INVALID" in autonomy["blockers"]
+    assert autonomy["safety"]["allow_order_submission"] is False
+
+
 def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     tmp_path, monkeypatch
 ):
@@ -407,6 +473,8 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     assert payload["counts"] == {
         "forward_paper": 10,
         "execution_paper": 3,
+        "candidate_execution_paper": 3,
+        "legacy_diagnostic_paper": 0,
         "forward_only": 7,
         "factory_survivors": 0,
     }
@@ -421,6 +489,57 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
     assert payload["safety"]["live_allowed"] is False
     assert payload["safety"]["order_submission_allowed"] is False
+    assert payload["safety"]["deployment_eligible"] is False
+
+
+def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_FACTORY_LOOP_STATUS",
+        str(tmp_path / "missing-factory.json"),
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    forward = {
+        "alphas": [
+            {"alpha_id": "carry_oi_majors", "n_forward_periods": 1},
+            {"alpha_id": "crowd_contra", "n_forward_periods": 1},
+            {"alpha_id": "top_contra", "n_forward_periods": 0},
+            {"alpha_id": "new_challenger", "n_forward_periods": 8},
+        ]
+    }
+    realtime = {
+        "alphas": {
+            alpha_id: {"status": "PAPER_MARKED"}
+            for alpha_id in (
+                "carry_oi_majors",
+                "crowd_contra",
+                "top_contra",
+                "new_challenger",
+            )
+        }
+    }
+
+    payload = artifact_paper_views._alpha_pipeline_payload(forward, realtime)
+    rows = {row["alpha_id"]: row for row in payload["candidates"]}
+
+    assert payload["counts"]["execution_paper"] == 4
+    assert payload["counts"]["candidate_execution_paper"] == 1
+    assert payload["counts"]["legacy_diagnostic_paper"] == 3
+    assert payload["handoff"]["forward_to_execution_dynamic"] is False
+    for alpha_id in ("carry_oi_majors", "crowd_contra", "top_contra"):
+        assert rows[alpha_id]["stage"] == "LEGACY_DIAGNOSTIC_PAPER"
+        assert rows[alpha_id]["paper_class"] == "LEGACY_DIAGNOSTIC_PAPER"
+        assert rows[alpha_id]["deployment_eligible"] is False
+        assert "LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE" in rows[alpha_id]["blockers"]
+    assert rows["new_challenger"]["stage"] == "EXECUTION_PAPER"
+    assert rows["new_challenger"]["paper_class"] == "CANDIDATE_EXECUTION_PAPER"
+    assert rows["new_challenger"]["blockers"] == []
 
 
 def test_dry_run_surfaces_automated_shadow_paper_without_live_capability():

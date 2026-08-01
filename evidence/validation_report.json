@@ -1,9 +1,9 @@
 {
-  "checks_manifest_sha256": "dc32e43fb90922f7bdcd4aeeb3d58d87abd4ee73ac8ea67179796f11d42d2cb2",
-  "commit": "4d9370a10eec1b34602f7e75dbb3db7422a813f9",
-  "derived_refresh_manifest_sha256": "c49acfbe7cc2b131a758334a2c0a5bfa6643468c20c6dfdebd092f15e0473fcd",
-  "duration_ms": 910613,
-  "generated_at_ms": 1785525318682,
+  "checks_manifest_sha256": "006f854f3af26d130a40248265cf1b39aee944c68c9965eb033ca9382b35efb5",
+  "commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
+  "derived_refresh_manifest_sha256": "f2cce7d16f4b99b52a5a1e96c9abccb727677e783ecbcf38e33ca59e9bd47998",
+  "duration_ms": 1221754,
+  "generated_at_ms": 1785621201178,
   "overall_status": "PASS",
   "readiness": "L2_DRY_RUN_ONLY",
   "report_kind": "FAIL_CLOSED_VALIDATION",
@@ -13,12 +13,12 @@
   "results": [
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_python_audit_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 178,
+      "duration_ms": 102,
       "returncode": 0,
       "stage": "python-audit-evidence:current",
       "status": "PASS",
@@ -26,12 +26,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_npm_audit_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 131,
+      "duration_ms": 93,
       "returncode": 0,
       "stage": "npm-audit-evidence:current",
       "status": "PASS",
@@ -39,12 +39,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_actions_audit_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 163,
+      "duration_ms": 109,
       "returncode": 0,
       "stage": "actions-osv-evidence:current",
       "status": "PASS",
@@ -52,12 +52,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_container_audit_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 132,
+      "duration_ms": 90,
       "returncode": 0,
       "stage": "container-trivy-evidence:current",
       "status": "PASS",
@@ -65,12 +65,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_container_reproducibility_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 123,
+      "duration_ms": 93,
       "returncode": 0,
       "stage": "container-reproducibility-evidence:current",
       "status": "PASS",
@@ -78,12 +78,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_event_schema_catalog.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 559,
+      "duration_ms": 347,
       "returncode": 0,
       "stage": "event-schema-catalog:current",
       "status": "PASS",
@@ -91,12 +91,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_service_import_graph.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1266,
+      "duration_ms": 1118,
       "returncode": 0,
       "stage": "service-import-graph:current",
       "status": "PASS",
@@ -104,11 +104,11 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\tools\\provision_artifact_admission_authority.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 407,
+      "duration_ms": 242,
       "returncode": 0,
       "stage": "artifact-admission-authority:provision",
       "status": "PASS",
@@ -116,12 +116,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\update_model_risk_history.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 586,
+      "duration_ms": 375,
       "returncode": 0,
       "stage": "model-risk-history:current",
       "status": "PASS",
@@ -129,13 +129,13 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "-m",
         "tools.crowding_metric_research",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 7217,
+      "duration_ms": 8068,
       "returncode": 0,
       "stage": "crowding-calibration-evidence:current",
       "status": "PASS",
@@ -143,13 +143,13 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "-m",
         "tools.feature_distribution_drift_research",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 6160,
+      "duration_ms": 5250,
       "returncode": 0,
       "stage": "feature-distribution-drift-evidence:current",
       "status": "PASS",
@@ -157,12 +157,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\check_backup_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 113,
+      "duration_ms": 78,
       "returncode": 0,
       "stage": "backup-evidence:current",
       "status": "PASS",
@@ -170,11 +170,11 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\run_risk_recovery_gate.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 658,
+      "duration_ms": 426,
       "returncode": 0,
       "stage": "risk-recovery-drill:fresh",
       "status": "PASS",
@@ -182,11 +182,11 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\apps\\research-console\\scripts\\run_paper_to_live_governance_check.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 2764,
+      "duration_ms": 2712,
       "returncode": 0,
       "stage": "governance-scanner",
       "status": "PASS",
@@ -194,11 +194,11 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_supply_chain_evidence.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1654,
+      "duration_ms": 1039,
       "returncode": 0,
       "stage": "supply-chain-baseline:refresh",
       "status": "PASS",
@@ -206,12 +206,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_supply_chain_evidence.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 1851,
+      "duration_ms": 1140,
       "returncode": 0,
       "stage": "supply-chain-baseline:current",
       "status": "PASS",
@@ -219,11 +219,11 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\assess_top_tier.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 10870,
+      "duration_ms": 9345,
       "returncode": 0,
       "stage": "top-tier-assessment:refresh",
       "status": "PASS",
@@ -231,12 +231,12 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\assess_top_tier.py",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 10847,
+      "duration_ms": 9451,
       "returncode": 0,
       "stage": "top-tier-assessment-artifacts",
       "status": "PASS",
@@ -244,7 +244,7 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "-m",
         "pytest",
         "-q",
@@ -272,7 +272,7 @@
         "tests/integration/test_dry_run_all.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 753439,
+      "duration_ms": 953189,
       "returncode": 0,
       "stage": "pytest: all suites (contracts, governance, research, trading)",
       "status": "PASS",
@@ -280,7 +280,7 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "-m",
         "pytest",
         "-q",
@@ -289,7 +289,7 @@
         "tests/tools"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 72871,
+      "duration_ms": 65922,
       "returncode": 0,
       "stage": "pytest: live execution stack (live, trading, tools)",
       "status": "PASS",
@@ -302,7 +302,7 @@
         "typecheck"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 2903,
+      "duration_ms": 3007,
       "returncode": 0,
       "stage": "frontend: typecheck",
       "status": "PASS",
@@ -315,7 +315,7 @@
         "eslint"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 3888,
+      "duration_ms": 3571,
       "returncode": 0,
       "stage": "frontend: eslint",
       "status": "PASS",
@@ -327,7 +327,7 @@
         "test"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4357,
+      "duration_ms": 4463,
       "returncode": 0,
       "stage": "frontend: tests",
       "status": "PASS",
@@ -340,7 +340,7 @@
         "build"
       ],
       "cwd": "H:\\code\\QUANTOS\\apps\\research-console",
-      "duration_ms": 4676,
+      "duration_ms": 4616,
       "returncode": 0,
       "stage": "frontend: production build",
       "status": "PASS",
@@ -348,13 +348,13 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
         "--repo-root",
         "H:\\code\\QUANTOS"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 2984,
+      "duration_ms": 12888,
       "returncode": 0,
       "stage": "phase13-readiness:refresh",
       "status": "PASS",
@@ -362,14 +362,14 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "H:\\code\\QUANTOS\\scripts\\generate_727_final_audit.py",
         "--repo-root",
         "H:\\code\\QUANTOS",
         "--check"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 2979,
+      "duration_ms": 16944,
       "returncode": 0,
       "stage": "phase13-readiness:current",
       "status": "PASS",
@@ -377,14 +377,14 @@
     },
     {
       "command": [
-        "H:\\miniconda\\python.exe",
+        "C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
         "-m",
         "pytest",
         "-q",
         "H:\\code\\QUANTOS\\tests\\governance\\test_727_final_audit.py"
       ],
       "cwd": "H:\\code\\QUANTOS",
-      "duration_ms": 16761,
+      "duration_ms": 116991,
       "returncode": 0,
       "stage": "phase13-readiness:tests",
       "status": "PASS",
@@ -422,7 +422,7 @@
     "phase13-readiness:tests"
   ],
   "selection_scope": "ALL",
-  "started_at_ms": 1785524408068,
+  "started_at_ms": 1785619979424,
   "summary": {
     "errored": 0,
     "failed": 0,

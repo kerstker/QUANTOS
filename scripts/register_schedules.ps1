@@ -6,20 +6,42 @@
 # monitoring process. Legacy tasks with those capabilities are disabled (not
 # deleted) before the L2 jobs are registered.
 #
-# The script location is the immutable release code root. -StateRoot may point
+# The script location is the immutable release code root. -StateRoot must point
 # at a separate mutable operational checkout containing data/cache; scheduled
 # imports still resolve only through tools/l2_schedule_entrypoint.py in this
-# release root.
-param([string]$StateRoot)
+# release root. Registration and every later launch bind the exact clean HEAD.
+param([Parameter(Mandatory = $true)][string]$StateRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $codeRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($StateRoot)) {
-  $stateRoot = $codeRoot
-} else {
-  $stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+  throw "StateRoot is required for immutable release registration"
+}
+$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+$codePrefix = $codeRoot.TrimEnd("\") + "\"
+$statePrefix = $stateRoot.TrimEnd("\") + "\"
+if (
+  $codeRoot -eq $stateRoot -or
+  $stateRoot.StartsWith($codePrefix, [StringComparison]::OrdinalIgnoreCase) -or
+  $codeRoot.StartsWith($statePrefix, [StringComparison]::OrdinalIgnoreCase)
+) {
+  throw "release and state roots must be different and non-overlapping"
+}
+$gitCommand = Get-Command git -ErrorAction Stop
+$releaseCommit = (& $gitCommand.Source -C $codeRoot rev-parse --verify HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch "^[0-9a-f]{40}$") {
+  throw "release code root has no valid Git HEAD"
+}
+$releaseStatus = @(
+  & $gitCommand.Source -C $codeRoot status --porcelain=v1 --untracked-files=all --ignore-submodules=none --
+)
+if ($LASTEXITCODE -ne 0) {
+  throw "release code root cleanliness could not be verified"
+}
+if ($releaseStatus.Count -ne 0) {
+  throw "release code root must be clean before schedule registration"
 }
 $launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
@@ -121,12 +143,13 @@ function Register-L2Task {
 
   $logRoot = Join-Path $stateRoot ".runtime\logs"
   $action = New-ScheduledTaskAction -Execute $pythonw `
-    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
+    -Argument "`"$launcher`" $Module --release-commit $releaseCommit" `
+    -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
     -Settings $settings -Principal $l2Principal `
-    -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
+    -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module@$releaseCommit" `
     -Force | Out-Null
   Write-Host "${Name}: registered tools.$Module"
 }
@@ -194,6 +217,16 @@ $binanceRealtimeFeaturesTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $binanceRealtimeDriftAlertsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Run the immutable 24-trial realtime Alpha budget after the feature worker has
+# had time to publish a fresh PIT watermark.  The worker is research-only and
+# returns the supervised SAFE_BLOCKED code while 30d/90d maturity is missing.
+$realtimeAlphaDiscoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Hours 1)
+# Once a candidate clears every immutable discovery gate, freeze forward
+# decisions before outcomes on a one-minute cadence.  An empty eligible set is
+# the normal SAFE_BLOCKED state and creates no paper position or live authority.
+$realtimeAlphaForwardShadowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
 $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -AtStartup),
   # The worker exits cleanly after 23 hours. A daily fixed-time trigger can be
@@ -253,6 +286,10 @@ Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realt
   -Trigger $binanceRealtimeFeaturesTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
   -Trigger $binanceRealtimeDriftAlertsTrigger
+Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha_discovery" `
+  -Trigger $realtimeAlphaDiscoveryTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-L2Task -Name "QUANTOS_realtime_alpha_forward_shadow" -Module "realtime_alpha_forward_shadow" `
+  -Trigger $realtimeAlphaForwardShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `

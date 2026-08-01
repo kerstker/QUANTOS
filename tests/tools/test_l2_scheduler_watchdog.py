@@ -23,6 +23,7 @@ from tools.l2_scheduler_watchdog import (
 
 
 NOW_MS = 1_784_044_800_000
+RELEASE_COMMIT = "a" * 40
 CONTRACT = {
     "version": 2,
     "sources": [
@@ -42,7 +43,7 @@ CONTRACT_SHA256 = hashlib.sha256(
 
 def _launcher_arguments(code_root: Path, module: str) -> str:
     launcher = code_root / "tools" / "l2_schedule_entrypoint.py"
-    return f'"{launcher}" {module}'
+    return f'"{launcher}" {module} --release-commit {RELEASE_COMMIT}'
 
 
 def _healthy_snapshot(
@@ -281,6 +282,40 @@ def test_schedule_evaluation_rejects_legacy_direct_module_action(tmp_path):
             **{
                 **item.__dict__,
                 "arguments": "-m tools.domain_event_ops",
+            }
+        )
+        if item.name == "QUANTOS_domain_event_ops"
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(
+        item
+        for item in result["checks"]
+        if item["task_name"] == "QUANTOS_domain_event_ops"
+    )
+    assert check["status"] == "BREACH"
+    assert check["code"] == "ACTION_DRIFT"
+
+
+def test_schedule_evaluation_rejects_task_pinned_to_different_release(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "arguments": item.arguments.replace(RELEASE_COMMIT, "b" * 40),
             }
         )
         if item.name == "QUANTOS_domain_event_ops"

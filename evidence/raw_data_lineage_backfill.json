@@ -2,7 +2,7 @@
   "schema_version": 1,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "RECENT_FORWARD_RAW_LINEAGE_BACKFILL",
-  "generated_at_ms": 1785254181520,
+  "generated_at_ms": 1785353719823,
   "instrument_scope": [
     "ADA",
     "ATOM",
@@ -20,31 +20,31 @@
     "XRP"
   ],
   "required_days": [
-    1784505600000,
     1784592000000,
     1784678400000,
     1784764800000,
     1784851200000,
     1784937600000,
     1785024000000,
-    1785110400000
+    1785110400000,
+    1785196800000
   ],
   "archive_root": "data/cache/raw_market_data",
   "artifacts": {
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
-      "size_bytes": 21744,
-      "sha256": "757b3ecdfe9232828a6f68b2c7031a6b556b8d0de32a15e63b561e15c6deec0e"
+      "size_bytes": 22681,
+      "sha256": "57728bc2f04d14f23e43604ac5cb60bedb59d5f26bca0b1a771e1d0082c57072"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
-      "size_bytes": 7817132,
-      "sha256": "ab4cac0fb858e4dabb9db51ed198e91199a4ca390dba5cf58eed298e2c6a2e33"
+      "size_bytes": 7817623,
+      "sha256": "48813602bc7ef151575dc01fabfab46328ee609d864a0af5ce65449c9f6dd2c5"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
-      "size_bytes": 6856894,
-      "sha256": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
+      "size_bytes": 6858751,
+      "sha256": "b3609cd12b545f999a7585159b86febde63b4461952d404ff59204260b5e8a30"
     }
   },
   "sources": {
@@ -90,19 +90,40 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 9130,
+    "observation_count": 59772,
     "invalid_observation_count": 0,
-    "object_count": 2970,
+    "object_count": 40990,
     "datasets": {
+      "binance_realtime_book": 3946,
+      "binance_realtime_exchange_info": 2084,
+      "binance_realtime_funding": 3946,
+      "binance_realtime_funding_info": 1790,
+      "binance_realtime_global_ls": 3946,
+      "binance_realtime_index_kline_1m": 1790,
+      "binance_realtime_kline_1m": 3946,
+      "binance_realtime_mark": 3946,
+      "binance_realtime_mark_kline_1m": 1790,
+      "binance_realtime_oi": 3946,
+      "binance_realtime_oi_current": 2518,
+      "binance_realtime_premium_kline_1m": 1790,
+      "binance_realtime_taker": 3946,
+      "binance_realtime_ticker_24h": 2084,
+      "binance_realtime_top_account_ls": 2518,
+      "binance_realtime_top_ls": 3946,
+      "binance_rpi_depth_1000": 164,
+      "binance_systemic_adl_risk": 246,
+      "binance_systemic_basis_1h": 283,
+      "binance_systemic_index_constituents": 314,
+      "binance_systemic_insurance_balance": 246,
       "cross_exchange_snapshots": 24,
-      "funding": 1406,
-      "oi_metrics": 3435,
+      "funding": 1504,
+      "oi_metrics": 4107,
       "oi_metrics_rest_gap_fill": 56,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 3477,
+      "perp_mark_prices": 4149,
       "perp_mark_prices_rest_gap_fill": 86,
-      "spot_klines": 583,
-      "spot_klines_1d": 5
+      "spot_klines": 597,
+      "spot_klines_1d": 6
     },
     "providers": [
       "Binance + Bybit public synchronized market snapshot",
@@ -110,6 +131,7 @@
       "Binance Data Vision USD-M mark-price klines",
       "Binance USD-M futures public REST (gap-fill)",
       "Binance USD-M perpetual funding history",
+      "Binance public USD-M market data",
       "Binance public spot klines",
       "Bybit public linear perp funding history",
       "Bybit public linear perp klines",
@@ -119,8 +141,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785254181520,
-    "aggregate_sha256": "8a6cb3827277caf1c45199b69c5f70b05729ba19a1ed1e8bddec98e3c6a5d6b6",
+    "latest_observed_at_ms": 1785354118653,
+    "aggregate_sha256": "41c655d441035a2d281e0c4df636418697957d6a7c54cf908c478395ea1271a3",
     "errors": []
   },
   "verdict": "PASS",

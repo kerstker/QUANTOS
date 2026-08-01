@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 from tools.local_frontend_server import (
     REQUIRED_LOCAL_API_MARKERS,
     SpaRequestHandler,
     _cache_control_for_path,
     _has_real_local_api_contract,
+    _is_event_stream_response,
     _spa_target,
 )
+
+
+class _FiniteEventStream:
+    status = 200
+
+    def __init__(self) -> None:
+        self._lines = iter((b"event: snapshot\n", b"data: {}\n", b"\n", b""))
+
+    def getheader(self, name: str, default: str = "") -> str:
+        if name.lower() == "content-type":
+            return "text/event-stream; charset=utf-8"
+        return default
+
+    def getheaders(self) -> list[tuple[str, str]]:
+        return [
+            ("Content-Type", "text/event-stream; charset=utf-8"),
+            ("Transfer-Encoding", "chunked"),
+        ]
+
+    def readline(self) -> bytes:
+        return next(self._lines)
 
 
 def test_spa_target_serves_assets_and_falls_back_for_routes(tmp_path):
@@ -89,3 +113,26 @@ def test_proxy_targets_are_fixed_to_local_read_and_runner_surfaces():
 
     handler.path = "/research/dry-run"
     assert handler._proxy_target() is None
+
+
+def test_event_stream_proxy_relays_without_buffering_or_content_length():
+    response = _FiniteEventStream()
+    assert _is_event_stream_response(response) is True
+    handler = object.__new__(SpaRequestHandler)
+    handler.command = "GET"
+    handler.wfile = BytesIO()
+    statuses: list[int] = []
+    headers: list[tuple[str, str]] = []
+    handler.send_response = statuses.append
+    handler.send_header = lambda key, value: headers.append((key, value))
+    handler.end_headers = lambda: None
+
+    handler._relay_response(response)
+
+    assert statuses == [200]
+    assert handler.wfile.getvalue() == b"event: snapshot\ndata: {}\n\n"
+    assert ("Content-Type", "text/event-stream; charset=utf-8") in headers
+    assert ("Cache-Control", "no-cache") in headers
+    assert all(key.lower() != "content-length" for key, _ in headers)
+    assert all(key.lower() != "transfer-encoding" for key, _ in headers)
+    assert handler.close_connection is True

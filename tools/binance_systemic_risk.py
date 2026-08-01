@@ -41,6 +41,7 @@ HOUR_MS = 60 * 60_000
 DAY_MS = 24 * HOUR_MS
 BASIS_LOOKBACK_MS = 30 * DAY_MS
 BASIS_REFRESH_BUDGET = 4
+CONSTITUENT_REFRESH_BUDGET = 7
 MAX_ADL_AGE_MS = 2 * HOUR_MS
 MAX_BASIS_AGE_MS = 3 * HOUR_MS
 MAX_CONSTITUENT_AGE_MS = HOUR_MS
@@ -717,15 +718,20 @@ def _fetch_symbol(
     *,
     basis_start_ms: int,
     observed_at_ms: int,
+    fetch_constituents: bool,
     fetch_basis: bool,
     http_get: Callable[[str], object],
     knowledge_clock_ms: Callable[[], int],
 ) -> dict[str, Any]:
     symbol = f"{ticker}USDT"
-    constituents = _get(
-        "/fapi/v1/constituents", {"symbol": symbol}, http_get
+    constituents = (
+        _get("/fapi/v1/constituents", {"symbol": symbol}, http_get)
+        if fetch_constituents
+        else None
     )
-    constituents_knowledge_time_ms = int(knowledge_clock_ms())
+    constituents_knowledge_time_ms = (
+        int(knowledge_clock_ms()) if fetch_constituents else None
+    )
     basis = (
         _fetch_basis_pages(
             symbol,
@@ -783,14 +789,16 @@ def _archive_symbol(
     fetched: Mapping[str, Any],
     archive_root: str,
 ) -> None:
-    rows: list[tuple[str, str, object, int]] = [
-        (
-            "index_constituents",
-            fetched["constituents"][0],
-            fetched["constituents"][1],
-            int(fetched["constituents_knowledge_time_ms"]),
-        ),
-    ]
+    rows: list[tuple[str, str, object, int]] = []
+    if fetched.get("constituents") is not None:
+        rows.append(
+            (
+                "index_constituents",
+                fetched["constituents"][0],
+                fetched["constituents"][1],
+                int(fetched["constituents_knowledge_time_ms"]),
+            )
+        )
     rows.extend(
         (
             "basis_1h",
@@ -866,6 +874,99 @@ def _basis_refresh_tickers(
     return tuple(ticker for _, ticker in due[:budget])
 
 
+def _constituent_refresh_tickers(
+    last_event_times: Mapping[str, int | None],
+    *,
+    budget: int = CONSTITUENT_REFRESH_BUDGET,
+) -> tuple[str, ...]:
+    """Rotate symbol-scoped snapshots, prioritising missing and oldest data.
+
+    Binance's constituent endpoint is the only weighted per-symbol surface in
+    this worker.  Refreshing all 14 symbols every cycle is unnecessary and can
+    collide with other public workers sharing the same IP.  A seven-symbol
+    budget on the 30-minute schedule refreshes the full universe once per hour
+    while verified cache rows keep the unselected half available.
+    """
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget <= 0:
+        raise ValueError("constituent refresh budget must be a positive integer")
+    ranked: list[tuple[int, int, str]] = []
+    for ticker, event_time in last_event_times.items():
+        if event_time is None:
+            ranked.append((0, -1, str(ticker)))
+            continue
+        if isinstance(event_time, bool) or not isinstance(event_time, int):
+            raise TypeError("constituent event times must be integers or None")
+        ranked.append((1, event_time, str(ticker)))
+    ranked.sort()
+    return tuple(ticker for _, _, ticker in ranked[:budget])
+
+
+def _latest_systemic_snapshot(
+    store: BinanceSystemicStore,
+    *,
+    symbol: str,
+    observed_at_ms: int,
+) -> dict[str, Any]:
+    observations = {
+        # A request can finish after the cycle's ``observed_at_ms``.  The row's
+        # knowledge_time_ms preserves that receipt boundary for PIT consumers;
+        # this operational snapshot must still include the response obtained
+        # by the current cycle.
+        dataset: store.latest(dataset, symbol)
+        for dataset in (
+            "adl_risk",
+            "basis_1h",
+            "index_constituents",
+            "insurance_balance",
+        )
+    }
+    missing = [name for name, value in observations.items() if value is None]
+    if missing:
+        raise BinanceSystemicRiskError(
+            f"systemic cache is incomplete for {symbol}: {sorted(missing)}"
+        )
+    adl = observations["adl_risk"]
+    basis = observations["basis_1h"]
+    constituents = observations["index_constituents"]
+    insurance = observations["insurance_balance"]
+    assert adl is not None and basis is not None
+    assert constituents is not None and insurance is not None
+    _fresh(
+        int(adl["event_time_ms"]),
+        max(observed_at_ms, int(adl["knowledge_time_ms"])),
+        MAX_ADL_AGE_MS,
+        "ADL risk",
+    )
+    _fresh(
+        int(basis["event_time_ms"]) + HOUR_MS,
+        max(observed_at_ms, int(basis["knowledge_time_ms"])),
+        MAX_BASIS_AGE_MS,
+        "basis",
+    )
+    _fresh(
+        int(constituents["event_time_ms"]),
+        max(observed_at_ms, int(constituents["knowledge_time_ms"])),
+        MAX_CONSTITUENT_AGE_MS,
+        "constituents",
+    )
+    _fresh(
+        int(insurance["event_time_ms"]),
+        max(observed_at_ms, int(insurance["knowledge_time_ms"])),
+        MAX_INSURANCE_AGE_MS,
+        "insurance balance",
+    )
+    return {
+        "adl_risk": adl["rating"],
+        "adl_event_time_ms": adl["event_time_ms"],
+        "basis_event_time_ms": basis["event_time_ms"],
+        "basis_rate": basis["basis_rate"],
+        "constituent_count": constituents["constituent_count"],
+        "constituent_dispersion_bps": constituents["price_dispersion_bps"],
+        "insurance_asset_count": insurance["asset_count"],
+        "insurance_event_time_ms": insurance["event_time_ms"],
+    }
+
+
 def run_refresh(
     *,
     tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
@@ -877,6 +978,7 @@ def run_refresh(
     max_workers: int = 1,
     request_interval_seconds: float | None = None,
     basis_refresh_budget: int = BASIS_REFRESH_BUDGET,
+    constituent_refresh_budget: int = CONSTITUENT_REFRESH_BUDGET,
     knowledge_clock_ms: Callable[[], int] | None = None,
 ) -> dict[str, Any]:
     selected = tuple(dict.fromkeys(str(item).upper() for item in tickers))
@@ -926,7 +1028,18 @@ def run_refresh(
             budget=basis_refresh_budget,
         )
         basis_refresh_set = set(basis_refresh_tickers)
+        constituent_refresh_tickers = _constituent_refresh_tickers(
+            {
+                ticker: store.latest_event_time(
+                    "index_constituents", f"{ticker}USDT"
+                )
+                for ticker in selected
+            },
+            budget=constituent_refresh_budget,
+        )
+        constituent_refresh_set = set(constituent_refresh_tickers)
         fetched: dict[str, dict[str, Any]] = {}
+        refresh_errors: dict[str, dict[str, str]] = {}
         errors: dict[str, dict[str, str]] = {}
         symbols = tuple(f"{ticker}USDT" for ticker in selected)
         shared: dict[str, Any] | None = None
@@ -943,14 +1056,21 @@ def run_refresh(
                 )
         except Exception as exc:  # noqa: BLE001 - shared snapshot is load-bearing
             for ticker in selected:
-                errors[ticker] = {
+                refresh_errors[ticker] = {
                     "error_type": type(exc).__name__,
                     "message": str(exc)[:240],
                 }
 
         if shared is not None:
+            symbol_fetch_tickers = tuple(
+                dict.fromkeys(
+                    (*constituent_refresh_tickers, *basis_refresh_tickers)
+                )
+            )
             with ThreadPoolExecutor(
-                max_workers=max(1, min(int(max_workers), len(selected)))
+                max_workers=max(
+                    1, min(int(max_workers), max(1, len(symbol_fetch_tickers)))
+                )
             ) as pool:
                 futures = {
                     pool.submit(
@@ -958,18 +1078,19 @@ def run_refresh(
                         ticker,
                         basis_start_ms=starts[ticker],
                         observed_at_ms=observed_at_ms,
+                        fetch_constituents=ticker in constituent_refresh_set,
                         fetch_basis=ticker in basis_refresh_set,
                         http_get=limited_http_get,
                         knowledge_clock_ms=knowledge_clock_ms,
                     ): ticker
-                    for ticker in selected
+                    for ticker in symbol_fetch_tickers
                 }
                 for future in as_completed(futures):
                     ticker = futures[future]
                     try:
                         fetched[ticker] = future.result()
                     except Exception as exc:  # noqa: BLE001 - isolate one symbol
-                        errors[ticker] = {
+                        refresh_errors[ticker] = {
                             "error_type": type(exc).__name__,
                             "message": str(exc)[:240],
                         }
@@ -982,74 +1103,71 @@ def run_refresh(
         }
         latest: dict[str, dict[str, Any]] = {}
         for ticker in selected:
-            if ticker in errors:
-                continue
             symbol = f"{ticker}USDT"
-            source = fetched[ticker]
+            source = fetched.get(ticker, {})
             try:
-                adl = parse_adl_risk(
-                    symbol,
-                    shared["adl_by_symbol"][symbol],
-                    knowledge_time_ms=int(shared["adl_knowledge_time_ms"]),
-                )
-                constituents = parse_constituents(
-                    symbol,
-                    source["constituents"][1],
-                    knowledge_time_ms=int(
-                        source["constituents_knowledge_time_ms"]
-                    ),
-                )
-                insurance = parse_insurance_balance(
-                    symbol,
-                    shared["insurance_by_symbol"][symbol],
-                    knowledge_time_ms=int(
-                        shared["insurance_knowledge_time_ms"]
-                    ),
-                )
+                observations: list[dict[str, Any]] = []
+                if shared is not None:
+                    observations.extend(
+                        (
+                            parse_adl_risk(
+                                symbol,
+                                shared["adl_by_symbol"][symbol],
+                                knowledge_time_ms=int(
+                                    shared["adl_knowledge_time_ms"]
+                                ),
+                            ),
+                            parse_insurance_balance(
+                                symbol,
+                                shared["insurance_by_symbol"][symbol],
+                                knowledge_time_ms=int(
+                                    shared["insurance_knowledge_time_ms"]
+                                ),
+                            ),
+                        )
+                    )
+                if source.get("constituents") is not None:
+                    observations.append(
+                        parse_constituents(
+                            symbol,
+                            source["constituents"][1],
+                            knowledge_time_ms=int(
+                                source["constituents_knowledge_time_ms"]
+                            ),
+                        )
+                    )
                 basis = parse_basis_rows(
                     symbol,
-                    [payload for _, payload in source["basis"]],
-                    knowledge_time_ms=int(source["basis_knowledge_time_ms"]),
+                    [payload for _, payload in source.get("basis", [])],
+                    knowledge_time_ms=int(
+                        source.get("basis_knowledge_time_ms", observed_at_ms)
+                    ),
                     min_event_time_ms=starts[ticker],
                 )
-                if archive_root is not None:
+                observations.extend(basis)
+                if archive_root is not None and source:
                     _archive_symbol(
                         ticker=ticker,
                         fetched=source,
                         archive_root=archive_root,
                     )
-                for observation in [adl, *basis, constituents, insurance]:
+                for observation in observations:
                     inserted_by_dataset[str(observation["dataset"])] += int(
                         _append_observation(store, observation)
                     )
-                latest_basis = store.latest("basis_1h", symbol)
-                if latest_basis is None:
-                    raise BinanceSystemicRiskError(
-                        "basis history has no completed row"
-                    )
-                _fresh(
-                    int(latest_basis["event_time_ms"]) + HOUR_MS,
-                    observed_at_ms,
-                    MAX_BASIS_AGE_MS,
-                    "basis",
+                latest[ticker] = _latest_systemic_snapshot(
+                    store,
+                    symbol=symbol,
+                    observed_at_ms=observed_at_ms,
                 )
-                latest[ticker] = {
-                    "adl_risk": adl["rating"],
-                    "adl_event_time_ms": adl["event_time_ms"],
-                    "basis_event_time_ms": latest_basis["event_time_ms"],
-                    "basis_rate": latest_basis["basis_rate"],
-                    "constituent_count": constituents["constituent_count"],
-                    "constituent_dispersion_bps": constituents[
-                        "price_dispersion_bps"
-                    ],
-                    "insurance_asset_count": insurance["asset_count"],
-                    "insurance_event_time_ms": insurance["event_time_ms"],
-                }
             except Exception as exc:  # noqa: BLE001 - fail closed per symbol
-                errors[ticker] = {
-                    "error_type": type(exc).__name__,
-                    "message": str(exc)[:240],
-                }
+                errors[ticker] = refresh_errors.get(
+                    ticker,
+                    {
+                        "error_type": type(exc).__name__,
+                        "message": str(exc)[:240],
+                    },
+                )
 
         chain_valid = store.chain_valid()
         row_counts = {
@@ -1075,6 +1193,7 @@ def run_refresh(
         },
         "latest": latest,
         "errors": errors,
+        "refresh_errors": refresh_errors,
         "store": {
             "path": store_path,
             "row_count": row_count,
@@ -1085,15 +1204,20 @@ def run_refresh(
         "request_rate_limit": {
             "planned_ip_weight": (
                 SHARED_ENDPOINT_WEIGHT
-                + len(selected) * ENDPOINT_WEIGHT_PER_SYMBOL
+                + len(constituent_refresh_tickers) * ENDPOINT_WEIGHT_PER_SYMBOL
             ),
             "planned_request_count": (
-                2 + len(selected) + len(basis_refresh_tickers)
+                2 + len(constituent_refresh_tickers) + len(basis_refresh_tickers)
             ),
             "shared_endpoint_weight": SHARED_ENDPOINT_WEIGHT,
             "endpoint_weight_per_symbol": ENDPOINT_WEIGHT_PER_SYMBOL,
             "basis_refresh_budget": basis_refresh_budget,
             "basis_refresh_tickers": list(basis_refresh_tickers),
+            "constituent_refresh_budget": constituent_refresh_budget,
+            "constituent_refresh_tickers": list(constituent_refresh_tickers),
+            "constituent_cache_reused": (
+                len(selected) - len(constituent_refresh_tickers)
+            ),
             "configured_max_workers": max(
                 1, min(int(max_workers), len(selected))
             ),

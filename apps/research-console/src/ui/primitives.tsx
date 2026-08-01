@@ -48,12 +48,12 @@ export function Panel({ title, eyebrow, right, tone, children, className = '', b
     <section className={`q-rise flex min-w-0 flex-col rounded-panel border border-line bg-gradient-to-b from-panel-2/60 to-panel shadow-panel ${className}`}
       style={tone ? { boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${TONE_VAR[tone]} 22%, transparent), var(--shadow-panel)` } : undefined}>
       {(title || right) && (
-        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-          <div className="min-w-0">
-            {eyebrow && <div className="mb-0.5 text-2xs font-medium uppercase tracking-[0.14em] text-faint">{eyebrow}</div>}
-            {title && <h2 className="truncate text-base font-semibold tracking-tight text-ink">{title}</h2>}
+        <header className="flex flex-col items-start gap-3 border-b border-line px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="min-w-0 max-w-full">
+            {eyebrow && <div className="mb-0.5 break-words text-2xs font-medium uppercase tracking-[0.14em] text-faint">{eyebrow}</div>}
+            {title && <h2 className="break-words text-base font-semibold tracking-tight text-ink sm:truncate">{title}</h2>}
           </div>
-          {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
+          {right && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">{right}</div>}
         </header>
       )}
       <div className={`min-w-0 flex-1 p-6 ${bodyClass}`}>{children}</div>

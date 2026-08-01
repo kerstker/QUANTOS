@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   Callout,
   Chip,
@@ -10,15 +10,13 @@ import {
 import { EquityCurveChart, type EquitySeries } from '@/ui/workbench';
 import { stamp, type Tone } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
-import {
-  fetchDryRunSnapshot,
-  isResearchConsoleApiEnabled,
-} from '@/lib/api/research-console-api';
+import { fetchDryRunSnapshot } from '@/lib/api/research-console-api';
 import type {
   DryRunPipelinePayload,
   PaperOrderPreviewAlpha,
   PaperRealtimeAlpha,
   PaperRealtimeHistoryPoint,
+  RealtimeAlphaAutonomyPayload,
 } from '@/lib/types/research';
 
 const mockPayload: DryRunPipelinePayload = {
@@ -247,6 +245,124 @@ function PaperLoadingState() {
   );
 }
 
+function fmtHorizon(horizonMs?: number | null): string {
+  if (horizonMs == null) return '--';
+  if (horizonMs < 60 * 60_000) return `${Math.round(horizonMs / 60_000)}m`;
+  return `${Math.round(horizonMs / (60 * 60_000))}h`;
+}
+
+function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPayload }) {
+  const running = Boolean(
+    snapshot?.boundary_valid && snapshot.autonomy.autonomous_search_running,
+  );
+  const spanDays = (snapshot?.data_admission.common_span_ms ?? 0) / 86_400_000;
+  const candidates = snapshot?.top_candidates ?? [];
+  const capacity = snapshot?.executable_depth_capacity;
+  const gates = snapshot?.boundary_valid
+    ? snapshot.remaining_gates
+    : snapshot?.blockers ?? ['AUTONOMY_SNAPSHOT_MISSING'];
+  const statusTone: Tone = running ? 'pos' : snapshot?.snapshot_present ? 'neg' : 'warn';
+
+  return (
+    <Panel
+      title="自主 Alpha 发现"
+      eyebrow="实时微观结构 → 预注册试验 → 锁定验证"
+      right={
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip label={snapshot?.autonomy.requires_developer_ai ? 'IDE COUPLED' : 'SYSTEM NATIVE'} tone="info" />
+          <Chip
+            label={snapshot?.forward_shadow.status ?? 'SHADOW NO SNAPSHOT'}
+            tone={snapshot?.forward_shadow.verdict.forward_shadow_running ? 'pos' : 'warn'}
+          />
+          <Chip label={snapshot?.status ?? 'NO SNAPSHOT'} tone={statusTone} />
+        </div>
+      }
+      bodyClass="p-4"
+    >
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Metric
+          label="Autonomy"
+          value={running ? 'RUNNING' : 'GATED'}
+          detail="hourly system worker"
+          tone={statusTone}
+        />
+        <Metric
+          label="Realtime history"
+          value={`${spanDays.toFixed(2)}d`}
+          detail={`${snapshot?.data_admission.common_instruments?.length ?? 0} instruments`}
+          tone={spanDays >= 30 ? 'pos' : 'warn'}
+        />
+        <Metric
+          label="Pre-registered"
+          value={snapshot?.funnel.pre_registered ?? 0}
+          detail={`${snapshot?.families.length ?? 0} families`}
+          tone="special"
+        />
+        <Metric
+          label="Diagnostic leads"
+          value={snapshot?.funnel.diagnostic_leads ?? 0}
+          detail={`${snapshot?.funnel.evaluated ?? 0} evaluated`}
+          tone={(snapshot?.funnel.diagnostic_leads ?? 0) > 0 ? 'info' : 'muted'}
+        />
+        <Metric
+          label="Formal passes"
+          value={snapshot?.funnel.formal_passes ?? 0}
+          detail={`global trials ${snapshot?.global_trial_count ?? '--'}`}
+          tone={(snapshot?.funnel.formal_passes ?? 0) > 0 ? 'pos' : 'warn'}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_minmax(240px,1fr)]">
+        <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
+          <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
+            Leading diagnostics — not approved Alpha
+          </div>
+          {candidates.length ? candidates.slice(0, 4).map(candidate => (
+            <div
+              key={candidate.candidate_id}
+              className="grid grid-cols-[minmax(0,1fr)_55px_72px_72px] items-center gap-2 border-b border-line/70 px-3 py-2 last:border-b-0"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium text-ink">{candidate.candidate_id}</div>
+                <div className="truncate text-3xs text-faint">{candidate.family_id} · {candidate.status}</div>
+              </div>
+              <span className="ticker-num text-right text-3xs text-muted">{fmtHorizon(candidate.horizon_ms)}</span>
+              <span className="ticker-num text-right text-3xs text-muted">
+                SR {candidate.holdout_net_sharpe?.toFixed(2) ?? '--'}
+              </span>
+              <span className={`ticker-num text-right text-3xs ${(candidate.net_return ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>
+                {fmtPct(candidate.net_return)}
+              </span>
+            </div>
+          )) : (
+            <div className="px-3 py-6 text-center text-xs text-faint">No evaluated candidate snapshot yet.</div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-line bg-inset/35 p-3">
+          <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Current hard gates</div>
+          <div className="mt-2 space-y-1.5">
+            {gates.slice(0, 4).map(gate => (
+              <div key={gate} className="break-words text-3xs text-muted">• {gate}</div>
+            ))}
+          </div>
+          <div className="mt-3 border-t border-line pt-2 text-3xs text-faint">
+            Data admission {snapshot?.data_admission.status ?? 'NO_SNAPSHOT'} · registry chain{' '}
+            {snapshot?.registry.chain_valid ? 'valid' : 'blocked'}
+            {' '}· forward ledger {snapshot?.forward_shadow.ledger.chain_valid ? 'valid' : 'waiting'}
+          </div>
+          <div className="mt-2 text-3xs text-faint">
+            Capacity max {fmtUsd(capacity?.max_supported_aum_usd)} · shadow sizing{' '}
+            {fmtUsd(capacity?.shadow_aum_usd)} · {(capacity?.history_span_ms ?? 0) / 86_400_000 >= 30
+              ? '30d evidence ready'
+              : `${((capacity?.history_span_ms ?? 0) / 86_400_000).toFixed(2)}d / 30d`}
+          </div>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function StrategyRow({
   alpha,
   value,
@@ -355,22 +471,17 @@ function FormalRiskRow({
 }
 
 export default function DryRunPipeline() {
-  const [refreshTick, setRefreshTick] = useState(0);
-  useEffect(() => {
-    if (!isResearchConsoleApiEnabled()) return undefined;
-    const timer = window.setInterval(() => setRefreshTick(value => value + 1), 10_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DryRunPipelinePayload>(
     signal => fetchDryRunSnapshot(signal),
-    [refreshTick],
+    [],
+    { streamPath: '/api/v1/console/stream/dry-run' },
   );
   const initialLoading = apiState === 'loading' && !usingBackend;
   const data = usingBackend ? payload! : mockPayload;
   const shadow = data.paper_shadow;
   const health = data.paper_health;
   const scheduler = data.scheduler_watchdog;
+  const realtimeAlpha = data.realtime_alpha_autonomy;
   const alphaPipeline = data.alpha_pipeline;
   const pipelineCandidates = alphaPipeline?.candidates ?? [];
   const alphaRows = Object.entries(shadow?.alphas ?? {});
@@ -427,11 +538,11 @@ export default function DryRunPipeline() {
   ];
   const chartSeries = useMemo(() => paperSeries(shadow?.history ?? []), [shadow?.history]);
   const transportLabel = initialLoading
-    ? 'CONNECTING'
+    ? 'SSE CONNECTING'
     : apiState === 'loading' && usingBackend
-      ? 'REFRESHING'
+      ? 'SSE RECONNECTING'
     : apiState === 'connected' && usingBackend
-      ? 'REAL API'
+      ? 'SSE LIVE'
       : 'API UNAVAILABLE';
   const transportTone: Tone = initialLoading || apiState === 'loading'
     ? 'info'
@@ -489,6 +600,9 @@ export default function DryRunPipeline() {
         <PaperLoadingState />
       ) : (
       <LoadingVeil active={apiState === 'loading'}>
+        <div className="mb-4">
+          <AutonomousAlphaPanel snapshot={realtimeAlpha} />
+        </div>
         <div className="grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-panel px-4 py-4 md:grid-cols-5">
           <Metric
             label="Total equity"
@@ -520,7 +634,7 @@ export default function DryRunPipeline() {
         <div className="mt-4">
           <Panel
             title="Alpha pipeline"
-            eyebrow="Discovery -> forward paper -> execution paper"
+            eyebrow="Discovery -> forward challenger -> candidate paper"
             right={
               <Chip
                 label={alphaPipeline?.handoff.status ?? 'NO PIPELINE'}
@@ -539,20 +653,20 @@ export default function DryRunPipeline() {
               <Metric
                 label="Forward paper"
                 value={alphaPipeline?.counts.forward_paper ?? 0}
-                detail="attested OOS challengers"
+                detail={`${alphaPipeline?.counts.forward_only ?? 0} still at forward gate`}
                 tone="info"
               />
               <Metric
-                label="Execution paper"
-                value={alphaPipeline?.counts.execution_paper ?? 0}
-                detail="real-time marked books"
+                label="Candidate paper"
+                value={alphaPipeline?.counts.candidate_execution_paper ?? 0}
+                detail="new-pipeline marked books"
                 tone="accent"
               />
               <Metric
-                label="Forward only"
-                value={alphaPipeline?.counts.forward_only ?? 0}
-                detail="waiting for dynamic risk handoff"
-                tone={(alphaPipeline?.counts.forward_only ?? 0) > 0 ? 'warn' : 'pos'}
+                label="Legacy paper"
+                value={alphaPipeline?.counts.legacy_diagnostic_paper ?? 0}
+                detail="diagnostic only; quarantined"
+                tone={(alphaPipeline?.counts.legacy_diagnostic_paper ?? 0) > 0 ? 'warn' : 'pos'}
               />
             </div>
 
@@ -575,14 +689,22 @@ export default function DryRunPipeline() {
                       </td>
                       <td className="px-3 py-2">
                         <Chip
-                          label={candidate.execution_paper
-                            ? 'EXECUTION'
+                          label={candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER'
+                            ? 'LEGACY PAPER'
+                            : candidate.execution_paper
+                              ? 'CANDIDATE PAPER'
                             : candidate.independent_evaluation?.status === 'VERIFIED'
                               ? 'EVALUATED'
                               : 'FORWARD'}
-                          tone={candidate.execution_paper ? 'pos' : 'info'}
+                          tone={candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER'
+                            ? 'warn'
+                            : candidate.execution_paper ? 'pos' : 'info'}
                         />
-                        {!candidate.execution_paper ? (
+                        {candidate.paper_class === 'LEGACY_DIAGNOSTIC_PAPER' ? (
+                          <div className="mt-1 text-3xs text-warn">
+                            diagnostic only · never deployment eligible
+                          </div>
+                        ) : !candidate.execution_paper ? (
                           <div className="mt-1 text-3xs text-faint">
                             Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Risk {candidate.risk_packet?.status ?? 'PENDING'}
                           </div>
@@ -619,7 +741,7 @@ export default function DryRunPipeline() {
           <Panel
             title="实时权益与策略账簿"
             eyebrow="Live paper books"
-            right={<Chip label="10s POLL" tone="info" />}
+            right={<Chip label="SSE STREAM" tone="info" />}
             bodyClass="p-4"
           >
             <div className="rounded-lg border border-line bg-inset/40 p-2">

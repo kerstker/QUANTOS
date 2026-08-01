@@ -891,7 +891,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is healthy but longitudinal maturity is incomplete: HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history health failed: FAILURE_IN_CLEAN_LOOKBACK, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -914,7 +914,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1477,9 +1477,9 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 0,
+    "failed": 1,
     "manual_evidence_required": 0,
-    "partial": 7,
+    "partial": 6,
     "passed": 15,
     "red_lines_failed": 3,
     "total": 22,

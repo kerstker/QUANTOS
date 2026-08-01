@@ -23,6 +23,7 @@ from pathlib import Path
 import sys
 import time
 
+from quantos.runtime_paths import runtime_state_root
 from services.data.panel_quality import gate_decision_inputs
 from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
 from services.research import alpha_expression as ax
@@ -752,7 +753,7 @@ def _run() -> None:
     status["alerts"] = alerts
     json.dump(status, open(_STATUS, "w", encoding="utf-8"), indent=2)
     baseline = build_forward_evidence(
-        Path(__file__).resolve().parents[1],
+        runtime_state_root(),
         observed_at_ms=now_ms,
         database=_DB,
         admission_database=_AUTHORITY,

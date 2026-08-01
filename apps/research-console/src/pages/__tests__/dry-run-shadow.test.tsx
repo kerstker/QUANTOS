@@ -48,6 +48,180 @@ const state = vi.hoisted(() => ({
         },
       ],
     },
+    realtime_alpha_autonomy: {
+      source: 'AUTONOMOUS_REALTIME_ALPHA_DISCOVERY_ARTIFACT',
+      read_only: true,
+      snapshot_present: true,
+      boundary_valid: true,
+      status: 'RUNNING_EXPLORATORY',
+      mode: 'L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH',
+      generated_at_ms: 1_785_592_975_514,
+      dataset_version: 'dataset-v1',
+      search_id: 'search-v1',
+      autonomy: {
+        worker: 'tools.realtime_alpha_discovery',
+        scheduler_task: 'QUANTOS_realtime_alpha_discovery',
+        autonomous_search_running: true,
+        requires_developer_ai: false,
+        next_cycle_expected_ms: 1_785_596_575_514,
+      },
+      data_admission: {
+        status: 'EXPLORATION_READY',
+        common_span_ms: 301_561_655,
+        feature_age_ms: 228_264,
+        common_instruments: Array.from({ length: 14 }, (_, index) => `S${index}`),
+        exploration_allowed: true,
+        formal_validation_allowed: false,
+        shadow_admission_allowed: false,
+        reasons: ['diagnostic exploration allowed; formal validation requires 30 days'],
+      },
+      feature_quality: { status: 'PASS', drift_status: 'BLOCK' },
+      executable_depth_capacity: {
+        status: 'COLLECTING_OR_BLOCKED',
+        passed: false,
+        evidence_ready: false,
+        target_aum_passed: false,
+        shadow_sizing_ready: false,
+        history_span_ms: 2_172_786,
+        feature_age_ms: 0,
+        instrument_count: 14,
+        conservative_depth_usd: 2_187.24,
+        max_supported_aum_usd: 874.90,
+        target_aum_usd: 1_000_000,
+        shadow_aum_usd: 437.45,
+        participation_rate: 0.1,
+        legs_per_side: 2,
+        reasons: [
+          'EXECUTABLE_DEPTH_HISTORY_BELOW_30D',
+          'EXECUTABLE_DEPTH_CAPACITY_BELOW_TARGET_AUM',
+        ],
+      },
+      funnel: {
+        pre_registered: 24,
+        evaluated: 24,
+        diagnostic_leads: 0,
+        formal_passes: 0,
+        shadow_candidates: 0,
+      },
+      families: [
+        { family_id: 'order_flow', hypothesis_count: 6 },
+        { family_id: 'order_book', hypothesis_count: 6 },
+        { family_id: 'liquidation', hypothesis_count: 6 },
+        { family_id: 'funding_basis', hypothesis_count: 6 },
+      ],
+      top_candidates: [
+        {
+          candidate_id: 'rt_basis_convergence_1h_v1',
+          family_id: 'funding_basis',
+          horizon_ms: 3_600_000,
+          status: 'EXPLORATORY_ONLY',
+          holdout_net_sharpe: -13.91,
+          net_return: -0.0367,
+          promotion_eligible: false,
+          live_allowed: false,
+        },
+      ],
+      global_trial_count: 2577,
+      registry: { chain_valid: true, event_count: 48 },
+      remaining_gates: [
+        '30D_COMMON_HISTORY_FOR_FORMAL_VALIDATION',
+        '90D_COMMON_HISTORY_FOR_FORWARD_SHADOW',
+        'EXECUTABLE_DEPTH_CAPACITY_CALIBRATION',
+      ],
+      blockers: [],
+      forward_shadow: {
+        snapshot_present: true,
+        boundary_valid: true,
+        status: 'WAITING_FOR_VALIDATED_CANDIDATE',
+        generated_at_ms: 1_785_592_980_000,
+        eligible_candidates: [],
+        feature_input: { ready: true, status: 'PASS' },
+        cycle: { new_admissions: 0, new_decisions: 0, new_realizations: 0 },
+        tracks: {},
+        errors: {},
+        ledger: { append_only: true, chain_valid: true, event_count: 0 },
+        verdict: {
+          forward_shadow_running: false,
+          promotion_eligible: false,
+          forward_evidence_credit: false,
+          deployment_eligible: false,
+          live_allowed: false,
+          order_submission_allowed: false,
+        },
+        blockers: [],
+        safety: {
+          paper_only: true,
+          public_market_data_only: true,
+          separate_from_official_paper: true,
+          credentials_accessed: false,
+          broker_connectivity: false,
+          broker_order_submission: false,
+          allow_ai_direct_trading: false,
+        },
+      },
+      safety: {
+        paper_only: true,
+        live_trading_enabled: false,
+        real_broker_enabled: false,
+        allow_order_submission: false,
+        allow_ai_direct_trading: false,
+        promotion_eligible: false,
+        credentials_accessed: false,
+      },
+    },
+    alpha_pipeline: {
+      source: 'BACKEND_COMPUTED_ALPHA_PIPELINE',
+      read_only: true,
+      factory: {
+        snapshot_present: true,
+        generated_at: 1_785_592_900_000,
+        rounds: 2,
+        dry_limit: 24,
+        data_dimensions: 12,
+        survivors: 1,
+        verdict: 'research survivor retained',
+        containment: 'research only',
+      },
+      counts: {
+        forward_paper: 1,
+        execution_paper: 1,
+        candidate_execution_paper: 0,
+        legacy_diagnostic_paper: 1,
+        forward_only: 0,
+        factory_survivors: 1,
+      },
+      candidates: [
+        {
+          alpha_id: 'crowd_contra',
+          n_forward_periods: 1,
+          weeks_to_go_no_go: 7,
+          paper_sharpe: null,
+          paper_ic: null,
+          cum_return: -0.002,
+          backtest_reference_sharpe: 1.2,
+          reference_weeks: 230,
+          pending_decisions: 1,
+          last_decision_ts: 1_785_263_100_000,
+          stage: 'LEGACY_DIAGNOSTIC_PAPER',
+          paper_class: 'LEGACY_DIAGNOSTIC_PAPER',
+          execution_paper: true,
+          deployment_eligible: false,
+          blockers: ['LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE'],
+        },
+      ],
+      handoff: {
+        factory_to_forward_registry_connected: false,
+        forward_to_execution_dynamic: false,
+        status: 'GAPPED',
+        gap_codes: ['LEGACY_DIAGNOSTIC_PAPER_QUARANTINED'],
+      },
+      safety: {
+        paper_only: true,
+        deployment_eligible: false,
+        live_allowed: false,
+        order_submission_allowed: false,
+      },
+    },
     paper_shadow: {
       source: 'AUTOMATED_SHADOW_PAPER_ARTIFACTS',
       read_only: true,
@@ -253,6 +427,17 @@ describe('automated shadow-paper cockpit', () => {
 
     expect(screen.getByText(/全自动影子纸面驾驶舱/)).toBeInTheDocument();
     expect(screen.getByText('SCHEDULED_ACTIVE')).toBeInTheDocument();
+    expect(screen.getByText('自主 Alpha 发现')).toBeInTheDocument();
+    expect(screen.getByText('SYSTEM NATIVE')).toBeInTheDocument();
+    expect(screen.getByText('SSE STREAM')).toBeInTheDocument();
+    expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
+    expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
+    expect(screen.getByText('WAITING_FOR_VALIDATED_CANDIDATE')).toBeInTheDocument();
+    expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
+    expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();
+    expect(screen.getByText('rt_basis_convergence_1h_v1')).toBeInTheDocument();
+    expect(screen.getByText('3.49d')).toBeInTheDocument();
+    expect(screen.getByText(/Capacity max \$875/)).toBeInTheDocument();
     expect(screen.getByText('$2,956,000')).toBeInTheDocument();
     expect(screen.getByText('$-44,000')).toBeInTheDocument();
     expect(screen.getByText(/独立、不可晋级的自动观察账户/)).toBeInTheDocument();
@@ -291,7 +476,7 @@ describe('automated shadow-paper cockpit', () => {
     state.usingBackend = true;
     try {
       render(<DryRunPipeline />);
-      expect(screen.getByText('REFRESHING')).toBeInTheDocument();
+      expect(screen.getByText('SSE RECONNECTING')).toBeInTheDocument();
       expect(screen.getByText('SCHEDULED_ACTIVE')).toBeInTheDocument();
       expect(screen.queryByText('CONNECTING')).not.toBeInTheDocument();
     } finally {

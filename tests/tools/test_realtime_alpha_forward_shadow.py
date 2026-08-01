@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from quantos.contracts.hashing import stable_hash
+from services.research.alpha_family_registry import AlphaFamilyRegistry
+from services.research.realtime_alpha_discovery import (
+    RealtimeFrame,
+    default_realtime_hypotheses,
+)
+from tools.realtime_alpha_forward_shadow import (
+    RealtimeAlphaForwardShadowError,
+    eligible_candidates,
+    run_cycle,
+)
+
+
+def _discovery(now_ms: int, *, eligible: bool = False) -> dict:
+    spec = default_realtime_hypotheses()[0]
+    return {
+        "generated_at_ms": now_ms,
+        "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
+        "manifest_hash": stable_hash(
+            [item.as_dict() for item in default_realtime_hypotheses()]
+        ),
+        "dataset_version": "dataset-v1",
+        "search_id": "search-v1",
+        "registry": {"chain_valid": True},
+        "data_admission": {
+            "shadow_admission_allowed": eligible,
+            "common_instruments": [f"S{index:02d}USDT" for index in range(10)],
+        },
+        "executable_depth_capacity": {
+            "shadow_sizing_ready": eligible,
+            "shadow_aum_usd": 500.0 if eligible else None,
+        },
+        "candidates": [
+            {
+                "candidate_id": spec.candidate_id,
+                "family_id": spec.family_id,
+                "mechanism": spec.mechanism,
+                "horizon_ms": spec.horizon_ms,
+                "gate_pass": eligible,
+                "status": "SHADOW_CANDIDATE_READY" if eligible else "EXPLORATORY_ONLY",
+                "promotion_eligible": False,
+                "live_allowed": False,
+            }
+        ],
+        "safety": {
+            "paper_only": True,
+            "live_trading_enabled": False,
+            "real_broker_enabled": False,
+            "allow_order_submission": False,
+            "allow_ai_direct_trading": False,
+            "promotion_eligible": False,
+            "credentials_accessed": False,
+        },
+    }
+
+
+def test_handoff_requires_all_maturity_capacity_and_safety_gates() -> None:
+    now = 1_000_000
+    assert eligible_candidates(_discovery(now), now_ms=now) == ()
+    ready = eligible_candidates(_discovery(now, eligible=True), now_ms=now)
+    assert len(ready) == 1
+
+    tampered = _discovery(now, eligible=True)
+    tampered["safety"]["allow_order_submission"] = True
+    with pytest.raises(
+        RealtimeAlphaForwardShadowError,
+        match="DISCOVERY_SAFETY_BOUNDARY_INVALID",
+    ):
+        eligible_candidates(tampered, now_ms=now)
+
+
+def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_path) -> None:
+    now = 1_000_000
+    discovery = tmp_path / "discovery.json"
+    discovery.write_text(json.dumps(_discovery(now)), encoding="utf-8")
+    feature_status = tmp_path / "feature-status.json"
+    feature_status.write_text(json.dumps({"status": "BLOCKED"}), encoding="utf-8")
+    output = tmp_path / "shadow.json"
+
+    report = run_cycle(
+        discovery_path=discovery,
+        feature_status_path=feature_status,
+        feature_store_path=tmp_path / "missing-features.db",
+        family_registry_path=tmp_path / "missing-family.db",
+        shadow_store_path=tmp_path / "shadow.db",
+        output_path=output,
+        now_ms=now,
+    )
+
+    assert report["status"] == "WAITING_FOR_VALIDATED_CANDIDATE"
+    assert report["eligible_candidates"] == []
+    assert report["handoff"]["valid"] is True
+    assert report["handoff"]["admission_blockers"] == [
+        "NINETY_DAY_SHADOW_MATURITY_NOT_MET",
+        "EXECUTABLE_DEPTH_SHADOW_SIZING_NOT_READY",
+    ]
+    assert report["verdict"]["forward_shadow_running"] is False
+    assert report["verdict"]["promotion_eligible"] is False
+    assert report["verdict"]["live_allowed"] is False
+    assert report["verdict"]["order_submission_allowed"] is False
+    assert not (tmp_path / "shadow.db").exists()
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == report["status"]
+
+
+def test_unsafe_handoff_writes_fresh_safe_blocked_evidence(tmp_path) -> None:
+    now = 1_000_000
+    payload = _discovery(now, eligible=True)
+    payload["safety"]["allow_ai_direct_trading"] = True
+    discovery = tmp_path / "discovery.json"
+    discovery.write_text(json.dumps(payload), encoding="utf-8")
+    feature_status = tmp_path / "feature-status.json"
+    feature_status.write_text(json.dumps({"status": "PASS"}), encoding="utf-8")
+    output = tmp_path / "shadow.json"
+
+    report = run_cycle(
+        discovery_path=discovery,
+        feature_status_path=feature_status,
+        feature_store_path=tmp_path / "missing-features.db",
+        family_registry_path=tmp_path / "missing-family.db",
+        shadow_store_path=tmp_path / "shadow.db",
+        output_path=output,
+        now_ms=now,
+    )
+
+    assert report["status"] == "SAFE_BLOCKED"
+    assert report["handoff"]["valid"] is False
+    assert "DISCOVERY_SAFETY_BOUNDARY_INVALID" in report["handoff"]["error"]
+    assert report["ledger"]["chain_valid"] is None
+    assert report["verdict"]["forward_shadow_running"] is False
+    assert not (tmp_path / "shadow.db").exists()
+
+
+def test_admitted_track_survives_restart_and_current_gate_regression(
+    tmp_path, monkeypatch
+) -> None:
+    base = 1_000_000
+    spec = default_realtime_hypotheses()[0]
+    discovery_path = tmp_path / "discovery.json"
+    feature_status_path = tmp_path / "feature-status.json"
+    feature_status_path.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "generated_at_ms": base,
+                "batch": {"chain_valid": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(registry_path), create=True) as registry:
+        registry.register_candidate(spec.as_dict(), recorded_at=base - 1)
+
+    def fake_frames(
+        _path,
+        *,
+        instruments,
+        start_ms,
+        end_ms,
+        bucket_ms,
+    ):
+        del start_ms, bucket_ms
+        return {
+            instrument: [
+                RealtimeFrame(
+                    instrument_id=instrument,
+                    event_time_ms=end_ms - 250,
+                    decision_time_ms=end_ms,
+                    mid_price=100.0 + index,
+                    spread_bps=1.0,
+                    depth_imbalance_5=(index - 4.5) / 10.0,
+                    mark_basis_bps=float(index - 4),
+                    funding_rate=0.00001 * index,
+                    taker_imbalance_5s=(index - 4.5) / 10.0,
+                    liquidation_imbalance_5s=0.0,
+                )
+            ]
+            for index, instrument in enumerate(instruments)
+        }
+
+    monkeypatch.setattr(
+        "tools.realtime_alpha_forward_shadow.load_bucketed_frames", fake_frames
+    )
+    ready = _discovery(base, eligible=True)
+    discovery_path.write_text(json.dumps(ready), encoding="utf-8")
+    common = {
+        "discovery_path": discovery_path,
+        "feature_status_path": feature_status_path,
+        "feature_store_path": tmp_path / "features.db",
+        "family_registry_path": registry_path,
+        "shadow_store_path": tmp_path / "shadow.db",
+        "output_path": tmp_path / "shadow.json",
+    }
+
+    admitted = run_cycle(**common, now_ms=base)
+    assert admitted["status"] == "RUNNING"
+    assert admitted["cycle"]["new_admissions"] == 1
+
+    decided = run_cycle(**common, now_ms=base + 30_000)
+    assert decided["cycle"]["new_decisions"] == 1
+
+    realization_time = base + 60_250
+    regressed = _discovery(realization_time, eligible=False)
+    discovery_path.write_text(json.dumps(regressed), encoding="utf-8")
+    recovered = run_cycle(**common, now_ms=realization_time)
+    assert recovered["status"] == "RUNNING"
+    assert recovered["eligible_candidates"] == []
+    assert recovered["admitted_candidates"] == [spec.candidate_id]
+    assert recovered["cycle"]["new_realizations"] == 1
+    assert recovered["ledger"]["chain_valid"] is True
