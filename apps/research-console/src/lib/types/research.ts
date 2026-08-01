@@ -1374,6 +1374,21 @@ export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
   stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | string;
   execution_paper: boolean;
   blockers: string[];
+  independent_evaluation?: {
+    status?: string | null;
+    verified?: boolean;
+    verdict?: string | null;
+    run_id?: string | null;
+  };
+  risk_packet?: {
+    status?: string | null;
+    missing?: string[];
+    reasons?: Record<string, string>;
+  };
+  maturity?: {
+    observed_periods?: number | null;
+    required_periods?: number | null;
+  };
 }
 
 export interface AlphaPipelinePayload {

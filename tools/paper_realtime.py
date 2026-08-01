@@ -37,6 +37,7 @@ from tools.cache_io import atomic_write_json
 from tools.binance_perp_mark_fetch import load_mark_prices
 from tools.l2_paper_operator import run_operator
 from tools.paper_health import build_report
+from tools.paper_candidate_universe import paper_candidate_ids
 from tools.paper_order_preview import run_preview
 
 
@@ -433,7 +434,7 @@ def build_mark_snapshot(
     funding_marks: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Value one Alpha's paper account at a public mark observation."""
-    if alpha_id not in ALPHA_IDS:
+    if alpha_id not in paper_candidate_ids():
         raise ValueError(f"unsupported alpha: {alpha_id}")
     if not math.isfinite(float(aum)) or float(aum) <= 0:
         raise ValueError("aum must be a positive finite number")
@@ -543,6 +544,62 @@ def _load_json(path: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _pending_candidate_snapshot(
+    alpha_id: str,
+    preview: Mapping[str, Any],
+    *,
+    observed_at: int | None,
+    generated_at: int,
+    aum: float,
+) -> dict[str, Any]:
+    """Expose an unfilled challenger without putting it in the mark chain."""
+    forward = preview.get("forward_observation")
+    forward = forward if isinstance(forward, Mapping) else {}
+    risk = preview.get("research_risk")
+    risk = risk if isinstance(risk, Mapping) else {}
+    bundle = preview.get("research_risk_bundle")
+    bundle = bundle if isinstance(bundle, Mapping) else {}
+    return {
+        "schema_version": 1,
+        "flow": "PAPER_REALTIME_CANDIDATE_STATUS",
+        "alpha_id": alpha_id,
+        "observed_at": int(observed_at) if isinstance(observed_at, int) else None,
+        "generated_at": int(generated_at),
+        "provider": "BINANCE_PUBLIC_MARK_PRICE",
+        "status": "PAPER_PENDING",
+        "candidate_stage": "FORWARD_PENDING",
+        "forward_observation": dict(forward),
+        "n_fills": 0,
+        "positions": {},
+        "cash": float(aum),
+        "market_value": 0.0,
+        "equity": float(aum),
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "funding_pnl": 0.0,
+        "funding_events": 0,
+        "funding_data_complete": False,
+        "funding_missing_instruments": [],
+        "funding_missing_events": [],
+        "gross_pnl": 0.0,
+        "costs": 0.0,
+        "net_pnl": 0.0,
+        "return_on_aum": 0.0,
+        "turnover": 0.0,
+        "reconciliation_residual": 0.0,
+        "research_risk": dict(risk),
+        "research_risk_bundle": dict(bundle),
+        "paper_execution": "PAPER_BLOCKED",
+        "persisted_realtime_snapshot": False,
+        "execution_eligible": False,
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "broker_connectivity": False,
+        "credentials_accessed": False,
+    }
+
+
 def _load_mark_history(path: str) -> dict[str, Any]:
     try:
         return load_mark_prices(path)
@@ -573,12 +630,21 @@ def _existing_paper_ledger_is_markable(path: str) -> bool:
         if not isinstance(row, Mapping):
             continue
         alpha_id = str(row.get("alpha_id", ""))
-        if alpha_id in ALPHA_IDS:
+        if alpha_id in paper_candidate_ids():
             by_alpha[alpha_id].append(row)
-    return all(
+    if not all(
         by_alpha.get(alpha_id)
         and all(row.get("paper_execution") == "PAPER_FILLED" for row in by_alpha[alpha_id])
         for alpha_id in ALPHA_IDS
+    ):
+        return False
+    # Once a challenger has a real paper fill, it becomes part of the
+    # mark-to-market set automatically.  A blocked/immature challenger has no
+    # position and therefore is not required to make replay available.
+    return all(
+        all(row.get("paper_execution") == "PAPER_FILLED" for row in rows_for_alpha)
+        for alpha_id, rows_for_alpha in by_alpha.items()
+        if alpha_id not in ALPHA_IDS
     )
 
 
@@ -598,6 +664,7 @@ def run_cycle(
 ) -> dict[str, Any]:
     """Run one observable paper valuation cycle and atomically publish its receipt."""
     generated_at = int(generated_at_ms if generated_at_ms is not None else time.time() * 1000)
+    candidate_ids = paper_candidate_ids()
     if operator is None:
         operator = dict(
             operator_runner() if operator_runner is not None else run_operator(advance_forward=False)
@@ -621,6 +688,7 @@ def run_cycle(
     errors: dict[str, str] = {}
     snapshots: dict[str, dict[str, Any]] = {}
     backtests: dict[str, dict[str, Any]] = {}
+    execution_ids: tuple[str, ...] = tuple(ALPHA_IDS)
     inserted = 0
     provider_payload: dict[str, Any] = {}
     funding_refresh: dict[str, Any] = {
@@ -649,7 +717,7 @@ def run_cycle(
                 if decision_ts is not None and decision_ts >= 0:
                     paper_ledger_decisions.add(decision_ts)
                 alpha_id = str(row.get("alpha_id", ""))
-                if alpha_id not in ALPHA_IDS:
+                if alpha_id not in candidate_ids:
                     continue
                 rows_by_alpha[alpha_id].append(row)
                 positions = row.get("paper_positions")
@@ -704,7 +772,21 @@ def run_cycle(
                         funding_refresh["error"] = (
                             f"{type(exc).__name__}: {str(exc)[:240]}"
                         )
-                for alpha_id in ALPHA_IDS:
+                execution_ids = tuple(
+                    ALPHA_IDS
+                    + tuple(
+                        sorted(
+                            alpha_id
+                            for alpha_id, rows_for_alpha in rows_by_alpha.items()
+                            if alpha_id not in ALPHA_IDS
+                            and any(
+                                row.get("paper_execution") == "PAPER_FILLED"
+                                for row in rows_for_alpha
+                            )
+                        )
+                    )
+                )
+                for alpha_id in execution_ids:
                     if not rows_by_alpha.get(alpha_id):
                         raise PublicMarkDataError(f"paper order ledger has no row for {alpha_id}")
                     snapshots[alpha_id] = build_mark_snapshot(
@@ -743,6 +825,65 @@ def run_cycle(
                     else {}
                 )
                 backtests = _backtest_summary(flow if isinstance(flow, Mapping) else {})
+                preview_stage = (
+                    (operator.get("stages") or {}).get("paper_order_preview", {})
+                    if isinstance(operator.get("stages"), Mapping)
+                    else {}
+                )
+                preview = (
+                    preview_stage.get("preview", {})
+                    if isinstance(preview_stage, Mapping)
+                    else {}
+                )
+                preview_rows = (
+                    preview.get("alphas", {})
+                    if isinstance(preview, Mapping)
+                    else {}
+                )
+                for alpha_id in execution_ids:
+                    if alpha_id in backtests:
+                        continue
+                    row = preview_rows.get(alpha_id) if isinstance(preview_rows, Mapping) else None
+                    if not isinstance(row, Mapping):
+                        continue
+                    risk = row.get("research_risk")
+                    risk = risk if isinstance(risk, Mapping) else {}
+                    returns = risk.get("alpha_returns")
+                    backtests[alpha_id] = {
+                        "run_id": row.get("run_id"),
+                        "n_periods": len(returns.get(alpha_id, ()))
+                        if isinstance(returns, Mapping)
+                        and isinstance(returns.get(alpha_id), (list, tuple))
+                        else None,
+                        "total_return": None,
+                        "sharpe": None,
+                        "sharpe_vt": None,
+                        "max_drawdown": None,
+                        "max_drawdown_vt": None,
+                        "reconciliation_residual": row.get("reconciliation_residual"),
+                        "research_risk_decision": risk.get("decision"),
+                        "provenance": "REAL_PAPER_CANDIDATE_RISK_INPUTS",
+                    }
+                # Keep every discovered challenger visible in the realtime
+                # artifact.  These rows are intentionally not appended to the
+                # immutable mark chain and can never count as execution rows.
+                if isinstance(preview_rows, Mapping):
+                    for alpha_id in candidate_ids:
+                        if alpha_id in snapshots or alpha_id in ALPHA_IDS:
+                            continue
+                        row = preview_rows.get(alpha_id)
+                        if isinstance(row, Mapping):
+                            snapshots[alpha_id] = _pending_candidate_snapshot(
+                                alpha_id,
+                                row,
+                                observed_at=(
+                                    int(provider_payload["observed_at"])
+                                    if isinstance(provider_payload.get("observed_at"), int)
+                                    else None
+                                ),
+                                generated_at=generated_at,
+                                aum=aum,
+                            )
             except Exception as exc:
                 errors["mark_cycle"] = f"{type(exc).__name__}: {str(exc)[:240]}"
                 chain_valid = False
@@ -755,11 +896,13 @@ def run_cycle(
     paper_ready = bool(
         operator_ready
         and not errors
-        and len(snapshots) == len(ALPHA_IDS)
-        and all(row.get("status") == "PAPER_MARKED" for row in snapshots.values())
+        and all(
+            snapshots.get(alpha_id, {}).get("status") == "PAPER_MARKED"
+            for alpha_id in ALPHA_IDS
+        )
         and chain_valid
     )
-    backtest_ready = len(backtests) == len(ALPHA_IDS)
+    backtest_ready = all(alpha_id in backtests for alpha_id in execution_ids)
     cycle_completed = paper_ready and backtest_ready
     if paper_ready and mark_only_replay:
         readiness_class = "PAPER_MARKS_ONLY_REPLAY"
@@ -778,6 +921,16 @@ def run_cycle(
         "provider": provider_payload.get("provider", "BINANCE_PUBLIC_MARK_PRICE"),
         "funding_refresh": funding_refresh,
         "alphas": snapshots,
+        "candidate_universe": {
+            "count": len(candidate_ids),
+            "execution_count": len(execution_ids),
+            "pending": sorted(
+                alpha_id
+                for alpha_id, row in snapshots.items()
+                if alpha_id not in execution_ids
+                and row.get("status") == "PAPER_PENDING"
+            ),
+        },
         "backtests": backtests,
         "persistence": {
             "paper_order_store": paper_store_path,
@@ -806,6 +959,9 @@ def run_cycle(
             "cycle_completed": cycle_completed,
             "paper_mark_ready": paper_ready,
             "backtest_reference_present_for_all_three": backtest_ready,
+            "backtest_reference_present_for_all_execution_candidates": backtest_ready,
+            "candidate_universe_count": len(candidate_ids),
+            "execution_paper_candidate_count": len(execution_ids),
             "new_paper_orders_allowed": operator_execution_ready,
             "live_allowed": False,
             "order_submission_allowed": False,

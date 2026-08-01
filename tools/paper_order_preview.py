@@ -58,6 +58,7 @@ from services.trading.broker_adapter import DryRunBrokerAdapter
 from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.binance_perp_mark_fetch import load_mark_prices
 from tools.cache_io import atomic_write_json
+from tools.paper_candidate_universe import paper_candidate_ids
 
 
 DEFAULT_FORWARD_DB = os.path.join("data", "cache", "paper_track.db")
@@ -67,6 +68,9 @@ DEFAULT_OUTPUT = os.path.join("data", "cache", "paper_order_preview.json")
 DEFAULT_PAPER_STORE = os.path.join("data", "cache", "paper_order_ledger.db")
 DEFAULT_RESEARCH_RISK_BUNDLE = os.path.join(
     "data", "cache", "paper_research_risk_inputs.json"
+)
+DEFAULT_FORWARD_EVALUATIONS = os.path.join(
+    "data", "cache", "forward_alpha_evaluations.json"
 )
 DEFAULT_REALTIME_MARKET_STATUS = os.path.join(
     "data", "cache", "binance_realtime_market_status.json"
@@ -84,6 +88,129 @@ def _load_json(path: str) -> dict[str, Any]:
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _forward_pending_preview(
+    alpha_id: str,
+    *,
+    status_path: str,
+    research_risk_bundle_path: str,
+    generated_at_ms: int | None,
+    error: str,
+) -> dict[str, Any]:
+    """Materialize a visible, non-executable row for an unready challenger.
+
+    A challenger can be discovered before it has an attested decision.  The
+    order preview must still expose that candidate and its evidence clock; an
+    exception-only entry made the UI look as if the candidate did not exist.
+    This row contains no orders, positions, or execution authority.
+    """
+    status_document = _load_json(status_path)
+    status_row = (
+        status_document.get("alphas", {}).get(alpha_id)
+        if isinstance(status_document.get("alphas"), Mapping)
+        else None
+    )
+    evaluation_document = _load_json(DEFAULT_FORWARD_EVALUATIONS)
+    evaluation_row = (
+        evaluation_document.get("alphas", {}).get(alpha_id)
+        if isinstance(evaluation_document.get("alphas"), Mapping)
+        else None
+    )
+    risk_document = _load_json(research_risk_bundle_path)
+    risk_row = (
+        risk_document.get("alphas", {}).get(alpha_id)
+        if isinstance(risk_document.get("alphas"), Mapping)
+        else None
+    )
+    evaluation = (
+        evaluation_row.get("evaluation")
+        if isinstance(evaluation_row, Mapping)
+        else None
+    )
+    observed = None
+    for source in (evaluation_row, status_row):
+        value = source.get("forward_periods") if isinstance(source, Mapping) else None
+        if value is None and isinstance(source, Mapping):
+            value = source.get("n_forward_periods")
+        if isinstance(value, int) and not isinstance(value, bool):
+            observed = value
+            break
+    blockers = [str(error)]
+    if not isinstance(evaluation, Mapping) or evaluation.get("verdict") != "PASS":
+        blockers.append("INDEPENDENT_EVALUATION_NOT_PASS")
+    if observed is None or observed < 8:
+        blockers.append("FORWARD_EVIDENCE_MATURITY_PENDING")
+    if not isinstance(risk_row, Mapping) or risk_row.get("status") != "READY":
+        blockers.append("FULL_NINE_ENGINE_RISK_PACKET_PENDING")
+    return {
+        "alpha_id": alpha_id,
+        "decision_source": "FORWARD_CANDIDATE_PENDING",
+        "forward_candidate": True,
+        "forward_observation": {
+            "observed_periods": observed,
+            "required_periods": 8,
+            "evaluation_status": (
+                evaluation_row.get("status")
+                if isinstance(evaluation_row, Mapping)
+                else "PENDING"
+            ),
+            "evaluation_verdict": (
+                evaluation.get("verdict")
+                if isinstance(evaluation, Mapping)
+                else None
+            ),
+        },
+        "orders": [],
+        "n_intents": 0,
+        "n_approved": 0,
+        "n_rejected": 0,
+        "rejected_reasons": list(dict.fromkeys(blockers)),
+        "paper_execution": "PAPER_BLOCKED",
+        "pnl": {
+            "total_pnl": 0.0,
+            "net_pnl": 0.0,
+            "gross_pnl": 0.0,
+            "costs": 0.0,
+            "equity": DEFAULT_AUM,
+            "turnover": 0.0,
+            "residual": 0.0,
+            "positions": {},
+        },
+        "research_risk": {
+            "decision": "RISK_PENDING",
+            "status": "PENDING",
+            "gates_passed": 0,
+            "gates_run": 0,
+            "engines_run": {},
+            "reasons": list(dict.fromkeys(blockers)),
+            "provenance": "FORWARD_CANDIDATE_PENDING",
+            "scope": "PRE_FILL_RESEARCH_EVIDENCE",
+        },
+        "research_risk_bundle": {
+            "status": (
+                risk_row.get("status")
+                if isinstance(risk_row, Mapping)
+                else "PENDING"
+            ),
+            "path": os.path.normpath(str(research_risk_bundle_path)),
+            "alpha_id": alpha_id,
+            "missing": list(risk_row.get("missing_inputs") or ())
+            if isinstance(risk_row, Mapping)
+            else ["forward_decision", "alpha_metadata"],
+            "reasons": dict(risk_row.get("missing_reasons") or {})
+            if isinstance(risk_row, Mapping)
+            else {},
+        },
+        "generated_at": int(
+            generated_at_ms if generated_at_ms is not None else time.time() * 1000
+        ),
+        "paper_only": True,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+        "broker_connectivity": False,
+        "credentials_accessed": False,
+    }
 
 
 def _status_guard(status: Mapping[str, Any], *, recorded_at: int) -> None:
@@ -315,7 +442,10 @@ def build_alpha_preview(
     intentional and observable: the pipeline returns a pending full-risk
     result and no paper fills are admitted.
     """
-    if alpha_id not in ALPHA_IDS:
+    if alpha_id not in paper_candidate_ids(
+        forward_status=DEFAULT_STATUS,
+        evaluations=DEFAULT_FORWARD_EVALUATIONS,
+    ):
         raise ValueError(f"unsupported alpha: {alpha_id}")
     if not math.isfinite(float(aum)) or float(aum) <= 0:
         raise ValueError("aum must be a positive finite number")
@@ -560,7 +690,7 @@ def _sizing_mismatch_preview(
 
 def run_preview(
     *,
-    alpha_ids: tuple[str, ...] = ALPHA_IDS,
+    alpha_ids: tuple[str, ...] | None = None,
     forward_db: str = DEFAULT_FORWARD_DB,
     mark_cache: str = DEFAULT_MARK_CACHE,
     status_path: str = DEFAULT_STATUS,
@@ -572,10 +702,23 @@ def run_preview(
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Build and atomically publish previews for one or all three Alphas."""
-    selected = tuple(alpha_ids)
-    if not selected or any(alpha not in ALPHA_IDS for alpha in selected):
-        raise ValueError("alpha_ids must be a non-empty subset of the three registered Alphas")
+    """Build previews for the complete current forward-paper universe."""
+    selected = (
+        paper_candidate_ids(
+            forward_status=status_path,
+            evaluations=DEFAULT_FORWARD_EVALUATIONS,
+        )
+        if alpha_ids is None
+        else tuple(alpha_ids)
+    )
+    if not selected or any(
+        alpha not in paper_candidate_ids(
+            forward_status=status_path,
+            evaluations=DEFAULT_FORWARD_EVALUATIONS,
+        )
+        for alpha in selected
+    ):
+        raise ValueError("alpha_ids must be a non-empty subset of the attested paper candidates")
     status = _load_json(status_path)
     mark_by_ticker = load_mark_prices(mark_cache)
     previews: dict[str, Any] = {}
@@ -730,19 +873,59 @@ def run_preview(
                         "order_submission_allowed": False,
                     }
             except Exception as exc:
-                errors[alpha_id] = {
-                    "error_type": type(exc).__name__,
-                    "error": str(exc)[:240],
-                    "paper_execution": "PAPER_BLOCKED",
-                    "live_allowed": False,
-                    "order_submission_allowed": False,
-                }
+                message = str(exc)[:240]
+                if (
+                    alpha_id not in ALPHA_IDS
+                    and alpha_id not in previews
+                    and "attested" in message
+                ):
+                    previews[alpha_id] = _forward_pending_preview(
+                        alpha_id,
+                        status_path=status_path,
+                        research_risk_bundle_path=research_risk_bundle_path,
+                        generated_at_ms=generated_at_ms,
+                        error=message,
+                    )
+                    errors[alpha_id] = {
+                        "error_type": "ForwardCandidatePending",
+                        "error": message,
+                        "reason": "FORWARD_CANDIDATE_PENDING",
+                        "paper_execution": "PAPER_BLOCKED",
+                        "live_allowed": False,
+                        "order_submission_allowed": False,
+                    }
+                else:
+                    errors[alpha_id] = {
+                        "error_type": type(exc).__name__,
+                        "error": message,
+                        "paper_execution": "PAPER_BLOCKED",
+                        "live_allowed": False,
+                        "order_submission_allowed": False,
+                    }
     finally:
         store.close()
-    ready = bool(previews) and not errors and all(
-        row.get("paper_execution") == "PAPER_FILLED"
-        and _full_research_risk_approved(row.get("research_risk"))
-        for row in previews.values()
+    # The three established books are the current execution-paper account.
+    # Forward challengers are evaluated in the same run, but their immaturity
+    # must not make the already-approved paper account unmarkable.  A selected
+    # challenger-only invocation remains strict, which keeps focused operator
+    # calls fail-closed.
+    static_selected = tuple(alpha for alpha in selected if alpha in ALPHA_IDS)
+    execution_required = static_selected or selected
+    ready = bool(previews) and all(
+        alpha_id in previews
+        and alpha_id not in errors
+        and previews[alpha_id].get("paper_execution") == "PAPER_FILLED"
+        and _full_research_risk_approved(previews[alpha_id].get("research_risk"))
+        for alpha_id in execution_required
+    )
+    forward_pending = tuple(
+        alpha_id
+        for alpha_id in selected
+        if alpha_id not in ALPHA_IDS
+        and (
+            alpha_id in errors
+            or previews.get(alpha_id, {}).get("paper_execution") != "PAPER_FILLED"
+        )
     )
     report = {
         "schema_version": 1,
@@ -753,6 +936,9 @@ def run_preview(
         "errors": errors,
         "verdict": {
             "paper_preview_ready": ready,
+            "paper_execution_universe": list(execution_required),
+            "forward_candidates_pending": list(forward_pending),
+            "forward_candidate_count": len(selected) - len(static_selected),
             "live_allowed": False,
             "order_submission_allowed": False,
             "human_review_required": True,
@@ -771,7 +957,11 @@ def run_preview(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--alpha", choices=("all", *ALPHA_IDS), default="all")
+    parser.add_argument(
+        "--alpha",
+        default="all",
+        help="registered paper candidate id, or all current forward candidates",
+    )
     parser.add_argument("--aum", type=float, default=DEFAULT_AUM, help="paper notional only")
     parser.add_argument("--cost-bps", type=float, default=DEFAULT_COST_BPS)
     parser.add_argument("--forward-db", default=DEFAULT_FORWARD_DB)
@@ -785,7 +975,14 @@ def main(argv: list[str] | None = None) -> int:
         help="immutable same-PIT nine-engine risk bundle; missing means pending/block",
     )
     args = parser.parse_args(argv)
-    alpha_ids = ALPHA_IDS if args.alpha == "all" else (args.alpha,)
+    alpha_ids = (
+        paper_candidate_ids(
+            forward_status=args.status,
+            evaluations=DEFAULT_FORWARD_EVALUATIONS,
+        )
+        if args.alpha == "all"
+        else (args.alpha,)
+    )
     report = run_preview(
         alpha_ids=alpha_ids,
         forward_db=args.forward_db,
