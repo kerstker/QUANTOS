@@ -301,6 +301,14 @@ def _canonical_manifest_value(value: object) -> object:
         return value
     if type(value) is bytes:
         return {"bytes_hex": value.hex()}
+    if type(value) is slice:
+        return {
+            "python_slice": {
+                "start": _canonical_manifest_value(value.start),
+                "stop": _canonical_manifest_value(value.stop),
+                "step": _canonical_manifest_value(value.step),
+            }
+        }
     if type(value) in (tuple, list):
         return [_canonical_manifest_value(item) for item in value]
     if type(value) is dict:

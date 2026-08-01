@@ -5,6 +5,7 @@ import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from services.features.value_store import SqliteFeatureValueStore
+from services.features.binance_realtime_projection import CORE_FEATURE_IDS, FEATURE_IDS
 from tools import binance_realtime_features as realtime
 
 
@@ -82,8 +83,8 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     )
     assert result["status"] == "PASS"
     assert result["features"]["instrument_count"] == 2
-    assert result["features"]["new_value_count"] == 2 * 300 * 7
-    assert result["drift"]["series_count"] == 2 * 7
+    assert result["features"]["new_value_count"] == 2 * 300 * len(FEATURE_IDS)
+    assert result["drift"]["series_count"] == 2 * len(CORE_FEATURE_IDS)
     assert result["drift"]["structurally_ready"] is True
     assert result["drift"]["calibration"]["status"] == "READY"
     assert result["drift"]["calibration"]["calibration_id"]

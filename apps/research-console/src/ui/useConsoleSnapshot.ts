@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { isResearchConsoleApiEnabled } from '@/lib/api/research-console-api';
+import {
+  assertConsoleSnapshot,
+  isResearchConsoleApiEnabled,
+  RESEARCH_CONSOLE_API_BASE,
+} from '@/lib/api/research-console-api';
 import {
   deriveSnapshotDisplayState,
   isSnapshotActionAllowed,
@@ -22,6 +26,11 @@ export interface SnapshotResult<T> {
   actionsAllowed?: boolean;
 }
 
+export interface ConsoleSnapshotOptions {
+  /** Optional read-only SSE endpoint. Falls back to one-shot fetch when unsupported. */
+  streamPath?: string;
+}
+
 /**
  * Unified read-only data hook for every console page. Preserves the existing
  * contract behaviour: when the API is disabled (mock mode) it stays `disabled`
@@ -34,11 +43,13 @@ export interface SnapshotResult<T> {
 export function useConsoleSnapshot<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
   deps: ReadonlyArray<unknown> = [],
+  options: ConsoleSnapshotOptions = {},
 ): SnapshotResult<T> {
   const [payload, setPayload] = useState<T | null>(null);
   const [apiState, setApiState] = useState<ConsoleApiState>('disabled');
   const [error, setError] = useState<string | null>(null);
   const apiEnabled = isResearchConsoleApiEnabled();
+  const streamPath = options.streamPath;
 
   useEffect(() => {
     if (!apiEnabled) {
@@ -46,6 +57,41 @@ export function useConsoleSnapshot<T>(
       setApiState('disabled');
       setError(null);
       return;
+    }
+    if (streamPath && typeof EventSource !== 'undefined') {
+      let receivedSnapshot = false;
+      const source = new EventSource(
+        new URL(streamPath, RESEARCH_CONSOLE_API_BASE).toString(),
+      );
+      setApiState('loading');
+      setError(null);
+      source.onopen = () => {
+        if (!receivedSnapshot) {
+          setApiState('loading');
+          setError(null);
+        }
+      };
+      source.onmessage = event => {
+        try {
+          const next = assertConsoleSnapshot<T>(JSON.parse(event.data), streamPath);
+          receivedSnapshot = true;
+          setPayload(next);
+          setApiState('connected');
+          setError(null);
+        } catch (err) {
+          source.close();
+          setPayload(null);
+          setApiState('error');
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      };
+      source.onerror = () => {
+        // EventSource reconnects by itself. Keep the last verified snapshot on
+        // screen while making the transport degradation visible.
+        setApiState(receivedSnapshot ? 'loading' : 'error');
+        setError('Live snapshot stream reconnecting');
+      };
+      return () => source.close();
     }
     const controller = new AbortController();
     setApiState('loading');
@@ -63,7 +109,7 @@ export function useConsoleSnapshot<T>(
       });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiEnabled, ...deps]);
+  }, [apiEnabled, streamPath, ...deps]);
 
   // Keep the last verified snapshot visible while a periodic refresh is in
   // flight.  The display state remains LOADING, so mutating actions stay

@@ -31,6 +31,7 @@ from services.data.distribution_drift_calibration import (
     calibrate_distribution_drift,
 )
 from services.features.binance_realtime_projection import (
+    CORE_FEATURE_IDS,
     FEATURE_IDS,
     FEATURE_VERSION,
     MATERIALIZER_VERSION,
@@ -117,7 +118,10 @@ def _feature_values(
     values_by_series: dict[str, list[float]] = {}
     instruments = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
     for instrument_id in instruments:
-        for feature_id in FEATURE_IDS:
+        # Capacity is admitted by its own 30-day conservative-depth gate.  It
+        # starts accumulating additively and must not invalidate the mature
+        # seven-feature drift calibration while its history is still short.
+        for feature_id in CORE_FEATURE_IDS:
             series_id = f"{feature_id}@{instrument_id}"
             rows = store.as_of(
                 feature_id,

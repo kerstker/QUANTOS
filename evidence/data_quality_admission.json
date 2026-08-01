@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_ms": 1785254181520,
+  "generated_at_ms": 1785353719823,
   "readiness": "L2_DRY_RUN_ONLY",
   "purpose": "FORWARD_EVIDENCE_DATA_ADMISSION",
   "instrument_scope": [
@@ -19,7 +19,7 @@
     "UNI",
     "XRP"
   ],
-  "expected_last_closed_day_ms": 1785110400000,
+  "expected_last_closed_day_ms": 1785196800000,
   "price_basis": "PERP_MARK_PRICE",
   "source_provenance": {
     "prices": "Binance Data Vision USD-M perpetual mark-price klines",
@@ -30,20 +30,20 @@
     "prices": {
       "path": "data/cache/crypto_perp_mark_prices.json",
       "exists": true,
-      "size_bytes": 21744,
-      "sha256": "757b3ecdfe9232828a6f68b2c7031a6b556b8d0de32a15e63b561e15c6deec0e"
+      "size_bytes": 22681,
+      "sha256": "57728bc2f04d14f23e43604ac5cb60bedb59d5f26bca0b1a771e1d0082c57072"
     },
     "funding": {
       "path": "data/cache/crypto_funding_rates.json",
       "exists": true,
-      "size_bytes": 7817132,
-      "sha256": "ab4cac0fb858e4dabb9db51ed198e91199a4ca390dba5cf58eed298e2c6a2e33"
+      "size_bytes": 7817623,
+      "sha256": "48813602bc7ef151575dc01fabfab46328ee609d864a0af5ce65449c9f6dd2c5"
     },
     "oi_metrics": {
       "path": "data/cache/crypto_oi_metrics.json",
       "exists": true,
-      "size_bytes": 6856894,
-      "sha256": "413952fbf381bc08530f04587f9e17e3841bf62abc0facbc40966a8d719126b1"
+      "size_bytes": 6858751,
+      "sha256": "b3609cd12b545f999a7585159b86febde63b4461952d404ff59204260b5e8a30"
     },
     "universe_snapshot": {
       "path": "data/cache/crypto_funding_snapshot.json",
@@ -54,14 +54,14 @@
     "refresh_status": {
       "path": "data/cache/live_refresh_status.json",
       "exists": true,
-      "size_bytes": 9911,
-      "sha256": "0124e58a1c020c4e58305312069413308732c4e1074cc5eb8e303514be3cde75"
+      "size_bytes": 10908,
+      "sha256": "6e27e5acafee47477fa394ed0a0c4d62a6be49c1d2ffbaad86536127f0dce871"
     },
     "raw_lineage_backfill": {
       "path": "evidence/raw_data_lineage_backfill.json",
       "exists": true,
-      "size_bytes": 3518,
-      "sha256": "1aa9069c468da59cca9aa3d42c9bd64dbfc23cbf71c0250a935f69efa7588e59"
+      "size_bytes": 4475,
+      "sha256": "3845bc7cbb67a6d251241a1a18e22a2902071fb6d68c25d7f02dc7f2fdcf6d16"
     }
   },
   "sources": {
@@ -71,99 +71,99 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 31,
-          "last_event_time": 1785110400000,
+          "n_records": 32,
+          "last_event_time": 1785196800000,
           "failed_checks": [],
           "detail": "ok"
         }
@@ -176,86 +176,86 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 2135,
-          "last_event_time": 1785110400000,
+          "n_records": 2136,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 2209,
-          "last_event_time": 1785110400000,
+          "n_records": 2210,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 2168,
-          "last_event_time": 1785110400000,
+          "n_records": 2169,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 2144,
-          "last_event_time": 1785110400000,
+          "n_records": 2145,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 2140,
-          "last_event_time": 1785110400000,
+          "n_records": 2141,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 2231,
-          "last_event_time": 1785110400000,
+          "n_records": 2232,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         }
       }
@@ -266,86 +266,86 @@
       "instruments": {
         "ADA": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "ATOM": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "AVAX": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BCH": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BNB": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "BTC": {
           "passed": true,
-          "n_records": 2156,
-          "last_event_time": 1785110400000,
+          "n_records": 2157,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "DOGE": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "DOT": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "ETH": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "LINK": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "LTC": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "SOL": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "UNI": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         },
         "XRP": {
           "passed": true,
-          "n_records": 1676,
-          "last_event_time": 1785110400000,
+          "n_records": 1677,
+          "last_event_time": 1785196800000,
           "detail": "ok"
         }
       },
@@ -356,19 +356,40 @@
     "schema_version": 1,
     "status": "PASS",
     "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-    "observation_count": 9130,
+    "observation_count": 59772,
     "invalid_observation_count": 0,
-    "object_count": 2970,
+    "object_count": 40990,
     "datasets": {
+      "binance_realtime_book": 3946,
+      "binance_realtime_exchange_info": 2084,
+      "binance_realtime_funding": 3946,
+      "binance_realtime_funding_info": 1790,
+      "binance_realtime_global_ls": 3946,
+      "binance_realtime_index_kline_1m": 1790,
+      "binance_realtime_kline_1m": 3946,
+      "binance_realtime_mark": 3946,
+      "binance_realtime_mark_kline_1m": 1790,
+      "binance_realtime_oi": 3946,
+      "binance_realtime_oi_current": 2518,
+      "binance_realtime_premium_kline_1m": 1790,
+      "binance_realtime_taker": 3946,
+      "binance_realtime_ticker_24h": 2084,
+      "binance_realtime_top_account_ls": 2518,
+      "binance_realtime_top_ls": 3946,
+      "binance_rpi_depth_1000": 164,
+      "binance_systemic_adl_risk": 246,
+      "binance_systemic_basis_1h": 283,
+      "binance_systemic_index_constituents": 314,
+      "binance_systemic_insurance_balance": 246,
       "cross_exchange_snapshots": 24,
-      "funding": 1406,
-      "oi_metrics": 3435,
+      "funding": 1504,
+      "oi_metrics": 4107,
       "oi_metrics_rest_gap_fill": 56,
       "perp_klines_1d": 58,
-      "perp_mark_prices": 3477,
+      "perp_mark_prices": 4149,
       "perp_mark_prices_rest_gap_fill": 86,
-      "spot_klines": 583,
-      "spot_klines_1d": 5
+      "spot_klines": 597,
+      "spot_klines_1d": 6
     },
     "providers": [
       "Binance + Bybit public synchronized market snapshot",
@@ -376,6 +397,7 @@
       "Binance Data Vision USD-M mark-price klines",
       "Binance USD-M futures public REST (gap-fill)",
       "Binance USD-M perpetual funding history",
+      "Binance public USD-M market data",
       "Binance public spot klines",
       "Bybit public linear perp funding history",
       "Bybit public linear perp klines",
@@ -385,8 +407,8 @@
       "CANONICAL_JSON_UTF8",
       "HTTP_BODY_BYTES"
     ],
-    "latest_observed_at_ms": 1785254181520,
-    "aggregate_sha256": "8a6cb3827277caf1c45199b69c5f70b05729ba19a1ed1e8bddec98e3c6a5d6b6",
+    "latest_observed_at_ms": 1785354118653,
+    "aggregate_sha256": "41c655d441035a2d281e0c4df636418697957d6a7c54cf908c478395ea1271a3",
     "errors": [],
     "path": "data/cache/raw_market_data"
   },
@@ -396,23 +418,23 @@
     "perp_mark_prices"
   ],
   "required_lineage_days": [
-    1784505600000,
     1784592000000,
     1784678400000,
     1784764800000,
     1784851200000,
     1784937600000,
     1785024000000,
-    1785110400000
+    1785110400000,
+    1785196800000
   ],
   "lineage_backfill": {
     "path": "evidence/raw_data_lineage_backfill.json",
     "exists": true,
-    "sha256": "1aa9069c468da59cca9aa3d42c9bd64dbfc23cbf71c0250a935f69efa7588e59",
+    "sha256": "3845bc7cbb67a6d251241a1a18e22a2902071fb6d68c25d7f02dc7f2fdcf6d16",
     "readable": true,
     "passed": true,
     "reasons": [],
-    "generated_at_ms": 1785254181520,
+    "generated_at_ms": 1785353719823,
     "verdict": "PASS",
     "instrument_scope": [
       "ADA",
@@ -431,21 +453,21 @@
       "XRP"
     ],
     "required_days": [
-      1784505600000,
       1784592000000,
       1784678400000,
       1784764800000,
       1784851200000,
       1784937600000,
       1785024000000,
-      1785110400000
+      1785110400000,
+      1785196800000
     ]
   },
   "lineage_verdict": "PASS",
   "refresh_observation": {
     "readable": true,
-    "run_id": "refresh-1785254181520",
-    "ran_at": 1785254181520,
+    "run_id": "refresh-1785353719823",
+    "ran_at": 1785353719823,
     "reports": [
       {
         "source": "prices",
@@ -482,19 +504,40 @@
       "schema_version": 1,
       "status": "PASS",
       "coverage_scope": "OBSERVED_FETCH_RESPONSES_ONLY",
-      "observation_count": 8892,
+      "observation_count": 59052,
       "invalid_observation_count": 0,
-      "object_count": 2970,
+      "object_count": 40644,
       "datasets": {
+        "binance_realtime_book": 3918,
+        "binance_realtime_exchange_info": 2056,
+        "binance_realtime_funding": 3918,
+        "binance_realtime_funding_info": 1762,
+        "binance_realtime_global_ls": 3918,
+        "binance_realtime_index_kline_1m": 1762,
+        "binance_realtime_kline_1m": 3918,
+        "binance_realtime_mark": 3918,
+        "binance_realtime_mark_kline_1m": 1762,
+        "binance_realtime_oi": 3918,
+        "binance_realtime_oi_current": 2490,
+        "binance_realtime_premium_kline_1m": 1762,
+        "binance_realtime_taker": 3918,
+        "binance_realtime_ticker_24h": 2056,
+        "binance_realtime_top_account_ls": 2490,
+        "binance_realtime_top_ls": 3918,
+        "binance_rpi_depth_1000": 150,
+        "binance_systemic_adl_risk": 245,
+        "binance_systemic_basis_1h": 279,
+        "binance_systemic_index_constituents": 300,
+        "binance_systemic_insurance_balance": 245,
         "cross_exchange_snapshots": 24,
-        "funding": 1392,
-        "oi_metrics": 3323,
+        "funding": 1490,
+        "oi_metrics": 3995,
         "oi_metrics_rest_gap_fill": 56,
         "perp_klines_1d": 58,
-        "perp_mark_prices": 3365,
+        "perp_mark_prices": 4037,
         "perp_mark_prices_rest_gap_fill": 86,
-        "spot_klines": 583,
-        "spot_klines_1d": 5
+        "spot_klines": 597,
+        "spot_klines_1d": 6
       },
       "providers": [
         "Binance + Bybit public synchronized market snapshot",
@@ -502,6 +545,7 @@
         "Binance Data Vision USD-M mark-price klines",
         "Binance USD-M futures public REST (gap-fill)",
         "Binance USD-M perpetual funding history",
+        "Binance public USD-M market data",
         "Binance public spot klines",
         "Bybit public linear perp funding history",
         "Bybit public linear perp klines",
@@ -511,8 +555,8 @@
         "CANONICAL_JSON_UTF8",
         "HTTP_BODY_BYTES"
       ],
-      "latest_observed_at_ms": 1785252987398,
-      "aggregate_sha256": "85036fd96669c16c5d08459a47a50b4551eb26796e5f099db63e303afdf0a653",
+      "latest_observed_at_ms": 1785353517944,
+      "aggregate_sha256": "9843e1533153cd663c711116724a72eeee60e4d1c97101679ab7c3432b51f49e",
       "errors": []
     }
   },

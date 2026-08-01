@@ -68,6 +68,34 @@ def test_phase13_paper_snapshot_accepts_only_declared_dynamic_input_drift() -> N
     assert not phase13_artifact_matches(path, actual, expected)
 
 
+def test_phase13_trial_snapshot_accepts_append_only_drift_but_rejects_inconsistent_counts() -> None:
+    reports, _ = build_phase13(root=ROOT, now_ms=1_800_000_000_000)
+    path = "evidence/trial_ledger_integrity.json"
+    expected = reports[path]
+    actual = json.loads(json.dumps(expected))
+    ledger_input = actual["inputs"]["data/cache/experiment_registry.db"]
+    ledger_input["sha256"] = "f" * 64
+    ledger_input["size_bytes"] = max(1, ledger_input["size_bytes"] - 4096)
+    actual["input_hash"] = _canonical_hash(actual["inputs"])
+    actual["ledger"]["sha256"] = "f" * 64
+    actual["ledger"]["row_counts"]["trials"] -= 1
+    actual["provenance"]["bare_trials"] -= 1
+    actual["provenance"]["coverage_ratio"] = round(
+        actual["provenance"]["configs_with_provenance"]
+        / actual["ledger"]["row_counts"]["trials"],
+        6,
+    )
+
+    assert phase13_artifact_matches(path, actual, expected)
+
+    actual["provenance"]["bare_trials"] += 1
+    assert not phase13_artifact_matches(path, actual, expected)
+
+    actual = json.loads(json.dumps(expected))
+    actual["family_multiple_testing"]["wired_into_promotion_gate"] = False
+    assert not phase13_artifact_matches(path, actual, expected)
+
+
 def _canonical_hash(value: object) -> str:
     import hashlib
 

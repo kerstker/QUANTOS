@@ -12,12 +12,12 @@
     "CHAOS_SCENARIO_NOT_EVIDENCED:rate_limit_backoff_and_dlq",
     "CHAOS_SCENARIO_NOT_EVIDENCED:cross_process_kill_switch_authority"
   ],
-  "commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
+  "commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785343441634,
-  "generator_sha256": "8fa4edeb1f5f088d56b2d580376b8a28a98cf8a7a5c270736d546e095a6406fb",
+  "generated_at_ms": 1785621054635,
+  "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "Existing local restore/risk drills and M3 deterministic tests are reported, but unverified exchange network/WebSocket and external process-isolation scenarios remain blocked.",
-  "input_hash": "975526ce3d15380aa989d0da8417604daa92e38ac40d4225f61d74fd3caa11be",
+  "input_hash": "23c8edb9906bb7f5d17e3a92c096e4e9cbdacbe1737aa75ccf6d1e3a775e3274",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -28,8 +28,8 @@
     "tests/live/test_live_backup.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "16754dfa0ad81f7f795fd7449c69fe54b19678544a2697462ab97961f4fc12f3",
-      "size_bytes": 16882
+      "sha256": "1b09dc28e5ca074d64b5fd3dd08ade342e28fe0c49c6b13861582b94bba01f59",
+      "size_bytes": 20498
     },
     "tests/live/test_order_recovery.py": {
       "exists": true,
@@ -40,8 +40,8 @@
     "tests/live/test_restore_drill.py": {
       "exists": true,
       "kind": "file",
-      "sha256": "4b24ea8444ec4914529a53bd5c7f304f1114ae6dca7f66ff2be7e9153015755d",
-      "size_bytes": 4418
+      "sha256": "2100f01d59b6b6814b0427d4a67f9b5c7df2f61948b11c3f2472d034de42cab8",
+      "size_bytes": 4490
     },
     "tests/live/test_risk_recovery_drill.py": {
       "exists": true,
@@ -99,9 +99,9 @@
   "status": "NOT_READY",
   "validation": {
     "current": true,
-    "head_commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
+    "head_commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
     "overall_status": "PASS",
-    "reported_commit": "a788bc9e81b9a7e29952928689d4622fbd744e44",
+    "reported_commit": "56e580f3b431b8ef1524c734f5a4a5f351f7b9bb",
     "reported_validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada",
     "selection_scope": "ALL",
     "validate_script_sha256": "769cc1e5a95de540591f4cafa41e563c98b7c653ebb7fab8e396b301445fcada"

@@ -1,5 +1,69 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-02 固定开发路线：** 从研究到生产的工序排序已冻结为
+> [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
+> `FROZEN_V1`。当前实施顺序固定为 `WP0 发布/证据原子性 → WP1 唯一候选工作流 →
+> WP2 生产级 Paper 变绿 → WP3 并行盲化前向与自动交接 → WP4 组合/执行承重 →
+> WP5 外部生产边界 → WP6 Testnet/Operational Canary → WP7 Alpha Canary/扩容`。
+> 该路线删除重复手工审批和串行等待，但不删除 PIT、Trial Ledger、锁定 OOS、独立挑战、
+> 风险/kill switch、对账、不可变发布或真实资本的人类授权。
+
+> **2026-08-02 WP0 发布身份与纸面身份第一增量：** L2 调度注册现在只接受干净 Git
+> `HEAD`，把精确 40 位 commit 写入每个 Task Scheduler action；每次 worker 启动前重新
+> 校验 HEAD 与完整 cleanliness，并拒绝 release/state 同根或嵌套。launcher 向 worker
+> 绑定 `QUANTOS_RELEASE_COMMIT`、`QUANTOS_RELEASE_ROOT`、`QUANTOS_STATE_ROOT`，每次运行在
+> state root 的 `.runtime/l2-release-runs/` 写哈希凭证，分别记录 release 验证结果与 worker
+> 退出结果。实时 Alpha 发现、前向 shadow、前向证据基线与控制台纸面投影已切到该 state
+> root，避免数据库回写 clean release。现有 Windows 任务仍是旧的同根、未固定 commit action，
+> 必须在本轮代码提交并建立独立 clean release 后重新注册；因此 **WP0 尚未宣称闭合**。
+> `carry_oi_majors`、`crowd_contra`、`top_contra` 同时被明确标为
+> `LEGACY_DIAGNOSTIC_PAPER`：仍可接收公共实时标记与产出 PnL，但不计入新候选执行 Paper，
+> 永远不具部署资格。前端漏斗已拆分 Candidate Paper 与 Legacy Paper，避免把三条历史 book
+> 误报为全自动候选晋级成功。全链仍为 L2，实盘与订单权限没有变化。
+
+> **2026-08-01 系统内生自治实时 Alpha 搜索与动态纸面驾驶舱：**
+> 实时 Alpha 发现已不再依赖开发 AI/IDE 手工触发：`tools.realtime_alpha_discovery`
+> 由 L2 调度器每小时运行，固定预注册 4 个经济机制家族（order-flow、order-book、
+> liquidation、funding/basis）× 2 个机制 × 3 个 horizon，共 24 个不可挑选性改写的
+> 试验；每轮统一消费 PIT Binance 公共微观结构特征，写入全局 experiment ledger、
+> DSR/PBO/时序 holdout/压力检验和哈希链家族注册表。2026-08-01 现场证据为 14 个
+> USD-M 交易对、核心共同历史 3.64 天、24/24 已评估、diagnostic lead 0、formal pass 0、
+> 全局 trial count 2577；系统没有为了展示数量伪造 Alpha。
+>
+> 容量已改用 top-5 双边可执行深度而不是成交量代理；新容量特征从接线时开始独立积累，
+> 当前仅约 0.04 天，保守深度约 `$2.16k`，10% 参与率/每边两腿下支持 AUM 约 `$866`，
+> 影子建议规模约 `$433`。该数值可用于诊断但在满 30 天前 `evidence_ready=false`；
+> `$1m` 目标容量不通过不会抹掉统计 Alpha，只会限制可测试规模。正式统计评估仍需 30 天
+> 共同历史，准入独立前向影子仍需 90 天共同历史。
+>
+> `tools.realtime_alpha_forward_shadow` 每分钟消费发现快照。只有 90 天成熟、正式门通过且
+> 可执行深度可定规模的候选才写入 append-only/hash-chained 影子账本；准入时冻结候选身份、
+> manifest、策略参数、交易宇宙、dataset/search 版本与 shadow AUM，先记决策再等结果，读取
+> 上界显式截断到本轮墙钟，重启后继续已准入轨道，即使下一轮搜索排名回退也不丢失 OOS
+> 观察。硬安全异常写新 `SAFE_BLOCKED` 证据，普通未成熟写机器原因。当前真实状态为
+> `WAITING_FOR_VALIDATED_CANDIDATE`、账本链有效、0 admission/decision/realization；这与既有
+> 3 个 `LEGACY_DIAGNOSTIC_PAPER` 自动诊断 book 相互隔离。
+>
+> 控制台 `/api/v1/console/stream/dry-run` 已改为基于耐久证据变化的 SSE（15 秒 heartbeat），
+> 纸面页不再 10 秒轮询或要求手动刷新；浏览器现场确认同一页面自动从 fail-closed 占位切换为
+> `SSE LIVE`，并显示 24 路漏斗、容量、前向状态、3 个纸面 book、权益/对账/TCA。通用 Panel
+> 同时改为窄视口纵向头部与可换行状态，IDE 内置浏览器不再出现标题竖排和 Chip 溢出。
+> 全链保持 `paper_only=true`、`live_allowed=false`、`order_submission_allowed=false`、
+> `allow_ai_direct_trading=false`，没有凭证、broker 或自动晋级权限。
+>
+> Binance 低频系统风险采集也已按共享公网 IP 约束内化为缺口优先的轮转计划：14 个标的中
+> 每 30 分钟只刷新最缺失/最旧的 7 个 constituent 快照，其余 7 个只在哈希链、PIT 时间和
+> 新鲜度复验通过后复用；basis 仍按最旧闭合小时限额补齐。真实调度任务从 20 请求/IP 权重
+> 30 降为 13 请求/IP 权重 16，并在冷却后完成 14/14、`refresh_errors=0`、任务退出 0。
+>
+> 同轮全量门禁暴露并修复了真实灾备容量缺口：旧 `QBK1` 单消息 AES-GCM 无法处理已增长到
+> 2.77GB 的 `experiment_registry.db`。文件级备份现使用向后兼容的 `QBK2` 分块认证容器，
+> 将总长度、块数、块序号和块长度绑定进每块 GCM AAD，篡改、截断、换序和多余尾部均
+> fail-closed；源快照、加解密、清单哈希和批次摘要均改为流式，不再整库读入内存。
+> 2026-08-01 真实 `QUANTOS_backup` 已在独立卷完成 14 个权威源的加密备份与隔离恢复：
+> Task result 0，manifest/source-contract/restore-history/hash-chain/SQLite integrity 全 PASS，
+> 总备份 419.450 秒，恢复 16.794 秒（RTO 300 秒内），RPO 满足。旧 QBK1 小文件仍可恢复。
+>
 > **2026-08-01 自动 Alpha 候选交接与真实漏斗可视化：**
 > “只有 3 个 Alpha”经现场追踪确认是展示与执行集合混淆，不是研究候选丢失：官方前向台账实际包含
 > 10 个已证明身份的 OOS challenger，而实时估值/模拟成交账本仍是 3 个。现已把 factory 输出升级为

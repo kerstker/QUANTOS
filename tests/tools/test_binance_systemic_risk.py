@@ -129,6 +129,9 @@ def test_refresh_backfills_and_persists_all_systemic_surfaces(tmp_path):
         "endpoint_weight_per_symbol": 2,
         "basis_refresh_budget": 4,
         "basis_refresh_tickers": ["BTC"],
+        "constituent_refresh_budget": 7,
+        "constituent_refresh_tickers": ["BTC"],
+        "constituent_cache_reused": 0,
         "configured_max_workers": 1,
         "min_request_interval_ms": 0,
         "cooldown_active": False,
@@ -249,6 +252,115 @@ def test_refresh_fetches_adl_and_insurance_once_for_the_universe(tmp_path):
     assert paths.count("/fapi/v1/constituents") == 2
     assert paths.count("/futures/data/basis") == 2
     assert status["request_rate_limit"]["planned_ip_weight"] == 6
+
+
+def test_constituent_budget_rotates_missing_first_and_reuses_verified_cache(
+    tmp_path,
+):
+    calls: list[str] = []
+
+    def multi_http(url: str):
+        calls.append(url)
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        symbol = query.get("symbol", query.get("pair", [""]))[0]
+        if parsed.path == "/fapi/v1/symbolAdlRisk":
+            return [
+                {
+                    "symbol": item,
+                    "adlRisk": "LOW",
+                    "updateTime": _NOW - 30 * 60_000,
+                }
+                for item in ("BTCUSDT", "ETHUSDT")
+            ]
+        if parsed.path == "/fapi/v1/insuranceBalance":
+            return [
+                {
+                    "symbols": ["BTCUSDT", "ETHUSDT"],
+                    "assets": [
+                        {
+                            "asset": "USDT",
+                            "marginBalance": "123456.7",
+                            "updateTime": _NOW - 6 * systemic.HOUR_MS,
+                        }
+                    ],
+                }
+            ]
+        if parsed.path == "/fapi/v1/constituents":
+            return {
+                "symbol": symbol,
+                "time": _NOW - 60_000,
+                "constituents": [
+                    {
+                        "exchange": "binance",
+                        "symbol": symbol,
+                        "price": "100",
+                        "weight": "1",
+                    }
+                ],
+            }
+        if parsed.path == "/futures/data/basis":
+            return [
+                {
+                    "indexPrice": "100",
+                    "contractType": "PERPETUAL",
+                    "basisRate": "0.005",
+                    "futuresPrice": "100.5",
+                    "annualizedBasisRate": "0.0438",
+                    "basis": "0.5",
+                    "pair": symbol,
+                    "timestamp": _NOW - systemic.HOUR_MS,
+                }
+            ]
+        raise AssertionError(url)
+
+    store_path = str(tmp_path / "systemic.db")
+    status_path = str(tmp_path / "status.json")
+    first = systemic.run_refresh(
+        tickers=("BTC", "ETH"),
+        store_path=store_path,
+        status_path=status_path,
+        archive_root=None,
+        http_get=multi_http,
+        now_ms=_NOW,
+        max_workers=1,
+        constituent_refresh_budget=1,
+    )
+
+    assert first["verdict"] == "BLOCK"
+    assert first["coverage"] == {"requested": 2, "complete": 1, "failed": 1}
+    assert first["request_rate_limit"]["constituent_refresh_tickers"] == [
+        "BTC"
+    ]
+    assert [urlparse(url).path for url in calls].count(
+        "/fapi/v1/constituents"
+    ) == 1
+
+    calls.clear()
+    second = systemic.run_refresh(
+        tickers=("BTC", "ETH"),
+        store_path=store_path,
+        status_path=status_path,
+        archive_root=None,
+        http_get=multi_http,
+        now_ms=_NOW + 30 * 60_000,
+        max_workers=1,
+        constituent_refresh_budget=1,
+    )
+
+    assert second["verdict"] == "PASS"
+    assert second["coverage"] == {"requested": 2, "complete": 2, "failed": 0}
+    assert second["request_rate_limit"]["constituent_refresh_tickers"] == [
+        "ETH"
+    ]
+    assert second["request_rate_limit"]["constituent_cache_reused"] == 1
+    constituent_urls = [
+        url for url in calls if urlparse(url).path == "/fapi/v1/constituents"
+    ]
+    assert len(constituent_urls) == 1
+    assert parse_qs(urlparse(constituent_urls[0]).query)["symbol"] == [
+        "ETHUSDT"
+    ]
 
 
 def test_refresh_uses_response_receipt_time_for_pit_knowledge(tmp_path):

@@ -41,6 +41,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import sys
 import time
 
@@ -59,18 +60,30 @@ _PASSPHRASE_ENV = "QUANTOS_BACKUP_PASSPHRASE"
 _ALLOW_PLAINTEXT_FLAG = "--allow-plaintext"
 _MIN_PASSPHRASE_LEN = 12  # PBKDF2 200,000 轮救不回一个空白/极短密码——低于此长度一律当作没设密码。
 
-# 加密备份文件格式:MAGIC(4B) + salt(16B) + nonce(12B) + AES-GCM 密文(含 16B tag)。
-# 逐文件独立 salt + nonce——每个 .enc 文件自包含,不依赖同批次其它文件就能独立解密。
+# QBK1 是小型 byte blob 的兼容格式。文件备份使用 QBK2 分块认证容器,避免单次
+# AES-GCM 调用的 2**31-1 字节上限；两种格式都逐文件独立 salt/nonce、自包含。
 _MAGIC = b"QBK1"
+_CHUNKED_MAGIC = b"QBK2"
 _PBKDF2_ITERATIONS = 200_000
 _SALT_LEN = 16
 _NONCE_LEN = 12
 _KEY_LEN = 32  # AES-256
+_CHUNK_NONCE_PREFIX_LEN = 8
+_DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
+_MAX_CHUNK_SIZE = 64 * 1024 * 1024
+_GCM_TAG_LEN = 16
+_CHUNKED_HEADER = struct.Struct(">4s16s8sIQI")
+_CHUNK_LENGTH = struct.Struct(">I")
+_CHUNK_AAD = struct.Struct(">II")
 
 
 class BackupEncryptionUnavailable(RuntimeError):
     """密码已配置,但加密原语不可用(`cryptography` 未安装/不可 import)。
     刻意不在这里静默退化成明文——调用方(main）应该让整次备份失败,而不是悄悄写明文。"""
+
+
+class BackupEncryptionError(RuntimeError):
+    """A streaming encrypted artifact could not be produced atomically."""
 
 
 class BackupDecryptionError(RuntimeError):
@@ -158,22 +171,187 @@ def decrypt_bytes(blob: bytes, passphrase: str) -> bytes:
         ) from exc
 
 
-def encrypt_file(src_path: str, dest_path: str, passphrase: str) -> None:
-    """读 `src_path`,加密,把 blob 写到 `dest_path`。用于备份的每个源文件。"""
-    with open(src_path, "rb") as fh:
-        data = fh.read()
-    blob = encrypt_bytes(data, passphrase)
-    with open(dest_path, "wb") as fh:
-        fh.write(blob)
+def _validated_chunk_size(chunk_size: int) -> int:
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int):
+        raise ValueError("chunk_size must be an integer")
+    if chunk_size <= 0 or chunk_size > _MAX_CHUNK_SIZE:
+        raise ValueError(f"chunk_size must be between 1 and {_MAX_CHUNK_SIZE} bytes")
+    return chunk_size
+
+
+def _chunk_count(plaintext_size: int, chunk_size: int) -> int:
+    count = max(1, (plaintext_size + chunk_size - 1) // chunk_size)
+    if count > 0xFFFFFFFF:
+        raise BackupEncryptionError("source is too large for the QBK2 chunk index space")
+    return count
+
+
+def _partial_path(dest_path: str) -> str:
+    return f"{dest_path}.partial-{os.getpid()}-{os.urandom(4).hex()}"
+
+
+def _read_exact(handle, size: int, *, label: str) -> bytes:
+    data = handle.read(size)
+    if len(data) != size:
+        raise BackupDecryptionError(f"truncated QBK2 encrypted backup while reading {label}")
+    return data
+
+
+def _fsync_output(output) -> None:
+    output.flush()
+    os.fsync(output.fileno())
+
+
+def encrypt_file(
+    src_path: str,
+    dest_path: str,
+    passphrase: str,
+    *,
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+) -> None:
+    """Stream a file into the authenticated QBK2 container.
+
+    QBK1 remains the byte-blob format used by :func:`encrypt_bytes`. QBK2 binds
+    the full header, chunk index, chunk length, total plaintext length and chunk
+    count into per-chunk AES-GCM authentication. This avoids the AESGCM one-shot
+    2**31-1 byte limit without weakening truncation, reordering or tamper checks.
+    The destination is published atomically only after the source stayed stable.
+    """
+
+    aesgcm_cls = _require_aesgcm()
+    _check_passphrase_strength(passphrase)
+    resolved_chunk_size = _validated_chunk_size(chunk_size)
+    before = os.stat(src_path, follow_symlinks=False)
+    plaintext_size = before.st_size
+    count = _chunk_count(plaintext_size, resolved_chunk_size)
+    salt = os.urandom(_SALT_LEN)
+    nonce_prefix = os.urandom(_CHUNK_NONCE_PREFIX_LEN)
+    header = _CHUNKED_HEADER.pack(
+        _CHUNKED_MAGIC,
+        salt,
+        nonce_prefix,
+        resolved_chunk_size,
+        plaintext_size,
+        count,
+    )
+    cipher = aesgcm_cls(_derive_key(passphrase, salt))
+    partial_path = _partial_path(dest_path)
+    try:
+        with open(src_path, "rb") as source, open(partial_path, "xb") as output:
+            output.write(header)
+            remaining = plaintext_size
+            for index in range(count):
+                expected = 0 if plaintext_size == 0 else min(resolved_chunk_size, remaining)
+                chunk = source.read(expected)
+                if len(chunk) != expected:
+                    raise BackupEncryptionError("source changed while QBK2 encryption was in progress")
+                nonce = nonce_prefix + index.to_bytes(4, "big")
+                aad = header + _CHUNK_AAD.pack(index, expected)
+                output.write(_CHUNK_LENGTH.pack(expected))
+                output.write(cipher.encrypt(nonce, chunk, aad))
+                remaining -= expected
+            if remaining != 0 or source.read(1):
+                raise BackupEncryptionError("source changed while QBK2 encryption was in progress")
+            after = os.stat(src_path, follow_symlinks=False)
+            if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
+                raise BackupEncryptionError("source changed while QBK2 encryption was in progress")
+            _fsync_output(output)
+        os.replace(partial_path, dest_path)
+    except Exception:
+        try:
+            os.remove(partial_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _decrypt_chunked_file(src_path: str, dest_path: str, passphrase: str) -> None:
+    aesgcm_cls = _require_aesgcm()
+    partial_path = _partial_path(dest_path)
+    try:
+        with open(src_path, "rb") as source:
+            header = _read_exact(source, _CHUNKED_HEADER.size, label="header")
+            magic, salt, nonce_prefix, chunk_size, plaintext_size, count = _CHUNKED_HEADER.unpack(header)
+            if magic != _CHUNKED_MAGIC:
+                raise BackupDecryptionError("not a recognized QBK2 encrypted backup")
+            try:
+                _validated_chunk_size(chunk_size)
+            except ValueError as exc:
+                raise BackupDecryptionError("QBK2 encrypted backup has an invalid chunk size") from exc
+            try:
+                expected_count = _chunk_count(plaintext_size, chunk_size)
+            except BackupEncryptionError as exc:
+                raise BackupDecryptionError("QBK2 encrypted backup has invalid size metadata") from exc
+            if count != expected_count:
+                raise BackupDecryptionError("QBK2 encrypted backup has inconsistent size metadata")
+            cipher = aesgcm_cls(_derive_key(passphrase, salt))
+            from cryptography.exceptions import InvalidTag
+
+            restored_size = 0
+            with open(partial_path, "xb") as output:
+                for index in range(count):
+                    recorded_length = _CHUNK_LENGTH.unpack(
+                        _read_exact(source, _CHUNK_LENGTH.size, label=f"chunk {index} length")
+                    )[0]
+                    expected = (
+                        0
+                        if plaintext_size == 0
+                        else min(chunk_size, plaintext_size - restored_size)
+                    )
+                    if recorded_length != expected:
+                        raise BackupDecryptionError("QBK2 encrypted backup has inconsistent chunk lengths")
+                    ciphertext = _read_exact(
+                        source,
+                        recorded_length + _GCM_TAG_LEN,
+                        label=f"chunk {index} ciphertext",
+                    )
+                    nonce = nonce_prefix + index.to_bytes(4, "big")
+                    aad = header + _CHUNK_AAD.pack(index, recorded_length)
+                    try:
+                        chunk = cipher.decrypt(nonce, ciphertext, aad)
+                    except InvalidTag as exc:
+                        raise BackupDecryptionError(
+                            "failed to decrypt QBK2 backup data — wrong passphrase, or the data is corrupted/tampered"
+                        ) from exc
+                    output.write(chunk)
+                    restored_size += len(chunk)
+                if restored_size != plaintext_size or source.read(1):
+                    raise BackupDecryptionError("QBK2 encrypted backup is truncated or has trailing data")
+                _fsync_output(output)
+            os.replace(partial_path, dest_path)
+    except Exception:
+        try:
+            os.remove(partial_path)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def decrypt_file(src_path: str, dest_path: str, passphrase: str) -> None:
-    """`encrypt_file` 的逆运算——还原用(目前无专用 restore CLI,直接调用本函数)。"""
-    with open(src_path, "rb") as fh:
-        blob = fh.read()
-    data = decrypt_bytes(blob, passphrase)
-    with open(dest_path, "wb") as fh:
-        fh.write(data)
+    """Restore QBK2 streams while retaining backward compatibility with QBK1."""
+
+    with open(src_path, "rb") as source:
+        magic = source.read(len(_MAGIC))
+    if magic == _CHUNKED_MAGIC:
+        _decrypt_chunked_file(src_path, dest_path, passphrase)
+        return
+    if magic != _MAGIC:
+        raise BackupDecryptionError("not a recognized QUANTOS encrypted backup file")
+
+    with open(src_path, "rb") as source:
+        data = decrypt_bytes(source.read(), passphrase)
+    partial_path = _partial_path(dest_path)
+    try:
+        with open(partial_path, "xb") as output:
+            output.write(data)
+            _fsync_output(output)
+        os.replace(partial_path, dest_path)
+    except Exception:
+        try:
+            os.remove(partial_path)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _check_encryption_policy(passphrase, allow_plaintext: bool) -> None:

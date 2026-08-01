@@ -10,10 +10,13 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
+import hashlib
 import importlib
+import json
 import ntpath
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from types import ModuleType
@@ -48,6 +51,8 @@ ALLOWED_L2_MODULES = frozenset(
         "paper_realtime_10k",
         "paper_shadow_auto",
         "paper_shadow_realtime",
+        "realtime_alpha_discovery",
+        "realtime_alpha_forward_shadow",
     }
 )
 
@@ -57,6 +62,10 @@ class ScheduleEntrypointError(RuntimeError):
 
 
 _HEADLESS_STREAMS: list[object] = []
+_GIT_COMMIT = re.compile(r"[0-9a-f]{40}")
+_RELEASE_COMMIT_ENV = "QUANTOS_RELEASE_COMMIT"
+_RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
+_STATE_ROOT_ENV = "QUANTOS_STATE_ROOT"
 
 
 def _configure_headless_logging(module_name: str) -> None:
@@ -123,10 +132,114 @@ def _is_within(path: Path, parent: Path) -> bool:
     return True
 
 
+def _require_separate_roots(release_root: Path, state_root: Path) -> None:
+    if _is_within(release_root, state_root) or _is_within(state_root, release_root):
+        raise ScheduleEntrypointError(
+            "release and state roots must be separate and non-overlapping"
+        )
+
+
+def _verify_release_identity(
+    release_root: Path,
+    expected_release_commit: str,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> str:
+    """Fail closed unless ``release_root`` is the exact clean registered commit.
+
+    ``GIT_OPTIONAL_LOCKS=0`` keeps verification read-only for a release checkout.
+    Both tracked and untracked changes are rejected; ignored mutable state is not
+    part of the release identity and belongs in the separate state root.
+    """
+    if _GIT_COMMIT.fullmatch(expected_release_commit) is None:
+        raise ScheduleEntrypointError("registered release commit is invalid")
+    command_options = {
+        "capture_output": True,
+        "text": True,
+        "check": False,
+        "timeout": 10,
+        "env": {**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+    }
+    try:
+        head = runner(
+            [
+                "git",
+                "-C",
+                str(release_root),
+                "rev-parse",
+                "--verify",
+                "HEAD",
+            ],
+            **command_options,
+        )
+        if head.returncode != 0:
+            raise ScheduleEntrypointError("release root has no verifiable Git HEAD")
+        actual_commit = head.stdout.strip()
+        if _GIT_COMMIT.fullmatch(actual_commit) is None:
+            raise ScheduleEntrypointError("release root Git HEAD is invalid")
+        if actual_commit != expected_release_commit:
+            raise ScheduleEntrypointError(
+                "release root HEAD does not match the registered release commit"
+            )
+        status = runner(
+            [
+                "git",
+                "-C",
+                str(release_root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+                "--",
+            ],
+            **command_options,
+        )
+        if status.returncode != 0:
+            raise ScheduleEntrypointError("release root cleanliness is unverifiable")
+        if status.stdout.strip():
+            raise ScheduleEntrypointError("release root is not clean")
+        return actual_commit
+    except ScheduleEntrypointError:
+        raise
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ScheduleEntrypointError("release identity verification failed") from exc
+
+
+def _receipt_document(payload: dict[str, object]) -> dict[str, object]:
+    document = dict(payload)
+    canonical = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    document["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
+    return document
+
+
+def _write_release_run_receipt(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(
+            _receipt_document(payload),
+            sort_keys=True,
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
 def run_scheduled_module(
     module_name: str,
     *,
     code_root: str | Path | None = None,
+    expected_release_commit: str,
+    release_verifier: Callable[[Path, str], str] = _verify_release_identity,
+    on_release_verified: Callable[[Path, str], None] | None = None,
     importer: Callable[[str], ModuleType] = importlib.import_module,
 ) -> int:
     """Run one fixed L2 module while preserving the caller's state directory."""
@@ -137,10 +250,23 @@ def run_scheduled_module(
         if code_root is None
         else Path(code_root).resolve()
     )
+    state_root = Path.cwd().resolve()
+    _require_separate_roots(release_root, state_root)
+    verified_commit = release_verifier(release_root, expected_release_commit)
+    if verified_commit != expected_release_commit:
+        raise ScheduleEntrypointError("release verifier returned an unexpected commit")
+    if on_release_verified is not None:
+        on_release_verified(release_root, verified_commit)
     release_tools = release_root / "tools"
     original_path = list(sys.path)
     original_argv = list(sys.argv)
+    original_release_commit = os.environ.get(_RELEASE_COMMIT_ENV)
+    original_release_root = os.environ.get(_RELEASE_ROOT_ENV)
+    original_state_root = os.environ.get(_STATE_ROOT_ENV)
     try:
+        os.environ[_RELEASE_COMMIT_ENV] = verified_commit
+        os.environ[_RELEASE_ROOT_ENV] = str(release_root)
+        os.environ[_STATE_ROOT_ENV] = str(state_root)
         sys.path.insert(0, str(release_root))
         module = importer(f"tools.{module_name}")
         module_file = getattr(module, "__file__", None)
@@ -168,28 +294,99 @@ def run_scheduled_module(
     finally:
         sys.path[:] = original_path
         sys.argv[:] = original_argv
+        if original_release_commit is None:
+            os.environ.pop(_RELEASE_COMMIT_ENV, None)
+        else:
+            os.environ[_RELEASE_COMMIT_ENV] = original_release_commit
+        if original_release_root is None:
+            os.environ.pop(_RELEASE_ROOT_ENV, None)
+        else:
+            os.environ[_RELEASE_ROOT_ENV] = original_release_root
+        if original_state_root is None:
+            os.environ.pop(_STATE_ROOT_ENV, None)
+        else:
+            os.environ[_STATE_ROOT_ENV] = original_state_root
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an allowlisted QUANTOS L2 worker")
     parser.add_argument("module", choices=sorted(ALLOWED_L2_MODULES))
+    parser.add_argument("--release-commit", required=True)
     args = parser.parse_args(argv)
     _configure_headless_logging(args.module)
     _install_headless_subprocess_guard()
     started_at = datetime.now(timezone.utc).isoformat()
+    release_root = Path(__file__).resolve().parents[1]
+    state_root = Path.cwd().resolve()
+    _require_separate_roots(release_root, state_root)
+    receipt_path = (
+        state_root
+        / ".runtime"
+        / "l2-release-runs"
+        / f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{os.getpid()}-{args.module}.json"
+    )
+    receipt: dict[str, object] = {
+        "schema_version": 1,
+        "module": args.module,
+        "status": "STARTED",
+        "release_commit": args.release_commit,
+        "release_root": str(release_root),
+        "state_root": str(state_root),
+        "release_verified": False,
+        "verified_at": None,
+        "started_at": started_at,
+        "finished_at": None,
+        "exit_code": None,
+        "error_type": None,
+    }
+    _write_release_run_receipt(receipt_path, receipt)
     print(
-        f"[l2-schedule] START module={args.module} at={started_at}",
+        f"[l2-schedule] START module={args.module} "
+        f"release_commit={args.release_commit} at={started_at}",
         flush=True,
     )
+
+    def record_release_verification(root: Path, commit: str) -> None:
+        receipt.update(
+            {
+                "release_commit": commit,
+                "release_root": str(root),
+                "release_verified": True,
+                "verified_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        _write_release_run_receipt(receipt_path, receipt)
+
     try:
-        result = run_scheduled_module(args.module)
+        result = run_scheduled_module(
+            args.module,
+            expected_release_commit=args.release_commit,
+            on_release_verified=record_release_verification,
+        )
     except Exception as exc:
+        receipt.update(
+            {
+                "status": "FAILED",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "error_type": type(exc).__name__,
+            }
+        )
+        _write_release_run_receipt(receipt_path, receipt)
         print(
             f"[l2-schedule] END module={args.module} status=ERROR "
             f"error_type={type(exc).__name__}",
             flush=True,
         )
         raise
+    receipt.update(
+        {
+            "status": "COMPLETED" if result == 0 else "FAILED",
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "exit_code": result,
+            "error_type": None if result == 0 else "NONZERO_EXIT",
+        }
+    )
+    _write_release_run_receipt(receipt_path, receipt)
     print(
         f"[l2-schedule] END module={args.module} exit_code={result}",
         flush=True,
@@ -206,5 +403,6 @@ __all__ = [
     "ScheduleEntrypointError",
     "_configure_headless_logging",
     "_install_headless_subprocess_guard",
+    "_verify_release_identity",
     "run_scheduled_module",
 ]

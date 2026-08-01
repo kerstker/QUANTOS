@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from quantos.runtime_paths import runtime_state_root
 from services.execution.paper_tca_history import build_paper_tca_history
 from services.execution.dry_run_store import DryRunStore
 from .artifact_diagnostic_views import router as diagnostic_router
@@ -18,7 +19,7 @@ from .artifact_diagnostic_views import router as diagnostic_router
 
 router = APIRouter()
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = runtime_state_root()
 IC_PANEL_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "ic_panel_snapshot.json")
 _DRY_RUN_DB = os.path.join(_REPO_ROOT, "data", "cache", "dry_run.db")
 _CAPACITY_SNAPSHOT = os.path.join(_REPO_ROOT, "data", "cache", "capacity_snapshot.json")
@@ -75,7 +76,16 @@ _PAPER_SHADOW_AUTO = os.path.join(
 _PAPER_SHADOW_REALTIME = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_shadow_realtime_status.json"
 )
+_REALTIME_ALPHA_DISCOVERY = os.path.join(
+    _REPO_ROOT, "data", "cache", "realtime_alpha_discovery.json"
+)
+_REALTIME_ALPHA_FORWARD_SHADOW = os.path.join(
+    _REPO_ROOT, "data", "cache", "realtime_alpha_forward_shadow.json"
+)
 _EVIDENCE_GATE_WEEKS = 8
+_LEGACY_DIAGNOSTIC_PAPER_IDS = frozenset(
+    {"carry_oi_majors", "crowd_contra", "top_contra"}
+)
 
 # The compact diagnostic routes live in their own bounded module.  Including
 # the child router keeps one public artifact surface while preserving the
@@ -117,6 +127,363 @@ def _paper_alpha_total(alphas: Any, field: str) -> float | None:
             return None
         values.append(number)
     return round(sum(values), 8)
+
+
+_REALTIME_ALPHA_SAFE_BOUNDARY = {
+    "paper_only": True,
+    "live_trading_enabled": False,
+    "real_broker_enabled": False,
+    "allow_order_submission": False,
+    "allow_ai_direct_trading": False,
+    "promotion_eligible": False,
+    "credentials_accessed": False,
+}
+
+_REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY = {
+    "paper_only": True,
+    "public_market_data_only": True,
+    "separate_from_official_paper": True,
+    "credentials_accessed": False,
+    "broker_connectivity": False,
+    "broker_order_submission": False,
+    "allow_ai_direct_trading": False,
+}
+
+
+def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
+    artifact = _load_json_object(path or _REALTIME_ALPHA_FORWARD_SHADOW)
+    empty = {
+        "snapshot_present": False,
+        "boundary_valid": False,
+        "status": "NO_SNAPSHOT",
+        "generated_at_ms": None,
+        "eligible_candidates": [],
+        "feature_input": {"ready": False},
+        "cycle": {
+            "new_admissions": 0,
+            "new_decisions": 0,
+            "new_realizations": 0,
+        },
+        "tracks": {},
+        "errors": {},
+        "ledger": {"append_only": True, "chain_valid": False, "event_count": 0},
+        "verdict": {
+            "forward_shadow_running": False,
+            "promotion_eligible": False,
+            "forward_evidence_credit": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "blockers": ["REALTIME_FORWARD_SHADOW_SNAPSHOT_MISSING"],
+        "safety": dict(_REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY),
+    }
+    if artifact is None:
+        return empty
+    blockers: list[str] = []
+    safety = artifact.get("safety")
+    if not isinstance(safety, dict) or any(
+        safety.get(field) is not expected
+        for field, expected in _REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY.items()
+    ):
+        blockers.append("REALTIME_FORWARD_SHADOW_SAFETY_INVALID")
+    ledger = artifact.get("ledger")
+    if (
+        not isinstance(ledger, dict)
+        or ledger.get("append_only") is not True
+        or ledger.get("chain_valid") is not True
+    ):
+        blockers.append("REALTIME_FORWARD_SHADOW_LEDGER_INVALID")
+    verdict = artifact.get("verdict")
+    if not isinstance(verdict, dict) or any(
+        verdict.get(field) is not False
+        for field in (
+            "promotion_eligible",
+            "forward_evidence_credit",
+            "deployment_eligible",
+            "live_allowed",
+            "order_submission_allowed",
+        )
+    ):
+        blockers.append("REALTIME_FORWARD_SHADOW_AUTHORITY_INVALID")
+    if blockers:
+        blocked = dict(empty)
+        blocked.update(
+            {
+                "snapshot_present": True,
+                "status": "SAFE_BLOCKED",
+                "generated_at_ms": artifact.get("generated_at_ms"),
+                "blockers": blockers,
+            }
+        )
+        return blocked
+    return {
+        "snapshot_present": True,
+        "boundary_valid": True,
+        "status": artifact.get("status", "SAFE_BLOCKED"),
+        "generated_at_ms": artifact.get("generated_at_ms"),
+        "eligible_candidates": artifact.get("eligible_candidates", []),
+        "feature_input": artifact.get("feature_input", {}),
+        "cycle": artifact.get("cycle", {}),
+        "tracks": artifact.get("tracks", {}),
+        "errors": artifact.get("errors", {}),
+        "ledger": {
+            "append_only": True,
+            "chain_valid": True,
+            "event_count": ledger.get("event_count", 0),
+        },
+        "verdict": {
+            "forward_shadow_running": bool(
+                verdict.get("forward_shadow_running", False)
+            ),
+            "promotion_eligible": False,
+            "forward_evidence_credit": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "blockers": [],
+        "safety": dict(_REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY),
+    }
+
+
+def _realtime_alpha_candidate_view(row: Any) -> Dict | None:
+    """Return the bounded, read-only candidate fields needed by the console."""
+    if not isinstance(row, dict) or not isinstance(row.get("candidate_id"), str):
+        return None
+    fields = (
+        "candidate_id",
+        "family_id",
+        "mechanism",
+        "horizon_ms",
+        "status",
+        "n_periods",
+        "mean_breadth",
+        "mean_ic",
+        "ic_t_stat",
+        "net_sharpe",
+        "holdout_net_sharpe",
+        "net_return",
+        "max_drawdown",
+        "walk_forward_positive_frac",
+        "spread_regime_positive_frac",
+        "diagnostic_lead",
+        "gate_pass",
+        "gate_reasons",
+        "deflated_sharpe",
+        "pbo",
+    )
+    result = {field: row.get(field) for field in fields}
+    # Console projection can never widen the worker's authority.
+    result["promotion_eligible"] = False
+    result["live_allowed"] = False
+    return result
+
+
+def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
+    """Project autonomous realtime research evidence through a fail-closed seam."""
+    artifact = _load_json_object(path or _REALTIME_ALPHA_DISCOVERY)
+    empty = {
+        "source": "AUTONOMOUS_REALTIME_ALPHA_DISCOVERY_ARTIFACT",
+        "read_only": True,
+        "snapshot_present": False,
+        "boundary_valid": False,
+        "status": "NO_SNAPSHOT",
+        "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
+        "generated_at_ms": None,
+        "dataset_version": None,
+        "search_id": None,
+        "autonomy": {
+            "worker": "tools.realtime_alpha_discovery",
+            "scheduler_task": "QUANTOS_realtime_alpha_discovery",
+            "autonomous_search_running": False,
+            "requires_developer_ai": False,
+            "next_cycle_expected_ms": None,
+        },
+        "data_admission": {
+            "status": "NO_SNAPSHOT",
+            "common_span_ms": 0,
+            "feature_age_ms": None,
+            "common_instruments": [],
+            "exploration_allowed": False,
+            "formal_validation_allowed": False,
+            "shadow_admission_allowed": False,
+            "reasons": ["autonomous realtime discovery snapshot is unavailable"],
+        },
+        "feature_quality": {"status": "NO_SNAPSHOT", "drift_status": None},
+        "executable_depth_capacity": {
+            "status": "NO_SNAPSHOT",
+            "passed": False,
+            "evidence_ready": False,
+            "target_aum_passed": False,
+            "shadow_sizing_ready": False,
+            "history_span_ms": 0,
+            "max_supported_aum_usd": None,
+            "target_aum_usd": 1_000_000.0,
+            "shadow_aum_usd": None,
+            "reasons": ["EXECUTABLE_DEPTH_CAPACITY_UNAVAILABLE"],
+        },
+        "funnel": {
+            "pre_registered": 0,
+            "evaluated": 0,
+            "diagnostic_leads": 0,
+            "formal_passes": 0,
+            "shadow_candidates": 0,
+        },
+        "families": [],
+        "top_candidates": [],
+        "global_trial_count": None,
+        "registry": {"chain_valid": False, "event_count": 0},
+        "remaining_gates": [
+            "30D_COMMON_HISTORY_FOR_FORMAL_VALIDATION",
+            "90D_COMMON_HISTORY_FOR_FORWARD_SHADOW",
+            "EXECUTABLE_DEPTH_CAPACITY_CALIBRATION",
+        ],
+        "blockers": ["AUTONOMY_SNAPSHOT_MISSING"],
+        "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+        "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
+    }
+    if artifact is None:
+        return empty
+
+    artifact_safety = artifact.get("safety")
+    registry = artifact.get("registry")
+    autonomy = artifact.get("autonomy")
+    blockers: list[str] = []
+    if artifact.get("mode") != "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH":
+        blockers.append("AUTONOMY_MODE_INVALID")
+    if not isinstance(artifact_safety, dict):
+        blockers.append("AUTONOMY_SAFETY_BOUNDARY_MISSING")
+    else:
+        for field, expected in _REALTIME_ALPHA_SAFE_BOUNDARY.items():
+            if artifact_safety.get(field) is not expected:
+                blockers.append(f"AUTONOMY_SAFETY_{field.upper()}_INVALID")
+    if not isinstance(registry, dict) or registry.get("chain_valid") is not True:
+        blockers.append("AUTONOMY_REGISTRY_CHAIN_INVALID")
+    if not isinstance(autonomy, dict) or autonomy.get("requires_developer_ai") is not False:
+        blockers.append("AUTONOMY_RUNTIME_IDENTITY_INVALID")
+
+    if blockers:
+        blocked = dict(empty)
+        blocked.update(
+            {
+                "snapshot_present": True,
+                "status": "SAFE_BLOCKED",
+                "generated_at_ms": artifact.get("generated_at_ms"),
+                "dataset_version": artifact.get("dataset_version"),
+                "search_id": artifact.get("search_id"),
+                "blockers": blockers,
+                "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+            }
+        )
+        return blocked
+
+    data_admission = artifact.get("data_admission")
+    feature_quality = artifact.get("feature_quality")
+    drift = feature_quality.get("drift") if isinstance(feature_quality, dict) else None
+    funnel = artifact.get("funnel")
+    capacity = artifact.get("executable_depth_capacity")
+    families = artifact.get("families")
+    top_candidates = artifact.get("top_candidates")
+    candidate_views = [
+        view
+        for view in (
+            _realtime_alpha_candidate_view(row)
+            for row in (top_candidates if isinstance(top_candidates, list) else [])[:8]
+        )
+        if view is not None
+    ]
+    return {
+        "source": "AUTONOMOUS_REALTIME_ALPHA_DISCOVERY_ARTIFACT",
+        "read_only": True,
+        "snapshot_present": True,
+        "boundary_valid": True,
+        "status": artifact.get("status", "SAFE_BLOCKED"),
+        "mode": artifact.get("mode"),
+        "generated_at_ms": artifact.get("generated_at_ms"),
+        "dataset_version": artifact.get("dataset_version"),
+        "search_id": artifact.get("search_id"),
+        "autonomy": {
+            "worker": autonomy.get("worker"),
+            "scheduler_task": autonomy.get("scheduler_task"),
+            "autonomous_search_running": bool(
+                autonomy.get("autonomous_search_running", False)
+            ),
+            "requires_developer_ai": False,
+            "next_cycle_expected_ms": autonomy.get("next_cycle_expected_ms"),
+        },
+        "data_admission": data_admission if isinstance(data_admission, dict) else {},
+        "feature_quality": {
+            "status": feature_quality.get("status")
+            if isinstance(feature_quality, dict)
+            else None,
+            "generated_at_ms": feature_quality.get("generated_at_ms")
+            if isinstance(feature_quality, dict)
+            else None,
+            "drift_status": drift.get("status") if isinstance(drift, dict) else None,
+        },
+        "executable_depth_capacity": (
+            {
+                field: capacity.get(field)
+                for field in (
+                    "status",
+                    "passed",
+                    "evidence_ready",
+                    "target_aum_passed",
+                    "shadow_sizing_ready",
+                    "history_span_ms",
+                    "feature_age_ms",
+                    "instrument_count",
+                    "conservative_depth_usd",
+                    "max_supported_aum_usd",
+                    "target_aum_usd",
+                    "shadow_aum_usd",
+                    "participation_rate",
+                    "legs_per_side",
+                    "reasons",
+                )
+            }
+            if isinstance(capacity, dict)
+            else {}
+        ),
+        "funnel": funnel if isinstance(funnel, dict) else {},
+        "families": families if isinstance(families, list) else [],
+        "top_candidates": candidate_views,
+        "global_trial_count": artifact.get("global_trial_count"),
+        "registry": {
+            "chain_valid": True,
+            "event_count": registry.get("event_count"),
+        },
+        "remaining_gates": artifact.get("remaining_gates", []),
+        "blockers": [],
+        "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+        "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
+    }
+
+
+def _dry_run_watch_paths() -> tuple[str, ...]:
+    """Files whose durable changes should wake the dry-run event stream."""
+    return (
+        _DRY_RUN_DB,
+        _FORWARD_TRACK_STATUS,
+        _FACTORY_LOOP_STATUS,
+        _CANDIDATE_ADMISSION_STATUS,
+        _FORWARD_CANDIDATE_EVALUATIONS,
+        _PAPER_RESEARCH_RISK_BUNDLE,
+        _LIVE_REFRESH_STATUS,
+        _SCHEDULER_WATCHDOG_STATUS,
+        _PAPER_ORDER_PREVIEW,
+        _L2_PAPER_OPERATOR,
+        _PAPER_REALTIME,
+        _PAPER_MULTIVENUE_SOR,
+        _PAPER_HEALTH,
+        _PAPER_10K_REALTIME,
+        _PAPER_10K_HEALTH,
+        _PAPER_SHADOW_AUTO,
+        _PAPER_SHADOW_REALTIME,
+        _REALTIME_ALPHA_DISCOVERY,
+        _REALTIME_ALPHA_FORWARD_SHADOW,
+    )
 
 
 def _forward_track_payload() -> Dict:
@@ -223,6 +590,9 @@ def _alpha_pipeline_payload(
             continue
         alpha_id = str(row["alpha_id"])
         execution_paper = alpha_id in execution_ids
+        legacy_diagnostic_paper = (
+            execution_paper and alpha_id in _LEGACY_DIAGNOSTIC_PAPER_IDS
+        )
         evaluation_row = evaluation_rows.get(alpha_id)
         evaluation_row = evaluation_row if isinstance(evaluation_row, dict) else {}
         evaluation_ref = evaluation_row.get("evaluation")
@@ -235,7 +605,9 @@ def _alpha_pipeline_payload(
         except (TypeError, ValueError):
             maturity_periods = None
         blockers: list[str] = []
-        if not execution_paper:
+        if legacy_diagnostic_paper:
+            blockers.append("LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE")
+        elif not execution_paper:
             if evaluation_row.get("status") != "VERIFIED" or evaluation_ref.get("verified") is not True:
                 blockers.append("INDEPENDENT_EVALUATION_PENDING")
             if evaluation_ref.get("verdict") != "PASS":
@@ -249,8 +621,22 @@ def _alpha_pipeline_payload(
         candidates.append(
             {
                 **row,
-                "stage": "EXECUTION_PAPER" if execution_paper else "FORWARD_PAPER",
+                "stage": (
+                    "LEGACY_DIAGNOSTIC_PAPER"
+                    if legacy_diagnostic_paper
+                    else "EXECUTION_PAPER"
+                    if execution_paper
+                    else "FORWARD_PAPER"
+                ),
+                "paper_class": (
+                    "LEGACY_DIAGNOSTIC_PAPER"
+                    if legacy_diagnostic_paper
+                    else "CANDIDATE_EXECUTION_PAPER"
+                    if execution_paper
+                    else "FORWARD_CHALLENGER"
+                ),
                 "execution_paper": execution_paper,
+                "deployment_eligible": False,
                 "blockers": blockers,
                 "independent_evaluation": {
                     "status": evaluation_row.get("status", "NOT_AVAILABLE"),
@@ -288,6 +674,10 @@ def _alpha_pipeline_payload(
     )
     forward_count = len(candidates)
     execution_count = sum(row["execution_paper"] for row in candidates)
+    legacy_execution_count = sum(
+        row["paper_class"] == "LEGACY_DIAGNOSTIC_PAPER" for row in candidates
+    )
+    candidate_execution_count = execution_count - legacy_execution_count
     return {
         "source": "BACKEND_COMPUTED_ALPHA_PIPELINE",
         "read_only": True,
@@ -306,25 +696,41 @@ def _alpha_pipeline_payload(
         "counts": {
             "forward_paper": forward_count,
             "execution_paper": execution_count,
+            "candidate_execution_paper": candidate_execution_count,
+            "legacy_diagnostic_paper": legacy_execution_count,
             "forward_only": max(0, forward_count - execution_count),
             "factory_survivors": len(discovered),
         },
         "candidates": candidates,
         "handoff": {
             "factory_to_forward_registry_connected": handoff_connected,
-            "forward_to_execution_dynamic": forward_count == execution_count and forward_count > 0,
-            "status": "CONNECTED" if handoff_connected and forward_count == execution_count else "GAPPED",
+            "forward_to_execution_dynamic": (
+                forward_count == candidate_execution_count and forward_count > 0
+            ),
+            "status": (
+                "CONNECTED"
+                if handoff_connected and forward_count == candidate_execution_count
+                else "GAPPED"
+            ),
             "gap_codes": [
                 code
                 for code, present in (
                     ("FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED", bool(factory) and not handoff_connected),
-                    ("FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER", forward_count > execution_count),
+                    (
+                        "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
+                        forward_count > candidate_execution_count,
+                    ),
+                    (
+                        "LEGACY_DIAGNOSTIC_PAPER_QUARANTINED",
+                        legacy_execution_count > 0,
+                    ),
                 )
                 if present
             ],
         },
         "safety": {
             "paper_only": True,
+            "deployment_eligible": False,
             "live_allowed": False,
             "order_submission_allowed": False,
         },
@@ -908,6 +1314,7 @@ def _dry_run_payload() -> Dict:
         "paper_operator": paper_operator,
         "paper_realtime": paper_realtime,
         "alpha_pipeline": _alpha_pipeline_payload(forward_track, paper_realtime),
+        "realtime_alpha_autonomy": _realtime_alpha_autonomy_payload(),
         "paper_shadow": _paper_shadow_payload(),
         "paper_health": paper_health,
         "forward_track": forward_track,

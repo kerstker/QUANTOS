@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ from services.governance.artifact_admission_external_seal import (
     RETENTION,
     STATUS,
     ArtifactAdmissionExternalSealError,
+    artifact_admission_seal_contract_sha256,
     verify_artifact_admission_external_seal,
 )
 
@@ -95,4 +98,21 @@ def test_retained_external_chain_head_is_cryptographically_verified() -> None:
     assert report["commitment"]["decision_count"] == 0
     assert report["commitment"]["overall_hash"] == (
         "9e2ba2d3add5642a376dbcbfd5cf4adb61a9649ae727e03925d890ed6cb229b7"
+    )
+
+
+def test_chain_head_contract_ignores_only_local_observation_time() -> None:
+    seal = json.loads(
+        (EVIDENCE / "artifact-admission-seal.json").read_text(encoding="utf-8")
+    )
+    later_observation = copy.deepcopy(seal)
+    later_observation["observed_at_ms"] += 1
+    changed_authority = copy.deepcopy(seal)
+    changed_authority["commitment"]["overall_hash"] = "f" * 64
+
+    assert artifact_admission_seal_contract_sha256(later_observation) == (
+        artifact_admission_seal_contract_sha256(seal)
+    )
+    assert artifact_admission_seal_contract_sha256(changed_authority) != (
+        artifact_admission_seal_contract_sha256(seal)
     )

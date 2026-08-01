@@ -64,6 +64,8 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
     payload = json.loads(artifact.read_text(encoding="utf-8"))
 
     assert payload["mode"] == "TRIAL_LEDGER_INTEGRITY_READ_ONLY"
+    assert payload["input_hash"] == _canonical_hash(payload["inputs"])
+    assert payload["inputs"]["data/cache/experiment_registry.db"]["exists"] is True
     assert payload["readiness"] == "L2_DRY_RUN_ONLY"
     assert payload["verdict"] in {"PASS", "PARTIAL", "BLOCKED"}
     # §22.13 — an unfinished subsystem must never be dressed up as PASS.
@@ -84,6 +86,15 @@ def test_repository_artifact_exists_and_declares_its_honest_verdict() -> None:
     assert wiring["entries"]["alpha_family_discovery"]["wired"] is True
     assert wiring["entries"]["crypto_robust_optimization"]["wired"] is True
     assert wiring["role"] == "CANONICAL_ENTRIES_WIRED_NOT_LEDGER_COVERAGE"
+
+
+def _canonical_hash(value: object) -> str:
+    import hashlib
+
+    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def test_provenance_wiring_reports_both_canonical_entries() -> None:

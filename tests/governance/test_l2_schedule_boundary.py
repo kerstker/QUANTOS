@@ -41,6 +41,8 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "binance_realtime_features",
         "binance_realtime_drift_alerts",
         "binance_realtime_stream",
+        "realtime_alpha_discovery",
+        "realtime_alpha_forward_shadow",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",
@@ -104,9 +106,12 @@ def test_schedule_registration_separates_release_code_from_mutable_state():
     source = _source()
     assert "$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot \"..\")).Path" in source
     assert "$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path" in source
+    assert "release and state roots must be different" in source
+    assert "status --porcelain=v1 --untracked-files=all --ignore-submodules=none" in source
+    assert "$releaseCommit" in source
     assert '$launcher = Join-Path $codeRoot "tools\\l2_schedule_entrypoint.py"' in source
     assert '-Execute $pythonw' in source
-    assert '-Argument "`"$launcher`" $Module"' in source
+    assert '--release-commit $releaseCommit' in source
     assert '-m tools.$Module' not in source
 
 

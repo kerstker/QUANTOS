@@ -125,27 +125,51 @@ def _canonical_hash(payload: Any) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def _input_hash(root: Path, ledger: Path) -> str:
-    """Hash the read-only inputs used to build this snapshot.
+def _input_key(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
 
-    The generator hash is kept as a separate field so this value does not
-    become self-referential when the generator itself changes.
-    """
-    inputs = {
-        "ledger": {
-            "path": os.path.relpath(ledger, root).replace("\\", "/"),
-            "sha256": _sha256(ledger),
-        },
-        "generator_contract": {
-            "path": "services/research/experiment_registry/store.py",
-            "sha256": _sha256(root / "services" / "research" / "experiment_registry" / "store.py"),
-        },
-        "provenance_contract": {
-            "path": "services/research/trial_provenance.py",
-            "sha256": _sha256(root / "services" / "research" / "trial_provenance.py"),
-        },
+
+def _file_snapshot(path: Path) -> dict[str, Any]:
+    exists = path.is_file()
+    try:
+        size_bytes = path.stat().st_size if exists else 0
+        sha256 = _sha256(path)
+    except OSError:
+        size_bytes = 0
+        sha256 = None
+    return {
+        "kind": "file",
+        "exists": exists,
+        "size_bytes": size_bytes,
+        "sha256": sha256,
     }
-    return _canonical_hash(inputs)
+
+
+def _input_manifest(
+    root: Path,
+    ledger: Path,
+    *,
+    ledger_content: Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Expose every read-only input so retained live snapshots are verifiable."""
+
+    source = ledger if ledger_content is None else ledger_content
+    inputs = {
+        _input_key(root, ledger): _file_snapshot(source),
+    }
+    for path in (
+        root / "services" / "research" / "experiment_registry" / "store.py",
+        root / "services" / "research" / "trial_provenance.py",
+    ):
+        inputs[_input_key(root, path)] = _file_snapshot(path)
+    return inputs
+
+
+def _input_hash(root: Path, ledger: Path) -> str:
+    return _canonical_hash(_input_manifest(root, ledger))
 
 
 def _safety_flags() -> dict[str, bool]:
@@ -427,9 +451,17 @@ def _provenance_wiring() -> dict[str, Any]:
     }
 
 
-def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
+def _build_report_from_snapshot(
+    *,
+    root: Path,
+    ledger: Path,
+    read_ledger: Path,
+) -> dict[str, Any]:
     root = root.resolve()
     ledger = ledger.resolve()
+    read_ledger = read_ledger.resolve()
+    inputs = _input_manifest(root, ledger, ledger_content=read_ledger)
+    ledger_key = _input_key(root, ledger)
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "mode": ARTIFACT_MODE,
@@ -437,14 +469,15 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
         "commit": _commit(root),
         "config_hash": _sha256(root / "quantos" / "contracts" / "config.py"),
         "generator_sha256": _sha256(root / "scripts" / "generate_trial_ledger_integrity.py"),
-        "input_hash": _input_hash(root, ledger),
+        "inputs": inputs,
+        "input_hash": _canonical_hash(inputs),
         "readiness": "L2_DRY_RUN_ONLY",
         "safety_flags": _safety_flags(),
         "safety_verdict": "PASS",
         "ledger": {
-            "path": os.path.relpath(ledger, root).replace("\\", "/"),
-            "exists": ledger.is_file(),
-            "sha256": _sha256(ledger),
+            "path": ledger_key,
+            "exists": inputs[ledger_key]["exists"],
+            "sha256": inputs[ledger_key]["sha256"],
         },
     }
 
@@ -455,7 +488,7 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
 
     connection: sqlite3.Connection | None = None
     try:
-        connection = _read_only_connection(ledger)
+        connection = _read_only_connection(read_ledger)
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         user_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         tables = {
@@ -582,6 +615,56 @@ def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
         }
     ]
     return report
+
+
+def _snapshot_sqlite(source: Path, destination: Path) -> None:
+    """Take a consistent read-only snapshot, including committed WAL pages."""
+
+    source_connection: sqlite3.Connection | None = None
+    destination_connection: sqlite3.Connection | None = None
+    try:
+        source_connection = sqlite3.connect(
+            source.resolve().as_uri() + "?mode=ro",
+            uri=True,
+            timeout=30.0,
+        )
+        source_connection.execute("PRAGMA query_only = ON")
+        destination_connection = sqlite3.connect(destination)
+        source_connection.backup(destination_connection)
+    finally:
+        if destination_connection is not None:
+            destination_connection.close()
+        if source_connection is not None:
+            source_connection.close()
+
+
+def build_report(*, root: Path, ledger: Path) -> dict[str, Any]:
+    """Build one internally consistent report without pausing live research."""
+
+    resolved_root = root.resolve()
+    resolved_ledger = ledger.resolve()
+    if not resolved_ledger.is_file():
+        return _build_report_from_snapshot(
+            root=resolved_root,
+            ledger=resolved_ledger,
+            read_ledger=resolved_ledger,
+        )
+    with tempfile.TemporaryDirectory(prefix="quantos-trial-ledger-snapshot-") as scratch:
+        snapshot = Path(scratch) / "experiment_registry.db"
+        try:
+            _snapshot_sqlite(resolved_ledger, snapshot)
+        except sqlite3.DatabaseError:
+            # Preserve the historical BLOCKED report shape for corrupt ledgers.
+            return _build_report_from_snapshot(
+                root=resolved_root,
+                ledger=resolved_ledger,
+                read_ledger=resolved_ledger,
+            )
+        return _build_report_from_snapshot(
+            root=resolved_root,
+            ledger=resolved_ledger,
+            read_ledger=snapshot,
+        )
 
 
 def _write(path: Path, payload: dict[str, Any]) -> None:

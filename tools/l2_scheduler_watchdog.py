@@ -134,6 +134,21 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_binance_realtime_drift_alerts": ExpectedTask(
         "binance_realtime_drift_alerts", 15 * 60_000
     ),
+    "QUANTOS_realtime_alpha_discovery": ExpectedTask(
+        "realtime_alpha_discovery",
+        3 * _HOUR_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
+        "realtime_alpha_forward_shadow",
+        5 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
+        "realtime_alpha_forward_shadow",
+        5 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "QUANTOS_binance_realtime_stream": ExpectedTask(
         "binance_realtime_stream", 15 * 60_000
     ),
@@ -462,8 +477,16 @@ def event_seal_configuration_ready(
 
 
 _LAUNCHER_ARGUMENTS = re.compile(
-    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+)$'
+    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+) '
+    r'--release-commit (?P<release_commit>[0-9a-f]{40})$'
 )
+
+
+def _action_release_commit(snapshot: TaskSnapshot | None) -> str | None:
+    if snapshot is None:
+        return None
+    match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
+    return None if match is None else match.group("release_commit")
 
 
 def _action_matches(
@@ -471,6 +494,7 @@ def _action_matches(
     spec: ExpectedTask,
     state_root: Path,
     code_root: Path,
+    expected_release_commit: str | None,
 ) -> bool:
     if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
         "python",
@@ -480,7 +504,12 @@ def _action_matches(
     }:
         return False
     match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
-    if match is None or match.group("module") != spec.module:
+    if (
+        match is None
+        or match.group("module") != spec.module
+        or expected_release_commit is None
+        or match.group("release_commit") != expected_release_commit
+    ):
         return False
     try:
         launcher = Path(match.group("launcher")).resolve(strict=False)
@@ -508,6 +537,7 @@ def _check_task(
     now_ms: int,
     repo_root: Path,
     code_root: Path,
+    expected_release_commit: str | None,
     self_check: bool = False,
 ) -> dict:
     if snapshot is None:
@@ -519,7 +549,13 @@ def _check_task(
             "code": "NOT_ENABLED",
             "detail": f"task state is {snapshot.state}",
         }
-    if not _action_matches(snapshot, spec, repo_root, code_root):
+    if not _action_matches(
+        snapshot,
+        spec,
+        repo_root,
+        code_root,
+        expected_release_commit,
+    ):
         return {
             "task_name": name,
             "status": "BREACH",
@@ -670,6 +706,9 @@ def evaluate_schedule(
         if snapshot.name in by_name:
             duplicates.add(snapshot.name)
         by_name[snapshot.name] = snapshot
+    expected_release_commit = _action_release_commit(
+        by_name.get("QUANTOS_scheduler_watchdog")
+    )
 
     checks: list[dict] = []
     conditional_readiness = {
@@ -720,6 +759,7 @@ def evaluate_schedule(
             now_ms=now_ms,
             repo_root=root,
             code_root=release_root,
+            expected_release_commit=expected_release_commit,
             self_check=name == "QUANTOS_scheduler_watchdog",
         )
         if name == "QUANTOS_backup":

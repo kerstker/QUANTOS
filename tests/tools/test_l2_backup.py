@@ -18,7 +18,7 @@ from tools.l2_backup import (
     run_recorded_l2_backup,
     run_l2_backup,
 )
-from tools.live_backup import decrypt_bytes, encrypt_bytes
+from tools.live_backup import decrypt_bytes, decrypt_file, encrypt_bytes, encrypt_file
 
 
 PASSPHRASE = "institutional-backup-test-passphrase"
@@ -72,7 +72,7 @@ def _seed_sqlite(path: Path) -> sqlite3.Connection:
     return connection
 
 
-def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path):
+def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     database = repo / "data" / "cache" / "authority.db"
     status = repo / "data" / "cache" / "l2_backup_status.json"
@@ -85,6 +85,7 @@ def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path
         BackupSource("data/cache/authority.db", "event_authority", required=True),
         BackupSource("data/cache/state.json", "operational_state", required=True),
     )
+    monkeypatch.setattr(l2_backup_module, "L2_ENCRYPTION_CHUNK_SIZE", 16)
     result = run_l2_backup(
         repo_root=repo,
         destination_root=tmp_path / "backup",
@@ -128,6 +129,9 @@ def test_l2_backup_uses_consistent_sqlite_snapshot_and_verified_restore(tmp_path
     assert batch.is_dir()
     assert {path.suffix for path in batch.iterdir()} == {".enc"}
     assert all(b"sensitive-state-marker" not in path.read_bytes() for path in batch.iterdir())
+    manifest = _read_manifest(batch)
+    for entry in manifest["entries"]:
+        assert (batch / f"{entry['artifact']}.enc").read_bytes().startswith(b"QBK2")
 
     restored = tmp_path / "restored"
     verification = restore_l2_batch(
@@ -503,13 +507,13 @@ def test_restore_rejects_semantically_tampered_restore_history_database(tmp_path
     entry = next(item for item in manifest["entries"] if item["role"] == "l2_restore_history_authority")
     artifact_path = batch / f"{entry['artifact']}.enc"
     tampered_path = tmp_path / "tampered-history.db"
-    tampered_path.write_bytes(decrypt_bytes(artifact_path.read_bytes(), PASSPHRASE))
+    decrypt_file(str(artifact_path), str(tampered_path), PASSPHRASE)
     with sqlite3.connect(tampered_path) as connection:
         connection.execute("DROP TRIGGER l2_restore_history_events_no_update")
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     tampered = tampered_path.read_bytes()
-    artifact_path.write_bytes(encrypt_bytes(tampered, PASSPHRASE))
+    encrypt_file(str(tampered_path), str(artifact_path), PASSPHRASE, chunk_size=32)
     entry["sha256"] = hashlib.sha256(tampered).hexdigest()
     entry["size"] = len(tampered)
     _write_manifest(batch, manifest)

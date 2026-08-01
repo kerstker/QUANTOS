@@ -16,7 +16,7 @@ from quantos.contracts.feature import FeatureValue
 
 FEATURE_VERSION = "binance-public-stream.v1"
 MATERIALIZER_VERSION = "binance-realtime-projection.v1"
-FEATURE_IDS = (
+CORE_FEATURE_IDS = (
     "rt_mid_price",
     "rt_spread_bps",
     "rt_depth_imbalance_5",
@@ -25,6 +25,8 @@ FEATURE_IDS = (
     "rt_taker_imbalance_5s",
     "rt_liquidation_imbalance_5s",
 )
+CAPACITY_FEATURE_ID = "rt_executable_depth_5_usd"
+FEATURE_IDS = CORE_FEATURE_IDS + (CAPACITY_FEATURE_ID,)
 
 
 class BinanceRealtimeProjectionError(ValueError):
@@ -55,10 +57,11 @@ def _timestamp(value: object, field: str) -> int:
     return result
 
 
-def _depth_sum(rows: object, field: str) -> float:
+def _depth_totals(rows: object, field: str) -> tuple[float, float]:
     if not isinstance(rows, list) or len(rows) < 5:
         raise BinanceRealtimeProjectionError(f"{field} has fewer than five levels")
     total = 0.0
+    notional = 0.0
     for index, row in enumerate(rows[:5]):
         if (
             not isinstance(row, Sequence)
@@ -68,9 +71,11 @@ def _depth_sum(rows: object, field: str) -> float:
             raise BinanceRealtimeProjectionError(
                 f"{field}[{index}] is malformed"
             )
-        _finite(row[0], f"{field}[{index}].price", positive=True)
-        total += _finite(row[1], f"{field}[{index}].quantity", positive=True)
-    return total
+        price = _finite(row[0], f"{field}[{index}].price", positive=True)
+        quantity = _finite(row[1], f"{field}[{index}].quantity", positive=True)
+        total += quantity
+        notional += price * quantity
+    return total, notional
 
 
 def _signed_ratio(positive: object, negative: object, field: str) -> float:
@@ -83,7 +88,7 @@ def _signed_ratio(positive: object, negative: object, field: str) -> float:
 
 
 def project_snapshot(snapshot: Mapping[str, Any]) -> tuple[FeatureValue, ...]:
-    """Project one complete WebSocket snapshot into seven causal features."""
+    """Project one complete WebSocket snapshot into eight causal features."""
     if not isinstance(snapshot, Mapping):
         raise BinanceRealtimeProjectionError("snapshot must be a mapping")
     if (
@@ -119,9 +124,10 @@ def project_snapshot(snapshot: Mapping[str, Any]) -> tuple[FeatureValue, ...]:
     spread_bps = _finite(book.get("spread_bps"), "book.spread_bps")
     if spread_bps < 0:
         raise BinanceRealtimeProjectionError("book spread is negative")
-    bid_depth = _depth_sum(depth.get("bids"), "depth.bids")
-    ask_depth = _depth_sum(depth.get("asks"), "depth.asks")
+    bid_depth, bid_depth_notional = _depth_totals(depth.get("bids"), "depth.bids")
+    ask_depth, ask_depth_notional = _depth_totals(depth.get("asks"), "depth.asks")
     depth_imbalance = (bid_depth - ask_depth) / (bid_depth + ask_depth)
+    executable_depth_usd = min(bid_depth_notional, ask_depth_notional)
     mark_price = _finite(mark.get("mark_price"), "mark.price", positive=True)
     index_price = _finite(mark.get("index_price"), "mark.index", positive=True)
     basis_bps = (mark_price - index_price) / index_price * 10_000.0
@@ -144,6 +150,7 @@ def project_snapshot(snapshot: Mapping[str, Any]) -> tuple[FeatureValue, ...]:
         funding_rate,
         taker_imbalance,
         liquidation_imbalance,
+        executable_depth_usd,
     )
     return tuple(
         FeatureValue(
@@ -159,6 +166,8 @@ def project_snapshot(snapshot: Mapping[str, Any]) -> tuple[FeatureValue, ...]:
 
 __all__ = [
     "BinanceRealtimeProjectionError",
+    "CAPACITY_FEATURE_ID",
+    "CORE_FEATURE_IDS",
     "FEATURE_IDS",
     "FEATURE_VERSION",
     "MATERIALIZER_VERSION",

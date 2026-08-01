@@ -233,12 +233,12 @@
     {
       "references": [
         {
-          "line": 14,
+          "line": 15,
           "module": "services.execution.paper_tca_history",
           "path": "services/console/api/artifact_paper_views.py"
         },
         {
-          "line": 15,
+          "line": 16,
           "module": "services.execution.dry_run_store",
           "path": "services/console/api/artifact_paper_views.py"
         },
@@ -254,7 +254,7 @@
     {
       "references": [
         {
-          "line": 334,
+          "line": 335,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
         }
@@ -313,7 +313,7 @@
     {
       "references": [
         {
-          "line": 467,
+          "line": 468,
           "module": "services.portfolio.optimizer",
           "path": "services/console/api/main.py"
         }
@@ -435,7 +435,7 @@
     {
       "references": [
         {
-          "line": 658,
+          "line": 659,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/main.py"
         },
@@ -461,7 +461,7 @@
     {
       "references": [
         {
-          "line": 92,
+          "line": 93,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/main.py"
         },
@@ -1010,6 +1010,11 @@
           "line": 19,
           "module": "services.features.leakage",
           "path": "services/research/leakage_evidence.py"
+        },
+        {
+          "line": 29,
+          "module": "services.features.binance_realtime_projection",
+          "path": "services/research/realtime_alpha_discovery.py"
         }
       ],
       "source": "research",
@@ -1224,7 +1229,7 @@
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "c131938541c3eb008b5df0d9582f249c86b7d415a4d8ee205c41d9eaf7e8a8c8",
+  "graph_sha256": "d066dd687c95f9c726c29c6579b969935c6f961e5a0f91677e0701098f9f1132",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
   "node_count": 20,
   "nodes": [
@@ -1262,7 +1267,7 @@
   "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 428,
+  "source_file_count": 431,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
