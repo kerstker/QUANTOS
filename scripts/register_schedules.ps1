@@ -175,6 +175,10 @@ $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
 $paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:45"
+# Reconcile candidate identity and every evidence stage before the next
+# five-minute paper worker. The job is read-mostly, idempotent, and L2-only.
+$alphaProductionWorkflowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Poll daily after the expected public-data close so a newly available
 # watermark is consumed promptly; the worker's internal seven-day due check
 # remains authoritative.
@@ -260,6 +264,8 @@ Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
   -Trigger $icTrigger
 Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_evaluation" `
   -Trigger $paperAlphaEvaluationTrigger
+Register-L2Task -Name "QUANTOS_alpha_production_workflow" -Module "alpha_production_workflow" `
+  -Trigger $alphaProductionWorkflowTrigger
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `

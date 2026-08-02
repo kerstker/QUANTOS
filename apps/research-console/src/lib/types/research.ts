@@ -1374,6 +1374,9 @@ export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
   stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER' | string;
   paper_class: 'FORWARD_CHALLENGER' | 'CANDIDATE_EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER';
   execution_paper: boolean;
+  execution_paper_eligible?: boolean;
+  workflow_identity_hash?: string | null;
+  workflow_bundle_hash?: string | null;
   deployment_eligible: false;
   blockers: string[];
   independent_evaluation?: {
@@ -1415,6 +1418,15 @@ export interface AlphaPipelinePayload {
     factory_survivors: number;
   };
   candidates: AlphaPipelineCandidate[];
+  workflow?: {
+    authority_present: boolean;
+    verified: boolean;
+    population_count?: number | null;
+    event_count?: number | null;
+    execution_paper_eligible_count: number;
+    release_commit?: string | null;
+    source_as_of_ms?: number | null;
+  };
   handoff: {
     factory_to_forward_registry_connected: boolean;
     forward_to_execution_dynamic: boolean;

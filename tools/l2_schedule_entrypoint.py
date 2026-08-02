@@ -25,6 +25,7 @@ from types import ModuleType
 ALLOWED_L2_MODULES = frozenset(
     {
         "alpha_paper_cycle",
+        "alpha_production_workflow",
         "alpha_maintenance_sweep",
         "artifact_admission_seal",
         "binance_realtime_market",

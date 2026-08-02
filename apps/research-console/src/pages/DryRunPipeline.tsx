@@ -670,6 +670,23 @@ export default function DryRunPipeline() {
               />
             </div>
 
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-line bg-inset/35 px-3 py-2 text-xs text-muted">
+              <Chip
+                label={alphaPipeline?.workflow?.verified ? 'ONE WORKFLOW' : 'WORKFLOW GATED'}
+                tone={alphaPipeline?.workflow?.verified ? 'pos' : 'warn'}
+              />
+              <span>
+                {alphaPipeline?.workflow?.population_count ?? alphaPipeline?.counts.forward_paper ?? 0} frozen identities
+                {' / '}{alphaPipeline?.workflow?.event_count ?? 0} evidence events
+                {' / '}{alphaPipeline?.workflow?.execution_paper_eligible_count ?? 0} paper-eligible now
+              </span>
+              {alphaPipeline?.workflow?.release_commit ? (
+                <span className="font-mono text-faint">
+                  release {alphaPipeline.workflow.release_commit.slice(0, 12)}
+                </span>
+              ) : null}
+            </div>
+
             <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
               <table className="w-full table-fixed text-left text-xs" aria-label="alpha paper pipeline">
                 <thead className="border-b border-line text-3xs uppercase tracking-[0.12em] text-faint">
@@ -693,6 +710,10 @@ export default function DryRunPipeline() {
                             ? 'LEGACY PAPER'
                             : candidate.execution_paper
                               ? 'CANDIDATE PAPER'
+                            : candidate.execution_paper_eligible
+                              ? 'PAPER ELIGIBLE'
+                            : candidate.stage === 'PARALLEL_VALIDATION'
+                              ? 'VALIDATING'
                             : candidate.independent_evaluation?.status === 'VERIFIED'
                               ? 'EVALUATED'
                               : 'FORWARD'}

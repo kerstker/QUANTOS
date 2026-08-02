@@ -294,6 +294,38 @@ def test_paper_health_blocks_missing_error_or_safety_fields():
     assert "REALTIME_BROKER_CONNECTIVITY_ENABLED" in report["blockers"]
 
 
+def test_required_unique_alpha_workflow_is_fail_closed() -> None:
+    invalid = evaluate_paper_health(
+        _realtime(),
+        _preview(),
+        now_ms=2_000,
+        alpha_production_workflow={},
+    )
+    assert "UNIQUE_ALPHA_PRODUCTION_WORKFLOW_NOT_VERIFIED" in invalid["blockers"]
+    assert invalid["verdict"]["unique_alpha_production_workflow_verified"] is False
+
+    verified = evaluate_paper_health(
+        _realtime(),
+        _preview(),
+        now_ms=2_000,
+        alpha_production_workflow={
+            "schema_version": 1,
+            "authority": "ALPHA_PRODUCTION_WORKFLOW",
+            "status": "VERIFIED",
+            "active_candidate_ids": list(ALPHA_IDS),
+            "population_count": len(ALPHA_IDS),
+            "event_count": len(ALPHA_IDS),
+            "execution_paper_eligible_ids": [],
+            "safety": {
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+        },
+    )
+    assert "UNIQUE_ALPHA_PRODUCTION_WORKFLOW_NOT_VERIFIED" not in verified["blockers"]
+    assert verified["verdict"]["unique_alpha_production_workflow_verified"] is True
+
+
 def test_main_distinguishes_safe_not_ready_from_evaluation_failure(
     monkeypatch, tmp_path
 ):

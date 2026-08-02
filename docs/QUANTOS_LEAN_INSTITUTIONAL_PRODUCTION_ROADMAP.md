@@ -167,6 +167,13 @@ Gate 只允许 `PASS / FAIL / ABSTAIN / PENDING`。AI 不能覆盖结果；材�
 建立 `AlphaProductionWorkflow`、`CandidateEvidenceBundle`、唯一 Population Registry 和材料变化分类。
 Factory、历史 OOS、Signal Shadow、Execution Paper、生命周期和前端只消费这一份状态。
 
+状态（2026-08-02）：**核心已实现，进入发布激活验收。** 已落地追加式双哈希链 Population/Event
+权威、并行历史 OOS + Signal Shadow 状态、候选证据包、材料变化/后继身份分类、五分钟幂等调和器、
+统一消费适配、Paper health 硬门、备份 source-contract v3 和 SSE 控制台投影。现役证据诚实显示
+10 个候选、0 个当前 Execution-Paper eligible、3 个 legacy diagnostic book；没有用接线完成替代统计
+通过。设计与边界见
+[`engineering/specs/2026-08-02-alpha-production-workflow.md`](engineering/specs/2026-08-02-alpha-production-workflow.md)。
+
 ### WP2：生产级 Paper 变绿
 
 修复 marks 新鲜度、候选通用九引擎输入、preview/fill、intent/fill/position/PnL 对账；

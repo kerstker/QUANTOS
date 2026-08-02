@@ -4,7 +4,7 @@ import ast
 import json
 from pathlib import Path
 
-from tools.l2_backup import DEFAULT_SOURCES
+from tools.l2_backup import DEFAULT_SOURCES, SOURCE_CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +43,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
     }
     assert actual == {
         "data/cache/alpha_maintenance.db": ("alpha_maintenance", False),
+        "data/cache/alpha_production_workflow.db": (
+            "alpha_production_workflow",
+            True,
+        ),
         "data/cache/approvals.db": ("approval_authority", False),
         "data/cache/artifact_admission.db": (
             "artifact_admission_authority",
@@ -65,6 +69,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         ),
         "data/cache/live_kill_switch.db": ("kill_switch_authority", False),
         "data/cache/live_refresh_history.db": ("data_refresh_history", True),
+        "data/cache/paper_candidate_registry.db": (
+            "factory_candidate_admission",
+            False,
+        ),
         "data/cache/paper_track.db": ("paper_track", True),
         "data/cache/research_runs.db": ("research_run_registry", True),
         "data/cache/vendor_delivery_history.db": (
@@ -90,7 +98,7 @@ def test_top_tier_backup_and_restore_require_the_exact_l2_source_contract():
     backup = requirements["OPS.BACKUP.ENCRYPTED"]
     restore = requirements["OPS.RESTORE.DRILL"]
     expected_contract = {
-        "version": 2,
+        "version": SOURCE_CONTRACT_VERSION,
         "sources": sorted(
             (
                 {

@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from quantos.contracts.hashing import stable_hash
 from quantos.runtime_paths import runtime_state_root
 from services.execution.paper_tca_history import build_paper_tca_history
 from services.execution.dry_run_store import DryRunStore
@@ -41,6 +42,9 @@ _CANDIDATE_ADMISSION_STATUS = os.path.join(
 )
 _FORWARD_CANDIDATE_EVALUATIONS = os.path.join(
     _REPO_ROOT, "data", "cache", "forward_alpha_evaluations.json"
+)
+_ALPHA_PRODUCTION_WORKFLOW = os.path.join(
+    _REPO_ROOT, "data", "cache", "alpha_production_workflow.json"
 )
 _PAPER_RESEARCH_RISK_BUNDLE = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_research_risk_inputs.json"
@@ -469,6 +473,7 @@ def _dry_run_watch_paths() -> tuple[str, ...]:
         _FACTORY_LOOP_STATUS,
         _CANDIDATE_ADMISSION_STATUS,
         _FORWARD_CANDIDATE_EVALUATIONS,
+        _ALPHA_PRODUCTION_WORKFLOW,
         _PAPER_RESEARCH_RISK_BUNDLE,
         _LIVE_REFRESH_STATUS,
         _SCHEDULER_WATCHDOG_STATUS,
@@ -568,10 +573,51 @@ def _alpha_pipeline_payload(
     risk_bundle = _load_json_object(_PAPER_RESEARCH_RISK_BUNDLE) or {}
     risk_rows = risk_bundle.get("alphas")
     risk_rows = risk_rows if isinstance(risk_rows, dict) else {}
+    workflow = _load_json_object(_ALPHA_PRODUCTION_WORKFLOW) or {}
+    workflow_rows_raw = workflow.get("candidates")
+    workflow_rows_raw = workflow_rows_raw if isinstance(workflow_rows_raw, list) else []
+    workflow_rows = {
+        str(row.get("candidate_id")): row
+        for row in workflow_rows_raw
+        if isinstance(row, dict) and isinstance(row.get("candidate_id"), str)
+    }
+    active_workflow_ids = workflow.get("active_candidate_ids")
+    workflow_verified = bool(
+        workflow.get("schema_version") == 1
+        and workflow.get("authority") == "ALPHA_PRODUCTION_WORKFLOW"
+        and workflow.get("status") == "VERIFIED"
+        and isinstance(active_workflow_ids, list)
+        and active_workflow_ids
+        and active_workflow_ids == list(dict.fromkeys(active_workflow_ids))
+        and all(
+            isinstance(alpha_id, str)
+            and isinstance(workflow_rows.get(alpha_id), dict)
+            and isinstance(workflow_rows[alpha_id].get("identity"), dict)
+            and workflow_rows[alpha_id].get("identity_hash")
+            == stable_hash(workflow_rows[alpha_id]["identity"])
+            for alpha_id in active_workflow_ids
+        )
+        and isinstance(workflow.get("safety"), dict)
+        and workflow["safety"].get("live_allowed") is False
+        and workflow["safety"].get("order_submission_allowed") is False
+    )
     discovered = factory.get("discovered_chain")
     discovered = discovered if isinstance(discovered, list) else []
     raw_forward = forward_track.get("alphas")
     forward_rows = raw_forward if isinstance(raw_forward, list) else []
+    if workflow_verified:
+        forward_by_id = {
+            str(row.get("alpha_id")): row
+            for row in forward_rows
+            if isinstance(row, dict) and isinstance(row.get("alpha_id"), str)
+        }
+        forward_rows = [
+            {
+                "alpha_id": alpha_id,
+                **dict(forward_by_id.get(alpha_id) or {}),
+            }
+            for alpha_id in active_workflow_ids
+        ]
     realtime_alphas = paper_realtime.get("alphas")
     realtime_alphas = realtime_alphas if isinstance(realtime_alphas, dict) else {}
     # The realtime artifact also carries visible FORWARD_PENDING challenger
@@ -589,43 +635,73 @@ def _alpha_pipeline_payload(
         if not isinstance(row, dict) or not isinstance(row.get("alpha_id"), str):
             continue
         alpha_id = str(row["alpha_id"])
-        execution_paper = alpha_id in execution_ids
-        legacy_diagnostic_paper = (
-            execution_paper and alpha_id in _LEGACY_DIAGNOSTIC_PAPER_IDS
+        workflow_row = workflow_rows.get(alpha_id) if workflow_verified else None
+        workflow_bundle = (
+            workflow_row.get("workflow") if isinstance(workflow_row, dict) else None
         )
+        workflow_bundle = workflow_bundle if isinstance(workflow_bundle, dict) else {}
+        workflow_gates = {
+            str(item.get("gate")): item
+            for item in workflow_bundle.get("gates", [])
+            if isinstance(item, dict) and isinstance(item.get("gate"), str)
+        }
+        workflow_stage = workflow_bundle.get("stage")
+        execution_evidence = workflow_gates.get("EXECUTION_PAPER", {})
+        if workflow_verified:
+            execution_paper = bool(
+                workflow_stage == "EXECUTION_PAPER"
+                or execution_evidence.get("status")
+                in {"PAPER_MARKED", "LEGACY_DIAGNOSTIC"}
+            )
+            legacy_diagnostic_paper = bool(
+                workflow_bundle.get("legacy_diagnostic") is True
+            )
+        else:
+            execution_paper = alpha_id in execution_ids
+            legacy_diagnostic_paper = (
+                execution_paper and alpha_id in _LEGACY_DIAGNOSTIC_PAPER_IDS
+            )
         evaluation_row = evaluation_rows.get(alpha_id)
         evaluation_row = evaluation_row if isinstance(evaluation_row, dict) else {}
         evaluation_ref = evaluation_row.get("evaluation")
         evaluation_ref = evaluation_ref if isinstance(evaluation_ref, dict) else {}
         risk_row = risk_rows.get(alpha_id)
         risk_row = risk_row if isinstance(risk_row, dict) else {}
-        maturity = row.get("n_forward_periods")
+        maturity = (
+            workflow_bundle.get("observed_forward_periods")
+            if workflow_verified
+            else row.get("n_forward_periods")
+        )
         try:
             maturity_periods = int(maturity) if maturity is not None else None
         except (TypeError, ValueError):
             maturity_periods = None
-        blockers: list[str] = []
-        if legacy_diagnostic_paper:
-            blockers.append("LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE")
-        elif not execution_paper:
-            if evaluation_row.get("status") != "VERIFIED" or evaluation_ref.get("verified") is not True:
-                blockers.append("INDEPENDENT_EVALUATION_PENDING")
-            if evaluation_ref.get("verdict") != "PASS":
-                blockers.append("INDEPENDENT_EVALUATION_NOT_PASS")
-            if maturity_periods is None or maturity_periods < _EVIDENCE_GATE_WEEKS:
-                blockers.append("FORWARD_EVIDENCE_MATURITY_PENDING")
-            if risk_row.get("status") != "READY":
-                blockers.append("FULL_NINE_ENGINE_RISK_PACKET_PENDING")
-            if not blockers:
-                blockers.append("NOT_IN_EXECUTION_PAPER_UNIVERSE")
+        if workflow_verified:
+            blockers = list(workflow_bundle.get("blockers") or [])
+        else:
+            blockers = []
+            if legacy_diagnostic_paper:
+                blockers.append("LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE")
+            elif not execution_paper:
+                if evaluation_row.get("status") != "VERIFIED" or evaluation_ref.get("verified") is not True:
+                    blockers.append("INDEPENDENT_EVALUATION_PENDING")
+                if evaluation_ref.get("verdict") != "PASS":
+                    blockers.append("INDEPENDENT_EVALUATION_NOT_PASS")
+                if maturity_periods is None or maturity_periods < _EVIDENCE_GATE_WEEKS:
+                    blockers.append("FORWARD_EVIDENCE_MATURITY_PENDING")
+                if risk_row.get("status") != "READY":
+                    blockers.append("FULL_NINE_ENGINE_RISK_PACKET_PENDING")
+                if not blockers:
+                    blockers.append("NOT_IN_EXECUTION_PAPER_UNIVERSE")
         candidates.append(
             {
                 **row,
                 "stage": (
                     "LEGACY_DIAGNOSTIC_PAPER"
                     if legacy_diagnostic_paper
-                    else "EXECUTION_PAPER"
-                    if execution_paper
+                    else str(workflow_stage)
+                    if workflow_verified and workflow_stage
+                    else "EXECUTION_PAPER" if execution_paper
                     else "FORWARD_PAPER"
                 ),
                 "paper_class": (
@@ -638,6 +714,15 @@ def _alpha_pipeline_payload(
                 "execution_paper": execution_paper,
                 "deployment_eligible": False,
                 "blockers": blockers,
+                "workflow_identity_hash": (
+                    workflow_row.get("identity_hash")
+                    if isinstance(workflow_row, dict)
+                    else None
+                ),
+                "workflow_bundle_hash": workflow_bundle.get("bundle_hash"),
+                "execution_paper_eligible": bool(
+                    workflow_bundle.get("eligible_for_execution_paper") is True
+                ),
                 "independent_evaluation": {
                     "status": evaluation_row.get("status", "NOT_AVAILABLE"),
                     "verified": evaluation_ref.get("verified") is True,
@@ -702,14 +787,40 @@ def _alpha_pipeline_payload(
             "factory_survivors": len(discovered),
         },
         "candidates": candidates,
+        "workflow": {
+            "authority_present": bool(workflow),
+            "verified": workflow_verified,
+            "population_count": workflow.get("population_count"),
+            "event_count": workflow.get("event_count"),
+            "execution_paper_eligible_count": len(
+                workflow.get("execution_paper_eligible_ids") or []
+            )
+            if workflow_verified
+            else 0,
+            "release_commit": (
+                (workflow.get("reconciliation") or {}).get("release_commit")
+                if isinstance(workflow.get("reconciliation"), dict)
+                else None
+            ),
+            "source_as_of_ms": (
+                (workflow.get("reconciliation") or {}).get("source_as_of_ms")
+                if isinstance(workflow.get("reconciliation"), dict)
+                else None
+            ),
+        },
         "handoff": {
             "factory_to_forward_registry_connected": handoff_connected,
             "forward_to_execution_dynamic": (
-                forward_count == candidate_execution_count and forward_count > 0
+                workflow_verified
+                or (forward_count == candidate_execution_count and forward_count > 0)
             ),
             "status": (
                 "CONNECTED"
-                if handoff_connected and forward_count == candidate_execution_count
+                if handoff_connected
+                and (
+                    workflow_verified
+                    or forward_count == candidate_execution_count
+                )
                 else "GAPPED"
             ),
             "gap_codes": [
@@ -718,7 +829,11 @@ def _alpha_pipeline_payload(
                     ("FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED", bool(factory) and not handoff_connected),
                     (
                         "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
-                        forward_count > candidate_execution_count,
+                        not workflow_verified and forward_count > candidate_execution_count,
+                    ),
+                    (
+                        "UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED",
+                        not workflow_verified,
                     ),
                     (
                         "LEGACY_DIAGNOSTIC_PAPER_QUARANTINED",

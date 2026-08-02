@@ -31,6 +31,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert registered_modules
     assert registered_modules <= {
         "alpha_maintenance_sweep",
+        "alpha_production_workflow",
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
