@@ -2169,8 +2169,10 @@ def _alpha_trial_ledger_evidence(
 def _l2_source_contract_error(contract: Any) -> str | None:
     if not isinstance(contract, dict) or set(contract) != {"version", "sources"}:
         return "source contract must contain only version and sources"
-    if contract.get("version") != 2:
-        return "source contract version must be 2"
+    # v3 (2026-08-02, WP1) added data/cache/alpha_production_workflow.db as a
+    # required source; the structural validation below is version-agnostic.
+    if contract.get("version") not in (2, 3):
+        return "source contract version must be 2 or 3"
     sources = contract.get("sources")
     if not isinstance(sources, list) or not sources:
         return "source contract must declare at least one source"
