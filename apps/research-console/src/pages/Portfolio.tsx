@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { fetchPortfolioSnapshot } from '@/lib/api/research-console-api';
 import { mockCalculationLineage, mockPortfolioSims } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
@@ -6,7 +6,7 @@ import type { CalculationLineageItem, PortfolioDashboardPayload, PortfolioSimula
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, Chip, ProgressBar, KeyValue, type Column,
+  StatusChip, Chip, ProgressBar, KeyValue, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { AreaChart, UnderwaterChart, Donut, DivergingBars } from '@/ui/charts';
 import { num, pct, pctPoints, fixed, signed, money, shortHash, statusTone, type Tone } from '@/ui/format';
@@ -195,11 +195,12 @@ export default function Portfolio() {
   return (
     <PageShell>
       <PageHeader title="Portfolio Research" titleZh="组合研究"
-        subtitle={bi('组合模拟权益、回撤、权重构成与风险/收益归因(只读合成快照)。',
-          'Portfolio simulation equity, drawdown, weight composition and risk/return attribution (read-only synthetic snapshot).')}
+        subtitle={bi('组合权益、回撤、权重构成与风险/收益归因 —— 权重由真实约束优化器(风险平价,基于收益协方差)计算,收益序列按上方来源徽标区分真实/合成(只读)。',
+          'Portfolio equity, drawdown, weight composition and risk/return attribution — weights come from the real constrained optimizer (risk-parity over the return covariance); the return series is badged real vs synthetic above (read-only).')}
         actions={analyticsMethod ? <Chip label={analyticsMethod} tone="special" /> : undefined} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={6}>
         <StatTile label={bi('模拟状态', 'Status')} value={<StatusChip value={simulation.status} />} />
         <StatTile label={bi('夏普', 'Sharpe')} value={fixed(sharpe, 2)} tone={statusTone(sharpe >= 1 ? 'OK' : 'WATCH')} accent={sharpe >= 1} />
@@ -291,6 +292,7 @@ export default function Portfolio() {
         right={<Chip label={bi(`${lineage.length} 条`, `${lineage.length} steps`)} tone="info" />}>
         <DataTable columns={lineageCols} rows={lineage} dense getKey={it => it.id} />
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

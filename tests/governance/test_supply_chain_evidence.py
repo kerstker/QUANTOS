@@ -57,6 +57,23 @@ def test_supply_chain_manifest_binds_catalog_pbo_evidence_surface():
     } <= set(_MANIFESTS)
 
 
+def test_supply_chain_manifest_binds_automatic_alpha_candidate_handoff():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "apps/research-console/src/lib/types/research.ts",
+        "apps/research-console/src/pages/DryRunPipeline.tsx",
+        "services/console/api/artifact_paper_views.py",
+        "services/research/paper_candidate_registry.py",
+        "tools/alpha_candidate_admission.py",
+        "tools/crypto_factory_loop.py",
+        "tools/forward_track_advance.py",
+        "tests/research/test_paper_candidate_registry.py",
+        "tests/tools/test_alpha_candidate_admission.py",
+        "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 
@@ -155,7 +172,8 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "scripts/generate_event_schema_catalog.py",
         "scripts/generate_strong_identity_evidence.py",
         "scripts/register_schedules.ps1",
-        "tests/governance/test_l2_schedule_boundary.py",
+            "tests/governance/test_l2_schedule_boundary.py",
+            "tests/governance/test_artifact_admission_provisioning.py",
         "tests/tools/test_deployment_events.py",
         "evidence/event_schema_catalog.json",
     } <= set(evidence["manifest_sha256"])
@@ -179,10 +197,42 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert "PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED" not in evidence["m4_blockers"]
     assert "BASE_IMAGE_VULNERABILITY_EVIDENCE_MISSING" not in evidence["m4_blockers"]
     assert "CONTAINER_BUILD_REPRODUCIBILITY_NOT_PROVEN" not in evidence["m4_blockers"]
-    assert "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN" in evidence["m4_blockers"]
-    assert evidence["artifact_signature_status"] == ("VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING")
+    cross_host_verified = (
+        evidence["cross_host_container_reproducibility_status"]
+        == "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
+    )
+    if cross_host_verified:
+        assert (
+            evidence["cross_host_container_reproducibility_evidence"][
+                "builders"
+            ]
+            == ["ubuntu-22.04", "ubuntu-24.04"]
+        )
+        assert (
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
+            not in evidence["m4_blockers"]
+        )
+    else:
+        assert (
+            evidence["cross_host_container_reproducibility_status"]
+            == "NOT_PROVIDED"
+        )
+        assert (
+            evidence["cross_host_container_reproducibility_evidence_ref"]
+            is None
+        )
+        assert (
+            evidence["cross_host_container_reproducibility_evidence"] is None
+        )
+        assert (
+            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"
+            in evidence["m4_blockers"]
+        )
+    assert evidence["artifact_signature_status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+    )
     assert evidence["artifact_admission_verifier_status"] == (
-        "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+        "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED"
     )
     assert evidence["artifact_admission_contract_versions"] == {
         "policy": 3,
@@ -196,12 +246,12 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
     assert evidence["artifact_admission_policy_registry_status"] == (
         "L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_POLICIES"
     )
-    assert evidence["artifact_admission_policy_registry_generation"] == 0
+    assert evidence["artifact_admission_policy_registry_generation"] == 1
     assert evidence["artifact_admission_active_policy_count"] == 0
     assert evidence["artifact_admission_receipt_authority_registry_status"] == (
         "L2_REPOSITORY_PINNED_FAIL_CLOSED_NO_ACTIVE_KEYS"
     )
-    assert evidence["artifact_admission_receipt_authority_registry_generation"] == 0
+    assert evidence["artifact_admission_receipt_authority_registry_generation"] == 1
     assert evidence["artifact_admission_active_receipt_key_count"] == 0
     assert evidence["artifact_admission_library"] == "sigstore"
     assert evidence["artifact_admission_library_version"] == "4.4.0"
@@ -217,9 +267,18 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "VERIFY_ONLY_ED25519_AUTHORITY_REGISTRY_EMPTY_NO_EXTERNAL_RECEIPT"
     )
     assert evidence["artifact_admission_decision_store_status"] == (
-        "WIRED_FAIL_CLOSED_UNPROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
+        "WIRED_LOCAL_PROVISIONED_FIXED_PATH_HASH_CHAINED_SQLITE"
     )
-    assert evidence["artifact_admission_decision_store_provisioning_status"] == ("NOT_PROVIDED")
+    assert evidence["artifact_admission_decision_store_provisioning_status"] == (
+        "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
+    )
+    assert evidence["artifact_admission_authority_snapshot"]["decision_count"] == 0
+    authority_snapshot = evidence["artifact_admission_authority_snapshot"]
+    assert authority_snapshot["policy_registry_event_seq"] > 0
+    assert (
+        authority_snapshot["receipt_authority_registry_event_seq"]
+        > authority_snapshot["policy_registry_event_seq"]
+    )
     assert evidence["artifact_admission_decision_store_worm_status"] == ("NOT_WORM_LOCAL_FILE_REPLACEABLE")
     assert evidence["artifact_admission_registry_history_status"] == (
         "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -234,32 +293,121 @@ def test_supply_chain_artifacts_are_deterministic_and_honest():
         "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
     )
     assert evidence["artifact_admission_read_consistency_status"] == ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT")
-    assert evidence["artifact_admission_decision_history_external_seal_status"] == ("NOT_PROVIDED")
-    assert evidence["artifact_admission_valid_bundle_fixture_status"] == ("NOT_PROVIDED")
+    external_chain_head_verified = (
+        evidence["artifact_admission_decision_history_external_seal_status"]
+        == (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_REKOR_"
+            "ARTIFACT_ADMISSION_CHAIN_HEAD"
+        )
+    )
+    assert evidence[
+        "artifact_admission_decision_history_external_seal_evidence_ref"
+    ] == (
+        "evidence/external_sigstore/2026-07-31-admission"
+        if external_chain_head_verified
+        else "evidence/artifact_admission_seal_latest.json"
+    )
+    assert len(
+        evidence[
+            "artifact_admission_decision_history_external_seal_evidence_sha256"
+        ]
+    ) == 64
+    assert len(
+        evidence[
+            "artifact_admission_decision_history_external_anchor_sha256"
+        ]
+    ) == 64
+    assert evidence[
+        "artifact_admission_decision_history_external_destination_class"
+    ] in (
+        {"GITHUB_ACTIONS_REKOR"}
+        if external_chain_head_verified
+        else {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+    )
+    assert evidence[
+        "artifact_admission_decision_history_external_signature_verified"
+    ] is external_chain_head_verified
+    assert evidence[
+        "artifact_admission_decision_history_external_transparency_verified"
+    ] is external_chain_head_verified
+    assert evidence[
+        "artifact_admission_decision_history_external_worm_verified"
+    ] is False
+    assert evidence["artifact_admission_valid_bundle_fixture_status"] == (
+        "VERIFIED_RETAINED_EXTERNAL_SIGSTORE_DSSE_BUNDLE"
+    )
     assert evidence["artifact_admission_signing_capability_present"] is False
-    assert evidence["artifact_admission_external_bundle_status"] == "NOT_PROVIDED"
+    assert evidence["artifact_admission_external_bundle_status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+    )
+    assert evidence["artifact_admission_external_bundle_evidence_ref"] == (
+        "evidence/external_sigstore/2026-07-30"
+    )
+    assert evidence["artifact_admission_external_bundle_evidence"]["status"] == (
+        "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+    )
     assert evidence["artifact_admission_independent_deployment_status"] == ("NOT_PROVIDED")
     assert set(evidence["artifact_admission_implementation_sha256"]) == {
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/artifact_admission_external_seal.py",
+        "services/governance/json_integrity.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/artifact_admission_seal.py",
     }
-    assert set(evidence["artifact_admission_verification_paths"]) == {
+    expected_admission_verification_paths = {
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
     }
-    assert {
-        "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
-        "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+    if cross_host_verified:
+        expected_admission_verification_paths.add(
+            "tests/governance/test_cross_host_container_sigstore_evidence.py"
+        )
+    assert set(evidence["artifact_admission_verification_paths"]) == (
+        expected_admission_verification_paths
+    )
+    required_m4_blockers = {
         "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
         "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
         "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
-        "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
-    } <= set(evidence["m4_blockers"])
+    }
+    if external_chain_head_verified:
+        assert (
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+            not in evidence["m4_blockers"]
+        )
+        assert evidence[
+            "artifact_admission_decision_history_external_workflow_run"
+        ].startswith("https://github.com/kerstker/QUANTOS/actions/runs/")
+        assert len(
+            evidence[
+                "artifact_admission_decision_history_external_source_commit"
+            ]
+        ) == 40
+    else:
+        required_m4_blockers.add(
+            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+        )
+    assert required_m4_blockers <= set(evidence["m4_blockers"])
+    assert (
+        "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING"
+        not in evidence["m4_blockers"]
+    )
+    assert "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED" not in evidence["m4_blockers"]
+    assert (
+        "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"
+        not in evidence["m4_blockers"]
+    )
 
     requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

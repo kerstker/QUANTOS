@@ -10,10 +10,9 @@ import statistics
 from itertools import combinations
 from typing import Dict, Iterable, List, Optional, Sequence
 
-# Real historical crisis replay (realism engine RE-2) — pure stdlib functions, no IO/RNG/
-# wall-clock, no reverse dependency on services.risk. Roadmap Rank #7 wires it here so the
-# stress gate replays NAMED crises instead of fabricating fixed multipliers.
-from services.research.realism.scenario import (
+# Real historical crisis replay (realism engine RE-2) — shared pure stdlib functions,
+# with no IO/RNG/wall-clock and no reverse dependency on another service domain.
+from quantos.scenario import (
     CRYPTO_CRISES, iso_to_ms, max_drawdown_window, window_stats,
 )
 # Real complete-linkage clustering (2026-07-09, gap audit rank #3) — pure stdlib, no IO/RNG/
@@ -68,12 +67,23 @@ class MarketRiskEngine:
         series = _clean(returns)
         if not series:
             return MarketRiskReport(passed=False)
-        volatility = statistics.pstdev(series) * math.sqrt(252) if len(series) > 1 else 0.0
+        periods_per_year = float(config.periods_per_year)
+        if not math.isfinite(periods_per_year) or periods_per_year <= 0:
+            raise ValueError("periods_per_year must be a positive finite number")
+        volatility = (
+            statistics.pstdev(series) * math.sqrt(periods_per_year)
+            if len(series) > 1
+            else 0.0
+        )
         var_95 = abs(min(0.0, _percentile(series, 0.05)))
         tail = [value for value in series if value <= _percentile(series, 0.05)]
         cvar_95 = abs(statistics.fmean(tail)) if tail else 0.0
         downside = [min(0.0, value) for value in series]
-        downside_volatility = statistics.pstdev(downside) * math.sqrt(252) if len(downside) > 1 else 0.0
+        downside_volatility = (
+            statistics.pstdev(downside) * math.sqrt(periods_per_year)
+            if len(downside) > 1
+            else 0.0
+        )
         tail_loss_99 = abs(min(0.0, _percentile(series, 0.01)))
         max_daily_loss = abs(min(0.0, min(series)))
         passed = (
@@ -98,15 +108,24 @@ class LiquidityRiskEngine:
         weights: Dict[str, float],
         capacity_cny: Dict[str, float],
         daily_volume_cny: float,
+        total_aum: float,
         config: RiskConfig,
     ) -> LiquidityRiskReport:
         if not weights:
             return LiquidityRiskReport(passed=False)   # no book -> not evaluable, fail closed
         gross = sum(abs(value) for value in weights.values())
-        min_capacity = min(capacity_cny.values()) if capacity_cny else 0.0
-        avg_daily_volume_usage = gross / max(daily_volume_cny / 100_000_000, 1.0)
-        participation_rate = gross / max(len(weights), 1)
-        liquidation_days = int(math.ceil((gross * 100_000_000) / max(min_capacity, 1.0))) if gross else 0
+        gross_notional = gross * max(float(total_aum), 0.0)
+        avg_daily_volume_usage = gross_notional / max(float(daily_volume_cny), 1.0)
+        # ``capacity_cny`` is the producer's 10%-of-ADV executable daily
+        # capacity.  Recover per-name ADV from that explicit contract instead
+        # of treating portfolio weights as participation rates.
+        usages = {
+            key: abs(weight) * float(total_aum) / max(float(capacity_cny.get(key, 0.0)), 1.0)
+            for key, weight in weights.items()
+        }
+        capacity_usage = max(usages.values(), default=0.0)
+        participation_rate = min(1.0, 0.10 * capacity_usage)
+        liquidation_days = int(math.ceil(capacity_usage)) if gross else 0
         cost_to_liquidate_bps = participation_rate * 100
         liquidity_stress_score = avg_daily_volume_usage + participation_rate + liquidation_days / 100
         passed = (
@@ -357,4 +376,5 @@ class ModelAlphaRiskEngine:
             alphas_with_overfitting_flags=overfit,
             alphas_with_leakage_flags=leakage,
             min_validation_confidence=min_validation,
+            min_paper_confidence=min_paper,
         )

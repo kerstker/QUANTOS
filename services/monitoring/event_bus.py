@@ -609,9 +609,8 @@ class DurableEventBus:
     def _record_connection_state_locked(self) -> None:
         """Retain legacy diagnostics without advancing trusted frontiers."""
         self._known_total_changes = self._c.total_changes
-        self._known_data_version = int(
-            self._c.execute("PRAGMA data_version").fetchone()[0]
-        )
+        data_version = int(self._c.execute("PRAGMA data_version").fetchone()[0])
+        self._known_data_version = data_version
 
     def _verify_required_schema_locked(self) -> None:
         required_columns = {
@@ -1035,8 +1034,14 @@ class DurableEventBus:
         lease_until_ms: int,
         error_type: str = "",
         error_fingerprint: str = "",
+        prev_record_hash: str | None = None,
     ) -> tuple[int, str]:
         frontier = self._frontiers["consumer"]
+        previous = (
+            frontier.last_record_hash
+            if prev_record_hash is None
+            else prev_record_hash
+        )
         digest = _consumer_record_hash(
             consumer_id=consumer_id,
             event_seq=event_seq,
@@ -1048,7 +1053,7 @@ class DurableEventBus:
             lease_until_ms=lease_until_ms,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
-            prev_record_hash=frontier.last_record_hash,
+            prev_record_hash=previous,
         )
         cursor = self._c.execute(
             "INSERT INTO event_consumer_journal"
@@ -1066,7 +1071,7 @@ class DurableEventBus:
                 lease_until_ms,
                 error_type,
                 error_fingerprint,
-                frontier.last_record_hash,
+                previous,
                 digest,
             ),
         )
@@ -1447,7 +1452,7 @@ class DurableEventBus:
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._refresh_integrity_locked(force=True)
+                self._refresh_integrity_locked()
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
                 offset = self._consumer_offset_locked(consumer_id)
@@ -1542,7 +1547,7 @@ class DurableEventBus:
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._refresh_integrity_locked(force=True)
+                self._refresh_integrity_locked()
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
                 self._consumer_groups.require_ownership_locked(
@@ -1623,7 +1628,7 @@ class DurableEventBus:
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._refresh_integrity_locked(force=True)
+                self._refresh_integrity_locked()
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
                 self._require_active_delivery_locked(delivery, at_ms=at_ms)
@@ -1678,7 +1683,7 @@ class DurableEventBus:
         with self._lock:
             try:
                 self._c.execute("BEGIN IMMEDIATE")
-                self._refresh_integrity_locked(force=True)
+                self._refresh_integrity_locked()
                 self._refresh_consumer_integrity_locked()
                 self._refresh_group_integrity_locked()
                 self._require_active_delivery_locked(delivery, at_ms=at_ms)
@@ -1733,6 +1738,12 @@ class DurableEventBus:
                 " worker_id, at_ms, lease_until_ms, error_type, error_fingerprint,"
                 " prev_record_hash, record_hash FROM event_consumer_journal"
                 " WHERE action='DEAD_LETTERED'"
+                " AND NOT EXISTS ("
+                "   SELECT 1 FROM event_consumer_journal newer"
+                "   WHERE newer.consumer_id=event_consumer_journal.consumer_id"
+                "     AND newer.event_seq=event_consumer_journal.event_seq"
+                "     AND newer.journal_seq>event_consumer_journal.journal_seq"
+                " )"
             )
             params: tuple = ()
             if consumer_id is not None:
@@ -1823,8 +1834,14 @@ class DurableEventBus:
             dead_letters = int(
                 self._c.execute(
                     "SELECT COUNT(*) FROM event_consumer_journal"
-                    " WHERE action='DEAD_LETTERED' AND consumer_id IN ("
-                    f"{placeholders})",
+                    " AS dead WHERE action='DEAD_LETTERED' AND consumer_id IN ("
+                    f"{placeholders})"
+                    " AND NOT EXISTS ("
+                    "   SELECT 1 FROM event_consumer_journal newer"
+                    "   WHERE newer.consumer_id=dead.consumer_id"
+                    "     AND newer.event_seq=dead.event_seq"
+                    "     AND newer.journal_seq>dead.journal_seq"
+                    " )",
                     tuple(consumer_ids),
                 ).fetchone()[0]
             )

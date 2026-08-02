@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "report_kind": "READ_ONLY_LIVE_READINESS_CHECKLIST",
+  "verdict": "BLOCKED_POST_L2_REQUIREMENTS",
+  "live_allowed": false,
+  "order_submission_allowed": false,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "checks": {
+    "safety_flags": {
+      "status": "PASS",
+      "readiness": "L2_DRY_RUN_ONLY",
+      "live_trading_armed": false
+    },
+    "platform_readiness": {
+      "status": "BLOCK",
+      "current": "L2_DRY_RUN_ONLY",
+      "required_for_live": "L4_LIVE_APPROVED"
+    },
+    "alpha_forward_clock": {
+      "status": "BLOCK",
+      "required_periods_per_alpha": 8,
+      "realized_periods": {
+        "carry_oi_majors": 0,
+        "crowd_contra": 0,
+        "top_contra": 0
+      },
+      "pending_decisions": {
+        "carry_oi_majors": 1,
+        "crowd_contra": 1,
+        "top_contra": 1
+      },
+      "attested_pending_decisions": {
+        "carry_oi_majors": 1,
+        "crowd_contra": 1,
+        "top_contra": 1
+      },
+      "legacy_unattested_decisions": {
+        "carry_oi_majors": 2,
+        "crowd_contra": 2,
+        "top_contra": 1
+      },
+      "evidence_state": {
+        "carry_oi_majors": "DATA_BLOCKED",
+        "crowd_contra": "DATA_BLOCKED",
+        "top_contra": "DATA_BLOCKED"
+      },
+      "refresh_evidence_available": false,
+      "source": "data/cache/forward_track_status.json",
+      "ran_at": 1784811601048
+    },
+    "data_admission": {
+      "status": "BLOCK",
+      "quality": "PASS",
+      "lineage": "BLOCK",
+      "block_reasons": [
+        "LINEAGE:BACKFILL_DAYS_MISMATCH",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:prices",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:funding",
+        "LINEAGE:BACKFILL_ARTIFACT_MISMATCH:oi_metrics",
+        "LINEAGE:BACKFILL_ARCHIVE_MISMATCH"
+      ]
+    },
+    "event_authority": {
+      "status": "PASS",
+      "consistency": "PASS",
+      "health": "PASS",
+      "projection_rebuild": "PROMOTED_AND_RECOVERED",
+      "projection_exact": true,
+      "historical_failed_deliveries": 5
+    },
+    "go_no_go": {
+      "status": "PASS",
+      "forward_evidence": {
+        "present": true,
+        "ran_at": 1784811601048,
+        "gate_weeks": 8,
+        "alphas": {
+          "crowd_contra": {
+            "weeks_accumulated": 0,
+            "weeks_to_gate": 8,
+            "paper_sharpe": null,
+            "paper_ic": null,
+            "cum_return": null,
+            "backtest_reference_sharpe": 2.535014112509048,
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "legacy_unattested_decisions": 2,
+            "evidence_state": "DATA_BLOCKED"
+          },
+          "carry_oi_majors": {
+            "weeks_accumulated": 0,
+            "weeks_to_gate": 8,
+            "paper_sharpe": null,
+            "paper_ic": null,
+            "cum_return": null,
+            "backtest_reference_sharpe": 2.2349227898630595,
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "legacy_unattested_decisions": 2,
+            "evidence_state": "DATA_BLOCKED"
+          },
+          "top_contra": {
+            "weeks_accumulated": 0,
+            "weeks_to_gate": 8,
+            "paper_sharpe": null,
+            "paper_ic": null,
+            "cum_return": null,
+            "backtest_reference_sharpe": 2.215693413199477,
+            "pending_decisions": 1,
+            "attested_pending_decisions": 1,
+            "legacy_unattested_decisions": 1,
+            "evidence_state": "DATA_BLOCKED"
+          }
+        }
+      },
+      "current_for_forward_status": true
+    },
+    "strong_identity": {
+      "status": "PARTIAL",
+      "external_authority": null
+    },
+    "top_tier": {
+      "status": "NOT_TOP_TIER",
+      "summary": {
+        "failed": 4,
+        "manual_evidence_required": 2,
+        "partial": 2,
+        "passed": 14,
+        "red_lines_failed": 4,
+        "total": 22,
+        "unverified": 0
+      }
+    },
+    "real_broker_adapter": {
+      "status": "POST_L2_NOT_IMPLEMENTED",
+      "live_order_submission": false,
+      "note": "only the structural rejecting seam exists; no broker SDK or credentials are present"
+    },
+    "process_isolation_and_signing": {
+      "status": "POST_L2_NOT_IMPLEMENTED",
+      "note": "out-of-process signing authority and deployment isolation are design seams, not live authorization"
+    }
+  },
+  "blockers": [
+    "L2_READINESS_PINNED",
+    "REAL_BROKER_ADAPTER_AND_ORDER_PATH_MISSING",
+    "MULTI_PARTY_EXTERNAL_APPROVAL_AND_STRONG_IDENTITY_NOT_COMPLETE",
+    "PROCESS_ISOLATION_AND_OUT_OF_PROCESS_SIGNING_NOT_DEPLOYED",
+    "FORWARD_PAPER_EVIDENCE_NOT_COMPLETE",
+    "DATA_ADMISSION_NOT_PASS",
+    "TOP_TIER_RED_LINES_OPEN"
+  ],
+  "next_safe_actions": [
+    "keep the three candidates in the official forward-paper clock",
+    "restore a clean recent-data admission with matching raw-lineage backfill",
+    "complete the missing external identity, supply-chain, broker, process-isolation, compliance, and capital-route controls in a separately approved post-L2 program"
+  ]
+}

@@ -606,6 +606,37 @@ def test_mark_realized_preserves_single_pending_legacy_compatibility(db):
         ledger.mark_realized("missing", _T0)
 
 
+def test_paper_period_replay_is_idempotent_but_conflict_fails_closed(db):
+    store, _ = db
+    row = (_T0, 0.01, 0.2, "FORWARD_LIVE")
+
+    store.append_periods("a", [row])
+    store.append_periods("a", [row])
+
+    assert len(store.periods("a")) == 1
+    with pytest.raises(Exception, match="reused with different content"):
+        store.append_periods("a", [(_T0, 0.02, 0.2, "FORWARD_LIVE")])
+    assert store.periods("a")[0]["realized_return"] == pytest.approx(0.01)
+
+
+def test_mark_realized_requires_one_pending_decision(db):
+    _, ledger = db
+    ledger._conn.execute(
+        "INSERT INTO forward_decisions("
+        "alpha_id,decided_ts,recorded_at,weights_json,signals_json,source,realized"
+        ") VALUES (?,?,?,?,?,?,0)",
+        ("a", _T0, _T0, '{"BTC":1.0}', None, "LEGACY_FORWARD_DECISION"),
+    )
+    ledger._conn.commit()
+
+    ledger.mark_realized("a", _T0)
+
+    with pytest.raises(Exception, match="pending forward decision not found"):
+        ledger.mark_realized("a", _T0)
+    with pytest.raises(Exception, match="pending forward decision not found"):
+        ledger.mark_realized("missing", _T0)
+
+
 def test_realize_math_long_short_plus_funding(db):
     store, ledger = db
     # L/S 各半:BTC +0.5(涨 10%),ETH -0.5(涨 4%) -> 价差 0.5*0.10 - 0.5*0.04 = +0.03

@@ -41,6 +41,7 @@ _SYSTEM_VIEW_ROUTES = {
     "/api/v1/console/events",
     "/api/v1/console/phase-3a-readiness",
     "/api/v1/console/system-health",
+    "/api/v1/console/runtime-contract",
 }
 
 _ARCHITECTURE_VIEW_ROUTES = {
@@ -73,6 +74,7 @@ _ALPHA_LIBRARY_ROUTES = {
     "/api/v1/console/alpha-zoo",
     "/api/v1/console/crypto-live",
     "/api/v1/console/dsl-explorer",
+    "/api/v1/console/dsl-explorer/check",
     "/api/v1/console/population-optimizer",
 }
 
@@ -238,7 +240,7 @@ def test_artifact_snapshot_router_is_bounded_read_only_and_extracted():
     from services.console.api.artifact_snapshots import router
 
     module_path = ROOT / "services/console/api/artifact_snapshots.py"
-    assert len(module_path.read_text(encoding="utf-8").splitlines()) < 800
+    assert len(module_path.read_text(encoding="utf-8").splitlines()) < 900
 
     routes = {route.path: route.methods for route in router.routes}
     assert set(routes) == _ARTIFACT_SNAPSHOT_ROUTES

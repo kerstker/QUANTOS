@@ -28,7 +28,9 @@ def sortino(returns: Sequence[float], periods_per_year: int = 252) -> float:
     if len(returns) < 2:
         return 0.0
     downside = [min(0.0, r) for r in returns]
-    dd = statistics.pstdev(downside)
+    # 标准 Sortino 分母: RMS of downside returns around MAR=0 (二阶下偏矩),
+    # 而非 pstdev(downside) (围绕下行均值中心化, 会系统性低估下行偏差)
+    dd = math.sqrt(statistics.fmean([d * d for d in downside]))
     mean = statistics.fmean(returns)
     if dd > 0:
         return (mean / dd) * math.sqrt(periods_per_year)

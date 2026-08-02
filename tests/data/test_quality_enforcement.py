@@ -11,7 +11,7 @@ import pytest
 from services.data.file_ingest import FatalIngestionError, ingest_bars_csv
 from services.data.persistent_store import SqlitePITStore
 from services.data.quality import (VolumeDispersionError, assert_volume_dispersion,
-                                   check_volume_dispersion)
+                                   build_ingestion_report, check_volume_dispersion)
 
 
 # ---- (2) cross-instrument volume dispersion ----
@@ -112,3 +112,19 @@ def test_strict_ingestion_raises_on_out_of_order(tmp_path):
     with pytest.raises(FatalIngestionError):
         ingest_bars_csv(_csv(tmp_path, _OOO), store, dataset_id="BTC", strict=True)
     assert store.as_of("BTC", as_of_time=99999999) == []
+
+
+def test_explicit_boundaries_count_empty_instrument_as_missing():
+    """A multi-instrument completeness report must not silently omit an empty series."""
+    day = 86_400_000
+    report = build_ingestion_report(
+        "perp-mark",
+        {"BTC": [day, 2 * day], "ETH": []},
+        expected_interval=day,
+        expected_start=day,
+        expected_end=2 * day,
+    )
+    assert report.passed is False
+    assert report.missing_count == 2
+    check = next(c for c in report.checks if c.name == "completeness")
+    assert check.passed is False and "2 missing" in check.detail

@@ -1,50 +1,888 @@
 {
-  "alphas": [],
+  "schema_version": 1,
+  "observed_at_ms": 1785353719823,
+  "max_age_ms": 172800000,
+  "readiness": "L2_DRY_RUN_ONLY",
+  "source_database": "data/cache/paper_track.db",
+  "price_basis": "PERP_MARK_PRICE",
+  "decision_chain_valid": true,
+  "realization_chain_valid": true,
   "counts": {
-    "attested_decisions": 0,
-    "attested_pending": 0,
-    "attested_realizations": 0,
-    "legacy_unattested_decisions": 0
+    "attested_decisions": 16,
+    "attested_pending": 10,
+    "attested_realizations": 6,
+    "legacy_unattested_decisions": 5
   },
+  "alphas": [
+    {
+      "alpha_id": "carry_oi_majors",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785196800000
+      ],
+      "legacy_unattested_decisions": 2,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-6177705283b7196d6cb0c5b8e23e592a",
+          "evidence_sha256": "6177705283b7196d6cb0c5b8e23e592acea3466536cbca133f36bbfb22011744",
+          "decision_hash": "9438b6595c8e074afc83262b9ba9c18c4f17a46f69e3046d08c2108e3d515b98",
+          "recorded_at_ms": 1784724201820,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-128905840ea787607b52d2374f21443e",
+          "evidence_sha256": "128905840ea787607b52d2374f21443e5717f5b21bfc8fcfd09f88b87c445132",
+          "decision_hash": "b4f094e98d78237826d44ab59fb5bf2d7d961101e70325bed84e22e91cca1aad",
+          "recorded_at_ms": 1785352938381,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785196800000
+      ],
+      "legacy_unattested_decisions": 2,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-6177705283b7196d6cb0c5b8e23e592a",
+          "evidence_sha256": "6177705283b7196d6cb0c5b8e23e592acea3466536cbca133f36bbfb22011744",
+          "decision_hash": "9438b6595c8e074afc83262b9ba9c18c4f17a46f69e3046d08c2108e3d515b98",
+          "recorded_at_ms": 1784724201820,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-128905840ea787607b52d2374f21443e",
+          "evidence_sha256": "128905840ea787607b52d2374f21443e5717f5b21bfc8fcfd09f88b87c445132",
+          "decision_hash": "b4f094e98d78237826d44ab59fb5bf2d7d961101e70325bed84e22e91cca1aad",
+          "recorded_at_ms": 1785352938381,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_14d",
+      "status": "ATTESTED",
+      "attested_decisions": 1,
+      "attested_pending": 1,
+      "attested_realizations": 0,
+      "attested_weeks": 0,
+      "attested_as_of_weeks": [],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_3d",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785024000000
+      ],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-655ae51c2b1432122147fc2a97792953",
+          "evidence_sha256": "655ae51c2b1432122147fc2a977929531b5cc933fad610385cd09546198afd35",
+          "decision_hash": "2cf7951ce2bd1595361a7419773f6e8d9e2df8c0c65ae5870982f2d3747f5df5",
+          "recorded_at_ms": 1785232449961,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_q20",
+      "status": "ATTESTED",
+      "attested_decisions": 1,
+      "attested_pending": 1,
+      "attested_realizations": 0,
+      "attested_weeks": 0,
+      "attested_as_of_weeks": [],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_q20_14d",
+      "status": "ATTESTED",
+      "attested_decisions": 1,
+      "attested_pending": 1,
+      "attested_realizations": 0,
+      "attested_weeks": 0,
+      "attested_as_of_weeks": [],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_q25_3d",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785024000000
+      ],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-655ae51c2b1432122147fc2a97792953",
+          "evidence_sha256": "655ae51c2b1432122147fc2a977929531b5cc933fad610385cd09546198afd35",
+          "decision_hash": "2cf7951ce2bd1595361a7419773f6e8d9e2df8c0c65ae5870982f2d3747f5df5",
+          "recorded_at_ms": 1785232449961,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_contra_q35_3d",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785024000000
+      ],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-655ae51c2b1432122147fc2a97792953",
+          "evidence_sha256": "655ae51c2b1432122147fc2a977929531b5cc933fad610385cd09546198afd35",
+          "decision_hash": "2cf7951ce2bd1595361a7419773f6e8d9e2df8c0c65ae5870982f2d3747f5df5",
+          "recorded_at_ms": 1785232449961,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "crowd_taker_combo",
+      "status": "ATTESTED",
+      "attested_decisions": 1,
+      "attested_pending": 1,
+      "attested_realizations": 0,
+      "attested_weeks": 0,
+      "attested_as_of_weeks": [],
+      "legacy_unattested_decisions": 0,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-c93e7390cc9f74d4d40973602b7b6431",
+          "evidence_sha256": "c93e7390cc9f74d4d40973602b7b6431e54c3f0437cac02aa5425360e177d1a0",
+          "decision_hash": "053674e4bab256cfd8197c5cb1271bcee0c0beb302b42bb8eef06f243787a3b3",
+          "recorded_at_ms": 1784907665615,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    },
+    {
+      "alpha_id": "top_contra",
+      "status": "ATTESTED",
+      "attested_decisions": 2,
+      "attested_pending": 1,
+      "attested_realizations": 1,
+      "attested_weeks": 1,
+      "attested_as_of_weeks": [
+        1785196800000
+      ],
+      "legacy_unattested_decisions": 1,
+      "decision_sources": [
+        "FORWARD_L2_ATTESTED_DECISION"
+      ],
+      "realization_sources": [
+        "FORWARD_L2_ATTESTED_PERP_MARK_GROSS_PLUS_FUNDING"
+      ],
+      "decision_admission_refs": [
+        {
+          "admission_id": "data-admission-6177705283b7196d6cb0c5b8e23e592a",
+          "evidence_sha256": "6177705283b7196d6cb0c5b8e23e592acea3466536cbca133f36bbfb22011744",
+          "decision_hash": "9438b6595c8e074afc83262b9ba9c18c4f17a46f69e3046d08c2108e3d515b98",
+          "recorded_at_ms": 1784724201820,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        },
+        {
+          "admission_id": "data-admission-128905840ea787607b52d2374f21443e",
+          "evidence_sha256": "128905840ea787607b52d2374f21443e5717f5b21bfc8fcfd09f88b87c445132",
+          "decision_hash": "b4f094e98d78237826d44ab59fb5bf2d7d961101e70325bed84e22e91cca1aad",
+          "recorded_at_ms": 1785352938381,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
+        }
+      ],
+      "current_admission_ref": {
+        "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+        "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+        "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+        "recorded_at_ms": 1785353719823,
+        "expires_at_ms": 1785526519823,
+        "price_basis": "PERP_MARK_PRICE",
+        "instrument_scope": [
+          "ADA",
+          "ATOM",
+          "AVAX",
+          "BCH",
+          "BNB",
+          "BTC",
+          "DOGE",
+          "DOT",
+          "ETH",
+          "LINK",
+          "LTC",
+          "SOL",
+          "UNI",
+          "XRP"
+        ],
+        "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+        "verdict": "PASS"
+      }
+    }
+  ],
   "data_admission": {
-    "current_admission_ref": null,
-    "expires_at_ms": null,
-    "price_basis": null,
-    "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
-    "status": "UNAVAILABLE"
+    "status": "CURRENT",
+    "current_admission_ref": {
+      "admission_id": "data-admission-be8c2274feb9a8631230807f16570955",
+      "evidence_sha256": "be8c2274feb9a8631230807f16570955c5eb2df21d6f69027a754d0338d0c171",
+      "decision_hash": "5d4a2d9643c668a2baee045aade6169af40067dce738bbcf4e8750c862be4378",
+      "recorded_at_ms": 1785353719823,
+      "expires_at_ms": 1785526519823,
+      "price_basis": "PERP_MARK_PRICE",
+      "instrument_scope": [
+        "ADA",
+        "ATOM",
+        "AVAX",
+        "BCH",
+        "BNB",
+        "BTC",
+        "DOGE",
+        "DOT",
+        "ETH",
+        "LINK",
+        "LTC",
+        "SOL",
+        "UNI",
+        "XRP"
+      ],
+      "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
+      "verdict": "PASS"
+    },
+    "expires_at_ms": 1785526519823,
+    "price_basis": "PERP_MARK_PRICE",
+    "source": "DATA_QUALITY_ADMISSION_AUTHORITY"
   },
-  "decision_chain_valid": false,
-  "evidence_gate": {
-    "eligible": false,
-    "minimum_weeks": 8
-  },
-  "honesty_note": "Only v2 authority-bound realizations count; legacy and backfilled rows never count.",
   "implementation": {
     "files": {
       "services/research/paper_trading/forward.py": {
-        "sha256": "da41920d942d7685a9d50cec07473f6afc02505a7fdd8f027b2fb0843e7ba66d",
-        "size": 6342
+        "sha256": "75393692baac0822de61773a91d8c8a1d17ec2075997b97a3496dc2e1bcb6b7b",
+        "size": 6248
       },
       "services/research/paper_trading/forward_evidence.py": {
-        "sha256": "147167fdee8229348a206964da64117b59ca973fb1e92bf37046f381d04f180a",
-        "size": 2322
+        "sha256": "73774352d26fd6aa1ae4c252f4d4ac6267e4f4ef8a01492e3b8cacf90a7ccb24",
+        "size": 2701
       },
       "services/research/paper_trading/forward_store.py": {
-        "sha256": "4975e8461d54a9e23604734806d5b744e3ce1ea26ca128b3a755ce9d378eb47d",
-        "size": 40086
+        "sha256": "668ede33818d9ea411279e0814c00db244c8e7828eb20c3c5e477be954c1d508",
+        "size": 40043
       },
       "tools/forward_track_advance.py": {
-        "sha256": "13ffc8727eae73d4616dd5cdbf27c79721646cc859d33ad5ae5e7b9f434156e9",
-        "size": 20937
+        "sha256": "ac7edc911b48b159f3ccc2eedb9025ec2cba52941e778b77fc2f5a38a4aca2c3",
+        "size": 33748
       }
     },
-    "sha256": "0de5c11d8d2412d924533d97a89f1a5fa9d9830aa5b19ac8be3d524f981733e9"
+    "sha256": "d79ca306db6d8f4912476b15db6fb114934c927baf443c621d610065ff4263e8"
   },
-  "max_age_ms": 172800000,
-  "observed_at_ms": 1784296800000,
-  "price_basis": "PERP_MARK_PRICE",
-  "readiness": "L2_DRY_RUN_ONLY",
-  "realization_chain_valid": false,
-  "schema_version": 1,
-  "source_database": "data/cache/paper_track.db"
+  "evidence_gate": {
+    "minimum_weeks": 8,
+    "eligible": false
+  },
+  "honesty_note": "Only v2 authority-bound realizations count; legacy and backfilled rows never count."
 }

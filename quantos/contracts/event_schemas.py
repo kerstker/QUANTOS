@@ -28,6 +28,7 @@ from .events import (
     EVENT_PRETRADE_APPROVED,
     EVENT_PRETRADE_REJECTED,
     EVENT_RESEARCH_RISK_EVALUATED,
+    EVENT_SHADOW_OBSERVED,
     Event,
     EventTimestampUnit,
     event_timestamp_to_milliseconds,
@@ -155,12 +156,32 @@ class _ResearchRiskEvaluatedPayload(_Payload):
     engines_skipped: list[str]
     gates_passed: int = Field(ge=0)
     gates_run: int = Field(ge=1)
-    provenance: Literal["REAL_RESEARCH_RISK_SUBSET"]
+    # SUBSET is the original honest dry-run seam.  FULL is emitted only when
+    # all nine research-risk engines were fed validated, point-in-time inputs;
+    # both remain research evidence and never grant live-trading capability.
+    provenance: Literal["REAL_RESEARCH_RISK_SUBSET", "REAL_RESEARCH_RISK_FULL"]
     reasons: list[str]
     run_id: str = Field(min_length=1)
     run_repro_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     series: str = Field(min_length=1)
     strategy_id: str = Field(min_length=1)
+
+
+class _ShadowObservedPayload(_Payload):
+    """SHADOW 观测的脱敏摘要(727 §12.2,Phase 7 S2)——只含标量结论,
+    不含盘口簿/walk 明细(完整观测在 shadow_store 行 payload_json)。新事件类型,
+    timestamp 为 Unix epoch 微秒(现行约定,catalog 钉死 latest 一律 µs)。"""
+    as_of_ms: int | None = Field(default=None, gt=0)
+    book_age_ms: int | None = None
+    decision_price: float = Field(gt=0)
+    executable_vwap: float | None = Field(default=None, gt=0)
+    instrument_id: str = Field(min_length=1)
+    observation_id: str = Field(pattern=r"^shd_[0-9a-f]{16}$")
+    provenance: Literal["SHADOW"]
+    quantity: float = Field(gt=0)
+    run_label: str = Field(min_length=1)
+    side: Literal["BUY", "SELL"]
+    slippage_bps_vs_decision: float | None = None
 
 
 @dataclass(frozen=True)
@@ -490,6 +511,13 @@ CANONICAL_EVENT_SCHEMAS = EventSchemaRegistry(
             domain="risk",
             source="services.risk.research_risk.dry_run_guard",
             criticalities=("C1", "C2"),
+        ),
+        _schema(
+            EVENT_SHADOW_OBSERVED,
+            _ShadowObservedPayload,
+            domain="execution",
+            source="live.execution.shadow_store",
+            criticalities=("C2",),
         ),
     )
 )

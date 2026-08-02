@@ -31,28 +31,19 @@ _SNAP = os.path.join("data", "cache", "crypto_funding_snapshot.json")
 _FUND_CACHE = os.path.join("data", "cache", "crypto_funding_rates.json")
 _OUT = os.path.join("data", "cache", "crypto_carry_strategy.json")
 
-FUND = ("field", "funding")
-def _z_neg(op, w): return ("cs_zscore", ("neg", (op, FUND, w)))
-# de-redundant carry composite: average of robust smoothings (the search's winners)
-COMPOSITE = ("div", ("add", ("add", _z_neg("decay_linear", 3), _z_neg("decay_linear", 7)),
-                     ("add", _z_neg("decay_linear", 14), _z_neg("ts_mean", 7))), ("const", 4.0))
-QUANTILE = 0.2
+# F2 (2026-07-27): COMPOSITE, FUND and the shared _legs book-builder MOVED to the single
+# source of truth services/factor_garden/canonical.py (COMPOSITE was a verbatim duplicate of
+# crypto_oi_research.CARRY — killed); re-exported here under the historical names so every
+# importer sees the same objects. QUANTILE stays 0.2 = CARRY_QUANTILE_OFFLINE (the live track
+# uses 0.3 — the divergence is deliberately NOT unified, recorded in canonical.py).
+from services.factor_garden.canonical import (
+    CARRY_COMPOSITE_EXPRESSION as COMPOSITE,
+    CARRY_QUANTILE_OFFLINE,
+    FUNDING_FIELD as FUND,
+    legs as _legs,
+)
+QUANTILE = CARRY_QUANTILE_OFFLINE
 FEE_BPS = (0, 2, 5, 10, 20)        # per unit traded notional, one-way (perp: ~2 maker / ~5 taker)
-
-
-def _legs(sig_row, q):
-    idx = [i for i, v in enumerate(sig_row) if v is not None]
-    if len(idx) < 4:
-        return {}
-    idx.sort(key=lambda i: sig_row[i])
-    k = max(1, int(round(len(idx) * q)))
-    longs, shorts = idx[-k:], idx[:k]
-    w = {}
-    for i in longs:
-        w[i] = 0.5 / len(longs)
-    for i in shorts:
-        w[i] = w.get(i, 0.0) - 0.5 / len(shorts)
-    return w
 
 
 def main() -> None:

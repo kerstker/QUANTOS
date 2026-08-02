@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "BINANCE_FUTURES_TESTNET_SMOKE",
+  "observed_at_ms": 1785231087406,
+  "venue": "BINANCE_FUTURES_TESTNET",
+  "place_order_requested": true,
+  "checks": [
+    {
+      "name": "credential_load_and_testnet_adapter",
+      "status": "PASS",
+      "venue_mode": "testnet"
+    },
+    {
+      "name": "exchange_filters",
+      "status": "PASS",
+      "symbol_count": 670,
+      "btc": {
+        "step_size": 0.0001,
+        "min_qty": 0.0001,
+        "min_notional": 50.0,
+        "tick_size": 0.1
+      }
+    },
+    {
+      "name": "signed_account",
+      "status": "PASS",
+      "field_names": [
+        "assets",
+        "availableBalance",
+        "canDeposit",
+        "canTrade",
+        "canWithdraw",
+        "feeBurn",
+        "feeTier",
+        "maxWithdrawAmount",
+        "multiAssetsMargin",
+        "positions",
+        "totalCrossUnPnl",
+        "totalCrossWalletBalance",
+        "totalInitialMargin",
+        "totalMaintMargin",
+        "totalMarginBalance",
+        "totalOpenOrderInitialMargin",
+        "totalPositionInitialMargin",
+        "totalUnrealizedProfit",
+        "totalWalletBalance",
+        "tradeGroupId",
+        "updateTime"
+      ],
+      "asset_row_count": 8,
+      "position_row_count": 730,
+      "can_trade": true,
+      "can_withdraw": true
+    },
+    {
+      "name": "normalized_positions",
+      "status": "PASS",
+      "nonzero_position_count": 14,
+      "instrument_ids": [
+        "AAVE",
+        "ADA",
+        "BNB",
+        "BTC",
+        "DOGE",
+        "DOT",
+        "ETC",
+        "INJ",
+        "LTC",
+        "NEAR",
+        "SOL",
+        "TRX",
+        "XLM",
+        "XRP"
+      ]
+    },
+    {
+      "name": "idempotent_missing_order_lookup",
+      "status": "PASS",
+      "returned_none": true
+    },
+    {
+      "name": "testnet_order_submit",
+      "status": "PASS",
+      "venue_order_id": "24529262944",
+      "client_order_id": "quantos-smoke-1785231091",
+      "instrument_id": "BTC",
+      "order_status": "NEW",
+      "filled_qty": 0.0,
+      "avg_price": 0.0
+    },
+    {
+      "name": "testnet_order_requery",
+      "status": "PASS",
+      "venue_order_id": "24529262944",
+      "client_order_id": "quantos-smoke-1785231091",
+      "instrument_id": "BTC",
+      "order_status": "FILLED",
+      "filled_qty": 0.002,
+      "avg_price": 63480.1
+    }
+  ],
+  "verdict": "PASS",
+  "safety": {
+    "testnet_only": true,
+    "real_capital": false,
+    "mainnet_order_submission": false,
+    "credentials_persisted": false,
+    "secret_values_in_evidence": false,
+    "raw_account_response_persisted": false
+  }
+}

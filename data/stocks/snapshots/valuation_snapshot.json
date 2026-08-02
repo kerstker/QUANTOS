@@ -1,0 +1,20 @@
+{
+  "artifact": "ASHARE_VALUATION_SNAPSHOT",
+  "asof": "2026-07-24",
+  "universe_size": 3,
+  "fetched": 3,
+  "skipped": 0,
+  "failed": {},
+  "rows_in_db": 3,
+  "fields": [
+    "name",
+    "close",
+    "mcap",
+    "pe_ttm",
+    "pe_lyr",
+    "pb",
+    "pb_lf",
+    "dividend_yield"
+  ],
+  "scope_note": "current cross-section only, NOT a PIT valuation history"
+}

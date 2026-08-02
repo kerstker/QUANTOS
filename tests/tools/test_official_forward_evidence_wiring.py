@@ -27,6 +27,9 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
         def decisions(self, alpha_id):
             return []
 
+        def attested_decisions(self, alpha_id):
+            return []
+
         def record_decision(self, *args, **kwargs):
             calls["record"] += 1
             raise AssertionError("BLOCK must not record")
@@ -45,7 +48,7 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
             pass
 
         def track(self, alpha_id):
-            return {}
+            return None
 
     now_ms = 1_700_000_000_000
     event_times = (now_ms - 14 * 86_400_000, now_ms - 7 * 86_400_000)
@@ -59,19 +62,28 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
 
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
-    monkeypatch.setattr(driver, "ForwardLedger", Ledger)
+    monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
+        "schema_version": 1,
+        "observed_at_ms": now_ms,
+    })
+    monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
     monkeypatch.setattr(driver, "_ALPHAS", {"alpha": object()})
     monkeypatch.setattr(driver.ax, "evaluate", lambda expr, current: ((1.0,), (1.0,)))
-    monkeypatch.setattr(driver, "build_panel", lambda: (panel, None))
+    monkeypatch.setattr(driver, "build_panel", lambda **_kwargs: (panel, None))
     monkeypatch.setattr(driver, "load_mark_prices", lambda: {"BTC": {
         event_times[0]: 100.0,
         event_times[1]: 101.0,
     }})
     monkeypatch.setattr(driver, "rows_with_acceptable_coverage", lambda sig, rows: rows)
-    monkeypatch.setattr(driver, "_weights_and_signals", lambda sig, insts: ({"BTC": 1.0}, {"BTC": 1.0}))
+    monkeypatch.setattr(
+        driver,
+        "_weights_and_signals",
+        lambda sig, insts, **_kwargs: ({"BTC": 1.0}, {"BTC": 1.0}),
+    )
     monkeypatch.setattr(driver, "_reference_sharpe", lambda *args, **kwargs: (None, 0))
-    monkeypatch.setattr(driver, "staleness_days", lambda current: {
+    monkeypatch.setattr(driver, "staleness_days", lambda current, **_kwargs: {
         name: {"freshest_days": 0, "n_stale": 0, "n_total": 1}
         for name in driver.STALE_LIMITS
     })
@@ -83,6 +95,11 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
             "perp_mark_prices": 1,
         }},
     })
+    monkeypatch.setattr(
+        driver,
+        "refresh_lineage_backfill",
+        lambda **_kwargs: (True, {"status": "PASS"}, []),
+    )
     reference = ForwardAdmissionRef(
         admission_id="data-admission-test",
         evidence_sha256="a" * 64,
@@ -119,6 +136,9 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
         def decisions(self, alpha_id):
             return list(self._decisions)
 
+        def attested_decisions(self, alpha_id):
+            return list(self._decisions)
+
         def record_decision(self, alpha_id, decided_ts, **kwargs):
             calls["record"].append(kwargs)
             self._decisions.append({"decided_ts": decided_ts})
@@ -128,7 +148,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             return []
 
         def attested_pending(self, alpha_id):
-            return []
+            return list(self._decisions)
 
         def legacy_decisions(self):
             return []
@@ -138,7 +158,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             pass
 
         def track(self, alpha_id):
-            return {}
+            return None
 
     now_ms = 1_700_000_000_000
     event_times = (now_ms - 14 * 86_400_000, now_ms - 7 * 86_400_000)
@@ -155,11 +175,16 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
 
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
-    monkeypatch.setattr(driver, "ForwardLedger", Ledger)
+    monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
+        "schema_version": 1,
+        "observed_at_ms": now_ms,
+    })
+    monkeypatch.setattr(driver, "AttestedForwardLedger", Ledger)
     monkeypatch.setattr(driver, "PaperTrackStore", Store)
     monkeypatch.setattr(driver, "_ALPHAS", {"alpha": object()})
     monkeypatch.setattr(driver.ax, "evaluate", lambda expr, current: ((1.0,), (1.0,)))
-    monkeypatch.setattr(driver, "build_panel", lambda: (SimpleNamespace(
+    monkeypatch.setattr(driver, "build_panel", lambda **_kwargs: (SimpleNamespace(
         instruments=("BTC",),
         event_times=event_times,
         matrices={"close": ((100.0,), (101.0,))},
@@ -169,9 +194,13 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
         event_times[1]: 101.0,
     }})
     monkeypatch.setattr(driver, "rows_with_acceptable_coverage", lambda sig, rows: rows)
-    monkeypatch.setattr(driver, "_weights_and_signals", lambda sig, insts: ({"BTC": 1.0}, {"BTC": 1.0}))
+    monkeypatch.setattr(
+        driver,
+        "_weights_and_signals",
+        lambda sig, insts, **_kwargs: ({"BTC": 1.0}, {"BTC": 1.0}),
+    )
     monkeypatch.setattr(driver, "_reference_sharpe", lambda *args, **kwargs: (None, 0))
-    monkeypatch.setattr(driver, "staleness_days", lambda current: {
+    monkeypatch.setattr(driver, "staleness_days", lambda current, **_kwargs: {
         name: {"freshest_days": 0, "n_stale": 0, "n_total": 1}
         for name in driver.STALE_LIMITS
     })
@@ -183,6 +212,11 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
             "perp_mark_prices": 1,
         }},
     })
+    monkeypatch.setattr(
+        driver,
+        "refresh_lineage_backfill",
+        lambda **_kwargs: (True, {"status": "PASS"}, []),
+    )
 
     def authority(**kwargs):
         calls["authority"] += 1
@@ -205,4 +239,9 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     assert calls["realize"][0]["admission_ref"] is reference
     assert calls["realize"][0]["committed_at_ms"] == now_ms
     status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
-    assert status["alphas"]["alpha"]["evidence_state"] == "ATTESTED"
+    assert (
+        status["alphas"]["alpha"]["evidence_state"]
+        == "ATTESTED_PENDING_REALIZATION"
+    )
+    assert status["quality_evidence_current"] is True
+    assert status["raw_lineage_backfill"]["status"] == "PASS"

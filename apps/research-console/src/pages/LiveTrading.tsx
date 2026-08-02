@@ -1,10 +1,9 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, StatusChip,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, StatusChip, LoadingVeil, Callout,
   type Column,
 } from '@/ui/primitives';
-import { money, pct, pctPoints, fixed, stamp } from '@/ui/format';
+import { money, pctPoints, fixed, stamp } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchLiveTradingSnapshot } from '@/lib/api/research-console-api';
 import type {
@@ -29,7 +28,7 @@ const TIER_ZH: Record<string, string> = { AUTO: '自动执行', NEEDS_HUMAN_REVI
 const MODE_ZH: Record<string, string> = { preview: '预览(不下单)', submit: '提交' };
 
 export default function LiveTrading() {
-  const { payload, apiState, error, usingBackend } = useConsoleSnapshot<LiveTradingPayload>(
+  const { payload, apiState, error, usingBackend, snapshotState } = useConsoleSnapshot<LiveTradingPayload>(
     s => fetchLiveTradingSnapshot(s));
   const p: LiveTradingPayload = usingBackend ? payload! : mockPayload;
   const ft = p.forward_track ?? { present: false, actions_allowed: false };
@@ -62,21 +61,25 @@ export default function LiveTrading() {
         realData={usingBackend && p.data_provenance === 'REAL_LIVE_TRADING_SNAPSHOT'}
         source={usingBackend ? (p.snapshot_present ? 'REAL_LIVE_TRADING_SNAPSHOT' : 'NO_LIVE_TRADING_SNAPSHOT')
           : 'FRONTEND_LIVE_TRADING_MOCK'}
-        error={error} />
+        error={error}
+        noDataYet={usingBackend && !p.snapshot_present}
+        dataStatus={usingBackend && lt.hard_stop ? 'BLOCKED' : snapshotState} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <div className="flex items-center gap-3">
         <StatusChip value={p.verdict} />
         <span className="text-2xs text-muted">{p.honesty_note}</span>
       </div>
 
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-2xs leading-relaxed text-amber-200/90">
+      <Callout tone="warn" summary={bi('L2_DRY_RUN_ONLY 未破 · 测试网零真实资本 · 无自动下单',
+        'L2_DRY_RUN_ONLY intact · testnet is zero real capital · nothing here auto-trades')}>
         {bi('L2_DRY_RUN_ONLY 未破:测试网(testnet)是交易所官方沙盒、零真实资本,不是真钱;真钱 Go/No-Go '
           + '需 ≥8 周前向证据 + 人工 Phase 3A 评审。这里没有任何自动下单——AUTO 层是人工签署 mandate 限额内的机械执行,'
           + 'NEEDS_HUMAN_REVIEW 永远不提交。',
           'L2_DRY_RUN_ONLY intact: testnet is the exchange’s own sandbox with zero real capital, not real money; '
           + 'real-money Go/No-Go needs ≥8 weeks of forward evidence + human Phase 3A review. Nothing here auto-trades — '
           + 'the AUTO tier is mechanical execution within a human-signed mandate’s limits; NEEDS_HUMAN_REVIEW never submits.')}
-      </div>
+      </Callout>
 
       {/* --- L2 authority-bound forward evidence --- */}
       <Panel eyebrow={bi('L2 证据', 'L2 EVIDENCE')} title={bi('L2 前向证据', 'L2 Forward Evidence')}
@@ -309,6 +312,7 @@ export default function LiveTrading() {
           'Read-only · attested forward evidence baseline + testnet offline snapshot · tiered mandate authorization is fail-closed to the core · '
           + 'emergency flatten runs an independent reduce-only channel (user-approved 2026-07-05; structurally reduce-only, governance-pinned)')}
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

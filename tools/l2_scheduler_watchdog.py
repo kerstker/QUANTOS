@@ -29,12 +29,53 @@ from services.governance.l2_restore_history import (
     evaluate_cadence,
 )
 from services.governance.artifact_admission import load_json_without_duplicate_keys
+from quantos.contracts.scheduled_worker import SCHEDULE_EXIT_SAFE_BLOCKED
 
 
 _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _RUNNING_RESULT = 267_009
 _PASSPHRASE_MIN_LENGTH = 12
+
+
+def _persistent_windows_environment(name: str) -> str | None:
+    """Read the same User/Machine environment scopes as schedule registration."""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+    except ImportError:
+        return None
+    locations = (
+        (winreg.HKEY_CURRENT_USER, "Environment"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    )
+    for hive, key_path in locations:
+        try:
+            with winreg.OpenKey(hive, key_path) as key:
+                value, _kind = winreg.QueryValueEx(key, name)
+        except OSError:
+            continue
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _configured_environment_value(
+    name: str,
+    *,
+    persistent_reader: Callable[[str], str | None] | None = None,
+) -> str | None:
+    """Prefer process state, then persistent Windows User/Machine state."""
+    value = os.environ.get(name)
+    if isinstance(value, str) and value.strip():
+        return value
+    reader = persistent_reader or _persistent_windows_environment
+    value = reader(name)
+    return value if isinstance(value, str) and value.strip() else None
 
 
 @dataclass(frozen=True)
@@ -59,12 +100,80 @@ class TaskSnapshot:
 EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_factory_loop": ExpectedTask("crypto_factory_loop", 9 * _DAY_MS),
     "QUANTOS_ic_panel_refresh": ExpectedTask("ic_panel_research", 9 * _DAY_MS),
+    "QUANTOS_paper_alpha_evaluation": ExpectedTask(
+        "paper_alpha_evaluation", 9 * _DAY_MS, frozenset({2})
+    ),
+    "QUANTOS_alpha_production_workflow": ExpectedTask(
+        "alpha_production_workflow", 15 * 60_000
+    ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_domain_event_ops": ExpectedTask(
         "domain_event_ops", 3 * _HOUR_MS, frozenset({2})
     ),
     "QUANTOS_gonogo_report": ExpectedTask("gonogo_report", 2 * _DAY_MS),
+    "QUANTOS_alpha_paper_cycle": ExpectedTask("alpha_paper_cycle", 2 * _DAY_MS),
+    "QUANTOS_paper_research_risk_bundle": ExpectedTask(
+        "paper_research_risk_bundle", 2 * _DAY_MS, frozenset({2})
+    ),
+    "QUANTOS_paper_order_preview": ExpectedTask(
+        "paper_order_preview",
+        2 * _DAY_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_paper_realtime": ExpectedTask("paper_realtime", 15 * 60_000),
+    "QUANTOS_binance_realtime_market": ExpectedTask(
+        "binance_realtime_market", 15 * 60_000
+    ),
+    "QUANTOS_binance_systemic_risk": ExpectedTask(
+        "binance_systemic_risk", 90 * 60_000
+    ),
+    "QUANTOS_binance_rpi_depth": ExpectedTask(
+        "binance_rpi_depth", 3 * _HOUR_MS
+    ),
+    "QUANTOS_binance_realtime_features": ExpectedTask(
+        "binance_realtime_features", 15 * 60_000
+    ),
+    "QUANTOS_binance_realtime_drift_alerts": ExpectedTask(
+        "binance_realtime_drift_alerts", 15 * 60_000
+    ),
+    "QUANTOS_realtime_alpha_discovery": ExpectedTask(
+        "realtime_alpha_discovery",
+        3 * _HOUR_MS,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
+        "realtime_alpha_forward_shadow",
+        5 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
+        "realtime_alpha_forward_shadow",
+        5 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_binance_realtime_stream": ExpectedTask(
+        "binance_realtime_stream", 15 * 60_000
+    ),
+    "QUANTOS_paper_multivenue_sor": ExpectedTask(
+        "paper_multivenue_sor", 15 * 60_000
+    ),
+    "QUANTOS_paper_realtime_10k": ExpectedTask(
+        "paper_realtime_10k",
+        15 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
+    "QUANTOS_paper_shadow_auto": ExpectedTask(
+        "paper_shadow_auto", 2 * _DAY_MS, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
+    ),
+    "QUANTOS_paper_shadow_realtime": ExpectedTask(
+        "paper_shadow_realtime", 15 * 60_000, frozenset({SCHEDULE_EXIT_SAFE_BLOCKED})
+    ),
+    "QUANTOS_paper_health": ExpectedTask(
+        "paper_health",
+        15 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "QUANTOS_scheduler_watchdog": ExpectedTask(
         "l2_scheduler_watchdog", 2 * _HOUR_MS, frozenset({2})
     ),
@@ -72,6 +181,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_external_heartbeat": ExpectedTask("external_heartbeat", 20 * 60_000),
     "QUANTOS_domain_event_seal": ExpectedTask(
         "domain_event_seal", 2 * _DAY_MS, frozenset({2})
+    ),
+    "QUANTOS_artifact_admission_seal": ExpectedTask(
+        "artifact_admission_seal", 2 * _DAY_MS, frozenset({2})
     ),
 }
 
@@ -89,6 +201,12 @@ _RESTORE_POLICY_FIELDS = (
     "minimum_successes",
     "clean_lookback_ms",
     "attempt_timeout_ms",
+)
+_RESTORE_HISTORY_MATURITY_REASONS = frozenset(
+    {
+        "HISTORY_SPAN_INSUFFICIENT",
+        "SUCCESS_COUNT_INSUFFICIENT",
+    }
 )
 
 
@@ -244,6 +362,11 @@ def collect_windows_tasks(
         timeout=30,
         shell=False,
         check=False,
+        creationflags=(
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if os.name == "nt"
+            else 0
+        ),
     )
     if completed.returncode != 0:
         raise SchedulerInspectionError("Task Scheduler query failed")
@@ -286,12 +409,14 @@ def backup_configuration_ready(
     destination: str | None = None,
 ) -> bool:
     passphrase = (
-        os.environ.get("QUANTOS_BACKUP_PASSPHRASE")
+        _configured_environment_value("QUANTOS_BACKUP_PASSPHRASE")
         if passphrase is None
         else passphrase
     )
     destination = (
-        os.environ.get("QUANTOS_BACKUP_DEST") if destination is None else destination
+        _configured_environment_value("QUANTOS_BACKUP_DEST")
+        if destination is None
+        else destination
     )
     if not passphrase or len(passphrase.strip()) < _PASSPHRASE_MIN_LENGTH or not destination:
         return False
@@ -307,7 +432,11 @@ def backup_configuration_ready(
 
 
 def external_heartbeat_configuration_ready(endpoint: str | None = None) -> bool:
-    endpoint = os.environ.get("QUANTOS_HEARTBEAT_URL") if endpoint is None else endpoint
+    endpoint = (
+        _configured_environment_value("QUANTOS_HEARTBEAT_URL")
+        if endpoint is None
+        else endpoint
+    )
     if not endpoint:
         return False
     parsed = urllib.parse.urlsplit(endpoint)
@@ -333,7 +462,7 @@ def event_seal_configuration_ready(
     *, repo_root: str | Path, destination: str | None = None
 ) -> bool:
     destination = (
-        os.environ.get("QUANTOS_EVENT_SEAL_DEST")
+        _configured_environment_value("QUANTOS_EVENT_SEAL_DEST")
         if destination is None
         else destination
     )
@@ -351,8 +480,16 @@ def event_seal_configuration_ready(
 
 
 _LAUNCHER_ARGUMENTS = re.compile(
-    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+)$'
+    r'^"(?P<launcher>[^"]+)" (?P<module>[a-z0-9_]+) '
+    r'--release-commit (?P<release_commit>[0-9a-f]{40})$'
 )
+
+
+def _action_release_commit(snapshot: TaskSnapshot | None) -> str | None:
+    if snapshot is None:
+        return None
+    match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
+    return None if match is None else match.group("release_commit")
 
 
 def _action_matches(
@@ -360,14 +497,22 @@ def _action_matches(
     spec: ExpectedTask,
     state_root: Path,
     code_root: Path,
+    expected_release_commit: str | None,
 ) -> bool:
     if not snapshot.execute or Path(snapshot.execute).name.casefold() not in {
         "python",
         "python.exe",
+        "pythonw",
+        "pythonw.exe",
     }:
         return False
     match = _LAUNCHER_ARGUMENTS.fullmatch((snapshot.arguments or "").strip())
-    if match is None or match.group("module") != spec.module:
+    if (
+        match is None
+        or match.group("module") != spec.module
+        or expected_release_commit is None
+        or match.group("release_commit") != expected_release_commit
+    ):
         return False
     try:
         launcher = Path(match.group("launcher")).resolve(strict=False)
@@ -395,6 +540,8 @@ def _check_task(
     now_ms: int,
     repo_root: Path,
     code_root: Path,
+    expected_release_commit: str | None,
+    self_check: bool = False,
 ) -> dict:
     if snapshot is None:
         return {"task_name": name, "status": "BREACH", "code": "MISSING", "detail": "task is missing"}
@@ -405,7 +552,13 @@ def _check_task(
             "code": "NOT_ENABLED",
             "detail": f"task state is {snapshot.state}",
         }
-    if not _action_matches(snapshot, spec, repo_root, code_root):
+    if not _action_matches(
+        snapshot,
+        spec,
+        repo_root,
+        code_root,
+        expected_release_commit,
+    ):
         return {
             "task_name": name,
             "status": "BREACH",
@@ -434,12 +587,15 @@ def _check_task(
             "code": "STALE",
             "detail": f"last run is stale by policy ({age_ms}ms > {spec.max_age_ms}ms)",
         }
-    if snapshot.state == "Running" and snapshot.last_result == _RUNNING_RESULT:
+    if snapshot.state == "Running":
         return {
             "task_name": name,
             "status": "PASS",
             "code": "RUNNING",
-            "detail": "task is currently running with the expected action",
+            "detail": (
+                "task is currently running with the expected action; "
+                "the previous result is not a completion result for this instance"
+            ),
         }
     if snapshot.last_result in spec.partial_results:
         return {
@@ -447,6 +603,20 @@ def _check_task(
             "status": "PARTIAL",
             "code": f"RESULT_{snapshot.last_result}",
             "detail": f"task completed with an explicitly partial result ({snapshot.last_result})",
+        }
+    # A watchdog invocation is the authority that is evaluating the current
+    # scheduler metadata.  Its previous non-zero exit code is not an
+    # independent worker failure: the previous run may have been non-zero
+    # precisely because it reported another task's breach, which otherwise
+    # creates a permanent self-referential RESULT_1 alert.  Freshness,
+    # action-pinning, and the current invocation's own exit status remain
+    # observable through the external heartbeat / next scheduler poll.
+    if self_check and snapshot.last_result != 0:
+        return {
+            "task_name": name,
+            "status": "PASS",
+            "code": "SELF_CHECK",
+            "detail": "fresh watchdog metadata is being evaluated; prior watchdog result is not self-reported",
         }
     if snapshot.last_result != 0:
         return {
@@ -489,6 +659,22 @@ def _merge_backup_history(check: dict, health: dict | None) -> dict:
             "code": "RESTORE_HISTORY_BACKUP_IN_PROGRESS",
             "detail": "the first recorded backup attempt is still in progress",
         }
+    if (
+        valid_reasons
+        and set(reasons).issubset(_RESTORE_HISTORY_MATURITY_REASONS)
+        and health.get("latest_terminal_verdict") == "PASS"
+        and health.get("failure_count_in_clean_window") == 0
+        and health.get("overdue_open_count") == 0
+    ):
+        return {
+            "task_name": "QUANTOS_backup",
+            "status": "PARTIAL",
+            "code": "RESTORE_HISTORY_MATURING",
+            "detail": (
+                "current restore evidence is healthy; longitudinal maturity "
+                f"is incomplete ({','.join(reasons)})"
+            ),
+        }
     code = (
         reason
         if reason.startswith("RESTORE_HISTORY_")
@@ -523,6 +709,9 @@ def evaluate_schedule(
         if snapshot.name in by_name:
             duplicates.add(snapshot.name)
         by_name[snapshot.name] = snapshot
+    expected_release_commit = _action_release_commit(
+        by_name.get("QUANTOS_scheduler_watchdog")
+    )
 
     checks: list[dict] = []
     conditional_readiness = {
@@ -535,6 +724,10 @@ def evaluate_schedule(
             "operator-owned HTTPS heartbeat endpoint is not configured",
         ),
         "QUANTOS_domain_event_seal": (
+            event_seal_ready,
+            "external event-seal destination is not configured",
+        ),
+        "QUANTOS_artifact_admission_seal": (
             event_seal_ready,
             "external event-seal destination is not configured",
         ),
@@ -569,6 +762,8 @@ def evaluate_schedule(
             now_ms=now_ms,
             repo_root=root,
             code_root=release_root,
+            expected_release_commit=expected_release_commit,
+            self_check=name == "QUANTOS_scheduler_watchdog",
         )
         if name == "QUANTOS_backup":
             check = _merge_backup_history(check, backup_history_health)

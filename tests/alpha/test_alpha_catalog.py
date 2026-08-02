@@ -86,3 +86,23 @@ def test_bhy_fdr_survivors_is_wired_and_stricter_than_bh():
     bhy = cat.bhy_fdr_survivors(q=0.05)
     assert bhy < bh                                      # strictly fewer survivors under BHY
     assert bhy == {"a0", "a1"} and bh == {"a0", "a1", "a2", "a3"}
+
+
+def test_family_fdr_groups_same_factor_dependencies_before_correlation():
+    cat = AlphaCatalog()
+    cat.register(_def("rank_ls", factors=("global_ls",)))
+    cat.register(_def("mean_ls", factors=("global_ls",)))
+    cat.register(_def("carry", factors=("funding",)))
+    for alpha_id, pvalue in {
+        "rank_ls": 0.001,
+        "mean_ls": 0.08,
+        "carry": 0.90,
+    }.items():
+        cat.set_pvalue(alpha_id, pvalue)
+
+    result = cat.family_fdr_result(q=0.10)
+
+    assert result.n_families == 2
+    assert result.survivors == frozenset({"rank_ls"})
+    assert result.reasons["mean_ls"] == "REJECTED_WITHIN_FAMILY"
+    assert result.reasons["carry"] == "FAMILY_NOT_SELECTED"

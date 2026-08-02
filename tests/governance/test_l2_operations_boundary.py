@@ -4,7 +4,7 @@ import ast
 import json
 from pathlib import Path
 
-from tools.l2_backup import DEFAULT_SOURCES
+from tools.l2_backup import DEFAULT_SOURCES, SOURCE_CONTRACT_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +23,19 @@ def _imports(path: Path) -> set[str]:
     }
 
 
+def _calls(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    calls: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            calls.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            calls.add(node.func.attr)
+    return calls
+
+
 def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
     actual = {
         source.relative_path.replace("\\", "/"): (source.role, source.required)
@@ -30,6 +43,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
     }
     assert actual == {
         "data/cache/alpha_maintenance.db": ("alpha_maintenance", False),
+        "data/cache/alpha_production_workflow.db": (
+            "alpha_production_workflow",
+            True,
+        ),
         "data/cache/approvals.db": ("approval_authority", False),
         "data/cache/artifact_admission.db": (
             "artifact_admission_authority",
@@ -52,8 +69,16 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
         ),
         "data/cache/live_kill_switch.db": ("kill_switch_authority", False),
         "data/cache/live_refresh_history.db": ("data_refresh_history", True),
+        "data/cache/paper_candidate_registry.db": (
+            "factory_candidate_admission",
+            False,
+        ),
         "data/cache/paper_track.db": ("paper_track", True),
         "data/cache/research_runs.db": ("research_run_registry", True),
+        "data/cache/vendor_delivery_history.db": (
+            "vendor_delivery_history_authority",
+            False,
+        ),
     }
     assert all(path.startswith("data/cache/") for path in actual)
     assert all(not path.startswith("key/") for path in actual)
@@ -73,7 +98,7 @@ def test_top_tier_backup_and_restore_require_the_exact_l2_source_contract():
     backup = requirements["OPS.BACKUP.ENCRYPTED"]
     restore = requirements["OPS.RESTORE.DRILL"]
     expected_contract = {
-        "version": 2,
+        "version": SOURCE_CONTRACT_VERSION,
         "sources": sorted(
             (
                 {
@@ -166,6 +191,36 @@ def test_l2_schedule_entrypoint_has_no_broker_network_or_secret_dependency():
         assert forbidden not in source
 
 
+def test_paper_evidence_producers_have_no_broker_network_or_order_surface():
+    producers = (
+        ROOT / "tools" / "paper_alpha_evaluation.py",
+        ROOT / "tools" / "paper_research_risk_bundle.py",
+        ROOT / "tools" / "paper_shadow_auto.py",
+        ROOT / "tools" / "paper_shadow_realtime.py",
+    )
+    forbidden_import_roots = {
+        "ccxt",
+        "httpx",
+        "requests",
+        "socket",
+        "urllib",
+        "live.pipeline",
+        "live.exchange",
+    }
+    for producer in producers:
+        imports = _imports(producer)
+        assert not imports & forbidden_import_roots
+        calls = {name.lower() for name in _calls(producer)}
+        assert not calls & {
+            "submit_order",
+            "place_order",
+            "cancel_order",
+            "withdraw",
+            "transfer",
+            "connect_broker",
+        }
+
+
 def test_scheduler_watchdog_does_not_import_any_monitored_worker():
     imports = _imports(ROOT / "tools" / "l2_scheduler_watchdog.py")
     monitored = {
@@ -179,6 +234,7 @@ def test_scheduler_watchdog_does_not_import_any_monitored_worker():
             "ic_panel_research",
             "l2_backup",
             "domain_event_seal",
+            "artifact_admission_seal",
             "external_heartbeat",
         }
     }

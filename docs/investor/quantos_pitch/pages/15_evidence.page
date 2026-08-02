@@ -1,0 +1,55 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "12 · 可验证性"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "证据索引：每个数字都有落盘文件"}
+  - elementId: ev-table
+    elementType: table
+    bounds: [80, 116, 800, 300]
+    columnWidths: [0.34, 0.66]
+    rowHeights: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    style: "$dark"
+    rows:
+      - - text: "主张"
+        - text: "证据文件"
+      - - {text: "全部干跑绩效（18 条策略）", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/dry_run.db", align: [left, middle], fontSize: 10}
+      - - {text: "变体族预注册检验", align: [left, middle], fontSize: 10}
+        - {text: "evidence/crowd_contra_variants.json", align: [left, middle], fontSize: 10}
+      - - {text: "IC 面板", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/ic_panel_snapshot.json", align: [left, middle], fontSize: 10}
+      - - {text: "容量与冲击", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/capacity_snapshot.json", align: [left, middle], fontSize: 10}
+      - - {text: "危机重演与尾部", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/scenario_tail_snapshot.json", align: [left, middle], fontSize: 10}
+      - - {text: "宏观 regime", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/macro_regime_snapshot.json + macro_fred.db", align: [left, middle], fontSize: 10}
+      - - {text: "组合分散", align: [left, middle], fontSize: 10}
+        - {text: "data/cache/combo_book_snapshot.json", align: [left, middle], fontSize: 10}
+      - - {text: "强身份 / 供应链", align: [left, middle], fontSize: 10}
+        - {text: "evidence/strong_identity_baseline.json · sbom.cdx.json", align: [left, middle], fontSize: 10}
+      - - {text: "全系统审计与路线图", align: [left, middle], fontSize: 10}
+        - {text: "docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md", align: [left, middle], fontSize: 10}
+  - elementId: claim
+    elementType: text
+    bounds: [80, 436, 800, 40]
+    content:
+      style: "$body"
+      fontSize: 14
+      text: |
+        <p>测试基线：<span style="color:$accent"><strong>433 测试文件 / 3,897 用例</strong></span>，pytest 全量通过（2026-07-25 实测）</p>
+  - elementId: src
+    elementType: text
+    bounds: [80, 486, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>完整版报告：docs/investor/QUANTOS_投资人全报告_2026-07-25.md（含口径说明与风险因素全表）</p>

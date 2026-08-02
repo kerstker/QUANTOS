@@ -6,20 +6,42 @@
 # monitoring process. Legacy tasks with those capabilities are disabled (not
 # deleted) before the L2 jobs are registered.
 #
-# The script location is the immutable release code root. -StateRoot may point
+# The script location is the immutable release code root. -StateRoot must point
 # at a separate mutable operational checkout containing data/cache; scheduled
 # imports still resolve only through tools/l2_schedule_entrypoint.py in this
-# release root.
-param([string]$StateRoot)
+# release root. Registration and every later launch bind the exact clean HEAD.
+param([Parameter(Mandatory = $true)][string]$StateRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $codeRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([string]::IsNullOrWhiteSpace($StateRoot)) {
-  $stateRoot = $codeRoot
-} else {
-  $stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+  throw "StateRoot is required for immutable release registration"
+}
+$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path
+$codePrefix = $codeRoot.TrimEnd("\") + "\"
+$statePrefix = $stateRoot.TrimEnd("\") + "\"
+if (
+  $codeRoot -eq $stateRoot -or
+  $stateRoot.StartsWith($codePrefix, [StringComparison]::OrdinalIgnoreCase) -or
+  $codeRoot.StartsWith($statePrefix, [StringComparison]::OrdinalIgnoreCase)
+) {
+  throw "release and state roots must be different and non-overlapping"
+}
+$gitCommand = Get-Command git -ErrorAction Stop
+$releaseCommit = (& $gitCommand.Source -C $codeRoot rev-parse --verify HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch "^[0-9a-f]{40}$") {
+  throw "release code root has no valid Git HEAD"
+}
+$releaseStatus = @(
+  & $gitCommand.Source -C $codeRoot status --porcelain=v1 --untracked-files=all --ignore-submodules=none --
+)
+if ($LASTEXITCODE -ne 0) {
+  throw "release code root cleanliness could not be verified"
+}
+if ($releaseStatus.Count -ne 0) {
+  throw "release code root must be clean before schedule registration"
 }
 $launcher = Join-Path $codeRoot "tools\l2_schedule_entrypoint.py"
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
@@ -27,6 +49,19 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 }
 $pythonCommand = Get-Command python -ErrorAction Stop
 $py = $pythonCommand.Source
+$pythonw = Join-Path (Split-Path -Parent $py) "pythonw.exe"
+if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
+  throw "pythonw.exe is unavailable beside the configured Python runtime"
+}
+# Keep every L2 worker outside the interactive desktop session.  pythonw.exe
+# removes the ordinary console host, while S4U also prevents a future child
+# process regression from surfacing a window in the signed-in operator session.
+# These workers use only local state and unauthenticated public HTTPS data; they
+# do not require an interactive token, stored password, broker credential, or
+# mapped network share.
+$l2Principal = New-ScheduledTaskPrincipal `
+  -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+  -LogonType S4U -RunLevel Limited
 
 function Disable-TaskIfPresent {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -106,12 +141,15 @@ function Register-L2Task {
     [TimeSpan]$ExecutionTimeLimit = (New-TimeSpan -Hours 6)
   )
 
-  $action = New-ScheduledTaskAction -Execute $py `
-    -Argument "`"$launcher`" $Module" -WorkingDirectory $stateRoot
+  $logRoot = Join-Path $stateRoot ".runtime\logs"
+  $action = New-ScheduledTaskAction -Execute $pythonw `
+    -Argument "`"$launcher`" $Module --release-commit $releaseCommit" `
+    -WorkingDirectory $stateRoot
   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -StartWhenAvailable -ExecutionTimeLimit $ExecutionTimeLimit
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Trigger `
-    -Settings $settings -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module" `
+    -Settings $settings -Principal $l2Principal `
+    -Description "QUANTOS L2_DRY_RUN_ONLY: tools.$Module@$releaseCommit" `
     -Force | Out-Null
   Write-Host "${Name}: registered tools.$Module"
 }
@@ -124,7 +162,8 @@ $legacyLiveTasks = @(
   "QUANTOS_watchdog",
   "QUANTOS_backup",
   "QUANTOS_external_heartbeat",
-  "QUANTOS_domain_event_seal"
+  "QUANTOS_domain_event_seal",
+  "QUANTOS_artifact_admission_seal"
 )
 foreach ($taskName in $legacyLiveTasks) {
   Disable-TaskIfPresent -Name $taskName
@@ -134,8 +173,16 @@ $factoryTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:00"
 $icTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Sunday -At "20:30"
-$forwardTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
-  -DaysOfWeek Monday -At "09:00"
+$paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
+  -DaysOfWeek Sunday -At "20:45"
+# Reconcile candidate identity and every evidence stage before the next
+# five-minute paper worker. The job is read-mostly, idempotent, and L2-only.
+$alphaProductionWorkflowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Poll daily after the expected public-data close so a newly available
+# watermark is consumed promptly; the worker's internal seven-day due check
+# remains authoritative.
+$forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:00"
 $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Monday -At "09:05"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
@@ -145,13 +192,80 @@ $schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMin
 $externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
+$artifactAdmissionSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:40"
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
+$paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
+$paperRiskBundleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:08"
+$paperPreviewTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:10"
+$paperShadowAutoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:20"
+# Public-mark paper valuation is a short-lived L2 worker. It refreshes the
+# current paper account without creating a resident process or touching a
+# private venue/order path.
+$paperRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Collect the complete public Binance USD-M surface before paper valuation.
+# This task is market-data only and has no credential or broker capability.
+$binanceRealtimeMarketTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Binance publishes symbol ADL risk every 30 minutes.  The same low-frequency
+# public worker incrementally maintains 30-day basis history, index constituents,
+# and insurance-fund snapshots without burdening the five-minute paper loop.
+$binanceSystemicRiskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(8) `
+  -RepetitionInterval (New-TimeSpan -Minutes 30)
+# The official RPI endpoint is fixed at 1000 levels and IP weight 20 per
+# symbol.  Keep the complete response on an independent hourly cadence.
+$binanceRpiDepthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10) `
+  -RepetitionInterval (New-TimeSpan -Hours 1)
+$binanceRealtimeFeaturesTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$binanceRealtimeDriftAlertsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Run the immutable 24-trial realtime Alpha budget after the feature worker has
+# had time to publish a fresh PIT watermark.  The worker is research-only and
+# returns the supervised SAFE_BLOCKED code while 30d/90d maturity is missing.
+$realtimeAlphaDiscoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Hours 1)
+# Once a candidate clears every immutable discovery gate, freeze forward
+# decisions before outcomes on a one-minute cadence.  An empty eligible set is
+# the normal SAFE_BLOCKED state and creates no paper position or live authority.
+$realtimeAlphaForwardShadowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
+$binanceRealtimeStreamTrigger = @(
+  (New-ScheduledTaskTrigger -AtStartup),
+  # The worker exits cleanly after 23 hours. A daily fixed-time trigger can be
+  # swallowed by MultipleInstances=IgnoreNew while the prior instance is
+  # still running, leaving a many-hour gap after that instance exits. Polling
+  # every five minutes preserves single-instance ownership while bounding
+  # both clean-exit and crash recovery to one paper cadence.
+  (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5))
+)
+# Exercise public-book multi-venue routing after the resident Binance stream
+# has flushed fresh depth. This remains simulation-only and has no credentials.
+$paperMultiVenueSorTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Keep the isolated 10,000 USD paper profile on the same five-minute cadence,
+# offset from the default account so the two short-lived workers do not start
+# together.  The worker includes its own semantic health check.
+$paperRealtime10kTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(7) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+$paperShadowRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Run the semantic paper health check one minute after the mark worker.  It is
+# also short-lived and returns non-zero when the paper artifacts are stale or
+# unsafe; it never refreshes data or reaches a broker.
+$paperHealthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 
 Register-L2Task -Name "QUANTOS_factory_loop" -Module "crypto_factory_loop" `
   -Trigger $factoryTrigger
 Register-L2Task -Name "QUANTOS_ic_panel_refresh" -Module "ic_panel_research" `
   -Trigger $icTrigger
+Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_evaluation" `
+  -Trigger $paperAlphaEvaluationTrigger
+Register-L2Task -Name "QUANTOS_alpha_production_workflow" -Module "alpha_production_workflow" `
+  -Trigger $alphaProductionWorkflowTrigger
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
@@ -162,6 +276,40 @@ Register-L2Task -Name "QUANTOS_scheduler_watchdog" -Module "l2_scheduler_watchdo
   -Trigger $schedulerWatchdogTrigger
 Register-L2Task -Name "QUANTOS_gonogo_report" -Module "gonogo_report" `
   -Trigger $gonogoTrigger
+Register-L2Task -Name "QUANTOS_alpha_paper_cycle" -Module "alpha_paper_cycle" `
+  -Trigger $paperCycleTrigger
+Register-L2Task -Name "QUANTOS_paper_research_risk_bundle" -Module "paper_research_risk_bundle" `
+  -Trigger $paperRiskBundleTrigger
+Register-L2Task -Name "QUANTOS_paper_order_preview" -Module "paper_order_preview" `
+  -Trigger $paperPreviewTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_market" -Module "binance_realtime_market" `
+  -Trigger $binanceRealtimeMarketTrigger
+Register-L2Task -Name "QUANTOS_binance_systemic_risk" -Module "binance_systemic_risk" `
+  -Trigger $binanceSystemicRiskTrigger
+Register-L2Task -Name "QUANTOS_binance_rpi_depth" -Module "binance_rpi_depth" `
+  -Trigger $binanceRpiDepthTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realtime_features" `
+  -Trigger $binanceRealtimeFeaturesTrigger
+Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
+  -Trigger $binanceRealtimeDriftAlertsTrigger
+Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha_discovery" `
+  -Trigger $realtimeAlphaDiscoveryTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-L2Task -Name "QUANTOS_realtime_alpha_forward_shadow" -Module "realtime_alpha_forward_shadow" `
+  -Trigger $realtimeAlphaForwardShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
+Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
+  -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
+Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `
+  -Trigger $paperMultiVenueSorTrigger
+Register-L2Task -Name "QUANTOS_paper_realtime" -Module "paper_realtime" `
+  -Trigger $paperRealtimeTrigger
+Register-L2Task -Name "QUANTOS_paper_realtime_10k" -Module "paper_realtime_10k" `
+  -Trigger $paperRealtime10kTrigger
+Register-L2Task -Name "QUANTOS_paper_shadow_auto" -Module "paper_shadow_auto" `
+  -Trigger $paperShadowAutoTrigger
+Register-L2Task -Name "QUANTOS_paper_shadow_realtime" -Module "paper_shadow_realtime" `
+  -Trigger $paperShadowRealtimeTrigger
+Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
+  -Trigger $paperHealthTrigger
 
 $backupReadiness = Get-L2BackupReadiness
 if ($backupReadiness.Ready) {
@@ -183,11 +331,14 @@ $eventSealReadiness = Get-EventSealReadiness
 if ($eventSealReadiness.Ready) {
   Register-L2Task -Name "QUANTOS_domain_event_seal" -Module "domain_event_seal" `
     -Trigger $eventSealTrigger
+  Register-L2Task -Name "QUANTOS_artifact_admission_seal" `
+    -Module "artifact_admission_seal" -Trigger $artifactAdmissionSealTrigger
 } else {
   Write-Warning "QUANTOS_domain_event_seal remains disabled: $($eventSealReadiness.Reason)"
+  Write-Warning "QUANTOS_artifact_admission_seal remains disabled: $($eventSealReadiness.Reason)"
 }
 
 Write-Host ""
-Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $py"
+Write-Host "L2_DRY_RUN_ONLY schedules registered from $codeRoot using $pythonw"
 Write-Host "Mutable operational state root: $stateRoot"
 Write-Host "No live submission or broker-capable task was registered."

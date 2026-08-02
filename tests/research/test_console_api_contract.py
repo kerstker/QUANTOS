@@ -19,12 +19,32 @@ import json
 
 from fastapi.testclient import TestClient
 
+from quantos.contracts.hashing import stable_hash
 from services.console.main import app
 from services.console.api import artifact_snapshots
+from services.console.api import artifact_paper_views
 
 client = TestClient(app)
 
-BASE_MARKERS = ("source", "read_only", "api_version")
+BASE_MARKERS = (
+    "source",
+    "read_only",
+    "api_version",
+    "data_provenance",
+    "snapshot_id",
+    "snapshot_ids",
+    "snapshot_status",
+    "data_quality",
+)
+
+SNAPSHOT_STATUSES = {
+    "REAL",
+    "SYNTHETIC",
+    "NO_SNAPSHOT",
+    "STALE",
+    "DATA_BLOCKED",
+    "UNAVAILABLE",
+}
 
 # endpoint -> (query string, required top-level keys per the frontend TS Payload type).
 # Keys mirror apps/research-console/src/lib/types/research.ts (extracted from the
@@ -92,9 +112,13 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/alpha-graph": ("", ("nodes", "edges", "clusters", "rho_cut", "n_near_dup")),
     "/api/v1/console/alpha-zoo": ("", ("rows", "dimensions")),
     "/api/v1/console/dsl-explorer": ("", ("exprs", "analysis_backend")),
+    "/api/v1/console/dsl-explorer/check": ("?expr=" + "(cs_rank (field close))", ("row",)),
     "/api/v1/console/system-completeness": ("", (
         "assessment", "domains", "requirements", "red_lines", "inventory", "summary", "safety_boundary")),
     "/api/v1/console/system-health": ("", ("services", "gates", "safety_checks")),
+    "/api/v1/console/runtime-contract": ("", (
+        "contract_version", "service", "instance_id", "process_id", "build_sha",
+        "build_sha_known", "event_schema_catalog", "safety_boundary", "generated_at_ms")),
     "/api/v1/console/computation-lab": ("?alpha_id=alpha-2&cost_bps=25&stress=1.5", (
         "selected_alpha_id", "alpha_candidates", "alpha", "validation", "metrics",
         "equity_curve", "drawdown_curve", "risk_report", "lineage")),
@@ -116,7 +140,7 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     "/api/v1/console/carry-readiness": ("", ("snapshot_present", "verdict", "strategy", "robustness",
                                              "capacity", "deployment_gaps", "honesty_note")),
     # dry-run pipeline: end-to-end runs (gate as runtime chokepoint) from DryRunStore; synthetic-empty in CI
-    "/api/v1/console/dry-run": ("", ("snapshot_present", "verdict", "n_runs", "latest", "runs", "safety_note")),
+    "/api/v1/console/dry-run": ("", ("snapshot_present", "verdict", "n_runs", "latest", "runs", "realtime_alpha_autonomy", "safety_note")),
     "/api/v1/console/ic-panel": ("", ("snapshot_present", "verdict", "rows", "universes", "honesty_note")),
     # research findings: capacity(RE-1) + macro regime(FRED) + combo diversification aggregate; synthetic-empty in CI
     "/api/v1/console/research-findings": ("", ("snapshot_present", "verdict", "capacity", "macro_regime", "combo", "honesty_note")),
@@ -130,12 +154,47 @@ CONTRACT: dict[str, tuple[str, tuple[str, ...]]] = {
     # GoNoGo evidence pack (Phase 5 item 3): forward evidence + execution PnL/cost attribution + incidents
     "/api/v1/console/gonogo": ("", ("snapshot_present", "verdict", "forward_evidence",
                                     "execution_evidence", "incidents", "honesty_note")),
+    # A股微盘 alpha 研究栈:真实 alpha/paper-track/klines 快照(缺文件时诚实 SYNTHETIC)
+    "/api/v1/console/ashare-alpha": ("", (
+        "source", "read_only", "provenance", "generated_at", "data_freshness", "universe",
+        "factors", "combo", "basket", "variants", "dry_run", "paper_track",
+        "cost_grid", "turnover_caps", "holdings_latest", "honest_limitations")),
+    # MEXC 零手续费 BTC 现货对接(read-only 三端点;artifact 未产出时诚实 SYNTHETIC/NO_SNAPSHOT)
+    "/api/v1/console/mexc-market": ("", ("snapshot_present", "verdict", "venue", "symbol",
+                                         "latest_price", "coverage", "freshness", "bars",
+                                         "honesty_note")),
+    "/api/v1/console/mexc-strategy": ("", ("snapshot_present", "verdict", "strategy_id", "metrics",
+                                           "equity_curve", "buy_and_hold", "runs", "honesty_note")),
+    "/api/v1/console/mexc-readiness": ("", ("snapshot_present", "verdict", "readiness", "n_ready",
+                                            "n_blocked", "checks", "kill_switch", "honesty_note")),
+    # Alpha 生命周期驾驶舱:tools/alpha_lifecycle_cockpit.py 的离线聚合 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/alpha-lifecycle": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                             "alphas", "stage_legend", "honesty_note")),
+    "/api/v1/console/alpha-families": ("", ("registry_present", "chain_valid", "families",
+                                              "honesty_note")),
+    # Go-Live 上线向导:tools/go_live_readiness.py 的离线就绪 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/go-live-readiness": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                               "venues", "strategies", "guidance", "honesty_note")),
+    # live-vs-replay 衰减(W1):tools/live_degradation.py 的离线 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/live-degradation": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                              "readiness", "summary", "reports", "honesty_note")),
+    # 投资者/审计证据快照(W9 §13):tools/investor_snapshot.py 的离线 artifact(缺则诚实 NO_SNAPSHOT)
+    "/api/v1/console/investor-snapshot": ("", ("snapshot_present", "artifact", "generated_at_ms",
+                                               "readiness", "data_cutoff_ms", "report_snapshot_hash",
+                                               "hash_scheme", "portfolio_views", "summary", "venues",
+                                               "amendments", "unknown_fields", "honesty_note")),
 }
+
+# Streaming transports are console endpoints, but deliberately do not map to a
+# single frontend *Payload JSON contract. Their event bodies are validated by
+# test_console_live_stream.py before the EventSource hook accepts them.
+NON_JSON_STREAM_ROUTES = {"/api/v1/console/stream/dry-run"}
 
 # Endpoints serving REAL (non-synthetic) read-only data carry a distinct provenance
 # marker. They still must be read-only snapshots; only the honesty label differs.
 _REAL_OR_SYNTHETIC = {"SYNTHETIC_DETERMINISTIC", "REAL_CRYPTO_SERIES"}
 REAL_DATA_PROVENANCE = {
+    "/api/v1/console/agents": "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT",
     "/api/v1/console/crypto-live": "REAL_CRYPTO_COINGECKO_OFFLINE_SNAPSHOT",
     "/api/v1/console/safety-primitives": "REAL_SAFETY_PRIMITIVES",   # reads the real KillSwitch/gate/config
     "/api/v1/console/research-runs": "RESEARCH_RUN_REGISTRY",
@@ -149,6 +208,23 @@ REAL_DATA_PROVENANCE = {
     # dry-run pipeline: REAL DryRunStore runs when present, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/dry-run": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
     "/api/v1/console/ic-panel": {"SYNTHETIC_DETERMINISTIC", "REAL_IC_PANEL_OFFLINE_SNAPSHOT"},
+    # MEXC 对接:market/strategy 依赖离线 artifact(缺则诚实 SYNTHETIC),readiness 恒为真实计算清单
+    "/api/v1/console/mexc-market": {"SYNTHETIC_DETERMINISTIC", "REAL_MEXC_MARKET_SNAPSHOT"},
+    "/api/v1/console/mexc-strategy": {"SYNTHETIC_DETERMINISTIC", "REAL_DRY_RUN_OFFLINE_SNAPSHOT"},
+    "/api/v1/console/mexc-readiness": "REAL_MEXC_READINESS_CHECK",
+    # go-live-readiness: REAL go_live_readiness.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/go-live-readiness": {"SYNTHETIC_DETERMINISTIC", "REAL_GO_LIVE_READINESS"},
+    # live-degradation: REAL live_degradation.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/live-degradation": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_DEGRADATION"},
+    # investor-snapshot: REAL investor_snapshot.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/investor-snapshot": {"SYNTHETIC_DETERMINISTIC", "REAL_INVESTOR_SNAPSHOT"},
+    # alpha-lifecycle: REAL alpha_lifecycle_cockpit.json artifact when the driver has run,
+    # SYNTHETIC-empty (NO_SNAPSHOT) in CI / fresh checkout. Both honest.
+    "/api/v1/console/alpha-lifecycle": {"SYNTHETIC_DETERMINISTIC", "REAL_ALPHA_LIFECYCLE"},
+    "/api/v1/console/alpha-families": "REAL_ALPHA_FAMILY_LEDGER",
     "/api/v1/console/research-findings": {"SYNTHETIC_DETERMINISTIC", "REAL_RESEARCH_FINDINGS"},
     "/api/v1/console/lance-1m-validation": {"SYNTHETIC_DETERMINISTIC", "REAL_LANCE_1M_VALIDATION"},
     # architecture: curated module/maturity roadmap + REAL repo introspection (`inventory`). REAL marker
@@ -178,6 +254,8 @@ REAL_DATA_PROVENANCE = {
     "/api/v1/console/live-trading": {"SYNTHETIC_DETERMINISTIC", "REAL_LIVE_TRADING_SNAPSHOT"},
     # GoNoGo: REAL gonogo_report.json snapshot when the driver has run, SYNTHETIC-empty in CI / fresh checkout.
     "/api/v1/console/gonogo": {"SYNTHETIC_DETERMINISTIC", "REAL_GONOGO_SNAPSHOT"},
+    # A股微盘 alpha:真实快照存在时 REAL_ASHARE_ALPHA_SNAPSHOT,缺失时诚实 SYNTHETIC(CI)
+    "/api/v1/console/ashare-alpha": {"SYNTHETIC_DETERMINISTIC", "REAL_ASHARE_ALPHA_SNAPSHOT"},
     # Events derive from the real run_registry when it has runs, else synthetic (CI / fresh checkout).
     "/api/v1/console/events": {
         "SYNTHETIC_DETERMINISTIC",
@@ -194,6 +272,7 @@ REAL_DATA_PROVENANCE = {
     # factor backtests when the snapshot is present, but the live-drift side stays synthetic (L2 has no
     # live/paper feed). The partial marker says exactly that — never claim fully real.
     "/api/v1/console/monitoring-drift": {"SYNTHETIC_DETERMINISTIC", "PARTIAL_ALPHA_DECAY_REAL"},
+    "/api/v1/console/runtime-contract": "REAL_RUNTIME_CONTRACT",
 }
 
 
@@ -201,17 +280,477 @@ def test_every_frontend_payload_type_has_an_endpoint():
     # if a *Payload type ever maps to a route not under contract, this fails loudly
     routed = {path for path, operations in app.openapi()["paths"].items() if "get" in operations}
     routed = {p for p in routed if p.startswith("/api/v1/console/")}
-    assert routed == set(CONTRACT), f"contract/route mismatch: {routed ^ set(CONTRACT)}"
+    expected = set(CONTRACT) | NON_JSON_STREAM_ROUTES
+    assert routed == expected, f"contract/route mismatch: {routed ^ expected}"
 
 
 def test_architecture_inventory_counts_included_router_endpoints():
     body = client.get("/api/v1/console/architecture").json()
-    assert body["inventory"]["n_console_endpoints"] == len(CONTRACT)
+    assert body["inventory"]["n_console_endpoints"] == (
+        len(CONTRACT) + len(NON_JSON_STREAM_ROUTES)
+    )
 
 
 def test_health_endpoint_is_read_only():
     body = client.get("/health").json()
     assert body["status"] == "healthy" and body["mode"] == "READ_ONLY"
+
+
+def test_runtime_contract_binds_version_schema_instance_and_l2_boundary():
+    body = client.get("/api/v1/console/runtime-contract").json()
+    assert body["contract_version"] == "console-runtime.v1"
+    assert body["service"] == "research-console-api"
+    assert body["instance_id"]
+    assert isinstance(body["process_id"], int)
+    assert isinstance(body["event_schema_catalog"]["sha256"], str)
+    assert body["event_schema_catalog"]["event_type_count"] >= 1
+    assert body["safety_boundary"] == {
+        "read_only_console": True,
+        "authorized_level": "L2_DRY_RUN_ONLY",
+        "live_trading_authorized": False,
+        "order_submission_allowed": False,
+        "broker_connectivity": False,
+    }
+
+
+def test_dry_run_surfaces_paper_order_preview_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    preview = body["paper_order_preview"]
+    assert preview["read_only"] is True
+    assert preview["safety"]["paper_only"] is True
+    assert preview["safety"]["broker_connectivity"] is False
+    assert preview["safety"]["broker_order_submission"] is False
+    assert preview["verdict"]["live_allowed"] is False
+    assert preview["verdict"]["order_submission_allowed"] is False
+
+
+def test_dry_run_surfaces_l2_paper_operator_receipt_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    operator = body["paper_operator"]
+    assert operator["read_only"] is True
+    # The receipt is an optional runtime artifact; a clean checkout may not
+    # have run the operator yet.  Missing evidence must remain visibly false,
+    # never turn into a synthetic success.
+    assert isinstance(operator["verdict"]["operator_completed"], bool)
+    assert isinstance(operator["verdict"]["paper_preview_ready"], bool)
+    assert isinstance(operator["verdict"]["research_packet_ready_for_all_three"], bool)
+    if not operator["snapshot_present"]:
+        assert operator["verdict"]["operator_completed"] is False
+        assert operator["verdict"]["paper_preview_ready"] is False
+    assert operator["verdict"]["live_allowed"] is False
+    assert operator["verdict"]["order_submission_allowed"] is False
+    assert operator["safety"]["paper_only"] is True
+    assert operator["safety"]["broker_order_submission"] is False
+
+
+def test_dry_run_surfaces_realtime_paper_marks_and_backtests_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    forward = body["forward_track"]
+    assert isinstance(forward["present"], bool)
+    assert isinstance(forward["alphas"], list)
+    assert isinstance(forward["evidence_gate_weeks"], int)
+    if forward["alphas"]:
+        assert isinstance(forward["alphas"][0]["alpha_id"], str)
+        assert "evidence_state" in forward["alphas"][0]
+    realtime = body["paper_realtime"]
+    assert realtime["read_only"] is True
+    assert isinstance(realtime["verdict"]["cycle_completed"], bool)
+    assert isinstance(realtime["verdict"]["paper_mark_ready"], bool)
+    assert isinstance(realtime.get("readiness_class"), str)
+    assert isinstance(realtime["verdict"]["backtest_reference_present_for_all_three"], bool)
+    assert isinstance(realtime["paper_ledger"], dict)
+    assert isinstance(realtime["history"], list)
+    assert isinstance(realtime.get("funding_refresh", {}), dict)
+    if realtime["history"]:
+        point = realtime["history"][-1]
+        assert isinstance(point["alpha_id"], str)
+        assert isinstance(point["observed_at"], int)
+    if not realtime["snapshot_present"]:
+        assert realtime["verdict"]["cycle_completed"] is False
+        assert realtime["verdict"]["paper_mark_ready"] is False
+    assert realtime["verdict"]["live_allowed"] is False
+    assert realtime["verdict"]["order_submission_allowed"] is False
+    assert realtime["safety"]["paper_only"] is True
+    assert realtime["safety"]["public_market_data_only"] is True
+    assert realtime["safety"]["broker_order_submission"] is False
+
+
+def test_dry_run_surfaces_system_native_realtime_alpha_discovery_fail_closed():
+    body = client.get("/api/v1/console/dry-run").json()
+    autonomy = body["realtime_alpha_autonomy"]
+    assert autonomy["read_only"] is True
+    assert isinstance(autonomy["snapshot_present"], bool)
+    assert autonomy["autonomy"]["requires_developer_ai"] is False
+    assert autonomy["forward_shadow"]["verdict"]["promotion_eligible"] is False
+    assert autonomy["forward_shadow"]["verdict"]["live_allowed"] is False
+    assert autonomy["forward_shadow"]["verdict"]["order_submission_allowed"] is False
+    assert autonomy["safety"]["paper_only"] is True
+    assert autonomy["safety"]["live_trading_enabled"] is False
+    assert autonomy["safety"]["real_broker_enabled"] is False
+    assert autonomy["safety"]["allow_order_submission"] is False
+    assert autonomy["safety"]["allow_ai_direct_trading"] is False
+    assert autonomy["safety"]["promotion_eligible"] is False
+    assert autonomy["safety"]["credentials_accessed"] is False
+    if autonomy["snapshot_present"]:
+        assert isinstance(autonomy["funnel"]["pre_registered"], int)
+        assert isinstance(autonomy["top_candidates"], list)
+    else:
+        assert autonomy["status"] == "NO_SNAPSHOT"
+        assert autonomy["autonomy"]["autonomous_search_running"] is False
+
+
+def test_realtime_alpha_console_projection_blocks_tampered_authority(tmp_path):
+    path = tmp_path / "tampered-autonomy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
+                "generated_at_ms": 123,
+                "autonomy": {"requires_developer_ai": False},
+                "registry": {"chain_valid": True},
+                "safety": {
+                    "paper_only": True,
+                    "live_trading_enabled": False,
+                    "real_broker_enabled": False,
+                    "allow_order_submission": True,
+                    "allow_ai_direct_trading": False,
+                    "promotion_eligible": False,
+                    "credentials_accessed": False,
+                },
+                "top_candidates": [{"candidate_id": "must-not-surface"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    autonomy = artifact_paper_views._realtime_alpha_autonomy_payload(str(path))
+
+    assert autonomy["snapshot_present"] is True
+    assert autonomy["boundary_valid"] is False
+    assert autonomy["status"] == "SAFE_BLOCKED"
+    assert autonomy["top_candidates"] == []
+    assert "AUTONOMY_SAFETY_ALLOW_ORDER_SUBMISSION_INVALID" in autonomy["blockers"]
+    assert autonomy["safety"]["allow_order_submission"] is False
+
+
+def test_dry_run_separates_factory_forward_and_execution_paper_populations(
+    tmp_path, monkeypatch
+):
+    factory_path = tmp_path / "factory.json"
+    factory_path.write_text(
+        json.dumps(
+            {
+                "fields": ["close", "funding", "global_ls"],
+                "rounds": 2,
+                "dry_limit": 2,
+                "discovered_chain": [],
+                "verdict": "no orthogonal survivor",
+                "containment": "research; auto_approved=0; drives no lifecycle",
+                "generated_at": 1_785_000_000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        artifact_paper_views, "_FACTORY_LOOP_STATUS", str(factory_path)
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    forward = {
+        "alphas": [
+            {"alpha_id": f"alpha-{index}", "n_forward_periods": 1}
+            for index in range(10)
+        ]
+    }
+    realtime = {
+        "alphas": {f"alpha-{index}": {"status": "PAPER_MARKED"} for index in range(3)}
+    }
+
+    payload = artifact_paper_views._alpha_pipeline_payload(forward, realtime)
+
+    assert payload["counts"] == {
+        "forward_paper": 10,
+        "execution_paper": 3,
+        "candidate_execution_paper": 3,
+        "legacy_diagnostic_paper": 0,
+        "forward_only": 7,
+        "factory_survivors": 0,
+    }
+    assert payload["factory"]["data_dimensions"] == 3
+    assert payload["factory"]["generated_at"] == 1_785_000_000_000
+    assert payload["handoff"]["status"] == "GAPPED"
+    assert payload["handoff"]["gap_codes"] == [
+        "FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED",
+        "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
+        "UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED",
+    ]
+    assert sum(row["stage"] == "EXECUTION_PAPER" for row in payload["candidates"]) == 3
+    assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
+    assert payload["safety"]["live_allowed"] is False
+    assert payload["safety"]["order_submission_allowed"] is False
+    assert payload["safety"]["deployment_eligible"] is False
+
+
+def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
+    candidate_ids = ["carry_oi_majors", "crowd_contra", "top_contra", "new_alpha"]
+    candidates = []
+    for alpha_id in candidate_ids:
+        identity = {"candidate_id": alpha_id, "expression": "canonical"}
+        legacy = alpha_id != "new_alpha"
+        candidates.append(
+            {
+                "candidate_id": alpha_id,
+                "identity": identity,
+                "identity_hash": stable_hash(identity),
+                "workflow": {
+                    "stage": "PARALLEL_VALIDATION" if legacy else "EXECUTION_PAPER_ELIGIBLE",
+                    "bundle_hash": stable_hash({"alpha_id": alpha_id}),
+                    "eligible_for_execution_paper": not legacy,
+                    "legacy_diagnostic": legacy,
+                    "observed_forward_periods": 8,
+                    "blockers": ["LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE"] if legacy else [],
+                    "gates": [
+                        {
+                            "gate": "EXECUTION_PAPER",
+                            "status": "LEGACY_DIAGNOSTIC" if legacy else "PENDING",
+                        }
+                    ],
+                },
+            }
+        )
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                "status": "VERIFIED",
+                "population_count": 4,
+                "event_count": 11,
+                "active_candidate_ids": candidate_ids,
+                "execution_paper_eligible_ids": ["new_alpha"],
+                "candidates": candidates,
+                "reconciliation": {
+                    "release_commit": "c" * 40,
+                    "source_as_of_ms": 1234,
+                },
+                "safety": {
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        artifact_paper_views, "_ALPHA_PRODUCTION_WORKFLOW", str(workflow_path)
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_FACTORY_LOOP_STATUS",
+        str(tmp_path / "missing-factory.json"),
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    payload = artifact_paper_views._alpha_pipeline_payload(
+        {"alphas": [{"alpha_id": "stale_alpha", "n_forward_periods": 1}]},
+        {"alphas": {"stale_alpha": {"status": "PAPER_MARKED"}}},
+    )
+
+    assert [row["alpha_id"] for row in payload["candidates"]] == candidate_ids
+    assert payload["workflow"] == {
+        "authority_present": True,
+        "verified": True,
+        "population_count": 4,
+        "event_count": 11,
+        "execution_paper_eligible_count": 1,
+        "release_commit": "c" * 40,
+        "source_as_of_ms": 1234,
+    }
+    assert payload["candidates"][-1]["stage"] == "EXECUTION_PAPER_ELIGIBLE"
+    assert payload["candidates"][-1]["execution_paper_eligible"] is True
+    assert payload["handoff"]["forward_to_execution_dynamic"] is True
+
+
+def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_FACTORY_LOOP_STATUS",
+        str(tmp_path / "missing-factory.json"),
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    forward = {
+        "alphas": [
+            {"alpha_id": "carry_oi_majors", "n_forward_periods": 1},
+            {"alpha_id": "crowd_contra", "n_forward_periods": 1},
+            {"alpha_id": "top_contra", "n_forward_periods": 0},
+            {"alpha_id": "new_challenger", "n_forward_periods": 8},
+        ]
+    }
+    realtime = {
+        "alphas": {
+            alpha_id: {"status": "PAPER_MARKED"}
+            for alpha_id in (
+                "carry_oi_majors",
+                "crowd_contra",
+                "top_contra",
+                "new_challenger",
+            )
+        }
+    }
+
+    payload = artifact_paper_views._alpha_pipeline_payload(forward, realtime)
+    rows = {row["alpha_id"]: row for row in payload["candidates"]}
+
+    assert payload["counts"]["execution_paper"] == 4
+    assert payload["counts"]["candidate_execution_paper"] == 1
+    assert payload["counts"]["legacy_diagnostic_paper"] == 3
+    assert payload["handoff"]["forward_to_execution_dynamic"] is False
+    for alpha_id in ("carry_oi_majors", "crowd_contra", "top_contra"):
+        assert rows[alpha_id]["stage"] == "LEGACY_DIAGNOSTIC_PAPER"
+        assert rows[alpha_id]["paper_class"] == "LEGACY_DIAGNOSTIC_PAPER"
+        assert rows[alpha_id]["deployment_eligible"] is False
+        assert "LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE" in rows[alpha_id]["blockers"]
+    assert rows["new_challenger"]["stage"] == "EXECUTION_PAPER"
+    assert rows["new_challenger"]["paper_class"] == "CANDIDATE_EXECUTION_PAPER"
+    assert rows["new_challenger"]["blockers"] == []
+
+
+def test_dry_run_surfaces_automated_shadow_paper_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    shadow = body["paper_shadow"]
+    assert shadow["read_only"] is True
+    assert shadow["execution_class"] == "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER"
+    assert isinstance(shadow["snapshot_present"], bool)
+    assert isinstance(shadow["verdict"]["shadow_paper_running"], bool)
+    assert isinstance(shadow["verdict"]["boundary_valid"], bool)
+    assert isinstance(shadow["alphas"], dict)
+    assert isinstance(shadow["previews"], dict)
+    assert isinstance(shadow["history"], list)
+    assert isinstance(shadow["totals"], dict)
+    assert shadow["verdict"]["official_paper_ready"] is False
+    assert shadow["verdict"]["promotion_eligible"] is False
+    assert shadow["verdict"]["forward_evidence_eligible"] is False
+    assert shadow["verdict"]["deployment_eligible"] is False
+    assert shadow["verdict"]["live_allowed"] is False
+    assert shadow["verdict"]["order_submission_allowed"] is False
+    assert shadow["safety"]["paper_only"] is True
+    assert shadow["safety"]["separate_from_official_paper"] is True
+    assert shadow["safety"]["credentials_accessed"] is False
+    assert shadow["safety"]["broker_connectivity"] is False
+    assert shadow["safety"]["broker_order_submission"] is False
+
+
+def test_shadow_paper_console_payload_fails_closed_on_tampered_safety(
+    tmp_path, monkeypatch
+):
+    auto_path = tmp_path / "auto.json"
+    realtime_path = tmp_path / "realtime.json"
+    auto_path.write_text(
+        json.dumps(
+            {
+                "verdict": {"shadow_paper_running": True},
+                "safety": {
+                    "paper_only": True,
+                    "broker_connectivity": True,
+                    "broker_order_submission": False,
+                    "credentials_accessed": False,
+                },
+                "alphas": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    realtime_path.write_text(
+        json.dumps(
+            {
+                "verdict": {
+                    "shadow_paper_running": True,
+                    "paper_mark_ready": True,
+                },
+                "safety": {
+                    "paper_only": True,
+                    "broker_connectivity": False,
+                    "broker_order_submission": False,
+                    "credentials_accessed": False,
+                },
+                "persistence": {"chain_valid": True},
+                "alphas": {"a": {}, "b": {}, "c": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifact_snapshots, "_PAPER_SHADOW_AUTO", str(auto_path))
+    monkeypatch.setattr(
+        artifact_snapshots, "_PAPER_SHADOW_REALTIME", str(realtime_path)
+    )
+
+    shadow = artifact_snapshots._paper_shadow_payload()
+
+    assert shadow["status"] == "SAFE_BLOCKED"
+    assert shadow["verdict"]["boundary_valid"] is False
+    assert shadow["verdict"]["shadow_paper_running"] is False
+    assert shadow["verdict"]["live_allowed"] is False
+    assert shadow["verdict"]["order_submission_allowed"] is False
+
+
+def test_dry_run_surfaces_semantic_paper_health_without_live_capability():
+    body = client.get("/api/v1/console/dry-run").json()
+    health = body["paper_health"]
+    assert health["read_only"] is True
+    assert isinstance(health["verdict"]["paper_ready"], bool)
+    assert isinstance(health["blockers"], list)
+    assert isinstance(health.get("readiness_class"), str)
+    assert isinstance(health.get("research_risk_bundles"), dict)
+    assert isinstance(health["forward_evidence"], dict)
+    assert isinstance(health["forward_evidence"]["complete_for_all_three"], bool)
+    assert health["verdict"]["live_allowed"] is False
+    assert health["verdict"]["order_submission_allowed"] is False
+    assert health["safety"]["paper_only"] is True
+    assert health["safety"]["broker_order_submission"] is False
+
+
+def test_dry_run_surfaces_isolated_small_paper_profile_read_only():
+    body = client.get("/api/v1/console/dry-run").json()
+    profile = body["paper_profiles"]["small_10k"]
+    assert profile["read_only"] is True
+    assert profile["aum"] == 10_000.0
+    assert isinstance(profile["snapshot_present"], bool)
+    assert isinstance(profile["realtime"]["cycle_completed"], bool)
+    assert isinstance(profile["realtime"]["chain_valid"], bool)
+    assert isinstance(profile["realtime"]["paper_ledger"], dict)
+    assert isinstance(profile["realtime"]["history"], list)
+    assert profile["realtime"]["paper_ledger"].get("n_decisions") is None or isinstance(
+        profile["realtime"]["paper_ledger"].get("n_decisions"), int
+    )
+    assert profile["realtime"]["total_equity"] is None or isinstance(
+        profile["realtime"]["total_equity"], (int, float)
+    )
+    assert profile["realtime"]["total_net_pnl"] is None or isinstance(
+        profile["realtime"]["total_net_pnl"], (int, float)
+    )
+    assert isinstance(profile["health"]["paper_ready"], bool)
+    assert isinstance(profile["health"]["blockers"], list)
+    assert isinstance(profile["forward_track"], dict)
+    assert isinstance(profile["forward_track"]["alphas"], list)
+    if profile["health"]["paper_ready"]:
+        assert profile["realtime"]["total_equity"] is not None
+        assert profile["realtime"]["total_net_pnl"] is not None
+    assert profile["safety"]["paper_only"] is True
+    assert profile["safety"]["live_allowed"] is False
+    assert profile["safety"]["order_submission_allowed"] is False
 
 
 def test_every_endpoint_satisfies_the_frontend_contract():
@@ -235,6 +774,18 @@ def test_every_endpoint_satisfies_the_frontend_contract():
         prov_ok = actual_prov in expected_prov if isinstance(expected_prov, set) else actual_prov == expected_prov
         if not prov_ok:
             failures.append(f"{path}: data_provenance {actual_prov!r} not in {expected_prov!r}")
+        if body.get("snapshot_status") not in SNAPSHOT_STATUSES:
+            failures.append(f"{path}: invalid snapshot_status {body.get('snapshot_status')!r}")
+        quality = body.get("data_quality")
+        if not isinstance(quality, dict):
+            failures.append(f"{path}: data_quality is not an object")
+        else:
+            if quality.get("status") != body.get("snapshot_status"):
+                failures.append(f"{path}: data_quality.status does not match snapshot_status")
+            if quality.get("provenance") != actual_prov:
+                failures.append(f"{path}: data_quality.provenance does not match data_provenance")
+            if quality.get("snapshot_ids") != body.get("snapshot_ids"):
+                failures.append(f"{path}: data_quality.snapshot_ids does not match snapshot_ids")
         for key in keys:
             if key not in body:
                 failures.append(f"{path}: missing contract key '{key}'")
@@ -358,3 +909,93 @@ def test_risk_dashboard_stress_block_carries_provenance_and_scenarios():
         assert key in stress, f"stress block missing '{key}'"
     assert stress["provenance"] in ("REAL_HISTORICAL_REPLAY", "SYNTHETIC_MULTIPLIER_UNCALIBRATED")
     assert isinstance(stress["scenario_losses"], dict) and stress["scenario_losses"]
+
+
+def test_snapshot_metadata_never_upgrades_synthetic_or_missing_data():
+    from services.console.api.common import snapshot_metadata
+
+    synthetic = snapshot_metadata({"data_provenance": "SYNTHETIC_DETERMINISTIC"})
+    assert synthetic["snapshot_status"] == "SYNTHETIC"
+    assert synthetic["snapshot_id"] is None and synthetic["snapshot_ids"] == []
+    assert synthetic["data_quality"]["is_synthetic"] is True
+
+    missing = snapshot_metadata(
+        {
+            "data_provenance": "SYNTHETIC_DETERMINISTIC",
+            "snapshot_present": False,
+            "verdict": "NO_SNAPSHOT",
+        }
+    )
+    assert missing["snapshot_status"] == "NO_SNAPSHOT"
+    assert missing["data_quality"]["is_available"] is False
+
+    blocked = snapshot_metadata({"data_provenance": "REAL_DATA", "verdict": "DATA_BLOCKED"})
+    assert blocked["snapshot_status"] == "DATA_BLOCKED"
+    assert blocked["data_quality"]["is_blocked"] is True
+
+    nested_blocked = snapshot_metadata(
+        {"data_provenance": "REAL_DATA", "data_quality": {"status": "BLOCK"}}
+    )
+    assert nested_blocked["snapshot_status"] == "DATA_BLOCKED"
+
+    real = snapshot_metadata(
+        {
+            "data_provenance": "REAL_PIT_DATASETS",
+            "snapshot_present": True,
+            "datasets": [{"snapshot_id": "pit-001"}],
+        }
+    )
+    assert real["snapshot_status"] == "REAL"
+    assert real["snapshot_id"] == "pit-001"
+
+
+def test_data_catalog_port_failure_is_explicitly_unavailable(monkeypatch):
+    from services.console.api import data_catalog
+
+    def unavailable():
+        raise RuntimeError("port unavailable")
+
+    monkeypatch.setattr(data_catalog.data_catalog_runtime, "require", unavailable)
+    payload = data_catalog._data_catalog_payload()
+    assert payload["data_provenance"] == "UNAVAILABLE"
+    assert payload["snapshot_status"] == "UNAVAILABLE"
+    assert payload["snapshot_present"] is False
+    assert payload["datasets"] == [] and payload["features"] == []
+    assert payload["data_quality"]["status"] == "UNAVAILABLE"
+
+
+def test_ashare_alpha_endpoint_numeric_sanity():
+    """A股 alpha 端点:形状契约之外的数值合理性(|IC|<=1、持仓权重和≈1、净值曲线非空)。
+
+    快照缺失(CI)时 fail-closed 到 SYNTHETIC 也是合法响应——此时只校验诚实标记。"""
+    body = client.get("/api/v1/console/ashare-alpha").json()
+    assert body["source"] == "BACKEND_COMPUTED_SNAPSHOT"
+    assert body["read_only"] is True
+    assert body["provenance"] in ("REAL_ASHARE_ALPHA_SNAPSHOT", "SYNTHETIC_DETERMINISTIC")
+    if body["provenance"] != "REAL_ASHARE_ALPHA_SNAPSHOT":
+        assert body["snapshot_present"] is False
+        assert body["honest_limitations"]
+        return
+    for f in body["factors"]:
+        assert abs(f["train_ic"]) <= 1.0 and abs(f["test_ic"]) <= 1.0
+        assert isinstance(f["kept"], bool)
+    combo = body["combo"]
+    assert abs(combo["h1_test_ic"]) <= 1.0 and abs(combo["h5_test_ic"]) <= 1.0
+    assert 0.0 <= combo["hit_rate"] <= 1.0
+    holdings = body["holdings_latest"]
+    assert holdings, "real snapshot must carry last-week holdings"
+    assert abs(sum(h["weight"] for h in holdings) - 1.0) < 1e-6
+    assert all(w["weight"] > 0 for w in holdings)
+    basket = body["basket"]
+    assert basket["equity_test"] and basket["bench_equity_test"]
+    assert all(isinstance(v, (int, float)) for v in basket["equity_test"])
+    assert basket["n"] > 0 and basket["aum_cny"] > 0
+    dry = body["dry_run"]
+    assert dry["run_id"] and dry["n_approved"] >= 0 and dry["n_rejected"] >= 0
+    paper = body["paper_track"]
+    assert paper["kind"] in ("BACKFILL", "FORWARD") and paper["n_weeks"] > 0
+    assert abs(paper["weekly_ic_mean"]) <= 1.0
+    assert body["variants"] and any(v["is_champion"] for v in body["variants"])
+    assert body["cost_grid"] and body["turnover_caps"]
+    assert body["data_freshness"]["stocks"] > 0 and body["data_freshness"]["last_date"] > 0
+    assert body["honest_limitations"]

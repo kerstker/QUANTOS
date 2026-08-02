@@ -102,6 +102,16 @@ def _seed(tmp_path, *, funding_gap=False, include_lineage=True):
             "failed_tickers": [],
             "passed": True,
         }
+        lineage_scope = {
+            "dataset_ids": [
+                "funding",
+                "oi_metrics",
+                "oi_metrics_rest_gap_fill",
+                "perp_mark_prices",
+                "perp_mark_prices_rest_gap_fill",
+            ],
+            "instrument_ids": ["BTC"],
+        }
         lineage_path.write_text(json.dumps({
             "schema_version": 1,
             "readiness": "L2_DRY_RUN_ONLY",
@@ -119,7 +129,12 @@ def _seed(tmp_path, *, funding_gap=False, include_lineage=True):
                 "funding": {"source": "funding", **source},
                 "oi_metrics": {"source": "oi_metrics", **source},
             },
-            "raw_lineage": summarize_archive(str(raw_path)),
+            "raw_lineage_scope": lineage_scope,
+            "raw_lineage": summarize_archive(
+                str(raw_path),
+                dataset_ids=set(lineage_scope["dataset_ids"]),
+                instrument_ids={"BTC"},
+            ),
             "verdict": "PASS",
             "block_reasons": [],
         }), encoding="utf-8")
@@ -165,6 +180,39 @@ def test_complete_perp_scoped_artifacts_pass_quality_and_admission(tmp_path):
         len(artifact["sha256"]) == 64
         for artifact in evidence["artifacts"].values()
     )
+
+
+def test_unrelated_concurrent_archive_growth_does_not_invalidate_backfill(
+    tmp_path,
+):
+    price, funding, oi, snapshot, refresh, raw, lineage = _seed(tmp_path)
+    archive_json_response(
+        root=str(raw),
+        payload={"book": [[1, 2]]},
+        source_uri="https://api.example.test/depth?symbol=ETHUSDT",
+        provider="example-public-data",
+        dataset_id="binance_realtime_depth",
+        instrument_id="ETH",
+        observed_at_ms=_NOW + 1,
+        parse_diagnostics={"status": "ACCEPTED", "input_rows": 1},
+    )
+
+    evidence = build_data_quality_evidence(
+        now_ms=_NOW + 1,
+        instruments=["BTC"],
+        price_path=str(price),
+        funding_path=str(funding),
+        oi_path=str(oi),
+        snapshot_path=str(snapshot),
+        refresh_status_path=str(refresh),
+        raw_archive_path=str(raw),
+        lineage_backfill_path=str(lineage),
+        price_basis="PERP_MARK_PRICE",
+    )
+
+    assert evidence["lineage_verdict"] == "PASS"
+    assert evidence["verdict"] == "PASS"
+    assert evidence["raw_lineage"]["observation_count"] == 5
 
 
 def test_funding_gap_blocks_quality_admission(tmp_path):
@@ -327,3 +375,53 @@ def test_run_records_authoritative_decision_before_publishing_manifest(tmp_path)
     assert store.evidence(decision.admission_id) == evidence
     assert len(store.pending_event_outbox()) == 1
     store.close()
+
+
+def test_rest_gap_fill_provenance_is_surfaced_without_weakening_admission(tmp_path):
+    _, funding, oi, snapshot, refresh, raw, lineage = _seed(tmp_path)
+    mark_path = tmp_path / "mark.json"
+    mark_path.write_text(
+        json.dumps({
+            "_meta": {"BTC": {"through": 20 * _DAY}},
+            "data": {
+                "BTC": {
+                    str((20 - offset) * _DAY): 100.0 + offset
+                    for offset in range(8)
+                }
+            },
+            "provenance": {"BTC": {str(20 * _DAY): "REST_GAP_FILL"}},
+        }),
+        encoding="utf-8",
+    )
+    oi_payload = json.loads(oi.read_text(encoding="utf-8"))
+    oi_payload["data"]["BTC"][str(20 * _DAY)] = dict(
+        oi_payload["data"]["BTC"][str(20 * _DAY)], source="REST_GAP_FILL"
+    )
+    oi.write_text(json.dumps(oi_payload), encoding="utf-8")
+
+    lineage_payload = json.loads(lineage.read_text(encoding="utf-8"))
+    for name, path in (("prices", mark_path), ("oi_metrics", oi)):
+        blob = path.read_bytes()
+        lineage_payload["artifacts"][name] = {
+            "path": str(path).replace("\\", "/"),
+            "size_bytes": len(blob),
+            "sha256": hashlib.sha256(blob).hexdigest(),
+        }
+    lineage.write_text(json.dumps(lineage_payload), encoding="utf-8")
+
+    evidence = build_data_quality_evidence(
+        now_ms=_NOW,
+        instruments=["BTC"],
+        price_path=str(mark_path),
+        funding_path=str(funding),
+        oi_path=str(oi),
+        snapshot_path=str(snapshot),
+        refresh_status_path=str(refresh),
+        raw_archive_path=str(raw),
+        lineage_backfill_path=str(lineage),
+        price_basis="PERP_MARK_PRICE",
+    )
+
+    assert evidence["sources"]["prices"]["rest_gap_fill_days"] == {"BTC": [20 * _DAY]}
+    assert evidence["sources"]["oi_metrics"]["rest_gap_fill_days"] == {"BTC": [20 * _DAY]}
+    assert evidence["verdict"] == "PASS"

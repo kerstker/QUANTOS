@@ -220,6 +220,35 @@ def test_consumer_journal_is_append_only_and_tamper_breaks_future_claims():
         )
 
 
+def test_consumer_chain_is_not_rescanned_for_each_delivery(tmp_path, monkeypatch):
+    bus = DurableEventBus(str(tmp_path / "events.db"))
+    for seq in range(1, 101):
+        bus.publish(_event(f"e{seq}", seq))
+
+    calls = 0
+    original = bus._verify_consumer_rows_locked
+
+    def counted():
+        nonlocal calls
+        calls += 1
+        return original()
+
+    monkeypatch.setattr(bus, "_verify_consumer_rows_locked", counted)
+    for now in range(1, 101):
+        delivery = bus.claim_next(
+            "projection",
+            worker_id="worker-a",
+            now_ms=now * 2,
+            lease_ms=10,
+        )
+        assert delivery is not None
+        bus.ack_delivery(delivery, at_ms=now * 2 + 1)
+
+    assert calls == 0
+    assert bus.consumer_chain_valid()
+    assert calls == 1
+
+
 def test_event_history_tamper_blocks_consumer_claim():
     bus = DurableEventBus(":memory:")
     bus.publish(_event("e1", 1))

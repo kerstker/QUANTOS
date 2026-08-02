@@ -20,6 +20,15 @@ from services.alpha.evaluation_evidence import (
     bind_evaluation_reproducibility,
     verify_evaluation_reproducibility,
 )
+from services.lifecycle import (
+    DeploymentState,
+    HealthReason,
+    HealthState,
+    HealthVerdict,
+    LifecycleTriple,
+    ResearchState,
+    project,
+)
 from services.research.experiment_registry.evaluation_artifact import (
     prepare_evaluation_artifact,
 )
@@ -29,6 +38,40 @@ from services.research.ports.persistence import (
 )
 from services.validation.pbo_evidence import verify_batch_pbo_evidence
 from services.validation.catalog_evidence import verify_catalog_evidence
+
+
+def _triple_db_fields(triple: LifecycleTriple) -> dict:
+    return {
+        "research_state": triple.research.value,
+        "deployment_state": triple.deployment.value,
+        "health_state": triple.health.state.value,
+        "research_reason": None,
+        "deployment_reason": None,
+        "health_reason": triple.health.reason.value,
+        "lossy_json": json.dumps(list(triple.lossy)),
+    }
+
+
+def _triple_from_row(row: dict) -> LifecycleTriple:
+    legacy = AlphaState(row["state"])
+    if row.get("research_state") is None:
+        return project(legacy)
+    health_reason = row.get("health_reason") or HealthReason.NONE.value
+    lossy_json = row.get("lossy_json")
+    lossy = (
+        project(legacy).lossy
+        if lossy_json is None
+        else tuple(json.loads(lossy_json))
+    )
+    return LifecycleTriple(
+        research=ResearchState(row["research_state"]),
+        deployment=DeploymentState(row["deployment_state"]),
+        health=HealthVerdict(
+            HealthState(row["health_state"]),
+            HealthReason(health_reason),
+        ),
+        lossy=lossy,
+    )
 
 
 class ExperimentRegistry:
@@ -117,6 +160,56 @@ class ExperimentRegistry:
     def search_history_valid(self) -> bool:
         return self._store.search_history_valid()
 
+    def search_identity(self, search_id: str) -> dict[str, str]:
+        """Return the verified immutable identity of a persistent search."""
+        return self._store.search_identity(search_id)
+
+    # --- trial provenance (727 §7.1) ----------------------------------------
+
+    def record_trial_provenance(self, record: TrialProvenance) -> bool:
+        """Retain one immutable TrialRecord. False means already retained
+        (idempotent replay), NOT that the write was skipped silently."""
+        return self._store.record_trial_provenance(record)
+
+    def trial_provenance(self, trial_id: str) -> Optional[dict]:
+        return self._store.trial_provenance(trial_id)
+
+    def trial_provenance_for_config(self, config_hash: str) -> list[dict]:
+        return self._store.trial_provenance_for_config(config_hash)
+
+    def trial_provenance_chain_valid(self) -> bool:
+        return self._store.trial_provenance_chain_valid()
+
+    def trial_provenance_head(self) -> str:
+        return self._store.trial_provenance_head()
+
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses,
+        *,
+        viewed_at: int,
+    ) -> int:
+        return self._store.record_search_oos_access(
+            search_id, accesses, viewed_at=viewed_at
+        )
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]:
+        return self._store.trial_oos_access(trial_id)
+
+    def trial_oos_access_chain_valid(self) -> bool:
+        return self._store.trial_oos_access_chain_valid()
+
+    def trial_oos_access_head(self) -> str:
+        return self._store.trial_oos_access_head()
+
+    def oos_peek_totals(self) -> dict[str, int]:
+        return self._store.oos_peek_totals()
+
+    def evaluation_binding(self, run_id: str) -> dict | None:
+        """Return the verified search identity bound to an evaluation artifact."""
+        return self._store.evaluation_binding(run_id)
+
     def save(
         self,
         catalog: AlphaCatalog,
@@ -143,6 +236,7 @@ class ExperimentRegistry:
                     "returns_json": json.dumps(list(row.returns)),
                     "sharpe": sharpe,
                     "pvalue": row.pvalue,
+                    **_triple_db_fields(row.triple or project(row.state)),
                 }
             )
         self._store.save_catalog_snapshot(
@@ -172,6 +266,7 @@ class ExperimentRegistry:
                     "returns_json": json.dumps(list(row.returns)),
                     "sharpe": catalog._sharpes.get(row.alpha_id),
                     "pvalue": row.pvalue,
+                    **_triple_db_fields(row.triple or project(row.state)),
                 }
             )
         self._store.save_evaluation_catalog_snapshot(
@@ -211,6 +306,7 @@ class ExperimentRegistry:
                         state=AlphaState(r["state"]),
                         returns=tuple(json.loads(r["returns_json"])),
                         pvalue=r["pvalue"],
+                        triple=_triple_from_row(r),
                     )
                 )
         except Exception as exc:  # intra-row corruption (bad JSON/state) -> fail closed,
@@ -231,6 +327,7 @@ class ExperimentRegistry:
                     json.loads(row["definition_json"])
                 )
                 AlphaState(row["state"])
+                _triple_from_row(row)  # fail closed on corrupt C2 columns too
                 values = json.loads(row["returns_json"])
                 if not isinstance(values, list):
                     raise ValueError("returns_json must decode to a list")

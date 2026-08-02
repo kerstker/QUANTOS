@@ -9,6 +9,8 @@ the lifecycle manager.
 """
 from __future__ import annotations
 
+import sys
+import traceback
 from typing import Optional, Sequence
 
 from quantos.contracts.alpha import (
@@ -94,6 +96,7 @@ def batch_pbo(
         try:
             res = run_panel_backtest(periods, cost=cost, quantile=quantile, target_aum=target_aum)
         except Exception:
+            traceback.print_exc(file=sys.stderr)
             return None
         candidate_hashes.append(_candidate_definition_hash(definition))
         rets = list(res.period_returns)
@@ -138,6 +141,7 @@ def batch_pbo(
             aligned_event_times=aligned_event_times,
         )
     except Exception:
+        traceback.print_exc(file=sys.stderr)
         return None
 
 

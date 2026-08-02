@@ -1,23 +1,23 @@
 {
   "artifact": "data/cache/ic_panel_snapshot.json",
-  "code_version": "855d75dd0f94",
+  "code_version": "3c990d67dd1c",
   "extractor": "ic_panel",
   "kind": "json_numbers",
   "numbers": {
     "crowd_contra.icir": {
       "abs_tol": 0.001,
       "rel_tol": 0.005,
-      "value": 0.0168
+      "value": 0.0165
     },
     "crowd_contra.mean_ic": {
       "abs_tol": 0.001,
       "rel_tol": 0.005,
-      "value": 0.0042
+      "value": 0.0041
     },
     "crowd_contra.t_stat": {
       "abs_tol": 0.001,
       "rel_tol": 0.005,
-      "value": 0.6802
+      "value": 0.6713
     }
   }
 }

@@ -90,6 +90,18 @@ def test_session_runs_persists_and_is_contained():
     assert {row["config_hash"] for row in candidates} <= set(
         reg._store.all_trial_hashes()
     )
+    provenance = [
+        provenance_row["record"]
+        for candidate_row in candidates
+        for provenance_row in reg.trial_provenance_for_config(
+            candidate_row["config_hash"]
+        )
+    ]
+    assert len(provenance) == len(candidates)
+    assert {record["actor_id"] for record in provenance} == {
+        "tests.research.test_session"
+    }
+    assert all(record["status"] == "RECORDED" for record in provenance)
 
 
 def test_session_exposes_real_factor_returns():

@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timezone
 
 from tools.live_track_advance import _VENUES, _venue_paths
+from tools.forward_status import alpha_forward_status
 
 _FORWARD_EVIDENCE_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _ALERTS = os.path.join("data", "cache", "alerts.jsonl")
@@ -134,6 +135,7 @@ def _forward_evidence(now_ms: int | None = None) -> dict:
         state = "DATA_BLOCKED"
     return {
         "present": True,
+        "ran_at": observed_at_ms,
         "evidence_state": state,
         "attested_realizations": parsed_counts["attested_realizations"],
         "attested_pending": parsed_counts["attested_pending"],

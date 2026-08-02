@@ -18,6 +18,13 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_perp_mark_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_funding_fetch.py"),
              os.path.join(_ROOT, "tools", "binance_oi_metrics_fetch.py"),
+             os.path.join(_ROOT, "tools", "binance_realtime_market.py"),
+             os.path.join(_ROOT, "tools", "binance_systemic_risk.py"),
+             os.path.join(_ROOT, "tools", "binance_rpi_depth.py"),
+             os.path.join(_ROOT, "tools", "binance_realtime_stream.py"),
+             # REST gap-fill(2026-07-26,消除 Data Vision 发布滞后的每日死窗):fapi 公共只读
+             # markPriceKlines + futures/data 指标族,无 key、绝不下单——同一条边界钉住它。
+             os.path.join(_ROOT, "tools", "binance_rest_gap_fill.py"),
              os.path.join(_ROOT, "tools", "crypto_sentiment_fetch.py"),
              os.path.join(_ROOT, "tools", "frankfurter_fetch.py"),
              os.path.join(_ROOT, "tools", "yahoo_equity_fetch.py"),
@@ -33,7 +40,33 @@ _FETCHERS = [os.path.join(_ROOT, "tools", "coingecko_fetch.py"),
              # 密钥权限校验工具(2026-07-08,安全 P0):独立、手动调用,查询交易所 mainnet 账户的
              # API key 权限位(提现是否禁用/IP 是否受限)。只读诊断,不接线(见其模块 docstring)——
              # 但它确实发起真实签名网络请求,同一条只读数据边界必须钉住它。
-             os.path.join(_ROOT, "tools", "verify_key_permissions.py")]
+             os.path.join(_ROOT, "tools", "verify_key_permissions.py"),
+             # Binance 期货 mainnet 只读首验工具(2026-07,镜像 mexc_readonly_smoke):人工
+             # 执行,4 个只读 GET(time/exchangeInfo/premiumIndex/account),绝不下单——但它
+             # 确实发起真实签名网络请求,同一条只读数据边界必须钉住它。
+             os.path.join(_ROOT, "tools", "binance_readonly_smoke.py"),
+             # Deribit 公开波动率/衍生品抓取器(2026-07-24,第四数据类 options/vol):
+             # DVOL 日频 + 永续/到期期货日线 + 期权 book 快照,公共端点无 key 只读,
+             # 绝不下单——同一条只读数据边界钉住它。
+             os.path.join(_ROOT, "tools", "deribit_fetch.py"),
+             # 补充数据维度(2026-07-25):近期强平事件 + Binance/Bybit 同步公开盘口。
+             os.path.join(_ROOT, "tools", "binance_liquidations_fetch.py"),
+             os.path.join(_ROOT, "tools", "cross_exchange_snapshot.py"),
+             os.path.join(_ROOT, "tools", "data_breadth_refresh.py"),
+             os.path.join(_ROOT, "tools", "data_channel_inventory.py"),
+             # Bybit 公开 linear perp 历史抓取器(2026-07-25,W2 cross-venue 簇 Phase 1):
+             # 日线 klines + funding history,公共端点无 key 只读,绝不下单——同一条只读
+             # 数据边界钉住它。
+             os.path.join(_ROOT, "tools", "bybit_klines_fetch.py"),
+             # MEXC 集成两个门外工具(2026-07-27,Phase 8 M1 补登记——审计发现的既有缺口,
+             # binance_readonly_smoke 在册而这两个不在):klines 公开行情抓取器(无 key 只读)
+             # 与 mainnet 只读首验(人工执行,3 个只读 GET,绝不下单)——同一条只读数据边界钉住。
+             os.path.join(_ROOT, "tools", "mexc_klines_fetch.py"),
+             os.path.join(_ROOT, "tools", "mexc_readonly_smoke.py"),
+             # SHADOW 轨道驱动器(2026-07-27,Phase 7 S3):网络面 = venue 适配器的
+             # 无签名公共行情 GET(depth);空凭证构造适配器、结构性只调无签名方法、
+             # 绝不下单——同一条只读数据边界钉住它。
+             os.path.join(_ROOT, "tools", "shadow_track.py")]
 _SERVICES = os.path.join(_ROOT, "services")
 _QUANTOS = os.path.join(_ROOT, "quantos")
 
@@ -66,9 +99,29 @@ _EXTRA_ALLOWED_BY_FILE = {
     "coingecko_fetch.py": {"math"},
     "binance_funding_fetch.py": {"math"},
     "binance_perp_mark_fetch.py": {"math"},
+    "binance_realtime_market.py": {
+        "collections", "math", "pathlib", "quantos", "typing"
+    },
+    "binance_systemic_risk.py": {
+        "collections", "dataclasses", "math", "pathlib", "quantos",
+        "re", "threading", "typing"
+    },
+    "binance_rpi_depth.py": {
+        "collections", "math", "pathlib", "quantos", "typing"
+    },
+    "binance_realtime_stream.py": {
+        "argparse", "asyncio", "collections", "math", "quantos", "typing",
+        "websockets",
+    },
+    # REST gap-fill:math 只做有限数校验(拒 NaN/Inf 源观测),不增加网络/交易/凭证能力。
+    "binance_rest_gap_fill.py": {"math"},
     # Process isolation is the hard wall-clock budget: each source is spawned, then the parent
     # terminates it on deadline. Both imports are stdlib and add no network/trade capability.
     "live_data_refresh.py": {"math", "multiprocessing", "queue"},
+    # Local artifact paths only. ``quantos.runtime_paths`` is a pure-stdlib
+    # state-root resolver; this file-scoped allowance adds no network, venue,
+    # credential, or trading capability.
+    "forward_track_advance.py": {"pathlib", "quantos"},
     # 纯 stdlib 文本解析(解析 fredgraph CSV)+ 内部契约包(FeatureValue 双时态契约,拒 lookahead)
     "fred_fetch.py": {"csv", "quantos"},
     "alfred_fetch.py": {"quantos"},  # 同一份内部契约包,vintage 抓取器同样需要
@@ -77,6 +130,30 @@ _EXTRA_ALLOWED_BY_FILE = {
     # (复用 live/exchange/{binance,bybit}_futures.py 与 retry.py 里已导出的 ungated 辅助函数/常量,
     # 见模块 docstring"设计决定"——不实例化任何 gated 类,不碰任何 LIVE 安全旗标)。
     "verify_key_permissions.py": {"hashlib", "hmac", "argparse", "dataclasses", "enum", "typing", "live"},
+    # Binance 只读首验:typing(注入签名)+ `live`(复用 binance_futures.py 的模块级
+    # transport/常量与 retry——不实例化任何 gated 类,不碰任何 LIVE 安全旗标)。
+    "binance_readonly_smoke.py": {"typing", "live"},
+    # Deribit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
+    # 均不增加网络/交易/凭证能力。
+    "deribit_fetch.py": {"math", "argparse"},
+    # 补充公开行情/强平解析器:math 只做有限数校验，不增加交易能力。
+    "binance_liquidations_fetch.py": {"math"},
+    "cross_exchange_snapshot.py": {"math"},
+    # Bybit 抓取器:math(纯 stdlib 有限数校验,拒 NaN/Inf 源观测)+ argparse(CLI)——
+    # 均不增加网络/交易/凭证能力。
+    "bybit_klines_fetch.py": {"math", "argparse"},
+    # MEXC 公开 klines 抓取器:argparse(CLI)——不增加网络/交易/凭证能力(网络复用
+    # tools/coingecko_fetch._http_get_json 的 urllib,已在 _ALLOWED_FETCHER 内)。
+    "mexc_klines_fetch.py": {"argparse"},
+    # MEXC 只读首验:argparse/typing(CLI 与注入签名)——签名 HMAC 走
+    # tools/mexc_credentials 内部(同 verify_key_permissions 的 ungated 纯函数镜像设计),
+    # 不实例化任何 gated 类。
+    "mexc_readonly_smoke.py": {"argparse", "typing"},
+    # SHADOW 轨道驱动器:math(有限数校验)+ argparse(CLI)+ typing(注入签名)+
+    # `live`(live/execution/shadow 比较核 + shadow_store 账本 + live/exchange venue
+    # 适配器——与 verify_key_permissions/binance_readonly_smoke 同款只读复用,
+    # 空凭证构造,不碰任何 LIVE 安全旗标)。
+    "shadow_track.py": {"math", "argparse", "typing", "live"},
 }
 # exchange / broker / trading SDKs that must NEVER appear (dual-use → live trading)
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",

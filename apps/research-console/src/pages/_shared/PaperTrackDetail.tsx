@@ -5,7 +5,7 @@ import { bi } from '@/lib/i18n/bilingual';
 import type { PaperTradingPayload, PaperRun, CalculationLineageItem } from '@/lib/types/research';
 import type { ConsoleApiState } from '@/ui/useConsoleSnapshot';
 import {
-  Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, KeyValue, type Column,
+  Panel, KpiStrip, StatTile, DataTable, StatusChip, Chip, type Column,
 } from '@/ui/primitives';
 import { AreaChart, UnderwaterChart } from '@/ui/charts';
 import { num, pct, pctPoints, fixed, money, statusTone, type Tone } from '@/ui/format';

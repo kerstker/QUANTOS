@@ -301,7 +301,7 @@ def test_v3_label_without_family_authority_fails_before_transaction_control() ->
     assert _transaction_control(statements) == []
 
 
-@pytest.mark.parametrize("version", (4, 5))
+@pytest.mark.parametrize("version", (5,))
 def test_phase_a_rejects_future_versions_before_transaction_control(
     version: int,
 ) -> None:
@@ -648,7 +648,7 @@ def test_search_and_audit_reads_do_not_migrate_uninitialized_legacy_store(versio
         assert _transaction_control(statements) == [], name
 
 
-@pytest.mark.parametrize("version", (4, 5))
+@pytest.mark.parametrize("version", (5,))
 def test_search_and_audit_reads_reject_future_versions_without_writes(version: int) -> None:
     store = SqliteExperimentStore(
         ":memory:",

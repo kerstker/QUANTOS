@@ -33,7 +33,14 @@ def adapt_carry(j: dict) -> dict:
         "metrics": {"net_sharpe_5bps": j.get("sharpe_net_5bps"),
                     "funding_bps_day": j.get("avg_funding_bps_day"),
                     "price_plus_funding": j.get("sharpe_price_plus_funding"),
-                    "turnover": j.get("avg_turnover")},
+                    "turnover": j.get("avg_turnover"),
+                    # merged in from crypto_carry_voltarget.json by _merge_carry_voltarget (same
+                    # strategy, sibling research artifact) — real max_drawdown/worst_day/raw sharpe
+                    # instead of the console hardcoding its own transcribed copy of these numbers.
+                    "max_drawdown": j.get("max_drawdown"),
+                    "worst_day": j.get("worst_day"),
+                    "sharpe_raw": j.get("sharpe_raw"),
+                    "ann_return": j.get("ann_return")},
         "series": {"carry_buildup": [
             {"label": "price", "value": j.get("sharpe_price_only")},
             {"label": "+funding", "value": j.get("sharpe_price_plus_funding")},
@@ -44,15 +51,44 @@ def adapt_carry(j: dict) -> dict:
     }
 
 
+_CARRY_VOLTARGET_FILE = "crypto_carry_voltarget.json"
+
+
+def _merge_carry_voltarget(cache_dir: str, j: dict) -> dict:
+    """Merge the real drawdown/worst-day/raw-sharpe figures from crypto_carry_voltarget.json (the
+    SAME funding-carry strategy's vol-target sibling artifact) into the carry_strategy bundle, so
+    the console can bind these instead of transcribing them as hardcoded literals. Fail-soft: a
+    missing/malformed sibling file just means those three fields stay None (adapt_carry already
+    handles None via the frontend's OBSERVED-constant fallback) — never fabricates a value."""
+    vt_path = os.path.join(cache_dir, _CARRY_VOLTARGET_FILE)
+    if not os.path.exists(vt_path):
+        return j
+    try:
+        vt = json.load(open(vt_path, encoding="utf-8"))
+    except Exception:
+        return j
+    raw = vt.get("raw") if isinstance(vt.get("raw"), dict) else {}
+    merged = dict(j)
+    merged["max_drawdown"] = raw.get("max_drawdown")
+    merged["worst_day"] = raw.get("worst_day")
+    merged["sharpe_raw"] = raw.get("sharpe")
+    merged["ann_return"] = raw.get("ann_return")
+    return merged
+
+
 def adapt_oi_research(j: dict) -> dict:
     factors = j.get("factors", [])
     top = sorted(factors, key=lambda f: -(f.get("incremental_ir_vs_carry") or -9))[:8]
+    crowd = next((f for f in factors if f.get("name") == "crowd_contra"), None)
     return {
         "title": "持仓因子 vs carry 正交研究",
         "params": {"universe": len(j.get("universe", [])), "n_days": j.get("n_days"), "quantile": j.get("quantile")},
         "metrics": {"carry_econ_sharpe": j.get("carry_econ_sharpe"),
                     "carry_price_sharpe": j.get("carry_price_sharpe"),
-                    "n_factors": len(factors)},
+                    "n_factors": len(factors),
+                    # real crowd_contra-vs-carry orthogonality (was a hardcoded "0.5%" literal on the console)
+                    "crowd_contra_r2_vs_carry": None if crowd is None else crowd.get("explained_r2_by_carry"),
+                    "crowd_contra_price_sharpe": None if crowd is None else crowd.get("price_sharpe")},
         "series": {"incremental_ir": [{"label": f.get("name", "?")[:10],
                                        "value": f.get("incremental_ir_vs_carry")} for f in top]},
         "verdict": j.get("verdict", "—"),
@@ -149,6 +185,8 @@ def index_existing(cache_dir: str, registry: RunRegistry, *, now: int) -> int:
             continue
         try:
             j = json.load(open(path, encoding="utf-8"))
+            if fname == "crypto_carry_strategy.json":
+                j = _merge_carry_voltarget(cache_dir, j)
             a = adapter(j)
         except Exception:
             continue                                         # skip a malformed file, never fabricate

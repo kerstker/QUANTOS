@@ -1597,11 +1597,22 @@ def evaluate_cadence(
         and item.attempt.operation_kind == policy.operation_kind
         and item.attempt.mode == policy.mode
     ]
-    if len(matching_attempts) != len(all_attempts):
-        add("SOURCE_CONTRACT_MISMATCH")
     matching_ids = {item.attempt.attempt_id for item in matching_attempts}
 
     latest_attempt = all_attempts[-1]
+    # The authority is append-only, so contract upgrades necessarily retain
+    # older attempts. Cadence is measured within the current contract epoch;
+    # historical epochs remain auditable but cannot permanently make the new
+    # epoch unreachable. Fail closed when the current epoch has never started
+    # or when the latest attempt rolled back to another contract.
+    if (
+        not matching_attempts
+        or latest_attempt.attempt.source_contract_sha256
+        != policy.source_contract_sha256
+        or latest_attempt.attempt.operation_kind != policy.operation_kind
+        or latest_attempt.attempt.mode != policy.mode
+    ):
+        add("SOURCE_CONTRACT_MISMATCH")
     latest_attempt_age_ms = max(0, now_ms - latest_attempt.attempt.started_at_ms)
     if latest_attempt_age_ms > policy.max_attempt_age_ms:
         add("LATEST_ATTEMPT_STALE")
@@ -1618,6 +1629,7 @@ def evaluate_cadence(
         item
         for item in all_outcomes
         if item.outcome.verdict == "FAIL"
+        and item.outcome.attempt_id in matching_ids
         and item.outcome.completed_at_ms >= clean_floor
     ]
     if clean_failures:

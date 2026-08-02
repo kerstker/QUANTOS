@@ -15,15 +15,19 @@ import tempfile
 import time
 from typing import Any
 
-from tools.live_backup import _check_passphrase_strength, decrypt_bytes
+from tools.live_backup import _check_passphrase_strength, decrypt_file
 
 
 class RestoreDrillError(RuntimeError):
     """The restore drill cannot prove a safe, complete recovery."""
 
 
-def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def _sha256_file(path: str, *, block_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        while block := source.read(block_size):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _evidence_path(path: str) -> str:
@@ -105,13 +109,13 @@ def run_restore_drill(
     started = time.perf_counter()
     try:
         for source_path, restored_name in zip(files, restored_names):
-            source_bytes = open(source_path, "rb").read()
-            restored_bytes = decrypt_bytes(source_bytes, passphrase or "") if mode == "ENCRYPTED" else source_bytes
-            expected_hashes[restored_name] = _sha256(restored_bytes)
             output_path = os.path.join(stage, restored_name)
-            with open(output_path, "wb") as output:
-                output.write(restored_bytes)
-            if _sha256(open(output_path, "rb").read()) != expected_hashes[restored_name]:
+            if mode == "ENCRYPTED":
+                decrypt_file(source_path, output_path, passphrase or "")
+            else:
+                shutil.copyfile(source_path, output_path)
+            expected_hashes[restored_name] = _sha256_file(output_path)
+            if _sha256_file(output_path) != expected_hashes[restored_name]:
                 raise RestoreDrillError(f"integrity mismatch after restore: {restored_name}")
 
         elapsed_ms = int(round((time.perf_counter() - started) * 1000))

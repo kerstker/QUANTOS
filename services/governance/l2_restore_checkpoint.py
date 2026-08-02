@@ -30,6 +30,9 @@ from pydantic import (
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$")
 _PAYLOAD_TYPE = "application/vnd.quantos.l2-restore-history-checkpoint.v1+json"
+_REQUEST_TYPE = (
+    "application/vnd.quantos.l2-restore-history-checkpoint-request.v1+json"
+)
 
 
 class _FrozenContract(BaseModel):
@@ -128,6 +131,27 @@ class L2RestoreCheckpoint(_FrozenContract):
             raise ValueError("event_count must equal the contiguous head_seq")
         if self.retention_until_ms < self.sealed_at_ms:
             raise ValueError("retention must not end before the checkpoint seal")
+        return self
+
+
+class L2RestoreCheckpointRequest(_FrozenContract):
+    """Unsigned handoff from the local authority to an external sealer."""
+
+    schema_version: Literal[1] = 1
+    request_type: Literal[
+        "application/vnd.quantos.l2-restore-history-checkpoint-request.v1+json"
+    ] = _REQUEST_TYPE
+    algorithm: Literal["Ed25519"] = "Ed25519"
+    requested_at_ms: int = Field(ge=0)
+    minimum_retention_until_ms: int = Field(ge=0)
+    required_issuer: str = Field(min_length=1, max_length=255)
+    required_key_id: str = Field(min_length=1, max_length=255)
+    local_head: L2RestoreHistoryHead
+
+    @model_validator(mode="after")
+    def _validate_retention(self) -> L2RestoreCheckpointRequest:
+        if self.minimum_retention_until_ms <= self.requested_at_ms:
+            raise ValueError("minimum retention must end after the request")
         return self
 
 
@@ -277,6 +301,16 @@ def l2_restore_checkpoint_signing_payload(
             "schema_version": 1,
         }
     )
+
+
+def l2_restore_checkpoint_request_sha256(
+    request: L2RestoreCheckpointRequest,
+) -> str:
+    """Bind one exact unsigned request before it leaves the local host."""
+
+    if not isinstance(request, L2RestoreCheckpointRequest):
+        raise TypeError("request must be an L2RestoreCheckpointRequest")
+    return _sha256(_canonical(request.model_dump(mode="json")))
 
 
 def signed_l2_restore_checkpoint_sha256(
@@ -469,10 +503,12 @@ def verify_signed_l2_restore_checkpoint(
 __all__ = [
     "L2RestoreCheckpoint",
     "L2RestoreCheckpointError",
+    "L2RestoreCheckpointRequest",
     "L2RestoreHistoryHead",
     "SignedL2RestoreCheckpoint",
     "TrustedL2RestoreCheckpointKey",
     "VerifiedL2RestoreCheckpoint",
+    "l2_restore_checkpoint_request_sha256",
     "l2_restore_checkpoint_signing_payload",
     "load_signed_l2_restore_checkpoint_json",
     "signed_l2_restore_checkpoint_sha256",

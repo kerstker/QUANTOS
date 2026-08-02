@@ -1,59 +1,66 @@
+@import '@fontsource-variable/noto-sans-sc';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================================================
-   QUANTOS Cockpit — premium fintech design language (Stripe / Linear / Arc grade)
-   Layered surfaces, light-alpha glass borders, soft elevation, a signature
-   indigo→violet gradient, generous type scale. CSS vars are the single source of
-   truth; Tailwind theme maps them to utilities.
+   QUANTOS Institutional Workbench — Bloomberg-terminal / institutional OMS
+   design language. Near-black canvas, low-saturation slate-blue panels,
+   hairline 1px borders, tight radii, compact type scale, tabular mono figures.
+   Signature accent is institutional amber (exchange-grade), with exchange
+   semantics: teal-green up / red down. CSS vars are the single source of
+   truth; Tailwind theme maps them to utilities. All legacy variable names
+   are preserved — page components need zero changes.
    ========================================================================== */
 :root {
   color-scheme: dark;
 
-  /* deep indigo-black base */
-  --bg:        #080912;
-  --surface:   #0c0e1a;   /* rail / topbar (glassy)   */
-  --panel:     #111426;   /* card                     */
-  --panel-2:   #141832;   /* card gradient top        */
-  --elevated:  #1b2040;   /* hover / nested           */
-  --inset:     #0a0c16;   /* wells, table bodies      */
+  /* near-black terminal base */
+  --bg:        #0a0c10;   /* canvas                    */
+  --surface:   #0e1117;   /* rail / topbar             */
+  --panel:     #12151d;   /* card                      */
+  --panel-2:   #151924;   /* card gradient top         */
+  --elevated:  #1b2029;   /* hover / nested            */
+  --inset:     #0c0f14;   /* wells, table bodies       */
 
-  /* light-alpha borders = the premium "glass" tell */
-  --line:        rgba(255,255,255,.07);
-  --line-strong: rgba(255,255,255,.14);
+  /* hairline borders — the institutional "chrome" tell */
+  --line:        rgba(148,163,184,.10);
+  --line-strong: rgba(148,163,184,.20);
 
   /* ink */
-  --ink:    #f2f4fb;
-  --muted:  #a8b0c9;
-  --faint:  #6d7591;
+  --ink:    #e8eaf0;
+  --muted:  #9aa3b2;
+  /* Lowest-emphasis copy still clears WCAG AA against elevated/panel/inset. */
+  --faint:  #808a98;
 
-  /* signature accent + semantics */
-  --accent:     #8b9cff;   /* indigo-violet primary */
-  --accent-2:   #c08cff;   /* violet                */
-  --accent-dim: #3b3f7a;
-  --accent-ink: #12132e;
-  --info:       #5eb0ff;
-  --pos:        #34d39a;
-  --warn:       #fbbf3c;
-  --neg:        #fb6f86;
-  --special:    #c08cff;
-  --cyan:       #5eead4;
+  /* signature amber accent + exchange semantics */
+  --accent:     #f0b90b;   /* institutional amber primary */
+  --accent-2:   #f8d12e;   /* amber highlight             */
+  --accent-dim: #4d3d08;
+  --accent-ink: #0a0c10;
+  --info:       #4b9bff;
+  --pos:        #2ebd85;   /* up / bid                    */
+  --warn:       #f0b90b;
+  --neg:        #f6465d;   /* down / ask                  */
+  --special:    #8b9cff;
+  --cyan:       #45d3d8;
 
-  /* signature gradient — brand mark, key accents, active states, chart fills */
-  --grad: linear-gradient(135deg, #818cf8 0%, #a78bfa 48%, #c084fc 100%);
-  --grad-cyan: linear-gradient(135deg, #5eead4 0%, #818cf8 100%);
+  /* brand gradient — restrained amber ramp (mark, key accents, chart fills) */
+  --grad: linear-gradient(135deg, #f0b90b 0%, #f8d12e 52%, #d9a213 100%);
+  --grad-cyan: linear-gradient(135deg, #45d3d8 0%, #4b9bff 100%);
 
-  --grid: rgba(255,255,255,.05);   /* chart gridlines */
+  --grid: rgba(148,163,184,.07);   /* chart gridlines */
 
-  /* soft elevation */
-  --shadow-panel: 0 1px 0 0 rgba(255,255,255,.04) inset, 0 18px 40px -24px rgba(0,0,0,.75);
-  --shadow-lift:  0 1px 0 0 rgba(255,255,255,.06) inset, 0 24px 60px -28px rgba(80,70,180,.45), 0 10px 28px -20px rgba(0,0,0,.7);
-  --glow-accent:  0 0 0 1px rgba(139,156,255,.25), 0 8px 30px -10px rgba(139,156,255,.35);
+  /* tight elevation — chrome, not glow */
+  --shadow-panel: 0 1px 0 0 rgba(255,255,255,.03) inset, 0 10px 24px -18px rgba(0,0,0,.8);
+  --shadow-lift:  0 1px 0 0 rgba(255,255,255,.05) inset, 0 16px 36px -20px rgba(0,0,0,.85), 0 4px 14px -10px rgba(240,185,11,.10);
+  --glow-accent:  0 0 0 1px rgba(240,185,11,.28), 0 6px 20px -10px rgba(240,185,11,.30);
+
+  --font-sans: "Noto Sans SC Variable", "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, "Noto Sans SC Variable", monospace;
 
   font-family: var(--font-sans);
-  --font-sans: "Inter var", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -62,14 +69,14 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    radial-gradient(1100px 620px at 82% -8%, rgba(160,120,255,.12), transparent 58%),
-    radial-gradient(900px 560px at -8% 4%, rgba(94,176,255,.10), transparent 55%),
-    radial-gradient(700px 700px at 50% 120%, rgba(94,234,212,.06), transparent 60%),
+    radial-gradient(1000px 520px at 88% -10%, rgba(240,185,11,.05), transparent 60%),
+    radial-gradient(880px 520px at -10% 0%, rgba(75,155,255,.05), transparent 55%),
     var(--bg);
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -85,28 +92,73 @@ a { color: inherit; text-decoration: none; }
   -webkit-text-fill-color: transparent; color: transparent;
 }
 
-/* glass panel sheen */
+/* glass panel sheen (rail / topbar) — subtler than before, terminal-grade */
 .glass {
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0) 60%), var(--surface);
-  backdrop-filter: blur(14px) saturate(140%);
+  background: linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0) 55%), var(--surface);
+  backdrop-filter: blur(12px) saturate(120%);
 }
 
 /* hover lift for interactive tiles */
-.lift { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
-.lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); border-color: var(--line-strong); }
+.lift { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.lift:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); border-color: var(--line-strong); }
 
-/* refined scrollbars */
-*::-webkit-scrollbar { width: 10px; height: 10px; }
+/* ---------------------------------------------------------------------------
+   Institutional workbench utility classes
+   --------------------------------------------------------------------------- */
+
+/* .terminal-panel — hairline border, squared chrome, faint grid/noise bed */
+.terminal-panel {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+}
+.terminal-panel::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: .35;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,.5), rgba(0,0,0,.08));
+}
+.terminal-panel > * { position: relative; }
+
+/* .ticker-num — exchange-tape figure: mono, tabular, tight tracking */
+.ticker-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+  letter-spacing: -0.02em;
+}
+
+/* .density-compact — opt-in compact container (tables, ladders, tapes) */
+.density-compact { font-size: 13px; line-height: 1.4; }
+.density-compact :is(th, td) { padding: 5px 9px !important; }
+.density-compact :is(.px-5) { padding-left: 12px !important; padding-right: 12px !important; }
+
+/* keyboard-focus ring for SVG node groups (e.g. AlphaGraph) — the <g role="button"> itself has
+   no visible geometry, so the ring is drawn on its focused descendant circle instead */
+g[role="button"]:focus-visible circle { stroke: var(--accent); stroke-width: 3; }
+g[role="button"]:focus-visible { outline: none; }
+
+/* refined scrollbars — thin terminal chrome */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: rgba(255,255,255,.10); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.18); background-clip: padding-box; }
+*::-webkit-scrollbar-thumb { background: rgba(148,163,184,.14); border-radius: 4px; border: 1px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.24); background-clip: padding-box; }
 
-@keyframes q-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes q-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes q-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 @keyframes q-sheen { from { background-position: -200% 0; } to { background-position: 200% 0; } }
-.q-rise { animation: q-rise .45s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes q-tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.q-rise { animation: q-rise .35s cubic-bezier(.22,.61,.36,1) both; }
 .q-live { animation: q-pulse 1.8s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .q-rise, .q-live, .lift { animation: none; transition: none; }
+  .q-rise, .q-live, .lift, .tape-scroll { animation: none !important; transition: none !important; }
 }

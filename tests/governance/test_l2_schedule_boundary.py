@@ -31,12 +31,32 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert registered_modules
     assert registered_modules <= {
         "alpha_maintenance_sweep",
+        "alpha_production_workflow",
         "crypto_factory_loop",
         "domain_event_ops",
         "domain_event_seal",
+        "artifact_admission_seal",
+        "binance_realtime_market",
+        "binance_systemic_risk",
+        "binance_rpi_depth",
+        "binance_realtime_features",
+        "binance_realtime_drift_alerts",
+        "binance_realtime_stream",
+        "realtime_alpha_discovery",
+        "realtime_alpha_forward_shadow",
         "external_heartbeat",
         "forward_track_advance",
         "gonogo_report",
+        "alpha_paper_cycle",
+        "paper_alpha_evaluation",
+        "paper_multivenue_sor",
+        "paper_research_risk_bundle",
+        "paper_order_preview",
+        "paper_realtime",
+        "paper_realtime_10k",
+        "paper_shadow_auto",
+        "paper_shadow_realtime",
+        "paper_health",
         "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",
@@ -47,6 +67,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_backup" in source
     assert "QUANTOS_external_heartbeat" in source
     assert "QUANTOS_domain_event_seal" in source
+    assert "QUANTOS_artifact_admission_seal" in source
 
 
 def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_tasks():
@@ -55,7 +76,11 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
     assert "StateRoot" in source
     assert "l2_schedule_entrypoint.py" in source
     assert "Get-Command python" in source
+    assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
+    assert "New-ScheduledTaskPrincipal" in source
+    assert "-LogonType S4U" in source
+    assert "-Principal $l2Principal" in source
     assert "-MultipleInstances IgnoreNew" in source
     assert "-WorkingDirectory $stateRoot" in source
     assert "-ExecutionTimeLimit (New-TimeSpan -Minutes 5)" in source
@@ -71,6 +96,7 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         "QUANTOS_backup",
         "QUANTOS_external_heartbeat",
         "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
     ):
         assert task_name in source
     assert "Disable-ScheduledTask" in source
@@ -81,9 +107,30 @@ def test_schedule_registration_separates_release_code_from_mutable_state():
     source = _source()
     assert "$codeRoot = (Resolve-Path (Join-Path $PSScriptRoot \"..\")).Path" in source
     assert "$stateRoot = (Resolve-Path -LiteralPath $StateRoot).Path" in source
+    assert "release and state roots must be different" in source
+    assert "status --porcelain=v1 --untracked-files=all --ignore-submodules=none" in source
+    assert "$releaseCommit" in source
     assert '$launcher = Join-Path $codeRoot "tools\\l2_schedule_entrypoint.py"' in source
-    assert '-Argument "`"$launcher`" $Module"' in source
+    assert '-Execute $pythonw' in source
+    assert '--release-commit $releaseCommit' in source
     assert '-m tools.$Module' not in source
+
+
+def test_resident_binance_stream_has_bounded_restart_poll():
+    source = _source()
+    trigger = re.search(
+        r"\$binanceRealtimeStreamTrigger\s*=\s*@\((.*?)\n\)",
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert trigger is not None
+    contract = trigger.group(1)
+    assert "New-ScheduledTaskTrigger -AtStartup" in contract
+    assert "New-ScheduledTaskTrigger -Once" in contract
+    assert "New-TimeSpan -Minutes 5" in contract
+    assert "New-ScheduledTaskTrigger -Daily" not in contract
+    assert "-MultipleInstances IgnoreNew" in source
 
 
 def test_backup_registration_never_embeds_a_secret_or_local_default_destination():

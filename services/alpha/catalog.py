@@ -22,7 +22,37 @@ from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
 
+from services.lifecycle import (
+    LOSSY_DEPLOYMENT,
+    LOSSY_HEALTH,
+    LOSSY_HEALTH_REASON,
+    DeploymentState,
+    HealthState,
+    HealthVerdict,
+    LifecycleTriple,
+    ResearchState,
+    project,
+)
+
 _VAR_SR_FLOOR = 1e-4
+
+
+def _evidence_trial_id(value: str) -> str:
+    """Return a SHA-256 identity for current and legacy trial tokens.
+
+    Early production registries retained 16-hex trial tokens. They are still
+    real, distinct trials and must remain in the multiple-testing denominator,
+    but the replayable evidence contract now requires full SHA-256 identities.
+    Namespace hashing is one-to-one for the retained tokens and leaves the raw
+    persistence ledger untouched.
+    """
+    token = str(value)
+    lowered = token.lower()
+    if len(lowered) == 64 and all(ch in "0123456789abcdef" for ch in lowered):
+        return lowered
+    if len(lowered) == 16 and all(ch in "0123456789abcdef" for ch in lowered):
+        return stable_hash({"legacy_catalog_trial_token": lowered})
+    return token
 
 
 @dataclass(frozen=True)
@@ -32,6 +62,10 @@ class AlphaStateRow:
     state: AlphaState
     returns: tuple[float, ...]
     pvalue: Optional[float]
+    # 727 C2: the three orthogonal machines alongside the legacy mixed state.
+    # None means "written before C2" — restore() falls back to project(state)
+    # rather than inventing dimensions that were never recorded.
+    triple: Optional[LifecycleTriple] = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +85,13 @@ class AlphaCatalog:
     ) -> None:
         self._defs: dict[str, AlphaDefinition] = {}
         self._state: dict[str, AlphaState] = {}
+        # 727 C2: parallel per-machine views. In C2 they are ALWAYS the
+        # projection of _state (dual-write); C3's advance_research/deployment/
+        # health entries are what will let them diverge from the projection.
+        self._research: dict[str, ResearchState] = {}
+        self._deployment: dict[str, DeploymentState] = {}
+        self._health: dict[str, HealthVerdict] = {}
+        self._lossy: dict[str, tuple[str, ...]] = {}
         self._returns: dict[str, tuple[float, ...]] = {}
         self._sharpes: dict[str, float] = {}
         self._pvalues: dict[str, float] = {}
@@ -59,6 +100,7 @@ class AlphaCatalog:
         self._historical_sharpes: dict[str, float] = {}
         self._historical_pvalues: dict[str, float] = {}
         self._seen_configs: set[str] = set()
+        self._evidence_trials: set[str] = set()
         self._trial_count: int = 0
         self._trial_recorder = trial_recorder
 
@@ -75,6 +117,7 @@ class AlphaCatalog:
             self.register_trial(definition.definition_hash)
         self._defs[aid] = definition
         self._state[aid] = AlphaState.DRAFT
+        self._write_triple(aid, project(AlphaState.DRAFT))
 
     def register_trial(self, config_hash: str) -> None:
         """Count a never-seen config exactly once; monotonic, never decremented."""
@@ -82,6 +125,7 @@ class AlphaCatalog:
             self._trial_recorder(config_hash)
         if config_hash not in self._seen_configs:
             self._seen_configs.add(config_hash)
+            self._evidence_trials.add(_evidence_trial_id(config_hash))
             self._trial_count += 1
 
     def global_trial_count(self) -> int:
@@ -94,7 +138,7 @@ class AlphaCatalog:
         The digest lets evaluation and lifecycle evidence bind the exact population.
         """
 
-        return stable_hash(sorted(self._seen_configs))
+        return stable_hash(sorted(self._evidence_trials))
 
     def catalog_var_sr(self) -> Optional[float]:
         """Population variance of per-observation Sharpe across the catalog.
@@ -168,7 +212,7 @@ class AlphaCatalog:
         return create_catalog_evidence(
             subject_id=alpha_id,
             subject_definition_hash=definition_hash,
-            trial_definition_hashes=tuple(sorted(self._seen_configs)),
+            trial_definition_hashes=tuple(sorted(self._evidence_trials)),
             return_series_by_definition=return_series_by_definition,
         )
 
@@ -196,6 +240,77 @@ class AlphaCatalog:
         survivors = benjamini_hochberg_yekutieli([pvalues[a] for a in ids], q=q)
         return {ids[i] for i in survivors}
 
+    def family_fdr_result(
+        self,
+        q: float = 0.10,
+        *,
+        rho_cut: float = 0.70,
+        min_overlap: int = 60,
+    ):
+        """Run the 727 §7.3 family/within-family FDR lens.
+
+        Family identity is fail-closed and deterministic:
+
+        * an explicit ``economic_family``/``family_id`` candidate parameter wins;
+        * otherwise candidates with the same factor dependency set share one
+          declared input family (the rank/zscore/window variants in §7.3);
+        * definitions without usable dependency metadata fall back to return
+          correlation;
+        * historical p-values restored without their definitions/returns are
+          charged as unique singleton families, never guessed into a discount.
+
+        This result is an ADDITIONAL promotion lens.  The existing catalog-wide
+        BHY test and flat global trial count remain mandatory, so family
+        accounting cannot weaken the current gate or un-deflate DSR.
+        """
+        from .family_testing import assign_families, hierarchical_fdr
+
+        pvalues = {**self._historical_pvalues, **self._pvalues}
+        return_series: dict[str, tuple[float, ...]] = {}
+        declared: dict[str, str] = {}
+        for alpha_id in sorted(pvalues):
+            return_series[alpha_id] = self._returns.get(alpha_id, ())
+            definition = self._defs.get(alpha_id)
+            if definition is None:
+                # The evaluation-only restore path intentionally does not
+                # rehydrate stale definitions/returns.  Treat every such row as
+                # a singleton instead of inventing an economic relationship.
+                declared[alpha_id] = f"legacy-singleton:{alpha_id}"
+                continue
+            explicit = (
+                definition.params.get("economic_family")
+                or definition.params.get("family_id")
+                or ""
+            )
+            if isinstance(explicit, str) and explicit.strip():
+                declared[alpha_id] = f"economic:{explicit.strip()}"
+            elif definition.factor_ids:
+                dependencies = ",".join(sorted(set(definition.factor_ids)))
+                declared[alpha_id] = f"inputs:{dependencies}"
+
+        families = assign_families(
+            return_series=return_series,
+            declared_families=declared,
+            rho_cut=rho_cut,
+            min_overlap=min_overlap,
+        )
+        return hierarchical_fdr(pvalues=pvalues, families=families, q=q)
+
+    def family_fdr_survivors(
+        self,
+        q: float = 0.10,
+        *,
+        rho_cut: float = 0.70,
+        min_overlap: int = 60,
+    ) -> set[str]:
+        return set(
+            self.family_fdr_result(
+                q,
+                rho_cut=rho_cut,
+                min_overlap=min_overlap,
+            ).survivors
+        )
+
     # --- state (low-level; the lifecycle manager is the validated chokepoint) -
 
     def get(self, alpha_id: str) -> AlphaDefinition:
@@ -203,6 +318,12 @@ class AlphaCatalog:
 
     def state(self, alpha_id: str) -> AlphaState:
         return self._state[alpha_id]
+
+    def _write_triple(self, alpha_id: str, triple: LifecycleTriple) -> None:
+        self._research[alpha_id] = triple.research
+        self._deployment[alpha_id] = triple.deployment
+        self._health[alpha_id] = triple.health
+        self._lossy[alpha_id] = triple.lossy
 
     def _set_state(self, alpha_id: str, state: AlphaState) -> None:
         """INTERNAL — performs NO validation. The AlphaLifecycleManager (the
@@ -213,6 +334,69 @@ class AlphaCatalog:
         (see the threat-model note in CLAUDE.md: in-process trusted code is governed
         by code review + the governance scanner, not by this runtime check)."""
         self._state[alpha_id] = state
+        # Dual-write (727 C2): the orthogonal machines shadow the legacy write
+        # with its projection. Zero behavior change — the legacy read path stays
+        # authoritative until C3 switches the orchestrator.
+        self._write_triple(alpha_id, project(state))
+
+    def _set_health(self, alpha_id: str, verdict: HealthVerdict) -> None:
+        """INTERNAL (727 C3) — health-machine write, same chokepoint discipline as
+        _set_state: only AlphaLifecycleManager.advance_health may call this in
+        production. Records a fully-known verdict, so the row's loss markers
+        concerning health are cleared (deployment loss, if any, is kept)."""
+        self._health[alpha_id] = verdict
+        self._lossy[alpha_id] = tuple(
+            marker
+            for marker in self._lossy.get(alpha_id, ())
+            if marker not in (LOSSY_HEALTH, LOSSY_HEALTH_REASON)
+        )
+
+    def _set_deployment(self, alpha_id: str, state: DeploymentState) -> None:
+        """INTERNAL (727 C3) — deployment-machine write; only the manager's
+        advance_deployment / advance_health de-risk coupling may call it."""
+        self._deployment[alpha_id] = state
+        if state is not DeploymentState.UNKNOWN_LEGACY:
+            self._lossy[alpha_id] = tuple(
+                marker
+                for marker in self._lossy.get(alpha_id, ())
+                if marker != LOSSY_DEPLOYMENT
+            )
+
+    def _set_research(self, alpha_id: str, state: ResearchState) -> None:
+        """INTERNAL (727 C3) — research-machine write; reserved for the manager's
+        advance_research entry (no production caller yet)."""
+        self._research[alpha_id] = state
+
+    # --- orthogonal machine reads (727 C2; additive, legacy reads untouched) --
+
+    def triple(self, alpha_id: str) -> LifecycleTriple:
+        """The three-machine view. Rows registered/restored after C2 carry it
+        directly; anything older is projected on the fly with its loss markers."""
+        if alpha_id not in self._research:
+            return project(self._state[alpha_id])
+        return LifecycleTriple(
+            research=self._research[alpha_id],
+            deployment=self._deployment[alpha_id],
+            health=self._health[alpha_id],
+            lossy=self._lossy.get(alpha_id, ()),
+        )
+
+    def research_state(self, alpha_id: str) -> ResearchState:
+        return self.triple(alpha_id).research
+
+    def deployment_state(self, alpha_id: str) -> DeploymentState:
+        return self.triple(alpha_id).deployment
+
+    def health(self, alpha_id: str) -> HealthVerdict:
+        return self.triple(alpha_id).health
+
+    def by_deployment(self, state: DeploymentState) -> list[str]:
+        return sorted(
+            aid for aid in self._defs if self.triple(aid).deployment is state
+        )
+
+    def by_health(self, state: HealthState) -> list[str]:
+        return sorted(aid for aid in self._defs if self.triple(aid).health.state is state)
 
     def all_ids(self) -> list[str]:
         return sorted(self._defs)
@@ -234,6 +418,7 @@ class AlphaCatalog:
                 state=self._state[aid],
                 returns=self._returns.get(aid, ()),
                 pvalue=self._pvalues.get(aid),
+                triple=self.triple(aid),
             )
             for aid in self.all_ids()
         )
@@ -245,6 +430,10 @@ class AlphaCatalog:
         consistent with the persisted returns."""
         self._defs = {}
         self._state = {}
+        self._research = {}
+        self._deployment = {}
+        self._health = {}
+        self._lossy = {}
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
@@ -253,10 +442,16 @@ class AlphaCatalog:
         self._historical_sharpes = {}
         self._historical_pvalues = {}
         self._seen_configs = set(snap.trials)
+        self._evidence_trials = {
+            _evidence_trial_id(value) for value in self._seen_configs
+        }
         self._trial_count = len(self._seen_configs)
         for row in snap.alphas:
             self._defs[row.alpha_id] = row.definition
             self._state[row.alpha_id] = row.state
+            # Rows persisted before C2 have no triple columns; project the legacy
+            # state (keeping its loss markers) instead of inventing dimensions.
+            self._write_triple(row.alpha_id, row.triple or project(row.state))
             if row.returns:
                 self.set_returns(row.alpha_id, row.returns)   # recomputes _sharpes
             if row.pvalue is not None:
@@ -278,10 +473,17 @@ class AlphaCatalog:
         """
         self._defs = {}
         self._state = {}
+        self._research = {}
+        self._deployment = {}
+        self._health = {}
+        self._lossy = {}
         self._returns = {}
         self._sharpes = {}
         self._pvalues = {}
         self._seen_configs = set(trials)
+        self._evidence_trials = {
+            _evidence_trial_id(value) for value in self._seen_configs
+        }
         self._trial_count = len(self._seen_configs)
         self._historical_returns = {}
         self._historical_definition_hashes = dict(

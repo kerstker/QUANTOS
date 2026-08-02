@@ -41,6 +41,84 @@ export interface ResearchAgent {
   performance_score: number; budget_spent_cny: number;
 }
 
+export interface AgentRuntimeRecord {
+  agent_id: string;
+  name: string;
+  state: AgentState;
+  runs_completed: number;
+  runs_active: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  last_run_id: string | null;
+  last_run_kind: string | null;
+  last_run_at: number | null;
+  agent_auto_approved: number;
+  can_reach_approved: boolean;
+  credentials_access: boolean;
+  order_submission: boolean;
+}
+
+export interface AgentEngineRecord {
+  engine_id: string;
+  implementation: string;
+  readiness: string;
+}
+
+export interface AgentsPayload extends ConsolePayloadBase {
+  summary: {
+    active: number;
+    total_runs: number;
+    completed: number;
+    succeeded: number;
+    failed: number;
+    cancelled: number;
+    agent_auto_approved: number;
+    registry_status: string;
+  };
+  agents: AgentRuntimeRecord[];
+  engines: AgentEngineRecord[];
+  observed_run_kinds: string[];
+  realtime_inputs: {
+    status: 'AVAILABLE' | 'STALE' | 'UNAVAILABLE';
+    fresh: boolean;
+    age_ms: number | null;
+    source: string;
+    feature_version: string | null;
+    feature_count: number;
+    instrument_count: number;
+    retained_value_count: number;
+    drift_status: string | null;
+    drift_status_counts: Record<string, number>;
+    drift_calibration: string | null;
+    drift_calibration_id: string | null;
+    drift_warn_ks: number | null;
+    drift_block_ks: number | null;
+    batch_chain_valid: boolean;
+    alerting: {
+      status: string;
+      current_severity: string | null;
+      local_delivery: string | null;
+      external_delivery: string | null;
+      independent_worker: boolean;
+      journal_chain_valid: boolean;
+      event_count: number;
+    };
+    consumption_mode: 'READ_ONLY_DIAGNOSTIC_CONTEXT';
+    automatic_action: false;
+    promotion_authority: false;
+  };
+  containment: {
+    authorized_level: string;
+    research_only: boolean;
+    human_approval_required: boolean;
+    agent_can_reach_approved: boolean;
+    credentials_access: boolean;
+    broker_connectivity: boolean;
+    order_submission: boolean;
+    live_trading: boolean;
+  };
+}
+
 export interface PaperRun {
   run_id: string; alpha_id: string; status: string;
   metrics: Record<string,number>; equity_curve: {timestamp:number;equity:number}[];
@@ -51,7 +129,13 @@ export interface PortfolioWeights { weights_id: string; weights: Record<string,n
 export interface PortfolioSimulation { run_id: string; status: string; metrics: Record<string,number>; equity_curve: {day:number;equity:number}[]; }
 export interface RiskReport { run_id: string; portfolio_id: string; decision: RiskDecision; gates_passed: number; gates_total: number; reasons: string[]; gate_results: Record<string,boolean>; }
 export interface EventRecord { event_id: string; event_type: string; timestamp: number; source: string; correlation_id?: string; payload: Record<string,unknown>; }
-export interface ServiceHealth { service: string; status: "healthy"|"degraded"|"down"; latency_ms: number; error_rate: number; }
+export interface ServiceHealth {
+  service: string;
+  status: "healthy"|"degraded"|"down"|"unknown";
+  latency_ms: number | null;
+  error_rate: number | null;
+  probe?: string;
+}
 
 export interface ChartPoint {
   x: number;
@@ -71,31 +155,6 @@ export interface CalculationLineageItem {
   output: string;
 }
 
-export interface ComputationAlphaSummary {
-  candidate_id: string;
-  expression: string;
-  turnover: number;
-  capacity_estimate: number;
-  lifecycle_state: string;
-  ic?: number;
-  rank_ic?: number;
-  icir?: number;
-  sharpe?: number;
-  composite_score?: number;
-}
-
-export interface ComputationValidation {
-  run_id: string;
-  alpha_id: string;
-  decision: ValidationDecision | "APPROVED" | "NEEDS_MORE_DATA";
-  gates_passed: number;
-  gates_total: number;
-  reasons: string[];
-  oos_sharpe?: number;
-  oos_ic?: number;
-  net_sharpe?: number;
-}
-
 export interface ComputationRiskReport {
   run_id: string;
   portfolio_id: string;
@@ -107,31 +166,6 @@ export interface ComputationRiskReport {
   reproducibility_hash?: string;
 }
 
-export interface ComputationMetrics {
-  gross_sharpe: number;
-  net_sharpe: number;
-  max_drawdown: number;
-  total_return: number;
-  cost_bps: number;
-  stress_multiplier: number;
-  paper_metrics?: Record<string, number>;
-}
-
-export interface ComputationLabPayload {
-  source: "BACKEND_COMPUTED_SNAPSHOT" | string;
-  read_only: true;
-  api_version: string;
-  selected_alpha_id: string;
-  alpha_candidates: ComputationAlphaSummary[];
-  alpha: ComputationAlphaSummary;
-  validation: ComputationValidation;
-  metrics: ComputationMetrics;
-  equity_curve: ChartPoint[];
-  drawdown_curve: DrawdownPoint[];
-  risk_report: ComputationRiskReport;
-  lineage: CalculationLineageItem[];
-}
-
 export interface ConsolePayloadBase {
   source: "BACKEND_COMPUTED_SNAPSHOT" | string;
   read_only: true;
@@ -139,6 +173,20 @@ export interface ConsolePayloadBase {
   // every console_api snapshot carries an honesty marker; pages read it to label the ProvenanceRibbon
   // accurately (REAL_* markers => real data, else synthetic). Optional so mock fixtures need not set it.
   data_provenance?: string;
+  /** Common backend admission metadata added by the console snapshot middleware. */
+  snapshot_status?: 'REAL' | 'SYNTHETIC' | 'NO_SNAPSHOT' | 'STALE' | 'DATA_BLOCKED' | 'UNAVAILABLE' | string;
+  snapshot_id?: string | null;
+  snapshot_ids?: string[];
+  data_quality?: {
+    status?: string;
+    provenance?: string;
+    snapshot_present?: boolean;
+    is_synthetic?: boolean;
+    is_stale?: boolean;
+    is_blocked?: boolean;
+    is_available?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 export interface ResearchStats {
@@ -161,16 +209,6 @@ export interface FunnelPoint {
 export interface OverviewPayload extends ConsolePayloadBase {
   stats: ResearchStats;
   funnel: FunnelPoint[];
-  agents: ResearchAgent[];
-}
-
-export interface AgentsPayload extends ConsolePayloadBase {
-  summary: {
-    active: number;
-    total_runs: number;
-    approved: number;
-    budget_spent_cny: number;
-  };
   agents: ResearchAgent[];
 }
 
@@ -208,55 +246,6 @@ export interface EventBusHealth {
   allocated_bytes: number | null;
   retention_mode: string;
   alerts: EventBusHealthAlert[];
-}
-
-export interface ArchitectureModule {
-  id: string;
-  name: string;
-  layer: string;
-  status: string;
-  maturity: number;
-  owner: string;
-  capability: string;
-  next_gap: string;
-}
-
-export interface ArchitectureFlow {
-  from: string;
-  to: string;
-  label: string;
-  mode: string;
-}
-
-export interface ArchitectureGap {
-  id: string;
-  area: string;
-  severity: string;
-  status: string;
-  next_action: string;
-}
-
-export interface ArchitecturePayload extends ConsolePayloadBase {
-  data_provenance?: "REAL_REPO_INVENTORY" | string;
-  current_level: "L2_DRY_RUN_ONLY";
-  target_level: "L3_BROKER_TEST_ENV_READY";
-  phase3a_decision: "NO_GO" | string;
-  implementation_authorized: false;
-  architecture_score: number;
-  inventory?: {
-    domains: { domain: string; n_modules: number; loc: number }[];
-    total_services_modules: number; total_services_loc: number;
-    n_test_files: number; n_test_functions: number;
-    n_console_pages: number; n_console_endpoints: number;
-  };
-  modules: ArchitectureModule[];
-  data_flows: ArchitectureFlow[];
-  gaps: ArchitectureGap[];
-  safety_boundary: {
-    read_only_console: boolean;
-    execution_boundary: string;
-    forbidden_capabilities: string[];
-  };
 }
 
 export interface ExperimentArtifact {
@@ -371,6 +360,196 @@ export interface DataCatalogLineageEdge {
   kind: "DATASET_TO_FEATURE" | "FEATURE_TO_EXPERIMENT" | string;
 }
 
+export interface DataChannelArtifact {
+  path: string;
+  exists: boolean;
+  size_bytes: number | null;
+  last_observed_ms: number | null;
+  status: string;             // REAL_HISTORY | REAL_SNAPSHOT | REAL_DIAGNOSTIC | PUBLIC_STREAM_REQUIRED | BLOCKED_MISSING
+  parse_error: string | null;
+}
+export interface DataChannel {
+  channel_id: string;
+  provider: string;
+  venue: string;
+  dataset_id: string;
+  cadence: string;
+  temporal_resolution: string;
+  fields: string[];
+  artifact_path: string;
+  availability: string;
+  alpha_families: string[];
+  freshness_sla_hours: number | null;
+  endpoint_class: string;
+  notes: string;
+  artifact: DataChannelArtifact;
+}
+export interface BinanceRealtimeCoverage {
+  requested?: number;
+  complete_core?: number;
+  persisted_this_flush?: number;
+  complete?: number;
+  inserted?: number;
+}
+export interface BinanceRealtimePayload {
+  verdict: string;
+  checked_at_ms: number;
+  universe_size: number;
+  stream: {
+    status_present: boolean;
+    effective_streaming: boolean;
+    reported_streaming: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    lag_ms: number | null;
+    coverage: BinanceRealtimeCoverage;
+    connections: Record<string, boolean>;
+    reconnects: Record<string, number>;
+    event_counts: Record<string, number>;
+    rejected_frames: number | null;
+    chain_valid: boolean | null;
+    routes: Record<string, string>;
+    source_path: string | null;
+  };
+  rest_snapshot: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    errors: number;
+    fields: string[];
+    source_path: string | null;
+  };
+  systemic_risk: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    row_count: number;
+    row_counts: Record<string, number>;
+    inserted: Record<string, number>;
+    latest: Record<string, {
+      adl_risk?: string;
+      basis_rate?: number;
+      constituent_count?: number;
+      constituent_dispersion_bps?: number;
+      insurance_asset_count?: number;
+    }>;
+    errors: number;
+    request_rate_limit?: {
+      planned_ip_weight: number;
+      endpoint_weight_per_symbol: number;
+      configured_max_workers: number;
+      min_request_interval_ms: number;
+      cooldown_active: boolean;
+      last_status_code: number | null;
+      retry_after_seconds: number;
+      max_used_weights: Record<string, number>;
+    };
+    fields: string[];
+    source_path: string | null;
+  };
+  rpi_depth: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    verdict: string | null;
+    coverage: BinanceRealtimeCoverage;
+    chain_valid: boolean | null;
+    row_count: number;
+    inserted: number;
+    latest: Record<string, {
+      bid_level_count?: number;
+      ask_level_count?: number;
+      spread_bps?: number;
+      notional_imbalance?: number;
+    }>;
+    errors: number;
+    request_policy: Record<string, string | number>;
+    fields: string[];
+    source_path: string | null;
+  };
+  feature_projection: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    status: string | null;
+    feature_version: string | null;
+    feature_count: number;
+    instrument_count: number;
+    retained_value_count: number;
+    drift_status: string | null;
+    drift_status_counts: Record<string, number>;
+    drift_series_count: number;
+    batch_chain_valid: boolean | null;
+    calibration: string | null;
+    calibration_id: string | null;
+    warn_ks: number | null;
+    block_ks: number | null;
+    calibration_window_count: number;
+    load_bearing: boolean;
+    source_path: string | null;
+  };
+  drift_alerting: {
+    status_present: boolean;
+    fresh: boolean;
+    age_ms: number | null;
+    status: string | null;
+    current_severity: string | null;
+    reason: string | null;
+    transition: string | null;
+    deduplicated: boolean;
+    local_delivery: string | null;
+    external_delivery: string | null;
+    independent_worker: boolean;
+    event_count: number;
+    chain_valid: boolean | null;
+    source_path: string | null;
+  };
+  api_coverage: {
+    status: string;
+    catalog_endpoint_count: number;
+    accounted_endpoint_count: number;
+    accounted_ratio: number;
+    load_bearing_endpoint_count: number;
+    gap_count: number;
+    gaps: Array<{
+      id: string;
+      title: string;
+      path: string;
+      reason: string;
+    }>;
+    error_type?: string;
+  };
+  stream_coverage: {
+    status: string;
+    catalog_stream_count: number;
+    accounted_stream_count: number;
+    accounted_ratio: number;
+    load_bearing_stream_count: number;
+    gap_count: number;
+    gaps: Array<{
+      id: string;
+      title: string;
+      route: string;
+      stream: string;
+      reason: string;
+    }>;
+    error_type?: string;
+  };
+  safety: {
+    public_market_data_only: boolean;
+    credentials: boolean;
+    private_stream: boolean;
+    broker_connectivity: boolean;
+    order_submission: boolean;
+    live_trading: boolean;
+  };
+}
 export interface DataCatalogPayload extends ConsolePayloadBase {
   catalog_mode: string;
   feature_store_mode: string;
@@ -387,400 +566,20 @@ export interface DataCatalogPayload extends ConsolePayloadBase {
   datasets: DataCatalogDataset[];
   features: DataCatalogFeature[];
   lineage_edges: DataCatalogLineageEdge[];
+  data_channels: {
+    status: string;           // REAL_COVERAGE_INVENTORY | UNAVAILABLE | INVALID
+    generated_at_ms?: number | null;
+    channels: DataChannel[];
+    summary: Record<string, unknown>;
+    honesty?: string[];
+  };
+  binance_realtime: BinanceRealtimePayload;
   quality_policy: {
     requires_dataset_hash: boolean;
     requires_event_timestamp: boolean;
     requires_asof_join: boolean;
     blocks_future_leakage: boolean;
     mutable_raw_inputs: boolean;
-  };
-}
-
-export interface BacktestCostComponent {
-  component: string;
-  value: number;
-  method: string;
-}
-
-export interface BacktestSegment {
-  segment_id: string;
-  start_day: number;
-  end_day: number;
-  return: number;
-  sharpe: number;
-  win_rate: number;
-  volatility: number;
-}
-
-export interface BacktestDrawdownPeriod {
-  rank: number;
-  start_day: number;
-  trough_day: number;
-  recovery_day: number;
-  depth: number;
-  duration_days: number;
-}
-
-export interface BacktestDecisionDriver {
-  driver: string;
-  impact: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | string;
-  score: number;
-  explanation: string;
-}
-
-export interface BacktestExplainabilityPayload extends ConsolePayloadBase {
-  explainability_mode: string;
-  selected_alpha_id: string;
-  run: {
-    run_id: string;
-    alpha_id: string;
-    execution_mode: "L2_DRY_RUN_ONLY";
-    engine: string;
-    data_snapshot_id: string;
-    config_hash: string;
-    reproducibility_hash: string;
-  };
-  alpha: AlphaCandidate;
-  summary: {
-    gross_return: number;
-    net_return: number;
-    gross_sharpe: number;
-    max_drawdown: number;
-    win_rate: number;
-    turnover: number;
-    cost_drag: number;
-    segments_passed: number;
-    segments_total: number;
-  };
-  equity_curve: ChartPoint[];
-  drawdown_curve: ChartPoint[];
-  segments: BacktestSegment[];
-  monthly_returns: Array<{month: string; return: number; positive_days: number; negative_days: number}>;
-  cost_breakdown: BacktestCostComponent[];
-  drawdown_periods: BacktestDrawdownPeriod[];
-  trade_distribution: Array<{bucket: string; count: number; avg_return: number}>;
-  regime_attribution: Array<{regime: string; days: number; contribution: number; hit_rate: number}>;
-  decision_drivers: BacktestDecisionDriver[];
-  assumptions: string[];
-  explainability_policy: {
-    requires_equity_curve: boolean;
-    requires_cost_model: boolean;
-    requires_drawdown_periods: boolean;
-    requires_regime_attribution: boolean;
-    mutable_results: boolean;
-  };
-}
-
-export interface ScenarioStressDriver {
-  driver: string;
-  impact: number;
-}
-
-export interface ScenarioStressCase {
-  scenario_id: string;
-  name: string;
-  name_zh: string;
-  severity: string;
-  decision: "PASS" | "WATCH" | "FAIL" | string;
-  shock_window: {
-    start_day: number;
-    end_day: number;
-  };
-  shocks: {
-    return_multiplier: number;
-    daily_cost_shift: number;
-    liquidity_haircut: number;
-    correlation_shift: number;
-  };
-  metrics: {
-    stressed_return: number;
-    loss_delta: number;
-    stressed_sharpe: number;
-    stressed_max_drawdown: number;
-    liquidity_buffer_used: number;
-    capacity_after_haircut: number;
-  };
-  curve: ChartPoint[];
-  drivers: ScenarioStressDriver[];
-}
-
-export interface ScenarioStressPayload extends ConsolePayloadBase {
-  stress_mode: string;
-  selected_alpha_id: string;
-  run: {
-    run_id: string;
-    execution_mode: "L2_DRY_RUN_ONLY";
-    engine: string;
-    scenario_set_id: string;
-    data_snapshot_id: string;
-    config_hash: string;
-    reproducibility_hash: string;
-  };
-  alpha: AlphaCandidate;
-  baseline: {
-    total_return: number;
-    sharpe: number;
-    max_drawdown: number;
-    turnover: number;
-    capacity_estimate: number;
-  };
-  summary: {
-    scenarios: number;
-    passes: number;
-    watches: number;
-    fails: number;
-    worst_scenario_id: string;
-    worst_loss_delta: number;
-    average_stressed_drawdown: number;
-    average_liquidity_buffer_used: number;
-  };
-  scenarios: ScenarioStressCase[];
-  exposure_buckets: Array<{factor: string; exposure: number; shock: number; estimated_pnl: number}>;
-  risk_factor_contributions: Array<{factor: string; exposure: number; shock: number; estimated_pnl: number}>;
-  scenario_policy: {
-    requires_multi_scenario_replay: boolean;
-    requires_liquidity_haircut: boolean;
-    requires_cost_widening: boolean;
-    requires_correlation_shift: boolean;
-    mutable_results: boolean;
-    authorizes_live_trading: boolean;
-  };
-  assumptions: string[];
-}
-
-export interface ModelRiskModel {
-  model_id: string;
-  name: string;
-  model_type: string;
-  linked_component: string;
-  owner: string;
-  risk_tier: string;
-  review_status: string;
-  intended_use: string;
-  prohibited_use: string;
-  validation_scores: {
-    conceptual_soundness: number;
-    implementation_verification: number;
-    outcomes_analysis: number;
-    ongoing_monitoring: number;
-  };
-  residual_risk: number;
-  evidence: {
-    experiment_id: string | null;
-    config_hash: string;
-    data_snapshot_id: string;
-    stress_run_id: string | null;
-    backtest_run_id: string | null;
-  };
-  limitations: string[];
-  findings: string[];
-  compensating_controls: string[];
-}
-
-export interface ModelRiskIssue {
-  issue_id: string;
-  severity: string;
-  status: string;
-  owner: string;
-  description: string;
-  linked_models: string[];
-}
-
-export interface ModelRiskReviewPayload extends ConsolePayloadBase {
-  model_risk_mode: string;
-  review_standard: string;
-  summary: {
-    models: number;
-    high_risk_models: number;
-    open_issues: number;
-    open_high_issues: number;
-    avg_residual_risk: number;
-    independent_validation_complete: boolean;
-    live_use_authorized: boolean;
-  };
-  models: ModelRiskModel[];
-  validation_dimensions: Array<{
-    dimension: string;
-    dimension_zh: string;
-    score: number;
-    status: string;
-    evidence: string;
-  }>;
-  issue_register: ModelRiskIssue[];
-  evidence_sources: Array<{source_id: string; name: string; records: number; read_only: boolean}>;
-  governance_policy: {
-    requires_independent_validation: boolean;
-    requires_intended_use_statement: boolean;
-    requires_limitations_disclosure: boolean;
-    requires_issue_tracking: boolean;
-    requires_ongoing_monitoring: boolean;
-    mutable_reviews: boolean;
-    authorizes_live_trading: boolean;
-  };
-}
-
-export interface EvidenceLedgerEntry {
-  evidence_id: string;
-  source_module: string;
-  source_endpoint: string;
-  artifact_type: string;
-  record_count: number;
-  status: string;
-  owner: string;
-  content_hash: string;
-  blocks_live_authorization: boolean;
-  sequence: number;
-  sealed_at: number;
-  previous_hash: string;
-  ledger_hash: string;
-  immutability_status: string;
-  read_only: boolean;
-  execution_mode: "L2_DRY_RUN_ONLY";
-  verification: {
-    hash_chain_valid: boolean;
-    content_hash_present: boolean;
-    source_read_only: boolean;
-    no_live_authorization: boolean;
-  };
-}
-
-export interface EvidenceLedgerPayload extends ConsolePayloadBase {
-  ledger_mode: string;
-  chain_id: string;
-  root_hash: string;
-  summary: {
-    entries: number;
-    sealed_entries: number;
-    blocking_entries: number;
-    hash_chain_valid: boolean;
-    read_only_entries: number;
-    live_authorization_allowed: boolean;
-  };
-  entries: EvidenceLedgerEntry[];
-  blockers: Array<{
-    evidence_id: string;
-    source_module: string;
-    reason: string;
-    ledger_hash: string;
-  }>;
-  ledger_policy: {
-    append_only: boolean;
-    requires_previous_hash: boolean;
-    requires_content_hash: boolean;
-    requires_source_endpoint: boolean;
-    requires_read_only_source: boolean;
-    mutable_entries: boolean;
-    authorizes_live_trading: boolean;
-  };
-}
-
-export interface ReviewerWorkflowTask {
-  task_id: string;
-  title: string;
-  evidence_ref: string;
-  source_area: string;
-  assigned_reviewer_id: string;
-  assigned_reviewer: string;
-  role: string;
-  severity: string;
-  gate_type: string;
-  state: string;
-  age_hours: number;
-  sla_hours: number;
-  due_in_hours: number;
-  blocks_live_authorization: boolean;
-  requires_independent_signoff: boolean;
-  task_hash: string;
-  created_at: number;
-}
-
-export interface ReviewerWorkflowPayload extends ConsolePayloadBase {
-  workflow_mode: string;
-  workflow_id: string;
-  summary: {
-    tasks: number;
-    blocking_tasks: number;
-    overdue_tasks: number;
-    reviewers: number;
-    approval_gates: number;
-    blocked_gates: number;
-    independent_validation_complete: boolean;
-    phase3a_decision: string;
-    live_authorization_allowed: boolean;
-  };
-  reviewers: Array<{reviewer_id: string; name: string; role: string; required: boolean; capacity: number; open_tasks: number}>;
-  tasks: ReviewerWorkflowTask[];
-  approval_gates: Array<{gate_id: string; name: string; status: string; required_tasks: string[]; owner_role: string}>;
-  workload: Array<{
-    reviewer_id: string;
-    name: string;
-    role: string;
-    required: boolean;
-    capacity: number;
-    open_tasks: number;
-    utilization: number;
-    required_open_blocking: number;
-  }>;
-  evidence_links: Array<{source: string; ref: string; records: number; blocking: number}>;
-  workflow_policy: {
-    read_only: boolean;
-    requires_independent_reviewer: boolean;
-    requires_blocking_task_closure: boolean;
-    requires_phase3a_go: boolean;
-    requires_signed_attestation: boolean;
-    mutable_tasks: boolean;
-    authorizes_live_trading: boolean;
-  };
-}
-
-export interface AccessControlRole {
-  role_id: string;
-  name: string;
-  name_zh: string;
-  scope: string;
-  users: number;
-  permissions: string[];
-  denied_capabilities: string[];
-}
-
-export interface AccessControlPayload extends ConsolePayloadBase {
-  access_mode: string;
-  summary: {
-    roles: number;
-    users: number;
-    permission_rows: number;
-    allowed_read_permissions: number;
-    denied_dangerous_permissions: number;
-    export_packages: number;
-    access_reviews: number;
-    live_authorization_allowed: boolean;
-  };
-  roles: AccessControlRole[];
-  permission_matrix: Array<{role_id: string; permission: string; allowed: boolean; reason: string}>;
-  export_packages: Array<{
-    package_id: string;
-    name: string;
-    name_zh: string;
-    status: string;
-    records: number;
-    source_root_hash: string;
-    requested_by_role: string;
-    export_mode: string;
-    content_hash: string;
-    contains_credentials: boolean;
-    contains_live_orders: boolean;
-    download_enabled: boolean;
-  }>;
-  access_reviews: Array<{review_id: string; role_id: string; status: string; owner: string; age_hours: number; finding: string}>;
-  forbidden_capabilities: Array<{capability: string; status: string; reason: string}>;
-  access_policy: {
-    read_only_console: boolean;
-    least_privilege: boolean;
-    segregation_of_duties_required: boolean;
-    signed_export_required: boolean;
-    mutable_permissions: boolean;
-    downloads_enabled: boolean;
-    authorizes_live_trading: boolean;
   };
 }
 
@@ -826,290 +625,6 @@ export interface MonitoringDriftPayload extends ConsolePayloadBase {
     mutable_alerts: boolean;
     authorizes_live_trading: boolean;
   };
-}
-
-export interface IncidentResponseIncident {
-  incident_id: string;
-  source_monitor_id: string;
-  category: string;
-  subject_id: string;
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | string;
-  state: string;
-  trigger_status: string;
-  trigger_metric: string;
-  drift_score: number;
-  owner: string;
-  incident_commander: string;
-  queue: string;
-  opened_at: number;
-  due_at: number;
-  age_minutes: number;
-  sla_minutes: number;
-  due_in_minutes: number;
-  sla_breached: boolean;
-  escalation_level: string;
-  route_id: string;
-  runbook_id: string;
-  evidence_ref: string;
-  evidence_packet_hash: string;
-  containment_action: string;
-  next_action: string;
-  external_alert_sent: boolean;
-  blocks_live_authorization: boolean;
-}
-
-export interface IncidentResponsePayload extends ConsolePayloadBase {
-  incident_mode: string;
-  summary: {
-    incidents: number;
-    open_incidents: number;
-    critical: number;
-    high: number;
-    medium: number;
-    sla_breaches: number;
-    escalated: number;
-    avg_age_minutes: number;
-    external_alerts_sent: number;
-    live_authorization_allowed: boolean;
-  };
-  severity_counts: Record<string, number>;
-  state_counts: Record<string, number>;
-  routing_counts: Record<string, number>;
-  incidents: IncidentResponseIncident[];
-  routing_rules: Array<{
-    route_id: string;
-    category: string;
-    queue: string;
-    primary_owner: string;
-    escalation_owner: string;
-    sla_minutes: number;
-    escalation_after_minutes: number;
-    runbook_id: string;
-    notification_mode: string;
-  }>;
-  runbooks: Array<{
-    runbook_id: string;
-    category: string;
-    title: string;
-    objective: string;
-    steps: string[];
-    requires_postmortem: boolean;
-    mutable_runbook: boolean;
-  }>;
-  timeline: Array<{
-    event_id: string;
-    incident_id: string;
-    timestamp: number;
-    event_type: string;
-    actor: string;
-    detail: string;
-    evidence_ref: string;
-  }>;
-  incident_policy: {
-    read_only: boolean;
-    requires_evidence_ref: boolean;
-    requires_sla: boolean;
-    requires_owner: boolean;
-    requires_postmortem_for_critical: boolean;
-    external_notifications_enabled: boolean;
-    mutable_incidents: boolean;
-    authorizes_live_trading: boolean;
-  };
-}
-
-export interface PromotionGate {
-  gate_id: string;
-  alpha_id: string;
-  stage: string;
-  status: 'PASS' | 'WATCH' | 'FAIL' | string;
-  owner: string;
-  evidence_ref: string;
-  score: number;
-  reason: string;
-  blocks_paper_replay: boolean;
-  blocks_broker_test_env: boolean;
-  blocks_live_authorization: boolean;
-}
-
-export interface PromotionRecord {
-  promotion_id: string;
-  alpha_id: string;
-  expression: string;
-  current_stage: string;
-  requested_stage: string;
-  decision: string;
-  decision_reason: string;
-  readiness_score: number;
-  gates_passed: number;
-  gates_watch: number;
-  gates_failed: number;
-  gates_total: number;
-  blocking_gates: string[];
-  watch_gates: string[];
-  evidence_refs: string[];
-  candidate_hash: string;
-  paper_replay_allowed: boolean;
-  broker_test_env_allowed: boolean;
-  live_release_allowed: boolean;
-  next_action: string;
-}
-
-export interface PromotionControlPayload extends ConsolePayloadBase {
-  promotion_mode: string;
-  current_level: string;
-  target_stage: string;
-  phase3a_decision: string;
-  summary: {
-    candidates: number;
-    approved_for_dry_run: number;
-    blocked: number;
-    watch_gates: number;
-    failed_gates: number;
-    paper_replay_allowed: number;
-    broker_test_env_allowed: number;
-    live_release_allowed: number;
-    avg_readiness_score: number;
-  };
-  decision_counts: Record<string, number>;
-  stage_counts: Record<string, {pass: number; watch: number; fail: number}>;
-  promotions: PromotionRecord[];
-  gates: PromotionGate[];
-  release_policy: {
-    read_only: boolean;
-    requires_validation_approval: boolean;
-    requires_paper_replay: boolean;
-    requires_risk_approval: boolean;
-    requires_model_risk_review: boolean;
-    requires_no_blocking_incidents: boolean;
-    requires_evidence_root_hash: boolean;
-    requires_access_control: boolean;
-    mutable_promotions: boolean;
-    broker_test_env_enabled: boolean;
-    live_release_enabled: boolean;
-    authorizes_live_trading: boolean;
-  };
-  safety_boundary: {
-    execution_boundary: string;
-    phase3a_decision: string;
-    forbidden_capabilities: string[];
-  };
-}
-
-export interface ReleaseCommitteePayload extends ConsolePayloadBase {
-  committee_mode: string;
-  meeting_id: string;
-  current_level: string;
-  phase3a_decision: string;
-  committee_decision: string;
-  summary: {
-    agenda_items: number;
-    no_go_items: number;
-    dry_run_only_items: number;
-    required_seats: number;
-    quorum_required: number;
-    quorum_present: number;
-    quorum_met: boolean;
-    votes: number;
-    reject_votes: number;
-    abstain_votes: number;
-    signed_votes: number;
-    blocking_attestations: number;
-    open_blocking_tasks: number;
-    broker_test_env_allowed: number;
-    live_release_allowed: number;
-  };
-  seats: Array<{
-    seat_id: string;
-    role: string;
-    required: boolean;
-    member: string;
-    domain: string;
-    vote_weight: number;
-  }>;
-  agenda: Array<{
-    agenda_id: string;
-    promotion_id: string;
-    alpha_id: string;
-    requested_stage: string;
-    recommendation: string;
-    release_decision: string;
-    readiness_score: number;
-    gate_failures: number;
-    watch_gates: number;
-    blocking_attestations: number;
-    open_blocking_tasks: number;
-    evidence_package_hash: string;
-    reason: string;
-    next_action: string;
-    broker_test_env_allowed: boolean;
-    live_release_allowed: boolean;
-  }>;
-  votes: Array<{
-    vote_id: string;
-    agenda_id: string;
-    seat_id: string;
-    role: string;
-    vote: string;
-    rationale: string;
-    signed: boolean;
-    signature_hash: string | null;
-    vote_weight: number;
-  }>;
-  required_attestations: Array<{
-    attestation_id: string;
-    name: string;
-    owner_role: string;
-    status: string;
-    evidence_ref: string;
-    blocks_release: boolean;
-  }>;
-  blockers: Array<{
-    blocker_id: string;
-    source: string;
-    ref: string;
-    owner: string;
-    reason: string;
-    blocks_release: boolean;
-  }>;
-  committee_policy: {
-    read_only: boolean;
-    requires_quorum: boolean;
-    requires_required_seat_signatures: boolean;
-    requires_signed_attestations: boolean;
-    requires_promotion_go: boolean;
-    requires_phase3a_go: boolean;
-    mutable_votes: boolean;
-    external_signing_enabled: boolean;
-    broker_test_env_enabled: boolean;
-    live_release_enabled: boolean;
-    authorizes_live_trading: boolean;
-  };
-}
-
-export interface AlphaFactoryPayload extends ConsolePayloadBase {
-  summary: {
-    candidates: number;
-    avg_ic: number;
-    avg_sharpe: number;
-    active: number;
-  };
-  candidates: AlphaCandidate[];
-  screening?: {
-    buckets: Record<string, number>;
-    top_candidates: Array<{
-      candidate_id: string;
-      decision: ValidationDecision | string;
-      reason: string;
-      composite_score: number;
-      expression: string;
-    }>;
-  };
-  correlation_matrix?: {
-    method: string;
-    ids: string[];
-    matrix: number[][];
-  };
-  lineage: CalculationLineageItem[];
 }
 
 export interface RiskDashboardPayload extends ConsolePayloadBase {
@@ -1228,6 +743,29 @@ export interface SystemHealthPayload extends ConsolePayloadBase {
   safety_checks: string[];
 }
 
+/** Read-only frontend/backend runtime handshake (console-runtime.v1). */
+export interface RuntimeContractPayload extends ConsolePayloadBase {
+  contract_version: string;
+  service: string;
+  instance_id: string;
+  process_id: number;
+  build_sha: string;
+  build_sha_known: boolean;
+  event_schema_catalog: {
+    sha256: string;
+    event_type_count: number;
+    latest_versions: Record<string, string>;
+  };
+  safety_boundary: {
+    read_only_console: boolean;
+    authorized_level: "L2_DRY_RUN_ONLY" | string;
+    live_trading_authorized: false;
+    order_submission_allowed: false;
+    broker_connectivity: false;
+  };
+  generated_at_ms: number;
+}
+
 export type Phase3ACriterionStatus = "APPROVED" | "PENDING" | "REJECTED";
 
 export interface Phase3ACriterion {
@@ -1257,10 +795,6 @@ export interface Phase3AReadiness {
   total_count: number;
   criteria: Phase3ACriterion[];
   blockers: Phase3ABlocker[];
-}
-
-export interface Phase3AReadinessPayload extends ConsolePayloadBase {
-  readiness: Phase3AReadiness;
 }
 
 /* ---- Crypto Live: REAL read-only CoinGecko research snapshot (not synthetic) ---- */
@@ -1471,6 +1005,633 @@ export interface DryRunRunRow {
   };
 }
 
+export interface PaperOrderPreviewOrder {
+  instrument: string;
+  side: string;
+  quantity: number;
+  target_signed_quantity?: number;
+  decision_mark_price?: number;
+  notional?: number;
+  paper_position_before?: number;
+  paper_position_after_fill?: number;
+}
+
+export interface PaperOrderPreviewAlpha {
+  alpha_id: string;
+  decision_ts?: number;
+  decision_source?: string;
+  scope?: string[];
+  paper_positions_before?: Record<string, number>;
+  paper_positions?: Record<string, number>;
+  orders?: PaperOrderPreviewOrder[];
+  n_intents?: number;
+  n_approved?: number;
+  n_rejected?: number;
+  rejected_reasons?: string[];
+  n_paper_fills?: number;
+  paper_execution?: string;
+  reconciliation_residual?: number;
+  replayed_from_store?: boolean;
+  research_risk?: {
+    decision?: string;
+    status?: string;
+    gates_passed?: number;
+    gates_run?: number;
+    engines_run?: Record<string, boolean>;
+    reasons?: string[];
+    provenance?: string;
+    scope?: string;
+    reports?: {
+      capacity?: {
+        passed?: boolean;
+        capacity_usage?: number;
+        bottleneck_alpha?: string;
+      };
+      model_alpha?: {
+        passed?: boolean;
+        alphas_with_decay?: number;
+        alphas_with_overfitting_flags?: number;
+        alphas_with_leakage_flags?: number;
+        min_validation_confidence?: number;
+        min_paper_confidence?: number;
+      };
+    };
+  };
+}
+
+export interface PaperOrderPreviewPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  verdict: {
+    paper_preview_ready?: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  alphas: Record<string, PaperOrderPreviewAlpha>;
+  errors: Record<string, { error_type?: string; error?: string; paper_execution?: string }>;
+  safety: {
+    paper_only: boolean;
+    broker_connectivity: boolean;
+    broker_order_submission: boolean;
+    credentials_accessed: boolean;
+  };
+}
+
+export interface L2PaperOperatorPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  verdict: {
+    operator_completed: boolean;
+    paper_preview_ready: boolean;
+    research_packet_ready_for_all_three: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  stages: {
+    three_alpha_paper_flow: { status: string; flow_completed: boolean };
+    paper_order_preview: { status: string; paper_preview_ready: boolean };
+  };
+  safety: {
+    paper_only: boolean;
+    private_binance_access: boolean;
+    credential_access: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperRealtimeAlpha {
+  alpha_id: string;
+  observed_at?: number;
+  status?: string;
+  n_fills?: number;
+  positions?: Record<string, number>;
+  marks?: Record<string, number>;
+  cash?: number;
+  market_value?: number;
+  equity?: number;
+  realized_pnl?: number;
+  unrealized_pnl?: number;
+  funding_pnl?: number;
+  funding_events?: number;
+  funding_data_complete?: boolean;
+  funding_missing_instruments?: string[];
+  funding_missing_events?: string[];
+  gross_pnl?: number;
+  costs?: number;
+  net_pnl?: number;
+  return_on_aum?: number;
+  turnover?: number;
+  reconciliation_residual?: number;
+  paper_only?: boolean;
+  live_allowed?: boolean;
+  order_submission_allowed?: boolean;
+}
+
+export interface PaperRealtimeBacktest {
+  run_id?: string;
+  n_periods?: number;
+  total_return?: number;
+  sharpe?: number;
+  sharpe_vt?: number;
+  max_drawdown?: number;
+  max_drawdown_vt?: number;
+  reconciliation_residual?: number;
+  research_risk_decision?: string;
+  provenance?: string;
+}
+
+export interface PaperRealtimeHistoryPoint {
+  alpha_id: string;
+  observed_at: number;
+  equity?: number;
+  net_pnl?: number;
+}
+
+export interface PaperRealtimePayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  observed_at?: number;
+  provider?: string;
+  verdict: {
+    cycle_completed: boolean;
+    paper_mark_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+    new_paper_orders_allowed?: boolean;
+  };
+  operator_mode?: string | null;
+  readiness_class?: string;
+  alphas: Record<string, PaperRealtimeAlpha>;
+  backtests: Record<string, PaperRealtimeBacktest>;
+  history?: PaperRealtimeHistoryPoint[];
+  funding_refresh?: {
+    attempted?: boolean;
+    provider?: string;
+    observed_at?: number | null;
+    error?: string | null;
+  };
+  paper_ledger?: {
+    n_rows?: number;
+    n_decisions?: number;
+    latest_decision_ts?: number | null;
+  };
+  persistence: { new_snapshots: number; chain_valid: boolean };
+  errors: Record<string, string>;
+  safety: {
+    paper_only: boolean;
+    public_market_data_only: boolean;
+    private_binance_access: boolean;
+    credentials_accessed: boolean;
+    broker_connectivity: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperShadowPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  execution_class: 'AUTOMATED_NONPROMOTABLE_SHADOW_PAPER' | string;
+  status: string;
+  generated_at?: number | null;
+  observed_at?: number | null;
+  provider?: string | null;
+  verdict: {
+    shadow_paper_running: boolean;
+    auto_rebalance_ready: boolean;
+    paper_mark_ready: boolean;
+    boundary_valid: boolean;
+    official_paper_ready: false;
+    promotion_eligible: false;
+    forward_evidence_eligible: false;
+    deployment_eligible: false;
+    live_allowed: false;
+    order_submission_allowed: false;
+  };
+  alphas: Record<string, PaperRealtimeAlpha>;
+  previews: Record<string, PaperOrderPreviewAlpha>;
+  history: PaperRealtimeHistoryPoint[];
+  totals: {
+    equity?: number | null;
+    net_pnl?: number | null;
+    funding_pnl?: number | null;
+  };
+  paper_ledger: {
+    n_rows?: number;
+    n_decisions?: number;
+    latest_decision_ts?: number | null;
+  };
+  persistence: {
+    new_snapshots: number;
+    chain_valid: boolean;
+  };
+  errors: Record<string, string>;
+  safety: {
+    paper_only: true;
+    separate_from_official_paper: true;
+    public_market_data_only: true;
+    private_account_access: false;
+    credentials_accessed: false;
+    broker_connectivity: false;
+    broker_order_submission: false;
+  };
+}
+
+export interface PaperHealthPayload {
+  source: string;
+  read_only: boolean;
+  snapshot_present: boolean;
+  generated_at?: number;
+  observed_at?: number;
+  age_ms?: number;
+  max_age_ms?: number;
+  verdict: {
+    paper_ready: boolean;
+    paper_mark_ready: boolean;
+    paper_preview_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    funding_data_complete_for_all_three?: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+  readiness_class?:
+    | 'PAPER_READY'
+    | 'PAPER_FORWARD_EVIDENCE_MATURING'
+    | 'PAPER_MARKS_ONLY_REPLAY'
+    | 'PAPER_MARKS_READY_PENDING_RISK'
+    | 'PAPER_MARKS_READY_PENDING_HEALTH'
+    | 'PAPER_CYCLE_BLOCKED'
+    | 'PAPER_BLOCKED'
+    | string;
+  next_action?: string | null;
+  blockers: string[];
+  research_risk_bundle_complete?: boolean;
+  research_risk_bundles?: Record<string, {
+    status?: string;
+    provenance?: string;
+    path?: string;
+    bundle_sha256?: string;
+    missing?: string[];
+    reasons?: string[];
+  }>;
+  forward_evidence?: {
+    present?: boolean;
+    ran_at?: number;
+    evidence_gate_periods?: number;
+    complete_for_all_three?: boolean;
+    maturity_state?:
+      | 'FORWARD_EVIDENCE_MATURING'
+      | 'FORWARD_EVIDENCE_COMPLETE'
+      | 'FORWARD_EVIDENCE_BLOCKED'
+      | string;
+    evidence_maturing?: boolean;
+    next_realization_eligible_at?: number | null;
+    wait_ms?: number | null;
+    max_periods_to_gate?: number;
+    quality_evidence_current?: boolean;
+    data_quality_admission?: {
+      verdict?: string;
+      quality_verdict?: string;
+      lineage_verdict?: string;
+    };
+    alphas?: Record<string, {
+      n_forward_periods?: number | null;
+      periods_to_gate?: number | null;
+      pending_decisions?: number | null;
+      attested_pending_decisions?: number | null;
+      evidence_state?: string;
+      paper_sharpe?: number | null;
+      last_decision_ts?: number | null;
+      next_realization_eligible_at?: number | null;
+    }>;
+    alerts?: string[];
+  };
+  safety: {
+    paper_only: boolean;
+    public_market_data_only: boolean;
+    broker_connectivity: boolean;
+    credentials_accessed: boolean;
+    broker_order_submission: boolean;
+  };
+}
+
+export interface PaperProfilePayload {
+  profile_id: string;
+  aum: number;
+  read_only: boolean;
+  snapshot_present: boolean;
+  realtime: {
+    cycle_completed: boolean;
+    paper_mark_ready: boolean;
+    backtest_reference_present_for_all_three: boolean;
+    readiness_class?: string;
+    observed_at?: number;
+    funding_refresh?: PaperRealtimePayload['funding_refresh'];
+    chain_valid: boolean;
+    alphas: Record<string, PaperRealtimeAlpha>;
+    operator_mode?: string | null;
+    new_paper_orders_allowed?: boolean;
+    total_equity?: number | null;
+    total_net_pnl?: number | null;
+    paper_ledger?: {
+      n_rows?: number;
+      n_decisions?: number;
+      latest_decision_ts?: number | null;
+    };
+    history?: PaperRealtimeHistoryPoint[];
+  };
+  health: {
+    paper_ready: boolean;
+    paper_mark_ready: boolean;
+    paper_preview_ready: boolean;
+    funding_data_complete_for_all_three?: boolean;
+    readiness_class?: string;
+    next_action?: string | null;
+    research_risk_bundle_complete?: boolean;
+    research_risk_bundles?: PaperHealthPayload['research_risk_bundles'];
+    age_ms?: number;
+    blockers: string[];
+  };
+  forward_track?: LiveTradingForwardTrack;
+  safety: {
+    paper_only: boolean;
+    broker_connectivity: boolean;
+    credentials_accessed: boolean;
+    broker_order_submission: boolean;
+    live_allowed: boolean;
+    order_submission_allowed: boolean;
+  };
+}
+
+export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
+  stage: 'FORWARD_PAPER' | 'EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER' | string;
+  paper_class: 'FORWARD_CHALLENGER' | 'CANDIDATE_EXECUTION_PAPER' | 'LEGACY_DIAGNOSTIC_PAPER';
+  execution_paper: boolean;
+  execution_paper_eligible?: boolean;
+  workflow_identity_hash?: string | null;
+  workflow_bundle_hash?: string | null;
+  deployment_eligible: false;
+  blockers: string[];
+  independent_evaluation?: {
+    status?: string | null;
+    verified?: boolean;
+    verdict?: string | null;
+    run_id?: string | null;
+  };
+  risk_packet?: {
+    status?: string | null;
+    missing?: string[];
+    reasons?: Record<string, string>;
+  };
+  maturity?: {
+    observed_periods?: number | null;
+    required_periods?: number | null;
+  };
+}
+
+export interface AlphaPipelinePayload {
+  source: string;
+  read_only: true;
+  factory: {
+    snapshot_present: boolean;
+    generated_at?: number | null;
+    rounds?: number | null;
+    dry_limit?: number | null;
+    data_dimensions: number;
+    survivors: number;
+    verdict?: string | null;
+    containment?: string | null;
+  };
+  counts: {
+    forward_paper: number;
+    execution_paper: number;
+    candidate_execution_paper: number;
+    legacy_diagnostic_paper: number;
+    forward_only: number;
+    factory_survivors: number;
+  };
+  candidates: AlphaPipelineCandidate[];
+  workflow?: {
+    authority_present: boolean;
+    verified: boolean;
+    population_count?: number | null;
+    event_count?: number | null;
+    execution_paper_eligible_count: number;
+    release_commit?: string | null;
+    source_as_of_ms?: number | null;
+  };
+  handoff: {
+    factory_to_forward_registry_connected: boolean;
+    forward_to_execution_dynamic: boolean;
+    status: 'CONNECTED' | 'GAPPED';
+    gap_codes: string[];
+  };
+  safety: {
+    paper_only: true;
+    deployment_eligible: false;
+    live_allowed: false;
+    order_submission_allowed: false;
+  };
+}
+
+export interface DataRefreshSourcePayload {
+  source: string;
+  outcome: string | null;
+  duration_ms: number | null;
+  refreshed: number | null;
+  skipped: number | null;
+  new_days: number | null;
+  ingested_rows: number | null;
+  failed_count: number;
+  failed_tickers: string[];
+  watermark_after: Record<string, unknown> | null;
+}
+export interface DataRefreshPayload {
+  snapshot_present: boolean;
+  run_id?: string | null;
+  ran_at?: number | null;
+  outcome?: string | null;
+  duration_ms?: number | null;
+  failed_total?: number | null;
+  failed_ticker_total?: number | null;
+  sources?: DataRefreshSourcePayload[];
+  staleness_after?: Record<string, {
+    worst_days?: number | null;
+    n_stale?: number | null;
+    n_total?: number | null;
+  }>;
+  raw_lineage?: { status: string | null; datasets: Record<string, unknown> };
+  history?: { chain_valid: boolean | null; run_count: number | null };
+  slo?: { verdict: string | null; violations: unknown[] };
+  alerts?: string[];
+}
+export interface SchedulerWatchdogCheckPayload {
+  task_name: string;
+  status: string;
+  code: string;
+  detail: string;
+}
+export interface SchedulerWatchdogPayload {
+  snapshot_present: boolean;
+  observed_at_ms?: number | null;
+  verdict: string;
+  summary: Record<string, number>;
+  checks: SchedulerWatchdogCheckPayload[];
+  external_heartbeat_configured?: boolean;
+  event_seal_configured?: boolean;
+}
+export interface RealtimeAlphaCandidatePayload {
+  candidate_id: string;
+  family_id?: string | null;
+  mechanism?: string | null;
+  horizon_ms?: number | null;
+  status?: string | null;
+  n_periods?: number | null;
+  mean_breadth?: number | null;
+  mean_ic?: number | null;
+  ic_t_stat?: number | null;
+  net_sharpe?: number | null;
+  holdout_net_sharpe?: number | null;
+  net_return?: number | null;
+  max_drawdown?: number | null;
+  walk_forward_positive_frac?: number | null;
+  spread_regime_positive_frac?: number | null;
+  diagnostic_lead?: boolean;
+  gate_pass?: boolean;
+  gate_reasons?: string[];
+  deflated_sharpe?: number | null;
+  pbo?: number | null;
+  promotion_eligible: false;
+  live_allowed: false;
+}
+export interface RealtimeAlphaAutonomyPayload {
+  source: string;
+  read_only: true;
+  snapshot_present: boolean;
+  boundary_valid: boolean;
+  status: string;
+  mode: string;
+  generated_at_ms?: number | null;
+  dataset_version?: string | null;
+  search_id?: string | null;
+  autonomy: {
+    worker?: string | null;
+    scheduler_task?: string | null;
+    autonomous_search_running: boolean;
+    requires_developer_ai: false;
+    next_cycle_expected_ms?: number | null;
+  };
+  data_admission: {
+    status?: string;
+    quality_status?: string;
+    common_start_ms?: number | null;
+    common_end_ms?: number | null;
+    common_span_ms?: number;
+    feature_age_ms?: number | null;
+    common_instruments?: string[];
+    missing_features?: string[];
+    thin_features?: string[];
+    reasons?: string[];
+    exploration_allowed?: boolean;
+    formal_validation_allowed?: boolean;
+    shadow_admission_allowed?: boolean;
+  };
+  feature_quality: {
+    status?: string | null;
+    generated_at_ms?: number | null;
+    drift_status?: string | null;
+  };
+  executable_depth_capacity: {
+    status?: string;
+    passed?: boolean;
+    evidence_ready?: boolean;
+    target_aum_passed?: boolean;
+    shadow_sizing_ready?: boolean;
+    history_span_ms?: number;
+    feature_age_ms?: number | null;
+    instrument_count?: number;
+    conservative_depth_usd?: number | null;
+    max_supported_aum_usd?: number | null;
+    target_aum_usd?: number | null;
+    shadow_aum_usd?: number | null;
+    participation_rate?: number;
+    legs_per_side?: number;
+    reasons?: string[];
+  };
+  funnel: {
+    pre_registered: number;
+    evaluated: number;
+    diagnostic_leads: number;
+    formal_passes: number;
+    shadow_candidates: number;
+  };
+  families: Array<{
+    family_id: string;
+    priority?: string;
+    hypothesis_count?: number;
+  }>;
+  top_candidates: RealtimeAlphaCandidatePayload[];
+  global_trial_count?: number | null;
+  registry: { chain_valid: boolean; event_count?: number | null };
+  remaining_gates: string[];
+  blockers: string[];
+  forward_shadow: {
+    snapshot_present: boolean;
+    boundary_valid: boolean;
+    status: string;
+    generated_at_ms?: number | null;
+    eligible_candidates: string[];
+    feature_input: { ready?: boolean; status?: string; generated_at_ms?: number | null };
+    cycle: {
+      new_admissions?: number;
+      new_decisions?: number;
+      new_realizations?: number;
+    };
+    tracks: Record<string, {
+      n_decisions?: number;
+      n_pending?: number;
+      n_realizations?: number;
+      cum_return?: number | null;
+      max_drawdown?: number | null;
+    }>;
+    errors: Record<string, string>;
+    ledger: { append_only: boolean; chain_valid: boolean; event_count?: number };
+    verdict: {
+      forward_shadow_running: boolean;
+      promotion_eligible: false;
+      forward_evidence_credit: false;
+      deployment_eligible: false;
+      live_allowed: false;
+      order_submission_allowed: false;
+    };
+    blockers: string[];
+    safety: {
+      paper_only: true;
+      public_market_data_only: true;
+      separate_from_official_paper: true;
+      credentials_accessed: false;
+      broker_connectivity: false;
+      broker_order_submission: false;
+      allow_ai_direct_trading: false;
+    };
+  };
+  safety: {
+    paper_only: true;
+    live_trading_enabled: false;
+    real_broker_enabled: false;
+    allow_order_submission: false;
+    allow_ai_direct_trading: false;
+    promotion_eligible: false;
+    credentials_accessed: false;
+  };
+}
 export interface DryRunPipelinePayload extends ConsolePayloadBase {
   data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
   snapshot_present: boolean;
@@ -1478,6 +1639,59 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   n_runs: number;
   latest: DryRunRunRow | Record<string, never>;
   runs: DryRunRunRow[];
+  route_tca_history?: {
+    schema_version: number;
+    simulation_only: true;
+    status: 'NO_ROUTE_TCA' | 'SINGLE_SNAPSHOT' | 'LONGITUDINAL_READY' | 'INVALID_RETAINED_EVIDENCE';
+    run_count: number;
+    record_count: number;
+    venue_count: number;
+    first_timestamp: number | null;
+    last_timestamp: number | null;
+    weighted_shortfall_bps: string | null;
+    points: {
+      run_id: string; strategy_id: string; timestamp: number; routing_snapshot_id: string;
+      record_index: number; period: number | null; instrument_id: string; side: string;
+      route_status: string; requested_quantity: number; filled_quantity: number;
+      fill_fraction: string; reference_notional: string;
+      implementation_shortfall_bps: string; venues: string[];
+    }[];
+    venues: {
+      venue_id: string; record_count: number; filled_quantity: number;
+      reference_notional: string; weighted_shortfall_bps: string | null;
+      first_timestamp: number; last_timestamp: number;
+    }[];
+  };
+  paper_multivenue_sor?: {
+    schema_version: number;
+    generated_at_ms: number;
+    status: 'PASS' | 'BLOCKED';
+    mode: 'L2_PAPER_EXECUTION_CANARY';
+    simulation_only: true;
+    strategy_edge_claim?: false;
+    snapshot_id?: string;
+    run_id?: string;
+    instruments?: string[];
+    venues?: string[];
+    route_plan_count?: number;
+    route_tca_count?: number;
+    book_bundle_count?: number;
+    fee_policy_version?: string;
+    fee_calibration?: string;
+    error_type?: string;
+    error?: string;
+  } | null;
+  paper_order_preview?: PaperOrderPreviewPayload;
+  paper_operator?: L2PaperOperatorPayload;
+  paper_realtime?: PaperRealtimePayload;
+  alpha_pipeline?: AlphaPipelinePayload;
+  realtime_alpha_autonomy?: RealtimeAlphaAutonomyPayload;
+  paper_shadow?: PaperShadowPayload;
+  paper_health?: PaperHealthPayload;
+  forward_track?: LiveTradingForwardTrack;
+  data_refresh?: DataRefreshPayload | null;
+  scheduler_watchdog?: SchedulerWatchdogPayload | null;
+  paper_profiles?: Record<string, PaperProfilePayload>;
   safety_note: string;
 }
 
@@ -1586,8 +1800,23 @@ export interface Lance1mValidationPayload extends ConsolePayloadBase {
   honesty_note: string;
 }
 
+export interface LiveTradingForwardAlpha {
+  alpha_id: string;
+  n_forward_periods: number | null;
+  weeks_to_go_no_go: number | null;
+  paper_sharpe: number | null;
+  paper_ic: number | null;
+  cum_return: number | null;
+  backtest_reference_sharpe: number | null;
+  reference_weeks: number | null;
+  pending_decisions: number | null;
+  attested_pending_decisions?: number | null;
+  evidence_state?: string;
+  last_decision_ts: number | null;
+}
 export interface LiveTradingForwardTrack {
   present: boolean;
+  ran_at?: number;
   evidence_state?: "ATTESTED" | "DATA_BLOCKED" | "STALE" | "UNAVAILABLE" | string;
   attested_realizations?: number;
   attested_pending?: number;
@@ -1595,6 +1824,20 @@ export interface LiveTradingForwardTrack {
   evidence_gate_weeks?: number;
   evidence_gate_eligible?: boolean;
   data_admission?: Record<string, unknown>;
+  staleness_days?: Record<string, {
+    freshest_days: number | null;
+    worst_days: number | null;
+    n_stale: number | null;
+    n_total: number;
+  }>;
+  quality_evidence_current?: boolean;
+  data_quality_admission?: {
+    verdict?: string;
+    quality_verdict?: string;
+    lineage_verdict?: string;
+  };
+  alphas?: LiveTradingForwardAlpha[];
+  alerts?: string[];
   actions_allowed: false;
 }
 export interface LiveTradingReconciliation {
@@ -1818,6 +2061,15 @@ export interface LifecycleRow {
   live_ic: number | null;           // honestly null in L2 — no live/paper IC source exists
   recommendation: string;           // NO_LIVE_DATA in L2 (degradation needs a live feed)
   alerts: string[];
+  // 727 C4: the three orthogonal lifecycle machines alongside the legacy mixed
+  // `state` (design doc 2026-07-27 §3). STORED = dual-written columns; PROJECTED
+  // = derived from the legacy state (pre-C2 row); SYNTHETIC = mock/fallback row;
+  // UNKNOWN = legacy state unreadable. Nulls only with triple_source=UNKNOWN.
+  research_state: string | null;
+  deployment_state: string | null;
+  health_state: string | null;
+  health_reason: string | null;
+  triple_source: 'STORED' | 'PROJECTED' | 'SYNTHETIC' | 'UNKNOWN';
 }
 export interface LifecycleMonitorPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
@@ -1879,4 +2131,521 @@ export interface AlphaGraphPayload {
   source: string; read_only: boolean; api_version: string; data_provenance: string;
   nodes: AlphaGraphNode[]; edges: AlphaGraphEdge[]; clusters: AlphaGraphCluster[];
   rho_cut: number; n_near_dup: number;
+}
+
+// ---- MEXC 零手续费 BTC 现货对接(read-only 三端点;additive contract,
+// mirrors services/console/api/mexc_views.py — 改形状两侧同步) ----
+export interface MexcMarketPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_MEXC_MARKET_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;              // MEXC_MARKET_OK | NO_SNAPSHOT
+  venue: string;                // "MEXC"
+  symbol: string;               // "BTCUSDT"
+  latest_price: number | null;
+  change_24h_pct: number | null;
+  volatility_30d_ann: number | null;
+  coverage: { date_start: string | null; date_end: string | null; n_rows: number };
+  freshness: {
+    fetched_at: number | null; age_hours: number | null;
+    fresh_within_hours: number; is_fresh: boolean;
+  };
+  db: { present: boolean; n_rows: number; date_start: string | null; date_end: string | null };
+  /** Optional per-bar OHLC series (not yet emitted by the backend; pages render honestly without it). */
+  bars?: { t?: number; open: number; high: number; low: number; close: number; volume?: number }[];
+  honesty_note: string;
+}
+
+export interface MexcStrategyMetrics {
+  total_return: number | null;
+  sharpe: number | null;
+  sharpe_vt: number | null;
+  max_drawdown: number | null;
+  max_drawdown_vt: number | null;
+  turnover: number | null;
+  n_periods: number | null;
+  n_approved: number | null;
+  n_rejected: number | null;
+  reconciliation_residual: number | null;
+}
+export interface MexcBuyAndHold {
+  present: boolean;
+  total_return?: number | null;
+  sharpe?: number | null;
+  max_drawdown?: number | null;
+  curve?: { t: number; equity: number }[];
+}
+export interface MexcStrategyPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_DRY_RUN_OFFLINE_SNAPSHOT" | string;
+  snapshot_present: boolean;
+  verdict: string;              // BTC_SPOT_TREND_OK | NO_RUN
+  venue: string;
+  strategy_id: string;          // "btc_spot_trend"
+  n_runs: number;
+  metrics: MexcStrategyMetrics;
+  equity_curve: { t: number; equity: number; ret?: number }[];
+  equity_curve_vt: { t: number; equity: number; ret?: number }[];
+  buy_and_hold: MexcBuyAndHold;
+  latest: DryRunRunRow | Record<string, never>;
+  runs: DryRunRunRow[];
+  honesty_note: string;
+}
+
+export interface MexcReadinessCheck {
+  id: string;
+  label: string;
+  status: "READY" | "BLOCKED" | string;
+  reason: string;
+}
+export interface MexcReadinessPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_MEXC_READINESS_CHECK" | string;
+  snapshot_present: boolean;
+  verdict: string;              // READY | BLOCKED
+  venue: string;
+  readiness: string;            // "L2_DRY_RUN_ONLY"
+  n_ready: number;
+  n_blocked: number;
+  checks: MexcReadinessCheck[];
+  kill_switch: { tripped: boolean; reason: string | null };
+  honesty_note: string;
+}
+
+/* ---------- Go-Live 上线向导(go-live readiness) ----------------------------
+   Contract for GET /api/v1/console/go-live-readiness — read-only serve of the
+   offline artifact evidence/go_live_readiness.json (tools/go_live_readiness.py).
+   Present: data_provenance REAL_GO_LIVE_READINESS / snapshot_status REAL.
+   Absent (driver never ran, e.g. CI): SYNTHETIC_DETERMINISTIC / NO_SNAPSHOT with
+   venues=[] strategies={} guidance=null — pages must render both honestly.
+   Existence/summary checks only; never reads mandate contents, never grants any
+   live capability. Pinned both sides by tests/research/test_console_api_contract.py. */
+export interface GoLiveKeyPermissions {
+  status: 'SAFE' | 'NOT_SAFE' | 'UNVERIFIED' | string;
+  checked_at_ms: number | null;
+}
+export interface GoLiveSmoke {
+  verdict: 'PASS' | 'FAIL' | 'ABSENT' | string;
+  age_ms: number | null;
+}
+export interface GoLiveMandate {
+  path: string;
+  present: boolean;
+  loads: boolean;
+  expired: boolean;
+  expires_at: number | null;
+  venue_domain_ok: boolean;
+  exchange_domain_ok: boolean;
+  expected_venue: string;
+  expected_exchange: string;
+  allowed_instruments: string[];
+  max_gross_notional: number | null;
+  max_single_order_notional: number | null;
+  max_net_notional: number | null;
+}
+export interface GoLiveVenue {
+  venue: string;
+  mainnet: boolean;
+  suffix: string;
+  key_permissions: GoLiveKeyPermissions;
+  smoke: GoLiveSmoke;
+  mandate: GoLiveMandate;
+  attestations: Record<string, { present: boolean; kind: string | null }>;
+  kill_switch_tripped: boolean;
+  last_run: {
+    status_path: string;
+    present: boolean;
+    at_ms: number | null;
+    summary: Record<string, unknown>;
+  };
+}
+export interface GoLiveStrategyLeg {
+  instrument: string;
+  weight: number;
+  price: number | null;
+}
+export interface GoLiveStrategy {
+  decided_ts: number;
+  n_legs: number;
+  gross: number;
+  legs: GoLiveStrategyLeg[];
+}
+export interface GoLiveGuidance {
+  venue: string;
+  strategy: string;
+  required_instruments: string[];
+  missing_from_mandate: string[];
+  stale_in_mandate: string[];
+  min_deploy_for_all_legs: number;
+  min_deploy_binding_leg: string;
+  deploy_target_usdt: number;
+  suggested_caps: {
+    max_gross_notional: number;
+    max_single_order_notional: number;
+    max_net_notional: number;
+    per_instrument: number;
+  };
+  warnings: string[];
+}
+export interface GoLiveReadinessPayload extends ConsolePayloadBase {
+  data_provenance: "REAL_GO_LIVE_READINESS" | "SYNTHETIC_DETERMINISTIC" | string;
+  snapshot_present: boolean;
+  artifact: string | null;      // "GO_LIVE_READINESS" when present
+  generated_at_ms: number | null;
+  readiness: string;            // "L2_DRY_RUN_ONLY"
+  venues: GoLiveVenue[];
+  strategies: Record<string, GoLiveStrategy>;
+  guidance: GoLiveGuidance | null;
+  honesty_note: string;
+}
+
+/* ---------- A股Alpha 工作台(ashare-alpha) ------------------------------------
+   Contract for GET /api/v1/console/ashare-alpha — read-only snapshot of the
+   A-share micro-cap multi-factor research stack (services/console/api/ashare_views.py).
+   Mock fixtures omit api_version, so this payload does not extend ConsolePayloadBase
+   (the runtime contract guard only requires source/read_only markers). */
+export interface AShareAlphaPayload {
+  source: "BACKEND_COMPUTED_SNAPSHOT" | string;
+  read_only: true;
+  api_version?: string;
+  provenance: string;           // REAL_ASHARE_ALPHA_SNAPSHOT | SYNTHETIC_DETERMINISTIC
+  data_provenance?: string;
+  snapshot_present?: boolean;
+  generated_at: string;
+  data_freshness: {
+    stocks: number;
+    bars: number;
+    last_date: number;
+    sources: { wind: number; ifind: number };
+  };
+  universe: { file_count: number; used: number };
+  factors: {
+    name: string;
+    train_ic: number;
+    train_t: number;
+    test_ic: number;
+    test_t: number;
+    kept: boolean;
+  }[];
+  combo: {
+    champion: string;
+    weights: Record<string, number>;
+    h1_test_ic: number;
+    h1_test_t: number;
+    h5_test_ic: number;
+    h5_test_t: number;
+    hit_rate: number;
+  };
+  basket: {
+    n: number;
+    aum_cny: number;
+    cost_bps: number;
+    test: { total_return: number; sharpe: number; max_dd: number; avg_turnover: number };
+    bench_test: { total_return: number; sharpe: number; max_dd: number };
+    equity_test: number[];
+    bench_equity_test: number[];
+  };
+  variants: {
+    name: string;
+    train_sharpe: number;
+    test_return: number;
+    test_sharpe: number;
+    test_mdd: number;
+    turnover: number;
+    is_champion: boolean;
+  }[];
+  dry_run: {
+    run_id: string;
+    total_return: number;
+    sharpe: number;
+    max_drawdown: number;
+    n_approved: number;
+    n_rejected: number;
+    residual: number;
+  };
+  paper_track: {
+    alpha_id: string;
+    n_weeks: number;
+    cum_return: number;
+    sharpe: number;
+    weekly_ic_mean: number;
+    weekly_ic_t: number;
+    kind: string;
+  };
+  cost_grid: { cost_bps: number; total_return: number; sharpe: number }[];
+  turnover_caps: { cap: number; train_sharpe: number; test_return: number; test_sharpe: number }[];
+  holdings_latest: { code: string; weight: number }[];
+  honest_limitations: string[];
+}
+
+/* ---------- Alpha 生命周期驾驶舱(alpha-lifecycle cockpit) -------------------
+   Contract for GET /api/v1/console/alpha-lifecycle — read-only verbatim serve of
+   the offline artifact evidence/alpha_lifecycle_cockpit.json
+   (tools/alpha_lifecycle_cockpit.py: read-only aggregation of existing local
+   evidence stores — dry_run.db / paper_track.db / IC panel / falsification /
+   scenario-tail / capacity / combo / live-track status / maintenance authority;
+   no network, no new research math).
+   Present: data_provenance REAL_ALPHA_LIFECYCLE / snapshot_status REAL.
+   Absent (driver never ran, e.g. CI): SYNTHETIC_DETERMINISTIC / NO_SNAPSHOT with
+   alphas=[] stage_legend={} — pages must render both honestly.
+   derived_stage is a mechanical evidence-chain derivation (see stage_legend),
+   never a promotion endorsement; lifecycle_state stays null (no lifecycle-SM
+   state persisted on disk). Pinned both sides by
+   tests/research/test_console_api_contract.py. */
+
+/** derived_stage ladder, ascending evidence maturity:
+    CANDIDATE < VALIDATED < DRY_RUN < PAPER_TRACKED < LIVE_TRACK. */
+export type AlphaDerivedStage =
+  "CANDIDATE" | "VALIDATED" | "DRY_RUN" | "PAPER_TRACKED" | "LIVE_TRACK" | string;
+
+/** Every stage cell is fail-soft: {"status":"ABSENT"} when the evidence store
+    has nothing for this alpha; the typed fields below appear only on PRESENT,
+    so each is optional even though the real artifact populates them. */
+export interface AlphaLifecycleStageBase {
+  status: "PRESENT" | "ABSENT" | string;
+  source?: string;
+  sources?: string[];
+}
+
+export interface AlphaLifecycleDiscoveryHorizon {
+  mean_ic?: number | null;
+  icir?: number | null;
+  t_stat?: number | null;
+  hit_rate?: number | null;
+  ic_std?: number | null;
+  n_periods?: number | null;
+  per_year?: Record<string, number | null>;
+}
+export interface AlphaLifecycleDiscoveryStage extends AlphaLifecycleStageBase {
+  factor?: string;
+  universe?: string;
+  mean_ic?: number | null;
+  icir?: number | null;
+  t_stat?: number | null;
+  hit_rate?: number | null;
+  n_periods?: number | null;
+  n_instruments?: number | null;
+  per_year?: Record<string, number | null>;
+  by_holding_period?: Record<string, AlphaLifecycleDiscoveryHorizon>;
+}
+
+export interface AlphaLifecycleFalsificationStage extends AlphaLifecycleStageBase {
+  checks?: Record<string, boolean> | null;
+  n_checks_pass?: number | null;
+  n_checks_total?: number | null;
+  verdict_pass?: boolean | null;
+  research_verdict?: string | null;
+  research_evidence?: Record<string, unknown> | null;
+  research_warnings?: string[] | null;
+  verify_summary?: Record<string, unknown> | null;
+}
+
+export interface AlphaLifecycleCrisis {
+  n_periods: number;
+  total_return: number;
+  max_drawdown: number;
+  worst_period: number;
+}
+export interface AlphaLifecycleVarCvar {
+  var: number;
+  cvar: number;
+  alpha?: number;
+}
+export interface AlphaLifecycleDrawdownWindow {
+  peak_ts?: number;
+  trough_ts?: number;
+  drawdown?: number;
+  peak_to_trough_periods?: number;
+  peak_date?: string;
+  trough_date?: string;
+}
+export interface AlphaLifecycleStressStage extends AlphaLifecycleStageBase {
+  book?: string;
+  provenance?: string;            // "REAL_HISTORICAL_REPLAY"
+  n_periods?: number | null;
+  crises?: Record<string, AlphaLifecycleCrisis>;
+  worst_drawdown_window?: AlphaLifecycleDrawdownWindow | null;
+  var_cvar_95?: AlphaLifecycleVarCvar | null;
+  var_cvar_99?: AlphaLifecycleVarCvar | null;
+  hill_tail_index?: number | null;
+  lower_tail_dep_vs_btc?: number | null;
+}
+
+export interface AlphaLifecycleCrowdingGate {
+  n_pass: number;
+  n_warn: number;
+  n_block: number;
+  worst_score: number | null;
+}
+export interface AlphaLifecycleBacktestStage extends AlphaLifecycleStageBase {
+  strategy_id?: string;
+  run_id?: string;
+  timestamp?: number;
+  canonical?: boolean;
+  n_runs_for_strategy?: number;
+  mode?: string;
+  cadence?: string;
+  n_periods?: number | null;
+  window_start_ts?: number | null;
+  window_end_ts?: number | null;
+  total_return?: number | null;
+  sharpe_raw?: number | null;
+  sharpe_vol_target?: number | null;
+  max_drawdown_raw?: number | null;
+  max_drawdown_vol_target?: number | null;
+  final_equity?: number | null;
+  total_funding?: number | null;
+  avg_net_exposure_pct?: number | null;
+  reconciliation_residual?: number | null;
+  n_intents?: number | null;
+  n_approved?: number | null;
+  n_rejected?: number | null;
+  research_risk_decision?: string | null;
+  cost_model?: string | null;
+  cost_bps?: number | null;
+  cost_provenance?: string | null;
+  crowding_gate?: AlphaLifecycleCrowdingGate | null;
+}
+
+export interface AlphaLifecycleCapacityStage extends AlphaLifecycleStageBase {
+  book?: string;
+  provenance?: string;            // "UNCALIBRATED_PRINCIPLED" — diagnostic band, never a gate
+  participation_cap_aum?: number | null;
+  binding?: string | null;
+  calibrated_range?: { low: number | null; high: number | null } | null;
+  impact_aum_low?: number | null;
+  impact_aum_high?: number | null;
+  gross_sharpe?: number | null;
+  n_periods?: number | null;
+  data_quality?: string | null;
+}
+
+export interface AlphaLifecycleReturnStreamCombo {
+  source?: string;
+  kind?: string;                  // "RETURN_STREAM_COMBINE_GROSS_RELATIVE" — gross, RELATIVE only
+  standalone_sharpe?: number | null;
+  standalone_max_drawdown?: number | null;
+  standalone_total_return?: number | null;
+  inverse_vol_weight?: number | null;
+  combo_equal_weight_sharpe?: number | null;
+  combo_inverse_vol_sharpe?: number | null;
+  combo_inverse_vol_max_drawdown?: number | null;
+  corr_carry_crowd?: number | null;
+  common_weeks?: number | null;
+}
+export interface AlphaLifecycleOptimizerCombo {
+  source?: string;
+  kind?: string;                  // "OPTIMIZER_COMBO"
+  weight?: number | null;
+  alone_econ_sharpe?: number | null;
+  alone_max_drawdown?: number | null;
+  combo_econ_sharpe?: number | null;
+  combo_max_drawdown?: number | null;
+  lift_vs_best_alone?: number | null;
+  verdict?: string | null;
+}
+export interface AlphaLifecyclePortfolioStage extends AlphaLifecycleStageBase {
+  return_stream_combo?: AlphaLifecycleReturnStreamCombo | null;
+  optimizer_combo?: AlphaLifecycleOptimizerCombo | null;
+}
+
+export interface AlphaLifecyclePaperTrack {
+  start_ts?: number | null;
+  last_ts?: number | null;
+  n_periods?: number | null;
+  cum_return?: number | null;
+  paper_sharpe?: number | null;
+  paper_ic?: number | null;
+  backtest_sharpe?: number | null;
+  perf_gap?: number | null;
+}
+export interface AlphaLifecyclePaperForward {
+  n_forward_periods?: number | null;
+  paper_sharpe?: number | null;
+  evidence_state?: string | null;
+  paper_verdict?: string | null;
+  blockers?: string[];
+  pending_decisions?: number | null;
+  attested_pending_decisions?: number | null;
+  last_decision_ts?: number | null;
+}
+export interface AlphaLifecyclePaperStage extends AlphaLifecycleStageBase {
+  paper_id?: string;
+  n_periods?: number | null;
+  track?: AlphaLifecyclePaperTrack | null;
+  last_period?: {
+    as_of_ts?: number | null;
+    realized_return?: number | null;
+    realized_ic?: number | null;
+    source?: string | null;
+  } | null;
+  forward?: AlphaLifecyclePaperForward | null;
+  required_forward_periods?: number | null;
+}
+
+export interface AlphaLifecycleLiveRun {
+  venue: string;
+  mode: string;                   // preview | submit (verbatim transcript)
+  tier: string;
+  armed: boolean | null;
+  hard_stop: boolean;
+  n_submitted: number;
+  n_pending_review?: number;
+  n_rejected_by_gate: number;
+  n_dropped_by_filters?: number;
+  n_submission_errors?: number;
+  order_stats?: Record<string, number>;
+  ran_at: number | null;
+  status_file?: string;
+}
+export interface AlphaLifecycleLiveStage extends AlphaLifecycleStageBase {
+  runs?: AlphaLifecycleLiveRun[];
+}
+
+export interface AlphaLifecycleDecayStage extends AlphaLifecycleStageBase {
+  sweep_generated_at?: number | null;
+  actor_kind?: string | null;
+  n_actions?: number | null;
+  alpha_action?: string | null;   // null = 权重侧无降级记录
+  degraded?: boolean;
+}
+export interface AlphaLifecycleRetirementStage extends AlphaLifecycleStageBase {
+  retired?: boolean;
+  n_retirement_events?: number | null;
+  events?: Array<Record<string, unknown>>;
+}
+
+/** The ten lifecycle stages, in canonical order (the page renders this order):
+    发掘 discovery → 证伪 falsification → 压力 stress → 回测 backtest →
+    容量 capacity → 组合 portfolio → 纸面 paper → 实盘 live → 衰弱 decay →
+    退役 retirement. Keys are optional only for fail-soft reading; the real
+    artifact always carries all ten. */
+export interface AlphaLifecycleStages {
+  discovery?: AlphaLifecycleDiscoveryStage;
+  falsification?: AlphaLifecycleFalsificationStage;
+  stress?: AlphaLifecycleStressStage;
+  backtest?: AlphaLifecycleBacktestStage;
+  capacity?: AlphaLifecycleCapacityStage;
+  portfolio?: AlphaLifecyclePortfolioStage;
+  paper?: AlphaLifecyclePaperStage;
+  live?: AlphaLifecycleLiveStage;
+  decay?: AlphaLifecycleDecayStage;
+  retirement?: AlphaLifecycleRetirementStage;
+}
+
+export interface AlphaLifecycleEntry {
+  alpha_id: string;
+  display_name: string;
+  derived_stage: AlphaDerivedStage;
+  lifecycle_state: string | null; // always null today (lifecycle SM not persisted)
+  stages: AlphaLifecycleStages;
+  warnings: string[];
+}
+
+export interface AlphaLifecyclePayload extends ConsolePayloadBase {
+  data_provenance: "REAL_ALPHA_LIFECYCLE" | "SYNTHETIC_DETERMINISTIC" | string;
+  snapshot_present: boolean;
+  artifact: string | null;      // "ALPHA_LIFECYCLE_COCKPIT" when present
+  generated_at_ms: number | null;
+  readiness: string;            // "L2_DRY_RUN_ONLY"
+  alphas: AlphaLifecycleEntry[];
+  stage_legend: Record<string, string>;
+  honesty_note: string;
 }

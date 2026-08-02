@@ -4,13 +4,27 @@
  * (the backend whitelist + governance test enforce that). Disabled unless VITE_RUNNER_URL is configured,
  * so the UI degrades to read-only browsing when the runner is not running.
  */
-export const RESEARCH_RUNNER_BASE = (import.meta.env.VITE_RUNNER_URL || '').replace(/\/$/, '');
+const SAME_ORIGIN_MARKER = '__QUANTOS_SAME_ORIGIN__';
+const configuredRunnerBase = (import.meta.env.VITE_RUNNER_URL || '').replace(/\/$/, '');
+export const RESEARCH_RUNNER_BASE = configuredRunnerBase === SAME_ORIGIN_MARKER
+  ? (typeof window === 'undefined' ? '' : `${window.location.origin}/__runner__`)
+  : configuredRunnerBase;
+
+function runnerUrl(path: string): URL {
+  return new URL(path.replace(/^\//, ''), `${RESEARCH_RUNNER_BASE}/`);
+}
 
 export function runnerEnabled(): boolean {
   return RESEARCH_RUNNER_BASE.length > 0;
 }
 
 export interface TriggerResult { run_id: string; status: string; kind: string; operator?: string; }
+
+export interface RunnerHealth {
+  mode: string;
+  live_disallowed: boolean;
+  kinds: string[];
+}
 
 // Rank #18: the runner requires an X-Operator tag on every trigger — a SELF-ASSERTED, UNAUTHENTICATED
 // accountability label (not RBAC/authn). Persisted in localStorage so the operator keeps their tag.
@@ -34,9 +48,16 @@ export function setRunnerToken(token: string): void {
   try { sessionStorage.setItem(RUNNER_TOKEN_KEY, token); } catch { /* private-mode etc */ }
 }
 
+export async function fetchRunnerHealth(signal?: AbortSignal): Promise<RunnerHealth> {
+  if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
+  const res = await fetch(runnerUrl('/health'), { method: 'GET', signal });
+  if (!res.ok) throw new Error(`runner returned ${res.status}`);
+  return res.json();
+}
+
 export async function triggerRun(kind: string, params: Record<string, unknown> = {}): Promise<TriggerResult> {
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
-  const res = await fetch(new URL('/run', RESEARCH_RUNNER_BASE), {
+  const res = await fetch(runnerUrl('/run'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
     body: JSON.stringify({ kind, params }),
@@ -53,7 +74,7 @@ export async function cancelRun(runId: string): Promise<{ run_id: string; cancel
   if (!RESEARCH_RUNNER_BASE) throw new Error('VITE_RUNNER_URL is not configured');
   // 2026-07-06 修复:后端 /cancel 现在要求 X-Operator(与 /run 对称的问责标签)+ X-Runner-Token
   // (本机共享密钥),少了任一个头都会出错(400/401)。
-  const res = await fetch(new URL('/cancel', RESEARCH_RUNNER_BASE), {
+  const res = await fetch(runnerUrl('/cancel'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Operator': getOperator(), 'X-Runner-Token': getRunnerToken() },
     body: JSON.stringify({ run_id: runId }),
@@ -76,6 +97,9 @@ export interface RunParamSpec {
 // The runnable research kinds (mirror backend RUN_KINDS). Fast ones first for a snappy demo. A kind with a
 // non-empty `params` renders typed inputs in the trigger panel; the values are passed to POST /run.
 export const RUNNABLE_KINDS: ReadonlyArray<{ kind: string; label: string; params?: RunParamSpec[] }> = [
+  { kind: 'paper_cycle', label: '执行纸面周期', params: [
+    { name: 'small_10k', type: 'bool', label: '10K 隔离账户', default: false },
+  ] },
   { kind: 'combo_book', label: '双因子组合' },
   { kind: 'oi_research', label: '持仓因子研究' },
   { kind: 'survivorship', label: '幸存者重测' },

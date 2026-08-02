@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { fetchRiskDashboardSnapshot, fetchSafetyPrimitivesSnapshot } from '@/lib/api/research-console-api';
 import { mockRiskReports } from '@/lib/mock-data/research-mocks';
 import { bi } from '@/lib/i18n/bilingual';
@@ -6,7 +6,7 @@ import type { CalculationLineageItem, ComputationRiskReport, RiskDashboardPayloa
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, KeyValue, Chip, type Column,
+  StatusChip, GateDot, ProgressBar, KeyValue, Chip, LoadingVeil, PillToggle, type Column,
 } from '@/ui/primitives';
 import { RadialGauge, DivergingBars } from '@/ui/charts';
 import { num, pct, fixed, shortHash, statusTone } from '@/ui/format';
@@ -31,7 +31,7 @@ const gateLabel = (g: string) => gateLabels[g] ?? g.replace(/_/g, ' ');
 
 export default function Risk() {
   const [selectedAlpha, setSelectedAlpha] = useState('alpha-1');
-  const { payload, apiState, error: apiError, usingBackend } = useConsoleSnapshot<RiskDashboardPayload>(
+  const { payload, apiState, error: apiError, usingBackend, snapshotState } = useConsoleSnapshot<RiskDashboardPayload>(
     s => fetchRiskDashboardSnapshot(selectedAlpha, s),
     [selectedAlpha],
   );
@@ -85,19 +85,22 @@ export default function Risk() {
         actions={
           <div className="flex flex-wrap gap-1.5">
             {ALPHA_IDS.map(id => (
-              <button key={id} onClick={() => setSelectedAlpha(id)}
-                className={`rounded-md px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide transition-colors ${
-                  selectedAlpha === id
-                    ? 'bg-accent/15 text-accent ring-1 ring-accent/40'
-                    : 'border border-line bg-elevated/40 text-muted hover:bg-elevated'}`}>
-                {id}
-              </button>
+              <PillToggle key={id} label={id} active={selectedAlpha === id} onClick={() => setSelectedAlpha(id)} />
             ))}
           </div>
         } />
-      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError} />
+      <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} realData={(payload as { data_provenance?: string } | null | undefined)?.data_provenance === 'REAL_CRYPTO_SERIES'} source={payload?.source} error={apiError}
+        dataStatus={usingBackend && primaryReport.decision.startsWith('REJECTED') ? 'BLOCKED' : snapshotState} />
+
+      {sp.apiState === 'error' && (
+        <div className="rounded-lg border border-neg/40 bg-neg/5 px-3 py-2 text-2xs text-neg">
+          {bi('安全原语面板加载失败', 'Safety primitives panel failed to load')}
+          {sp.error ? `: ${sp.error}` : ''}
+        </div>
+      )}
 
       {safety && (
+      <LoadingVeil active={sp.apiState === 'loading'}>
         <Panel eyebrow={bi('安全原语(只读)', 'Safety Primitives (read-only)')}
           title={bi('熔断 / 盘前门 / 安全配置', 'Kill-Switch / Pre-Trade Gate / Safety Config')}
           right={<Chip label={bi('真实安全原语', 'REAL_SAFETY_PRIMITIVES')} tone="pos" />}>
@@ -127,8 +130,10 @@ export default function Risk() {
               'Read-only: never arms/resets the switch, never places an order — reset is human-only, incident-bound. Real services/risk/pre_trade.')}
           </div>
         </Panel>
+      </LoadingVeil>
       )}
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={5}>
         <StatTile label={bi('已选 Alpha', 'Selected Alpha')} value={selectedAlphaId} accent />
         <StatTile label={bi('风控决策', 'Risk Decision')}
@@ -245,6 +250,7 @@ export default function Risk() {
           />
         </Panel>
       )}
+      </LoadingVeil>
     </PageShell>
   );
 }

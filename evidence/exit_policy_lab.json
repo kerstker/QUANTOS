@@ -1,0 +1,925 @@
+{
+  "schema_version": 1,
+  "evidence_class": "RESEARCH_DIAGNOSTIC",
+  "provenance": "REAL_EXIT_POLICY_LAB",
+  "readiness": "L2_DRY_RUN_ONLY",
+  "as_of": 1784764800000,
+  "selection_rule": {
+    "version": "exit_lab_selection.v1",
+    "text": "A policy is 'worth further study' ONLY IF ALL of: (1) Sharpe delta > 0 (RAW series); (2) maxDD not worsened by more than 2pp (mdd_delta <= 0.02); (3) delta not concentrated: if incremental PnL > 0, at least 5 periods are needed to cover it (negative/zero delta cannot be 'concentrated' and does not block); (4) profit factor >= baseline profit factor (both computed; None PF fails unless baseline PF is also None). Ranking is reported on multiple criteria (Sharpe delta / maxDD delta / PF delta); selection by final net PnL alone is FORBIDDEN (spec §8/§2.3).",
+    "thresholds": {
+      "mdd_tolerance": 0.02,
+      "min_periods_for_delta": 5,
+      "soft_warning_periods": 10
+    }
+  },
+  "metric_definitions": {
+    "profit_factor": "sum(positive period $PnL) / |sum(negative period $PnL)|; None if no losing period",
+    "right_tail_share": "share of total net $PnL from the top ceil(n/10) periods by $PnL; None if total <= 0 (>1 means the rest of the book nets negative)",
+    "delta_concentration": "min count of top period (policy-baseline) $ deltas needed to cover the total positive delta; <5 hard-fails selection, <10 warns",
+    "cost_total": "final_equity(zero-cost twin run) - final_equity(cost run); fills are identical across the twin (quantities depend on fixed AUM+prices only)",
+    "incremental": "every delta is policy minus signal-only baseline on the SAME periods/costs/AUM/seed"
+  },
+  "policies": [
+    {
+      "name": "baseline_signal_only",
+      "version": "baseline_signal_only.v1",
+      "description": "对照:恒 HOLD,退出全由信号给出",
+      "params": {},
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "fixed_stop",
+      "version": "fixed_stop.v1",
+      "description": "固定百分比止损(锁定)",
+      "params": {
+        "pct": 0.1
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "atr_stop",
+      "version": "atr_stop.v1",
+      "description": "ATR 止损(锁定)",
+      "params": {
+        "mult": 3.0,
+        "window": 14
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "chandelier",
+      "version": "chandelier.v1",
+      "description": "吊灯追踪止损(锁定)",
+      "params": {
+        "mult": 3.0,
+        "window": 22
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "time_stop",
+      "version": "time_stop.v1",
+      "description": "时间止损(锁定)",
+      "params": {
+        "max_periods": 8
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "scale_out",
+      "version": "scale_out.v1",
+      "description": "分批止盈(水位线单向减仓,不锁定)",
+      "params": {
+        "levels": [
+          [
+            0.1,
+            0.5
+          ],
+          [
+            0.2,
+            0.25
+          ]
+        ]
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "vol_adaptive_stop",
+      "version": "vol_adaptive_stop.v1",
+      "description": "波动自适应止损(base_mult×σ×√t,锁定)",
+      "params": {
+        "base_mult": 2.0,
+        "vol_lookback": 30
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    },
+    {
+      "name": "risk_budget_reduce",
+      "version": "risk_budget_reduce.v1",
+      "description": "W6 仓位级风险预算减仓(无闩锁)",
+      "params": {
+        "levels": [
+          [
+            0.05,
+            0.5
+          ],
+          [
+            0.1,
+            0.25
+          ],
+          [
+            0.2,
+            0.0
+          ]
+        ]
+      },
+      "threshold_provenance": "UNCALIBRATED_ENGINEERING_DEFAULT"
+    }
+  ],
+  "books": {
+    "crowd_contra": {
+      "strategy_id": "crowd_contra",
+      "data_source": "crypto_funding.db(PIT)",
+      "note": "OI 大币周度截面多空;资金费现金流在现金流的真边;无 crowding-gate 覆盖层",
+      "n_periods": 236,
+      "aum": 1000000.0,
+      "cost_bps": 10.0,
+      "cadence": "weekly_decision_grid",
+      "baseline": {
+        "net_pnl": 967215.539511,
+        "total_return": 0.967216,
+        "sharpe": 1.2701,
+        "max_drawdown": 0.1243,
+        "sharpe_vt": 1.1426,
+        "max_drawdown_vt": 0.1387,
+        "profit_factor": 1.6608,
+        "right_tail_share": 1.1391,
+        "trade_count": 3912,
+        "cost_total": 150332.788313,
+        "n_exit_events": 0,
+        "n_lockout_periods": 0,
+        "n_reduce_events": 0,
+        "residual": 4e-09,
+        "signal_only_assessment": "PROFITABLE_WITH_SIGNAL_ONLY_EXITS"
+      },
+      "policies": {
+        "fixed_stop": {
+          "net_pnl": 895033.573881,
+          "total_return": 0.895034,
+          "sharpe": 1.1198,
+          "max_drawdown": 0.1349,
+          "sharpe_vt": 1.093,
+          "max_drawdown_vt": 0.1117,
+          "profit_factor": 1.5524,
+          "right_tail_share": 1.3019,
+          "trade_count": 3416,
+          "cost_total": 146202.628994,
+          "n_exit_events": 105,
+          "n_lockout_periods": 401,
+          "n_reduce_events": 0,
+          "residual": 3e-09,
+          "delta_net_pnl": -72181.96563,
+          "delta_sharpe": -0.1503,
+          "delta_max_drawdown": 0.0106,
+          "delta_profit_factor": -0.1084,
+          "delta_trade_count": -496,
+          "delta_cost_total": -4130.159319,
+          "concentration": {
+            "total_delta": -72181.96563,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "fixed_stop.v1",
+          "params": {
+            "pct": 0.1
+          }
+        },
+        "atr_stop": {
+          "net_pnl": 827896.240601,
+          "total_return": 0.827896,
+          "sharpe": 1.0873,
+          "max_drawdown": 0.1243,
+          "sharpe_vt": 0.8948,
+          "max_drawdown_vt": 0.165,
+          "profit_factor": 1.5267,
+          "right_tail_share": 1.3531,
+          "trade_count": 3642,
+          "cost_total": 148138.475339,
+          "n_exit_events": 45,
+          "n_lockout_periods": 229,
+          "n_reduce_events": 0,
+          "residual": 3e-09,
+          "delta_net_pnl": -139319.29891,
+          "delta_sharpe": -0.1828,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": -0.1341,
+          "delta_trade_count": -270,
+          "delta_cost_total": -2194.312974,
+          "concentration": {
+            "total_delta": -139319.29891,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "atr_stop.v1",
+          "params": {
+            "mult": 3.0,
+            "window": 14
+          }
+        },
+        "chandelier": {
+          "net_pnl": 750733.760515,
+          "total_return": 0.750734,
+          "sharpe": 0.9211,
+          "max_drawdown": 0.1317,
+          "sharpe_vt": 0.7778,
+          "max_drawdown_vt": 0.1359,
+          "profit_factor": 1.4678,
+          "right_tail_share": 1.601,
+          "trade_count": 3266,
+          "cost_total": 146223.338276,
+          "n_exit_events": 82,
+          "n_lockout_periods": 610,
+          "n_reduce_events": 0,
+          "residual": 3e-09,
+          "delta_net_pnl": -216481.778996,
+          "delta_sharpe": -0.349,
+          "delta_max_drawdown": 0.0074,
+          "delta_profit_factor": -0.193,
+          "delta_trade_count": -646,
+          "delta_cost_total": -4109.450037,
+          "concentration": {
+            "total_delta": -216481.778996,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "chandelier.v1",
+          "params": {
+            "mult": 3.0,
+            "window": 22
+          }
+        },
+        "time_stop": {
+          "net_pnl": 882654.477914,
+          "total_return": 0.882654,
+          "sharpe": 1.2714,
+          "max_drawdown": 0.0807,
+          "sharpe_vt": 1.0732,
+          "max_drawdown_vt": 0.1295,
+          "profit_factor": 1.6473,
+          "right_tail_share": 1.3728,
+          "trade_count": 3162,
+          "cost_total": 146249.906588,
+          "n_exit_events": 71,
+          "n_lockout_periods": 759,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": -84561.061597,
+          "delta_sharpe": 0.0013,
+          "delta_max_drawdown": -0.0436,
+          "delta_profit_factor": -0.0135,
+          "delta_trade_count": -750,
+          "delta_cost_total": -4082.881725,
+          "concentration": {
+            "total_delta": -84561.061597,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": true,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "time_stop.v1",
+          "params": {
+            "max_periods": 8
+          }
+        },
+        "scale_out": {
+          "net_pnl": 510471.756727,
+          "total_return": 0.510472,
+          "sharpe": 0.8544,
+          "max_drawdown": 0.1986,
+          "sharpe_vt": 0.6491,
+          "max_drawdown_vt": 0.2551,
+          "profit_factor": 1.3542,
+          "right_tail_share": 1.8395,
+          "trade_count": 3874,
+          "cost_total": 143402.67804,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 1324,
+          "residual": 1e-08,
+          "delta_net_pnl": -456743.782784,
+          "delta_sharpe": -0.4157,
+          "delta_max_drawdown": 0.0743,
+          "delta_profit_factor": -0.3066,
+          "delta_trade_count": -38,
+          "delta_cost_total": -6930.110273,
+          "concentration": {
+            "total_delta": -456743.782784,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": false,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "mdd_delta<=0.02",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "scale_out.v1",
+          "params": {
+            "levels": [
+              [
+                0.1,
+                0.5
+              ],
+              [
+                0.2,
+                0.25
+              ]
+            ]
+          }
+        },
+        "vol_adaptive_stop": {
+          "net_pnl": 880170.391421,
+          "total_return": 0.88017,
+          "sharpe": 1.0819,
+          "max_drawdown": 0.1471,
+          "sharpe_vt": 1.0699,
+          "max_drawdown_vt": 0.1261,
+          "profit_factor": 1.5263,
+          "right_tail_share": 1.3472,
+          "trade_count": 3436,
+          "cost_total": 146596.129897,
+          "n_exit_events": 106,
+          "n_lockout_periods": 394,
+          "n_reduce_events": 0,
+          "residual": 5e-09,
+          "delta_net_pnl": -87045.14809,
+          "delta_sharpe": -0.1882,
+          "delta_max_drawdown": 0.0228,
+          "delta_profit_factor": -0.1345,
+          "delta_trade_count": -476,
+          "delta_cost_total": -3736.658416,
+          "concentration": {
+            "total_delta": -87045.14809,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": false,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "mdd_delta<=0.02",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "vol_adaptive_stop.v1",
+          "params": {
+            "base_mult": 2.0,
+            "vol_lookback": 30
+          }
+        },
+        "risk_budget_reduce": {
+          "net_pnl": 849816.94773,
+          "total_return": 0.849817,
+          "sharpe": 0.9817,
+          "max_drawdown": 0.1601,
+          "sharpe_vt": 0.9634,
+          "max_drawdown_vt": 0.1368,
+          "profit_factor": 1.5244,
+          "right_tail_share": 1.5116,
+          "trade_count": 3700,
+          "cost_total": 160910.192483,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 972,
+          "residual": 1e-09,
+          "delta_net_pnl": -117398.591781,
+          "delta_sharpe": -0.2884,
+          "delta_max_drawdown": 0.0358,
+          "delta_profit_factor": -0.1364,
+          "delta_trade_count": -212,
+          "delta_cost_total": 10577.40417,
+          "concentration": {
+            "total_delta": -117398.591781,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": false,
+            "concentration_ok": true,
+            "pf_ok": false,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0",
+              "mdd_delta<=0.02",
+              "profit_factor>=baseline"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "risk_budget_reduce.v1",
+          "params": {
+            "levels": [
+              [
+                0.05,
+                0.5
+              ],
+              [
+                0.1,
+                0.25
+              ],
+              [
+                0.2,
+                0.0
+              ]
+            ]
+          }
+        }
+      },
+      "rankings": {
+        "by_sharpe_delta_desc": [
+          "time_stop",
+          "fixed_stop",
+          "atr_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce",
+          "chandelier",
+          "scale_out"
+        ],
+        "by_maxdd_delta_asc": [
+          "time_stop",
+          "atr_stop",
+          "chandelier",
+          "fixed_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce",
+          "scale_out"
+        ],
+        "by_profit_factor_delta_desc": [
+          "time_stop",
+          "fixed_stop",
+          "atr_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce",
+          "chandelier",
+          "scale_out"
+        ],
+        "note": "multi-criteria ranking only; selection by final net PnL alone is forbidden (spec §8/§2.3)"
+      },
+      "verdict": "signal-only baseline: sharpe=1.2701 net=$967,216 maxDD=12.4% PF=1.6608 → no exit policy clears the pre-registered bar — signal-only exits are the honest default for this book",
+      "worth_further_study": []
+    },
+    "btc_spot_trend": {
+      "strategy_id": "btc_spot_trend_hold",
+      "data_source": "crypto_mexc.db(MEXC PIT)",
+      "note": "BTC 现货 long-only 迟滞趋势;5bps 敏感性成本口径(canonical 0 费率另存)",
+      "n_periods": 72,
+      "aum": 1000000.0,
+      "cost_bps": 5.0,
+      "cadence": "weekly_decision_grid",
+      "baseline": {
+        "net_pnl": 108570.43211,
+        "total_return": 0.10857,
+        "sharpe": 0.4981,
+        "max_drawdown": 0.1205,
+        "sharpe_vt": 0.8495,
+        "max_drawdown_vt": 0.0634,
+        "profit_factor": 1.225,
+        "right_tail_share": 4.5445,
+        "trade_count": 25,
+        "cost_total": 7825.76789,
+        "n_exit_events": 0,
+        "n_lockout_periods": 0,
+        "n_reduce_events": 0,
+        "residual": 0.0,
+        "signal_only_assessment": "PROFITABLE_WITH_SIGNAL_ONLY_EXITS"
+      },
+      "policies": {
+        "fixed_stop": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "fixed_stop.v1",
+          "params": {
+            "pct": 0.1
+          }
+        },
+        "atr_stop": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "atr_stop.v1",
+          "params": {
+            "mult": 3.0,
+            "window": 14
+          }
+        },
+        "chandelier": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "chandelier.v1",
+          "params": {
+            "mult": 3.0,
+            "window": 22
+          }
+        },
+        "time_stop": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "time_stop.v1",
+          "params": {
+            "max_periods": 8
+          }
+        },
+        "scale_out": {
+          "net_pnl": 129201.550625,
+          "total_return": 0.129202,
+          "sharpe": 0.6079,
+          "max_drawdown": 0.0934,
+          "sharpe_vt": 0.8141,
+          "max_drawdown_vt": 0.0746,
+          "profit_factor": 1.3143,
+          "right_tail_share": 3.5709,
+          "trade_count": 23,
+          "cost_total": 7731.339375,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 6,
+          "residual": 0.0,
+          "delta_net_pnl": 20631.118515,
+          "delta_sharpe": 0.1098,
+          "delta_max_drawdown": -0.0271,
+          "delta_profit_factor": 0.0893,
+          "delta_trade_count": -2,
+          "delta_cost_total": -94.428515,
+          "concentration": {
+            "total_delta": 20631.118515,
+            "periods_for_delta": 1,
+            "concentration_ok": false,
+            "selection_warning": "CONCENTRATED_DELTA: entire positive delta covered by 1<5 periods — a handful of periods, not a robust exit edge"
+          },
+          "selection": {
+            "sharpe_ok": true,
+            "mdd_ok": true,
+            "concentration_ok": false,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "periods_for_delta>=5"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": "CONCENTRATED_DELTA: entire positive delta covered by 1<5 periods — a handful of periods, not a robust exit edge",
+          "policy_version": "scale_out.v1",
+          "params": {
+            "levels": [
+              [
+                0.1,
+                0.5
+              ],
+              [
+                0.2,
+                0.25
+              ]
+            ]
+          }
+        },
+        "vol_adaptive_stop": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "vol_adaptive_stop.v1",
+          "params": {
+            "base_mult": 2.0,
+            "vol_lookback": 30
+          }
+        },
+        "risk_budget_reduce": {
+          "net_pnl": 108570.43211,
+          "total_return": 0.10857,
+          "sharpe": 0.4981,
+          "max_drawdown": 0.1205,
+          "sharpe_vt": 0.8495,
+          "max_drawdown_vt": 0.0634,
+          "profit_factor": 1.225,
+          "right_tail_share": 4.5445,
+          "trade_count": 25,
+          "cost_total": 7825.76789,
+          "n_exit_events": 0,
+          "n_lockout_periods": 0,
+          "n_reduce_events": 0,
+          "residual": 0.0,
+          "delta_net_pnl": 0.0,
+          "delta_sharpe": 0.0,
+          "delta_max_drawdown": 0.0,
+          "delta_profit_factor": 0.0,
+          "delta_trade_count": 0,
+          "delta_cost_total": 0.0,
+          "concentration": {
+            "total_delta": 0.0,
+            "periods_for_delta": null,
+            "concentration_ok": true,
+            "selection_warning": null
+          },
+          "selection": {
+            "sharpe_ok": false,
+            "mdd_ok": true,
+            "concentration_ok": true,
+            "pf_ok": true,
+            "worth_further_study": false,
+            "failed": [
+              "sharpe_delta>0"
+            ],
+            "rule_version": "exit_lab_selection.v1"
+          },
+          "selection_warning": null,
+          "policy_version": "risk_budget_reduce.v1",
+          "params": {
+            "levels": [
+              [
+                0.05,
+                0.5
+              ],
+              [
+                0.1,
+                0.25
+              ],
+              [
+                0.2,
+                0.0
+              ]
+            ]
+          }
+        }
+      },
+      "rankings": {
+        "by_sharpe_delta_desc": [
+          "scale_out",
+          "fixed_stop",
+          "atr_stop",
+          "chandelier",
+          "time_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce"
+        ],
+        "by_maxdd_delta_asc": [
+          "scale_out",
+          "fixed_stop",
+          "atr_stop",
+          "chandelier",
+          "time_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce"
+        ],
+        "by_profit_factor_delta_desc": [
+          "scale_out",
+          "fixed_stop",
+          "atr_stop",
+          "chandelier",
+          "time_stop",
+          "vol_adaptive_stop",
+          "risk_budget_reduce"
+        ],
+        "note": "multi-criteria ranking only; selection by final net PnL alone is forbidden (spec §8/§2.3)"
+      },
+      "verdict": "signal-only baseline: sharpe=0.4981 net=$108,570 maxDD=12.0% PF=1.225 → no exit policy clears the pre-registered bar — signal-only exits are the honest default for this book",
+      "worth_further_study": []
+    }
+  },
+  "books_omitted": [],
+  "honest_limits": [
+    "退出判定只在决策点(周度调仓网格)用尾随日线做出;周内止损路径未模拟——对所有策略与基线同一网格,相对比较公平,绝对数值偏乐观。",
+    "每策略单一参数点(UNCALIBRATED 工程默认),非参数扫描——扫描会放大试验数;预注册规则已按 4 条件把关。",
+    "实验室基线不叠 crowding gate、且全 book 名单全期定价——与 canonical 存盘 run 的两点刻意偏差(见驱动器 docstring),实验室内自洽。",
+    "全样本已知历史内的诊断,非前向证据;过关策略只赢得「进一步研究」,不赢得晋级/仓位。",
+    "RECOVERY ramp 等 W6 组合级语义在仓位级简化为「乘数随修复即时回升」(无 ramp)。"
+  ]
+}

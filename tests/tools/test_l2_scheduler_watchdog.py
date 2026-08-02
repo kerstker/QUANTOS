@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+import tools.l2_scheduler_watchdog as watchdog
 from services.governance.l2_restore_history import (
     L2RestoreHistoryStore,
     RestoreAttempt,
@@ -22,6 +23,7 @@ from tools.l2_scheduler_watchdog import (
 
 
 NOW_MS = 1_784_044_800_000
+RELEASE_COMMIT = "a" * 40
 CONTRACT = {
     "version": 2,
     "sources": [
@@ -41,7 +43,7 @@ CONTRACT_SHA256 = hashlib.sha256(
 
 def _launcher_arguments(code_root: Path, module: str) -> str:
     launcher = code_root / "tools" / "l2_schedule_entrypoint.py"
-    return f'"{launcher}" {module}'
+    return f'"{launcher}" {module} --release-commit {RELEASE_COMMIT}'
 
 
 def _healthy_snapshot(
@@ -70,6 +72,7 @@ def _healthy_tasks(
     conditional_external = {
         "QUANTOS_external_heartbeat",
         "QUANTOS_domain_event_seal",
+        "QUANTOS_artifact_admission_seal",
     }
     return [
         _healthy_snapshot(repo, name)
@@ -188,6 +191,65 @@ def test_schedule_evaluation_passes_only_when_every_ready_task_matches_contract(
     }
 
 
+def test_running_task_ignores_prior_overlap_result_until_current_instance_completes(
+    tmp_path,
+):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    stream_index = next(
+        index
+        for index, row in enumerate(snapshots)
+        if row.name == "QUANTOS_binance_realtime_stream"
+    )
+    prior = snapshots[stream_index]
+    snapshots[stream_index] = TaskSnapshot(
+        name=prior.name,
+        state="Running",
+        last_run_ms=prior.last_run_ms,
+        last_result=2_147_946_720,
+        next_run_ms=prior.next_run_ms,
+        execute=prior.execute,
+        arguments=prior.arguments,
+        working_directory=prior.working_directory,
+    )
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(
+        row
+        for row in result["checks"]
+        if row["task_name"] == "QUANTOS_binance_realtime_stream"
+    )
+    assert check["status"] == "PASS"
+    assert check["code"] == "RUNNING"
+    assert result["verdict"] == "PASS"
+
+
+def test_binance_low_frequency_workers_are_pinned_in_watchdog_contract():
+    systemic = EXPECTED_TASKS["QUANTOS_binance_systemic_risk"]
+    rpi = EXPECTED_TASKS["QUANTOS_binance_rpi_depth"]
+
+    assert systemic.module == "binance_systemic_risk"
+    assert systemic.max_age_ms == 90 * 60_000
+    assert rpi.module == "binance_rpi_depth"
+    assert rpi.max_age_ms == 3 * 3_600_000
+
+
+def test_resident_binance_stream_exit_is_stale_within_three_paper_cadences():
+    stream = EXPECTED_TASKS["QUANTOS_binance_realtime_stream"]
+
+    assert stream.module == "binance_realtime_stream"
+    assert stream.max_age_ms == 15 * 60_000
+
+
 def test_schedule_evaluation_accepts_distinct_release_and_state_roots(tmp_path):
     state_root = tmp_path / "state"
     code_root = tmp_path / "release"
@@ -220,6 +282,40 @@ def test_schedule_evaluation_rejects_legacy_direct_module_action(tmp_path):
             **{
                 **item.__dict__,
                 "arguments": "-m tools.domain_event_ops",
+            }
+        )
+        if item.name == "QUANTOS_domain_event_ops"
+        else item
+        for item in snapshots
+    ]
+
+    result = evaluate_schedule(
+        snapshots,
+        now_ms=NOW_MS,
+        repo_root=tmp_path,
+        backup_ready=True,
+        heartbeat_ready=True,
+        event_seal_ready=True,
+    )
+
+    check = next(
+        item
+        for item in result["checks"]
+        if item["task_name"] == "QUANTOS_domain_event_ops"
+    )
+    assert check["status"] == "BREACH"
+    assert check["code"] == "ACTION_DRIFT"
+
+
+def test_schedule_evaluation_rejects_task_pinned_to_different_release(tmp_path):
+    snapshots = _healthy_tasks(
+        tmp_path, include_backup=True, include_external=True
+    )
+    snapshots = [
+        TaskSnapshot(
+            **{
+                **item.__dict__,
+                "arguments": item.arguments.replace(RELEASE_COMMIT, "b" * 40),
             }
         )
         if item.name == "QUANTOS_domain_event_ops"
@@ -384,6 +480,11 @@ def test_windows_collector_uses_fixed_powershell_command_without_shell(tmp_path)
     command, kwargs = calls[0]
     assert command[:3] == ["powershell.exe", "-NoProfile", "-NonInteractive"]
     assert kwargs["shell"] is False
+    assert kwargs["creationflags"] == (
+        getattr(watchdog.subprocess, "CREATE_NO_WINDOW", 0)
+        if watchdog.os.name == "nt"
+        else 0
+    )
 
 
 def test_watchdog_writes_status_and_deduplicates_unchanged_alerts(tmp_path):
@@ -555,6 +656,36 @@ def test_history_failure_remains_breach_after_later_success_and_stale_is_breach(
     stale = read_restore_history_health(repo_root=tmp_path, now_ms=NOW_MS)
     assert stale["verdict"] == "BREACH"
     assert "LATEST_SUCCESS_STALE" in stale["reason_codes"]
+
+
+def test_longitudinal_restore_maturity_is_partial_not_operational_breach():
+    check = {
+        "task_name": "QUANTOS_backup",
+        "status": "PASS",
+        "code": "HEALTHY",
+        "detail": "enabled, action-pinned, fresh, and successful",
+    }
+    health = {
+        "verdict": "BREACH",
+        "reason_codes": (
+            "HISTORY_SPAN_INSUFFICIENT",
+            "SUCCESS_COUNT_INSUFFICIENT",
+        ),
+        "latest_terminal_verdict": "PASS",
+        "failure_count_in_clean_window": 0,
+        "overdue_open_count": 0,
+    }
+
+    assert watchdog._merge_backup_history(check, health) == {
+        "task_name": "QUANTOS_backup",
+        "status": "PARTIAL",
+        "code": "RESTORE_HISTORY_MATURING",
+        "detail": (
+            "current restore evidence is healthy; longitudinal maturity "
+            "is incomplete "
+            "(HISTORY_SPAN_INSUFFICIENT,SUCCESS_COUNT_INSUFFICIENT)"
+        ),
+    }
 
 
 def test_healthy_scheduler_and_history_pass_and_history_alert_is_deduplicated(

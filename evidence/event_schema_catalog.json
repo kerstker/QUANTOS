@@ -1,33 +1,35 @@
 {
   "canonical_latest_timestamp_unit": "unix_epoch_microseconds",
-  "event_type_count": 12,
+  "event_type_count": 13,
   "implementation_sha256": {
-    "quantos/contracts/event_schemas.py": "8951b7c9e8ade5471f411f467bf8d1acd62f419ba73b3eb2a79912695f107efa",
-    "quantos/contracts/events.py": "7460c157d3ea07bd47a860759f43c541f91367b1e36b2657c2d3d9fce520acd7",
-    "scripts/generate_event_schema_catalog.py": "2954466b6535522c058da77a54465a9951a456c59992e1fdddec35e23e66017b",
+    "live/execution/shadow_store.py": "11a3f151397f741f5e1454ba71eb97a05d56eedcdbcb88a0fb406c16f6f03a13",
+    "quantos/contracts/event_schemas.py": "b3968daa4a4fc6c5af3963ac85a08cf34b4c7622e391b2111b125b1049976a8e",
+    "quantos/contracts/events.py": "2bfd6b15d123f890227d92c3237efd271483aeb640a5d16a509aaffe598ed850",
+    "scripts/generate_event_schema_catalog.py": "0392d2f8303e87f275957518966f74a7e6162ede770560e18cd740143dfe55bf",
     "services/alpha/events.py": "58a8419c5d506f2c6582039991db76f550d9359288cf2a9c1f9983de2be89190",
     "services/alpha/maintenance_events.py": "af29de4ea9f4bfbc1dea65d200f25449eb3d09fc057d9973f0fe5b30052e5217",
-    "services/console/api/system_views.py": "07ad5ff4f44f961c472a452735b418de9e0cd0a2dabd66bb66122782d84498de",
+    "services/console/api/system_views.py": "93c7d177da8845faf1540f59f1bd77efe572a770aa94e55eec73d60b74bbacd0",
     "services/data/admission_store.py": "56cf672826e7a9318c419552a5ed7387aed6a6ee56d77e81c016a6278178acaa",
     "services/data/events.py": "61e7e140c6dcab0afeb9efcaabf7ab769e67e797b5644d5d4155a11d1def4804",
     "services/data/refresh_history.py": "ca8bb6e0755c7041c61e4062dad3cd0ee2799dbe89a065717c6e72febd01c816",
     "services/deployment/events.py": "51e27421aa686669cbf7c0aab9372847ac900c0023a678df3a1f477903f8d4c6",
     "services/deployment/runtime.py": "be1cb970ae6867226067fe7f5595aa3ac75469d27d2b173b84a85775ef102adc",
     "services/deployment/store.py": "aa4be3d957680063ee9968870c9380b0c557bb03ae875bf03a50f2975be1519f",
-    "services/execution/dry_run_store.py": "1ab72d9a9a0a9711144b3f75860d8495d38d3604ac7e59a0b648f2769b6d914b",
+    "services/execution/dry_run_store.py": "a8232642799917cf0bc2599e0f9f8c436804754ac9e9de0c120ed78df3df6517",
     "services/execution/events.py": "8a7d63b2138e092d8e9a87c4eb315c8759c6774a943e044254ee5bf0b8ae1625",
-    "services/monitoring/domain_event_runtime.py": "37c16cdd3071e37243b9b6f48518177f3045cc25afac9c0ba1dca204fa18e566",
+    "services/monitoring/domain_event_runtime.py": "7f7c31c0d48752ca8d9295079c22583b541d08e2b31a2f7c901a9ab4239b5317",
     "services/monitoring/event_health.py": "7848de9e1ecc49248a5ba2b6a0e2fcbd8107e212a40be35b006b9e80d051a954",
     "services/risk/pre_trade/events.py": "ecc4d151dbafb080a127bd74cf31ebd3aae7d42c3cd424f6ee970421c0d2a088",
     "services/risk/pre_trade/kill_switch_store.py": "7251f7994b9b6d1ce31fa813d030471cd2bd85c750d8ad39555f584a386dd816",
-    "services/risk/research_risk/events.py": "f2fd56be0a9dc60b0306895ef7c76c2f09051e7acb76a92918c925d96a95d575",
-    "tools/data_quality_admission.py": "2dc0f0f8516695c1014a32b7e6ae0b25fc99e02b5ebfeeae15f823281960aa6b"
+    "services/risk/research_risk/events.py": "2dc8cb40160254a07d38817c1f5bb9c4410ad45520c475fe6a32e454809f82b1",
+    "tools/data_quality_admission.py": "38ef162d65d7c80624c12dab5d96e15d2871a4fb1366b9bf89ee11b528040061"
   },
   "latest_consumer_versions": {
     "data.market.refresh.recorded": "1.0.0",
     "data.quality.admission.decided": "1.0.0",
     "execution.dry_run.completed": "1.1.0",
     "execution.dry_run.started": "1.0.0",
+    "execution.shadow.observed": "1.0.0",
     "governance.deployment.recorded": "1.1.0",
     "research.alpha.maintenance.transition": "1.0.0",
     "research.alpha.promoted": "1.1.0",
@@ -61,7 +63,7 @@
     }
   ],
   "mode": "VERSIONED_CANONICAL_EVENT_SCHEMA_CATALOG",
-  "schema_definition_count": 17,
+  "schema_definition_count": 18,
   "schema_version": 1,
   "schemas": {
     "data.market.refresh.recorded": {
@@ -446,6 +448,134 @@
           "payload_schema_sha256": "cfe99421e94cf73a8e03949ca9510cce82e1bc02c91b10e636e65b379928e252",
           "sources": [
             "services.execution.dry_run_pipeline"
+          ],
+          "timestamp_unit": "unix_epoch_microseconds",
+          "version": "1.0.0"
+        }
+      ],
+      "domain": "execution",
+      "latest_version": "1.0.0",
+      "versions": [
+        "1.0.0"
+      ]
+    },
+    "execution.shadow.observed": {
+      "definitions": [
+        {
+          "compatible_consumer_versions": [
+            "1.0.0"
+          ],
+          "criticalities": [
+            "C2"
+          ],
+          "payload_schema": {
+            "additionalProperties": false,
+            "description": "SHADOW \u89c2\u6d4b\u7684\u8131\u654f\u6458\u8981(727 \u00a712.2,Phase 7 S2)\u2014\u2014\u53ea\u542b\u6807\u91cf\u7ed3\u8bba,\n\u4e0d\u542b\u76d8\u53e3\u7c3f/walk \u660e\u7ec6(\u5b8c\u6574\u89c2\u6d4b\u5728 shadow_store \u884c payload_json)\u3002\u65b0\u4e8b\u4ef6\u7c7b\u578b,\ntimestamp \u4e3a Unix epoch \u5fae\u79d2(\u73b0\u884c\u7ea6\u5b9a,catalog \u9489\u6b7b latest \u4e00\u5f8b \u00b5s)\u3002",
+            "properties": {
+              "as_of_ms": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "As Of Ms"
+              },
+              "book_age_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Book Age Ms"
+              },
+              "decision_price": {
+                "exclusiveMinimum": 0,
+                "title": "Decision Price",
+                "type": "number"
+              },
+              "executable_vwap": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Executable Vwap"
+              },
+              "instrument_id": {
+                "minLength": 1,
+                "title": "Instrument Id",
+                "type": "string"
+              },
+              "observation_id": {
+                "pattern": "^shd_[0-9a-f]{16}$",
+                "title": "Observation Id",
+                "type": "string"
+              },
+              "provenance": {
+                "const": "SHADOW",
+                "title": "Provenance",
+                "type": "string"
+              },
+              "quantity": {
+                "exclusiveMinimum": 0,
+                "title": "Quantity",
+                "type": "number"
+              },
+              "run_label": {
+                "minLength": 1,
+                "title": "Run Label",
+                "type": "string"
+              },
+              "side": {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ],
+                "title": "Side",
+                "type": "string"
+              },
+              "slippage_bps_vs_decision": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Slippage Bps Vs Decision"
+              }
+            },
+            "required": [
+              "decision_price",
+              "instrument_id",
+              "observation_id",
+              "provenance",
+              "quantity",
+              "run_label",
+              "side"
+            ],
+            "title": "_ShadowObservedPayload",
+            "type": "object"
+          },
+          "payload_schema_sha256": "385111621141dc6d2118dbc606bf171886df6d454554af18cc141614d5ae0378",
+          "sources": [
+            "live.execution.shadow_store"
           ],
           "timestamp_unit": "unix_epoch_microseconds",
           "version": "1.0.0"
@@ -859,7 +989,10 @@
                 "type": "integer"
               },
               "provenance": {
-                "const": "REAL_RESEARCH_RISK_SUBSET",
+                "enum": [
+                  "REAL_RESEARCH_RISK_SUBSET",
+                  "REAL_RESEARCH_RISK_FULL"
+                ],
                 "title": "Provenance",
                 "type": "string"
               },
@@ -908,7 +1041,7 @@
             "title": "_ResearchRiskEvaluatedPayload",
             "type": "object"
           },
-          "payload_schema_sha256": "c8bb4ff5b381126f407b4247c4cf5bd393fa6fbd553d6ac2b909f5bcb8860fac",
+          "payload_schema_sha256": "72b30bc5decc08352ee18f40ea98644bb3098d4e321e7fcbbc807e0321cb8216",
           "sources": [
             "services.risk.research_risk.dry_run_guard"
           ],
@@ -1311,6 +1444,6 @@
       ]
     }
   },
-  "schemas_sha256": "e6b1d7b4f4e8a018a50e12080a4682f4dca407650da01d6d6b82f0670c5329fa",
+  "schemas_sha256": "2f19450c065c0d0f92aeca5075babc32d0807f35038202206671a8573a7100ce",
   "verdict": "PASS"
 }

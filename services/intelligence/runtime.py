@@ -10,10 +10,15 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import hashlib
-from typing import Any
+from typing import Any, Protocol
+
+from pydantic import ValidationError
 
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.model_risk import (
+    ExternalProviderBinding,
+    ExternalProviderBindingStatus,
+    ExternalProviderResponse,
     ModelCard,
     ModelUseStatus,
     PromptLineageStatus,
@@ -64,6 +69,32 @@ class RuntimeGovernanceError(PermissionError):
 
 class RuntimeExecutionError(RuntimeError):
     """Registered offline compute failed before an invocation could be recorded."""
+
+
+class ExternalModelProvider(Protocol):
+    def invoke(self, request: Mapping[str, Any]) -> ExternalProviderResponse:
+        """Return a provider response bound to the canonical request digest."""
+
+
+class ExternalProviderVerifier(Protocol):
+    def verify(
+        self,
+        *,
+        binding: ExternalProviderBinding,
+        response: ExternalProviderResponse,
+    ) -> bool:
+        """Verify an externally produced response receipt without exposing secrets."""
+
+
+class DenyExternalProviderVerifier:
+    def verify(
+        self,
+        *,
+        binding: ExternalProviderBinding,
+        response: ExternalProviderResponse,
+    ) -> bool:
+        del binding, response
+        return False
 
 
 @dataclass(frozen=True)
@@ -217,9 +248,109 @@ class GovernedModelRuntime:
         event_hash = self._registry.record_runtime_invocation(invocation)
         return RuntimeResult(value=value, invocation=invocation, event_hash=event_hash)
 
+    def invoke_external(
+        self,
+        *,
+        invocation_id: str,
+        action: str,
+        input_payload: Mapping[str, Any],
+        binding_ref: str,
+        provider: ExternalModelProvider,
+        recorded_at: int,
+        verifier: ExternalProviderVerifier | None = None,
+    ) -> RuntimeResult:
+        normalized_action = self.authorize(action)
+        if not isinstance(input_payload, Mapping):
+            raise RuntimeGovernanceError("runtime input must be a structured mapping")
+        if recorded_at < 0:
+            raise RuntimeGovernanceError("runtime timestamp must be non-negative")
+        if not callable(getattr(provider, "invoke", None)):
+            raise TypeError("external provider must implement invoke")
+        verifier = verifier or DenyExternalProviderVerifier()
+        if not callable(getattr(verifier, "verify", None)):
+            raise TypeError("external provider verifier must implement verify")
+
+        binding_id = _artifact_id(binding_ref, "provider-binding")
+        binding = self._load(binding_id, ExternalProviderBinding)
+        if not self._registry.verify_artifact(binding_id):
+            raise RuntimeGovernanceError("provider binding failed registry integrity verification")
+        if binding.status != ExternalProviderBindingStatus.RESEARCH_ONLY:
+            raise RuntimeGovernanceError("external provider binding is disabled")
+        if binding.model_ref != self.model.model_ref:
+            raise RuntimeGovernanceError("provider binding does not match the runtime model")
+        if normalized_action not in binding.allowed_actions:
+            raise RuntimeGovernanceError("provider binding does not allow the runtime action")
+
+        request = {
+            "action": normalized_action,
+            "input": dict(input_payload),
+            "model_ref": self.model.model_ref,
+            "prompt_ref": self.prompt.prompt_ref,
+            "prompt_sha256": self.prompt.template_sha256,
+            "provider_id": binding.provider_id,
+            "provider_model_ref": binding.provider_model_ref,
+            "tool_manifest_ref": self.manifest.manifest_ref,
+        }
+        request_hash = stable_hash(request)
+        try:
+            raw_response = provider.invoke(request)
+            response = ExternalProviderResponse.model_validate(raw_response)
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise RuntimeGovernanceError(
+                f"external provider returned an invalid response: {type(exc).__name__}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeExecutionError(
+                f"external provider failed: {type(exc).__name__}"
+            ) from exc
+
+        if (
+            response.provider_id != binding.provider_id
+            or response.provider_model_ref != binding.provider_model_ref
+        ):
+            raise RuntimeGovernanceError("external provider response identity mismatch")
+        if response.request_sha256 != request_hash:
+            raise RuntimeGovernanceError("external provider request digest mismatch")
+        try:
+            verified = verifier.verify(binding=binding, response=response)
+        except Exception as exc:
+            raise RuntimeGovernanceError(
+                f"external provider verification failed: {type(exc).__name__}"
+            ) from exc
+        if verified is not True:
+            raise RuntimeGovernanceError("external provider response is not externally verified")
+
+        value = response.response
+        if isinstance(value, Mapping):
+            returned_action = value.get("action")
+            if returned_action is not None and returned_action != normalized_action:
+                raise RuntimeGovernanceError(
+                    "runtime output attempted to override its authorized action"
+                )
+        if _contains_sensitive_key(value):
+            raise RuntimeGovernanceError(
+                "runtime output contains a sensitive or order-bearing field"
+            )
+        invocation = RuntimeInvocation(
+            invocation_id=invocation_id,
+            model_ref=self.model.model_ref,
+            prompt_ref=self.prompt.prompt_ref,
+            tool_manifest_ref=self.manifest.manifest_ref,
+            action=normalized_action,
+            input_sha256=stable_hash(dict(input_payload)),
+            output_sha256=response.response_sha256,
+            outcome=RuntimeInvocationOutcome.ALLOWED,
+            recorded_at=recorded_at,
+        )
+        event_hash = self._registry.record_runtime_invocation(invocation)
+        return RuntimeResult(value=value, invocation=invocation, event_hash=event_hash)
+
 
 __all__ = [
     "GovernedModelRuntime",
+    "DenyExternalProviderVerifier",
+    "ExternalModelProvider",
+    "ExternalProviderVerifier",
     "RESEARCH_EVALUATION_TEMPLATE",
     "RuntimeExecutionError",
     "RuntimeGovernanceError",

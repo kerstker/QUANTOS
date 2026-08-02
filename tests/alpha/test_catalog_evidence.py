@@ -125,3 +125,27 @@ def test_catalog_evidence_requires_an_honest_cross_trial_population() -> None:
     catalog.set_returns("a", (0.01, 0.02, -0.01, 0.03))
 
     assert catalog.evidence("a") is None
+
+
+def test_legacy_16_hex_trials_keep_count_but_mint_full_hash_evidence() -> None:
+    catalog = AlphaCatalog()
+    left = _definition("a", "factor-a")
+    right = _definition("b", "factor-b")
+    catalog.restore_evaluation_context(
+        trials=("0123456789abcdef", left.definition_hash, right.definition_hash),
+        historical_returns={},
+        historical_pvalues={},
+    )
+    catalog.register(left)
+    catalog.register(right)
+    catalog.set_returns("a", (0.01, 0.02, -0.01, 0.03))
+    catalog.set_returns("b", (-0.01, 0.01, 0.02, -0.02))
+
+    evidence = catalog.evidence("a")
+
+    assert evidence is not None
+    assert catalog.global_trial_count() == evidence.trial_count == 3
+    assert all(len(value) == 64 for value in evidence.trial_definition_hashes)
+    assert "0123456789abcdef" not in evidence.trial_definition_hashes
+    assert evidence.catalog_trial_set_hash == catalog.trial_set_hash()
+    assert verify_catalog_evidence_against_catalog(evidence, catalog, "a")

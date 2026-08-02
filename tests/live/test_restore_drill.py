@@ -20,7 +20,12 @@ def test_encrypted_restore_drill_roundtrip_writes_integrity_evidence(tmp_path):
     for name, content in files.items():
         plain = source / name
         plain.write_bytes(content)
-        encrypt_file(str(plain), str(batch / f"{name}.enc"), "restore-drill-passphrase")
+        encrypt_file(
+            str(plain),
+            str(batch / f"{name}.enc"),
+            "restore-drill-passphrase",
+            chunk_size=4,
+        )
 
     result = run_restore_drill(
         batch_dir=str(batch),

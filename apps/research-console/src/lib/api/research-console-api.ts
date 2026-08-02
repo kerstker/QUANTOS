@@ -1,10 +1,7 @@
 import type {
-  AccessControlPayload,
+  AlphaLifecyclePayload,
   AgentsPayload,
-  AlphaFactoryPayload,
-  ArchitecturePayload,
-  BacktestExplainabilityPayload,
-  ComputationLabPayload,
+  AShareAlphaPayload,
   CryptoLivePayload,
   FxResearchPayload,
   CarryReadinessPayload,
@@ -19,37 +16,65 @@ import type {
   ResearchRunsComparePayload,
   ResearchRunDetail,
   DataCatalogPayload,
-  EvidenceLedgerPayload,
   EventsPayload,
   ExperimentsPayload,
-  IncidentResponsePayload,
-  ModelRiskReviewPayload,
   MonitoringDriftPayload,
   OverviewPayload,
   PaperTradingPayload,
-  Phase3AReadinessPayload,
   PortfolioDashboardPayload,
   PopulationOptimizerPayload,
   AlphaGraphPayload,
   AlphaZooPayload,
   DslExplorerPayload,
+  DslExprRow,
   SafetyPrimitivesPayload,
+  MexcMarketPayload,
+  MexcStrategyPayload,
+  MexcReadinessPayload,
+  GoLiveReadinessPayload,
   LifecycleMonitorPayload,
   BacktestResultsPayload,
-  PromotionControlPayload,
-  ReleaseCommitteePayload,
   RiskDashboardPayload,
-  ReviewerWorkflowPayload,
-  ScenarioStressPayload,
+  RuntimeContractPayload,
   SystemCompletenessPayload,
   SystemHealthPayload,
   ValidationDashboardPayload,
 } from '@/lib/types/research';
 
-export const RESEARCH_CONSOLE_API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const SAME_ORIGIN_MARKER = '__QUANTOS_SAME_ORIGIN__';
+const configuredConsoleBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+export const RESEARCH_CONSOLE_API_BASE = configuredConsoleBase === SAME_ORIGIN_MARKER
+  ? (typeof window === 'undefined' ? '' : window.location.origin)
+  : configuredConsoleBase;
+
+/**
+ * The console has three deliberately explicit runtime modes.  A missing API
+ * URL is not the same thing as an intentional mock session: it is an
+ * unavailable real console and must be visible to the operator.
+ */
+export type ConsoleRuntimeMode = 'MOCK' | 'REAL_API' | 'REAL_API_UNAVAILABLE';
+
+export function getConsoleRuntimeMode(): ConsoleRuntimeMode {
+  if (import.meta.env.VITE_MOCK_MODE === 'true') return 'MOCK';
+  return RESEARCH_CONSOLE_API_BASE ? 'REAL_API' : 'REAL_API_UNAVAILABLE';
+}
 
 export function isResearchConsoleApiEnabled() {
   return import.meta.env.VITE_MOCK_MODE === 'false' && RESEARCH_CONSOLE_API_BASE.length > 0;
+}
+
+/**
+ * Read-only snapshots are polled by several shared surfaces.  A short-lived
+ * client cache prevents a page from issuing the same expensive snapshot more
+ * than once during a render/poll burst, while keeping the authoritative
+ * backend as the source of truth.  Errors are never cached.
+ */
+const SNAPSHOT_CACHE_TTL_MS = 3_000;
+const snapshotCache = new Map<string, { expiresAt: number; value: unknown }>();
+
+export function clearConsoleSnapshotCache() {
+  snapshotCache.clear();
 }
 
 /**
@@ -73,37 +98,17 @@ export function assertConsoleSnapshot<TPayload>(body: unknown, path: string): TP
   return body as TPayload;
 }
 
-export async function fetchComputationLabSnapshot({
-  alphaId,
-  costBps,
-  stress,
-  signal,
-}: {
-  alphaId: string;
-  costBps: number;
-  stress: number;
-  signal?: AbortSignal;
-}): Promise<ComputationLabPayload> {
-  if (!RESEARCH_CONSOLE_API_BASE) {
-    throw new Error('VITE_API_URL is not configured');
-  }
-
-  const url = new URL('/api/v1/console/computation-lab', RESEARCH_CONSOLE_API_BASE);
-  url.searchParams.set('alpha_id', alphaId);
-  url.searchParams.set('cost_bps', String(costBps));
-  url.searchParams.set('stress', String(stress));
-
-  const response = await fetch(url, { method: 'GET', signal });
-  if (!response.ok) {
-    throw new Error(`Computation API returned ${response.status}`);
-  }
-
-  return assertConsoleSnapshot<ComputationLabPayload>(await response.json(), '/api/v1/console/computation-lab');
-}
-
 async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): Promise<TPayload> {
   if (!RESEARCH_CONSOLE_API_BASE) {
     throw new Error('VITE_API_URL is not configured');
+  }
+
+  if (signal?.aborted) {
+    throw new Error('Console snapshot request aborted');
+  }
+  const cached = snapshotCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value as TPayload;
   }
 
   const response = await fetch(new URL(path, RESEARCH_CONSOLE_API_BASE), { method: 'GET', signal });
@@ -111,27 +116,21 @@ async function fetchConsoleJson<TPayload>(path: string, signal?: AbortSignal): P
     throw new Error(`Console API returned ${response.status}`);
   }
 
-  return assertConsoleSnapshot<TPayload>(await response.json(), path);
+  const value = assertConsoleSnapshot<TPayload>(await response.json(), path);
+  snapshotCache.set(path, { value, expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
+  return value;
 }
 
 export function fetchOverviewSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<OverviewPayload>('/api/v1/console/overview', signal);
 }
 
-export function fetchAgentsSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<AgentsPayload>('/api/v1/console/agents', signal);
-}
-
 export function fetchEventsSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<EventsPayload>('/api/v1/console/events', signal);
 }
 
-export function fetchPhase3AReadinessSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<Phase3AReadinessPayload>('/api/v1/console/phase-3a-readiness', signal);
-}
-
-export function fetchArchitectureSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<ArchitecturePayload>('/api/v1/console/architecture', signal);
+export function fetchAgentsSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<AgentsPayload>('/api/v1/console/agents', signal);
 }
 
 export function fetchExperimentsSnapshot(signal?: AbortSignal) {
@@ -142,50 +141,8 @@ export function fetchDataCatalogSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<DataCatalogPayload>('/api/v1/console/data-catalog', signal);
 }
 
-export function fetchBacktestExplainabilitySnapshot(alphaId: string, signal?: AbortSignal) {
-  const path = `/api/v1/console/backtest-explainability?alpha_id=${encodeURIComponent(alphaId)}`;
-  return fetchConsoleJson<BacktestExplainabilityPayload>(path, signal);
-}
-
-export function fetchScenarioStressSnapshot(alphaId: string, signal?: AbortSignal) {
-  const path = `/api/v1/console/scenario-stress?alpha_id=${encodeURIComponent(alphaId)}`;
-  return fetchConsoleJson<ScenarioStressPayload>(path, signal);
-}
-
-export function fetchModelRiskReviewSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<ModelRiskReviewPayload>('/api/v1/console/model-risk-review', signal);
-}
-
-export function fetchEvidenceLedgerSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<EvidenceLedgerPayload>('/api/v1/console/evidence-ledger', signal);
-}
-
-export function fetchReviewerWorkflowSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<ReviewerWorkflowPayload>('/api/v1/console/reviewer-workflow', signal);
-}
-
-export function fetchAccessControlSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<AccessControlPayload>('/api/v1/console/access-control', signal);
-}
-
 export function fetchMonitoringDriftSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<MonitoringDriftPayload>('/api/v1/console/monitoring-drift', signal);
-}
-
-export function fetchIncidentResponseSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<IncidentResponsePayload>('/api/v1/console/incident-response', signal);
-}
-
-export function fetchPromotionControlSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<PromotionControlPayload>('/api/v1/console/promotion-control', signal);
-}
-
-export function fetchReleaseCommitteeSnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<ReleaseCommitteePayload>('/api/v1/console/release-committee', signal);
-}
-
-export function fetchAlphaFactorySnapshot(signal?: AbortSignal) {
-  return fetchConsoleJson<AlphaFactoryPayload>('/api/v1/console/alpha-factory', signal);
 }
 
 export function fetchRiskDashboardSnapshot(alphaId: string, signal?: AbortSignal) {
@@ -222,6 +179,20 @@ export function fetchDslExplorerSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<DslExplorerPayload>('/api/v1/console/dsl-explorer', signal);
 }
 
+export async function checkDslExpression(expr: string, signal?: AbortSignal): Promise<DslExprRow> {
+  if (!RESEARCH_CONSOLE_API_BASE) {
+    throw new Error('VITE_API_URL is not configured');
+  }
+  const url = new URL('/api/v1/console/dsl-explorer/check', RESEARCH_CONSOLE_API_BASE);
+  url.searchParams.set('expr', expr);
+  const response = await fetch(url, { method: 'GET', signal });
+  if (!response.ok) {
+    throw new Error(`Console API returned ${response.status}`);
+  }
+  const body = assertConsoleSnapshot<{ row: DslExprRow }>(await response.json(), '/api/v1/console/dsl-explorer/check');
+  return body.row;
+}
+
 export function fetchSafetyPrimitivesSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SafetyPrimitivesPayload>('/api/v1/console/safety-primitives', signal);
 }
@@ -236,6 +207,10 @@ export function fetchBacktestResultsSnapshot(signal?: AbortSignal) {
 
 export function fetchSystemHealthSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<SystemHealthPayload>('/api/v1/console/system-health', signal);
+}
+
+export function fetchRuntimeContract(signal?: AbortSignal) {
+  return fetchConsoleJson<RuntimeContractPayload>('/api/v1/console/runtime-contract', signal);
 }
 
 export function fetchSystemCompletenessSnapshot(signal?: AbortSignal) {
@@ -262,6 +237,10 @@ export function fetchIcPanelSnapshot(signal?: AbortSignal) {
   return fetchConsoleJson<IcPanelPayload>('/api/v1/console/ic-panel', signal);
 }
 
+export function fetchAShareAlphaSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<AShareAlphaPayload>('/api/v1/console/ashare-alpha', signal);
+}
+
 export function fetchResearchFindings(signal?: AbortSignal) {
   return fetchConsoleJson<ResearchFindingsPayload>('/api/v1/console/research-findings', signal);
 }
@@ -276,6 +255,22 @@ export function fetchLiveTradingSnapshot(signal?: AbortSignal) {
 
 export function fetchGonogo(signal?: AbortSignal) {
   return fetchConsoleJson<GonogoPayload>('/api/v1/console/gonogo', signal);
+}
+
+export function fetchMexcMarketSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcMarketPayload>('/api/v1/console/mexc-market', signal);
+}
+
+export function fetchMexcStrategySnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcStrategyPayload>('/api/v1/console/mexc-strategy', signal);
+}
+
+export function fetchMexcReadinessSnapshot(signal?: AbortSignal) {
+  return fetchConsoleJson<MexcReadinessPayload>('/api/v1/console/mexc-readiness', signal);
+}
+
+export function fetchGoLiveReadiness(signal?: AbortSignal) {
+  return fetchConsoleJson<GoLiveReadinessPayload>('/api/v1/console/go-live-readiness', signal);
 }
 
 export function fetchResearchRuns(signal?: AbortSignal) {
@@ -297,4 +292,8 @@ export async function fetchResearchRunsCompare(
   const payloads = await Promise.all(runIds.map(id => fetchResearchRun(id, signal)));
   const runs = payloads.map(p => p.run).filter((r): r is ResearchRunDetail => r != null);
   return { source: 'BACKEND_COMPUTED_SNAPSHOT', read_only: true, data_provenance: 'RESEARCH_RUN_REGISTRY', runs };
+}
+
+export function fetchAlphaLifecycle(signal?: AbortSignal) {
+  return fetchConsoleJson<AlphaLifecyclePayload>('/api/v1/console/alpha-lifecycle', signal);
 }

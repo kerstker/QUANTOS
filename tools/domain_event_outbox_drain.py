@@ -12,6 +12,7 @@ from services.data.refresh_history import RefreshHistoryStore
 from services.deployment.runtime import DEPLOYMENT_STATE_DB
 from services.deployment.store import DeploymentDecisionStore
 from services.execution.dry_run_store import DryRunStore
+from live.execution.shadow_store import SqliteShadowStore
 from services.monitoring.domain_event_runtime import (
     DOMAIN_EVENT_DB,
     DOMAIN_EVENT_PROJECTION_DB,
@@ -21,6 +22,7 @@ from services.monitoring.domain_event_runtime import (
     dispatch_kill_switch_event_outbox,
     dispatch_maintenance_event_outbox,
     dispatch_refresh_event_outbox,
+    dispatch_shadow_event_outbox,
     open_domain_event_bus,
     project_pending_domain_events,
 )
@@ -45,6 +47,9 @@ DATA_REFRESH_HISTORY_DB = os.path.join(
 )
 DATA_QUALITY_ADMISSION_DB = os.path.join(
     "data", "cache", "data_quality_admission.db"
+)
+SHADOW_OBSERVATIONS_DB = os.path.join(
+    "data", "cache", "shadow_observations.db"
 )
 DOMAIN_EVENT_DRAIN_SNAPSHOT = os.path.join(
     "data", "cache", "domain_event_outbox_drain.json"
@@ -110,6 +115,15 @@ def default_outbox_sources() -> tuple[OutboxSource, ...]:
             DATA_QUALITY_ADMISSION_DB,
             lambda path: DataQualityAdmissionStore(path, create=False),
             dispatch_data_quality_admission_event_outbox,
+        ),
+        # SHADOW(Phase 7 S2):owner store 在 live/execution/shadow_store.py——
+        # 这是本文件唯一的 live/ import(纯 sqlite 持久化,无网络/无执行能力),
+        # 治理测试以精确开洞钉死(其余 live/ 引用仍全面禁止)。
+        OutboxSource(
+            "shadow",
+            SHADOW_OBSERVATIONS_DB,
+            lambda path: SqliteShadowStore(path, create=False),
+            dispatch_shadow_event_outbox,
         ),
     )
 
@@ -289,6 +303,7 @@ __all__ = [
     "DATA_QUALITY_ADMISSION_DB",
     "DOMAIN_EVENT_DRAIN_SNAPSHOT",
     "OutboxSource",
+    "SHADOW_OBSERVATIONS_DB",
     "default_outbox_sources",
     "drain_domain_event_outboxes",
 ]

@@ -144,7 +144,15 @@ def _failed(
     )
 
 
-def _ks_distance(left: Sequence[float], right: Sequence[float]) -> float:
+def two_sample_ks_distance(
+    left: Sequence[float],
+    right: Sequence[float],
+) -> float:
+    """Return the exact empirical two-sample KS distance."""
+    if not left or not right:
+        raise ValueError("KS samples must be non-empty")
+    if any(not _finite_number(value) for value in tuple(left) + tuple(right)):
+        raise ValueError("KS samples must be finite")
     ordered_left = sorted(left)
     ordered_right = sorted(right)
     i = j = 0
@@ -216,7 +224,7 @@ def evaluate_distribution_drift(
 
     baseline_float = tuple(float(value) for value in baseline)
     recent_float = tuple(float(value) for value in recent)
-    distance = _ks_distance(baseline_float, recent_float)
+    distance = two_sample_ks_distance(baseline_float, recent_float)
     if distance >= float(policy.block_ks):
         status = BLOCK
         reasons = ("distribution_ks_block",)
@@ -353,5 +361,6 @@ __all__ = [
     "distribution_drift_diagnostics",
     "evaluate_feature_distribution_drift",
     "evaluate_distribution_drift",
+    "two_sample_ks_distance",
     "validate_distribution_drift_policy",
 ]

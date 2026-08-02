@@ -30,6 +30,8 @@ DOMAIN_EVENT_PROJECTION_DB = os.path.join(
 DOMAIN_EVENT_PROJECTION_CONSUMER = "domain-event-projection-v1"
 DOMAIN_EVENT_PROJECTION_PARTITIONS = 1
 DOMAIN_EVENT_PROJECTION_SESSION_TIMEOUT_MS = 120_000
+_GROUP_CLOCK_RETRY_LIMIT = 4
+_MIN_REAL_MS = 946684800000
 _EVENT_AUTHORITY_TABLES = frozenset(
     {
         "event_log",
@@ -165,6 +167,100 @@ def read_domain_event_bus_health(
             event_bus.close()
 
 
+def _is_group_clock_rollback(exc: BaseException) -> bool:
+    """Return whether a shared worker lost a race on the persisted group clock."""
+    return (
+        isinstance(exc, ValueError)
+        and str(exc) == "consumer-group time must be monotonic"
+    )
+
+
+def _refresh_group_clock(
+    event_bus: DurableEventBus,
+    *,
+    group_id: str,
+    requested_ms: int,
+) -> int:
+    """Choose a timestamp that is current for the shared authority.
+
+    ``project_pending_domain_events`` is used by multiple L2 workers.  A worker
+    can capture ``now_ms`` and then wait behind another SQLite transaction that
+    appends a later heartbeat.  Direct consumer-group APIs must still reject an
+    explicitly regressed clock; this helper is deliberately local to the
+    cooperative projection worker and only advances its retry timestamp.
+    """
+    candidate = int(requested_ms)
+    if candidate >= _MIN_REAL_MS:
+        candidate = max(candidate, int(time.time() * 1000))
+    try:
+        status = event_bus.consumer_group_status(
+            group_id,
+            now_ms=candidate,
+        )
+    except Exception:
+        # Preserve the original failure if the authority cannot be read; the
+        # caller will surface the integrity/availability error fail-closed.
+        return candidate
+    last_at_ms = status.get("last_at_ms") if isinstance(status, dict) else None
+    if isinstance(last_at_ms, int) and not isinstance(last_at_ms, bool):
+        candidate = max(candidate, last_at_ms)
+    return candidate
+
+
+def _heartbeat_projection_worker(
+    event_bus: DurableEventBus,
+    *,
+    worker_id: str,
+    now_ms: int,
+    partition_count: int,
+    session_timeout_ms: int,
+):
+    candidate = int(now_ms)
+    for attempt in range(_GROUP_CLOCK_RETRY_LIMIT):
+        try:
+            return event_bus.heartbeat_consumer_group(
+                DOMAIN_EVENT_PROJECTION_CONSUMER,
+                worker_id=worker_id,
+                now_ms=candidate,
+                partition_count=partition_count,
+                session_timeout_ms=session_timeout_ms,
+            )
+        except ValueError as exc:
+            if not _is_group_clock_rollback(exc) or attempt + 1 >= _GROUP_CLOCK_RETRY_LIMIT:
+                raise
+            candidate = _refresh_group_clock(
+                event_bus,
+                group_id=DOMAIN_EVENT_PROJECTION_CONSUMER,
+                requested_ms=candidate,
+            )
+    raise AssertionError("unreachable group heartbeat retry state")
+
+
+def _leave_projection_worker(
+    event_bus: DurableEventBus,
+    *,
+    worker_id: str,
+    now_ms: int,
+):
+    candidate = int(now_ms)
+    for attempt in range(_GROUP_CLOCK_RETRY_LIMIT):
+        try:
+            return event_bus.leave_consumer_group(
+                DOMAIN_EVENT_PROJECTION_CONSUMER,
+                worker_id=worker_id,
+                now_ms=candidate,
+            )
+        except ValueError as exc:
+            if not _is_group_clock_rollback(exc) or attempt + 1 >= _GROUP_CLOCK_RETRY_LIMIT:
+                raise
+            candidate = _refresh_group_clock(
+                event_bus,
+                group_id=DOMAIN_EVENT_PROJECTION_CONSUMER,
+                requested_ms=candidate,
+            )
+    raise AssertionError("unreachable group leave retry state")
+
+
 def project_pending_domain_events(
     event_bus: DurableEventBus,
     *,
@@ -186,7 +282,6 @@ def project_pending_domain_events(
     # Floor now_ms to wall-clock when called with a real (historical) timestamp
     # that predates the consumer group's last recorded time.  Test-only tiny
     # values (< 2000-01-01) are left untouched so unit tests still work.
-    _MIN_REAL_MS = 946684800000
     if now_ms >= _MIN_REAL_MS:
         now_ms = max(now_ms, int(time.time() * 1000))
 
@@ -194,8 +289,8 @@ def project_pending_domain_events(
         projection_path,
         schema_registry=schema_registry,
     )
-    assignment = event_bus.heartbeat_consumer_group(
-        DOMAIN_EVENT_PROJECTION_CONSUMER,
+    assignment = _heartbeat_projection_worker(
+        event_bus,
         worker_id=worker_id,
         now_ms=now_ms,
         partition_count=DOMAIN_EVENT_PROJECTION_PARTITIONS,
@@ -249,8 +344,8 @@ def project_pending_domain_events(
         }
     finally:
         projection.close()
-        event_bus.leave_consumer_group(
-            DOMAIN_EVENT_PROJECTION_CONSUMER,
+        _leave_projection_worker(
+            event_bus,
             worker_id=worker_id,
             now_ms=now_ms,
         )
@@ -436,6 +531,41 @@ def dispatch_data_quality_admission_event_outbox(
     }
 
 
+def dispatch_shadow_event_outbox(
+    store,
+    event_bus: DurableEventBus,
+    *,
+    at_ms: int,
+    limit: int = 1_000,
+) -> dict:
+    """Idempotently move shadow-observation events into the shared log.
+
+    Same dependency-injection signature as the six existing dispatchers (the
+    owner store instance is passed in): services/ never imports live/, and the
+    shadow owner store lives at live/execution/shadow_store.py.
+    """
+    pending = store.pending_event_outbox(limit=limit)
+    dispatched = 0
+    for record in pending:
+        event = record["event"]
+        CANONICAL_EVENT_SCHEMAS.validate(event)
+        event_bus.publish_once(
+            event,
+            correlation_id=record["correlation_id"],
+            causation_id=record["causation_id"],
+        )
+        store.mark_event_dispatched(
+            record["outbox_id"],
+            dispatched_at=at_ms,
+            event_repro_hash=event.reproducibility_hash,
+        )
+        dispatched += 1
+    return {
+        "dispatched": dispatched,
+        "pending": len(store.pending_event_outbox(limit=limit)),
+    }
+
+
 __all__ = [
     "DOMAIN_EVENT_DB",
     "DOMAIN_EVENT_PROJECTION_CONSUMER",
@@ -448,6 +578,7 @@ __all__ = [
     "dispatch_kill_switch_event_outbox",
     "dispatch_maintenance_event_outbox",
     "dispatch_refresh_event_outbox",
+    "dispatch_shadow_event_outbox",
     "open_domain_event_bus",
     "project_pending_domain_events",
     "read_domain_event_bus_health",

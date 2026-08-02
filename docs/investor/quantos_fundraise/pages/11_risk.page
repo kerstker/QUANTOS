@@ -1,0 +1,55 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 投资人关心"出了事怎么办"。回答：每层风险有对应引擎；Kill Switch 是锁存的、带 SQLite 权威账本；人工接管路径是演练过的，不是文档。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "10 · 风险治理体系"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "每一类风险，都有对应的引擎和开关"}
+  - elementId: risk-table
+    elementType: table
+    bounds: [90, 120, 780, 250]
+    columnWidths: [0.28, 0.72]
+    rowHeights: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    style: "$dark"
+    rows:
+      - - text: "风险类别"
+        - text: "机制"
+      - - {text: "数据风险", align: [left, middle]}
+        - {text: "质量准入门 · 血缘追踪 · PIT 防未来函数", align: [left, middle]}
+      - - {text: "模型风险", align: [left, middle]}
+        - {text: "多重检验泄气 · walk-forward · 过拟合检测（PBO）", align: [left, middle]}
+      - - {text: "策略风险", align: [left, middle]}
+        - {text: "生命周期状态机 · 衰减监控 · 自动退役扫描", align: [left, middle]}
+      - - {text: "组合风险", align: [left, middle]}
+        - {text: "集中度/相关性约束 · 因子风险模型（PSD 检查）", align: [left, middle]}
+      - - {text: "流动性/容量风险", align: [left, middle]}
+        - {text: "Almgren-Chriss 冲击 · 参与率上限 · 容量衰减带", align: [left, middle]}
+      - - {text: "交易所风险", align: [left, middle]}
+        - {text: "适配器隔离 · 实时价格/资金费交叉校验 · 异常冻结", align: [left, middle]}
+      - - {text: "执行风险", align: [left, middle]}
+        - {text: "9 引擎 pre-trade 门 · 逐笔拒单分类 · 幂等可复现", align: [left, middle]}
+      - - {text: "操作风险", align: [left, middle]}
+        - {text: "角色权限 · 多方人工批准 · 哈希链审计", align: [left, middle]}
+      - - {text: "极端情形", align: [left, middle]}
+        - {text: "锁存 Kill Switch（SQLite 权威账本）· 人工接管与恢复演练", align: [left, middle]}
+  - elementId: claim
+    elementType: text
+    bounds: [90, 396, 780, 60]
+    content:
+      style: "$body"
+      fontSize: 13
+      lineHeight: 1.7
+      text: |
+        <p>Kill Switch 触发即锁存，<strong>任何代码路径都无法自动复位</strong>——复位需要多方人工批准链。</p>
+        <p><span style="color:$muted;font-size:11px">恢复流程有演练证据（restore drill / risk recovery drill 落盘存证）。</span></p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 12"}

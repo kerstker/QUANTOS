@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import Iterable, Iterator, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Iterable, Iterator, Mapping, Optional, Sequence
 
 from quantos.contracts.events import EventOutboxMessage
 
@@ -22,6 +22,9 @@ from services.research.experiment_registry.evaluation_artifact import (
 )
 from services.research.experiment_registry.family_schema_v2_activation import (
     verify_exact_v2_search_writer_source,
+)
+from services.research.experiment_registry.family_schema_v2_catalog import (
+    EXACT_V2_INHERITED_SCHEMA_CATALOG,
 )
 from services.research.experiment_registry.family_schema_v2_semantics import (
     canonical_hash,
@@ -54,7 +57,11 @@ from services.research.ports.persistence import (
     EvaluationAuditIntent,
     ExperimentStoreError,
     ImmutableArtifactError,
+    TrialPersistenceError,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, keeps the store import-light
+    from services.research.trial_provenance import TrialProvenance
 
 
 _SCHEMA = """
@@ -116,17 +123,74 @@ BEGIN SELECT RAISE(ABORT, 'experiment_event_dispatch is append-only'); END;
 """
 
 _TABLES = ("trials", "alpha_state", "evaluations")
+# 727 C2 lazy migration: the three orthogonal lifecycle machines (design doc
+# 2026-07-27-three-orthogonal-state-machines-design.md §6) land alongside the
+# legacy mixed `state` column. All nullable with NO default — a pre-C2 row reads
+# back NULL and the loader falls back to project(legacy state); fabricating
+# values for rows whose dimensions were never recorded would be exactly the
+# backfill this migration refuses to do.
+_TRIPLE_COLUMNS = {
+    "research_state": "TEXT",
+    "deployment_state": "TEXT",
+    "health_state": "TEXT",
+    "research_reason": "TEXT",
+    "deployment_reason": "TEXT",
+    "health_reason": "TEXT",
+    # C3: rows whose triple diverges from project(legacy state) need their loss
+    # markers persisted (C2 rows are exact projections, so NULL means "derive
+    # from the legacy state" — never a fabricated marker list).
+    "lossy_json": "TEXT",
+}
+
+_ALPHA_BASE_COLUMNS = (
+    "alpha_id",
+    "definition_json",
+    "state",
+    "returns_json",
+    "sharpe",
+    "pvalue",
+)
+
+
+def _alpha_insert_sql(*, on_conflict_update: bool) -> str:
+    """Single source for the alpha_state INSERT column list — the base columns
+    plus every 727 C2/C3 triple column, so the three write paths cannot drift."""
+    columns = list(_ALPHA_BASE_COLUMNS) + list(_TRIPLE_COLUMNS)
+    sql = (
+        f"INSERT INTO alpha_state({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})"
+    )
+    if on_conflict_update:
+        updates = ", ".join(
+            f"{column}=excluded.{column}"
+            for column in columns
+            if column != "alpha_id"
+        )
+        sql += f" ON CONFLICT(alpha_id) DO UPDATE SET {updates}"
+    return sql
+
+
+def _alpha_row_params(row: Mapping[str, object]) -> tuple:
+    params: list[object] = [row[column] for column in _ALPHA_BASE_COLUMNS[:4]]
+    params.extend(row.get(column) for column in _ALPHA_BASE_COLUMNS[4:])
+    params.extend(row.get(column) for column in _TRIPLE_COLUMNS)
+    return tuple(params)
 _OUTBOX_TABLES = ("experiment_event_outbox", "experiment_event_dispatch")
 _SEARCH_TABLES = ("search_attempt_events", "search_candidates")
 _SEARCH_ACTIVITY_TABLES = (
     "search_attempt_heartbeats",
     "search_attempt_recoveries",
     "search_evaluations",
+    "trial_provenance",
+    "trial_oos_access",
 )
 _EVALUATION_AUDIT_TABLES = ("evaluation_audit_outbox", "evaluation_audit_dispatch")
 _SEARCH_TERMINAL_STATUSES = frozenset({"FAILED", "COMPLETED"})
 _SEARCH_RECOVERY_REASON = "STALE_STARTED_TIMEOUT"
-_SEARCH_SCHEMA_VERSION = 2
+# v3 adds trial_provenance (727 §7.1 TrialRecord). The migration replays the
+# whole _SEARCH_SCHEMA script and every statement is CREATE ... IF NOT EXISTS,
+# so a v2 store gains only the new table + triggers and keeps every existing row.
+_SEARCH_SCHEMA_VERSION = 4
 _SEARCH_APPEND_ONLY_TRIGGERS = {
     "search_attempt_events_no_update": ("search_attempt_events", "update"),
     "search_attempt_events_no_delete": ("search_attempt_events", "delete"),
@@ -146,6 +210,10 @@ _SEARCH_APPEND_ONLY_TRIGGERS = {
     "evaluation_audit_outbox_no_delete": ("evaluation_audit_outbox", "delete"),
     "evaluation_audit_dispatch_no_update": ("evaluation_audit_dispatch", "update"),
     "evaluation_audit_dispatch_no_delete": ("evaluation_audit_dispatch", "delete"),
+    "trial_provenance_no_update": ("trial_provenance", "update"),
+    "trial_provenance_no_delete": ("trial_provenance", "delete"),
+    "trial_oos_access_no_update": ("trial_oos_access", "update"),
+    "trial_oos_access_no_delete": ("trial_oos_access", "delete"),
 }
 
 _SEARCH_SCHEMA = """
@@ -283,12 +351,137 @@ BEGIN SELECT RAISE(ABORT, 'evaluation_audit_dispatch is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS evaluation_audit_dispatch_no_delete
 BEFORE DELETE ON evaluation_audit_dispatch
 BEGIN SELECT RAISE(ABORT, 'evaluation_audit_dispatch is append-only'); END;
+CREATE TABLE IF NOT EXISTS trial_provenance (
+    provenance_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT UNIQUE NOT NULL,
+    research_session_id TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at INTEGER NOT NULL CHECK(started_at >= 0),
+    completed_at INTEGER NOT NULL CHECK(completed_at >= started_at),
+    parent_trial_id TEXT NOT NULL,
+    hypothesis_id TEXT NOT NULL,
+    expression_hash TEXT NOT NULL,
+    parameter_hash TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    oos_peek_count INTEGER NOT NULL CHECK(oos_peek_count >= 0),
+    record_json TEXT NOT NULL,
+    prev_entry_hash TEXT NOT NULL,
+    entry_hash TEXT UNIQUE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trial_provenance_by_config
+ON trial_provenance(config_hash, provenance_seq);
+CREATE INDEX IF NOT EXISTS trial_provenance_by_session
+ON trial_provenance(research_session_id, provenance_seq);
+CREATE TRIGGER IF NOT EXISTS trial_provenance_no_update
+BEFORE UPDATE ON trial_provenance
+BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trial_provenance_no_delete
+BEFORE DELETE ON trial_provenance
+BEGIN SELECT RAISE(ABORT, 'trial_provenance is append-only'); END;
+CREATE TABLE IF NOT EXISTS trial_oos_access (
+    access_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    boundary TEXT NOT NULL,
+    viewed_at INTEGER NOT NULL CHECK(viewed_at >= 0),
+    prev_entry_hash TEXT NOT NULL,
+    entry_hash TEXT UNIQUE NOT NULL,
+    UNIQUE(trial_id, method, boundary)
+);
+CREATE INDEX IF NOT EXISTS trial_oos_access_by_trial
+ON trial_oos_access(trial_id, access_seq);
+CREATE TRIGGER IF NOT EXISTS trial_oos_access_no_update
+BEFORE UPDATE ON trial_oos_access
+BEGIN SELECT RAISE(ABORT, 'trial_oos_access is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trial_oos_access_no_delete
+BEFORE DELETE ON trial_oos_access
+BEGIN SELECT RAISE(ABORT, 'trial_oos_access is append-only'); END;
 """
 
 
 def _canonical_hash(payload: Mapping[str, object]) -> str:
     """Compatibility alias for historical private tests and repair tooling."""
     return canonical_hash(payload)
+
+
+def _search_identity_hash(
+    *,
+    search_id: str,
+    search_kind: str,
+    source: str,
+    dataset_version: str,
+) -> str:
+    """Stable identity derived only from immutable STARTED metadata."""
+
+    return _canonical_hash(
+        {
+            "dataset_version": dataset_version,
+            "search_id": search_id,
+            "search_kind": search_kind,
+            "source": source,
+        }
+    )
+
+
+def _trial_oos_access_hash(
+    *,
+    trial_id: str,
+    method: str,
+    boundary: str,
+    viewed_at: int,
+    prev_entry_hash: str,
+) -> str:
+    return _canonical_hash(
+        {
+            "boundary": boundary,
+            "method": method,
+            "prev_entry_hash": prev_entry_hash,
+            "trial_id": trial_id,
+            "viewed_at": viewed_at,
+        }
+    )
+
+
+def _create_exact_v2_schema(connection: sqlite3.Connection) -> None:
+    """Materialize the machine-pinned v2 schema without any v4 additions."""
+    entries = EXACT_V2_INHERITED_SCHEMA_CATALOG.sqlite_schema_entries
+    for object_type in ("table", "index", "trigger"):
+        for entry in entries:
+            if (
+                entry.object_type == object_type
+                and entry.name != "sqlite_sequence"
+                and entry.sql is not None
+            ):
+                connection.execute(entry.sql)
+    connection.execute(
+        f"PRAGMA user_version = {EXACT_V2_INHERITED_SCHEMA_CATALOG.schema_version}"
+    )
+
+
+def _complete_exact_v2_schema(connection: sqlite3.Connection) -> None:
+    """Complete a legacy v0/v1 store to exact v2 inside the caller transaction."""
+
+    existing = {
+        (str(row[0]), str(row[1]))
+        for row in connection.execute(
+            "SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
+        )
+    }
+    for object_type in ("table", "index", "trigger"):
+        for entry in EXACT_V2_INHERITED_SCHEMA_CATALOG.sqlite_schema_entries:
+            if (
+                entry.object_type == object_type
+                and entry.name != "sqlite_sequence"
+                and entry.sql is not None
+                and (entry.object_type, entry.name) not in existing
+            ):
+                connection.execute(entry.sql)
+    connection.execute(
+        f"PRAGMA user_version = {EXACT_V2_INHERITED_SCHEMA_CATALOG.schema_version}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,10 +514,20 @@ class SqliteExperimentStore:
         self._active_write_lease: _WriteLease | None = None
         self._connection_invalidated = False
         if create:
-            self._conn.executescript(_SCHEMA)
-            self._conn.executescript(_SEARCH_SCHEMA)
-            self._conn.execute(f"PRAGMA user_version = {_SEARCH_SCHEMA_VERSION}")
-            self._conn.commit()
+            existing = self._conn.execute(
+                "SELECT 1 FROM sqlite_schema "
+                "WHERE name NOT LIKE 'sqlite_%' LIMIT 1"
+            ).fetchone()
+            if existing is None:
+                _create_exact_v2_schema(self._conn)
+                self._conn.commit()
+
+    def ensure_event_outbox_schema(self) -> None:
+        """Add the legacy owner-store outbox without changing schema authority."""
+
+        self._reject_write_ownership_conflict()
+        self._conn.executescript(_SCHEMA)
+        self._conn.commit()
 
     def _reject_write_ownership_conflict(self) -> None:
         """Reject external/reentrant ownership before schema or transaction work."""
@@ -435,6 +638,99 @@ class SqliteExperimentStore:
         if missing:
             raise ExperimentStoreError(f"store uninitialized; missing tables: {missing}")
 
+    def _alpha_state_columns(self) -> set[str]:
+        return {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(alpha_state)").fetchall()
+        }
+
+    def _ensure_triple_columns(self) -> None:
+        """Lazily add the 727 C2 dual-write columns to an existing valid store."""
+
+        self._reject_write_ownership_conflict()
+        self._require_schema()
+        if not (_TRIPLE_COLUMNS.keys() - self._alpha_state_columns()):
+            return
+        if self._schema_version() == 3:
+            # Exact family-authority v3 has a machine-pinned namespace.  It
+            # cannot be altered in place without invalidating its authority.
+            return
+        self._ensure_search_schema(require_provenance=True)
+        if not (_TRIPLE_COLUMNS.keys() - self._alpha_state_columns()):
+            return
+        with self._immediate_transaction() as (conn, _lease):
+            present = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(alpha_state)").fetchall()
+            }
+            for column, ddl in _TRIPLE_COLUMNS.items():
+                if column not in present:
+                    conn.execute(
+                        f"ALTER TABLE alpha_state ADD COLUMN {column} {ddl}"
+                    )
+
+    def _has_sealed_v2_history_locked(self, conn: sqlite3.Connection) -> bool:
+        """Return whether v2 already contains authority-bearing history."""
+
+        for table in (
+            "search_attempt_events",
+            "evaluations",
+            "experiment_event_outbox",
+            "evaluation_audit_outbox",
+        ):
+            if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:
+                return True
+        return False
+
+    def _prepare_triple_columns_locked(
+        self,
+        conn: sqlite3.Connection,
+        lease: object,
+    ) -> bool:
+        """Prepare C2 columns inside the caller's one owned transaction.
+
+        A populated exact-v2 authority is immutable and remains on the legacy
+        projection path. Empty/pre-C2 stores move to v4 atomically with the
+        caller's first dual write.
+        """
+
+        self._require_write_lock(conn, lease)
+        present = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(alpha_state)").fetchall()
+        }
+        if not (_TRIPLE_COLUMNS.keys() - present):
+            return True
+        version = self._schema_version()
+        if version == 3:
+            return False
+        if version == 2 and self._has_sealed_v2_history_locked(conn):
+            return False
+        if version not in (2, _SEARCH_SCHEMA_VERSION):
+            raise ExperimentStoreError(
+                f"lifecycle migration requires user_version 2 or 4, found {version}"
+            )
+        if version == 2:
+            statement = ""
+            for line in f"{_SCHEMA}\n{_SEARCH_SCHEMA}".splitlines():
+                statement = f"{statement}{line}\n"
+                if not sqlite3.complete_statement(statement):
+                    continue
+                sql = statement.strip()
+                statement = ""
+                if sql:
+                    conn.execute(sql)
+            if statement.strip():
+                raise ExperimentStoreError(
+                    "lifecycle migration schema contains an incomplete statement"
+                )
+        for column, ddl in _TRIPLE_COLUMNS.items():
+            if column not in present:
+                conn.execute(f"ALTER TABLE alpha_state ADD COLUMN {column} {ddl}")
+        if version == 2:
+            conn.execute(f"PRAGMA user_version = {_SEARCH_SCHEMA_VERSION}")
+        return True
+
     def _schema_version(self) -> int:
         try:
             row = self._conn.execute("PRAGMA user_version").fetchone()
@@ -449,7 +745,9 @@ class SqliteExperimentStore:
 
         version = self._schema_version()
         if version != 3:
-            raise ExperimentStoreError(f"family authority requires exact user_version 3, found {version}")
+            raise ExperimentStoreError(
+                f"family authority requires exact user_version 3, found {version}"
+            )
         expected = self._expected_authority_instance_id
         if type(expected) is not str or not expected:
             raise ExperimentStoreError("family authority expected authority_instance_id is not configured")
@@ -463,37 +761,54 @@ class SqliteExperimentStore:
             raise ExperimentStoreError(f"family authority verification failed: {exc}") from exc
 
     def _require_search_write_permission(self, version: int) -> None:
-        if version not in (2, 3):
+        if version not in (2, 3, _SEARCH_SCHEMA_VERSION):
             raise ExperimentStoreError(f"unsupported experiment store user_version: {version}")
         if version == 2:
             verify_exact_v2_search_writer_source(self._conn)
             return
-        self._require_search_schema(allow_v3=True)
+        if version == 3:
+            self._require_search_schema(allow_v3=True)
+            verify_search_state(self._conn)
+            self._require_family_schema_v3()
+            return
+        self._require_search_schema()
         verify_search_state(self._conn)
-        self._require_family_schema_v3()
+        if self._expected_authority_instance_id is not None:
+            self._require_family_schema_v3()
 
     def _require_runtime_mutation_schema(self) -> None:
         """Gate legacy mutators on known Phase-A versions before ``BEGIN``."""
 
         self._ensure_search_schema()
 
-    def _ensure_search_schema(self) -> None:
+    def _ensure_search_schema(self, *, require_provenance: bool = False) -> None:
         """Migrate only an already-valid experiment store on the first search write."""
         self._reject_write_ownership_conflict()
         self._require_schema()
         migration_started = False
         try:
             current_version = self._schema_version()
-            if current_version > 3:
+            if current_version > _SEARCH_SCHEMA_VERSION:
                 raise ExperimentStoreError(f"unsupported experiment store user_version: {current_version}")
-            if current_version in (_SEARCH_SCHEMA_VERSION, 3):
+            if current_version == _SEARCH_SCHEMA_VERSION:
                 self._require_search_write_permission(current_version)
                 return
+            if current_version == 3:
+                self._require_search_write_permission(current_version)
+                if require_provenance:
+                    raise ExperimentStoreError(
+                        "trial provenance is unavailable in exact family schema v3"
+                    )
+                return
+            if current_version == 2:
+                self._require_search_write_permission(current_version)
+                if not require_provenance:
+                    return
 
             self._conn.execute("BEGIN IMMEDIATE")
             migration_started = True
             locked_version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
-            if locked_version in (_SEARCH_SCHEMA_VERSION, 3):
+            if locked_version == _SEARCH_SCHEMA_VERSION:
                 self._require_search_write_permission(locked_version)
                 try:
                     self._commit_owned_transaction(self._conn)
@@ -503,8 +818,18 @@ class SqliteExperimentStore:
                 migration_started = False
                 self._require_search_write_permission(locked_version)
                 return
-            if locked_version > 3:
+            if locked_version > _SEARCH_SCHEMA_VERSION:
                 raise ExperimentStoreError(f"unsupported experiment store user_version: {locked_version}")
+            if locked_version < 2:
+                _complete_exact_v2_schema(self._conn)
+                self._migration_checkpoint("exact_v2_complete")
+                verify_exact_v2_search_writer_source(self._conn)
+                if not require_provenance:
+                    self._commit_owned_transaction(self._conn)
+                    migration_started = False
+                    return
+                locked_version = 2
+            self._require_search_write_permission(locked_version)
 
             statement = ""
             statement_index = 0
@@ -548,20 +873,35 @@ class SqliteExperimentStore:
 
     def _require_search_schema(self, *, allow_v3: bool = False) -> int:
         self._require_schema()
+        version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+        allowed_versions = (
+            (2, 3, _SEARCH_SCHEMA_VERSION)
+            if allow_v3
+            else (2, _SEARCH_SCHEMA_VERSION)
+        )
+        if version not in allowed_versions:
+            expected = "2, 3, or 4" if allow_v3 else "2 or 4"
+            raise ExperimentStoreError(
+                f"search provenance requires user_version {expected}, found {version}"
+            )
         try:
             rows = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         except sqlite3.DatabaseError as exc:
             raise ExperimentStoreError(f"store unreadable: {exc}") from exc
         present = {row["name"] for row in rows}
-        required_tables = _SEARCH_TABLES + _SEARCH_ACTIVITY_TABLES + _EVALUATION_AUDIT_TABLES
+        activity_tables = (
+            _SEARCH_ACTIVITY_TABLES
+            if version == _SEARCH_SCHEMA_VERSION
+            else tuple(
+                table
+                for table in _SEARCH_ACTIVITY_TABLES
+                if table not in {"trial_provenance", "trial_oos_access"}
+            )
+        )
+        required_tables = _SEARCH_TABLES + activity_tables + _EVALUATION_AUDIT_TABLES
         missing = [table for table in required_tables if table not in present]
         if missing:
             raise ExperimentStoreError(f"search provenance unavailable; missing tables: {missing}")
-        version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
-        allowed_versions = (_SEARCH_SCHEMA_VERSION, 3) if allow_v3 else (_SEARCH_SCHEMA_VERSION,)
-        if version not in allowed_versions:
-            expected = "2 or 3" if allow_v3 else "2"
-            raise ExperimentStoreError(f"search provenance requires exact user_version {expected}, found {version}")
         link_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(search_evaluations)")}
         required_link_columns = {
             "link_seq",
@@ -583,6 +923,11 @@ class SqliteExperimentStore:
             for row in self._conn.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")
         }
         for name, (table, action) in _SEARCH_APPEND_ONLY_TRIGGERS.items():
+            if version != _SEARCH_SCHEMA_VERSION and table in {
+                "trial_provenance",
+                "trial_oos_access",
+            }:
+                continue
             sql = triggers.get(name, "")
             if f"before {action} on {table}" not in " ".join(sql.split()) or "raise" not in sql:
                 raise ExperimentStoreError(f"append-only trigger missing or invalid: {name}")
@@ -637,6 +982,12 @@ class SqliteExperimentStore:
     def _verified_search_state(
         self,
     ) -> tuple[str, str, dict[str, dict[str, object]]]:
+        if self._schema_version() == 2:
+            verified = verify_search_state(self._conn)
+            # Preserve the semantic verifier's precise corruption diagnosis;
+            # the exact-schema verifier then adds the namespace/source pin.
+            verify_exact_v2_search_writer_source(self._conn)
+            return verified.event_head, verified.candidate_head, verified.attempts
         version = self._require_search_schema(allow_v3=True)
         verified = verify_search_state(self._conn)
         if version == 3:
@@ -814,6 +1165,333 @@ class SqliteExperimentStore:
                 "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
                 [(h, first_seen_ts) for h in config_hashes],
             )
+
+    # --- trial provenance (727 §7.1) ----------------------------------------
+
+    def _trial_provenance_rows(self) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT provenance_seq,trial_id,config_hash,record_json,"
+            " prev_entry_hash,entry_hash"
+            " FROM trial_provenance ORDER BY provenance_seq"
+        ).fetchall()
+
+    def record_trial_provenance(self, record: "TrialProvenance") -> bool:
+        """Append one immutable TrialRecord; return False if already retained.
+
+        The config_hash is ALSO admitted into `trials` in the SAME transaction.
+        A provenance row whose config never entered the trial population would
+        let a real attempt escape the DSR/PBO/FDR denominator (§7.2) — the two
+        writes must not be separable.
+        """
+        self._ensure_search_schema(require_provenance=True)
+        payload = record.canonical_payload()
+        record_json = json.dumps(
+            payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        )
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                "SELECT entry_hash FROM trial_provenance WHERE trial_id = ?",
+                (record.trial_id,),
+            ).fetchone()
+            if existing is not None:
+                self._conn.commit()
+                return False
+            head_row = self._conn.execute(
+                "SELECT entry_hash FROM trial_provenance"
+                " ORDER BY provenance_seq DESC LIMIT 1"
+            ).fetchone()
+            prev = "" if head_row is None else str(head_row["entry_hash"])
+            entry = record.entry_hash(prev)
+            self._conn.execute(
+                "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
+                (record.config_hash, record.started_at),
+            )
+            self._conn.execute(
+                "INSERT INTO trial_provenance("
+                " trial_id,research_session_id,config_hash,actor_id,actor_type,status,"
+                " started_at,completed_at,parent_trial_id,hypothesis_id,expression_hash,"
+                " parameter_hash,code_hash,oos_peek_count,record_json,prev_entry_hash,"
+                " entry_hash)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    record.trial_id,
+                    record.research_session_id,
+                    record.config_hash,
+                    record.actor_id,
+                    record.actor_type.value,
+                    record.status.value,
+                    record.started_at,
+                    record.completed_at,
+                    record.parent_trial_id,
+                    record.hypothesis_id,
+                    record.expression_hash,
+                    record.parameter_hash,
+                    record.code_hash,
+                    record.oos_peek_count,
+                    record_json,
+                    prev,
+                    entry,
+                ),
+            )
+            self._conn.commit()
+            return True
+        except sqlite3.DatabaseError as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise TrialPersistenceError(
+                f"trial provenance could not be retained: {exc}"
+            ) from exc
+
+    def trial_provenance(self, trial_id: str) -> Optional[dict]:
+        self._ensure_search_schema(require_provenance=True)
+        row = self._conn.execute(
+            "SELECT provenance_seq,trial_id,config_hash,record_json,"
+            " prev_entry_hash,entry_hash FROM trial_provenance WHERE trial_id = ?",
+            (trial_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._decoded_provenance_row(row)
+
+    def trial_provenance_for_config(self, config_hash: str) -> list[dict]:
+        """Every ATTEMPT at this config. §7.2 counts attempts, `trials` counts
+        distinct configs — so this legitimately returns more than one row."""
+        self._ensure_search_schema(require_provenance=True)
+        return [
+            self._decoded_provenance_row(row)
+            for row in self._conn.execute(
+                "SELECT provenance_seq,trial_id,config_hash,record_json,"
+                " prev_entry_hash,entry_hash FROM trial_provenance"
+                " WHERE config_hash = ? ORDER BY provenance_seq",
+                (config_hash,),
+            )
+        ]
+
+    @staticmethod
+    def _decoded_provenance_row(row: sqlite3.Row) -> dict:
+        try:
+            record = json.loads(row["record_json"])
+        except Exception as exc:
+            raise ExperimentStoreError(
+                f"trial provenance {row['trial_id']} record is corrupt"
+            ) from exc
+        if not isinstance(record, dict):
+            raise ExperimentStoreError(
+                f"trial provenance {row['trial_id']} record is not an object"
+            )
+        return {
+            "provenance_seq": row["provenance_seq"],
+            "trial_id": row["trial_id"],
+            "config_hash": row["config_hash"],
+            "record": record,
+            "prev_entry_hash": row["prev_entry_hash"],
+            "entry_hash": row["entry_hash"],
+        }
+
+    def trial_provenance_chain_valid(self) -> bool:
+        """Recompute the whole provenance chain. Fail-closed: any corruption,
+        gap, reordering, or a config missing from `trials` returns False."""
+        try:
+            self._ensure_search_schema(require_provenance=True)
+            trials = {
+                str(row["config_hash"])
+                for row in self._conn.execute("SELECT config_hash FROM trials")
+            }
+            previous = ""
+            for row in self._trial_provenance_rows():
+                decoded = self._decoded_provenance_row(row)
+                if row["prev_entry_hash"] != previous:
+                    return False
+                if decoded["config_hash"] not in trials:
+                    return False
+                expected = _canonical_hash(
+                    {"entry": decoded["record"], "prev_hash": previous}
+                )
+                if row["entry_hash"] != expected:
+                    return False
+                previous = expected
+            return True
+        except Exception:
+            return False
+
+    def trial_provenance_head(self) -> str:
+        """Current chain head ("" when empty); the value an evidence artifact
+        pins so a later audit can prove no record was inserted retroactively."""
+        self._ensure_search_schema(require_provenance=True)
+        row = self._conn.execute(
+            "SELECT entry_hash FROM trial_provenance"
+            " ORDER BY provenance_seq DESC LIMIT 1"
+        ).fetchone()
+        return "" if row is None else str(row["entry_hash"])
+
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses: Mapping[str, Sequence[str]],
+        *,
+        viewed_at: int,
+    ) -> int:
+        """Append actual OOS boundaries viewed by every trial in a search.
+
+        TrialRecord is written before data access and remains immutable. This
+        companion chain records only boundaries returned by completed OOS
+        validators. A persistence failure is fatal so OOS cannot be consumed
+        without accounting for the peek.
+        """
+        search_id = self._require_text(search_id, "search_id")
+        viewed_at = self._require_time(viewed_at, "viewed_at")
+        normalized: list[tuple[str, str]] = []
+        for method, boundaries in sorted(accesses.items()):
+            method = self._require_text(method, "method")
+            for boundary in sorted(set(boundaries)):
+                normalized.append(
+                    (method, self._require_text(boundary, "boundary"))
+                )
+        if not normalized:
+            return 0
+        self._ensure_search_schema(require_provenance=True)
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._verified_search_state()
+            trials = [
+                str(row["trial_id"])
+                for row in self._conn.execute(
+                    "SELECT trial_id FROM trial_provenance"
+                    " WHERE research_session_id=? ORDER BY provenance_seq",
+                    (search_id,),
+                )
+            ]
+            if not trials:
+                raise TrialPersistenceError(
+                    f"search {search_id} viewed OOS data without retained trials"
+                )
+            head_row = self._conn.execute(
+                "SELECT entry_hash FROM trial_oos_access"
+                " ORDER BY access_seq DESC LIMIT 1"
+            ).fetchone()
+            head = "" if head_row is None else str(head_row["entry_hash"])
+            inserted = 0
+            for trial_id in trials:
+                for method, boundary in normalized:
+                    existing = self._conn.execute(
+                        "SELECT entry_hash FROM trial_oos_access"
+                        " WHERE trial_id=? AND method=? AND boundary=?",
+                        (trial_id, method, boundary),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
+                    entry = _trial_oos_access_hash(
+                        trial_id=trial_id,
+                        method=method,
+                        boundary=boundary,
+                        viewed_at=viewed_at,
+                        prev_entry_hash=head,
+                    )
+                    self._conn.execute(
+                        "INSERT INTO trial_oos_access("
+                        " trial_id,method,boundary,viewed_at,prev_entry_hash,entry_hash)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (trial_id, method, boundary, viewed_at, head, entry),
+                    )
+                    head = entry
+                    inserted += 1
+            self._conn.commit()
+            return inserted
+        except TrialPersistenceError:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+        except Exception as exc:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise TrialPersistenceError(
+                f"OOS access provenance could not be retained: {exc}"
+            ) from exc
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]:
+        trial_id = self._require_text(trial_id, "trial_id")
+        self._ensure_search_schema(require_provenance=True)
+        return [
+            dict(row)
+            for row in self._conn.execute(
+                "SELECT access_seq,trial_id,method,boundary,viewed_at,"
+                " prev_entry_hash,entry_hash FROM trial_oos_access"
+                " WHERE trial_id=? ORDER BY access_seq",
+                (trial_id,),
+            )
+        ]
+
+    def trial_oos_access_chain_valid(self) -> bool:
+        try:
+            self._ensure_search_schema(require_provenance=True)
+            trial_ids = {
+                str(row["trial_id"])
+                for row in self._conn.execute("SELECT trial_id FROM trial_provenance")
+            }
+            previous = ""
+            for row in self._conn.execute(
+                "SELECT access_seq,trial_id,method,boundary,viewed_at,"
+                " prev_entry_hash,entry_hash FROM trial_oos_access"
+                " ORDER BY access_seq"
+            ):
+                if row["trial_id"] not in trial_ids:
+                    return False
+                if row["prev_entry_hash"] != previous:
+                    return False
+                expected = _trial_oos_access_hash(
+                    trial_id=row["trial_id"],
+                    method=row["method"],
+                    boundary=row["boundary"],
+                    viewed_at=row["viewed_at"],
+                    prev_entry_hash=previous,
+                )
+                if row["entry_hash"] != expected:
+                    return False
+                previous = expected
+            return True
+        except Exception:
+            return False
+
+    def trial_oos_access_head(self) -> str:
+        self._ensure_search_schema(require_provenance=True)
+        row = self._conn.execute(
+            "SELECT entry_hash FROM trial_oos_access"
+            " ORDER BY access_seq DESC LIMIT 1"
+        ).fetchone()
+        return "" if row is None else str(row["entry_hash"])
+
+    def oos_peek_totals(self) -> dict[str, int]:
+        """Max distinct OOS boundaries any single attempt at each config had
+        already viewed. §0.4.7 forbids calling re-inspected OOS data "unseen";
+        this surfaces the number instead of leaving it unrecorded."""
+        self._ensure_search_schema(require_provenance=True)
+        per_config: dict[str, int] = {}
+        for row in self._conn.execute(
+            "SELECT trial_id,config_hash,record_json FROM trial_provenance"
+            " ORDER BY provenance_seq"
+        ):
+            try:
+                initial = set(
+                    json.loads(row["record_json"]).get(
+                        "viewed_oos_boundaries", ()
+                    )
+                )
+            except Exception as exc:
+                raise ExperimentStoreError(
+                    f"trial provenance {row['trial_id']} record is corrupt"
+                ) from exc
+            appended = {
+                f"{access['method']}:{access['boundary']}"
+                for access in self._conn.execute(
+                    "SELECT method,boundary FROM trial_oos_access WHERE trial_id=?",
+                    (row["trial_id"],),
+                )
+            }
+            count = len(initial | appended)
+            config_hash = str(row["config_hash"])
+            per_config[config_hash] = max(per_config.get(config_hash, 0), count)
+        return per_config
 
     def begin_search_attempt(
         self,
@@ -1108,6 +1786,53 @@ class SqliteExperimentStore:
             )
         ]
 
+    def search_identity(self, search_id: str) -> dict[str, str]:
+        """Return the canonical, cross-session identity for one search.
+
+        Reads go through the complete hash-chain verifier first.  A caller
+        cannot obtain an identity from a tampered STARTED row, and the returned
+        digest is derived only from immutable search metadata.
+        """
+        search_id = self._require_text(search_id, "search_id")
+        attempts = self._verified_search_state()[2]
+        attempt = attempts.get(search_id)
+        if attempt is None:
+            raise ExperimentStoreError(
+                f"search attempt {search_id} has not STARTED"
+            )
+        search_kind, source, dataset_version = attempt["metadata"]
+        identity = {
+            "search_id": search_id,
+            "search_kind": str(search_kind),
+            "source": str(source),
+            "dataset_version": str(dataset_version),
+        }
+        identity["identity_hash"] = _search_identity_hash(**identity)
+        return identity
+
+    def evaluation_binding(self, run_id: str) -> dict | None:
+        """Return an evaluation's verified search binding and identity digest.
+
+        The link is only exposed after the complete search provenance chain is
+        verified.  A missing link is represented as ``None`` so diagnostic
+        evaluations cannot be mistaken for selection-bound artifacts.
+        """
+        run_id = self._require_text(run_id, "run_id")
+        self._verified_search_state()
+        row = self._conn.execute(
+            "SELECT link_seq,search_id,config_hash,run_id,recorded_at,"
+            "evaluation_content_hash,prev_link_hash,link_hash "
+            "FROM search_evaluations WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        binding = dict(row)
+        binding["search_identity_hash"] = self.search_identity(
+            str(row["search_id"])
+        )["identity_hash"]
+        return binding
+
     def search_attempt_recoveries(self, search_id: str) -> list[dict]:
         search_id = self._require_text(search_id, "search_id")
         self._verified_search_state()
@@ -1169,23 +1894,57 @@ class SqliteExperimentStore:
         self._require_outbox_schema()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
+        requires_triple = any(
+            any(column in row for column in _TRIPLE_COLUMNS) for row in alpha_rows
+        )
         messages = tuple(event_outbox)
         if any(not isinstance(message, EventOutboxMessage) for message in messages):
             raise TypeError("event_outbox must contain EventOutboxMessage values")
 
         with self._immediate_transaction() as (conn, lease):
+            write_triple = (
+                self._prepare_triple_columns_locked(conn, lease)
+                if requires_triple
+                else not (_TRIPLE_COLUMNS.keys() - self._alpha_state_columns())
+            )
             conn.executemany(
                 "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
                 trial_rows,
             )
             for row in alpha_rows:
+                if not write_triple:
+                    conn.execute(
+                        "INSERT INTO alpha_state(alpha_id, definition_json, state, "
+                        "returns_json, sharpe, pvalue) VALUES (?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(alpha_id) DO UPDATE SET "
+                        "definition_json=excluded.definition_json, "
+                        "state=excluded.state, returns_json=excluded.returns_json, "
+                        "sharpe=excluded.sharpe, pvalue=excluded.pvalue",
+                        (
+                            row["alpha_id"],
+                            row["definition_json"],
+                            row["state"],
+                            row["returns_json"],
+                            row.get("sharpe"),
+                            row.get("pvalue"),
+                        ),
+                    )
+                    continue
                 conn.execute(
                     "INSERT INTO alpha_state(alpha_id, definition_json, state, "
-                    "returns_json, sharpe, pvalue) VALUES (?, ?, ?, ?, ?, ?) "
+                    "returns_json, sharpe, pvalue, research_state, deployment_state, "
+                    "health_state, research_reason, deployment_reason, health_reason, "
+                    "lossy_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(alpha_id) DO UPDATE SET "
                     "definition_json=excluded.definition_json, state=excluded.state, "
                     "returns_json=excluded.returns_json, sharpe=excluded.sharpe, "
-                    "pvalue=excluded.pvalue",
+                    "pvalue=excluded.pvalue, research_state=excluded.research_state, "
+                    "deployment_state=excluded.deployment_state, "
+                    "health_state=excluded.health_state, "
+                    "research_reason=excluded.research_reason, "
+                    "deployment_reason=excluded.deployment_reason, "
+                    "health_reason=excluded.health_reason, "
+                    "lossy_json=excluded.lossy_json",
                     (
                         row["alpha_id"],
                         row["definition_json"],
@@ -1193,6 +1952,13 @@ class SqliteExperimentStore:
                         row["returns_json"],
                         row.get("sharpe"),
                         row.get("pvalue"),
+                        row.get("research_state"),
+                        row.get("deployment_state"),
+                        row.get("health_state"),
+                        row.get("research_reason"),
+                        row.get("deployment_reason"),
+                        row.get("health_reason"),
+                        row.get("lossy_json"),
                     ),
                 )
             self._append_event_outbox_locked(conn, lease, messages)
@@ -1209,7 +1975,15 @@ class SqliteExperimentStore:
         self._require_runtime_mutation_schema()
         trial_rows = [(value, first_seen_ts) for value in config_hashes]
         alpha_rows = [dict(row) for row in alphas]
+        requires_triple = any(
+            any(column in row for column in _TRIPLE_COLUMNS) for row in alpha_rows
+        )
         with self._immediate_transaction() as (conn, _lease):
+            write_triple = (
+                self._prepare_triple_columns_locked(conn, _lease)
+                if requires_triple
+                else not (_TRIPLE_COLUMNS.keys() - self._alpha_state_columns())
+            )
             conn.executemany(
                 "INSERT OR IGNORE INTO trials(config_hash, first_seen_ts) VALUES (?, ?)",
                 trial_rows,
@@ -1223,9 +1997,25 @@ class SqliteExperimentStore:
                     if existing["definition_json"] != row["definition_json"]:
                         raise ImmutableArtifactError(f"alpha_id {row['alpha_id']} already has a different definition")
                     continue
+                if not write_triple:
+                    conn.execute(
+                        "INSERT INTO alpha_state(alpha_id,definition_json,state,"
+                        "returns_json,sharpe,pvalue) VALUES (?,?,?,?,?,?)",
+                        (
+                            row["alpha_id"],
+                            row["definition_json"],
+                            row["state"],
+                            row["returns_json"],
+                            row.get("sharpe"),
+                            row.get("pvalue"),
+                        ),
+                    )
+                    continue
                 conn.execute(
                     "INSERT INTO alpha_state(alpha_id,definition_json,state,returns_json,"
-                    " sharpe,pvalue) VALUES (?,?,?,?,?,?)",
+                    " sharpe,pvalue,research_state,deployment_state,health_state,"
+                    " research_reason,deployment_reason,health_reason,lossy_json)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         row["alpha_id"],
                         row["definition_json"],
@@ -1233,6 +2023,13 @@ class SqliteExperimentStore:
                         row["returns_json"],
                         row.get("sharpe"),
                         row.get("pvalue"),
+                        row.get("research_state"),
+                        row.get("deployment_state"),
+                        row.get("health_state"),
+                        row.get("research_reason"),
+                        row.get("deployment_reason"),
+                        row.get("health_reason"),
+                        row.get("lossy_json"),
                     ),
                 )
 
@@ -1333,10 +2130,52 @@ class SqliteExperimentStore:
         returns_json: str,
         sharpe: Optional[float],
         pvalue: Optional[float],
+        *,
+        research_state: Optional[str] = None,
+        deployment_state: Optional[str] = None,
+        health_state: Optional[str] = None,
+        research_reason: Optional[str] = None,
+        deployment_reason: Optional[str] = None,
+        health_reason: Optional[str] = None,
+        lossy_json: Optional[str] = None,
     ) -> None:
         self._reject_write_ownership_conflict()
         self._require_runtime_mutation_schema()
         with self._immediate_transaction() as (conn, _lease):
+            write_triple = self._prepare_triple_columns_locked(conn, _lease)
+            if write_triple:
+                conn.execute(
+                    "INSERT INTO alpha_state(alpha_id,definition_json,state,"
+                    "returns_json,sharpe,pvalue,research_state,deployment_state,"
+                    "health_state,research_reason,deployment_reason,health_reason,"
+                    "lossy_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(alpha_id) DO UPDATE SET "
+                    "definition_json=excluded.definition_json,state=excluded.state,"
+                    "returns_json=excluded.returns_json,sharpe=excluded.sharpe,"
+                    "pvalue=excluded.pvalue,research_state=excluded.research_state,"
+                    "deployment_state=excluded.deployment_state,"
+                    "health_state=excluded.health_state,"
+                    "research_reason=excluded.research_reason,"
+                    "deployment_reason=excluded.deployment_reason,"
+                    "health_reason=excluded.health_reason,"
+                    "lossy_json=excluded.lossy_json",
+                    (
+                        alpha_id,
+                        definition_json,
+                        state,
+                        returns_json,
+                        sharpe,
+                        pvalue,
+                        research_state,
+                        deployment_state,
+                        health_state,
+                        research_reason,
+                        deployment_reason,
+                        health_reason,
+                        lossy_json,
+                    ),
+                )
+                return
             conn.execute(
                 "INSERT INTO alpha_state(alpha_id, definition_json, state, returns_json, sharpe, pvalue) "
                 "VALUES (?, ?, ?, ?, ?, ?) "
@@ -1348,11 +2187,16 @@ class SqliteExperimentStore:
 
     def all_alphas(self) -> list[dict]:
         self._require_schema()
+        present = self._alpha_state_columns()
+        select_triple = "".join(
+            f", {column}" if column in present else f", NULL AS {column}"
+            for column in _TRIPLE_COLUMNS
+        )
         return [
             dict(r)
             for r in self._conn.execute(
                 "SELECT alpha_id, definition_json, state, returns_json, sharpe, pvalue "
-                "FROM alpha_state ORDER BY alpha_id"
+                f"{select_triple} FROM alpha_state ORDER BY alpha_id"
             )
         ]
 

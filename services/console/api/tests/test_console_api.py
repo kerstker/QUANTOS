@@ -15,6 +15,13 @@ def test_health_read_only():
     assert response.json()["mode"] == "READ_ONLY"
 
 
+def test_console_cors_echoes_explicit_frontend_origin():
+    origin = "http://127.0.0.1:3100"
+    response = client.get("/health", headers={"Origin": origin})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == origin
+
+
 def test_phase1b_real_series_back_engines(monkeypatch):
     # Phase 1B: when the offline snapshot's real per-factor return series are loaded, the engines run on
     # REAL data and provenance flips to REAL_CRYPTO_SERIES; absent, everything fails closed to synthetic.
@@ -45,7 +52,12 @@ def test_phase1b_real_series_back_engines(monkeypatch):
     assert any(round(c["ic"], 4) == 0.05 for c in af["candidates"])  # real IC, not synthetic
     risk = client.get("/api/v1/console/risk-dashboard?alpha_id=alpha-1").json()
     assert risk["data_provenance"] == "REAL_CRYPTO_SERIES"
-    assert risk["primary_report"]["gates_total"] == 9  # the real 9-engine gate ran
+    assert risk["primary_report"]["gates_total"] == 9
+    assert risk["primary_report"]["gates_run"] == 0
+    assert risk["primary_report"]["provenance"] == "REAL_RESEARCH_RISK_FULL_PENDING"
+    assert risk["primary_report"]["admission_allowed"] is False
+    assert risk["reports"][1]["decision"] == "RISK_REJECTED"
+    assert risk["reports"][1]["provenance"] == "NO_SNAPSHOT"
 
     monkeypatch.setattr(capi, "_REAL_FACTORS_CACHE", [])  # fail-closed -> synthetic
     assert client.get("/api/v1/console/alpha-factory").json()["data_provenance"] == "SYNTHETIC_DETERMINISTIC"
@@ -81,10 +93,26 @@ def test_agents_snapshot_uses_backend_contract():
     payload = response.json()
     assert payload["source"] == "BACKEND_COMPUTED_SNAPSHOT"
     assert payload["read_only"] is True
-    assert payload["summary"]["active"] == 1
-    assert payload["summary"]["total_runs"] == 85
-    assert len(payload["agents"]) == 3
-    assert payload["agents"][0]["state"] == "RUNNING"
+    assert payload["data_provenance"] == "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT"
+    assert len(payload["agents"]) == 1
+    assert payload["summary"]["total_runs"] >= 0
+    assert payload["summary"]["agent_auto_approved"] == 0
+    assert payload["agents"][0]["can_reach_approved"] is False
+    assert payload["containment"]["order_submission"] is False
+    assert payload["realtime_inputs"]["source"] == "BINANCE_PUBLIC_USDM_WEBSOCKET"
+    assert payload["realtime_inputs"]["automatic_action"] is False
+    assert payload["realtime_inputs"]["promotion_authority"] is False
+    assert payload["realtime_inputs"]["alerting"]["independent_worker"] in {
+        True,
+        False,
+    }
+    assert payload["realtime_inputs"]["alerting"]["event_count"] >= 0
+    assert {engine["engine_id"] for engine in payload["engines"]} == {
+        "guided_search",
+        "evolutionary_search",
+        "gp_search",
+        "mcts_search",
+    }
 
 
 def test_events_snapshot_uses_backend_contract():
@@ -179,6 +207,15 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert any(edge["kind"] == "FEATURE_TO_EXPERIMENT" for edge in payload["lineage_edges"])
     assert payload["quality_policy"]["blocks_future_leakage"] is True
     assert payload["quality_policy"]["mutable_raw_inputs"] is False
+    projection = payload["binance_realtime"]["feature_projection"]
+    rest_snapshot = payload["binance_realtime"]["rest_snapshot"]
+    assert isinstance(rest_snapshot["fields"], list)
+    assert projection["load_bearing"] is False
+    assert isinstance(projection["drift_status_counts"], dict)
+    assert projection["calibration_window_count"] >= 0
+    alerting = payload["binance_realtime"]["drift_alerting"]
+    assert alerting["event_count"] >= 0
+    assert alerting["independent_worker"] in {True, False}
     # G2: catalog content hashes + PIT-safety now come from the real data layer.
     assert payload["data_backend"] == "PIT_DATA_LAYER_v1"
     assert all(dataset["point_in_time_safe"] for dataset in payload["datasets"])
@@ -338,7 +375,7 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert any(monitor["category"] == "ALPHA_DECAY" for monitor in payload["monitors"])
     assert any(monitor["category"] == "FEATURE_DRIFT" for monitor in payload["monitors"])
     assert any(monitor["category"] == "REVIEWER_SLA" for monitor in payload["monitors"])
-    assert payload["monitoring_policy"]["distribution_drift"]["available"] is False
+    assert payload["monitoring_policy"]["distribution_drift"]["available"] is True
     assert all(
         monitor.get("provenance") == "SYNTHETIC_FEATURE_VALUES"
         for monitor in payload["monitors"]
@@ -350,6 +387,32 @@ def test_monitoring_drift_snapshot_uses_backend_contract():
     assert payload["monitoring_policy"]["requires_thresholds"] is True
     assert payload["monitoring_policy"]["mutable_alerts"] is False
     assert payload["monitoring_policy"]["authorizes_live_trading"] is False
+
+
+def test_monitoring_drift_uses_tracked_pit_evidence_without_local_cache(monkeypatch):
+    import services.console.api.monitoring_views as monitoring_views
+
+    monkeypatch.setattr(monitoring_views, "_distribution_series", lambda: {})
+    response = client.get("/api/v1/console/monitoring-drift")
+    assert response.status_code == 200
+    payload = response.json()
+    policy = payload["monitoring_policy"]["distribution_drift"]
+    assert policy == {
+        "available": True,
+        "provenance": "REAL_PIT_FEATURE_DISTRIBUTION_DRIFT_V1",
+        "realtime": False,
+        "load_bearing": False,
+        "baseline_window": 60,
+        "recent_window": 20,
+    }
+    evidence_monitors = [
+        monitor
+        for monitor in payload["monitors"]
+        if monitor["monitor_id"].startswith("MON-DISTRIBUTION-EVIDENCE-")
+    ]
+    assert evidence_monitors
+    assert all(monitor["realtime"] is False for monitor in evidence_monitors)
+    assert all(monitor["load_bearing"] is False for monitor in evidence_monitors)
 
 
 def test_lifecycle_monitor_is_read_only_and_honest_about_live(tmp_path, monkeypatch):
@@ -795,9 +858,13 @@ def test_system_health_snapshot_uses_backend_contract():
     assert payload["read_only"] is True
     assert any(service["service"] == "research-console-api" for service in payload["services"])
     assert len(payload["safety_checks"]) == 5
-    # Rank #26: the REAL integrity block (build_snapshot over the durable audit chain) is present,
-    # and the illustrative latencies are honestly labelled (not presented as measured).
-    assert payload["latency_provenance"] == "ILLUSTRATIVE_NOT_MEASURED"
+    # Health must expose measured local evidence and explicit unknowns for
+    # services without a configured probe; no deterministic latency is passed
+    # off as an operational measurement.
+    assert payload["latency_provenance"] == "MEASURED_LOCAL_MONITORING_CALL"
+    assert payload["latency_scope"] == "PROCESS_LOCAL_ONLY"
+    assert payload["error_rate_provenance"] == "UNMEASURED_NO_REQUEST_COUNTER"
+    assert any(service["status"] == "unknown" for service in payload["services"])
     mon = payload["monitoring"]
     assert mon["provenance"] in ("REAL_MONITORING_SNAPSHOT", "NO_DURABLE_AUDIT_CHAIN", "MONITORING_ERROR")
     if mon["provenance"] == "REAL_MONITORING_SNAPSHOT":
@@ -816,7 +883,14 @@ def test_system_completeness_snapshot_uses_backend_contract():
     assert inv["domains"] and inv["total_services_modules"] > 0
     assert payload["summary"]["total"] == len(payload["requirements"])
     assert len(payload["domains"]) == 11
-    assert any(item["status"] == "MANUAL_EVIDENCE_REQUIRED" for item in payload["requirements"])
+    externally_gated = [
+        item
+        for item in payload["requirements"]
+        if item["classification"] in {"NEEDS_EXTERNAL", "POST_L2"}
+    ]
+    assert externally_gated
+    assert all(item["status"] != "PASS" for item in externally_gated)
+    assert all(item["meets_target"] is False for item in externally_gated)
     assert payload["red_lines"]
     assert all("completion_score" not in item for item in payload["requirements"])
     assert payload["safety_boundary"]["execution_boundary"] == "LIVE_TRADING_DISALLOWED"

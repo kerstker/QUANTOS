@@ -1,11 +1,18 @@
 """forward_track_advance 的决策门 helper decision_block_reason(P1-8):把喂前向证据钟的坏/停更数据从
 '只告警'升成'挡决策'(证据钟暂停=留 pending)。镜像 live 驱动器 batch_skip_reason 的可测纯 helper 范式。"""
+import json
+import os
+
+import tools.forward_track_advance as forward_track
 from services.data.admission_store import DataQualityAdmissionStore
 from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from tools.forward_track_advance import (
     _mark_price_map,
+    _candidate_advances_ledger,
+    _realization_timestamps,
     authoritative_admission_status,
     decision_block_reason,
+    refresh_lineage_backfill,
     raw_lineage_block_reason,
 )
 
@@ -19,6 +26,24 @@ _ADMISSION_REF = ForwardAdmissionRef(
     price_basis="PERP_MARK_PRICE",
     instrument_scope=("BTC", "ETH"),
 )
+
+
+def test_live_lock_owner_is_not_evicted_by_age_and_dead_owner_is_recovered(
+    tmp_path,
+    monkeypatch,
+):
+    lock = tmp_path / "forward.lock"
+    monkeypatch.setattr(forward_track, "_LOCK_FILE", str(lock))
+    lock.write_text(str(os.getpid()), encoding="ascii")
+    os.utime(lock, (0, 0))
+
+    assert forward_track._try_acquire_lock() is False
+    assert lock.read_text(encoding="ascii") == str(os.getpid())
+
+    lock.write_text(str(2**31 - 1), encoding="ascii")
+    assert forward_track._try_acquire_lock() is True
+    assert lock.read_text(encoding="ascii") == str(os.getpid())
+    forward_track._release_lock()
 
 
 def _evidence(*, verdict="PASS"):
@@ -64,6 +89,31 @@ def test_mark_price_map_never_falls_back_to_spot_prices():
     assert _mark_price_map(
         {"BTC": {100: 10.0}, "ETH": {200: 20.0}}, [100, 200]
     ) == {100: {"BTC": 10.0}, 200: {"ETH": 20.0}}
+
+
+def test_new_admission_cannot_backdate_behind_legacy_ledger_rows():
+    assert _candidate_advances_ledger(101, [100]) is True
+    assert _candidate_advances_ledger(100, [100]) is False
+    assert _candidate_advances_ledger(99, [100]) is False
+    assert _candidate_advances_ledger(100, []) is True
+
+
+def test_realization_grid_includes_latest_closed_row_between_weekly_anchors():
+    event_times = [_NOW - 8 * _DAY, _NOW - 7 * _DAY, _NOW - _DAY, _NOW]
+
+    assert _realization_timestamps(event_times, [0, 1]) == [
+        _NOW - 8 * _DAY,
+        _NOW - 7 * _DAY,
+        _NOW,
+    ]
+
+
+def test_realization_grid_deduplicates_latest_weekly_anchor_and_handles_empty():
+    assert _realization_timestamps([_NOW - _DAY, _NOW], [0, 1]) == [
+        _NOW - _DAY,
+        _NOW,
+    ]
+    assert _realization_timestamps([], []) == []
 
 
 def test_raw_lineage_requires_integrity_and_all_forward_datasets():
@@ -190,4 +240,46 @@ def test_admission_authority_failure_blocks_without_leaking_error_text():
     assert ref is None
     assert status == {"status": "BREACH", "error_type": "OSError"}
     assert alerts == ["data-quality admission authority BREACH: OSError"]
+    assert "must-not-leak" not in str(status) + str(alerts)
+
+
+def test_refresh_lineage_backfill_persists_current_report(tmp_path):
+    output = tmp_path / "lineage.json"
+    report = {
+        "verdict": "PASS",
+        "instrument_scope": ["BTC", "ETH"],
+        "required_days": [1, 2, 3],
+        "block_reasons": [],
+    }
+
+    current, status, alerts = refresh_lineage_backfill(
+        now_ms=_NOW,
+        runner=lambda **kwargs: report,
+        output_path=str(output),
+    )
+
+    assert current is True
+    assert status == {
+        "status": "PASS",
+        "verdict": "PASS",
+        "instrument_count": 2,
+        "day_count": 3,
+    }
+    assert alerts == []
+    assert json.loads(output.read_text(encoding="utf-8")) == report
+
+
+def test_refresh_lineage_backfill_failure_is_redacted_and_fail_closed(tmp_path):
+    def broken_runner(**kwargs):
+        raise OSError("credential=must-not-leak")
+
+    current, status, alerts = refresh_lineage_backfill(
+        now_ms=_NOW,
+        runner=broken_runner,
+        output_path=str(tmp_path / "lineage.json"),
+    )
+
+    assert current is False
+    assert status == {"status": "BREACH", "error_type": "OSError"}
+    assert alerts == ["raw-lineage backfill BREACH: OSError"]
     assert "must-not-leak" not in str(status) + str(alerts)

@@ -36,7 +36,9 @@ from live.contracts import LiveOrderRequest, VenueOrderResult
 from live.exchange.base import VenueAdapter
 from live.execution.filters import apply_exchange_filters
 from live.execution.position_ledger import LiveLedger, LiveLedgerConflictError
+from live.execution.order_recovery import SqliteOrderRecoveryStore
 from live.execution.pricing import LimitPricing, resolve_anchor, to_limit_orders
+from live.execution.tca import ArrivalSnapshot, validate_arrival_snapshot
 from live.governance.mandate import AUTO, NEEDS_HUMAN_REVIEW, Mandate, evaluate_mandate
 from live.governance.validation_attestation import (
     ValidationAttestation,
@@ -194,17 +196,21 @@ def resolve_unconfirmed_orders(ledger: LiveLedger, venue: VenueAdapter, *, now: 
 
 def _record_tca_failsoft(ledger: LiveLedger, audit: GlobalAuditLog, order: LiveOrderRequest,
                          confirmed: VenueOrderResult, *, decision_price: Optional[float],
-                         run_id: str, strategy_id: str, now: int) -> None:
+                         run_id: str, strategy_id: str, now: int,
+                         arrival_snapshot: Optional[ArrivalSnapshot] = None) -> None:
     """成交质量记录(TCA,2026-07-05)。fail-soft:TCA 是诊断数据,写失败绝不能影响成交记账
     (仓位真相优先于诊断)——单独 try + 单独审计事件。决策价缺失/成交均价非正 -> 跳过
     (无法计算滑点,诚实缺失)。"""
-    if decision_price is None or confirmed.avg_price <= 0:
+    if (decision_price is None and arrival_snapshot is None) or confirmed.avg_price <= 0:
         return
+    decision_baseline = (decision_price if decision_price is not None
+                         else arrival_snapshot.price)
     try:
         ledger.record_tca(_det_id("tca", order.client_order_id), client_order_id=order.client_order_id,
                           instrument_id=order.instrument_id, side=order.side,
-                          decision_price=decision_price, fill_price=confirmed.avg_price,
-                          quantity=confirmed.filled_qty, strategy_id=strategy_id, recorded_at=now)
+                          decision_price=decision_baseline, fill_price=confirmed.avg_price,
+                          quantity=confirmed.filled_qty, strategy_id=strategy_id, recorded_at=now,
+                          arrival_snapshot=arrival_snapshot)
     except Exception as exc:
         audit.append(event_id=_det_id("live_tca_err", run_id, order.instrument_id),
                      actor=f"live:{strategy_id}", action="LIVE_TCA_WRITE_FAILED", timestamp=now,
@@ -223,7 +229,12 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                       slicer: Optional[Callable] = None,
                       frozen: frozenset = frozenset(),
                       limit_pricing: Optional[LimitPricing] = None,
-                      limit_max_confirm_polls: int = DEFAULT_LIMIT_MAX_CONFIRM_POLLS
+                      limit_max_confirm_polls: int = DEFAULT_LIMIT_MAX_CONFIRM_POLLS,
+                      arrival_snapshots: Optional[Mapping[str, ArrivalSnapshot]] = None,
+                      arrival_max_age_ms: Optional[int] = 5 * 60 * 1000,
+                      arrival_expected_source: Optional[str] = None,
+                      unknown_order_store: Optional[SqliteOrderRecoveryStore] = None,
+                      startup_recovery: Optional[object] = None,
                       ) -> LiveBatchResult:
     """`current_positions` vs `account_positions` 口径分离(2026-07-06 战线③,评审 #1):
     `current_positions` = **本策略**的分账仓位——目标增量必须对着本策略自己的仓位算,否则第二条
@@ -246,6 +257,40 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
     audit.append(event_id=_det_id("live_start", run_id), actor=f"live:{strategy_id}",
                 action="LIVE_BATCH_START", timestamp=now, target=run_id,
                 metadata={"aum": str(aum), "n_weights": str(len(weights))})
+
+    # Startup recovery and unknown-order recovery are optional injected seams
+    # so existing dry-run/test callers remain byte-compatible.  Once supplied,
+    # they are hard gates: a missing/false report never reaches mandate or the
+    # venue.  This is deliberately checked before any new intent is submitted.
+    if startup_recovery is not None:
+        ready = (startup_recovery.get("ready_for_new_orders")
+                 if isinstance(startup_recovery, Mapping)
+                 else getattr(startup_recovery, "ready_for_new_orders", None))
+        if ready is not True:
+            audit.append(
+                event_id=_det_id("live_startup_block", run_id),
+                actor=f"live:{strategy_id}", action="LIVE_STARTUP_RECOVERY_BLOCKED",
+                timestamp=now, target=run_id,
+                metadata={"reason": "startup_recovery_not_ready"},
+            )
+            return LiveBatchResult(
+                tier=NEEDS_HUMAN_REVIEW,
+                mandate_reasons=("startup_recovery_not_ready",),
+            )
+    if unknown_order_store is not None:
+        if not isinstance(unknown_order_store, SqliteOrderRecoveryStore):
+            raise TypeError("unknown_order_store must be a SqliteOrderRecoveryStore")
+        if unknown_order_store.deployment_blocked(strategy_id):
+            audit.append(
+                event_id=_det_id("live_unknown_block", run_id),
+                actor=f"live:{strategy_id}", action="LIVE_UNKNOWN_ORDER_BLOCKED",
+                timestamp=now, target=run_id,
+                metadata={"deployment_id": strategy_id},
+            )
+            return LiveBatchResult(
+                tier=NEEDS_HUMAN_REVIEW,
+                mandate_reasons=("order_submission_unknown",),
+            )
 
     attestation_map = (
         {strategy_id: validation_attestation}
@@ -308,6 +353,41 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                      action="LIVE_ORDER_DROPPED_BY_FILTER", timestamp=now, target=instrument_id,
                      metadata={"reason": reason})
 
+    # Arrival snapshots are optional for backwards compatibility, but once a
+    # caller supplies a snapshot map every order must carry valid, fresh,
+    # source-consistent evidence.  This check happens before mandate approval
+    # and before any venue call, so an incomplete observation can only escalate
+    # to a human review and can never silently fall back to a stale quote.
+    if arrival_snapshots is not None:
+        arrival_reasons = {}
+        for o in adjusted:
+            snapshot = arrival_snapshots.get(o.instrument_id)
+            if snapshot is not None and not isinstance(snapshot, ArrivalSnapshot):
+                reason = "arrival_snapshot_invalid_type"
+            else:
+                reason = validate_arrival_snapshot(
+                    snapshot, now_ms=now, max_age_ms=arrival_max_age_ms,
+                    expected_source=arrival_expected_source)
+            if reason is not None:
+                arrival_reasons[o.instrument_id] = reason
+                audit.append(
+                    event_id=_det_id("live_arrival_block", run_id, o.instrument_id),
+                    actor=f"live:{strategy_id}", action="LIVE_ARRIVAL_SNAPSHOT_BLOCKED",
+                    timestamp=now, target=o.instrument_id,
+                    metadata={"reason": reason},
+                )
+        if arrival_reasons:
+            return LiveBatchResult(
+                tier=NEEDS_HUMAN_REVIEW,
+                pending_review=tuple(adjusted),
+                rejected_by_gate=tuple(screened["rejected"]),
+                dropped_by_filters=tuple(dropped),
+                mandate_reasons=tuple(
+                    f"{instrument}:{reason}" for instrument, reason
+                    in sorted(arrival_reasons.items())
+                ),
+            )
+
     # LIMIT 定价装配(2026-07-06 战线②):limit_pricing=None 时这整段不执行,adjusted 保持
     # apply_exchange_filters 产出的 MARKET 请求——与改动前完全一致(回归锁)。
     if limit_pricing is not None:
@@ -342,6 +422,28 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
 
     # mandate 的账户上下文 = 账户级仓位(见函数 docstring 的口径分离;冻结不改变账户事实,
     # 这里刻意不按 frozen 过滤——与既有"mandate 仍看全量 current_positions"的语义一致)
+    if unknown_order_store is not None:
+        replay_blocked = [
+            o.client_order_id for o in adjusted
+            if not unknown_order_store.client_submission_permitted(
+                deployment_id=strategy_id, client_order_id=o.client_order_id
+            )
+        ]
+        if replay_blocked:
+            for client_id in replay_blocked:
+                audit.append(
+                    event_id=_det_id("live_idempotency_block", run_id, client_id),
+                    actor=f"live:{strategy_id}", action="LIVE_ORDER_REPLAY_BLOCKED",
+                    timestamp=now, target=client_id,
+                    metadata={"reason": "explicit_retry_authorization_required"},
+                )
+            return LiveBatchResult(
+                tier=NEEDS_HUMAN_REVIEW,
+                pending_review=tuple(adjusted),
+                rejected_by_gate=tuple(screened["rejected"]),
+                dropped_by_filters=tuple(dropped),
+                mandate_reasons=("order_retry_authorization_required",),
+            )
     mandate_positions = account_positions if account_positions is not None else current_positions
     decision = evaluate_mandate(adjusted, prices, mandate, venue=venue.venue_mode,
                                exchange=getattr(venue, "venue_name", ""), now=now,
@@ -374,6 +476,8 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
             result = None
             recovered = False
             genuine_error = False
+            recovery_recorded = False
+            recovery_query_error = None
             # Pre-journal before touching the venue. A missing PENDING_NEW row makes a
             # crash-created exchange order undiscoverable, so any pre-journal failure
             # aborts the remaining batch. Failures after place_order follow the separate
@@ -429,8 +533,55 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                 # (2026-07-04 对抗式审查发现 #4/#5)。先用 get_order 回查权威状态再下结论。
                 try:
                     result = venue.get_order(o.instrument_id, o.client_order_id)
-                except Exception:
+                except Exception as query_exc:
                     result = None
+                    recovery_query_error = type(query_exc).__name__
+                if unknown_order_store is not None:
+                    try:
+                        unknown_order_store.register_unknown(
+                            client_order_id=o.client_order_id,
+                            deployment_id=strategy_id,
+                            instrument_id=o.instrument_id,
+                            side=o.side.value,
+                            quantity=o.quantity,
+                            now_ms=now,
+                            reason="place_order response ambiguous",
+                        )
+                        recovery_recorded = True
+                        if result is None:
+                            if recovery_query_error is None:
+                                # The adapter's None contract is an explicit
+                                # not-found answer, not a permission/network
+                                # failure.  It authorizes no automatic retry.
+                                unknown_order_store.mark_absent(
+                                    o.client_order_id, now_ms=now,
+                                )
+                            else:
+                                unknown_order_store.mark_indeterminate(
+                                    o.client_order_id, now_ms=now,
+                                    reason=f"venue query failed: {recovery_query_error}",
+                                )
+                        else:
+                            unknown_order_store.mark_found(
+                                o.client_order_id, result, now_ms=now,
+                            )
+                        audit.append(
+                            event_id=_det_id("live_unknown", run_id, o.client_order_id),
+                            actor=f"live:{strategy_id}",
+                            action="ORDER_SUBMISSION_UNKNOWN",
+                            timestamp=now, target=o.instrument_id,
+                            metadata={
+                                "client_order_id": o.client_order_id,
+                                "query": "error" if recovery_query_error else
+                                         ("found" if result is not None else "absent"),
+                                "query_error": recovery_query_error or "",
+                            },
+                        )
+                    except Exception as recovery_exc:
+                        # Never turn a failed recovery write into permission to
+                        # retry.  The existing submission error remains visible
+                        # and the caller must use manual reconciliation.
+                        recovery_query_error = type(recovery_exc).__name__
                 if result is None:
                     errors.append((o, f"{type(exc).__name__}: {exc}"))
                     audit.append(event_id=_det_id("live_submit_err", run_id, o.client_order_id),
@@ -482,7 +633,17 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                                        confirmed.avg_price, strategy_id=strategy_id, filled_at=now)
                     _record_tca_failsoft(ledger, audit, o, confirmed,
                                          decision_price=prices.get(o.instrument_id), run_id=run_id,
-                                         strategy_id=strategy_id, now=now)
+                                         arrival_snapshot=(arrival_snapshots.get(o.instrument_id)
+                                                           if arrival_snapshots is not None else None),
+                                       strategy_id=strategy_id, now=now)
+                if (unknown_order_store is not None and recovery_recorded
+                        and confirmed.status in _TERMINAL_ORDER_STATUSES):
+                    latest_recovery = unknown_order_store.latest(o.client_order_id)
+                    if latest_recovery is not None and latest_recovery.state.value == "FOUND":
+                        unknown_order_store.mark_resolved(
+                            o.client_order_id, now_ms=now,
+                            observed_status=confirmed.status,
+                        )
             except Exception as exc:
                 # 记账失败 ≠ 下单失败——这笔单在 venue 侧真实存在(已确认或至少已受理),必须算进
                 # submitted 而不是 submission_errors,否则调用方会误判"没下单"进而重发/重复加仓
@@ -501,6 +662,16 @@ def submit_live_batch(*, weights: Mapping[str, float], prices: Mapping[str, floa
                               "order_type": o.order_type}
             if o.order_type == "LIMIT":
                 submit_metadata["limit_price"] = str(o.limit_price)
+            if arrival_snapshots is not None:
+                arrival = arrival_snapshots.get(o.instrument_id)
+                if isinstance(arrival, ArrivalSnapshot):
+                    submit_metadata.update({
+                        "arrival_source": arrival.source,
+                        "arrival_price": str(arrival.price),
+                        "arrival_captured_at_ms": str(arrival.captured_at_ms),
+                        "arrival_as_of_ms": (str(arrival.as_of_ms)
+                                              if arrival.as_of_ms is not None else ""),
+                    })
             audit.append(event_id=_det_id("live_submit", run_id, o.client_order_id),
                          actor=f"live:{strategy_id}", action="LIVE_ORDER_SUBMITTED", timestamp=now,
                          target=o.instrument_id, metadata=submit_metadata)

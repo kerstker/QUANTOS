@@ -1,0 +1,64 @@
+pageType: cover
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: deco-line-top
+    elementType: line
+    bounds: [80, 96, 120, 2]
+    viewBox: [120, 2]
+    points: "0,1 120,1"
+    border: {style: solid, width: 3, color: "$accent"}
+  - elementId: tag
+    elementType: text
+    bounds: [80, 116, 500, 22]
+    content:
+      style: "$small"
+      color: "$accent"
+      letterSpacing: 4
+      wrap: false
+      text: |
+        <p>SAFETY-CRITICAL AI QUANTITATIVE TRADING PLATFORM</p>
+  - elementId: title
+    elementType: text
+    bounds: [76, 150, 820, 90]
+    content:
+      style: "$hero"
+      wrap: false
+      text: |
+        <p>QUANTOS</p>
+  - elementId: subtitle
+    elementType: text
+    bounds: [80, 248, 800, 34]
+    content:
+      fontSize: 20
+      color: "$ink"
+      wrap: false
+      text: |
+        <p>安全关键型 AI 量化交易研究平台 · 投资人全报告</p>
+  - elementId: desc
+    elementType: text
+    bounds: [80, 300, 760, 60]
+    content:
+      style: "$body"
+      color: "$muted"
+      text: |
+        <p>全链路 11 层架构 · 3,897 个测试用例全量通过 · 18 条策略干跑存证</p>
+        <p>每一个数字都可复核，每一个实验都可复现</p>
+  - elementId: meta
+    elementType: text
+    bounds: [80, 470, 700, 40]
+    content:
+      style: "$small"
+      text: |
+        <p>2026-07-25 · 系统状态 L2_DRY_RUN_ONLY · Testnet 已联通 · Mainnet 多重人工门结构封锁</p>
+  - elementId: corner-mark
+    elementType: text
+    bounds: [760, 60, 140, 30]
+    content:
+      fontSize: 12
+      color: "$accent"
+      align: [right, top]
+      wrap: false
+      text: |
+        <p>CONFIDENTIAL</p>

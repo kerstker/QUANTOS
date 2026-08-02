@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn==0.40.0",
     "pydantic==2.13.4",
     "PyJWT==2.13.0",
+    "websockets==16.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,11 @@ pre_trade_risk = [
 research-ml = [
     "numpy==2.4.4",
     "scikit-learn==1.8.0",
+]
+# Optional offline research accelerator. This does not enter execution, risk,
+# audit, or live-trading paths. Pair with a compatible NVIDIA driver.
+research-ml-gpu = [
+    "xgboost==3.2.0",
 ]
 # live backup encryption (tools/live_backup.py). 2026-07-08 code review fix: previously
 # undeclared (only "happened to be installed" via unrelated tools) even though the

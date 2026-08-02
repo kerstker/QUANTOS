@@ -1,7 +1,8 @@
 """端到端干跑流水线编排器(薄、确定性)。
 
 数据流:权重 → 目标整数手数 → build_intents → 逐意图过预交易门(运行时 chokepoint,fail-closed)+
-kill_switch → 干跑适配器受理(不真发)→ 纸面成交 → reconcile/PnL → 哈希链审计 → DryRunRun。
+kill_switch → 可选模拟 SOR 分片 → 干跑适配器受理(不真发)→ 纸面成交 → reconcile/PnL
+→ 哈希链审计 → DryRunRun。
 
 容器化(L2,不可让):五个 LIVE 标志恒 false、门 fail-closed、kill_switch 先查、干跑适配器无券商 SDK/
 不真发、无网络 import、编排器绝不进 research_runner、核心无 RNG/无墙钟(timestamp/seed 由调用方边界注入)。
@@ -11,8 +12,10 @@ RiskContext 由注入的 ctx_factory 装配(核心不硬编码账户/安全装�
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import statistics
+from decimal import Decimal
 from typing import Callable, Dict, Optional, Sequence, Tuple
 
 from quantos.contracts.risk import RiskDecisionType
@@ -25,15 +28,136 @@ from services.execution.events import (
 from services.execution.intent_builder import build_intents
 from services.execution.paper_reconciliation import reconcile
 from services.execution.quantization import meets_min_notional, round_to_step
+from services.execution.simulated_sor import (
+    RouteStatus,
+    SimulatedRoutePlan,
+    validate_simulated_route_plan,
+)
+from services.execution.simulated_tca import RouteExecution, build_route_tca
 from services.monitoring.audit_log import GlobalAuditLog
 from quantos.contracts.paper import FillMethod, OrderSide as PaperSide, PaperFill
 from services.trading.broker_adapter import assert_dry_run_adapter
 from services.trading.dry_run_adapters.domain.models import DryRunCommand
+from services.risk.research_risk.dry_run_guard import (
+    DryRunResearchRiskInputs,
+    evaluate_dry_run_risk,
+    full_research_risk_approved,
+)
+from services.risk.research_risk.domain.models import RiskConfig
+from services.risk.research_risk.events import research_risk_evaluated_event
 
 
 def _det_id(*parts) -> str:
     """Deterministic short id from parts (no RNG/clock) — keeps the whole pipeline reproducible."""
     return hashlib.sha256("|".join(str(p) for p in parts).encode()).hexdigest()[:16]
+
+
+def _research_risk_identity(
+    inputs: Optional[DryRunResearchRiskInputs],
+    config: Optional[RiskConfig],
+    require_full: bool,
+) -> str:
+    """Return a deterministic run-id suffix for risk evidence.
+
+    A run snapshot includes its research-risk decision.  If callers submit a
+    different evidence bundle for the same strategy/period, that must produce a
+    different immutable ``DryRunRun`` instead of colliding in the append-only
+    store.  The default legacy subset path intentionally has an empty suffix so
+    existing dry-run identifiers remain stable.
+    """
+    # The historical subset path without an explicit config keeps its stable
+    # identifiers.  An explicit config (for example weekly ppy=52) is part of
+    # the evidence identity even when the seam still has only its honest
+    # four-engine inputs; otherwise a cadence correction would collide with
+    # the prior immutable run and its risk event.
+    if inputs is None and not require_full and config is None:
+        return ""
+    payload = {
+        "require_full": bool(require_full),
+        "config": (config or RiskConfig()).compute_hash(),
+    }
+    if isinstance(inputs, DryRunResearchRiskInputs):
+        try:
+            payload["inputs"] = {
+                "capacity_cny": dict(sorted(inputs.capacity_cny.items(), key=lambda item: str(item[0]))),
+                "daily_volume_cny": inputs.daily_volume_cny,
+                "total_aum": inputs.total_aum,
+                "alpha_returns": {
+                    str(key): list(value)
+                    for key, value in sorted(inputs.alpha_returns.items(), key=lambda item: str(item[0]))
+                },
+                "regime_labels": list(inputs.regime_labels),
+                "alpha_metadata": [dict(item) for item in inputs.alpha_metadata],
+                "timestamps": (
+                    list(inputs.timestamps) if inputs.timestamps is not None else None
+                ),
+            }
+        except Exception:
+            # The evaluator will return a strict PENDING result for malformed
+            # evidence; identity generation must not turn that into an exception.
+            payload["inputs_type"] = "INVALID_DRY_RUN_RESEARCH_RISK_INPUTS"
+    elif inputs is not None:
+        payload["inputs_type"] = type(inputs).__name__
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _evaluate_research_risk(
+    *,
+    returns: Sequence[float],
+    weights: Dict[str, float],
+    equity_curve: Sequence[float],
+    timestamps: Optional[Sequence[int]],
+    inputs: Optional[DryRunResearchRiskInputs],
+    config: Optional[RiskConfig],
+    require_full: bool,
+    series: str,
+) -> dict:
+    """Evaluate and normalize the research-risk snapshot consumed by a dry run.
+
+    Providing a full input bundle always selects the strict nine-engine path;
+    callers cannot accidentally downgrade it with ``require_full=False``.  A
+    missing bundle under explicit strict mode remains a pending/rejected result.
+    Any unexpected evaluator failure is converted to a deterministic pending
+    result so execution never treats an unavailable risk decision as approval.
+    The result is explicitly post-run portfolio evidence; it does not replace
+    the per-intent ``PreTradeRiskGate``.
+    """
+    strict = bool(require_full or inputs is not None)
+    effective_config = config or RiskConfig()
+    try:
+        risk = evaluate_dry_run_risk(
+            list(returns),
+            dict(weights),
+            list(equity_curve),
+            timestamps=list(timestamps) if timestamps is not None else None,
+            config=effective_config,
+            full_inputs=inputs,
+            require_full_inputs=strict,
+        )
+    except Exception as exc:  # fail-closed: no risk result is ever an approval
+        risk = {
+            "decision": "RISK_REJECTED",
+            "status": "PENDING",
+            "gates_passed": 0,
+            "gates_run": 0,
+            "engines_run": {},
+            "engines_skipped": {},
+            "engines_pending": {},
+            "reports": {},
+            "reasons": [f"research_risk_error:{type(exc).__name__}"],
+            "provenance": "REAL_RESEARCH_RISK_FULL_PENDING" if strict else "REAL_RESEARCH_RISK_SUBSET",
+            "config_provenance": effective_config.compute_hash(),
+        }
+    snapshot = dict(risk)
+    snapshot["series"] = str(series)
+    snapshot["input_mode"] = "FULL" if strict else "SUBSET"
+    # This is a portfolio-level, post-run evidence gate.  The per-intent
+    # PreTradeRiskGate remains the execution chokepoint and is intentionally
+    # separate; consumers must not interpret this snapshot as order admission.
+    snapshot["scope"] = "POST_RUN_PORTFOLIO_EVIDENCE"
+    return snapshot
 
 
 def plan_target_quantities(weights: Dict[str, float], prices: Dict[str, float], aum: float,
@@ -129,7 +253,7 @@ def _publish_screening_events(
         )
 
 
-def _to_command(intent, ref: str, price: float, *, idx: int, run_id: str) -> DryRunCommand:
+def _to_command(intent, ref: str, price: float, *, idx, run_id: str) -> DryRunCommand:
     """OrderIntent + risk ref + price -> 干跑命令。恒 dry_run=True / live_trading_allowed=False;
     oms_state_ref 取适配器允许集中的 "VALIDATED";risk/pre_trade ref 非空(适配器二次校验要求)。"""
     cid = _det_id(run_id, idx, intent.instrument_id)
@@ -142,8 +266,36 @@ def _to_command(intent, ref: str, price: float, *, idx: int, run_id: str) -> Dry
         dry_run=True, live_trading_allowed=False)
 
 
+def _route_summary(plan: SimulatedRoutePlan) -> dict:
+    return {
+        "instrument_id": plan.instrument_id,
+        "side": plan.side.value,
+        "status": plan.status.value,
+        "requested_quantity": plan.requested_quantity,
+        "routed_quantity": plan.routed_quantity,
+        "residual_quantity": plan.residual_quantity,
+        "expected_raw_notional": str(plan.expected_raw_notional),
+        "expected_all_in_notional": str(plan.expected_all_in_notional),
+        "expected_fees": str(plan.expected_fees),
+        "expected_latency_penalty": str(plan.expected_latency_penalty),
+        "slices": [
+            {
+                "venue_id": item.venue_id,
+                "quantity": item.quantity,
+                "raw_price": str(item.raw_price),
+                "all_in_price": str(item.all_in_price),
+                "fee_amount": str(item.fee_amount),
+                "latency_penalty_amount": str(item.latency_penalty_amount),
+                "quote_age_ms": item.quote_age_ms,
+            }
+            for item in plan.slices
+        ],
+    }
+
+
 def simulate_fills(approved: Sequence, prices: Dict[str, float], *, adapter, run_id: str,
-                   timestamp: int, cost_bps: float = 0.0, impact=None, adv: Dict[str, float] = None) -> dict:
+                   timestamp: int, cost_bps: float = 0.0, impact=None,
+                   adv: Dict[str, float] = None, route_planner: Callable | None = None) -> dict:
     """已批准意图 → 干跑适配器受理(process→simulate_fill,绝不真发)→ 纸面成交 PaperFill。
     适配器是第二道闸:若它拒绝(rejection_reasons 非空)则不成交。
 
@@ -152,38 +304,137 @@ def simulate_fills(approved: Sequence, prices: Dict[str, float], *, adapter, run
     回退**平 bps。commission 在 reconcile 两侧同进同出,恒等式残差不受影响。确定性 id;不捕获适配器内部 uuid。"""
     assert_dry_run_adapter(adapter)  # fail-closed 接缝守卫:运行时只放行证明为干跑的适配器
     fills, reports, impact_trades = [], [], []
+    routing, route_rejections, route_tca = [], [], []
     n_impact = n_flat = 0
+    route_cost_total = 0.0
+    n_adapter_rejected = 0
     for i, (intent, ref) in enumerate(approved):
-        px = prices.get(intent.instrument_id)
-        if px is None or px <= 0:
-            continue
-        run = adapter.process(_to_command(intent, ref, px, idx=i, run_id=run_id))
-        if run.rejection_reasons:  # 适配器二次校验拒 -> 不成交
-            if run.normalized_report is not None:
-                reports.append(run.normalized_report)
-            continue
-        rep = adapter.simulate_fill(run.run_id)
-        if rep is None:
-            continue
-        reports.append(rep)
-        qty = abs(int(intent.quantity))
-        fp = float(rep.fill_price or px)
-        notional = fp * qty
-        adv_i = adv.get(intent.instrument_id) if (impact is not None and adv is not None) else None
-        if adv_i is not None and adv_i > 0:
-            commission = impact.total_cost_notional(notional, adv_i)   # participation-driven impact
-            impact_trades.append((notional, float(adv_i)))
-            n_impact += 1
+        slices = None
+        if route_planner is not None:
+            try:
+                plan = route_planner(intent)
+            except Exception as exc:
+                route_rejections.append({
+                    "instrument_id": intent.instrument_id,
+                    "reasons": [f"ROUTE_PLANNER_ERROR:{type(exc).__name__}"],
+                })
+                continue
+            invalid = validate_simulated_route_plan(plan, intent)
+            if invalid:
+                route_rejections.append({
+                    "instrument_id": intent.instrument_id,
+                    "reasons": list(invalid),
+                })
+                continue
+            routing.append(_route_summary(plan))
+            if plan.status == RouteStatus.REJECTED:
+                route_rejections.append({
+                    "instrument_id": intent.instrument_id,
+                    "reasons": ["ROUTE_REJECTED"],
+                })
+                continue
+            reference_price = prices.get(intent.instrument_id)
+            if reference_price is None or reference_price <= 0:
+                route_rejections.append({
+                    "instrument_id": intent.instrument_id,
+                    "reasons": ["TCA_REFERENCE_PRICE_MISSING"],
+                })
+                continue
+            slices = tuple(plan.slices)
+
+        if slices is None:
+            px = prices.get(intent.instrument_id)
+            if px is None or px <= 0:
+                route_rejections.append({
+                    "instrument_id": intent.instrument_id,
+                    "reasons": ["REFERENCE_PRICE_MISSING"],
+                })
+                continue
+            execution_slices = ((None, int(intent.quantity), float(px), 0.0),)
         else:
-            commission = notional * cost_bps / 1e4                     # flat-bps (default / per-name fallback)
-            n_flat += 1
-        fills.append(PaperFill(
-            fill_id=_det_id("f", run_id, i), order_id=_det_id("o", run_id, i), run_id=run_id,
-            instrument_id=intent.instrument_id, side=PaperSide(intent.side.value), quantity=qty,
-            price=fp, fill_method=FillMethod.NEXT_OPEN, timestamp=timestamp,
-            commission=commission, slippage=0.0))
+            execution_slices = tuple(
+                (
+                    item.venue_id,
+                    item.quantity,
+                    float(item.raw_price),
+                    float(item.fee_amount + item.latency_penalty_amount),
+                )
+                for item in slices
+            )
+
+        route_executions = []
+        for j, (venue_id, qty, px, route_cost) in enumerate(execution_slices):
+            child_intent = intent.model_copy(update={"quantity": int(qty)})
+            child_index = i if venue_id is None else f"{i}:{j}:{venue_id}"
+            run = adapter.process(
+                _to_command(
+                    child_intent,
+                    ref,
+                    px,
+                    idx=child_index,
+                    run_id=run_id,
+                )
+            )
+            if run.rejection_reasons:  # 适配器二次校验拒 -> 不成交
+                n_adapter_rejected += 1
+                if run.normalized_report is not None:
+                    reports.append(run.normalized_report)
+                continue
+            rep = adapter.simulate_fill(run.run_id)
+            if rep is None:
+                n_adapter_rejected += 1
+                continue
+            reports.append(rep)
+            fp = float(rep.fill_price or px)
+            notional = fp * qty
+            adv_i = (
+                adv.get(intent.instrument_id)
+                if (impact is not None and adv is not None)
+                else None
+            )
+            if adv_i is not None and adv_i > 0:
+                base_cost = impact.total_cost_notional(notional, adv_i)
+                impact_trades.append((notional, float(adv_i)))
+                n_impact += 1
+            else:
+                base_cost = notional * cost_bps / 1e4
+                n_flat += 1
+            fills.append(PaperFill(
+                fill_id=_det_id("f", run_id, child_index),
+                order_id=_det_id("o", run_id, child_index),
+                run_id=run_id,
+                instrument_id=intent.instrument_id,
+                side=PaperSide(intent.side.value),
+                quantity=qty,
+                price=fp,
+                fill_method=FillMethod.NEXT_OPEN,
+                timestamp=timestamp,
+                commission=base_cost + route_cost,
+                slippage=0.0,
+            ))
+            if slices is not None:
+                route_executions.append(
+                    RouteExecution(
+                        slice_index=j,
+                        venue_id=str(venue_id),
+                        quantity=qty,
+                        fill_price=Decimal(str(fp)),
+                    )
+                )
+            route_cost_total += route_cost
+        if slices is not None:
+            route_tca.append(
+                build_route_tca(
+                    plan,
+                    reference_price=Decimal(str(reference_price)),
+                    executions=route_executions,
+                )
+            )
     return {"fills": fills, "reports": reports, "impact_trades": impact_trades,
-            "n_impact": n_impact, "n_flat": n_flat}
+            "n_impact": n_impact, "n_flat": n_flat, "routing": routing,
+            "route_rejections": route_rejections, "route_tca": route_tca,
+            "n_adapter_rejected": n_adapter_rejected,
+            "route_cost_total": route_cost_total}
 
 
 def reconcile_run(fills, marks: Dict[str, float], initial_capital: float) -> dict:
@@ -202,11 +453,58 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                          current_positions: Dict[str, int], aum: float, gate, ctx_factory: Callable,
                          adapter, strategy_id: str, timestamp: int, marks: Dict[str, float] = None,
                          initial_capital: float = 1e7, cost_bps: float = 0.0,
-                         event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
+                         filters: Optional[Dict[str, tuple[float, float, float]]] = None,
+                         route_planner: Callable | None = None,
+                         routing_snapshot_id: str = "",
+                         event_bus=None, publish_completion_event: bool = True,
+                         research_risk_inputs: Optional[DryRunResearchRiskInputs] = None,
+                         research_risk_config: Optional[RiskConfig] = None,
+                         require_full_research_risk: bool = False,
+                         research_risk_returns: Optional[Sequence[float]] = None,
+                         research_risk_equity_curve: Optional[Sequence[float]] = None,
+                         research_risk_timestamps: Optional[Sequence[int]] = None,
+                         publish_research_risk_event: Optional[bool] = None) -> DryRunRun:
     """端到端干跑编排器(薄、确定性):权重→目标手数→意图→门 chokepoint(fail-closed)→干跑受理(不真发)
     →纸面成交→对账→哈希链审计→DryRunRun。墙钟/seed 在调用方边界(timestamp/adapter)注入;此函数无 RNG/墙钟。
-    kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。"""
-    run_id = _det_id(strategy_id, timestamp, tuple(sorted(weights.items())))
+    kill_switch 由 gate 持有并在 evaluate 时绑定(latched→全意图被门拒、零成交)。
+    route_planner 为可选研究/干跑 SOR；启用时必须提供内容绑定的 routing_snapshot_id。"""
+    strict_research_risk = bool(require_full_research_risk or research_risk_inputs is not None)
+    if (research_risk_returns is None) != (research_risk_equity_curve is None):
+        raise ValueError(
+            "research_risk_returns and research_risk_equity_curve must be provided together"
+        )
+    if research_risk_timestamps is not None and research_risk_returns is None:
+        raise ValueError("research_risk_timestamps requires research_risk_returns")
+    risk_identity = _research_risk_identity(
+        research_risk_inputs, research_risk_config, strict_research_risk
+    )
+    if route_planner is not None and (
+        not isinstance(routing_snapshot_id, str) or not routing_snapshot_id.strip()
+    ):
+        raise ValueError("routing_snapshot_id is required when route_planner is provided")
+    if route_planner is None and routing_snapshot_id:
+        raise ValueError("routing_snapshot_id requires route_planner")
+    run_id_parts = [strategy_id, timestamp, tuple(sorted(weights.items()))]
+    if filters is not None:
+        run_id_parts.append(("exchange_filters", tuple(sorted(filters.items()))))
+    if risk_identity:
+        run_id_parts.append(risk_identity)
+    if research_risk_returns is not None:
+        run_id_parts.append(
+            (
+                "research_risk_series",
+                tuple(float(value) for value in research_risk_returns),
+                tuple(float(value) for value in research_risk_equity_curve or ()),
+                (
+                    tuple(int(value) for value in research_risk_timestamps)
+                    if research_risk_timestamps is not None
+                    else None
+                ),
+            )
+        )
+    if routing_snapshot_id:
+        run_id_parts.append(("sor", routing_snapshot_id))
+    run_id = _det_id(*run_id_parts)
     start_event_id = ""
     if event_bus is not None:
         start_event = dry_run_started_event(
@@ -223,7 +521,7 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                  timestamp=timestamp, target=run_id,
                  metadata={"aum": str(aum), "n_weights": str(len(weights))})
 
-    targets = plan_target_quantities(weights, prices, aum)
+    targets = plan_target_quantities(weights, prices, aum, filters=filters)
     intents = build_intents(targets, current_positions, strategy_id=strategy_id)
     screened = screen_intents(intents, gate=gate, ctx_factory=ctx_factory)
     if event_bus is not None:
@@ -241,13 +539,86 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
                      action="INTENT_REJECTED", timestamp=timestamp, target=intent.instrument_id,
                      metadata={"reasons": ",".join(str(r) for r in reasons)})
 
-    filled = simulate_fills(screened["approved"], prices, adapter=adapter, run_id=run_id,
-                            timestamp=timestamp, cost_bps=cost_bps)
+    pre_fill_research_risk = None
+    if strict_research_risk and research_risk_returns is not None:
+        pre_fill_research_risk = _evaluate_research_risk(
+            returns=[float(value) for value in research_risk_returns],
+            weights=weights,
+            equity_curve=[
+                float(value) for value in research_risk_equity_curve or ()
+            ],
+            timestamps=(
+                [int(value) for value in research_risk_timestamps]
+                if research_risk_timestamps is not None
+                else None
+            ),
+            inputs=research_risk_inputs,
+            config=research_risk_config,
+            require_full=True,
+            series="aligned_pit_history",
+        )
+        pre_fill_research_risk["scope"] = "PRE_FILL_RESEARCH_EVIDENCE"
+
+    fill_admitted = (
+        not strict_research_risk
+        or (
+            pre_fill_research_risk is not None
+            and full_research_risk_approved(pre_fill_research_risk)
+        )
+    )
+    if not fill_admitted:
+        # Strict paper execution requires a complete approval computed from an
+        # explicit aligned history before any simulated fill.  Missing,
+        # post-fill-only, or rejected evidence is observable but cannot mutate
+        # the paper position projection.
+        filled = {
+            "fills": [], "reports": [], "impact_trades": [],
+            "n_impact": 0, "n_flat": 0, "routing": [],
+            "route_rejections": [], "route_tca": [], "n_adapter_rejected": 0,
+        }
+    else:
+        filled = simulate_fills(screened["approved"], prices, adapter=adapter, run_id=run_id,
+                                timestamp=timestamp, cost_bps=cost_bps,
+                                route_planner=route_planner)
     for f in filled["fills"]:
-        audit.append(event_id=_det_id("fill", run_id, f.instrument_id), actor=f"dry_run:{strategy_id}",
+        audit.append(event_id=_det_id("fill", run_id, f.fill_id), actor=f"dry_run:{strategy_id}",
                      action="DRY_RUN_FILL", timestamp=timestamp, target=f.instrument_id,
                      metadata={"qty": str(f.quantity), "price": str(f.price), "side": f.side.value})
     pnl = reconcile_run(filled["fills"], marks or prices, initial_capital)
+    single_return = (
+        float(pnl["total_pnl"]) / float(initial_capital)
+        if isinstance(initial_capital, (int, float)) and initial_capital > 0
+        else float("nan")
+    )
+    risk_returns = (
+        [float(value) for value in research_risk_returns]
+        if research_risk_returns is not None
+        else [single_return]
+    )
+    risk_equity_curve = (
+        [float(value) for value in research_risk_equity_curve]
+        if research_risk_equity_curve is not None
+        else [float(pnl["equity"])]
+    )
+    risk_timestamps = (
+        [int(value) for value in research_risk_timestamps]
+        if research_risk_timestamps is not None
+        else ([int(timestamp)] if research_risk_returns is None else None)
+    )
+    research_risk = pre_fill_research_risk or _evaluate_research_risk(
+        returns=risk_returns,
+        weights=weights,
+        equity_curve=risk_equity_curve,
+        timestamps=risk_timestamps,
+        inputs=research_risk_inputs,
+        config=research_risk_config,
+        require_full=strict_research_risk,
+        series=(
+            "aligned_pit_history"
+            if research_risk_returns is not None
+            else "single_period"
+        ),
+    )
     audit_root = audit.seal().head_hash
 
     result = DryRunRun(
@@ -256,7 +627,35 @@ def run_dry_run_pipeline(*, weights: Dict[str, float], prices: Dict[str, float],
         rejected_reasons=[rr for _, rs in screened["rejected"] for rr in rs], pnl=pnl,
         audit_root=str(audit_root),
         detail={"n_fills": len(filled["fills"]), "targets": targets,
-                "n_adapter_rejected": len(screened["approved"]) - len(filled["fills"])})
+                "n_adapter_rejected": filled.get("n_adapter_rejected", 0),
+                "routing_snapshot_id": routing_snapshot_id or None,
+                "route_tca_schema_version": 1 if route_planner is not None else None,
+                 "routing": filled.get("routing", []),
+                 "route_rejections": filled.get("route_rejections", []),
+                 "route_tca": filled.get("route_tca", []),
+                 "research_risk_fill_admitted": fill_admitted,
+                 "research_risk": research_risk})
+    should_publish_risk = (
+        bool(publish_research_risk_event)
+        if publish_research_risk_event is not None
+        else research_risk_inputs is not None
+    )
+    if (
+        event_bus is not None
+        and should_publish_risk
+        and research_risk.get("engines_run")
+    ):
+        event_bus.publish_once(
+            research_risk_evaluated_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                run_repro_hash=result.reproducibility_hash,
+                timestamp_ms=int(timestamp),
+                risk=research_risk,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
     if event_bus is not None and publish_completion_event:
         event_bus.publish_once(
             dry_run_completed_event(
@@ -332,7 +731,13 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
                              strategy_id: str, aum: float, cost_bps: float = 0.0, cash_flow_fn=None,
                              vol_target: dict = None, impact=None, adv_by_period: dict = None,
                              filters: Optional[Dict[str, Tuple[float, float, float]]] = None,
-                             event_bus=None, publish_completion_event: bool = True) -> DryRunRun:
+                             route_planner: Callable | None = None,
+                             routing_snapshot_id: str = "",
+                             event_bus=None, publish_completion_event: bool = True,
+                             research_risk_inputs: Optional[DryRunResearchRiskInputs] = None,
+                             research_risk_config: Optional[RiskConfig] = None,
+                             require_full_research_risk: bool = False,
+                             publish_research_risk_event: Optional[bool] = None) -> DryRunRun:
     """全历史周度滚动干跑(薄、确定性):逐期重平衡,每期增量调仓单过门(fail-closed)→纸面成交(不真发)→
     价格 MTM(reconcile)+ 资金费现金流(cash_flow_fn)→权益点→哈希链审计→raw/vol-target 两条净值曲线。
     ctx_factory(intent, prices, period);kill-switch 由 gate 持有(latched→全期被拒)。墙钟在驱动器边界。
@@ -341,7 +746,22 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     `{instrument_id: (step_size, min_qty, min_notional)}`,原样透传给每期的 `plan_target_quantities`
     (见其 docstring)。默认 None -> 每期目标手数计算与改动前逐字节相同(回归测试钉死)。这轮只交付
     管线本身有能力做量化——真实 Binance/Bybit exchangeInfo 数据接进具体驱动器是后续独立工作。"""
-    run_id = _det_id(strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:]))
+    strict_research_risk = bool(require_full_research_risk or research_risk_inputs is not None)
+    risk_identity = _research_risk_identity(
+        research_risk_inputs, research_risk_config, strict_research_risk
+    )
+    if route_planner is not None and (
+        not isinstance(routing_snapshot_id, str) or not routing_snapshot_id.strip()
+    ):
+        raise ValueError("routing_snapshot_id is required when route_planner is provided")
+    if route_planner is None and routing_snapshot_id:
+        raise ValueError("routing_snapshot_id requires route_planner")
+    run_id_parts = [strategy_id, "multi", len(periods), tuple(periods[:1]), tuple(periods[-1:])]
+    if risk_identity:
+        run_id_parts.append(risk_identity)
+    if routing_snapshot_id:
+        run_id_parts.append(("sor", routing_snapshot_id))
+    run_id = _det_id(*run_id_parts)
     start_event_id = ""
     if event_bus is not None:
         start_event = dry_run_started_event(
@@ -360,12 +780,17 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     held: dict = {}                       # instrument -> signed qty
     all_fills: list = []
     all_impact_trades: list = []          # (notional, adv) per impact-costed fill, for TCA-lite
+    all_routing: list = []
+    all_route_rejections: list = []
+    all_route_tca: list = []
     tot_impact = tot_flat = 0
+    route_cost_total = 0.0
     cum_cash = 0.0
     curve: list = []
     tot_appr = tot_rej = 0
     prev_equity = aum
-    for t in periods:
+    n_periods = len(periods)
+    for i, t in enumerate(periods):
         prices_t = prices_by_period[t]
         adv_t = adv_by_period.get(t) if adv_by_period else None
         targets = plan_target_quantities(weights_by_period.get(t, {}), prices_t, aum, filters=filters)
@@ -384,12 +809,45 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
             )
         tot_appr += len(screened["approved"])
         tot_rej += len(screened["rejected"])
-        filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
-                                run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps,
-                                impact=impact, adv=adv_t)
+        if strict_research_risk and research_risk_inputs is None:
+            # Keep the strict contract fail-closed across every period.  We
+            # still build the curve and persist the pending decision so the
+            # missing evidence is observable and reproducible.
+            filled = {
+                "fills": [], "reports": [], "impact_trades": [],
+                "n_impact": 0, "n_flat": 0, "routing": [],
+                "route_rejections": [], "route_tca": [], "n_adapter_rejected": 0,
+                "route_cost_total": 0.0,
+            }
+        else:
+            period_route_planner = (
+                (
+                    lambda intent, _prices=prices_t, _period=t:
+                    route_planner(intent, _prices, _period)
+                )
+                if route_planner is not None
+                else None
+            )
+            filled = simulate_fills(screened["approved"], prices_t, adapter=adapter,
+                                    run_id=f"{run_id}:{t}", timestamp=int(t), cost_bps=cost_bps,
+                                    impact=impact, adv=adv_t,
+                                    route_planner=period_route_planner)
         all_impact_trades.extend(filled.get("impact_trades", []))
+        all_routing.extend(
+            {"period": int(t), **item}
+            for item in filled.get("routing", [])
+        )
+        all_route_rejections.extend(
+            {"period": int(t), **item}
+            for item in filled.get("route_rejections", [])
+        )
+        all_route_tca.extend(
+            {"period": int(t), "tca": item}
+            for item in filled.get("route_tca", [])
+        )
         tot_impact += filled.get("n_impact", 0)
         tot_flat += filled.get("n_flat", 0)
+        route_cost_total += float(filled.get("route_cost_total", 0.0))
         for f in filled["fills"]:
             all_fills.append(f)
             held[f.instrument_id] = held.get(f.instrument_id, 0) + (
@@ -412,6 +870,10 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
                      metadata={"equity": str(round(equity_t, 2)), "ret": str(round(ret, 6)),
                                "approved": str(len(screened["approved"])),
                                "rejected": str(len(screened["rejected"]))})
+        # 每 20 周或最后一周打印进度
+        if (i + 1) % 20 == 0 or i == n_periods - 1:
+            print(f"  [{i+1}/{n_periods}] equity={equity_t:,.0f}  "
+                  f"approved={len(screened['approved'])}  rejected={len(screened['rejected'])}", flush=True)
 
     returns = [p["ret"] for p in curve]
     vt_curve: list = []
@@ -442,15 +904,55 @@ def run_multi_period_dry_run(*, periods, weights_by_period, prices_by_period, ga
     used_impact = impact is not None and tot_impact > 0
     cost = {"cost_model": "IMPACT_AC" if used_impact else "FLAT_BPS",
             "cost_provenance": "UNCALIBRATED_PRINCIPLED" if used_impact else "FLAT_BPS",
-            "cost_fills": {"impact": tot_impact, "flat": tot_flat}, "cost_bps": cost_bps}
+            "cost_fills": {"impact": tot_impact, "flat": tot_flat}, "cost_bps": cost_bps,
+            "sor_route_cost": round(route_cost_total, 6)}
     if used_impact:
         cost["tca"] = _tca_lite(impact, all_impact_trades)
+    risk_weights = (
+        dict(weights_by_period.get(periods[-1], {})) if periods else {}
+    )
+    research_risk = _evaluate_research_risk(
+        returns=returns,
+        weights=risk_weights,
+        equity_curve=[p["equity"] for p in curve],
+        timestamps=[int(period) for period in periods],
+        inputs=research_risk_inputs,
+        config=research_risk_config,
+        require_full=strict_research_risk,
+        series="multi_period",
+    )
     result = DryRunRun(
         run_id=run_id, strategy_id=strategy_id, timestamp=int(periods[-1]) if periods else 0,
         n_intents=tot_appr + tot_rej, n_approved=tot_appr, n_rejected=tot_rej, rejected_reasons=[],
         pnl=pnl, audit_root=str(audit.seal().head_hash),
         detail={"mode": "multi_period", "n_periods": len(periods), "cadence": "weekly",
-                "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve, **cost})
+                "n_fills": len(all_fills), "equity_curve": curve, "equity_curve_vt": vt_curve,
+                "routing_snapshot_id": routing_snapshot_id or None,
+                "route_tca_schema_version": 1 if route_planner is not None else None,
+                "routing": all_routing, "route_rejections": all_route_rejections,
+                "route_tca": all_route_tca,
+                "research_risk": research_risk, **cost})
+    should_publish_risk = (
+        bool(publish_research_risk_event)
+        if publish_research_risk_event is not None
+        else research_risk_inputs is not None
+    )
+    if (
+        event_bus is not None
+        and should_publish_risk
+        and research_risk.get("engines_run")
+    ):
+        event_bus.publish_once(
+            research_risk_evaluated_event(
+                run_id=run_id,
+                strategy_id=strategy_id,
+                run_repro_hash=result.reproducibility_hash,
+                timestamp_ms=result.timestamp,
+                risk=research_risk,
+            ),
+            correlation_id=run_id,
+            causation_id=start_event_id,
+        )
     if event_bus is not None and publish_completion_event:
         event_bus.publish_once(
             dry_run_completed_event(

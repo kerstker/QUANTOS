@@ -1,5 +1,36 @@
 # QUANTOS 对标顶级 AI 量化 · 差距 + 修补路线图
 
+> **2026-08-02 路线锁定：** 本文继续作为历史能力缺口与完成记录；从研究到生产的唯一工序排序、
+> 精益化取舍和最快部署路径，改由
+> [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
+> `FROZEN_V1` 负责。任何后续开发先按其 `WP0 → WP7` 顺序，不得用本文旧 Rank 或固定等待期
+> 绕过新的候选身份、并行盲化前向、生产级 Paper 和资本授权边界。
+
+> **2026-08-01 当前优先级增量（L2 内生自治闭环）：** 系统原生的实时 Alpha
+> discovery → evidence gate → capacity-sized forward shadow → console SSE 接缝已落地，
+> 不再需要开发 AI/IDE 代替运行时寻找 Alpha。固定首批 24 个微观结构试验已按小时调度，
+> 前向影子 worker 已按分钟调度并具备冻结准入、先决策后兑现、墙钟防前视、哈希链和重启恢复；
+> 纸面驾驶舱通过 SSE 随耐久证据变化更新，窄视口也已现场验收。
+>
+> 当前优先顺序不是继续堆候选数量，而是让证据按真实时间成熟：**P0** 保持 14 币公共行情、
+> 8 项实时特征和调度连续运行，先积累可执行深度 30 天；**P1** 在 30 天锁定窗上对 24 个
+> 预注册试验执行正式 DSR/PBO/holdout/压力门；**P2** 仅把正式通过且可定规模的候选送入
+> 90 天独立 forward shadow；**P3** 只有正向 OOS 轨道完成后才评审接入正式纸面 book。
+> 2026-08-01 现场结果仍是 24 evaluated / 0 diagnostic lead / 0 formal pass / 2577 global
+> trials；核心历史 3.64 天、容量历史约 0.04 天，故当前机器状态诚实为
+> `WAITING_FOR_VALIDATED_CANDIDATE`。这些是时间/证据门，不是待用 IDE 手工补跑的代码缺口；
+> live、broker、凭证、订单和自动晋级继续全部关闭。
+>
+> 同日把 Binance 系统风险公共 REST 从“每轮重抓 14 个 constituent”改为 7+7 的缺口/最旧
+> 轮转与经完整性、PIT、新鲜度复验的缓存复用；每轮计划由 20 请求/IP 权重 30 降至 13/16。
+> 冷却后真实任务已恢复 14/14、无刷新错误、退出 0，外部 418 不再诱发无意义的全量重抓。
+>
+> **同日恢复性闭环：** 全量验证发现 2.77GB experiment ledger 超出旧 QBK1 单次
+> AES-GCM 上限；现已升级为 QBK2 流式分块认证加密，并把 L2 快照、恢复、哈希和批次摘要
+> 全部改为常量内存路径。真实计划任务在独立卷对 14 个权威源完成加密备份→隔离恢复→
+> 清单/源合同/恢复历史链/SQLite 完整性复验，任务退出 0，恢复 16.794 秒 < 300 秒 RTO，
+> RPO PASS。该闭环证明“能恢复”，不把单机独立卷冒充 90 天 WORM 或跨主机灾备。
+>
 > **状态:历史输入(2026-07-10 起非权威)。** 本文的手工分数、排名和完成描述保留用于
 > 追溯研究决策，不再作为当前成熟度或开发排序真源。权威标准见
 > `docs/QUANTOS_TOP_TIER_STANDARD.md`;机器可验证要求见
@@ -9,6 +40,17 @@
 > `python scripts/assess_top_tier.py --check`,并按红线、证据缺口、目标成熟度和
 > `L2_SAFE_NOW / NEEDS_EXTERNAL / POST_L2` 分类排序。
 
+> **2026-07-30 供应链增量：** GitHub Actions run `30540314233` 已在
+> `ubuntu-22.04`/`ubuntu-24.04` 对同一 commit 生成逐字节一致的 canonical 源码包，
+> 并以 GitHub ambient OIDC + Fulcio/SCT/Rekor v1 生成真实 Sigstore DSSE/SLSA v1
+> bundle；仓库内离线 verifier 已复验身份、透明日志、subject、commit、双 builder
+> 与哈希绑定。因此“外部身份签名”和“跨主机源码复现”不再是缺口，机器成熟度升为 M3。
+> deployable-container 跨主机复现已由 GitHub Actions run `30599904036` 的
+> Ubuntu 22.04/24.04 冷 OCI 字节一致性、完整输入内容根和 OIDC/Fulcio/SCT/Rekor
+> 签名证据关闭。剩余供应链缺口是独立准入、认证外部回执/WORM、
+> checkpoint/revocation 独立运营以及外部权威链头封存；在这些外部边界完成前仍为
+> `NOT_TOP_TIER`，不以一个成功工作流冒充组织级持续运营。
+>
 > **生成:** 2026-07-01,多代理并行对标(8 维;4 维由工作流深度对标 + web 检索,4 维由 2026-06-29 基线报告 + 本会话更新补齐)。
 > **对标对象:** 顶级 AI 量化(RenTech / Two Sigma / Citadel / HRT / Jane Street + 现代 ML 基金)。
 > **打分基准:** 作为「研究/干跑平台」(非「能赚钱的实盘基金」)——两套基准差数量级,下文区分。
@@ -50,7 +92,7 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 | 10 | 可复现硬化(GP/numpy 种子钉死 + Docker/Nix 环境锁 + 性能回归基线) | 6 | P2 / S | 现有确定性核 | 把「纪律极好的笔记本」推向「可重算底座」 |
 | 11 | 股票+基本面(BYO-CSV 摄入 + 价值/动量/低波因子过关卡) | 1 | P1 / M | `market_csv.py`、`fundamental_factors.py`(全已存在) | 唯一真数据广度扩张;需你提供 CSV(免费源本环境被墙) |
 | **12 ✓** | **crowd_contra 送前向 paper-track**(已做,2026-07-04 真前向证据钟启动) | 2 | P2 / S | `paper_trading/store` | **已完成并升级为「真前向」**(用户拍板走实盘路线后的 Stage 0):`services/research/paper_trading/forward.py`(先记决策后兑现的 PIT 台账,无前视/fail-closed)+ `tools/{live_data_refresh,forward_track_advance,alert_sink}.py`(增量刷新 + 周度驱动 + 告警)。首条决策 2026-07-02(数据时间)已落库:crowd_contra + carry_oi_majors(对照)各 14 腿,同公式历史参照 sharpe 3.66(231周)/3.14(312周)(gross+funding 口径)。真钱 Go/No-Go 门 = ≥8 周前向兑现(用户拍板),预计最早 2026-08 下旬可评审。见 `docs/2026-07-04-live-readiness-review-and-plan.md`。 |
-| **13 ◑** | **数据漂移检测**(PIT 分布漂移告警) | 4/6 | P2 / M | `macro_regime`、data quality、特征值缓存 | **数据集与封存 PIT 特征分布均已升真：**60/20 窗口 KS 内核 + 真实 `crypto_daily.db` close-to-close 监控行已落地；新增 FX PIT bundle 的 3 个因果特征级重放，当前诊断 3/3 `BLOCK`。**仍缺：**物化特征值缓存、实时/纸面 feed、阈值校准和运营告警；该诊断不承重。 |
+| **13 ✓** | **数据漂移检测**(PIT 分布漂移告警) | 6/6 | P2 / M | `macro_regime`、data quality、实时特征值缓存 | **L2 闭环已完成：**60/20 KS 内核、真实 dataset/FX 特征重放、Binance 14 币双 WebSocket、7 类 × 14 币 = 98 条追加 PIT `FeatureValue` 与批次哈希链均已落地。阈值不再是固定假设：当前 60+20 评估窗完全隔离，只用更早 PIT 块的确定性置换空分布取 95/99 分位；首次真实校准 8,232 窗，Warn=0.3167、Block=0.3833，当前 41 PASS / 8 WARN / 49 BLOCK。独立 5 分钟告警 worker 按 incident 状态去重，事件/投递结果进追加 SQLite 哈希链并送 operator JSONL；本地投递失败非零退出且持续重试，首条 BLOCK 已 DELIVERED、复跑 DEDUPLICATED，外部 Telegram 未配置诚实标 `UNCONFIGURED`。Console 与 Agent 页均可见。诊断仍不承重、不驱动 Agent 晋级、仓位或订单。 |
 
 ## 4. 需外部资源(钱与组织,非代码缺陷)
 
@@ -77,4 +119,18 @@ QUANTOS 是**方法学诚实、安全工程扎实、可复现的中端研究/干
 > **2026-07-21 Rank #13 特征级证据：** `tools/feature_distribution_drift_research.py` 已从封存的
 > FX PIT bundle 重放三个因果 close 特征，并生成可确定性校验的
 > `evidence/feature_distribution_drift_baseline.json`。当前诊断为 `BLOCK`（三个特征均超出 KS
-> 阈值），但制品明确不承重；FeatureValue 缓存、实时/纸面 feed、校准和告警仍是开放项。
+> 阈值），但制品明确不承重；当时 FeatureValue 缓存、实时/纸面 feed、校准和告警仍是
+> 开放项，现已由 2026-07-29 Rank #13 实时闭环收口。
+
+> **2026-07-29 Rank #13 实时输入底座：** Binance USD-M 公开行情已建立 14 币 REST
+> 完整快照与 `/public`、`/market` 双 WebSocket 长驻流，覆盖最优盘口、20 档深度、
+> mark/index/funding、逐笔聚合成交、1 分钟 K 线、强平及 REST 的 OI/多空比/taker
+> 指标。数据以追加 SQLite 哈希链和状态水位持久化，调度、重连、新鲜度和 Console 健康
+> 可视化已完成。该增量当时只关闭“无实时原始 feed”；实时特征缓存与漂移告警随后由
+> 2026-07-29 Rank #13 收口增量完成。
+>
+> **2026-07-29 L2 多场所执行金丝雀：** Binance 真实 WebSocket 20 档深度现已与
+> Bybit V5 真实公共 order book 同步进入 deterministic paper SOR；跨场所快照和逐场所
+> route TCA 均追加持久化，5 分钟调度、watchdog、API 与 Console 已接通。连续两次真实
+> 快照运行达到 `LONGITUDINAL_READY`。该证据只证明公开行情驱动的仿真链路，费用仍为
+> 未校准研究假设，绝不关闭“生产多场所 SOR / 真实成交 TCA”外部缺口。

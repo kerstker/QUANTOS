@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
 from quantos.contracts.multi_asset import RETAINED_FX_FACTOR_SPECS
@@ -68,9 +69,34 @@ def _load_json(name):
 def _build(db_name, instruments, fields=("close",)):
     store = CachingPITStore(SqlitePITStore(os.path.join(_CACHE, db_name), create=False))
     event_times = sorted({b.event_time for inst in instruments for b in store.fetch_bars(inst, -10 ** 18, 10 ** 18)})
-    return ax.build_field_panel(store, instruments, event_times, fields)
+    # This panel is an own-event-time consumer: a bar is used only at its
+    # recorded event_time.  Use the store's bulk PIT contract once per
+    # instrument instead of calling latest_as_of() for every (time, instrument)
+    # cell.  The old loop performed hundreds of thousands of repeated in-memory
+    # scans on the 336-symbol Binance universe and made the registry test suite
+    # look hung, while the resulting values were identical.
+    bars_by_instrument = {
+        instrument: {
+            int(bar.event_time): bar
+            for bar in store.fetch_bars_pit(instrument, -10 ** 18, 10 ** 18)
+        }
+        for instrument in sorted(instruments)
+    }
+    matrices = {field: [] for field in fields}
+    for event_time in event_times:
+        for field in fields:
+            matrices[field].append([
+                (
+                    float(getattr(bars_by_instrument[instrument][event_time], field))
+                    if event_time in bars_by_instrument[instrument]
+                    else None
+                )
+                for instrument in sorted(instruments)
+            ])
+    return ax.FieldPanel(sorted(instruments), event_times, matrices)
 
 
+@lru_cache(maxsize=None)
 def _crypto_funding_panel():
     """115 币 carry 宇宙(照抄 tools/crypto_carry_strategy.py 的配方)。"""
     instruments = sorted(_load_json("crypto_funding_snapshot.json")["instruments"])
@@ -80,6 +106,7 @@ def _crypto_funding_panel():
     return panel
 
 
+@lru_cache(maxsize=None)
 def _crypto_oi_majors_panel():
     """14 大币 OI/持仓宇宙(照抄 tools/crypto_oi_research.py::build_panel 的过滤配方)。"""
     oi_cache = _load_json("crypto_oi_metrics.json")
@@ -95,6 +122,7 @@ def _crypto_oi_majors_panel():
     return panel
 
 
+@lru_cache(maxsize=None)
 def _crypto_daily_panel():
     """18 币日线趋势宇宙(照抄 tools/crypto_daily_composite.py::_instruments 的配方)。"""
     snap = _load_json("crypto_research_snapshot.json")
@@ -102,12 +130,14 @@ def _crypto_daily_panel():
     return _build("crypto_daily.db", instruments)
 
 
+@lru_cache(maxsize=None)
 def _crypto_binance_wide_panel():
     """336 币宽宇宙——ingestion 时已过滤稳定币/包装币/太短历史,直接读快照的 instruments 即可。"""
     instruments = sorted(_load_json("crypto_binance_snapshot.json")["instruments"])
     return _build("crypto_binance.db", instruments)
 
 
+@lru_cache(maxsize=None)
 def _equity_daily_panel():
     """2026-07-10(路线图 Rank #8):流动美股大盘宇宙(79 支,10 年日线,tools/yahoo_equity_fetch.py
     已抓、PIT-vintage 未复权原始 OHLC)——第一个非加密/FX 资产类别接进 IC 面板。诚实边界:当前成分
@@ -142,6 +172,20 @@ UNIVERSE_REGISTRY = {
     "equity_daily": _equity_daily_panel,
     "fx_tradable": _fx_tradable_panel,
 }
+
+
+def clear_universe_cache() -> None:
+    """Clear the process-local panel cache after a data refresh.
+
+    Registry panels are immutable-by-convention diagnostics.  Caching avoids
+    rebuilding the 336-symbol Binance panel once per registered factor, while
+    this explicit hook keeps long-lived research workers from serving a panel
+    built before their input snapshot was refreshed.
+    """
+    for builder in UNIVERSE_REGISTRY.values():
+        clear = getattr(builder, "cache_clear", None)
+        if callable(clear):
+            clear()
 
 FACTOR_REGISTRY = [
     {"name": "carry_composite", "holding_periods": [1, 7, 14], "universe": "crypto_funding",

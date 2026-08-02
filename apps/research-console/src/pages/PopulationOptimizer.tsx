@@ -1,10 +1,10 @@
-import React from 'react';
 import { fetchPopulationOptimizerSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
-import type { PopulationOptimizerPayload, PopOptSelected, PopOptExcluded } from '@/lib/types/research';
+import type { PopulationOptimizerPayload, PopOptSelected } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, type Column,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable, Chip, ProgressBar, LoadingVeil,
+  type Column,
 } from '@/ui/primitives';
 import { fixed, signed } from '@/ui/format';
 
@@ -16,8 +16,6 @@ import { fixed, signed } from '@/ui/format';
  */
 
 type Selected = PopOptSelected;
-type Excluded = PopOptExcluded;
-
 const fallback: PopulationOptimizerPayload = {
   source: 'FRONTEND_POPOPT_FALLBACK', read_only: true, api_version: '0.1.0',
   data_provenance: 'SYNTHETIC_DETERMINISTIC', method: 'FORWARD_SELECTION_INCREMENTAL_IR', n_candidates: 7,
@@ -69,6 +67,7 @@ export default function PopulationOptimizer() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error}
         realData={data.data_provenance === 'REAL_CRYPTO_SERIES'} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('已选', 'Selected')} value={String(selected.length)} tone="pos" />
         <StatTile label={bi('剔除', 'Excluded')} value={String(excluded.length)} tone="warn" />
@@ -95,6 +94,7 @@ export default function PopulationOptimizer() {
           </div>
         </Panel>
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

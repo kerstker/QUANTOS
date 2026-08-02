@@ -12,9 +12,9 @@ mined out). Reports the chain of discovered edges + a final no-peek selection OO
 long-short, taker. Deterministic, pure-stdlib via services. Containment unchanged: research output, drives
 no lifecycle, auto_approved stays 0. Observed numbers only — the chain is whatever the machine finds.
 """
+
 from __future__ import annotations
 
-import json
 import os
 import statistics
 import time
@@ -33,8 +33,12 @@ from tools.search_trial_registry import (
     make_search_id,
     production_experiment_registry,
 )
+from tools.alpha_candidate_admission import run as run_candidate_admission
+from tools.cache_io import atomic_write_json
 
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
+
 FIELDS = ("close", "volume", "funding", "basis", "oi", "oi_value", "top_ls", "global_ls", "taker_ls")
 WINDOWS = (3, 7, 14, 30)
 QUANTILE = 0.3
@@ -64,20 +68,26 @@ def _gauntlet(e, panel, basis):
     econ = economic_return_series(sig, panel, quantile=QUANTILE)
     orth = orthogonalize(tuple(econ), basis, min_overlap=200)
     if orth.explained_r2 is None or orth.explained_r2 >= 0.2:
-        return None                                  # not orthogonal to what we already know
+        return None  # not orthogonal to what we already know
     from services.research.expression_leakage import compute_leakage_ok
-    if compute_leakage_ok(e, panel, rows=list(range(150, len(pr), max(1, len(pr)//25)))) is not True:
+
+    if compute_leakage_ok(e, panel, rows=list(range(150, len(pr), max(1, len(pr) // 25)))) is not True:
         return None
     lag1 = sharpe(_streams(sig, px, fm, q=QUANTILE, lag=1)[0])
     net10 = sharpe([p - t * 10 / 1e4 for p, t in zip(pr, tr)])
     if not (sharpe(pr) > 0.5 and lag1 > 0.5 and net10 > 0.4):
-        return None                                  # fragile (timing artifact) or dies on cost
-    return {"expr": ax.serialize(e), "econ_stream": tuple(econ),
-            "price_sharpe": round(sharpe(pr), 3), "lag1_sharpe": round(lag1, 3),
-            "net10_sharpe": round(net10, 3), "r2_vs_known": round(orth.explained_r2, 3),
-            "turnover": round(statistics.fmean(tr), 3),
-            "per_year": _per_year(pr, panel.event_times),
-            "fields": sorted({n[1] for _p, n in _nodes(e) if isinstance(n, tuple) and n and n[0] == "field"})}
+        return None  # fragile (timing artifact) or dies on cost
+    return {
+        "expr": ax.serialize(e),
+        "econ_stream": tuple(econ),
+        "price_sharpe": round(sharpe(pr), 3),
+        "lag1_sharpe": round(lag1, 3),
+        "net10_sharpe": round(net10, 3),
+        "r2_vs_known": round(orth.explained_r2, 3),
+        "turnover": round(statistics.fmean(tr), 3),
+        "per_year": _per_year(pr, panel.event_times),
+        "fields": sorted({n[1] for _p, n in _nodes(e) if isinstance(n, tuple) and n and n[0] == "field"}),
+    }
 
 
 def _nodes(t, path=()):
@@ -93,15 +103,24 @@ def main() -> None:
     panel, instruments = build_panel(add_basis=True)
     dataset_version = field_panel_dataset_version(panel)
     print(f"=== loop-until-dry orthogonal mining ({len(instruments)} coins, {len(FIELDS)} dims) ===")
-    known = {"carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
-             "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE)}
+    known = {
+        "carry": economic_return_series(ax.evaluate(CARRY, panel), panel, quantile=QUANTILE),
+        "crowd_contra": economic_return_series(ax.evaluate(CROWD_CONTRA, panel), panel, quantile=QUANTILE),
+    }
     known_ids = {ax.alpha_id(CARRY), ax.alpha_id(CROWD_CONTRA)}
     print(f"seed basis: carry SR {sharpe(known['carry']):.2f}, crowd_contra SR {sharpe(known['crowd_contra']):.2f}")
 
-    chain, dry, rnd = [], 0, 0
+    chain, eligible_discoveries, dry, rnd, n_evaluated_total = [], [], 0, 0, 0
     while dry < DRY_LIMIT and rnd < MAX_ROUNDS:
         rnd += 1
         recorded_at = invocation_at + rnd
+        search_id = make_search_id(
+            source="tools.crypto_factory_loop",
+            search_kind="ALPHA_FACTORY_LOOP",
+            dataset_version=dataset_version,
+            recorded_at=recorded_at,
+            params={"round": rnd, "generations": 5, "population": 48},
+        )
         with production_experiment_registry() as registry:
             out = run_alpha_factory(
                 panel,
@@ -117,16 +136,27 @@ def main() -> None:
                 timestamp=recorded_at,
                 max_workers=MAX_WORKERS,
                 search_registry=registry,
-                search_id=make_search_id(
-                    source="tools.crypto_factory_loop",
-                    search_kind="ALPHA_FACTORY_LOOP",
-                    dataset_version=dataset_version,
-                    recorded_at=recorded_at,
-                    params={"round": rnd, "generations": 5, "population": 48},
-                ),
+                search_id=search_id,
                 search_kind="ALPHA_FACTORY_LOOP",
                 search_source="tools.crypto_factory_loop",
             )
+            evaluation_refs = {}
+            for run_id in out.get("recorded_run_ids", ()):
+                row = registry.get_evaluation(str(run_id))
+                if not isinstance(row, dict):
+                    continue
+                alpha_id = str(row.get("alpha_id", ""))
+                if not alpha_id:
+                    continue
+                evaluation_refs[alpha_id] = {
+                    "evaluation_run_id": str(run_id),
+                    "verified": registry.verify_evaluation(str(run_id)),
+                    "verdict": row.get("verdict"),
+                    "definition_hash": row.get("config_hash"),
+                    "dataset_version": row.get("dataset_version"),
+                    "source_search_id": row.get("search_id"),
+                }
+        n_evaluated_total += int(out.get("n_evaluated", 0) or 0)
         found = None
         for b in out["best"]:
             e = ax.deserialize(b["expr"])
@@ -145,33 +175,87 @@ def main() -> None:
         known[aid[:12]] = g["econ_stream"]
         known_ids.add(aid)
         dry = 0
-        chain.append({k: v for k, v in g.items() if k != "econ_stream"})
-        print(f"round {rnd}: + NEW orthogonal edge  SR {g['price_sharpe']}  lag1 {g['lag1_sharpe']}  "
-              f"net10 {g['net10_sharpe']}  R2|known {g['r2_vs_known']}  {g['fields']}")
+        discovery = {
+            "alpha_id": aid,
+            **{k: v for k, v in g.items() if k != "econ_stream"},
+            "source_search_id": search_id,
+            "dataset_version": dataset_version,
+        }
+        chain.append(discovery)
+        evaluation_ref = evaluation_refs.get(aid)
+        if (
+            isinstance(evaluation_ref, dict)
+            and evaluation_ref.get("verified") is True
+            and evaluation_ref.get("verdict") == "PASS"
+            and evaluation_ref.get("source_search_id") == search_id
+            and evaluation_ref.get("dataset_version") == dataset_version
+            and isinstance(evaluation_ref.get("definition_hash"), str)
+        ):
+            eligible_discoveries.append(
+                {
+                    **discovery,
+                    "definition_hash": evaluation_ref["definition_hash"],
+                    "evaluation_run_id": evaluation_ref["evaluation_run_id"],
+                    "quantile": QUANTILE,
+                    "cadence_days": 7,
+                }
+            )
+        print(
+            f"round {rnd}: + NEW orthogonal edge  SR {g['price_sharpe']}  lag1 {g['lag1_sharpe']}  "
+            f"net10 {g['net10_sharpe']}  R2|known {g['r2_vs_known']}  {g['fields']}"
+        )
         print(f"          {g['expr']}")
 
     print(f"\nmined {len(chain)} orthogonal edge(s) beyond carry+crowd_contra before going dry:")
     for i, c in enumerate(chain, 1):
-        print(f"  {i}. SR {c['price_sharpe']:>5} lag1 {c['lag1_sharpe']:>5} net10 {c['net10_sharpe']:>5} "
-              f"{','.join(c['fields']):<22} {c['expr'][:64]}")
+        print(
+            f"  {i}. SR {c['price_sharpe']:>5} lag1 {c['lag1_sharpe']:>5} net10 {c['net10_sharpe']:>5} "
+            f"{','.join(c['fields']):<22} {c['expr'][:64]}"
+        )
 
     # final no-peek OOS over the whole discovered book
     T = len(known["carry"])
-    oos = walk_forward_selection_oos(known, train_size=max(252, T // 4), test_size=max(120, T // 8),
-                                     embargo=2, top_k=1)
+    oos = walk_forward_selection_oos(known, train_size=max(252, T // 4), test_size=max(120, T // 8), embargo=2, top_k=1)
     picks = [f["selected"] for f in oos.get("folds", [])]
-    print(f"\nno-peek OOS over full discovered book ({len(known)} edges): folds={oos['n_folds']} "
-          f"mean_OOS={oos.get('mean_oos_sharpe')} picks={picks}")
+    print(
+        f"\nno-peek OOS over full discovered book ({len(known)} edges): folds={oos['n_folds']} "
+        f"mean_OOS={oos.get('mean_oos_sharpe')} picks={picks}"
+    )
 
-    verdict = (f"machine autonomously mined {len(chain)} NEW orthogonal edge(s) (each lag+cost-robust) "
-               f"before drying out — multi-dimensional discovery loop works"
-               if chain else "no orthogonal edge beyond carry+crowd_contra survived the gauntlet")
+    verdict = (
+        f"machine autonomously mined {len(chain)} NEW orthogonal edge(s) (each lag+cost-robust) "
+        f"before drying out — multi-dimensional discovery loop works"
+        if chain
+        else "no orthogonal edge beyond carry+crowd_contra survived the gauntlet"
+    )
     print(f"\nVERDICT: {verdict}")
-    json.dump({"universe": instruments, "fields": list(FIELDS), "rounds": rnd, "dry_limit": DRY_LIMIT,
-               "seed_basis": ["carry", "crowd_contra"], "discovered_chain": chain,
-               "oos_mean": oos.get("mean_oos_sharpe"), "oos_picks": picks, "verdict": verdict,
-               "containment": "research; auto_approved=0; drives no lifecycle; no live/flags",
-               "generated_at": int(time.time())}, open(_OUT, "w", encoding="utf-8"), indent=2)
+    document = {
+        "schema_version": 2,
+        "universe": instruments,
+        "fields": list(FIELDS),
+        "rounds": rnd,
+        "dry_limit": DRY_LIMIT,
+        "n_evaluated_total": n_evaluated_total,
+        "seed_basis": ["carry", "crowd_contra"],
+        "discovered_chain": chain,
+        "eligible_discoveries": eligible_discoveries,
+        "oos_mean": oos.get("mean_oos_sharpe"),
+        "oos_picks": picks,
+        "verdict": verdict,
+        "containment": (
+            "research; verified PASS survivors auto-register to L2 forward paper only; "
+            "no lifecycle promotion; no live/flags"
+        ),
+        "handoff_contract": "VERIFIED_FACTORY_PASS_TO_FORWARD_PAPER",
+        "generated_at": int(time.time()),
+    }
+    atomic_write_json(_OUT, document, indent=2)
+    admission = run_candidate_admission(factory_path=_OUT)
+    print(
+        "candidate handoff: "
+        f"status={admission['status']} admitted={len(admission['admitted'])} "
+        f"replayed={len(admission['replayed'])}"
+    )
     print(f"-> wrote {_OUT}")
 
 

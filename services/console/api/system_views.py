@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List
@@ -26,8 +29,14 @@ from services.monitoring.domain_event_runtime import (
     read_domain_event_bus_health,
 )
 from services.monitoring.event_projection import DomainEventProjection
+from services.console.api.realtime_inputs import (
+    realtime_agent_input_payload as _realtime_agent_input_payload,
+)
 
 
+CONSOLE_API_VERSION = os.getenv("QUANTOS_CONSOLE_API_VERSION", "0.1.0")
+RUNTIME_CONTRACT_VERSION = "console-runtime.v1"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DOMAIN_EVENT_PROJECTION_DB = os.path.join(
     "data", "cache", "domain_event_projection.db"
 )
@@ -328,18 +337,57 @@ PHASE3A_BLOCKERS = [
 
 
 def _system_health_payload() -> Dict:
+    probe_started = time.perf_counter()
+    try:
+        monitoring = _real_monitoring_snapshot()
+    except Exception as exc:  # health must remain readable and fail closed
+        monitoring = {
+            "provenance": "MONITORING_ERROR",
+            "audit_chain_valid": False,
+            "kill_switch_active": True,
+            "healthy": False,
+            "anomalies": [f"MONITORING_ERROR:{type(exc).__name__}"],
+            "audit_events": 0,
+        }
+    local_latency_ms = round((time.perf_counter() - probe_started) * 1000.0, 3)
+    if monitoring.get("healthy") is True:
+        local_status = "healthy"
+    elif monitoring.get("healthy") is False:
+        local_status = "degraded"
+    else:
+        local_status = "unknown"
     return {
-        "monitoring": _real_monitoring_snapshot(),
-        "latency_provenance": "ILLUSTRATIVE_NOT_MEASURED",
+        "monitoring": monitoring,
+        "latency_provenance": "MEASURED_LOCAL_MONITORING_CALL",
+        "latency_scope": "PROCESS_LOCAL_ONLY",
+        "error_rate_provenance": "UNMEASURED_NO_REQUEST_COUNTER",
         "services": [
-            {"service": "research-console-api", "status": "healthy", "latency_ms": 3.4, "error_rate": 0.0},
-            {"service": "market-data-ingestor", "status": "healthy", "latency_ms": 4.8, "error_rate": 0.001},
-            {"service": "alpha-discovery-engine", "status": "healthy", "latency_ms": 41.2, "error_rate": 0.008},
-            {"service": "alpha-validation", "status": "healthy", "latency_ms": 13.7, "error_rate": 0.002},
-            {"service": "paper-trading", "status": "healthy", "latency_ms": 8.9, "error_rate": 0.0},
-            {"service": "portfolio-research", "status": "healthy", "latency_ms": 16.4, "error_rate": 0.001},
-            {"service": "research-risk", "status": "degraded", "latency_ms": 82.5, "error_rate": 0.027},
+            {
+                "service": "research-console-api",
+                "status": local_status,
+                "latency_ms": local_latency_ms,
+                "error_rate": None,
+                "probe": "LOCAL_MONITORING_CALL",
+            },
+            *[
+                {
+                    "service": service,
+                    "status": "unknown",
+                    "latency_ms": None,
+                    "error_rate": None,
+                    "probe": "NOT_CONFIGURED",
+                }
+                for service in (
+                    "market-data-ingestor",
+                    "alpha-discovery-engine",
+                    "alpha-validation",
+                    "paper-trading",
+                    "portfolio-research",
+                    "research-risk",
+                )
+            ],
         ],
+        "gates_provenance": "STATIC_READINESS_DECLARATION_NOT_LIVENESS",
         "gates": [
             {"g": "Phase 1G.1 Research Pipeline", "s": "PASSED"},
             {"g": "Phase 1H.1 Paper Trading", "s": "PASSED"},
@@ -357,46 +405,140 @@ def _system_health_payload() -> Dict:
     }
 
 
+def _runtime_contract_payload() -> Dict:
+    """Return the read-only runtime handshake consumed by the console shell.
+
+    A HTTP 200 alone cannot prove that a browser is talking to the intended
+    backend.  This payload binds the running process to the console API
+    version, the canonical event-schema catalog and the L2 safety posture.
+    Build SHA and instance id are deployment inputs; when they are not pinned
+    we report that fact instead of manufacturing a release identity.
+    """
+    build_sha = os.getenv("QUANTOS_BUILD_SHA", "").strip()
+    build_sha_known = bool(build_sha and build_sha.lower() not in {"unknown", "dirty"})
+    instance_id = os.getenv("QUANTOS_CONSOLE_INSTANCE_ID", "").strip()
+    if not instance_id:
+        instance_id = f"pid-{os.getpid()}"
+    manifest = CANONICAL_EVENT_SCHEMAS.manifest()
+    canonical_manifest = json.dumps(
+        manifest,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "contract_version": RUNTIME_CONTRACT_VERSION,
+        "service": "research-console-api",
+        "instance_id": instance_id,
+        "process_id": os.getpid(),
+        "build_sha": build_sha or "UNKNOWN",
+        "build_sha_known": build_sha_known,
+        "event_schema_catalog": {
+            "sha256": hashlib.sha256(canonical_manifest).hexdigest(),
+            "event_type_count": len(manifest),
+            "latest_versions": CANONICAL_EVENT_SCHEMAS.latest_consumer_versions(),
+        },
+        "safety_boundary": {
+            "read_only_console": True,
+            "authorized_level": "L2_DRY_RUN_ONLY",
+            "live_trading_authorized": False,
+            "order_submission_allowed": False,
+            "broker_connectivity": False,
+        },
+        "generated_at_ms": int(time.time() * 1000),
+    }
+
+
 def _agents_payload() -> Dict:
-    candidates = _alpha_candidates()
-    approved_count = sum(1 for alpha in candidates if _validation_decision(alpha) == "APPROVED")
+    """Describe the real research-agent boundary and persisted run activity.
+
+    Search strategies are capabilities of one guardrailed ResearchAgentLoop,
+    not independent human-like personas.  Run counts come from the durable
+    research registry; approval and budget figures are deliberately not
+    inferred because agents cannot approve promotion and the registry does not
+    persist a monetary-agent budget contract.
+    """
+    try:
+        runs = _runs_registry().list(limit=500)
+        registry_status = "AVAILABLE"
+    except Exception:
+        runs = []
+        registry_status = "UNAVAILABLE"
+    status_counts = {
+        status: sum(1 for run in runs if run.status == status)
+        for status in ("queued", "running", "done", "error", "cancelled")
+    }
+    active = status_counts["queued"] + status_counts["running"]
+    terminal = status_counts["done"] + status_counts["error"] + status_counts["cancelled"]
+    latest = max(runs, key=lambda run: (run.created_ts, run.run_id)) if runs else None
+    kinds = sorted({run.kind for run in runs})
+    agent_state = "RUNNING" if active else ("IDLE" if registry_status == "AVAILABLE" else "FAILED")
     agents = [
         {
-            "agent_id": "agent-1",
-            "name": "Macro Analyst",
-            "state": "RUNNING",
-            "runs_completed": 42,
-            "alpha_approved": approved_count,
-            "performance_score": 0.78,
-            "budget_spent_cny": 150,
+            "agent_id": "research-agent-loop",
+            "name": "Guardrailed ResearchAgentLoop",
+            "state": agent_state,
+            "runs_completed": terminal,
+            "runs_active": active,
+            "runs_succeeded": status_counts["done"],
+            "runs_failed": status_counts["error"],
+            "last_run_id": latest.run_id if latest else None,
+            "last_run_kind": latest.kind if latest else None,
+            "last_run_at": latest.created_ts if latest else None,
+            "agent_auto_approved": 0,
+            "can_reach_approved": False,
+            "credentials_access": False,
+            "order_submission": False,
+        }
+    ]
+    engines = [
+        {
+            "engine_id": "guided_search",
+            "implementation": "services.intelligence.search_strategies.GuidedSearch",
+            "readiness": "AVAILABLE_TESTED",
         },
         {
-            "agent_id": "agent-2",
-            "name": "Factor Hunter",
-            "state": "REFLECTING",
-            "runs_completed": 28,
-            "alpha_approved": 3,
-            "performance_score": 0.62,
-            "budget_spent_cny": 280,
+            "engine_id": "evolutionary_search",
+            "implementation": "services.intelligence.search_strategies.EvolutionarySearch",
+            "readiness": "AVAILABLE_TESTED",
         },
         {
-            "agent_id": "agent-3",
-            "name": "Momentum Specialist",
-            "state": "IDLE",
-            "runs_completed": 15,
-            "alpha_approved": 2,
-            "performance_score": 0.55,
-            "budget_spent_cny": 95,
+            "engine_id": "gp_search",
+            "implementation": "services.intelligence.search_strategies.GPSearch",
+            "readiness": "AVAILABLE_TESTED",
+        },
+        {
+            "engine_id": "mcts_search",
+            "implementation": "services.intelligence.search_strategies.MCTSSearch",
+            "readiness": "AVAILABLE_TESTED",
         },
     ]
     return {
+        "data_provenance": "RESEARCH_RUN_REGISTRY_AND_GUARDRAIL_CONTRACT",
         "summary": {
-            "active": sum(1 for agent in agents if agent["state"] == "RUNNING"),
-            "total_runs": sum(agent["runs_completed"] for agent in agents),
-            "approved": sum(agent["alpha_approved"] for agent in agents),
-            "budget_spent_cny": sum(agent["budget_spent_cny"] for agent in agents),
+            "active": active,
+            "total_runs": len(runs),
+            "completed": terminal,
+            "succeeded": status_counts["done"],
+            "failed": status_counts["error"],
+            "cancelled": status_counts["cancelled"],
+            "agent_auto_approved": 0,
+            "registry_status": registry_status,
         },
         "agents": agents,
+        "engines": engines,
+        "observed_run_kinds": kinds,
+        "realtime_inputs": _realtime_agent_input_payload(),
+        "containment": {
+            "authorized_level": "L2_DRY_RUN_ONLY",
+            "research_only": True,
+            "human_approval_required": True,
+            "agent_can_reach_approved": False,
+            "credentials_access": False,
+            "broker_connectivity": False,
+            "order_submission": False,
+            "live_trading": False,
+        },
     }
 
 
@@ -553,7 +695,7 @@ def _snapshot(payload: Dict) -> Dict:
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",
         "read_only": True,
-        "api_version": "0.1.0",
+        "api_version": CONSOLE_API_VERSION,
         "data_provenance": "SYNTHETIC_DETERMINISTIC",
         **payload,
     }
@@ -577,3 +719,14 @@ async def phase3a_readiness() -> Dict:
 @router.get("/api/v1/console/system-health")
 async def system_health() -> Dict:
     return _snapshot(_system_health_payload())
+
+
+@router.get("/api/v1/console/runtime-contract")
+async def runtime_contract() -> Dict:
+    """Read-only frontend/backend version and safety handshake."""
+    return _snapshot(
+        {
+            **_runtime_contract_payload(),
+            "data_provenance": "REAL_RUNTIME_CONTRACT",
+        }
+    )

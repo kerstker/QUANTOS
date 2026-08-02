@@ -1,5 +1,500 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-02 WP1 唯一候选工作流：** `AlphaProductionWorkflow` 与
+> `CandidateEvidenceBundle` 已落地为追加式 SQLite 双哈希链，统一冻结候选身份、材料变化后继关系，
+> 以及 Historical OOS / Signal Shadow / nine-engine risk / Execution Paper / lifecycle 五类证据。
+> 调和器每五分钟从不可变 release 幂等运行；权威 JSON 存在后，forward、独立评估、风险包、preview、
+> realtime、paper health 和 SSE 前端只消费其 active population；现有但无效的权威会 fail-closed，缺失仅
+> 保留首次引导兼容。该 DB 已成为 L2 backup source-contract v3 的 required source。对当前 release
+> `c90836d8...` 的只读烟雾调和结果为 10 个候选、0 个当前 paper eligible、0 个非 legacy execution
+> candidate；全部仍为 1/8 前向周期，三本既有实时标记账户继续明确隔离为
+> `LEGACY_DIAGNOSTIC_PAPER`。因此 WP1 接线完成并没有伪造 Alpha 通过，下一承重目标仍是 WP2：让
+> 候选通用九引擎、preview/fill 和逐周期对账在真实新候选上变绿。设计见
+> [`docs/engineering/specs/2026-08-02-alpha-production-workflow.md`](docs/engineering/specs/2026-08-02-alpha-production-workflow.md)。
+
+> **2026-08-02 固定开发路线：** 从研究到生产的工序排序已冻结为
+> [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
+> `FROZEN_V1`。当前实施顺序固定为 `WP0 发布/证据原子性 → WP1 唯一候选工作流 →
+> WP2 生产级 Paper 变绿 → WP3 并行盲化前向与自动交接 → WP4 组合/执行承重 →
+> WP5 外部生产边界 → WP6 Testnet/Operational Canary → WP7 Alpha Canary/扩容`。
+> 该路线删除重复手工审批和串行等待，但不删除 PIT、Trial Ledger、锁定 OOS、独立挑战、
+> 风险/kill switch、对账、不可变发布或真实资本的人类授权。
+
+> **2026-08-02 WP0 发布身份与纸面身份第一增量：** L2 调度注册现在只接受干净 Git
+> `HEAD`，把精确 40 位 commit 写入每个 Task Scheduler action；每次 worker 启动前重新
+> 校验 HEAD 与完整 cleanliness，并拒绝 release/state 同根或嵌套。launcher 向 worker
+> 绑定 `QUANTOS_RELEASE_COMMIT`、`QUANTOS_RELEASE_ROOT`、`QUANTOS_STATE_ROOT`，每次运行在
+> state root 的 `.runtime/l2-release-runs/` 写哈希凭证，分别记录 release 验证结果与 worker
+> 退出结果。实时 Alpha 发现、前向 shadow、前向证据基线与控制台纸面投影已切到该 state
+> root，避免数据库回写 clean release。该边界已在真实 Windows Task Scheduler 上激活：首个迁移
+> 基线为 GitHub commit `2d4ca1227ddecc96eb39a2799cc6d8404f564466`，release root 与
+> `H:\QUANTOS_STATE` 完全分离；状态迁移排除 `pytest-basetemp` 后逐路径核对 447,339 个文件、
+> 10,963,519,184 bytes，0 缺失/多余/大小漂移，5 座关键 SQLite 库只读 `quick_check=PASS`。
+> 33 个 QUANTOS 任务中 28 个 L2 action 已固定 release commit/state root，5 个旧实盘/运维任务
+> 保持 `Disabled`。首次真实 watchdog 运行进一步暴露 worker `main()` 调用 `sys.exit(code)` 会绕过
+> launcher 最终回执；launcher 现已把 `SystemExit(None|int)` 规范化为 worker 退出码，布尔/字符串/
+> 浮点仍 fail-closed，从而保证非零结果也落成 `FAILED + NONZERO_EXIT` 完整回执。旧同根调度缺口已
+> 关闭；**WP0 整体仍不宣称闭合**，剩余是把每轮输入数据快照/证据集合进一步绑定进 release receipt，
+> 以及外部 WORM/独立回执权威，而不是再次回退到开发工作树运行。
+> 同一 release/state 契约也已扩展到本地控制台三进程：显式状态根必须与精确 clean release
+> commit 成对提供，console API、research runner 和静态前端均以 state root 为 cwd，并通过
+> `python -P` 与 release-first `PYTHONPATH` 固定代码来源；manifest/log 改写入 state root。
+> 因此浏览器、runner 与调度器消费同一运行状态，同时状态目录中的代码副本不能遮蔽 release。
+> Uvicorn 另以 `--app-dir=<release>` 固定应用导入，静态服务直接执行 release 中的绝对脚本；Git
+> 忽略的前端 bundle 不再写入 release，而位于 `state/.runtime/frontend-builds/<commit>/dist`，
+> 通过 `QUANTOS_FRONTEND_DIST` 与发布身份一一绑定。
+> `carry_oi_majors`、`crowd_contra`、`top_contra` 同时被明确标为
+> `LEGACY_DIAGNOSTIC_PAPER`：仍可接收公共实时标记与产出 PnL，但不计入新候选执行 Paper，
+> 永远不具部署资格。前端漏斗已拆分 Candidate Paper 与 Legacy Paper，避免把三条历史 book
+> 误报为全自动候选晋级成功。全链仍为 L2，实盘与订单权限没有变化。
+
+> **2026-08-01 系统内生自治实时 Alpha 搜索与动态纸面驾驶舱：**
+> 实时 Alpha 发现已不再依赖开发 AI/IDE 手工触发：`tools.realtime_alpha_discovery`
+> 由 L2 调度器每小时运行，固定预注册 4 个经济机制家族（order-flow、order-book、
+> liquidation、funding/basis）× 2 个机制 × 3 个 horizon，共 24 个不可挑选性改写的
+> 试验；每轮统一消费 PIT Binance 公共微观结构特征，写入全局 experiment ledger、
+> DSR/PBO/时序 holdout/压力检验和哈希链家族注册表。2026-08-01 现场证据为 14 个
+> USD-M 交易对、核心共同历史 3.64 天、24/24 已评估、diagnostic lead 0、formal pass 0、
+> 全局 trial count 2577；系统没有为了展示数量伪造 Alpha。
+>
+> 容量已改用 top-5 双边可执行深度而不是成交量代理；新容量特征从接线时开始独立积累，
+> 当前仅约 0.04 天，保守深度约 `$2.16k`，10% 参与率/每边两腿下支持 AUM 约 `$866`，
+> 影子建议规模约 `$433`。该数值可用于诊断但在满 30 天前 `evidence_ready=false`；
+> `$1m` 目标容量不通过不会抹掉统计 Alpha，只会限制可测试规模。正式统计评估仍需 30 天
+> 共同历史，准入独立前向影子仍需 90 天共同历史。
+>
+> `tools.realtime_alpha_forward_shadow` 每分钟消费发现快照。只有 90 天成熟、正式门通过且
+> 可执行深度可定规模的候选才写入 append-only/hash-chained 影子账本；准入时冻结候选身份、
+> manifest、策略参数、交易宇宙、dataset/search 版本与 shadow AUM，先记决策再等结果，读取
+> 上界显式截断到本轮墙钟，重启后继续已准入轨道，即使下一轮搜索排名回退也不丢失 OOS
+> 观察。硬安全异常写新 `SAFE_BLOCKED` 证据，普通未成熟写机器原因。当前真实状态为
+> `WAITING_FOR_VALIDATED_CANDIDATE`、账本链有效、0 admission/decision/realization；这与既有
+> 3 个 `LEGACY_DIAGNOSTIC_PAPER` 自动诊断 book 相互隔离。
+>
+> 控制台 `/api/v1/console/stream/dry-run` 已改为基于耐久证据变化的 SSE（15 秒 heartbeat），
+> 纸面页不再 10 秒轮询或要求手动刷新；浏览器现场确认同一页面自动从 fail-closed 占位切换为
+> `SSE LIVE`，并显示 24 路漏斗、容量、前向状态、3 个纸面 book、权益/对账/TCA。通用 Panel
+> 同时改为窄视口纵向头部与可换行状态，IDE 内置浏览器不再出现标题竖排和 Chip 溢出。
+> 全链保持 `paper_only=true`、`live_allowed=false`、`order_submission_allowed=false`、
+> `allow_ai_direct_trading=false`，没有凭证、broker 或自动晋级权限。
+>
+> Binance 低频系统风险采集也已按共享公网 IP 约束内化为缺口优先的轮转计划：14 个标的中
+> 每 30 分钟只刷新最缺失/最旧的 7 个 constituent 快照，其余 7 个只在哈希链、PIT 时间和
+> 新鲜度复验通过后复用；basis 仍按最旧闭合小时限额补齐。真实调度任务从 20 请求/IP 权重
+> 30 降为 13 请求/IP 权重 16，并在冷却后完成 14/14、`refresh_errors=0`、任务退出 0。
+>
+> 同轮全量门禁暴露并修复了真实灾备容量缺口：旧 `QBK1` 单消息 AES-GCM 无法处理已增长到
+> 2.77GB 的 `experiment_registry.db`。文件级备份现使用向后兼容的 `QBK2` 分块认证容器，
+> 将总长度、块数、块序号和块长度绑定进每块 GCM AAD，篡改、截断、换序和多余尾部均
+> fail-closed；源快照、加解密、清单哈希和批次摘要均改为流式，不再整库读入内存。
+> 2026-08-01 真实 `QUANTOS_backup` 已在独立卷完成 14 个权威源的加密备份与隔离恢复：
+> Task result 0，manifest/source-contract/restore-history/hash-chain/SQLite integrity 全 PASS，
+> 总备份 419.450 秒，恢复 16.794 秒（RTO 300 秒内），RPO 满足。旧 QBK1 小文件仍可恢复。
+>
+> **2026-08-01 自动 Alpha 候选交接与真实漏斗可视化：**
+> “只有 3 个 Alpha”经现场追踪确认是展示与执行集合混淆，不是研究候选丢失：官方前向台账实际包含
+> 10 个已证明身份的 OOS challenger，而实时估值/模拟成交账本仍是 3 个。现已把 factory 输出升级为
+> schema v2；只有实验注册表中逐项验签、结果为 PASS、且 search/dataset/definition 身份完全一致的幸存者，
+> 才会自动写入新的追加式、哈希链接、禁止 UPDATE/DELETE 的 L2 `PaperCandidateRegistry`。前向调度器每轮
+> 合并静态候选与该动态注册表，注册表缺失按空集合处理，链损坏或身份冲突则 fail-closed。当前 factory
+> 真实运行在 24 币、9 数据维、2 轮、248 次评估上，没有发现新的正交 PASS Alpha，因此没有伪造新增候选；
+> factory→forward 接缝已验证，自动晋级、实盘、订单和凭证权限仍全部关闭。纸面驾驶舱现在按
+> `factory survivors / forward paper / execution paper / forward-only` 分层显示，现场为 `0 / 10 / 3 / 7`，
+> 并逐项显示前向周期、待兑现决策和累计收益。剩余唯一流水线接缝是动态候选的独立 evaluator 元数据、
+> 九引擎风险输入与执行纸面消费；7 个变体目前仅 1/8 前向周期，不能为了数量绕过多重检验和成熟门。
+> 设计与边界见 `docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md`。
+
+> **2026-07-31 OIDC 验证密钥轮换/撤销承重化：**
+> 强身份验证器不再接受单个静态 `QUANTOS_OIDC_PUBLIC_KEY_FILE`。新 `OidcKeyRegistry` 要求 JWT
+> `kid` 精确选键、算法与注册项一致、Ed25519/≥2048-bit RSA 公钥类型正确、显式有效期且状态为 ACTIVE；
+> 缺/未知 `kid`、撤销、算法错配、未生效或过期均在解 JWT 前 fail-closed。注册表代际连续且不可回滚，旧
+> `kid` 不可删除、换材料/算法/有效期或撤销后复活；运行时同时要求文件 SHA-256 与最低 generation 两个
+> operator pin，拒绝 symlink、digest/issuer 漂移和低代际。强身份基线由 20 增至 23 个对抗案例，服务仍不
+> 含 JWKS 网络抓取、私钥或签名能力。该增量使本地轮换/撤销接缝承重，但外部 IdP、托管 HSM/证书生命周期
+> 与独立运营证据仍不存在，因此 `GOV.IDENTITY.STRONG_AUTH` 保持 M3/PARTIAL、总矩阵保持 15/22。
+
+> **2026-07-31 OIDC 验证密钥轮换/撤销承重化：**
+> 强身份验证器不再接受单个静态 `QUANTOS_OIDC_PUBLIC_KEY_FILE`。新 `OidcKeyRegistry` 要求 JWT
+> `kid` 精确选键、算法与注册项一致、Ed25519/≥2048-bit RSA 公钥类型正确、显式有效期且状态为 ACTIVE；
+> 缺/未知 `kid`、撤销、算法错配、未生效或过期均在解 JWT 前 fail-closed。注册表代际连续且不可回滚，旧
+> `kid` 不可删除、换材料/算法/有效期或撤销后复活；运行时同时要求文件 SHA-256 与最低 generation 两个
+> operator pin，拒绝 symlink、digest/issuer 漂移和低代际。强身份基线由 20 增至 23 个对抗案例，服务仍不
+> 含 JWKS 网络抓取、私钥或签名能力。该增量使本地轮换/撤销接缝承重，但外部 IdP、托管 HSM/证书生命周期
+> 与独立运营证据仍不存在，因此 `GOV.IDENTITY.STRONG_AUTH` 保持 M3/PARTIAL、总矩阵保持 15/22。
+
+> **2026-07-31 强身份访问复核证明承重化：**
+> 治理授权不再把 `access_review_expires_at_ms` 当成可单独手填的充分证据；所有启用且未撤销的
+> `IdentityAuthorizationGrant` 现在必须携带内容寻址的 `IdentityAccessReviewAttestation`。证明精确绑定
+> `issuer|subject`、HUMAN/WORKLOAD、完整角色集、独立复核人、OIDC+mTLS+MFA assurance、token ID、
+> 客户端证书摘要、复核时刻和最长 90 天到期；复核人必须持 reviewer 角色、令牌在复核时有效且不可自审。
+> 授权决策保留 review ID/content hash/reviewer actor，注册表快照则把整份证明纳入既有 CAS 头与追加式
+> 哈希链。无证明、角色/主体/到期漂移、超期、过期 reviewer 或自审均 fail-closed；紧急撤销刻意允许无新鲜
+> 复核，避免复核系统故障阻止撤权。强身份基线现含 20 个对抗案例。该增量只闭合本地承重证据，外部 OIDC、
+> 可信 mTLS 终止、托管密钥/证书轮换、真实 joiner/mover/leaver 与独立组织复核仍未提供，故矩阵诚实保持
+> `GOV.IDENTITY.STRONG_AUTH=M3/PARTIAL`、全局 15/22 与 `L2_DRY_RUN_ONLY`。
+
+> **2026-07-31 实盘前阻断队列与高级证据分层：**
+> `SystemCompleteness` 默认视图不再把 22 项 Tier A/B 证据表、域成熟度、红线、仓库清单和
+> L2 边界同时平铺。页面直接消费 `TOP_TIER_EVIDENCE_ASSESSMENT`，只投影机器判定的未完成项，
+> 并按 `L2_SAFE_NOW → NEEDS_EXTERNAL → POST_L2` 固定排序为 `WORK NOW / EXTERNAL / AFTER L2`；
+> 每项仅显示当前→目标成熟度、真实 detail 和 registry 的 next_action。完整 22 项矩阵、证据路径、
+> 域清单和安全边界仍保留在 `Advanced evidence matrix` disclosure，未删除审计信息，也未引入
+> 手写完成率。固定 Chromium 门禁新增该页面：7 项真实形状 blocker、1440×1000 零横向溢出、
+> WCAG 2.0/2.1 A+AA 零违规；纸面驾驶舱视觉基线保持不变。现场外部探针再次使用仓库外
+> `key/key.txt` 执行无业务数据 echo，Provider 仍返回 HTTP 401，未生成 PASS 证据；最新 GitHub
+> Actions `30628839808` 两个 job 均为 0 steps，官方 annotation 明确是账户付款/额度在调度前拒绝，
+> 不是代码失败。`crowd_contra` 虽有正 embargoed OOS Sharpe，但全局 2539 trials 校正后的 DSR
+> 仅 0.0203、正式 evaluator=FAIL，因此未冒充正向 challenger。矩阵继续诚实保持 15/22、
+> `NOT_TOP_TIER`。完整门禁同时抓到一个只在实时运行时出现的 Phase 13 竞态：生成审计制品后，
+> 5 分钟 paper worker 更新输入会令静态逐字段测试失败。现把 `paper_health_10k.json` 与
+> `shadow_status.json` 明确列为动态输入并纳入 `input_hash`；检查器只允许这两个声明输入的快照漂移，
+> 同时继续逐位核对代码、配置、其余静态输入、安全标志、派生状态和内部哈希，篡改
+> `ALLOW_ORDER_SUBMISSION` 的负控制会立即失败。实时纸面无需停机即可稳定跑统一门禁，L2 边界不变。
+
+> **2026-07-31 正式纸面前向证据时钟与成熟态可视化：**
+> 现场审计确认自动 canary SOR 持续增长至 692 runs，三条正式策略也持续盯市、资金费与
+> 对账，但九引擎 pre-fill 风险门按设计拒绝新 fills：crowd/top 各过 8/9，carry 过 7/9；
+> 共同未满足项是前向置信度仅 `1/8=0.125`，carry 另有真实容量约束。官方前向任务无漏跑，
+> 三条策略各有一个 admission-bound、attested pending decision，决策锚点 2026-07-28，
+> 6.5 天不可回看持有期决定下一次最早可兑现为 `2026-08-03 12:00 UTC`。`paper_health`
+> 现仅在三策略待兑现决策齐全、质量/血缘三门全 PASS、无前向告警且九引擎输入包完整时
+> 输出 `PAPER_FORWARD_EVIDENCE_MATURING`，并提供逐策略 decision/eligibility、wait_ms、
+> 剩余周期；缺任一条件仍 fail-closed 为 BLOCKED。指挥中心与纸面驾驶舱展示同一真实时钟，
+> 不再把正常时间成熟误写成“修复风险”，也不把成熟中冒充 READY。正式下单、broker、凭据、
+> 私有账户与自动晋级仍全部 false；直到真实 8 个周期及剩余风险门通过前不会制造正式 fills。
+
+> **2026-07-31 机构级纸面驾驶舱与跨平台前端门禁：**
+> 纸面控制面已收敛为 5 个一级工作区（指挥、纸面、风险、数据、健康），完整长尾页面
+> 保留在 Advanced 菜单与搜索中；顶部单行情状态不再复制滚动，1440×1000 下零横向
+> 溢出。新增精确固定的 Playwright 1.62.1 + axe 4.12.1 门禁：固定 UTC/locale/viewport，
+> WCAG 2.0/2.1 A+AA 零违规，Windows/Linux 双平台视觉基线，失败制品由 SHA 固定的
+> upload-artifact 保留；内嵌 Noto Sans SC variable font 消除 Linux CJK 方框。治理测试
+> 把配置、CI、双基线与依赖钉入 top-tier requirements，矩阵不再把 E2E 误列为待办。
+> 真实 `DryRunStore` route-TCA 投影也由小标签升级成纸面执行质量面板：现场连续增长至
+> 666 routed runs / 2,664 verified records / 2 simulated venues，加权 shortfall 6.08bps，
+> 并逐位标注 `SIMULATION_ONLY · verified on read`。本机 canonical fail-closed gate 全绿，
+> Windows 与本机 Playwright Linux 容器 E2E 均通过；独立 GitHub Codespace
+> `animated-yodel-pwqxjjg755c94rr`（`basicLinux32gb`、Linux x86_64）已在精确功能提交
+> `f6238fe83e04177337ebc2a7bd0800c00468ecd0` 上完成 `npm ci`（447 packages、0 vulnerabilities）、
+> typecheck、16 files / 131 tests、ESLint、production build、Playwright 1.62.1 Chromium
+> E2E 2/2 与前端治理契约 4/4；云端 checkout 保持 clean。GitHub hosted Actions 当前仍因
+> 账户额度/付款状态拒绝启动 job，因此本次 Codespace 结果是独立 Linux 复验，不冒充受保护
+> 分支上的 hosted Actions required check。
+> 全自动影子纸面继续读取 Binance 公共 mark，实盘、下单、凭据、私有账户访问均为 false；
+> 能力矩阵仍诚实为 15/22、`NOT_TOP_TIER`，外部身份、供应链 WORM、30/90 天历史、
+> 真实授权数据/场所与正向 OOS challenger 不因前端完成而提前关闭。
+
+> **2026-07-31 跨主机 deployable-container 复现切片：**
+> 新增配方绑定的 OCI 单构建声明与跨主机聚合校验器；GitHub 外部工作流现由
+> `ubuntu-22.04` / `ubuntu-24.04` 两个独立 hosted runner 使用 full-SHA 固定的
+> setup-buildx action、digest 固定的 BuildKit 与应用基础镜像做无缓存 OCI 构建。
+> 每个 runner 在本机完整校验 archive/blob/manifest/config/layer/diff-id/重写时间戳，
+> 仅上传自哈希声明；OIDC 作业要求 archive 字节与完整 image graph 逐位一致，再用
+> Sigstore/Fulcio/Rekor 签署聚合证明并保留 90 天 GitHub artifact。当前代码与契约测试
+> 已落地，必须等外部 workflow 真跑成功并回收签名制品后，才把
+> `CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN` 从能力矩阵移除。独立组织、
+> 外部 receipt authority 与 WORM/object-lock 仍明确开放；L2/实盘门禁零变化。
+
+> **2026-07-31 机构控制面导航收敛：**
+> 顶部外壳不再同时平铺 7 个阶段的实时指标、自动/人工计数和当前分区全部页面。
+> 一级生命周期改为固定 7 等分 rail，只保留阶段、一个真实读数和当前态；二级只呈现
+> 当前页、前后页和按需展开的完整页面菜单。1280px 下零横向裁切，390px 下收敛为
+> 带可访问名称的图标 rail；真实浏览器确认菜单、实时纸面首屏和 10 秒轮询不受影响，
+> console 0 error。完整审计入口仍在菜单与全局搜索中，信息没有删除，只降低默认噪声。
+>
+> **2026-07-31 前向数据血缘并发一致性与单实例锁修复：**
+> 前向刷新曾把回填证据绑定到持续增长的整库 raw-archive 聚合；实时 Binance depth/trade
+> 在回填与 admission 之间追加合法观测时，会把有效的必需数据误判为
+> `BACKFILL_ARCHIVE_MISMATCH`。现回填与 admission 共同绑定明确的数据集 × 14 标的
+> scope，整库摘要仍独立承担全归档完整性门，既消除无关实时流竞争也不放松 fail-closed
+> 校验；前向编排复用同一轮已验证摘要，避免重复全库扫描。单实例锁同时改为 PID 存活
+> 权威：活进程无论运行多久都不可被 10 分钟阈值驱逐，死亡 PID 立即恢复，只有不可解析
+> 的旧锁才按时限回收。研究风险、前向周期和真人生产门均未绕过。
+>
+> **2026-07-31 恢复历史合同 epoch 与运行健康分层修复：**
+> 恢复权威本来允许 source contract 升级后开启新的 cadence epoch，但 clean-lookback
+> 失败统计误扫了所有历史合同，导致旧合同首次配置失败持续污染当前合同。现只统计当前
+> 合同绑定的 attempt；真实权威复核为当前合同 9 次成功、0 次失败、0 个超时开放尝试、
+> 最新恢复 PASS，旧失败仍完整保留在 append-only 链中。Watchdog 同时把仅由
+> `HISTORY_SPAN_INSUFFICIENT` / `SUCCESS_COUNT_INSUFFICIENT` 构成的状态标为
+> `PARTIAL / RESTORE_HISTORY_MATURING`，而当前失败、陈旧、间隔超限、链损坏和超时仍为
+> `BREACH`。计划任务真实上下文复跑为 20 PASS、0 BREACH；M4 顶级门仍诚实等待 30 天、
+> 至少 16 次成功、独立 Ed25519 checkpoint 与 90 天 WORM 回执，不宣称提前完成。
+
+> **2026-07-30 实时纸面控制面与公共行情运行闭环修复：**
+> Data Catalog 每 5 秒读取真实 console API，默认只呈现实时流核心指标；API/WS 全目录、
+> systemic/RPI、漂移、限流、数据集、特征与血缘保留在可展开审计区。本地 SPA 对
+> `index.html` 强制 `no-store`，不再长期持有旧 mock 构建。163,240 行实时库的全链复验
+> 单次已耗 18.6 秒，现移入独立线程每 5 分钟执行，5 秒快照不再被阻塞，并保留最近验证
+> 时刻。Binance `insuranceBalance` 会在保留粗粒度 `updateTime` 时修改余额，现以接收
+> 时刻作为可追加快照身份并保存 `source_update_time_ms`；basis 越过 `startTime` 返回的
+> 已封存旧行也会被过滤。真实复验：5 分钟触发器自动拉起 stream；stream 14/14、age
+> 0.8 秒、链有效；systemic 14/14、0 error、任务返回 0；纸面 SOR 计数持续增长。全链仍
+> 仅为无凭证公共行情与 L2 纸面交易，`live_allowed=false`、
+> `order_submission_allowed=false`。
+
+> **2026-07-30 Binance 长驻流自愈调度修复：**
+> 真实运行发现 `binance_realtime_stream` 固定 23 小时正常退出，但旧触发器仅为
+> AtStartup + 每日 00:05；当 00:05 到来时旧实例仍在运行，
+> `MultipleInstances=IgnoreNew` 会吞掉当天唯一重启触发，实例随后白天退出后便可留下
+> 近 24 小时空窗。实况中 Binance book 自 13:42 UTC 起过期，paper SOR 连续
+> fail-closed，手工重启公共 WebSocket 后立即恢复 4/4 intents、8 fills、4 条 TCA、
+> residual=0。现将第二触发器改为每 5 分钟轮询：运行中仍忽略重复，正常退出或崩溃后
+> 最多一个 paper cadence 自动拉起；watchdog 对已退出 stream 的 freshness 也由 2 天
+> 收紧到 15 分钟。全程公共行情、paper-only，不增加凭证、broker 或订单权限。
+>
+> **2026-07-30 外部 GitHub OIDC Sigstore 与跨主机源码复现实证：**
+> GitHub Actions run `30540314233` 已在固定的 `ubuntu-22.04` 与
+> `ubuntu-24.04` 托管执行器上，从同一 Git commit 的 blob 独立构造 canonical
+> PAX+gzip 源码包并逐字节比对通过；随后由最小权限的 GitHub ambient OIDC
+> workload identity 通过 Fulcio 签发、SCT 与 Rekor v1 透明日志签入
+> `sigstore==4.4.0` DSSE/SLSA v1 bundle。仓库保留 receipt、manifest、bundle、
+> predicate 与 signer 使用的 trusted root，离线 verifier 独立复验 GitHub
+> identity、证书链、SCT、Rekor inclusion proof、DSSE subject、源码 commit、
+> 两个 builder 和所有哈希绑定；GitHub artifact `8758408888` 的 ZIP digest 与
+> 90 天到期时间也被固定。供应链成熟度因此由 M2 升至 M3，但仍不宣称 M4/PASS：
+> 跨主机证明目前是源码包而非 deployable container，GitHub artifact 不是 WORM，
+> 且尚无独立准入部署、外部回执权威、撤销源或外部权威链头封存。该工作流无仓库写、
+> secret、部署、broker、订单或实盘权限，L2 边界不变。
+>
+> **2026-07-30 Binance systemic 限流域真实收敛（14/14 已复验）：**
+> 30 分钟 systemic worker 的间歇性 418 经端点级遥测定位到
+> `/futures/data/basis`，不是 ADL、保险基金或指数成分。按 Binance 当前官方契约，
+> `symbolAdlRisk` 与 `insuranceBalance` 均改为每轮一次的无 symbol 全市场共享快照，
+> 再 fail-closed 映射到 14 个目标合约；计划 IP weight 从 56 降为 30，请求间隔由
+> 250ms 放宽到 3 秒。旧实现还会请求尚未闭合的当前小时 basis，再由解析器全部丢弃；
+> 现只补 `next_start + 1h <= now` 的不可变小时，并按最旧水位每轮最多 4 币，30 分钟
+> cadence 在 2 小时内轮转 14 币且满足 3 小时 freshness gate。429/418 现在解析正文
+> `IP banned until <epoch-ms>`，并把真实
+> 截止时间和触发端点跨调度进程持久化；截止前的新轮次零网络请求，避免旧实现仅凭
+> 缺失的 `Retry-After` 猜 120 秒后反复撞限流。解禁后首轮又暴露一个独立 PIT
+> 时间问题：3 秒串行轮次后半段的指数成分响应发生在轮次启动时刻之后，旧代码却把
+> 启动时刻误作知识时间，因而错误判为“来自未来”。现以每个 HTTP 响应真正接收完成
+> 的时刻记录 `knowledge_time`，同时继续拒绝晚于接收时刻的交易所事件时间。34 项
+> 聚焦回归通过；S4U 后台真实复验为 14/14 PASS、0 失败、哈希链有效、计划 IP weight
+> 30、实际 `X-MBX-USED-WEIGHT-1M=131`，Console Data Catalog 总体 PASS。全部仍是
+> 无凭据 USD-M 公共市场数据，不增加账户、broker、订单或 live trading 能力。
+>
+> **2026-07-29 Windows 后台任务彻底隔离交互桌面：**
+> 复查确认所有 L2 任务虽然已使用 `pythonw.exe`，但注册时仍继承默认
+> `InteractiveToken`，因此并未从结构上排除未来子进程触达当前桌面会话。
+> `scripts/register_schedules.ps1` 现统一使用 S4U 非交互 principal，并保持
+> `pythonw.exe` 与 IDE 内日志；`tools/l2_schedule_entrypoint.py` 另在 pythonw
+> 模式为任何后续 `subprocess.Popen` 强制追加 Windows `CREATE_NO_WINDOW`，显式
+> `CREATE_NEW_CONSOLE` 请求会 fail-closed。全部计划任务已按新 principal 重新注册，
+> XML 实况为 `<LogonType>S4U</LogonType>`；真实 Binance REST 轮次在该身份下
+> 14/14 PASS，长驻 WebSocket 状态水位继续更新。该变更只隔离窗口与日志呈现，
+> 不改变 L2 数据、纸面执行、凭证或实盘权限。
+
+> **2026-07-29 Binance systemic worker 限流合同与 Console 可观测性：**
+> 真实 30 分钟 worker 暴露了 HTTP 418（旧实现 8 并发，轮次停在 11/14），现按官方
+> IP 限流合同改为单并发、250ms 请求间隔，并采集每个响应的
+> `X-MBX-USED-WEIGHT-*`；HTTP 429/418 会读取 `Retry-After`、打开共享冷却并阻止
+> 同轮后续网络请求。四端点每币计划权重为 4，14 币整轮为 56。真实恢复轮次已
+> 14/14 PASS、零失败、链有效；API/Console 现展示计划/观测权重、并发、节奏、
+> 状态码与冷却状态。全部仍是无凭据 USD-M 公共市场数据。
+>
+> **2026-07-29 paper SOR TCA 精确对账修复：**
+> 连续 143 个 PASS 周期后，XRPUSDT 930 数量的序列化 VWAP 除法舍入被数量放大，
+> 导致 verifier 在 `1e-24` 边界误报 `route TCA record is invalid`。校验器现复用已经
+> 独立验证的逐场所原始成交名义额与成本重建 exact all-in，而不再用已序列化 VWAP
+> 反推总额；真实任务重跑返回 0，回归样本固定该数量级。该修复只提高纸面 TCA
+> 恒等式稳定性，不改变路由、费用假设或任何实盘能力。
+
+> **2026-07-29 Binance 低频 worker 的 watchdog 契约收口：**
+> 已正式注册的 `QUANTOS_binance_systemic_risk`（30 分钟）与
+> `QUANTOS_binance_rpi_depth`（1 小时）此前遗漏于
+> `tools/l2_scheduler_watchdog.py::EXPECTED_TASKS`，因此会被每 15 分钟健康检查误报为
+> `UNEXPECTED_ENABLED_TASK`。现已按各自真实调度频率固定 module/action 与最大新鲜度
+> （90 分钟 / 3 小时），并新增回归测试防止计划任务注册表与 watchdog 允许清单再次漂移。
+> 该修复只纠正 L2 公共市场数据 worker 的运行监控，不改变数据权限、纸面逻辑或实盘边界。
+>
+> **2026-07-29 Binance 官方 USD-M WebSocket 市场流 20/20 收口：**
+> 新增 `config/binance_usdm_ws_stream_coverage.json` 与纯验证器
+> `services/data/binance_stream_coverage.py`，逐项登记官方 Public 5 类 + Market
+> 15 类流；当前 20/20 accounted、8 load-bearing、9 redundant、3
+> not-applicable、0 GAP。现有双路长驻流新增 14 币
+> `{symbol}@rpiDepth@500ms` 和全市场 `!contractInfo`：前者逐事件校验
+> `U/u/pu` 连续性并把 RPI 更新/删除窗口写入 5 秒哈希链快照，明确不重建完整盘口、
+> 不假设纸面可成交；完整 RPI 恢复基线仍由小时 REST 1000 档快照承担。后者在真实发生
+> 上市、结算、状态或 notional bracket 变更时保留事件，稀疏无事件不冒充故障。
+> 真实 20 秒 14 币烟测 PASS：28,155 事件，其中 RPI 515、14/14 完整、0 连续性断点、
+> 0 拒绝帧、双连接与存储链有效；后台长驻任务已无窗口切换到新版本并持续 PASS。
+> Data Catalog API/页面新增 Official WS Catalog 20/20、承载流 8、缺口 0 与契约
+> VALID。全链仍为公开市场数据、L2 研究/纸面专用，不读取凭证、账户或用户流，不连接
+> broker，也不提交订单。
+
+> **2026-07-29 Binance 官方 USD-M 市场目录 34/34 收口：**
+> 新增独立低频公开数据 worker `tools/binance_systemic_risk.py` 与
+> `tools/binance_rpi_depth.py`。前者每 30 分钟保存 14 币官方 ADL risk、完整可用
+> 30 天小时 perpetual basis、指数成分价格/权重/离散度和保险基金资产余额；后者因
+> 官方 RPI endpoint 固定 1000 档且单币 IP weight 20，隔离为小时级完整快照。
+> 两条通道均使用 append-only SHA-256 SQLite 链、原始响应归档、源事件时间与接收知识时间，
+> 无凭证、无账户、无 broker、无订单能力。真实首轮均为 14/14 PASS；systemic basis
+> 回填 10,080 条小时记录，RPI 保留交易所实际返回档数（例如 ATOM bid 340/ask 1000，
+> 不补造）。官方 34 项 REST Market Data 覆盖契约现为 34/34 accounted、23 load-bearing、
+> 0 GAP；这只证明公开市场数据工程覆盖，不代表实盘或生产成熟度。
+
+> **2026-07-29 Binance 官方市场目录覆盖与参考价面补齐：**
+> 5 分钟 USD-M 公共快照新增 `/fapi/v1/fundingInfo`、`/fapi/v1/markPriceKlines`、
+> `/fapi/v1/indexPriceKlines`、`/fapi/v1/premiumIndexKlines`。每个标的保存最近闭合
+> 1 分钟 mark/index/premium OHLC、同分钟 mark-index basis，以及交易所明确返回的资金费
+> cap/floor/interval 调整；adjustment-only 接口未返回某标的时保留 unknown defaults，
+> 不猜测。真实 BTC smoke PASS，三套参考价 bar 的 close time 完全对齐，观测到当前
+> cap/floor 为 ±0.003、interval 8h。新增机器可读
+> `config/binance_usdm_market_data_coverage.json`，逐项登记官方 Market Data 34 个 REST
+> 接口并由纯校验器 fail-closed；该阶段当时为 29/34 已解释、18 个承载、5 个真实缺口，
+> 现已由上方 34/34 增量收口。Data
+> Catalog 已显示总覆盖、承载数及缺口路径。全链仍是无凭证公开数据、L2 研究/纸面专用；
+> Account/Trade/User Data Stream 未纳入，实盘权限没有扩大。
+>
+
+> **2026-07-29 终端弹窗根因收口：**
+> L2 计划任务虽然已统一为 `pythonw.exe`，但 `QUANTOS_scheduler_watchdog`
+> 每 15 分钟仍会用普通 `powershell.exe` 查询 Task Scheduler，形成周期性终端闪窗；
+> 现已对该子进程强制 Windows `CREATE_NO_WINDOW`。8440 Ops API 的只读
+> run/preview/demo-funds 子进程也采用同一无窗口约束。旧的可见 `cmd/python.exe`
+> 常驻前端、Console API、Runner 与 Ops API 进程已按精确 PID 停止，并分别通过
+> `tools/local_console_stack.py` 的无窗口管理器和 `pythonw.exe` 重启；3105/8400/
+> 8420/8440 均恢复监听。前三项日志与 PID manifest 在
+> `.runtime/console-stack/`，Ops 与计划任务日志在 `.runtime/logs/`，可直接从 IDE
+> 查看。手动触发 watchdog 已正常回到 Ready；退出码 1 来自既有
+> `RESTORE_HISTORY_FAILURE_IN_CLEAN_LOOKBACK` breach，不是进程启动故障。
+
+> **2026-07-29 Binance 合约规则与 24h 市场统计进入自动纸面执行：**
+> 5 分钟公共 USD-M 快照新增 `/fapi/v1/exchangeInfo` 与
+> `/fapi/v1/ticker/24hr`，对 14 个前向标的逐一验证 `TRADING`、`PERPETUAL`、
+> USDT quote、`PRICE_FILTER`、`MARKET_LOT_SIZE/LOT_SIZE` 和
+> `MIN_NOTIONAL`，并保存合约生命周期、tick/step/min/max quantity、最小名义额、
+> 24 小时 OHLC、加权均价、base/quote volume 与成交笔数。任一标的缺失、规则异常或
+> 24h 行情超过 5 分钟即阻断整轮完整性。`paper_order_preview` 在完整九引擎研究风险
+> 获批后，必须读取 15 分钟内的该快照，并把真实 step/minQty/minNotional 传入同一
+> 干跑量化器；规则缺失、过期、停牌或非永续均不产生纸面成交。真实 Binance 首跑
+> 14/14 PASS、14 条新哈希链记录、链有效；BTC 当次规则为 tick 0.1、step/minQty
+> 0.001、minNotional 50 USDT。全程为无凭证公开数据，不扩大实盘权限。
+
+> **2026-07-29 L2 自动任务改为无窗口后台运行：**
+> `scripts/register_schedules.ps1` 不再让 Windows Task Scheduler 直接调用会弹控制台的
+> `python.exe`，而是固定调用同一运行时旁的 `pythonw.exe`。承重入口
+> `tools/l2_schedule_entrypoint.py` 在 pythonw 模式下把 stdout/stderr 逐 worker 追加到
+> `.runtime/logs/<module>.log`，并记录 START/END/exit code；因此桌面不再被终端框打断，
+> 日志可直接在 IDE 内查看，Task Scheduler 仍保留真实退出码。现有 L2 任务已全部重新
+> 注册，实时流已切换到无窗口实例；实测 `binance_realtime_features.log` 记录完整 PASS
+> 与 exit_code=0，实时数据总状态恢复 PASS。该变更只改变进程呈现与日志接收，不扩大
+> 任何网络、凭证、券商、订单或实盘权限。
+
+> **2026-07-29 Binance 公共实时仓位面补齐：**
+> `tools/binance_realtime_market.py` 的 5 分钟全量快照新增官方公开
+> `/fapi/v1/openInterest` 当前 OI 与
+> `/futures/data/topLongShortAccountRatio` 大户账户多空比；原 5 分钟历史
+> OI/OI 名义价值字段保持兼容，不改变既有消费口径。两项均执行 symbol、数值域、
+> source time 与新鲜度 fail-closed 校验，并与盘口、mark/index/funding、K 线、
+> 全市场/大户持仓比、taker 流一起进入原 append-only SQLite 哈希链和原始响应归档。
+> 真实 Binance 首跑 14/14 完整、14 条新记录、链有效；Data Catalog API/页面展示
+> 当前 REST 字段清单。实时 WebSocket 重启还暴露并修复了一个运营缺口：启动初期的
+> incomplete-core 快照会诚实留在源哈希链，但特征 worker 现在只投影其中
+> `complete_core=true` 的行，并在任何标的没有完整行时继续 fail-closed，避免一条保留的
+> 重启诊断记录永久堵塞后续特征物化。真实恢复运行写入 3,213 个新特征值，98 条漂移
+> 序列完整，特征批次链有效。数据仍为无凭证公共行情，只服务 L2 研究与纸面交易，不接私有
+> 账户、券商或订单。外部模型 Provider 探针也已真实执行，但现有本地凭证返回 401，
+> 因而未生成 PASS 证据，`AI.MODEL.REGISTRY.REDTEAM` 仍诚实保持 PARTIAL。
+
+> **2026-07-29 Rank #13 收口——实时漂移经验校准 + 独立运营告警：**
+> `services/data/distribution_drift_calibration.py` 现在把每条实时序列的最新 60+20
+> 评估窗完全隔离，只在更早的 PIT 块内做确定性 60/20 置换，汇总经验同分布 KS
+> 空分布的 95/99 分位；历史不足、非有限值、阈值退化均 fail-closed，不回退成伪校准。
+> 首次真实运行覆盖 98 条序列、8,232 个校准窗，得到 Warn=0.3167 /
+> Block=0.3833，内容寻址 calibration id
+> `401fb51176389cb70dda2f2ab98a711aceb0370e0947810064195c44bbb82230`；
+> 当前独立评估为 41 PASS / 8 WARN / 49 BLOCK，完整保留。新增独立 5 分钟 worker
+> `tools/binance_realtime_drift_alerts.py`：只读特征状态，按 OPENED/ESCALATED/
+> DEESCALATED/RECOVERED 去重，事件与投递结果写入禁止修改/删除的 SQLite 哈希链，
+> 同时投递既有 operator JSONL；本地投递失败时任务非零退出并持续重试，成功后才去重。
+> 首条 BLOCK 已 `DELIVERED`，重复运行
+> `DEDUPLICATED`，链 2/2 有效。Telegram 未配置则明确 `UNCONFIGURED`，不冒充外部
+> 送达。Data Catalog 与 AI Agent 页显示校准阈值、校准窗、独立 worker、本地/外部
+> 投递和告警链。该闭环完成 Rank #13 的 L2 范围，但始终 diagnostic-only，
+> 不驱动 Agent 晋级、仓位、订单或实盘。
+
+> **2026-07-29 Binance 实时 FeatureValue 与 Agent 输入可视化：** 新增纯投影
+> `services/features/binance_realtime_projection.py`，把 14 币 WebSocket 完整快照物化为
+> mid、spread、5 档深度不平衡、mark basis、funding、5 秒 taker imbalance、5 秒
+> liquidation imbalance 共 7 类、98 条 PIT `FeatureValue` 序列。物化缓存 append-only，
+> 每批同时绑定源快照摘要并写入独立禁止更新/删除的哈希链
+> `binance_realtime_feature_batches.db`。`tools/binance_realtime_features.py` 每 5 分钟重放
+> 最近 3,500 个真实快照、幂等补写特征并消费 60/20 KS 窗口；首次真实运行写入 24,500
+> 个值，98/98 序列结构完整，结果为 30 PASS / 19 WARN / 49 BLOCK。BLOCK 是未校准阈值下
+> 的真实诊断，不是 worker 故障，也没有被删改。Data Catalog 与 AI Agent 页均显示特征
+> 新鲜度、保留值、漂移分布和批次链；Agent 只能把它视为只读诊断上下文，自动动作与晋级
+> 权限恒为 false。该首次未校准状态已由上方经验校准与独立告警增量收口。
+
+> **2026-07-29 真实公共订单簿到多场所纸面 SOR 已自动化：** 新增
+> `tools/paper_multivenue_sor.py`，从现有 Binance USD-M WebSocket 哈希链读取
+> DOGE/XRP/ADA/DOT 的真实 20 档深度，并从 Bybit V5 公共接口取得对应 linear
+> order book；两场所都必须新鲜、完整且时间偏差不超过 10 分钟，否则 fail-closed。
+> 跨场所快照写入 append-only、禁止更新/删除且逐行哈希链保护的
+> `cross_venue_order_books.db`，再通过已有 pre-trade gate、`DryRunAdapterEngine`、
+> deterministic SOR 和 `DryRunStore` 生成逐场所纸面成交及 route TCA。5 分钟 Windows
+> 调度、watchdog、只读 API 和干跑页状态均已接入。真实烟测连续两次 PASS，每次 4 个
+> route plan / 4 条 TCA，均覆盖 `binance_usdm + bybit_linear`，纵向投影已达到
+> `LONGITUDINAL_READY`。这是执行质量金丝雀，不是 Alpha，不声明策略边；费用为
+> `public-paper-fees.v1 / UNCALIBRATED_RESEARCH_ASSUMPTION`，延迟惩罚为 0（未伪造测量）。
+> 全链无凭证、无私有账户、无 broker 连接、无订单提交，绝不升级为生产 SOR/TCA。
+
+> **2026-07-29 证据修复与纵向纸面 TCA 增量：** 上一条状态中列出的 npm、Trivy
+> 与 artifact-admission 阻断已完成修复：前端生产依赖审计为 0 漏洞，运行镜像
+> Trivy 证据为 0 漏洞，制品授权注册表已按不可变历史轮换至 generation 1；强身份
+> 实现摘要重生后恢复为 M3/PARTIAL，供应链检查器也已改为绑定当前注册表 generation、
+> 当前 seal 实现与测试，不再硬编码旧 generation 0。Top-tier 当前实况为
+> **15 PASS / 6 PARTIAL / 1 FAILED**；唯一 FAILED 是恢复演练的自然历史仍未满足
+> 30 天干净回看与成功次数，既有失败没有被删除或伪造。
+>
+> 多场所纸面执行新增 `services/execution/paper_tca_history.py`：直接读取 append-only
+> `DryRunStore` 中已有的逐路由 TCA，逐条复验 SHA-256、路由绑定与算术恒等式，再生成
+> 跨运行的 route/venue 时间序列、名义额加权 implementation shortfall 和场所归因。
+> 一个时间点只标 `SINGLE_SNAPSHOT`，至少两个不同运行时间才标
+> `LONGITUDINAL_READY`；普通单场所干跑明确显示 `NO_ROUTE_TCA`。该只读投影已进入
+> `/api/v1/console/dry-run` 和干跑页的“多场所纸面 TCA”面板。它只证明 L2 仿真工程
+> 准备度，不连接券商、不提交订单，也不冒充生产多场所成交证据。
+
+> **2026-07-29 Binance USD-M 公共实时数据流与 AI Agent 实况界面：** 新增
+> `tools/binance_realtime_market.py`（14 个前向主币、每 5 分钟完整 REST 快照）和
+> `tools/binance_realtime_stream.py`（按 Binance 新路由拆分 `/public` 与 `/market`
+> 双 WebSocket，采集 bookTicker、20 档深度、1 秒 mark/funding、aggTrade、1 分钟
+> kline 与全市场强平）。高频帧每 5 秒归并为逐币完整快照，写入追加式 SQLite 哈希链；
+> 连接重试、24 小时前主动轮换、事件时间/知识时间、覆盖率、延迟、拒绝帧与断线状态均
+> 显式记录。真实烟测为 14/14 核心覆盖、10,968 个事件、0 拒绝帧，Windows 长驻任务
+> 随后已启动并持续写入；REST 首轮同为 14/14 完整。两条路径只使用公开市场数据，
+> 不读取凭据、不连私有流/券商、不提交订单、不改变 L2 干跑边界。
+>
+> Console 数据目录新增 Binance 实时健康面板，只有状态文件在 30 秒内新鲜且两条连接
+> 都健康时才显示 `LIVE`，已结束烟测不会被误报在线；后端可通过仓库外
+> `QUANTOS_STATE_ROOT` 读取隔离运行目录。原 `/agents` 的三位虚构人格、固定运行次数和
+> 演示预算已删除，替换为真实 `RunRegistry` 活动、唯一 guardrailed
+> `ResearchAgentLoop`、四个已测试搜索引擎能力和硬隔离边界；Agent 自动批准恒为 0，
+> 无凭据、券商、下单或 live 能力。
+>
+> 本增量聚焦验证为后端 92 项、前端 124 项与生产构建全绿；Python audit（0 漏洞）、
+> event schema catalog 和 service import graph 已重生并通过 current 检查。全仓统一门
+> 当时仍被独立的供应链/运营证据阻断；这些供应链项已由上方更新修复。恢复历史仍保留
+> 真实失败且未达到 30 天，上述实时数据与 Agent 功能不据此冒充全仓绿色。
+
+> **2026-07-29 前向 Paper 九引擎输入自动化（保持 fail-closed）：** 新增
+> `tools/paper_alpha_evaluation.py`，为 `carry_oi_majors`、`crowd_contra`、
+> `top_contra` 铸造内容寻址的研究定义，并把评估契约、完整全局 trial 分母、DSR/PBO
+> 与精确 OOS 收益绑定进生产 experiment registry；三份评估均可独立重放验证，但在
+> 2539 次全局试验分母下 verdict 均为 `FAIL`，不会被伪装成可部署 Alpha。修复了
+> `panel_backtest` 跨 `PYTHONHASHSEED` 的浮点累加次序漂移，并将旧 16-hex trial token
+> 一对一命名空间哈希为完整 SHA-256 证据 ID，原始追加账本与试验数不变。
+> `tools/paper_research_risk_bundle.py` 已从真实 PIT ADV、Frankfurter/ECB CNY 汇率、
+> 对齐历史 Alpha 收益、VIX regime、维护状态、前向账本和已验证评估生成同决策绑定包；
+> 当前三条决策的六类输入中，容量、成交量、AUM、收益和 regime 已真实填充，只剩
+> `alpha_metadata`。这是刻意的时间因果门：当前决策早于新评估，禁止事后证据回填。
+> Windows 调度已增加每周日 20:45 评估，并在 21:00 前向推进前完成；风险包、预览、
+> 10k/健康和 watchdog 继续接受安全的 partial exit code。当前仍为 `PAPER_BLOCKED`：
+> 前向周期为 0/8、三份验证 verdict 不达门槛，且不增加网络、凭据、broker、下单或
+> live 能力。
+
 > **2026-07-21 路线图校正：** Rank #9「全局多重检验预算账本」已经完成，不再是待开发项。机器评估与能力矩阵均为 `ALPHA.TRIAL.GLOBAL_LEDGER = M4/PASS`；可移植历史链、封存快照、精确评估绑定和追加保护证据见 `evidence/alpha_trial_ledger_history.json`、`evidence/alpha_trial_ledger_snapshot.db`、`evidence/alpha_trial_ledger_snapshot_seal.json`。后续工作仅是持续维护证据，不把内部已完成能力冒充外部成熟度。
 
 > **2026-07-21 组合级统一约束门落地（L2 可用增量）：** 新增纯函数
@@ -1160,3 +1655,45 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > `PIT_FEATURE_TRAILING_KS_DRIFT_V1` / `UNCALIBRATED_PRINCIPLED`。它不读取数据库、不持久化告警、
 > 不改仓位/晋级/交易路径，故机器顶级判定仍诚实为 **15/22、NOT_TOP_TIER**；后续仍需填充真实
 > feature-value cache 并提供独立调度运营证据。
+
+> **2026-07-30 local console stack is fully headless:**
+> After scheduled workers moved to `pythonw.exe + S4U`, a process-tree audit
+> still found `conhost.exe` attached to the local 8400/8420 APIs and the 3105
+> Vite process. `tools/local_console_stack.py` now fixes both APIs to
+> `pythonw.exe`, while `tools/local_frontend_server.py` serves the built React
+> SPA through `pythonw.exe`; resident operation no longer needs Node/npm/cmd.
+> Windows children also carry `CREATE_NO_WINDOW` plus
+> `STARTF_USESHOWWINDOW/SW_HIDE`. The tracked `.env.localhost` and
+> `npm run build:localhost` bind the bundle to the real 8400/8420 local APIs;
+> the static server rejects a stale mock bundle instead of silently serving it.
+> A real restart verified all three listeners as `pythonw.exe` with no
+> `conhost.exe` children, and Data Catalog showed `REAL_API / CONNECTED` with
+> Binance 14/14 LIVE/PASS.
+> **2026-07-31 cross-host container source-input binding hardening:**
+> GitHub Actions run `30584226012` completed cold OCI builds on independent
+> `ubuntu-22.04` / `ubuntu-24.04` hosted runners, byte-identical complete image
+> graph verification, and GitHub OIDC + Fulcio/SCT/Rekor signing. Full repository
+> CI run `30584230979` also passed. A subsequent evidence audit found that the v1
+> claim bound the recipe, toolchain and final image but did not let the local
+> verifier explicitly bind the current `services/` / `quantos/` bytes to that
+> external build. Schema v2 now binds a deterministic complete container-input
+> content root through each claim, aggregate proof, signed receipt and offline
+> verifier. Any source change makes prior proof fail closed. The blocker remains
+> until the published v2 code completes a fresh two-runner run and the new signed
+> artifacts are retained. L2 and live-trading gates are unchanged.
+>
+> **2026-07-31 signed cross-host deployable-container evidence closed:**
+> GitHub Actions run `30599904036` completed cold OCI builds on independently
+> provisioned `ubuntu-22.04` and `ubuntu-24.04` runners. The complete archives,
+> manifests, configs, layers and diff IDs were byte-identical. Schema v2 also
+> bound the exact Docker-context input root (`services/`, `quantos/`, recipe and
+> dependency files) and rejected runner-local files excluded by `.dockerignore`.
+> The aggregate was signed through GitHub ambient OIDC and independently verified
+> against Fulcio identity, SCT and Rekor v1 inclusion. The signed bundle, receipt
+> and aggregate are retained under
+> `evidence/external_sigstore/2026-07-31-container/`; offline verification is
+> load-bearing in the supply-chain generator and top-tier checker. The
+> `CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN` blocker is closed. Independent
+> admission deployment, external receipt authority, WORM/object-lock retention
+> and external history seals remain open. L2 and live-trading gates are unchanged.
+>

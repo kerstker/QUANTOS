@@ -1,7 +1,7 @@
 {
   "dataset": {
     "bundle_ref": "evidence/datasets/crowding_gate_calibration_v1.jsonl.gz",
-    "bundle_sha256": "372b1a1901d72a4d3688fe6f0bcd5ad51a24d36b9d4fbe0a01dba68b9b6e01d2",
+    "bundle_sha256": "5bcc6d1089532129ff9d67e3ae6d03facf43f3f76fb3f0f219a2f3af9e331701",
     "instruments": [
       "AAVE",
       "ADA",
@@ -28,26 +28,26 @@
       "XLM",
       "XRP"
     ],
-    "manifest_sha256": "3ae12ad39bf8761c403f1e0b67e8b8ba1e7af4790f9b0d1a787a84ee7b70eb48",
-    "max_period": 1783555200000,
+    "manifest_sha256": "ef4b8403832f988b8a4c12c11f8e8f71fdd6a19a11054b3cd8faa5c283429d61",
+    "max_period": 1784764800000,
     "min_period": 1642636800000,
-    "row_count": 234,
+    "row_count": 236,
     "source_sha256": {
-      "data/cache/crypto_funding.db": "c12b700d238499ece8f8fc251d89a69eff8d98e262d60f68a27ee3a1fdb5f2ab",
-      "data/cache/crypto_funding_rates.json": "e7e327867feb02116142d725f073c935615c5c4264193e65a933e7fa1554a10b",
+      "data/cache/crypto_funding.db": "b2976593beafc8fb2c4f278e3bde7c220646ea96225488c5b45adb310fe74fda",
+      "data/cache/crypto_funding_rates.json": "7dc18e9c4359ae0e5d96593eba5af0dc27585e8404695458edf7d0969743d713",
       "data/cache/crypto_funding_snapshot.json": "1ead2c98305def37844a2483f41bc8e826c17d1eced869d37dd10fbaa66e21ab",
-      "data/cache/crypto_oi_metrics.json": "2647c72cba025517ed859d7b07904f610a76abce178fa724918e912534fc5767"
+      "data/cache/crypto_oi_metrics.json": "9d60f9d69d4d56acee80afa24630873e6d29135c9a92aba49bf4f5392d8423aa"
     }
   },
-  "evidence_sha256": "8ee21a2e1ff83497b66efd034c047cabab505ae2d0d321bb50dda7959ec6b824",
+  "evidence_sha256": "dad7d572d72cef7737dae2050bd2879fee9da6b6d83c346a0364d99418711081",
   "implementation_sha256": {
     "live/execution/crowding_score.py": "fa4a2578d46503c3a137d4439a395d586dd94d91b059aadeeb80c7846d100c4e",
     "services/portfolio/crowding_calibration.py": "9ad944bca31ff218a49a5fa5e5f742b26f17d7e78288964aaf35d1e05ccd5a91",
     "services/portfolio/crowding_gate.py": "28d09e42404ffb51f552af4b7b0c9602b6058fc6f059b9305d1077f3e066d0cf",
-    "tools/crowding_metric_research.py": "d11dffcb8c6e4ea73518f2f23b7035d7b3fa19caf058bf87d0f513b6db17b089",
-    "tools/dry_run_crowd_contra_multi.py": "851c5abcf1f423180936e664206b7e0b6b8b24ae6fcf7acda00d290bbbc30648",
-    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "486fc7c56fa2cf00b4f892c3b1c0d2edd14e1ae9b5c762d3804baf59e73a26bb",
-    "tools/live_track_advance.py": "322f0bb1fbf4992cd6c40d24ba1f7826855950e04a0a7d3e7acaf085eb4b6a0b"
+    "tools/crowding_metric_research.py": "f7bbe196e34f43fd882f44677073b6039a70769bdd2b22938997fb87fc14c297",
+    "tools/dry_run_crowd_contra_multi.py": "1bf04d044c2eb5913788f25e824053b0a850327b91b2556a2db4d2b1a1dbc885",
+    "tools/dry_run_crowd_contra_signal_adapter_multi.py": "e87ec50ae01442ef82f36b2baa51abd5279c5b348de40e6b4cdaa5e912e1e2ad",
+    "tools/live_track_advance.py": "c46306bb2ebc9e7536b800690ccc36990e8bfcbc0a02530d7d4b918c056fa8b1"
   },
   "limitations": [
     "Sensitivity replay is historical and not causal proof of loss prevention.",
@@ -76,29 +76,29 @@
     "absolute_statistics": {
       "short_max_z": {
         "max": 5.870804,
-        "mean": 1.499687,
+        "mean": 1.494444,
         "min": -0.501008,
-        "n": 233,
+        "n": 235,
         "p10": 0.214209,
-        "p50": 1.388896,
+        "p50": 1.373901,
         "p90": 2.905214
       },
       "short_mean_z": {
         "max": 3.775822,
-        "mean": 0.405931,
+        "mean": 0.402556,
         "min": -1.078983,
-        "n": 233,
+        "n": 235,
         "p10": -0.435172,
-        "p50": 0.304006,
+        "p50": 0.300424,
         "p90": 1.344697
       },
       "short_raw_gls": {
         "max": 6.583925,
-        "mean": 3.293372,
+        "mean": 3.286298,
         "min": 1.987949,
-        "n": 234,
-        "p10": 2.509293,
-        "p50": 3.2415,
+        "n": 236,
+        "p10": 2.504247,
+        "p50": 3.230152,
         "p90": 4.150884
       }
     },
@@ -128,10 +128,10 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.089744,
+        "block_rate": 0.088983,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 213
+        "n_warn": 215
       },
       "live": {
         "block_periods": [
@@ -157,76 +157,76 @@
           1736380800000,
           1763596800000
         ],
-        "block_rate": 0.089744,
+        "block_rate": 0.088983,
         "n_block": 21,
         "n_pass": 0,
-        "n_warn": 213
+        "n_warn": 215
       }
     },
     "max_name_weight": {
-      "max": 0.083333,
-      "mean": 0.073006,
+      "max": 0.125,
+      "mean": 0.073219,
       "min": 0.071429,
-      "n": 234,
+      "n": 236,
       "p10": 0.071429,
       "p50": 0.071429,
       "p90": 0.083333
     },
-    "max_period": 1783555200000,
+    "max_period": 1784764800000,
     "min_period": 1642636800000,
-    "n_periods": 234,
+    "n_periods": 236,
     "provenance": "REAL_GATE_REPLAY_FROM_FROZEN_INPUTS",
     "rank_statistics": {
       "dry_run_average": {
         "max": 0.5,
         "mean": 0.5,
         "min": 0.5,
-        "n": 234,
+        "n": 236,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.5
       },
       "dry_run_long": {
         "max": 0.307692,
-        "mean": 0.23148,
-        "min": 0.227273,
-        "n": 234,
+        "mean": 0.231404,
+        "min": 0.214286,
+        "n": 236,
         "p10": 0.227273,
         "p50": 0.230769,
         "p90": 0.230769
       },
       "dry_run_short": {
-        "max": 0.772727,
-        "mean": 0.76852,
+        "max": 0.785714,
+        "mean": 0.768596,
         "min": 0.692308,
-        "n": 234,
+        "n": 236,
         "p10": 0.769231,
         "p50": 0.769231,
         "p90": 0.772727
       },
       "live_average": {
         "max": 0.65528,
-        "mean": 0.502804,
+        "mean": 0.50278,
         "min": 0.5,
-        "n": 234,
+        "n": 236,
         "p10": 0.5,
         "p50": 0.5,
         "p90": 0.503106
       },
       "live_long": {
         "max": 0.440994,
-        "mean": 0.136419,
-        "min": 0.125,
-        "n": 234,
+        "mean": 0.136305,
+        "min": 0.115385,
+        "n": 236,
         "p10": 0.130435,
         "p50": 0.130435,
         "p90": 0.142857
       },
       "live_short": {
-        "max": 0.875,
-        "mean": 0.869189,
+        "max": 0.884615,
+        "mean": 0.869256,
         "min": 0.857143,
-        "n": 234,
+        "n": 236,
         "p10": 0.868421,
         "p50": 0.869565,
         "p90": 0.869565
@@ -236,35 +236,35 @@
     "z_threshold_sensitivity": {
       "2.0": {
         "block_periods_equal": true,
-        "block_rate": 0.260684,
+        "block_rate": 0.258475,
         "dry_n_block": 61,
         "live_n_block": 61,
         "n_block": 61
       },
       "2.5": {
         "block_periods_equal": true,
-        "block_rate": 0.162393,
+        "block_rate": 0.161017,
         "dry_n_block": 38,
         "live_n_block": 38,
         "n_block": 38
       },
       "3.0": {
         "block_periods_equal": true,
-        "block_rate": 0.089744,
+        "block_rate": 0.088983,
         "dry_n_block": 21,
         "live_n_block": 21,
         "n_block": 21
       },
       "3.5": {
         "block_periods_equal": true,
-        "block_rate": 0.038462,
+        "block_rate": 0.038136,
         "dry_n_block": 9,
         "live_n_block": 9,
         "n_block": 9
       },
       "4.0": {
         "block_periods_equal": true,
-        "block_rate": 0.021368,
+        "block_rate": 0.021186,
         "dry_n_block": 5,
         "live_n_block": 5,
         "n_block": 5

@@ -24,6 +24,11 @@ SQLITE_PERSISTENCE_OWNERS = {
     "services/research/run_registry/store.py",
     "services/research/paper_trading/store.py",
     "services/research/paper_trading/forward_store.py",
+    "services/research/paper_trading/attested_store.py",
+    "services/research/paper_candidate_registry.py",
+    "services/research/alpha_production_workflow.py",
+    "services/research/alpha_family_registry.py",
+    "services/research/realtime_alpha_shadow_store.py",
 }
 
 

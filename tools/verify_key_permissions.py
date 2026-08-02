@@ -86,6 +86,14 @@ docstring 里标注的源代码位置),**不是重新设计一套签名方案**,
 `KeyPermissionResult` 字段都**绝不包含** `api_key`/`api_secret` 的明文值(哪怕交易所自己的响应
 里可能回显 key 的部分信息,本文件的解析函数也只挑选具名的、非密钥类的诊断字段,绝不把整个响应体
 原样吐出)。
+
+## 可选证据 artifact(2026-07-24,go-live 向导)
+
+`--write-evidence <path>` 在打印之外把同一份**已脱敏**结果落成 JSON(`write_evidence_artifact`,
+atomic write):`{venue, safety, reasons, raw_fields, checked_at_ms}`——就是 `KeyPermissionResult`
+本身加一个校验时间戳,绝不新增任何凭据派生字段。默认不带该旗标时行为逐字节不变(不写任何文件)。
+消费方:`tools/go_live_readiness.py`(go-live 上线向导后端)按
+`evidence/key_permissions_<venue>.json` 约定读取。
 """
 from __future__ import annotations
 
@@ -107,7 +115,9 @@ from live.exchange.bybit_futures import BybitFuturesAdapter
 from live.exchange.bybit_futures import _default_http_request as _bybit_default_transport
 from live.exchange.bybit_futures import _is_rate_limited as _bybit_is_rate_limited
 from live.exchange.retry import call_with_backoff
+from tools.cache_io import atomic_write_json
 from tools.live_track_advance import _load_credentials
+from tools.mexc_credentials import check_mexc_key_safety
 
 # Binance 的账户/权限查询在**现货**host,不是 binance_futures.py 用的 fapi(合约)host——见模块
 # docstring"端点/字段名诚实标注"。字面量常量,不从 BinanceFuturesAdapter 派生(那个类只知道
@@ -334,7 +344,31 @@ def check_bybit_key_permissions(api_key: str, api_secret: str, *,
     return _parse_bybit_query_api(status, data)
 
 
-_CHECKERS = {"binance": check_binance_key_permissions, "bybit": check_bybit_key_permissions}
+# ---------------------------------------------------------------------------
+# MEXC:GET /api/v3/account(只读)——复用 tools/mexc_credentials.py 的 ungated 镜像
+# ---------------------------------------------------------------------------
+
+def check_mexc_key_permissions(api_key: str, api_secret: str, **kwargs) -> KeyPermissionResult:
+    """查询 MEXC mainnet 现货账户的 key 权限位(§10 加载器的校验半)。MEXC v3 没有
+    Binance 那种 apiRestrictions 专用端点,权限位从 `/api/v3/account` 的
+    `canTrade`/`canWithdraw` 读取(字段名假设未经真实响应验证——缺失即 UNKNOWN,
+    fail-closed,见 tools/mexc_credentials.py 模块 docstring)。**MEXC 的 IP 白名单
+    绑定无法经 v3 API 验证**,所以 SAFE 的语义比 binance/bybit 弱一档:只承诺
+    「提现已关闭 + 现货交易开着 + 只读可达」,IP 白名单必须由人在交易所网页确认
+    (reasons 里诚实标注)。注入/fail-closed 约定同 `check_binance_key_permissions`。"""
+    result = check_mexc_key_safety(api_key, api_secret, **kwargs)
+    if result.is_safe:
+        return KeyPermissionResult(venue="mexc", safety=KeySafety.SAFE,
+                                   reasons=result.reasons, raw_fields=result.raw_fields)
+    if result.withdraw_disabled is False:
+        return KeyPermissionResult(venue="mexc", safety=KeySafety.UNSAFE,
+                                   reasons=result.reasons, raw_fields=result.raw_fields)
+    return KeyPermissionResult(venue="mexc", safety=KeySafety.UNKNOWN,
+                               reasons=result.reasons, raw_fields=result.raw_fields)
+
+
+_CHECKERS = {"binance": check_binance_key_permissions, "bybit": check_bybit_key_permissions,
+             "mexc": check_mexc_key_permissions}
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +385,11 @@ _MAINNET_CREDENTIAL_CONFIG = {
                "key_file": os.path.join("key", "binance_mainnet_key.json")},
     "bybit": {"env": ("BYBIT_MAINNET_API_KEY", "BYBIT_MAINNET_API_SECRET"),
              "key_file": os.path.join("key", "bybit_mainnet_key.json")},
+    # MEXC 无现货 testnet——这把 key 就是它唯一的(mainnet)key;env 带 MAINNET 字样是为了与
+    # binance/bybit 两家族的配置形状对齐,文件与 tools/live_track_advance._VENUES["mexc"] 共用
+    # 同一份 key/mexc_spot.json(形状 {"api_key", "api_secret"})。
+    "mexc": {"env": ("MEXC_MAINNET_API_KEY", "MEXC_MAINNET_API_SECRET"),
+            "key_file": os.path.join("key", "mexc_spot.json")},
 }
 
 
@@ -399,12 +438,33 @@ def _print_result(result: KeyPermissionResult) -> None:
              "API-key settings page directly).")
 
 
+def write_evidence_artifact(result: KeyPermissionResult, path: str, *,
+                            checked_at_ms: Optional[int] = None) -> dict:
+    """把一次校验结果写成**脱敏**证据 artifact(供 tools/go_live_readiness.py 等只读消费)。
+    只含具名非密钥字段(venue/safety/reasons/raw_fields 布尔与计数/checked_at_ms)——
+    `KeyPermissionResult` 全程不接触 api_key/api_secret 值(见模块 docstring "密钥值绝不落地"),
+    所以这里序列化 result 本身就是脱敏的;绝不另加任何凭据派生字段。"""
+    artifact = {
+        "venue": result.venue,
+        "safety": result.safety.value,
+        "reasons": list(result.reasons),
+        "raw_fields": dict(result.raw_fields),
+        "checked_at_ms": int(checked_at_ms if checked_at_ms is not None
+                             else time.time() * 1000),
+    }
+    atomic_write_json(path, artifact, indent=2)
+    return artifact
+
+
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
         description="独立手动密钥权限校验工具(不接线)——诊断 mainnet API key 是否禁用提现 + "
                     "绑定 IP 白名单。见模块 docstring。")
     parser.add_argument("--venue", required=True, choices=sorted(_MAINNET_CREDENTIAL_CONFIG),
                         help="要校验的交易所")
+    parser.add_argument("--write-evidence", default=None, metavar="PATH",
+                        help="可选:额外把脱敏结果写成 JSON 证据 artifact({venue, safety, "
+                             "reasons, raw_fields, checked_at_ms};绝不含密钥材料)。默认行为不变。")
     args = parser.parse_args(argv)
 
     try:
@@ -414,6 +474,10 @@ def main(argv: Optional[list] = None) -> int:
         return 2
 
     _print_result(result)
+    if args.write_evidence:
+        artifact = write_evidence_artifact(result, args.write_evidence)
+        print(f"  evidence artifact (redacted) written -> {args.write_evidence} "
+              f"(safety={artifact['safety']}, checked_at_ms={artifact['checked_at_ms']})")
     return 0 if result.safety is KeySafety.SAFE else 1
 
 

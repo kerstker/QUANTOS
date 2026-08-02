@@ -1,6 +1,5 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
-import { PageShell, PageHeader, ProvenanceRibbon, Panel } from '@/ui/primitives';
+import { PageShell, PageHeader, ProvenanceRibbon, Panel, LoadingVeil } from '@/ui/primitives';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchGonogo } from '@/lib/api/research-console-api';
 import type { GonogoPayload } from '@/lib/types/research';
@@ -54,6 +53,7 @@ export default function Gonogo() {
 
       <div className="rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">{p.honesty_note}</div>
 
+      <LoadingVeil active={apiState === 'loading'}>
       {/* 前向证据钟 */}
       <Panel eyebrow={bi('前向证据钟 · Stage 0', 'FORWARD EVIDENCE · Stage 0')}
         title={bi(`距 8 周门槛的证据积累(gate_weeks ${p.forward_evidence.gate_weeks ?? 8})`,
@@ -129,10 +129,12 @@ export default function Gonogo() {
       <Panel eyebrow={bi('事故台账', 'INCIDENTS')}
         title={bi('风控越限 · 对账硬停 · 紧急减仓 · 哨兵失败 次数', 'Risk breaches · recon hard-stops · emergency flattens · sentinel failures')}>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[['风控越限', 'risk breaches', inc.risk_breaches],
+          {([
+            ['风控越限', 'risk breaches', inc.risk_breaches],
             ['对账硬停', 'recon hard-stops', inc.reconciliation_hard_stops],
             ['紧急减仓', 'emergency flattens', inc.emergency_flattens],
-            ['哨兵失败', 'sentinel failures', inc.sentinel_failures]].map(([zh, en, n]: any) => (
+            ['哨兵失败', 'sentinel failures', inc.sentinel_failures],
+          ] as const).map(([zh, en, n]) => (
             <div key={en} className="rounded border border-line px-3 py-2 text-center">
               <div className={`mono text-lg ${n ? 'text-warn' : 'text-muted'}`}>{n ?? 0}</div>
               <div className="text-2xs text-faint">{bi(zh, en)}</div>
@@ -145,6 +147,7 @@ export default function Gonogo() {
         {bi('只读 · 盘后自动聚合 · PnL 归因是权益总账(含已实现+未实现+资金费)· 不下 Go/No-Go 结论(Phase 3A 人工评审)',
           'Read-only · auto post-close · PnL is total equity ledger · draws NO Go/No-Go conclusion (Phase 3A human review)')}
       </div>
+      </LoadingVeil>
     </PageShell>
   );
 }

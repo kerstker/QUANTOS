@@ -8,7 +8,10 @@ import pytest
 from quantos.contracts.alpha import AlphaCluster
 from services.risk.research_risk.domain.gate import RiskApprovalGate
 from services.risk.research_risk.domain.models import ConcentrationRiskReport, RiskConfig, RiskDecision, RiskRun
-from services.risk.research_risk.domain.risk_modules import ConcentrationRiskEngine
+from services.risk.research_risk.domain.risk_modules import (
+    ConcentrationRiskEngine,
+    LiquidityRiskEngine,
+)
 
 
 def _pass_inputs():
@@ -34,6 +37,30 @@ def test_all_gates_pass_approves():
     d = RiskApprovalGate().evaluate(run=run, **_pass_inputs())
     assert d.decision == RiskDecision.RISK_APPROVED
     assert d.gates_passed == 9 and all(run.gate_results.values())
+
+
+def test_model_alpha_failure_reports_both_confidence_dimensions():
+    run = RiskRun(portfolio_id="p")
+    inputs = _pass_inputs()
+    inputs["alpha_metadata"] = [{
+        "validation_confidence": 0.2,
+        "paper_confidence": 0.125,
+        "age_days": 10,
+        "decay_flag": False,
+        "overfit_flag": False,
+        "leakage_flag": False,
+    }]
+
+    decision = RiskApprovalGate().evaluate(run=run, **inputs)
+
+    report = run.gate_reports["model_alpha"]
+    assert report.passed is False
+    assert report.min_validation_confidence == pytest.approx(0.2)
+    assert report.min_paper_confidence == pytest.approx(0.125)
+    assert any(
+        "validation_conf=0.200, paper_conf=0.125" in reason
+        for reason in decision.reasons
+    )
 
 
 def test_empty_inputs_fail_closed_not_approved():
@@ -68,6 +95,24 @@ def test_single_engine_failure_maps_to_its_rejection_reason():
     d = RiskApprovalGate().evaluate(run=run, **inp)
     assert d.decision == RiskDecision.REJECTED_MARKET_RISK
     assert run.gate_results["market"] is False
+
+
+def test_liquidity_engine_uses_aum_and_ten_percent_adv_capacity_contract():
+    report = LiquidityRiskEngine().evaluate(
+        weights={"BTC": 0.125, "ETH": -0.125},
+        capacity_cny={"BTC": 14_000_000.0, "ETH": 7_000_000.0},
+        daily_volume_cny=210_000_000.0,
+        total_aum=7_000_000.0,
+        config=RiskConfig(),
+    )
+
+    assert report.avg_daily_volume_usage == pytest.approx(
+        1_750_000.0 / 210_000_000.0
+    )
+    assert report.participation_rate == pytest.approx(0.0125)
+    assert report.liquidation_days == 1
+    assert report.cost_to_liquidate_bps == pytest.approx(1.25)
+    assert report.passed is True
 
 
 # ---- concentration engine: real clustering (2026-07-09, gap audit rank #3) --------------------

@@ -24,6 +24,17 @@ coverage/
 .benchmarks/
 .claude/worktrees/
 .worktrees/
+.codex/
+.playwright-cli/
+playwright-report/
+test-results/
+.runtime/
+# Read-only partial validation runs are local diagnostics. Only the canonical
+# full report at evidence/validation_report.json is retained as release evidence.
+evidence/validation_report_subset.json
+
+# Generated presentation workspace (canonical decks live under docs/)
+QUANTOS_Roadshow/
 
 # Logs & temp
 logs/
@@ -45,6 +56,7 @@ data/backup/
 # Secrets / live config (must never be committed — see blueprint §1.1, §5.2, §14)
 .env
 .env.*
+!apps/research-console/.env.localhost
 config/live.yaml
 *.secret.yaml
 *.secret.yml

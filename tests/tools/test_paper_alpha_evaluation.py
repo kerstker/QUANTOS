@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from services.research.alpha_expression import FieldPanel
+from tools import paper_alpha_evaluation as driver
+
+
+def _panel(n_periods: int = 42, n_instruments: int = 12) -> FieldPanel:
+    instruments = tuple(f"COIN{i}" for i in range(n_instruments))
+    event_times = tuple(1_700_000_000_000 + row * 86_400_000 for row in range(n_periods))
+    close = []
+    funding = []
+    global_ls = []
+    top_ls = []
+    for row in range(n_periods):
+        close.append(
+            [
+                100.0 + row * 0.2 + column * 0.4 + ((row + column) % 3) * 0.1
+                for column in range(n_instruments)
+            ]
+        )
+        funding.append([0.0001 * ((column % 5) - 2) for column in range(n_instruments)])
+        global_ls.append([1.0 + 0.1 * ((row + column) % 7) for column in range(n_instruments)])
+        top_ls.append([0.8 + 0.08 * ((2 * row + column) % 9) for column in range(n_instruments)])
+    return FieldPanel(
+        instruments,
+        event_times,
+        {
+            "close": close,
+            "funding": funding,
+            "global_ls": global_ls,
+            "top_ls": top_ls,
+        },
+    )
+
+
+def test_build_paper_candidates_uses_content_addressed_research_identities() -> None:
+    candidates, evidence, mappings = driver.build_paper_candidates(_panel())
+
+    assert set(mappings) == {"carry_oi_majors", "crowd_contra", "top_contra"}
+    assert len(candidates) == 3
+    assert set(evidence) == {
+        mapping["research_alpha_id"] for mapping in mappings.values()
+    }
+    for definition, periods in candidates:
+        deployed = next(
+            name
+            for name, mapping in mappings.items()
+            if mapping["research_alpha_id"] == definition.alpha_id
+        )
+        assert definition.alpha_id.startswith(f"paper_{deployed}_")
+        assert definition.definition_hash == mappings[deployed]["definition_hash"]
+        assert periods
+        assert "leakage_ok" in evidence[definition.alpha_id]
+
+
+def test_evaluation_dataset_version_binds_contract_and_panel() -> None:
+    panel = _panel()
+    baseline = driver.evaluation_dataset_version(panel)
+    assert baseline == driver.evaluation_dataset_version(panel)
+
+    changed = _panel()
+    changed.matrices["top_ls"][0][0] += 0.5
+    assert driver.evaluation_dataset_version(changed) != baseline

@@ -12,6 +12,9 @@ import zipfile
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        archive_response)
 from tools.binance_oi_metrics_fetch import DEFAULT_TICKERS
+from tools.binance_rest_gap_fill import (PROVENANCE_DATA_VISION_ARCHIVE,
+                                         PROVENANCE_REST_GAP_FILL,
+                                         fetch_mark_days_rest)
 from tools.cache_io import atomic_write_json
 from tools.source_failures import classify_source_failure, source_failure_detail
 
@@ -179,13 +182,14 @@ def fetch_mark_days(ticker: str, days: list[int], *,
 
 def _load_cache(path: str) -> dict:
     if not os.path.exists(path):
-        return {"_meta": {}, "data": {}}
+        return {"_meta": {}, "data": {}, "provenance": {}}
     with open(path, encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict) or not isinstance(payload.get("data", {}), dict):
         raise MarkPriceDataError("mark-price cache has an invalid root schema")
     payload.setdefault("_meta", {})
     payload.setdefault("data", {})
+    payload.setdefault("provenance", {})
     return payload
 
 
@@ -227,7 +231,15 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
                         http_get_bytes=_http_get_bytes,
                         lookback_days: int = _FORWARD_COVERAGE_DAYS,
                         max_workers: int = 4, archive_root=None,
-                        observed_at_ms=None) -> dict:
+                        observed_at_ms=None, rest_fetch=None) -> dict:
+    """Archive-first refresh with optional latest-days REST gap-fill.
+
+    Precedence (archive is canonical): days already cached from the Data Vision archive are never
+    refetched. Days cached as REST_GAP_FILL placeholders (see tools/binance_rest_gap_fill.py) are
+    RE-ATTEMPTED from the archive every run and replaced once published. `rest_fetch` (None =
+    disabled, the test-hermetic default) then fills days still entirely absent — production wiring
+    passes fetch_mark_days_rest; each filled day is marked REST_GAP_FILL in the cache's top-level
+    "provenance" section."""
     selected = list(tickers or DEFAULT_TICKERS)
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -239,6 +251,7 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
         )
     cache = _load_cache(cache_path)
     meta, data = cache["_meta"], cache["data"]
+    provenance = cache["provenance"]
     expected_end = (now_ms // _DAY_MS) * _DAY_MS - _DAY_MS
     expected_start = expected_end - (lookback_days - 1) * _DAY_MS
     report = {
@@ -246,6 +259,7 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
         "refreshed": 0,
         "skipped": 0,
         "new_days": 0,
+        "rest_gap_fill_days": 0,
         "failed": [],
         "failure_details": [],
         "failed_tickers": [],
@@ -255,10 +269,16 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
     os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
     for ticker in selected:
         ticker_data = data.setdefault(ticker, {})
-        present = {int(day) for day in ticker_data}
+        ticker_prov = provenance.setdefault(ticker, {})
+        archived_days = {
+            int(day) for day in ticker_data
+            if ticker_prov.get(str(day)) != PROVENANCE_REST_GAP_FILL
+        }
+        # Missing days AND placeholder days go back through the archive first: a published
+        # archive row always supersedes a REST placeholder (archive is canonical).
         missing = [
             day for day in range(expected_start, expected_end + 1, _DAY_MS)
-            if day not in present
+            if day not in archived_days
         ]
         if missing:
             attempted.add(ticker)
@@ -273,7 +293,29 @@ def refresh_mark_prices(tickers=None, *, now_ms: int | None = None,
             )
             for day, close in fresh.items():
                 ticker_data[str(day)] = close
+                ticker_prov[str(day)] = PROVENANCE_DATA_VISION_ARCHIVE
             report["new_days"] += len(fresh)
+        if rest_fetch is not None:
+            still_absent = [
+                day for day in range(expected_start, expected_end + 1, _DAY_MS)
+                if str(day) not in ticker_data
+            ]
+            if still_absent:
+                attempted.add(ticker)
+                filled = rest_fetch(
+                    ticker,
+                    still_absent,
+                    now_ms=now_ms,
+                    archive_root=archive_root,
+                    observed_at_ms=observed_at_ms,
+                    failure_sink=report["failure_details"],
+                )
+                for day, close in filled.items():
+                    if str(day) in ticker_data:
+                        continue            # never overwrite an archive row (canonical)
+                    ticker_data[str(day)] = close
+                    ticker_prov[str(day)] = PROVENANCE_REST_GAP_FILL
+                report["rest_gap_fill_days"] += len(filled)
         actual = sorted(int(day) for day in ticker_data)
         meta[ticker] = {"through": actual[-1] if actual else None}
         atomic_write_json(cache_path, cache)
@@ -322,10 +364,13 @@ def main() -> None:
         now_ms=now_ms,
         archive_root=DEFAULT_RAW_ARCHIVE,
         observed_at_ms=now_ms,
+        rest_fetch=fetch_mark_days_rest,
     )
     print(
         f"perp mark prices: refreshed={report['refreshed']} "
-        f"new_days={report['new_days']} failed={len(report['failed_tickers'])}"
+        f"new_days={report['new_days']} "
+        f"rest_gap_fill_days={report['rest_gap_fill_days']} "
+        f"failed={len(report['failed_tickers'])}"
     )
     print(f"-> {_CACHE}")
 

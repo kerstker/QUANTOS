@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import statistics
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List
 
 from fastapi import APIRouter
@@ -58,6 +60,10 @@ class MonitoringViewRuntime:
 
 
 monitoring_view_runtime = MonitoringViewRuntime()
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_DISTRIBUTION_EVIDENCE = (
+    _PROJECT_ROOT / "evidence" / "feature_distribution_drift_baseline.json"
+)
 
 
 def configure_monitoring_views(
@@ -88,6 +94,35 @@ def _distribution_series() -> Dict[str, List[float]]:
         return getter()
     except Exception:
         return {}
+
+
+def _distribution_evidence() -> Dict:
+    """Load the tracked, reproducibly verified PIT drift assessment.
+
+    This is a historical diagnostic fallback for clean deployments that do not
+    carry the operator's local market-data cache.  It must never be presented
+    as a realtime assessment or as a load-bearing admission result.
+    """
+    try:
+        document = json.loads(_DISTRIBUTION_EVIDENCE.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    assessment = document.get("assessment")
+    panel = document.get("panel")
+    policy = document.get("policy")
+    source = document.get("source")
+    if (
+        document.get("schema_version") != 1
+        or document.get("load_bearing") is not False
+        or not isinstance(document.get("provenance"), str)
+        or not isinstance(assessment, dict)
+        or not isinstance(assessment.get("assessments"), dict)
+        or not isinstance(panel, dict)
+        or not isinstance(policy, dict)
+        or not isinstance(source, dict)
+    ):
+        return {}
+    return document
 
 
 def _monitoring_drift_payload() -> Dict:
@@ -196,6 +231,60 @@ def _monitoring_drift_payload() -> Dict:
                 ),
             }
         )
+
+    distribution_evidence = _distribution_evidence() if not distribution_series else {}
+    if distribution_evidence:
+        evidence_assessments = distribution_evidence["assessment"]["assessments"]
+        evidence_policy = distribution_evidence["policy"]
+        evidence_provenance = distribution_evidence["provenance"]
+        source = distribution_evidence["source"]
+        evidence_time_ms = distribution_evidence["panel"].get("last_event_time")
+        evidence_time = (
+            evidence_time_ms // 1_000
+            if isinstance(evidence_time_ms, int)
+            else base_time
+        )
+        for idx, (subject_id, assessment) in enumerate(
+            sorted(evidence_assessments.items())[:8]
+        ):
+            if not isinstance(assessment, dict):
+                continue
+            status = distribution_status.get(str(assessment.get("status")), "OK")
+            score = assessment.get("ks_distance")
+            if isinstance(score, bool) or not isinstance(score, (int, float)):
+                continue
+            monitors.append(
+                {
+                    "monitor_id": f"MON-DISTRIBUTION-EVIDENCE-{idx + 1:03d}",
+                    "category": "DATA_DISTRIBUTION_DRIFT",
+                    "subject_id": subject_id,
+                    "metric": "ks_distance",
+                    "baseline": assessment.get("baseline_mean", 0.0),
+                    "current": assessment.get("recent_mean", 0.0),
+                    "drift_score": round(float(score), 3),
+                    "warn_threshold": evidence_policy.get(
+                        "warn_ks", distribution_policy.warn_ks
+                    ),
+                    "breach_threshold": evidence_policy.get(
+                        "block_ks", distribution_policy.block_ks
+                    ),
+                    "status": status,
+                    "owner": "Data Platform",
+                    "evidence_ref": (
+                        f"{source.get('manifest_sha256', 'UNKNOWN')}:{subject_id}:"
+                        f"{assessment.get('end_index', 'UNKNOWN')}"
+                    ),
+                    "last_checked": evidence_time + idx * 240,
+                    "provenance": evidence_provenance,
+                    "realtime": False,
+                    "load_bearing": False,
+                    "remediation": (
+                        "Refresh the verified PIT baseline and investigate distribution shift"
+                        if status != "OK"
+                        else "Continue historical baseline monitoring"
+                    ),
+                }
+            )
 
     for idx, feature in enumerate(data_catalog["features"][:8]):
         baseline = feature["quality_score"]
@@ -344,14 +433,32 @@ def _monitoring_drift_payload() -> Dict:
             "mutable_alerts": False,
             "authorizes_live_trading": False,
             "distribution_drift": {
-                "available": bool(distribution_series),
+                "available": bool(distribution_series or distribution_evidence),
                 "provenance": (
                     DISTRIBUTION_PROVENANCE
                     if distribution_series
+                    else distribution_evidence.get(
+                        "provenance", "NO_HONEST_INPUT"
+                    )
+                    if distribution_evidence
                     else "NO_HONEST_INPUT"
                 ),
-                "baseline_window": distribution_policy.baseline_window,
-                "recent_window": distribution_policy.recent_window,
+                "realtime": bool(distribution_series),
+                "load_bearing": False,
+                "baseline_window": (
+                    distribution_policy.baseline_window
+                    if distribution_series
+                    else distribution_evidence.get("policy", {}).get(
+                        "baseline_window", distribution_policy.baseline_window
+                    )
+                ),
+                "recent_window": (
+                    distribution_policy.recent_window
+                    if distribution_series
+                    else distribution_evidence.get("policy", {}).get(
+                        "recent_window", distribution_policy.recent_window
+                    )
+                ),
             },
         },
     }

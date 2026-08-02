@@ -1,15 +1,26 @@
+from dataclasses import replace
+from decimal import Decimal
+
 from quantos.contracts.alpha import Actor, ActorKind
 from quantos.contracts.events import (
     EVENT_DRY_RUN_COMPLETED,
     EVENT_DRY_RUN_STARTED,
     EVENT_PRETRADE_APPROVED,
     EVENT_PRETRADE_REJECTED,
+    EVENT_RESEARCH_RISK_EVALUATED,
 )
 
 from services.execution.dry_run_pipeline import (_ann_sharpe, _max_drawdown_from_returns, _vol_target_returns,
                                                  plan_target_quantities, reconcile_run, run_dry_run_pipeline,
                                                  run_multi_period_dry_run, screen_intents, simulate_fills)
 from services.execution.intent_builder import build_intents
+from services.execution.simulated_sor import (
+    BookLevel,
+    SORPolicy,
+    VenueBook,
+    route_simulated_intent,
+)
+from services.execution.simulated_tca import verify_route_tca_record
 from services.monitoring.event_bus import DurableEventBus
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
 from services.risk.pre_trade.config import RiskLimits
@@ -17,6 +28,8 @@ from services.risk.pre_trade.context import (AccountRiskState, MarketContext, Ri
                                              StrategyApproval)
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
+from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
+from services.risk.research_risk.domain.models import RiskConfig
 
 
 def _gate(kill_switch=None, fat_finger=10 ** 9):
@@ -92,6 +105,212 @@ def test_simulate_fills_with_cost_charges_commission():
     assert round(out["fills"][0].commission, 6) == 0.5  # notional 1000 * 5bps = 0.5
 
 
+def _sor_for_intent(intent, *, price=100, quantity=None, fee_bps="10"):
+    quantity = int(quantity if quantity is not None else intent.quantity)
+    book = VenueBook(
+        venue_id="VENUE_A",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal(fee_bps),
+        latency_ms=2,
+        bids=(BookLevel(Decimal(str(price - 1)), quantity),),
+        asks=(BookLevel(Decimal(str(price)), quantity),),
+    )
+    return route_simulated_intent(
+        intent,
+        [book],
+        as_of_ms=1000,
+        policy=SORPolicy(
+            max_quote_age_ms=0,
+            latency_penalty_bps_per_ms=Decimal("0.1"),
+        ),
+    )
+
+
+def test_simulate_fills_consumes_sor_slices_and_charges_route_costs():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    first = VenueBook(
+        venue_id="A",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal("10"),
+        latency_ms=0,
+        bids=(BookLevel(Decimal("99"), 10),),
+        asks=(BookLevel(Decimal("100"), 4),),
+    )
+    second = VenueBook(
+        venue_id="B",
+        observed_at_ms=1000,
+        taker_fee_bps=Decimal("0"),
+        latency_ms=0,
+        bids=(BookLevel(Decimal("98"), 10),),
+        asks=(BookLevel(Decimal("101"), 6),),
+    )
+    plan = route_simulated_intent(
+        intent,
+        [second, first],
+        as_of_ms=1000,
+        policy=SORPolicy(max_quote_age_ms=0),
+    )
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 999.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-r1",
+        timestamp=1000,
+        route_planner=lambda _intent: plan,
+    )
+
+    assert [(fill.quantity, fill.price) for fill in out["fills"]] == [
+        (4, 100.0),
+        (6, 101.0),
+    ]
+    assert round(sum(fill.commission for fill in out["fills"]), 6) == 0.4
+    assert round(out["route_cost_total"], 6) == 0.4
+    assert out["routing"][0]["slices"][0]["venue_id"] == "A"
+    assert out["route_rejections"] == []
+    assert len(out["route_tca"]) == 1
+    assert out["route_tca"][0]["filled_quantity"] == 10
+    assert verify_route_tca_record(out["route_tca"][0]) is True
+    assert all(
+        report.live_trading_allowed is False and report.dry_run is True
+        for report in out["reports"]
+    )
+    pnl = reconcile_run(out["fills"], {"BTC": 101.0}, initial_capital=1e7)
+    assert pnl["total_pnl"] == 3.6
+    assert pnl["residual"] < 1e-6
+
+
+def test_tampered_sor_plan_is_rejected_before_adapter():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    plan = _sor_for_intent(intent)
+    tampered = replace(plan, expected_fees=Decimal("0"))
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-tampered",
+        timestamp=1000,
+        route_planner=lambda _intent: tampered,
+    )
+
+    assert out["fills"] == []
+    assert out["reports"] == []
+    assert out["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["ROUTE_TOTALS_MISMATCH"],
+    }]
+
+
+def test_rejected_or_failed_route_planner_produces_zero_fills():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    rejected = _sor_for_intent(intent, quantity=5)
+
+    denied = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-denied",
+        timestamp=1000,
+        route_planner=lambda _intent: rejected,
+    )
+
+    assert denied["fills"] == []
+    assert denied["routing"][0]["status"] == "REJECTED"
+    assert denied["route_rejections"][0]["reasons"] == ["ROUTE_REJECTED"]
+
+    def broken(_intent):
+        raise RuntimeError("venue snapshot unavailable: do not leak payload")
+
+    failed = simulate_fills(
+        [(intent, "ref-1")],
+        {"BTC": 100.0},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-error",
+        timestamp=1000,
+        route_planner=broken,
+    )
+    assert failed["fills"] == []
+    assert failed["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["ROUTE_PLANNER_ERROR:RuntimeError"],
+    }]
+
+
+def test_single_pipeline_requires_and_binds_routing_snapshot_id():
+    def planner(intent):
+        return _sor_for_intent(intent, quantity=int(intent.quantity))
+
+    with _pytest.raises(ValueError, match="routing_snapshot_id is required"):
+        run_dry_run_pipeline(
+            weights={"BTC": 0.001},
+            prices={"BTC": 100.0},
+            current_positions={},
+            aum=1e6,
+            gate=_gate(),
+            ctx_factory=_ctx_factory({"BTC": 100.0}),
+            adapter=DryRunAdapterEngine(),
+            strategy_id="carry",
+            timestamp=1000,
+            route_planner=planner,
+        )
+
+    routed = run_dry_run_pipeline(
+        weights={"BTC": 0.001},
+        prices={"BTC": 100.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 100.0},
+        route_planner=planner,
+        routing_snapshot_id="books-sha256:abc",
+    )
+    legacy = run_dry_run_pipeline(
+        weights={"BTC": 0.001},
+        prices={"BTC": 100.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 100.0},
+    )
+
+    assert routed.run_id != legacy.run_id
+    assert routed.detail["routing_snapshot_id"] == "books-sha256:abc"
+    assert routed.detail["routing"][0]["status"] == "COMPLETE"
+    assert verify_route_tca_record(routed.detail["route_tca"][0]) is True
+    assert routed.detail["n_fills"] == 1
+    assert routed.pnl["costs"] > 0
+
+
+def test_routed_fill_without_positive_tca_reference_fails_closed():
+    intent = build_intents({"BTC": 10}, {}, strategy_id="carry")[0]
+    plan = _sor_for_intent(intent)
+
+    out = simulate_fills(
+        [(intent, "ref-1")],
+        {},
+        adapter=DryRunAdapterEngine(),
+        run_id="sor-no-reference",
+        timestamp=1000,
+        route_planner=lambda _intent: plan,
+    )
+
+    assert out["fills"] == []
+    assert out["route_tca"] == []
+    assert out["route_rejections"] == [{
+        "instrument_id": "BTC",
+        "reasons": ["TCA_REFERENCE_PRICE_MISSING"],
+    }]
+
+
 def test_reconcile_run_returns_pnl_summary():
     intents = build_intents({"BTC": 10}, {}, strategy_id="carry")
     out = simulate_fills([(intents[0], "ref-1")], {"BTC": 100.0}, adapter=DryRunAdapterEngine(),
@@ -106,7 +325,172 @@ def _pipeline(ks=None, event_bus=None):
         weights={"BTC": 0.5, "ETH": -0.5}, prices={"BTC": 100.0, "ETH": 50.0}, current_positions={},
         aum=1e6, gate=_gate(kill_switch=ks), ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
         adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
-        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
+         marks={"BTC": 101.0, "ETH": 49.0}, event_bus=event_bus)
+
+
+def _full_research_risk_inputs(n_periods):
+    return DryRunResearchRiskInputs(
+        capacity_cny={"BTC": 1.0e12, "ETH": 1.0e12},
+        daily_volume_cny=1.0e12,
+        total_aum=1.0e6,
+        alpha_returns={
+            "alpha_a": [0.001 for _ in range(n_periods)],
+            "alpha_b": [(-0.0002 if i % 2 else 0.0003) for i in range(n_periods)],
+        },
+        regime_labels=["normal"] * n_periods,
+        alpha_metadata=[
+            {
+                "alpha_id": "alpha_a",
+                "age_days": 10.0,
+                "validation_confidence": 0.8,
+                "paper_confidence": 0.8,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+            {
+                "alpha_id": "alpha_b",
+                "age_days": 12.0,
+                "validation_confidence": 0.8,
+                "paper_confidence": 0.8,
+                "decay_flag": False,
+                "overfit_flag": False,
+                "leakage_flag": False,
+            },
+        ],
+    )
+
+
+def test_single_pipeline_persists_full_research_risk_and_publishes_canonical_event():
+    bus = DurableEventBus(":memory:")
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.5, "ETH": -0.5},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={}, aum=1e6, gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(), strategy_id="carry", timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0}, event_bus=bus,
+        research_risk_inputs=_full_research_risk_inputs(1),
+    )
+    risk = run.detail["research_risk"]
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["input_mode"] == "FULL"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert risk["gates_run"] == 9 and set(risk["engines_run"]) == {
+        "market", "liquidity", "concentration", "correlation", "drawdown",
+        "regime", "stress", "capacity", "model_alpha",
+    }
+    assert risk["decision"] == "RISK_REJECTED"  # 50% legs exceed the concentration limit
+    assert any("Concentration:" in reason for reason in risk["reasons"])
+    events = [record["event"] for record in bus.records(correlation_id=run.run_id)]
+    assert [event.event_type for event in events] == [
+        EVENT_DRY_RUN_STARTED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_PRETRADE_APPROVED,
+        EVENT_RESEARCH_RISK_EVALUATED,
+        EVENT_DRY_RUN_COMPLETED,
+    ]
+    assert events[3].payload["run_repro_hash"] == run.reproducibility_hash
+    assert events[3].payload["provenance"] == "REAL_RESEARCH_RISK_FULL"
+
+
+def test_single_pipeline_accepts_explicit_aligned_research_risk_history():
+    periods = 8
+    inputs = _full_research_risk_inputs(periods)
+    returns = [0.001 for _ in range(periods)]
+    equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.1, "ETH": -0.1},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        research_risk_inputs=inputs,
+        research_risk_returns=returns,
+        research_risk_equity_curve=equity,
+    )
+
+    risk = run.detail["research_risk"]
+    assert risk["series"] == "aligned_pit_history"
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["gates_run"] == 9
+    assert risk["decision"] == "RISK_APPROVED"
+    assert risk["scope"] == "PRE_FILL_RESEARCH_EVIDENCE"
+    assert run.detail["research_risk_fill_admitted"] is True
+    assert run.detail["n_fills"] == 2
+
+
+def test_single_pipeline_rejected_explicit_full_risk_has_zero_fills():
+    periods = 8
+    inputs = _full_research_risk_inputs(periods)
+    returns = [0.001 for _ in range(periods)]
+    equity = [1_000_000.0 * (1.001 ** (index + 1)) for index in range(periods)]
+    run = run_dry_run_pipeline(
+        weights={"BTC": 0.25, "ETH": -0.25},
+        prices={"BTC": 100.0, "ETH": 50.0},
+        current_positions={},
+        aum=1e6,
+        gate=_gate(),
+        ctx_factory=_ctx_factory({"BTC": 100.0, "ETH": 50.0}),
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        timestamp=1000,
+        marks={"BTC": 101.0, "ETH": 49.0},
+        research_risk_inputs=inputs,
+        research_risk_returns=returns,
+        research_risk_equity_curve=equity,
+    )
+
+    assert run.detail["research_risk"]["decision"] == "RISK_REJECTED"
+    assert run.detail["research_risk_fill_admitted"] is False
+    assert run.detail["n_fills"] == 0
+    assert run.pnl["positions"] == {}
+
+
+def test_multi_period_strict_research_risk_without_evidence_is_pending_and_fail_closed():
+    bus = DurableEventBus(":memory:")
+    run = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX,
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(),
+        strategy_id="carry", aum=1e6, cost_bps=5.0, event_bus=bus,
+        require_full_research_risk=True,
+    )
+    risk = run.detail["research_risk"]
+    assert risk["status"] == "PENDING"
+    assert risk["decision"] == "RISK_REJECTED"
+    assert risk["gates_run"] == risk["gates_passed"] == 0
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL_PENDING"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert "full_research_risk_inputs_missing" in risk["reasons"]
+    assert run.detail["n_fills"] == 0
+    # Pending evidence must not be downgraded to a synthetic/subset risk event.
+    assert all(
+        record["event"].event_type != "RESEARCH_RISK_EVALUATED"
+        for record in bus.records(correlation_id=run.run_id)
+    )
+
+
+def test_multi_period_persists_full_research_risk_against_aligned_curve():
+    run = run_multi_period_dry_run(
+        periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX,
+        gate=_gate(), ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(),
+        strategy_id="carry", aum=1e6, cost_bps=5.0,
+        research_risk_inputs=_full_research_risk_inputs(len(_PERIODS)),
+    )
+    risk = run.detail["research_risk"]
+    assert risk["series"] == "multi_period"
+    assert risk["provenance"] == "REAL_RESEARCH_RISK_FULL"
+    assert risk["scope"] == "POST_RUN_PORTFOLIO_EVIDENCE"
+    assert risk["gates_run"] == 9
+    assert set(risk["engines_run"]) == {
+        "market", "liquidity", "concentration", "correlation", "drawdown",
+        "regime", "stress", "capacity", "model_alpha",
+    }
 
 
 def test_end_to_end_benign_produces_run():
@@ -302,12 +686,60 @@ _W = {1: {"BTC": 0.5, "ETH": -0.5}, 2: {"BTC": 0.5, "ETH": -0.5}, 3: {"BTC": 0.4
 _PX = {1: {"BTC": 100.0, "ETH": 50.0}, 2: {"BTC": 110.0, "ETH": 48.0}, 3: {"BTC": 105.0, "ETH": 52.0}}
 
 
-def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None):
+def _mp(gate=None, cash_flow_fn=None, vol_target=None, event_bus=None,
+        research_risk_config=None):
     return run_multi_period_dry_run(
         periods=_PERIODS, weights_by_period=_W, prices_by_period=_PX, gate=gate or _gate(),
         ctx_factory=_mp_ctx, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=1e6,
         cost_bps=5.0, cash_flow_fn=cash_flow_fn, vol_target=vol_target,
-        event_bus=event_bus)
+        event_bus=event_bus, research_risk_config=research_risk_config)
+
+
+def test_multi_period_pipeline_consumes_period_bound_sor_plans():
+    def planner(intent, prices, period):
+        price = Decimal(str(prices[intent.instrument_id]))
+        quantity = int(intent.quantity)
+        book = VenueBook(
+            venue_id="PERIOD_VENUE",
+            observed_at_ms=int(period),
+            taker_fee_bps=Decimal("5"),
+            latency_ms=0,
+            bids=(BookLevel(price, quantity),),
+            asks=(BookLevel(price + Decimal("0.1"), quantity),),
+        )
+        return route_simulated_intent(
+            intent,
+            [book],
+            as_of_ms=int(period),
+            policy=SORPolicy(max_quote_age_ms=0),
+        )
+
+    routed = run_multi_period_dry_run(
+        periods=_PERIODS,
+        weights_by_period=_W,
+        prices_by_period=_PX,
+        gate=_gate(),
+        ctx_factory=_mp_ctx,
+        adapter=DryRunAdapterEngine(),
+        strategy_id="carry",
+        aum=1e6,
+        route_planner=planner,
+        routing_snapshot_id="weekly-books:v1",
+    )
+
+    assert routed.detail["routing_snapshot_id"] == "weekly-books:v1"
+    assert routed.detail["routing"]
+    assert {item["period"] for item in routed.detail["routing"]}.issubset(
+        set(_PERIODS)
+    )
+    assert routed.detail["route_tca"]
+    assert all(
+        item["period"] in _PERIODS and verify_route_tca_record(item["tca"])
+        for item in routed.detail["route_tca"]
+    )
+    assert routed.detail["sor_route_cost"] > 0
+    assert routed.detail["route_rejections"] == []
+    assert routed.pnl["residual"] < 1e-6
 
 
 def test_multi_period_benign_curve():
@@ -349,6 +781,14 @@ def test_multi_period_funding_flows_into_equity():
 def test_multi_period_deterministic():
     a, b = _mp(), _mp()
     assert (a.audit_root, a.pnl, a.detail["equity_curve"]) == (b.audit_root, b.pnl, b.detail["equity_curve"])
+
+
+def test_explicit_subset_risk_config_binds_immutable_run_identity():
+    default = _mp()
+    weekly = _mp(research_risk_config=RiskConfig(periods_per_year=52))
+    assert weekly.run_id != default.run_id
+    assert weekly.detail["research_risk"]["config_provenance"] != \
+        default.detail["research_risk"]["config_provenance"]
 
 
 def test_vol_target_returns_passthrough_then_scales():

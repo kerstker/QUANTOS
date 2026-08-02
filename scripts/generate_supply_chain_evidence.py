@@ -29,11 +29,30 @@ from services.governance.vulnerability_evidence import (  # noqa: E402
 from services.governance.artifact_admission import (  # noqa: E402
     load_json_without_duplicate_keys,
 )
+from services.governance.artifact_admission_store import (  # noqa: E402
+    POLICY_REGISTRY_KIND,
+    RECEIPT_AUTHORITY_REGISTRY_KIND,
+    ArtifactAdmissionStore,
+    ArtifactAdmissionStoreError,
+)
 from services.governance.reproducibility_evidence import (  # noqa: E402
     verify_container_reproducibility_evidence,
 )
-
-
+from services.governance.cross_host_container_reproducibility import (  # noqa: E402
+    CrossHostContainerEvidenceError,
+    CrossHostContainerInputMismatchError,
+    verify_signed_cross_host_container_evidence,
+)
+from services.governance.external_sigstore_evidence import (  # noqa: E402
+    ExternalSigstoreEvidenceError,
+    verify_external_sigstore_evidence,
+)
+from services.governance.artifact_admission_external_seal import (  # noqa: E402
+    STATUS as ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
+    ArtifactAdmissionExternalSealError,
+    artifact_admission_seal_contract_sha256,
+    verify_artifact_admission_external_seal,
+)
 DEFAULT_SBOM = REPO / "evidence" / "sbom.cdx.json"
 DEFAULT_EVIDENCE = REPO / "evidence" / "supply_chain_baseline.json"
 DEFAULT_NPM_AUDIT = REPO / "evidence" / "vulnerability" / "npm_audit_latest.json"
@@ -42,14 +61,18 @@ _ACTION = re.compile(r"uses:\s*([^\s#]+)")
 _ACTION_SHA = re.compile(r"^([^@]+)@([0-9a-f]{40})$")
 _MANIFESTS = (
     ".gitattributes",
+    ".github/workflows/sigstore-evidence.yml",
     ".github/workflows/validate.yml",
     "apps/research-console/package-lock.json",
     "apps/research-console/package.json",
     "config/artifact_admission_policy_registry.json",
+    "config/artifact_admission_policy_registry.generation-0.json",
     "config/artifact_receipt_authority_registry.json",
+    "config/artifact_receipt_authority_registry.generation-0.json",
     "config/identity_authorization_registry.json",
     "config/model_provider_registry.json",
     "config/service_import_policy.json",
+    "config/templates/live_mandate_binance_mainnet.json.template",
     "config/top_tier_requirements.json",
     "deploy/console.Dockerfile",
     "evidence/service_import_graph.json",
@@ -63,8 +86,11 @@ _MANIFESTS = (
     "quantos/contracts/alpha.py",
     "requirements-dev.txt",
     "requirements.txt",
+    "apps/research-console/src/lib/types/research.ts",
+    "apps/research-console/src/pages/DryRunPipeline.tsx",
     "services/console/main.py",
     "services/console/risk_console.py",
+    "services/console/api/artifact_paper_views.py",
     "services/console/api/risk_port.py",
     "services/console/api/system_views.py",
     "services/alpha/events.py",
@@ -85,6 +111,8 @@ _MANIFESTS = (
     "services/governance/artifact_admission_store.py",
     "services/governance/artifact_receipt_auth.py",
     "services/governance/external_model_provider_evidence.py",
+    "services/governance/oidc_key_registry.py",
+    "services/governance/identity_access_review.py",
     "services/governance/identity_authorization.py",
     "services/governance/identity_authorization_store.py",
     "services/governance/service_import_graph.py",
@@ -106,6 +134,8 @@ _MANIFESTS = (
     "services/promotion_api/main.py",
     "services/research/experiment_registry/registry.py",
     "services/research/experiment_registry/store.py",
+    "services/research/robust_optimization.py",
+    "services/research/paper_candidate_registry.py",
     "services/research/ports/persistence.py",
     "services/validation/pbo_evidence.py",
     "services/risk/pre_trade/events.py",
@@ -129,41 +159,79 @@ _MANIFESTS = (
     "tools/domain_event_health.py",
     "tools/domain_event_ops.py",
     "tools/domain_event_seal.py",
+    "tools/artifact_admission_seal.py",
     "tools/domain_event_owner_migration.py",
     "tools/domain_event_outbox_drain.py",
     "tools/live_data_refresh.py",
+    "tools/live_testnet_smoke.py",
     "tools/deployment_events.py",
     "tools/live_track_advance.py",
     "tools/external_heartbeat.py",
     "tools/external_model_provider.py",
     "tools/external_model_provider_probe.py",
     "tools/verify_artifact_admission.py",
+    "tools/provision_artifact_admission_authority.py",
+    "tools/build_reproducible_source_bundle.py",
+    "tools/crypto_robust_optimization.py",
+    "tools/alpha_candidate_admission.py",
+    "tools/crypto_factory_loop.py",
+    "tools/forward_track_advance.py",
     "tests/governance/test_artifact_admission.py",
     "tests/governance/test_artifact_admission_cli.py",
     "tests/governance/test_artifact_admission_store.py",
+    "tests/governance/test_artifact_admission_provisioning.py",
     "tests/governance/test_artifact_receipt_auth.py",
     "tests/governance/test_external_model_provider_boundary.py",
     "tests/governance/test_external_model_provider_evidence.py",
+    "tests/governance/test_oidc_key_registry.py",
+    "tests/governance/test_identity_access_review.py",
     "tests/governance/test_identity_authorization.py",
     "tests/governance/test_identity_authorization_store.py",
     "tests/governance/test_promotion_api_boundary.py",
     "tests/governance/test_promotion_api_endpoints.py",
     "tests/governance/test_strong_identity.py",
     "tests/governance/test_strong_identity_evidence.py",
+    "tests/governance/test_external_sigstore_workflow.py",
+    "tests/governance/test_cross_host_container_reproducibility.py",
     "tests/intelligence/test_external_provider_runtime.py",
+    "tests/tools/test_reproducible_source_bundle.py",
     "tests/tools/test_external_model_provider.py",
+    "tests/research/test_paper_candidate_registry.py",
+    "tests/tools/test_alpha_candidate_admission.py",
+    "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
+    "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md",
+    "docs/engineering/specs/2026-07-31-cross-host-container-reproducibility.md",
+    "docs/engineering/specs/2026-07-31-identity-access-review-attestation.md",
+    "docs/engineering/specs/2026-07-31-oidc-key-rotation-registry.md",
     "evidence/vulnerability/npm_audit_latest.json",
     "evidence/vulnerability/python_audit_latest.json",
     "evidence/vulnerability/actions_osv_latest.json",
     "evidence/vulnerability/container_trivy_latest.json",
     "evidence/reproducibility/container_build_latest.json",
+    "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+    "evidence/external_sigstore/2026-07-30/github-artifact.json",
+    "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+    "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+    "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+    "evidence/external_sigstore/2026-07-30/trusted-root.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+    "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+    "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
+    "services/governance/external_sigstore_evidence.py",
+    "services/governance/artifact_admission_external_seal.py",
+    "services/governance/json_integrity.py",
+    "tests/governance/test_external_sigstore_evidence.py",
+    "tests/governance/test_artifact_admission_external_seal.py",
     "services/governance/reproducibility_evidence.py",
+    "services/governance/cross_host_container_reproducibility.py",
     "services/governance/vulnerability_evidence.py",
     "scripts/generate_npm_audit_evidence.py",
     "scripts/generate_python_audit_evidence.py",
     "scripts/generate_actions_audit_evidence.py",
     "scripts/generate_container_audit_evidence.py",
     "scripts/generate_container_reproducibility_evidence.py",
+    "scripts/generate_cross_host_container_evidence.py",
     "scripts/generate_service_import_graph.py",
     "scripts/generate_strong_identity_evidence.py",
     "scripts/generate_event_schema_catalog.py",
@@ -205,6 +273,7 @@ _MANIFESTS = (
     "tests/tools/test_domain_event_health.py",
     "tests/tools/test_domain_event_ops.py",
     "tests/tools/test_domain_event_seal.py",
+    "tests/tools/test_artifact_admission_seal.py",
     "tests/tools/test_domain_event_owner_migration.py",
     "tests/tools/test_domain_event_outbox_drain.py",
     "tests/tools/test_l2_backup.py",
@@ -226,6 +295,137 @@ def _sha256_bytes(content: bytes) -> str:
 
 def _sha256_file(path: Path) -> str:
     return source_file_sha256(path)
+
+
+def _artifact_admission_authority_snapshot(
+    root: Path,
+    *,
+    policy_registry_bytes: bytes,
+    receipt_authority_registry_bytes: bytes,
+) -> dict[str, Any] | None:
+    store_path = root / "data/cache/artifact_admission.db"
+    if not store_path.exists():
+        return None
+    if store_path.is_symlink() or not store_path.is_file():
+        raise ValueError("artifact-admission authority path is not a regular file")
+    try:
+        store = ArtifactAdmissionStore(str(store_path), create=False)
+        try:
+            heads = store.registry_heads()
+            expected = {
+                POLICY_REGISTRY_KIND: policy_registry_bytes,
+                RECEIPT_AUTHORITY_REGISTRY_KIND: receipt_authority_registry_bytes,
+            }
+            if set(heads) != set(expected):
+                raise ValueError("artifact-admission authority heads are incomplete")
+            for kind, content in expected.items():
+                head = heads[kind]
+                if (
+                    head.registry_bytes != content
+                    or head.registry_sha256 != _sha256_bytes(content)
+                ):
+                    raise ValueError(
+                        f"artifact-admission authority {kind} mirror mismatch"
+                    )
+            decisions = store.decisions()
+            return {
+                "authority_time_floor_ms": store.authority_time_floor(),
+                "decision_count": len(decisions),
+                "policy_registry_event_hash": heads[
+                    POLICY_REGISTRY_KIND
+                ].event_hash,
+                "policy_registry_event_seq": heads[
+                    POLICY_REGISTRY_KIND
+                ].authority_event_seq,
+                "receipt_authority_registry_event_hash": heads[
+                    RECEIPT_AUTHORITY_REGISTRY_KIND
+                ].event_hash,
+                "receipt_authority_registry_event_seq": heads[
+                    RECEIPT_AUTHORITY_REGISTRY_KIND
+                ].authority_event_seq,
+            }
+        finally:
+            store.close()
+    except ArtifactAdmissionStoreError as exc:
+        raise ValueError("artifact-admission authority verification failed") from exc
+
+
+def _artifact_admission_external_seal(root: Path) -> dict[str, Any]:
+    evidence_ref = "evidence/artifact_admission_seal_latest.json"
+    evidence_path = root / evidence_ref
+    if not evidence_path.is_file() or evidence_path.is_symlink():
+        return {"status": "NOT_PROVIDED"}
+    try:
+        evidence_bytes = evidence_path.read_bytes()
+        document = load_json_without_duplicate_keys(evidence_bytes)
+        if (
+            not isinstance(document, dict)
+            or document.get("operation_verdict") != "PASS"
+            or document.get("institutional_seal_status")
+            != "PARTIAL_EXTERNAL_WORM_UNVERIFIED"
+            or document.get("authority_mutated") is not False
+            or document.get("destination_class")
+            not in {"SEPARATE_VOLUME", "OFF_HOST_UNC"}
+            or document.get("external_signature_verified") is not False
+            or document.get("worm_retention_verified") is not False
+            or not isinstance(document.get("anchor_path"), str)
+        ):
+            raise ValueError("artifact-admission seal evidence contract is invalid")
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise ValueError("artifact-admission external seal verification failed") from exc
+    external_ref = "evidence/external_sigstore/2026-07-31-admission"
+    external_path = root / external_ref
+    if external_path.exists():
+        try:
+            report = verify_artifact_admission_external_seal(external_path)
+        except ArtifactAdmissionExternalSealError as exc:
+            raise ValueError(
+                "artifact-admission signed external seal verification failed"
+            ) from exc
+        if (
+            report.get("status") != ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
+            or report.get("seal_contract_sha256")
+            != artifact_admission_seal_contract_sha256(document)
+            or report.get("local_anchor_sha256") != document["anchor_sha256"]
+            or report.get("external_signature_verified") is not True
+            or report.get("transparency_log_verified") is not True
+            or report.get("worm_retention_verified") is not False
+        ):
+            raise ValueError(
+                "artifact-admission signed external seal is inconsistent"
+            )
+        return {
+            "status": ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS,
+            "evidence_ref": external_ref,
+            "evidence_sha256": report["receipt_sha256"],
+            "anchor_sha256": report["local_anchor_sha256"],
+            "destination_class": "GITHUB_ACTIONS_REKOR",
+            "external_signature_verified": True,
+            "external_transparency_verified": True,
+            "external_workflow_run": report["workflow_run"],
+            "external_source_commit": report["source_commit"],
+            "transparency_integrated_at_ms": (
+                report["transparency_integrated_at_ms"]
+            ),
+            "worm_retention_verified": False,
+        }
+    return {
+        # The external anchor deliberately lives outside the repository. A
+        # clean checkout can validate this retained declaration and digest,
+        # but cannot honestly re-open the operator-owned external object.
+        "status": "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED",
+        "evidence_ref": evidence_ref,
+        "evidence_sha256": _sha256_bytes(evidence_bytes),
+        "anchor_sha256": document["anchor_sha256"],
+        "destination_class": document["destination_class"],
+        "external_signature_verified": False,
+        "worm_retention_verified": False,
+    }
 
 
 def _requirement_entries(path: Path, seen: set[Path] | None = None) -> list[str]:
@@ -451,18 +651,78 @@ def build_supply_chain_artifacts(
         for entry in receipt_authority_registry["keys"].values()
         if isinstance(entry, dict) and entry.get("status") == "ACTIVE"
     )
-    admission_store_provisioned = (root / "data/cache/artifact_admission.db").is_file()
+    admission_authority = _artifact_admission_authority_snapshot(
+        root,
+        policy_registry_bytes=policy_registry_bytes,
+        receipt_authority_registry_bytes=receipt_authority_registry_bytes,
+    )
+    admission_store_provisioned = admission_authority is not None
+    admission_external_seal = _artifact_admission_external_seal(root)
+    external_sigstore_ref = "evidence/external_sigstore/2026-07-30"
+    external_sigstore_directory = root / external_sigstore_ref
+    external_sigstore_report: dict[str, Any] | None = None
+    if external_sigstore_directory.exists():
+        try:
+            external_sigstore_report = verify_external_sigstore_evidence(
+                external_sigstore_directory
+            )
+        except ExternalSigstoreEvidenceError as exc:
+            raise ValueError(
+                f"retained external Sigstore evidence is invalid: {exc}"
+            ) from exc
+    cross_host_container_ref = (
+        "evidence/external_sigstore/2026-07-31-container-548ff"
+    )
+    cross_host_container_directory = root / cross_host_container_ref
+    cross_host_container_report: dict[str, Any] | None = None
+    if cross_host_container_directory.exists():
+        try:
+            cross_host_container_report = (
+                verify_signed_cross_host_container_evidence(
+                    cross_host_container_directory,
+                    repo_root=root,
+                    trusted_root_path=(
+                        external_sigstore_directory / "trusted-root.json"
+                    ),
+                )
+            )
+        except CrossHostContainerInputMismatchError:
+            # A previously verified proof is expected to become stale after a
+            # legitimate container-input change.  Keep delivery two-phased:
+            # publish the code with the blocker restored, then retain the new
+            # externally signed proof in an evidence-only follow-up.
+            cross_host_container_report = None
+        except CrossHostContainerEvidenceError as exc:
+            raise ValueError(
+                f"retained cross-host container evidence is invalid: {exc}"
+            ) from exc
+    cross_host_container_verified = cross_host_container_report is not None
     admission_implementations = (
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/artifact_admission_external_seal.py",
+        "services/governance/json_integrity.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "tools/verify_artifact_admission.py",
+        "tools/provision_artifact_admission_authority.py",
+        "tools/artifact_admission_seal.py",
     )
     admission_verification = (
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
+        *(
+            ("tests/governance/test_cross_host_container_sigstore_evidence.py",)
+            if cross_host_container_verified
+            else ()
+        ),
     )
     sbom = {
         "bomFormat": "CycloneDX",
@@ -479,10 +739,24 @@ def build_supply_chain_artifacts(
         "components": components,
     }
     sbom_sha256 = _sha256_bytes(_canonical_bytes(sbom))
-    manifests = {path: _sha256_file(root / path) for path in _MANIFESTS}
+    manifest_paths = (
+        *_MANIFESTS,
+        *(
+            (
+                "tests/governance/test_cross_host_container_sigstore_evidence.py",
+                "evidence/external_sigstore/2026-07-31-container/cross-host-container-receipt.json",
+                "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.json",
+                "evidence/external_sigstore/2026-07-31-container/quantos-console-cross-host.sigstore.json",
+            )
+            if cross_host_container_verified
+            else ()
+        ),
+    )
+    manifests = {path: _sha256_file(root / path) for path in manifest_paths}
     validate_source = (root / "scripts" / "validate.py").read_text(encoding="utf-8")
     workflow_source = (root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     actions_pinned = bool(actions) and all(item["sha_pinned"] for item in actions)
+    external_sigstore_verified = external_sigstore_report is not None
     evidence = {
         "schema_version": 1,
         "verdict": "PARTIAL",
@@ -551,9 +825,26 @@ def build_supply_chain_artifacts(
         "container_reproducible_archive_sha256": reproducibility_summary["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility_summary["manifest_digest"],
         "container_reproducibility_buildkit_version": reproducibility_summary["buildkit_version"],
-        "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
+        "cross_host_container_reproducibility_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_TWO_RUNNERS_BYTE_IDENTICAL"
+            if cross_host_container_verified
+            else "NOT_PROVIDED"
+        ),
+        "cross_host_container_reproducibility_evidence_ref": (
+            cross_host_container_ref if cross_host_container_verified else None
+        ),
+        "cross_host_container_reproducibility_evidence": (
+            cross_host_container_report
+        ),
+        "artifact_signature_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_SIGSTORE_CROSS_HOST"
+            if external_sigstore_verified
+            else "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING"
+        ),
         "artifact_admission_verifier_status": (
-            "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
+            "OFFLINE_SIGSTORE_REKOR_V1_REAL_EXTERNAL_BUNDLE_VERIFIED_POLICY_V3_DECISION_V4_EXTERNAL_RECEIPT_STILL_GATED"
+            if external_sigstore_verified
+            else "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
         ),
         "artifact_admission_contract_versions": {
             "policy": 3,
@@ -602,9 +893,44 @@ def build_supply_chain_artifacts(
         ),
         "artifact_admission_decision_store_path": ("data/cache/artifact_admission.db"),
         "artifact_admission_decision_store_provisioning_status": (
-            "LOCAL_PROVISIONED_UNSEALED" if admission_store_provisioned else "NOT_PROVIDED"
+            "LOCAL_PROVISIONED_VERIFIED_EMPTY_TRUST_ROOTS_UNSEALED"
+            if admission_store_provisioned
+            else "NOT_PROVIDED"
         ),
-        "artifact_admission_decision_history_external_seal_status": ("NOT_PROVIDED"),
+        "artifact_admission_authority_snapshot": admission_authority,
+        "artifact_admission_decision_history_external_seal_status": (
+            admission_external_seal["status"]
+        ),
+        "artifact_admission_decision_history_external_seal_evidence_ref": (
+            admission_external_seal.get("evidence_ref")
+        ),
+        "artifact_admission_decision_history_external_seal_evidence_sha256": (
+            admission_external_seal.get("evidence_sha256")
+        ),
+        "artifact_admission_decision_history_external_anchor_sha256": (
+            admission_external_seal.get("anchor_sha256")
+        ),
+        "artifact_admission_decision_history_external_destination_class": (
+            admission_external_seal.get("destination_class")
+        ),
+        "artifact_admission_decision_history_external_signature_verified": (
+            admission_external_seal.get("external_signature_verified", False)
+        ),
+        "artifact_admission_decision_history_external_transparency_verified": (
+            admission_external_seal.get("external_transparency_verified", False)
+        ),
+        "artifact_admission_decision_history_external_workflow_run": (
+            admission_external_seal.get("external_workflow_run")
+        ),
+        "artifact_admission_decision_history_external_source_commit": (
+            admission_external_seal.get("external_source_commit")
+        ),
+        "artifact_admission_decision_history_external_integrated_at_ms": (
+            admission_external_seal.get("transparency_integrated_at_ms")
+        ),
+        "artifact_admission_decision_history_external_worm_verified": (
+            admission_external_seal.get("worm_retention_verified", False)
+        ),
         "artifact_admission_decision_store_worm_status": ("NOT_WORM_LOCAL_FILE_REPLACEABLE"),
         "artifact_admission_registry_history_status": (
             "LOCAL_SINGLE_SQLITE_LINEARIZABLE_REGISTRY_DECISION_CAS_UNSEALED"
@@ -617,23 +943,56 @@ def build_supply_chain_artifacts(
             "LOCAL_MONOTONIC_GUARDED_WALL_CLOCK_FUTURE_SKEW_NO_EXTERNAL_TIME_AUTHORITY"
         ),
         "artifact_admission_read_consistency_status": ("SINGLE_SQLITE_TRANSACTIONAL_READ_SNAPSHOT"),
-        "artifact_admission_valid_bundle_fixture_status": "NOT_PROVIDED",
+        "artifact_admission_valid_bundle_fixture_status": (
+            "VERIFIED_RETAINED_EXTERNAL_SIGSTORE_DSSE_BUNDLE"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
         "artifact_admission_signing_capability_present": False,
-        "artifact_admission_external_bundle_status": "NOT_PROVIDED",
+        "artifact_admission_external_bundle_status": (
+            "VERIFIED_EXTERNAL_GITHUB_OIDC_FULCIO_SCT_REKOR_V1"
+            if external_sigstore_verified
+            else "NOT_PROVIDED"
+        ),
+        "artifact_admission_external_bundle_evidence_ref": (
+            external_sigstore_ref if external_sigstore_verified else None
+        ),
+        "artifact_admission_external_bundle_evidence": external_sigstore_report,
         "artifact_admission_independent_deployment_status": "NOT_PROVIDED",
         "artifact_admission_implementation_sha256": {
             path: _sha256_file(root / path) for path in admission_implementations
         },
         "artifact_admission_verification_paths": list(admission_verification),
         "m4_blockers": [
-            "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
-            "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
-            "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+            *(
+                []
+                if cross_host_container_verified
+                else ["CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN"]
+            ),
+            *(
+                []
+                if external_sigstore_verified
+                else [
+                    "EXTERNAL_ARTIFACT_SIGNATURE_IDENTITY_MISSING",
+                    "SIGNED_PROVENANCE_BUNDLE_NOT_RETAINED",
+                ]
+            ),
             "INDEPENDENT_ADMISSION_DEPLOYMENT_NOT_PROVEN",
             "EXTERNAL_RECEIPT_AUTHORITY_AND_SIGNED_RECEIPT_NOT_PROVIDED",
             "SOURCE_NATIVE_CHECKPOINT_REVOCATION_PROOFS_NOT_VERIFIED",
-            "ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED",
-            "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED",
+            *(
+                []
+                if admission_store_provisioned
+                else ["ARTIFACT_ADMISSION_FIXED_AUTHORITY_STORE_NOT_PROVISIONED"]
+            ),
+            *(
+                []
+                if admission_external_seal["status"]
+                == ARTIFACT_ADMISSION_EXTERNAL_SEAL_STATUS
+                else [
+                    "ARTIFACT_ADMISSION_DECISION_HISTORY_NOT_EXTERNALLY_SEALED"
+                ]
+            ),
             *(["CONTAINER_VULNERABILITY_POLICY_FAILED"] if not container_policy_passed else []),
             *(["PYPROJECT_OPTIONAL_DEPENDENCIES_UNPINNED"] if unresolved_optional else []),
         ],

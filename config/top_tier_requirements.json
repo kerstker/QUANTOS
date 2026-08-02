@@ -37,13 +37,23 @@
                                                        "verification",
                                                        "governance",
                                                        "reproducibility"
-                                                   ],
+                             ],
                              "red_line":  false,
-                             "checker":  "manual_evidence",
+                             "checker":  "paths_exist",
                              "checker_args":  {
-
+                                                  "paths":  [
+                                                                "quantos/contracts/vendor_data.py",
+                                                                "services/data/vendor_admission.py",
+                                                                "services/data/vendor_delivery_history.py",
+                                                                "tests/data/test_vendor_admission.py",
+                                                                "tests/data/test_vendor_delivery_history.py",
+                                                                "tests/governance/test_vendor_data_boundary.py",
+                                                                "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+                                                            ],
+                                                  "pass_maturity":  "M2"
                                               },
-                             "next_action":  "Acquire licensed source and record SLA evidence"
+                             "assess_local_readiness":  true,
+                             "next_action":  "Acquire a genuine licensed tick/order-book source; provision an external license verifier; operate the append-only delivery authority with real deliveries, SLA incidents and remediation; retain contractual rights and legal review"
                          },
                          {
                              "id":  "ALPHA.TRIAL.GLOBAL_LEDGER",
@@ -330,11 +340,26 @@
                                                        "reproducibility"
                                                    ],
                              "red_line":  false,
-                             "checker":  "manual_evidence",
+                             "checker":  "paths_exist",
                              "checker_args":  {
-
+                                                  "paths":  [
+                                                                "services/execution/simulated_sor.py",
+                                                                "services/execution/simulated_tca.py",
+                                                                "services/execution/paper_tca_history.py",
+                                                                "services/execution/dry_run_pipeline.py",
+                                                                "services/execution/dry_run_store.py",
+                                                                "tests/execution/test_simulated_sor.py",
+                                                                "tests/execution/test_simulated_tca.py",
+                                                                "tests/execution/test_paper_tca_history.py",
+                                                                "tests/execution/test_dry_run_pipeline.py",
+                                                                "tests/execution/test_dry_run_store.py",
+                                                                "tests/execution/test_execution_import_boundary.py",
+                                                                "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+                                                            ],
+                                                  "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Keep simulated until post-L2 approval"
+                             "assess_local_readiness":  true,
+                             "next_action":  "Retain longitudinal route-level dry-run TCA while awaiting post-L2 approval; then prove real multi-venue broker connectivity, fill quality, outage behavior and production TCA"
                          },
                          {
                              "id":  "AI.AGENT.NONHUMAN.BOUNDARY",
@@ -388,7 +413,7 @@
                                                                              "tests/intelligence/test_runtime_governance.py"
                                                                          ]
                                               },
-                             "next_action":  "Govern an external model provider through the registered runtime and independent external review"
+                             "next_action":  "Configure a real external provider and externally verified receipts through the registered runtime; complete independent strong-identity review"
                          },
                          {
                              "id":  "GOV.APPROVAL.HASHCHAIN",
@@ -460,6 +485,7 @@
                                                                   "actions-osv-evidence:current",
                                                                   "container-trivy-evidence:current",
                                                                   "service-import-graph:current",
+                                                                  "artifact-admission-authority:provision",
                                                                   "model-risk-history:current",
                                                                   "risk-recovery-drill:fresh",
                                                                   "frontend: typecheck",
@@ -489,7 +515,7 @@
                                                   "path":  "evidence/supply_chain_baseline.json",
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; provision the fixed admission authority and externally seal its chain head at an independently deployed boundary"
+                             "next_action":  "Retain an authenticated external receipt and 90-day WORM object-lock copy; operate independently deployed admission, checkpoint, and revocation authorities"
                          },
                          {
                              "id":  "OPS.BACKUP.ENCRYPTED",
@@ -522,12 +548,17 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  2,
+                                                                                   "version":  3,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "alpha_maintenance"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/alpha_production_workflow.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "alpha_production_workflow"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/approvals.db",
@@ -595,6 +626,11 @@
                                                                                                        "role":  "data_refresh_history"
                                                                                                    },
                                                                                                    {
+                                                                                                       "relative_path":  "data/cache/paper_candidate_registry.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "factory_candidate_admission"
+                                                                                                   },
+                                                                                                   {
                                                                                                        "relative_path":  "data/cache/paper_track.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "paper_track"
@@ -603,6 +639,11 @@
                                                                                                        "relative_path":  "data/cache/research_runs.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "research_run_registry"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/vendor_delivery_history.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "vendor_delivery_history_authority"
                                                                                                    }
                                                                                                ]
                                                                                },
@@ -642,12 +683,17 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  2,
+                                                                                   "version":  3,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
                                                                                                        "required":  false,
                                                                                                        "role":  "alpha_maintenance"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/alpha_production_workflow.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "alpha_production_workflow"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/approvals.db",
@@ -715,6 +761,11 @@
                                                                                                        "role":  "data_refresh_history"
                                                                                                    },
                                                                                                    {
+                                                                                                       "relative_path":  "data/cache/paper_candidate_registry.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "factory_candidate_admission"
+                                                                                                   },
+                                                                                                   {
                                                                                                        "relative_path":  "data/cache/paper_track.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "paper_track"
@@ -723,6 +774,11 @@
                                                                                                        "relative_path":  "data/cache/research_runs.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "research_run_registry"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/vendor_delivery_history.db",
+                                                                                                       "required":  false,
+                                                                                                       "role":  "vendor_delivery_history_authority"
                                                                                                    }
                                                                                                ]
                                                                                },
@@ -748,7 +804,7 @@
                              "tier":  "A",
                              "target_maturity":  "M3",
                              "classification":  "L2_SAFE_NOW",
-                             "description":  "Routes navigation and smoke tests share registry",
+                             "description":  "Routes navigation and smoke tests share registry; the paper cockpit has a deterministic cross-platform accessibility, overflow, and visual-regression gate",
                              "required_evidence":  [
                                                        "implementation",
                                                        "verification",
@@ -759,12 +815,18 @@
                              "checker":  "paths_exist",
                              "checker_args":  {
                                                   "paths":  [
+                                                                ".github/workflows/validate.yml",
                                                                 "apps/research-console/src/app/routes.tsx",
-                                                                "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+                                                                "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+                                                                "apps/research-console/playwright.config.ts",
+                                                                "apps/research-console/e2e/paper-cockpit.spec.ts",
+                                                                "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+                                                                "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+                                                                "tests/governance/test_frontend_institutional_e2e_gate.py"
                                                             ],
                                                   "pass_maturity":  "M3"
                                               },
-                             "next_action":  "Add E2E accessibility and visual regression"
+                             "next_action":  "Sustain the pinned Windows/Linux accessibility, overflow, and visual-regression gate as the cockpit evolves"
                          },
                          {
                              "id":  "FRONTEND.EVIDENCE.SINGLE_SOURCE",

@@ -31,6 +31,8 @@ def test_cpcv_validate_summarizes_run_factors():
     assert s["n_splits"] == 15
     assert s["frac_positive"] > 0.8                       # the good factor generalizes OOS
     assert "good" in s["selected_counts"]
+    assert len(s["test_boundaries"]) == s["n_splits"]
+    assert all(len(boundaries) == 2 for boundaries in s["test_boundaries"])
 
 
 def test_cpcv_validate_fail_closed_too_few_or_short():

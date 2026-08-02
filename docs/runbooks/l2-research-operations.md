@@ -7,10 +7,11 @@ order submission, emergency trading action, or a live operations API.
 
 ## Scheduled Jobs
 
-Register from a clean, validated release checkout. For a single-root install,
-run `powershell -ExecutionPolicy Bypass -File scripts/register_schedules.ps1`
-from that checkout. When mutable operational state lives in a different root,
-keep the release checkout clean and pass the state root explicitly:
+Registration requires two absolute, different, non-overlapping roots. The code
+root is a clean, validated release checkout; the state root is the mutable
+operational tree that owns `data/cache`, `evidence`, and `.runtime`. A
+single-root installation is rejected rather than treated as a production-paper
+release:
 
 ```powershell
 powershell -ExecutionPolicy Bypass `
@@ -18,28 +19,194 @@ powershell -ExecutionPolicy Bypass `
   -StateRoot H:\path\to\operational-state
 ```
 
-The script location is the code root; it is never caller-selected. Each task
-executes the absolute `tools/l2_schedule_entrypoint.py` from that root, which
-allows only the modules in the table below and verifies the imported worker
-also came from the release. The Task Scheduler working directory remains the
-state root, preserving all `data/cache` contracts without importing Python from
-a dirty operational checkout. The independent watchdog pins the Python
-executable class, launcher path, module, and state root; legacy direct
-`-m tools.*` actions fail closed as `ACTION_DRIFT`. `QUANTOS_domain_event_ops`
-also has a five-minute execution limit and `IgnoreNew` overlap policy.
+The script location is the code root; it is never caller-selected. Registration
+fails unless Git `HEAD` is a 40-character commit and the release has no tracked
+or untracked changes. Each task action carries that exact commit through
+`--release-commit`. Before every import, `tools/l2_schedule_entrypoint.py`
+rechecks the release `HEAD`, verifies full cleanliness, rejects overlapping
+release/state roots, and binds `QUANTOS_RELEASE_COMMIT`,
+`QUANTOS_RELEASE_ROOT`, and `QUANTOS_STATE_ROOT` into the worker. The imported
+module must also resolve under the release `tools` directory.
+
+The Task Scheduler working directory remains the state root. Mutable default
+paths resolve there, including the autonomous realtime discovery and forward
+shadow stores; the console uses the same `QUANTOS_STATE_ROOT`. Every invocation
+writes a hash-bearing receipt under `.runtime/l2-release-runs/`. The receipt
+separates release verification from worker outcome, so a verified release plus
+a non-zero worker exit is recorded as `release_verified=true`, `status=FAILED`.
+The independent watchdog pins the Python executable class, launcher path,
+module, state root, and release commit; legacy direct `-m tools.*`, unpinned, or
+same-root actions fail closed as `ACTION_DRIFT`. Existing tasks must therefore
+be re-registered from a clean release after adopting this contract.
 
 | Task | Cadence | Module |
 |---|---|---|
 | `QUANTOS_factory_loop` | Sunday 20:00 | `tools.crypto_factory_loop` |
 | `QUANTOS_ic_panel_refresh` | Sunday 20:30 | `tools.ic_panel_research` |
-| `QUANTOS_forward_track` | Monday 09:00 | `tools.forward_track_advance` |
+| `QUANTOS_paper_alpha_evaluation` | Sunday 20:45 | `tools.paper_alpha_evaluation` |
+| `QUANTOS_forward_track` | Daily 21:00 poll (7-day internal due gate) | `tools.forward_track_advance` |
 | `QUANTOS_alpha_maintenance` | Monday 09:05 | `tools.alpha_maintenance_sweep` |
 | `QUANTOS_domain_event_ops` | Hourly | `tools.domain_event_ops` |
 | `QUANTOS_scheduler_watchdog` | Every 15 minutes | `tools.l2_scheduler_watchdog` |
 | `QUANTOS_gonogo_report` | Daily 23:00 | `tools.gonogo_report` |
+| `QUANTOS_alpha_paper_cycle` | Daily 23:05 (after Go/No-Go) | `tools.alpha_paper_cycle` |
+| `QUANTOS_paper_research_risk_bundle` | Daily 23:08 | `tools.paper_research_risk_bundle` |
+| `QUANTOS_paper_order_preview` | Daily 23:10 (after paper cycle) | `tools.paper_order_preview` |
+| `QUANTOS_binance_realtime_market` | Every 5 minutes | `tools.binance_realtime_market` |
+| `QUANTOS_binance_systemic_risk` | Every 30 minutes | `tools.binance_systemic_risk` |
+| `QUANTOS_binance_rpi_depth` | Hourly | `tools.binance_rpi_depth` |
+| `QUANTOS_binance_realtime_features` | Every 5 minutes | `tools.binance_realtime_features` |
+| `QUANTOS_binance_realtime_drift_alerts` | Every 5 minutes | `tools.binance_realtime_drift_alerts` |
+| `QUANTOS_realtime_alpha_discovery` | Hourly | `tools.realtime_alpha_discovery` |
+| `QUANTOS_realtime_alpha_forward_shadow` | Every minute | `tools.realtime_alpha_forward_shadow` |
+| `QUANTOS_binance_realtime_stream` | Startup + 5-minute restart check | `tools.binance_realtime_stream` |
+| `QUANTOS_paper_multivenue_sor` | Every 5 minutes | `tools.paper_multivenue_sor` |
+| `QUANTOS_paper_realtime` | Every 5 minutes (short-lived worker) | `tools.paper_realtime` |
+| `QUANTOS_paper_realtime_10k` | Every 5 minutes (short-lived worker, offset) | `tools.paper_realtime_10k` |
+| `QUANTOS_paper_shadow_auto` | Daily 21:20 | `tools.paper_shadow_auto` |
+| `QUANTOS_paper_shadow_realtime` | Every 5 minutes | `tools.paper_shadow_realtime` |
+| `QUANTOS_paper_health` | Every 5 minutes (one minute after marks) | `tools.paper_health` |
 | `QUANTOS_backup` | Daily 03:00, only when configuration passes | `tools.l2_backup` |
 | `QUANTOS_external_heartbeat` | Every 5 minutes, only when configured | `tools.external_heartbeat` |
 | `QUANTOS_domain_event_seal` | Daily 02:30, only when configured | `tools.domain_event_seal` |
+
+## Three-Alpha Paper Cycle
+
+The operator-level paper flow is a single idempotent, L2-only command. It runs
+the authoritative dry-run seam for `carry_oi_majors`, `crowd_contra`, and
+`top_contra`, rebuilds the shared paper-cycle/readiness evidence, then runs the
+same pre-trade gate and dry-run adapter for the paper order preview. These three
+pre-unified-workflow books are explicitly classified as
+`LEGACY_DIAGNOSTIC_PAPER`: they may continue receiving public realtime marks and
+producing PnL diagnostics, but they cannot count as a new-pipeline candidate or
+obtain deployment eligibility. It never reads private credentials or submits
+an order:
+
+```powershell
+rtk python -m tools.l2_paper_operator
+```
+
+The operator advances the public forward-paper clock by default. Use
+`--no-forward` only when the current refresh evidence is already known to be
+current. A failed requested forward refresh makes the whole operator fail
+closed; stale evidence is never reported as a successful refresh. The official
+evidence gate is eight realized periods per Alpha. New decisions are bound to
+the append-only data-admission authority and new realizations are committed
+atomically with their paper period. Rows written before that binding existed
+are reported as `legacy_unattested_decisions` and never count toward the gate.
+Current L2 output is diagnostic/paper evidence only and cannot authorize
+Binance private access, live orders, or a live broker adapter. The combined
+operator receipt is `data/cache/l2_paper_operator.json`.
+
+The scheduled `paper_order_preview` task is the operator's paper-order view. It
+reads the latest attested decision and local public mark cache, runs the same
+pre-trade gate and dry-run adapter as the manual command, and atomically writes
+`data/cache/paper_order_preview.json`. It is intentionally read-only and does
+not advance forward realization or persist any live position; a non-empty
+attested backlog or stale evidence blocks the preview.
+
+The optional `paper_realtime` task is a bounded public-mark refresh. Each
+invocation runs one cycle and exits, so it does not leave a resident polling
+process. It only refreshes the L2 paper mark receipt; it never advances a
+live decision, reads credentials, or submits an order. Register it with the
+L2 schedule reconciler when continuous paper observation is desired, and
+disable that task to stop the cadence.
+
+`QUANTOS_paper_realtime_10k` uses the same bounded worker for the isolated
+10,000 USD profile. It runs its own `--health-check` and writes the suffixed
+receipts, so it does not share or mutate the default 1,000,000 USD paper
+ledger. Both scheduled workers are short-lived and use `MultipleInstances
+IgnoreNew`.
+
+## Real-Time Paper Marking + Backtest Reference
+
+For between-rebalance paper P&L, run the foreground public-mark cycle:
+
+```powershell
+rtk python -m tools.paper_realtime --cycles 1
+```
+
+要在同一条前台命令中完成纸面再平衡、公开标记和语义健康判定，可加
+`--health-check`。命令仍是有界进程，结束后不会留下轮询后台进程：
+
+```powershell
+rtk python -m tools.paper_realtime --cycles 1 --health-check
+```
+
+只有实时周期和 `paper_health` 都通过时该命令才返回成功；健康报告仍写入
+`data/cache/paper_health.json`（可用 `--health-output` 覆盖）。
+
+The first cycle bootstraps the L2 paper operator, polls the unauthenticated
+public mark-price endpoint, reconstructs the three Alpha paper fills from the
+append-only order ledger, reconciles current equity/P&L, and stores a
+hash-chained observation in `data/cache/paper_realtime.db`. It also carries the
+latest authoritative dry-run/backtest summary into
+`data/cache/paper_realtime_status.json`. Each cycle also refreshes public
+funding-rate events and point-in-time funding marks; a cache older than 12 hours
+is reported as incomplete rather than treated as zero funding. No private Binance endpoint, key,
+account, broker SDK, or order submission is reachable from this driver.
+
+To keep polling in the foreground (Ctrl-C stops it cleanly):
+
+```powershell
+rtk python -m tools.paper_realtime --follow --interval-seconds 30
+```
+
+Use `--refresh-paper` when a new paper rebalance decision is expected; without
+it, follow mode only re-marks the existing paper positions. The default one
+cycle is intentionally bounded so an operator never leaves an unmanaged
+background process behind. The console exposes the latest receipt under the
+Dry-Run Pipeline page and `/api/v1/console/dry-run.paper_realtime`.
+The receipt keeps `paper_mark_ready` separate from
+`backtest_reference_present_for_all_three`; `cycle_completed` is true only when
+both the three-Alpha paper marks and all three authoritative backtest
+references are present.
+
+The paper-order ledger is one append-only paper-account profile.  Its decision
+identity is `(alpha_id, decision_ts)`, so rerunning an already recorded
+decision with a different `--aum` or `--cost-bps` is blocked explicitly rather
+than silently changing positions or replaying the wrong size.  For a separate
+small-capital sizing trial, use a separate store and output artifact:
+
+```powershell
+rtk python -m tools.paper_order_preview --aum 10000 `
+  --paper-store data/cache/paper_order_ledger_10k.db `
+  --output data/cache/paper_order_preview_10k.json
+```
+
+This remains paper-only; the separate store is an isolated paper account, not
+an authorization for live trading.
+
+要把完整的实时纸面链路固定在一个 10,000 USD 隔离账户，可直接运行：
+
+```powershell
+rtk python -m tools.paper_realtime --cycles 1 --health-check --aum 10000 `
+  --paper-store data/cache/paper_order_ledger_10k.db `
+  --store data/cache/paper_realtime_10k.db `
+  --output data/cache/paper_realtime_10k_status.json `
+  --operator-receipt data/cache/l2_paper_operator_10k.json `
+  --health-output data/cache/paper_health_10k.json
+```
+
+该账户与默认 1,000,000 USD 纸面账本完全隔离；整手舍入可能使不同 Alpha
+产生不同的成交腿数，但每个 Alpha 必须仍满足成交、拒单为零和对账残差为零。
+
+## Paper Health Check
+
+Task Scheduler success only proves that a worker exited successfully.  Before
+using the paper view, run the semantic, fail-closed health check as well:
+
+```powershell
+rtk python -m tools.paper_health
+```
+
+It verifies that the public mark is fresh (default maximum age: five minutes),
+all three Alpha accounts have paper fills and zero reconciliation residual,
+the three authoritative dry-run references are present, the paper preview is
+complete, and live/order/credential flags are explicitly disabled.  It writes
+`data/cache/paper_health.json` and returns exit code `0` only when the paper
+workflow is ready.  A stale or incomplete artifact returns non-zero; this
+check never refreshes data or submits an order.
 
 ## Selection Trial-Ledger History
 

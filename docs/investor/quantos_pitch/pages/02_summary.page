@@ -1,0 +1,85 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 44, 300, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "01 · 执行摘要"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 66, 800, 40]
+    content: {style: "$h1", wrap: false, text: "为什么是现在，为什么是我们"}
+  - elementId: n1
+    elementType: text
+    bounds: [80, 150, 150, 60]
+    content: {style: "$bignum", wrap: false, text: "3,897"}
+  - elementId: n1-label
+    elementType: text
+    bounds: [80, 214, 220, 44]
+    content:
+      style: "$small"
+      text: |
+        <p>测试用例全量通过</p>
+        <p>真引擎、真数据、真测试</p>
+  - elementId: div1
+    elementType: line
+    bounds: [80, 146, 60, 2]
+    viewBox: [60, 2]
+    points: "0,1 60,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: n2
+    elementType: text
+    bounds: [380, 150, 150, 60]
+    content: {style: "$bignum", wrap: false, text: "1.30"}
+  - elementId: n2-label
+    elementType: text
+    bounds: [380, 214, 240, 44]
+    content:
+      style: "$small"
+      text: |
+        <p>top_contra 可部署口径夏普（含成本/整手/风控门）</p>
+        <p>对账残差 ~1e-9 恒等式成立</p>
+  - elementId: div2
+    elementType: line
+    bounds: [380, 146, 60, 2]
+    viewBox: [60, 2]
+    points: "0,1 60,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: n3
+    elementType: text
+    bounds: [680, 150, 150, 60]
+    content: {style: "$bignum", wrap: false, text: "0"}
+  - elementId: n3-label
+    elementType: text
+    bounds: [680, 214, 220, 44]
+    content:
+      style: "$small"
+      text: |
+        <p>AI 可触达的实盘路径数</p>
+        <p>机器强制执行，非人工承诺</p>
+  - elementId: div3
+    elementType: line
+    bounds: [680, 146, 60, 2]
+    viewBox: [60, 2]
+    points: "0,1 60,1"
+    border: {style: solid, width: 2, color: "$accent"}
+  - elementId: claims
+    elementType: text
+    bounds: [80, 300, 800, 150]
+    content:
+      style: "$body"
+      fontSize: 14
+      lineHeight: 1.7
+      text: |
+        <p><span style="color:$accent">①</span>  后端引擎全部建成并经测试验证 —— 不是演示 Demo，是可审计的生产级研究平台</p>
+        <p><span style="color:$accent">②</span>  已产出可部署候选 ALPHA —— 两条近零相关（-0.04）的加密货币边，执行现实检验存活</p>
+        <p><span style="color:$accent">③</span>  安全即护城河 —— "AI 永远不能碰实盘"是结构性约束，监管尽调时代最稀缺的工程资产</p>
+  - elementId: footnote
+    elementType: text
+    bounds: [80, 478, 800, 34]
+    content:
+      style: "$small"
+      text: |
+        <p>诚实声明：全部绩效为历史数据上的执行现实干跑（非前向实盘收益）；失败实验已主动披露（第 14 页）。</p>

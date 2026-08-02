@@ -197,6 +197,95 @@ def test_encrypt_file_then_decrypt_file_roundtrip_is_byte_identical(tmp_path):
     assert restored.read_bytes() == original_bytes
 
 
+def test_encrypt_file_streams_multiple_authenticated_chunks(tmp_path):
+    src = tmp_path / "large-ledger.db"
+    original_bytes = bytes(range(256)) * 3
+    src.write_bytes(original_bytes)
+
+    enc = tmp_path / "large-ledger.db.enc"
+    encrypt_file(str(src), str(enc), "chunked-passphrase", chunk_size=31)
+
+    assert enc.read_bytes().startswith(b"QBK2")
+    restored = tmp_path / "restored-large-ledger.db"
+    decrypt_file(str(enc), str(restored), "chunked-passphrase")
+    assert restored.read_bytes() == original_bytes
+
+
+def test_decrypt_file_remains_backward_compatible_with_qbk1_blob(tmp_path):
+    original_bytes = b"legacy encrypted authority state"
+    enc = tmp_path / "legacy.db.enc"
+    enc.write_bytes(encrypt_bytes(original_bytes, "legacy-passphrase"))
+
+    restored = tmp_path / "restored-legacy.db"
+    decrypt_file(str(enc), str(restored), "legacy-passphrase")
+
+    assert restored.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize("mutation", ["tamper", "truncate"])
+def test_chunked_decrypt_rejects_corruption_without_publishing_partial_output(tmp_path, mutation):
+    src = tmp_path / "authority.db"
+    src.write_bytes(bytes(range(128)) * 2)
+    enc = tmp_path / "authority.db.enc"
+    encrypt_file(str(src), str(enc), "corruption-test-passphrase", chunk_size=23)
+
+    blob = bytearray(enc.read_bytes())
+    if mutation == "tamper":
+        blob[-1] ^= 0xFF
+    else:
+        del blob[-7:]
+    enc.write_bytes(blob)
+
+    restored = tmp_path / "must-not-exist.db"
+    with pytest.raises(BackupDecryptionError):
+        decrypt_file(str(enc), str(restored), "corruption-test-passphrase")
+    assert not restored.exists()
+
+
+def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
+    import tools.live_backup as live_backup
+
+    chunk_size = 23
+    src = tmp_path / "authority.db"
+    src.write_bytes(bytes(range(chunk_size * 2)))
+    enc = tmp_path / "authority.db.enc"
+    encrypt_file(str(src), str(enc), "reorder-test-passphrase", chunk_size=chunk_size)
+
+    blob = bytearray(enc.read_bytes())
+    header_size = live_backup._CHUNKED_HEADER.size
+    record_size = live_backup._CHUNK_LENGTH.size + chunk_size + live_backup._GCM_TAG_LEN
+    first = bytes(blob[header_size:header_size + record_size])
+    second = bytes(blob[header_size + record_size:header_size + (record_size * 2)])
+    blob[header_size:header_size + record_size] = second
+    blob[header_size + record_size:header_size + (record_size * 2)] = first
+    enc.write_bytes(blob)
+
+    with pytest.raises(BackupDecryptionError):
+        decrypt_file(str(enc), str(tmp_path / "must-not-exist.db"), "reorder-test-passphrase")
+
+
+def test_chunked_decrypt_rejects_reordered_authenticated_chunks(tmp_path):
+    import tools.live_backup as live_backup
+
+    chunk_size = 23
+    src = tmp_path / "authority.db"
+    src.write_bytes(bytes(range(chunk_size * 2)))
+    enc = tmp_path / "authority.db.enc"
+    encrypt_file(str(src), str(enc), "reorder-test-passphrase", chunk_size=chunk_size)
+
+    blob = bytearray(enc.read_bytes())
+    header_size = live_backup._CHUNKED_HEADER.size
+    record_size = live_backup._CHUNK_LENGTH.size + chunk_size + live_backup._GCM_TAG_LEN
+    first = bytes(blob[header_size:header_size + record_size])
+    second = bytes(blob[header_size + record_size:header_size + (record_size * 2)])
+    blob[header_size:header_size + record_size] = second
+    blob[header_size + record_size:header_size + (record_size * 2)] = first
+    enc.write_bytes(blob)
+
+    with pytest.raises(BackupDecryptionError):
+        decrypt_file(str(enc), str(tmp_path / "must-not-exist.db"), "reorder-test-passphrase")
+
+
 def test_policy_refuses_to_run_when_no_passphrase_and_no_explicit_optout():
     import tools.live_backup as live_backup
 

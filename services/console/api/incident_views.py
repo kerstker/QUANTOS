@@ -120,10 +120,13 @@ def _incident_response_payload() -> Dict:
     ]
 
     source_monitors = monitoring["top_breaches"] + monitoring["watchlist"]
+    category_aliases = {"DATA_DISTRIBUTION_DRIFT": "FEATURE_DRIFT"}
     incidents = []
     timeline = []
     for idx, monitor in enumerate(source_monitors):
-        rule = route_by_category[monitor["category"]]
+        rule = route_by_category[
+            category_aliases.get(monitor["category"], monitor["category"])
+        ]
         if monitor["status"] == "BREACH" and monitor["drift_score"] >= 0.5:
             severity = "CRITICAL"
         elif monitor["status"] == "BREACH":

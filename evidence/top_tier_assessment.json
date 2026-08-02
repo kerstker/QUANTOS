@@ -15,14 +15,14 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M2",
       "domain": "data_moat",
       "passed": 1,
       "red_lines_failed": 0,
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "execution_microstructure",
       "passed": 1,
       "red_lines_failed": 0,
@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "domain": "reliability_operations",
-      "passed": 1,
+      "passed": 0,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -156,7 +156,7 @@
       ],
       "id": "AI.MODEL.REGISTRY.REDTEAM",
       "meets_target": false,
-      "next_action": "Govern an external model provider through the registered runtime and independent external review",
+      "next_action": "Configure a real external provider and externally verified receipts through the registered runtime; complete independent strong-identity review",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -342,17 +342,37 @@
       "tier": "A"
     },
     {
-      "checker": "manual_evidence",
-      "checker_args": {},
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M2",
+        "paths": [
+          "quantos/contracts/vendor_data.py",
+          "services/data/vendor_admission.py",
+          "services/data/vendor_delivery_history.py",
+          "tests/data/test_vendor_admission.py",
+          "tests/data/test_vendor_delivery_history.py",
+          "tests/governance/test_vendor_data_boundary.py",
+          "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+        ]
+      },
       "classification": "NEEDS_EXTERNAL",
-      "current_maturity": "M1",
+      "current_maturity": "M2",
       "description": "Licensed tick and order-book data with SLA",
-      "detail": "requires external or human-verified evidence",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
       "domain": "data_moat",
-      "evidence": [],
+      "evidence": [
+        "quantos/contracts/vendor_data.py",
+        "services/data/vendor_admission.py",
+        "services/data/vendor_delivery_history.py",
+        "tests/data/test_vendor_admission.py",
+        "tests/data/test_vendor_delivery_history.py",
+        "tests/governance/test_vendor_data_boundary.py",
+        "docs/engineering/specs/2026-07-28-licensed-vendor-data-admission.md"
+      ],
       "id": "DATA.VENDOR.DEPTH",
       "meets_target": false,
-      "next_action": "Acquire licensed source and record SLA evidence",
+      "next_action": "Acquire a genuine licensed tick/order-book source; provision an external license verifier; operate the append-only delivery authority with real deliveries, SLA incidents and remediation; retain contractual rights and legal review",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -360,7 +380,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "MANUAL_EVIDENCE_REQUIRED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -397,17 +417,47 @@
       "tier": "A"
     },
     {
-      "checker": "manual_evidence",
-      "checker_args": {},
+      "assess_local_readiness": true,
+      "checker": "paths_exist",
+      "checker_args": {
+        "pass_maturity": "M3",
+        "paths": [
+          "services/execution/simulated_sor.py",
+          "services/execution/simulated_tca.py",
+          "services/execution/paper_tca_history.py",
+          "services/execution/dry_run_pipeline.py",
+          "services/execution/dry_run_store.py",
+          "tests/execution/test_simulated_sor.py",
+          "tests/execution/test_simulated_tca.py",
+          "tests/execution/test_paper_tca_history.py",
+          "tests/execution/test_dry_run_pipeline.py",
+          "tests/execution/test_dry_run_store.py",
+          "tests/execution/test_execution_import_boundary.py",
+          "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+        ]
+      },
       "classification": "POST_L2",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "Multi-venue SOR and production microstructure",
-      "detail": "requires external or human-verified evidence",
+      "detail": "all declared evidence paths exist; local readiness only; external target evidence remains required",
       "domain": "execution_microstructure",
-      "evidence": [],
+      "evidence": [
+        "services/execution/simulated_sor.py",
+        "services/execution/simulated_tca.py",
+        "services/execution/paper_tca_history.py",
+        "services/execution/dry_run_pipeline.py",
+        "services/execution/dry_run_store.py",
+        "tests/execution/test_simulated_sor.py",
+        "tests/execution/test_simulated_tca.py",
+        "tests/execution/test_paper_tca_history.py",
+        "tests/execution/test_dry_run_pipeline.py",
+        "tests/execution/test_dry_run_store.py",
+        "tests/execution/test_execution_import_boundary.py",
+        "docs/engineering/specs/2026-07-28-simulated-multivenue-sor.md"
+      ],
       "id": "EXECUTION.MULTIVENUE.SOR",
       "meets_target": false,
-      "next_action": "Keep simulated until post-L2 approval",
+      "next_action": "Retain longitudinal route-level dry-run TCA while awaiting post-L2 approval; then prove real multi-venue broker connectivity, fill quality, outage behavior and production TCA",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -415,7 +465,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "MANUAL_EVIDENCE_REQUIRED",
+      "status": "PARTIAL",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -455,22 +505,34 @@
       "checker_args": {
         "pass_maturity": "M3",
         "paths": [
+          ".github/workflows/validate.yml",
           "apps/research-console/src/app/routes.tsx",
-          "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+          "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+          "apps/research-console/playwright.config.ts",
+          "apps/research-console/e2e/paper-cockpit.spec.ts",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+          "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+          "tests/governance/test_frontend_institutional_e2e_gate.py"
         ]
       },
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
-      "description": "Routes navigation and smoke tests share registry",
+      "description": "Routes navigation and smoke tests share registry; the paper cockpit has a deterministic cross-platform accessibility, overflow, and visual-regression gate",
       "detail": "all declared evidence paths exist",
       "domain": "frontend_console",
       "evidence": [
+        ".github/workflows/validate.yml",
         "apps/research-console/src/app/routes.tsx",
-        "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx"
+        "apps/research-console/src/pages/__tests__/pages.smoke.test.tsx",
+        "apps/research-console/playwright.config.ts",
+        "apps/research-console/e2e/paper-cockpit.spec.ts",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-win32.png",
+        "apps/research-console/e2e/__snapshots__/paper-cockpit-linux.png",
+        "tests/governance/test_frontend_institutional_e2e_gate.py"
       ],
       "id": "FRONTEND.ROUTES.SINGLE_SOURCE",
       "meets_target": true,
-      "next_action": "Add E2E accessibility and visual regression",
+      "next_action": "Sustain the pinned Windows/Linux accessibility, overflow, and visual-regression gate as the cockpit evolves",
       "red_line": false,
       "required_evidence": [
         "implementation",
@@ -533,13 +595,17 @@
         "config/identity_authorization_registry.json",
         "quantos/contracts/identity.py",
         "scripts/generate_strong_identity_evidence.py",
+        "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
+        "services/governance/oidc_key_registry.py",
         "services/governance/strong_identity.py",
         "services/promotion_api/main.py",
         "apps/research-console/src/lib/api/governance-pkce.test.ts",
+        "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
+        "tests/governance/test_oidc_key_registry.py",
         "tests/governance/test_promotion_api_boundary.py",
         "tests/governance/test_promotion_api_endpoints.py",
         "tests/governance/test_strong_identity.py",
@@ -571,6 +637,11 @@
               "role": "alpha_maintenance"
             },
             {
+              "relative_path": "data/cache/alpha_production_workflow.db",
+              "required": true,
+              "role": "alpha_production_workflow"
+            },
+            {
               "relative_path": "data/cache/approvals.db",
               "required": false,
               "role": "approval_authority"
@@ -636,6 +707,11 @@
               "role": "data_refresh_history"
             },
             {
+              "relative_path": "data/cache/paper_candidate_registry.db",
+              "required": false,
+              "role": "factory_candidate_admission"
+            },
+            {
               "relative_path": "data/cache/paper_track.db",
               "required": true,
               "role": "paper_track"
@@ -644,9 +720,14 @@
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 2
+          "version": 3
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -666,25 +747,13 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
+      "detail": "invalid expected source contract: source contract version must be 2",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "tools/l2_scheduler_watchdog.py",
-        "tools/external_heartbeat.py",
-        "tools/domain_event_seal.py",
-        "tools/restore_drill.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/tools/test_l2_scheduler_watchdog.py",
-        "tests/tools/test_external_heartbeat.py",
-        "tests/tools/test_domain_event_seal.py",
-        "tests/governance/test_l2_operations_boundary.py",
-        "evidence/l2_backup_latest.json"
-      ],
+      "evidence": [],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -694,7 +763,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "UNVERIFIED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -710,6 +779,11 @@
               "relative_path": "data/cache/alpha_maintenance.db",
               "required": false,
               "role": "alpha_maintenance"
+            },
+            {
+              "relative_path": "data/cache/alpha_production_workflow.db",
+              "required": true,
+              "role": "alpha_production_workflow"
             },
             {
               "relative_path": "data/cache/approvals.db",
@@ -777,6 +851,11 @@
               "role": "data_refresh_history"
             },
             {
+              "relative_path": "data/cache/paper_candidate_registry.db",
+              "required": false,
+              "role": "factory_candidate_admission"
+            },
+            {
               "relative_path": "data/cache/paper_track.db",
               "required": true,
               "role": "paper_track"
@@ -785,9 +864,14 @@
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
+            },
+            {
+              "relative_path": "data/cache/vendor_delivery_history.db",
+              "required": false,
+              "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 2
+          "version": 3
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -813,20 +897,11 @@
         "trust_registry_path": "config/l2_restore_checkpoint_trust_registry.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M0",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is not provisioned; recurring M4 evidence is unavailable",
+      "detail": "restore-history checker arguments are incomplete",
       "domain": "reliability_operations",
-      "evidence": [
-        "tools/l2_backup.py",
-        "services/governance/l2_restore_history.py",
-        "services/governance/l2_restore_checkpoint.py",
-        "tests/tools/test_l2_backup.py",
-        "tests/governance/test_l2_restore_history.py",
-        "tests/governance/test_l2_restore_checkpoint.py",
-        "tests/governance/test_l2_restore_top_tier.py",
-        "data/cache/l2_restore_history.db"
-      ],
+      "evidence": [],
       "id": "OPS.RESTORE.DRILL",
       "meets_target": false,
       "next_action": "Operate the append-only restore history for 30 days, provision an independent Ed25519 checkpoint key, retain WORM object-version receipts for at least 90 days, and prove the external scheduler/heartbeat detects missed attempts",
@@ -838,7 +913,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "UNVERIFIED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -853,6 +928,7 @@
           "actions-osv-evidence:current",
           "container-trivy-evidence:current",
           "service-import-graph:current",
+          "artifact-admission-authority:provision",
           "model-risk-history:current",
           "risk-recovery-drill:fresh",
           "frontend: typecheck",
@@ -893,20 +969,40 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "SBOM SAST dependency scan and signed artifacts",
-      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed but unprovisioned local decision store; no retained valid bundle or external signed receipt exercises the real verifier path, source-native checkpoint/revocation proofs are not verified, and cross-host reproducibility, an externally signed artifact, authenticated receipts, independent deployment, and an external history seal remain open; evidence does not meet target maturity",
+      "detail": "deterministic SBOM, pinned direct inputs, immutable CI actions, manifest digests, external npm/Python/Actions advisory results, and a digest-bound Trivy base/runtime image scan with zero runtime findings verified; two same-builder cold OCI builds were byte-identical; an offline Rekor-v1-only Sigstore boundary now uses empty policy and receipt-authority registries, a verify-only Ed25519 signed-receipt gate, strict freshness/revocation checks, and a fixed local decision authority whose exact empty trust-root mirrors and hash-chain heads were verified; a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 DSSE bundle and byte-identical Ubuntu 22.04/24.04 source artifact are independently verified; cross-host deployable-container reproduction is not proven; the artifact-admission authority chain head is bound to the source commit by a retained GitHub OIDC/Fulcio/SCT/Rekor-v1 signature; an external signed receipt authority, source-native checkpoint/revocation proofs, independent admission deployment, and WORM object-lock retention remain open; evidence does not meet target maturity",
       "domain": "platform_engineering",
       "evidence": [
         "evidence/supply_chain_baseline.json",
         "config/artifact_admission_policy_registry.json",
         "config/artifact_receipt_authority_registry.json",
         "services/governance/artifact_admission.py",
+        "services/governance/artifact_admission_external_seal.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/cross_host_container_reproducibility.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/json_integrity.py",
+        "tools/artifact_admission_seal.py",
+        "tools/provision_artifact_admission_authority.py",
         "tools/verify_artifact_admission.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/tools/test_artifact_admission_seal.py",
+        "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+        "evidence/external_sigstore/2026-07-30/github-artifact.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+        "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+        "evidence/external_sigstore/2026-07-30/trusted-root.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+        "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
         "evidence/vulnerability/npm_audit_latest.json",
         "evidence/vulnerability/python_audit_latest.json",
         "evidence/vulnerability/actions_osv_latest.json",
@@ -914,17 +1010,38 @@
         "evidence/reproducibility/container_build_latest.json",
         "evidence/sbom.cdx.json",
         ".gitattributes",
+        ".github/workflows/sigstore-evidence.yml",
         ".github/workflows/validate.yml",
         "apps/research-console/package-lock.json",
         "apps/research-console/package.json",
+        "apps/research-console/src/lib/types/research.ts",
+        "apps/research-console/src/pages/DryRunPipeline.tsx",
+        "config/artifact_admission_policy_registry.generation-0.json",
         "config/artifact_admission_policy_registry.json",
+        "config/artifact_receipt_authority_registry.generation-0.json",
         "config/artifact_receipt_authority_registry.json",
         "config/identity_authorization_registry.json",
         "config/model_provider_registry.json",
         "config/service_import_policy.json",
+        "config/templates/live_mandate_binance_mainnet.json.template",
         "config/top_tier_requirements.json",
         "deploy/console.Dockerfile",
+        "docs/engineering/specs/2026-07-30-external-sigstore-evidence-design.md",
+        "docs/engineering/specs/2026-07-31-cross-host-container-reproducibility.md",
+        "docs/engineering/specs/2026-07-31-identity-access-review-attestation.md",
+        "docs/engineering/specs/2026-07-31-oidc-key-rotation-registry.md",
+        "docs/engineering/specs/2026-08-01-automatic-alpha-candidate-handoff.md",
         "evidence/event_schema_catalog.json",
+        "evidence/external_sigstore/2026-07-30/external-evidence-receipt.json",
+        "evidence/external_sigstore/2026-07-30/github-artifact.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.manifest.json",
+        "evidence/external_sigstore/2026-07-30/quantos-source.sigstore.json",
+        "evidence/external_sigstore/2026-07-30/slsa-predicate.json",
+        "evidence/external_sigstore/2026-07-30/trusted-root.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-external-receipt.sigstore.json",
+        "evidence/external_sigstore/2026-07-31-admission/artifact-admission-seal.json",
+        "evidence/external_sigstore/2026-07-31-admission/trusted-root.json",
         "evidence/reproducibility/container_build_latest.json",
         "evidence/service_import_graph.json",
         "evidence/vulnerability/actions_osv_latest.json",
@@ -945,6 +1062,7 @@
         "scripts/generate_actions_audit_evidence.py",
         "scripts/generate_container_audit_evidence.py",
         "scripts/generate_container_reproducibility_evidence.py",
+        "scripts/generate_cross_host_container_evidence.py",
         "scripts/generate_event_schema_catalog.py",
         "scripts/generate_npm_audit_evidence.py",
         "scripts/generate_python_audit_evidence.py",
@@ -961,6 +1079,7 @@
         "services/alpha/maintenance_events.py",
         "services/alpha/maintenance_store.py",
         "services/alpha/promotion.py",
+        "services/console/api/artifact_paper_views.py",
         "services/console/api/risk_port.py",
         "services/console/api/system_views.py",
         "services/console/main.py",
@@ -978,11 +1097,17 @@
         "services/execution/impact_calibration.py",
         "services/execution/paper_reconciliation.py",
         "services/governance/artifact_admission.py",
+        "services/governance/artifact_admission_external_seal.py",
         "services/governance/artifact_admission_store.py",
         "services/governance/artifact_receipt_auth.py",
+        "services/governance/cross_host_container_reproducibility.py",
         "services/governance/external_model_provider_evidence.py",
+        "services/governance/external_sigstore_evidence.py",
+        "services/governance/identity_access_review.py",
         "services/governance/identity_authorization.py",
         "services/governance/identity_authorization_store.py",
+        "services/governance/json_integrity.py",
+        "services/governance/oidc_key_registry.py",
         "services/governance/reproducibility_evidence.py",
         "services/governance/service_import_graph.py",
         "services/governance/strong_identity.py",
@@ -998,7 +1123,9 @@
         "services/promotion_api/main.py",
         "services/research/experiment_registry/registry.py",
         "services/research/experiment_registry/store.py",
+        "services/research/paper_candidate_registry.py",
         "services/research/ports/persistence.py",
+        "services/research/robust_optimization.py",
         "services/risk/pre_trade/events.py",
         "services/risk/pre_trade/kill_switch.py",
         "services/risk/pre_trade/kill_switch_runtime.py",
@@ -1015,19 +1142,26 @@
         "tests/execution/test_impact_ownership.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
+        "tests/governance/test_artifact_admission_external_seal.py",
+        "tests/governance/test_artifact_admission_provisioning.py",
         "tests/governance/test_artifact_admission_store.py",
         "tests/governance/test_artifact_receipt_auth.py",
         "tests/governance/test_console_composition_boundary.py",
+        "tests/governance/test_cross_host_container_reproducibility.py",
         "tests/governance/test_event_bus_wiring.py",
         "tests/governance/test_event_schema_catalog.py",
         "tests/governance/test_evidence_checkout_portability.py",
         "tests/governance/test_external_model_provider_boundary.py",
         "tests/governance/test_external_model_provider_evidence.py",
         "tests/governance/test_external_operations_boundary.py",
+        "tests/governance/test_external_sigstore_evidence.py",
+        "tests/governance/test_external_sigstore_workflow.py",
+        "tests/governance/test_identity_access_review.py",
         "tests/governance/test_identity_authorization.py",
         "tests/governance/test_identity_authorization_store.py",
         "tests/governance/test_l2_operations_boundary.py",
         "tests/governance/test_l2_schedule_boundary.py",
+        "tests/governance/test_oidc_key_registry.py",
         "tests/governance/test_promotion_api_boundary.py",
         "tests/governance/test_promotion_api_endpoints.py",
         "tests/governance/test_risk_recovery_drill_boundary.py",
@@ -1047,9 +1181,12 @@
         "tests/monitoring/test_governance_decision_audit.py",
         "tests/research/test_console_event_projection.py",
         "tests/research/test_experiment_event_outbox.py",
+        "tests/research/test_paper_candidate_registry.py",
         "tests/risk/test_kill_switch_state_store.py",
         "tests/risk/test_research_risk_events.py",
+        "tests/tools/test_alpha_candidate_admission.py",
         "tests/tools/test_alpha_maintenance_sweep.py",
+        "tests/tools/test_artifact_admission_seal.py",
         "tests/tools/test_deployment_events.py",
         "tests/tools/test_domain_event_bus.py",
         "tests/tools/test_domain_event_health.py",
@@ -1062,7 +1199,13 @@
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_reproducible_source_bundle.py",
+        "tools/alpha_candidate_admission.py",
         "tools/alpha_maintenance_sweep.py",
+        "tools/artifact_admission_seal.py",
+        "tools/build_reproducible_source_bundle.py",
+        "tools/crypto_factory_loop.py",
+        "tools/crypto_robust_optimization.py",
         "tools/deployment_events.py",
         "tools/domain_event_bus.py",
         "tools/domain_event_health.py",
@@ -1073,6 +1216,7 @@
         "tools/external_heartbeat.py",
         "tools/external_model_provider.py",
         "tools/external_model_provider_probe.py",
+        "tools/forward_track_advance.py",
         "tools/kill_switch_events.py",
         "tools/l2_backup.py",
         "tools/l2_schedule_entrypoint.py",
@@ -1081,14 +1225,16 @@
         "tools/live_data_refresh.py",
         "tools/live_kill_switch_reset.py",
         "tools/live_risk_sentinel.py",
+        "tools/live_testnet_smoke.py",
         "tools/live_track_advance.py",
+        "tools/provision_artifact_admission_authority.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
         "tools/verify_artifact_admission.py"
       ],
       "id": "PLATFORM.SUPPLY_CHAIN",
       "meets_target": false,
-      "next_action": "Prove cross-host reproducibility; retain externally identity-signed Sigstore bundles and authenticated receipts; operate independent checkpoint and revocation sources; provision the fixed admission authority and externally seal its chain head at an independently deployed boundary",
+      "next_action": "Retain an authenticated external receipt and 90-day WORM object-lock copy; operate independently deployed admission, checkpoint, and revocation authorities",
       "red_line": true,
       "required_evidence": [
         "implementation",
@@ -1331,12 +1477,12 @@
   "schema_version": 1,
   "summary": {
     "failed": 0,
-    "manual_evidence_required": 2,
-    "partial": 5,
-    "passed": 15,
+    "manual_evidence_required": 0,
+    "partial": 6,
+    "passed": 14,
     "red_lines_failed": 3,
     "total": 22,
-    "unverified": 0
+    "unverified": 2
   },
   "verdict": "NOT_TOP_TIER"
 }

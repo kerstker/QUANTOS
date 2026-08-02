@@ -7,6 +7,8 @@ from services.research.backtest_engine.engine import run_backtest
 from services.research.backtest_engine.metrics import max_drawdown, metrics, sharpe, sortino
 from services.research.backtest_engine.report import capacity_estimate, to_backtest_result
 
+import pytest
+
 
 def _bars(closes):
     return [Bar(instrument_id="X", event_time=i + 1, knowledge_time=i + 1,
@@ -99,6 +101,20 @@ def test_max_drawdown_clamped_on_negative_equity():
 
 def test_sortino_infinite_when_no_downside():
     assert sortino([0.01, 0.02, 0.03]) == float("inf")
+
+
+def test_sortino_uses_standard_downside_deviation_rms_around_zero():
+    """Sortino 应使用 sqrt(mean(downside_returns²)) — 围绕 MAR=0 的二阶下偏矩，
+    而非 pstdev(downside)（围绕下行均值中心化）。验证修复后值与标准公式一致。"""
+    import math, statistics as _st
+    returns = [-0.02, -0.01, 0.01, 0.02, 0.03]
+    downside = [min(0.0, r) for r in returns]
+    # 标准 Sortino 分母: RMS of downside returns around MAR=0
+    expected_dd = math.sqrt(_st.fmean([d * d for d in downside]))
+    mean = _st.fmean(returns)
+    expected_sortino = (mean / expected_dd) * math.sqrt(252)
+    actual = sortino(returns)
+    assert actual == pytest.approx(expected_sortino, rel=1e-10)
 
 
 def test_calmar_is_annualized_and_finite():

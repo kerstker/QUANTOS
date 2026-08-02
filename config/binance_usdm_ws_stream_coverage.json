@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "product": "BINANCE_USDM_FUTURES",
+  "scope": "L2_PUBLIC_WEBSOCKET_MARKET_STREAMS_ONLY",
+  "official_public_catalog_url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public",
+  "official_market_catalog_url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market",
+  "catalog_stream_count": 20,
+  "capabilities": [
+    {
+      "id": "all_book_tickers",
+      "title": "All Book Tickers Stream",
+      "route": "PUBLIC",
+      "stream": "!bookTicker",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The per-symbol bookTicker subscriptions provide the same fields at real-time speed for the fixed 14-symbol universe; the all-symbol stream is slower and broader."
+    },
+    {
+      "id": "diff_book_depth",
+      "title": "Diff. Book Depth Streams",
+      "route": "PUBLIC",
+      "stream": "{symbol}@depth@{updateSpeed}",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The bounded paper SOR consumes the official 20-level partial book; full local-book reconstruction is not required by the current execution contract."
+    },
+    {
+      "id": "individual_book_ticker",
+      "title": "Individual Symbol Book Ticker Streams",
+      "route": "PUBLIC",
+      "stream": "{symbol}@bookTicker",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "Real-time best bid, ask, quantities and spread are consumed by paper execution and diagnostics."
+    },
+    {
+      "id": "partial_book_depth",
+      "title": "Partial Book Depth Streams",
+      "route": "PUBLIC",
+      "stream": "{symbol}@depth20@500ms",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "The deterministic paper SOR consumes a bounded 20-level public book."
+    },
+    {
+      "id": "rpi_diff_book_depth",
+      "title": "RPI Diff. Book Depth Streams",
+      "route": "PUBLIC",
+      "stream": "{symbol}@rpiDepth@500ms",
+      "status": "LOAD_BEARING",
+      "implementation": [
+        "tools/binance_realtime_stream.py",
+        "tools/binance_rpi_depth.py"
+      ],
+      "reason": "Real-time RPI-inclusive deltas are continuity-checked and reduced alongside hourly complete RPI snapshots without assuming paper fills."
+    },
+    {
+      "id": "aggregate_trade",
+      "title": "Aggregate Trade Streams",
+      "route": "MARKET",
+      "stream": "{symbol}@aggTrade",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "Real-time taker flow is reduced into five-second buy and sell notional windows."
+    },
+    {
+      "id": "all_market_liquidation",
+      "title": "All Market Liquidation Order Stream",
+      "route": "MARKET",
+      "stream": "!forceOrder@arr",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "One all-market stream supplies forced-order flow for the complete fixed universe."
+    },
+    {
+      "id": "all_market_mini_tickers",
+      "title": "All Market Mini Tickers Stream",
+      "route": "MARKET",
+      "stream": "!miniTicker@arr",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The five-minute REST snapshot already persists validated 24-hour statistics for every required symbol."
+    },
+    {
+      "id": "all_market_tickers",
+      "title": "All Market Tickers Streams",
+      "route": "MARKET",
+      "stream": "!ticker@arr",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The five-minute REST snapshot already persists the complete ticker fields for the fixed universe."
+    },
+    {
+      "id": "composite_index",
+      "title": "Composite Index Symbol Information Streams",
+      "route": "MARKET",
+      "stream": "{symbol}@compositeIndex",
+      "status": "NOT_APPLICABLE",
+      "implementation": [],
+      "reason": "The current paper universe contains ordinary single-asset USDT perpetuals and no composite-index contract."
+    },
+    {
+      "id": "continuous_contract_kline",
+      "title": "Continuous Contract Kline/Candlestick Streams",
+      "route": "MARKET",
+      "stream": "{pair}_{contractType}@continuousKline_{interval}",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The fixed universe uses named perpetual symbols and consumes their individual symbol kline stream."
+    },
+    {
+      "id": "contract_info",
+      "title": "Contract Info Stream",
+      "route": "MARKET",
+      "stream": "!contractInfo",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "Listing, settlement, contract-status and notional-bracket changes are retained immediately for fail-closed paper eligibility."
+    },
+    {
+      "id": "individual_mini_ticker",
+      "title": "Individual Symbol Mini Ticker Stream",
+      "route": "MARKET",
+      "stream": "{symbol}@miniTicker",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The complete individual ticker and REST snapshot supersede this reduced field set."
+    },
+    {
+      "id": "individual_ticker",
+      "title": "Individual Symbol Ticker Streams",
+      "route": "MARKET",
+      "stream": "{symbol}@ticker",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "Validated five-minute REST 24-hour statistics are sufficient for current paper sizing and avoid 14 additional one-second streams."
+    },
+    {
+      "id": "kline",
+      "title": "Kline/Candlestick Streams",
+      "route": "MARKET",
+      "stream": "{symbol}@kline_1m",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "The current one-minute candle is retained for intraminute market state and feature projection."
+    },
+    {
+      "id": "individual_liquidation",
+      "title": "Liquidation Order Streams",
+      "route": "MARKET",
+      "stream": "{symbol}@forceOrder",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "The all-market liquidation stream supplies the same selected-symbol events on one subscription."
+    },
+    {
+      "id": "mark_price",
+      "title": "Mark Price Stream",
+      "route": "MARKET",
+      "stream": "{symbol}@markPrice@1s",
+      "status": "LOAD_BEARING",
+      "implementation": ["tools/binance_realtime_stream.py"],
+      "reason": "Mark price, index price, estimated settlement and funding are required by the paper mark and risk surface."
+    },
+    {
+      "id": "all_market_mark_price",
+      "title": "Mark Price Stream for All market",
+      "route": "MARKET",
+      "stream": "!markPrice@arr@1s",
+      "status": "REDUNDANT",
+      "implementation": [],
+      "reason": "Per-symbol mark streams constrain the feed to the fixed universe and expose the same required fields."
+    },
+    {
+      "id": "asset_index",
+      "title": "Multi-Assets Mode Asset Index",
+      "route": "MARKET",
+      "stream": "!assetIndex@arr",
+      "status": "NOT_APPLICABLE",
+      "implementation": [],
+      "reason": "The L2 paper book uses a single USDT collateral convention and does not model multi-assets auto-exchange."
+    },
+    {
+      "id": "trading_session",
+      "title": "Trading Session Stream",
+      "route": "MARKET",
+      "stream": "tradingSession",
+      "status": "NOT_APPLICABLE",
+      "implementation": [],
+      "reason": "The fixed universe contains crypto perpetuals, not TradFi perpetual underlyings with exchange sessions."
+    }
+  ]
+}

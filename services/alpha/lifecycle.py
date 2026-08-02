@@ -25,6 +25,7 @@ from typing import Optional
 from quantos.contracts.alpha import (
     Actor, AlphaTransition, assert_alpha_transition,
 )
+from quantos.contracts.alpha import InvalidAlphaTransition
 from quantos.contracts.governance import ApprovalRecord, AuditEvent
 from quantos.contracts.hashing import stable_hash
 from quantos.contracts.research import AlphaState
@@ -32,8 +33,30 @@ from services.validation.catalog_evidence import (
     verify_catalog_evidence_against_catalog,
 )
 
+from services.lifecycle import (
+    DeploymentState,
+    HealthState,
+    HealthVerdict,
+    InvalidHealthTransition,
+    can_health_transition,
+    is_deployed,
+)
+
 from .config import AlphaFactoryConfig
 from . import guards
+
+
+# 727 C3: how a health-machine verdict maps onto the legacy mixed field when the
+# two machines overlap. DEGRADED and PAUSED existed before; FAILED (execution or
+# risk broke) is what the legacy PAUSED actually meant coming from the monitor;
+# WATCH never existed — it keeps the more severe legacy representation (PAUSED),
+# the fail-safe direction. HEALTHY has no entry: recovery is §11.3 human-gated
+# and deliberately NOT wired in C3.
+_HEALTH_TO_LEGACY = {
+    HealthState.WATCH: AlphaState.PAUSED,
+    HealthState.DEGRADED: AlphaState.DEGRADED,
+    HealthState.FAILED: AlphaState.PAUSED,
+}
 
 
 class GuardRejected(ValueError):
@@ -146,12 +169,16 @@ class AlphaLifecycleManager:
             # Rank #12: promotion requires surviving the arbitrary-dependence BHY FDR (stricter than
             # plain BH — correct when the catalog's edges are correlated), not just BH.
             fdr_ok = alpha_id in self.catalog.bhy_fdr_survivors(self.config.fdr_q)
+            family_fdr_ok = alpha_id in self.catalog.family_fdr_survivors(
+                self.config.fdr_q
+            )
             return guards.guard_to_validated(
                 evaluation,
                 self.config,
                 cc,
                 trial_set_hash,
                 bh_survived=fdr_ok,
+                family_fdr_survived=family_fdr_ok,
                 catalog_evidence_matches=catalog_evidence_matches,
             )
         if dst == AlphaState.PAPER_TRADING:
@@ -197,6 +224,96 @@ class AlphaLifecycleManager:
             # the only live gate is APPROVED (human-only, handled above) — so these are always permitted
             return True, ()
         return False, ("UNKNOWN_TRANSITION",)
+
+    def advance_health(
+        self,
+        alpha_id: str,
+        verdict: HealthVerdict,
+        actor: Actor,
+        *,
+        timestamp: int,
+        dataset_version: str = "",
+    ) -> Optional[AlphaTransition]:
+        """727 C3 health-machine entry — the orchestrated way to record that an
+        alpha's BEHAVIOUR changed, without touching its research verdict or its
+        deployment position (the two things the legacy DEGRADED/PAUSED writes
+        used to overwrite).
+
+        Flow: health-edge legality -> legacy write through the existing audited
+        advance() (so every unswitched reader and the transition chain see
+        exactly what they saw before C3) -> restore the orthogonal dimensions the
+        legacy projection clobbered -> append a health-machine audit event.
+
+        De-risk coupling (§3.4 invariant 3): a FAILED verdict while deployed
+        drives the deployment dimension to PAUSED — always permitted, §11.2.
+        If the legacy edge needed for the overlap write does not exist (e.g.
+        legacy PAUSED -> DEGRADED, a recovery the mixed field cannot express),
+        the legacy state is LEFT at the more severe value and the health machine
+        still records the improvement — that expressiveness gap is the reason
+        the three machines exist. Returns the legacy AlphaTransition, or None
+        for an idempotent re-observation / a reason-only update / a skipped
+        legacy write.
+        """
+        if not isinstance(verdict, HealthVerdict):
+            raise TypeError("verdict must be a HealthVerdict")
+        if verdict.state is HealthState.HEALTHY:
+            raise ValueError(
+                "HEALTHY recovery is not wired in C3: §11.3 recovery is human-gated"
+            )
+        current = self.catalog.triple(alpha_id)
+        cur_health = current.health
+        if cur_health == verdict:
+            return None                     # idempotent re-observation
+        legacy_write = "skipped_not_needed"
+        tr = None
+        if cur_health.state is verdict.state:
+            # Same state, sharper reason: a correction, not a transition. The
+            # health table has no self-loops; record it as an audited update.
+            self.catalog._set_health(alpha_id, verdict)
+            legacy_write = "skipped_same_state"
+        else:
+            if not can_health_transition(cur_health.state, verdict.state):
+                raise InvalidHealthTransition(cur_health.state, verdict.state)
+            deployment = current.deployment
+            if verdict.forces_de_risk and is_deployed(deployment):
+                deployment = DeploymentState.PAUSED
+            legacy_dst = _HEALTH_TO_LEGACY[verdict.state]
+            if self.catalog.state(alpha_id) is not legacy_dst:
+                try:
+                    tr = self.advance(
+                        alpha_id, legacy_dst, actor,
+                        timestamp=timestamp, dataset_version=dataset_version,
+                    )
+                    legacy_write = legacy_dst.value
+                except InvalidAlphaTransition:
+                    # The mixed field cannot express this recovery edge; keep the
+                    # more severe legacy value and let the health machine tell
+                    # the truth. This gap is why the machines were split.
+                    legacy_write = "skipped_illegal_legacy_edge"
+            self.catalog._set_deployment(alpha_id, deployment)
+            self.catalog._set_health(alpha_id, verdict)
+        prev_audit = self.audit[-1].entry_hash if self.audit else ""
+        self.audit.append(AuditEvent(
+            event_id=(
+                f"{alpha_id}:health:{cur_health.state.value}"
+                f"->{verdict.state.value}:{timestamp}"
+            ),
+            actor=actor.actor_id,
+            action=f"ALPHA_HEALTH_{verdict.state.value}",
+            target=alpha_id,
+            timestamp=timestamp,
+            metadata={
+                "machine": "health",
+                "src": cur_health.state.value,
+                "dst": verdict.state.value,
+                "reason": verdict.reason.value,
+                "actor_kind": actor.kind.value,
+                "deployment": self.catalog.deployment_state(alpha_id).value,
+                "legacy_write": legacy_write,
+            },
+            prev_hash=prev_audit,
+        ))
+        return tr
 
     def audit_chain_valid(self) -> bool:
         """Recompute the chain; any tamper breaks prev_hash linkage."""

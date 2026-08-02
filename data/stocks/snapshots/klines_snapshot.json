@@ -1,0 +1,1508 @@
+{
+ "fetched_at": "2026-07-24T05:58:33",
+ "universe_size": 249,
+ "stocks_with_data": 249,
+ "wind_stocks": 120,
+ "ifind_stocks": 129,
+ "total_rows": 317641,
+ "notes": {
+  "amt": "amt (CNY turnover) is NOT persisted in the PIT payload for ANY source (canonical Bar contract is OHLCV only; iFinD CSV has no amt column). Downstream amt = volume x typical-price proxy.",
+  "source_mix": "Per-stock single source: 'wind' bars are Wind 前复权, 'ifind' bars are iFinD forward-adjusted daily. Adjustment bases may differ, so cross-source price LEVELS are not comparable, but each stock's series is internally consistent (one source per stock)."
+ },
+ "per_stock": {
+  "002858.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688156.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300195.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002388.SZ": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300971.SZ": {
+   "rows": 1279,
+   "date_min": 20210402,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "003017.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300103.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688517.SH": {
+   "rows": 1236,
+   "date_min": 20210618,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002780.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "000586.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603937.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002114.SZ": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300854.SZ": {
+   "rows": 1172,
+   "date_min": 20210916,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "605069.SH": {
+   "rows": 1195,
+   "date_min": 20210816,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300543.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002420.SZ": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "605258.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002076.SZ": {
+   "rows": 1339,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300554.SZ": {
+   "rows": 1342,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301159.SZ": {
+   "rows": 1099,
+   "date_min": 20220107,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300956.SZ": {
+   "rows": 1282,
+   "date_min": 20210312,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301118.SZ": {
+   "rows": 1134,
+   "date_min": 20211118,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300585.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300694.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002848.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301395.SZ": {
+   "rows": 742,
+   "date_min": 20230703,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300519.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300616.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301052.SZ": {
+   "rows": 1185,
+   "date_min": 20210830,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300845.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301378.SZ": {
+   "rows": 811,
+   "date_min": 20230320,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300025.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002566.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002343.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300340.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300987.SZ": {
+   "rows": 1263,
+   "date_min": 20210511,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688130.SH": {
+   "rows": 965,
+   "date_min": 20220729,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300565.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300813.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603188.SH": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301067.SZ": {
+   "rows": 1170,
+   "date_min": 20210922,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000014.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300644.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300536.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002084.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002830.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002576.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301106.SZ": {
+   "rows": 1074,
+   "date_min": 20220128,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603818.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603700.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300703.SZ": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002888.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688316.SH": {
+   "rows": 1299,
+   "date_min": 20210316,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688435.SH": {
+   "rows": 848,
+   "date_min": 20230119,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300937.SZ": {
+   "rows": 1329,
+   "date_min": 20210118,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688310.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300789.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603331.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688246.SH": {
+   "rows": 1116,
+   "date_min": 20211214,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301057.SZ": {
+   "rows": 1172,
+   "date_min": 20210909,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300350.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300647.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688367.SH": {
+   "rows": 1230,
+   "date_min": 20210628,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "000573.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300359.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600661.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300930.SZ": {
+   "rows": 1333,
+   "date_min": 20210111,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603076.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301276.SZ": {
+   "rows": 935,
+   "date_min": 20220909,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301337.SZ": {
+   "rows": 766,
+   "date_min": 20230526,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300422.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603917.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300538.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002700.SZ": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603488.SH": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "003032.SZ": {
+   "rows": 1337,
+   "date_min": 20210112,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002712.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301041.SZ": {
+   "rows": 1198,
+   "date_min": 20210811,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600793.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300165.SZ": {
+   "rows": 1333,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002729.SZ": {
+   "rows": 1330,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002775.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300898.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300097.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301040.SZ": {
+   "rows": 1199,
+   "date_min": 20210803,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300281.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301227.SZ": {
+   "rows": 925,
+   "date_min": 20220926,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002723.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603329.SH": {
+   "rows": 1339,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300828.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002442.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300334.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "605068.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002682.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600573.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603458.SH": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "000790.SZ": {
+   "rows": 1336,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002319.SZ": {
+   "rows": 1342,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300807.SZ": {
+   "rows": 1330,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603320.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301577.SZ": {
+   "rows": 602,
+   "date_min": 20240124,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603617.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603042.SH": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002377.SZ": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300591.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600538.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600992.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "001205.SZ": {
+   "rows": 1261,
+   "date_min": 20210513,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002769.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301152.SZ": {
+   "rows": 944,
+   "date_min": 20220829,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002748.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002702.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "000565.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301125.SZ": {
+   "rows": 1002,
+   "date_min": 20220608,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603633.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002982.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300269.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "000668.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002172.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300426.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603886.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301290.SZ": {
+   "rows": 883,
+   "date_min": 20221130,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301418.SZ": {
+   "rows": 707,
+   "date_min": 20230821,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300333.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002767.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603335.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301059.SZ": {
+   "rows": 1175,
+   "date_min": 20210913,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688500.SH": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300275.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "002659.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300631.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300942.SZ": {
+   "rows": 1320,
+   "date_min": 20210129,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603030.SH": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600405.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603017.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600257.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300753.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300449.SZ": {
+   "rows": 1330,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "600665.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "300922.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301107.SZ": {
+   "rows": 1012,
+   "date_min": 20220524,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300163.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "301197.SZ": {
+   "rows": 959,
+   "date_min": 20220808,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002795.SZ": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603895.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603001.SH": {
+   "rows": 1328,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603036.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688292.SH": {
+   "rows": 951,
+   "date_min": 20220818,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300659.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "603863.SH": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "wind"
+  },
+  "688592.SH": {
+   "rows": 710,
+   "date_min": 20230816,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688080.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600228.SH": {
+   "rows": 1337,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "001296.SZ": {
+   "rows": 1108,
+   "date_min": 20211224,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300804.SZ": {
+   "rows": 746,
+   "date_min": 20230627,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "601996.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301023.SZ": {
+   "rows": 1223,
+   "date_min": 20210707,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002012.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000545.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002687.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002425.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000809.SZ": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002771.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300970.SZ": {
+   "rows": 1281,
+   "date_min": 20210412,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688619.SH": {
+   "rows": 1314,
+   "date_min": 20210223,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300437.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688589.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002875.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300651.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300279.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600250.SH": {
+   "rows": 1330,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300891.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600671.SH": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "001324.SZ": {
+   "rows": 770,
+   "date_min": 20230522,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300902.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300052.SZ": {
+   "rows": 1334,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002397.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "001319.SZ": {
+   "rows": 1020,
+   "date_min": 20220512,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002828.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300484.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002248.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300650.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "605166.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600215.SH": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301082.SZ": {
+   "rows": 1150,
+   "date_min": 20211027,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688314.SH": {
+   "rows": 1258,
+   "date_min": 20210518,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301062.SZ": {
+   "rows": 1174,
+   "date_min": 20210914,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603696.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603159.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000153.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "601798.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688657.SH": {
+   "rows": 677,
+   "date_min": 20231010,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "001358.SZ": {
+   "rows": 625,
+   "date_min": 20231221,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002863.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603006.SH": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603819.SH": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300235.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300710.SZ": {
+   "rows": 1330,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603578.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300479.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000159.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688077.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002893.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300575.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603066.SH": {
+   "rows": 1336,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300141.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603829.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300175.SZ": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600785.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688255.SH": {
+   "rows": 1152,
+   "date_min": 20211025,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603779.SH": {
+   "rows": 1339,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002998.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300410.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603878.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301081.SZ": {
+   "rows": 1155,
+   "date_min": 20211020,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301042.SZ": {
+   "rows": 1202,
+   "date_min": 20210805,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300771.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300786.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688030.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002072.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301020.SZ": {
+   "rows": 1224,
+   "date_min": 20210706,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "003030.SZ": {
+   "rows": 1343,
+   "date_min": 20210106,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "000504.SZ": {
+   "rows": 1342,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300884.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300826.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301428.SZ": {
+   "rows": 771,
+   "date_min": 20230519,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300849.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603637.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002806.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603518.SH": {
+   "rows": 1342,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002136.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301043.SZ": {
+   "rows": 1198,
+   "date_min": 20210811,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002259.SZ": {
+   "rows": 1343,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300530.SZ": {
+   "rows": 1338,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300810.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "688056.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300912.SZ": {
+   "rows": 1335,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002476.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002663.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "600630.SH": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300051.SZ": {
+   "rows": 1328,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603722.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002357.SZ": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002692.SZ": {
+   "rows": 1344,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603655.SH": {
+   "rows": 1340,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "002347.SZ": {
+   "rows": 1345,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "603330.SH": {
+   "rows": 1341,
+   "date_min": 20210104,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "301581.SZ": {
+   "rows": 375,
+   "date_min": 20250103,
+   "date_max": 20260723,
+   "source": "ifind"
+  },
+  "300931.SZ": {
+   "rows": 1332,
+   "date_min": 20210121,
+   "date_max": 20260723,
+   "source": "ifind"
+  }
+ }
+}

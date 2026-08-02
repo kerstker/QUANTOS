@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { fetchDslExplorerSnapshot } from '@/lib/api/research-console-api';
+import { useState } from 'react';
+import { fetchDslExplorerSnapshot, checkDslExpression } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type { DslExplorerPayload, DslExprRow } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, GateDot, Chip,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, GateDot, Chip, LoadingVeil,
 } from '@/ui/primitives';
 import { fixed } from '@/ui/format';
+import { useToast } from '@/ui/toast';
 
 /**
  * DSL Explorer. Cross-sectional alpha expressions with their REAL static analysis — the dsl_checker
@@ -34,7 +35,32 @@ export default function DslExplorer() {
   const data = usingBackend ? payload! : fallback;
   const exprs = data.exprs;
   const [sel, setSel] = useState(0);
-  const r = exprs[Math.min(sel, exprs.length - 1)];
+  const [customExpr, setCustomExpr] = useState('');
+  const [customRow, setCustomRow] = useState<ExprRow | null>(null);
+  const [customBusy, setCustomBusy] = useState(false);
+  const toast = useToast();
+  const r = customRow ?? exprs[Math.min(sel, exprs.length - 1)];
+
+  async function runCustomCheck() {
+    if (!customExpr.trim()) return;
+    setCustomBusy(true);
+    try {
+      if (usingBackend) {
+        setCustomRow(await checkDslExpression(customExpr));
+      } else {
+        // offline fallback: no engine to call — report honestly rather than fabricate a verdict.
+        setCustomRow({
+          expr: customExpr, valid: false, complexity: 0, leakage_ok: null, deps: [],
+          note: bi('离线模式:无法调用真实检查器', 'offline mode: real checker unavailable'),
+          errors: [bi('后端未连接', 'backend not connected')],
+        });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCustomBusy(false);
+    }
+  }
 
   return (
     <PageShell>
@@ -43,6 +69,7 @@ export default function DslExplorer() {
           'Cross-sectional alpha expressions + static checker + operator-weighted complexity + PIT leakage machine-proof (real engines, read-only)')} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('表达式', 'Expressions')} value={String(exprs.length)} />
         <StatTile label={bi('类型/维度检查通过', 'Checker pass')} value={String(exprs.filter(e => e.valid).length)} tone="pos" />
@@ -64,7 +91,36 @@ export default function DslExplorer() {
         </div>
       </Panel>
 
-      <Panel eyebrow={bi('静态分析', 'Static Analysis')} title={bi('选中表达式', 'Selected Expression')}
+      <Panel eyebrow={bi('自由输入', 'Free Input')} title={bi('测试你自己的表达式', 'Test Your Own Expression')}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <input
+            value={customExpr}
+            onChange={e => setCustomExpr(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') runCustomCheck(); }}
+            placeholder={bi('输入 S 表达式,例如 (cs_rank (ts_mean (field close) 5))',
+              'Type an S-expression, e.g. (cs_rank (ts_mean (field close) 5))')}
+            className="mono flex-1 rounded-lg border border-line bg-inset/40 px-3 py-2 text-xs text-ink placeholder:text-faint" />
+          <div className="flex gap-2">
+            <button onClick={runCustomCheck} disabled={customBusy || !customExpr.trim()}
+              className="rounded-lg border border-accent/50 bg-accent/10 px-3 py-2 text-2xs font-medium text-accent hover:bg-accent/20 disabled:opacity-50">
+              {customBusy ? bi('检查中…', 'checking…') : bi('运行检查器', 'Run Checker')}
+            </button>
+            {customRow && (
+              <button onClick={() => { setCustomRow(null); setCustomExpr(''); }}
+                className="rounded-lg border border-line px-3 py-2 text-2xs text-muted hover:text-ink">
+                {bi('清除', 'Clear')}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-2 text-2xs text-secondary">
+          {bi('调用与因子库同一套真实引擎(dsl_checker + complexity + expression_leakage);只做静态分析,不执行/不接触真实数据。',
+            'Runs the same real engines as the curated library (dsl_checker + complexity + expression_leakage); static analysis only — never executes against real data.')}
+        </div>
+      </Panel>
+
+      <Panel eyebrow={bi('静态分析', 'Static Analysis')}
+        title={customRow ? bi('自定义表达式', 'Custom Expression') : bi('选中表达式', 'Selected Expression')}
         right={<Chip label={r.valid && r.leakage_ok !== false ? bi('可入库', 'admissible') : bi('被拦', 'blocked')}
           tone={r.valid && r.leakage_ok !== false ? 'pos' : 'neg'} />}>
         <div className="mono mb-3 rounded-lg border border-line bg-inset/40 px-3 py-2 text-xs text-ink">{r.expr}</div>
@@ -89,6 +145,7 @@ export default function DslExplorer() {
         </div>
         <div className="mt-2 text-2xs text-secondary">{r.note}</div>
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

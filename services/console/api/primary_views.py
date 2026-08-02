@@ -268,13 +268,18 @@ async def risk_dashboard(alpha_id: str = Query("alpha-1")) -> Dict:
     equity_points = _equity_curve(returns)
     primary_report = _risk_decision(alpha["candidate_id"], returns, equity_points, alpha["capacity_estimate"])
     control_report = {
-        "run_id": "risk-control-001",
+        "run_id": "risk-control-unavailable",
         "portfolio_id": "control-portfolio",
-        "decision": "RISK_APPROVED",
-        "gates_passed": 9,
+        "decision": "RISK_REJECTED",
+        "status": "PENDING",
+        "gates_passed": 0,
+        "gates_run": 0,
         "gates_total": 9,
-        "reasons": [],
-        "gate_results": {gate: True for gate in primary_report["gate_results"]},
+        "reasons": ["NO_INDEPENDENT_CONTROL_INPUT"],
+        "gate_results": {},
+        "provenance": "NO_SNAPSHOT",
+        "admission_allowed": False,
+        "diagnostic_only": True,
     }
     return {
         "source": "BACKEND_COMPUTED_SNAPSHOT",

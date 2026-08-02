@@ -109,6 +109,10 @@ class ExperimentStorePort(Protocol):
 
     def search_history_valid(self) -> bool: ...
 
+    def search_identity(self, search_id: str) -> dict[str, str]: ...
+
+    def evaluation_binding(self, run_id: str) -> Optional[dict]: ...
+
     def add_trials(
         self,
         config_hashes: Iterable[str],
@@ -137,6 +141,34 @@ class ExperimentStorePort(Protocol):
 
     def all_trial_hashes(self) -> list[str]: ...
 
+    # --- trial provenance (727 §7.1 TrialRecord) ----------------------------
+
+    def record_trial_provenance(self, record: Any) -> bool: ...
+
+    def trial_provenance(self, trial_id: str) -> Optional[dict]: ...
+
+    def trial_provenance_for_config(self, config_hash: str) -> list[dict]: ...
+
+    def trial_provenance_chain_valid(self) -> bool: ...
+
+    def trial_provenance_head(self) -> str: ...
+
+    def record_search_oos_access(
+        self,
+        search_id: str,
+        accesses: Mapping[str, Sequence[str]],
+        *,
+        viewed_at: int,
+    ) -> int: ...
+
+    def trial_oos_access(self, trial_id: str) -> list[dict]: ...
+
+    def trial_oos_access_chain_valid(self) -> bool: ...
+
+    def trial_oos_access_head(self) -> str: ...
+
+    def oos_peek_totals(self) -> dict[str, int]: ...
+
     def upsert_alpha(
         self,
         alpha_id: str,
@@ -145,6 +177,14 @@ class ExperimentStorePort(Protocol):
         returns_json: str,
         sharpe: Optional[float],
         pvalue: Optional[float],
+        *,
+        research_state: Optional[str] = None,
+        deployment_state: Optional[str] = None,
+        health_state: Optional[str] = None,
+        research_reason: Optional[str] = None,
+        deployment_reason: Optional[str] = None,
+        health_reason: Optional[str] = None,
+        lossy_json: Optional[str] = None,
     ) -> None: ...
 
     def all_alphas(self) -> list[dict]: ...

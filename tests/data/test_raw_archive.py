@@ -83,6 +83,35 @@ def test_parallel_observations_share_one_immutable_object(tmp_path):
     assert summary["object_count"] == 1
 
 
+def test_scoped_summary_is_stable_under_unrelated_archive_growth(tmp_path):
+    _archive(tmp_path)
+    before = summarize_archive(
+        str(tmp_path),
+        dataset_ids={"perp_mark_prices"},
+        instrument_ids={"BTC"},
+    )
+    archive_json_response(
+        root=str(tmp_path),
+        payload={"depth": [[1, 2]]},
+        source_uri="https://data.example.test/depth/ETH",
+        provider="example-public-data",
+        dataset_id="binance_realtime_depth",
+        instrument_id="ETH",
+        observed_at_ms=2000,
+        parse_diagnostics={"status": "ACCEPTED", "input_rows": 1},
+    )
+    after = summarize_archive(
+        str(tmp_path),
+        dataset_ids={"perp_mark_prices"},
+        instrument_ids={"BTC"},
+    )
+
+    assert before == after
+    assert before["observation_count"] == 1
+    assert before["datasets"] == {"perp_mark_prices": 1}
+    assert summarize_archive(str(tmp_path))["observation_count"] == 2
+
+
 def test_load_archived_response_returns_latest_verified_event(tmp_path):
     common = {
         "root": str(tmp_path),

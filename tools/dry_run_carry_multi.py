@@ -2,6 +2,8 @@
 (纸面、绝不真发)滚动跑完整历史,资金费现金流单独累计(carry 的真边),产出 raw 与 vol-target 两条净值曲线,
 落一条多期 DryRunRun 到 data/cache/dry_run.db。墙钟/seed 仅此边界;读本地库、无网络、无真单/真钱/真凭证。
 装配真实 RiskContext(五个 LIVE 标志由 SafetyConfig() 恒 false)。实盘 = 同接口换真券商适配器 + 人工批准 = 非目标。
+
+用法: python -m tools.dry_run_carry_multi [--max-weeks N]   (默认 N=0=全历史)
 """
 from __future__ import annotations
 
@@ -41,13 +43,51 @@ _AUM = 1_000_000.0
 _WEEK_MS = 7 * 24 * 3600 * 1000
 
 
-def main() -> None:
+def _existing_carry_run(path: str = _OUT) -> dict | None:
+    """Return an already persisted full-history carry run, if one exists.
+
+    The store and event authority are append-only.  Retrying this deterministic
+    driver must reuse its existing run instead of deleting shared history or
+    attempting to bind a second completion/risk event to the same run id.
+    """
+    if not os.path.isfile(path):
+        return None
+    store = None
+    try:
+        store = DryRunStore(path, create=False)
+        records = [
+            record
+            for record in store.all_runs()
+            if isinstance(record, dict) and record.get("strategy_id") == "carry"
+        ]
+        return records[-1] if records else None
+    except Exception:
+        return None
+    finally:
+        if store is not None:
+            store.close()
+
+
+def main(max_weeks: int = 0) -> None:
+    if max_weeks <= 0:
+        existing = _existing_carry_run(_OUT)
+        if existing is not None:
+            pnl = existing.get("pnl") or {}
+            print(
+                f"[dry_run_carry] 已复用持久化运行 {existing.get('run_id')} "
+                f"sharpe={pnl.get('sharpe')} residual={pnl.get('residual')}",
+                flush=True,
+            )
+            print(f"-> {_OUT}", flush=True)
+            return
+
     instruments = sorted(json.load(open(_SNAP, encoding="utf-8"))["instruments"])
     store = CachingPITStore(SqlitePITStore(_DB, create=False))
     funding = {tk: {int(k): v for k, v in d.items()}
                for tk, d in json.load(open(_FUND, encoding="utf-8")).items()}
 
     # liquid half (same deployable universe as carry validation)
+    print(f"[dry_run_carry] 加载数据: {len(instruments)} 个币...", flush=True)
     liq = {}
     for inst in instruments:
         dv = [b.close * b.volume for b in store.fetch_bars(inst, -10 ** 18, 10 ** 18)
@@ -93,6 +133,17 @@ def main() -> None:
     held_names = sorted({n for w in weights_by_period.values() for n in w})
     cost_bps = statistics.fmean([slip[n] for n in held_names]) if held_names else 0.0
 
+    # --max-weeks 截断: 便于快速验证(默认 0 = 全历史)
+    if max_weeks > 0:
+        periods = periods[:max_weeks]
+        weights_by_period = {t: w for t, w in weights_by_period.items() if t in periods}
+        prices_by_period = {t: p for t, p in prices_by_period.items() if t in periods}
+        rate_by_period = {t: r for t, r in rate_by_period.items() if t in periods}
+        adv_by_period = {t: a for t, a in adv_by_period.items() if t in periods}
+        vol_by_period = {t: v for t, v in vol_by_period.items() if t in periods}
+
+    print(f"[dry_run_carry] 流动半数 {len(liquid)} 币, {len(periods)} 周度采样点, 开始干跑...", flush=True)
+
     def cash_flow_fn(held, prices, period):
         # carry funding cash flow on the held book: sum_i (-rate_i * qty_i * price_i)
         rates = rate_by_period.get(period, {})
@@ -124,32 +175,40 @@ def main() -> None:
     # names lacking ADV fall back to cost_bps per-name. TCA-lite band lands in run detail.
     impact = scenario_impact(default_crypto_impact_calibration().base)
     event_bus = open_domain_event_bus()
-    run = run_multi_period_dry_run(
-        periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
-        ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=_AUM,
-        cost_bps=cost_bps, cash_flow_fn=cash_flow_fn, impact=impact, adv_by_period=adv_by_period,
-        vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
-        event_bus=event_bus, publish_completion_event=False)
-
-    if os.path.exists(_OUT):
-        os.remove(_OUT)
-    save_and_project_dry_run(
-        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
-    )
-    p = run.pnl
-    print(f"=== CARRY 周度滚动干跑 · 流动 {len(liquid)} 币 · {p['n_periods']} 周 · 成本 {cost_bps:.1f}bps ===", flush=True)
-    print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)
-    print(f"  总收益 {p['total_return']*100:.1f}% · 夏普(周→年) {p['sharpe']} · 最大回撤 {p['max_drawdown']*100:.0f}% "
-          f"· 累计资金费 ${p['total_funding']:,.0f} · 对账残差 {p['residual']}", flush=True)
-    print(f"  raw 曲线 {len(run.detail['equity_curve'])} 点 · vol-target 曲线 {len(run.detail['equity_curve_vt'])} 点 "
-          f"-> {_OUT}", flush=True)
-    cf = run.detail.get("cost_fills", {})
-    print(f"  成本模型: {run.detail.get('cost_model')} · 冲击成交 {cf.get('impact')}/平bps回退 {cf.get('flat')}", flush=True)
-    if "tca" in run.detail:
-        tca = run.detail["tca"]
-        print(f"  TCA-lite: 计入 ${tca['assumed']:,.0f} · 区间 [${tca['band_lo']:,.0f}, ${tca['band_hi']:,.0f}] "
-              f"· in_band={tca['in_band']}", flush=True)
+    print(f"[dry_run_carry] 干跑中...", flush=True)
+    store_out = DryRunStore(_OUT, create=True)
+    try:
+        run = run_multi_period_dry_run(
+            periods=periods, weights_by_period=weights_by_period, prices_by_period=prices_by_period, gate=gate,
+            ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id="carry", aum=_AUM,
+            cost_bps=cost_bps, cash_flow_fn=cash_flow_fn, impact=impact, adv_by_period=adv_by_period,
+            vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
+            event_bus=event_bus, publish_completion_event=False)
+        save_and_project_dry_run(
+            store_out, run, event_bus, now_ms=int(run.timestamp)
+        )
+        p = run.pnl
+        print(f"=== CARRY 周度滚动干跑 · 流动 {len(liquid)} 币 · {p['n_periods']} 周 · 成本 {cost_bps:.1f}bps ===", flush=True)
+        print(f"DryRunRun {run.run_id}: 累计意图 {run.n_intents} · 门批准 {run.n_approved} · 门拒绝 {run.n_rejected}", flush=True)
+        print(f"  总收益 {p['total_return']*100:.1f}% · 夏普(周→年) {p['sharpe']} · 最大回撤 {p['max_drawdown']*100:.0f}% "
+              f"· 累计资金费 ${p['total_funding']:,.0f} · 对账残差 {p['residual']}", flush=True)
+        print(f"  raw 曲线 {len(run.detail['equity_curve'])} 点 · vol-target 曲线 {len(run.detail['equity_curve_vt'])} 点 "
+              f"-> {_OUT}", flush=True)
+        cf = run.detail.get("cost_fills", {})
+        print(f"  成本模型: {run.detail.get('cost_model')} · 冲击成交 {cf.get('impact')}/平bps回退 {cf.get('flat')}", flush=True)
+        if "tca" in run.detail:
+            tca = run.detail["tca"]
+            print(f"  TCA-lite: 计入 ${tca['assumed']:,.0f} · 区间 [${tca['band_lo']:,.0f}, ${tca['band_hi']:,.0f}] "
+                  f"· in_band={tca['in_band']}", flush=True)
+    finally:
+        store_out.close()
+        event_bus.close()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    max_weeks = 0
+    for i, arg in enumerate(sys.argv):
+        if arg == "--max-weeks" and i + 1 < len(sys.argv):
+            max_weeks = int(sys.argv[i + 1])
+    main(max_weeks=max_weeks)

@@ -1,0 +1,124 @@
+pageType: content
+background:
+  type: solid
+  color: $bg
+notes: 金额是占位符，比例是建议方案——明确说"可修改"。强调反面清单：不租豪华办公室、不盲目扩团队、不采购大硬件。12 个月运营周期是约束条件。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: $kicker, wrap: false, text: 13 · 融资用途}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: $h1, wrap: false, text: <p>计划融资：人民币 300 万元（最小实现方案）</p>}
+  - elementId: subtitle
+    elementType: text
+    bounds: [90, 102, 780, 22]
+    content:
+      style: $small
+      wrap: false
+      text: |
+        <p>最小实现估算：仅覆盖下阶段验证必需项 · 目标：维持约 12 个月合理运营周期 · 比例与金额为建议方案，均可调整</p>
+  - elementId: bar1-label
+    elementType: text
+    bounds: [90, 140, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 小资金实盘验证与风险准备}
+  - elementId: bar1
+    elementType: shape
+    bounds: [310, 142, 210, 16]
+    shapeName: rect
+    fill: {type: solid, color: $accent}
+  - elementId: bar1-v
+    elementType: text
+    bounds: [532, 140, 120, 20]
+    content: {style: $body, fontSize: 11, color: $accent, wrap: false, text: 25% · 37.5万}
+  - elementId: bar2-label
+    elementType: text
+    bounds: [90, 182, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 核心 Alpha 研究}
+  - elementId: bar2
+    elementType: shape
+    bounds: [310, 184, 168, 16]
+    shapeName: rect
+    fill: {type: solid, color: $accent}
+  - elementId: bar2-v
+    elementType: text
+    bounds: [490, 182, 120, 20]
+    content: {style: $body, fontSize: 11, color: $accent, wrap: false, text: 20% · 30万}
+  - elementId: bar3-label
+    elementType: text
+    bounds: [90, 224, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 数据采购与基础设施}
+  - elementId: bar3
+    elementType: shape
+    bounds: [310, 226, 126, 16]
+    shapeName: rect
+    fill: {type: solid, color: $blue}
+  - elementId: bar3-v
+    elementType: text
+    bounds: [448, 224, 120, 20]
+    content: {style: $body, fontSize: 11, color: $blue, wrap: false, text: 15% · 22.5万}
+  - elementId: bar4-label
+    elementType: text
+    bounds: [90, 266, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 核心团队最低配置}
+  - elementId: bar4
+    elementType: shape
+    bounds: [310, 268, 126, 16]
+    shapeName: rect
+    fill: {type: solid, color: $blue}
+  - elementId: bar4-v
+    elementType: text
+    bounds: [448, 266, 120, 20]
+    content: {style: $body, fontSize: 11, color: $blue, wrap: false, text: 15% · 22.5万}
+  - elementId: bar5-label
+    elementType: text
+    bounds: [90, 308, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 交易执行与实盘退化监控}
+  - elementId: bar5
+    elementType: shape
+    bounds: [310, 310, 84, 16]
+    shapeName: rect
+    fill: {type: solid, color: $muted}
+  - elementId: bar5-v
+    elementType: text
+    bounds: [406, 308, 120, 20]
+    content: {style: $body, fontSize: 11, color: $muted, wrap: false, text: 10% · 15万}
+  - elementId: bar6-label
+    elementType: text
+    bounds: [90, 350, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 风控、合规与公司治理}
+  - elementId: bar6
+    elementType: shape
+    bounds: [310, 352, 84, 16]
+    shapeName: rect
+    fill: {type: solid, color: $muted}
+  - elementId: bar6-v
+    elementType: text
+    bounds: [406, 350, 120, 20]
+    content: {style: $body, fontSize: 11, color: $muted, wrap: false, text: 10% · 15万}
+  - elementId: bar7-label
+    elementType: text
+    bounds: [90, 392, 210, 20]
+    content: {style: $body, fontSize: 11, wrap: false, text: 运营储备}
+  - elementId: bar7
+    elementType: shape
+    bounds: [310, 394, 42, 16]
+    shapeName: rect
+    fill: {type: solid, color: $muted}
+  - elementId: bar7-v
+    elementType: text
+    bounds: [364, 392, 120, 20]
+    content: {style: $body, fontSize: 11, color: $muted, wrap: false, text: 5% · 7.5万}
+  - elementId: exclusions
+    elementType: text
+    bounds: [90, 440, 780, 44]
+    content:
+      style: $small
+      text: |
+        <p><span style="color:$warn">明确不用于：</span>豪华办公室 · 非核心行政人员 · 大规模硬件采购 · 盲目扩张团队</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: $small, wrap: false, text: QuantOS · Confidential · 15}

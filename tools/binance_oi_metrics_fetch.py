@@ -24,6 +24,9 @@ Cache (resumable): data/cache/crypto_oi_metrics.json
     {"_meta": {ticker: {"start": day_ms, "through": day_ms}},
      "data": {ticker: {day_ms_str: {"oi","oi_value","top_ls","global_ls","taker_ls"}}}}
 Re-running only fetches days not already cached. `main()` writes a snapshot alongside it.
+REST gap-filled placeholder days (publication lag) carry an extra record field
+"source": "REST_GAP_FILL"; archive rows have no such field (archive is canonical, see
+tools/binance_rest_gap_fill.py for the precedence rule).
 """
 from __future__ import annotations
 
@@ -37,6 +40,9 @@ import zipfile
 
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        archive_response)
+from tools.binance_rest_gap_fill import (PROVENANCE_REST_GAP_FILL,
+                                         REST_RETENTION_DAYS,
+                                         fetch_oi_days_rest)
 from tools.cache_io import atomic_write_json
 from tools.source_failures import classify_source_failure, source_failure_detail
 
@@ -52,6 +58,17 @@ _SNAP_INTRADAY = os.path.join("data", "cache", "crypto_oi_intraday_snapshot.json
 DEFAULT_TICKERS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "LINK", "DOT",
                    "LTC", "BCH", "TRX", "ATOM", "NEAR", "APT", "OP", "FIL", "ETC", "UNI",
                    "AAVE", "INJ", "XLM", "ICP"]
+
+# The forward-paper clock intentionally uses the existing major-book shape,
+# rather than making the small-cap tail a prerequisite for evidence.  This is
+# a fixed, reviewable L2 scope: the historical model card used MATIC, which is
+# no longer in the active cache, so current BCH is the compatible replacement.
+# ``DEFAULT_TICKERS`` remains the wider liquid-history universe for research
+# and survivorship diagnostics; callers must opt into this narrower scope.
+FORWARD_MAJOR_TICKERS = (
+    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX",
+    "BCH", "DOT", "LTC", "UNI", "LINK", "ATOM",
+)
 
 # end-of-day fields we keep (column index in the metrics CSV, 0-based)
 _COLS = {"oi": 2, "oi_value": 3, "top_ls": 5, "global_ls": 6, "taker_ls": 7}
@@ -320,12 +337,17 @@ def _load_cache(path) -> dict:
 
 def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
          parse_fn=parse_metrics_zip, cache_path=_CACHE, snap_path=_SNAP,
-         http_get_bytes=_http_get_bytes, archive_root=None,
+         http_get_bytes=_http_get_bytes, archive_root=None, rest_fetch=None,
          observed_at_ms=None) -> dict:
     """`bounded=True` probes each ticker's LAST available day (find_end_ms) and stops there — use it
     for DELISTED coins so we don't fetch thousands of post-delisting 404 days. Live coins are unaffected.
     `parse_fn`/`cache_path` select what to extract per day (eod fields vs intraday-derived features) and
-    where to cache — so the intraday feature pull reuses the same fetch infrastructure."""
+    where to cache — so the intraday feature pull reuses the same fetch infrastructure.
+    `rest_fetch` (None = disabled, test-hermetic default) enables latest-days REST gap-fill for the
+    Data Vision publication lag (tools/binance_rest_gap_fill.py): after the archive pass, recent
+    CLOSED days still absent are filled via Binance futures REST and marked source="REST_GAP_FILL";
+    placeholder days are re-attempted from the archive every run and replaced once published
+    (archive is canonical — a REST placeholder never overwrites an archive row)."""
     os.makedirs(os.path.join("data", "cache"), exist_ok=True)
     tickers = tickers or DEFAULT_TICKERS
     cache = _load_cache(cache_path)
@@ -335,10 +357,15 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
         observed_at_ms = now_ms
     today_ms = (now_ms // _DAY_MS) * _DAY_MS  # drop the live (today) day -> PIT-safe
     failure_details = []
+    rest_filled = 0
 
     for ti, ticker in enumerate(tickers):
         sym_days = data.setdefault(ticker, {})
-        present = {int(k) for k in sym_days}
+        # REST_GAP_FILL placeholder days are NOT "present": the archive re-attempts them every
+        # run and supersedes the placeholder once Data Vision publishes the day (canonical).
+        present = {int(k) for k, rec in sym_days.items()
+                   if not (isinstance(rec, dict)
+                           and rec.get("source") == PROVENANCE_REST_GAP_FILL)}
         start = meta.get(ticker, {}).get("start")
         if start is None:
             start = find_start_ms(ticker, http_get_bytes=http_get_bytes, now_ms=now_ms)
@@ -362,6 +389,23 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
             archive_root=archive_root, observed_at_ms=observed_at_ms)
         for k, v in fresh.items():
             sym_days[str(k)] = v
+        if rest_fetch is not None:
+            # Latest-days REST gap-fill (publication lag): only CLOSED days inside REST
+            # retention that are entirely absent; placeholders never overwrite archive rows.
+            rest_floor = (max(int(start), today_ms - REST_RETENTION_DAYS * _DAY_MS)
+                          // _DAY_MS) * _DAY_MS
+            rest_days = [day for day in range(rest_floor, today_ms, _DAY_MS)
+                         if str(day) not in sym_days]
+            if rest_days:
+                rest_fresh = rest_fetch(
+                    ticker, rest_days, now_ms=now_ms,
+                    archive_root=archive_root, observed_at_ms=observed_at_ms,
+                    failure_sink=failure_details)
+                for k, v in rest_fresh.items():
+                    if str(k) in sym_days:
+                        continue
+                    sym_days[str(k)] = dict(v, source=PROVENANCE_REST_GAP_FILL)
+                rest_filled += len(rest_fresh)
         all_days = sorted(int(k) for k in sym_days)
         meta[ticker] = {"start": start, "through": all_days[-1] if all_days else None}
         atomic_write_json(cache_path, cache)  # checkpoint each ticker (resumable)
@@ -383,6 +427,7 @@ def main(tickers=None, *, sleep: float = 0.08, bounded: bool = False,
     )
     return {
         "failure_details": ordered,
+        "rest_gap_fill_days": rest_filled,
         "failed_tickers": sorted({
             item["ticker"] for item in ordered if item.get("kind") != "NOT_FOUND"
         }),
@@ -396,4 +441,5 @@ if __name__ == "__main__":
              cache_path=_CACHE_INTRADAY, snap_path=_SNAP_INTRADAY,
              archive_root=DEFAULT_RAW_ARCHIVE)
     else:
-        main(args or None, archive_root=DEFAULT_RAW_ARCHIVE)
+        main(args or None, archive_root=DEFAULT_RAW_ARCHIVE,
+             rest_fetch=fetch_oi_days_rest)

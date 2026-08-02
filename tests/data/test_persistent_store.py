@@ -55,6 +55,32 @@ def test_fetch_bars_window_and_keys():
     assert s.keys() == ["X"]
 
 
+def test_fetch_bars_pit_excludes_late_knowledge_includes_boundary():
+    s = _store()
+    s.add("X", _bar("X", 10, 10, 100.0))   # kt == et: knowable on its own event date -> kept
+    s.add("X", _bar("X", 20, 50, 101.0))   # kt > et: NOT knowable by its event date -> dropped
+    s.add("X", _bar("X", 30, 30, 102.0))
+    out = s.fetch_bars_pit("X", 0, 100)
+    assert [(b.event_time, b.knowledge_time) for b in out] == [(10, 10), (30, 30)]
+
+
+def test_fetch_bars_pit_respects_window_bounds():
+    s = _store()
+    s.add_many("X", [_bar("X", t, t, 100.0 + t) for t in (10, 20, 30)])
+    assert [b.event_time for b in s.fetch_bars_pit("X", 15, 25)] == [20]
+    assert s.fetch_bars_pit("X", 31, 40) == []
+    assert s.fetch_bars_pit("NOPE", 0, 100) == []
+
+
+def test_fetch_bars_pit_parity_with_fetch_bars_on_clean_data():
+    s = _store()
+    s.add_many("X", [_bar("X", t, t, 100.0 + t) for t in (10, 20, 30)])
+    s.add_many("Y", [_bar("Y", t, t, 50.0 + t) for t in (5, 15)])
+    for key in ("X", "Y"):
+        for lo, hi in ((0, 100), (10, 20), (12, 18)):
+            assert s.fetch_bars_pit(key, lo, hi) == s.fetch_bars(key, lo, hi)
+
+
 def test_uninitialized_store_fails_closed(tmp_path):
     p = str(tmp_path / "empty.db")
     sqlite3.connect(p).close()

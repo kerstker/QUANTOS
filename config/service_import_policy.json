@@ -6,13 +6,13 @@
   "known_unresolved_dynamic_imports": [
     {
       "path": "services/research_runner/run_kinds.py",
-      "line": 65,
+      "line": 67,
       "function": "importlib.import_module",
       "boundary": "RunSpec.entrypoint is selected only from the static RUN_KINDS research whitelist."
     },
     {
       "path": "services/research_runner/run_kinds.py",
-      "line": 72,
+      "line": 74,
       "function": "importlib.import_module",
       "boundary": "The module argument is closed over from static _tool_then_json calls in RUN_KINDS."
     }

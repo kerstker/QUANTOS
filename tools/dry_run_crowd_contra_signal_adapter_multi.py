@@ -30,11 +30,13 @@ signal_to_portfolio 分倉在 vol-target 口徑下用夏普小幅提升換了明
 from __future__ import annotations
 
 import os
+import time
 
 from services.portfolio.crowding_gate import evaluate_crowding_gate, summarize_gate_decisions
 from services.portfolio.signal_adapter import SignalAdapterConfig, signal_to_portfolio
 from services.research import alpha_expression as ax
 from services.risk.research_risk.dry_run_guard import evaluate_dry_run_risk
+from services.risk.research_risk.domain.models import RiskConfig
 from services.risk.pre_trade.config import RiskLimits
 from services.risk.pre_trade.context import (AccountRiskState, MarketContext, RiskContext,
                                              StrategyApproval)
@@ -47,6 +49,7 @@ from live.execution.crowding_score import crowding_zscore as _crowding_zscore  #
 from tools.crypto_oi_research import build_panel
 from tools.crypto_oi_verify import CROWD_CONTRA
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
+_WEEKLY_RISK_PROVENANCE = "RISK_CONFIG_WEEKLY_PPY_52_DURATION_UNCALIBRATED"
 # _crowding_rank 是纯排名数学(零 _legs()/实盘耦合)——直接复用基准驱动器的实现,避免两份
 # 逻辑漂移;两个驱动器的对照实验唯一变量应只是分仓方法本身。
 from tools.dry_run_crowd_contra_multi import _crowding_rank
@@ -149,18 +152,26 @@ def main() -> None:
         ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id=_STRATEGY_ID, aum=_AUM,
         cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": 52},
-        event_bus=event_bus, publish_completion_event=False)
+        event_bus=event_bus, publish_completion_event=False,
+        research_risk_config=RiskConfig(periods_per_year=52))
 
     crowding = summarize_gate_decisions(gate_decisions)
     run.detail["crowding_gate"] = crowding
     vt = run.detail.get("equity_curve_vt") or run.detail["equity_curve"]
-    risk = evaluate_dry_run_risk([c["ret"] for c in vt], weights_by_period.get(periods[-1], {}),
-                                 [c["equity"] for c in vt], timestamps=periods)
+    risk = evaluate_dry_run_risk(
+        [c["ret"] for c in vt],
+        weights_by_period.get(periods[-1], {}),
+        [c["equity"] for c in vt],
+        timestamps=periods,
+        config=RiskConfig(periods_per_year=52),
+    )
     risk["series"] = "vol_target"
-    risk["config_provenance"] = "RISK_CONFIG_DEFAULTS_UNCALIBRATED_FOR_WEEKLY"
+    risk["config_provenance"] = _WEEKLY_RISK_PROVENANCE
     run.detail["research_risk"] = risk
     save_and_project_dry_run(
-        DryRunStore(_OUT, create=True), run, event_bus, now_ms=int(run.timestamp)
+        DryRunStore(_OUT, create=True), run, event_bus,
+        now_ms=max(int(run.timestamp), int(time.time() * 1000)),
+        project=False,
     )
     p = run.pnl
     print(f"  拥挤门: {crowding['n_periods']} 周 · PASS {crowding['n_pass']}/WARN {crowding['n_warn']}"

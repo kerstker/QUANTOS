@@ -2,7 +2,8 @@
 test_broker_adapter_boundary.py / test_signing_boundary.py 的 AST 检查风格,应用到整棵 live/ 树。
 设计:docs/engineering/specs/2026-07-04-live-execution-stack-design.md §4/§10。
 
-1) 仅 live/exchange/{binance,bybit}_futures.py 可含网络 import;live/ 其余文件一律不许;
+1) 仅 live/exchange/{binance,bybit}_futures.py 与 live/exchange/mexc_spot.py 可含网络
+   import;live/ 其余文件一律不许;
 2) live/ 全树无交易所/券商 SDK import;
 3) live/ 全树源码不含提幣/划转调用字面量(place_order/submit_order 是本树正当职责,不在禁止清单);
 4) 每个 venue adapter(base_url=MAINNET_BASE)在 L2 默认下必须 raise SafetyViolation;
@@ -22,6 +23,11 @@ _LIVE = os.path.join(_ROOT, "live")
 _SERVICES = os.path.join(_ROOT, "services")
 _VENUE_ADAPTERS = (os.path.join(_LIVE, "exchange", "binance_futures.py"),
                    os.path.join(_LIVE, "exchange", "bybit_futures.py"))
+_MEXC_SPOT = os.path.join(_LIVE, "exchange", "mexc_spot.py")
+# MEXC 现货适配器若已存在,同样进入网络 import 白名单(文件未创建时不可加入,否则
+# 白名单循环会因读不到文件而崩——届时由下方的 skip 守卫显式报告缺口)。
+if os.path.exists(_MEXC_SPOT):
+    _VENUE_ADAPTERS = _VENUE_ADAPTERS + (_MEXC_SPOT,)
 
 _FORBIDDEN_SDK = {"ccxt", "binance", "coinbase", "cbpro", "krakenex", "kraken", "ib_insync",
                   "ibapi", "alpaca", "alpaca_trade_api", "oandapyV20", "fix", "quickfix", "ctp", "vnpy"}
@@ -103,10 +109,16 @@ def test_mainnet_adapters_uninstantiable_at_l2():
     from live.exchange.bybit_futures import BybitFuturesAdapter
     from quantos.contracts.config import RESEARCH_SAFE_DEFAULTS, SafetyViolation
     assert RESEARCH_SAFE_DEFAULTS.live_trading_armed is False
-    for cls in (BinanceFuturesAdapter, BybitFuturesAdapter):
+    classes = [BinanceFuturesAdapter, BybitFuturesAdapter]
+    mexc = pytest.importorskip("live.exchange.mexc_spot",
+                               reason="MexcSpotAdapter 尚未由并行任务创建——创建后本测试自动生效")
+    classes.append(mexc.MexcSpotAdapter)
+    for cls in classes:
         with pytest.raises(SafetyViolation):
             cls(api_key="k", api_secret="s", base_url=cls.MAINNET_BASE,
                safety_config=RESEARCH_SAFE_DEFAULTS)
+
+
 
 
 def test_no_hardcoded_api_key_material_in_live_tree():

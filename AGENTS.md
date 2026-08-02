@@ -5,8 +5,21 @@ Authoritative spec: [`QUANTOS_MASTER_BLUEPRINT.md`](QUANTOS_MASTER_BLUEPRINT.md)
 (11 layers, phases 0–14). Program plan:
 [`docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md`](docs/QUANTOS_DEVELOPMENT_PROGRAM_PLAN.md).
 
-Readiness: **L2_DRY_RUN_ONLY** — research + dry-run simulation only. No live
-trading, no broker connectivity, no real credentials.
+Readiness: **L2_DRY_RUN_ONLY (default)** — 分层表述,三层实况:
+
+- **L2 研究 + 干跑(默认态)**:研究与全量测试默认运行在 L2,mainnet
+  实盘被多重结构性人工门封锁(见下)。
+- **Testnet 已联通**:`live/` 执行栈已存在并联调 —— Binance/Bybit
+  期货 testnet 适配器(`live/exchange/`)、`live/pipeline.py::submit_live_batch`
+  (attestation→plan→gate→mandate→ledger→place→confirm→audit 全链)、
+  `tools/live_ops_api.py`(port 8440 只读运维 API)。
+- **Mainnet 被多重人工门结构封锁**:mainnet 适配器构造即
+  `raise SafetyViolation`(`SafetyConfig.live_trading_armed` 默认 False);
+  下单必须经过 validation attestation + 人工 mandate(AUTO 拒绝)+
+  pre-trade gate + kill-switch + 账本预记账;MEXC 现货 mainnet 适配器
+  (建设中)同样遵循。MEXC 无现货 testnet → 毕业路径 = 干跑 → 小额真实 +
+  人工 mandate → 规模化。无真凭证落盘承诺不变(`key/` gitignored,
+  只写格式文档,绝不写真实密钥)。
 
 ## Safety boundary (non-negotiable — blueprint §1)
 
@@ -40,7 +53,7 @@ catalog access is for human-controlled workflows and is not an agent API.
 
 Authoritative reality map + completion roadmap:
 [`docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md`](docs/engineering/specs/2026-06-29-system-audit-and-completion-roadmap.md).
-**The backend is substantially built and tested (~1047 tests pass). The console-wiring
+**The backend is substantially built and tested (1631+ tests pass). The console-wiring
 gap is now largely closed: the four ALPHA-pipeline breaks are all wired + tested — 断点1
 关卡证据回喂 evaluator (real `detect_leakage`/regime/PBO evidence through every search loop),
 断点2 前向 paper 追踪持久层, 断点3 console 真组合 (optimizer + real returns), 断点4 衰退/退役调度器.
@@ -126,6 +139,21 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (高VIX+1.96 vs 低+1.25;倒挂+1.76 vs 正常+0.88)——crowd 正好在 carry 走弱处走强 = 强分散故事**,系统化了 RE-2 的 LUNA/FTX
   危机发现。诚实边界:regime 标签=全样本分位(回顾性描述,非 PIT 可交易择时);gross 无成本(RELATIVE 模式才是结论);经济发布类
   (CPI/GDP,需 ALFRED vintage)+ 股票(BYO-CSV/ALFRED)= 显式待办;HY-OAS 仅 2023-07+(FRED 限)信用维覆盖 155/期。诊断非门禁。
+- `tools/deribit_fetch.py` + `services/research/vol_factors.py` + `tools/vol_research.py` — **第四数据类
+  (options/vol,2026-07-24)**:Deribit 公共 API v2(无 key 只读,治理钉进 `test_crypto_data_boundary._FETCHERS`)
+  三数据面。① **DVOL 日频**(BTC/ETH 均 2021-03-24 起 1948 天,`continuation` 翻页);② **永续+到期期货日线**
+  (BTC-PERPETUAL 2018-08 起 2901 天;已结算合约按「每月最后周五」约定名探测重建历史——`get_instruments?expired=true`
+  已不回全量名单,但已知名字的已结算合约仍给全量日线;**实测坑:响应把结算价常数前填到今天**(BTC-25MAR22 自
+  expiry-1 起 44019.0 重复 1500+ 天)——`fetch_chart_rows` 硬截到期日 + `trim_constant_tail` 去填充,零 post-expiry
+  违规已验证);③ **期权 book 快照**(无 greeks → Black-76 自算 delta → 25Δ skew 取最近 ±0.25 行;**免费 skew 历史
+  不存在**,按日 key 落 `deribit_options_skew.json` 从 2026-07-24 向前积累)。PIT `data/cache/deribit_vol.db`
+  (31,232 bars / 145 keys,kt=et,水位线幂等,重跑零新行已验证)。`vol_factors.py` 纯核(dvol_level/change、
+  iv_rv_spread(DVOL 是百分数非小数,年化 √365)、annualized_basis、term_structure_slope、时序 zscore、bs_delta、
+  skew_25d、ts_ic_stats n<10 全 None)。驱动器落 `evidence/vol_research.json`。**诚实结论:24 次检验
+  (6 因子 × 2 标的 × 2 horizon)无一过多重比较+非重叠双门槛——最强 BTC dvol_zscore_30d h1 t=3.08 但 h7
+  非重叠 t=1.87 不确认;ETH 全弱(|t|<2)。regime overlay:carry 高 DVOL 桶 SR 1.67 < 低 2.03 < 中 2.69
+  (高 vol 桶最差,与 VIX「carry 爱平静」同向、温和);crowd_contra 低 DVOL 2.73 > 高 1.37 > 中 0.84
+  (与 VIX「crowd 爱压力」**方向相反**,诚实并存两口径)。** 诊断非门禁;skew 因子待快照积累后再评。
 - `services/research/book_combine.py` + `tools/combo_book_research.py` — **组合分散验证(兑现 regime 互补故事)**:把
   carry+crowd_contra 逐周 gross 收益按 ISO 年-周对齐(`align_on_common_weeks`)+ 等权/逆波动组合。**分散强兑现:
   corr(carry,crowd)=-0.04(近乎不相关)→ 组合夏普 1.95 > 单条 1.44/1.30,最大回撤 8% = 单条(16%/15%)一半,总收益~187%
@@ -139,6 +167,69 @@ Real, tested backend engines (`*_TESTED` in the audit):
   方式(naive-merge VT 1.20 / risk-parity-merge VT 1.14 / portfolio-of-books 配置 VT 1.21)**均 < crowd_contra 单条 VT 1.38**。
   根因:1.95/8% 是 gross(carry gross~1.44);净-成本+整手+vol-target 下 carry 仅~0.58、拉不动 crowd;净曲线相关 +0.04
   (非 gross -0.04)。执行流水线抓到理想-vs-真的差。**deployable = crowd_contra 单条。** dry_run.db 现 5 条策略并列存证。
+- `services/research/factor_decomp.py` + `tools/common_risk_research.py` →
+  `evidence/common_risk_decomposition.json` — **W3 策略簇 & 公共风险分解(spec §7,2026-07-24)**:
+  §7.1 因子库 10 因子全由既有本地数据构造(BTC/ETH 市场、4 周趋势、1 周反转、已实现波动 Δ、
+  成交量流动性 Δ、OI 规模 Δ、资金费周累计、基差 Δ、OI 拥挤度 Δ;清算/Amihud/skew/链上/跨资产
+  诚实标 MISSING);per 策略 OLS(lstsq 闭式,确定性;**残差均值被截距吸收恒 0 → 「边」看
+  alpha=截距的 t + mean_attribution 均值归因**);聚类复用 `services/alpha/cluster.py`
+  complete-linkage(|ρ|≥0.5 UNCALIBRATED,反链式);breadth=1/ΣW_c²(逆波动权重);
+  26 周滚动 mean|ρ|>全样本+0.25 冲击(UNCALIBRATED)。**首跑结论(192 共同周,4 book 策略):
+  ① carry/crowd/top 的边都不是伪装 beta**——R² 仅 0.045–0.198,alpha +8.0%~+20.3%/y
+  (t 1.0~1.93);carry 对市场资金费水平反而是**负**载(标准化 β=−0.36,t=−3.78:截面 carry
+  的边在价差,市场级拥挤多头 regime 是逆风);② **无隐藏共同敞口**——raw 与残差相关矩阵
+  最大 |ρ| 0.15,4 策略在 0.3/0.5/0.7 三档阈值下全是单例簇,breadth 3.78/4(raw=残差),
+  VT 口径同结论;③ 相关冲击当前平静(0.144 vs 阈值 0.32),历史仅 2024-W17~19 三周;
+  ④ 基准验证:等权主流币篮子 R²=0.81·β_BTC t=4.5·alpha≈0(机器工作正常;
+  `btc_spot_trend_hold` 非干净买入持有——119/216 周空仓——不能当基准,诚实记录)。
+  诊断非门禁;W5 组合层消费簇结构。测试 `tests/research/test_factor_decomp.py` +
+  `tests/tools/test_common_risk_research.py`(34)。
+- `services/research/exit_policies.py` + `tools/exit_policy_lab.py` →
+  `evidence/exit_policy_lab.json` — **W4 退出策略实验室(spec §8,2026-07-24)**:EXIT 升为
+  一等独立研究对象。纯核:`ExitDecision{HOLD|REDUCE|EXIT, target_fraction∈[0,1],
+  reason_code, policy_version}` + 8 策略(baseline_signal_only 恒为对照 / fixed_stop /
+  atr_stop / chandelier / time_stop / scale_out / vol_adaptive_stop(σ×√t 距离)/
+  risk_budget_reduce(W6 仓位级镜像、**无闩锁**));**只减不加**(执行=信号×fraction,
+  退出永不制造信号外敞口);硬止损触发后锁定至信号复位(防「同信号再进场→再止损」抖动),
+  risk_budget 乘数随修复即时回升(episode 由信号驱动,不减仓状态也能延续水位线)。无前视
+  双保险:MarketState 访问器机器过滤 `event_time≤as_of`(性质测试:追加极端未来 bar
+  决策逐字段不变)+ 驱动器 `fetch_bars_pit`。接缝 = `apply_exit_policy` **权重流后处理器**
+  (管线门/对账/成本零改动);全 book 名单全期定价 + 不叠 crowding gate = 与 canonical
+  存盘 run 的两点刻意偏差(实验室内自洽)。8 策略 × 2 书(crowd 236 周@10bps / btc 迟滞
+  72 周@5bps)过同一 `run_multi_period_dry_run`,成本合计由零成本孪生跑精确反解。预注册
+  选择规则(exit_lab_selection.v1):ΔSharpe>0 ∧ Δmdd≤2pp ∧ 正增量不被 <5 期全覆盖 ∧
+  PF≥基线,四条件全过才算 worth-further-study;排名多准则、**禁止以最终净 PnL 单独选择**
+  (§2.3)。**首跑诚实结论:两书底层信号在纯信号退出下均盈利,7 策略全灭——crowd 每个
+  止损变体都毁 Sharpe(反向书的边在扛拥挤回撤,止损砍掉的正是信号要扛的坑;scale_out 最
+  差 ΔSharpe −0.42;time_stop 最温和:Δmdd −4.4pp 但 PF 不达标);btc 迟滞信号自带
+  动量退出 → 止损 0 触发,唯一「有效」的 scale_out(ΔSharpe +0.11)增量集中于 1 期、被
+  集中度规则硬否(CONCENTRATED_DELTA)。实验室的诚实答案 = signal-only exits are fine。**
+  测试 `tests/research/test_exit_policies.py`(29)+ `tests/tools/test_exit_policy_lab.py`(6)。
+  诊断非门禁。
+- `services/research/allocators.py` + `tools/allocator_research.py` →
+  `evidence/allocator_research.json` — **W5 条件组合配置器(spec §9,2026-07-24)**:策略层
+  资本配置从等权基线升级为「簇风险预算 + vol target + regime 条件化 + 稳健回退」并在
+  **锁定 OOS** 上对照 6 个保留配置器。纯核:6 配置器(equal_weight 不可删对照 /
+  inverse_vol(包装 book_combine)/ cluster_risk_parity(W3 簇图,簇内逆波动×簇间逆波动
+  预算×簇帽投影)/ constrained_max_sharpe(trailing 均值向 0 收缩 0.5 + 确定性单形网格
+  0.02 + 约束)/ turnover_penalized(死区部分调整,实现换手=max(0,S−2λ),λ 精确单调、
+  凸组合保持可行域、初始建仓不罚)/ regime_conditioned(stress>0.5 才向 fallback 倾斜,
+  **低置信 → 逐位精确回退**,性质测试钉死))+ `apply_constraints` 注水投影(非负/策略帽
+  0.40/簇帽 0.40,不可行诚实标 feasible=False 绝不超帽)+ `build_regime_series`(全 PIT:
+  VIX/DVOL expanding 三分位、资金费/已实现波动 trailing z、W3 相关冲击的截断不变变体;
+  **t 决策只用 ≤t−1 已完结周**,FRED 全样本分位是描述性的此处不用)+ 走前引擎
+  (承重可行性校验,违规 ValueError)。评估:4 book 策略公共 192 周 RAW 曲线,**锁定切分
+  fit≤2024-12 / locked≥2025-W01(81 周唯一评分窗)**,trailing-only 周度 PIT 再平衡,
+  成本 10bps×Σ|Δw|(干跑同口径)。**首跑结论:主判定 ADOPTED-AS-RESEARCH-FINDING——
+  turnover_penalized_max_sharpe 净夏普 1.669 > EW 1.468(Δ+0.201>0.1,回撤 0.026≤1.5×);
+  但敏感性硬否稳健性——剔除 top_contra 后 EW_REMAINS(best 0.787 vs EW 0.771,Δ仅
+  +0.016):配置层全部超额是 top_contra(治理 PAUSED、前向证据为负)锁定窗尾边的载体,
+  单条 top_contra 1.782 高于所有配置器;regime 条件化本轮结构性空转(W3 簇图全单例 →
+  CRP≡IV,base 与 fallback 重合,4 个 stress 周触发 tilt 但权重零变化,机制经测试就绪
+  待多成员簇);VT 杠杆诊断块(scale~1.6)不进判定;crowd_contra 单条锁定窗净夏普仅
+  0.128(边在 2025+ 衰减,与前向 BLOCKED 一致)。** 测试
+  `tests/research/test_allocators.py`(29)+ `tests/tools/test_allocator_research.py`(9)。
+  诊断非门禁,不接 live(live 回撤控制器独立缩放 deploy)。
 - `tools/dry_run_combo_multi.py` — **统一执行 book(把组合从收益流相加升级成真的一个 book 过干跑流水线)**:carry 面板
   加 OI `global_ls` 矩阵,每周权重 = 0.5·carry_legs + 0.5·crowd_legs,过门 + 净-成本 + 资金费 + vol-target,第 4 条策略
   `carry_crowd_combo` 落 dry_run.db。**诚实结论(4 条对比,RAW 无杠杆 / VT vol-target 可部署两条曲线都存):carry
@@ -156,7 +247,11 @@ Real, tested backend engines (`*_TESTED` in the audit):
   BH-FDR ranker, population_optimizer, decay, crowding/capacity, correlation/
   cluster, orthogonalize, zoo, alpha_graph, lineage, degradation_monitor.
 - `services/data/` (89 tests) — PIT store, survivorship-free universe, versioning,
-  quality, normalization, PIT corporate actions, catalog.
+  quality, normalization, PIT corporate actions, catalog. 存储层提供
+  `fetch_bars_pit(instrument, start, end)`(SqlitePITStore + CachingPITStore,2026-07-23):
+  批量读但逐 bar 过滤 `knowledge_time <= event_time`——仅对「每根 bar 只在自己的
+  event_date 消费」的 panel builder 是 PIT 安全的,不能替代决策时点 `as_of(t)`;
+  services/ 裸 `fetch_bars` 仍被 AST 治理钉死在白名单 infra。
 - `services/portfolio/` (57 tests) — constrained optimizer (feasibility-checked),
   PSD-checked factor risk model, construction, attribution, signal_adapter.
 - `services/intelligence/` (59 tests) — guardrailed non-human `ResearchAgentLoop`
@@ -164,6 +259,154 @@ Real, tested backend engines (`*_TESTED` in the audit):
 - `services/{features,execution,monitoring,deployment}/` — leakage detector +
   feature registry; execution boundary + intent builder; hash-chained audit log +
   health; fail-closed deployment/version-pin gate. All tested.
+- `services/lifecycle/` — **三个正交状态机(727 §3/§11,C1–C3 已落地)**:把混合的
+  `AlphaState` 拆为 `research_state`(研究是否成立)/ `deployment_state`(跑在哪里,
+  唯一带人类专属边的机器:进入 MICRO_LIVE/LIVE 必须真人 + Grant,L2 下
+  `REAL_CAPITAL_BLOCKED_AT_L2` 结构性拒绝,PAUSED→LIVE 无边)/ `health_state`
+  (当前是否健康,带原因码)+ `projection`(旧 `AlphaState` → 三元组的加法投影,
+  UNKNOWN_LEGACY 诚实哨兵零入边)。纯数据+纯函数、无 IO、不 import `services/*`,
+  故编排器 `services/alpha/lifecycle.py` 可采用而无循环依赖。**C3 已切换**:
+  `degradation_monitor`/`maintenance`/`retirement` 按部署态筛选、衰退经
+  `AlphaLifecycleManager.advance_health` 走 health 机器——降级不再覆盖部署位
+  (VALIDATED+PAPER+DEGRADED 首次可表达)、monitor 的 PAUSED 建议映射 FAILED+自动
+  降险、原因码机器可读;legacy 字段与报告 action 串逐位不变(旧套件零修改通过),
+  HEALTHY 恢复刻意未接线(§11.3 人门)。持久化:C2 双写 + C3 `lossy_json` 第 7 列,
+  发散三元组完整往返。行为变化评审清单见设计文档 §7.3
+  `docs/engineering/specs/2026-07-27-three-orthogonal-state-machines-design.md`。
+  C4(console 三维展示)已落地:lifecycle-monitor 行带三态 + triple_source
+  provenance(STORED/PROJECTED/SYNTHETIC/UNKNOWN),前端 R/D/H 列,契约测试锁定。
+- `services/orchestration/` — **727 §2.5 自治内核(K1–K4 全部落地,106 测试,
+  Phase 2 完成)**:
+  K1 `command_envelope`(727 §4.2 信封,stable_hash fail-closed)+
+  `idempotency.py::SqliteCommandLog`(持久幂等命令日志,RECEIVED→COMPLETED/FAILED
+  CAS 状态机,重链哈希链,in_flight 只上面绝不自动重试)+ `command_bus.py`
+  (幂等受理→handler→publish_once 因果事件→落结果;重复命令不产生重复副作用)。
+  K2 `leader_lease.py::SqliteLeaderLeaseStore`(单实例 Leader + fencing token +
+  任务租约:token 单调递增释放不归零,stale leader 的 require_owner/renew/release
+  一律 fence,过期判定 now>=expires)。K3 `scheduler.py`(持久化确定性调度器:
+  leader 门控兑现 + SKIPPED_NOT_LEADER 审计、按计划时刻推进不漂移、错过补跑合并
+  COALESCED 诚实留痕、幂等补跑=K1 重放(key 编 attempts)、确定性退避 + DLQ
+  只上面、未知结果大声抛出;三 store 可共库)。K4a `policy_engine.py`(统一
+  策略评估接口:注册确定性纯函数,fail-closed 三规则——未注册/判定器异常/
+  非法 verdict 绝不放行,ABSTAIN≠FAIL,evidence_hash 只经 create;不迁移任何
+  现有判定器)+ `event_router.py`(声明式类型→handler 路由表,多 handler 注册序,
+  RouterDispatchError 聚合不回滚,at-least-once 幂等是 handler 责任,replay_from
+  增量对账)。K4b `workflow_engine.py`(持久化多步工作流:三链存储 + 转换表
+  guard,PENDING→RUNNING→COMPLETED|FAILED|HALTED,resume 显式,attempt 编 key,
+  崩溃恢复链=in_flight 上面→MARK_FAILED→resume→新 key 重跑,实例级隔离不外抛)
+  + `recovery.py`(inspect_kernel 纯读聚合四悬挂面;resolve_in_flight 唯一处置
+  入口仅 MARK_FAILED——未知绝不盲目重跑;revive_task DLQ 显式复活)
+  + `autonomy_kernel.py`(组合根门面,五 store 共一 sqlite 文件,run_once/
+  recovery_report 转发,无新逻辑)。确定性核心(时间全为调用方
+  int ms,不起线程)、无网络、**单节点诚实边界——非跨主机共识(post-L2)**。
+  设计文档 `docs/engineering/specs/2026-07-27-autonomy-kernel-design.md`
+  (K 系列切片计划 + §11.4 Phase 2 验收对照表:命令幂等/事件可重放/状态转换
+  有 guard/单实例执行/崩溃后恢复,五条全有实现与钉死测试)。
+- `services/factor_garden/` — **Factor Garden F1–F5 全部落地,727 Phase 4 完成
+  (2026-07-27,22+11+9+24+11 测试)**:`quantos/contracts/feature.py::FeatureDefinition` 加法加宽 §6.1 全字段
+  (factor_family_id/expression_hash/economic_hypothesis/required_datasets/预处理/
+  provenance/created_at_ms,全可选带默认值,旧构造形状零漂移)+ `FactorFamily`
+  13 值枚举(§6.4)。唯一 canonical 表达式形式 = `alpha_expression` 嵌套 tuple DSL
+  (`formula=serialize`、`expression_hash=alpha_id`;factor_engine 字符串 AST 刻意不用)。
+  `definitions.py`(纯核:fail-closed 建造器——§8.1 假说非空/数据依赖非空/真枚举/
+  表达式过 DSL 自身 serialize 往返 + 合成面板 evaluate 校验;`factor_content_hash`
+  只含身份字段,created_at_ms 不进哈希)+ `registry.py`(薄边界包
+  `SqliteFeatureRegistryStore`——garden 不变量边界复检纵深防御,owner=creator_actor,
+  content hash 进 lineage 审计;store 只加 `all_items()` 只读,持久化/哈希链全复用)。
+  **F2 canonical 因子收敛**:`canonical.py` —— 生产因子表达式的单一真源从 tools/ 移入
+  services 侧(CARRY/CROWD_CONTRA/TOP_CONTRA/TREND_COMPOSITE + 共享 `legs` 账本构造器 +
+  `FUNDING_FIELD`),消灭全部逐字双份(CARRY 3 份、CROWD_CONTRA 10 份、TOP_CONTRA 4 份、
+  trend 2 份、_legs 2 份;移动前逐位验证相同,15 个 tools 模块改为导入并以历史名
+  re-export,对象同一性测试钉死);`CANONICAL_FACTORS`(3 个 DSL 原生因子的 F1 garden
+  定义,真经济假说 + 真数据集 id)+ `register_canonical_factors`(幂等,冲突 raise,
+  驱动器调用非 import 时)。QUANTILE 0.2(离线)/0.3(live)分叉**不统一**,以
+  `CARRY_QUANTILE_OFFLINE`/`CARRY_QUANTILE_LIVE` 命名常量诚实记录(人工决策)。
+  诚实边界:trend 的生产形式是 SIGNAL_OPS pair-tuple(与 tuple DSL 不逐位等价),
+  故只收敛常量、**不在** CANONICAL_FACTORS(DSL 原生 trend 注册是独立评审切片)。
+  **F3 物化器 + feature_values schema v2**:`materializer.py` ——
+  `evaluate(deserialize(defn.formula), panel)` 逐格落 `SqliteFeatureValueStore`
+  (schema v2 四列 computed_at_ms/dataset_version/materializer_version/quality_verdict,
+  惰性迁移 `_ensure_v2_columns` 与 experiment_registry 同先例、唯一加列路径、
+  旧行 NULL 诚实标记绝不回填;`add_many` 可选 kwargs 默认 None → v1 路径逐位不变,
+  读路径新增 `as_of_observations` 全列 dict,as_of/latest_as_of 契约不变)。
+  **kt 语义裁定:kt := event_time**——FieldPanel 无逐格 kt,其构建契约是「格 (t,i)
+  在 t 可知」(latest_as_of(t,t) ∧ bar.event_time==t),evaluate 只回看 ≤t/同行 t →
+  因子值在 t 可知,与 EOD 数据存储 kt=et 约定一致;从 panel PIT 契约推导非虚构。
+  None 格不落盘(无观测)、NaN/Inf 跳过计数;幂等靠主键 INSERT OR IGNORE(重跑 0 新增);
+  `materialize_many` 逐因子隔离失败。quality_verdict = 调用方/全局标记,
+  逐格 leakage/质量检测不做(独立评审)。物化只写观测,不驱动任何晋级/下单。
+  **F4 parity + dependency graph + health**:`offline_online_parity.py`
+  (ParityReport + compare_series/compare_panels,**交集为空 → INSUFFICIENT_OVERLAP
+  fail-closed 绝不谎报 OK**,形状不符不抛;真实双路径 parity 案例:真 live 函数
+  `_latest_weights_and_prices_for` vs 真干跑组合 evaluate+legs,同一决策行
+  tolerance=0 下 crowd/carry 均 PARITY_OK;三套行选择政策**不统一**,统一是行为
+  变更)+ `dependency_graph.py`(不可变 dataset→factor→alpha 邻接,
+  from_definitions/dependents_of_dataset 传播/validate 悬空引用清单 fail-closed;
+  topo_factors 诚实注:无 factor→factor 边,topo 即排序)+ `health.py`
+  (**纯核事实注入**,绝不自读 db/json——admission_store/refresh_history/
+  live_refresh_status 三权威源由调用方读盘注入;DatasetHealth UNKNOWN 是诚实
+  缺省,**BLOCK 或 UNKNOWN → factor PAUSED fail-closed**,STALE→STALE;
+  propagate 到 alpha:任一依赖 factor 非 HEALTHY → PAUSED 带明细——
+  forward_track_advance/live_track_advance 依赖失败→暂停语义的图驱动泛化)。
+  **verdict 不写回 registry**(纯评估;set_status 写回留驱动器显式决策)。
+  **F5 family_cluster(727 §6.4/§7.3)**:`family_cluster.py` —— 声明家族优先
+  (缺失/无效 → FactorClusterError fail-closed 绝不猜)+ 家族内相关聚类 =
+  **并查集传递闭包**(correlation 注入、键序无关、负相关高幅值也并——拥挤反向
+  变体同族;**刻意不复用** services/alpha/cluster.py 的 complete-linkage——
+  那个签名自算相关且明确禁链式(P2-3),与本切片规定的传递闭包冲突;链式过并
+  对 §7.3 是保守方向——更宽簇=声称独立赌注更少,rho_cut=0.5 UNCALIBRATED W3
+  同口径)。correlation=None → 全 SINGLETON(无证据不声称冗余);无边因子
+  DECLARED;cluster_id=`<FAMILY>#<簇内最小 factor_id>` 确定性(插入序/键序无关)。
+  **§7.3 接缝(只接口不整合)**:cluster_id = family-level DSR/FDR 分组键,
+  但 family_testing/ranker/multiple_testing 一字未动(整合留评审)。
+  确定性核心(无墙钟无 uuid)、单节点、**诊断非门禁**。
+  Phase 4 验收对照表(factor_id/version ✓ / 历史实时同逻辑 ✓ / 依赖失败传播
+  暂停 ✓ / 物化 ✓ / 家族聚类 ✓)见设计文档 §9
+  `docs/engineering/specs/2026-07-27-factor-garden-design.md`。
+- `services/alpha_factory/` — **Alpha Factory P5-1..P5-3(727 §7/§8,2026-07-27,83 测试,Phase 5 完成)**:
+  `hypothesis.py`(§8.1 全字段 frozen Hypothesis + 内容派生 id「hyp_+sha256[:16]」+
+  fail-closed builder——「Sharpe 可能更高」类候选构造即拒)+ `hypothesis_store.py`
+  (append-only 哈希链预注册账本,register 幂等,同 id 不同内容 HypothesisConflictError
+  大声抛)+ `economic_rules.py`(可复用规则面:HYP_MECHANISM_TOO_SHORT/
+  HYP_VAGUE_FALSIFICATION(UNCALIBRATED 启发式)等 6 码,search_controller
+  重检非本构造假设用)。**TrialProvenance 零接线已消灭**:两个 canonical 搜索入口
+  (`run_alpha_factory` / `run_registered_candidate_batch`)在注册时每候选写一条完整
+  §7.1 TrialRecord(只做加法,旧签名逐位兼容;model_name 诚实——cs_genome-evolution /
+  "" 非编造;状态只 RECORDED,不编造 ELIMINATED_*;`trial_id_for_attempt` 共享 id
+  约定,重复候选跨 session 双行记账 §7.2)。`evidence/trial_ledger_integrity.json`
+  诚实翻转:新增 provenance_wiring 代码级验证段,open_gap 翻
+  CANONICAL_ENTRIES_WIRED_OTHER_DRIVERS_PENDING,verdict 保持 PARTIAL(历史 2533
+  bare trial 永久不可回溯 + 15+ 其他驱动器未接线,全列 open_gaps;不向生产账本
+  注合成 trial 污染 DSR 分母)。
+  **P5-2(§8.2/§8.3 漏斗前四层)**:`candidate_compiler.py`(canonicalize/serialize/
+  alpha_id 三道 + 合成面板 evaluate 校验——只保形式合法 + 身份稳定不评优劣;
+  `compile_from_hypothesis` 绑定编译,required_factors 零交集 →
+  HYPOTHESIS_FACTOR_MISMATCH **警告不硬拒**)+ `constrained_search_space.py`
+  (SearchSpaceConstraints fail-closed 构造,**max_window 必填无默认**=数据可用性
+  上界;五违规码 SPACE_FIELD_NOT_ALLOWED/OP_NOT_ALLOWED/TOO_DEEP/
+  WINDOW_OUT_OF_RANGE/ROOT_NOT_ECONOMIC;两层形态确定性枚举 + 几何窗口阶梯 +
+  硬截断防爆炸;cs_genome 一字未改,`_depth` 四行平行实现)+
+  `candidate_deduplicator.py`(EXACT/NEAR(0.85 UNCALIBRATED)/KEEP,首见保留与
+  run_alpha_factory._pending 同语义)+ `search_controller.py`(假设违规拒开搜
+  SearchPlanError / 语义淘汰 ELIMINATED_SEMANTIC+码 / 预算 BudgetExhausted /
+  去重 ELIMINATED_DUPLICATE;**控制器不写库**,SearchPlan.eliminations 供调用方
+  经 P5-1 接线落账,e2e 测试真消费;数据可用性/粗筛及以后各层在 evaluator,
+  刻意不在本切片)。
+  **P5-3(§8.4 Deterministic Judge + §10 第一刀)**:`challenger.py`
+  (ChallengeObjection 结构化异议;确定性 statistical_challenger 七条攻击线
+  DSR≤0/PBO≥0.5/leakage/perturbation FAIL→BLOCK,regime/cost/concentration→WARN,
+  全 None→INSUFFICIENT_EVIDENCE 绝不静默通过;`external_objection` = LLM/人工
+  异议**唯一入境口**,creator_model 必填、rationale≥20 字符)+
+  `challenge_council.py`(convene 六条固定政策:**EXTERNAL_STRUCTURED BLOCK 只到
+  REQUIRES_HUMAN_REVIEW 绝不直接 FAIL,§8.4 机器钉死**;空 objections≠PASS;
+  `judge_candidate` = 机器证据 + 固定政策的 Deterministic Judge 落地)+
+  `champion_challenger.py`(§10:ChampionSnapshot 九字段冻结销 + assert_frozen
+  漂移码「不得在线自动调参」+ §10.3 十键面板固定政策对比——双优无 guard 退化
+  才 CHALLENGER_BETTER,**绝不只比总收益**;替换流程本身在下游治理,刻意不在)。
+  边界:services/ 零 LLM 客户端,假设只能作结构化
+  数据经 tools/ 进入,最终状态转换归 Deterministic Judge + Governance(727 §8.4)。
+  设计文档 `docs/engineering/specs/2026-07-27-alpha-factory-phase5-design.md`
+  (P5-1..P5-3 切片计划)。诊断非门禁。
 - `quantos/contracts/event_schemas.py` +
   `services/monitoring/{event_bus,event_projection,domain_event_runtime}.py` —
   versioned strict event schemas, a single-node durable Event log, append-only
@@ -265,8 +508,180 @@ Real, tested backend engines (`*_TESTED` in the audit):
   与它 IC t-stat 4.32、过 4/5 证伪一致。诚实边界:这是对**已知历史**的执行现实回测(整手+门+成本+换手,残差≈0 恒等式成立),
   **非前向/实盘**;宇宙仅 14 大币;证伪已过≠前向必赚——是否送前向 paper-track/加仓位是另一独立决策。
   实盘 = 同接口换真券商适配器 + 人工批准 = 显式非目标.
-- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (~31 GET
-  endpoints), now **mostly REAL** (distinct provenance markers; fail-closed to
+- `tools/crowd_contra_variants.py` + `evidence/crowd_contra_variants.json` — **预注册 crowd_contra
+  变体族(2026-07-24,17 trial 含基线重跑)**:16 变体(分位扫描 0.20/0.25/0.35、节奏 3d/14d、
+  taker/top 复合、分位×节奏网格、oi_delta 与 crowd+carry 信号级复合)过同一台 5 项证伪机器检验
+  (按变体自身分位+节奏构造流;基线 cadence=1 锚定复现 verify 数字)+ IC 面板 + 容量带 +
+  同一条 run_multi_period_dry_run(变体**不写** dry_run.db)。预注册相对判定:基线本次重跑
+  VT 1.095/回撤 9.7%/证伪 4/5(2020-21 早年平,broad_across_years 失;宇宙已扩到 24 币,与
+  历史 14 币记录不同属数据演进),**7 非基线 CANDIDATE**(q20、3d×3、14d、q20_14d、taker 复合),
+  9 REJECTED 全记录。Trial 纪律:17 候选经 run_registered_candidate_batch 三节奏批注册
+  (registry 2436→2453),DSR 按全 trial 总体泄气——**调整口径深度怀疑**(3d 变体 DSR~0.001,
+  基线 0.84 最高;17 次同属一个信号族,有效独立赌注 ≪17)。7 个 CANDIDATE 已注册进
+  `tools/forward_track_advance.py::_ALPHAS`(新增 dict spec:expr/quantile/cadence_days,
+  原三条纯 tuple 路径逐位不变;3d/14d 变体走每日兑现网格 + 变体节奏参照)——仅前向 paper
+  证据积累,非晋级;live 轨道 `_STRATEGIES`/mandate/attestation 一字未动。
+- `live/` — **实盘执行栈(已存在,testnet 已联调)**:`live/exchange/base.py`
+  `VenueAdapter` Protocol + `live/exchange/retry.py`(`call_with_backoff`)+
+  `live/exchange/binance_futures.py` / `bybit_futures.py`(纯 stdlib
+  urllib+hmac,无交易所 SDK;构造注入 `http_request/clock/sleep` 可测;
+  mainnet base 在默认 SafetyConfig 下构造即 `raise SafetyViolation`;
+  未知 base_url raise ValueError)。`live/pipeline.py::submit_live_batch`
+  全链:validation attestation → 计划 → pre-trade gate → 过滤器 →
+  mandate(AUTO 拒绝/人工复核)→ 账本预记账 → 下单 → 确认 → 审计。
+  `live/governance/{mandate,mandate_store,validation_attestation}.py` 人工门。
+  **OMS canonical 状态机(2026-07-23 接入)**:`live/execution/oms_state.py` 把
+  `quantos/contracts/order.py::OrderState` 状态机接进 `LiveLedger`——venue 状态串
+  fail-closed 映射到 canonical(`PENDING_NEW→RISK_APPROVED`、`NEW→SUBMITTED`、
+  `PREVIEW_NOT_SUBMITTED→FAILED` 等 9 条,未知串 raise ValueError),账本新增
+  `canonical_state` 列(lazy 迁移,兼容存量 testnet 账本),`update_status` 强制
+  **可达性**(BFS over ALLOWED_TRANSITIONS,快照语义:允许合并未记录的中间跳,
+  禁止 terminal 改写/状态回退),幂等重放语义不变;`ReconciliationStatus`
+  (`IN_SYNC`/`RECONCILIATION_REQUIRED`)显式化对账状态(仍 report-only/硬停,
+  绝不自动纠正)。**适配器行情读(2026-07-23)**:`BinanceFuturesAdapter` 新增
+  `premium_index()`(标记价/指数价/最新资金费率/下次结算时间)与
+  `funding_rates()`(历史资金费率,limit 钳 [1,1000])——公开无签名端点,
+  fail-soft None,与 `book_ticker` 同法;合约 `PremiumIndexSnapshot`/
+  `FundingRateSnapshot` 在 `live/contracts.py`(NaN/Inf 拒)。策略级资金费数据
+  此前只有日频离线快照,这是首个执行面实时读。**资金费实时交叉校验
+  (2026-07-23)**:`live/execution/funding_check.py` 纯模块(镜像 `price_check.py`)
+  + `tools/live_track_advance.py` 接线——对 `_FUNDING_CHECK_STRATEGIES`
+  (目前仅 `carry_oi_majors`,资金费信号策略)逐目标币用 venue `premium_index`
+  实时读比对日频快照(`venue_rate×3` vs 当日累计费率,abs 0.001 + rel 2.0
+  组合带宽,**未校准的过期/垃圾探测器非精确等式**;快照 None/过期/next_funding_time
+  荒谬 → fail-closed 冻结该币),冻结名单并集进价格检查的 `frozen_names` 一起进
+  `submit_live_batch(frozen=...)`;`PreviewVenue` 加 `premium_index` 透传使
+  preview 跑同一检查;无该方法的场地(bybit/mexc)干净跳过。carry 的信号本身
+  就是资金费率——没有实时校验等于拿昨天的费率下今天的单,此洞已补。
+  **Binance Futures mainnet 代码面 human-ready(2026-07-23,与 MEXC 对称)**:
+  `_VENUES["binance_mainnet"]`(MAINNET_BASE,env `BINANCE_MAINNET_API_KEY/SECRET`,
+  `mainnet_only: True` 标记——未 arm 即 SystemExit;通路=人工 `--arm-live`
+  (armed preview,2026-07-24:PreviewVenue 结构性零提交)或人工 `--submit --arm-live`;
+  启动强制 `check_binance_key_permissions`(`/sapi/v1/account/apiRestrictions`,
+  提现已关 ∧ IP 白名单才 SAFE,否则 fail-closed 拒绝);`key/live_mandate_binance_mainnet
+  .json.template`(占位 expires_at=0 恒过期,绝不 AUTO)+ 只读首验
+  `tools/binance_readonly_smoke.py`(4 个 GET,无凭据零网络,落
+  `evidence/binance_mainnet_smoke.json`,首单前 `order_response_shape=
+  UNVERIFIED_UNTIL_FIRST_FILL`)+ 首单 runbook
+  `docs/runbooks/binance-futures-live-runbook.md`(干跑→paper-track→testnet→
+  smoke→mandate+attestation→≤$100 首单→对账→规模化)。真凭证/真 mandate/
+  attestation 仍只能真人提供;ops API 的 argv 绝不携带 `--submit`(2026-07-24
+  治理收紧,真提交只留人工 CLI),`--arm-live` 只出现在 `/preview` 的
+  armed-preview 固定 argv(PreviewVenue 结构性无法提交)。
+  `tools/live_ops_api.py`(port 8440,X-Ops-Token,**只读运维、绝不直接下单**;
+  2026-07-24 新增 `POST /api/v1/liveops/preview` 演练端点——fixed argv 同步跑驱动器
+  preview 路径并回传 status JSON 含 `would_submit`,mainnet-only venue 自动
+  `--arm-live`,全模块 argv 绝不 `--submit`)
+  + `tools/live_track_advance.py::_VENUES` 场地注册表 + `tools/live_data_refresh.py`
+  行情刷新流水线。治理边界机器钉死:网络 import 只在 `live/exchange/` 与 `tools/`,
+  `services/` 永不 import `live/`。
+  **REST gap-fill(2026-07-26,消除 Data Vision 发布滞后死窗)**:`tools/binance_rest_gap_fill.py`
+  —— Data Vision 日归档在 UTC 日收盘后 ~10-16h 才发布,死窗内 admission 恒 BLOCK;
+  现 perp_mark_prices/oi_metrics 两源在归档 pass 后对「最新已收盘日缺失」的币用 fapi 公共
+  REST(markPriceKlines 1d + futures/data 指标族 5m eod 行,端点时间戳语义已对真实数据
+  逐字段钉死:OI 族 window-end eod=次日00:00行,taker window-start eod=当日23:55行)补占位。
+  规则:**归档 canonical**——占位标 `REST_GAP_FILL`(mark 缓存顶层 `provenance` 段 /
+  OI record `source` 字段),每次刷新先回归档重试、发布即覆盖;REST 绝不覆盖归档行、
+  绝不入当日未收盘 bar;占位日以专用 dataset id(`*_rest_gap_fill`)进 raw archive,
+  lineage backfill 对占位日走 REST 重取+回放校验(同源同严度,不放宽)。
+  **W6 动态回撤状态机 + 可解释风险乘数(spec §10,2026-07-24 落地,
+  2026-07-25 接真制品)**:
+  `live/execution/drawdown_controller.py`(纯核,无 IO)——
+  NORMAL/CAUTION/DEFENSIVE/RECOVERY/HALT 状态机(阈值全部 UNCALIBRATED 工程默认:
+  5%/10%/20%;RECOVERY 双门 = 最近 3 次连续观测 dd<5% ∧ 最近 3 次无创新低,缺一
+  停在 CAUTION;慢速 ramp 0.1→0.5、第 6 次观测才回 NORMAL,绝不瞬时满杠杆;
+  数据异常/场地事故→HALT,相关冲击→至少 DEFENSIVE)+ `risk_multiplier =
+  min(各分量, 状态天花板)`(NORMAL 1.0/CAUTION 0.5/DEFENSIVE 0.25/RECOVERY ramp/
+  HALT 0.0;UNKNOWN 分量解析为保守默认 0.5——缺证据不放满配;min 语义 + [0,1]
+  钳制 = 任何模型输出都覆盖不了硬风险上限)。驱动器接线(加法式):
+  `drawdown_control_decision` 可测桥(equity/peak 来自
+  `record_and_validate_peak_equity`,venue health 来自本轮 book_ticker 探测,
+  **相关冲击已接 W3 真制品** `evidence/common_risk_decomposition.json`
+  (`correlation_shock_from_artifact` 纯读者:`correlation_shock.in_shock_now`
+  + status==OK 才可信,True→至少 DEFENSIVE;缺失/畸形→None 无意见),
+  **衰退已接 W1 真制品** `evidence/live_degradation.json`
+  (`degradation_component_from_artifact` 按 strategy×venue 取 `reports[]`,
+  7d staleness 守门(注入 now)、ratio null(sign-flip/replay≈0)/SMALL_SAMPLE→
+  UNKNOWN 绝不把无意义比值翻成数字、可信 DESCRIPTIVE_ONLY ratio 按 UNCALIBRATED
+  分档 ≥0.7→1.0 / 0.4–0.7→0.5 / <0.4→0.25;2026-07-24 的猜版 schema 分支已随
+  真制品落地删除),vol/liquidity/capacity 无实盘制品→UNKNOWN)→
+  `deploy_aum = min(capital_base, 0.95*mandate) × multiplier`(≤1 只缩不放);
+  HALT/DEFENSIVE→跳批(管线无 reduce-only 概念,不虚构;闩锁式全局 halt 仍是
+  kill-switch,本机不复制)。快照落 `live_drawdown_state{suffix}.json`(独立
+  单写者文件,不塞进 risk_state——save_peak_equity 重建载荷会丢外加键),
+  status JSON 加法键 `drawdown_control` 全量审计。测试
+  `tests/live/test_drawdown_controller.py`(68)。
+- `live/exchange/mexc_spot.py` + `tools/mexc_klines_fetch.py` +
+  `tools/dry_run_btc_spot_multi.py` — **MEXC 零手续费 BTC 现货对接(代码面 human-ready,
+  2026-07-23 Part 1 接线完成)**:MEXC Spot API v3(Binance 兼容,`https://api.mexc.com`,签名=
+  HMAC-SHA256(urlencoded query)+ `X-MEXC-APIKEY` 头)现货适配器,遵循与
+  Binance/Bybit 相同的构造注入与安全不变量(mainnet 默认构造即 SafetyViolation;
+  MEXC 无现货 testnet → 毕业路径 = 干跑 → 小额真实 + 人工 mandate → 规模化,
+  见 `docs/MEXC_INTEGRATION.md`)。接线实况:MEXC klines 已是 `tools/live_data_refresh.py`
+  第 5 幂等源(落 `crypto_mexc.db` + `mexc_btc_klines.json`);`btc_spot_trend` 干跑主口径
+  已切 MEXC PIT(CoinGecko `_cg` 对照)+ paper_track.db 前向持久层;`_VENUES["mexc"]` /
+  `_STRATEGIES["btc_spot_trend"]` 已注册进 `tools/live_track_advance.py`(现货现金门 +
+  现货口径风控限额 + §10 启动 key 校验);§10 凭证加载器 `tools/mexc_credentials.py` +
+  `verify_key_permissions.py` MEXC 分支;`--arm-live` arming(ops API 只在 `/preview`
+  的 armed-preview 固定 argv 携带,绝不提交,治理钉死);只读首验 `tools/mexc_readonly_smoke.py`(人工执行,未跑前
+  readiness 诚实报 UNVERIFIED_MAINNET_RESPONSE);ops API 现货 dashboard 分支 +
+  `docs/runbooks/mexc-live-runbook.md` 首单 checklist。永不实现提现/划转(治理扫描机器禁止)。
+  **Phase 8 M1(727 §13 阶段 B,2026-07-27)**:适配器新增三个签名只读账户端点——
+  `open_orders(instrument_id=None)` / `all_orders(instrument_id, limit 钳 [1,1000],7 天窗口)` /
+  `my_trades(instrument_id, limit 钳 [1,1000],~1 月窗口)`,全部 **fail-loud**(喂对账,
+  绝不静默跳过;非 2xx/畸形行 → RuntimeError),不进 VenueAdapter Protocol(hasattr
+  可选能力惯例);`exchange_filters()` 附 maker/taker commission 解析(`ExchangeFilters`
+  加法扩展两个 `Optional[float]=None` 尾随字段,缺席诚实 None ≠ 免费,既有构造零漂移);
+  治理 `_FETCHERS` 补登记 `tools/mexc_klines_fetch.py` + `tools/mexc_readonly_smoke.py`;
+  `docs/MEXC_INTEGRATION.md` §3 方法面漂移修正(原列 get_open_orders 等不存在)。
+  user stream/listenKey **推迟立据**(与 2026-07-07 审计「周度策略不要 ws」裁定一致,
+  REST 三件套等价覆盖断连恢复)。设计 + M1..M3 切片计划
+  `docs/engineering/specs/2026-07-27-mexc-phase8-design.md`。测试 45→59。
+- `live/execution/shadow.py` + 三适配器 `depth()` + `live/execution/shadow_store.py` +
+  `tools/shadow_track.py` — **SHADOW Phase 7 S1–S3 全部落地(727 §12.2,2026-07-27,
+  Phase 7 SHADOW 侧完成)**:设计
+  `docs/engineering/specs/2026-07-27-shadow-phase7-design.md`。Paper→Micro-Live
+  之间全缺的 SHADOW 层的第一、二片:① 订单簿深度端点——`BookLevel`/`OrderBookSnapshot` 契约
+  (fail-closed 校验,as_of_ms 缺失诚实 None,刻意不拒瞬时交叉簿)+ `live/exchange/depth.py`
+  共享解析/钳档(向上取档绝不少给)+ 三适配器 `depth(instrument_id, *, limit)`(MEXC 档 5–1000
+  无时间戳 / Binance 档 5–1000 取 E→T / Bybit linear 档 1/50/200/1000 取 result.ts,全部
+  不签名公共端点、fail-soft None、绝不在下单路径上);`depth` 沿用 premium_index 的 **hasattr
+  可选能力惯例不进 VenueAdapter Protocol**(`base.py` 注释钉死)。② 纯核(无 IO/网络/墙钟,
+  时间全 int ms 注入):`walk_the_book`(逐档 VWAP;EMPTY_BOOK/CROSSED_BOOK/INSUFFICIENT_DEPTH,
+  深度不足绝不为未成交部分编造价格)+ `observe_leg`/`observe_batch`(degradation.py 同款
+  UNKNOWN 纪律:book None→BOOK_UNAVAILABLE、过旧→BOOK_STALE、未来→BOOK_FROM_FUTURE;
+  spread/slippage 复用 `tca.slippage_bps`;expected_impact 鸭子类型双给才算,UNCALIBRATED
+  输入绝不编造;paper_fill_price=decision_price 如实记录当前 paper 语义——**SHADOW 观测正是
+  量化「paper fill=决策价」缺口的机器,不修复它**;provenance 恒 "SHADOW" §18.2 构造期校验)。
+  ③ **S2 持久化+事件化**:`SqliteShadowStore`(克隆 refresh_history 结构,全新库无迁移分支——
+  观测行与其 canonical 事件**同一事务**提交;observation_id 内容派生 `"shd_"+sha256[:16]`
+  幂等、run_label 是批次元数据不进身份;观测/outbox/dispatch 三哈希链 + append-only 触发器;
+  create=False 缺库即拒 + 打开即全链校验,篡改拒开拒续写)+ `SHADOW_OBSERVED` 事件 schema
+  (`execution.shadow.observed` v1.0,**µs**,domain=execution,payload 是**脱敏摘要**——
+  结论标量,不含盘口簿/walk 明细;catalog 12→13 types/17→18 defs)+
+  `dispatch_shadow_event_outbox`(**与六店同款依赖注入签名,无偏差**)+ drain 第 8 注册源
+  (`data/cache/shadow_observations.db`;治理测试对 drain 的 `"live."` 禁令**精确开洞**:
+  唯一允许引用=纯 sqlite 的 shadow_store,其余仍全面禁止)。
+  venue 裁定:Phase 7 驱动器主线 = Binance testnet,MEXC 现货 shadow 化留 Phase 8 的 §13
+  单列任务(depth 端点三家已对称落地备 §13 阶段 A)。④ **S3 运行时驱动器 +
+  shadow_ready 门(Phase 7 收官)**:`tools/shadow_track.py`(IO 边界,已登记
+  `_FETCHERS`)——复用 `_STRATEGIES` 信号注册表(绝不重算信号),venue 从
+  `_VENUES` 按 base_url 白名单结构性筛 testnet/demo(binance_testnet/bybit_testnet/
+  bybit_demo;mainnet/spot 进不来,空凭证构造只调无签名方法),逐标的 depth()
+  实测 latency → observe_batch → shadow_store 落账;`build_shadow_readiness`
+  五 blocker(NO_OBSERVATIONS/CHAIN_INVALID/OUTBOX_CHAIN_INVALID/
+  LATEST_OBSERVATION_STALE(recorded_at 口径)/NO_EXECUTABLE_OBSERVATION,
+  镜像 paper_health 全满足才 true)+ `--once`/`--follow` 真实时间推进 +
+  `evidence/shadow_status.json`(provenance SHADOW + honesty_note)。**真实首跑
+  (testnet,crowd_contra,$10k):14 腿落账,drain 14 事件 e2e PASS;诚实发现
+  ——testnet 盘口稀疏(11/14 簿 as_of 超 60s BOOK_STALE),仅 3 腿可成交,
+  mean|slippage| 439bps**——SHADOW 要量化的「paper 决策价 vs 真实可成交价」
+  缺口的第一份真实数字。测试 tests/live/test_shadow.py(27)
+  + 三适配器各 6 + tests/live/test_shadow_store.py(17) +
+  tests/tools/test_shadow_track.py(18)。**不接 console**(证据快照已可读,
+  console 展示是独立切片);§12.3/12.4 MICRO_LIVE/LIVE 是 Phase 9+。
+- `services/console/main.py`（正式组合根）+ `services/console/api/main.py`（只读 HTTP 路由/展示层）— FastAPI **read-only** API (45+ GET
+  endpoints, console 8400 + live_ops 8440), now **mostly REAL** (distinct provenance markers; fail-closed to
   `SYNTHETIC_DETERMINISTIC` only when an artifact is absent, e.g. CI). REAL: `research-runs`/
   `research-run` (run_registry sqlite), `crypto-live` (CoinGecko offline snapshot),
   `fx-research` (ECB/Frankfurter snapshots + tradable gauntlet), `lifecycle-monitor`
@@ -274,12 +689,207 @@ Real, tested backend engines (`*_TESTED` in the audit):
   (12-dim real eval + time/活体征 dims), `backtest-results` (run_registry by role),
   `data-catalog` (real PIT datasets), `safety-primitives` (real KillSwitch/gate), `portfolio`
   (real optimizer/risk-parity), risk-dashboard/validation (real engines), `dry-run` (DryRunStore
-  runs), `architecture`+`system-completeness` (**REAL_REPO_INVENTORY** — live read-only repo
+  runs), `mexc-market`/`mexc-strategy`/`mexc-readiness` (MEXC PIT 现货快照 + OHLCV bars +
+  btc_spot_trend 干跑指标/净值 vs 买入持有基准 + human-ready 就绪检查清单;2026-07-25 前端
+  MexcReadiness 页并入 GoLive 的 mexc 场地卡「MEXC 专项检查」展开区——后端端点保留,
+  前端 MEXC 两页 + GoLive 消费),
+  `architecture`+`system-completeness` (**REAL_REPO_INVENTORY** — live read-only repo
   introspection via `_repo_inventory()`: per-domain module/LOC + test/page/endpoint counts, grounding
   the curated maturity map in hard counts). The residual synthetic surfaces are the genuinely-missing
   governance/process subsystems (incident/committee/RBAC/…), kept HONESTLY LABELED (not faked — faking
   would break the honesty posture); synthetic root `_factor_values`/`_forward_returns` (`math.sin/cos`);
-  contract-guarded by `tests/research/test_console_api_contract.py`.
+  contract-guarded by `tests/research/test_console_api_contract.py`。
+  **Go-Live 上线向导(2026-07-24)**:`tools/go_live_readiness.py`(离线驱动器,无网络——
+  聚合 `_VENUES` 逐场地就绪:key 权限证据/mandate 校验(加载/过期/域/仪器/额度)/
+  attestation/research readiness/smoke 证据/kill-switch/last-run + 当前信号腿 →
+  mandate 缺口引导(缺哪些币/建议额度/最小 deploy 约束),落 `evidence/go_live_readiness.json`)
+  + `verify_key_permissions.py --write-evidence`(脱敏权限证据落盘)+ console 只读端点
+  `/api/v1/console/go-live-readiness`(provenance `REAL_GO_LIVE_READINESS`,缺证据诚实
+  NO_SNAPSHOT)+ 前端页 `GoLive.tsx`(nav「上线向导」,execution 组:场地 checklist 卡/
+  信号腿表/mandate 缺口与建议额度(只读可复制 JSON,**前端永不代填 mandate/凭证**)/最终
+  两步 CLI 展示——**按键刻意留人,无下单按钮**)。 smoke 修正(2026-07-24):
+  `binance_readonly_smoke` account 检查与适配器同法语义——非 USDT 行(USDC 本位/季度合约
+  零仓位,真实账户恒有)跳过而非误判 FAIL。**容量安全规则(W7 §11.3,2026-07-24)**:
+  guidance 新增 `capacity_safety` 块 + 各有容量带策略的 `capacity_utilization_note`——
+  spec「实际部署资金 ≤ 安全容量/3,除非人工治理审批」。safe 取容量带**最保守角**
+  (`calibrated_range.low` = 5% 参与率×单日执行,与 binding aum 现存者的最小值;
+  UNCALIBRATED_PRINCIPLED 诊断带);缺证据 passes=null+告警、绝不编造容量;违反只大声进
+  warnings、**不 clamp**(guidance 是建议)。首跑:deploy $1000 对 crowd safe $3.58M
+  =0.028%、carry safe $0.98M =0.10%、top 同 crowd 带,全 PASS;btc_spot_trend 无带不注。
+  **crowd_contra 变体族(2026-07-24,预注册 17 试验)**:`tools/crowd_contra_variants.py`
+  ——机构级纪律:配方+判定bar 先于结果写入(quantile×cadence×composite 16 变体 +
+  baseline 试#0),全试验进 DSR 记账(注册表 2436→2453),过关者**只进前向 paper**
+  (`forward_track_advance._ALPHAS` 字典化注册 7 个候选,实盘 `_STRATEGIES`/mandate
+  一字未动)。结果:边对构造细节稳健(7/16 过相对 bar:q20/3d/q25_3d/q35_3d/14d/
+  q20_14d/crowd_taker),3d 样本内 VT 1.55–1.66 优于 7d 基线 1.10,**但 DSR 通缩
+  后 3d「改进」≈0.001(17 个相关试验的多重比较税)**——3d 是否真加分交给新注册的
+  前向钟裁决。证据 `evidence/crowd_contra_variants.json`。
+  **Alpha 生命周期驾驶舱(2026-07-24)**:`tools/alpha_lifecycle_cockpit.py` →
+  `evidence/alpha_lifecycle_cockpit.json`(20 alphas × 10 阶段证据聚合:发掘 IC/
+  证伪/压力/回测/容量/组合/纸面/实盘/衰弱/退役,全 fail-soft ABSENT 诚实标,派生
+  阶段梯 CANDIDATE<VALIDATED<DRY_RUN<PAPER_TRACKED<LIVE_TRACK 显式入 legend;
+  `lifecycle_state` 恒 null——无任何落盘 SM 状态,不编造)+ console 端点
+  `/api/v1/console/alpha-lifecycle`(`REAL_ALPHA_LIFECYCLE`)+ 前端页
+  `AlphaLifecycle.tsx`(nav「生命周期驾驶舱」,alpha 组:4 焦点策略全宽卡 + 研究
+  候选紧凑表 + 前向证据缺口琥珀标)。首跑实况:crowd_contra=LIVE_TRACK(10/10)、
+  carry=PAPER_TRACKED、top/btc_spot=DRY_RUN;三条 OI alpha 前向证据全部
+  BLOCKED(0–1/8 期)——前向积累是当前真瓶颈。
+  **W2 均值回复簇(2026-07-25,预注册 8 变体)**:日频残差/截面反转/beta 中和/vol 归一
+  全系(`tools/mean_reversion_cluster.py`)——**8/8 REJECTED**(失败 bar 一致:证伪+VT
+  Sharpe+回撤;试验记账 2459→2467)。结论:日频均值回复不是可用第 5 簇(微观结构 MR
+  无本地数据,诚实出界)。证据 `evidence/mean_reversion_cluster.json`。
+  **W2 跨所簇(2026-07-25,Phase 0 深度实测 + 预注册 6 变体)**:Binance × Bybit 两所
+  (MEXC 无 perp funding 公共史、OKX 无适配器,预注册声明出界)。`tools/bybit_klines_fetch.py`
+  (Bybit V5 公共 klines+funding,无 key 只读,治理 `_FETCHERS` 钉死)→ `data/cache/bybit_perp.db`
+  (24 OI 大币 44,060 日 bar,最浅 APT 2022-10-19;重跑 0 新行幂等已验证)+
+  `bybit_funding_rates.json`(日求和,与 binance_funding_fetch 同口径;BTC 2020-03-25 起)。
+  `tools/cross_venue_research.py` → `evidence/cross_venue_research.json`:6 预注册假设
+  (basis 20d z 正反两方向/delta/水平/60d 窗 + 资金费价差 contrarian,双所日网格对齐覆盖率
+  86.5%)过同一台四阶段机器(IC/5 项证伪/容量带/干跑)。**6/6 REJECTED**(失败 bar 一致:
+  t-stat 全部 |t|<1.3、证伪 ≤2/5、VT<0.8;最强 xv_funding_spread_rev VT 0.80/回撤 0.18
+  但 t=0.74、1/5 证伪;DSR 全 0;试验记账 2482→2488)。结论:日频跨所偏离不是可用第 6 簇
+  (intraday 同步盘口偏离无本地历史,诚实出界);执行现实诚实块记录在案——本筛把信号模拟在
+  Binance 定价 book 上是 first-pass,两腿跨所执行(转账/腿风险/限频)结构性未覆盖。
+  **W4 退出政策实验室(2026-07-25)**:`services/research/exit_policies.py` + `tools/
+  exit_policy_lab.py`——8 政策 × 2 book 全标准矩阵(ΔSharpe/Δmdd/PF/右尾/集中度)。
+  **诚实结论:signal-only 退出已最优**——7 政策全灭(crowd 基线 Sharpe 1.27;scale_out
+  砍的正是盈利尾部;btc 唯一"有效"项增量集中 1 期被集中度规则硬否,正是为防净 PnL
+  单指标骗人设计)。无前视双保险(访问器机器过滤 + 追加未来 bar 性质测试)。
+  **W3 共同风险拆解(2026-07-25)**:`services/research/factor_decomp.py` +
+  `tools/common_risk_research.py`——10 因子库(5 项 MISSING 诚实标:清算/skew 史等)。
+  **四策略无隐藏共同暴露(残差 |ρ|≤0.15,全单簇,effective breadth 3.78/4,分散为真)**;
+  carry 边=截面价差(全市场资金费 β=−0.36 负载,非伪装 beta);相关冲击信号产出
+  (当前 0.144 vs 阈值 0.320,平静)→ 已接线进 W6 控制器(2026-07-25,
+  `correlation_shock_from_artifact`,见 W6 条)。
+  **§6.2 晋升门槛三闸(W2 slice 2,2026-07-25)**:`services/research/promotion_checks.py`
+  ——平台缺失的三项晋升检查补为**可复用纯组件**:`cost_stress_report`(各成本档夏普
+  衰减 + 弹性 ΔSharpe/bps + 线性外推 breakeven,edge 不必每档为正但弹性必须摆出)、
+  `perturbation_report`(参数网格上部署点不得是孤立尖峰 SPIKE_OPTIMUM、也不得低于
+  邻域中位数;PASS/WARN/FAIL + 完整表面)、`concentration_report`(剔最佳标的/最佳
+  月份/极端单期后 edge 须仍正;三维取最差);缺数据恒 None 不假通过,阈值全部
+  UNCALIBRATED 工程默认随证据落盘。`attribute_period_contributions` 逐标的美元
+  归因与 `run_multi_period_dry_run` 同语义(整手/决策价成交/平 bps/资金费;标记缺失
+  回退最后成交价镜像 reconcile)——**恒等式实测残差 $0.000000**(Σ归因 ≡ 管线权益
+  增量 $1,215,255.85)。驱动器 `tools/promotion_gate_crowd_contra.py` →
+  `evidence/promotion_gate_crowd_contra.json`:15 点 quantile{0.20–0.40}×cadence
+  {3,7,14} 网格全注册(register-then-evaluate,registry 2467→2482,Δ15;12/15 与
+  variants 族重叠属保守重复计数)、成本 {10,15,20}bps、集中度走部署点基档簿;
+  机器互证:与 variants 族 12 重叠点 sharpe_vt 差全 0.0、与 dry_run.db 正典存档
+  Δsharpe −0.0002(236 vs 235 周数据微演进)。**首跑 crowd_contra 成绩单:成本
+  PASS(VT 1.095→1.072→1.048 @10/15/20bps 单调,弹性 0.00466/bps,breakeven
+  ~245bps)、集中度 PASS(24 标的 top1 SOL 26.8%/top3 64.2%,剔 top3 残差
+  +$434.9k;最佳周 16.8%/top3 周 37.6%;最佳月 2023-12 18.0%/top3 月 48.3%,
+  剔除后全仍正)、扰动 FAIL(center_rank 0.357:部署点 q30/7d VT 1.095 < 邻域
+  中位 1.277——3d 行 1.31–1.75 及 q20_7d 1.55/q40_7d 1.36 样本内更优;spike_gap
+  为负=非参数孤岛,边对构造稳健,但部署点非局部最优。该「邻域更优」正是
+  variants 族预注册发现里 DSR 泄气至 ~0.001 的同一现象——7 候选已在前向
+  paper-track 裁决,FAIL 是「参数选择待前向复核」的诚实标记,非立即换参依据)→
+  overall FAIL(取最差)。** 判定只落证据文件,不驱动任何自动晋级/下单;
+  `_STRATEGIES`/mandate/attestation/live 一字未动。测试
+  `tests/research/test_promotion_checks.py`(31)+
+  `tests/tools/test_promotion_gate_crowd_contra.py`(12)。
+  **W8 top_contra 隔离(2026-07-25)**:经非人维护机器权威通道 **PAUSED**(730 天
+  真实执行 paper 回撤 30.8% 越 0.30 阈),live 路径双重独立封锁(maintenance_skip +
+  research readiness)。规格书 §16.3 明令完成。
+  **top_contra 隔离(W8 §16.3/§12,2026-07-24)**:spec「top_contra 应立即 QUARANTINED」
+  经既有维护机器落地——canonical `AlphaState` **无 QUARANTINED 枚举**,其 §12 语义
+  (异常/证据不足,只减仓)映射 `PAUSED`(reversible halt:停止新增敞口、绝不自动减仓、
+  可逆待诊断;RETIRED 是锁定 OOS 仍无效后的独立治理决策,本轮不做)。`tools/
+  alpha_maintenance_sweep.py` 新增 `top_contra_quarantine_health` 证据通道:现实执行
+  连续 paper(`binance_usdt_continuous_paper.json`,730 天 PIT+taker 费+冲击)已实现
+  **max_drawdown 0.308 ≥ monitor 既有 0.30 阈值** → 经审计 manager(非人 actor,
+  AGENT_REACHABLE de-risking)PAPER_TRADING→PAUSED 落 alpha_maintenance.db 权威 +
+  事件 outbox;证据引用(证伪 4/5 broad_across_years=false、前向 BLOCKED 0/8、连续
+  paper 统计)原样落快照 `quarantine_evidence` 块。live 驱动器
+  `maintenance_skip("top_contra")` 现返回 `maintenance_paused:*`(与既有
+  `alpha_paper_blocked` 双保险,--submit 跳批,仓位不动);cockpit decay 阶段自动呈现 +
+  `build_warnings` 新增 maintenance 降级告警。隔离本身**无需人步**;剩余人步 = §16.3
+  诊断(信号方向/数据对齐/选择偏差、分市场分制度)、解除隔离(重新过人类晋级门)或
+  正式 RETIRED 的治理签署;「不得直接上线反向版本」无任何 wiring(本slice未建反向策略)。
+  **全 alpha 真实执行 paper 同口径丈量(2026-07-25)**:`tools/binance_usdc_alpha_retest.py`
+  策略注册与前向 paper 轨**共享同一注册表**(`forward_track_advance._ALPHAS` 经同一
+  `_alpha_spec` 归一,expr/quantile/cadence 零漂移,等价性测试钉死)——3 originals +
+  equal_weight_combo + 7 个预注册 crowd_contra 变体 CANDIDATE 全部过同一台 730 天现实执行
+  机器(PIT mark 价 + 4bps taker + 当前价差校准 + Almgren-Chriss 冲击 + 资金费 +
+  整手/最小名义过滤 + 对账恒等式 ≤1.3e-08);`_cadence_rows` 承载 3d/14d 节奏(7d 与旧
+  周度网格逐位一致;originals + combo 权重逐位不变——combo 仍只混 3 originals)。
+  窗口 2024-07-25→2026-07-23(729 完整日;网格随窗口重锚,与 2026-07-24 运行逐决策不可
+  直接比)。结论(Sharpe 序):equal_weight_combo 1.36 > crowd_contra_14d 1.19 >
+  crowd_contra 1.12 > q20_14d 0.86 > carry 0.78 > q20 0.73 > top_contra 0.68 >
+  crowd_taker_combo 0.64 > q35_3d 0.64 > 3d 0.52 = q25_3d 0.52。**3d 变体在现实执行下
+  成本翻倍(~$60k vs 基线 ~$32k)、净 Sharpe 垫底——DSR 深度怀疑(~0.001)在执行维度
+  独立兑现**;14d 变体(1.19/回撤 11.7%)略优于基线,与 DSR 0.38 的温和怀疑并存,交
+  前向钟裁决。q25_3d ≡ 3d(14 币宇宙 k=round(N·q) 同为 4 → 逐位相同组合,诚实标
+  `identical_portfolio_as`,非独立证据)。**窗口敏感诚实注:top_contra 本窗回撤
+  0.207 < 0.30 跳闸线(2026-07-24 窗 0.308 越线促成 PAUSED——权威快照不动,下轮
+  sweep 读到的将是越线证据已消失)。** 台账
+  `binance_usdt_continuous_paper_24m.db` 1881 行(418 legacy + 1463 本窗;重放 0 插入
+  幂等端到端已证)。汇总 `tools/all_alpha_realistic_paper.py` →
+  `evidence/all_alpha_realistic_paper.json`(11 策略标准指标 + 判定 bar = 对账/完整日
+  机械完整性 + 0.30 回撤跳闸线 + 净成本边为正;btc_spot_trend 走 MEXC 独立路径只引用
+  dry_run.db 不硬塞 Binance 引擎;均值回复 8/8 REJECTED 与 vol 类无候选按纪律只记录)。
+  诊断非门禁,不驱动任何晋级/下单。
+  **W10 研究预算契约(§14.1/§14.2,2026-07-25)**:`services/research/research_budget.py`
+  (纯核,无 IO/RNG/墙钟)——`ResearchBudget` 冻结 dataclass(max_trials/max_compute_hours/
+  max_feature_count/max_parameter_dimensions/locked_oos_period/allowed_data_sources/
+  stopping_rules,**全部可空 = 不约束**)+ `check_budget`(逐维 OK/UNCONSTRAINED/
+  EXCEEDED/UNVERIFIED,**两个 None 严格区分:limit=None 放行、usage=None 按
+  `unverified_dimension` fail-closed 拒绝**,全维度不短路)+ `evaluate_stopping_rules`
+  (max_trials/no_improvement_trials,越高越好指标)+ 类型化 `BudgetExhausted`。
+  注册点加法集成:`run_registered_candidate_batch` 新增可选
+  `budget=/parent_hypothesis=/search_space=/data_source=/uses_locked_oos=`——声明预算
+  则**任何落盘前**先校验、耗尽即 `BudgetExhausted`(一字节不进台账),hypothesis +
+  search_space 强制非空;不声明则行为逐字节不变(2482-trial 注册表与全部既有驱动器
+  零改动通过)。usage 口径:trials=本批声明族大小(族扩员超声明 = 新实验须抬预算;
+  跨批累计记账需持久消耗台账,本 slice 不做,诚实标注)、feature/参数维=批内候选
+  最大基数、**compute 不可计量 → 声明 compute 预算必被 unverified 拒(只许声明
+  可验证维度)**。预算声明+逐维校验结果作 additive 字段记入 run artifact
+  `budget_declaration`(随驱动器证据落盘)。模板采用者:`tools/mean_reversion_cluster.py`
+  (RESEARCH_BUDGET max_trials=8 钉死真实族 + PARENT_HYPOTHESIS/SEARCH_SPACE;
+  **诚实注记:本族 8 trial 已在预算前制度下消耗(2026-07-24,2459→2467),预算是
+  前向约束不回溯**)。§14.1 其余结构性禁令(智能体不得改 locked OOS/晋级/删实验)
+  由既有治理承载,本轮验证不重建。测试 `tests/research/test_research_budget.py`(65)+
+  `tests/intelligence/test_registered_candidate_batch_budget.py`(17)+
+  `tests/tools/test_mean_reversion_cluster_budget.py`(3);诊断非门禁,不驱动晋级/下单。
+  **Live-vs-Replay 衰减引擎(W1,2026-07-24)**:`live/execution/degradation.py`(纯核:
+  DegradationReport 每 venue×strategy×窗口——live_net/replay_net/degradation_ratio
+  (replay≈0[含 0.1%·aum 地板]/异号/任一侧 UNKNOWN → None+reason,绝不硬算)、
+  成分分解(fee/funding 实际值账本不记录恒 UNKNOWN、TCA 滑点、position/timing 残差,
+  恒等式 residual≈0 钉死)、逐日瀑布)+ `tools/live_degradation.py`(只读驱动器,
+  全 sqlite `?mode=ro`)→ `evidence/live_degradation.json` + console 端点
+  `/api/v1/console/live-degradation`(`REAL_LIVE_DEGRADATION`,缺证据诚实 NO_SNAPSHOT,
+  契约测试锁定)。**Replay 构造(诚实选择)**:权重只取记录在案的 contemporaneous
+  artifacts(前向台账 forward_decisions 为纸面权威;其缺失的 decided_ts 用
+  live_parity*.jsonl submit 记录,标 `LIVE_PARITY_RECORD`)——绝不拿今天数据重算信号;
+  经济学 = 干跑流水线同款原语(plan_target_quantities+flat 10bps+reconcile+资金费公式,
+  与 run_multi_period_dry_run 曲线等价性测试钉死),决策日后的价格只做 MTM。
+  **首跑实况(testnet 20 天)**:binance:crowd_contra live +$103.5 vs replay −$35.0
+  → 比值诚实 None(异号——live 从未执行 07-16/07-21 两期纸面调仓,碰巧躲过了纸面
+  新仓的亏损;最大"漏损"成分是 position/timing +$112.6,执行滑点 −33.9bps 加权
+  = 相对决策价的价格改善,testnet 无冲击);bybit_demo 分母过小 → None(0.1%·aum
+  地板)。诚实边界:testnet 无真实冲击,度量的是运营/模型漏损非生产冲击。
+  **投资者证据层(W9 §13,2026-07-25)**:`live/execution/investor_snapshot.py`(纯核:
+  日频 NAV[每 UTC 日取最后采样]+现金流调整(外部出入金=非交易资金划转,
+  `nav_adjusted=raw−cum(flows)`;**账本不记录 venue 出入金 → flows 恒 None、
+  basis=RAW_FLOWS_UNRECORDED,绝不把无记录当零**)、gross/net/fee/funding/slippage
+  逐策略分解(fee/funding actual 恒 UNKNOWN)、live/paper/replay 三线(**paper 线 W1
+  artifact 不承载 → ABSENT,绝不拿 replay 冒充**)、maxDD/恢复天数/最差日周、
+  账户级对账块、kill-switch 事故链(权威 SQLite 优先/legacy JSON 镜像/不可读
+  fail-closed tripped,provenance 如实标)、版本清单(无 artifact 钉 strategy_version/
+  code_hash → 恒 UNKNOWN)、容量摘要;`compute_snapshot_hash`=SHA512(canonical
+  {data_cutoff, ledger_root, strategy_versions},sort_keys+版本排序使键序无关,
+  UNKNOWN 版本以显式 null 入哈希;**now_ms 绝不进哈希,同一数据截止点重跑同哈希**——
+  实测两次重跑逐位相同)+ `tools/investor_snapshot.py`(只读驱动器,全 sqlite
+  `?mode=ro`)→ `evidence/investor_snapshot.json` + console 端点
+  `/api/v1/console/investor-snapshot`(`REAL_INVESTOR_SNAPSHOT`,缺证据诚实
+  NO_SNAPSHOT,契约测试锁定)。**首跑实况**:5 venue 中 binance(testnet)/
+  bybit_demo ACTIVE、binance_mainnet/bybit/mexc ABSENT_NO_ACTIVITY(诚实);
+  binance NAV $5,135.97(10 天,2026-07-05→07-14,+3.74%,maxDD 0.33%,恢复 1 天,
+  对账 in_sync)、bybit_demo NAV $169,721.93(9 天,maxDD 1.455%);crowd_contra
+  live_net binance +$103.49/bybit_demo +$121.15 vs replay −$34.97/+$2.16(比值
+  None,同 W1 结论);kill_switch_tripped_any 三值(None=有 venue 无记录,绝不报全清);
+  §13.3 双组合视图(Showcase/Growth)单轨道未实例化 → 双 ABSENT。测试
+  `tests/live/test_investor_snapshot.py`(17)+ `tests/tools/test_investor_snapshot.py`(6)。
 - `apps/research-console/src/` — React 18 + Vite 6 + TS (strict) + Tailwind. **2026-07-03
   信息架构重构:42 页 → 30 页 · 7 个工作流导航组(总览→数据→因子研究→验证→组合与风险→执行与跟踪→
   治理与系统)**。路由/导航/冒烟测试的唯一真源 = `src/app/routes.tsx` 页面注册表(新页加一行,
@@ -287,7 +897,18 @@ Real, tested backend engines (`*_TESTED` in the audit):
   promotion/model-risk)+ 合成或重复(Agents/Phase3A/ScenarioStress/BacktestExplainability/
   SignalToPortfolio/Overview),旧路由语义就近重定向(蓝图页 → SystemCompleteness,那里
   REAL_REPO_INVENTORY 诚实列出缺失子系统——删页不删诚实);后端 console_api 端点零改动
-  (契约测试锁定)。测试地板:**30/30 页全冒烟 + 注册表一致性测试**(44 fe tests)。
+  (契约测试锁定)。测试地板:**全量注册页冒烟 + 注册表一致性测试**(125 fe tests)。
+  **2026-07-25 第三轮 IA 整合**:MexcReadiness 并入 GoLive(唯一真重复;5 项独有检查 +
+  四阶段毕业路径迁入 mexc 场地卡「MEXC 专项检查」展开区,`/research/mexc-readiness` →
+  `/research/go-live` 重定向,后端端点保留);LifecycleMonitor(实验登记 SM + paper-track)
+  从「执行」挪入「验证」组;执行组按就绪→上线→跟踪流程重排;15 个退役页死 fetcher +
+  其独占类型清除。
+  **机构工作台改版(已落地 2026-07-23)**:设计原则与组件清单见
+  [`docs/FRONTEND_WORKBENCH_REDESIGN.md`](docs/FRONTEND_WORKBENCH_REDESIGN.md)。共享组件层
+  `src/ui/workbench.tsx`(EquityCurveChart 多序列净值/StatusBanner 常驻 kill-switch 条/AsOfStamp/
+  EndpointFootnote/StateView/ConfirmActionButton/MandateGateChip/MarketTape 顶栏滚动带),
+  DataTable 粘性表头 + compact 密度,MEXC 交易台两页(市场 CandleChart/策略净值 vs 买入持有基准;
+  就绪检查清单 2026-07-25 并入 GoLive mexc 场地卡),LiveDesk 现货分支。
 
 Quarantined / broken:
 - `services/trading/pre_trade_risk/main.py` — **NON-FUNCTIONAL** (missing domain

@@ -25,6 +25,7 @@ DEFAULT_OUTPUT = REPO / "evidence" / "event_schema_catalog.json"
 IMPLEMENTATION_PATHS = (
     "quantos/contracts/events.py",
     "quantos/contracts/event_schemas.py",
+    "live/execution/shadow_store.py",
     "services/alpha/events.py",
     "services/alpha/maintenance_events.py",
     "services/console/api/system_views.py",

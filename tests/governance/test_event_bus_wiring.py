@@ -273,7 +273,7 @@ def test_event_health_is_alert_only_and_has_no_execution_or_compaction_capabilit
         assert forbidden not in tool
 
 
-def test_unified_outbox_recovery_has_seven_sources_and_no_execution_capability():
+def test_unified_outbox_recovery_has_eight_sources_and_no_execution_capability():
     source = (
         ROOT / "tools" / "domain_event_outbox_drain.py"
     ).read_text(encoding="utf-8")
@@ -285,12 +285,18 @@ def test_unified_outbox_recovery_has_seven_sources_and_no_execution_capability()
         "dispatch_deployment_event_outbox",
         "dispatch_refresh_event_outbox",
         "dispatch_data_quality_admission_event_outbox",
+        "dispatch_shadow_event_outbox",
     ):
         assert dispatch in source
-    assert source.count("OutboxSource(") == 7
-    assert source.count("create=False") == 7
+    assert source.count("OutboxSource(") == 8
+    assert source.count("create=False") == 8
     assert "create=not event_authority_exists" in source
     assert source.count("resolved_projector(") == 1
+    # SHADOW(Phase 7 S2)精确开洞:drain 唯一允许的 live/ 引用是纯 sqlite 持久化的
+    # shadow owner store(无网络/无执行能力);其余 live. 引用仍全面禁止。
+    shadow_import = "from live.execution.shadow_store import SqliteShadowStore"
+    assert shadow_import in source
+    scrubbed = source.replace(shadow_import, "").replace("live/execution/shadow_store.py", "")
     for forbidden in (
         "urllib",
         "socket",
@@ -306,7 +312,7 @@ def test_unified_outbox_recovery_has_seven_sources_and_no_execution_capability()
         "DELETE FROM",
         "VACUUM",
     ):
-        assert forbidden not in source
+        assert forbidden not in scrubbed
 
 
 def test_scheduled_domain_event_ops_is_l2_only_and_fail_closed():

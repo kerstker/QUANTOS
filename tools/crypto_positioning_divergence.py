@@ -33,7 +33,8 @@ from tools.crypto_oi_research import build_panel, _returns, _rank_ic, CARRY, QUA
 _OUT = os.path.join("data", "cache", "crypto_positioning_divergence.json")
 
 # The established weak lead (fade crowded retail longs) — new factors must beat this too, not just carry.
-CROWD_CONTRA = ("cs_rank", ("neg", ("field", "global_ls")))
+# F2 (2026-07-27): re-exported from the single source of truth (was a verbatim duplicate).
+from services.factor_garden.canonical import CROWD_CONTRA_EXPRESSION as CROWD_CONTRA
 
 TOP = ("field", "top_ls")
 GLOBAL = ("field", "global_ls")

@@ -29,7 +29,12 @@ from services.governance.l2_restore_history import (
     RestoreOutcome,
     RestoreProof,
 )
-from tools.live_backup import _check_passphrase_strength, encrypt_bytes
+from services.governance.external_evidence import (
+    ContinuityAssessment,
+    ContinuityObservation,
+    evaluate_continuity,
+)
+from tools.live_backup import _check_passphrase_strength, encrypt_bytes, encrypt_file
 from tools.restore_drill import RestoreDrillError, run_restore_drill
 
 
@@ -38,7 +43,8 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 2
+SOURCE_CONTRACT_VERSION = 3
+L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
 _SNAPSHOT_METHODS = frozenset({"SQLITE_ONLINE_BACKUP", "STABLE_FILE_READ", "EMPTY_DB_PLACEHOLDER"})
@@ -63,6 +69,11 @@ DEFAULT_SOURCES = (
     BackupSource("data/cache/live_refresh_history.db", "data_refresh_history", True),
     BackupSource("data/cache/data_quality_admission.db", "data_quality_admission", True),
     BackupSource("data/cache/paper_track.db", "paper_track", True),
+    BackupSource(
+        "data/cache/alpha_production_workflow.db",
+        "alpha_production_workflow",
+        True,
+    ),
     BackupSource("data/cache/research_runs.db", "research_run_registry", True),
     BackupSource("data/cache/governance_audit.db", "governance_audit", True),
     BackupSource(
@@ -71,6 +82,11 @@ DEFAULT_SOURCES = (
         True,
     ),
     BackupSource("data/cache/alpha_maintenance.db", "alpha_maintenance", False),
+    BackupSource(
+        "data/cache/paper_candidate_registry.db",
+        "factory_candidate_admission",
+        False,
+    ),
     BackupSource("data/cache/live_kill_switch.db", "kill_switch_authority", False),
     BackupSource("data/cache/deployment_state.db", "deployment_state", False),
     BackupSource(
@@ -84,11 +100,24 @@ DEFAULT_SOURCES = (
         "identity_authorization_authority",
         False,
     ),
+    BackupSource(
+        "data/cache/vendor_delivery_history.db",
+        "vendor_delivery_history_authority",
+        False,
+    ),
 )
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path, *, block_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while block := source.read(block_size):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _canonical_json(document: object) -> bytes:
@@ -207,6 +236,20 @@ def _stable_read(path: Path) -> tuple[bytes, int]:
     return data, after.st_mtime_ns
 
 
+def _stable_copy(path: Path, destination: Path) -> int:
+    before = path.stat(follow_symlinks=False)
+    shutil.copyfile(path, destination)
+    after = path.stat(follow_symlinks=False)
+    copied_size = destination.stat(follow_symlinks=False).st_size
+    if (
+        before.st_size != after.st_size
+        or before.st_mtime_ns != after.st_mtime_ns
+        or copied_size != after.st_size
+    ):
+        raise L2BackupError(f"source changed while it was being copied: {path.name}")
+    return after.st_mtime_ns
+
+
 def _sqlite_integrity(path: Path) -> None:
     try:
         uri = path.resolve().as_uri() + "?mode=ro"
@@ -219,20 +262,21 @@ def _sqlite_integrity(path: Path) -> None:
         raise L2BackupError(f"SQLite integrity check failed for {path.name}")
 
 
-def _snapshot_source(source: Path, scratch: Path) -> tuple[bytes, str, int]:
+def _snapshot_source_file(source: Path, scratch: Path) -> tuple[Path, str, int]:
+    identity = hashlib.sha256(os.fspath(source.resolve()).encode("utf-8")).hexdigest()[:12]
+    snapshot = scratch / f"{identity}-{source.name}"
     if source.suffix.lower() != ".db":
-        data, mtime_ns = _stable_read(source)
-        return data, "STABLE_FILE_READ", mtime_ns
+        mtime_ns = _stable_copy(source, snapshot)
+        return snapshot, "STABLE_FILE_READ", mtime_ns
 
     size = source.stat(follow_symlinks=False).st_size
     if size == 0:
-        data, mtime_ns = _stable_read(source)
-        return data, "EMPTY_DB_PLACEHOLDER", mtime_ns
+        mtime_ns = _stable_copy(source, snapshot)
+        return snapshot, "EMPTY_DB_PLACEHOLDER", mtime_ns
     with source.open("rb") as handle:
         if handle.read(len(_SQLITE_HEADER)) != _SQLITE_HEADER:
             raise L2BackupError(f"source is not a valid SQLite database: {source.name}")
 
-    snapshot = scratch / source.name
     source_uri = source.resolve().as_uri() + "?mode=ro"
     try:
         with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as source_connection:
@@ -242,7 +286,14 @@ def _snapshot_source(source: Path, scratch: Path) -> tuple[bytes, str, int]:
     except sqlite3.Error as exc:
         raise L2BackupError(f"failed to snapshot SQLite source: {source.name}") from exc
     _sqlite_integrity(snapshot)
-    return snapshot.read_bytes(), "SQLITE_ONLINE_BACKUP", source.stat().st_mtime_ns
+    return snapshot, "SQLITE_ONLINE_BACKUP", source.stat().st_mtime_ns
+
+
+def _snapshot_source(source: Path, scratch: Path) -> tuple[bytes, str, int]:
+    """Compatibility wrapper for callers that explicitly need an in-memory snapshot."""
+
+    snapshot, method, mtime_ns = _snapshot_source_file(source, scratch)
+    return snapshot.read_bytes(), method, mtime_ns
 
 
 def _discover_sources(
@@ -380,8 +431,8 @@ def restore_l2_batch(
             source = flat / artifact
             if not source.is_file():
                 raise L2BackupError(f"restored artifact is missing: {artifact}")
-            data = source.read_bytes()
-            if entry.get("size") != len(data) or entry.get("sha256") != _sha256(data):
+            source_size = source.stat(follow_symlinks=False).st_size
+            if entry.get("size") != source_size or entry.get("sha256") != _sha256_file(source):
                 raise L2BackupError(f"restored artifact digest mismatch: {artifact}")
             output = tree.joinpath(*relative.parts)
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -471,18 +522,22 @@ def run_l2_backup(
         with tempfile.TemporaryDirectory(prefix="quantos-l2-backup-") as scratch_name:
             scratch = Path(scratch_name)
             for index, (source_spec, relative, source_path) in enumerate(discovered, start=1):
-                plaintext, snapshot_method, source_mtime_ns = _snapshot_source(source_path, scratch)
+                snapshot, snapshot_method, source_mtime_ns = _snapshot_source_file(source_path, scratch)
                 artifact = _artifact_name(index, relative)
-                encrypted = encrypt_bytes(plaintext, passphrase)
-                (stage / f"{artifact}.enc").write_bytes(encrypted)
+                encrypt_file(
+                    os.fspath(snapshot),
+                    os.fspath(stage / f"{artifact}.enc"),
+                    passphrase,
+                    chunk_size=L2_ENCRYPTION_CHUNK_SIZE,
+                )
                 entries.append(
                     {
                         "artifact": artifact,
                         "relative_path": relative.as_posix(),
                         "required": source_spec.required,
                         "role": source_spec.role,
-                        "sha256": _sha256(plaintext),
-                        "size": len(plaintext),
+                        "sha256": _sha256_file(snapshot),
+                        "size": snapshot.stat(follow_symlinks=False).st_size,
                         "snapshot_method": snapshot_method,
                         "source_mtime_ns": source_mtime_ns,
                     }
@@ -579,12 +634,11 @@ def _batch_sha256(batch_dir: Path) -> str:
     for path in sorted(batch_dir.iterdir(), key=lambda item: item.name):
         if not path.is_file():
             raise L2BackupError("backup batch contains a non-file member")
-        data = path.read_bytes()
         members.append(
             {
                 "name_sha256": _sha256(path.name.encode("utf-8")),
-                "sha256": _sha256(data),
-                "size": len(data),
+                "sha256": _sha256_file(path),
+                "size": path.stat(follow_symlinks=False).st_size,
             }
         )
     return _sha256(_canonical_json(members))
@@ -893,6 +947,27 @@ def run_recorded_l2_backup(
         raise L2BackupError(reason_code) from None
     finally:
         history_store.close()
+
+
+def evaluate_restore_continuity(
+    observations: tuple[ContinuityObservation, ...],
+    *,
+    now_ms: int,
+    max_gap_ms: int,
+    minimum_history_span_ms: int,
+    minimum_passes: int,
+    clean_lookback_ms: int,
+) -> ContinuityAssessment:
+    """Evaluate retained restore receipts without mutating the history store."""
+
+    return evaluate_continuity(
+        observations,
+        now_ms=now_ms,
+        max_gap_ms=max_gap_ms,
+        minimum_history_span_ms=minimum_history_span_ms,
+        minimum_passes=minimum_passes,
+        clean_lookback_ms=clean_lookback_ms,
+    )
 
 
 def main() -> None:

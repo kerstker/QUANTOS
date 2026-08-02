@@ -1,0 +1,142 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 强调两点：①每一格都有客观的进入/退出标准，不是创始人拍脑袋；②Retirement 是一等公民——能淘汰策略的系统才值得信任，第 9 页的 top_contra 就是活例。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "07 · Alpha 生命周期"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "每条策略都走同一条晋升与退役通道"}
+  - elementId: chev1
+    elementType: shape
+    bounds: [90, 140, 92, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t1
+    elementType: text
+    bounds: [92, 148, 82, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "研究想法"}
+  - elementId: chev2
+    elementType: shape
+    bounds: [188, 140, 92, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t2
+    elementType: text
+    bounds: [190, 148, 82, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "原型"}
+  - elementId: chev3
+    elementType: shape
+    bounds: [286, 140, 92, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t3
+    elementType: text
+    bounds: [288, 148, 82, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "回测"}
+  - elementId: chev4
+    elementType: shape
+    bounds: [384, 140, 104, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "#3A2F10"}
+    border: {style: solid, width: 1, color: "$accent"}
+  - elementId: t4
+    elementType: text
+    bounds: [386, 148, 94, 28]
+    content: {style: "$small", color: "$accent", align: [center, middle], text: "Validation Gate"}
+  - elementId: chev5
+    elementType: shape
+    bounds: [494, 140, 84, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t5
+    elementType: text
+    bounds: [496, 148, 74, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "Paper"}
+  - elementId: chev6
+    elementType: shape
+    bounds: [584, 140, 84, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t6
+    elementType: text
+    bounds: [586, 148, 74, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "Shadow"}
+  - elementId: chev7
+    elementType: shape
+    bounds: [674, 140, 92, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "#3A2F10"}
+    border: {style: solid, width: 1, color: "$accent"}
+  - elementId: t7
+    elementType: text
+    bounds: [676, 148, 82, 28]
+    content: {style: "$small", color: "$accent", align: [center, middle], text: "Small Live"}
+  - elementId: chev8
+    elementType: shape
+    bounds: [772, 140, 96, 44]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: t8
+    elementType: text
+    bounds: [774, 148, 86, 28]
+    content: {style: "$small", color: "$ink", align: [center, middle], text: "Production"}
+  - elementId: chev9
+    elementType: shape
+    bounds: [420, 230, 110, 40]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$warn"}
+  - elementId: t9
+    elementType: text
+    bounds: [422, 236, 100, 28]
+    content: {style: "$small", color: "$warn", align: [center, middle], text: "Decay 衰减"}
+  - elementId: chev10
+    elementType: shape
+    bounds: [540, 230, 120, 40]
+    shapeName: homePlate
+    fill: {type: solid, color: "$bg2"}
+    border: {style: solid, width: 1, color: "$warn"}
+  - elementId: t10
+    elementType: text
+    bounds: [542, 236, 110, 28]
+    content: {style: "$small", color: "$warn", align: [center, middle], text: "Retirement 退役"}
+  - elementId: down1
+    elementType: line
+    bounds: [814, 190, 2, 44]
+    viewBox: [2, 44]
+    points: "1,0 1,44"
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: backline
+    elementType: line
+    bounds: [540, 250, 276, 2]
+    viewBox: [276, 2]
+    points: "276,1 0,1"
+    arrow: [null, "stealth"]
+    border: {style: solid, width: 1, color: "$line"}
+  - elementId: points
+    elementType: text
+    bounds: [90, 316, 780, 150]
+    content:
+      style: "$body"
+      fontSize: 12.5
+      lineHeight: 1.8
+      text: |
+        <p><span style="color:$accent">■</span> 每一格都有<strong>客观的进入/退出标准</strong>：统计门、前向证据期数、人工多方批准——不是拍脑袋</p>
+        <p><span style="color:$accent">■</span> 全程哈希链审计：谁、什么时候、基于什么证据让策略晋级，全部可回放</p>
+        <p><span style="color:$accent">■</span> <strong>退役是一等公民</strong>：衰减监控自动扫描，失败策略被诊断、隔离、退役候选</p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 09"}

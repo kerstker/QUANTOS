@@ -47,6 +47,99 @@ class ExchangeFilters:
     min_qty: float
     min_notional: float
     tick_size: Optional[float] = None
+    # MEXC Phase 8 M1(2026-07-27,加法扩展):交易所按 symbol 报的成交费率(小数,
+    # 如 0.0 = 零手续费;MEXC exchangeInfo 携带 makerCommission/takerCommission)。
+    # 其他 venue 不解析 → 诚实 None(缺费率证据,不编造 0)。只读诊断输入,
+    # 不在下单/定价路径上消费。
+    maker_commission: Optional[float] = None
+    taker_commission: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class PremiumIndexSnapshot:
+    """Binance `GET /fapi/v1/premiumIndex` 的只读快照(标记价/指数价/最新资金费)——
+    定价与诊断输入,不在下单路径上。时间均为 ms epoch int;价格/费率为 float(finite 校验)。"""
+    instrument_id: str
+    mark_price: float
+    index_price: float
+    last_funding_rate: float
+    next_funding_time_ms: int
+    time_ms: int
+
+    def __post_init__(self) -> None:
+        for name in ("mark_price", "index_price", "last_funding_rate"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite, got {getattr(self, name)!r}")
+
+
+@dataclass(frozen=True)
+class BookLevel:
+    """订单簿一档(价格 + 挂单量,SHADOW 深度读数的原子单位,2026-07-27 Phase 7 S1)。
+
+    fail-closed:价格/挂单量必须有限且 > 0——REST 深度快照里的零量/负量/非有限档是
+    垃圾数据(深度快照的「删除档」语义只存在于增量推送流,REST 快照不带),宁可整簿
+    fail-soft None 也不把它交进比较核(适配器据此整体返回 None)。"""
+    price: float
+    size: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.price) or self.price <= 0:
+            raise ValueError(f"BookLevel price must be finite and positive, got {self.price!r}")
+        if not math.isfinite(self.size) or self.size <= 0:
+            raise ValueError(f"BookLevel size must be finite and positive, got {self.size!r}")
+
+
+@dataclass(frozen=True)
+class OrderBookSnapshot:
+    """一份 venue REST 深度快照(bids/asks 各自按 venue 给出的最优在前顺序,SHADOW
+    比较核的输入,2026-07-27 Phase 7 S1)。
+
+    - `as_of_ms`:venue 载荷自带的时间戳(如 Binance 的 `E`);载荷不带 → None,
+      **绝不自造**(调用方拿不到来源时间就不能做 staleness 判定,诚实缺失)。
+    - `source`:venue 标签常量("mexc"/"binance"/"bybit"),构造期 fail-closed 非空。
+    - **刻意不拒绝瞬时交叉盘口**(best_ask < best_bid,交易所快速行情下真实存在):
+      快照只承载「venue 报了什么」,可执行性判定(crossed → CROSSED_BOOK)归
+      `live/execution/shadow.py::walk_the_book`,分层单一职责。
+    - 两侧允许为空簿(空簿是 venue 的合法回答,EMPTY_BOOK 判定同样在 walk_the_book);
+      适配器 fail-soft 政策更严(任一侧空簿即 None),两层语义不冲突。
+    """
+    instrument_id: str
+    bids: tuple = ()                       # tuple[BookLevel, ...],买一在前(venue 原序)
+    asks: tuple = ()                       # tuple[BookLevel, ...],卖一在前(venue 原序)
+    as_of_ms: Optional[int] = None
+    source: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instrument_id, str) or not self.instrument_id.strip():
+            raise ValueError("OrderBookSnapshot instrument_id must be non-empty")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("OrderBookSnapshot source must be non-empty")
+        for name in ("bids", "asks"):
+            levels = getattr(self, name)
+            if not isinstance(levels, tuple):
+                raise ValueError(f"OrderBookSnapshot {name} must be a tuple of BookLevel")
+            for lvl in levels:
+                if not isinstance(lvl, BookLevel):
+                    raise ValueError(f"OrderBookSnapshot {name} entries must be BookLevel, "
+                                     f"got {type(lvl).__name__}")
+        if self.as_of_ms is not None:
+            if isinstance(self.as_of_ms, bool) or int(self.as_of_ms) != self.as_of_ms \
+                    or self.as_of_ms <= 0:
+                raise ValueError(f"OrderBookSnapshot as_of_ms must be a positive integer, "
+                                 f"got {self.as_of_ms!r}")
+
+
+@dataclass(frozen=True)
+class FundingRateSnapshot:
+    """Binance `GET /fapi/v1/fundingRate` 历史资金费单条记录——离线研究/干跑校准输入,
+    不在下单路径上。"""
+    instrument_id: str
+    funding_rate: float
+    funding_time_ms: int
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.funding_rate):
+            raise ValueError(f"funding_rate must be finite, got {self.funding_rate!r}")
 
 
 @dataclass(frozen=True)

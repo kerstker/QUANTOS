@@ -17,12 +17,19 @@ append-only SQLite；同一 client_order_id/fill_id + 同一不可变 payload �
 - 惰性迁移(`_migrate_strategy_id`)只对**迁移前的存量行**留下列默认值 'crowd_contra'(SQLite
   ALTER ADD COLUMN 的 NOT NULL 语法要求;该默认值永久留在被迁移库的 schema 里,无法无损移除——
   无害,因为 Python 写入 API 全部显式带 strategy_id,SQL 默认值只对迁移前的存量行生效)。
+- canonical_state(2026-07-23 Phase 3 OMS 接线):raw venue `status` 的 canonical
+  `OrderState`(映射/快照转换校验在 `live/execution/oms_state.py`,纯函数)。写入路径
+  (record_submission/update_status)显式计算落库;惰性迁移 nullable 无 DEFAULT——存量行
+  NULL 是诚实的,update_status 时从 raw status 现推,绝不回填编造的历史状态。
 """
 from __future__ import annotations
 
 import sqlite3
 from typing import Dict, List, Optional
 
+from live.execution.oms_state import (assert_snapshot_transition,
+                                      canonical_for_venue_status)
+from quantos.contracts.order import OrderState
 from quantos.contracts.trading import OrderSide
 
 _SCHEMA = """
@@ -36,7 +43,8 @@ CREATE TABLE IF NOT EXISTS live_orders (
   status          TEXT NOT NULL DEFAULT 'NEW',
   strategy_id     TEXT NOT NULL,
   order_type      TEXT,
-  limit_price     REAL
+  limit_price     REAL,
+  canonical_state TEXT
 );
 CREATE TABLE IF NOT EXISTS live_fills (
   fill_id         TEXT PRIMARY KEY,
@@ -62,7 +70,13 @@ CREATE TABLE IF NOT EXISTS live_tca (
   quantity         REAL NOT NULL,
   slippage_bps     REAL,
   recorded_at      INTEGER NOT NULL,
-  strategy_id      TEXT NOT NULL
+  strategy_id      TEXT NOT NULL,
+  arrival_price    REAL,
+  arrival_bid      REAL,
+  arrival_ask      REAL,
+  arrival_as_of_ms INTEGER,
+  arrival_captured_at_ms INTEGER,
+  arrival_source   TEXT
 );
 """
 _TABLES = ("live_orders", "live_fills")
@@ -72,6 +86,14 @@ _TABLES = ("live_orders", "live_fills")
 # 运维产物,按用户裁定同样保持该回填值),不是猜测。
 _BACKFILL_STRATEGY_ID = "crowd_contra"
 _STRATEGY_TABLES = ("live_orders", "live_fills", "live_tca")
+_TCA_ARRIVAL_COLUMNS = (
+    ("arrival_price", "REAL"),
+    ("arrival_bid", "REAL"),
+    ("arrival_ask", "REAL"),
+    ("arrival_as_of_ms", "INTEGER"),
+    ("arrival_captured_at_ms", "INTEGER"),
+    ("arrival_source", "TEXT"),
+)
 # order_type/limit_price(2026-07-06 战线②):**双轨**——_SCHEMA(上面)让新建账本/preview
 # 一次性草稿账本(create=True)直接带列;`_migrate_order_type_columns` 给存量真实测试网账本
 # 惰性 ALTER。两列刻意**不设 NOT NULL/DEFAULT**(与 strategy_id 的强制回填不同):存量行读回
@@ -101,6 +123,8 @@ class LiveLedger:
         # 迁移必须在无 create 路径也跑:ops API / gonogo_report 用 LiveLedger(path) 打开
         self._migrate_strategy_id()
         self._migrate_order_type_columns()
+        self._migrate_canonical_state_column()
+        self._migrate_tca_arrival_columns()
 
     def _require_schema(self) -> None:
         try:
@@ -177,10 +201,49 @@ class LiveLedger:
         if self._add_order_type_columns_if_missing():
             self._conn.commit()
 
+    def _migrate_tca_arrival_columns(self) -> None:
+        """Add nullable arrival-evidence columns to pre-snapshot ledgers.
+
+        The migration is deliberately nullable: historical TCA rows used the
+        decision-price proxy and must remain readable without inventing source
+        timestamps or quote data.
+        """
+        exists = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='live_tca'"
+        ).fetchone()
+        if exists is None:
+            return
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(live_tca)")}
+        changed = False
+        for column, sql_type in _TCA_ARRIVAL_COLUMNS:
+            if column not in cols:
+                changed = self._add_column_if_missing("live_tca", column, sql_type) or changed
+        if changed:
+            self._conn.commit()
+
+    def _migrate_canonical_state_column(self) -> None:
+        """canonical_state(2026-07-23,Phase 3 OMS 接线):live_orders 增加 nullable canonical
+        状态列。双轨同 order_type——_SCHEMA 让新库直接带列,这里给存量真实测试网账本惰性
+        ALTER。**刻意 nullable、无 DEFAULT**:存量行读回 NULL 是诚实的(当时没有 canonical
+        记录),`update_status` 对 NULL 行从 raw status 现推 canonical(映射表对全部现存
+        raw 状态封闭),绝不回填一个编造的历史状态。"""
+        exists = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (_ORDER_TYPE_TABLE,)).fetchone()
+        if exists is None:
+            return
+        cols = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({_ORDER_TYPE_TABLE})")}
+        if "canonical_state" in cols:
+            return
+        if self._add_column_if_missing(_ORDER_TYPE_TABLE, "canonical_state", "TEXT"):
+            self._conn.commit()
+
     def record_submission(self, client_order_id: str, instrument_id: str, side: OrderSide,
                           quantity: float, *, strategy_id: str, submitted_at: int,
                           venue_order_id: str = "", status: str = "NEW",
                           order_type: str = "MARKET", limit_price: Optional[float] = None) -> None:
+        # 未知 venue 状态 fail-closed(写前就拒,绝不落一个无 canonical 对应的新行)
+        canonical = canonical_for_venue_status(status).value
         immutable = (
             instrument_id, side.value, float(quantity), strategy_id, order_type, limit_price,
         )
@@ -188,9 +251,10 @@ class LiveLedger:
             self._conn.execute(
                 "INSERT INTO live_orders"
                 "(client_order_id, instrument_id, side, quantity, submitted_at, venue_order_id,"
-                " status, strategy_id, order_type, limit_price) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " status, strategy_id, order_type, limit_price, canonical_state)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (client_order_id, instrument_id, side.value, float(quantity), int(submitted_at),
-                 venue_order_id, status, strategy_id, order_type, limit_price))
+                 venue_order_id, status, strategy_id, order_type, limit_price, canonical))
         except sqlite3.IntegrityError:
             self._conn.rollback()
             existing = self._conn.execute(
@@ -209,13 +273,28 @@ class LiveLedger:
 
     def update_status(self, client_order_id: str, status: str, *,
                       venue_order_id: Optional[str] = None) -> None:
+        new_canonical = canonical_for_venue_status(status)   # 未知 venue 状态 fail-closed,不改库
+        row = self._conn.execute(
+            "SELECT status, canonical_state FROM live_orders WHERE client_order_id=?",
+            (client_order_id,)).fetchone()
+        if row is not None:
+            # 迁移前的存量行 canonical_state 为 NULL:从 raw status 现推(映射表对全部现存
+            # raw 状态封闭);已迁移/新行直接读存的 canonical 值。快照转换校验:同态重写
+            # (幂等重放)是 no-op;venue 权威可跳过中间态(可达即可);倒退/改写终态拒绝。
+            prev = (OrderState(row["canonical_state"])
+                    if row["canonical_state"] is not None
+                    else canonical_for_venue_status(row["status"]))
+            assert_snapshot_transition(prev, new_canonical)
+        # 行不存在:保持既有行为(SQL UPDATE 零行 no-op),无旧态可校验。
         if venue_order_id is not None:
             self._conn.execute(
-                "UPDATE live_orders SET status=?, venue_order_id=? WHERE client_order_id=?",
-                (status, venue_order_id, client_order_id))
+                "UPDATE live_orders SET status=?, venue_order_id=?, canonical_state=?"
+                " WHERE client_order_id=?",
+                (status, venue_order_id, new_canonical.value, client_order_id))
         else:
-            self._conn.execute("UPDATE live_orders SET status=? WHERE client_order_id=?",
-                               (status, client_order_id))
+            self._conn.execute(
+                "UPDATE live_orders SET status=?, canonical_state=? WHERE client_order_id=?",
+                (status, new_canonical.value, client_order_id))
         self._conn.commit()
 
     def record_fill(self, fill_id: str, client_order_id: str, instrument_id: str,
@@ -249,34 +328,58 @@ class LiveLedger:
 
     def record_tca(self, fill_id: str, *, client_order_id: str, instrument_id: str,
                    side: OrderSide, decision_price: float, fill_price: float, quantity: float,
-                   strategy_id: str, recorded_at: int) -> None:
+                   strategy_id: str, recorded_at: int, arrival_snapshot=None) -> None:
         """成交质量记录(2026-07-05 TCA)。惰性建表；同 ID 同 payload 幂等、异 payload 拒绝。
         slippage_bps 在写入时算好落库(带方向:买贵/卖贱为正=成本),读取端零重算。"""
-        from live.execution.tca import slippage_bps
+        from live.execution.tca import ArrivalSnapshot, slippage_bps
+        if arrival_snapshot is not None and not isinstance(arrival_snapshot, ArrivalSnapshot):
+            raise TypeError("arrival_snapshot must be an ArrivalSnapshot")
+        baseline = (arrival_snapshot.price if arrival_snapshot is not None
+                    else float(decision_price))
         self._conn.executescript(_TCA_SCHEMA)
         self._migrate_strategy_id()          # 老库 live_tca 可能建于加列之前(防御,幂等)
-        slip = slippage_bps(side, decision_price=decision_price, fill_price=fill_price)
+        self._migrate_tca_arrival_columns()
+        slip = slippage_bps(side, decision_price=baseline, fill_price=fill_price)
+        arrival_values = (
+            arrival_snapshot.price if arrival_snapshot is not None else None,
+            arrival_snapshot.bid if arrival_snapshot is not None else None,
+            arrival_snapshot.ask if arrival_snapshot is not None else None,
+            arrival_snapshot.as_of_ms if arrival_snapshot is not None else None,
+            arrival_snapshot.captured_at_ms if arrival_snapshot is not None else None,
+            arrival_snapshot.source if arrival_snapshot is not None else "decision_price_fallback",
+        )
         immutable = (
             client_order_id, instrument_id, side.value, float(decision_price),
-            float(fill_price), float(quantity), slip, strategy_id,
+            float(fill_price), float(quantity), slip, strategy_id, *arrival_values,
         )
         try:
             self._conn.execute(
                 "INSERT INTO live_tca"
                 "(fill_id, client_order_id, instrument_id, side, decision_price, fill_price,"
-                " quantity, slippage_bps, recorded_at, strategy_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                " quantity, slippage_bps, recorded_at, strategy_id, arrival_price, arrival_bid,"
+                " arrival_ask, arrival_as_of_ms, arrival_captured_at_ms, arrival_source)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (fill_id, client_order_id, instrument_id, side.value, float(decision_price),
-                 float(fill_price), float(quantity), slip, int(recorded_at), strategy_id))
+                 float(fill_price), float(quantity), slip, int(recorded_at), strategy_id,
+                 *arrival_values))
         except sqlite3.IntegrityError:
             self._conn.rollback()
             existing = self._conn.execute(
                 "SELECT client_order_id, instrument_id, side, decision_price, fill_price,"
-                " quantity, slippage_bps, strategy_id FROM live_tca WHERE fill_id=?",
+                " quantity, slippage_bps, strategy_id, arrival_price, arrival_bid, arrival_ask,"
+                " arrival_as_of_ms, arrival_captured_at_ms, arrival_source"
+                " FROM live_tca WHERE fill_id=?",
                 (fill_id,),
             ).fetchone()
             if existing is None:
                 raise
-            if tuple(existing) != immutable:
+            existing_values = tuple(existing)
+            # Historical rows have no snapshot columns. Preserve their
+            # idempotent decision-price semantics without fabricating evidence.
+            if (existing_values[-1] is None and existing_values[-6] is None
+                    and arrival_snapshot is None):
+                existing_values = existing_values[:-1] + ("decision_price_fallback",)
+            if existing_values != immutable:
                 raise LiveLedgerConflictError(
                     f"TCA fill_id collision with different payload: {fill_id}"
                 )

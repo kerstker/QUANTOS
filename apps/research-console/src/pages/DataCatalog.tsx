@@ -1,16 +1,27 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchDataCatalogSnapshot } from '@/lib/api/research-console-api';
 import { bi } from '@/lib/i18n/bilingual';
 import type {
-  DataCatalogDataset, DataCatalogFeature, DataCatalogPayload,
+  DataCatalogDataset, DataCatalogFeature, DataCatalogPayload, DataChannel,
 } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
   PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, DataTable,
-  StatusChip, GateDot, ProgressBar, Chip, KeyValue, type Column,
+  StatusChip, GateDot, ProgressBar, Chip, KeyValue, LoadingVeil, type Column,
 } from '@/ui/primitives';
 import { Donut, Histogram } from '@/ui/charts';
 import { num, pct, fixed, compact, shortHash, type Tone } from '@/ui/format';
+
+const emptySystemicRateLimit = {
+  planned_ip_weight: 0,
+  endpoint_weight_per_symbol: 0,
+  configured_max_workers: 0,
+  min_request_interval_ms: 0,
+  cooldown_active: false,
+  last_status_code: null,
+  retry_after_seconds: 0,
+  max_used_weights: {},
+};
 
 const fallbackCatalog: DataCatalogPayload = {
   source: 'FRONTEND_DATA_CATALOG_FALLBACK',
@@ -112,6 +123,72 @@ const fallbackCatalog: DataCatalogPayload = {
     {from: 'ds-liquidity-profile', to: 'feat-turnover-std-60', kind: 'DATASET_TO_FEATURE'},
     {from: 'feat-turnover-std-60', to: 'exp-alpha-5-v002', kind: 'FEATURE_TO_EXPERIMENT'},
   ],
+  data_channels: { status: 'UNAVAILABLE', channels: [], summary: {} },
+  binance_realtime: {
+    verdict: 'UNAVAILABLE',
+    checked_at_ms: 0,
+    universe_size: 14,
+    stream: {
+      status_present: false, effective_streaming: false, reported_streaming: false,
+      fresh: false, age_ms: null, lag_ms: null, coverage: {}, connections: {},
+      reconnects: {}, event_counts: {}, rejected_frames: null, chain_valid: null,
+      routes: {}, source_path: null,
+    },
+    rest_snapshot: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, errors: 0, fields: [], source_path: null,
+    },
+    systemic_risk: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, row_count: 0, row_counts: {},
+      inserted: {}, latest: {}, errors: 0,
+      request_rate_limit: emptySystemicRateLimit,
+      fields: [], source_path: null,
+    },
+    rpi_depth: {
+      status_present: false, fresh: false, age_ms: null, verdict: null,
+      coverage: {}, chain_valid: null, row_count: 0, inserted: 0,
+      latest: {}, errors: 0, request_policy: {}, fields: [], source_path: null,
+    },
+    feature_projection: {
+      status_present: false, fresh: false, age_ms: null, status: null,
+      feature_version: null, feature_count: 0, instrument_count: 0,
+      retained_value_count: 0, drift_status: null, drift_status_counts: {},
+      drift_series_count: 0, batch_chain_valid: null, calibration: null,
+      calibration_id: null, warn_ks: null, block_ks: null,
+      calibration_window_count: 0,
+      load_bearing: false, source_path: null,
+    },
+    drift_alerting: {
+      status_present: false, fresh: false, age_ms: null, status: null,
+      current_severity: null, reason: null, transition: null,
+      deduplicated: false, local_delivery: null, external_delivery: null,
+      independent_worker: false, event_count: 0, chain_valid: null,
+      source_path: null,
+    },
+    api_coverage: {
+      status: 'INVALID',
+      catalog_endpoint_count: 0,
+      accounted_endpoint_count: 0,
+      accounted_ratio: 0,
+      load_bearing_endpoint_count: 0,
+      gap_count: 0,
+      gaps: [],
+    },
+    stream_coverage: {
+      status: 'INVALID',
+      catalog_stream_count: 0,
+      accounted_stream_count: 0,
+      accounted_ratio: 0,
+      load_bearing_stream_count: 0,
+      gap_count: 0,
+      gaps: [],
+    },
+    safety: {
+      public_market_data_only: true, credentials: false, private_stream: false,
+      broker_connectivity: false, order_submission: false, live_trading: false,
+    },
+  },
   quality_policy: {
     requires_dataset_hash: true,
     requires_event_timestamp: true,
@@ -130,6 +207,13 @@ function qualityTone(v: number): Tone {
   return 'neg';
 }
 
+function channelTone(status: string): Tone {
+  if (status === 'REAL_HISTORY') return 'pos';
+  if (status === 'REAL_SNAPSHOT' || status === 'REAL_DIAGNOSTIC' || status === 'REAL_RECENT') return 'info';
+  if (status === 'PUBLIC_STREAM_REQUIRED') return 'warn';
+  return 'neg';
+}
+
 function checkStats(dataset: DataCatalogDataset): { passed: number; total: number } {
   const total = dataset.checks.length;
   const passed = dataset.checks.filter(c => c.status === 'PASS').length;
@@ -137,8 +221,16 @@ function checkStats(dataset: DataCatalogDataset): { passed: number; total: numbe
 }
 
 export default function DataCatalog() {
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setRefreshTick(value => value + 1), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const { payload, apiState, error, usingBackend } = useConsoleSnapshot<DataCatalogPayload>(
-    s => fetchDataCatalogSnapshot(s));
+    s => fetchDataCatalogSnapshot(s),
+    [refreshTick],
+  );
 
   const catalog = usingBackend ? payload! : fallbackCatalog;
 
@@ -256,8 +348,51 @@ export default function DataCatalog() {
     },
   ];
 
+  const channelCols: Column<DataChannel>[] = [
+    {
+      key: 'channel', header: bi('渠道', 'Channel'),
+      render: c => (
+        <div className="min-w-0">
+          <div className="truncate font-medium text-ink">{c.channel_id}</div>
+          <div className="truncate text-2xs text-faint">{c.provider} / {c.venue}</div>
+        </div>
+      ),
+    },
+    { key: 'dataset', header: bi('数据集', 'Dataset'), mono: true, render: c => c.dataset_id },
+    { key: 'cadence', header: bi('频率', 'Cadence'), render: c => c.cadence },
+    {
+      key: 'status', header: bi('证据状态', 'Evidence'),
+      render: c => <StatusChip value={c.artifact.status} />,
+    },
+    {
+      key: 'availability', header: bi('可用性', 'Availability'),
+      render: c => <Chip label={c.availability} tone={channelTone(c.availability)} />,
+    },
+    {
+      key: 'artifact', header: bi('资产', 'Artifact'),
+      render: c => <span className="mono truncate text-2xs text-muted">{c.artifact_path}</span>,
+    },
+    {
+      key: 'fields', header: bi('字段', 'Fields'),
+      render: c => <span className="truncate text-2xs text-muted">{c.fields.join(', ')}</span>,
+    },
+  ];
+
   const qPassRate = catalog.summary.quality_checks > 0
     ? catalog.summary.quality_passed / catalog.summary.quality_checks : 0;
+  const realtime = catalog.binance_realtime ?? fallbackCatalog.binance_realtime;
+  const streamCoverage = realtime.stream.coverage;
+  const restCoverage = realtime.rest_snapshot.coverage;
+  const systemicCoverage = realtime.systemic_risk.coverage;
+  const systemicRateLimit = realtime.systemic_risk.request_rate_limit
+    ?? emptySystemicRateLimit;
+  const systemicUsedWeight = Math.max(
+    0,
+    ...Object.values(systemicRateLimit.max_used_weights),
+  );
+  const rpiCoverage = realtime.rpi_depth.coverage;
+  const streamEvents = Object.values(realtime.stream.event_counts)
+    .reduce((total, value) => total + value, 0);
 
   return (
     <PageShell>
@@ -274,6 +409,7 @@ export default function DataCatalog() {
         realData={usingBackend && catalog.data_provenance === 'REAL_PIT_DATASETS'}
         source={catalog.source} error={error} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={8}>
         <StatTile label={bi('数据集', 'Datasets')} value={num(catalog.summary.datasets)} accent />
         <StatTile label={bi('特征', 'Features')} value={num(catalog.summary.features)} />
@@ -286,6 +422,203 @@ export default function DataCatalog() {
         <StatTile label={bi('只读', 'Read-only')} value={catalog.read_only ? bi('是', 'YES') : bi('否', 'NO')} tone="pos" />
       </KpiStrip>
 
+      <Panel eyebrow="BINANCE USD-M REALTIME" title={bi('实时公共行情流', 'Real-time Public Market Stream')}
+        right={<StatusChip value={realtime.verdict} />}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('流状态', 'Stream')} value={realtime.stream.effective_streaming ? 'LIVE' : 'NOT LIVE'}
+            tone={realtime.stream.effective_streaming ? 'pos' : 'warn'} />
+          <StatTile label={bi('核心覆盖', 'Core Coverage')}
+            value={`${num(streamCoverage.complete_core ?? 0)}/${num(streamCoverage.requested ?? realtime.universe_size)}`}
+            tone={(streamCoverage.complete_core ?? 0) === realtime.universe_size ? 'pos' : 'warn'} />
+          <StatTile label={bi('接收延迟', 'Receive Lag')}
+            value={realtime.stream.lag_ms == null ? '—' : `${num(realtime.stream.lag_ms)}ms`}
+            tone={realtime.stream.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('累计事件', 'Events')} value={compact(streamEvents)} />
+          <StatTile label={bi('拒绝帧', 'Rejected')} value={num(realtime.stream.rejected_frames ?? 0)}
+            tone={(realtime.stream.rejected_frames ?? 0) === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('流哈希链', 'Stream Chain')} value={realtime.stream.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.stream.chain_valid ? 'pos' : 'warn'} />
+          <StatTile label={bi('REST 覆盖', 'REST Coverage')}
+            value={`${num(restCoverage.complete ?? 0)}/${num(restCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.rest_snapshot.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('REST 哈希链', 'REST Chain')} value={realtime.rest_snapshot.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.rest_snapshot.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <details className="mt-4 rounded-lg border border-line bg-inset/30">
+          <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold text-muted">
+            Market-data diagnostics and full evidence
+          </summary>
+          <div className="border-t border-line px-4 pb-4">
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('官方目录', 'Official Catalog')}
+            value={`${num(realtime.api_coverage.accounted_endpoint_count)}/${num(realtime.api_coverage.catalog_endpoint_count)}`}
+            tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'info' : 'warn'} />
+          <StatTile label={bi('承载接口', 'Load-bearing APIs')}
+            value={num(realtime.api_coverage.load_bearing_endpoint_count)} tone="pos" />
+          <StatTile label={bi('明确缺口', 'Explicit Gaps')}
+            value={num(realtime.api_coverage.gap_count)}
+            tone={realtime.api_coverage.gap_count === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('覆盖契约', 'Coverage Contract')}
+            value={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
+            tone={realtime.api_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('官方流目录', 'Official WS Catalog')}
+            value={`${num(realtime.stream_coverage.accounted_stream_count)}/${num(realtime.stream_coverage.catalog_stream_count)}`}
+            tone={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'info' : 'warn'} />
+          <StatTile label={bi('承载实时流', 'Load-bearing Streams')}
+            value={num(realtime.stream_coverage.load_bearing_stream_count)} tone="pos" />
+          <StatTile label={bi('实时流缺口', 'WS Explicit Gaps')}
+            value={num(realtime.stream_coverage.gap_count)}
+            tone={realtime.stream_coverage.gap_count === 0 ? 'pos' : 'warn'} />
+          <StatTile label={bi('实时流契约', 'WS Coverage Contract')}
+            value={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'VALID' : 'INVALID'}
+            tone={realtime.stream_coverage.status === 'VALIDATED_OFFICIAL_CATALOG' ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('系统风险通道', 'Systemic Risk')}
+            value={realtime.systemic_risk.verdict ?? 'UNAVAILABLE'}
+            tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('系统风险覆盖', 'Systemic Coverage')}
+            value={`${num(systemicCoverage.complete ?? 0)}/${num(systemicCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.systemic_risk.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('系统风险记录', 'Systemic Rows')}
+            value={compact(realtime.systemic_risk.row_count)} />
+          <StatTile label={bi('系统风险链', 'Systemic Chain')}
+            value={realtime.systemic_risk.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.systemic_risk.chain_valid ? 'pos' : 'warn'} />
+          <StatTile label={bi('计划 IP 权重', 'Planned IP Weight')}
+            value={num(systemicRateLimit.planned_ip_weight)}
+            sub={`${num(systemicRateLimit.endpoint_weight_per_symbol)}/symbol`} />
+          <StatTile label={bi('观测 IP 权重', 'Observed IP Weight')}
+            value={num(systemicUsedWeight)}
+            sub={Object.keys(systemicRateLimit.max_used_weights)[0] ?? 'header unavailable'} />
+          <StatTile label={bi('请求节奏', 'Request Pacing')}
+            value={`${num(systemicRateLimit.min_request_interval_ms)}ms`}
+            sub={`${num(systemicRateLimit.configured_max_workers)} worker`} />
+          <StatTile label={bi('限流冷却', 'Rate-limit Cooldown')}
+            value={systemicRateLimit.cooldown_active ? 'ACTIVE' : 'CLEAR'}
+            tone={systemicRateLimit.cooldown_active ? 'neg' : 'pos'}
+            sub={systemicRateLimit.cooldown_active
+              ? `${num(systemicRateLimit.retry_after_seconds)}s / HTTP ${systemicRateLimit.last_status_code ?? '—'}`
+              : '429/418 guard ready'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label={bi('RPI 深度', 'RPI Depth')}
+            value={realtime.rpi_depth.verdict ?? 'UNAVAILABLE'}
+            tone={realtime.rpi_depth.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('RPI 覆盖', 'RPI Coverage')}
+            value={`${num(rpiCoverage.complete ?? 0)}/${num(rpiCoverage.requested ?? realtime.universe_size)}`}
+            tone={realtime.rpi_depth.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('RPI 快照', 'RPI Snapshots')}
+            value={compact(realtime.rpi_depth.row_count)} />
+          <StatTile label={bi('RPI 哈希链', 'RPI Chain')}
+            value={realtime.rpi_depth.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.rpi_depth.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        {realtime.api_coverage.gaps.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {realtime.api_coverage.gaps.map(gap => (
+              <Chip key={gap.id} label={`${gap.title} · ${gap.path}`} tone="warn" />
+            ))}
+          </div>
+        ) : null}
+        {realtime.stream_coverage.gaps.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {realtime.stream_coverage.gaps.map(gap => (
+              <Chip key={gap.id} label={`${gap.title} · ${gap.route} · ${gap.stream}`} tone="warn" />
+            ))}
+          </div>
+        ) : null}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('实时特征', 'Realtime Features')}
+            value={num(realtime.feature_projection.feature_count)}
+            tone={realtime.feature_projection.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('特征标的', 'Feature Instruments')}
+            value={num(realtime.feature_projection.instrument_count)} />
+          <StatTile label={bi('保留值', 'Retained Values')}
+            value={compact(realtime.feature_projection.retained_value_count)} />
+          <StatTile label={bi('漂移序列', 'Drift Series')}
+            value={num(realtime.feature_projection.drift_series_count)} />
+          <StatTile label={bi('漂移状态', 'Drift Status')}
+            value={realtime.feature_projection.drift_status ?? '—'}
+            tone={realtime.feature_projection.drift_status === 'BLOCK' ? 'warn' : 'info'} />
+          <StatTile label={bi('稳定', 'Stable')}
+            value={num(realtime.feature_projection.drift_status_counts.PASS ?? 0)} tone="pos" />
+          <StatTile label={bi('警告/阻断', 'Warn / Block')}
+            value={`${num(realtime.feature_projection.drift_status_counts.WARN ?? 0)} / ${num(realtime.feature_projection.drift_status_counts.BLOCK ?? 0)}`}
+            tone="warn" />
+          <StatTile label={bi('特征批次链', 'Feature Batch Chain')}
+            value={realtime.feature_projection.batch_chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.feature_projection.batch_chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <StatTile label={bi('漂移校准', 'Drift Calibration')}
+            value={realtime.feature_projection.calibration === 'EMPIRICALLY_CALIBRATED_PIT_V1' ? 'CALIBRATED' : 'UNAVAILABLE'}
+            tone={realtime.feature_projection.calibration_id ? 'pos' : 'warn'} />
+          <StatTile label={bi('校准窗口', 'Calibration Windows')}
+            value={num(realtime.feature_projection.calibration_window_count)} />
+          <StatTile label={bi('警告阈值', 'Warn KS')}
+            value={realtime.feature_projection.warn_ks == null ? '—' : realtime.feature_projection.warn_ks.toFixed(3)} />
+          <StatTile label={bi('阻断阈值', 'Block KS')}
+            value={realtime.feature_projection.block_ks == null ? '—' : realtime.feature_projection.block_ks.toFixed(3)} />
+          <StatTile label={bi('独立告警', 'Alert Worker')}
+            value={realtime.drift_alerting.independent_worker ? 'RUNNING' : 'UNAVAILABLE'}
+            tone={realtime.drift_alerting.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('本地投递', 'Local Delivery')}
+            value={realtime.drift_alerting.local_delivery ?? '—'}
+            tone={realtime.drift_alerting.local_delivery === 'DELIVERED' ? 'pos' : 'info'} />
+          <StatTile label={bi('外部投递', 'External Delivery')}
+            value={realtime.drift_alerting.external_delivery ?? '—'} />
+          <StatTile label={bi('告警链', 'Alert Chain')}
+            value={realtime.drift_alerting.chain_valid ? 'VALID' : 'UNKNOWN'}
+            tone={realtime.drift_alerting.chain_valid ? 'pos' : 'warn'} />
+        </div>
+        <div className="mt-2 text-2xs text-muted">
+          {bi(
+            '实时漂移阈值来自当前窗口之外的 PIT 经验校准；独立告警只通知运营，不驱动晋级、仓位或订单。外部通道未配置时明确显示 UNCONFIGURED。',
+            'Realtime thresholds use pre-current PIT empirical calibration. Independent alerts notify operators only and never drive promotion, positions, or orders; an absent external channel is explicit as UNCONFIGURED.',
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {realtime.rest_snapshot.fields.map(field => (
+            <Chip key={field} label={field} tone="muted" />
+          ))}
+          {realtime.systemic_risk.fields.map(field => (
+            <Chip key={`systemic-${field}`} label={field} tone="info" />
+          ))}
+          {realtime.rpi_depth.fields.map(field => (
+            <Chip key={`rpi-${field}`} label={field} tone="special" />
+          ))}
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <KeyValue cols={2} items={[
+            { k: 'Public route', v: realtime.stream.routes.public ?? '—' },
+            { k: 'Market route', v: realtime.stream.routes.market ?? '—' },
+            { k: bi('公共连接', 'Public link'), v: realtime.stream.connections.public ? 'CONNECTED' : 'DOWN' },
+            { k: bi('市场连接', 'Market link'), v: realtime.stream.connections.market ? 'CONNECTED' : 'DOWN' },
+          ]} />
+          <KeyValue cols={2} items={Object.entries(realtime.stream.event_counts).map(([key, value]) => ({
+            k: key, v: compact(value),
+          }))} />
+          <div className="flex flex-wrap content-start gap-2 rounded-lg border border-line bg-inset/40 p-3">
+            <Chip label="PUBLIC DATA ONLY" tone="pos" />
+            <Chip label="NO CREDENTIALS" tone="pos" />
+            <Chip label="NO PRIVATE STREAM" tone="pos" />
+            <Chip label="NO BROKER" tone="pos" />
+            <Chip label="NO ORDER SUBMISSION" tone="pos" />
+            <Chip label="L2 DRY-RUN ONLY" tone="info" />
+          </div>
+        </div>
+          </div>
+        </details>
+      </Panel>
+
+      <details className="rounded-xl border border-line bg-surface/40">
+        <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+          Datasets, features, and lineage evidence
+        </summary>
+        <div className="space-y-4 border-t border-line p-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel eyebrow={bi('构成', 'Composition')} title={bi('特征族分布', 'Feature Families')}
           right={<Chip label={bi(`${familySegments.length} 族`, `${familySegments.length} fam.`)} tone="muted" />}>
@@ -332,6 +665,15 @@ export default function DataCatalog() {
         <DataTable columns={datasetCols} rows={catalog.datasets} getKey={d => d.dataset_id} dense />
       </Panel>
 
+      <Panel eyebrow={bi('渠道', 'Channels')} title={bi('真实数据获取渠道', 'Real Data Acquisition Channels')}
+        right={<Chip label={bi(`${catalog.data_channels.channels.length} 个`, `${catalog.data_channels.channels.length} channels`)}
+          tone={catalog.data_channels.status === 'REAL_COVERAGE_INVENTORY' ? 'info' : 'warn'} />}>
+        <DataTable columns={channelCols} rows={catalog.data_channels.channels} getKey={c => c.channel_id} dense />
+        {catalog.data_channels.honesty?.length ? (
+          <div className="mt-3 text-2xs text-faint">{catalog.data_channels.honesty.join(' · ')}</div>
+        ) : null}
+      </Panel>
+
       <Panel eyebrow={bi('特征库', 'Feature Store')} title={bi('特征定义与 PIT 策略', 'Feature Definitions & PIT Policy')}
         right={<Chip label={bi(`${catalog.features.length} 个`, `${catalog.features.length} feat.`)} tone="accent" />}>
         <DataTable columns={featureCols} rows={catalog.features} getKey={f => f.feature_id} dense />
@@ -363,6 +705,9 @@ export default function DataCatalog() {
           ))}
         </div>
       </Panel>
+        </div>
+      </details>
+      </LoadingVeil>
     </PageShell>
   );
 }

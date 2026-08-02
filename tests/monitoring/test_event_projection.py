@@ -112,6 +112,43 @@ def test_projection_is_append_only_and_detects_bypassed_tamper(tmp_path):
         projection.records()
 
 
+def test_projection_rechecks_full_chain_after_external_connection_change(tmp_path):
+    path = str(tmp_path / "projection.db")
+    projection = DomainEventProjection(path)
+    projection.apply(_delivery(_event("e1", 1), event_seq=1))
+
+    other = sqlite3.connect(path)
+    other.execute("DROP TRIGGER projected_events_no_update")
+    other.execute("UPDATE projected_events SET source='evil'")
+    other.commit()
+    other.close()
+
+    with pytest.raises(
+        EventProjectionIntegrityError,
+        match="payload hash|previous hash|record hash|trigger is missing",
+    ):
+        projection.apply(_delivery(_event("e2", 2), event_seq=2))
+
+
+def test_projection_does_not_rescan_chain_for_each_same_connection_append(tmp_path, monkeypatch):
+    projection = DomainEventProjection(str(tmp_path / "projection.db"))
+    calls = 0
+    original = projection._verify_rows
+
+    def counted(rows):
+        nonlocal calls
+        calls += 1
+        return original(rows)
+
+    monkeypatch.setattr(projection, "_verify_rows", counted)
+    for seq in range(1, 101):
+        projection.apply(_delivery(_event(f"e{seq}", seq), event_seq=seq))
+
+    assert calls == 0
+    assert projection.chain_valid()
+    assert calls == 1
+
+
 def test_read_only_open_fails_closed_without_creating_missing_projection(tmp_path):
     path = tmp_path / "missing.db"
     with pytest.raises(EventProjectionIntegrityError, match="unavailable"):

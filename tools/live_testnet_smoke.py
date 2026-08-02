@@ -16,16 +16,21 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
 import time
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from live.contracts import LiveOrderRequest
 from live.exchange.binance_futures import BinanceFuturesAdapter
 from quantos.contracts.trading import OrderSide
+from tools.cache_io import atomic_write_json
 
 _KEY_FILE = os.path.join("key", "binance_test_key.json")
+DEFAULT_EVIDENCE_PATH = os.path.join("evidence", "binance_testnet_smoke.json")
 
 
 def _load_credentials():
@@ -44,62 +49,230 @@ def _load_credentials():
         "(set $BINANCE_TESTNET_API_KEY/$BINANCE_TESTNET_API_SECRET, or key/binance_test_key.json)")
 
 
-def _step(label, fn):
-    print(f"\n--- {label} ---", flush=True)
+def _step(
+    name: str,
+    fn: Callable[[], Any],
+    summarize: Callable[[Any], dict[str, Any]],
+) -> tuple[dict[str, Any], Any | None]:
     try:
         result = fn()
-        print(f"OK: {result}", flush=True)
-        return True, result
+        summary = summarize(result)
+        record = {"name": name, "status": "PASS", **summary}
+        print(f"{name}: PASS {json.dumps(summary, ensure_ascii=False, sort_keys=True)}")
+        return record, result
     except Exception as exc:
-        print(f"FAILED: {type(exc).__name__}: {exc}", flush=True)
-        return False, None
+        record = {
+            "name": name,
+            "status": "FAIL",
+            "error_type": type(exc).__name__,
+        }
+        print(f"{name}: FAIL error_type={type(exc).__name__}", flush=True)
+        return record, None
 
 
-def main() -> None:
-    api_key, api_secret = _load_credentials()
-    client = BinanceFuturesAdapter(api_key=api_key, api_secret=api_secret,
-                                   base_url=BinanceFuturesAdapter.TESTNET_BASE)
-    print(f"venue_mode={client.venue_mode}")
-
-    ok, filters = _step("exchange_filters (公开,不签名)", client.exchange_filters)
-    if ok:
-        print(f"  {len(filters)} 个 USDT-M 符号;BTC={filters.get('BTC')}", flush=True)
-
-    ok, acct = _step("account (签名)", client.account)
-    if ok:
-        print(f"  keys={sorted(acct.keys())}", flush=True)
-        print(f"  totalWalletBalance={acct.get('totalWalletBalance')} "
-              f"availableBalance={acct.get('availableBalance')}", flush=True)
-
-    ok, positions = _step("positions (签名,规范化)", client.positions)
-
-    _step("get_order(不存在的单) -> 期望 None",
-         lambda: client.get_order("BTC", "quantos-smoke-ghost-order"))
-
-    if "--place-order" not in sys.argv:
-        print("\n(只读步骤完成;加 --place-order 额外测试下单)", flush=True)
-        return
-
-    if not filters or "BTC" not in filters:
-        print("\nBTC 不在 exchange_filters 里,跳过下单测试", flush=True)
-        return
+def _filters_summary(filters: Any) -> dict[str, Any]:
+    if not isinstance(filters, dict) or "BTC" not in filters:
+        raise ValueError("BTC filter is missing")
     btc = filters["BTC"]
-    # min_qty(0.0001 BTC)本身在真实价位下大概率低于 min_notional($50)——20x 安全边际,
-    # 覆盖任何合理 BTC 价格区间(测试网假钱,数量本身不影响任何真实风险)。
-    qty = round(max(btc.min_qty * 20, btc.step_size), 8)
-    cid = f"quantos-smoke-{int(time.time())}"
+    return {
+        "symbol_count": len(filters),
+        "btc": {
+            "step_size": btc.step_size,
+            "min_qty": btc.min_qty,
+            "min_notional": btc.min_notional,
+            "tick_size": btc.tick_size,
+        },
+    }
 
-    def _place():
-        order = LiveOrderRequest(instrument_id="BTC", side=OrderSide.BUY, quantity=qty,
-                                 client_order_id=cid)
-        return client.place_order(order)
 
-    ok, result = _step(f"place_order(BUY {qty} BTC, cid={cid})", _place)
-    if ok:
-        print(f"  venue_order_id={result.venue_order_id} status={result.status} "
-              f"filled_qty={result.filled_qty} avg_price={result.avg_price}", flush=True)
-        _step("get_order(核对刚提交的单)", lambda: client.get_order("BTC", cid))
+def _account_summary(account: Any) -> dict[str, Any]:
+    if not isinstance(account, dict):
+        raise TypeError("account response must be an object")
+    assets = account.get("assets")
+    positions = account.get("positions")
+    return {
+        "field_names": sorted(account),
+        "asset_row_count": len(assets) if isinstance(assets, list) else None,
+        "position_row_count": len(positions) if isinstance(positions, list) else None,
+        "can_trade": account.get("canTrade"),
+        "can_withdraw": account.get("canWithdraw"),
+    }
+
+
+def _positions_summary(positions: Any) -> dict[str, Any]:
+    if not isinstance(positions, dict):
+        raise TypeError("normalized positions must be an object")
+    return {
+        "nonzero_position_count": len(positions),
+        "instrument_ids": sorted(positions),
+    }
+
+
+def _order_summary(order: Any) -> dict[str, Any]:
+    if order is None:
+        raise ValueError("order response is missing")
+    return {
+        "venue_order_id": str(order.venue_order_id),
+        "client_order_id": order.client_order_id,
+        "instrument_id": order.instrument_id,
+        "order_status": order.status,
+        "filled_qty": order.filled_qty,
+        "avg_price": order.avg_price,
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--place-order",
+        action="store_true",
+        help="place one minimum Binance Futures testnet MARKET order",
+    )
+    parser.add_argument("--output", default=DEFAULT_EVIDENCE_PATH)
+    args = parser.parse_args(argv)
+    observed_at_ms = int(time.time() * 1000)
+    checks: list[dict[str, Any]] = []
+    try:
+        api_key, api_secret = _load_credentials()
+        client = BinanceFuturesAdapter(
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url=BinanceFuturesAdapter.TESTNET_BASE,
+        )
+        if client.venue_mode != "testnet":
+            raise ValueError("adapter did not bind to testnet")
+        checks.append({
+            "name": "credential_load_and_testnet_adapter",
+            "status": "PASS",
+            "venue_mode": client.venue_mode,
+        })
+    except Exception as exc:
+        checks.append(
+            {
+                "name": "credential_load_and_testnet_adapter",
+                "status": "FAIL",
+                "error_type": type(exc).__name__,
+            }
+        )
+        client = None
+
+    filters = None
+    if client is not None:
+        record, filters = _step(
+            "exchange_filters",
+            client.exchange_filters,
+            _filters_summary,
+        )
+        checks.append(record)
+        record, _account = _step("signed_account", client.account, _account_summary)
+        checks.append(record)
+        record, _positions = _step(
+            "normalized_positions",
+            client.positions,
+            _positions_summary,
+        )
+        checks.append(record)
+        record, _ghost = _step(
+            "idempotent_missing_order_lookup",
+            lambda: client.get_order("BTC", "quantos-smoke-ghost-order"),
+            lambda value: {"returned_none": value is None}
+            if value is None
+            else (_ for _ in ()).throw(ValueError("ghost order unexpectedly exists")),
+        )
+        checks.append(record)
+
+    if args.place_order:
+        if client is None or not isinstance(filters, dict) or "BTC" not in filters:
+            checks.append(
+                {
+                    "name": "testnet_order_and_requery",
+                    "status": "FAIL",
+                    "error_type": "PrerequisiteFailed",
+                }
+            )
+        else:
+            btc = filters["BTC"]
+            qty = round(max(btc.min_qty * 20, btc.step_size), 8)
+            client_order_id = f"quantos-smoke-{int(time.time())}"
+            order = LiveOrderRequest(
+                instrument_id="BTC",
+                side=OrderSide.BUY,
+                quantity=qty,
+                client_order_id=client_order_id,
+            )
+            placed_record, _placed = _step(
+                "testnet_order_submit",
+                lambda: client.place_order(order),
+                _order_summary,
+            )
+            if (
+                placed_record["status"] == "PASS"
+                and (
+                    _placed is None
+                    or _placed.client_order_id != client_order_id
+                    or _placed.instrument_id != "BTC"
+                )
+            ):
+                placed_record = {
+                    **placed_record,
+                    "status": "FAIL",
+                    "error_type": "OrderIdentityMismatch",
+                }
+            checks.append(placed_record)
+            queried_record, queried = _step(
+                "testnet_order_requery",
+                lambda: client.get_order("BTC", client_order_id),
+                _order_summary,
+            )
+            if (
+                queried_record["status"] == "PASS"
+                and (
+                    queried is None
+                    or queried.client_order_id != client_order_id
+                    or queried.instrument_id != "BTC"
+                    or queried.status != "FILLED"
+                    or queried.filled_qty != qty
+                )
+            ):
+                queried_record = {
+                    **queried_record,
+                    "status": "FAIL",
+                    "error_type": "OrderFillOrIdentityMismatch",
+                }
+            checks.append(queried_record)
+
+    passed = all(check["status"] == "PASS" for check in checks)
+    evidence = {
+        "schema_version": 1,
+        "evidence_kind": "BINANCE_FUTURES_TESTNET_SMOKE",
+        "observed_at_ms": observed_at_ms,
+        "venue": "BINANCE_FUTURES_TESTNET",
+        "place_order_requested": args.place_order,
+        "checks": checks,
+        "verdict": "PASS" if passed else "FAIL",
+        "safety": {
+            "testnet_only": True,
+            "real_capital": False,
+            "mainnet_order_submission": False,
+            "credentials_persisted": False,
+            "secret_values_in_evidence": False,
+            "raw_account_response_persisted": False,
+        },
+    }
+    atomic_write_json(args.output, evidence, indent=2)
+    print(
+        json.dumps(
+            {
+                "verdict": evidence["verdict"],
+                "check_count": len(checks),
+                "output": args.output,
+                "testnet_only": True,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

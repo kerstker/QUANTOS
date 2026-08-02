@@ -221,6 +221,41 @@ def test_job_runs_and_writes_registry(tmp_path):
         _unregister_stub("_stub")
 
 
+def test_paper_cycle_runner_uses_fixed_profile_and_adapts_health(
+    tmp_path, monkeypatch
+):
+    import tools.paper_realtime as paper_tool
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data" / "cache").mkdir(parents=True)
+    captured = {}
+
+    def fake_main(argv):
+        captured["argv"] = list(argv)
+        output = argv[argv.index("--output") + 1]
+        health_output = argv[argv.index("--health-output") + 1]
+        (tmp_path / output).write_text(json.dumps({
+            "verdict": {"cycle_completed": True},
+            "persistence": {"new_snapshots": 3},
+            "alphas": {"carry_oi_majors": {"net_pnl": 1.5}},
+        }), encoding="utf-8")
+        (tmp_path / health_output).write_text(json.dumps({
+            "verdict": {"paper_ready": True}, "blockers": [],
+        }), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(paper_tool, "main", fake_main)
+    result = RUN_KINDS["paper_cycle"].runner({"small_10k": True})
+
+    assert result["profile"] == "small_10k"
+    assert "--refresh-paper" in captured["argv"]
+    assert captured["argv"][captured["argv"].index("--aum") + 1] == "10000"
+    assert result["report"]["persistence"]["new_snapshots"] == 3
+    adapted = RUN_KINDS["paper_cycle"].adapter(result)
+    assert adapted["verdict"] == "PAPER_CYCLE_OK"
+    assert adapted["provenance"] == "tools/paper_realtime.py"
+
+
 def test_same_second_submissions_are_distinct_invocations(tmp_path):
     reg = RunRegistry(ResearchRunStore(str(tmp_path / "same-second.db")))
     _register_stub("_same_second", RunSpec(
@@ -681,3 +716,117 @@ def test_cancel_terminal_run_returns_false(tmp_path):
         assert q.cancel(rid) is False                   # already done -> cannot cancel
     finally:
         _unregister_stub("_done")
+
+
+def _fake_ashare_snapshot(path):
+    import os
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({
+            "universe": {"used": 249},
+            "hygiene": {"kept": ["reversal_5d", "turnover_20d"]},
+            "combo": {"champion": "icir", "weights": {"reversal_5d": 0.12},
+                      "ic": {"h1": {"test": {"mean_ic": 0.0949, "t_stat": 12.7552}}}},
+            "basket": {"test": {"strategy": {"total_return": 0.1846, "ann_sharpe": 0.5728,
+                                             "max_drawdown": 0.288},
+                                "equity": [1.0, 1.01, 1.02]}},
+            "dry_run_champion_variant": {"run_id": "11dae0671c13e2e2", "sharpe": 1.2285,
+                                         "total_return": 0.4051},
+        }, fh)
+
+
+def test_ashare_alpha_kind_constructs_argv_without_shell_and_adapts(tmp_path, monkeypatch):
+    import subprocess as sp
+    import sys as _sys
+
+    from services.research_runner import run_kinds
+
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        captured["kwargs"] = dict(kwargs)
+        snap = tmp_path / "data" / "stocks" / "snapshots" / "alpha_snapshot.json"
+        _fake_ashare_snapshot(str(snap))
+
+        class _Done:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return _Done()
+
+    monkeypatch.setattr(run_kinds.subprocess, "run", fake_run)
+    spec = RUN_KINDS["ashare_alpha"]
+    out = spec.resolve()({})
+    assert captured["argv"] == [_sys.executable, "-m", "tools.ashare_alpha_research"]
+    assert captured["kwargs"]["shell"] is False
+    assert captured["kwargs"]["check"] is False
+    adapted = spec.adapter(out)
+    assert adapted["provenance"] == "tools/ashare_alpha_research.py"
+    assert adapted["metrics"]["h1_test_ic"] == 0.0949
+    assert adapted["metrics"]["dry_run_sharpe"] == 1.2285
+    assert adapted["verdict"] == "DIAGNOSTIC"
+    assert spec.provenance_policy.purpose is RunPurpose.DIAGNOSTIC_ONLY
+
+
+def test_ashare_paper_track_kind_constructs_argv_without_shell(tmp_path, monkeypatch):
+    import os
+
+    from services.research_runner import run_kinds
+
+    monkeypatch.chdir(tmp_path)
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = list(argv)
+        snap = tmp_path / "data" / "stocks" / "snapshots" / "paper_track_snapshot.json"
+        os.makedirs(os.path.dirname(str(snap)), exist_ok=True)
+        with open(str(snap), "w", encoding="utf-8") as fh:
+            json.dump({"alpha_id": "ashare_microcap_composite_v3_u249_cap30",
+                       "variant": "cap30",
+                       "summary": {"n_weeks": 74, "paper_cum_return": 0.4491,
+                                   "paper_sharpe_weekly_annualized": 1.0963,
+                                   "paper_ic_mean": 0.1235, "paper_ic_t_stat": 7.5169,
+                                   "bench_total_return": 0.2097, "perf_gap_vs_train": -4.5151},
+                       "weekly": [{"date": 20250103, "weekly_ic": 0.1996}]}, fh)
+
+        class _Done:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return _Done()
+
+    import sys as _sys
+    monkeypatch.setattr(run_kinds.subprocess, "run", fake_run)
+    spec = RUN_KINDS["ashare_paper_track"]
+    out = spec.resolve()({})
+    assert captured["argv"] == [_sys.executable, "-m", "tools.ashare_paper_track"]
+    adapted = spec.adapter(out)
+    assert adapted["provenance"] == "tools/ashare_paper_track.py"
+    assert adapted["metrics"]["n_weeks"] == 74
+    assert adapted["metrics"]["paper_ic_t_stat"] == 7.5169
+
+
+def test_ashare_kind_fails_closed_on_nonzero_exit(tmp_path, monkeypatch):
+    from services.research_runner import run_kinds
+
+    monkeypatch.chdir(tmp_path)
+
+    class _Boom:
+        returncode = 3
+        stdout = ""
+        stderr = "disk full"
+
+    monkeypatch.setattr(run_kinds.subprocess, "run", lambda *a, **k: _Boom())
+    with pytest.raises(RuntimeError, match="exited 3"):
+        RUN_KINDS["ashare_alpha"].resolve()({})
+
+
+def test_ashare_kinds_in_registry_whitelist_and_stay_diagnostic():
+    from services.research.run_registry.contract import ALLOWED_KINDS
+    assert {"ashare_alpha", "ashare_paper_track"} <= ALLOWED_KINDS
+    assert {"ashare_alpha", "ashare_paper_track"} <= set(RUN_KINDS)
+    for kind in ("ashare_alpha", "ashare_paper_track"):
+        assert RUN_KINDS[kind].provenance_policy.purpose is RunPurpose.DIAGNOSTIC_ONLY
+        assert RUN_KINDS[kind].param_schema == {}

@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from '@/lib/router';
 import App from './App';
 import './index.css';
+import { getConsoleRuntimeMode } from '@/lib/api/research-console-api';
 
-const mode = import.meta.env.VITE_MOCK_MODE !== 'false' ? 'MOCK' : 'REAL_API';
-console.log(`[QUANTOS Research Console] Mode: ${mode}`);
+console.log(`[QUANTOS Research Console] Mode: ${getConsoleRuntimeMode()}`);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

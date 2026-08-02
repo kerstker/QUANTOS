@@ -67,12 +67,17 @@ import urllib.parse
 import urllib.request
 from typing import Callable, Optional
 
-from live.contracts import ExchangeFilters, LiveOrderRequest, VenueOrderResult, VenuePosition
+from live.contracts import (ExchangeFilters, LiveOrderRequest, OrderBookSnapshot,
+                            VenueOrderResult, VenuePosition)
+from live.exchange.depth import clamp_depth_limit, extract_as_of_ms, parse_depth_levels
 from live.exchange.retry import call_with_backoff
 from quantos.contracts.config import SafetyConfig, SafetyViolation
 
 _RATE_LIMIT_RETCODE = 10006
 _CANCEL_NOT_EXISTS_RETCODE = 110001    # "order not exists or too late to cancel"
+# Bybit V5 /v5/market/orderbook 的合法 limit 档(linear category;公开文档规格。
+# spot category 另有 25 档,本适配器只做 linear,保守只承接 linear 合法集)。
+_DEPTH_ALLOWED_LIMITS = (1, 50, 200, 1000)
 
 # Bybit V5 orderStatus -> 流水线规范状态(见模块 docstring"状态归一化")
 _STATUS_NORMALIZE = {
@@ -292,6 +297,30 @@ class BybitFuturesAdapter:
                     if as_of_ms > 0:
                         book["as_of_ms"] = as_of_ms
             return book
+        except Exception:
+            return None
+
+    def depth(self, instrument_id: str, *, limit: int = 50) -> Optional[OrderBookSnapshot]:
+        """只读订单簿深度(SHADOW 比较输入,2026-07-27 Phase 7 S1):
+        GET /v5/market/orderbook?category=linear,不签名。limit 钳到 Bybit linear 合法档
+        (1/50/200/1000,向上取档绝不少给;spot 的 25 档不承接,本适配器只做 linear)。
+        fail-soft 与 `book_ticker` 同型——非 2xx/retCode!=0/形状不符/任一侧空簿/任一
+        非有限档一律 None。as_of_ms 取信封 result.ts(快照时刻),缺失则 None
+        (绝不自造)。只读、绝不在下单路径上。"""
+        clamped = clamp_depth_limit(limit, _DEPTH_ALLOWED_LIMITS, default=50)
+        try:
+            status, data = self._get("/v5/market/orderbook",
+                                     {"category": "linear", "symbol": instrument_id + "USDT",
+                                      "limit": clamped},
+                                     signed=False)
+            result = self._unwrap(status, data, action="depth")
+            bids = parse_depth_levels(result.get("b"))
+            asks = parse_depth_levels(result.get("a"))
+            if not bids or not asks:
+                return None
+            return OrderBookSnapshot(instrument_id=instrument_id, bids=bids, asks=asks,
+                                     as_of_ms=extract_as_of_ms(result.get("ts")),
+                                     source="bybit")
         except Exception:
             return None
 

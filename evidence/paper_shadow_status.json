@@ -1,0 +1,191 @@
+{
+  "artifact": "QUANTOS_727_PAPER_SHADOW_STATUS",
+  "blockers": [
+    "crowd_contra_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_q20:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_q20_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_q25_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_q35_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_taker_combo:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+    "crowd_contra_14d:BACKTEST_PROVENANCE_INVALID",
+    "crowd_contra_3d:BACKTEST_PROVENANCE_INVALID",
+    "crowd_contra_q20:BACKTEST_PROVENANCE_INVALID",
+    "crowd_contra_q20_14d:BACKTEST_PROVENANCE_INVALID",
+    "crowd_contra_q25_3d:BACKTEST_PROVENANCE_INVALID",
+    "crowd_contra_q35_3d:BACKTEST_PROVENANCE_INVALID",
+    "crowd_taker_combo:BACKTEST_PROVENANCE_INVALID",
+    "PAPER_ORDER_PREVIEW_NOT_READY",
+    "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+    "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
+    "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
+    "crowd_contra:PAPER_EXECUTION_NOT_FILLED"
+  ],
+  "commit": "f23713b017a4fd05a45acf5d3bc8de005081efcb",
+  "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
+  "generated_at_ms": 1785655607835,
+  "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
+  "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
+  "input_hash": "90c74359c7eb93c0fa2fb53207162c0946304b1e86a4ed963c676b15c347c996",
+  "inputs": {
+    "data/cache/paper_health_10k.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "19cfc5b03d2677fcf2b07fc7a2627839b3e06cc1ce2f84f6fba8a0f335bb9154",
+      "size_bytes": 8808
+    },
+    "docs/QUANTOS_727.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "76c591363e70d06268a476976acf175ba8c7f7d6bb66d3924f361cfd2c8a2706",
+      "size_bytes": 43031
+    },
+    "docs/engineering/specs/2026-07-27-shadow-phase7-design.md": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "f9ac960a7a11a56863778a23f6724d6dd72e948752281e2f9402e5114ffd1750",
+      "size_bytes": 22476
+    },
+    "evidence/alpha_paper_cycle.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "21bd92cee61929ebb6001b67929da89e01fd017c5775065b211d29cbf50050cf",
+      "size_bytes": 8098
+    },
+    "evidence/shadow_status.json": {
+      "exists": true,
+      "kind": "file",
+      "sha256": "e1cc9b70f0e000542f69f03c2c219482376f26073d582cacc8a0018985c8d64d",
+      "size_bytes": 1252
+    },
+    "tests/live": {
+      "exists": true,
+      "file_count": 61,
+      "files_sha256": "0a4949c963ab8788fbfa712f741d87998aad523be26822535ef3a1ee49ff43a7",
+      "kind": "python_directory"
+    },
+    "tests/research": {
+      "exists": true,
+      "file_count": 145,
+      "files_sha256": "d873141207450925ef5602331bec2140158a68fdd425805e6e3046873609cc24",
+      "kind": "python_directory"
+    }
+  },
+  "paper": {
+    "blockers": [
+      "crowd_contra_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_q20:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_q20_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_q25_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_q35_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_taker_combo:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
+      "crowd_contra_14d:BACKTEST_PROVENANCE_INVALID",
+      "crowd_contra_3d:BACKTEST_PROVENANCE_INVALID",
+      "crowd_contra_q20:BACKTEST_PROVENANCE_INVALID",
+      "crowd_contra_q20_14d:BACKTEST_PROVENANCE_INVALID",
+      "crowd_contra_q25_3d:BACKTEST_PROVENANCE_INVALID",
+      "crowd_contra_q35_3d:BACKTEST_PROVENANCE_INVALID",
+      "crowd_taker_combo:BACKTEST_PROVENANCE_INVALID",
+      "PAPER_ORDER_PREVIEW_NOT_READY",
+      "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+      "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
+      "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
+      "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
+      "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
+      "top_contra:PAPER_EXECUTION_NOT_FILLED",
+      "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
+    ],
+    "forward_evidence": {
+      "alerts": [],
+      "alphas": {
+        "carry_oi_majors": {
+          "attested_pending_decisions": 1,
+          "evidence_state": "ATTESTED",
+          "last_decision_ts": 1785196800000,
+          "n_forward_periods": 1,
+          "next_realization_eligible_at": 1785758400000,
+          "paper_sharpe": null,
+          "pending_decisions": null,
+          "periods_to_gate": 7
+        },
+        "crowd_contra": {
+          "attested_pending_decisions": 1,
+          "evidence_state": "ATTESTED",
+          "last_decision_ts": 1785196800000,
+          "n_forward_periods": 1,
+          "next_realization_eligible_at": 1785758400000,
+          "paper_sharpe": null,
+          "pending_decisions": null,
+          "periods_to_gate": 7
+        },
+        "top_contra": {
+          "attested_pending_decisions": 1,
+          "evidence_state": "ATTESTED",
+          "last_decision_ts": 1785196800000,
+          "n_forward_periods": 1,
+          "next_realization_eligible_at": 1785758400000,
+          "paper_sharpe": null,
+          "pending_decisions": null,
+          "periods_to_gate": 7
+        }
+      },
+      "complete_for_all_three": false,
+      "data_quality_admission": {
+        "lineage_verdict": "PASS",
+        "quality_verdict": "PASS",
+        "verdict": "PASS"
+      },
+      "evidence_gate_periods": 8,
+      "evidence_maturing": true,
+      "maturity_state": "FORWARD_EVIDENCE_MATURING",
+      "max_periods_to_gate": 7,
+      "next_realization_eligible_at": 1785758400000,
+      "present": true,
+      "quality_evidence_current": true,
+      "ran_at": 1785589203177,
+      "wait_ms": 142826691
+    },
+    "paper_mark_ready": true,
+    "paper_preview_ready": false,
+    "paper_ready": false,
+    "status": "NOT_READY"
+  },
+  "readiness": "L2_DRY_RUN_ONLY",
+  "safety_flags": {
+    "ALLOW_AI_DIRECT_TRADING": false,
+    "ALLOW_ORDER_SUBMISSION": false,
+    "LIVE_TRADING_ENABLED": false,
+    "REAL_BROKER_ENABLED": false,
+    "REQUIRE_HUMAN_APPROVAL": true
+  },
+  "safety_verdict": "PASS",
+  "schema_version": 1,
+  "shadow": {
+    "chain_valid": true,
+    "observation_count": 14,
+    "outbox_chain_valid": true,
+    "safety": {
+      "credentials_accessed": false,
+      "order_path_touched": false,
+      "public_market_data_only": true
+    },
+    "shadow_ready": true,
+    "status": "READY_FOR_SHADOW"
+  },
+  "status": "READY_FOR_SHADOW",
+  "validation": {
+    "current": true,
+    "head_commit": "f23713b017a4fd05a45acf5d3bc8de005081efcb",
+    "overall_status": "PASS",
+    "reported_commit": "f23713b017a4fd05a45acf5d3bc8de005081efcb",
+    "reported_validate_script_sha256": "6cdf0f24e52d79a3bc7aa5e7ed116913047be022923f591c527bab0215de9865",
+    "selection_scope": "ALL",
+    "validate_script_sha256": "6cdf0f24e52d79a3bc7aa5e7ed116913047be022923f591c527bab0215de9865"
+  },
+  "working_tree_dirty": true
+}

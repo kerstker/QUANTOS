@@ -38,3 +38,12 @@ class VenueAdapter(Protocol):
     # 返回 None(合法),调用方(live/execution/pricing.py::resolve_anchor)据此回退决策价锚。
     # 绝不因盘口拿不到而抛异常打断整批。
     def book_ticker(self, instrument_id: str) -> Optional[dict]: ...
+
+    # 可选能力,刻意不进 Protocol(2026-07-23 premium_index/funding_rates 定例,
+    # 2026-07-27 Phase 7 S1 depth 沿用):本 Protocol 是「一个完整 venue 必须有什么」的
+    # 最小集合(契约测试 tests/live/test_venue_base.py 钉死);只读诊断/行情能力按 venue
+    # 各自提供,调用方以 hasattr(venue, "depth") 探测、缺了干净跳过(既有先例:
+    # tools/live_track_advance.py 对 premium_index 的同款 hasattr 惯例,无该方法的
+    # 场地 fail-open 跳过并诚实告警)。把可选方法塞进 Protocol 会让「缺它的 venue 不算
+    # 完整实现」——那是错误语义。当前可选能力:premium_index(仅 Binance)、
+    # funding_rates(仅 Binance)、depth(Binance/Bybit/MEXC 三家,SHADOW 用)。

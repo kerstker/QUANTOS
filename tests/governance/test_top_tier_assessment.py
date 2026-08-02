@@ -143,6 +143,52 @@ def test_manual_and_external_requirements_never_auto_pass(tmp_path):
     assert report["summary"]["passed"] == 0
 
 
+def test_external_requirement_can_report_opt_in_local_readiness_but_never_pass(tmp_path):
+    (tmp_path / "simulated_sor.py").write_text("SIMULATION_ONLY = True\n", encoding="utf-8")
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "EXECUTION.MULTIVENUE.SOR",
+                classification="POST_L2",
+                target_maturity="M4",
+                checker="paths_exist",
+                checker_args={
+                    "paths": ["simulated_sor.py"],
+                    "pass_maturity": "M2",
+                },
+                assess_local_readiness=True,
+            )
+        ],
+    )
+
+    report = assess_repository(tmp_path, path)
+    requirement = report["requirements"][0]
+
+    assert requirement["status"] == "PARTIAL"
+    assert requirement["current_maturity"] == "M2"
+    assert requirement["meets_target"] is False
+    assert requirement["evidence"] == ["simulated_sor.py"]
+    assert "external target evidence remains required" in requirement["detail"]
+    assert report["summary"]["passed"] == 0
+
+
+def test_local_readiness_opt_in_is_rejected_for_l2_safe_requirement(tmp_path):
+    path = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "EXECUTION.LOCAL",
+                classification="L2_SAFE_NOW",
+                assess_local_readiness=True,
+            )
+        ],
+    )
+
+    with pytest.raises(RegistryError, match="only valid for external or post-L2"):
+        load_requirements(path)
+
+
 def test_all_tier_a_targets_can_reach_top_tier_research(tmp_path):
     (tmp_path / "proof.txt").write_text("real evidence", encoding="utf-8")
     path = _write_registry(
@@ -773,6 +819,18 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "artifact_receipt_signing_payload verify_signed_artifact_receipt "
             "RECEIPT_SIGNATURE_INVALID\n"
         ),
+        "services/governance/external_sigstore_evidence.py": (
+            "def verify_external_sigstore_evidence(): pass\n"
+        ),
+        "services/governance/artifact_admission_external_seal.py": (
+            "def verify_artifact_admission_external_seal(): pass\n"
+        ),
+        "services/governance/json_integrity.py": (
+            "def load_json_without_duplicate_keys(): pass\n"
+        ),
+        "services/governance/cross_host_container_reproducibility.py": (
+            "def verify_signed_cross_host_container_evidence(): pass\n"
+        ),
         "tools/verify_artifact_admission.py": (
             "TrustedRoot.from_file Verifier(trusted_root= Identity( "
             "verify_dsse POLICY_REGISTRY_PATH _policy_registry_decision "
@@ -788,10 +846,33 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "_registry_mirror_reason "
             "denied_admission_decision\n"
         ),
+        "tools/provision_artifact_admission_authority.py": (
+            "ArtifactAdmissionStore create=not destination.exists() "
+            "append_registry_snapshot _verify_exact check_only "
+            "POLICY_REGISTRY_KIND RECEIPT_AUTHORITY_REGISTRY_KIND "
+            '"signing_capability_present": False '
+            '"live_trading_authority_granted": False\n'
+        ),
+        "tools/artifact_admission_seal.py": (
+            "ArtifactAdmissionStore create=False "
+            "verify_artifact_admission_seal create_once\n"
+        ),
         "tests/governance/test_artifact_admission.py": "def test_core(): pass\n",
         "tests/governance/test_artifact_admission_cli.py": "def test_cli(): pass\n",
         "tests/governance/test_artifact_admission_store.py": ("def test_store(): pass\n"),
         "tests/governance/test_artifact_receipt_auth.py": ("def test_receipt_auth(): pass\n"),
+        "tests/governance/test_artifact_admission_provisioning.py": (
+            "def test_provisioning(): pass\n"
+        ),
+        "tests/governance/test_external_sigstore_evidence.py": (
+            "def test_external_sigstore(): pass\n"
+        ),
+        "tests/governance/test_artifact_admission_external_seal.py": (
+            "def test_external_chain_head(): pass\n"
+        ),
+        "tests/tools/test_artifact_admission_seal.py": (
+            "def test_artifact_admission_seal(): pass\n"
+        ),
     }
     for relative, content in admission_sources.items():
         path = tmp_path / relative
@@ -1023,6 +1104,9 @@ def _write_valid_supply_chain_evidence(tmp_path):
         "container_reproducible_archive_sha256": reproducibility["builds"][0]["archive_sha256"],
         "container_reproducible_manifest_digest": reproducibility["image"]["manifest_digest"],
         "container_reproducibility_buildkit_version": "v0.26.2",
+        "cross_host_container_reproducibility_status": "NOT_PROVIDED",
+        "cross_host_container_reproducibility_evidence_ref": None,
+        "cross_host_container_reproducibility_evidence": None,
         "artifact_signature_status": "VERIFIER_READY_EXTERNAL_SIGNATURE_MISSING",
         "artifact_admission_verifier_status": (
             "OFFLINE_SIGSTORE_REKOR_V1_POLICY_V3_DECISION_V4_SIGNED_RECEIPT_GATED_CODE_VERIFIED_NO_VALID_BUNDLE"
@@ -1089,7 +1173,13 @@ def _write_valid_supply_chain_evidence(tmp_path):
                 "services/governance/artifact_admission.py",
                 "services/governance/artifact_admission_store.py",
                 "services/governance/artifact_receipt_auth.py",
+                "services/governance/external_sigstore_evidence.py",
+                "services/governance/artifact_admission_external_seal.py",
+                "services/governance/json_integrity.py",
+                "services/governance/cross_host_container_reproducibility.py",
                 "tools/verify_artifact_admission.py",
+                "tools/provision_artifact_admission_authority.py",
+                "tools/artifact_admission_seal.py",
             )
         },
         "artifact_admission_verification_paths": [
@@ -1097,6 +1187,10 @@ def _write_valid_supply_chain_evidence(tmp_path):
             "tests/governance/test_artifact_admission_cli.py",
             "tests/governance/test_artifact_admission_store.py",
             "tests/governance/test_artifact_receipt_auth.py",
+            "tests/governance/test_artifact_admission_provisioning.py",
+            "tests/governance/test_external_sigstore_evidence.py",
+            "tests/governance/test_artifact_admission_external_seal.py",
+            "tests/tools/test_artifact_admission_seal.py",
         ],
         "m4_blockers": [
             "CROSS_HOST_CONTAINER_REPRODUCIBILITY_NOT_PROVEN",
@@ -1139,6 +1233,55 @@ def test_supply_chain_checker_verifies_baseline_but_keeps_m4_red_line_open(tmp_p
     result = assess_repository(tmp_path, registry)["requirements"][0]
     assert result["status"] == "FAILED"
     assert "manifest_digest" in result["detail"]
+
+
+def test_supply_chain_checker_accepts_honest_nonportable_external_anchor_as_partial(
+    tmp_path,
+):
+    evidence = _write_valid_supply_chain_evidence(tmp_path)
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document.update(
+        {
+            "artifact_admission_decision_history_external_seal_status": (
+                "DECLARED_EXTERNAL_ANCHOR_NOT_PORTABLY_VERIFIED"
+            ),
+            "artifact_admission_decision_history_external_seal_evidence_ref": (
+                "evidence/artifact_admission_seal_latest.json"
+            ),
+            "artifact_admission_decision_history_external_seal_evidence_sha256": (
+                "a" * 64
+            ),
+            "artifact_admission_decision_history_external_anchor_sha256": (
+                "b" * 64
+            ),
+            "artifact_admission_decision_history_external_destination_class": (
+                "SEPARATE_VOLUME"
+            ),
+            "artifact_admission_decision_history_external_signature_verified": False,
+            "artifact_admission_decision_history_external_worm_verified": False,
+        }
+    )
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "PLATFORM.SUPPLY_CHAIN",
+                domain="platform_engineering",
+                tier="B",
+                target_maturity="M4",
+                red_line=True,
+                checker="supply_chain_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M3"},
+            )
+        ],
+    )
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert result["current_maturity"] == "M3"
+    assert "does not meet target maturity" in result["detail"]
 
 
 def test_supply_chain_checker_rejects_tampered_npm_audit_evidence(tmp_path):
@@ -1751,6 +1894,29 @@ def test_model_risk_checker_accepts_retained_bundle_without_local_source_db(tmp_
     assert "versioned PIT evaluation subset" in result["detail"]
 
 
+def test_model_risk_checker_accepts_retained_bundle_after_source_db_advances(tmp_path):
+    evidence = _write_valid_model_risk_evidence(tmp_path, with_bundle=True)
+    registry = _write_registry(
+        tmp_path,
+        [
+            _requirement(
+                "VALIDATION.CHALLENGER.MODEL_RISK",
+                domain="validation_model_risk",
+                target_maturity="M3",
+                checker="model_risk_baseline_evidence",
+                checker_args={"path": evidence.name, "pass_maturity": "M2"},
+            )
+        ],
+    )
+    source = tmp_path / "data/cache/fx.db"
+    source.write_bytes(source.read_bytes() + b"new-source-revision")
+
+    result = assess_repository(tmp_path, registry)["requirements"][0]
+
+    assert result["status"] == "PARTIAL", result["detail"]
+    assert "versioned PIT evaluation subset" in result["detail"]
+
+
 def test_model_risk_checker_accepts_all_retained_release_lineage(tmp_path):
     evidence_path = _write_valid_model_risk_evidence(
         tmp_path,
@@ -1927,11 +2093,22 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
     sources = {
         "quantos/contracts/identity.py": "identity contract\n",
         "services/governance/strong_identity.py": (
-            "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values\n"
+            "jwt.decode x5t#S256 client_cert_chain_verified required_amr_values "
+            "QUANTOS_OIDC_KEY_REGISTRY_SHA256 QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION "
+            "select_oidc_verification_key\n"
+        ),
+        "services/governance/oidc_key_registry.py": (
+            "OIDC_KEY_REACTIVATION_FORBIDDEN OIDC_KEY_REGISTRY_ROLLBACK "
+            "OIDC_KEY_REVOKED load_pem_public_key\n"
+        ),
+        "services/governance/identity_access_review.py": (
+            "ACCESS_REVIEW_SELF_REVIEW_FORBIDDEN MAX_ACCESS_REVIEW_VALIDITY_MS "
+            "reviewer_certificate_sha256 stable_hash\n"
         ),
         "services/governance/identity_authorization.py": (
             "evaluate_authorization tokens_valid_after_ms "
-            "access_review_expires_at_ms WORKLOAD_HUMAN_ACTION_FORBIDDEN "
+            "access_review_expires_at_ms access_review_content_sha256 "
+            "WORKLOAD_HUMAN_ACTION_FORBIDDEN "
             "TOKEN_ROLE_REQUIRED\n"
         ),
         "services/governance/identity_authorization_store.py": (
@@ -1954,6 +2131,8 @@ def _write_valid_strong_identity_evidence(tmp_path: Path) -> Path:
         "apps/research-console/src/pages/PromotionQueue.tsx": "OIDC mTLS\n",
         "scripts/generate_strong_identity_evidence.py": "generator\n",
         "tests/governance/test_strong_identity.py": "tests\n",
+        "tests/governance/test_oidc_key_registry.py": "tests\n",
+        "tests/governance/test_identity_access_review.py": "tests\n",
         "tests/governance/test_identity_authorization.py": "tests\n",
         "tests/governance/test_identity_authorization_store.py": "tests\n",
         "tests/governance/test_promotion_api_boundary.py": "tests\n",

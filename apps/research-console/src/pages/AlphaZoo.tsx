@@ -4,7 +4,7 @@ import { bi } from '@/lib/i18n/bilingual';
 import type { AlphaZooPayload, AlphaZooRow, ZooDimension } from '@/lib/types/research';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import {
-  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, StatusChip, Chip,
+  PageShell, PageHeader, ProvenanceRibbon, Panel, KpiStrip, StatTile, StatusChip, Chip, LoadingVeil, PillToggle,
 } from '@/ui/primitives';
 import { Donut } from '@/ui/charts';
 import { statusTone } from '@/ui/format';
@@ -188,6 +188,7 @@ export default function AlphaZoo() {
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState} source={data.source} error={error}
         realData={usingBackend && data.data_provenance === 'EXPERIMENT_REGISTRY'} />
 
+      <LoadingVeil active={apiState === 'loading'}>
       <KpiStrip cols={4}>
         <StatTile label={bi('资产总数', 'Total')} value={String(allRows.length)} />
         <StatTile label={bi('可晋级(DSR≥0.6)', 'Promotable')} value={String(promotable)} tone="pos" />
@@ -211,16 +212,22 @@ export default function AlphaZoo() {
       <Panel eyebrow={bi('多维散点', 'Multi-dim scatter')} title={bi('因子分布(任选两维)', 'Factor map (pick any two dims)')}
         right={
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-faint">X</span>
-            <select value={xDim} onChange={e => setXDim(e.target.value)}
-              className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
-              {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
-            </select>
-            <span className="text-faint">Y</span>
-            <select value={yDim} onChange={e => setYDim(e.target.value)}
-              className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
-              {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
-            </select>
+            <label className="flex items-center gap-1.5">
+              <span className="text-faint">X</span>
+              <select value={xDim} onChange={e => setXDim(e.target.value)}
+                aria-label={bi('X 轴维度', 'X-axis dimension')}
+                className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
+                {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5">
+              <span className="text-faint">Y</span>
+              <select value={yDim} onChange={e => setYDim(e.target.value)}
+                aria-label={bi('Y 轴维度', 'Y-axis dimension')}
+                className="rounded-md border border-line bg-inset/40 px-2 py-1 text-xs text-ink">
+                {dims.map(d => <option key={d.key} value={d.key}>{d.zh}</option>)}
+              </select>
+            </label>
           </div>
         }>
         <DimScatter rows={rows} dimByKey={dimByKey} x={xDim} y={yDim} openId={openId} onPick={setOpenId} />
@@ -237,15 +244,17 @@ export default function AlphaZoo() {
         right={<Chip label={bi(`按 ${dimByKey[sortKey]?.zh ?? sortKey} 排序`, `sorted by ${dimByKey[sortKey]?.en ?? sortKey}`)} tone="info" />}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {GENERATORS.map(g => (
-            <button key={g} onClick={() => setGen(g)}
-              className={`rounded-md border px-2.5 py-1 text-xs transition ${gen === g ? 'border-accent bg-accent/10 text-accent' : 'border-line text-muted hover:text-ink'}`}>{g}</button>
+            <PillToggle key={g} label={g} active={gen === g} onClick={() => setGen(g)} />
           ))}
           <span className="mx-0.5 h-4 w-px self-center bg-line" />
           {SCREENS.map(s => (
-            <button key={s.key}
-              onClick={() => setScreens(prev => { const n = new Set(prev); n.has(s.key) ? n.delete(s.key) : n.add(s.key); return n; })}
-              className={`rounded-md border px-2.5 py-1 text-xs transition ${screens.has(s.key) ? 'border-pos bg-pos/10 text-pos' : 'border-line text-muted hover:text-ink'}`}>
-              {bi(s.zh, s.en)}</button>
+            <PillToggle key={s.key} label={bi(s.zh, s.en)} tone="pos" active={screens.has(s.key)}
+              onClick={() => setScreens(prev => {
+                const n = new Set(prev);
+                if (n.has(s.key)) n.delete(s.key);
+                else n.add(s.key);
+                return n;
+              })} />
           ))}
         </div>
 
@@ -346,6 +355,7 @@ export default function AlphaZoo() {
           </table>
         </div>
       </Panel>
+      </LoadingVeil>
     </PageShell>
   );
 }

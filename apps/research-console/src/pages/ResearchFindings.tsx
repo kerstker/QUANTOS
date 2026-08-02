@@ -1,9 +1,8 @@
-import React from 'react';
 import { bi } from '@/lib/i18n/bilingual';
-import { PageShell, PageHeader, ProvenanceRibbon, Panel, Chip } from '@/ui/primitives';
+import { PageShell, PageHeader, ProvenanceRibbon, Panel, Chip, LoadingVeil } from '@/ui/primitives';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchResearchFindings, fetchLance1mValidation } from '@/lib/api/research-console-api';
-import type { ResearchFindingsPayload, Lance1mValidationPayload, Lance1mFeeResult } from '@/lib/types/research';
+import type { ResearchFindingsPayload, ResearchFindingsMetric, Lance1mValidationPayload, Lance1mFeeResult, Lance1mRollingStress } from '@/lib/types/research';
 
 /**
  * Research Findings — 现实主义/宏观/组合三件研究成果只读聚合:
@@ -79,6 +78,7 @@ function LanceValidationSection() {
           realData={usingBackend && p.data_provenance === 'REAL_LANCE_1M_VALIDATION'}
           source={usingBackend ? (p.snapshot_present ? 'REAL_LANCE_1M_VALIDATION' : 'NO_VALIDATION_SNAPSHOT') : 'FRONTEND_LANCE_1M_MOCK'}
           error={error} />
+        <LoadingVeil active={apiState === 'loading'}>
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
           {bi('用户提供的第三方策略文档(' + p.doc + ')自称夏普 5.01/总收益 +17.9%。用 53.7 万根真实 1 分钟 '
             + 'BTC K 线(2025-07 至 2026-07,零缺口零重复,无前视)独立复核:在文档自称窗口 + 文档自己最乐观的 '
@@ -126,7 +126,8 @@ function LanceValidationSection() {
         ) : <div className="text-2xs text-faint">{bi('无验证快照', 'no validation snapshot')}</div>}
 
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {[['1bps', p.rolling_window_stress_1bps], ['5bps', p.rolling_window_stress_5bps]].map(([label, s]: any) => (
+          {([['1bps', p.rolling_window_stress_1bps], ['5bps', p.rolling_window_stress_5bps]] as
+            [string, Lance1mRollingStress][]).map(([label, s]) => (
             <div key={label} className="rounded border border-line px-3 py-2.5">
               <div className="text-xs font-medium text-ink">{label} · {s.n_windows ?? '—'} windows</div>
               <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-2xs">
@@ -164,7 +165,7 @@ function LanceValidationSection() {
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {([['conservative_ohlc_ambiguity', bi('保守裁决(默认)', 'conservative (default)')],
             ['doc_literal_no_override', bi('文档字面顺序', 'doc-literal order')]] as const).map(([key, label]) => {
-            const r = (ohlc as any)[key] as Lance1mFeeResult | undefined;
+            const r: Lance1mFeeResult | undefined = ohlc[key];
             return (
               <div key={key} className="rounded border border-line px-3 py-2">
                 <div className="text-2xs font-medium text-ink">{label}</div>
@@ -180,6 +181,7 @@ function LanceValidationSection() {
         </div>
 
         <div className="text-2xs text-faint">{p.honesty_note}</div>
+        </LoadingVeil>
       </div>
     </details>
   );
@@ -211,13 +213,20 @@ export default function ResearchFindings() {
   const capBooks = Object.entries(p.capacity.books ?? {});
   const comboStd = p.combo.standalone ?? {};
   const comboC = p.combo.combo ?? {};
+  const comboRows: Array<[string, ResearchFindingsMetric | undefined]> = [
+    ['carry', comboStd.carry],
+    ['crowd_contra', comboStd.crowd_contra],
+    ['combo 50/50', comboC.equal_weight],
+    ['combo 逆波动', comboC.inverse_vol],
+  ];
   const macroBooks = Object.entries(p.macro_regime.books ?? {});
 
   return (
     <PageShell>
       <PageHeader title="Research Findings" titleZh="研究成果"
         subtitle={bi('容量带 · 宏观 regime 条件化 · 组合分散 — 现实主义/数据方向成果只读聚合,诊断非门禁',
-          'Capacity · macro-regime conditioning · diversification — read-only research aggregate, diagnostic not a gate')} />
+          'Capacity · macro-regime conditioning · diversification — read-only research aggregate, diagnostic not a gate')}
+        actions={<Chip label={bi('↓ 另含外部策略审计(Lance 1m)', '↓ also includes external audit (Lance 1m)')} tone="muted" />} />
       <ProvenanceRibbon usingBackend={usingBackend} apiState={apiState}
         realData={usingBackend && p.data_provenance === 'REAL_RESEARCH_FINDINGS'}
         source={usingBackend ? (p.snapshot_present ? 'REAL_RESEARCH_FINDINGS' : 'NO_FINDINGS_SNAPSHOT') : 'FRONTEND_FINDINGS_MOCK'}
@@ -225,6 +234,7 @@ export default function ResearchFindings() {
 
       <div className="rounded-md border border-line bg-inset/40 px-3 py-2 text-2xs text-muted">{p.honesty_note}</div>
 
+      <LoadingVeil active={apiState === 'loading'}>
       {/* 容量带 */}
       <Panel eyebrow={bi('容量带 · RE-1', 'CAPACITY BAND · RE-1')}
         title={bi('参与率绑定的诚实容量区间(参与率 5–20% × 执行铺开 1–5 天)', 'Participation-bound honest capacity range')}>
@@ -256,8 +266,7 @@ export default function ResearchFindings() {
               <th className="text-right">{bi('最大回撤', 'max DD')}</th><th className="text-right">{bi('总收益', 'total ret')}</th>
             </tr></thead>
             <tbody className="mono">
-              {[['carry', comboStd.carry], ['crowd_contra', comboStd.crowd_contra],
-                ['combo 50/50', comboC.equal_weight], ['combo 逆波动', comboC.inverse_vol]].map(([lbl, m]: any) => m ? (
+              {comboRows.map(([lbl, m]) => m ? (
                 <tr key={lbl} className="border-t border-line/50">
                   <td className="py-1 text-ink">{lbl}</td>
                   <td className={`text-right ${shTone(m.ann_sharpe)}`}>{m.ann_sharpe.toFixed(2)}</td>
@@ -296,6 +305,8 @@ export default function ResearchFindings() {
         ) : <div className="text-2xs text-faint">{bi('无宏观快照', 'no macro snapshot')}</div>}
         {p.macro_regime.note && <div className="mt-2 text-2xs text-faint">{p.macro_regime.note}</div>}
       </Panel>
+
+      </LoadingVeil>
 
       <LanceValidationSection />
 

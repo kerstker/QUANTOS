@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Any
 from uuid import uuid4
+import math
 import time, hashlib, json
 
 
@@ -29,7 +30,19 @@ class RiskConfig:
     min_capacity: float = 10_000_000; max_capacity_usage: float = 0.80
     max_worst_regime_loss: float = 0.25; max_stress_loss: float = 0.35
     min_validation_confidence: float = 0.3; min_paper_confidence: float = 0.3
+    # Annualisation basis for return-series engines.  The historical default
+    # remains daily (252), while weekly dry-runs pass 52 explicitly.  Keeping
+    # cadence in the immutable config prevents a weekly series from silently
+    # inheriting a daily volatility multiplier.
+    periods_per_year: float = 252.0
     seed: int = 42
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.periods_per_year, bool)
+                or not isinstance(self.periods_per_year, (int, float))
+                or not math.isfinite(float(self.periods_per_year))
+                or self.periods_per_year <= 0):
+            raise ValueError("periods_per_year must be a positive finite number")
 
     def compute_hash(self) -> str:
         return hashlib.sha256(json.dumps(self.__dict__, sort_keys=True).encode()).hexdigest()[:16]
@@ -98,6 +111,7 @@ class ModelAlphaRiskReport:
     passed: bool = True; avg_alpha_age_days: float = 0.0
     alphas_with_decay: int = 0; alphas_with_overfitting_flags: int = 0
     alphas_with_leakage_flags: int = 0; min_validation_confidence: float = 0.0
+    min_paper_confidence: float = 0.0
 
 @dataclass
 class ResearchRiskDecision:

@@ -1,0 +1,64 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+notes: 这一页主动拆除投资人对"AI 交易"的最大疑虑。核心句放在页面中央：AI 不绕过风控直接控制资金——这在代码里是结构性约束，不是制度承诺。
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [90, 40, 300, 16]
+    content: {style: "$kicker", wrap: false, text: "06 · AI 的角色"}
+  - elementId: title
+    elementType: text
+    bounds: [90, 62, 780, 36]
+    content: {style: "$h1", wrap: false, text: "AI 加速研究，但不碰资金"}
+  - elementId: do-title
+    elementType: text
+    bounds: [90, 122, 380, 24]
+    content: {style: "$h2", fontSize: 14, wrap: false, text: "AI 做什么"}
+  - elementId: do-list
+    elementType: text
+    bounds: [90, 152, 380, 190]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.8
+      text: |
+        <p><span style="color:$accent">■</span> 辅助生成研究假设</p>
+        <p><span style="color:$accent">■</span> 执行实验、调用研究工具</p>
+        <p><span style="color:$accent">■</span> 总结结果、沉淀失败知识库</p>
+        <p><span style="color:$accent">■</span> 多模型交叉审查代码与结论</p>
+        <p><span style="color:$accent">■</span> 提高研究迭代效率</p>
+  - elementId: dont-title
+    elementType: text
+    bounds: [510, 122, 380, 24]
+    content: {style: "$h2", fontSize: 14, color: "$warn", wrap: false, text: "AI 不做什么"}
+  - elementId: dont-list
+    elementType: text
+    bounds: [510, 152, 380, 190]
+    content:
+      style: "$body"
+      fontSize: 12
+      lineHeight: 1.8
+      color: "$muted"
+      text: |
+        <p><span style="color:$warn">×</span> 不预测涨跌后直接下单</p>
+        <p><span style="color:$warn">×</span> 不绕过任何一道风控门</p>
+        <p><span style="color:$warn">×</span> 不接触账户凭证</p>
+        <p><span style="color:$warn">×</span> 不能自主批准策略上线</p>
+        <p><span style="color:$warn">×</span> 不能重置 Kill Switch</p>
+  - elementId: core-claim
+    elementType: text
+    bounds: [90, 372, 780, 70]
+    content:
+      fontSize: 19
+      bold: true
+      color: "$ink"
+      align: [center, middle]
+      text: |
+        <p>“AI 不绕过风控直接控制资金。”</p>
+        <p style="margin-top:8px"><span style="font-size:11px;color:$muted;font-weight:normal">确定性风控拥有最终决策权 —— 这是代码层的结构性约束，由治理测试机器执行，不是制度承诺</span></p>
+  - elementId: footer
+    elementType: text
+    bounds: [90, 505, 780, 16]
+    content: {style: "$small", wrap: false, text: "QuantOS · Confidential · 08"}

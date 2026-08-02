@@ -34,7 +34,7 @@ class _Bus:
         self.closed = True
 
 
-def test_default_sources_cover_all_seven_transactional_outboxes():
+def test_default_sources_cover_all_eight_transactional_outboxes():
     sources = default_outbox_sources()
 
     assert [source.name for source in sources] == [
@@ -45,8 +45,9 @@ def test_default_sources_cover_all_seven_transactional_outboxes():
         "deployment",
         "data_refresh",
         "data_quality_admission",
+        "shadow",
     ]
-    assert len({source.path for source in sources}) == 7
+    assert len({source.path for source in sources}) == 8
 
 
 def test_drain_attempts_all_sources_then_projects_once(tmp_path):

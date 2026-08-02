@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 import services.research.alpha_expression as ax
 import services.research.alpha_factory as alpha_factory
 from quantos.contracts.alpha import AlphaDefinition
+from quantos.contracts.hashing import short_hash, stable_hash
 from services.intelligence import research_session as intelligence_session
 from services.research.experiment_registry import store as experiment_store
 from services.research.experiment_registry.registry import ExperimentRegistry
@@ -338,6 +340,84 @@ def test_trial_count_persists_across_sessions(tmp_path) -> None:
     registry2._store.close()
 
 
+def test_search_identity_is_stable_across_sessions_and_binds_evaluations(tmp_path) -> None:
+    """A durable search has one canonical identity independent of process state."""
+    db_path = str(tmp_path / "identity-ledger.db")
+    registry1 = ExperimentRegistry(SqliteExperimentStore(db_path, create=True))
+    registry1.begin_search_attempt(
+        search_id="identity-search",
+        search_kind="ALPHA_FACTORY",
+        source="tests.identity",
+        dataset_version="dataset-v1",
+        recorded_at=100,
+    )
+    registry1.register_search_candidates(
+        "identity-search", ["candidate-a"], registered_at=100
+    )
+    identity1 = registry1.search_identity("identity-search")
+    assert identity1["search_id"] == "identity-search"
+    assert identity1["search_kind"] == "ALPHA_FACTORY"
+    assert identity1["source"] == "tests.identity"
+    assert identity1["dataset_version"] == "dataset-v1"
+    assert len(identity1["identity_hash"]) == 64
+    evaluation = {
+        "alpha_id": "a1",
+        "reproducibility_hash": "repro-identity",
+        "verdict": "PASS",
+    }
+    evaluation_json = json.dumps(evaluation, sort_keys=True, default=str)
+    run_id = short_hash(
+        {
+            "alpha_id": "a1",
+            "repro": "repro-identity",
+            "dataset_version": "dataset-v1",
+        }
+    )
+    registry1._store.insert_evaluation(
+        run_id=run_id,
+        alpha_id="a1",
+        dataset_version="dataset-v1",
+        recorded_ts=100,
+        verdict="PASS",
+        content_hash=stable_hash(
+            {"evaluation": evaluation, "dataset_version": "dataset-v1"}
+        ),
+        evaluation_json=evaluation_json,
+        search_id="identity-search",
+        config_hash="candidate-a",
+    )
+    binding = registry1.evaluation_binding(run_id)
+    assert binding is not None
+    assert binding["search_identity_hash"] == identity1["identity_hash"]
+    registry1._store.close()
+
+    registry2 = ExperimentRegistry(SqliteExperimentStore(db_path, create=False))
+    assert registry2.search_identity("identity-search") == identity1
+    assert registry2.evaluation_binding(run_id) == binding
+    registry2._store.close()
+
+
+def test_search_identity_fails_closed_when_start_metadata_is_tampered() -> None:
+    registry = _registry()
+    registry.begin_search_attempt(
+        search_id="identity-tamper",
+        search_kind="ALPHA_FACTORY",
+        source="tests.identity",
+        dataset_version="dataset-v1",
+        recorded_at=100,
+    )
+    registry._store._conn.execute(
+        "DROP TRIGGER search_attempt_events_no_update"
+    )
+    registry._store._conn.execute(
+        "UPDATE search_attempt_events SET source='tampered' WHERE search_id=?",
+        ("identity-tamper",),
+    )
+    registry._store._conn.commit()
+    with pytest.raises(ExperimentStoreError):
+        registry.search_identity("identity-tamper")
+
+
 def test_failed_terminal_write_does_not_mask_the_scorer_error(monkeypatch) -> None:
     registry = _registry()
 
@@ -389,3 +469,44 @@ def test_official_research_session_requires_registry_or_explicit_ephemeral(
     )
     assert result["ephemeral"] is True
     assert "ephemeral" not in result["kwargs"]
+
+
+def test_official_research_session_persists_actual_oos_access(monkeypatch) -> None:
+    registry = _registry()
+    definition = AlphaDefinition(
+        alpha_id="oos-alpha",
+        name="OOS Alpha",
+        factor_ids=("close",),
+        universe="u",
+        params={"operator": "momentum", "window": "5"},
+    )
+
+    def core(*args, **kwargs):
+        kwargs["trial_recorder"](definition.definition_hash)
+        kwargs["trial_provenance_recorder"](definition)
+        kwargs["oos_access_recorder"](
+            {"WALK_FORWARD_NO_PEEK_SELECTION_OOS": ("index:[20,28)",)}
+        )
+        return {"oos": {"n_folds": 1}}
+
+    monkeypatch.setattr(intelligence_session, "_run_research_session_core", core)
+    monkeypatch.setattr(
+        intelligence_session, "adapt_research_market_data", lambda value: value
+    )
+    result = intelligence_session.run_research_session(
+        store=object(),
+        instruments=("BTC",),
+        event_times=tuple(range(30)),
+        registry=registry,
+        dataset_version="dataset-v1",
+        timestamp=100,
+        search_id="oos-search",
+        search_kind="GUIDED",
+        search_source="tests.oos",
+    )
+
+    assert result["oos"]["n_folds"] == 1
+    trial_id = f"oos-search:{definition.definition_hash}"
+    assert registry.trial_oos_access(trial_id)[0]["boundary"] == "index:[20,28)"
+    assert registry.trial_oos_access_chain_valid() is True
+    assert registry.search_attempt_events("oos-search")[-1]["status"] == "COMPLETED"

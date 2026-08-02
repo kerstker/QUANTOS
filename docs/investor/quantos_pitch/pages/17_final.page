@@ -1,0 +1,40 @@
+pageType: final
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: deco-line
+    elementType: line
+    bounds: [80, 170, 120, 2]
+    viewBox: [120, 2]
+    points: "0,1 120,1"
+    border: {style: solid, width: 3, color: "$accent"}
+  - elementId: hero
+    elementType: text
+    bounds: [80, 196, 800, 120]
+    content:
+      fontSize: 34
+      bold: true
+      color: "$ink"
+      lineHeight: 1.4
+      text: |
+        <p>可复核的数字，</p>
+        <p>可复现的实验，可审计的系统。</p>
+  - elementId: sub
+    elementType: text
+    bounds: [80, 330, 800, 60]
+    content:
+      style: "$body"
+      color: "$muted"
+      lineHeight: 1.7
+      text: |
+        <p>QUANTOS 不接受“相信我”——我们提供证据文件、测试基线与重跑脚本。</p>
+        <p>欢迎技术尽调：本材料每一项主张均可当场打开数据库复核。</p>
+  - elementId: meta
+    elementType: text
+    bounds: [80, 440, 800, 50]
+    content:
+      style: "$small"
+      text: |
+        <p>QUANTOS · 2026-07-25 · L2_DRY_RUN_ONLY</p>
+        <p>完整报告：docs/investor/QUANTOS_投资人全报告_2026-07-25.md</p>

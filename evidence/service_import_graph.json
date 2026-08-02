@@ -1,7 +1,7 @@
 {
   "cyclic_edges": [],
   "cyclic_sccs": [],
-  "edge_count": 36,
+  "edge_count": 44,
   "edges": [
     {
       "references": [
@@ -22,7 +22,38 @@
     {
       "references": [
         {
-          "line": 165,
+          "line": 25,
+          "module": "services.lifecycle",
+          "path": "services/alpha/catalog.py"
+        },
+        {
+          "line": 25,
+          "module": "services.lifecycle",
+          "path": "services/alpha/degradation_monitor.py"
+        },
+        {
+          "line": 36,
+          "module": "services.lifecycle",
+          "path": "services/alpha/lifecycle.py"
+        },
+        {
+          "line": 33,
+          "module": "services.lifecycle",
+          "path": "services/alpha/maintenance.py"
+        },
+        {
+          "line": 17,
+          "module": "services.lifecycle",
+          "path": "services/alpha/retirement.py"
+        }
+      ],
+      "source": "alpha",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
+          "line": 209,
           "module": "services.validation.catalog_evidence",
           "path": "services/alpha/catalog.py"
         },
@@ -57,7 +88,7 @@
           "path": "services/alpha/evaluator.py"
         },
         {
-          "line": 24,
+          "line": 26,
           "module": "services.validation.pbo_evidence",
           "path": "services/alpha/factory.py"
         },
@@ -72,7 +103,7 @@
           "path": "services/alpha/guards.py"
         },
         {
-          "line": 31,
+          "line": 32,
           "module": "services.validation.catalog_evidence",
           "path": "services/alpha/lifecycle.py"
         },
@@ -93,27 +124,69 @@
     {
       "references": [
         {
+          "line": 23,
+          "module": "services.alpha.similarity",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "alpha"
+    },
+    {
+      "references": [
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_compiler.py"
+        },
+        {
+          "line": 24,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/candidate_deduplicator.py"
+        },
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/alpha_factory/constrained_search_space.py"
+        },
+        {
+          "line": 30,
+          "module": "services.research.research_budget",
+          "path": "services/alpha_factory/search_controller.py"
+        },
+        {
+          "line": 36,
+          "module": "services.research.trial_provenance",
+          "path": "services/alpha_factory/search_controller.py"
+        }
+      ],
+      "source": "alpha_factory",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
           "line": 15,
           "module": "services.alpha.factor_set",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 513,
+          "line": 560,
           "module": "services.alpha.alpha_graph",
           "path": "services/console/api/alpha_library_views.py"
         },
         {
-          "line": 122,
+          "line": 157,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/monitoring_views.py"
         },
         {
-          "line": 235,
+          "line": 271,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 307,
+          "line": 343,
           "module": "services.alpha.degradation_monitor",
           "path": "services/console/api/registry_snapshots.py"
         }
@@ -124,7 +197,17 @@
     {
       "references": [
         {
+          "line": 15,
+          "module": "services.data.binance_api_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
           "line": 19,
+          "module": "services.data.binance_stream_coverage",
+          "path": "services/console/api/data_catalog.py"
+        },
+        {
+          "line": 21,
           "module": "services.data.distribution_drift",
           "path": "services/console/api/monitoring_views.py"
         },
@@ -150,9 +233,19 @@
     {
       "references": [
         {
-          "line": 13,
+          "line": 16,
+          "module": "services.execution.paper_tca_history",
+          "path": "services/console/api/artifact_paper_views.py"
+        },
+        {
+          "line": 17,
           "module": "services.execution.dry_run_store",
-          "path": "services/console/api/artifact_snapshots.py"
+          "path": "services/console/api/artifact_paper_views.py"
+        },
+        {
+          "line": 33,
+          "module": "services.execution.dry_run_store",
+          "path": "services/console/api/mexc_views.py"
         }
       ],
       "source": "console",
@@ -161,7 +254,7 @@
     {
       "references": [
         {
-          "line": 315,
+          "line": 335,
           "module": "services.features.leakage",
           "path": "services/console/api/main.py"
         }
@@ -183,22 +276,33 @@
     {
       "references": [
         {
-          "line": 24,
+          "line": 32,
+          "module": "services.lifecycle",
+          "path": "services/console/api/registry_snapshots.py"
+        }
+      ],
+      "source": "console",
+      "target": "lifecycle"
+    },
+    {
+      "references": [
+        {
+          "line": 27,
           "module": "services.monitoring.domain_event_runtime",
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 28,
+          "line": 31,
           "module": "services.monitoring.event_projection",
           "path": "services/console/api/system_views.py"
         },
         {
-          "line": 10,
+          "line": 11,
           "module": "services.monitoring.audit_store",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.monitoring.health",
           "path": "services/console/risk_console.py"
         }
@@ -209,7 +313,7 @@
     {
       "references": [
         {
-          "line": 448,
+          "line": 468,
           "module": "services.portfolio.optimizer",
           "path": "services/console/api/main.py"
         }
@@ -219,6 +323,16 @@
     },
     {
       "references": [
+        {
+          "line": 12,
+          "module": "services.research.alpha_family_catalog",
+          "path": "services/console/api/alpha_family_views.py"
+        },
+        {
+          "line": 13,
+          "module": "services.research.alpha_family_registry",
+          "path": "services/console/api/alpha_family_views.py"
+        },
         {
           "line": 20,
           "module": "services.research.factor_engine.domain.model",
@@ -241,6 +355,26 @@
         },
         {
           "line": 244,
+          "module": "services.research",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 291,
+          "module": "services.research.alpha_expression",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 292,
+          "module": "services.research.dsl_checker",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 293,
+          "module": "services.research.complexity",
+          "path": "services/console/api/alpha_library_views.py"
+        },
+        {
+          "line": 294,
           "module": "services.research",
           "path": "services/console/api/alpha_library_views.py"
         },
@@ -270,12 +404,12 @@
           "path": "services/console/api/primary_views.py"
         },
         {
-          "line": 115,
+          "line": 151,
           "module": "services.research.experiment_registry.store",
           "path": "services/console/api/registry_snapshots.py"
         },
         {
-          "line": 126,
+          "line": 162,
           "module": "services.research.paper_trading.store",
           "path": "services/console/api/registry_snapshots.py"
         },
@@ -301,28 +435,23 @@
     {
       "references": [
         {
-          "line": 639,
+          "line": 659,
           "module": "services.risk.pre_trade.kill_switch_store",
           "path": "services/console/api/main.py"
         },
         {
-          "line": 12,
+          "line": 13,
           "module": "services.risk.pre_trade.checks",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 13,
+          "line": 14,
           "module": "services.risk.pre_trade.kill_switch",
           "path": "services/console/risk_console.py"
         },
         {
-          "line": 14,
-          "module": "services.risk.research_risk.domain.gate",
-          "path": "services/console/risk_console.py"
-        },
-        {
           "line": 15,
-          "module": "services.risk.research_risk.domain.models",
+          "module": "services.risk.research_risk.dry_run_guard",
           "path": "services/console/risk_console.py"
         }
       ],
@@ -332,7 +461,7 @@
     {
       "references": [
         {
-          "line": 81,
+          "line": 93,
           "module": "services.validation.factor_statistics",
           "path": "services/console/api/main.py"
         },
@@ -364,7 +493,7 @@
     {
       "references": [
         {
-          "line": 28,
+          "line": 37,
           "module": "services.monitoring.audit_log",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -375,12 +504,33 @@
     {
       "references": [
         {
-          "line": 30,
+          "line": 41,
+          "module": "services.risk.research_risk.dry_run_guard",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 46,
+          "module": "services.risk.research_risk.domain.models",
+          "path": "services/execution/dry_run_pipeline.py"
+        },
+        {
+          "line": 47,
+          "module": "services.risk.research_risk.events",
+          "path": "services/execution/dry_run_pipeline.py"
+        }
+      ],
+      "source": "execution",
+      "target": "risk"
+    },
+    {
+      "references": [
+        {
+          "line": 39,
           "module": "services.trading.broker_adapter",
           "path": "services/execution/dry_run_pipeline.py"
         },
         {
-          "line": 31,
+          "line": 40,
           "module": "services.trading.dry_run_adapters.domain.models",
           "path": "services/execution/dry_run_pipeline.py"
         }
@@ -391,12 +541,44 @@
     {
       "references": [
         {
-          "line": 20,
+          "line": 37,
+          "module": "services.features.value_store",
+          "path": "services/factor_garden/materializer.py"
+        },
+        {
+          "line": 21,
+          "module": "services.features.registry_store",
+          "path": "services/factor_garden/registry.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 29,
+          "module": "services.research.alpha_expression",
+          "path": "services/factor_garden/definitions.py"
+        },
+        {
+          "line": 38,
+          "module": "services.research.alpha_expression",
+          "path": "services/factor_garden/materializer.py"
+        }
+      ],
+      "source": "factor_garden",
+      "target": "research"
+    },
+    {
+      "references": [
+        {
+          "line": 28,
           "module": "services.data.persistent_store",
           "path": "services/features/registry_store.py"
         },
         {
-          "line": 19,
+          "line": 25,
           "module": "services.data.persistent_store",
           "path": "services/features/value_store.py"
         }
@@ -437,17 +619,17 @@
           "path": "services/intelligence/evolutionary_search.py"
         },
         {
-          "line": 9,
+          "line": 10,
           "module": "services.alpha.catalog",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 10,
+          "line": 11,
           "module": "services.alpha.config",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
-          "line": 11,
+          "line": 12,
           "module": "services.alpha.evaluator",
           "path": "services/intelligence/registered_candidate_batch.py"
         }
@@ -469,7 +651,7 @@
     {
       "references": [
         {
-          "line": 26,
+          "line": 31,
           "module": "services.governance.model_risk_registry",
           "path": "services/intelligence/runtime.py"
         }
@@ -530,8 +712,23 @@
           "path": "services/intelligence/mcts_search.py"
         },
         {
-          "line": 12,
+          "line": 13,
+          "module": "services.research",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 14,
           "module": "services.research.experiment_registry.registry",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 15,
+          "module": "services.research.research_budget",
+          "path": "services/intelligence/registered_candidate_batch.py"
+        },
+        {
+          "line": 20,
+          "module": "services.research.trial_provenance",
           "path": "services/intelligence/registered_candidate_batch.py"
         },
         {
@@ -542,6 +739,11 @@
         {
           "line": 18,
           "module": "services.research.ports.persistence",
+          "path": "services/intelligence/research_session.py"
+        },
+        {
+          "line": 19,
+          "module": "services.research.trial_provenance",
           "path": "services/intelligence/research_session.py"
         }
       ],
@@ -569,6 +771,27 @@
       ],
       "source": "monitoring",
       "target": "data"
+    },
+    {
+      "references": [
+        {
+          "line": 19,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/autonomy_kernel.py"
+        },
+        {
+          "line": 41,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/command_bus.py"
+        },
+        {
+          "line": 31,
+          "module": "services.monitoring.event_bus",
+          "path": "services/orchestration/event_router.py"
+        }
+      ],
+      "source": "orchestration",
+      "target": "monitoring"
     },
     {
       "references": [
@@ -667,12 +890,12 @@
           "path": "services/research/alpha_expression.py"
         },
         {
-          "line": 29,
+          "line": 30,
           "module": "services.alpha.catalog",
           "path": "services/research/alpha_factory.py"
         },
         {
-          "line": 30,
+          "line": 31,
           "module": "services.alpha.factor_set",
           "path": "services/research/alpha_factory.py"
         },
@@ -710,6 +933,11 @@
           "line": 19,
           "module": "services.alpha.evaluation_evidence",
           "path": "services/research/experiment_registry/registry.py"
+        },
+        {
+          "line": 59,
+          "module": "services.alpha.cluster",
+          "path": "services/research/factor_decomp.py"
         },
         {
           "line": 3,
@@ -782,10 +1010,26 @@
           "line": 19,
           "module": "services.features.leakage",
           "path": "services/research/leakage_evidence.py"
+        },
+        {
+          "line": 29,
+          "module": "services.features.binance_realtime_projection",
+          "path": "services/research/realtime_alpha_discovery.py"
         }
       ],
       "source": "research",
       "target": "features"
+    },
+    {
+      "references": [
+        {
+          "line": 23,
+          "module": "services.lifecycle",
+          "path": "services/research/experiment_registry/registry.py"
+        }
+      ],
+      "source": "research",
+      "target": "lifecycle"
     },
     {
       "references": [
@@ -801,7 +1045,7 @@
     {
       "references": [
         {
-          "line": 31,
+          "line": 32,
           "module": "services.validation.performance",
           "path": "services/research/alpha_factory.py"
         },
@@ -821,12 +1065,12 @@
           "path": "services/research/experiment_registry/family_schema_named_verifiers_c8.py"
         },
         {
-          "line": 30,
+          "line": 39,
           "module": "services.validation.pbo_evidence",
           "path": "services/research/experiment_registry/registry.py"
         },
         {
-          "line": 31,
+          "line": 40,
           "module": "services.validation.catalog_evidence",
           "path": "services/research/experiment_registry/registry.py"
         },
@@ -856,7 +1100,7 @@
           "path": "services/research/regime.py"
         },
         {
-          "line": 116,
+          "line": 127,
           "module": "services.validation.cpcv",
           "path": "services/research/session.py"
         },
@@ -943,7 +1187,7 @@
           "path": "services/research_runner/main.py"
         },
         {
-          "line": 17,
+          "line": 19,
           "module": "services.research.run_registry.indexer",
           "path": "services/research_runner/run_kinds.py"
         },
@@ -982,33 +1226,26 @@
       ],
       "source": "risk",
       "target": "governance"
-    },
-    {
-      "references": [
-        {
-          "line": 16,
-          "module": "services.research.realism.scenario",
-          "path": "services/risk/research_risk/domain/risk_modules.py"
-        }
-      ],
-      "source": "risk",
-      "target": "research"
     }
   ],
   "excluded_test_file_count": 4,
-  "graph_sha256": "d7611aa88874da544968fb8fc6dd6ee34a52ab5f00e05e08446b1e2fa05503a5",
+  "graph_sha256": "2723fb707dc78a66d695a678d99c4ddb67a3aabd78121d5d1b2581dd738f23cd",
   "mode": "STATIC_AST_SERVICE_DOMAIN_GRAPH",
-  "node_count": 16,
+  "node_count": 20,
   "nodes": [
     "alpha",
+    "alpha_factory",
     "console",
     "data",
     "deployment",
     "execution",
+    "factor_garden",
     "features",
     "governance",
     "intelligence",
+    "lifecycle",
     "monitoring",
+    "orchestration",
     "portfolio",
     "promotion_api",
     "research",
@@ -1027,19 +1264,19 @@
     "unexpected_dynamic_imports": []
   },
   "policy_path": "config/service_import_policy.json",
-  "policy_sha256": "e3d45db72f87fa3085dab662cffb5309d9bc5e564d9012bc571b902f5413da91",
+  "policy_sha256": "2e39f79d3b899f7e3d06b0163b2ce4770091ef07523e40a35ff71296e2ae65da",
   "schema_version": 1,
   "scope": "services production Python; directories named tests excluded",
-  "source_file_count": 333,
+  "source_file_count": 432,
   "unresolved_dynamic_imports": [
     {
       "function": "importlib.import_module",
-      "line": 65,
+      "line": 67,
       "path": "services/research_runner/run_kinds.py"
     },
     {
       "function": "importlib.import_module",
-      "line": 72,
+      "line": 74,
       "path": "services/research_runner/run_kinds.py"
     }
   ],

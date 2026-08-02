@@ -1,0 +1,77 @@
+pageType: content
+background:
+  type: solid
+  color: "$bg"
+elements:
+  - elementId: kicker
+    elementType: text
+    bounds: [80, 40, 400, 18]
+    content: {style: "$small", color: "$accent", letterSpacing: 3, wrap: false, text: "09 · 容量与尾部风险"}
+  - elementId: title
+    elementType: text
+    bounds: [80, 62, 820, 38]
+    content: {style: "$h1", wrap: false, text: "诚实容量区间 · 危机中的真实表现"}
+  - elementId: cap-title
+    elementType: text
+    bounds: [80, 116, 400, 24]
+    content: {style: "$h2", wrap: false, text: "Almgren-Chriss 容量（未校准区间）"}
+  - elementId: cap-table
+    elementType: table
+    bounds: [80, 146, 800, 108]
+    columnWidths: [0.22, 0.30, 0.26, 0.22]
+    rowHeights: [0.34, 0.33, 0.33]
+    style: "$dark"
+    rows:
+      - - text: "策略"
+        - text: "冲击-only（虚高）"
+        - text: "参与率约束后（保守角）"
+        - text: "执行铺开 5 天"
+      - - {text: "carry", align: [left, middle]}
+        - {text: "$0.7B–4.1B", color: "$warn"}
+        - {text: "$2.0M", bold: true, color: "$accent"}
+        - text: "$5M–20M"
+      - - {text: "crowd_contra", align: [left, middle]}
+        - {text: "同量级虚高", color: "$warn"}
+        - {text: "$7.2M", bold: true, color: "$accent"}
+        - text: "$18M–72M"
+  - elementId: cap-note
+    elementType: text
+    bounds: [80, 262, 800, 44]
+    content:
+      style: "$small"
+      text: |
+        <p>冲击-only 模型误报 $B 级容量（~300× 高估）—— “松现实主义抬高可部署性”是行业最常见的自欺，引擎首跑即抓到。绑定约束 = 10% 参与率上限。</p>
+  - elementId: tail-title
+    elementType: text
+    bounds: [80, 316, 500, 24]
+    content: {style: "$h2", wrap: false, text: "历史危机重演（真实数据回放）"}
+  - elementId: tail-table
+    elementType: table
+    bounds: [80, 346, 800, 108]
+    columnWidths: [0.28, 0.24, 0.24, 0.24]
+    rowHeights: [0.25, 0.25, 0.25, 0.25]
+    style: "$dark"
+    rows:
+      - - text: "指标"
+        - text: "carry"
+        - text: "crowd_contra"
+        - text: "解读"
+      - - {text: "2022-05 LUNA 崩盘", align: [left, middle]}
+        - text: "-0.2%"
+        - {text: "+10.6%", bold: true, color: "$accent"}
+        - {text: "崩盘beta≈0", fontSize: 10}
+      - - {text: "2022-11 FTX 崩盘", align: [left, middle]}
+        - text: "-3.4%"
+        - {text: "+6.5%", bold: true, color: "$accent"}
+        - {text: "反而盈利", fontSize: 10}
+      - - {text: "99% VaR / Hill 尾指数", align: [left, middle]}
+        - text: "6.3% / 2.43"
+        - text: "— / ~2.7"
+        - {text: "肥尾·类t分布", fontSize: 10}
+  - elementId: src
+    elementType: text
+    bounds: [80, 478, 800, 30]
+    content:
+      style: "$small"
+      text: |
+        <p>证据：data/cache/capacity_snapshot.json（UNCALIBRATED_PRINCIPLED）· data/cache/scenario_tail_snapshot.json（REAL_HISTORICAL_REPLAY）</p>

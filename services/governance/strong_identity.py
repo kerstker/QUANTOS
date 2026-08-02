@@ -9,21 +9,35 @@ import base64
 import hashlib
 import os
 from pathlib import Path
+import re
 import secrets
 from collections.abc import Mapping
 from typing import Any
 
 import jwt
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from quantos.contracts.identity import (
     GovernanceRole,
     StrongIdentityAssurance,
     VerifiedIdentity,
 )
+from quantos.contracts.hashing import stable_hash
+
+from .external_evidence import (
+    ExternalEvidenceStatus,
+    build_external_blocked_status,
+)
+from .oidc_key_registry import (
+    OidcKeyRegistry,
+    OidcKeyRegistryError,
+    load_oidc_key_registry,
+    select_oidc_verification_key,
+)
 
 
 _ASYMMETRIC_ALGORITHMS = frozenset({"EdDSA", "RS256"})
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class StrongIdentityError(PermissionError):
@@ -41,7 +55,7 @@ class OidcTrustPolicy(BaseModel):
 
     issuer: str = Field(min_length=1)
     audience: str = Field(min_length=1)
-    public_key_pem: str = Field(min_length=1)
+    key_registry: OidcKeyRegistry
     allowed_algorithms: tuple[str, ...] = Field(min_length=1)
     required_acr_values: tuple[str, ...] = Field(min_length=1)
     required_amr_values: tuple[str, ...] = Field(min_length=1)
@@ -68,6 +82,33 @@ class OidcTrustPolicy(BaseModel):
                 + ", ".join(sorted(invalid))
             )
         return value
+
+    @field_validator("key_registry", mode="before")
+    @classmethod
+    def _validate_registry_input(cls, value: object) -> OidcKeyRegistry:
+        if isinstance(value, OidcKeyRegistry):
+            return value
+        if isinstance(value, dict):
+            return OidcKeyRegistry.model_validate(value)
+        raise ValueError("key_registry must be an OIDC key registry")
+
+    @field_validator("issuer")
+    @classmethod
+    def _validate_issuer_matches_registry_later(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("issuer must be canonical")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_registry(self) -> "OidcTrustPolicy":
+        if self.key_registry.issuer != self.issuer:
+            raise ValueError("OIDC policy issuer must match the key registry")
+        registry_algorithms = {key.algorithm for key in self.key_registry.keys}
+        if not registry_algorithms <= set(self.allowed_algorithms):
+            raise ValueError("OIDC registry contains an algorithm outside policy")
+        if not any(key.status == "ACTIVE" for key in self.key_registry.keys):
+            raise ValueError("OIDC policy requires at least one active verification key")
+        return self
 
 
 def _as_timestamp(claims: Mapping[str, Any], name: str) -> int:
@@ -117,11 +158,20 @@ class OidcMtlsVerifier:
             raise StrongIdentityError("ALGORITHM_NOT_ALLOWED", "token algorithm is not allowed")
         if header.get("typ") != "at+jwt":
             raise StrongIdentityError("INVALID_TOKEN_TYPE", "token type must be at+jwt")
+        try:
+            verification_key = select_oidc_verification_key(
+                self.policy.key_registry,
+                kid=header.get("kid"),
+                algorithm=algorithm,
+                now=now,
+            )
+        except OidcKeyRegistryError as exc:
+            raise StrongIdentityError(exc.code, str(exc)) from exc
 
         try:
             claims = jwt.decode(
                 token,
-                self.policy.public_key_pem,
+                verification_key.public_key_pem,
                 algorithms=list(self.policy.allowed_algorithms),
                 audience=self.policy.audience,
                 issuer=self.policy.issuer,
@@ -264,19 +314,49 @@ def load_oidc_policy_from_environment(
     values = environ if environ is not None else os.environ
     issuer = values.get("QUANTOS_OIDC_ISSUER", "").strip()
     audience = values.get("QUANTOS_OIDC_AUDIENCE", "").strip()
-    public_key_file = values.get("QUANTOS_OIDC_PUBLIC_KEY_FILE", "").strip()
-    if not issuer or not audience or not public_key_file:
+    registry_file = values.get("QUANTOS_OIDC_KEY_REGISTRY_FILE", "").strip()
+    registry_sha256 = values.get("QUANTOS_OIDC_KEY_REGISTRY_SHA256", "").strip().lower()
+    minimum_generation_text = values.get("QUANTOS_OIDC_KEY_REGISTRY_MIN_GENERATION", "").strip()
+    if not issuer or not audience or not registry_file or not registry_sha256 or not minimum_generation_text:
         raise StrongIdentityUnavailable(
             "IDENTITY_POLICY_UNAVAILABLE",
-            "external OIDC identity policy is not configured",
+            "external OIDC identity policy and pinned key registry are not configured",
+        )
+    if _SHA256.fullmatch(registry_sha256) is None:
+        raise StrongIdentityUnavailable(
+            "IDENTITY_POLICY_UNAVAILABLE",
+            "OIDC key registry SHA-256 pin is invalid",
+        )
+    registry_path = Path(registry_file)
+    if registry_path.is_symlink() or not registry_path.is_file():
+        raise StrongIdentityUnavailable(
+            "IDENTITY_POLICY_UNAVAILABLE",
+            "external OIDC key registry is unavailable",
         )
     try:
-        public_key_pem = Path(public_key_file).read_text(encoding="ascii")
-    except OSError as exc:
+        registry_bytes = registry_path.read_bytes()
+        registry = load_oidc_key_registry(registry_bytes)
+        minimum_generation = int(minimum_generation_text)
+    except (OSError, UnicodeError, ValueError) as exc:
         raise StrongIdentityUnavailable(
             "IDENTITY_POLICY_UNAVAILABLE",
-            "external OIDC public key is unavailable",
+            "external OIDC key registry is invalid",
         ) from exc
+    if minimum_generation < 1 or registry.generation < minimum_generation:
+        raise StrongIdentityUnavailable(
+            "OIDC_KEY_REGISTRY_ROLLBACK",
+            "OIDC key registry generation is below the operator pin",
+        )
+    if hashlib.sha256(registry_bytes).hexdigest() != registry_sha256:
+        raise StrongIdentityUnavailable(
+            "OIDC_KEY_REGISTRY_DIGEST_MISMATCH",
+            "OIDC key registry does not match the operator digest pin",
+        )
+    if registry.issuer != issuer:
+        raise StrongIdentityUnavailable(
+            "OIDC_KEY_REGISTRY_ISSUER_MISMATCH",
+            "OIDC key registry issuer does not match the configured issuer",
+        )
 
     def _csv(name: str, default: str) -> tuple[str, ...]:
         return tuple(value.strip() for value in values.get(name, default).split(",") if value.strip())
@@ -285,7 +365,7 @@ def load_oidc_policy_from_environment(
         return OidcTrustPolicy(
             issuer=issuer,
             audience=audience,
-            public_key_pem=public_key_pem,
+            key_registry=registry,
             allowed_algorithms=_csv("QUANTOS_OIDC_ALGORITHMS", "EdDSA"),
             required_acr_values=_csv("QUANTOS_OIDC_REQUIRED_ACR", "urn:quantos:aal2"),
             required_amr_values=_csv("QUANTOS_OIDC_REQUIRED_AMR", "mfa"),
@@ -304,6 +384,45 @@ def load_oidc_policy_from_environment(
         ) from exc
 
 
+def oidc_policy_configuration_status(
+    environ: Mapping[str, str] | None = None,
+    *,
+    observed_at_ms: int,
+) -> ExternalEvidenceStatus:
+    """Report identity configuration without claiming IdP deployment evidence.
+
+    A valid local policy is only ``PARTIAL`` until an operator supplies proof
+    of the external issuer, trusted mTLS termination, MFA policy, key custody,
+    and revocation lifecycle.  Missing or invalid configuration is an explicit
+    ``EXTERNAL_BLOCKED`` status consumed by release/governance tooling.
+    """
+
+    try:
+        policy = load_oidc_policy_from_environment(environ)
+    except StrongIdentityUnavailable as exc:
+        return build_external_blocked_status(
+            capability="oidc_identity",
+            reason_code=exc.code,
+            required_action=(
+                "Provision external OIDC issuer, trusted mTLS termination, MFA, "
+                "and key lifecycle evidence"
+            ),
+            observed_at_ms=observed_at_ms,
+        )
+    policy_digest = stable_hash(policy.key_registry.model_dump(mode="json"))
+    return ExternalEvidenceStatus(
+        capability="oidc_identity",
+        status="PARTIAL",
+        reason_code="OIDC_POLICY_CONFIGURED_EXTERNAL_DEPLOYMENT_UNVERIFIED",
+        required_action=(
+            "Retain operator-owned OIDC/mTLS/MFA deployment, revocation, and key-custody evidence"
+        ),
+        observed_at_ms=observed_at_ms,
+        external_authority=policy.issuer,
+        evidence_ref=f"local-policy-sha256:{policy_digest}",
+    )
+
+
 __all__ = [
     "OidcMtlsVerifier",
     "OidcTrustPolicy",
@@ -311,5 +430,6 @@ __all__ = [
     "StrongIdentityUnavailable",
     "extract_verified_client_certificate",
     "load_oidc_policy_from_environment",
+    "oidc_policy_configuration_status",
     "require_role",
 ]
