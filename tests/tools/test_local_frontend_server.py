@@ -2,14 +2,32 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import pytest
+
 from tools.local_frontend_server import (
+    FRONTEND_DIST_ENV,
     REQUIRED_LOCAL_API_MARKERS,
     SpaRequestHandler,
     _cache_control_for_path,
+    _frontend_dist_root,
     _has_real_local_api_contract,
     _is_event_stream_response,
     _spa_target,
 )
+
+
+def test_frontend_dist_root_defaults_and_requires_absolute_override(monkeypatch, tmp_path):
+    root = tmp_path / "release"
+    monkeypatch.delenv(FRONTEND_DIST_ENV, raising=False)
+    assert _frontend_dist_root(root=root) == root / "apps" / "research-console" / "dist"
+
+    artifact = tmp_path / "state" / "frontend" / "dist"
+    monkeypatch.setenv(FRONTEND_DIST_ENV, str(artifact))
+    assert _frontend_dist_root(root=root) == artifact.resolve()
+
+    monkeypatch.setenv(FRONTEND_DIST_ENV, "relative/dist")
+    with pytest.raises(RuntimeError, match="absolute path"):
+        _frontend_dist_root(root=root)
 
 
 class _FiniteEventStream:

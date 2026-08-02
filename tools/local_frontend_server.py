@@ -10,13 +10,27 @@ from __future__ import annotations
 import argparse
 import http.client
 import http.server
+import os
 from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / "apps" / "research-console" / "dist"
+FRONTEND_DIST_ENV = "QUANTOS_FRONTEND_DIST"
+
+
+def _frontend_dist_root(*, root: Path = ROOT) -> Path:
+    configured = os.getenv(FRONTEND_DIST_ENV, "").strip()
+    if not configured:
+        return root / "apps" / "research-console" / "dist"
+    candidate = Path(configured)
+    if not candidate.is_absolute():
+        raise RuntimeError(f"{FRONTEND_DIST_ENV} must be an absolute path")
+    return candidate.resolve()
+
+
+DIST = _frontend_dist_root()
 REQUIRED_LOCAL_API_MARKERS = (
     b"__QUANTOS_SAME_ORIGIN__",
 )

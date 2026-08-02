@@ -28,6 +28,9 @@
 > commit 成对提供，console API、research runner 和静态前端均以 state root 为 cwd，并通过
 > `python -P` 与 release-first `PYTHONPATH` 固定代码来源；manifest/log 改写入 state root。
 > 因此浏览器、runner 与调度器消费同一运行状态，同时状态目录中的代码副本不能遮蔽 release。
+> Uvicorn 另以 `--app-dir=<release>` 固定应用导入，静态服务直接执行 release 中的绝对脚本；Git
+> 忽略的前端 bundle 不再写入 release，而位于 `state/.runtime/frontend-builds/<commit>/dist`，
+> 通过 `QUANTOS_FRONTEND_DIST` 与发布身份一一绑定。
 > `carry_oi_majors`、`crowd_contra`、`top_contra` 同时被明确标为
 > `LEGACY_DIAGNOSTIC_PAPER`：仍可接收公共实时标记与产出 PnL，但不计入新候选执行 Paper，
 > 永远不具部署资格。前端漏斗已拆分 Candidate Paper 与 Legacy Paper，避免把三条历史 book

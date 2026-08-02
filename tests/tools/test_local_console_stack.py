@@ -23,7 +23,7 @@ def test_local_stack_is_l2_console_only(monkeypatch):
     assert all("live" not in str(part).lower() for part in commands)
     frontend_command = [str(part).lower() for part in specs[2]["command"]]
     assert frontend_command[0].endswith(("python", "python3", "python.exe", "pythonw.exe"))
-    assert "tools.local_frontend_server" in frontend_command
+    assert Path(specs[2]["command"][2]).name == "local_frontend_server.py"
     assert all("node" not in part and "npm" not in part and "cmd.exe" not in part for part in frontend_command)
     assert specs[0]["cors_probe"].endswith("/health")
     assert set(specs[0]["cors_origins"]) == {
@@ -35,6 +35,11 @@ def test_local_stack_is_l2_console_only(monkeypatch):
     assert all(spec["command"][1] == "-P" for spec in specs)
     assert all(spec["env"]["QUANTOS_STATE_ROOT"] == str(stack.STATE_ROOT) for spec in specs)
     assert all(spec["env"]["PYTHONPATH"].split(stack.os.pathsep)[0] == str(stack.ROOT) for spec in specs)
+    assert all(
+        str(stack.ROOT.resolve()) == spec["command"][spec["command"].index("--app-dir") + 1]
+        for spec in specs[:2]
+    )
+    assert specs[2]["command"][2] == str((stack.ROOT / "tools" / "local_frontend_server.py").resolve())
 
 
 def test_explicit_state_root_requires_exact_clean_release_identity(
@@ -60,6 +65,9 @@ def test_explicit_state_root_requires_exact_clean_release_identity(
     assert all(spec["release_commit"] == commit for spec in specs)
     assert all(spec["env"]["QUANTOS_RELEASE_ROOT"] == str(release) for spec in specs)
     assert all(spec["env"]["QUANTOS_RELEASE_COMMIT"] == commit for spec in specs)
+    expected_dist = state / ".runtime" / "frontend-builds" / commit / "dist"
+    assert specs[2]["env"]["QUANTOS_FRONTEND_DIST"] == str(expected_dist)
+    assert specs[2]["artifact_root"] == str(expected_dist)
 
 
 def test_explicit_state_root_rejects_missing_or_dirty_release_identity(

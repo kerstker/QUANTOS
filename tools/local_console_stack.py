@@ -37,6 +37,7 @@ MANIFEST = RUNTIME / "manifest.json"
 LOGS = RUNTIME / "logs"
 _RELEASE_COMMIT_ENV = "QUANTOS_RELEASE_COMMIT"
 _RELEASE_ROOT_ENV = "QUANTOS_RELEASE_ROOT"
+_FRONTEND_DIST_ENV = "QUANTOS_FRONTEND_DIST"
 
 
 def _headless_creationflags() -> int:
@@ -202,13 +203,22 @@ def service_specs() -> list[dict[str, Any]]:
     python_worker = _python_worker()
     source_revision = _source_revision()
     release_identity, runtime_env = _runtime_identity(STATE_ROOT, source_revision)
+    explicit_release = bool(os.getenv(STATE_ROOT_ENV, "").strip())
+    frontend_dist = (
+        STATE_ROOT / ".runtime" / "frontend-builds" / release_identity / "dist"
+        if explicit_release
+        else ROOT / "apps" / "research-console" / "dist"
+    )
     return [
         {
             "name": "console_api",
             "port": 8400,
             "cwd": STATE_ROOT,
-            "command": [python_worker, "-P", "-m", "uvicorn", "services.console.main:app",
-                        "--host", "127.0.0.1", "--port", "8400"],
+            "command": [
+                python_worker, "-P", "-m", "uvicorn", "services.console.main:app",
+                "--host", "127.0.0.1", "--port", "8400",
+                "--app-dir", str(ROOT.resolve()),
+            ],
             "health": "http://127.0.0.1:8400/openapi.json",
             "cors_probe": "http://127.0.0.1:8400/health",
             "cors_origins": [f"http://127.0.0.1:{frontend_port}", f"http://localhost:{frontend_port}"],
@@ -223,8 +233,11 @@ def service_specs() -> list[dict[str, Any]]:
             "name": "research_runner",
             "port": 8420,
             "cwd": STATE_ROOT,
-            "command": [python_worker, "-P", "-m", "uvicorn", "services.research_runner.main:app",
-                        "--host", "127.0.0.1", "--port", "8420"],
+            "command": [
+                python_worker, "-P", "-m", "uvicorn", "services.research_runner.main:app",
+                "--host", "127.0.0.1", "--port", "8420",
+                "--app-dir", str(ROOT.resolve()),
+            ],
             "health": "http://127.0.0.1:8420/health",
             "env": {**runtime_env, "QUANTOS_RUNNER_CORS_ORIGINS": frontend_origin},
             "release_commit": release_identity,
@@ -239,16 +252,16 @@ def service_specs() -> list[dict[str, Any]]:
             "command": [
                 python_worker,
                 "-P",
-                "-m",
-                "tools.local_frontend_server",
+                str((ROOT / "tools" / "local_frontend_server.py").resolve()),
                 "--host",
                 "127.0.0.1",
                 "--port",
                 str(frontend_port),
             ],
             "health": f"http://127.0.0.1:{frontend_port}/",
-            "env": dict(runtime_env),
+            "env": {**runtime_env, _FRONTEND_DIST_ENV: str(frontend_dist.resolve())},
             "release_commit": release_identity,
+            "artifact_root": str(frontend_dist.resolve()),
         },
     ]
 
@@ -455,6 +468,7 @@ def status() -> dict[str, Any]:
             "log": service.get("log"),
             "release_commit": service.get("release_commit"),
             "state_root": service.get("state_root"),
+            "artifact_root": service.get("artifact_root"),
         })
     return {"running": bool(rows) and all(row["pid_alive"] and row["port_listening"] for row in rows),
             "services": rows, "manifest": str(MANIFEST)}
@@ -495,7 +509,8 @@ def start() -> dict[str, Any]:
                 log.close()
             record = {"name": spec["name"], "pid": process.pid, "launcher_pid": process.pid,
                       "port": spec["port"], "health": spec["health"], "log": str(log_path),
-                      "release_commit": spec["release_commit"], "state_root": str(spec["cwd"])}
+                      "release_commit": spec["release_commit"], "state_root": str(spec["cwd"]),
+                      "artifact_root": spec.get("artifact_root")}
             started.append(record)
             _write_json(MANIFEST, {"schema_version": 2, "started_at": int(time.time()),
                                    "services": started})
