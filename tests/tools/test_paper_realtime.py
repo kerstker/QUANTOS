@@ -551,3 +551,105 @@ def test_main_keeps_incomplete_cycle_as_operational_failure(monkeypatch, tmp_pat
         )
         == 1
     )
+
+
+def _candidate_stage_row(alpha_id: str, *, status: str = "PASS") -> dict:
+    row = {
+        "alpha_id": alpha_id,
+        "module": "tools.dry_run_candidate_multi",
+        "status": status,
+        "paper_order_submission": False,
+    }
+    if status == "PASS":
+        row["snapshot"] = {
+            "run_id": f"bt-{alpha_id}",
+            "n_periods": 81,
+            "pnl": {
+                "sharpe": 0.6,
+                "sharpe_vt": 0.5,
+                "max_drawdown": 0.3,
+                "max_drawdown_vt": 0.2,
+                "total_return": 0.4,
+            },
+            "reconciliation_residual": 0.0,
+            "research_risk_decision": "RISK_APPROVED",
+        }
+    return row
+
+
+def test_backtest_summary_maps_candidate_stage_to_authoritative_provenance():
+    flow = {
+        "stages": {
+            "authoritative_dry_runs": [
+                {
+                    "alpha_id": "crowd_contra",
+                    "status": "PASS",
+                    "snapshot": {"run_id": "bt-crowd", "n_periods": 12, "pnl": {}},
+                }
+            ],
+            "candidate_authoritative_dry_runs": [
+                _candidate_stage_row("crowd_contra_3d"),
+                _candidate_stage_row("crowd_contra_14d", status="ERROR"),
+            ],
+        }
+    }
+    backtests = paper_realtime._backtest_summary(flow)
+    assert set(backtests) == {"crowd_contra", "crowd_contra_3d"}
+    challenger = backtests["crowd_contra_3d"]
+    assert challenger["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
+    assert challenger["run_id"] == "bt-crowd_contra_3d"
+    assert challenger["n_periods"] == 81
+    assert challenger["sharpe"] == 0.6
+    assert challenger["sharpe_vt"] == 0.5
+    assert challenger["research_risk_decision"] == "RISK_APPROVED"
+
+
+def test_backtest_summary_without_candidate_stage_keeps_legacy_only():
+    flow = {
+        "stages": {
+            "authoritative_dry_runs": [
+                {
+                    "alpha_id": "crowd_contra",
+                    "status": "PASS",
+                    "snapshot": {"run_id": "bt-crowd", "n_periods": 12, "pnl": {}},
+                }
+            ]
+        }
+    }
+    backtests = paper_realtime._backtest_summary(flow)
+    assert set(backtests) == {"crowd_contra"}
+    assert backtests["crowd_contra"]["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
+
+
+def test_run_cycle_maps_candidate_authoritative_backtest(tmp_path):
+    paper_path = tmp_path / "paper-orders.db"
+    order_store = PaperExecutionStore(str(paper_path), create=True)
+    try:
+        for alpha in ALPHA_IDS:
+            order_store.append_preview(_row(alpha))
+    finally:
+        order_store.close()
+    operator = _operator()
+    operator["stages"]["three_alpha_paper_flow"]["flow"]["stages"][
+        "candidate_authoritative_dry_runs"
+    ] = [_candidate_stage_row("crowd_contra_3d")]
+    report = run_cycle(
+        operator=operator,
+        mark_provider=lambda _instruments: {
+            "provider": "BINANCE_PUBLIC_MARK_PRICE",
+            "observed_at": 2000,
+            "marks": {"BTC": 110.0},
+            "source_times": {"BTC": 2000},
+        },
+        paper_store_path=str(paper_path),
+        realtime_store_path=str(tmp_path / "realtime.db"),
+        output_path=str(tmp_path / "status.json"),
+        aum=1000.0,
+        generated_at_ms=3000,
+    )
+    assert report["verdict"]["cycle_completed"] is True
+    challenger = report["backtests"]["crowd_contra_3d"]
+    assert challenger["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
+    assert challenger["run_id"] == "bt-crowd_contra_3d"
+    for alpha in ALPHA_IDS:
+        assert report["backtests"][alpha]["provenance"] == "REAL_AUTHORITATIVE_L2_DRY_RUN"
