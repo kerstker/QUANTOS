@@ -471,17 +471,52 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
     status = "ERROR"
     returncode = None
     detail = None
+    captured_tail: str | None = None
     try:
-        process = subprocess.Popen(command, cwd=absolute_cwd)
+        # stdin=DEVNULL: under detached/agent-hosted shells the inherited
+        # console handles can be/become invalid; any child spawned with an
+        # inherited dead handle then dies in _make_inheritable with WinError 6
+        # before it even starts (observed 2026-08-02 as the 26/27 stage
+        # failure: every subprocess test in tests/governance).  Every check is
+        # non-interactive, so a NUL stdin is the honest contract.  If even the
+        # inherited stdout/stderr handles are dead, fall back to captured
+        # pipes — the gate must not depend on the host console at all.
         try:
-            returncode = process.wait(timeout=timeout_seconds)
+            process = subprocess.Popen(command, cwd=absolute_cwd, stdin=subprocess.DEVNULL)
+        except OSError as exc:
+            # ASCII-only, locale-independent detail: the report is hashed
+            # evidence, and localized OS error text (e.g. GBK WinError text)
+            # would make it host-dependent.
+            detail = (
+                "host console handles unavailable "
+                f"({type(exc).__name__} winerror={getattr(exc, 'winerror', None)}); "
+                "child output captured instead of streamed"
+            )
+            process = subprocess.Popen(
+                command,
+                cwd=absolute_cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        try:
+            if process.stdout is not None:
+                captured, _ = process.communicate(timeout=timeout_seconds)
+                returncode = process.returncode
+                captured_tail = captured.decode("utf-8", errors="replace")[-4000:]
+            else:
+                returncode = process.wait(timeout=timeout_seconds)
             status = "PASS" if returncode == 0 else "FAIL"
         except subprocess.TimeoutExpired:
             detail = f"stage exceeded {timeout_seconds:.1f}s"
             try:
                 process.kill()
             finally:
-                process.wait()
+                if process.stdout is not None:
+                    captured, _ = process.communicate()
+                    captured_tail = captured.decode("utf-8", errors="replace")[-4000:]
+                else:
+                    process.wait()
             status = "TIMEOUT"
     except OSError as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -498,6 +533,10 @@ def _run_check(name: str, argv, cwd: str, timeout_seconds: float) -> dict:
     }
     if detail:
         result["detail"] = detail
+    if captured_tail and status != "PASS":
+        # Keep a bounded failure tail in the machine report so a degraded-host
+        # run remains diagnosable without the live console stream.
+        result["child_output_tail"] = captured_tail
     if status == "TIMEOUT" and process is not None:
         result["stuck_process"] = {
             "pid": process.pid,
