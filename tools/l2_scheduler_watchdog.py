@@ -103,6 +103,9 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_paper_alpha_evaluation": ExpectedTask(
         "paper_alpha_evaluation", 9 * _DAY_MS, frozenset({2})
     ),
+    "QUANTOS_alpha_production_workflow": ExpectedTask(
+        "alpha_production_workflow", 15 * 60_000
+    ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_domain_event_ops": ExpectedTask(

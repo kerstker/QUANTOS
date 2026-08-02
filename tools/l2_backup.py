@@ -43,7 +43,7 @@ DESTINATION_ENV = "QUANTOS_BACKUP_DEST"
 DEFAULT_RTO_MS = 300_000
 DEFAULT_MAX_RPO_MS = 86_400_000
 MANIFEST_SCHEMA_VERSION = 2
-SOURCE_CONTRACT_VERSION = 2
+SOURCE_CONTRACT_VERSION = 3
 L2_ENCRYPTION_CHUNK_SIZE = 8 * 1024 * 1024
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _ALLOWED_SOURCE_ROOTS = (PurePosixPath("data/cache"), PurePosixPath("evidence"))
@@ -69,6 +69,11 @@ DEFAULT_SOURCES = (
     BackupSource("data/cache/live_refresh_history.db", "data_refresh_history", True),
     BackupSource("data/cache/data_quality_admission.db", "data_quality_admission", True),
     BackupSource("data/cache/paper_track.db", "paper_track", True),
+    BackupSource(
+        "data/cache/alpha_production_workflow.db",
+        "alpha_production_workflow",
+        True,
+    ),
     BackupSource("data/cache/research_runs.db", "research_run_registry", True),
     BackupSource("data/cache/governance_audit.db", "governance_audit", True),
     BackupSource(
@@ -77,6 +82,11 @@ DEFAULT_SOURCES = (
         True,
     ),
     BackupSource("data/cache/alpha_maintenance.db", "alpha_maintenance", False),
+    BackupSource(
+        "data/cache/paper_candidate_registry.db",
+        "factory_candidate_admission",
+        False,
+    ),
     BackupSource("data/cache/live_kill_switch.db", "kill_switch_authority", False),
     BackupSource("data/cache/deployment_state.db", "deployment_state", False),
     BackupSource(

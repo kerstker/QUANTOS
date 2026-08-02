@@ -23,6 +23,7 @@ from pathlib import Path
 import sys
 import time
 
+from quantos.contracts.hashing import stable_hash
 from quantos.runtime_paths import runtime_state_root
 from services.data.panel_quality import gate_decision_inputs
 from services.factor_garden.canonical import TOP_CONTRA_EXPRESSION as TOP_CONTRA
@@ -63,6 +64,7 @@ _FORWARD_BASELINE = os.path.join("evidence", "forward_evidence_baseline.json")
 _AUTHORITY = DATA_QUALITY_ADMISSION_DB
 _LINEAGE_BACKFILL = os.path.join("evidence", "raw_data_lineage_backfill.json")
 _CANDIDATE_REGISTRY = os.path.join("data", "cache", "paper_candidate_registry.db")
+_WORKFLOW_STATUS = os.path.join("data", "cache", "alpha_production_workflow.json")
 _LOCK_FILE = os.path.join("data", "cache", "forward_track_advance.lock")
 _LOCK_STALE_S = 600  # malformed legacy locks expire after 10 minutes
 _DAY_MS = 86_400_000
@@ -118,7 +120,10 @@ def _alpha_spec(entry):
     return spec
 
 
-def _registered_alphas() -> tuple[dict[str, object], tuple[str, ...]]:
+def _registered_alphas(
+    *,
+    workflow_authority: bool = True,
+) -> tuple[dict[str, object], tuple[str, ...]]:
     """Merge static challengers with verified factory PASS admissions.
 
     A missing dynamic registry is a valid empty state.  An existing registry
@@ -127,12 +132,12 @@ def _registered_alphas() -> tuple[dict[str, object], tuple[str, ...]]:
     """
     merged: dict[str, object] = dict(_ALPHAS)
     dynamic_ids: list[str] = []
-    if not Path(_CANDIDATE_REGISTRY).is_file():
-        return merged, ()
-    with PaperCandidateRegistry(_CANDIDATE_REGISTRY, create=False) as registry:
-        if not registry.chain_valid():
-            raise RuntimeError("paper candidate registry hash chain is invalid")
-        candidates = registry.all()
+    candidates = ()
+    if Path(_CANDIDATE_REGISTRY).is_file():
+        with PaperCandidateRegistry(_CANDIDATE_REGISTRY, create=False) as registry:
+            if not registry.chain_valid():
+                raise RuntimeError("paper candidate registry hash chain is invalid")
+            candidates = registry.all()
     for candidate in candidates:
         expression = ax.deserialize(candidate.expression)
         existing = merged.get(candidate.alpha_id)
@@ -149,7 +154,64 @@ def _registered_alphas() -> tuple[dict[str, object], tuple[str, ...]]:
             "cadence_days": candidate.cadence_days,
         }
         dynamic_ids.append(candidate.alpha_id)
-    return merged, tuple(dynamic_ids)
+    if not workflow_authority or not Path(_WORKFLOW_STATUS).is_file():
+        return merged, tuple(dynamic_ids)
+    try:
+        workflow = json.loads(Path(_WORKFLOW_STATUS).read_text(encoding="utf-8"))
+    except (OSError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("alpha production workflow is unreadable") from exc
+    if not isinstance(workflow, dict):
+        raise RuntimeError("alpha production workflow is not an object")
+    if (
+        workflow.get("schema_version") != 1
+        or workflow.get("authority") != "ALPHA_PRODUCTION_WORKFLOW"
+        or workflow.get("status") != "VERIFIED"
+    ):
+        raise RuntimeError("alpha production workflow authority is not verified")
+    safety = workflow.get("safety")
+    if not isinstance(safety, dict) or any(
+        safety.get(name) is not False
+        for name in ("live_allowed", "order_submission_allowed")
+    ):
+        raise RuntimeError("alpha production workflow safety boundary is invalid")
+    active_ids = workflow.get("active_candidate_ids")
+    rows = workflow.get("candidates")
+    if (
+        not isinstance(active_ids, list)
+        or not active_ids
+        or active_ids != list(dict.fromkeys(active_ids))
+        or any(not isinstance(alpha_id, str) or not alpha_id for alpha_id in active_ids)
+        or not isinstance(rows, list)
+    ):
+        raise RuntimeError("alpha production workflow population is invalid")
+    workflow_rows = {
+        str(row.get("candidate_id")): row
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("candidate_id"), str)
+    }
+    selected: dict[str, object] = {}
+    for alpha_id in active_ids:
+        entry = merged.get(alpha_id)
+        row = workflow_rows.get(alpha_id)
+        identity = row.get("identity") if isinstance(row, dict) else None
+        if entry is None or not isinstance(identity, dict):
+            raise RuntimeError(
+                f"workflow candidate is missing from source registry: {alpha_id}"
+            )
+        if row.get("identity_hash") != stable_hash(identity):
+            raise RuntimeError(f"workflow candidate identity hash is invalid: {alpha_id}")
+        spec = _alpha_spec(entry)
+        if (
+            identity.get("candidate_id") != alpha_id
+            or identity.get("expression") != ax.serialize(spec["expr"])
+            or float(identity.get("quantile", -1.0)) != float(spec["quantile"])
+            or int(identity.get("cadence_days", -1)) != int(spec["cadence_days"])
+        ):
+            raise RuntimeError(
+                f"workflow candidate conflicts with source definition: {alpha_id}"
+            )
+        selected[alpha_id] = entry
+    return selected, tuple(alpha_id for alpha_id in dynamic_ids if alpha_id in selected)
 
 
 def decision_block_reason(*, weights, prices, decided_ts, now, stale, quality_failed,

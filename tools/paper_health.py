@@ -36,6 +36,9 @@ DEFAULT_OUTPUT = os.path.join("data", "cache", "paper_health.json")
 DEFAULT_FORWARD_TRACK_STATUS = os.path.join(
     "data", "cache", "forward_track_status.json"
 )
+DEFAULT_ALPHA_PRODUCTION_WORKFLOW = os.path.join(
+    "data", "cache", "alpha_production_workflow.json"
+)
 DEFAULT_MAX_AGE_MS = 5 * 60 * 1000
 RECONCILIATION_TOLERANCE = 1e-6
 
@@ -226,6 +229,7 @@ def evaluate_paper_health(
     now_ms: int,
     max_age_ms: int = DEFAULT_MAX_AGE_MS,
     forward_track: Mapping[str, Any] | None = None,
+    alpha_production_workflow: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate paper artifacts without IO or mutation.
 
@@ -272,6 +276,29 @@ def evaluate_paper_health(
         block("PAPER_REALTIME_ARTIFACT_MISSING_OR_INVALID")
     if not order_preview:
         block("PAPER_ORDER_PREVIEW_ARTIFACT_MISSING_OR_INVALID")
+
+    workflow = (
+        alpha_production_workflow
+        if isinstance(alpha_production_workflow, Mapping)
+        else None
+    )
+    workflow_safety = (
+        workflow.get("safety")
+        if isinstance(workflow, Mapping) and isinstance(workflow.get("safety"), Mapping)
+        else {}
+    )
+    workflow_verified = bool(
+        workflow
+        and workflow.get("schema_version") == 1
+        and workflow.get("authority") == "ALPHA_PRODUCTION_WORKFLOW"
+        and workflow.get("status") == "VERIFIED"
+        and isinstance(workflow.get("active_candidate_ids"), list)
+        and workflow.get("active_candidate_ids")
+        and workflow_safety.get("live_allowed") is False
+        and workflow_safety.get("order_submission_allowed") is False
+    )
+    if alpha_production_workflow is not None and not workflow_verified:
+        block("UNIQUE_ALPHA_PRODUCTION_WORKFLOW_NOT_VERIFIED")
 
     age_ms, age_error = _safe_age(now_ms, realtime_status.get("observed_at"))
     if age_error:
@@ -455,6 +482,7 @@ def evaluate_paper_health(
                 realtime_verdict.get("backtest_reference_present_for_all_three") is True
             ),
             "funding_data_complete_for_all_three": funding_complete,
+            "unique_alpha_production_workflow_verified": workflow_verified,
             "live_allowed": False,
             "order_submission_allowed": False,
             "human_review_required": True,
@@ -465,6 +493,17 @@ def evaluate_paper_health(
         "research_risk_bundles": research_risk_bundles,
         "research_risk_bundle_complete": research_risk_bundle_complete,
         "forward_evidence": forward_evidence,
+        "alpha_production_workflow": {
+            "required": alpha_production_workflow is not None,
+            "verified": workflow_verified,
+            "population_count": workflow.get("population_count") if workflow else None,
+            "event_count": workflow.get("event_count") if workflow else None,
+            "execution_paper_eligible_count": len(
+                workflow.get("execution_paper_eligible_ids") or []
+            )
+            if workflow_verified
+            else 0,
+        },
         "blockers": blockers,
         "safety": {
             "paper_only": True,
@@ -481,6 +520,7 @@ def build_report(
     realtime_status_path: str = DEFAULT_REALTIME_STATUS,
     order_preview_path: str = DEFAULT_ORDER_PREVIEW,
     forward_track_path: str = DEFAULT_FORWARD_TRACK_STATUS,
+    alpha_production_workflow_path: str = DEFAULT_ALPHA_PRODUCTION_WORKFLOW,
     output_path: str = DEFAULT_OUTPUT,
     now_ms: int | None = None,
     max_age_ms: int = DEFAULT_MAX_AGE_MS,
@@ -492,11 +532,13 @@ def build_report(
         now_ms=now,
         max_age_ms=max_age_ms,
         forward_track=_load_json(forward_track_path),
+        alpha_production_workflow=_load_json(alpha_production_workflow_path),
     )
     report["sources"] = {
         "realtime_status": realtime_status_path,
         "order_preview": order_preview_path,
         "forward_track": forward_track_path,
+        "alpha_production_workflow": alpha_production_workflow_path,
     }
     atomic_write_json(output_path, report, indent=2)
     return report
@@ -507,6 +549,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--realtime-status", default=DEFAULT_REALTIME_STATUS)
     parser.add_argument("--order-preview", default=DEFAULT_ORDER_PREVIEW)
     parser.add_argument("--forward-track", default=DEFAULT_FORWARD_TRACK_STATUS)
+    parser.add_argument(
+        "--alpha-production-workflow",
+        default=DEFAULT_ALPHA_PRODUCTION_WORKFLOW,
+    )
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--max-age-ms", type=int, default=DEFAULT_MAX_AGE_MS)
     args = parser.parse_args(argv)
@@ -515,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
             realtime_status_path=args.realtime_status,
             order_preview_path=args.order_preview,
             forward_track_path=args.forward_track,
+            alpha_production_workflow_path=args.alpha_production_workflow,
             output_path=args.output,
             max_age_ms=args.max_age_ms,
         )

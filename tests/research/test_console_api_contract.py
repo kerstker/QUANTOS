@@ -19,6 +19,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from quantos.contracts.hashing import stable_hash
 from services.console.main import app
 from services.console.api import artifact_snapshots
 from services.console.api import artifact_paper_views
@@ -484,12 +485,97 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     assert payload["handoff"]["gap_codes"] == [
         "FACTORY_TO_FORWARD_REGISTRY_NOT_VERIFIED",
         "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
+        "UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED",
     ]
     assert sum(row["stage"] == "EXECUTION_PAPER" for row in payload["candidates"]) == 3
     assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
     assert payload["safety"]["live_allowed"] is False
     assert payload["safety"]["order_submission_allowed"] is False
     assert payload["safety"]["deployment_eligible"] is False
+
+
+def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
+    candidate_ids = ["carry_oi_majors", "crowd_contra", "top_contra", "new_alpha"]
+    candidates = []
+    for alpha_id in candidate_ids:
+        identity = {"candidate_id": alpha_id, "expression": "canonical"}
+        legacy = alpha_id != "new_alpha"
+        candidates.append(
+            {
+                "candidate_id": alpha_id,
+                "identity": identity,
+                "identity_hash": stable_hash(identity),
+                "workflow": {
+                    "stage": "PARALLEL_VALIDATION" if legacy else "EXECUTION_PAPER_ELIGIBLE",
+                    "bundle_hash": stable_hash({"alpha_id": alpha_id}),
+                    "eligible_for_execution_paper": not legacy,
+                    "legacy_diagnostic": legacy,
+                    "observed_forward_periods": 8,
+                    "blockers": ["LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE"] if legacy else [],
+                    "gates": [
+                        {
+                            "gate": "EXECUTION_PAPER",
+                            "status": "LEGACY_DIAGNOSTIC" if legacy else "PENDING",
+                        }
+                    ],
+                },
+            }
+        )
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                "status": "VERIFIED",
+                "population_count": 4,
+                "event_count": 11,
+                "active_candidate_ids": candidate_ids,
+                "execution_paper_eligible_ids": ["new_alpha"],
+                "candidates": candidates,
+                "reconciliation": {
+                    "release_commit": "c" * 40,
+                    "source_as_of_ms": 1234,
+                },
+                "safety": {
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        artifact_paper_views, "_ALPHA_PRODUCTION_WORKFLOW", str(workflow_path)
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_FACTORY_LOOP_STATUS",
+        str(tmp_path / "missing-factory.json"),
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_CANDIDATE_ADMISSION_STATUS",
+        str(tmp_path / "missing-admission.json"),
+    )
+    payload = artifact_paper_views._alpha_pipeline_payload(
+        {"alphas": [{"alpha_id": "stale_alpha", "n_forward_periods": 1}]},
+        {"alphas": {"stale_alpha": {"status": "PAPER_MARKED"}}},
+    )
+
+    assert [row["alpha_id"] for row in payload["candidates"]] == candidate_ids
+    assert payload["workflow"] == {
+        "authority_present": True,
+        "verified": True,
+        "population_count": 4,
+        "event_count": 11,
+        "execution_paper_eligible_count": 1,
+        "release_commit": "c" * 40,
+        "source_as_of_ms": 1234,
+    }
+    assert payload["candidates"][-1]["stage"] == "EXECUTION_PAPER_ELIGIBLE"
+    assert payload["candidates"][-1]["execution_paper_eligible"] is True
+    assert payload["handoff"]["forward_to_execution_dynamic"] is True
 
 
 def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(

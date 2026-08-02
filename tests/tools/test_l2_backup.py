@@ -38,6 +38,17 @@ def test_default_backup_sources_require_restore_history_authority():
     assert source.required is True
 
 
+def test_default_backup_sources_require_alpha_production_workflow():
+    source = next(
+        item
+        for item in DEFAULT_SOURCES
+        if item.relative_path == "data/cache/alpha_production_workflow.db"
+    )
+
+    assert source.role == "alpha_production_workflow"
+    assert source.required is True
+
+
 def test_fixed_artifact_admission_authority_is_an_optional_backup_source():
     source = next(item for item in DEFAULT_SOURCES if item.relative_path == "data/cache/artifact_admission.db")
 

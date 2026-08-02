@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-02 WP1 唯一候选工作流：** `AlphaProductionWorkflow` 与
+> `CandidateEvidenceBundle` 已落地为追加式 SQLite 双哈希链，统一冻结候选身份、材料变化后继关系，
+> 以及 Historical OOS / Signal Shadow / nine-engine risk / Execution Paper / lifecycle 五类证据。
+> 调和器每五分钟从不可变 release 幂等运行；权威 JSON 存在后，forward、独立评估、风险包、preview、
+> realtime、paper health 和 SSE 前端只消费其 active population；现有但无效的权威会 fail-closed，缺失仅
+> 保留首次引导兼容。该 DB 已成为 L2 backup source-contract v3 的 required source。对当前 release
+> `c90836d8...` 的只读烟雾调和结果为 10 个候选、0 个当前 paper eligible、0 个非 legacy execution
+> candidate；全部仍为 1/8 前向周期，三本既有实时标记账户继续明确隔离为
+> `LEGACY_DIAGNOSTIC_PAPER`。因此 WP1 接线完成并没有伪造 Alpha 通过，下一承重目标仍是 WP2：让
+> 候选通用九引擎、preview/fill 和逐周期对账在真实新候选上变绿。设计见
+> [`docs/engineering/specs/2026-08-02-alpha-production-workflow.md`](docs/engineering/specs/2026-08-02-alpha-production-workflow.md)。
+
 > **2026-08-02 固定开发路线：** 从研究到生产的工序排序已冻结为
 > [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)
 > `FROZEN_V1`。当前实施顺序固定为 `WP0 发布/证据原子性 → WP1 唯一候选工作流 →
