@@ -494,3 +494,20 @@ def test_governance_alias_selects_only_governance_scanner():
     selected = validate._select_checks(["governance"], checks)
 
     assert [name for name, _, _ in selected] == ["governance-scanner"]
+
+
+def test_frontend_tests_are_resource_bounded_for_the_canonical_gate():
+    validate = _load_validate_module()
+    argv = next(
+        argv
+        for name, argv, _cwd in validate.CHECKS
+        if name == "frontend: tests"
+    )
+
+    assert argv == [
+        validate.NPM,
+        "test",
+        "--",
+        "--maxWorkers=1",
+        "--no-file-parallelism",
+    ]

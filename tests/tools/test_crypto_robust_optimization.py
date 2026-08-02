@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from services.research.robust_optimization import ALPHA_IDS, CandidateSpec, StressSpec, screen_reference
+from tools import crypto_robust_optimization as robust_driver
 from tools.crypto_robust_optimization import (
     GpuUnavailable,
     _cpu_replay_candidate,
@@ -14,6 +15,12 @@ from tools.crypto_robust_optimization import (
     _prepare_top_from_existing,
     _require_cuda,
 )
+
+
+def test_runtime_root_honors_explicit_mutable_state_root(tmp_path) -> None:
+    assert robust_driver._runtime_root(
+        environ={"QUANTOS_STATE_ROOT": str(tmp_path)}
+    ) == str(tmp_path.resolve())
 
 
 def test_top_schedule_retains_real_adv_for_names_outside_current_legs(monkeypatch) -> None:

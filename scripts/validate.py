@@ -247,7 +247,13 @@ CHECKS = [
     ),
     (
         "frontend: tests",
-        [NPM, "test"],
+        [
+            NPM,
+            "test",
+            "--",
+            "--maxWorkers=1",
+            "--no-file-parallelism",
+        ],
         APPS,
     ),
     (

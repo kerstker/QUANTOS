@@ -25,8 +25,10 @@ import os
 import statistics
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from quantos.runtime_paths import runtime_state_root
 from services.research.robust_optimization import (
     ALPHA_IDS,
     CandidateSpec,
@@ -43,7 +45,15 @@ from services.research.robust_optimization import (
 from services.research.trial_provenance import trial_provenance_for_config
 
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+_CODE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _runtime_root(*, environ: dict[str, str] | None = None) -> str:
+    """Resolve mutable evidence/data outside an immutable release checkout."""
+    return str(runtime_state_root(environ=environ, cwd=_CODE_ROOT))
+
+
+ROOT = _runtime_root()
 DEFAULT_REPORT = os.path.join(ROOT, "evidence", "crypto_robust_optimization.json")
 DEFAULT_CELLS = os.path.join(ROOT, "data", "cache", "crypto_robust_optimization_cells.jsonl")
 DEFAULT_REGISTRY = os.path.join(ROOT, "data", "cache", "experiment_registry.db")
