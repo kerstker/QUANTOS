@@ -3,10 +3,10 @@
 > 本报告由 `scripts/generate_autonomy_baseline.py` 生成。它是当前快照，
 > 不覆盖历史证据，也不授予任何真实资金或订单权限。
 
-- 生成时间（Unix ms）：`1785213308476`
-- commit：`b2e2b1a5d2f59f75bf8c859a928d0696bbd1bc4f`
+- 生成时间（Unix ms）：`1785693745864`
+- commit：`771b3d7e64faed448bd10574f18d2b37c37457be`
 - 当前等级：`L2_DRY_RUN_ONLY`
-- 输入哈希：`a6a417746e7e30f1edc289333ee6408c7b4ade1035e6930a5d3b7f57a4bc4d1c`
+- 输入哈希：`10e6cce467ac0d98fd401f7c914224bccfea9a22ee62ab1bc1339c5575b1a607`
 - 配置哈希：`b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0`
 
 ## Phase 0/1 当前状态
@@ -20,8 +20,8 @@
 
 - Data Admission：`PASS`（quality=`PASS`, lineage=`PASS`）。
 - Raw lineage/backfill：`PASS`。
-- Paper 10k：`PAPER_MARKS_ONLY_REPLAY`；paper_ready=`False`，paper_mark_ready=`True`，paper_preview_ready=`False`。
-- Top-tier：`NOT_TOP_TIER`；摘要=`{"failed": 1, "manual_evidence_required": 0, "partial": 6, "passed": 15, "red_lines_failed": 3, "total": 22, "unverified": 0}`。
+- Paper 10k：`PAPER_FORWARD_EVIDENCE_MATURING`；paper_ready=`False`，paper_mark_ready=`True`，paper_preview_ready=`False`。
+- Top-tier：`NOT_TOP_TIER`；摘要=`{"failed": 2, "manual_evidence_required": 0, "partial": 6, "passed": 14, "red_lines_failed": 3, "total": 22, "unverified": 0}`。
 - Full validation report：scope=`ALL`，status=`PASS`。
 
 ## 安全边界

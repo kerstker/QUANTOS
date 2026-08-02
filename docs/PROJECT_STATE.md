@@ -1,5 +1,71 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-02 WP3 预注册揭盲 + WP4 组合承重接线：** **WP3 W3-1**——影子门从
+> 「原始期数 ≥ 8」升级为预注册三重纪律:有效独立观察数(兑现窗口重叠只少计,
+> 贪心区间调度)+ regime 覆盖(资金费 z × 30d 实现波动 z 的 expanding 三分位,
+> 全 PIT、缺证据 fail-closed SEALED)+ 政策版本化(`unblinding_policy.v1` 内容
+> 寻址进门证据哈希,不重置现有 10 候选身份/证据钟)。纯核
+> `services/research/unblinding.py`(28 测试),接线
+> `tools/alpha_production_workflow.py::_shadow_gate`(18 测试);揭盲判定只消费
+> 计数与覆盖、绝不读收益——只会让 MATURE 更晚到。真实数据冒烟 VERIFIED:10 候选
+> 全 SEALED/RUNNING,blocker 诚实(1/8 期 + regime 证据不足)。设计
+> `docs/engineering/specs/2026-08-02-wp3-preregistered-unblinding-design.md`。
+> **WP4 W4-1/W4-2**——五个此前纯诊断的维度做成 per 候选承重证据行:
+> `services/research/portfolio_evidence.py`(纯核)+
+> `tools/candidate_portfolio_evidence.py` → `candidate_portfolio_evidence.json`
+> (边际组合贡献——incumbent = dry_run.db 正典 run 等权合成、共同暴露
+> factor_decomp、容量带引用、拥挤汇总、SOR TCA 引用;任一不可得 → None +
+> `missing`,绝不编造)。接线 **不开第六门**:RESEARCH_RISK READY = 九引擎包
+> READY ∧ portfolio 行完备(容忍集仅 tca),缺 → PENDING +
+> `PORTFOLIO_EVIDENCE_INCOMPLETE`/逐子项 blocker,行进门 content hash;
+> `eligible_for_execution_paper` 谓词不动。**只查完备性,阈值 = W4-3 独立
+> 预注册评审(全部 UNCALIBRATED,本周期不预断任何候选)**。设计
+> `docs/engineering/specs/2026-08-02-wp4-portfolio-execution-gate-design.md`。
+> 首跑实况:legacy 三条有行(crowd/top OK,R² 0.045–0.09 与 W3「无隐藏共同敞口」
+> 互证;carry 诚实 INCOMPLETE 缺 crowding),7 challenger 无正典 run →
+> MISSING_RUN(权威回测首跑 = 新 release 下运维步骤)。44 测试 + 治理扫描绿。
+> **W4-3 已生效**:预注册 `portfolio_gate_policy.v1` merit 判定激活(阈值表 =
+> 设计文档冻结节,全 UNCALIBRATED,TCA 容忍缺失)——缺子证据仍 INCOMPLETE
+> (PENDING),完备未过阈 → 门 FAIL + `PORTFOLIO_GATE_<CODE>`,判定块与政策哈希
+> 进门 content hash/调和摘要;实测 crowd/top merit PASS(仍被九引擎包挡)、carry
+> 维持 INCOMPLETE、challenger MISSING_RUN。测试 37+18(核心/调和器)。
+> **WP5 盘点:L2 内无可诚实编码项**——外部心跳 sink、持续外部封存(GitHub
+> Actions 计费阻断)、WORM/异地留存、数据第二源 SLA、供应商退出全部绑定外部
+> 资源/真人授权,保持 NEEDS_EXTERNAL 登记(top-tier 评估机器承载),不造假。
+> **WP1 遗留对齐**:`top_tier_assessment._l2_source_contract_error` 仍只认
+> source-contract v2,而 WP1 已把备份契約升 v3(新增 `alpha_production_workflow.db`
+> required)——校验器已对齐接受 v2/v3(结构校验不变,附 v3 验收测试;
+> `tests/governance/test_top_tier_assessment.py`)。当前两项
+> (OPS.BACKUP.ENCRYPTED/OPS.RESTORE.DRILL)诚实报 FAILED(v3 契约已声明、
+> v3 证据未产出):最近一次调度备份跑在任务重绑新 release 之前,今晚 03:00
+> 的备份会产出 v3 证据,届时两项恢复可验证。
+
+> **2026-08-02 WP2 机器层收口第一刀(26/27 根因 + 变体兑现回归 + challenger 回测
+> provenance)：** ① 上一轮验证 26/27 的唯一失败(后端全套 pytest)根因定位为**宿主句柄
+> 失效、非代码回归**:托管/分离 shell 里继承的控制台句柄在长跑中失效,之后子进程创建即
+> `WinError 6`,tests/governance 247 个子进程用例批量失败(同文件单跑全过、`< /dev/null`
+> 全过可复现)。修复:新建根 `conftest.py`(测试派生子进程默认 stdin=NUL,显式 stdin/input
+> 不受影响)+ `scripts/validate.py::_run_check`(stdin=DEVNULL;继承句柄失效时降级为管道
+> 捕获,detail 强制 ASCII/区域无关保证据可哈希,失败尾部 4KB 进机器报告)。② `f23713b0`
+> 回归:`tools/forward_track_advance.py` 重写 `realize_due` 调用时丢了变体
+> `min_gap_ms`/兑现网格/参照 quantile——3d 变体决策每 3 天一条、兑现却等 6.5 天,稳态积压
+> 2 条 pending,结构性堵死风险包/preview 的「恰好一条 attested pending」契约;且全部变体
+> `backtest_reference_sharpe` 误用周度网格+默认分位而逐位雷同。已修复并以 2 个钉死测试
+> 防回归(`tests/research/test_forward_track_gate.py`)。**调度系统跑不可变 release
+> `5d7c2dc1`,此修复随下一 release 生效;上线后 3d 积压由日常 forward 运行按 2.5d min_gap
+> 自然兑现消化。** ③ challenger 回测 provenance:新驱动器
+> `tools/dry_run_candidate_multi.py` 把 7 个预注册变体跑过与官方 crowd 驱动器同一条
+> `run_multi_period_dry_run`(10bps/拥挤门/资金费/vol-target 按节奏 ppy)并幂等持久化进
+> `dry_run.db`(复用 `_existing_crowd_run` 同语义);`three_alpha_paper_flow` 新增
+> `candidate_authoritative_dry_runs` 阶段(legacy 三条的 verdict 语义一字不动),
+> `paper_realtime._backtest_summary` 双源消费——候选可赚
+> `REAL_AUTHORITATIVE_L2_DRY_RUN` 行,健康门 `BACKTEST_PROVENANCE_INVALID` 的机器阻塞
+> 消除;无行候选仍诚实回退 `REAL_PAPER_CANDIDATE_RISK_INPUTS`,**不降低任何晋级门**
+> (workflow eligibility 仍需 verified PASS 评估 + 8 前向期 + READY 九引擎包)。首跑真实
+> 落库是新 release 下的运维步骤,幂等。本轮后全量 `validate.py` **27/27 全绿**(含
+> frontend + phase13)。证据钟项(1/8 前向期、独立评估 verdict=FAIL、容量带积累)保持不变
+> ——WP2「变绿」的剩余部分靠时间与前向证据,不用代码豁免。
+
 > **2026-08-02 WP1 唯一候选工作流：** `AlphaProductionWorkflow` 与
 > `CandidateEvidenceBundle` 已落地为追加式 SQLite 双哈希链，统一冻结候选身份、材料变化后继关系，
 > 以及 Historical OOS / Signal Shadow / nine-engine risk / Execution Paper / lifecycle 五类证据。

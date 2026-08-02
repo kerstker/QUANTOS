@@ -521,6 +521,69 @@ Real, tested backend engines (`*_TESTED` in the audit):
   `tools/forward_track_advance.py::_ALPHAS`(新增 dict spec:expr/quantile/cadence_days,
   原三条纯 tuple 路径逐位不变;3d/14d 变体走每日兑现网格 + 变体节奏参照)——仅前向 paper
   证据积累,非晋级;live 轨道 `_STRATEGIES`/mandate/attestation 一字未动。
+  **⚠ 2026-08-02 回归修复**:`f23713b0` 重写 `realize_due` 调用时丢了变体 `min_gap_ms`/
+  兑现网格/参照 quantile(3d 变体稳态积压 2 条 pending、变体参照 sharpe 逐位雷同),
+  已在 `tools/forward_track_advance.py::_realization_plan`/`_reference_grid` 恢复按候选
+  cadence 兑现与参照,钉死测试在 `tests/research/test_forward_track_gate.py`;修复随下一
+  release 生效后 3d 积压自然消化。
+- `tools/dry_run_candidate_multi.py` — **challenger 权威回测驱动器(WP2 回测 provenance,
+  2026-08-02)**:把 7 个预注册变体(`_ALPHAS` dict 条目;legacy 三条纯 tuple 结构性排除,
+  人口 = `dynamic_paper_candidate_ids()` 顺序 ∩ `_registered_alphas()` 权威校验,fail-closed)
+  跑过与官方 crowd 驱动器**同一条** `run_multi_period_dry_run`(10bps/拥挤门 z>3.0 跳周/
+  资金费/vol-target 按节奏 ppy 52/122/26),幂等持久化进 `dry_run.db`
+  (`_existing_candidate_run` 同 `_existing_crowd_run` 语义,重跑 0 新行),研究风控 4 引擎
+  子集按节奏打显式 provenance 标签(7d 复用 WEEKLY 标签,3d/14d 用自身 ppy 标签,绝不冒称
+  九引擎)。`three_alpha_paper_flow` 新增 `candidate_authoritative_dry_runs` 阶段(legacy
+  verdict 语义不变)+ `paper_realtime._backtest_summary` 双源消费 → 候选可赚
+  `REAL_AUTHORITATIVE_L2_DRY_RUN` 行(健康门 `BACKTEST_PROVENANCE_INVALID` 机器阻塞消除);
+  无行候选仍诚实回退 `REAL_PAPER_CANDIDATE_RISK_INPUTS`。只新增历史回测证据,不降低任何
+  晋级门;首跑真实落库是新 release 下的运维步骤。核心引擎从
+  `tools/crowd_contra_variants.py::stage_dry_run` 提取为 `candidate_dry_run()`(原包装
+  签名/返回逐位不变)。
+- `services/research/alpha_production_workflow.py` + `tools/alpha_production_workflow.py` —
+  **WP1 唯一候选工作流(2026-08-02)+ WP3 预注册揭盲(W3-1)**:权威 =
+  追加式 SQLite 双哈希链(`data/cache/alpha_production_workflow.db`),五门 canonical
+  顺序(HISTORICAL_OOS/SIGNAL_SHADOW/RESEARCH_RISK/EXECUTION_PAPER/LIFECYCLE,冻结,
+  **不可开第六门**——append-only bundle 无迁移路径);设计
+  `docs/engineering/specs/2026-08-02-alpha-production-workflow.md`。**WP3 揭盲纪律**
+  (`services/research/unblinding.py` 纯核 + `_shadow_gate` 接线,设计
+  `docs/engineering/specs/2026-08-02-wp3-preregistered-unblinding-design.md`):
+  MATURE = 原始期数 ∧ **有效独立观察数**(兑现窗口重叠只少计,贪心区间调度)∧
+  **regime 覆盖**(资金费 z × 30d 实现波动 z expanding 三分位,全 PIT,缺证据
+  fail-closed SEALED);政策 `unblinding_policy.v1` 内容寻址进门证据哈希,不重置
+  既有候选身份;判定只消费计数与覆盖、绝不读收益——只会让 MATURE 更晚到。
+- `services/research/portfolio_evidence.py` + `tools/candidate_portfolio_evidence.py` →
+  `data/cache/candidate_portfolio_evidence.json` + `tools/alpha_production_workflow.py::_risk_gate`
+  扩展 — **WP4 W4-1/W4-2 组合与执行承重接入晋级 Gate(2026-08-02,设计
+  `docs/engineering/specs/2026-08-02-wp4-portfolio-execution-gate-design.md`)**:五个此前纯
+  诊断的维度做成 per 候选承重证据行——边际组合贡献(`family_testing.marginal_ir` OLS
+  appraisal ratio + 等风险逆波动组合增量 Sharpe,incumbent book = dry_run.db 正典 run
+  ISO 周对齐**等权**合成,刻意选择已标注)、共同暴露(`factor_decomp` 10 因子 OLS 的
+  R²/最大|标准化 β|/残差 vs incumbent 最大相关)、容量(capacity_snapshot 既有带按引用
+  携带,challenger 无 ADV 带 → MISSING 绝不编造)、拥挤(正典 run detail crowding_gate
+  汇总;逐期 z 未持久化 → max_z None 诚实)、TCA(多场所 SOR book 级 canary 引用,
+  simulated/UNCALIBRATED,记录缺席 → 短点 None)。纯核全序列注入、无 IO/RNG/墙钟;
+  任一子证据不可得 → 字段 None + 名字进 `missing`。W4-2 接线:**非第六门**——
+  RESEARCH_RISK READY = 九引擎包 READY ∧ portfolio 行存在且非容忍 missing 为空
+  (容忍集 = {"tca"};artifact/行/子项缺失 → PENDING + `PORTFOLIO_EVIDENCE_INCOMPLETE`
+  + 逐子项 `PORTFOLIO_EVIDENCE_MISSING:<sub>`;行并入 gate row 进 content hash;
+  缺席 → PENDING 不崩,畸形 → RuntimeError fail-closed)。**只查 PRESENCE/完备性,
+  阈值(marginal IR 下界等)= W4-3 独立预注册评审,全部 UNCALIBRATED**。
+  `eligible_for_execution_paper` 谓词不动。首跑实况:legacy 三条有行(carry 诚实
+  INCOMPLETE 缺 crowding——官方 carry 驱动器无拥挤门;crowd/top OK,R² 0.045–0.09、
+  残差相关 ≤0.07 与 W3「无隐藏共同敞口」互证),7 challenger 本 worktree 无正典 run →
+  MISSING_RUN 诚实行。测试 `tests/research/test_portfolio_evidence.py`(37)+
+  `tests/tools/test_candidate_portfolio_evidence.py`(8)+
+  `tests/tools/test_alpha_production_workflow.py` 扩展(18)。不驱动任何自动晋级/下单。
+  **W4-3 已生效(2026-08-02)**:`portfolio_gate_policy.v1` merit 判定激活——阈值表
+  = 设计文档「W4-3 预注册」冻结节(marginal_ir/incremental_sharpe ≥0、R²/残差相关
+  ≤0.5、容量比 ≥3.0(参照 AUM=$1M,与 paper_research_risk_bundle/paper_order_preview
+  同口径)、拥挤 BLOCK 占比 ≤0.25,全 UNCALIBRATED;TCA 容忍缺失不设阈);语义 =
+  缺子证据 INCOMPLETE(维持 PENDING,非 merit 失败)/ 完备未过阈 FAIL +
+  `PORTFOLIO_GATE_<CODE>` / available 块 None 指标 `*_INVALID` 绝不静默通过;
+  判定块并入 gate row 进 content hash,政策哈希进调和摘要,政策/aum 可注入覆盖。
+  首跑语义实测:crowd/top merit PASS(仍被九引擎包 PENDING 挡)、carry 缺 crowding
+  维持 INCOMPLETE(负 incremental_sharpe 不构成 FAIL)、challenger MISSING_RUN。
 - `live/` — **实盘执行栈(已存在,testnet 已联调)**:`live/exchange/base.py`
   `VenueAdapter` Protocol + `live/exchange/retry.py`(`call_with_backoff`)+
   `live/exchange/binance_futures.py` / `bybit_futures.py`(纯 stdlib
@@ -930,6 +993,13 @@ lives in the FLAT `services/<domain>/*.py` modules, not these shells.
 ```bash
 # Full fail-closed gate (governance scanner + all runnable test suites)
 python scripts/validate.py
+
+# Windows 句柄卫生(2026-08-02):托管/分离 shell 下继承的控制台句柄可能在长跑中失效,
+# 之后子进程创建即 WinError 6(曾表现为 tests/governance 批量假失败 = 26/27)。仓库根
+# conftest.py 把测试派生子进程默认 stdin 钉到 NUL(显式 stdin=/input= 不受影响),
+# validate 自身子进程 stdin=DEVNULL 且在继承句柄失效时降级为管道捕获(报告记 ASCII-only
+# detail + 失败尾部 4KB)。不要用会关闭/失效 stdin 的方式包装这条命令;真遇到时再查
+# evidence/validation_report.json 里的 detail 字段。
 
 # Governance scanner only
 python apps/research-console/scripts/run_paper_to_live_governance_check.py
