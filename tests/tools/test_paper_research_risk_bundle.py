@@ -346,3 +346,48 @@ def test_immature_dynamic_candidate_precomputes_inputs_but_stays_pending(
     assert row["admission_blockers"] == ["FORWARD_EVIDENCE_MATURITY_PENDING"]
     assert row["status"] == "PENDING"
     assert document["status"] == "PENDING"
+
+
+def test_main_treats_published_pending_artifact_as_healthy_job(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import paper_candidate_universe
+
+    output = tmp_path / "risk.json"
+    document = {
+        "status": "PENDING",
+        "alphas": {"challenger": {}},
+        "missing_inputs": [],
+    }
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        lambda **_kwargs: ("challenger",),
+    )
+    monkeypatch.setattr(
+        bundle,
+        "build_automatic_research_risk_bundle",
+        lambda **_kwargs: document,
+    )
+
+    assert bundle.main(["--output", str(output)]) == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "PENDING"
+
+
+def test_main_returns_failure_when_bundle_cannot_be_computed(
+    tmp_path, monkeypatch
+) -> None:
+    from tools import paper_candidate_universe
+
+    monkeypatch.setattr(
+        paper_candidate_universe,
+        "paper_candidate_ids",
+        lambda **_kwargs: ("challenger",),
+    )
+
+    def fail(**_kwargs):
+        raise RuntimeError("broken evidence")
+
+    monkeypatch.setattr(bundle, "build_automatic_research_risk_bundle", fail)
+
+    assert bundle.main(["--output", str(tmp_path / "risk.json")]) == 1
