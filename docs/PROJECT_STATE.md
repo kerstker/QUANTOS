@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v3（风险输入全覆盖）：** 10/10 纸面 Alpha 的七类非时间型
+> 九引擎输入已全部预计算完成。慢节奏 14d 候选在没有当前 pending 决策时，只使用最近一条
+> 真实 attested 已兑现决策生成监控输入，并标记
+> `LATEST_REALIZED_ATTESTED_DECISION_MONITORING_ONLY`；评估晚于旧决策的候选允许生成
+> `POST_DECISION_MONITORING_ONLY` 模型风险输入。两条路径均保持正式 `status=PENDING`，并以
+> `CURRENT_ATTESTED_PENDING_DECISION_MISSING` / `INDEPENDENT_EVALUATION_POSTDATES_DECISION`
+> 阻断准入。没有补造或回填决策，8 周与独立 PASS 仍只决定正式 Paper 晋级。
+
 > **2026-08-04 实时纸面生产 v2（开发与前向证据并行）：** 工程影子纸面不再等待
 > 8 个前向周期才启动；8 周门只保留为正式晋级/真钱资格证据。`paper_multivenue_sor`
 > 现在每轮为 14 个候选交易对保存 Binance USD-M WebSocket + Bybit V5 公共订单簿的

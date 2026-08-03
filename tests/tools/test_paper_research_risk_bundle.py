@@ -24,6 +24,31 @@ class _FakeLedger:
         return None
 
 
+class _FakeRealizedLedger(_FakeLedger):
+    def attested_pending(self, _alpha_id):
+        return []
+
+    def attested_decisions(self, alpha_id):
+        return [
+            {
+                "decided_ts": 80,
+                "recorded_at": 90,
+                "weights_json": json.dumps({"ETH": -1.0}),
+                "signals_json": None,
+                "source": "TEST_ATTESTED",
+                "alpha_id": alpha_id,
+            },
+            {
+                "decided_ts": 100,
+                "recorded_at": 110,
+                "weights_json": json.dumps({"BTC": 1.0}),
+                "signals_json": None,
+                "source": "TEST_ATTESTED",
+                "alpha_id": alpha_id,
+            },
+        ]
+
+
 def test_pending_bundle_binds_real_decisions_without_synthetic_inputs(tmp_path, monkeypatch):
     dataset = tmp_path / "dataset.json"
     dataset.write_text(json.dumps({"dataset": {"version": "pit-v1"}}), encoding="utf-8")
@@ -121,6 +146,47 @@ def test_metadata_rejects_evaluation_recorded_after_decision() -> None:
         assert "predate" in str(exc)
     else:
         raise AssertionError("post-decision evaluation must be rejected")
+
+
+def test_postdecision_evaluation_is_available_for_monitoring_but_marked() -> None:
+    row = {
+        "evaluation": {
+            "as_of": 101,
+            "deflated_sharpe": 0.5,
+            "pbo": 0.1,
+            "verdict": "FAIL",
+            "reasons": [],
+        },
+        "run_id": "eval-after-decision",
+    }
+
+    metadata = bundle._metadata_from_evaluation(
+        deployed_alpha_id="crowd_contra_q20",
+        evaluation_row=row,
+        decision_recorded_at=100,
+        forward_periods=1,
+        maintenance={"strategies": {}},
+        allow_post_decision_monitoring=True,
+    )
+
+    assert metadata["evidence_timing"] == "POST_DECISION_MONITORING_ONLY"
+    assert metadata["evaluation_as_of"] == 101
+    assert metadata["decision_recorded_at"] == 100
+    assert metadata["age_days"] == 0.0
+
+
+def test_realized_attested_decision_can_feed_monitoring_inputs_only() -> None:
+    ledger = _FakeRealizedLedger("unused", create=False)
+
+    decision, basis, blockers, error = bundle._dynamic_evidence_decision(
+        ledger, "crowd_contra_14d"
+    )
+
+    assert decision is not None
+    assert decision["decided_ts"] == 100
+    assert basis == "LATEST_REALIZED_ATTESTED_DECISION_MONITORING_ONLY"
+    assert blockers == ["CURRENT_ATTESTED_PENDING_DECISION_MISSING"]
+    assert error is None
 
 
 def test_high_trial_review_reason_is_not_an_observed_overfit_flag() -> None:
@@ -276,6 +342,7 @@ def test_immature_dynamic_candidate_precomputes_inputs_but_stays_pending(
     row = document["alphas"]["challenger"]
     assert row["input_evidence_status"] == "READY"
     assert set(bundle.REQUIRED_INPUT_FIELDS).issubset(row["inputs"])
+    assert row["provenance"]["decision_basis"] == "CURRENT_ATTESTED_PENDING_DECISION"
     assert row["admission_blockers"] == ["FORWARD_EVIDENCE_MATURITY_PENDING"]
     assert row["status"] == "PENDING"
     assert document["status"] == "PENDING"

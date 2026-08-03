@@ -351,6 +351,48 @@ def _dynamic_admission_blockers(
     return blockers
 
 
+def _dynamic_evidence_decision(
+    ledger: AttestedForwardLedger,
+    alpha_id: str,
+) -> tuple[dict[str, Any] | None, str, list[str], str | None]:
+    """Select an attested PIT decision for evidence without inventing one.
+
+    A current pending decision is the formal admission binding.  When a slower
+    cadence has already realized its latest decision, the same immutable row is
+    still valid for non-time monitoring inputs (ADV, capacity, return history,
+    and model diagnostics), but it is never treated as a current admission
+    decision.  More than one pending row is ambiguous and remains fail-closed.
+    """
+    pending = [dict(row) for row in ledger.attested_pending(alpha_id)]
+    if len(pending) == 1:
+        return pending[0], "CURRENT_ATTESTED_PENDING_DECISION", [], None
+    if len(pending) > 1:
+        return (
+            None,
+            "AMBIGUOUS_ATTESTED_PENDING_DECISIONS",
+            ["ATTESTED_PENDING_DECISION_BACKLOG"],
+            f"attested_pending_decision_backlog:{len(pending)}",
+        )
+    decisions = [dict(row) for row in ledger.attested_decisions(alpha_id)]
+    if not decisions:
+        return (
+            None,
+            "ATTESTED_DECISION_MISSING",
+            ["ATTESTED_FORWARD_DECISION_MISSING"],
+            "attested_forward_decision_missing",
+        )
+    latest = max(
+        decisions,
+        key=lambda row: (int(row["decided_ts"]), int(row["recorded_at"])),
+    )
+    return (
+        latest,
+        "LATEST_REALIZED_ATTESTED_DECISION_MONITORING_ONLY",
+        ["CURRENT_ATTESTED_PENDING_DECISION_MISSING"],
+        None,
+    )
+
+
 def _dynamic_candidate_schedule(panel, alpha_id: str):
     """Build a real PIT schedule for a forward challenger when needed."""
     from tools.crypto_robust_optimization import _prepare_oi_alpha
@@ -415,12 +457,16 @@ def _metadata_from_evaluation(
     decision_recorded_at: int,
     forward_periods: int,
     maintenance: Mapping[str, Any],
+    allow_post_decision_monitoring: bool = False,
 ) -> dict[str, Any]:
     evaluation = evaluation_row.get("evaluation")
     if not isinstance(evaluation, Mapping):
         raise RuntimeError("verified evaluation payload is missing")
     as_of = evaluation.get("as_of")
-    if not isinstance(as_of, int) or as_of > int(decision_recorded_at):
+    if not isinstance(as_of, int):
+        raise RuntimeError("verified evaluation as_of is invalid")
+    post_decision = as_of > int(decision_recorded_at)
+    if post_decision and not allow_post_decision_monitoring:
         raise RuntimeError("verified evaluation does not predate the decision")
     reasons = [str(value).upper() for value in evaluation.get("reasons") or ()]
     dsr = evaluation.get("deflated_sharpe")
@@ -457,6 +503,11 @@ def _metadata_from_evaluation(
         "evaluation_run_id": evaluation_row.get("run_id"),
         "evaluation_verdict": evaluation.get("verdict"),
         "maintenance_state": maintenance_state,
+        "evidence_timing": (
+            "POST_DECISION_MONITORING_ONLY" if post_decision else "PREDECISION"
+        ),
+        "evaluation_as_of": as_of,
+        "decision_recorded_at": int(decision_recorded_at),
     }
 
 
@@ -694,30 +745,30 @@ def build_automatic_research_risk_bundle(
     base_research = None
     try:
         for alpha_id in dynamic_selected:
-            pending_rows = ledger.attested_pending(alpha_id)
-            if len(pending_rows) != 1:
-                reason = (
-                    "attested_pending_decision_missing"
-                    if not pending_rows
-                    else f"attested_pending_decision_backlog:{len(pending_rows)}"
-                )
+            pending, decision_basis, decision_blockers, decision_error = (
+                _dynamic_evidence_decision(ledger, alpha_id)
+            )
+            if pending is None:
                 dynamic_missing.append("forward_decision")
                 dynamic_rows[alpha_id] = {
                     "binding": {"alpha_id": alpha_id, "config_hash": config_hash},
                     "missing_inputs": ["forward_decision"],
-                    "missing_reasons": {"forward_decision": reason},
+                    "missing_reasons": {
+                        "forward_decision": decision_error
+                        or "attested_forward_decision_missing"
+                    },
                     "input_evidence_status": "PENDING",
-                    "admission_blockers": ["ATTESTED_FORWARD_DECISION_MISSING"],
+                    "admission_blockers": decision_blockers,
                     "status": "PENDING",
                     "maturity": {"forward_periods": None, "required": REQUIRED_FORWARD_PERIODS},
                     "provenance": {
                         "independent_evaluation": "PENDING",
+                        "decision_basis": decision_basis,
                         "synthetic_defaults": False,
                     },
                 }
                 continue
 
-            pending = dict(pending_rows[0])
             pending["alpha_id"] = alpha_id
             decision_ts = int(pending["decided_ts"])
             binding = {
@@ -739,6 +790,9 @@ def build_automatic_research_risk_bundle(
             admission_blockers = _dynamic_admission_blockers(
                 forward_periods=forward_periods,
                 evaluation=evaluation if isinstance(evaluation, Mapping) else None,
+            )
+            admission_blockers = list(
+                dict.fromkeys(decision_blockers + admission_blockers)
             )
             if evaluation_row is None or not isinstance(evaluation, Mapping):
                 row_missing.append("alpha_metadata")
@@ -764,6 +818,7 @@ def build_automatic_research_risk_bundle(
                     if isinstance(evaluation, Mapping)
                     else None
                 ),
+                "decision_basis": decision_basis,
                 "synthetic_defaults": False,
             }
             try:
@@ -815,6 +870,7 @@ def build_automatic_research_risk_bundle(
                             decision_recorded_at=int(pending["recorded_at"]),
                             forward_periods=forward_periods,
                             maintenance=maintenance_document,
+                            allow_post_decision_monitoring=True,
                         )
                     except RuntimeError as exc:
                         if "alpha_metadata" not in row_missing:
@@ -822,6 +878,13 @@ def build_automatic_research_risk_bundle(
                         missing_reasons["alpha_metadata"] = str(exc)
                     else:
                         inputs["alpha_metadata"] = [metadata]
+                        if metadata.get("evidence_timing") == "POST_DECISION_MONITORING_ONLY":
+                            admission_blockers = list(
+                                dict.fromkeys(
+                                    admission_blockers
+                                    + ["INDEPENDENT_EVALUATION_POSTDATES_DECISION"]
+                                )
+                            )
                         if "alpha_metadata" in row_missing:
                             row_missing.remove("alpha_metadata")
                         missing_reasons.pop("alpha_metadata", None)

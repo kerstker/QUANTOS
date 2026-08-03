@@ -731,6 +731,11 @@ def _alpha_pipeline_payload(
                 },
                 "risk_packet": {
                     "status": risk_row.get("status", "NOT_AVAILABLE"),
+                    "decision_basis": (
+                        risk_row.get("provenance", {}).get("decision_basis")
+                        if isinstance(risk_row.get("provenance"), dict)
+                        else None
+                    ),
                     "input_evidence_status": risk_row.get(
                         "input_evidence_status",
                         "READY" if risk_row.get("status") == "READY" else "PENDING",
