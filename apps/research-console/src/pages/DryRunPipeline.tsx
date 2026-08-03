@@ -814,7 +814,7 @@ export default function DryRunPipeline() {
           <Panel
             title="自动流水线"
             eyebrow="Automation control"
-            right={<StatusChip value={scheduler?.verdict ?? 'NO_SNAPSHOT'} />}
+            right={<StatusChip value={scheduler == null ? 'NO_SNAPSHOT' : schedulerHealthy ? 'PASS' : 'BREACH'} />}
             bodyClass="divide-y divide-line/70 px-4 py-2"
           >
             {flow.map((step, index) => (
