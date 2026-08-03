@@ -464,6 +464,33 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
         "_ALPHA_PRODUCTION_WORKFLOW",
         str(tmp_path / "missing-workflow.json"),
     )
+    risk_path = tmp_path / "risk-inputs.json"
+    risk_path.write_text(
+        json.dumps(
+            {
+                "alphas": {
+                    "alpha-0": {
+                        "status": "PENDING",
+                        "input_evidence_status": "READY",
+                        "inputs": {
+                            "capacity_cny": {"BTC": 1.0},
+                            "alpha_returns": {"alpha-0": [0.01]},
+                        },
+                        "admission_blockers": [
+                            "FORWARD_EVIDENCE_MATURITY_PENDING"
+                        ],
+                        "missing_inputs": [],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_PAPER_RESEARCH_RISK_BUNDLE",
+        str(risk_path),
+    )
     forward = {
         "alphas": [
             {"alpha_id": f"alpha-{index}", "n_forward_periods": 1}
@@ -495,6 +522,17 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     assert payload["handoff"]["boundary_codes"] == []
     assert sum(row["stage"] == "EXECUTION_PAPER" for row in payload["candidates"]) == 3
     assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
+    alpha_zero = next(
+        row for row in payload["candidates"] if row["alpha_id"] == "alpha-0"
+    )
+    assert alpha_zero["risk_packet"] == {
+        "status": "PENDING",
+        "input_evidence_status": "READY",
+        "input_fields": ["alpha_returns", "capacity_cny"],
+        "admission_blockers": ["FORWARD_EVIDENCE_MATURITY_PENDING"],
+        "missing": [],
+        "reasons": {},
+    }
     assert payload["safety"]["live_allowed"] is False
     assert payload["safety"]["order_submission_allowed"] is False
     assert payload["safety"]["deployment_eligible"] is False

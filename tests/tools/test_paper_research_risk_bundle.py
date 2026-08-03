@@ -167,3 +167,115 @@ def test_pbo_above_half_is_an_observed_overfit_flag() -> None:
     )
 
     assert metadata["overfit_flag"] is True
+
+
+def test_dynamic_admission_waits_without_blocking_input_precomputation() -> None:
+    assert bundle._dynamic_admission_blockers(
+        forward_periods=3,
+        evaluation={"verdict": "PASS"},
+    ) == ["FORWARD_EVIDENCE_MATURITY_PENDING"]
+    assert bundle._dynamic_admission_blockers(
+        forward_periods=8,
+        evaluation={"verdict": "FAIL"},
+    ) == ["INDEPENDENT_EVALUATION_NOT_PASS"]
+    assert bundle._dynamic_admission_blockers(
+        forward_periods=8,
+        evaluation={"verdict": "PASS"},
+    ) == []
+
+
+def test_dynamic_admission_fails_closed_when_both_gates_are_missing() -> None:
+    assert bundle._dynamic_admission_blockers(
+        forward_periods=0,
+        evaluation=None,
+    ) == [
+        "INDEPENDENT_EVALUATION_MISSING",
+        "FORWARD_EVIDENCE_MATURITY_PENDING",
+    ]
+
+
+def test_immature_dynamic_candidate_precomputes_inputs_but_stays_pending(
+    monkeypatch,
+) -> None:
+    from tools import crypto_oi_research, crypto_robust_optimization
+
+    candidate = SimpleNamespace(alpha_id="challenger")
+    reference = SimpleNamespace(alpha_id="crowd_contra")
+    monkeypatch.setattr(bundle, "AttestedForwardLedger", _FakeLedger)
+    monkeypatch.setattr(bundle, "forward_decision_payload_sha256", lambda _row: "a" * 64)
+    monkeypatch.setattr(bundle, "_forward_periods", lambda *_args, **_kwargs: 3)
+    monkeypatch.setattr(
+        bundle,
+        "_verified_forward_evaluation_rows",
+        lambda *_args, **_kwargs: {
+            "challenger": {
+                "evaluation": {"verdict": "PASS"},
+                "run_id": "eval-1",
+                "content_hash": "content-1",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        bundle,
+        "_read_object",
+        lambda path: (
+            {"strategies": {}}
+            if "maintenance" in str(path)
+            else {"dataset_version": "forward-v1"}
+        ),
+    )
+    monkeypatch.setattr(
+        crypto_robust_optimization,
+        "load_alpha_schedules",
+        lambda: ({"crowd_contra": reference}, "schedule-v1"),
+    )
+    monkeypatch.setattr(crypto_robust_optimization, "_build_bundle", lambda _rows: {})
+    monkeypatch.setattr(crypto_oi_research, "build_panel", lambda: (object(), {}))
+    monkeypatch.setattr(bundle, "_dynamic_candidate_schedule", lambda *_args: candidate)
+    monkeypatch.setattr(
+        bundle,
+        "_candidate_risk_history",
+        lambda *_args: (
+            {"challenger": (0.01, -0.01), "crowd_contra": (0.0, 0.01)},
+            ["CALM", "STRESS"],
+            [10, 20],
+        ),
+    )
+    monkeypatch.setattr(
+        bundle,
+        "_cny_per_usd_as_of",
+        lambda *_args, **_kwargs: (7.0, {"source": "TEST_FX"}),
+    )
+    monkeypatch.setattr(
+        bundle,
+        "_decision_adv_inputs",
+        lambda **_kwargs: {
+            "capacity_cny": {"BTC": 1_000_000.0},
+            "daily_volume_cny": 10_000_000.0,
+            "total_aum": 7_000_000.0,
+            "liquidity_provenance": {"source": "TEST_ADV"},
+        },
+    )
+    monkeypatch.setattr(
+        bundle,
+        "_metadata_from_evaluation",
+        lambda **_kwargs: {
+            "age_days": 0.0,
+            "validation_confidence": 1.0,
+            "paper_confidence": 0.375,
+            "decay_flag": False,
+            "overfit_flag": False,
+            "leakage_flag": False,
+        },
+    )
+
+    document = bundle.build_automatic_research_risk_bundle(
+        alpha_ids=("challenger",),
+    )
+
+    row = document["alphas"]["challenger"]
+    assert row["input_evidence_status"] == "READY"
+    assert set(bundle.REQUIRED_INPUT_FIELDS).issubset(row["inputs"])
+    assert row["admission_blockers"] == ["FORWARD_EVIDENCE_MATURITY_PENDING"]
+    assert row["status"] == "PENDING"
+    assert document["status"] == "PENDING"

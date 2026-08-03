@@ -11,6 +11,13 @@
 > `cycle_completed=true`，资金费完整且对账残差约 `2e-10`。费用、队列位置、延迟和真实
 > 成交仍未校准，因此这是 `REAL_PUBLIC_BOOK_SIMULATED_SOR_V2`，不是生产券商 SOR/TCA。
 > 全程 public-data/paper-only，`live_allowed=false`、`order_submission_allowed=false`。
+> **同日九引擎输入前置计算：** challenger 的 PIT 收益/参考收益、regime、容量、ADV、AUM、
+> FX 与数据集身份不再被 8 周证据钟串行阻塞；有 attested decision 即预计算，并以
+> `input_evidence_status` 与正式 `status/admission_blockers` 两条正交状态展示。真实首跑：
+> 3 个 challenger 已齐全部输入但因独立评估非 PASS + 3/8 周保持 PENDING；2 个已齐
+> 6 类输入但评估晚于原决策，缺合法 pre-decision metadata；2 个 14d 变体尚无 attested
+> pending decision，明确阻断。前端现在显示 `Inputs READY · Admission PENDING`，不会把工程
+> 进度误报成正式准入，也不会因等待周期停止证据生产。
 
 
 > **2026-08-02 WP3 预注册揭盲 + WP4 组合承重接线：** **WP3 W3-1**——影子门从
