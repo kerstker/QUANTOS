@@ -3,12 +3,18 @@ import json
 import zipfile
 
 from services.data.raw_archive import (archive_json_response,
-                                       archive_response)
-from tools.raw_data_lineage_backfill import run_backfill
+                                       archive_response,
+                                       summarize_archive)
+from tools.raw_data_lineage_backfill import run_backfill as _run_backfill
 
 _DAY = 86_400_000
 _NOW = 21 * _DAY
 _EXPECTED = 20 * _DAY
+
+
+def run_backfill(**kwargs):
+    kwargs.setdefault("archive_summary", summarize_archive)
+    return _run_backfill(**kwargs)
 
 
 def _seed(tmp_path):
@@ -156,7 +162,7 @@ def test_backfill_blocks_source_value_mismatch(tmp_path):
     assert report["sources"]["perp_mark_prices"]["failures"][0]["kind"] == "VALUE_MISMATCH"
 
 
-def test_backfill_replays_verified_archive_after_transient_refetch(tmp_path):
+def test_backfill_prefers_verified_archive_without_refetch(tmp_path):
     mark_path, funding_path, oi_path, oi_record = _seed(tmp_path)
     archive = str(tmp_path / "raw")
     archive_response(
@@ -173,11 +179,7 @@ def test_backfill_replays_verified_archive_after_transient_refetch(tmp_path):
     )
 
     def mark_fetch(ticker, days, *, archive_root, observed_at_ms, failure_sink):
-        failure_sink.append({
-            "ticker": ticker, "day_ms": _EXPECTED, "kind": "TRANSIENT",
-            "error_type": "URLError", "message": "connection reset",
-        })
-        return {}
+        raise AssertionError("verified archived day must not be refetched")
 
     def oi_fetch(ticker, start_ms, end_ms, present, *, archive_root,
                  observed_at_ms, failure_sink):
@@ -214,7 +216,7 @@ def test_backfill_replays_verified_archive_after_transient_refetch(tmp_path):
     assert mark["refetched_records"] == 0
     assert mark["replayed_records"] == 1
     assert mark["failures"] == []
-    assert mark["warnings"][0]["kind"] == "TRANSIENT"
+    assert mark["warnings"] == []
 
 
 _REST_MARK = "REST_GAP_FILL"
@@ -403,7 +405,7 @@ def test_backfill_blocks_rest_gap_fill_value_mismatch(tmp_path):
     assert mark["failures"][0]["day_ms"] == expected
 
 
-def test_backfill_replays_archived_rest_day_after_transient_rest_refetch(tmp_path):
+def test_backfill_prefers_verified_archived_rest_day_without_refetch(tmp_path):
     _, _, _, oi_record = _seed(tmp_path)
     mark_path, funding_path, oi_path, older, expected = _seed_rest_window(
         tmp_path, oi_record
@@ -418,11 +420,7 @@ def test_backfill_replays_archived_rest_day_after_transient_rest_refetch(tmp_pat
 
     def rest_mark_fetch(ticker, days, *, now_ms, archive_root, observed_at_ms,
                         failure_sink):
-        failure_sink.append({
-            "ticker": ticker, "day_ms": expected, "kind": "TRANSIENT",
-            "error_type": "URLError", "message": "connection reset",
-        })
-        return {}
+        raise AssertionError("verified archived REST day must not be refetched")
 
     def oi_fetch(ticker, start_ms, end_ms, present, *, archive_root,
                  observed_at_ms, failure_sink):
@@ -455,5 +453,64 @@ def test_backfill_replays_archived_rest_day_after_transient_rest_refetch(tmp_pat
     assert mark["rest_refetched_records"] == 0
     assert mark["rest_replayed_records"] == 1
     assert mark["failures"] == []
-    assert mark["warnings"][0]["kind"] == "TRANSIENT"
-    assert mark["warnings"][0]["resolved_by"] == "ARCHIVE_REPLAY"
+    assert mark["warnings"] == []
+
+
+def test_backfill_fetches_only_days_missing_from_archive(tmp_path):
+    mark_path, funding_path, oi_path, oi_record = _seed(tmp_path)
+    older = 19 * _DAY
+    mark_payload = json.loads(mark_path.read_text(encoding="utf-8"))
+    mark_payload["data"]["BTC"][str(older)] = 99.0
+    mark_path.write_text(json.dumps(mark_payload), encoding="utf-8")
+    funding_payload = json.loads(funding_path.read_text(encoding="utf-8"))
+    funding_payload["BTC"][str(older)] = 0.001
+    funding_path.write_text(json.dumps(funding_payload), encoding="utf-8")
+    oi_payload = json.loads(oi_path.read_text(encoding="utf-8"))
+    oi_payload["data"]["BTC"][str(older)] = oi_record
+    oi_path.write_text(json.dumps(oi_payload), encoding="utf-8")
+    archive = str(tmp_path / "raw")
+    archive_response(
+        root=archive, payload=_mark_zip(older, close=99.0),
+        source_uri="https://data.example.test/mark/BTC.zip",
+        provider="example-public-data", dataset_id="perp_mark_prices",
+        instrument_id="BTC", observed_at_ms=_NOW - 1,
+        representation="HTTP_BODY_BYTES",
+        parse_diagnostics={
+            "status": "ACCEPTED", "input_rows": 1, "accepted_rows": 1,
+            "rejected_rows": 0, "duplicate_rows": 0,
+            "event_time_ms": older,
+        },
+    )
+    seen = {}
+
+    def mark_fetch(ticker, days, *, archive_root, observed_at_ms, failure_sink):
+        seen["mark_days"] = list(days)
+        _archive_bytes(archive_root, "perp_mark_prices", b"mark", observed_at_ms)
+        return {_EXPECTED: 100.0}
+
+    def oi_fetch(ticker, start_ms, end_ms, present, *, archive_root,
+                 observed_at_ms, failure_sink):
+        seen["oi_range"] = (start_ms, end_ms)
+        _archive_bytes(archive_root, "oi_metrics", b"oi", observed_at_ms)
+        return {older: oi_record, _EXPECTED: oi_record}
+
+    report = run_backfill(
+        now_ms=_NOW,
+        instruments=["BTC"],
+        lookback_days=2,
+        archive_root=archive,
+        mark_path=str(mark_path),
+        funding_path=str(funding_path),
+        oi_path=str(oi_path),
+        mark_fetch=mark_fetch,
+        oi_fetch=oi_fetch,
+        funding_fetch=_funding_fetch_two_days(older, _EXPECTED),
+        funding_workers=1,
+    )
+
+    assert report["verdict"] == "PASS", report["block_reasons"]
+    assert seen["mark_days"] == [_EXPECTED]
+    assert seen["oi_range"] == (older, _EXPECTED + _DAY)
+    mark = report["sources"]["perp_mark_prices"]
+    assert mark["replayed_records"] == 1
+    assert mark["refetched_records"] == 1

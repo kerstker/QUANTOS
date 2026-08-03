@@ -1,5 +1,6 @@
 import hashlib
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -9,7 +10,9 @@ from services.data.raw_archive import (
     archive_json_response,
     archive_response,
     load_archived_response,
+    load_archived_responses,
     summarize_archive,
+    summarize_indexed_archive,
 )
 
 
@@ -143,6 +146,57 @@ def test_load_archived_response_returns_latest_verified_event(tmp_path):
         str(tmp_path), dataset_id="perp_mark_prices",
         instrument_id="ETH", event_time_ms=500,
     ) is None
+
+
+def test_load_archived_responses_returns_latest_for_requested_keys(tmp_path):
+    common = {
+        "root": str(tmp_path),
+        "source_uri": "https://data.example.test/market/day.zip",
+        "provider": "example-public-data",
+        "dataset_id": "perp_mark_prices",
+        "representation": "HTTP_BODY_BYTES",
+    }
+    for instrument, event_time, observed_at, payload in (
+        ("BTC", 500, 1000, b"old"),
+        ("BTC", 500, 2000, b"new"),
+        ("ETH", 600, 1500, b"eth"),
+        ("SOL", 700, 1500, b"unrequested"),
+    ):
+        archive_response(
+            payload=payload,
+            instrument_id=instrument,
+            observed_at_ms=observed_at,
+            parse_diagnostics={"status": "ACCEPTED", "event_time_ms": event_time},
+            **common,
+        )
+    btc = ("perp_mark_prices", "BTC", 500)
+    eth = ("perp_mark_prices", "ETH", 600)
+    missing = ("perp_mark_prices", "XRP", 800)
+
+    responses = load_archived_responses(
+        str(tmp_path), requests={btc, eth, missing}
+    )
+
+    assert set(responses) == {btc, eth}
+    assert responses[btc]["payload"] == b"new"
+    assert responses[eth]["payload"] == b"eth"
+
+
+def test_indexed_summary_requires_and_reuses_recent_full_audit(tmp_path):
+    _archive(tmp_path)
+    before = summarize_indexed_archive(str(tmp_path), now_ms=2000)
+    assert before["status"] == "BLOCK"
+    assert before["errors"] == [{"kind": "FULL_AUDIT_STALE"}]
+
+    assert summarize_archive(str(tmp_path))["status"] == "PASS"
+    after = summarize_indexed_archive(
+        str(tmp_path), dataset_ids={"perp_mark_prices"},
+        instrument_ids={"BTC"}, now_ms=int(time.time() * 1000),
+    )
+
+    assert after["status"] == "PASS"
+    assert after["observation_count"] == 1
+    assert after["coverage_scope"] == "INDEXED_OBSERVATIONS_ANCHORED_TO_FULL_AUDIT"
 
 
 def test_archive_summary_blocks_tampered_object(tmp_path):

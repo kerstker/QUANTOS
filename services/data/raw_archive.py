@@ -4,8 +4,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import tempfile
+import threading
+import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
@@ -27,6 +31,8 @@ _SENSITIVE_QUERY_PARTS = (
     "token",
 )
 _HTTPS_URL = TypeAdapter(HttpUrl)
+_INDEX_NAME = "archive_index.sqlite3"
+_INDEX_SETUP_LOCK = threading.RLock()
 
 
 def _sha256(payload: bytes) -> str:
@@ -115,6 +121,58 @@ def _publish_immutable(path: str, payload: bytes) -> None:
         os.remove(temporary)
 
 
+def _index_connection(root: str) -> sqlite3.Connection:
+    with _INDEX_SETUP_LOCK:
+        connection = sqlite3.connect(os.path.join(root, _INDEX_NAME), timeout=30.0)
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS observations (
+            observation_sha256 TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL,
+            instrument_id TEXT NOT NULL,
+            event_time_ms INTEGER,
+            observed_at_ms INTEGER NOT NULL,
+            artifact_sha256 TEXT NOT NULL,
+            observation_path TEXT NOT NULL,
+            object_path TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            representation TEXT NOT NULL,
+            parse_status TEXT
+            )
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_archive_event
+            ON observations(dataset_id, instrument_id, event_time_ms, observed_at_ms)
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS audit_state (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+            audited_at_ms INTEGER NOT NULL
+            )
+        """)
+    return connection
+
+
+def _index_row(observation_sha: str, observation: dict) -> tuple:
+    diagnostics = observation["parse_diagnostics"]
+    event_time = diagnostics.get("event_time_ms")
+    if isinstance(event_time, bool) or not isinstance(event_time, int):
+        event_time = None
+    return (
+        observation_sha, observation["dataset_id"], observation["instrument_id"],
+        event_time, observation["observed_at_ms"], observation["artifact_sha256"],
+        f"observations/sha256/{observation_sha[:2]}/{observation_sha}.json",
+        observation["object_path"], observation["provider"],
+        observation["representation"], diagnostics.get("status"),
+    )
+
+
+def _insert_index_rows(connection: sqlite3.Connection, rows) -> None:
+    connection.executemany("""
+        INSERT OR IGNORE INTO observations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, rows)
+
+
 def archive_response(
     *,
     root: str,
@@ -176,6 +234,12 @@ def archive_response(
         observation_sha + ".json",
     )
     _publish_immutable(observation_path, observation_bytes)
+    connection = _index_connection(root)
+    try:
+        _insert_index_rows(connection, [_index_row(observation_sha, observation)])
+        connection.commit()
+    finally:
+        connection.close()
     return {
         "artifact_sha256": artifact_sha,
         "observation_sha256": observation_sha,
@@ -253,20 +317,54 @@ def load_archived_response(
     event_time_ms: int,
 ) -> dict | None:
     """Load the latest verified accepted response for one dataset/instrument/event."""
+    key = (dataset_id, instrument_id, event_time_ms)
+    return load_archived_responses(root, requests={key}).get(key)
+
+
+def load_archived_responses(
+    root: str,
+    *,
+    requests: set[tuple[str, str, int]] | frozenset[tuple[str, str, int]],
+) -> dict[tuple[str, str, int], dict]:
+    """Load latest verified responses for many keys with one archive scan."""
     root = os.path.abspath(root)
-    dataset_id = _require_text("dataset_id", dataset_id)
-    instrument_id = _require_text("instrument_id", instrument_id)
-    if isinstance(event_time_ms, bool) or not isinstance(event_time_ms, int):
-        raise RawArchiveError("event_time_ms must be an integer")
-    observation_root = os.path.join(root, "observations", "sha256")
-    if not os.path.isdir(observation_root):
-        return None
-    matches = []
-    for directory, _subdirs, names in os.walk(observation_root):
-        for name in names:
-            if not name.endswith(".json") or name.startswith(".tmp_"):
-                continue
-            path = os.path.join(directory, name)
+    normalized = set()
+    for request in requests:
+        if not isinstance(request, tuple) or len(request) != 3:
+            raise RawArchiveError(
+                "archive request must be a (dataset_id, instrument_id, event_time_ms) tuple"
+            )
+        dataset_id = _require_text("dataset_id", request[0])
+        instrument_id = _require_text("instrument_id", request[1])
+        event_time_ms = request[2]
+        if isinstance(event_time_ms, bool) or not isinstance(event_time_ms, int):
+            raise RawArchiveError("event_time_ms must be an integer")
+        normalized.add((dataset_id, instrument_id, event_time_ms))
+    if not normalized:
+        return {}
+    index_path = os.path.join(root, _INDEX_NAME)
+    if not os.path.isfile(index_path):
+        return {}
+    matches = {}
+    connection = _index_connection(root)
+    try:
+        datasets = sorted({key[0] for key in normalized})
+        instruments = sorted({key[1] for key in normalized})
+        events = sorted({key[2] for key in normalized})
+        placeholders = lambda values: ",".join("?" for _ in values)
+        rows = connection.execute(
+            f"""SELECT observation_sha256, observation_path
+                FROM observations
+                WHERE dataset_id IN ({placeholders(datasets)})
+                  AND instrument_id IN ({placeholders(instruments)})
+                  AND event_time_ms IN ({placeholders(events)})
+                  AND parse_status = 'ACCEPTED'""",
+            datasets + instruments + events,
+        ).fetchall()
+    finally:
+        connection.close()
+    for observation_sha, relative_path in rows:
+            path = os.path.join(root, *relative_path.split("/"))
             observation, error = _load_observation(path)
             if error is not None:
                 continue
@@ -275,10 +373,12 @@ def load_archived_response(
             except (RawArchiveError, TypeError):
                 continue
             diagnostics = observation["parse_diagnostics"]
-            if (observation["dataset_id"] != dataset_id
-                    or observation["instrument_id"] != instrument_id
-                    or diagnostics.get("status") != "ACCEPTED"
-                    or diagnostics.get("event_time_ms") != event_time_ms):
+            key = (
+                observation["dataset_id"],
+                observation["instrument_id"],
+                diagnostics.get("event_time_ms"),
+            )
+            if diagnostics.get("status") != "ACCEPTED" or key not in normalized:
                 continue
             object_path = os.path.join(
                 root, *observation["object_path"].split("/")
@@ -290,18 +390,78 @@ def load_archived_response(
             if (_sha256(payload) != observation["artifact_sha256"]
                     or len(payload) != observation["size_bytes"]):
                 raise RawArchiveError("archived response object failed verification")
-            observation_sha = os.path.splitext(name)[0]
-            matches.append((
+            candidate = (
                 int(observation["observed_at_ms"]), observation_sha,
                 payload, observation,
-            ))
-    if not matches:
-        return None
-    _observed_at, observation_sha, payload, observation = max(matches)
+            )
+            if key not in matches or candidate[:2] > matches[key][:2]:
+                matches[key] = candidate
     return {
-        "payload": payload,
-        "observation_sha256": observation_sha,
-        "observation": observation,
+        key: {
+            "payload": candidate[2],
+            "observation_sha256": candidate[1],
+            "observation": candidate[3],
+        }
+        for key, candidate in matches.items()
+    }
+
+
+def summarize_indexed_archive(
+    root: str,
+    *,
+    dataset_ids: set[str] | frozenset[str] | None = None,
+    instrument_ids: set[str] | frozenset[str] | None = None,
+    now_ms: int | None = None,
+    max_full_audit_age_ms: int = 86_400_000,
+) -> dict:
+    """Return a fast derived summary anchored to a recent full filesystem audit."""
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    index_path = os.path.join(os.path.abspath(root), _INDEX_NAME)
+    if not os.path.isfile(index_path):
+        return {"status": "MISSING", "errors": [{"kind": "INDEX_MISSING"}]}
+    connection = _index_connection(os.path.abspath(root))
+    try:
+        audit = connection.execute(
+            "SELECT audited_at_ms FROM audit_state WHERE singleton = 1"
+        ).fetchone()
+        clauses = []
+        parameters = []
+        if dataset_ids is not None:
+            values = sorted(dataset_ids)
+            clauses.append("dataset_id IN (%s)" % ",".join("?" for _ in values))
+            parameters.extend(values)
+        if instrument_ids is not None:
+            values = sorted(instrument_ids)
+            clauses.append("instrument_id IN (%s)" % ",".join("?" for _ in values))
+            parameters.extend(values)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        rows = connection.execute(
+            "SELECT observation_sha256, artifact_sha256, dataset_id, provider, "
+            "representation, observed_at_ms FROM observations" + where,
+            parameters,
+        ).fetchall()
+    finally:
+        connection.close()
+    audited_at = audit[0] if audit else None
+    stale = audited_at is None or int(now_ms) - audited_at > max_full_audit_age_ms
+    datasets = Counter(row[2] for row in rows)
+    return {
+        "schema_version": 1,
+        "status": "BLOCK" if stale else ("PASS" if rows else "MISSING"),
+        "coverage_scope": "INDEXED_OBSERVATIONS_ANCHORED_TO_FULL_AUDIT",
+        "observation_count": len(rows),
+        "invalid_observation_count": 0,
+        "object_count": len({row[1] for row in rows}),
+        "datasets": dict(sorted(datasets.items())),
+        "providers": sorted({row[3] for row in rows}),
+        "representations": sorted({row[4] for row in rows}),
+        "latest_observed_at_ms": max((row[5] for row in rows), default=None),
+        "aggregate_sha256": _sha256(_json_bytes(
+            sorted(row[0] for row in rows), label="observation index"
+        )) if rows else None,
+        "full_audit_at_ms": audited_at,
+        "errors": [{"kind": "FULL_AUDIT_STALE"}] if stale else [],
     }
 
 
@@ -360,11 +520,14 @@ def summarize_archive(
     objects = set()
     observed_at = []
     observation_ids = []
-    for path in paths:
+    index_rows = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        loaded_observations = list(executor.map(_load_observation, paths))
+    verified_objects = {}
+    for path, (observation, load_error) in zip(paths, loaded_observations):
         observation_id = os.path.splitext(os.path.basename(path))[0]
         if not scoped:
             observation_ids.append(observation_id)
-        observation, load_error = _load_observation(path)
         if load_error is not None:
             if scoped:
                 # The unfiltered admission summary remains load-bearing for
@@ -410,24 +573,26 @@ def summarize_archive(
             invalid.add(observation_id)
             continue
         object_path = os.path.join(root, *object_relative.split("/"))
-        try:
-            body = open(object_path, "rb").read()
-        except OSError:
-            errors.append({
-                "observation_sha256": observation_id,
-                "kind": "OBJECT_MISSING",
-            })
-            invalid.add(observation_id)
-            continue
-        if _sha256(body) != artifact_sha:
-            kind = "OBJECT_DIGEST_MISMATCH"
-        elif len(body) != observation.get("size_bytes"):
+        verification = verified_objects.get(artifact_sha)
+        if verification is None:
+            try:
+                body = open(object_path, "rb").read()
+            except OSError:
+                verification = ("OBJECT_MISSING", None)
+            else:
+                if _sha256(body) != artifact_sha:
+                    verification = ("OBJECT_DIGEST_MISMATCH", len(body))
+                else:
+                    verification = (None, len(body))
+            verified_objects[artifact_sha] = verification
+        kind, actual_size = verification
+        if kind is None and actual_size != observation.get("size_bytes"):
             kind = "OBJECT_SIZE_MISMATCH"
-        else:
-            kind = None
         if kind is not None:
             errors.append({"observation_sha256": observation_id, "kind": kind})
             invalid.add(observation_id)
+        else:
+            index_rows.append(_index_row(observation_id, observation))
 
         objects.add(str(artifact_sha))
         datasets[str(observation.get("dataset_id"))] += 1
@@ -453,6 +618,18 @@ def summarize_archive(
             "errors": [],
         }
     aggregate = _sha256(_json_bytes(sorted(observation_ids), label="observation index"))
+    if not scoped and not errors:
+        connection = _index_connection(root)
+        try:
+            _insert_index_rows(connection, index_rows)
+            connection.execute(
+                "INSERT INTO audit_state(singleton, audited_at_ms) VALUES (1, ?) "
+                "ON CONFLICT(singleton) DO UPDATE SET audited_at_ms=excluded.audited_at_ms",
+                (int(time.time() * 1000),),
+            )
+            connection.commit()
+        finally:
+            connection.close()
     return {
         "schema_version": 1,
         "status": "BLOCK" if errors else "PASS",

@@ -59,6 +59,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "paper_shadow_auto",
         "paper_shadow_realtime",
         "paper_health",
+        "raw_archive_audit",
         "ic_panel_research",
         "l2_backup",
         "l2_scheduler_watchdog",

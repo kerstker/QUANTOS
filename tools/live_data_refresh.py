@@ -31,7 +31,7 @@ from services.data.market_provider import ingest_provider_rows
 from services.data.file_ingest import FatalIngestionError
 from services.data.quality import build_ingestion_report
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
-                                       summarize_archive)
+                                       summarize_indexed_archive)
 from services.data.refresh_history import (RefreshHistoryStore,
                                            source_outcome)
 from services.monitoring.domain_event_runtime import (
@@ -863,7 +863,9 @@ def run_refresh(*, now_ms=None, source_timeouts=None,
     else:
         # Keep the injected test/operator reader's one-argument contract.
         resolved_staleness_reader = staleness_reader
-    resolved_archive_summary = archive_summary or summarize_archive
+    resolved_archive_summary = archive_summary or (
+        lambda root: summarize_indexed_archive(root, now_ms=int(now_ms))
+    )
     resolved_alert_emitter = alert_emitter or emit
     source_tickers = {
         "prices": active_tickers,
