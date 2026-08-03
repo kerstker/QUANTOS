@@ -1396,6 +1396,7 @@ export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
   };
   risk_packet?: {
     status?: string | null;
+    decision_basis?: string | null;
     input_evidence_status?: string | null;
     input_fields?: string[];
     admission_blockers?: string[];

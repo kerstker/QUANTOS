@@ -479,6 +479,9 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
                         "admission_blockers": [
                             "FORWARD_EVIDENCE_MATURITY_PENDING"
                         ],
+                        "provenance": {
+                            "decision_basis": "CURRENT_ATTESTED_PENDING_DECISION"
+                        },
                         "missing_inputs": [],
                     }
                 }
@@ -527,6 +530,7 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
     )
     assert alpha_zero["risk_packet"] == {
         "status": "PENDING",
+        "decision_basis": "CURRENT_ATTESTED_PENDING_DECISION",
         "input_evidence_status": "READY",
         "input_fields": ["alpha_returns", "capacity_cny"],
         "admission_blockers": ["FORWARD_EVIDENCE_MATURITY_PENDING"],

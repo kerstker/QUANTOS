@@ -729,7 +729,13 @@ export default function DryRunPipeline() {
                             diagnostic only · never deployment eligible
                           </div>
                         ) : !candidate.execution_paper ? (
-                          <div className="mt-1 text-3xs text-faint">
+                          <div
+                            className="mt-1 text-3xs text-faint"
+                            title={[
+                              candidate.risk_packet?.decision_basis,
+                              ...(candidate.risk_packet?.admission_blockers ?? []),
+                            ].filter(Boolean).join(' · ') || undefined}
+                          >
                             Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Inputs {candidate.risk_packet?.input_evidence_status ?? 'PENDING'} · Admission {candidate.risk_packet?.status ?? 'PENDING'}
                           </div>
                         ) : null}
