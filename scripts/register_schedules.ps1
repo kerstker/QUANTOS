@@ -97,7 +97,11 @@ function Disable-TaskIfPresent {
         Where-Object { $_.CommandLine -like $workerPattern }
     )
     foreach ($worker in $workers) {
-      Stop-Process -Id $worker.ProcessId -Force -ErrorAction Stop
+      # The scheduled shim and its interpreter can finish between CIM
+      # enumeration and Stop-Process.  Treat that specific disappearance as
+      # quiesced; the mandatory re-scan below still fails closed when any
+      # matching process survives (including access-denied failures).
+      Stop-Process -Id $worker.ProcessId -Force -ErrorAction SilentlyContinue
     }
     $workerDeadline = (Get-Date).AddSeconds(30)
     do {
