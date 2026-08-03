@@ -835,6 +835,12 @@ def _alpha_pipeline_payload(
                         "UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED",
                         not workflow_verified,
                     ),
+                )
+                if present
+            ],
+            "boundary_codes": [
+                code
+                for code, present in (
                     (
                         "LEGACY_DIAGNOSTIC_PAPER_QUARANTINED",
                         legacy_execution_count > 0,

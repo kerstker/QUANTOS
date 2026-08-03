@@ -115,3 +115,22 @@ def test_parser_blocks_unsorted_or_stale_depth():
     stale["E"] = stale["T"]
     with pytest.raises(rpi.BinanceRpiDepthError, match="stale"):
         rpi.parse_snapshot("BTCUSDT", stale, knowledge_time_ms=_NOW)
+
+
+def test_parser_accepts_bounded_exchange_clock_lead_without_pit_backdating():
+    payload = _fake_http(
+        "https://fapi.binance.com/fapi/v1/rpiDepth?"
+        "symbol=BTCUSDT&limit=1000"
+    )
+    payload["T"] = _NOW + 2_000
+    payload["E"] = _NOW + 2_005
+
+    row = rpi.parse_snapshot("BTCUSDT", payload, knowledge_time_ms=_NOW)
+
+    assert row["event_time_ms"] == _NOW + 2_000
+    assert row["knowledge_time_ms"] == _NOW + 2_005
+
+    payload["T"] = _NOW + rpi.MAX_FUTURE_SKEW_MS + 1
+    payload["E"] = payload["T"]
+    with pytest.raises(rpi.BinanceRpiDepthError, match="future"):
+        rpi.parse_snapshot("BTCUSDT", payload, knowledge_time_ms=_NOW)

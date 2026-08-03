@@ -657,9 +657,9 @@ export default function DryRunPipeline() {
                 tone="info"
               />
               <Metric
-                label="Candidate paper"
-                value={alphaPipeline?.counts.candidate_execution_paper ?? 0}
-                detail="new-pipeline marked books"
+                label="Engineering paper"
+                value={shadow?.candidate_universe?.running_count ?? alphaRows.length}
+                detail={`${alphaPipeline?.counts.candidate_execution_paper ?? 0} official candidates; isolated shadow books`}
                 tone="accent"
               />
               <Metric
@@ -753,6 +753,11 @@ export default function DryRunPipeline() {
               <Callout summary="Pipeline handoff is not fully connected" tone="warn">
                 {alphaPipeline.handoff.gap_codes.map(code => <div key={code}>- {code}</div>)}
                 {alphaPipeline.factory.verdict ? <div>- Factory: {alphaPipeline.factory.verdict}</div> : null}
+              </Callout>
+            ) : null}
+            {alphaPipeline?.handoff.boundary_codes?.length ? (
+              <Callout summary="Pipeline safety boundaries are active" tone="info">
+                {alphaPipeline.handoff.boundary_codes.map(code => <div key={code}>- {code}</div>)}
               </Callout>
             ) : null}
           </Panel>
