@@ -459,6 +459,11 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
         "_CANDIDATE_ADMISSION_STATUS",
         str(tmp_path / "missing-admission.json"),
     )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_ALPHA_PRODUCTION_WORKFLOW",
+        str(tmp_path / "missing-workflow.json"),
+    )
     forward = {
         "alphas": [
             {"alpha_id": f"alpha-{index}", "n_forward_periods": 1}
@@ -590,6 +595,11 @@ def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(
         artifact_paper_views,
         "_CANDIDATE_ADMISSION_STATUS",
         str(tmp_path / "missing-admission.json"),
+    )
+    monkeypatch.setattr(
+        artifact_paper_views,
+        "_ALPHA_PRODUCTION_WORKFLOW",
+        str(tmp_path / "missing-workflow.json"),
     )
     forward = {
         "alphas": [

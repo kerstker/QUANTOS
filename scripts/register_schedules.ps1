@@ -64,7 +64,10 @@ $l2Principal = New-ScheduledTaskPrincipal `
   -LogonType S4U -RunLevel Limited
 
 function Disable-TaskIfPresent {
-  param([Parameter(Mandatory = $true)][string]$Name)
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [string]$Module
+  )
 
   $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
   if ($null -eq $task) {
@@ -82,6 +85,37 @@ function Disable-TaskIfPresent {
       throw "${Name}: running instance did not stop before release registration"
     }
     Write-Host "${Name}: stopped before release registration"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($Module)) {
+    # WindowsApps pythonw is a launcher shim. Task Scheduler can report Ready
+    # after stopping the shim while the real interpreter remains orphaned and
+    # keeps mutable SQLite/lock files open. Match only the approved L2 launcher
+    # plus the exact module, terminate those descendants, and verify quiescence.
+    $workerPattern = "*l2_schedule_entrypoint.py* ${Module} --release-commit *"
+    $workers = @(
+      Get-CimInstance Win32_Process -ErrorAction Stop |
+        Where-Object { $_.CommandLine -like $workerPattern }
+    )
+    foreach ($worker in $workers) {
+      Stop-Process -Id $worker.ProcessId -Force -ErrorAction Stop
+    }
+    $workerDeadline = (Get-Date).AddSeconds(30)
+    do {
+      $remainingWorkers = @(
+        Get-CimInstance Win32_Process -ErrorAction Stop |
+          Where-Object { $_.CommandLine -like $workerPattern }
+      )
+      if ($remainingWorkers.Count -eq 0) {
+        break
+      }
+      Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $workerDeadline)
+    if ($remainingWorkers.Count -ne 0) {
+      throw "${Name}: orphaned L2 worker did not stop before release registration"
+    }
+    if ($workers.Count -ne 0) {
+      Write-Host "${Name}: stopped $($workers.Count) orphaned L2 worker process(es)"
+    }
   }
   Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
   Write-Host "${Name}: disabled before L2 registration"
@@ -159,7 +193,7 @@ function Register-L2Task {
   # hours while the new release starts beside it.  Stop and verify the exact
   # same task before replacing its definition; failure is loud and leaves no
   # mixed-release registration claim.
-  Disable-TaskIfPresent -Name $Name
+  Disable-TaskIfPresent -Name $Name -Module $Module
   $logRoot = Join-Path $stateRoot ".runtime\logs"
   $action = New-ScheduledTaskAction -Execute $pythonw `
     -Argument "`"$launcher`" $Module --release-commit $releaseCommit" `

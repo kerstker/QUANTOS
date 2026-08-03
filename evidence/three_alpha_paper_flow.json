@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "flow": "THREE_ALPHA_PAPER_FLOW",
-  "started_at": 1785596388647,
-  "finished_at": 1785596391844,
+  "started_at": 1785769256365,
+  "finished_at": 1785769259325,
   "readiness": "L2_DRY_RUN_ONLY",
   "stages": {
     "public_forward": {
@@ -98,6 +98,7 @@
         }
       }
     ],
+    "candidate_authoritative_dry_runs": [],
     "paper_cycle": {
       "status": "PASS",
       "path": "evidence\\alpha_paper_cycle.json",
@@ -106,7 +107,7 @@
         "readiness": "L2_DRY_RUN_ONLY",
         "cycle": {
           "mode": "FORWARD_PAPER_ONLY",
-          "state": "BLOCKED_BY_DATA_AND_EVENT_GATES",
+          "state": "PENDING_FORWARD_EVIDENCE",
           "required_forward_periods": 8,
           "official_driver": "tools/forward_track_advance.py",
           "forward_return_semantics": {
@@ -186,12 +187,11 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 2,
-              "evidence_state": "ATTESTED",
+              "evidence_state": "DATA_BLOCKED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
@@ -256,12 +256,11 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 2,
-              "evidence_state": "ATTESTED",
+              "evidence_state": "DATA_BLOCKED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           },
@@ -327,19 +326,16 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 1,
-              "evidence_state": "ATTESTED",
+              "evidence_state": "DATA_BLOCKED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           }
         },
-        "common_blockers": [
-          "GONOGO_FORWARD_EVIDENCE_STALE"
-        ],
+        "common_blockers": [],
         "next_actions": [
           "run the official forward driver on each daily poll until every candidate has at least 8 realized periods",
           "keep top_contra research-only until its forward evidence reaches the required period count"
@@ -352,10 +348,10 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "GONOGO_FORWARD_EVIDENCE_STALE",
           "DRY_RUN_RESEARCH_RISK_NOT_PASS",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED"
+          "PAPER_CYCLE_BLOCKED",
+          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
         ],
         "report": {
           "schema_version": 1,
@@ -393,14 +389,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": true,
+            "quality_evidence_current": false,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "ATTESTED",
-            "refresh_evidence_available": true,
+            "evidence_state": "DATA_BLOCKED",
+            "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": false,
+            "gonogo_forward_evidence_present": true,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -415,10 +411,10 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED"
+              "PAPER_CYCLE_BLOCKED",
+              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
             ],
             "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },
@@ -434,9 +430,9 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED"
+          "PAPER_CYCLE_BLOCKED",
+          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
         ],
         "report": {
           "schema_version": 1,
@@ -483,14 +479,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": true,
+            "quality_evidence_current": false,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "ATTESTED",
-            "refresh_evidence_available": true,
+            "evidence_state": "DATA_BLOCKED",
+            "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": false,
+            "gonogo_forward_evidence_present": true,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -505,9 +501,9 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED"
+              "PAPER_CYCLE_BLOCKED",
+              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
             ],
             "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },
@@ -523,9 +519,9 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED"
+          "PAPER_CYCLE_BLOCKED",
+          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
         ],
         "report": {
           "schema_version": 1,
@@ -562,14 +558,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": true,
+            "quality_evidence_current": false,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 1,
-            "evidence_state": "ATTESTED",
-            "refresh_evidence_available": true,
+            "evidence_state": "DATA_BLOCKED",
+            "refresh_evidence_available": false,
             "event_health_verdict": "PASS",
             "pending_events": 0,
-            "gonogo_forward_evidence_present": false,
+            "gonogo_forward_evidence_present": true,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -584,9 +580,9 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED"
+              "PAPER_CYCLE_BLOCKED",
+              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
             ],
             "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },

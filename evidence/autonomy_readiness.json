@@ -1,13 +1,15 @@
 {
   "acceptance": {
     "live_authority": false,
-    "research_autonomy": true
+    "research_autonomy": false
   },
   "artifact": "QUANTOS_727_AUTONOMY_READINESS",
-  "blockers": [],
-  "commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
+  "blockers": [
+    "FULL_VALIDATION_NOT_CURRENT_PASS"
+  ],
+  "commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785752396584,
+  "generated_at_ms": 1785765213393,
   "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "This status covers deterministic research-plane autonomy only. It does not authorize paper, shadow, micro-live, or live orders.",
   "implementation": {
@@ -16,7 +18,7 @@
     "production_order_authority": false,
     "workflow_event_policy_idempotency_scheduler": true
   },
-  "input_hash": "3d0a8d62a9db91545e7504bb731ddc483210a3baaaeebf71df28bfeda04cea51",
+  "input_hash": "04b772fd14e7e213de050d6d1e836b2ffaef1956165e6d98964ff44972d21f5e",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -33,13 +35,13 @@
     "services/orchestration": {
       "exists": true,
       "file_count": 12,
-      "files_sha256": "120cbf7a467d901c9120e54175d9b8a31179e657dd5e53ad57e76ccaefdc95cc",
+      "files_sha256": "449d4c6e9994506ae80be31e8ce6b652ab17e565919dddc42fb34fe664531a00",
       "kind": "python_directory"
     },
     "tests/orchestration": {
       "exists": true,
       "file_count": 10,
-      "files_sha256": "db1694143a9b41acbe02f3a15eb337c47aec037c97f7dac3051717b978f949ea",
+      "files_sha256": "cd61bbdb2d1a0aaef140a6cd14942f3b6aeb53df6909719da9a7ad5402359346",
       "kind": "python_directory"
     }
   },
@@ -53,12 +55,12 @@
   },
   "safety_verdict": "PASS",
   "schema_version": 1,
-  "status": "READY_FOR_RESEARCH_AUTONOMY",
+  "status": "NOT_READY",
   "validation": {
-    "current": true,
-    "head_commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
-    "overall_status": "PASS",
-    "reported_commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
+    "current": false,
+    "head_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+    "overall_status": "FAIL",
+    "reported_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
     "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
     "selection_scope": "ALL",
     "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"
