@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "domain": "reliability_operations",
-      "passed": 0,
+      "passed": 1,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -747,9 +747,9 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M1",
+      "current_maturity": "M3",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
+      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -765,7 +765,7 @@
         "evidence/l2_backup_latest.json"
       ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": false,
+      "meets_target": true,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -775,7 +775,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "FAILED",
+      "status": "PASS",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -1497,10 +1497,10 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 2,
+    "failed": 1,
     "manual_evidence_required": 0,
     "partial": 6,
-    "passed": 14,
+    "passed": 15,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0
