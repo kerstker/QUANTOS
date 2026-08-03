@@ -124,6 +124,10 @@ def test_schedule_registration_quiesces_old_release_instances_before_force_repla
     )
     assert "running instance did not stop before release registration" in source
     assert "AddSeconds(30)" in source
+    assert "Get-CimInstance Win32_Process" in source
+    assert "l2_schedule_entrypoint.py* ${Module} --release-commit" in source
+    assert "Stop-Process -Id $worker.ProcessId -Force" in source
+    assert "orphaned L2 worker did not stop before release registration" in source
 
 
 def test_schedule_registration_separates_release_code_from_mutable_state():
