@@ -164,17 +164,27 @@ def _run_candidate_risk_bundle() -> dict[str, Any]:
 def run_operator(
     *,
     advance_forward: bool = True,
+    refresh_candidate_research: bool = True,
     output_path: str = DEFAULT_OUTPUT,
     flow_runner: Callable[[], Mapping[str, Any]] | None = None,
     preview_runner: Callable[[], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run the official paper flow followed by the idempotent order preview."""
+    """Run the official paper flow followed by the idempotent order preview.
+
+    ``refresh_candidate_research=False`` is the bounded mark-loop mode. It
+    consumes persisted challenger evidence instead of launching Alpha mining,
+    candidate backtests, evaluation, or risk-bundle work. Those heavy stages
+    are owned by independent scheduled tasks.
+    """
     started_at = int(time.time() * 1000)
     try:
         flow = dict(
             flow_runner()
             if flow_runner is not None
-            else run_flow(advance_forward=advance_forward)
+            else run_flow(
+                advance_forward=advance_forward,
+                run_candidates=refresh_candidate_research,
+            )
         )
         flow_verdict = flow.get("verdict")
         flow_completed = isinstance(flow_verdict, Mapping) and flow_verdict.get(
@@ -226,6 +236,19 @@ def run_operator(
             risk_stage = {
                 "status": "SKIPPED",
                 "reason": "INJECTED_FLOW_RUNNER",
+            }
+        elif not refresh_candidate_research:
+            mining_stage = {
+                "status": "SKIPPED",
+                "reason": "INDEPENDENT_RESEARCH_SCHEDULE",
+            }
+            evaluation_stage = {
+                "status": "SKIPPED",
+                "reason": "INDEPENDENT_RESEARCH_SCHEDULE",
+            }
+            risk_stage = {
+                "status": "SKIPPED",
+                "reason": "INDEPENDENT_RESEARCH_SCHEDULE",
             }
         else:
             try:

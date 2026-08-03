@@ -101,9 +101,38 @@ def test_drain_attempts_all_sources_then_projects_once(tmp_path):
     assert len(projections) == 1
     assert projections[0][1]["now_ms"] == 100
     assert projections[0][1]["worker_id"] == "domain-event-outbox-recovery"
+    assert projections[0][1]["limit"] == 1_000
+    assert document["projection"]["batches"] == 1
+    assert document["projection"]["caught_up"] is True
     assert all(store.closed for store in stores.values())
     assert bus.closed
     assert json.loads(output.read_text(encoding="utf-8")) == document
+
+
+def test_projection_catches_up_across_bounded_batches(tmp_path):
+    event_path = tmp_path / "events.db"
+    event_path.write_bytes(b"present")
+    counts = iter((1_000, 1_000, 5))
+    calls = []
+
+    def project(_bus, **kwargs):
+        calls.append(kwargs)
+        return {"projected": next(counts), "offset": len(calls) * 1_000}
+
+    document = drain_domain_event_outboxes(
+        now_ms=150,
+        event_path=str(event_path),
+        projection_path=str(tmp_path / "projection.db"),
+        output_path=str(tmp_path / "drain.json"),
+        sources=(),
+        event_bus_factory=lambda _path, *, create: _Bus(),
+        projector=project,
+    )
+
+    assert len(calls) == 3
+    assert document["projection"]["projected"] == 2_005
+    assert document["projection"]["batches"] == 3
+    assert document["projection"]["caught_up"] is True
 
 
 def test_corrupt_source_is_redacted_and_does_not_block_other_sources(tmp_path):

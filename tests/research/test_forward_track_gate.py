@@ -9,7 +9,9 @@ from services.research.paper_trading.forward_evidence import ForwardAdmissionRef
 from tools.forward_track_advance import (
     _mark_price_map,
     _candidate_advances_ledger,
+    _realization_plan,
     _realization_timestamps,
+    _reference_grid,
     authoritative_admission_status,
     decision_block_reason,
     refresh_lineage_backfill,
@@ -114,6 +116,47 @@ def test_realization_grid_deduplicates_latest_weekly_anchor_and_handles_empty():
         _NOW,
     ]
     assert _realization_timestamps([], []) == []
+
+
+def test_variant_cadence_realization_plan_honors_registered_min_gap():
+    """回归钉死(2026-08-02):f23713b0 曾让全部候选共用 6.5d 默认 min_gap,
+    3d 变体稳态积压 2 条 pending,结构性堵死「恰好一条 attested pending」契约。"""
+    event_times = [_NOW - k * _DAY for k in range(10, -1, -1)]
+    weekly_rows = [0, 7]
+    spec_3d = forward_track._alpha_spec(
+        {"expr": ("field", "global_ls"), "quantile": 0.30, "cadence_days": 3}
+    )
+    spec_7d = forward_track._alpha_spec(("field", "global_ls"))
+
+    ts_3d, gap_3d = _realization_plan(spec_3d, event_times, weekly_rows)
+    assert ts_3d == [int(t) for t in event_times]
+    assert gap_3d == 3 * _DAY - 12 * 3600 * 1000
+
+    ts_7d, gap_7d = _realization_plan(spec_7d, event_times, weekly_rows)
+    assert ts_7d == _realization_timestamps(event_times, weekly_rows)
+    assert gap_7d == 7 * _DAY - 12 * 3600 * 1000
+
+
+def test_reference_grid_follows_variant_cadence_not_weekly_default():
+    """回归钉死(2026-08-02):历史参照网格必须按候选自己的 cadence_days,
+    否则 q20/taker/3d 变体的 backtest_reference_sharpe 逐位雷同、不可比。"""
+    event_times = [_NOW - k * _DAY for k in range(30, -1, -1)]
+    spec_3d = forward_track._alpha_spec(
+        {"expr": ("field", "global_ls"), "quantile": 0.25, "cadence_days": 3}
+    )
+    spec_14d = forward_track._alpha_spec(
+        {"expr": ("field", "global_ls"), "quantile": 0.20, "cadence_days": 14}
+    )
+    grid_3d = _reference_grid(spec_3d, event_times)
+    grid_14d = _reference_grid(spec_14d, event_times)
+    assert len(grid_3d) > len(grid_14d)
+    assert all(
+        event_times[b] - event_times[a] >= 3 * _DAY
+        for a, b in zip(grid_3d, grid_3d[1:])
+    )
+    assert _reference_grid(spec_14d, event_times) == forward_track._cadence_rows(
+        event_times, 14
+    )
 
 
 def test_raw_lineage_requires_integrity_and_all_forward_datasets():

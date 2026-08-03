@@ -160,8 +160,10 @@ def drain_domain_event_outboxes(
     sources: Sequence[OutboxSource] | None = None,
     event_bus_factory=None,
     projector=None,
+    projection_batch_limit: int = 1_000,
+    max_projection_batches: int = 25,
 ) -> dict:
-    """Drain independent source outboxes, then advance the shared projection once."""
+    """Drain source outboxes, then catch the projection up in bounded batches."""
     if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:
         raise ValueError("now_ms must be a non-negative integer")
     resolved_sources = (
@@ -169,6 +171,18 @@ def drain_domain_event_outboxes(
     )
     if any(not isinstance(source, OutboxSource) for source in resolved_sources):
         raise TypeError("sources must contain OutboxSource values")
+    if (
+        isinstance(projection_batch_limit, bool)
+        or not isinstance(projection_batch_limit, int)
+        or projection_batch_limit < 1
+    ):
+        raise ValueError("projection_batch_limit must be a positive integer")
+    if (
+        isinstance(max_projection_batches, bool)
+        or not isinstance(max_projection_batches, int)
+        or max_projection_batches < 1
+    ):
+        raise ValueError("max_projection_batches must be a positive integer")
     names = [source.name for source in resolved_sources]
     if len(names) != len(set(names)):
         raise ValueError("outbox source names must be unique")
@@ -247,13 +261,41 @@ def drain_domain_event_outboxes(
                                     "path": source.path,
                                 }
         try:
-            projected = resolved_projector(
-                event_bus,
-                now_ms=now_ms,
-                projection_path=projection_path,
-                worker_id="domain-event-outbox-recovery",
-            )
-            projection_result = {"status": "PASS", **dict(projected)}
+            projected_total = 0
+            projected_batches = 0
+            caught_up = False
+            latest_projection: dict = {}
+            for _ in range(max_projection_batches):
+                latest_projection = dict(
+                    resolved_projector(
+                        event_bus,
+                        now_ms=now_ms,
+                        projection_path=projection_path,
+                        worker_id="domain-event-outbox-recovery",
+                        limit=projection_batch_limit,
+                    )
+                )
+                batch_count = latest_projection.get("projected")
+                if (
+                    isinstance(batch_count, bool)
+                    or not isinstance(batch_count, int)
+                    or batch_count < 0
+                    or batch_count > projection_batch_limit
+                ):
+                    raise ValueError("projector returned an invalid projected count")
+                projected_total += batch_count
+                projected_batches += 1
+                if batch_count < projection_batch_limit:
+                    caught_up = True
+                    break
+            projection_result = {
+                "status": "PASS",
+                **latest_projection,
+                "projected": projected_total,
+                "batches": projected_batches,
+                "batch_limit": projection_batch_limit,
+                "caught_up": caught_up,
+            }
         except Exception as exc:
             projection_result = {
                 "status": "BREACH",

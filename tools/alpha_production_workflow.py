@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping, Sequence
 import json
+import math
 import os
 from pathlib import Path
 import time
@@ -28,6 +29,20 @@ from services.research.alpha_production_workflow import (
     derive_stage,
 )
 from services.research.paper_candidate_registry import PaperCandidateRegistry
+from services.research.paper_trading.attested_store import AttestedForwardLedger
+from services.research.paper_trading.attested_store import AttestedForwardLedger
+from services.research.portfolio_evidence import (
+    PORTFOLIO_GATE_TOLERATED_MISSING,
+    PortfolioGatePolicy,
+    evaluate_portfolio_gate,
+)
+from services.research.ports.persistence import ForwardLedgerError
+from services.research.unblinding import (
+    RealizationWindow,
+    UnblindingPolicy,
+    evaluate_unblinding,
+    window_regime_labels,
+)
 from tools.cache_io import atomic_write_json
 
 
@@ -38,12 +53,31 @@ DEFAULT_HISTORICAL_EVALUATIONS = Path("evidence/paper_alpha_evaluations.json")
 DEFAULT_FORWARD_EVALUATIONS = Path("data/cache/forward_alpha_evaluations.json")
 DEFAULT_FORWARD_STATUS = Path("data/cache/forward_track_status.json")
 DEFAULT_RISK_BUNDLE = Path("data/cache/paper_research_risk_inputs.json")
+DEFAULT_PORTFOLIO_EVIDENCE = Path("data/cache/candidate_portfolio_evidence.json")
 DEFAULT_PAPER_REALTIME = Path("data/cache/paper_realtime_status.json")
 DEFAULT_LIFECYCLE = Path("evidence/alpha_lifecycle_status.json")
+DEFAULT_PAPER_TRACK = Path("data/cache/paper_track.db")
+DEFAULT_REGIME_MARKS = Path("data/cache/crypto_perp_mark_prices.json")
+DEFAULT_REGIME_FUNDING = Path("data/cache/crypto_funding_rates.json")
+DEFAULT_UNBLINDING_POLICY = UnblindingPolicy()
 REQUIRED_FORWARD_PERIODS = 8
 LEGACY_DIAGNOSTIC_IDS = frozenset(
     {"carry_oi_majors", "crowd_contra", "top_contra"}
 )
+# WP4 W4-2/W4-3:portfolio evidence 的容忍缺失集(唯一真源在纯核
+# services/research/portfolio_evidence.PORTFOLIO_GATE_TOLERATED_MISSING,此处仅
+# 再导出保持既有 import 兼容)。book 级多场所 SOR Paper TCA 是 canary 引用
+# (非 per 候选实测),盘口深度历史缺口本切片显式容忍 MISSING;capacity/crowding/
+# marginal_contribution/common_exposure 必须在场,缺一即
+# PORTFOLIO_EVIDENCE_INCOMPLETE;W4-3 起完备行再过 portfolio_gate_policy.v1
+# merit 判定(未过阈 → PORTFOLIO_GATE_*)。
+PORTFOLIO_EVIDENCE_TOLERATED_MISSING = PORTFOLIO_GATE_TOLERATED_MISSING
+# WP4 W4-3:组合门政策与容量比参照 AUM。$1M 与九引擎包生成端
+# tools/paper_research_risk_bundle.DEFAULT_PAPER_AUM_USD 及
+# tools/paper_order_preview.DEFAULT_AUM 同口径——同一纸面 book 规模,容量比
+# capacity.low / reference_aum 才与「部署 ≤ 安全容量/3」(W7 §11.3)先例可比。
+DEFAULT_PORTFOLIO_GATE_POLICY = PortfolioGatePolicy()
+DEFAULT_PAPER_AUM = 1_000_000.0
 
 
 def _read_optional(path: str | Path) -> dict[str, Any]:
@@ -57,6 +91,71 @@ def _read_optional(path: str | Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"workflow evidence is not an object: {resolved}")
     return value
+
+
+def _read_soft(path: str | Path) -> dict[str, Any]:
+    """Regime 证据读取器:缺失**或不可读** → {}(缺席 → SEALED,绝不因此崩溃)。
+
+    与 `_read_optional` 的 fail-closed 不同:regime 序列是揭盲判定的输入,
+    缺席的诚实后果是 MATURE 更晚到来(REGIME_EVIDENCE_MISSING),不是调和失败。
+    """
+    try:
+        return _read_optional(path)
+    except RuntimeError:
+        return {}
+
+
+def _series_from_document(document: Mapping[str, Any], symbol: str) -> dict[int, float]:
+    """从本地行情文档提取 {ts_ms: value}(仅数值、有限、非负 ts,按 ts 升序)。
+
+    marks 文档是 `{_meta, data: {symbol: {...}}}`,funding 文档是 `{symbol: {...}}`。
+    """
+    container = document.get("data")
+    if not isinstance(container, Mapping):
+        container = document
+    series = container.get(symbol)
+    points: dict[int, float] = {}
+    if isinstance(series, Mapping):
+        for ts, value in series.items():
+            try:
+                stamp = int(ts)
+                point = float(value)
+            except (TypeError, ValueError):
+                continue
+            if stamp < 0 or not math.isfinite(point):
+                continue
+            points[stamp] = point
+    return dict(sorted(points.items()))
+
+
+def _realization_windows(
+    candidate_id: str,
+    *,
+    paper_track_path: str | Path | None,
+) -> tuple[RealizationWindow, ...]:
+    """attested 兑现窗口(decided_ts, as_of_ts);库缺席 → 空(诚实 SEALED),
+    哈希链损坏 → fail-closed RuntimeError(与 registry 同款,绝不带伤继续)。"""
+    if paper_track_path is None:
+        return ()
+    resolved = Path(paper_track_path)
+    if not resolved.is_file():
+        return ()
+    try:
+        ledger = AttestedForwardLedger(str(resolved), create=False)
+        try:
+            rows = ledger.attested_realizations(candidate_id)
+        finally:
+            ledger.close()
+    except ForwardLedgerError as exc:
+        raise RuntimeError(
+            f"attested forward ledger failed closed: {resolved}: {exc}"
+        ) from exc
+    return tuple(
+        RealizationWindow(
+            decided_ts=int(row["decided_ts"]), as_of_ts=int(row["as_of_ts"])
+        )
+        for row in rows
+    )
 
 
 def _timestamp_ms(value: object) -> int | None:
@@ -294,7 +393,19 @@ def _shadow_gate(
     *,
     document: Mapping[str, Any],
     path: str | Path,
-) -> tuple[GateEvidence, int | None]:
+    policy: UnblindingPolicy,
+    paper_track_path: str | Path | None,
+    funding_by_ts: Mapping[int, float],
+    prices_by_ts: Mapping[int, float],
+) -> tuple[GateEvidence, int | None, dict[str, Any]]:
+    """影子门 = 预注册揭盲纪律(WP3 W3-1):MATURE 要求三重条件全过——
+
+    原始期数 ≥ min_periods ∧ 有效独立观察数 ≥ min_independent_periods ∧
+    regime 覆盖双条件(类数 + 单类份额)。任一不满足 → RUNNING/BLOCKED,
+    `unblinding` 子块(政策哈希 + 实测值 + 未满足项)并入 gate row 进 content
+    hash,未满足项同时以 `UNBLINDING_*` blocker 落进持久 bundle。本门只会让
+    MATURE 更晚到来,绝不更早;判定只消费计数与覆盖,绝不读收益/IC。
+    """
     row = _mapping_row(document, candidate_id)
     if not row:
         return (
@@ -306,10 +417,27 @@ def _shadow_gate(
                 row={},
             ),
             None,
+            {},
         )
     periods = row.get("n_forward_periods")
     observed = int(periods) if type(periods) is int and periods >= 0 else None
-    if observed is not None and observed >= REQUIRED_FORWARD_PERIODS:
+    windows = _realization_windows(candidate_id, paper_track_path=paper_track_path)
+    labels = (
+        window_regime_labels(
+            windows, funding_by_ts=funding_by_ts, prices_by_ts=prices_by_ts
+        )
+        if windows
+        else ()
+    )
+    detail = evaluate_unblinding(
+        n_periods=observed if observed is not None else 0,
+        windows=windows,
+        regime_labels=labels,
+        policy=policy,
+    )
+    row = dict(row)
+    row["unblinding"] = detail
+    if observed is not None and detail["status"] == "READY_TO_UNBLIND":
         status = EvidenceStatus.MATURE
     elif row.get("evidence_state") in {"FAILED", "BLOCKED"}:
         status = EvidenceStatus.BLOCKED
@@ -324,6 +452,20 @@ def _shadow_gate(
             row=row,
         ),
         observed,
+        detail,
+    )
+
+
+def _portfolio_missing(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """portfolio evidence 行的非容忍 missing 清单;形状畸形 → fail-closed
+    RuntimeError(带伤证据绝不当完备放行)。"""
+    missing = row.get("missing", [])
+    if not isinstance(missing, list) or any(
+        not isinstance(name, str) for name in missing
+    ):
+        raise RuntimeError("portfolio evidence row has a malformed 'missing' list")
+    return tuple(
+        sorted(set(missing) - PORTFOLIO_EVIDENCE_TOLERATED_MISSING)
     )
 
 
@@ -332,8 +474,22 @@ def _risk_gate(
     *,
     document: Mapping[str, Any],
     path: str | Path,
-) -> GateEvidence:
+    portfolio_document: Mapping[str, Any] | None = None,
+    portfolio_policy: PortfolioGatePolicy,
+    portfolio_reference_aum: float,
+) -> tuple[GateEvidence, list[str]]:
+    """RESEARCH_RISK 门(WP4 W4-2/W4-3):READY = 九引擎包 READY ∧ portfolio
+    evidence 行完备 ∧ 组合门 merit PASS(portfolio_gate_policy.v1)。
+
+    缺 artifact/缺行/缺非容忍子项 → 状态降 PENDING +
+    PORTFOLIO_EVIDENCE_INCOMPLETE(+逐子项 PORTFOLIO_EVIDENCE_MISSING:<sub>);
+    完备而未过阈 → EvidenceStatus.FAIL + 逐失败码 PORTFOLIO_GATE_<CODE>
+    (RESEARCH_RISK_NOT_READY 由调和器按非 READY 统一追加);判定 dict 并入
+    gate row(portfolio_evidence + portfolio_gate)→ 进 content hash 绑定。
+    缺席 → PENDING 绝不崩,畸形 → RuntimeError fail-closed(经 _portfolio_missing
+    与 evaluate_portfolio_gate 双重校验)。"""
     row = _mapping_row(document, candidate_id)
+    blockers: list[str] = []
     if not row:
         status = EvidenceStatus.NOT_AVAILABLE
     elif row.get("status") == "READY":
@@ -342,12 +498,42 @@ def _risk_gate(
         status = EvidenceStatus.FAIL
     else:
         status = EvidenceStatus.PENDING
-    return _gate(
-        EvidenceGate.RESEARCH_RISK,
-        status,
-        path=path,
-        document=document if row else {},
-        row=row,
+    if status is EvidenceStatus.READY:
+        portfolio_row = _mapping_row(portfolio_document or {}, candidate_id)
+        row = dict(row)
+        row["portfolio_evidence"] = portfolio_row
+        if not portfolio_row:
+            status = EvidenceStatus.PENDING
+            blockers.append("PORTFOLIO_EVIDENCE_INCOMPLETE")
+        else:
+            _portfolio_missing(portfolio_row)  # 畸形 missing 清单 → RuntimeError
+            evaluation = evaluate_portfolio_gate(
+                portfolio_row,
+                portfolio_policy,
+                reference_aum=portfolio_reference_aum,
+            )
+            row["portfolio_gate"] = evaluation
+            if evaluation["status"] == "INCOMPLETE":
+                status = EvidenceStatus.PENDING
+                blockers.append("PORTFOLIO_EVIDENCE_INCOMPLETE")
+                blockers.extend(
+                    f"PORTFOLIO_EVIDENCE_MISSING:{name}"
+                    for name in evaluation["missing"]
+                )
+            elif evaluation["status"] == "FAIL":
+                status = EvidenceStatus.FAIL
+                blockers.extend(
+                    f"PORTFOLIO_GATE_{code}" for code in evaluation["failures"]
+                )
+    return (
+        _gate(
+            EvidenceGate.RESEARCH_RISK,
+            status,
+            path=path,
+            document=document if row else {},
+            row=row,
+        ),
+        blockers,
     )
 
 
@@ -422,9 +608,23 @@ def reconcile_workflow(
     lifecycle_document: Mapping[str, Any],
     lifecycle_path: str | Path,
     release_commit: str | None,
+    paper_track_path: str | Path | None = None,
+    marks_document: Mapping[str, Any] | None = None,
+    funding_document: Mapping[str, Any] | None = None,
+    unblinding_policy: UnblindingPolicy | None = None,
+    portfolio_document: Mapping[str, Any] | None = None,
+    portfolio_policy: PortfolioGatePolicy | None = None,
+    portfolio_reference_aum: float | None = None,
 ) -> dict[str, Any]:
     inserted_candidates = 0
     inserted_events = 0
+    policy = unblinding_policy or DEFAULT_UNBLINDING_POLICY
+    gate_policy = portfolio_policy or DEFAULT_PORTFOLIO_GATE_POLICY
+    gate_reference_aum = (
+        DEFAULT_PAPER_AUM if portfolio_reference_aum is None else portfolio_reference_aum
+    )
+    funding_by_ts = _series_from_document(funding_document or {}, "BTC")
+    prices_by_ts = _series_from_document(marks_document or {}, "BTC")
     source_documents = (
         historical_document,
         forward_evaluations_document,
@@ -448,15 +648,22 @@ def reconcile_workflow(
             forward_document=forward_evaluations_document,
             forward_path=forward_evaluations_path,
         )
-        shadow, periods = _shadow_gate(
+        shadow, periods, unblinding = _shadow_gate(
             identity.candidate_id,
             document=forward_status_document,
             path=forward_status_path,
+            policy=policy,
+            paper_track_path=paper_track_path,
+            funding_by_ts=funding_by_ts,
+            prices_by_ts=prices_by_ts,
         )
-        risk = _risk_gate(
+        risk, risk_blockers = _risk_gate(
             identity.candidate_id,
             document=risk_document,
             path=risk_path,
+            portfolio_document=portfolio_document,
+            portfolio_policy=gate_policy,
+            portfolio_reference_aum=gate_reference_aum,
         )
         execution, legacy = _execution_gate(
             identity.candidate_id,
@@ -477,8 +684,11 @@ def reconcile_workflow(
             blockers.append("HISTORICAL_OOS_NOT_PASS")
         if shadow.status is not EvidenceStatus.MATURE:
             blockers.append("SIGNAL_SHADOW_NOT_MATURE")
+            for item in unblinding.get("blockers", ()):
+                blockers.append(f"UNBLINDING_{item}")
         if risk.status is not EvidenceStatus.READY:
             blockers.append("RESEARCH_RISK_NOT_READY")
+        blockers.extend(risk_blockers)
         if release_commit is None:
             blockers.append("RELEASE_IDENTITY_MISSING")
         if legacy:
@@ -506,14 +716,22 @@ def reconcile_workflow(
                 "inserted_events": inserted_events,
                 "source_as_of_ms": as_of_ms,
                 "release_commit": release_commit,
+                "unblinding_policy_hash": policy.content_hash(),
+                "unblinding_policy_version": policy.policy_version,
+                "portfolio_gate_policy_hash": gate_policy.content_hash(),
+                "portfolio_gate_policy_version": gate_policy.policy_version,
+                "portfolio_reference_aum": float(gate_reference_aum),
             },
             "source_hashes": {
                 "historical_evaluations": stable_hash(historical_document),
                 "forward_evaluations": stable_hash(forward_evaluations_document),
                 "forward_status": stable_hash(forward_status_document),
                 "research_risk": stable_hash(risk_document),
+                "portfolio_evidence": stable_hash(portfolio_document or {}),
                 "paper_realtime": stable_hash(realtime_document),
                 "lifecycle": stable_hash(lifecycle_document),
+                "regime_marks": stable_hash(marks_document or {}),
+                "regime_funding": stable_hash(funding_document or {}),
             },
         }
     )
@@ -529,8 +747,15 @@ def run(
     forward_evaluations_path: str | Path = DEFAULT_FORWARD_EVALUATIONS,
     forward_status_path: str | Path = DEFAULT_FORWARD_STATUS,
     risk_path: str | Path = DEFAULT_RISK_BUNDLE,
+    portfolio_evidence_path: str | Path = DEFAULT_PORTFOLIO_EVIDENCE,
     realtime_path: str | Path = DEFAULT_PAPER_REALTIME,
     lifecycle_path: str | Path = DEFAULT_LIFECYCLE,
+    paper_track_path: str | Path = DEFAULT_PAPER_TRACK,
+    regime_marks_path: str | Path = DEFAULT_REGIME_MARKS,
+    regime_funding_path: str | Path = DEFAULT_REGIME_FUNDING,
+    unblinding_policy: UnblindingPolicy | None = None,
+    portfolio_policy: PortfolioGatePolicy | None = None,
+    portfolio_reference_aum: float | None = None,
     release_commit: str | None = None,
 ) -> dict[str, Any]:
     commit = release_commit or os.environ.get("QUANTOS_RELEASE_COMMIT")
@@ -553,11 +778,18 @@ def run(
             forward_status_path=forward_status_path,
             risk_document=_read_optional(risk_path),
             risk_path=risk_path,
+            portfolio_document=_read_optional(portfolio_evidence_path),
             realtime_document=_read_optional(realtime_path),
             realtime_path=realtime_path,
             lifecycle_document=_read_optional(lifecycle_path),
             lifecycle_path=lifecycle_path,
             release_commit=commit,
+            paper_track_path=paper_track_path,
+            marks_document=_read_soft(regime_marks_path),
+            funding_document=_read_soft(regime_funding_path),
+            unblinding_policy=unblinding_policy,
+            portfolio_policy=portfolio_policy,
+            portfolio_reference_aum=portfolio_reference_aum,
         )
     atomic_write_json(str(output_path), snapshot, indent=2)
     return snapshot
@@ -574,8 +806,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--forward-evaluations", default=str(DEFAULT_FORWARD_EVALUATIONS))
     parser.add_argument("--forward-status", default=str(DEFAULT_FORWARD_STATUS))
     parser.add_argument("--risk-bundle", default=str(DEFAULT_RISK_BUNDLE))
+    parser.add_argument("--portfolio-evidence", default=str(DEFAULT_PORTFOLIO_EVIDENCE))
     parser.add_argument("--paper-realtime", default=str(DEFAULT_PAPER_REALTIME))
     parser.add_argument("--lifecycle", default=str(DEFAULT_LIFECYCLE))
+    parser.add_argument("--paper-track", default=str(DEFAULT_PAPER_TRACK))
+    parser.add_argument("--regime-marks", default=str(DEFAULT_REGIME_MARKS))
+    parser.add_argument("--regime-funding", default=str(DEFAULT_REGIME_FUNDING))
     parser.add_argument("--release-commit", default=None)
     args = parser.parse_args(argv)
     try:
@@ -587,8 +823,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             forward_evaluations_path=args.forward_evaluations,
             forward_status_path=args.forward_status,
             risk_path=args.risk_bundle,
+            portfolio_evidence_path=args.portfolio_evidence,
             realtime_path=args.paper_realtime,
             lifecycle_path=args.lifecycle,
+            paper_track_path=args.paper_track,
+            regime_marks_path=args.regime_marks,
+            regime_funding_path=args.regime_funding,
             release_commit=args.release_commit,
         )
     except (OSError, RuntimeError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
@@ -610,7 +850,15 @@ if __name__ == "__main__":
 __all__ = [
     "DEFAULT_DB",
     "DEFAULT_OUTPUT",
+    "DEFAULT_PAPER_AUM",
+    "DEFAULT_PAPER_TRACK",
+    "DEFAULT_PORTFOLIO_EVIDENCE",
+    "DEFAULT_PORTFOLIO_GATE_POLICY",
+    "DEFAULT_REGIME_FUNDING",
+    "DEFAULT_REGIME_MARKS",
+    "DEFAULT_UNBLINDING_POLICY",
     "LEGACY_DIAGNOSTIC_IDS",
+    "PORTFOLIO_EVIDENCE_TOLERATED_MISSING",
     "REQUIRED_FORWARD_PERIODS",
     "build_candidate_identities",
     "reconcile_workflow",

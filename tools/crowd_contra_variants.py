@@ -416,6 +416,17 @@ def stage_capacity(panel, sig, spec):
 def stage_dry_run(panel, spec, sig):
     """与 tools/dry_run_crowd_contra_multi.py 同一条 run_multi_period_dry_run(10bps、拥挤门、资金费、
     vol-target),参数化 (信号, q, cadence);不写 dry_run.db、不开 event bus。年化按变体节奏重算。"""
+    _run, metrics = candidate_dry_run(panel, spec, sig)
+    return metrics
+
+
+def candidate_dry_run(panel, spec, sig, *, event_bus=None):
+    """stage_dry_run 的核心,返回 (run, metrics):metrics 与 stage_dry_run 逐位相同;run(DryRunRun)
+    暴露给需要持久化的调用方(tools/dry_run_candidate_multi.py 的权威候选干跑)。event_bus 默认 None
+    (变体族路径零事件、逐字节不变);权威候选驱动器传入共享总线(与官方 crowd 驱动器同款接线,
+    publish_completion_event=False——完成事件由 save_and_project_dry_run 事务性绑定)。
+    run.detail 附加 final_weights/candidate_cadence_days(供调用方按节奏重算研究风控;变体族
+    调用方丢弃 run,不受影响)。"""
     insts = panel.instruments
     close, fmat, gmat, ev = (panel.matrices["close"], panel.matrices["funding"],
                              panel.matrices["global_ls"], panel.event_times)
@@ -480,11 +491,15 @@ def stage_dry_run(panel, spec, sig):
         gate=gate, ctx_factory=ctx_factory, adapter=DryRunAdapterEngine(), strategy_id=spec["id"],
         aum=_AUM, cost_bps=_COST_BPS, cash_flow_fn=cash_flow_fn,
         vol_target={"target_ann": 0.10, "lookback": 8, "lev_cap": 3.0, "ppy": ppy},
-        event_bus=None, publish_completion_event=False)
+        event_bus=event_bus, publish_completion_event=False)
+    # 供持久化调用方按节奏重算 VT 研究风控(管线内部 detail["cadence"] 恒 "weekly" 且
+    # research_risk 用默认 config 跑 raw 序列——与官方 crowd 驱动器一样由调用方覆写)。
+    run.detail["final_weights"] = dict(weights_by_period.get(periods[-1], {})) if periods else {}
+    run.detail["candidate_cadence_days"] = int(c)
     raw_rets = [x["ret"] for x in run.detail["equity_curve"]]
     vt_rets = [x["ret"] for x in run.detail["equity_curve_vt"]]
     crowding = summarize_gate_decisions(gate_decisions)
-    return {"n_periods": run.pnl["n_periods"], "n_intents": run.n_intents,
+    metrics = {"n_periods": run.pnl["n_periods"], "n_intents": run.n_intents,
             "n_approved": run.n_approved, "n_rejected": run.n_rejected,
             "total_return": run.pnl["total_return"], "total_funding": run.pnl["total_funding"],
             "reconciliation_residual": run.pnl["residual"],
@@ -492,6 +507,7 @@ def stage_dry_run(panel, spec, sig):
             "sharpe_vt": _ann(vt_rets, ppy), "max_drawdown_vt": _mdd(vt_rets),
             "pipeline_sharpe_ppy52": run.pnl["sharpe"], "pipeline_sharpe_vt_ppy52": run.pnl["sharpe_vt"],
             "crowding_gate": crowding, "ppy": ppy, "cost_bps": _COST_BPS}
+    return run, metrics
 
 
 # ---------------------------------------------------------------------------

@@ -106,6 +106,12 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_alpha_production_workflow": ExpectedTask(
         "alpha_production_workflow", 15 * 60_000
     ),
+    "QUANTOS_candidate_dry_run": ExpectedTask(
+        "dry_run_candidate_multi", 2 * _DAY_MS
+    ),
+    "QUANTOS_candidate_portfolio_evidence": ExpectedTask(
+        "candidate_portfolio_evidence", 2 * _DAY_MS
+    ),
     "QUANTOS_forward_track": ExpectedTask("forward_track_advance", 9 * _DAY_MS),
     "QUANTOS_alpha_maintenance": ExpectedTask("alpha_maintenance_sweep", 9 * _DAY_MS),
     "QUANTOS_domain_event_ops": ExpectedTask(
@@ -140,11 +146,6 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_realtime_alpha_discovery": ExpectedTask(
         "realtime_alpha_discovery",
         3 * _HOUR_MS,
-        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
-    ),
-    "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
-        "realtime_alpha_forward_shadow",
-        5 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
     "QUANTOS_realtime_alpha_forward_shadow": ExpectedTask(
@@ -210,8 +211,13 @@ _RESTORE_HISTORY_MATURITY_REASONS = frozenset(
 )
 
 
-def _restore_policy_and_path(repo_root: Path) -> tuple[RestoreCadencePolicy, Path]:
-    registry_path = repo_root / "config" / "top_tier_requirements.json"
+def _restore_policy_and_path(
+    repo_root: Path,
+    *,
+    policy_root: Path | None = None,
+) -> tuple[RestoreCadencePolicy, Path]:
+    registry_root = repo_root if policy_root is None else policy_root
+    registry_path = registry_root / "config" / "top_tier_requirements.json"
     document = load_json_without_duplicate_keys(
         registry_path.read_text(encoding="utf-8")
     )
@@ -253,11 +259,20 @@ def _restore_policy_and_path(repo_root: Path) -> tuple[RestoreCadencePolicy, Pat
     return policy, repo_root.joinpath(*relative_history.parts)
 
 
-def read_restore_history_health(*, repo_root: str | Path, now_ms: int) -> dict:
+def read_restore_history_health(
+    *,
+    repo_root: str | Path,
+    now_ms: int,
+    policy_root: str | Path | None = None,
+) -> dict:
     """Read and evaluate the configured restore-history authority without mutation."""
     root = Path(repo_root).resolve()
+    resolved_policy_root = None if policy_root is None else Path(policy_root).resolve()
     try:
-        policy, history_path = _restore_policy_and_path(root)
+        policy, history_path = _restore_policy_and_path(
+            root,
+            policy_root=resolved_policy_root,
+        )
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
         return {
             "verdict": "BREACH",
@@ -866,6 +881,7 @@ def run_scheduler_watchdog(
                 history_health = history_reader(
                     repo_root=repo_root,
                     now_ms=observed_at_ms,
+                    policy_root=code_root,
                 )
             except Exception:
                 history_health = {

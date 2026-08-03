@@ -510,7 +510,15 @@ def build_mark_snapshot(
 
 def _backtest_summary(flow: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     stages = flow.get("stages") if isinstance(flow, Mapping) else None
-    rows = (stages or {}).get("authoritative_dry_runs", []) if isinstance(stages, Mapping) else []
+    rows: list[Any] = []
+    if isinstance(stages, Mapping):
+        # Legacy three first, then the challenger family stage (populations are
+        # disjoint; a candidate without an authoritative row simply never
+        # appears here and keeps its honest fallback provenance).
+        for key in ("authoritative_dry_runs", "candidate_authoritative_dry_runs"):
+            stage_rows = stages.get(key, [])
+            if isinstance(stage_rows, list):
+                rows.extend(stage_rows)
     result: dict[str, dict[str, Any]] = {}
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, Mapping) or row.get("status") != "PASS":
@@ -667,7 +675,12 @@ def run_cycle(
     candidate_ids = paper_candidate_ids()
     if operator is None:
         operator = dict(
-            operator_runner() if operator_runner is not None else run_operator(advance_forward=False)
+            operator_runner()
+            if operator_runner is not None
+            else run_operator(
+                advance_forward=False,
+                refresh_candidate_research=False,
+            )
         )
     else:
         operator = dict(operator)
@@ -1103,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
                 def operator_runner() -> Mapping[str, Any]:
                     return run_operator(
                         advance_forward=False,
+                        refresh_candidate_research=False,
                         output_path=args.operator_receipt,
                         preview_runner=lambda: run_preview(
                             aum=args.aum,

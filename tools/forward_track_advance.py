@@ -412,6 +412,27 @@ def _realization_timestamps(event_times, cadence_rows) -> list[int]:
     return sorted(timestamps)
 
 
+def _reference_grid(spec, event_times) -> list:
+    """历史参照网格必须按该候选自己的 cadence_days(2026-08-02 回归修复:
+    f23713b0 曾退化为全候选周度网格,q20/taker/3d 变体参照值逐位雷同)。"""
+    return _cadence_rows(event_times, int(spec["cadence_days"]))
+
+
+def _realization_plan(spec, event_times, weekly_rows) -> tuple[list[int], int]:
+    """Per-candidate realization grid + horizon, honoring the registered cadence.
+
+    7d candidates keep the weekly anchors plus the latest closed row; faster
+    variants (3d) settle on the full daily grid with their own ``min_gap_ms``
+    (2.5d), otherwise a new decision every 3 days against a 6.5-day horizon
+    accumulates a structural backlog of two pending decisions and can never
+    satisfy the exactly-one attested-pending contract downstream.
+    """
+    min_gap_ms = int(spec["min_gap_ms"])
+    if int(spec["cadence_days"]) == 7:
+        return _realization_timestamps(event_times, weekly_rows), min_gap_ms
+    return [int(_t) for _t in event_times], min_gap_ms
+
+
 def _weights_and_signals(sig_row, insts, quantile=QUANTILE):
     legs = _legs(sig_row, quantile)
     weights = {insts[i]: w for i, w in legs.items()}
@@ -753,8 +774,12 @@ def _run() -> None:
 
         first_dec_ts = (decs[0]["decided_ts"] if decs
                         else recorded_ts if recorded_new else int(ev[rows[-1]]) + 1)
-        ref_sharpe, ref_weeks = _reference_sharpe(sig, rows, ev, insts, spot_prices, funding_sum,
-                                                  before_ts=first_dec_ts)
+        # 2026-08-02 回归修复:f23713b0 丢回了变体节奏——参照 sharpe 必须按该候选
+        # 自己的 cadence 网格与 quantile 重算(否则 q20/taker/3d 变体全部误用
+        # 周度网格 + 默认分位,参照值逐位雷同、不可比)。
+        ref_sharpe, ref_weeks = _reference_sharpe(sig, _reference_grid(spec, ev),
+                                                  ev, insts, spot_prices, funding_sum,
+                                                  before_ts=first_dec_ts, quantile=spec["quantile"])
         if admission_ref is None:
             out = {
                 "alerts": ["forward realization blocked: current data admission unavailable"],
@@ -762,16 +787,23 @@ def _run() -> None:
                 "n_quality_blocked": 0,
             }
         else:
+            # 2026-08-02 回归修复:f23713b0 丢掉了变体兑现节奏——3d/14d 变体
+            # 必须走自己的日网格与 min_gap(2.5d/13.5d),否则 3d 变体决策每
+            # 3 天一条、兑现却等 6.5 天,稳态积压 2 条 pending,结构性堵死
+            # 风险包/preview 的「恰好一条 attested pending」契约。7d 路径
+            # 保持周度锚点+最新收盘行(与修复前逐位一致)。
+            realization_timestamps, realization_min_gap_ms = _realization_plan(spec, ev, rows)
             out = realize_due(
                 ledger,
                 store,
                 alpha_id,
-                timestamps=_realization_timestamps(ev, rows),
+                timestamps=realization_timestamps,
                 prices=prices,
                 funding_sum=funding_sum,
                 backtest_sharpe=ref_sharpe,
                 blocked_instruments=blocked_instruments,
                 admission_ref=admission_ref,
+                min_gap_ms=realization_min_gap_ms,
                 committed_at_ms=now_ms,
             )
         alerts.extend(out["alerts"])

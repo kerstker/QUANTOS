@@ -6,6 +6,11 @@
       "role": "alpha_maintenance"
     },
     {
+      "relative_path": "data/cache/alpha_production_workflow.db",
+      "required": true,
+      "role": "alpha_production_workflow"
+    },
+    {
       "relative_path": "data/cache/artifact_admission.db",
       "required": false,
       "role": "artifact_admission_authority"
@@ -61,6 +66,11 @@
       "role": "data_refresh_history"
     },
     {
+      "relative_path": "data/cache/paper_candidate_registry.db",
+      "required": false,
+      "role": "factory_candidate_admission"
+    },
+    {
       "relative_path": "data/cache/paper_track.db",
       "required": true,
       "role": "paper_track"
@@ -71,14 +81,14 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 103378,
+  "backup_elapsed_ms": 591060,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
-  "file_count": 14,
+  "file_count": 16,
   "history_authoritative": true,
-  "history_event_hash": "8a0c30608d23a87287609da715f41d156cb545a00f39a1d56f2def8abee0da90",
-  "history_event_seq": 74,
+  "history_event_hash": "e752da51a66f9a89f33847aa4d645fbb6e6d239fb3d96c4853832bbe8c0e1875",
+  "history_event_seq": 76,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
   "missing_optional_sources": [
@@ -87,9 +97,9 @@
     "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1785610802156,
-  "required_source_count": 10,
-  "restore_elapsed_ms": 17970,
+  "observed_at_ms": 1785697203048,
+  "required_source_count": 11,
+  "restore_elapsed_ms": 38571,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,
@@ -103,6 +113,11 @@
         "relative_path": "data/cache/alpha_maintenance.db",
         "required": false,
         "role": "alpha_maintenance"
+      },
+      {
+        "relative_path": "data/cache/alpha_production_workflow.db",
+        "required": true,
+        "role": "alpha_production_workflow"
       },
       {
         "relative_path": "data/cache/approvals.db",
@@ -170,6 +185,11 @@
         "role": "data_refresh_history"
       },
       {
+        "relative_path": "data/cache/paper_candidate_registry.db",
+        "required": false,
+        "role": "factory_candidate_admission"
+      },
+      {
         "relative_path": "data/cache/paper_track.db",
         "required": true,
         "role": "paper_track"
@@ -185,9 +205,9 @@
         "role": "vendor_delivery_history_authority"
       }
     ],
-    "version": 2
+    "version": 3
   },
-  "source_contract_sha256": "9adfd8f06d038146492d80186700e638c500330e423b097ab8452181c8176bff",
+  "source_contract_sha256": "1ef4b19a97dbf8e8083b48128488739aa048bc1fdcba705ef57f0e8c8302de8d",
   "source_contract_verified": true,
   "sqlite_integrity_verified": true,
   "verdict": "PASS"

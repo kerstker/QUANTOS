@@ -181,6 +181,84 @@ def _run_driver(
     }
 
 
+CANDIDATE_DRIVER_MODULE = "tools.dry_run_candidate_multi"
+
+
+def _run_candidate_dry_run_stage(
+    *,
+    runner: Callable[[], Any] | None = None,
+    ids_loader: Callable[[], Any] | None = None,
+    snapshot_loader: Callable[[str, str | None], dict[str, Any]] = _latest_dry_run_snapshot,
+) -> list[dict[str, Any]]:
+    """Run the challenger authoritative dry-run driver once and verify each snapshot.
+
+    Additive evidence stage for the pre-registered challenger family: rows are
+    PASS only when a verified per-candidate snapshot exists in the dry-run
+    store.  A candidate without a persisted run simply has no authoritative
+    row here and keeps its honest fallback downstream.  This stage never feeds
+    the legacy ``paper_packet_ready_for_all_three`` verdict.
+    """
+    module_name = CANDIDATE_DRIVER_MODULE
+    try:
+        if runner is None or ids_loader is None:
+            module = importlib.import_module(module_name)
+            if runner is None:
+                runner = module.main
+            if ids_loader is None:
+                ids_loader = module.candidate_ids
+        ids = [str(alpha_id) for alpha_id in ids_loader()]
+    except Exception as exc:  # invalid workflow authority must fail closed
+        return [
+            {
+                "alpha_id": None,
+                "module": module_name,
+                "status": "ERROR",
+                "reason": "CANDIDATE_POPULATION_UNRESOLVED",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:240],
+                "paper_order_submission": False,
+            }
+        ]
+    try:
+        runner()
+    except Exception as exc:  # fail closed, preserve the legacy three reports
+        return [
+            {
+                "alpha_id": alpha_id,
+                "module": module_name,
+                "status": "ERROR",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:240],
+                "paper_order_submission": False,
+            }
+            for alpha_id in ids
+        ]
+    rows: list[dict[str, Any]] = []
+    for alpha_id in ids:
+        snapshot = snapshot_loader(alpha_id, None)
+        if snapshot:
+            rows.append(
+                {
+                    "alpha_id": alpha_id,
+                    "module": module_name,
+                    "status": "PASS",
+                    "paper_order_submission": False,
+                    "snapshot": snapshot,
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "alpha_id": alpha_id,
+                    "module": module_name,
+                    "status": "ERROR",
+                    "reason": "DRY_RUN_ARTIFACT_MISSING_AFTER_DRIVER",
+                    "paper_order_submission": False,
+                }
+            )
+    return rows
+
+
 def _run_public_forward_driver() -> dict[str, Any]:
     """Advance the public forward-paper clock, never a private/live venue path."""
     try:
@@ -243,6 +321,9 @@ def run_flow(
     snapshot_loader: Callable[[str, str | None], dict[str, Any]] = _latest_dry_run_snapshot,
     cycle_builder: Callable[[], dict[str, Any]] = build_paper_cycle_report,
     readiness_builder: Callable[[str], dict[str, Any]] = build_alpha_readiness_report,
+    run_candidates: bool = True,
+    candidate_runner: Callable[[], Any] | None = None,
+    candidate_ids_loader: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     """Execute and verify the full L2 paper flow for all three candidates."""
     started_at = int(time.time() * 1000)
@@ -284,6 +365,18 @@ def run_flow(
             }
             for alpha_id, module_name, _ in ALPHA_DRIVERS
         ]
+
+    # Challenger family (additive): the candidate authoritative dry-run stage is
+    # evidence-only.  It deliberately does NOT feed ``flow_completed`` or
+    # ``paper_packet_ready_for_all_three`` — those stay about the legacy three.
+    if run_candidates:
+        candidate_rows = _run_candidate_dry_run_stage(
+            runner=candidate_runner,
+            ids_loader=candidate_ids_loader,
+            snapshot_loader=snapshot_loader,
+        )
+    else:
+        candidate_rows = []
 
     try:
         cycle = cycle_builder()
@@ -354,6 +447,7 @@ def run_flow(
             "public_forward": forward,
             "gonogo_refresh": gonogo,
             "authoritative_dry_runs": drivers,
+            "candidate_authoritative_dry_runs": candidate_rows,
             "paper_cycle": cycle_stage,
             "alpha_readiness": readiness,
         },
@@ -380,6 +474,7 @@ def run_flow(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-dry-runs", action="store_true", help="only refresh reports; do not execute paper drivers")
+    parser.add_argument("--no-candidates", action="store_true", help="skip the challenger authoritative dry-run stage")
     parser.add_argument(
         "--advance-forward",
         action="store_true",
@@ -393,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         advance_forward=args.advance_forward,
         output_path=args.output,
         cycle_output_path=args.cycle_output,
+        run_candidates=not args.no_candidates,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"-> {args.output}")
