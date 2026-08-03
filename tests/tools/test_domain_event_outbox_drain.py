@@ -135,6 +135,39 @@ def test_projection_catches_up_across_bounded_batches(tmp_path):
     assert document["projection"]["caught_up"] is True
 
 
+def test_projection_does_not_treat_idempotent_replay_as_end_of_backlog(tmp_path):
+    event_path = tmp_path / "events.db"
+    event_path.write_bytes(b"present")
+    batches = iter(
+        (
+            {"projected": 999, "idempotent_replays": 1, "offset": 1_000},
+            {"projected": 2, "idempotent_replays": 0, "offset": 1_002},
+        )
+    )
+    calls = []
+
+    def project(_bus, **kwargs):
+        calls.append(kwargs)
+        return next(batches)
+
+    document = drain_domain_event_outboxes(
+        now_ms=175,
+        event_path=str(event_path),
+        projection_path=str(tmp_path / "projection.db"),
+        output_path=str(tmp_path / "drain.json"),
+        sources=(),
+        event_bus_factory=lambda _path, *, create: _Bus(),
+        projector=project,
+    )
+
+    assert len(calls) == 2
+    assert document["projection"]["projected"] == 1_001
+    assert document["projection"]["idempotent_replays"] == 1
+    assert document["projection"]["processed"] == 1_002
+    assert document["projection"]["batches"] == 2
+    assert document["projection"]["caught_up"] is True
+
+
 def test_corrupt_source_is_redacted_and_does_not_block_other_sources(tmp_path):
     bad_path = tmp_path / "bad.db"
     good_path = tmp_path / "good.db"
