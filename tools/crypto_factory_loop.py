@@ -57,6 +57,24 @@ MAX_WORKERS = min(4, os.cpu_count() or 1)
 _OUT = os.path.join("data", "cache", "crypto_factory_loop.json")
 
 
+def next_search_recorded_at(*, previous: int | None, observed_at: int) -> int:
+    """Return a non-decreasing search clock after expensive input assembly.
+
+    The production experiment authority rejects global STARTED-clock rollback.
+    A factory invocation therefore must not freeze its clock before
+    ``build_panel`` (which can take minutes), and every subsequent round must
+    observe wall time again. ``previous`` supplies the local one-millisecond
+    floor when rounds begin inside the same clock tick.
+    """
+    if isinstance(observed_at, bool) or not isinstance(observed_at, int) or observed_at < 0:
+        raise ValueError("observed_at must be a non-negative integer")
+    if previous is None:
+        return observed_at
+    if isinstance(previous, bool) or not isinstance(previous, int) or previous < 0:
+        raise ValueError("previous must be a non-negative integer or None")
+    return max(observed_at, previous + 1)
+
+
 def _gauntlet(e, panel, basis):
     """Quick reality gauntlet for a candidate expr: returns a dict if it is a REAL orthogonal edge
     (orthogonal to basis, PIT-safe, survives a 1-day lag AND 10bps cost), else None."""
@@ -99,7 +117,6 @@ def _nodes(t, path=()):
 
 
 def main() -> None:
-    invocation_at = time.time_ns() // 1_000_000
     panel, instruments = build_panel(add_basis=True)
     dataset_version = field_panel_dataset_version(panel)
     print(f"=== loop-until-dry orthogonal mining ({len(instruments)} coins, {len(FIELDS)} dims) ===")
@@ -111,9 +128,14 @@ def main() -> None:
     print(f"seed basis: carry SR {sharpe(known['carry']):.2f}, crowd_contra SR {sharpe(known['crowd_contra']):.2f}")
 
     chain, eligible_discoveries, dry, rnd, n_evaluated_total = [], [], 0, 0, 0
+    previous_recorded_at: int | None = None
     while dry < DRY_LIMIT and rnd < MAX_ROUNDS:
         rnd += 1
-        recorded_at = invocation_at + rnd
+        recorded_at = next_search_recorded_at(
+            previous=previous_recorded_at,
+            observed_at=time.time_ns() // 1_000_000,
+        )
+        previous_recorded_at = recorded_at
         search_id = make_search_id(
             source="tools.crypto_factory_loop",
             search_kind="ALPHA_FACTORY_LOOP",

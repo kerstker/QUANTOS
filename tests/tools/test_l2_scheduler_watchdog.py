@@ -542,6 +542,28 @@ def test_read_restore_history_health_passes_real_current_authority(tmp_path):
     assert health["success_count"] == 1
 
 
+def test_restore_policy_comes_from_immutable_code_root(tmp_path):
+    state_root = tmp_path / "state"
+    code_root = tmp_path / "release"
+    _write_restore_policy(code_root)
+    store = _history_store(state_root)
+    _record_history_outcome(
+        store,
+        attempt_id="release-policy",
+        started_at_ms=NOW_MS - 1_000,
+        passing=True,
+    )
+    store.close()
+
+    health = read_restore_history_health(
+        repo_root=state_root,
+        policy_root=code_root,
+        now_ms=NOW_MS,
+    )
+
+    assert health["verdict"] == "PASS"
+
+
 def test_read_restore_history_health_reports_missing_empty_and_corrupt_without_path(
     tmp_path,
 ):

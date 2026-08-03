@@ -453,6 +453,7 @@ def test_main_passes_custom_paper_profile_to_order_preview(monkeypatch, tmp_path
     assert captured["preview"]["output_path"].endswith(
         "small-operator_paper_order_preview_10000.json"
     )
+    assert captured["operator"]["refresh_candidate_research"] is False
 
 
 def test_main_health_check_runs_after_cycle_and_controls_exit_code(monkeypatch, tmp_path):

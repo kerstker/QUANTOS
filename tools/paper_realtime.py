@@ -675,7 +675,12 @@ def run_cycle(
     candidate_ids = paper_candidate_ids()
     if operator is None:
         operator = dict(
-            operator_runner() if operator_runner is not None else run_operator(advance_forward=False)
+            operator_runner()
+            if operator_runner is not None
+            else run_operator(
+                advance_forward=False,
+                refresh_candidate_research=False,
+            )
         )
     else:
         operator = dict(operator)
@@ -1111,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
                 def operator_runner() -> Mapping[str, Any]:
                     return run_operator(
                         advance_forward=False,
+                        refresh_candidate_research=False,
                         output_path=args.operator_receipt,
                         preview_runner=lambda: run_preview(
                             aum=args.aum,

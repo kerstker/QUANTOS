@@ -179,6 +179,12 @@ $paperAlphaEvaluationTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1
 # five-minute paper worker. The job is read-mostly, idempotent, and L2-only.
 $alphaProductionWorkflowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Candidate backtests are deliberately outside the five-minute mark-to-market
+# path. Run them after the daily forward refresh, then build portfolio evidence
+# from their persisted authoritative runs. The gap prevents the second task
+# from reading a partially refreshed dry-run store.
+$candidateDryRunTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:10"
+$candidatePortfolioEvidenceTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:45"
 # Poll daily after the expected public-data close so a newly available
 # watermark is consumed promptly; the worker's internal seven-day due check
 # remains authoritative.
@@ -266,6 +272,10 @@ Register-L2Task -Name "QUANTOS_paper_alpha_evaluation" -Module "paper_alpha_eval
   -Trigger $paperAlphaEvaluationTrigger
 Register-L2Task -Name "QUANTOS_alpha_production_workflow" -Module "alpha_production_workflow" `
   -Trigger $alphaProductionWorkflowTrigger
+Register-L2Task -Name "QUANTOS_candidate_dry_run" -Module "dry_run_candidate_multi" `
+  -Trigger $candidateDryRunTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-L2Task -Name "QUANTOS_candidate_portfolio_evidence" -Module "candidate_portfolio_evidence" `
+  -Trigger $candidatePortfolioEvidenceTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
   -Trigger $forwardTrigger
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `

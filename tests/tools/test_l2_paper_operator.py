@@ -1,5 +1,6 @@
 import json
 
+import tools.l2_paper_operator as operator_tool
 from tools.l2_paper_operator import run_operator
 
 
@@ -80,3 +81,47 @@ def test_operator_marks_unready_preview_as_failure(tmp_path):
 
     assert report["verdict"]["operator_completed"] is False
     assert report["stages"]["paper_order_preview"]["status"] == "ERROR"
+
+
+def test_bounded_mark_mode_skips_all_candidate_research(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_flow(**kwargs):
+        captured["flow"] = kwargs
+        return _flow()
+
+    monkeypatch.setattr(operator_tool, "run_flow", fake_flow)
+    monkeypatch.setattr(
+        operator_tool,
+        "_run_candidate_mining",
+        lambda: (_ for _ in ()).throw(AssertionError("mining must stay off hot path")),
+    )
+    monkeypatch.setattr(
+        operator_tool,
+        "_run_candidate_evaluation",
+        lambda: (_ for _ in ()).throw(AssertionError("evaluation must stay off hot path")),
+    )
+    monkeypatch.setattr(
+        operator_tool,
+        "_run_candidate_risk_bundle",
+        lambda: (_ for _ in ()).throw(AssertionError("risk bundle must stay off hot path")),
+    )
+
+    report = run_operator(
+        advance_forward=False,
+        refresh_candidate_research=False,
+        output_path=str(tmp_path / "operator.json"),
+        preview_runner=lambda: _preview(),
+    )
+
+    assert captured["flow"] == {"advance_forward": False, "run_candidates": False}
+    assert report["verdict"]["operator_completed"] is True
+    for stage in (
+        "candidate_mining",
+        "forward_candidate_evaluation",
+        "paper_research_risk_bundle",
+    ):
+        assert report["stages"][stage] == {
+            "status": "SKIPPED",
+            "reason": "INDEPENDENT_RESEARCH_SCHEDULE",
+        }
