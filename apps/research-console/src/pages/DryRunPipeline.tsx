@@ -499,6 +499,9 @@ export default function DryRunPipeline() {
   const forwardByAlpha = health?.forward_evidence?.alphas ?? {};
   const bundleByAlpha = health?.research_risk_bundles ?? {};
   const formalPreviewByAlpha = data.paper_order_preview?.alphas ?? {};
+  const precomputedRiskInputs = pipelineCandidates.filter(candidate =>
+    candidate.risk_packet?.input_evidence_status === 'READY'
+    || candidate.risk_packet?.status === 'READY').length;
   const totalPositions = alphaRows.reduce(
     (sum, [, alpha]) => sum + Object.values(alpha.positions ?? {}).filter(qty => qty !== 0).length,
     0,
@@ -727,7 +730,7 @@ export default function DryRunPipeline() {
                           </div>
                         ) : !candidate.execution_paper ? (
                           <div className="mt-1 text-3xs text-faint">
-                            Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Risk {candidate.risk_packet?.status ?? 'PENDING'}
+                            Eval {candidate.independent_evaluation?.verdict ?? 'PENDING'} · Inputs {candidate.risk_packet?.input_evidence_status ?? 'PENDING'} · Admission {candidate.risk_packet?.status ?? 'PENDING'}
                           </div>
                         ) : null}
                       </td>
@@ -823,10 +826,10 @@ export default function DryRunPipeline() {
           >
             <div className="grid grid-cols-3 gap-3">
               <Metric
-                label="Risk bundles"
-                value={health?.research_risk_bundle_complete ? '3/3' : `${Object.values(bundleByAlpha).filter(row => row.status === 'PASS').length}/3`}
-                detail="nine-engine gate"
-                tone={health?.research_risk_bundle_complete ? 'pos' : 'warn'}
+                label="Risk inputs"
+                value={`${precomputedRiskInputs}/${pipelineCandidates.length || 0}`}
+                detail="precomputed · admission separate"
+                tone={precomputedRiskInputs === pipelineCandidates.length && precomputedRiskInputs > 0 ? 'pos' : 'warn'}
               />
               <Metric
                 label="Forward"

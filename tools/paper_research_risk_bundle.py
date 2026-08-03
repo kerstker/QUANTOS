@@ -335,6 +335,22 @@ def _forward_periods(path: Path, alpha_id: str, ledger: AttestedForwardLedger) -
     return len(ledger.attested_realizations(alpha_id))
 
 
+def _dynamic_admission_blockers(
+    *,
+    forward_periods: int,
+    evaluation: Mapping[str, Any] | None,
+) -> list[str]:
+    """Keep evidence production independent from formal Paper admission."""
+    blockers: list[str] = []
+    if evaluation is None:
+        blockers.append("INDEPENDENT_EVALUATION_MISSING")
+    elif evaluation.get("verdict") != "PASS":
+        blockers.append("INDEPENDENT_EVALUATION_NOT_PASS")
+    if int(forward_periods) < REQUIRED_FORWARD_PERIODS:
+        blockers.append("FORWARD_EVIDENCE_MATURITY_PENDING")
+    return blockers
+
+
 def _dynamic_candidate_schedule(panel, alpha_id: str):
     """Build a real PIT schedule for a forward challenger when needed."""
     from tools.crypto_robust_optimization import _prepare_oi_alpha
@@ -625,12 +641,12 @@ def build_automatic_research_risk_bundle(
 ) -> dict[str, Any]:
     """Extend the static bundle with every forward challenger.
 
-    Dynamic challengers are deliberately more restrictive than the legacy
-    three-book artifact: they need an independently verified evaluation with
-    a PASS verdict and the full eight-period forward evidence gate before a
-    real PIT risk input row can become READY.  Before maturity, the artifact
-    still records an explicit row and blocker, allowing the operator and UI to
-    show that the candidate is running rather than silently dropping it.
+    Dynamic challengers precompute every non-time-based risk input as soon as
+    an attested decision exists.  Eight forward periods and independent
+    evaluation remain formal admission gates, but they do not postpone PIT
+    return/regime, capacity, ADV, AUM, or dataset-provenance construction.
+    This lets realtime engineering paper and evidence production advance in
+    parallel without pretending an immature candidate is formally eligible.
     """
     selected = tuple(alpha_ids)
     if selected != tuple(dict.fromkeys(selected)) or not selected:
@@ -690,6 +706,8 @@ def build_automatic_research_risk_bundle(
                     "binding": {"alpha_id": alpha_id, "config_hash": config_hash},
                     "missing_inputs": ["forward_decision"],
                     "missing_reasons": {"forward_decision": reason},
+                    "input_evidence_status": "PENDING",
+                    "admission_blockers": ["ATTESTED_FORWARD_DECISION_MISSING"],
                     "status": "PENDING",
                     "maturity": {"forward_periods": None, "required": REQUIRED_FORWARD_PERIODS},
                     "provenance": {
@@ -718,22 +736,17 @@ def build_automatic_research_risk_bundle(
                 if isinstance(evaluation_row, Mapping)
                 else None
             )
-            if forward_periods < REQUIRED_FORWARD_PERIODS:
-                row_missing.append("alpha_metadata")
-                missing_reasons["alpha_metadata"] = (
-                    f"forward_evidence_maturity:{forward_periods}/{REQUIRED_FORWARD_PERIODS}"
-                )
-            elif evaluation_row is None or not isinstance(evaluation, Mapping):
+            admission_blockers = _dynamic_admission_blockers(
+                forward_periods=forward_periods,
+                evaluation=evaluation if isinstance(evaluation, Mapping) else None,
+            )
+            if evaluation_row is None or not isinstance(evaluation, Mapping):
                 row_missing.append("alpha_metadata")
                 missing_reasons["alpha_metadata"] = "independent_evaluation_missing"
-            elif evaluation.get("verdict") != "PASS":
-                row_missing.append("alpha_metadata")
-                missing_reasons["alpha_metadata"] = "independent_evaluation_not_pass"
 
-            # No candidate-specific history is built until the candidate has
-            # crossed the evidence clock and the independent evaluator has
-            # actually passed.  This avoids treating an immature observation
-            # as a complete risk packet and keeps the current operator cheap.
+            # Non-time inputs are evidence production, not admission.  Build
+            # them immediately from the attested PIT decision even while the
+            # forward/evaluation gates remain visibly immature or failed.
             inputs: dict[str, Any] = {}
             provenance: dict[str, Any] = {
                 "independent_evaluation": (
@@ -743,104 +756,132 @@ def build_automatic_research_risk_bundle(
                 ),
                 "forward_periods": forward_periods,
                 "required_forward_periods": REQUIRED_FORWARD_PERIODS,
+                "formal_forward_gate_passed": (
+                    forward_periods >= REQUIRED_FORWARD_PERIODS
+                ),
+                "independent_evaluation_verdict": (
+                    evaluation.get("verdict")
+                    if isinstance(evaluation, Mapping)
+                    else None
+                ),
                 "synthetic_defaults": False,
             }
-            if not row_missing:
-                try:
-                    if panel is None:
-                        from tools.crypto_oi_research import build_panel
-                        from tools.crypto_robust_optimization import (
-                            _build_bundle,
-                            load_alpha_schedules,
-                        )
+            try:
+                if panel is None:
+                    from tools.crypto_oi_research import build_panel
+                    from tools.crypto_robust_optimization import (
+                        _build_bundle,
+                        load_alpha_schedules,
+                    )
 
-                        base_schedules, schedule_identity = load_alpha_schedules()
-                        base_research = _build_bundle(base_schedules)
-                        panel, _ = build_panel()
-                    schedule = _dynamic_candidate_schedule(panel, alpha_id)
-                    reference_id = (
-                        "carry_oi_majors"
-                        if alpha_id == "crowd_contra"
-                        else "crowd_contra"
-                    )
-                    reference = base_schedules[reference_id]
-                    returns, labels, timestamps = _candidate_risk_history(
-                        schedule,
-                        reference,
-                        base_research,
-                    )
-                    cny_per_usd, fx_identity = _cny_per_usd_as_of(
-                        Path(fx_db), decision_ts
-                    )
-                    liquidity = _decision_adv_inputs(
-                        schedule=schedule,
-                        decision_ts=decision_ts,
-                        weights=json.loads(str(pending["weights_json"])),
-                        cny_per_usd=cny_per_usd,
-                        paper_aum_usd=float(paper_aum_usd),
-                    )
-                    metadata = _metadata_from_evaluation(
-                        deployed_alpha_id=alpha_id,
-                        evaluation_row=evaluation_row,
-                        decision_recorded_at=int(pending["recorded_at"]),
-                        forward_periods=forward_periods,
-                        maintenance=maintenance_document,
-                    )
-                    inputs = {
-                        "capacity_cny": liquidity["capacity_cny"],
-                        "daily_volume_cny": liquidity["daily_volume_cny"],
-                        "total_aum": liquidity["total_aum"],
-                        "alpha_returns": {key: list(value) for key, value in returns.items()},
-                        "regime_labels": labels,
-                        "timestamps": timestamps,
-                        "alpha_metadata": [metadata],
+                    base_schedules, schedule_identity = load_alpha_schedules()
+                    base_research = _build_bundle(base_schedules)
+                    panel, _ = build_panel()
+                schedule = _dynamic_candidate_schedule(panel, alpha_id)
+                reference_id = (
+                    "carry_oi_majors"
+                    if alpha_id == "crowd_contra"
+                    else "crowd_contra"
+                )
+                reference = base_schedules[reference_id]
+                returns, labels, timestamps = _candidate_risk_history(
+                    schedule,
+                    reference,
+                    base_research,
+                )
+                cny_per_usd, fx_identity = _cny_per_usd_as_of(
+                    Path(fx_db), decision_ts
+                )
+                liquidity = _decision_adv_inputs(
+                    schedule=schedule,
+                    decision_ts=decision_ts,
+                    weights=json.loads(str(pending["weights_json"])),
+                    cny_per_usd=cny_per_usd,
+                    paper_aum_usd=float(paper_aum_usd),
+                )
+                inputs = {
+                    "capacity_cny": liquidity["capacity_cny"],
+                    "daily_volume_cny": liquidity["daily_volume_cny"],
+                    "total_aum": liquidity["total_aum"],
+                    "alpha_returns": {key: list(value) for key, value in returns.items()},
+                    "regime_labels": labels,
+                    "timestamps": timestamps,
+                }
+                if isinstance(evaluation_row, Mapping):
+                    try:
+                        metadata = _metadata_from_evaluation(
+                            deployed_alpha_id=alpha_id,
+                            evaluation_row=evaluation_row,
+                            decision_recorded_at=int(pending["recorded_at"]),
+                            forward_periods=forward_periods,
+                            maintenance=maintenance_document,
+                        )
+                    except RuntimeError as exc:
+                        if "alpha_metadata" not in row_missing:
+                            row_missing.append("alpha_metadata")
+                        missing_reasons["alpha_metadata"] = str(exc)
+                    else:
+                        inputs["alpha_metadata"] = [metadata]
+                        if "alpha_metadata" in row_missing:
+                            row_missing.remove("alpha_metadata")
+                        missing_reasons.pop("alpha_metadata", None)
+                provenance.update(
+                    {
+                        "schedule_identity": schedule_identity,
+                        "reference_alpha_id": reference_id,
+                        "fx": fx_identity,
+                        "liquidity": liquidity["liquidity_provenance"],
+                        "non_time_inputs_precomputed": True,
                     }
-                    provenance.update(
-                        {
-                            "schedule_identity": schedule_identity,
-                            "reference_alpha_id": reference_id,
-                            "fx": fx_identity,
-                            "liquidity": liquidity["liquidity_provenance"],
-                        }
-                    )
-                    schedule_digest = hashlib.sha256(
-                        json.dumps(
-                            {
-                                "alpha_id": alpha_id,
-                                "returns": {
-                                    str(key): list(value)
-                                    for key, value in returns.items()
-                                },
-                                "labels": labels,
-                                "timestamps": timestamps,
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                            ensure_ascii=True,
-                        ).encode("utf-8")
-                    ).hexdigest()
-                    dataset_components.append(
+                )
+                schedule_digest = hashlib.sha256(
+                    json.dumps(
                         {
                             "alpha_id": alpha_id,
-                            "decision_ts": decision_ts,
-                            "forward_periods": forward_periods,
-                            "evaluation_content_hash": evaluation_row.get("content_hash"),
-                            "schedule_digest": schedule_digest,
-                            "fx": fx_identity,
-                            "liquidity": liquidity["liquidity_provenance"],
-                        }
-                    )
-                except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
-                    row_missing.extend(REQUIRED_INPUT_FIELDS)
-                    missing_reasons["candidate_schedule"] = str(exc)[:240]
-                    inputs = {}
+                            "returns": {
+                                str(key): list(value)
+                                for key, value in returns.items()
+                            },
+                            "labels": labels,
+                            "timestamps": timestamps,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+                dataset_components.append(
+                    {
+                        "alpha_id": alpha_id,
+                        "decision_ts": decision_ts,
+                        "forward_periods": forward_periods,
+                        "evaluation_content_hash": (
+                            evaluation_row.get("content_hash")
+                            if isinstance(evaluation_row, Mapping)
+                            else None
+                        ),
+                        "schedule_digest": schedule_digest,
+                        "fx": fx_identity,
+                        "liquidity": liquidity["liquidity_provenance"],
+                    }
+                )
+            except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                row_missing.extend(REQUIRED_INPUT_FIELDS)
+                missing_reasons["candidate_schedule"] = str(exc)[:240]
+                inputs = {}
             dynamic_missing.extend(row_missing)
             dynamic_rows[alpha_id] = {
                 "binding": binding,
                 "inputs": inputs,
                 "missing_inputs": list(dict.fromkeys(row_missing)),
                 "missing_reasons": missing_reasons,
-                "status": "READY" if not row_missing else "PENDING",
+                "input_evidence_status": "READY" if not row_missing else "PENDING",
+                "admission_blockers": admission_blockers,
+                "status": (
+                    "READY"
+                    if not row_missing and not admission_blockers
+                    else "PENDING"
+                ),
                 "maturity": {
                     "forward_periods": forward_periods,
                     "required": REQUIRED_FORWARD_PERIODS,

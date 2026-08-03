@@ -731,6 +731,21 @@ def _alpha_pipeline_payload(
                 },
                 "risk_packet": {
                     "status": risk_row.get("status", "NOT_AVAILABLE"),
+                    "input_evidence_status": risk_row.get(
+                        "input_evidence_status",
+                        "READY" if risk_row.get("status") == "READY" else "PENDING",
+                    ),
+                    "input_fields": sorted(
+                        str(field)
+                        for field in (
+                            risk_row.get("inputs", {}).keys()
+                            if isinstance(risk_row.get("inputs"), dict)
+                            else ()
+                        )
+                    ),
+                    "admission_blockers": list(
+                        risk_row.get("admission_blockers") or []
+                    ),
                     "missing": list(risk_row.get("missing_inputs") or []),
                     "reasons": dict(risk_row.get("missing_reasons") or {}),
                 },
