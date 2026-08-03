@@ -591,6 +591,12 @@ def build_alpha_preview(
     ]
     if not full_risk_approved:
         rejected_reasons.append("FULL_RESEARCH_RISK_NOT_APPROVED")
+    turnover = float(run.pnl.get("turnover", 0.0) or 0.0)
+    execution_cost = float(run.pnl.get("costs", 0.0) or 0.0)
+    aggregate_shortfall_bps = (
+        execution_cost / turnover * 1e4 if turnover > 0.0 else 0.0
+    )
+    route_tca = list(run.detail.get("route_tca") or [])
     return {
         "alpha_id": alpha_id,
         "decision_ts": decision_ts,
@@ -608,6 +614,25 @@ def build_alpha_preview(
         "paper_execution": "PAPER_FILLED" if fully_filled else "PAPER_BLOCKED",
         "pnl": dict(run.pnl),
         "reconciliation_residual": run.pnl.get("residual"),
+        "execution_tca": {
+            "status": "COMPLETE" if pretrade_filled else "INCOMPLETE",
+            "simulation_only": True,
+            "reference_price": "DECISION_MARK",
+            "fill_model": "DRY_RUN_REFERENCE_PRICE",
+            "turnover_notional": turnover,
+            "execution_cost": execution_cost,
+            "implementation_shortfall_bps_including_cost": aggregate_shortfall_bps,
+            "route_tca": route_tca,
+            "route_tca_available": bool(route_tca),
+            "limitations": (
+                []
+                if route_tca
+                else [
+                    "NO_ORDER_BOOK_ROUTE_MODEL",
+                    "NO_LATENCY_OR_MARKET_IMPACT_SLIPPAGE",
+                ]
+            ),
+        },
         "research_risk": risk_snapshot,
         "research_risk_bundle": dict(research_risk_bundle_status or {
             "status": "NOT_PROVIDED",

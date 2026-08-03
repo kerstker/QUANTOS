@@ -1208,6 +1208,8 @@ export interface PaperShadowPayload {
     auto_rebalance_ready: boolean;
     paper_mark_ready: boolean;
     boundary_valid: boolean;
+    candidate_coverage_complete?: boolean;
+    candidate_count?: number;
     official_paper_ready: false;
     promotion_eligible: false;
     forward_evidence_eligible: false;
@@ -1217,6 +1219,13 @@ export interface PaperShadowPayload {
   };
   alphas: Record<string, PaperRealtimeAlpha>;
   previews: Record<string, PaperOrderPreviewAlpha>;
+  candidate_universe?: {
+    authority: string;
+    expected: string[];
+    expected_count: number;
+    running_count: number;
+    coverage_complete: boolean;
+  };
   history: PaperRealtimeHistoryPoint[];
   totals: {
     equity?: number | null;

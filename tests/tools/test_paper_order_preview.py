@@ -214,6 +214,30 @@ def test_build_preview_applies_exchange_step_size_to_targets():
     assert result["orders"][0]["quantity"] == 2
 
 
+def test_engineering_preview_exposes_reconciled_simulation_tca():
+    result = build_alpha_preview(
+        "crowd_contra",
+        _pending({"BTC": 0.125, "ETH": -0.125}),
+        mark_by_ticker={
+            "BTC": {DECISION_TS: 50_000.0},
+            "ETH": {DECISION_TS: 2_000.0},
+        },
+        status=STATUS,
+        aum=1_000_000.0,
+        cost_bps=10.0,
+        generated_at_ms=DECISION_TS + 2_000,
+        require_full_research_risk=False,
+    )
+
+    tca = result["execution_tca"]
+    assert result["n_paper_fills"] == result["n_approved"] == 2
+    assert tca["status"] == "COMPLETE"
+    assert tca["simulation_only"] is True
+    assert tca["implementation_shortfall_bps_including_cost"] == pytest.approx(10.0)
+    assert tca["route_tca_available"] is False
+    assert "NO_ORDER_BOOK_ROUTE_MODEL" in tca["limitations"]
+
+
 def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tmp_path):
     output = tmp_path / "preview.json"
     report = run_preview(

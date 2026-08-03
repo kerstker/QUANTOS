@@ -29,24 +29,58 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.execution.paper_execution_store import PaperExecutionStore
+from services.research.paper_trading.attested_store import AttestedForwardLedger
 from tools.binance_perp_mark_fetch import load_mark_prices
 from tools.cache_io import atomic_write_json
 from tools.paper_order_preview import (
-    ALPHA_IDS,
     DEFAULT_AUM,
     DEFAULT_COST_BPS,
     DEFAULT_FORWARD_DB,
     DEFAULT_MARK_CACHE,
     DEFAULT_STATUS,
-    _latest_attested_pending,
     _load_json,
     build_alpha_preview,
 )
+from tools.paper_candidate_universe import paper_candidate_ids
 
 
 DEFAULT_STORE = "data/cache/paper_shadow_ledger.db"
 DEFAULT_OUTPUT = "data/cache/paper_shadow_auto.json"
 SHADOW_CLASS = "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER"
+
+
+def _latest_attested_shadow_decision(
+    forward_db: str,
+    alpha_id: str,
+) -> tuple[dict[str, Any], str]:
+    """Select the current attested target without mutating forward evidence.
+
+    Prefer the unresolved decision used by the official paper path.  A slower
+    cadence candidate can legitimately have no unresolved row after its OOS
+    observation was realized; the engineering-paper account may still open at
+    that latest *attested* target.  Reusing it here never changes ``realized``
+    and the physically separate shadow ledger is ineligible for evidence.
+    """
+    ledger = AttestedForwardLedger(forward_db, create=False)
+    try:
+        pending = ledger.attested_pending(alpha_id)
+        if len(pending) > 1:
+            raise RuntimeError(
+                f"{alpha_id} has {len(pending)} unresolved attested decisions"
+            )
+        if pending:
+            row = dict(pending[0])
+            selection = "ATTESTED_PENDING"
+        else:
+            decisions = ledger.attested_decisions(alpha_id)
+            if not decisions:
+                raise RuntimeError(f"no attested decision for {alpha_id}")
+            row = dict(decisions[-1])
+            selection = "LATEST_ATTESTED_REALIZED"
+    finally:
+        ledger.close()
+    row["alpha_id"] = str(alpha_id)
+    return row, selection
 
 
 def admit_shadow_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
@@ -118,13 +152,17 @@ def run_shadow(
     )
     status = _load_json(status_path)
     mark_by_ticker = load_mark_prices(mark_cache)
+    candidate_ids = paper_candidate_ids()
     store = PaperExecutionStore(store_path, create=True)
     rows: dict[str, dict[str, Any]] = {}
     errors: dict[str, dict[str, str]] = {}
     try:
-        for alpha_id in ALPHA_IDS:
+        for alpha_id in candidate_ids:
             try:
-                pending, _ = _latest_attested_pending(forward_db, alpha_id)
+                pending, selection = _latest_attested_shadow_decision(
+                    forward_db,
+                    alpha_id,
+                )
                 decision_ts = int(pending["decided_ts"])
                 existing = store.get_by_decision(alpha_id, decision_ts)
                 if existing is not None:
@@ -155,6 +193,7 @@ def run_shadow(
                     require_full_research_risk=False,
                 )
                 shadow = admit_shadow_preview(preview)
+                shadow["shadow_decision_selection"] = selection
                 store.append_preview(shadow)
                 rows[alpha_id] = shadow
             except Exception as exc:
@@ -167,7 +206,7 @@ def run_shadow(
         store.close()
     completed = (
         not errors
-        and set(rows) == set(ALPHA_IDS)
+        and set(rows) == set(candidate_ids)
         and all(row.get("execution_class") == SHADOW_CLASS for row in rows.values())
         and chain_valid
     )
@@ -178,11 +217,21 @@ def run_shadow(
         "generated_at": generated_at,
         "status": "RUNNING" if completed else "SAFE_BLOCKED",
         "alphas": rows,
+        "candidate_universe": {
+            "authority": "ALPHA_PRODUCTION_WORKFLOW",
+            "expected": list(candidate_ids),
+            "expected_count": len(candidate_ids),
+            "running_count": len(rows),
+            "coverage_complete": set(rows) == set(candidate_ids),
+        },
         "errors": errors,
         "verdict": {
             "operator_completed": completed,
             "paper_preview_ready": completed,
             "shadow_paper_running": completed,
+            "candidate_coverage_complete": set(rows) == set(candidate_ids),
+            "candidate_count": len(candidate_ids),
+            "running_candidate_count": len(rows),
             "official_paper_ready": False,
             "promotion_eligible": False,
             "forward_evidence_eligible": False,
