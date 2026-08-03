@@ -326,6 +326,58 @@ def test_required_unique_alpha_workflow_is_fail_closed() -> None:
     assert verified["verdict"]["unique_alpha_production_workflow_verified"] is True
 
 
+def test_research_challengers_do_not_pollute_execution_paper_health() -> None:
+    realtime = _realtime()
+    realtime["alphas"]["research_challenger"] = {
+        "status": "PENDING_HISTORICAL_GATE",
+        "n_fills": 0,
+        "reconciliation_residual": None,
+    }
+    realtime["backtests"]["research_challenger"] = {
+        "provenance": "PENDING_AUTHORITATIVE_DRY_RUN"
+    }
+    workflow = {
+        "schema_version": 1,
+        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+        "status": "VERIFIED",
+        "active_candidate_ids": [*ALPHA_IDS, "research_challenger"],
+        "population_count": len(ALPHA_IDS) + 1,
+        "event_count": len(ALPHA_IDS) + 1,
+        "execution_paper_eligible_ids": [],
+        "safety": {"live_allowed": False, "order_submission_allowed": False},
+    }
+
+    report = evaluate_paper_health(
+        realtime,
+        _preview(),
+        now_ms=2_000,
+        alpha_production_workflow=workflow,
+    )
+
+    assert report["verdict"]["paper_ready"] is True
+    assert report["alphas"]["research_challenger"][
+        "required_for_operational_health"
+    ] is False
+    assert not any(
+        blocker.startswith("research_challenger:") for blocker in report["blockers"]
+    )
+
+    workflow["execution_paper_eligible_ids"] = ["research_challenger"]
+    eligible = evaluate_paper_health(
+        realtime,
+        _preview(),
+        now_ms=2_000,
+        alpha_production_workflow=workflow,
+    )
+    assert eligible["verdict"]["paper_ready"] is False
+    assert eligible["alphas"]["research_challenger"][
+        "required_for_operational_health"
+    ] is True
+    assert any(
+        blocker.startswith("research_challenger:") for blocker in eligible["blockers"]
+    )
+
+
 def test_main_distinguishes_safe_not_ready_from_evaluation_failure(
     monkeypatch, tmp_path
 ):

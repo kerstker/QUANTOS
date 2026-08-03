@@ -328,14 +328,26 @@ def evaluate_paper_health(
         if isinstance(realtime_status.get("alphas"), Mapping)
         else {}
     )
+    workflow_eligible_ids = {
+        alpha_id
+        for alpha_id in (workflow.get("execution_paper_eligible_ids") or [])
+        if workflow_verified and isinstance(alpha_id, str) and alpha_id
+    } if workflow else set()
+    required_operational_ids = set(ALPHA_IDS) | workflow_eligible_ids
     realtime_candidate_ids = tuple(
-        ALPHA_IDS
-        + tuple(sorted(alpha_id for alpha_id in realtime_alphas if alpha_id not in ALPHA_IDS))
+        ALPHA_IDS + tuple(
+            sorted(
+                alpha_id
+                for alpha_id in set(realtime_alphas) | workflow_eligible_ids
+                if alpha_id not in ALPHA_IDS
+            )
+        )
     )
     if not set(ALPHA_IDS).issubset(set(realtime_alphas)):
         block("PAPER_REALTIME_ALPHA_SET_INCOMPLETE")
     alpha_report: dict[str, dict[str, Any]] = {}
     for alpha_id in realtime_candidate_ids:
+        required_for_operational_health = alpha_id in required_operational_ids
         row = realtime_alphas.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
         residual = _finite_number(row.get("reconciliation_residual"))
@@ -346,9 +358,10 @@ def evaluate_paper_health(
             row_blockers.append("PAPER_FILLS_MISSING")
         if residual is None or abs(residual) > RECONCILIATION_TOLERANCE:
             row_blockers.append("PAPER_RECONCILIATION_FAILED")
-        if row_blockers:
+        if row_blockers and required_for_operational_health:
             block(f"{alpha_id}:" + ",".join(row_blockers))
         alpha_report[alpha_id] = {
+            "required_for_operational_health": required_for_operational_health,
             "status": row.get("status"),
             "n_fills": row.get("n_fills"),
             "equity": row.get("equity"),
@@ -370,7 +383,10 @@ def evaluate_paper_health(
     for alpha_id in realtime_candidate_ids:
         row = backtests.get(alpha_id)
         row = row if isinstance(row, Mapping) else {}
-        if row.get("provenance") != "REAL_AUTHORITATIVE_L2_DRY_RUN":
+        if (
+            alpha_id in required_operational_ids
+            and row.get("provenance") != "REAL_AUTHORITATIVE_L2_DRY_RUN"
+        ):
             block(f"{alpha_id}:BACKTEST_PROVENANCE_INVALID")
 
     if preview_verdict.get("paper_preview_ready") is not True:
@@ -447,8 +463,9 @@ def evaluate_paper_health(
     research_risk_bundle_complete = bool(research_risk_bundles) and all(
         row.get("status") == "READY" for row in research_risk_bundles.values()
     )
-    funding_complete = bool(alpha_report) and all(
-        row.get("funding_data_complete") is True for row in alpha_report.values()
+    funding_complete = bool(required_operational_ids) and all(
+        alpha_report.get(alpha_id, {}).get("funding_data_complete") is True
+        for alpha_id in required_operational_ids
     )
     paper_mark_ready = realtime_verdict.get("paper_mark_ready") is True
     paper_preview_ready = (
@@ -503,6 +520,7 @@ def evaluate_paper_health(
             )
             if workflow_verified
             else 0,
+            "operational_obligation_ids": sorted(required_operational_ids),
         },
         "blockers": blockers,
         "safety": {
