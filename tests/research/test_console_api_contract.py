@@ -716,6 +716,61 @@ def test_shadow_paper_console_payload_fails_closed_on_tampered_safety(
     assert shadow["verdict"]["order_submission_allowed"] is False
 
 
+def test_shadow_paper_console_requires_authoritative_candidate_coverage(tmp_path):
+    auto_path = tmp_path / "auto.json"
+    realtime_path = tmp_path / "realtime.json"
+    expected = ["legacy", "challenger"]
+    common_safety = {
+        "paper_only": True,
+        "broker_connectivity": False,
+        "broker_order_submission": False,
+        "credentials_accessed": False,
+    }
+    auto_path.write_text(
+        json.dumps(
+            {
+                "verdict": {
+                    "shadow_paper_running": True,
+                    "candidate_coverage_complete": True,
+                },
+                "candidate_universe": {"expected": expected},
+                "safety": common_safety,
+                "alphas": {alpha_id: {} for alpha_id in expected},
+            }
+        ),
+        encoding="utf-8",
+    )
+    realtime_path.write_text(
+        json.dumps(
+            {
+                "verdict": {
+                    "shadow_paper_running": True,
+                    "paper_mark_ready": True,
+                    "candidate_coverage_complete": True,
+                },
+                "candidate_universe": {"expected": expected},
+                "safety": common_safety,
+                "persistence": {"chain_valid": True},
+                "alphas": {
+                    alpha_id: {"status": "PAPER_MARKED"}
+                    for alpha_id in expected
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    shadow = artifact_paper_views._paper_shadow_payload(
+        auto_path=str(auto_path), realtime_path=str(realtime_path)
+    )
+
+    assert shadow["status"] == "RUNNING"
+    assert shadow["verdict"]["shadow_paper_running"] is True
+    assert shadow["verdict"]["candidate_coverage_complete"] is True
+    assert shadow["verdict"]["candidate_count"] == 2
+    assert shadow["candidate_universe"]["expected"] == expected
+
+
 def test_dry_run_surfaces_semantic_paper_health_without_live_capability():
     body = client.get("/api/v1/console/dry-run").json()
     health = body["paper_health"]

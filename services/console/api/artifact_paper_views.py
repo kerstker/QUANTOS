@@ -1095,6 +1095,29 @@ def _paper_shadow_payload(
     alphas = realtime.get("alphas", {}) if realtime else {}
     previews = auto.get("alphas", {}) if auto else {}
     history = realtime.get("history", []) if realtime else []
+    auto_universe = auto.get("candidate_universe", {}) if auto else {}
+    realtime_universe = realtime.get("candidate_universe", {}) if realtime else {}
+    auto_expected = (
+        auto_universe.get("expected", []) if isinstance(auto_universe, dict) else []
+    )
+    realtime_expected = (
+        realtime_universe.get("expected", [])
+        if isinstance(realtime_universe, dict)
+        else []
+    )
+    candidate_coverage_valid = bool(
+        isinstance(auto_expected, list)
+        and auto_expected
+        and isinstance(realtime_expected, list)
+        and set(auto_expected) == set(realtime_expected)
+        and len(auto_expected) == len(set(auto_expected))
+        and isinstance(alphas, dict)
+        and set(alphas) == set(auto_expected)
+        and isinstance(previews, dict)
+        and set(previews) == set(auto_expected)
+        and auto_verdict.get("candidate_coverage_complete") is True
+        and realtime_verdict.get("candidate_coverage_complete") is True
+    )
     boundary_valid = bool(
         auto
         and realtime
@@ -1113,8 +1136,7 @@ def _paper_shadow_payload(
         and auto_verdict.get("shadow_paper_running") is True
         and realtime_verdict.get("shadow_paper_running") is True
         and realtime_verdict.get("paper_mark_ready") is True
-        and isinstance(alphas, dict)
-        and len(alphas) == 3
+        and candidate_coverage_valid
     )
     return {
         "source": "AUTOMATED_SHADOW_PAPER_ARTIFACTS",
@@ -1136,6 +1158,8 @@ def _paper_shadow_payload(
                 and realtime_verdict.get("paper_mark_ready") is True
             ),
             "boundary_valid": boundary_valid,
+            "candidate_coverage_complete": candidate_coverage_valid,
+            "candidate_count": len(auto_expected) if candidate_coverage_valid else 0,
             "official_paper_ready": False,
             "promotion_eligible": False,
             "forward_evidence_eligible": False,
@@ -1145,6 +1169,15 @@ def _paper_shadow_payload(
         },
         "alphas": alphas if isinstance(alphas, dict) else {},
         "previews": previews if isinstance(previews, dict) else {},
+        "candidate_universe": {
+            "authority": "ALPHA_PRODUCTION_WORKFLOW",
+            "expected": auto_expected if isinstance(auto_expected, list) else [],
+            "expected_count": len(auto_expected)
+            if isinstance(auto_expected, list)
+            else 0,
+            "running_count": len(alphas) if isinstance(alphas, dict) else 0,
+            "coverage_complete": candidate_coverage_valid,
+        },
         "history": history if isinstance(history, list) else [],
         "totals": {
             "equity": _paper_alpha_total(alphas, "equity"),
