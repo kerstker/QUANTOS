@@ -192,6 +192,19 @@ class AlphaCatalog:
                 historical_id
             )
             if definition_hash is not None:
+                current_definition = self._defs.get(historical_id)
+                if (
+                    historical_id in self._returns
+                    and current_definition is not None
+                    and current_definition.definition_hash == definition_hash
+                ):
+                    # A current evaluation of the exact same Alpha identity and
+                    # definition supersedes its persisted observation.  Keeping
+                    # both would make every expanding-PIT re-evaluation conflict
+                    # with its own previous return window.  Different identities
+                    # that claim the same definition remain conflict-checked in
+                    # the current-series loop below.
+                    continue
                 return_series_by_definition[definition_hash] = values
         for current_id in sorted(self._returns):
             definition = self._defs.get(current_id)
