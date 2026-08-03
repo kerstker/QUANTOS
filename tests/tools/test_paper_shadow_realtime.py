@@ -48,7 +48,7 @@ def test_shadow_realtime_is_a_fixed_isolated_profile(monkeypatch, tmp_path):
     assert paper_shadow_realtime.main([]) == 0
     args = captured["args"]
     assert "--no-bootstrap" in args
-    assert "data/cache/paper_shadow_ledger.db" in args
+    assert "data/cache/paper_shadow_routed_ledger_v2.db" in args
     assert "data/cache/paper_shadow_realtime.db" in args
     assert "data/cache/paper_shadow_auto.json" in args
     report = json.loads(output.read_text(encoding="utf-8"))

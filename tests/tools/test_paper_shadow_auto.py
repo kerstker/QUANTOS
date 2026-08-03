@@ -1,6 +1,10 @@
+import json
+from decimal import Decimal
+
 import pytest
 
 from services.execution.paper_execution_store import PaperExecutionStore
+from services.execution.simulated_sor import BookLevel, VenueBook
 from tools import paper_shadow_auto
 from tools.paper_shadow_auto import (
     SHADOW_CLASS,
@@ -25,6 +29,11 @@ def _preview():
         "broker_connectivity": False,
         "broker_order_submission": False,
         "credentials_accessed": False,
+        "execution_tca": {
+            "route_tca_available": True,
+            "fill_model": "REAL_PUBLIC_BOOK_SIMULATED_SOR",
+            "routing_snapshot_id": "snapshot-1",
+        },
     }
 
 
@@ -146,6 +155,11 @@ def test_shadow_worker_recovers_all_books_and_replays_idempotently_after_restart
         return row
 
     monkeypatch.setattr(paper_shadow_auto, "build_alpha_preview", preview)
+    monkeypatch.setattr(
+        paper_shadow_auto,
+        "load_persisted_routing_snapshot",
+        lambda **_kwargs: ({}, {"BTC": 100.0}, "snapshot-1", 2_000),
+    )
 
     first = paper_shadow_auto.run_shadow(
         store_path=str(store_path),
@@ -171,3 +185,85 @@ def test_shadow_worker_recovers_all_books_and_replays_idempotently_after_restart
         assert all(recovered.latest(alpha_id)["paper_positions"] == {"BTC": 1} for alpha_id in alpha_ids)
     finally:
         recovered.close()
+
+
+def test_shadow_worker_opens_new_account_through_persisted_multivenue_sor(
+    tmp_path, monkeypatch
+):
+    decision_ts = 1_700_000_000_000
+    execution_ts = decision_ts + 2_000
+    pending = {
+        "decided_ts": decision_ts,
+        "recorded_at": decision_ts,
+        "weights_json": json.dumps({"BTC": 0.125}),
+        "source": "FORWARD_L2_ATTESTED_DECISION",
+    }
+    status = {
+        "quality_evidence_current": True,
+        "data_quality_admission": {"verdict": "PASS"},
+        "alerts": [],
+        "ran_at": decision_ts + 1_000,
+        "staleness_days": {"prices": {"worst_days": 1}},
+    }
+    books = (
+        VenueBook(
+            venue_id="binance_usdm",
+            observed_at_ms=execution_ts,
+            taker_fee_bps=Decimal("5"),
+            latency_ms=20,
+            bids=(BookLevel(Decimal("49999"), 10),),
+            asks=(BookLevel(Decimal("50001"), 10),),
+        ),
+        VenueBook(
+            venue_id="bybit_linear",
+            observed_at_ms=execution_ts,
+            taker_fee_bps=Decimal("5.5"),
+            latency_ms=30,
+            bids=(BookLevel(Decimal("49998"), 10),),
+            asks=(BookLevel(Decimal("50002"), 10),),
+        ),
+    )
+    monkeypatch.setattr(
+        paper_shadow_auto, "paper_candidate_ids", lambda: ("crowd_contra",)
+    )
+    monkeypatch.setattr(paper_shadow_auto, "_load_json", lambda _path: status)
+    monkeypatch.setattr(
+        paper_shadow_auto,
+        "load_mark_prices",
+        lambda _path: {"BTC": {decision_ts: 50_000.0}},
+    )
+    monkeypatch.setattr(
+        paper_shadow_auto,
+        "_latest_attested_shadow_decision",
+        lambda _path, _alpha_id: (pending, "ATTESTED_PENDING"),
+    )
+    monkeypatch.setattr(
+        paper_shadow_auto,
+        "load_persisted_routing_snapshot",
+        lambda **_kwargs: (
+            {"BTC": books},
+            {"BTC": 50_000.0},
+            "a" * 64,
+            execution_ts,
+        ),
+    )
+
+    result = paper_shadow_auto.run_shadow(
+        store_path=str(tmp_path / "routed.db"),
+        output_path=str(tmp_path / "status.json"),
+        generated_at_ms=execution_ts,
+    )
+
+    row = result["alphas"]["crowd_contra"]
+    assert result["status"] == "RUNNING"
+    assert result["execution_profile"] == "REAL_PUBLIC_BOOK_SIMULATED_SOR_V2"
+    assert row["paper_execution"] == "PAPER_FILLED"
+    assert row["execution_tca"]["route_tca_available"] is True
+    assert row["execution_tca"]["routing_snapshot_id"] == "a" * 64
+    assert row["execution_tca"]["route_tca"][0]["venues"][0]["venue_id"] == "binance_usdm"
+    assert row["reconciliation_residual"] == 0.0
+    assert result["routing"]["routing_snapshot_ids"] == ["a" * 64]
+    assert result["routing"]["routed_account_count"] == 1
+    assert result["routing"]["routed_order_count"] == 1
+    assert result["routing"]["simulation_only"] is True
+    assert result["ledger"]["chain_valid"] is True
