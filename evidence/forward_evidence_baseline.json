@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "observed_at_ms": 1785756922016,
+  "observed_at_ms": 1785782636071,
   "max_age_ms": 172800000,
   "readiness": "L2_DRY_RUN_ONLY",
   "source_database": "data/cache/paper_track.db",
@@ -8,9 +8,9 @@
   "decision_chain_valid": true,
   "realization_chain_valid": true,
   "counts": {
-    "attested_decisions": 21,
-    "attested_pending": 11,
-    "attested_realizations": 10,
+    "attested_decisions": 24,
+    "attested_pending": 8,
+    "attested_realizations": 16,
     "legacy_unattested_decisions": 5
   },
   "alphas": [
@@ -80,11 +80,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -172,11 +172,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -241,11 +241,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -270,12 +270,14 @@
     {
       "alpha_id": "crowd_contra_3d",
       "status": "ATTESTED",
-      "attested_decisions": 3,
-      "attested_pending": 2,
-      "attested_realizations": 1,
-      "attested_weeks": 1,
+      "attested_decisions": 4,
+      "attested_pending": 1,
+      "attested_realizations": 3,
+      "attested_weeks": 3,
       "attested_as_of_weeks": [
-        1785024000000
+        1785024000000,
+        1785369600000,
+        1785628800000
       ],
       "legacy_unattested_decisions": 0,
       "decision_sources": [
@@ -353,14 +355,37 @@
             "UNI",
             "XRP"
           ]
+        },
+        {
+          "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+          "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+          "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+          "recorded_at_ms": 1785782636071,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -448,11 +473,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -517,11 +542,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -546,12 +571,14 @@
     {
       "alpha_id": "crowd_contra_q25_3d",
       "status": "ATTESTED",
-      "attested_decisions": 3,
-      "attested_pending": 2,
-      "attested_realizations": 1,
-      "attested_weeks": 1,
+      "attested_decisions": 4,
+      "attested_pending": 1,
+      "attested_realizations": 3,
+      "attested_weeks": 3,
       "attested_as_of_weeks": [
-        1785024000000
+        1785024000000,
+        1785369600000,
+        1785628800000
       ],
       "legacy_unattested_decisions": 0,
       "decision_sources": [
@@ -629,14 +656,37 @@
             "UNI",
             "XRP"
           ]
+        },
+        {
+          "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+          "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+          "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+          "recorded_at_ms": 1785782636071,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -661,12 +711,14 @@
     {
       "alpha_id": "crowd_contra_q35_3d",
       "status": "ATTESTED",
-      "attested_decisions": 3,
-      "attested_pending": 2,
-      "attested_realizations": 1,
-      "attested_weeks": 1,
+      "attested_decisions": 4,
+      "attested_pending": 1,
+      "attested_realizations": 3,
+      "attested_weeks": 3,
       "attested_as_of_weeks": [
-        1785024000000
+        1785024000000,
+        1785369600000,
+        1785628800000
       ],
       "legacy_unattested_decisions": 0,
       "decision_sources": [
@@ -744,14 +796,37 @@
             "UNI",
             "XRP"
           ]
+        },
+        {
+          "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+          "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+          "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+          "recorded_at_ms": 1785782636071,
+          "price_basis": "PERP_MARK_PRICE",
+          "instrument_scope": [
+            "ADA",
+            "ATOM",
+            "AVAX",
+            "BCH",
+            "BNB",
+            "BTC",
+            "DOGE",
+            "DOT",
+            "ETH",
+            "LINK",
+            "LTC",
+            "SOL",
+            "UNI",
+            "XRP"
+          ]
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -839,11 +914,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -931,11 +1006,11 @@
         }
       ],
       "current_admission_ref": {
-        "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-        "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-        "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-        "recorded_at_ms": 1785589203177,
-        "expires_at_ms": 1785762003177,
+        "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+        "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+        "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+        "recorded_at_ms": 1785782636071,
+        "expires_at_ms": 1785955436071,
         "price_basis": "PERP_MARK_PRICE",
         "instrument_scope": [
           "ADA",
@@ -961,11 +1036,11 @@
   "data_admission": {
     "status": "CURRENT",
     "current_admission_ref": {
-      "admission_id": "data-admission-90c4249567a773c3d6014d624e362860",
-      "evidence_sha256": "90c4249567a773c3d6014d624e362860e4349008ba682d552d0c4be91842ddd3",
-      "decision_hash": "df4edc0303ebf4d6fcf35ba7963868234ca5c5b7a7f6e48c9398d4bb5a747771",
-      "recorded_at_ms": 1785589203177,
-      "expires_at_ms": 1785762003177,
+      "admission_id": "data-admission-48c23aa218e06e234954f2a04d909ada",
+      "evidence_sha256": "48c23aa218e06e234954f2a04d909ada952a496ebb7d971344502d8b1fe81412",
+      "decision_hash": "9145c2a256cbc185ca6c0f0fa8970514ecf467ce1890b233bbb068a16dff43a8",
+      "recorded_at_ms": 1785782636071,
+      "expires_at_ms": 1785955436071,
       "price_basis": "PERP_MARK_PRICE",
       "instrument_scope": [
         "ADA",
@@ -986,7 +1061,7 @@
       "source": "DATA_QUALITY_ADMISSION_AUTHORITY",
       "verdict": "PASS"
     },
-    "expires_at_ms": 1785762003177,
+    "expires_at_ms": 1785955436071,
     "price_basis": "PERP_MARK_PRICE",
     "source": "DATA_QUALITY_ADMISSION_AUTHORITY"
   },

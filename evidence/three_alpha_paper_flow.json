@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "flow": "THREE_ALPHA_PAPER_FLOW",
-  "started_at": 1785769868024,
-  "finished_at": 1785769871650,
+  "started_at": 1785782817279,
+  "finished_at": 1785782820580,
   "readiness": "L2_DRY_RUN_ONLY",
   "stages": {
     "public_forward": {
@@ -187,12 +187,12 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 2,
-              "evidence_state": "DATA_BLOCKED",
+              "evidence_state": "ATTESTED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
@@ -257,12 +257,12 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 2,
-              "evidence_state": "DATA_BLOCKED",
+              "evidence_state": "ATTESTED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           },
@@ -328,21 +328,20 @@
               "pending_decisions": 1,
               "attested_pending_decisions": 1,
               "legacy_unattested_decisions": 1,
-              "evidence_state": "DATA_BLOCKED",
+              "evidence_state": "ATTESTED",
               "last_decision_ts": 1785196800000
             },
             "paper_verdict": "BLOCKED",
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT"
             ]
           }
         },
         "common_blockers": [
-          "EVENT_BUS_NOT_HEALTHY"
+          "GONOGO_FORWARD_EVIDENCE_STALE"
         ],
         "next_actions": [
-          "resolve retained event delivery dead letters without deleting the append-only history",
           "run the official forward driver on each daily poll until every candidate has at least 8 realized periods",
           "keep top_contra research-only until its forward evidence reaches the required period count"
         ]
@@ -354,11 +353,10 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "EVENT_BUS_NOT_HEALTHY",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "DRY_RUN_RESEARCH_RISK_NOT_PASS",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED",
-          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+          "PAPER_CYCLE_BLOCKED"
         ],
         "report": {
           "schema_version": 1,
@@ -396,14 +394,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": false,
+            "quality_evidence_current": true,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "DATA_BLOCKED",
-            "refresh_evidence_available": false,
-            "event_health_verdict": "BREACH",
-            "pending_events": 43573,
-            "gonogo_forward_evidence_present": true,
+            "evidence_state": "ATTESTED",
+            "refresh_evidence_available": true,
+            "event_health_verdict": "PASS",
+            "pending_events": 0,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -418,13 +416,12 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "DRY_RUN_RESEARCH_RISK_NOT_PASS",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED",
-              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+              "PAPER_CYCLE_BLOCKED"
             ],
-            "next_action": "Keep the event authority and projection healthy and consistent, then continue the forward-paper clock; live order submission remains disabled."
+            "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },
           "safety": {
             "live_trading_armed": false,
@@ -438,10 +435,9 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "EVENT_BUS_NOT_HEALTHY",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED",
-          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+          "PAPER_CYCLE_BLOCKED"
         ],
         "report": {
           "schema_version": 1,
@@ -488,14 +484,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": false,
+            "quality_evidence_current": true,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 2,
-            "evidence_state": "DATA_BLOCKED",
-            "refresh_evidence_available": false,
-            "event_health_verdict": "BREACH",
-            "pending_events": 43573,
-            "gonogo_forward_evidence_present": true,
+            "evidence_state": "ATTESTED",
+            "refresh_evidence_available": true,
+            "event_health_verdict": "PASS",
+            "pending_events": 0,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -510,12 +506,11 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED",
-              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+              "PAPER_CYCLE_BLOCKED"
             ],
-            "next_action": "Keep the event authority and projection healthy and consistent, then continue the forward-paper clock; live order submission remains disabled."
+            "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },
           "safety": {
             "live_trading_armed": false,
@@ -529,10 +524,9 @@
         "research_packet_ready_for_paper": false,
         "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
         "blockers": [
-          "EVENT_BUS_NOT_HEALTHY",
+          "GONOGO_FORWARD_EVIDENCE_STALE",
           "FORWARD_EVIDENCE_INSUFFICIENT",
-          "PAPER_CYCLE_BLOCKED",
-          "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+          "PAPER_CYCLE_BLOCKED"
         ],
         "report": {
           "schema_version": 1,
@@ -569,14 +563,14 @@
             "data_admission_verdict": "PASS",
             "n_forward_periods": 1,
             "paper_sharpe": null,
-            "quality_evidence_current": false,
+            "quality_evidence_current": true,
             "attested_pending_decisions": 1,
             "legacy_unattested_decisions": 1,
-            "evidence_state": "DATA_BLOCKED",
-            "refresh_evidence_available": false,
-            "event_health_verdict": "BREACH",
-            "pending_events": 43573,
-            "gonogo_forward_evidence_present": true,
+            "evidence_state": "ATTESTED",
+            "refresh_evidence_available": true,
+            "event_health_verdict": "PASS",
+            "pending_events": 0,
+            "gonogo_forward_evidence_present": false,
             "event_projection_rebuild_candidate": {
               "verdict": "BLOCKED",
               "promotion": null
@@ -591,12 +585,11 @@
             "small_capital_live_verdict": "BLOCKED_L2_DRY_RUN_ONLY",
             "research_packet_ready_for_paper": false,
             "blockers": [
-              "EVENT_BUS_NOT_HEALTHY",
+              "GONOGO_FORWARD_EVIDENCE_STALE",
               "FORWARD_EVIDENCE_INSUFFICIENT",
-              "PAPER_CYCLE_BLOCKED",
-              "FORWARD_QUALITY_EVIDENCE_UNAVAILABLE"
+              "PAPER_CYCLE_BLOCKED"
             ],
-            "next_action": "Keep the event authority and projection healthy and consistent, then continue the forward-paper clock; live order submission remains disabled."
+            "next_action": "Continue the official forward driver until this Alpha has 8 realized periods; the L2 system will not generate or submit real orders."
           },
           "safety": {
             "live_trading_armed": false,
