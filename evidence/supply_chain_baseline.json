@@ -454,7 +454,7 @@
     "tests/research/test_paper_candidate_registry.py": "f97a8f98ca899962714bc7c2739326ab0980616d1d5b46d9efd51aa933b690fb",
     "tests/risk/test_kill_switch_state_store.py": "6c68f3eda6bb97cf7493842807924fa8064aa7082c2a638f4a813e8545afca4f",
     "tests/risk/test_research_risk_events.py": "4bb91b802cbd55beb6457abcf2d649a355f1665ad7a3dd02129a19d7e6ee4b11",
-    "tests/tools/test_alpha_candidate_admission.py": "3ec13b6d1d52e3baaf45092f3050d825d73c98b1ae820292fe3a9a95ded5efe7",
+    "tests/tools/test_alpha_candidate_admission.py": "39720d92c89fb8d4013ec93de6cae8a42ed73a91293e1dc3cd459969b658d1f9",
     "tests/tools/test_alpha_maintenance_sweep.py": "586086c8fdfd965a7da90f9e7b469d1d0e3cc59bcbec4bccbbd34a466bd96637",
     "tests/tools/test_artifact_admission_seal.py": "fdf3a204d8392b568add8baf547bc0f72716f19f989157622965d790d95f0a04",
     "tests/tools/test_deployment_events.py": "172ea65e430553818cce83035bb3b5015e72a940ad3d6dfae435509d0588bde9",

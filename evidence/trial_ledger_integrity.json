@@ -1,6 +1,6 @@
 {
   "block_reasons": [],
-  "commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
+  "commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
   "family_multiple_testing": {
     "available": true,
@@ -14,15 +14,15 @@
     "role": "ADDITIONAL_GATE_ALONGSIDE_GLOBAL_BHY",
     "wired_into_promotion_gate": true
   },
-  "generated_at_ms": 1785752396584,
+  "generated_at_ms": 1785765213393,
   "generator_sha256": "af5d5762cfccff15ffc8f0b46fb0edf01642fa229da58765aa730d401a1f184c",
-  "input_hash": "fce8f27dd9d6299d8929ebe4481ee7d676ccdd02bf5dcdeb5b24c6add66647e7",
+  "input_hash": "cf74ef7389077e3e3c282e909b6d624a397dd0230c0f36348d4c71066b08032c",
   "inputs": {
     "data/cache/experiment_registry.db": {
       "exists": true,
       "kind": "file",
-      "sha256": "54de166b6ab701ec85dadf28c501e052887ea46d9eac783ab97bc4986edc7965",
-      "size_bytes": 3563806720
+      "sha256": "6c458786c7b90331d3c226e594db370c139e32f9da2118fcbed554b5fb3a8ac1",
+      "size_bytes": 3563945984
     },
     "services/research/experiment_registry/store.py": {
       "exists": true,
@@ -50,15 +50,15 @@
     "exists": true,
     "path": "data/cache/experiment_registry.db",
     "row_counts": {
-      "evaluations": 2920,
-      "search_attempt_events": 771,
-      "search_candidates": 23429,
-      "search_evaluations": 2919,
+      "evaluations": 2944,
+      "search_attempt_events": 773,
+      "search_candidates": 23453,
+      "search_evaluations": 2943,
       "trial_oos_access": 0,
-      "trial_provenance": 5782,
+      "trial_provenance": 5806,
       "trials": 2577
     },
-    "sha256": "54de166b6ab701ec85dadf28c501e052887ea46d9eac783ab97bc4986edc7965",
+    "sha256": "6c458786c7b90331d3c226e594db370c139e32f9da2118fcbed554b5fb3a8ac1",
     "sqlite_integrity": "ok",
     "user_version": 4
   },
@@ -81,18 +81,18 @@
   ],
   "provenance": {
     "actor_type_counts": {
-      "AUTOMATED_SEARCH": 5782
+      "AUTOMATED_SEARCH": 5806
     },
-    "attempts_recorded": 5782,
+    "attempts_recorded": 5806,
     "bare_trials": 2409,
-    "chain_head": "368b6b64d6c4674bf7f91ca48b3e37b5b2ca1122cb58fdf448f99e3e4f1ca17d",
+    "chain_head": "969baced8028e2d4da36887c36f4fc0f1c79266a9126f8b0ac0d10c79e2feb9e",
     "chain_valid": true,
     "configs_with_provenance": 168,
     "coverage_ratio": 0.065192,
     "max_oos_peek_count": 0,
     "reason": null,
     "status_counts": {
-      "RECORDED": 5782
+      "RECORDED": 5806
     },
     "table_present": true
   },

@@ -1,39 +1,37 @@
 {
   "artifact": "QUANTOS_727_PAPER_SHADOW_STATUS",
   "blockers": [
-    "crowd_contra_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_q20:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_q20_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_q25_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_q35_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_taker_combo:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-    "crowd_contra_14d:BACKTEST_PROVENANCE_INVALID",
-    "crowd_contra_3d:BACKTEST_PROVENANCE_INVALID",
-    "crowd_contra_q20:BACKTEST_PROVENANCE_INVALID",
-    "crowd_contra_q20_14d:BACKTEST_PROVENANCE_INVALID",
-    "crowd_contra_q25_3d:BACKTEST_PROVENANCE_INVALID",
-    "crowd_contra_q35_3d:BACKTEST_PROVENANCE_INVALID",
-    "crowd_taker_combo:BACKTEST_PROVENANCE_INVALID",
     "PAPER_ORDER_PREVIEW_NOT_READY",
     "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+    "PAPER_ORDER_ALPHA_SET_INCOMPLETE",
     "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
     "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "carry_oi_majors:PAPER_ORDER_REJECTED",
+    "carry_oi_majors:PAPER_ORDER_RECONCILIATION_FAILED",
     "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
-    "crowd_contra:PAPER_EXECUTION_NOT_FILLED"
+    "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
+    "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "crowd_contra:PAPER_ORDER_REJECTED",
+    "crowd_contra:PAPER_ORDER_RECONCILIATION_FAILED",
+    "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
+    "top_contra:PAPER_EXECUTION_NOT_FILLED",
+    "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+    "top_contra:PAPER_ORDER_REJECTED",
+    "top_contra:PAPER_ORDER_RECONCILIATION_FAILED",
+    "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
   ],
-  "commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
+  "commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785752396584,
+  "generated_at_ms": 1785765213393,
   "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "5b978af4d98407af5903d12962576eed4878ce58c6c8a3c2d1333d94e2f29759",
+  "input_hash": "4f97c25597500de3d52f58088871eb023243a8cf9d42f860b5ed041459b36f3d",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "19cfc5b03d2677fcf2b07fc7a2627839b3e06cc1ce2f84f6fba8a0f335bb9154",
-      "size_bytes": 8808
+      "sha256": "d5fe3916aef142c88dd7a2eca15c461f0c52428437533d035da3828b3675e69a",
+      "size_bytes": 9056
     },
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -50,8 +48,8 @@
     "evidence/alpha_paper_cycle.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "21bd92cee61929ebb6001b67929da89e01fd017c5775065b211d29cbf50050cf",
-      "size_bytes": 8098
+      "sha256": "ded2b4f1a35399cd46e3fbb3b4c73b84b01e8c36aaae01b809e1484ce4fbf958",
+      "size_bytes": 8110
     },
     "evidence/shadow_status.json": {
       "exists": true,
@@ -68,44 +66,52 @@
     "tests/research": {
       "exists": true,
       "file_count": 147,
-      "files_sha256": "c6b137e723bd5901ba6135ef8e4bd25045847578596fa1bf2035602113631949",
+      "files_sha256": "bee254ac8363539fe72bfa0f9fec0f8342a8019f24e293f75b36b30f9dd4e227",
       "kind": "python_directory"
     }
   },
   "paper": {
     "blockers": [
-      "crowd_contra_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_q20:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_q20_14d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_q25_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_q35_3d:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_taker_combo:PAPER_MARK_NOT_RECORDED,PAPER_FILLS_MISSING",
-      "crowd_contra_14d:BACKTEST_PROVENANCE_INVALID",
-      "crowd_contra_3d:BACKTEST_PROVENANCE_INVALID",
-      "crowd_contra_q20:BACKTEST_PROVENANCE_INVALID",
-      "crowd_contra_q20_14d:BACKTEST_PROVENANCE_INVALID",
-      "crowd_contra_q25_3d:BACKTEST_PROVENANCE_INVALID",
-      "crowd_contra_q35_3d:BACKTEST_PROVENANCE_INVALID",
-      "crowd_taker_combo:BACKTEST_PROVENANCE_INVALID",
       "PAPER_ORDER_PREVIEW_NOT_READY",
       "PAPER_ORDER_PREVIEW_REPORTED_ERRORS",
+      "PAPER_ORDER_ALPHA_SET_INCOMPLETE",
       "carry_oi_majors:PAPER_EXECUTION_NOT_FILLED",
       "carry_oi_majors:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "carry_oi_majors:PAPER_ORDER_REJECTED",
+      "carry_oi_majors:PAPER_ORDER_RECONCILIATION_FAILED",
       "carry_oi_majors:PAPER_RESEARCH_RISK_NOT_FULL",
       "crowd_contra:PAPER_EXECUTION_NOT_FILLED",
       "crowd_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "crowd_contra:PAPER_ORDER_REJECTED",
+      "crowd_contra:PAPER_ORDER_RECONCILIATION_FAILED",
       "crowd_contra:PAPER_RESEARCH_RISK_NOT_FULL",
       "top_contra:PAPER_EXECUTION_NOT_FILLED",
       "top_contra:PAPER_INTENT_FILL_COUNT_MISMATCH",
+      "top_contra:PAPER_ORDER_REJECTED",
+      "top_contra:PAPER_ORDER_RECONCILIATION_FAILED",
       "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
     ],
     "forward_evidence": {
-      "alerts": [],
+      "alerts": [
+        "refresh skipped: current ingestion quality evidence unavailable; decision and realization blocked",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "forward realization blocked: current data admission unavailable",
+        "crowd_contra_3d: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable",
+        "crowd_contra_q25_3d: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable",
+        "crowd_contra_q35_3d: current admission reference unavailable; decision paused",
+        "forward realization blocked: current data admission unavailable"
+      ],
       "alphas": {
         "carry_oi_majors": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED",
+          "evidence_state": "DATA_BLOCKED",
           "last_decision_ts": 1785196800000,
           "n_forward_periods": 1,
           "next_realization_eligible_at": 1785758400000,
@@ -115,7 +121,7 @@
         },
         "crowd_contra": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED",
+          "evidence_state": "DATA_BLOCKED",
           "last_decision_ts": 1785196800000,
           "n_forward_periods": 1,
           "next_realization_eligible_at": 1785758400000,
@@ -125,7 +131,7 @@
         },
         "top_contra": {
           "attested_pending_decisions": 1,
-          "evidence_state": "ATTESTED",
+          "evidence_state": "DATA_BLOCKED",
           "last_decision_ts": 1785196800000,
           "n_forward_periods": 1,
           "next_realization_eligible_at": 1785758400000,
@@ -136,19 +142,19 @@
       },
       "complete_for_all_three": false,
       "data_quality_admission": {
-        "lineage_verdict": "PASS",
-        "quality_verdict": "PASS",
-        "verdict": "PASS"
+        "lineage_verdict": null,
+        "quality_verdict": null,
+        "verdict": null
       },
       "evidence_gate_periods": 8,
-      "evidence_maturing": true,
-      "maturity_state": "FORWARD_EVIDENCE_MATURING",
+      "evidence_maturing": false,
+      "maturity_state": "FORWARD_EVIDENCE_BLOCKED",
       "max_periods_to_gate": 7,
       "next_realization_eligible_at": 1785758400000,
       "present": true,
-      "quality_evidence_current": true,
-      "ran_at": 1785589203177,
-      "wait_ms": 142826691
+      "quality_evidence_current": false,
+      "ran_at": 1785756922016,
+      "wait_ms": 0
     },
     "paper_mark_ready": true,
     "paper_preview_ready": false,
@@ -179,10 +185,10 @@
   },
   "status": "READY_FOR_SHADOW",
   "validation": {
-    "current": true,
-    "head_commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
-    "overall_status": "PASS",
-    "reported_commit": "040b64375bcff483eff2499fba0cc3d2bc0babc0",
+    "current": false,
+    "head_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+    "overall_status": "FAIL",
+    "reported_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
     "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
     "selection_scope": "ALL",
     "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"
