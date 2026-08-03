@@ -20,18 +20,18 @@
     "top_contra:PAPER_ORDER_RECONCILIATION_FAILED",
     "top_contra:PAPER_RESEARCH_RISK_NOT_FULL"
   ],
-  "commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+  "commit": "7825c6b8eacd815839f94a91947088711b1337b7",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785765213393,
+  "generated_at_ms": 1785773663524,
   "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "Shadow readiness is not fill or paper proof. Paper remains separate and cannot be promoted from marks-only replay.",
-  "input_hash": "4f97c25597500de3d52f58088871eb023243a8cf9d42f860b5ed041459b36f3d",
+  "input_hash": "6fbbad53f92084653ca6db7d6abffd3c16e78bfde4e5fd0ac33df12d46300051",
   "inputs": {
     "data/cache/paper_health_10k.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "d5fe3916aef142c88dd7a2eca15c461f0c52428437533d035da3828b3675e69a",
-      "size_bytes": 9056
+      "sha256": "2210427ce66319f9806b974dd295390395a692cb93b129dc3651cea61c49384b",
+      "size_bytes": 9052
     },
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -48,8 +48,8 @@
     "evidence/alpha_paper_cycle.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "ded2b4f1a35399cd46e3fbb3b4c73b84b01e8c36aaae01b809e1484ce4fbf958",
-      "size_bytes": 8110
+      "sha256": "8bd0bfe887fe24893613eb5aede76705138ebe35a60ccf92808c7c06d2cf8f49",
+      "size_bytes": 8172
     },
     "evidence/shadow_status.json": {
       "exists": true,
@@ -185,10 +185,10 @@
   },
   "status": "READY_FOR_SHADOW",
   "validation": {
-    "current": false,
-    "head_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
-    "overall_status": "FAIL",
-    "reported_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+    "current": true,
+    "head_commit": "7825c6b8eacd815839f94a91947088711b1337b7",
+    "overall_status": "PASS",
+    "reported_commit": "7825c6b8eacd815839f94a91947088711b1337b7",
     "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
     "selection_scope": "ALL",
     "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"

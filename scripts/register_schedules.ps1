@@ -245,7 +245,7 @@ $forwardTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "21:00"
 $maintenanceTrigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 `
   -DaysOfWeek Monday -At "09:05"
 $eventOpsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Hours 1)
+  -RepetitionInterval (New-TimeSpan -Minutes 15)
 $schedulerWatchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
   -RepetitionInterval (New-TimeSpan -Minutes 15)
 $externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(3) `
@@ -253,6 +253,7 @@ $externalHeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMin
 $eventSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:30"
 $artifactAdmissionSealTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "02:40"
 $backupTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "03:00"
+$rawArchiveAuditTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "04:00"
 $gonogoTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:00"
 $paperCycleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:05"
 $paperRiskBundleTrigger = New-ScheduledTaskTrigger -Daily -DaysInterval 1 -At "23:08"
@@ -373,6 +374,8 @@ Register-L2Task -Name "QUANTOS_paper_shadow_realtime" -Module "paper_shadow_real
   -Trigger $paperShadowRealtimeTrigger
 Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
   -Trigger $paperHealthTrigger
+Register-L2Task -Name "QUANTOS_raw_archive_audit" -Module "raw_archive_audit" `
+  -Trigger $rawArchiveAuditTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
 $backupReadiness = Get-L2BackupReadiness
 if ($backupReadiness.Ready) {

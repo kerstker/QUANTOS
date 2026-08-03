@@ -161,7 +161,7 @@ def drain_domain_event_outboxes(
     event_bus_factory=None,
     projector=None,
     projection_batch_limit: int = 1_000,
-    max_projection_batches: int = 25,
+    max_projection_batches: int = 10,
 ) -> dict:
     """Drain source outboxes, then catch the projection up in bounded batches."""
     if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:
@@ -262,6 +262,8 @@ def drain_domain_event_outboxes(
                                 }
         try:
             projected_total = 0
+            idempotent_replays_total = 0
+            processed_total = 0
             projected_batches = 0
             caught_up = False
             latest_projection: dict = {}
@@ -283,15 +285,30 @@ def drain_domain_event_outboxes(
                     or batch_count > projection_batch_limit
                 ):
                     raise ValueError("projector returned an invalid projected count")
+                replay_count = latest_projection.get("idempotent_replays", 0)
+                if (
+                    isinstance(replay_count, bool)
+                    or not isinstance(replay_count, int)
+                    or replay_count < 0
+                    or batch_count + replay_count > projection_batch_limit
+                ):
+                    raise ValueError(
+                        "projector returned an invalid idempotent replay count"
+                    )
+                processed_count = batch_count + replay_count
                 projected_total += batch_count
+                idempotent_replays_total += replay_count
+                processed_total += processed_count
                 projected_batches += 1
-                if batch_count < projection_batch_limit:
+                if processed_count < projection_batch_limit:
                     caught_up = True
                     break
             projection_result = {
                 "status": "PASS",
                 **latest_projection,
                 "projected": projected_total,
+                "idempotent_replays": idempotent_replays_total,
+                "processed": processed_total,
                 "batches": projected_batches,
                 "batch_limit": projection_batch_limit,
                 "caught_up": caught_up,

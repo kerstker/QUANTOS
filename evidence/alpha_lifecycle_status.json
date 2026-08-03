@@ -2,12 +2,10 @@
   "acceptance": {
     "external_approval": false,
     "live_authority": false,
-    "research_lifecycle": false
+    "research_lifecycle": true
   },
   "artifact": "QUANTOS_727_ALPHA_LIFECYCLE_STATUS",
-  "blockers": [
-    "FULL_VALIDATION_NOT_CURRENT_PASS"
-  ],
+  "blockers": [],
   "cockpit": {
     "alpha_count": 20,
     "derived_stage_counts": {
@@ -18,9 +16,9 @@
     "path": "evidence/alpha_lifecycle_cockpit.json",
     "sha256": "8a6371b773df4bcf096188d6a05a7e00ca941c972eac847f039329a1d7f35e00"
   },
-  "commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+  "commit": "7825c6b8eacd815839f94a91947088711b1337b7",
   "config_hash": "b59e44d7cc6f2afe03ea4e4a37e775cd9759d0ee2744d71279b3387b59b516a0",
-  "generated_at_ms": 1785765213393,
+  "generated_at_ms": 1785773663524,
   "generator_sha256": "b1570e7a41b9c8bea215eda3a6695d26807fc67c205813a87d160fb5017ca0ad",
   "honesty_note": "The cockpit is a read-only aggregation of current evidence. Forward paper insufficiency and external approval remain visible.",
   "implementation": {
@@ -30,7 +28,7 @@
     "promotion_and_grant": true,
     "research_state_machine": true
   },
-  "input_hash": "d996ff83afb42c111dcec8652f47d70e2903fcfd26436be899c622b044229f79",
+  "input_hash": "fafd5083cd27d8d953c3000f5d96bc2c02d1a9efbc5985e5e31c8dae4c86940d",
   "inputs": {
     "docs/QUANTOS_727.md": {
       "exists": true,
@@ -53,8 +51,8 @@
     "evidence/alpha_paper_cycle.json": {
       "exists": true,
       "kind": "file",
-      "sha256": "ded2b4f1a35399cd46e3fbb3b4c73b84b01e8c36aaae01b809e1484ce4fbf958",
-      "size_bytes": 8110
+      "sha256": "8bd0bfe887fe24893613eb5aede76705138ebe35a60ccf92808c7c06d2cf8f49",
+      "size_bytes": 8172
     },
     "services/alpha": {
       "exists": true,
@@ -97,12 +95,12 @@
   },
   "safety_verdict": "PASS",
   "schema_version": 1,
-  "status": "NOT_READY",
+  "status": "READY_FOR_RESEARCH_AUTONOMY",
   "validation": {
-    "current": false,
-    "head_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
-    "overall_status": "FAIL",
-    "reported_commit": "3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78",
+    "current": true,
+    "head_commit": "7825c6b8eacd815839f94a91947088711b1337b7",
+    "overall_status": "PASS",
+    "reported_commit": "7825c6b8eacd815839f94a91947088711b1337b7",
     "reported_validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28",
     "selection_scope": "ALL",
     "validate_script_sha256": "cae0b190ef77ac2d9b927bec1d18ecd9a117d97972c41dec209e1a653febfe28"

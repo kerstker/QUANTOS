@@ -22,7 +22,8 @@ if _REPO_ROOT not in sys.path:
 
 from services.data.raw_archive import (DEFAULT_RAW_ARCHIVE,
                                        load_archived_response,
-                                       summarize_archive)
+                                       load_archived_responses,
+                                       summarize_indexed_archive)
 from tools.binance_funding_fetch import fetch_daily_funding
 from tools.binance_oi_metrics_fetch import (FORWARD_MAJOR_TICKERS,
                                             fetch_ticker_days,
@@ -147,6 +148,7 @@ def _replay_missing(
     observed: dict,
     failures: list[dict],
     parser,
+    archive_responses: dict | None = None,
 ) -> tuple[dict, list[dict], list[dict], int]:
     replayed_days = set()
     replay_failures = []
@@ -154,11 +156,16 @@ def _replay_missing(
         if day in observed:
             continue
         try:
-            archived = load_archived_response(
-                archive_root,
-                dataset_id=dataset_id,
-                instrument_id=ticker,
-                event_time_ms=day,
+            key = (dataset_id, ticker, day)
+            archived = (
+                archive_responses.get(key)
+                if archive_responses is not None
+                else load_archived_response(
+                    archive_root,
+                    dataset_id=dataset_id,
+                    instrument_id=ticker,
+                    event_time_ms=day,
+                )
             )
             if archived is None:
                 continue
@@ -222,6 +229,7 @@ def run_backfill(
     rest_mark_fetch=fetch_mark_days_rest,
     rest_oi_fetch=fetch_oi_days_rest,
     funding_workers: int = 8,
+    archive_summary=summarize_indexed_archive,
 ) -> dict:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -263,6 +271,19 @@ def run_backfill(
         for ticker, values in oi_data.items()
         if isinstance(values, dict)
     }
+    replay_datasets = (
+        "perp_mark_prices", REST_DATASET_MARK,
+        "oi_metrics", REST_DATASET_OI,
+    )
+    archive_responses = load_archived_responses(
+        archive_root,
+        requests={
+            (dataset_id, ticker, day)
+            for dataset_id in replay_datasets
+            for ticker in scope
+            for day in days
+        },
+    )
 
     mark_report = {
         "source": "perp_mark_prices", "attempted_records": attempted,
@@ -280,64 +301,66 @@ def run_backfill(
             day for day in days
             if provenance.get(str(day)) == PROVENANCE_REST_GAP_FILL
         ]
-        failures = []
-        try:
-            observed = mark_fetch(
-                ticker, archive_days, archive_root=archive_root,
-                observed_at_ms=int(now_ms), failure_sink=failures,
-            )
-        except Exception as exc:
-            observed = {}
-            failures.append(source_failure_detail(
-                ticker, exc, phase="lineage_backfill_mark"
-            ))
-        mark_report["refetched_records"] += len(
-            set(archive_days).intersection(observed)
-        )
         observed, failures, warnings, replayed = _replay_missing(
             archive_root=archive_root,
             dataset_id="perp_mark_prices",
             ticker=ticker,
             days=archive_days,
-            observed=observed,
-            failures=failures,
+            observed={},
+            failures=[],
             parser=lambda payload, day: parse_mark_price_zip(
                 payload, expected_day=day
             ),
+            archive_responses=archive_responses,
         )
         mark_report["replayed_records"] += replayed
         mark_report["warnings"].extend(warnings)
+        missing_archive_days = [day for day in archive_days if day not in observed]
+        if missing_archive_days:
+            try:
+                observed.update(mark_fetch(
+                    ticker, missing_archive_days, archive_root=archive_root,
+                    observed_at_ms=int(now_ms), failure_sink=failures,
+                ))
+            except Exception as exc:
+                failures.append(source_failure_detail(
+                    ticker, exc, phase="lineage_backfill_mark"
+                ))
+        mark_report["refetched_records"] += len(
+            set(missing_archive_days).intersection(observed)
+        )
         mark_report["failures"].extend(failures)
         _reconcile(
             mark_report, ticker, archive_days, mark_cache.get(ticker, {}), observed
         )
         if rest_days:
-            rest_failures = []
-            try:
-                rest_observed = rest_mark_fetch(
-                    ticker, rest_days, now_ms=int(now_ms),
-                    archive_root=archive_root, observed_at_ms=int(now_ms),
-                    failure_sink=rest_failures,
-                )
-            except Exception as exc:
-                rest_observed = {}
-                rest_failures.append(source_failure_detail(
-                    ticker, exc, phase="lineage_backfill_mark_rest"
-                ))
-            mark_report["rest_refetched_records"] += len(
-                set(rest_days).intersection(rest_observed)
-            )
             rest_observed, rest_failures, rest_warnings, rest_replayed = _replay_missing(
                 archive_root=archive_root,
                 dataset_id=REST_DATASET_MARK,
                 ticker=ticker,
                 days=rest_days,
-                observed=rest_observed,
-                failures=rest_failures,
+                observed={},
+                failures=[],
                 parser=parse_mark_rest_day,
+                archive_responses=archive_responses,
             )
             mark_report["rest_replayed_records"] += rest_replayed
             mark_report["warnings"].extend(rest_warnings)
+            missing_rest_days = [day for day in rest_days if day not in rest_observed]
+            if missing_rest_days:
+                try:
+                    rest_observed.update(rest_mark_fetch(
+                        ticker, missing_rest_days, now_ms=int(now_ms),
+                        archive_root=archive_root, observed_at_ms=int(now_ms),
+                        failure_sink=rest_failures,
+                    ))
+                except Exception as exc:
+                    rest_failures.append(source_failure_detail(
+                        ticker, exc, phase="lineage_backfill_mark_rest"
+                    ))
+            mark_report["rest_refetched_records"] += len(
+                set(missing_rest_days).intersection(rest_observed)
+            )
             mark_report["failures"].extend(rest_failures)
             _reconcile(
                 mark_report, ticker, rest_days,
@@ -361,63 +384,70 @@ def run_backfill(
             day for day in days
             if provenance.get(day) == PROVENANCE_REST_GAP_FILL
         ]
-        failures = []
-        try:
-            observed = oi_fetch(
-                ticker, archive_days[0], archive_days[-1] + _DAY_MS, set(),
-                archive_root=archive_root, observed_at_ms=int(now_ms),
-                failure_sink=failures,
-            ) if archive_days else {}
-        except Exception as exc:
-            observed = {}
-            failures.append(source_failure_detail(
-                ticker, exc, phase="lineage_backfill_oi"
-            ))
-        oi_report["refetched_records"] += len(
-            set(archive_days).intersection(observed)
-        )
         observed, failures, warnings, replayed = _replay_missing(
             archive_root=archive_root,
             dataset_id="oi_metrics",
             ticker=ticker,
             days=archive_days,
-            observed=observed,
-            failures=failures,
+            observed={},
+            failures=[],
             parser=lambda payload, _day: parse_metrics_zip(payload),
+            archive_responses=archive_responses,
         )
         oi_report["replayed_records"] += replayed
         oi_report["warnings"].extend(warnings)
+        missing_archive_days = [day for day in archive_days if day not in observed]
+        if missing_archive_days:
+            try:
+                fetched = oi_fetch(
+                    ticker, missing_archive_days[0],
+                    missing_archive_days[-1] + _DAY_MS, set(observed),
+                    archive_root=archive_root, observed_at_ms=int(now_ms),
+                    failure_sink=failures,
+                )
+                observed.update({
+                    day: fetched[day]
+                    for day in missing_archive_days if day in fetched
+                })
+            except Exception as exc:
+                failures.append(source_failure_detail(
+                    ticker, exc, phase="lineage_backfill_oi"
+                ))
+        oi_report["refetched_records"] += len(
+            set(missing_archive_days).intersection(observed)
+        )
         oi_report["failures"].extend(failures)
         _reconcile(
             oi_report, ticker, archive_days, oi_cache.get(ticker, {}), observed
         )
         if rest_days:
-            rest_failures = []
-            try:
-                rest_observed = rest_oi_fetch(
-                    ticker, rest_days, now_ms=int(now_ms),
-                    archive_root=archive_root, observed_at_ms=int(now_ms),
-                    failure_sink=rest_failures,
-                )
-            except Exception as exc:
-                rest_observed = {}
-                rest_failures.append(source_failure_detail(
-                    ticker, exc, phase="lineage_backfill_oi_rest"
-                ))
-            oi_report["rest_refetched_records"] += len(
-                set(rest_days).intersection(rest_observed)
-            )
             rest_observed, rest_failures, rest_warnings, rest_replayed = _replay_missing(
                 archive_root=archive_root,
                 dataset_id=REST_DATASET_OI,
                 ticker=ticker,
                 days=rest_days,
-                observed=rest_observed,
-                failures=rest_failures,
+                observed={},
+                failures=[],
                 parser=parse_oi_rest_day,
+                archive_responses=archive_responses,
             )
             oi_report["rest_replayed_records"] += rest_replayed
             oi_report["warnings"].extend(rest_warnings)
+            missing_rest_days = [day for day in rest_days if day not in rest_observed]
+            if missing_rest_days:
+                try:
+                    rest_observed.update(rest_oi_fetch(
+                        ticker, missing_rest_days, now_ms=int(now_ms),
+                        archive_root=archive_root, observed_at_ms=int(now_ms),
+                        failure_sink=rest_failures,
+                    ))
+                except Exception as exc:
+                    rest_failures.append(source_failure_detail(
+                        ticker, exc, phase="lineage_backfill_oi_rest"
+                    ))
+            oi_report["rest_refetched_records"] += len(
+                set(missing_rest_days).intersection(rest_observed)
+            )
             oi_report["failures"].extend(rest_failures)
             _reconcile(
                 oi_report, ticker, rest_days,
@@ -465,7 +495,7 @@ def run_backfill(
         "dataset_ids": sorted(RAW_LINEAGE_BACKFILL_DATASETS),
         "instrument_ids": scope,
     }
-    raw_lineage = summarize_archive(
+    raw_lineage = archive_summary(
         archive_root,
         dataset_ids=RAW_LINEAGE_BACKFILL_DATASETS,
         instrument_ids=frozenset(scope),

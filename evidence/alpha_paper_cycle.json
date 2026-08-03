@@ -3,7 +3,7 @@
   "readiness": "L2_DRY_RUN_ONLY",
   "cycle": {
     "mode": "FORWARD_PAPER_ONLY",
-    "state": "PENDING_FORWARD_EVIDENCE",
+    "state": "BLOCKED_BY_DATA_AND_EVENT_GATES",
     "required_forward_periods": 8,
     "official_driver": "tools/forward_track_advance.py",
     "forward_return_semantics": {
@@ -88,6 +88,7 @@
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "EVENT_BUS_NOT_HEALTHY",
         "DRY_RUN_RESEARCH_RISK_NOT_PASS",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
@@ -157,6 +158,7 @@
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "EVENT_BUS_NOT_HEALTHY",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     },
@@ -227,12 +229,16 @@
       },
       "paper_verdict": "BLOCKED",
       "blockers": [
+        "EVENT_BUS_NOT_HEALTHY",
         "FORWARD_EVIDENCE_INSUFFICIENT"
       ]
     }
   },
-  "common_blockers": [],
+  "common_blockers": [
+    "EVENT_BUS_NOT_HEALTHY"
+  ],
   "next_actions": [
+    "resolve retained event delivery dead letters without deleting the append-only history",
     "run the official forward driver on each daily poll until every candidate has at least 8 realized periods",
     "keep top_contra research-only until its forward evidence reaches the required period count"
   ]
