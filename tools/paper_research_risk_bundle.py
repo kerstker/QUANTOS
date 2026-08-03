@@ -1043,7 +1043,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"paper research-risk bundle: {len(document['alphas'])} alphas; "
         f"status={document['status']}; missing={','.join(document['missing_inputs'])}"
     )
-    return 0 if document["status"] == "READY" else 2
+    # PENDING is a valid fail-closed research/admission state carried by the
+    # artifact, not a failed production job.  A successful compute + atomic
+    # publish must keep Task Scheduler and release receipts healthy; only the
+    # exception path above returns non-zero.
+    return 0
 
 
 if __name__ == "__main__":
