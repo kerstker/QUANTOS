@@ -544,13 +544,19 @@ def _release_lock() -> None:
         pass
 
 
-def main() -> None:
+def main() -> int:
     if not _try_acquire_lock():
-        sys.exit("forward_track_advance: another run is active, exiting to avoid consumer-group race")
+        print(
+            "forward_track_advance: another run is active; "
+            "returning non-ready to avoid consumer-group race",
+            flush=True,
+        )
+        return 2
     try:
         _run()
     finally:
         _release_lock()
+    return 0
 
 
 def _run() -> None:
@@ -870,4 +876,4 @@ def _run() -> None:
 
 
 if __name__ == "__main__":
-    main()  # pragma: no cover
+    raise SystemExit(main())  # pragma: no cover

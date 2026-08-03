@@ -71,6 +71,18 @@ function Disable-TaskIfPresent {
     Write-Host "${Name}: not present"
     return
   }
+  if ($task.State -eq "Running") {
+    Stop-ScheduledTask -TaskName $Name -ErrorAction Stop
+    $stopDeadline = (Get-Date).AddSeconds(30)
+    do {
+      Start-Sleep -Milliseconds 200
+      $task = Get-ScheduledTask -TaskName $Name -ErrorAction Stop
+    } while ($task.State -eq "Running" -and (Get-Date) -lt $stopDeadline)
+    if ($task.State -eq "Running") {
+      throw "${Name}: running instance did not stop before release registration"
+    }
+    Write-Host "${Name}: stopped before release registration"
+  }
   Disable-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
   Write-Host "${Name}: disabled before L2 registration"
 }
@@ -141,6 +153,13 @@ function Register-L2Task {
     [TimeSpan]$ExecutionTimeLimit = (New-TimeSpan -Hours 6)
   )
 
+  # Register-ScheduledTask -Force replaces the definition but does not
+  # terminate an already-running instance.  Without an explicit quiesce, an
+  # immutable release switch leaves old code holding the mutable state DBs for
+  # hours while the new release starts beside it.  Stop and verify the exact
+  # same task before replacing its definition; failure is loud and leaves no
+  # mixed-release registration claim.
+  Disable-TaskIfPresent -Name $Name
   $logRoot = Join-Path $stateRoot ".runtime\logs"
   $action = New-ScheduledTaskAction -Execute $pythonw `
     -Argument "`"$launcher`" $Module --release-commit $releaseCommit" `
