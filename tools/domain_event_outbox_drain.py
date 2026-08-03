@@ -161,7 +161,7 @@ def drain_domain_event_outboxes(
     event_bus_factory=None,
     projector=None,
     projection_batch_limit: int = 1_000,
-    max_projection_batches: int = 25,
+    max_projection_batches: int = 10,
 ) -> dict:
     """Drain source outboxes, then catch the projection up in bounded batches."""
     if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms < 0:

@@ -168,6 +168,31 @@ def test_projection_does_not_treat_idempotent_replay_as_end_of_backlog(tmp_path)
     assert document["projection"]["caught_up"] is True
 
 
+def test_projection_stops_at_default_ten_batch_operational_budget(tmp_path):
+    event_path = tmp_path / "events.db"
+    event_path.write_bytes(b"present")
+    calls = []
+
+    def project(_bus, **kwargs):
+        calls.append(kwargs)
+        return {"projected": 1_000, "offset": len(calls) * 1_000}
+
+    document = drain_domain_event_outboxes(
+        now_ms=180,
+        event_path=str(event_path),
+        projection_path=str(tmp_path / "projection.db"),
+        output_path=str(tmp_path / "drain.json"),
+        sources=(),
+        event_bus_factory=lambda _path, *, create: _Bus(),
+        projector=project,
+    )
+
+    assert len(calls) == 10
+    assert document["projection"]["processed"] == 10_000
+    assert document["projection"]["batches"] == 10
+    assert document["projection"]["caught_up"] is False
+
+
 def test_corrupt_source_is_redacted_and_does_not_block_other_sources(tmp_path):
     bad_path = tmp_path / "bad.db"
     good_path = tmp_path / "good.db"

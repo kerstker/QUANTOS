@@ -74,6 +74,21 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_artifact_admission_seal" in source
 
 
+def test_domain_event_ops_has_frequent_bounded_recovery_schedule():
+    source = _source()
+    assert re.search(
+        r"\$eventOpsTrigger\s*=.*?\n\s*"
+        r"-RepetitionInterval \(New-TimeSpan -Minutes 15\)",
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_domain_event_ops".*?\n\s*'
+        r"-Trigger \$eventOpsTrigger -ExecutionTimeLimit "
+        r"\(New-TimeSpan -Minutes 5\)",
+        source,
+    )
+
+
 def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_tasks():
     source = _source()
     assert "$PSScriptRoot" in source
