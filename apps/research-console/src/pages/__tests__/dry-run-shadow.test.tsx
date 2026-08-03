@@ -333,8 +333,8 @@ const state = vi.hoisted(() => ({
     },
     scheduler_watchdog: {
       snapshot_present: true,
-      verdict: 'PASS',
-      summary: { PASS: 2 },
+      verdict: 'BREACH',
+      summary: { PASS: 2, BREACH: 1 },
       checks: [
         {
           task_name: 'QUANTOS_paper_shadow_auto',
@@ -431,6 +431,7 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('自主 Alpha 发现')).toBeInTheDocument();
     expect(screen.getByText('SYSTEM NATIVE')).toBeInTheDocument();
     expect(screen.getByText('SSE STREAM')).toBeInTheDocument();
+    expect(screen.queryByText('BREACH')).not.toBeInTheDocument();
     expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
     expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
     expect(screen.getByText('WAITING_FOR_VALIDATED_CANDIDATE')).toBeInTheDocument();
