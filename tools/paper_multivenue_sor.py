@@ -42,6 +42,7 @@ from services.risk.pre_trade.context import (
 from services.risk.pre_trade.gate import PreTradeRiskGate
 from services.risk.pre_trade.kill_switch import KillSwitch
 from services.trading.dry_run_adapters.domain.engine import DryRunAdapterEngine
+from tools.binance_oi_metrics_fetch import FORWARD_MAJOR_TICKERS
 from tools.cache_io import atomic_write_json
 from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_run
 
@@ -59,6 +60,7 @@ DEFAULT_STATUS = os.path.join(
     "data", "cache", "paper_multivenue_sor_status.json"
 )
 INSTRUMENTS = ("DOGEUSDT", "XRPUSDT", "ADAUSDT", "DOTUSDT")
+PAPER_INSTRUMENTS = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
 TARGET_NOTIONAL = Decimal("1000")
 MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
@@ -67,6 +69,15 @@ FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
     "binance_usdm": Decimal("5"),
     "bybit_linear": Decimal("5.5"),
+}
+PUBLIC_BOOK_SOURCES = {
+    "binance_usdm": frozenset(
+        {
+            "BINANCE_PUBLIC_USDM_WEBSOCKET",
+            "BINANCE_PUBLIC_USDM_REST_FAILOVER",
+        }
+    ),
+    "bybit_linear": frozenset({"BYBIT_PUBLIC_LINEAR_REST"}),
 }
 
 
@@ -106,14 +117,23 @@ def _levels(
     if not isinstance(rows, list) or not rows:
         raise PaperMultiVenueSORError(f"{field} has no depth")
     levels: list[BookLevel] = []
+    cumulative_quantity = Decimal("0")
+    emitted_quantity = 0
     for index, row in enumerate(rows):
         if not isinstance(row, Sequence) or isinstance(row, (str, bytes)) or len(row) < 2:
             raise PaperMultiVenueSORError(f"{field}[{index}] is malformed")
         price = _decimal(row[0], f"{field}[{index}].price")
         quantity_decimal = _decimal(row[1], f"{field}[{index}].quantity")
-        quantity = int(quantity_decimal)
+        # Venue books carry fractional contract quantities while the current
+        # paper execution contract is whole-unit.  Floor each level separately
+        # would discard executable depth (especially BTC/ETH).  Accumulate and
+        # emit newly completed whole units at the current, therefore
+        # conservative, worst price level.
+        cumulative_quantity += quantity_decimal
+        quantity = int(cumulative_quantity) - emitted_quantity
         if quantity > 0:
             levels.append(BookLevel(price=price, quantity=quantity))
+            emitted_quantity += quantity
     if not levels:
         raise PaperMultiVenueSORError(f"{field} has no whole-unit depth")
     expected = sorted(
@@ -269,6 +289,7 @@ def collect_books(
     now_ms: int,
     http_get: Callable[[str], object] = _http_get_json,
     clock_ms: Callable[[], int] | None = None,
+    instruments: Sequence[str] = INSTRUMENTS,
 ) -> tuple[dict[str, tuple[VenueBook, VenueBook]], dict[str, Any]]:
     read_clock = (
         (lambda: int(time.time() * 1000))
@@ -282,7 +303,14 @@ def collect_books(
         output: dict[str, tuple[VenueBook, VenueBook]] = {}
         rows: list[dict[str, Any]] = []
         binance_sources: dict[str, str] = {}
-        for instrument_id in INSTRUMENTS:
+        requested = tuple(str(item).upper() for item in instruments)
+        if (
+            not requested
+            or len(requested) != len(set(requested))
+            or any(not item.endswith("USDT") for item in requested)
+        ):
+            raise PaperMultiVenueSORError("routing instrument universe is invalid")
+        for instrument_id in requested:
             snapshot = store.latest_for_provider(
                 instrument_id,
                 "BINANCE_PUBLIC_USDM_WEBSOCKET",
@@ -375,6 +403,115 @@ def collect_books(
             "order_submission": False,
         },
     }
+
+
+def _persisted_book(row: Mapping[str, Any], *, as_of_ms: int) -> VenueBook:
+    instrument_id = str(row.get("instrument_id", "")).upper()
+    venue_id = str(row.get("venue", ""))
+    if not instrument_id.endswith("USDT") or venue_id not in FEE_ASSUMPTIONS_BPS:
+        raise PaperMultiVenueSORError("persisted routing book identity is invalid")
+    source = str(row.get("source", ""))
+    if source not in PUBLIC_BOOK_SOURCES[venue_id]:
+        raise PaperMultiVenueSORError("persisted routing book source is invalid")
+    try:
+        observed_at_ms = int(row["observed_at_ms"])
+        latency_ms = int(row["latency_ms"])
+        taker_fee_bps = Decimal(str(row["taker_fee_bps"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PaperMultiVenueSORError(
+            "persisted routing book metadata is invalid"
+        ) from exc
+    if (
+        observed_at_ms > as_of_ms
+        or as_of_ms - observed_at_ms > MAX_QUOTE_AGE_MS
+        or latency_ms < 0
+        or taker_fee_bps != FEE_ASSUMPTIONS_BPS[venue_id]
+    ):
+        raise PaperMultiVenueSORError("persisted routing book is stale or invalid")
+    return VenueBook(
+        venue_id=venue_id,
+        observed_at_ms=observed_at_ms,
+        taker_fee_bps=taker_fee_bps,
+        latency_ms=latency_ms,
+        bids=_levels(row.get("bids"), "persisted.bids", descending=True),
+        asks=_levels(row.get("asks"), "persisted.asks", descending=False),
+    )
+
+
+def load_persisted_routing_snapshot(
+    *,
+    book_store_path: str = DEFAULT_BOOK_STORE,
+    tickers: Sequence[str] = FORWARD_MAJOR_TICKERS,
+    now_ms: int,
+) -> tuple[dict[str, tuple[VenueBook, VenueBook]], dict[str, float], str, int]:
+    """Load one exact, hash-verified full-universe routing snapshot.
+
+    The returned books are keyed by QUANTOS ticker (``BTC``), while the
+    persisted public venue identifiers remain ``BTCUSDT``.  Missing, stale,
+    duplicated, fee-drifted, or partial venue coverage fails closed.
+    """
+    expected_tickers = tuple(str(item).upper() for item in tickers)
+    if (
+        not expected_tickers
+        or len(expected_tickers) != len(set(expected_tickers))
+        or any(not item or item.endswith("USDT") for item in expected_tickers)
+    ):
+        raise PaperMultiVenueSORError("paper routing ticker universe is invalid")
+    store = CrossVenueOrderBookStore(book_store_path, create=False)
+    try:
+        if not store.chain_valid():
+            raise PaperMultiVenueSORError("cross-venue order-book chain is invalid")
+        bundle = store.latest()
+    finally:
+        store.close()
+    if not isinstance(bundle, Mapping):
+        raise PaperMultiVenueSORError("cross-venue routing snapshot is missing")
+    try:
+        snapshot_id = str(bundle["snapshot_id"])
+        as_of_ms = int(bundle["observed_at_ms"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PaperMultiVenueSORError("routing snapshot identity is invalid") from exc
+    if (
+        not snapshot_id
+        or as_of_ms > int(now_ms) + MAX_FUTURE_SKEW_MS
+        or int(now_ms) - as_of_ms > MAX_QUOTE_AGE_MS
+    ):
+        raise PaperMultiVenueSORError("routing snapshot is stale or in the future")
+    rows = bundle.get("books")
+    if not isinstance(rows, list):
+        raise PaperMultiVenueSORError("routing snapshot books are missing")
+    expected_instruments = {f"{ticker}USDT" for ticker in expected_tickers}
+    grouped: dict[str, dict[str, VenueBook]] = {
+        ticker: {} for ticker in expected_tickers
+    }
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise PaperMultiVenueSORError("persisted routing book is malformed")
+        instrument_id = str(row.get("instrument_id", "")).upper()
+        if instrument_id not in expected_instruments:
+            continue
+        ticker = instrument_id.removesuffix("USDT")
+        book = _persisted_book(row, as_of_ms=as_of_ms)
+        if book.venue_id in grouped[ticker]:
+            raise PaperMultiVenueSORError("duplicate venue in routing snapshot")
+        grouped[ticker][book.venue_id] = book
+    books: dict[str, tuple[VenueBook, VenueBook]] = {}
+    prices: dict[str, float] = {}
+    expected_venues = set(FEE_ASSUMPTIONS_BPS)
+    for ticker in expected_tickers:
+        by_venue = grouped[ticker]
+        if set(by_venue) != expected_venues:
+            raise PaperMultiVenueSORError(
+                f"routing snapshot is incomplete for {ticker}"
+            )
+        ordered = tuple(by_venue[name] for name in sorted(by_venue))
+        if abs(ordered[0].observed_at_ms - ordered[1].observed_at_ms) > MAX_VENUE_SKEW_MS:
+            raise PaperMultiVenueSORError(
+                f"cross-venue quote skew is too large for {ticker}"
+            )
+        books[ticker] = ordered
+        prices[ticker] = float(sum((_mid(book) for book in ordered), Decimal("0")) / 2)
+    return books, prices, snapshot_id, as_of_ms
 
 
 def _mid(book: VenueBook) -> Decimal:
@@ -496,6 +633,7 @@ def execute(
         binance_store_path=binance_store_path,
         now_ms=now,
         http_get=http_get,
+        instruments=PAPER_INSTRUMENTS,
     )
     Path(book_store_path).parent.mkdir(parents=True, exist_ok=True)
     book_store = CrossVenueOrderBookStore(book_store_path, create=True)
@@ -509,7 +647,7 @@ def execute(
 
     run = run_canary(
         now_ms=int(bundle["observed_at_ms"]),
-        books=books,
+        books={instrument: books[instrument] for instrument in INSTRUMENTS},
         snapshot_id=str(bundle["snapshot_id"]),
     )
     event_bus = open_domain_event_bus()
@@ -545,7 +683,8 @@ def execute(
         "strategy_edge_claim": False,
         "snapshot_id": bundle["snapshot_id"],
         "run_id": run.run_id,
-        "instruments": list(INSTRUMENTS),
+        "instruments": list(PAPER_INSTRUMENTS),
+        "canary_instruments": list(INSTRUMENTS),
         "venues": venues,
         "route_plan_count": len(routing),
         "route_tca_count": len(route_tca),

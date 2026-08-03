@@ -1,5 +1,13 @@
 # QUANTOS 对标顶级 AI 量化 · 差距 + 修补路线图
 
+> **2026-08-04 路线执行口径更新：** 实时工程影子纸面与前向证据钟并行推进，不再把
+> “等待 8 周”当作开发阻塞项。已完成 P0 执行接缝：14 交易对双场所公共订单簿快照 →
+> 来源/完整性/新鲜度 fail-closed → simulated SOR → route TCA → 独立 v2 哈希链纸面账本 →
+> 10 候选实时重估与 SSE 控制台。8 周前向证据、独立挑战和九引擎正式输入仍决定正式
+> Paper/真钱晋级，不影响非晋级工程影子账户持续运行。下一优先级是把九引擎中的非时间型
+> 输入接入正式 Paper admission；真实成交校准、私有账户与下单仍不在 L2 授权范围内。
+
+
 > **2026-08-02 路线锁定：** 本文继续作为历史能力缺口与完成记录；从研究到生产的唯一工序排序、
 > 精益化取舍和最快部署路径，改由
 > [`QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md`](QUANTOS_LEAN_INSTITUTIONAL_PRODUCTION_ROADMAP.md)

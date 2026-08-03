@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 
 import tools.paper_order_preview as paper_preview
+from services.execution.simulated_sor import (
+    BookLevel,
+    SORPolicy,
+    VenueBook,
+    route_simulated_intent,
+)
 from services.risk.research_risk.dry_run_guard import DryRunResearchRiskInputs
 from services.risk.research_risk.domain.models import RiskConfig
 from tools.paper_order_preview import build_alpha_preview, run_preview
@@ -236,6 +243,69 @@ def test_engineering_preview_exposes_reconciled_simulation_tca():
     assert tca["implementation_shortfall_bps_including_cost"] == pytest.approx(10.0)
     assert tca["route_tca_available"] is False
     assert "NO_ORDER_BOOK_ROUTE_MODEL" in tca["limitations"]
+
+
+def test_engineering_preview_routes_new_fill_on_bound_public_book_snapshot():
+    execution_ts = DECISION_TS + 2_000
+    books = (
+        VenueBook(
+            venue_id="binance_usdm",
+            observed_at_ms=execution_ts,
+            taker_fee_bps=Decimal("5"),
+            latency_ms=20,
+            bids=(BookLevel(Decimal("49999"), 10),),
+            asks=(BookLevel(Decimal("50001"), 10),),
+        ),
+        VenueBook(
+            venue_id="bybit_linear",
+            observed_at_ms=execution_ts,
+            taker_fee_bps=Decimal("5.5"),
+            latency_ms=30,
+            bids=(BookLevel(Decimal("49998"), 10),),
+            asks=(BookLevel(Decimal("50002"), 10),),
+        ),
+    )
+    policy = SORPolicy(
+        max_quote_age_ms=60_000,
+        min_fill_fraction=Decimal("1"),
+        max_venue_fraction=Decimal("1"),
+        latency_penalty_bps_per_ms=Decimal("0"),
+    )
+
+    def planner(intent):
+        return route_simulated_intent(
+            intent,
+            books,
+            as_of_ms=execution_ts,
+            policy=policy,
+        )
+
+    result = build_alpha_preview(
+        "crowd_contra",
+        _pending({"BTC": 0.125}),
+        mark_by_ticker={"BTC": {DECISION_TS: 50_000.0}},
+        status=STATUS,
+        aum=1_000_000.0,
+        cost_bps=0.0,
+        generated_at_ms=execution_ts,
+        execution_prices={"BTC": 50_000.0},
+        execution_at_ms=execution_ts,
+        route_planner=planner,
+        routing_snapshot_id="a" * 64,
+        require_full_research_risk=False,
+    )
+
+    tca = result["execution_tca"]
+    assert result["paper_execution"] == "PAPER_BLOCKED"
+    assert "FULL_RESEARCH_RISK_NOT_APPROVED" in result["rejected_reasons"]
+    assert result["execution_ts"] == execution_ts
+    assert result["n_paper_fills"] == result["n_approved"] == 1
+    assert result["n_paper_fill_slices"] == 1
+    assert tca["route_tca_available"] is True
+    assert tca["fill_model"] == "REAL_PUBLIC_BOOK_SIMULATED_SOR"
+    assert tca["routing_snapshot_id"] == "a" * 64
+    assert tca["route_tca"][0]["venues"][0]["venue_id"] == "binance_usdm"
+    assert result["reconciliation_residual"] == 0.0
 
 
 def test_run_preview_publishes_fail_closed_report_for_missing_attested_ledger(tmp_path):

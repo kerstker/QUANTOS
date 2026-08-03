@@ -3,12 +3,14 @@ from decimal import Decimal
 import pytest
 
 from services.data.binance_realtime_store import BinanceRealtimeStore
+from services.data.cross_venue_order_book_store import CrossVenueOrderBookStore
 from tools.paper_multivenue_sor import (
     INSTRUMENTS,
     MAX_FUTURE_SKEW_MS,
     MAX_QUOTE_AGE_MS,
     PaperMultiVenueSORError,
     collect_books,
+    load_persisted_routing_snapshot,
     parse_binance_rest_book,
     parse_bybit_book,
     run_canary,
@@ -103,6 +105,22 @@ def test_parse_bybit_book_rejects_stale_and_preserves_depth():
     payload["result"]["ts"] = now_ms - MAX_QUOTE_AGE_MS - 1
     with pytest.raises(PaperMultiVenueSORError, match="stale"):
         parse_bybit_book(payload, "DOGEUSDT", observed_at_ms=now_ms)
+
+
+def test_fractional_contract_depth_is_conservatively_aggregated_to_whole_units():
+    now_ms = 1_000_000
+    payload = _bybit_payload("BTCUSDT", "50000", now_ms)
+    payload["result"]["b"] = [["50000", "0.6"], ["49999", "0.6"]]
+    payload["result"]["a"] = [["50001", "0.6"], ["50002", "0.6"]]
+
+    book = parse_bybit_book(payload, "BTCUSDT", observed_at_ms=now_ms)
+
+    assert [(row.price, row.quantity) for row in book.bids] == [
+        (Decimal("49999"), 1)
+    ]
+    assert [(row.price, row.quantity) for row in book.asks] == [
+        (Decimal("50002"), 1)
+    ]
 
 
 def test_public_rest_parsers_allow_only_bounded_exchange_clock_lead():
@@ -230,3 +248,77 @@ def test_collect_books_uses_visible_binance_rest_failover_when_stream_is_stale(
     assert {
         row["source"] for row in bundle["books"] if row["venue"] == "binance_usdm"
     } == {"BINANCE_PUBLIC_USDM_REST_FAILOVER"}
+
+
+def test_persisted_routing_snapshot_requires_two_fresh_venues_per_ticker(tmp_path):
+    now_ms = 2_000_000
+    bases = {"DOGEUSDT": "0.20", "XRPUSDT": "0.50"}
+    realtime_path = tmp_path / "binance.db"
+    realtime = BinanceRealtimeStore(str(realtime_path), create=True)
+    try:
+        for instrument_id, base in bases.items():
+            realtime.append_snapshot(_binance_snapshot(instrument_id, base, now_ms))
+    finally:
+        realtime.close()
+
+    def fake_get(url: str):
+        instrument_id = next(item for item in bases if item in url)
+        return _bybit_payload(instrument_id, bases[instrument_id], now_ms)
+
+    _, bundle = collect_books(
+        binance_store_path=str(realtime_path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+        instruments=tuple(bases),
+    )
+    book_path = tmp_path / "books.db"
+    store = CrossVenueOrderBookStore(str(book_path), create=True)
+    try:
+        store.append_bundle(bundle)
+    finally:
+        store.close()
+
+    books, prices, snapshot_id, as_of_ms = load_persisted_routing_snapshot(
+        book_store_path=str(book_path),
+        tickers=("DOGE", "XRP"),
+        now_ms=now_ms,
+    )
+
+    assert set(books) == {"DOGE", "XRP"}
+    assert all(len(rows) == 2 for rows in books.values())
+    assert prices["DOGE"] > 0
+    assert snapshot_id == bundle["snapshot_id"]
+    assert as_of_ms == bundle["observed_at_ms"]
+
+
+def test_persisted_routing_snapshot_rejects_unapproved_public_source(tmp_path):
+    now_ms = 2_000_000
+    realtime_path = tmp_path / "binance.db"
+    realtime = BinanceRealtimeStore(str(realtime_path), create=True)
+    try:
+        realtime.append_snapshot(_binance_snapshot("BTCUSDT", "60000", now_ms))
+    finally:
+        realtime.close()
+
+    _, bundle = collect_books(
+        binance_store_path=str(realtime_path),
+        now_ms=now_ms,
+        http_get=lambda _url: _bybit_payload("BTCUSDT", "60000", now_ms),
+        clock_ms=lambda: now_ms,
+        instruments=("BTCUSDT",),
+    )
+    bundle["books"][0]["source"] = "UNVERIFIED_PROXY"
+    book_path = tmp_path / "books.db"
+    store = CrossVenueOrderBookStore(str(book_path), create=True)
+    try:
+        store.append_bundle(bundle)
+    finally:
+        store.close()
+
+    with pytest.raises(PaperMultiVenueSORError, match="source is invalid"):
+        load_persisted_routing_snapshot(
+            book_store_path=str(book_path),
+            tickers=("BTC",),
+            now_ms=now_ms,
+        )

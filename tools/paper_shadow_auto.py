@@ -15,6 +15,7 @@ import argparse
 from collections.abc import Mapping, Sequence
 import json
 import math
+from decimal import Decimal
 from pathlib import Path
 import sys
 import time
@@ -29,12 +30,15 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.execution.paper_execution_store import PaperExecutionStore
+from services.execution.simulated_sor import (
+    SORPolicy,
+    route_simulated_intent,
+)
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from tools.binance_perp_mark_fetch import load_mark_prices
 from tools.cache_io import atomic_write_json
 from tools.paper_order_preview import (
     DEFAULT_AUM,
-    DEFAULT_COST_BPS,
     DEFAULT_FORWARD_DB,
     DEFAULT_MARK_CACHE,
     DEFAULT_STATUS,
@@ -42,11 +46,18 @@ from tools.paper_order_preview import (
     build_alpha_preview,
 )
 from tools.paper_candidate_universe import paper_candidate_ids
+from tools.paper_multivenue_sor import (
+    DEFAULT_BOOK_STORE,
+    MAX_QUOTE_AGE_MS,
+    load_persisted_routing_snapshot,
+)
 
 
-DEFAULT_STORE = "data/cache/paper_shadow_ledger.db"
+DEFAULT_STORE = "data/cache/paper_shadow_routed_ledger_v2.db"
+LEGACY_STORE = "data/cache/paper_shadow_ledger.db"
 DEFAULT_OUTPUT = "data/cache/paper_shadow_auto.json"
 SHADOW_CLASS = "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER"
+EXECUTION_PROFILE = "REAL_PUBLIC_BOOK_SIMULATED_SOR_V2"
 
 
 def _latest_attested_shadow_decision(
@@ -142,9 +153,10 @@ def run_shadow(
     mark_cache: str = DEFAULT_MARK_CACHE,
     status_path: str = DEFAULT_STATUS,
     store_path: str = DEFAULT_STORE,
+    book_store_path: str = DEFAULT_BOOK_STORE,
     output_path: str = DEFAULT_OUTPUT,
     aum: float = DEFAULT_AUM,
-    cost_bps: float = DEFAULT_COST_BPS,
+    cost_bps: float = 0.0,
     generated_at_ms: int | None = None,
 ) -> dict[str, Any]:
     generated_at = int(
@@ -156,6 +168,16 @@ def run_shadow(
     store = PaperExecutionStore(store_path, create=True)
     rows: dict[str, dict[str, Any]] = {}
     errors: dict[str, dict[str, str]] = {}
+    routing_books = None
+    routing_prices = None
+    routing_snapshot_id = None
+    routing_as_of_ms = None
+    route_policy = SORPolicy(
+        max_quote_age_ms=MAX_QUOTE_AGE_MS,
+        min_fill_fraction=Decimal("1"),
+        max_venue_fraction=Decimal("1"),
+        latency_penalty_bps_per_ms=Decimal("0"),
+    )
     try:
         for alpha_id in candidate_ids:
             try:
@@ -171,6 +193,25 @@ def run_shadow(
                     row["replayed_from_store"] = True
                     rows[alpha_id] = row
                     continue
+                if routing_books is None:
+                    (
+                        routing_books,
+                        routing_prices,
+                        routing_snapshot_id,
+                        routing_as_of_ms,
+                    ) = load_persisted_routing_snapshot(
+                        book_store_path=book_store_path,
+                        now_ms=generated_at,
+                    )
+
+                def route_planner(intent):
+                    return route_simulated_intent(
+                        intent,
+                        routing_books[intent.instrument_id],
+                        as_of_ms=routing_as_of_ms,
+                        policy=route_policy,
+                    )
+
                 preview = build_alpha_preview(
                     alpha_id,
                     pending,
@@ -191,6 +232,10 @@ def run_shadow(
                         ],
                     },
                     require_full_research_risk=False,
+                    execution_prices=routing_prices,
+                    execution_at_ms=routing_as_of_ms,
+                    route_planner=route_planner,
+                    routing_snapshot_id=routing_snapshot_id,
                 )
                 shadow = admit_shadow_preview(preview)
                 shadow["shadow_decision_selection"] = selection
@@ -208,7 +253,27 @@ def run_shadow(
         not errors
         and set(rows) == set(candidate_ids)
         and all(row.get("execution_class") == SHADOW_CLASS for row in rows.values())
+        and all(
+            isinstance(row.get("execution_tca"), Mapping)
+            and row["execution_tca"].get("route_tca_available") is True
+            and row["execution_tca"].get("fill_model")
+            == "REAL_PUBLIC_BOOK_SIMULATED_SOR"
+            for row in rows.values()
+        )
         and chain_valid
+    )
+    routing_snapshot_ids = sorted(
+        {
+            str(row["execution_tca"]["routing_snapshot_id"])
+            for row in rows.values()
+            if isinstance(row.get("execution_tca"), Mapping)
+            and row["execution_tca"].get("routing_snapshot_id")
+        }
+    )
+    routed_order_count = sum(
+        len(row["execution_tca"].get("route_tca", []))
+        for row in rows.values()
+        if isinstance(row.get("execution_tca"), Mapping)
     )
     document = {
         "schema_version": 1,
@@ -216,6 +281,7 @@ def run_shadow(
         "readiness": "L2_DRY_RUN_ONLY",
         "generated_at": generated_at,
         "status": "RUNNING" if completed else "SAFE_BLOCKED",
+        "execution_profile": EXECUTION_PROFILE,
         "alphas": rows,
         "candidate_universe": {
             "authority": "ALPHA_PRODUCTION_WORKFLOW",
@@ -223,6 +289,20 @@ def run_shadow(
             "expected_count": len(candidate_ids),
             "running_count": len(rows),
             "coverage_complete": set(rows) == set(candidate_ids),
+        },
+        "routing": {
+            "mode": "REAL_PUBLIC_BOOK_SIMULATED_SOR",
+            "venue_ids": ["binance_usdm", "bybit_linear"],
+            "routing_snapshot_ids": routing_snapshot_ids,
+            "routed_account_count": sum(
+                1
+                for row in rows.values()
+                if isinstance(row.get("execution_tca"), Mapping)
+                and row["execution_tca"].get("route_tca_available") is True
+            ),
+            "routed_order_count": routed_order_count,
+            "public_data_only": True,
+            "simulation_only": True,
         },
         "errors": errors,
         "verdict": {
@@ -240,6 +320,9 @@ def run_shadow(
         },
         "ledger": {
             "path": store_path,
+            "schema_generation": 2,
+            "legacy_v1_path": LEGACY_STORE,
+            "legacy_v1_retained_read_only": True,
             "append_only": True,
             "chain_valid": chain_valid,
             "separate_from_official_paper": True,
@@ -262,15 +345,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mark-cache", default=DEFAULT_MARK_CACHE)
     parser.add_argument("--status", default=DEFAULT_STATUS)
     parser.add_argument("--store", default=DEFAULT_STORE)
+    parser.add_argument("--book-store", default=DEFAULT_BOOK_STORE)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--aum", type=float, default=DEFAULT_AUM)
-    parser.add_argument("--cost-bps", type=float, default=DEFAULT_COST_BPS)
+    parser.add_argument("--cost-bps", type=float, default=0.0)
     args = parser.parse_args(argv)
     document = run_shadow(
         forward_db=args.forward_db,
         mark_cache=args.mark_cache,
         status_path=args.status,
         store_path=args.store,
+        book_store_path=args.book_store,
         output_path=args.output,
         aum=args.aum,
         cost_bps=args.cost_bps,

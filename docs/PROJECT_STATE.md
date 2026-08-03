@@ -1,5 +1,18 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v2（开发与前向证据并行）：** 工程影子纸面不再等待
+> 8 个前向周期才启动；8 周门只保留为正式晋级/真钱资格证据。`paper_multivenue_sor`
+> 现在每轮为 14 个候选交易对保存 Binance USD-M WebSocket + Bybit V5 公共订单簿的
+> 完整哈希链快照，验证场所、来源、费用假设、新鲜度、跨场所时钟偏差和全宇宙覆盖后，
+> `paper_shadow_auto` 才允许把最新已证明身份的候选送入 deterministic simulated SOR。
+> 新决策使用独立 `paper_shadow_routed_ledger_v2.db`，旧 v1 账本只读保留；重启按决策键
+> 精确重放，不依赖重新获取快照。真实现场验证为 14/14 交易对、10/10 候选账户、
+> 78 个父订单、892 个场所子成交切片、零错误、账本链有效；实时重估写入 10 个新快照，
+> `cycle_completed=true`，资金费完整且对账残差约 `2e-10`。费用、队列位置、延迟和真实
+> 成交仍未校准，因此这是 `REAL_PUBLIC_BOOK_SIMULATED_SOR_V2`，不是生产券商 SOR/TCA。
+> 全程 public-data/paper-only，`live_allowed=false`、`order_submission_allowed=false`。
+
+
 > **2026-08-02 WP3 预注册揭盲 + WP4 组合承重接线：** **WP3 W3-1**——影子门从
 > 「原始期数 ≥ 8」升级为预注册三重纪律:有效独立观察数(兑现窗口重叠只少计,
 > 贪心区间调度)+ regime 覆盖(资金费 z × 30d 实现波动 z 的 expanding 三分位,

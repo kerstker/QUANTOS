@@ -1001,7 +1001,7 @@ def _print_summary(
     verdict = report.get("verdict") if isinstance(report.get("verdict"), Mapping) else {}
     alpha_rows = report.get("alphas") if isinstance(report.get("alphas"), Mapping) else {}
     alpha_summary: dict[str, dict[str, Any]] = {}
-    for alpha_id in ALPHA_IDS:
+    for alpha_id in sorted(alpha_rows):
         row = alpha_rows.get(alpha_id)
         if isinstance(row, Mapping):
             alpha_summary[alpha_id] = {
@@ -1015,7 +1015,7 @@ def _print_summary(
             }
     backtest_rows = report.get("backtests") if isinstance(report.get("backtests"), Mapping) else {}
     backtest_summary: dict[str, dict[str, Any]] = {}
-    for alpha_id in ALPHA_IDS:
+    for alpha_id in sorted(backtest_rows):
         row = backtest_rows.get(alpha_id)
         if isinstance(row, Mapping):
             backtest_summary[alpha_id] = {
@@ -1031,6 +1031,10 @@ def _print_summary(
                 "paper_mark_ready": verdict.get("paper_mark_ready", False),
                 "backtest_reference_present_for_all_three": verdict.get(
                     "backtest_reference_present_for_all_three", False
+                ),
+                "backtest_reference_present_for_all_execution_candidates": verdict.get(
+                    "backtest_reference_present_for_all_execution_candidates",
+                    False,
                 ),
                 "observed_at": report.get("observed_at"),
                 "new_snapshots": (report.get("persistence") or {}).get("new_snapshots"),

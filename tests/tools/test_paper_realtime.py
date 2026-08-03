@@ -51,9 +51,18 @@ def test_print_summary_includes_paper_and_backtest_metrics(capsys):
                     "equity": 9_950.0,
                     "net_pnl": -50.0,
                     "reconciliation_residual": 0.0,
-                }
+                },
+                "challenger": {
+                    "status": "PAPER_MARKED",
+                    "equity": 10_010.0,
+                    "net_pnl": 10.0,
+                    "reconciliation_residual": 0.0,
+                },
             },
-            "backtests": {"carry_oi_majors": {"run_id": "run-1", "sharpe": 0.42}},
+            "backtests": {
+                "carry_oi_majors": {"run_id": "run-1", "sharpe": 0.42},
+                "challenger": {"run_id": "run-2", "sharpe": None},
+            },
             "errors": {},
         }
     )
@@ -73,6 +82,8 @@ def test_print_summary_includes_paper_and_backtest_metrics(capsys):
         "sharpe_vt": None,
         "max_drawdown": None,
     }
+    assert payload["alphas"]["challenger"]["status"] == "PAPER_MARKED"
+    assert payload["backtests"]["challenger"]["run_id"] == "run-2"
 
 
 def _operator() -> dict:

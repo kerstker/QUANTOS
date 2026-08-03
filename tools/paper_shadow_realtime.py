@@ -28,7 +28,7 @@ PROFILE_ARGS: tuple[str, ...] = (
     "--aum",
     "1000000",
     "--paper-store",
-    "data/cache/paper_shadow_ledger.db",
+    "data/cache/paper_shadow_routed_ledger_v2.db",
     "--store",
     "data/cache/paper_shadow_realtime.db",
     "--output",

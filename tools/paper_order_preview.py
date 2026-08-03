@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 # Keep the documented direct-script entrypoint import-safe from the repository
@@ -433,6 +433,10 @@ def build_alpha_preview(
     research_risk_bundle_status: Mapping[str, Any] | None = None,
     require_full_research_risk: bool = True,
     exchange_filters: dict[str, tuple[float, float, float]] | None = None,
+    execution_prices: Mapping[str, float] | None = None,
+    execution_at_ms: int | None = None,
+    route_planner: Callable | None = None,
+    routing_snapshot_id: str = "",
 ) -> dict[str, Any]:
     """Run one attested decision through the real paper execution chain.
 
@@ -451,27 +455,50 @@ def build_alpha_preview(
         raise ValueError("aum must be a positive finite number")
     if not math.isfinite(float(cost_bps)) or float(cost_bps) < 0:
         raise ValueError("cost_bps must be a non-negative finite number")
+    generated_at = int(
+        generated_at_ms if generated_at_ms is not None else time.time() * 1000
+    )
     decision_ts, weights, prices = _decision_inputs(pending, mark_by_ticker)
+    execution_ts = int(execution_at_ms if execution_at_ms is not None else decision_ts)
+    if execution_ts < 0:
+        raise ValueError("execution_at_ms must be a non-negative integer")
     _status_guard(status, recorded_at=int(pending.get("recorded_at", 0) or 0))
     held = {str(name): int(quantity) for name, quantity in (current_positions or {}).items()}
     outside_held = sorted(set(held) - set(FORWARD_MAJOR_TICKERS))
     if outside_held:
         raise RuntimeError(f"paper positions exceed the major-universe scope: {outside_held}")
-    missing_held: list[str] = []
-    for instrument in held:
-        if instrument in prices:
-            continue
-        days = mark_by_ticker.get(instrument)
-        value = days.get(decision_ts) if isinstance(days, Mapping) else None
-        if value is None or not math.isfinite(float(value)) or float(value) <= 0:
-            missing_held.append(instrument)
-        else:
-            prices[instrument] = float(value)
-    if missing_held:
-        raise RuntimeError(
-            f"mark-price cache has no exact decision-time price for held {missing_held}"
-        )
     instruments = set(weights) | set(held)
+    if execution_prices is not None:
+        missing_execution_prices = sorted(instruments - set(execution_prices))
+        if missing_execution_prices:
+            raise RuntimeError(
+                "execution snapshot has no price for "
+                + ",".join(missing_execution_prices)
+            )
+        normalized_prices: dict[str, float] = {}
+        for instrument in instruments:
+            value = execution_prices[instrument]
+            if not math.isfinite(float(value)) or float(value) <= 0:
+                raise RuntimeError(
+                    f"execution snapshot price is invalid for {instrument}"
+                )
+            normalized_prices[instrument] = float(value)
+        prices = normalized_prices
+    else:
+        missing_held: list[str] = []
+        for instrument in held:
+            if instrument in prices:
+                continue
+            days = mark_by_ticker.get(instrument)
+            value = days.get(decision_ts) if isinstance(days, Mapping) else None
+            if value is None or not math.isfinite(float(value)) or float(value) <= 0:
+                missing_held.append(instrument)
+            else:
+                prices[instrument] = float(value)
+        if missing_held:
+            raise RuntimeError(
+                f"mark-price cache has no exact decision-time price for held {missing_held}"
+            )
     gate = _paper_gate(alpha_id=alpha_id, instruments=instruments, aum=float(aum))
     risk_returns: list[float] | None = None
     risk_equity_curve: list[float] | None = None
@@ -508,7 +535,7 @@ def build_alpha_preview(
                 known=True,
                 reference_price=prices[intent.instrument_id],
                 market_open=True,
-                price_as_of=decision_ts,
+                price_as_of=execution_ts,
                 est_daily_volume=1e18,
                 instrument_vol=0.20,
             ),
@@ -517,7 +544,7 @@ def build_alpha_preview(
                 approved=True,
                 approval_id=f"paper-preview:{alpha_id}:{decision_ts}",
             ),
-            now=decision_ts,
+            now=execution_ts,
             max_staleness=10**15,
         )
 
@@ -530,11 +557,13 @@ def build_alpha_preview(
         ctx_factory=ctx_factory,
         adapter=DryRunBrokerAdapter(),
         strategy_id=alpha_id,
-        timestamp=decision_ts,
+        timestamp=execution_ts,
         marks=prices,
         initial_capital=float(aum),
         cost_bps=float(cost_bps),
         filters=exchange_filters,
+        route_planner=route_planner,
+        routing_snapshot_id=routing_snapshot_id,
         event_bus=None,
         publish_completion_event=False,
         research_risk_inputs=research_risk_inputs,
@@ -572,15 +601,21 @@ def build_alpha_preview(
                 "quantity": abs(quantity),
                 "target_signed_quantity": quantity,
                 "decision_mark_price": price,
+                "execution_reference_price": price,
                 "notional": round(abs(quantity) * price, 6),
                 "paper_position_before": int(held.get(instrument, 0)),
                 "paper_position_after_fill": positions.get(instrument, 0),
             }
         )
+    fill_slices = int(run.detail.get("n_fills", 0))
+    route_tca = list(run.detail.get("route_tca") or [])
+    filled_orders = len(route_tca) if route_planner is not None else fill_slices
     pretrade_filled = (
         run.n_intents == run.n_approved
         and run.n_rejected == 0
-        and int(run.detail.get("n_fills", 0)) == run.n_approved
+        and filled_orders == run.n_approved
+        and not list(run.detail.get("route_rejections") or [])
+        and int(run.detail.get("n_adapter_rejected", 0)) == 0
         and abs(float(run.pnl.get("residual", 1.0))) <= 1e-6
     )
     risk_snapshot = dict(run.detail.get("research_risk") or {})
@@ -593,13 +628,30 @@ def build_alpha_preview(
         rejected_reasons.append("FULL_RESEARCH_RISK_NOT_APPROVED")
     turnover = float(run.pnl.get("turnover", 0.0) or 0.0)
     execution_cost = float(run.pnl.get("costs", 0.0) or 0.0)
-    aggregate_shortfall_bps = (
-        execution_cost / turnover * 1e4 if turnover > 0.0 else 0.0
-    )
-    route_tca = list(run.detail.get("route_tca") or [])
+    if route_tca:
+        route_reference_notional = sum(
+            float(row["reference_price"]) * int(row["filled_quantity"])
+            for row in route_tca
+        )
+        aggregate_shortfall_bps = (
+            sum(
+                float(row["implementation_shortfall_bps"])
+                * float(row["reference_price"])
+                * int(row["filled_quantity"])
+                for row in route_tca
+            )
+            / route_reference_notional
+            if route_reference_notional > 0.0
+            else 0.0
+        )
+    else:
+        aggregate_shortfall_bps = (
+            execution_cost / turnover * 1e4 if turnover > 0.0 else 0.0
+        )
     return {
         "alpha_id": alpha_id,
         "decision_ts": decision_ts,
+        "execution_ts": execution_ts,
         "decision_source": str(pending.get("source", "")),
         "decision_recorded_at": int(pending.get("recorded_at", 0) or 0),
         "scope": sorted(instruments),
@@ -610,22 +662,36 @@ def build_alpha_preview(
         "n_approved": int(run.n_approved),
         "n_rejected": int(run.n_rejected),
         "rejected_reasons": rejected_reasons,
-        "n_paper_fills": int(run.detail.get("n_fills", 0)),
+        "n_paper_fills": filled_orders,
+        "n_paper_fill_slices": fill_slices,
         "paper_execution": "PAPER_FILLED" if fully_filled else "PAPER_BLOCKED",
         "pnl": dict(run.pnl),
         "reconciliation_residual": run.pnl.get("residual"),
         "execution_tca": {
             "status": "COMPLETE" if pretrade_filled else "INCOMPLETE",
             "simulation_only": True,
-            "reference_price": "DECISION_MARK",
-            "fill_model": "DRY_RUN_REFERENCE_PRICE",
+            "reference_price": (
+                "CONSOLIDATED_CROSS_VENUE_MID"
+                if route_tca
+                else "DECISION_MARK"
+            ),
+            "fill_model": (
+                "REAL_PUBLIC_BOOK_SIMULATED_SOR"
+                if route_tca
+                else "DRY_RUN_REFERENCE_PRICE"
+            ),
+            "routing_snapshot_id": routing_snapshot_id or None,
             "turnover_notional": turnover,
             "execution_cost": execution_cost,
             "implementation_shortfall_bps_including_cost": aggregate_shortfall_bps,
             "route_tca": route_tca,
             "route_tca_available": bool(route_tca),
             "limitations": (
-                []
+                [
+                    "SIMULATION_ONLY_NO_QUEUE_POSITION",
+                    "LATENCY_PENALTY_UNCALIBRATED",
+                    "PUBLIC_TAKER_FEES_UNCALIBRATED",
+                ]
                 if route_tca
                 else [
                     "NO_ORDER_BOOK_ROUTE_MODEL",
@@ -650,7 +716,7 @@ def build_alpha_preview(
         "audit_root": run.audit_root,
         "aum": float(aum),
         "cost_bps": float(cost_bps),
-        "generated_at": int(generated_at_ms if generated_at_ms is not None else time.time() * 1000),
+        "generated_at": generated_at,
         "paper_only": True,
         "live_allowed": False,
         "order_submission_allowed": False,
