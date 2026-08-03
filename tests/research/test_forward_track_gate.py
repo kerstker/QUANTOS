@@ -48,6 +48,30 @@ def test_live_lock_owner_is_not_evicted_by_age_and_dead_owner_is_recovered(
     forward_track._release_lock()
 
 
+def test_main_returns_non_ready_when_another_forward_consumer_owns_lock(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(forward_track, "_try_acquire_lock", lambda: False)
+    monkeypatch.setattr(
+        forward_track,
+        "_run",
+        lambda: pytest.fail("contending worker must not run"),
+    )
+
+    assert forward_track.main() == 2
+    assert "another run is active" in capsys.readouterr().out
+
+
+def test_main_returns_success_and_releases_lock(monkeypatch):
+    events = []
+    monkeypatch.setattr(forward_track, "_try_acquire_lock", lambda: True)
+    monkeypatch.setattr(forward_track, "_run", lambda: events.append("run"))
+    monkeypatch.setattr(forward_track, "_release_lock", lambda: events.append("release"))
+
+    assert forward_track.main() == 0
+    assert events == ["run", "release"]
+
+
 def _evidence(*, verdict="PASS"):
     blocked = verdict == "BLOCK"
     return {

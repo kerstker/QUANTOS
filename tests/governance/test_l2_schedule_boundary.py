@@ -104,7 +104,26 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
     ):
         assert task_name in source
     assert "Disable-ScheduledTask" in source
+    assert "Stop-ScheduledTask" in source
     assert "Get-ScheduledTask" in source
+
+
+def test_schedule_registration_quiesces_old_release_instances_before_force_replace():
+    source = _source()
+    function = re.search(
+        r"function Register-L2Task \{(.*?)\n\}",
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert function is not None
+    body = function.group(1)
+    assert "Disable-TaskIfPresent -Name $Name" in body
+    assert body.index("Disable-TaskIfPresent -Name $Name") < body.index(
+        "Register-ScheduledTask -TaskName"
+    )
+    assert "running instance did not stop before release registration" in source
+    assert "AddSeconds(30)" in source
 
 
 def test_schedule_registration_separates_release_code_from_mutable_state():
