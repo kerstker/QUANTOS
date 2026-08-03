@@ -81,13 +81,13 @@
       "role": "research_run_registry"
     }
   ],
-  "backup_elapsed_ms": 591060,
+  "backup_elapsed_ms": 85693,
   "destination_class": "SEPARATE_VOLUME",
   "encrypted": true,
   "external_destination_verified": true,
   "file_count": 16,
   "history_authoritative": true,
-  "history_event_hash": "e752da51a66f9a89f33847aa4d645fbb6e6d239fb3d96c4853832bbe8c0e1875",
+  "history_event_hash": "3b6adad2e5ddb82dd9a62a8208390284b7053ba0d81ec8cd674de2de82c82bd8",
   "history_event_seq": 76,
   "manifest_verified": true,
   "max_rpo_ms": 86400000,
@@ -97,9 +97,9 @@
     "data/cache/vendor_delivery_history.db"
   ],
   "mode": "L2_AUTHORITY_STATE",
-  "observed_at_ms": 1785697203048,
+  "observed_at_ms": 1785769807775,
   "required_source_count": 11,
-  "restore_elapsed_ms": 38571,
+  "restore_elapsed_ms": 15843,
   "restore_history_verified": true,
   "restore_verified": true,
   "rpo_met": true,

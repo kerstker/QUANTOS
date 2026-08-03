@@ -2,8 +2,8 @@
 
 > 本报告由 `scripts/generate_727_final_audit.py` 只读生成。它不授予任何订单、资金或部署权限。
 
-- 生成时间（Unix ms）：`1785765213393`
-- commit：`3bf3b03ad75bbfd3bcc3c9ec78c14fa5f2887d78`
+- 生成时间（Unix ms）：`1785773663524`
+- commit：`7825c6b8eacd815839f94a91947088711b1337b7`
 - 当前 readiness：`L2_DRY_RUN_ONLY`
 - 当前总状态：`NOT_READY`
 - 不生成任何开放真实实盘的状态或权限
@@ -12,10 +12,10 @@
 
 | 能力 | 当前状态 |
 |---|---|
-| Autonomy Kernel | `NOT_READY` |
+| Autonomy Kernel | `READY_FOR_RESEARCH_AUTONOMY` |
 | Trial Ledger | `NOT_READY` |
-| Factor Garden | `NOT_READY` |
-| Alpha Lifecycle | `NOT_READY` |
+| Factor Garden | `READY_FOR_RESEARCH_AUTONOMY` |
+| Alpha Lifecycle | `READY_FOR_RESEARCH_AUTONOMY` |
 | Paper / Shadow | `READY_FOR_SHADOW` |
 | MEXC Integration | `NOT_READY` |
 | Chaos / Recovery | `NOT_READY` |
