@@ -31,6 +31,8 @@ DOMAIN_EVENT_PROJECTION_CONSUMER = "domain-event-projection-v1"
 DOMAIN_EVENT_PROJECTION_PARTITIONS = 1
 DOMAIN_EVENT_PROJECTION_SESSION_TIMEOUT_MS = 120_000
 _GROUP_CLOCK_RETRY_LIMIT = 4
+_OPEN_CONCURRENT_APPEND_RETRY_LIMIT = 5
+_OPEN_CONCURRENT_APPEND_RETRY_BASE_SECONDS = 0.05
 _MIN_REAL_MS = 946684800000
 _EVENT_AUTHORITY_TABLES = frozenset(
     {
@@ -70,11 +72,23 @@ def open_domain_event_bus(
 ) -> DurableEventBus:
     if not create:
         _require_existing_event_authority(path)
-    return DurableEventBus(
-        path,
-        create=create,
-        schema_registry=CANONICAL_EVENT_SCHEMAS,
-    )
+    for attempt in range(_OPEN_CONCURRENT_APPEND_RETRY_LIMIT):
+        try:
+            return DurableEventBus(
+                path,
+                create=create,
+                schema_registry=CANONICAL_EVENT_SCHEMAS,
+            )
+        except EventBusIntegrityError as exc:
+            if (
+                str(exc) != "event authority changed during complete verification"
+                or attempt + 1 >= _OPEN_CONCURRENT_APPEND_RETRY_LIMIT
+            ):
+                raise
+            time.sleep(
+                _OPEN_CONCURRENT_APPEND_RETRY_BASE_SECONDS * (2 ** attempt)
+            )
+    raise AssertionError("unreachable event bus open retry state")
 
 
 def _unavailable_event_bus_health(
