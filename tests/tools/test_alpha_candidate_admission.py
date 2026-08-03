@@ -153,7 +153,9 @@ def test_forward_worker_consumes_verified_dynamic_registry(tmp_path, monkeypatch
         assert report["status"] == "PASS"
     monkeypatch.setattr(forward_track_advance, "_CANDIDATE_REGISTRY", str(registry_path))
 
-    alphas, dynamic_ids = forward_track_advance._registered_alphas()
+    alphas, dynamic_ids = forward_track_advance._registered_alphas(
+        workflow_authority=False
+    )
 
     assert dynamic_ids == (ALPHA_ID,)
     assert ALPHA_ID in alphas

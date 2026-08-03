@@ -63,6 +63,7 @@ def test_pass_authority_with_incomplete_refresh_never_records_or_realizes(tmp_pa
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
     monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "_WORKFLOW_STATUS", str(tmp_path / "missing-workflow.json"))
     monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
         "schema_version": 1,
         "observed_at_ms": now_ms,
@@ -176,6 +177,7 @@ def test_complete_refresh_invokes_authority_and_binds_same_reference(tmp_path, m
     monkeypatch.setattr(driver, "_FUND", str(funding_path))
     monkeypatch.setattr(driver, "_STATUS", str(tmp_path / "status.json"))
     monkeypatch.setattr(driver, "_FORWARD_BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(driver, "_WORKFLOW_STATUS", str(tmp_path / "missing-workflow.json"))
     monkeypatch.setattr(driver, "build_forward_evidence", lambda *args, **kwargs: {
         "schema_version": 1,
         "observed_at_ms": now_ms,
