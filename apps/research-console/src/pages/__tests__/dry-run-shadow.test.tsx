@@ -213,7 +213,8 @@ const state = vi.hoisted(() => ({
         factory_to_forward_registry_connected: false,
         forward_to_execution_dynamic: false,
         status: 'GAPPED',
-        gap_codes: ['LEGACY_DIAGNOSTIC_PAPER_QUARANTINED'],
+        gap_codes: ['UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED'],
+        boundary_codes: ['LEGACY_DIAGNOSTIC_PAPER_QUARANTINED'],
       },
       safety: {
         paper_only: true,

@@ -1441,6 +1441,7 @@ export interface AlphaPipelinePayload {
     forward_to_execution_dynamic: boolean;
     status: 'CONNECTED' | 'GAPPED';
     gap_codes: string[];
+    boundary_codes: string[];
   };
   safety: {
     paper_only: true;

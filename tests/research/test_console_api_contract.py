@@ -492,6 +492,7 @@ def test_dry_run_separates_factory_forward_and_execution_paper_populations(
         "FORWARD_UNIVERSE_NOT_CONSUMED_BY_EXECUTION_PAPER",
         "UNIQUE_ALPHA_WORKFLOW_NOT_VERIFIED",
     ]
+    assert payload["handoff"]["boundary_codes"] == []
     assert sum(row["stage"] == "EXECUTION_PAPER" for row in payload["candidates"]) == 3
     assert sum(row["stage"] == "FORWARD_PAPER" for row in payload["candidates"]) == 7
     assert payload["safety"]["live_allowed"] is False
@@ -553,15 +554,24 @@ def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(
         artifact_paper_views, "_ALPHA_PRODUCTION_WORKFLOW", str(workflow_path)
     )
-    monkeypatch.setattr(
-        artifact_paper_views,
-        "_FACTORY_LOOP_STATUS",
-        str(tmp_path / "missing-factory.json"),
+    factory_path = tmp_path / "factory.json"
+    factory_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "handoff_contract": "VERIFIED_FACTORY_PASS_TO_FORWARD_PAPER",
+            }
+        ),
+        encoding="utf-8",
     )
+    admission_path = tmp_path / "admission.json"
+    admission_path.write_text(
+        json.dumps({"status": "PASS", "registry": {"status": "VERIFIED"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifact_paper_views, "_FACTORY_LOOP_STATUS", str(factory_path))
     monkeypatch.setattr(
-        artifact_paper_views,
-        "_CANDIDATE_ADMISSION_STATUS",
-        str(tmp_path / "missing-admission.json"),
+        artifact_paper_views, "_CANDIDATE_ADMISSION_STATUS", str(admission_path)
     )
     payload = artifact_paper_views._alpha_pipeline_payload(
         {"alphas": [{"alpha_id": "stale_alpha", "n_forward_periods": 1}]},
@@ -581,6 +591,11 @@ def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
     assert payload["candidates"][-1]["stage"] == "EXECUTION_PAPER_ELIGIBLE"
     assert payload["candidates"][-1]["execution_paper_eligible"] is True
     assert payload["handoff"]["forward_to_execution_dynamic"] is True
+    assert payload["handoff"]["status"] == "CONNECTED"
+    assert payload["handoff"]["gap_codes"] == []
+    assert payload["handoff"]["boundary_codes"] == [
+        "LEGACY_DIAGNOSTIC_PAPER_QUARANTINED"
+    ]
 
 
 def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(
@@ -628,6 +643,9 @@ def test_dry_run_quarantines_legacy_paper_books_from_candidate_pipeline(
     assert payload["counts"]["candidate_execution_paper"] == 1
     assert payload["counts"]["legacy_diagnostic_paper"] == 3
     assert payload["handoff"]["forward_to_execution_dynamic"] is False
+    assert payload["handoff"]["boundary_codes"] == [
+        "LEGACY_DIAGNOSTIC_PAPER_QUARANTINED"
+    ]
     for alpha_id in ("carry_oi_majors", "crowd_contra", "top_contra"):
         assert rows[alpha_id]["stage"] == "LEGACY_DIAGNOSTIC_PAPER"
         assert rows[alpha_id]["paper_class"] == "LEGACY_DIAGNOSTIC_PAPER"

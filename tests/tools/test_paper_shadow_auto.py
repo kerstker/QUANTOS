@@ -1,5 +1,6 @@
 import pytest
 
+from services.execution.paper_execution_store import PaperExecutionStore
 from tools import paper_shadow_auto
 from tools.paper_shadow_auto import (
     SHADOW_CLASS,
@@ -109,3 +110,64 @@ def test_shadow_decision_reuses_latest_attested_realized_target(monkeypatch):
     assert row["decided_ts"] == 200
     assert row["realized"] == 1
     assert selection == "LATEST_ATTESTED_REALIZED"
+
+
+def test_shadow_worker_recovers_all_books_and_replays_idempotently_after_restart(
+    tmp_path, monkeypatch
+):
+    alpha_ids = [f"candidate_{index:02d}" for index in range(10)]
+    store_path = tmp_path / "shadow.db"
+    output_path = tmp_path / "shadow.json"
+
+    monkeypatch.setattr(paper_shadow_auto, "paper_candidate_ids", lambda: alpha_ids)
+    monkeypatch.setattr(paper_shadow_auto, "_load_json", lambda _path: {})
+    monkeypatch.setattr(
+        paper_shadow_auto, "load_mark_prices", lambda _path: {"BTC": 100.0}
+    )
+    monkeypatch.setattr(
+        paper_shadow_auto,
+        "_latest_attested_shadow_decision",
+        lambda _path, alpha_id: (
+            {"alpha_id": alpha_id, "decided_ts": 1_000, "run_id": f"run-{alpha_id}"},
+            "ATTESTED_PENDING",
+        ),
+    )
+
+    def preview(alpha_id, pending, **_kwargs):
+        row = _preview()
+        row.update(
+            {
+                "alpha_id": alpha_id,
+                "decision_ts": pending["decided_ts"],
+                "run_id": pending["run_id"],
+                "paper_positions": {"BTC": 1},
+            }
+        )
+        return row
+
+    monkeypatch.setattr(paper_shadow_auto, "build_alpha_preview", preview)
+
+    first = paper_shadow_auto.run_shadow(
+        store_path=str(store_path),
+        output_path=str(output_path),
+        generated_at_ms=2_000,
+    )
+    restarted = paper_shadow_auto.run_shadow(
+        store_path=str(store_path),
+        output_path=str(output_path),
+        generated_at_ms=3_000,
+    )
+
+    assert first["status"] == "RUNNING"
+    assert first["candidate_universe"]["running_count"] == 10
+    assert first["candidate_universe"]["coverage_complete"] is True
+    assert restarted["status"] == "RUNNING"
+    assert all(row["replayed_from_store"] is True for row in restarted["alphas"].values())
+
+    recovered = PaperExecutionStore(str(store_path), create=False)
+    try:
+        assert len(recovered.rows()) == 10
+        assert recovered.chain_valid() is True
+        assert all(recovered.latest(alpha_id)["paper_positions"] == {"BTC": 1} for alpha_id in alpha_ids)
+    finally:
+        recovered.close()

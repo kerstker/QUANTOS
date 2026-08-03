@@ -175,6 +175,10 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
         15 * 60_000,
         frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
     ),
+    "QUANTOS_raw_archive_audit": ExpectedTask(
+        "raw_archive_audit",
+        2 * _DAY_MS,
+    ),
     "QUANTOS_scheduler_watchdog": ExpectedTask(
         "l2_scheduler_watchdog", 2 * _HOUR_MS, frozenset({2})
     ),

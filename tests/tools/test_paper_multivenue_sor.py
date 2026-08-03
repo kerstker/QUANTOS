@@ -5,9 +5,11 @@ import pytest
 from services.data.binance_realtime_store import BinanceRealtimeStore
 from tools.paper_multivenue_sor import (
     INSTRUMENTS,
+    MAX_FUTURE_SKEW_MS,
     MAX_QUOTE_AGE_MS,
     PaperMultiVenueSORError,
     collect_books,
+    parse_binance_rest_book,
     parse_bybit_book,
     run_canary,
 )
@@ -73,6 +75,23 @@ def _bybit_payload(instrument_id: str, base: str, now_ms: int) -> dict:
     }
 
 
+def _binance_rest_payload(base: str, now_ms: int) -> dict:
+    price = Decimal(base)
+    return {
+        "lastUpdateId": 99,
+        "E": now_ms - 40,
+        "T": now_ms - 50,
+        "bids": [
+            [str(price), "100000"],
+            [str(price - Decimal("0.001")), "100000"],
+        ],
+        "asks": [
+            [str(price + Decimal("0.001")), "100000"],
+            [str(price + Decimal("0.002")), "100000"],
+        ],
+    }
+
+
 def test_parse_bybit_book_rejects_stale_and_preserves_depth():
     now_ms = 1_000_000
     payload = _bybit_payload("DOGEUSDT", "0.20", now_ms)
@@ -84,6 +103,35 @@ def test_parse_bybit_book_rejects_stale_and_preserves_depth():
     payload["result"]["ts"] = now_ms - MAX_QUOTE_AGE_MS - 1
     with pytest.raises(PaperMultiVenueSORError, match="stale"):
         parse_bybit_book(payload, "DOGEUSDT", observed_at_ms=now_ms)
+
+
+def test_public_rest_parsers_allow_only_bounded_exchange_clock_lead():
+    now_ms = 1_000_000
+    binance = _binance_rest_payload("0.20", now_ms)
+    binance["T"] = now_ms + 2_000
+    binance["E"] = now_ms + 2_005
+    assert parse_binance_rest_book(
+        binance, "DOGEUSDT", observed_at_ms=now_ms
+    ).observed_at_ms == now_ms + 2_000
+    assert parse_binance_rest_book(
+        binance, "DOGEUSDT", observed_at_ms=now_ms
+    ).latency_ms == 0
+    binance["T"] = now_ms + MAX_FUTURE_SKEW_MS + 1
+    binance["E"] = binance["T"]
+    with pytest.raises(PaperMultiVenueSORError, match="future"):
+        parse_binance_rest_book(binance, "DOGEUSDT", observed_at_ms=now_ms)
+
+    bybit = _bybit_payload("DOGEUSDT", "0.20", now_ms)
+    bybit["result"]["ts"] = now_ms + 2_000
+    assert parse_bybit_book(
+        bybit, "DOGEUSDT", observed_at_ms=now_ms
+    ).observed_at_ms == now_ms + 2_000
+    assert parse_bybit_book(
+        bybit, "DOGEUSDT", observed_at_ms=now_ms
+    ).latency_ms == 0
+    bybit["result"]["ts"] = now_ms + MAX_FUTURE_SKEW_MS + 1
+    with pytest.raises(PaperMultiVenueSORError, match="future"):
+        parse_bybit_book(bybit, "DOGEUSDT", observed_at_ms=now_ms)
 
 
 def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
@@ -135,3 +183,50 @@ def test_collect_and_run_canary_use_two_real_public_venues(tmp_path):
     assert all(
         route["status"] == "COMPLETE" for route in run.detail["routing"]
     )
+
+
+def test_collect_books_uses_visible_binance_rest_failover_when_stream_is_stale(
+    tmp_path,
+):
+    now_ms = 2_000_000
+    bases = {
+        "DOGEUSDT": "0.20",
+        "XRPUSDT": "0.50",
+        "ADAUSDT": "0.40",
+        "DOTUSDT": "2.00",
+    }
+    path = tmp_path / "binance.db"
+    store = BinanceRealtimeStore(str(path), create=True)
+    try:
+        for instrument_id, base in bases.items():
+            store.append_snapshot(
+                _binance_snapshot(
+                    instrument_id,
+                    base,
+                    now_ms - MAX_QUOTE_AGE_MS - 1,
+                )
+            )
+    finally:
+        store.close()
+
+    def fake_get(url: str):
+        instrument_id = next(item for item in INSTRUMENTS if item in url)
+        if "fapi.binance.com" in url:
+            return _binance_rest_payload(bases[instrument_id], now_ms)
+        return _bybit_payload(instrument_id, bases[instrument_id], now_ms)
+
+    books, bundle = collect_books(
+        binance_store_path=str(path),
+        now_ms=now_ms,
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+    )
+
+    assert set(books) == set(INSTRUMENTS)
+    assert bundle["quality"]["binance_rest_failover_used"] is True
+    assert set(bundle["binance_sources"].values()) == {
+        "BINANCE_PUBLIC_USDM_REST_FAILOVER"
+    }
+    assert {
+        row["source"] for row in bundle["books"] if row["venue"] == "binance_usdm"
+    } == {"BINANCE_PUBLIC_USDM_REST_FAILOVER"}

@@ -47,6 +47,7 @@ from tools.domain_event_bus import open_domain_event_bus, save_and_project_dry_r
 
 
 BYBIT_BASE_URL = "https://api.bybit.com"
+BINANCE_BASE_URL = "https://fapi.binance.com"
 DEFAULT_BINANCE_STORE = os.path.join(
     "data", "cache", "binance_realtime_stream.db"
 )
@@ -61,6 +62,7 @@ INSTRUMENTS = ("DOGEUSDT", "XRPUSDT", "ADAUSDT", "DOTUSDT")
 TARGET_NOTIONAL = Decimal("1000")
 MAX_QUOTE_AGE_MS = 10 * 60_000
 MAX_VENUE_SKEW_MS = 10 * 60_000
+MAX_FUTURE_SKEW_MS = 30_000
 FEE_POLICY_VERSION = "public-paper-fees.v1"
 FEE_ASSUMPTIONS_BPS = {
     "binance_usdm": Decimal("5"),
@@ -149,9 +151,54 @@ def parse_binance_book(
         venue_id="binance_usdm",
         observed_at_ms=observed_at_ms,
         taker_fee_bps=FEE_ASSUMPTIONS_BPS["binance_usdm"],
-        latency_ms=0,
+        latency_ms=max(0, now_ms - observed_at_ms),
         bids=_levels(depth.get("bids"), "binance.bids", descending=True),
         asks=_levels(depth.get("asks"), "binance.asks", descending=False),
+    )
+
+
+def parse_binance_rest_book(
+    payload: object,
+    instrument_id: str,
+    *,
+    observed_at_ms: int,
+) -> VenueBook:
+    """Parse a current public REST depth snapshot as a visible failover.
+
+    The resident WebSocket chain remains preferred.  REST is used only when
+    that source is missing or stale, and the bundle records the source choice.
+    A bounded exchange-clock lead is accepted without weakening the age gate.
+    """
+    if not isinstance(payload, Mapping):
+        raise PaperMultiVenueSORError("Binance REST order book is missing")
+    try:
+        output_time_ms = int(payload["E"])
+        source_time_ms = int(payload["T"])
+        update_id = int(payload["lastUpdateId"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PaperMultiVenueSORError(
+            "Binance REST order-book identity is invalid"
+        ) from exc
+    if (
+        output_time_ms < source_time_ms
+        or update_id < 0
+        or source_time_ms > observed_at_ms + MAX_FUTURE_SKEW_MS
+        or observed_at_ms - source_time_ms > MAX_QUOTE_AGE_MS
+    ):
+        raise PaperMultiVenueSORError(
+            "Binance REST order book is stale or in the future"
+        )
+    bids = _levels(payload.get("bids"), "binance_rest.bids", descending=True)
+    asks = _levels(payload.get("asks"), "binance_rest.asks", descending=False)
+    if asks[0].price <= bids[0].price:
+        raise PaperMultiVenueSORError("Binance REST order book is crossed or locked")
+    return VenueBook(
+        venue_id="binance_usdm",
+        observed_at_ms=source_time_ms,
+        taker_fee_bps=FEE_ASSUMPTIONS_BPS["binance_usdm"],
+        latency_ms=max(0, observed_at_ms - source_time_ms),
+        bids=bids,
+        asks=asks,
     )
 
 
@@ -173,7 +220,7 @@ def parse_bybit_book(
     except (KeyError, TypeError, ValueError) as exc:
         raise PaperMultiVenueSORError("Bybit order-book timestamp is invalid") from exc
     if (
-        source_time_ms > observed_at_ms
+        source_time_ms > observed_at_ms + MAX_FUTURE_SKEW_MS
         or observed_at_ms - source_time_ms > MAX_QUOTE_AGE_MS
     ):
         raise PaperMultiVenueSORError("Bybit order book is stale or in the future")
@@ -181,16 +228,22 @@ def parse_bybit_book(
         venue_id="bybit_linear",
         observed_at_ms=source_time_ms,
         taker_fee_bps=FEE_ASSUMPTIONS_BPS["bybit_linear"],
-        latency_ms=0,
+        latency_ms=max(0, observed_at_ms - source_time_ms),
         bids=_levels(result.get("b"), "bybit.bids", descending=True),
         asks=_levels(result.get("a"), "bybit.asks", descending=False),
     )
 
 
-def _book_payload(instrument_id: str, book: VenueBook) -> dict[str, Any]:
+def _book_payload(
+    instrument_id: str,
+    book: VenueBook,
+    *,
+    source: str,
+) -> dict[str, Any]:
     return {
         "instrument_id": instrument_id,
         "venue": book.venue_id,
+        "source": source,
         "observed_at_ms": book.observed_at_ms,
         "bids": [[str(level.price), level.quantity] for level in book.bids],
         "asks": [[str(level.price), level.quantity] for level in book.asks],
@@ -228,17 +281,40 @@ def collect_books(
             raise PaperMultiVenueSORError("Binance realtime chain is invalid")
         output: dict[str, tuple[VenueBook, VenueBook]] = {}
         rows: list[dict[str, Any]] = []
+        binance_sources: dict[str, str] = {}
         for instrument_id in INSTRUMENTS:
             snapshot = store.latest_for_provider(
                 instrument_id,
                 "BINANCE_PUBLIC_USDM_WEBSOCKET",
                 as_of_ms=now_ms,
             )
-            if snapshot is None:
-                raise PaperMultiVenueSORError(
-                    f"Binance book is missing for {instrument_id}"
+            try:
+                if snapshot is None:
+                    raise PaperMultiVenueSORError(
+                        f"Binance book is missing for {instrument_id}"
+                    )
+                binance_book = parse_binance_book(snapshot, now_ms=now_ms)
+                binance_source = "BINANCE_PUBLIC_USDM_WEBSOCKET"
+            except PaperMultiVenueSORError as websocket_error:
+                binance_url = (
+                    f"{BINANCE_BASE_URL}/fapi/v1/depth?"
+                    f"{urlencode({'symbol': instrument_id, 'limit': 20})}"
                 )
-            binance_book = parse_binance_book(snapshot, now_ms=now_ms)
+                try:
+                    binance_payload = http_get(binance_url)
+                    binance_observed_at_ms = max(now_ms, int(read_clock()))
+                    binance_book = parse_binance_rest_book(
+                        binance_payload,
+                        instrument_id,
+                        observed_at_ms=binance_observed_at_ms,
+                    )
+                except Exception as rest_error:
+                    raise PaperMultiVenueSORError(
+                        f"Binance WebSocket unavailable ({websocket_error}); "
+                        f"REST failover unavailable ({rest_error})"
+                    ) from rest_error
+                binance_source = "BINANCE_PUBLIC_USDM_REST_FAILOVER"
+            binance_sources[instrument_id] = binance_source
             url = (
                 f"{BYBIT_BASE_URL}/v5/market/orderbook?"
                 f"{urlencode({'category': 'linear', 'symbol': instrument_id, 'limit': 20})}"
@@ -258,8 +334,16 @@ def collect_books(
             output[instrument_id] = (binance_book, bybit_book)
             rows.extend(
                 (
-                    _book_payload(instrument_id, binance_book),
-                    _book_payload(instrument_id, bybit_book),
+                    _book_payload(
+                        instrument_id,
+                        binance_book,
+                        source=binance_source,
+                    ),
+                    _book_payload(
+                        instrument_id,
+                        bybit_book,
+                        source="BYBIT_PUBLIC_LINEAR_REST",
+                    ),
                 )
             )
     finally:
@@ -277,9 +361,14 @@ def collect_books(
         "provenance": "REAL_PUBLIC_CROSS_VENUE_ORDER_BOOKS",
         "fee_policy_version": FEE_POLICY_VERSION,
         "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
+        "binance_sources": dict(sorted(binance_sources.items())),
         "books": rows,
         "quality": {
             "complete": True,
+            "binance_rest_failover_used": any(
+                source == "BINANCE_PUBLIC_USDM_REST_FAILOVER"
+                for source in binance_sources.values()
+            ),
             "simulation_only": True,
             "private_access": False,
             "broker_connectivity": False,
@@ -463,6 +552,10 @@ def execute(
         "book_bundle_count": book_rows,
         "fee_policy_version": FEE_POLICY_VERSION,
         "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
+        "binance_sources": bundle["binance_sources"],
+        "binance_rest_failover_used": bundle["quality"][
+            "binance_rest_failover_used"
+        ],
         "safety": {
             "private_access": False,
             "credentials": False,

@@ -32,6 +32,7 @@ DEFAULT_STORE = os.path.join("data", "cache", "binance_rpi_depth.db")
 DEFAULT_STATUS = os.path.join("data", "cache", "binance_rpi_depth_status.json")
 REQUESTED_LEVELS = 1000
 MAX_AGE_MS = 5 * 60_000
+MAX_FUTURE_SKEW_MS = 30_000
 
 
 class BinanceRpiDepthError(RuntimeError):
@@ -120,8 +121,13 @@ def parse_snapshot(
     if output_time_ms < event_time_ms:
         raise BinanceRpiDepthError("RPI output precedes transaction time")
     age = knowledge_time_ms - event_time_ms
-    if age < 0 or age > MAX_AGE_MS:
+    if age < -MAX_FUTURE_SKEW_MS or age > MAX_AGE_MS:
         raise BinanceRpiDepthError("RPI depth is stale or in the future")
+    normalized_knowledge_time_ms = max(
+        int(knowledge_time_ms),
+        output_time_ms,
+        event_time_ms,
+    )
     bids = _levels(payload.get("bids"), "RPI bids", descending=True)
     asks = _levels(payload.get("asks"), "RPI asks", descending=False)
     best_bid = bids[0][0]
@@ -139,7 +145,10 @@ def parse_snapshot(
         "dataset": "rpi_depth_1000",
         "instrument_id": symbol,
         "event_time_ms": event_time_ms,
-        "knowledge_time_ms": knowledge_time_ms,
+        # Binance's public clock can lead the host by a few seconds.  Accept
+        # only a tightly bounded skew and move knowledge time forward so the
+        # retained PIT row never claims the event was known before it existed.
+        "knowledge_time_ms": normalized_knowledge_time_ms,
         "output_time_ms": output_time_ms,
         "last_update_id": update_id,
         "requested_levels": REQUESTED_LEVELS,
