@@ -344,10 +344,18 @@ def run(
 ) -> dict[str, Any]:
     from tools.crypto_oi_research import build_panel
 
-    observed_at = int(recorded_at if recorded_at is not None else time.time_ns() // 1_000_000)
     panel, _ = build_panel()
     candidates, leakage_evidence, mappings = build_paper_candidates(panel)
     dataset_version = evaluation_dataset_version(panel)
+    # Freeze the authority clock only after every expensive input has been
+    # assembled.  Candidate/leakage construction can take tens of seconds;
+    # taking the timestamp before it lets another scheduled research process
+    # legitimately advance the global STARTED clock and makes this batch look
+    # like a rollback.  Explicit caller time remains exact for deterministic
+    # tests and replay.
+    observed_at = int(
+        recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
+    )
     search_id = make_search_id(
         source="tools.paper_alpha_evaluation",
         search_kind="PAPER_ALPHA_EXACT_EVALUATION",
@@ -433,12 +441,12 @@ def run_forward(
     """Evaluate every forward challenger through the independent registry."""
     from tools.crypto_oi_research import build_panel
 
-    observed_at = int(
-        recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
-    )
     panel, _ = build_panel()
     candidates, leakage_evidence, mappings = build_forward_candidates(panel)
     dataset_version = evaluation_dataset_version(panel)
+    observed_at = int(
+        recorded_at if recorded_at is not None else time.time_ns() // 1_000_000
+    )
     search_id = make_search_id(
         source="tools.paper_alpha_evaluation",
         search_kind=FORWARD_EVALUATION_CONTRACT,

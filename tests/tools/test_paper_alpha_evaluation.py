@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from types import SimpleNamespace
+
 from services.research.alpha_expression import FieldPanel
 from tools import paper_alpha_evaluation as driver
 
@@ -61,3 +64,81 @@ def test_evaluation_dataset_version_binds_contract_and_panel() -> None:
     changed = _panel()
     changed.matrices["top_ls"][0][0] += 0.5
     assert driver.evaluation_dataset_version(changed) != baseline
+
+
+def test_run_freezes_search_clock_after_expensive_candidate_assembly(
+    tmp_path, monkeypatch
+) -> None:
+    order: list[str] = []
+    panel = _panel()
+
+    def build_panel():
+        order.append("panel")
+        return panel, list(panel.instruments)
+
+    def build_candidates(_panel):
+        order.append("candidates")
+        return [], {}, {}
+
+    def time_ns():
+        order.append("clock")
+        return 123_000_000
+
+    def run_batch(*_args, **kwargs):
+        order.append("batch")
+        assert kwargs["recorded_at"] == 123
+        return {"recorded_run_ids": []}
+
+    monkeypatch.setattr("tools.crypto_oi_research.build_panel", build_panel)
+    monkeypatch.setattr(driver, "build_paper_candidates", build_candidates)
+    monkeypatch.setattr(driver, "evaluation_dataset_version", lambda _panel: "dataset-v1")
+    monkeypatch.setattr(driver.time, "time_ns", time_ns)
+    monkeypatch.setattr(
+        driver,
+        "production_experiment_registry",
+        lambda: nullcontext(SimpleNamespace()),
+    )
+    monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
+
+    driver.run(output=tmp_path / "paper.json")
+
+    assert order == ["panel", "candidates", "clock", "batch"]
+
+
+def test_forward_run_freezes_search_clock_after_candidate_assembly(
+    tmp_path, monkeypatch
+) -> None:
+    order: list[str] = []
+    panel = _panel()
+
+    monkeypatch.setattr(
+        "tools.crypto_oi_research.build_panel",
+        lambda: (order.append("panel") or (panel, list(panel.instruments))),
+    )
+    monkeypatch.setattr(
+        driver,
+        "build_forward_candidates",
+        lambda _panel: (order.append("candidates") or ([], {}, {})),
+    )
+    monkeypatch.setattr(driver, "evaluation_dataset_version", lambda _panel: "dataset-v1")
+    monkeypatch.setattr(
+        driver.time,
+        "time_ns",
+        lambda: (order.append("clock") or 456_000_000),
+    )
+    monkeypatch.setattr(
+        driver,
+        "production_experiment_registry",
+        lambda: nullcontext(SimpleNamespace()),
+    )
+
+    def run_batch(*_args, **kwargs):
+        order.append("batch")
+        assert kwargs["recorded_at"] == 456
+        return {"recorded_run_ids": []}
+
+    monkeypatch.setattr(driver, "run_registered_candidate_batch", run_batch)
+
+    driver.run_forward(output=tmp_path / "forward.json")
+
+    assert order == ["panel", "candidates", "clock", "batch"]
