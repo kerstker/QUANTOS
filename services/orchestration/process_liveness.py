@@ -17,10 +17,24 @@ def process_is_alive(pid: int) -> bool:
         close_handle = kernel32.CloseHandle
         close_handle.argtypes = (ctypes.c_void_p,)
         close_handle.restype = ctypes.c_int
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+        get_exit_code.restype = ctypes.c_int
         handle = open_process(0x1000, 0, pid)
         if handle:
-            close_handle(handle)
-            return True
+            try:
+                exit_code = ctypes.c_uint32()
+                if not get_exit_code(handle, ctypes.byref(exit_code)):
+                    # The process object exists but its state cannot be queried.
+                    # Fail closed and retain ownership rather than evicting a
+                    # potentially live lock holder.
+                    return True
+                # OpenProcess can continue to succeed after termination while
+                # Task Scheduler or another parent retains a process handle.
+                # Only STILL_ACTIVE denotes a live owner.
+                return exit_code.value == 259
+            finally:
+                close_handle(handle)
         # Access denied also proves that the process object exists.
         return ctypes.get_last_error() == 5
     try:
