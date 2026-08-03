@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from quantos.contracts.alpha import AlphaDefinition
 from quantos.contracts.hashing import stable_hash
 from services.alpha.catalog import AlphaCatalog
@@ -149,3 +151,59 @@ def test_legacy_16_hex_trials_keep_count_but_mint_full_hash_evidence() -> None:
     assert "0123456789abcdef" not in evidence.trial_definition_hashes
     assert evidence.catalog_trial_set_hash == catalog.trial_set_hash()
     assert verify_catalog_evidence_against_catalog(evidence, catalog, "a")
+
+
+def test_current_re_evaluation_replaces_its_own_historical_return_window() -> None:
+    catalog = AlphaCatalog()
+    left = _definition("a", "factor-a")
+    right = _definition("b", "factor-b")
+    old_left = (0.01, 0.02, -0.01, 0.03)
+    new_left = (0.01, 0.02, -0.01, 0.03, 0.04)
+    right_returns = (-0.01, 0.01, 0.02, -0.02)
+    catalog.restore_evaluation_context(
+        trials=(left.definition_hash, right.definition_hash),
+        historical_returns={"a": old_left, "b": right_returns},
+        historical_pvalues={},
+        historical_definition_hashes={
+            "a": left.definition_hash,
+            "b": right.definition_hash,
+        },
+    )
+    catalog.register(left)
+    catalog.set_returns("a", new_left)
+
+    evidence = catalog.evidence("a")
+
+    assert evidence is not None
+    subject = next(
+        item
+        for item in evidence.return_observations
+        if item.observation_id == left.definition_hash
+    )
+    assert subject.returns == new_left
+    assert verify_catalog_evidence_against_catalog(evidence, catalog, "a")
+
+
+def test_distinct_historical_identity_with_same_definition_still_conflicts() -> None:
+    catalog = AlphaCatalog()
+    left = _definition("a", "factor-a")
+    right = _definition("b", "factor-b")
+    catalog.restore_evaluation_context(
+        trials=(left.definition_hash, right.definition_hash),
+        historical_returns={
+            "historical-alias": (0.02, 0.01, -0.01, 0.04),
+            "b": (-0.01, 0.01, 0.02, -0.02),
+        },
+        historical_pvalues={},
+        historical_definition_hashes={
+            "historical-alias": left.definition_hash,
+            "b": right.definition_hash,
+        },
+    )
+    catalog.register(left)
+    catalog.set_returns("a", (0.01, 0.02, -0.01, 0.03))
+
+    with pytest.raises(
+        ValueError, match="one catalog definition has conflicting OOS return series"
+    ):
+        catalog.evidence("a")
