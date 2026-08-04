@@ -215,6 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             {
                 "flow": "AUTOMATED_SHADOW_PAPER_REALTIME_CYCLE",
                 "execution_class": "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER",
+                "status": "RUNNING" if completed else "SAFE_BLOCKED",
                 "official_paper_execution": "PAPER_BLOCKED",
                 "promotion_eligible": False,
                 "forward_evidence_eligible": False,
