@@ -482,6 +482,13 @@ export interface BinanceRealtimePayload {
     feature_count: number;
     instrument_count: number;
     retained_value_count: number;
+    new_value_count: number;
+    eligible_source_snapshot_count: number;
+    skipped_existing_snapshot_count: number;
+    materialization_elapsed_ms: number | null;
+    bounded_drift_read: boolean;
+    drift_loaded_observation_count: number;
+    drift_history_limit_per_series: number;
     drift_status: string | null;
     drift_status_counts: Record<string, number>;
     drift_series_count: number;

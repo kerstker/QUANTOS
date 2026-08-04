@@ -224,30 +224,127 @@ class BinanceRealtimeStore:
             ).fetchone()[0]
         )
 
-    def chain_valid(self) -> bool:
-        previous = _GENESIS
+    @staticmethod
+    def _validate_checkpoint(
+        checkpoint_seq: int,
+        checkpoint_row_hash: str,
+    ) -> None:
+        if (
+            isinstance(checkpoint_seq, bool)
+            or not isinstance(checkpoint_seq, int)
+            or checkpoint_seq < 0
+        ):
+            raise BinanceRealtimeStoreError("chain checkpoint sequence is invalid")
+        if checkpoint_seq == 0:
+            if checkpoint_row_hash != _GENESIS:
+                raise BinanceRealtimeStoreError("genesis checkpoint hash is invalid")
+        elif (
+            not isinstance(checkpoint_row_hash, str)
+            or len(checkpoint_row_hash) != 64
+            or any(character not in "0123456789abcdef" for character in checkpoint_row_hash)
+        ):
+            raise BinanceRealtimeStoreError("chain checkpoint hash is invalid")
+
+    def _verify_chain_suffix(
+        self,
+        *,
+        checkpoint_seq: int,
+        checkpoint_row_hash: str,
+    ) -> dict[str, Any]:
+        self._validate_checkpoint(checkpoint_seq, checkpoint_row_hash)
+        if checkpoint_seq > 0:
+            anchor = self._conn.execute(
+                "SELECT row_hash FROM binance_market_snapshots WHERE seq=?",
+                (checkpoint_seq,),
+            ).fetchone()
+            if anchor is None or str(anchor["row_hash"]) != checkpoint_row_hash:
+                raise BinanceRealtimeStoreError("chain checkpoint anchor mismatch")
+        previous = checkpoint_row_hash
+        last_seq = checkpoint_seq
+        verified_rows = 0
+        for row in self._conn.execute(
+            "SELECT * FROM binance_market_snapshots WHERE seq>? ORDER BY seq",
+            (checkpoint_seq,),
+        ):
+            self._decode(row)
+            if row["prev_hash"] != previous:
+                raise BinanceRealtimeStoreError("snapshot chain link mismatch")
+            expected = _sha256(
+                {
+                    "instrument_id": row["instrument_id"],
+                    "observed_at_ms": int(row["observed_at_ms"]),
+                    "event_time_ms": int(row["event_time_ms"]),
+                    "payload_sha256": row["payload_sha256"],
+                    "prev_hash": row["prev_hash"],
+                }
+            )
+            if row["row_hash"] != expected:
+                raise BinanceRealtimeStoreError("snapshot row hash mismatch")
+            previous = str(row["row_hash"])
+            last_seq = int(row["seq"])
+            verified_rows += 1
+        return {
+            "valid": True,
+            "anchor_seq": checkpoint_seq,
+            "verified_suffix_rows": verified_rows,
+            "verified_seq": last_seq,
+            "verified_row_hash": previous,
+        }
+
+    def verify_chain_from(
+        self,
+        *,
+        checkpoint_seq: int = 0,
+        checkpoint_row_hash: str = _GENESIS,
+    ) -> dict[str, Any]:
+        """Verify the append-only suffix after a previously trusted head."""
         try:
-            for row in self._conn.execute(
-                "SELECT * FROM binance_market_snapshots ORDER BY seq"
-            ):
-                self._decode(row)
-                if row["prev_hash"] != previous:
-                    return False
-                expected = _sha256(
-                    {
-                        "instrument_id": row["instrument_id"],
-                        "observed_at_ms": int(row["observed_at_ms"]),
-                        "event_time_ms": int(row["event_time_ms"]),
-                        "payload_sha256": row["payload_sha256"],
-                        "prev_hash": row["prev_hash"],
-                    }
+            return self._verify_chain_suffix(
+                checkpoint_seq=checkpoint_seq,
+                checkpoint_row_hash=checkpoint_row_hash,
+            )
+        except (BinanceRealtimeStoreError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            return {
+                "valid": False,
+                "anchor_seq": checkpoint_seq,
+                "verified_suffix_rows": 0,
+                "verified_seq": checkpoint_seq,
+                "verified_row_hash": checkpoint_row_hash,
+                "error": str(exc),
+            }
+
+    def verified_recent_rows(
+        self,
+        limit: int,
+        *,
+        checkpoint_seq: int = 0,
+        checkpoint_row_hash: str = _GENESIS,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Verify a chain suffix and read its recent rows from one DB snapshot."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        try:
+            self._conn.execute("BEGIN")
+            verification = self._verify_chain_suffix(
+                checkpoint_seq=checkpoint_seq,
+                checkpoint_row_hash=checkpoint_row_hash,
+            )
+            rows = list(
+                self._conn.execute(
+                    "SELECT * FROM binance_market_snapshots ORDER BY seq DESC LIMIT ?",
+                    (limit,),
                 )
-                if row["row_hash"] != expected:
-                    return False
-                previous = str(row["row_hash"])
-            return True
-        except (BinanceRealtimeStoreError, sqlite3.DatabaseError, TypeError, ValueError):
-            return False
+            )
+            decoded = [self._decode(row) for row in reversed(rows)]
+            self._conn.rollback()
+            return decoded, verification
+        except Exception:
+            if self._conn.in_transaction:
+                self._conn.rollback()
+            raise
+
+    def chain_valid(self) -> bool:
+        return bool(self.verify_chain_from()["valid"])
 
 
 __all__ = ["BinanceRealtimeStore", "BinanceRealtimeStoreError"]

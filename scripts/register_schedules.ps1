@@ -286,8 +286,8 @@ $binanceRealtimeFeaturesTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).
 $binanceRealtimeDriftAlertsTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Run the immutable 24-trial realtime Alpha budget after the feature worker has
-# had time to publish a fresh PIT watermark.  The worker is research-only and
-# returns the supervised SAFE_BLOCKED code while 30d/90d maturity is missing.
+# published a fresh PIT watermark.  Evaluated candidates may enter isolated
+# engineering paper immediately; 30d/90d still gate formal graduation only.
 $realtimeAlphaDiscoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
   -RepetitionInterval (New-TimeSpan -Hours 1)
 # Once a candidate clears every immutable discovery gate, freeze forward
@@ -361,7 +361,7 @@ Register-L2Task -Name "QUANTOS_binance_systemic_risk" -Module "binance_systemic_
 Register-L2Task -Name "QUANTOS_binance_rpi_depth" -Module "binance_rpi_depth" `
   -Trigger $binanceRpiDepthTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realtime_features" `
-  -Trigger $binanceRealtimeFeaturesTrigger
+  -Trigger $binanceRealtimeFeaturesTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
   -Trigger $binanceRealtimeDriftAlertsTrigger
 Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha_discovery" `

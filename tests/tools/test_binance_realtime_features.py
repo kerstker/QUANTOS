@@ -94,6 +94,17 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
     assert result["drift"]["policy"]["warn_ks"] < (
         result["drift"]["policy"]["block_ks"]
     )
+    assert result["features"]["incremental_projected_value_count"] == (
+        2 * 300 * len(FEATURE_IDS)
+    )
+    assert result["features"]["skipped_existing_snapshot_count"] == 0
+    assert result["drift"]["history"]["max_observations_per_series"] == 240
+    assert result["drift"]["history"]["loaded_observation_count"] == (
+        2 * len(CORE_FEATURE_IDS) * 240
+    )
+    assert result["runtime"]["elapsed_ms"] >= 0
+    assert result["source"]["chain_verification"]["mode"] == "FULL_BOOTSTRAP"
+    assert result["source"]["chain_verification"]["verified_suffix_rows"] == 601
     assert result["batch"]["chain_valid"] is True
     assert result["agent_input"]["automatic_action"] is False
 
@@ -108,6 +119,73 @@ def test_execute_materializes_complete_drift_ready_feature_cache(
         assert len(rows) == 300
     finally:
         store.close()
+
+    repeated = realtime.execute(
+        now_ms=20_001,
+        source_store_path=str(source_path),
+        feature_store_path=str(feature_path),
+        batch_store_path=str(tmp_path / "batches.db"),
+        status_path=str(tmp_path / "status.json"),
+        source_row_limit=601,
+    )
+    assert repeated["features"]["new_value_count"] == 0
+    assert repeated["features"]["incremental_projected_value_count"] == 0
+    assert repeated["features"]["eligible_source_snapshot_count"] == 0
+    assert repeated["features"]["skipped_existing_snapshot_count"] == 600
+    assert repeated["batch"]["new_batch"] is False
+    assert repeated["source"]["chain_verification"]["mode"] == (
+        "INCREMENTAL_FROM_TRUSTED_BATCH"
+    )
+    assert repeated["source"]["chain_verification"]["verified_suffix_rows"] == 0
+    periodic = realtime._trusted_source_checkpoint(
+        str(tmp_path / "batches.db"),
+        now_ms=20_000 + realtime.FULL_CHAIN_AUDIT_INTERVAL_MS,
+    )
+    assert periodic["verification_mode"] == "FULL_PERIODIC_AUDIT"
+    assert periodic["checkpoint_seq"] == 0
+
+
+def test_incremental_projection_replays_from_minimum_feature_watermark(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(realtime, "FORWARD_MAJOR_TICKERS", ("AAA", "BBB"))
+    source_path = tmp_path / "source.db"
+    source = BinanceRealtimeStore(str(source_path), create=True)
+    try:
+        for index in range(300):
+            for ticker in ("AAA", "BBB"):
+                source.append_snapshot(_snapshot(f"{ticker}USDT", index))
+    finally:
+        source.close()
+
+    feature_path = tmp_path / "features.db"
+    feature_store = SqliteFeatureValueStore(str(feature_path), create=True)
+    try:
+        # Simulate a crash/legacy partial write: the latest mid exists, while
+        # the other seven features do not.  The minimum watermark must remain
+        # absent so the complete source history is replayed safely.
+        feature_store.add(
+            realtime.project_snapshot(_snapshot("AAAUSDT", 299))[0],
+            version=realtime.FEATURE_VERSION,
+        )
+    finally:
+        feature_store.close()
+
+    result = realtime.execute(
+        now_ms=20_000,
+        source_store_path=str(source_path),
+        feature_store_path=str(feature_path),
+        batch_store_path=str(tmp_path / "batches.db"),
+        status_path=str(tmp_path / "status.json"),
+        source_row_limit=600,
+    )
+
+    assert result["features"]["watermarks_before"]["AAAUSDT"] is None
+    assert result["features"]["eligible_source_snapshot_count"] == 600
+    assert result["features"]["new_value_count"] == (
+        2 * 300 * len(FEATURE_IDS) - 1
+    )
 
 
 def test_source_snapshot_selection_keeps_incomplete_restart_rows_as_evidence(
@@ -129,7 +207,12 @@ def test_source_snapshot_selection_keeps_incomplete_restart_rows_as_evidence(
             realtime.BinanceRealtimeFeatureError,
             match="missing instruments",
         ):
-            realtime._source_snapshots(source, limit=2)
+            realtime._source_snapshots(
+                source,
+                limit=2,
+                checkpoint_seq=0,
+                checkpoint_row_hash="",
+            )
 
         assert source.row_count() == 2
         assert source.chain_valid() is True
