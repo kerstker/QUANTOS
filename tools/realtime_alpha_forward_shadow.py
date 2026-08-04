@@ -490,6 +490,9 @@ def run_cycle(
 ) -> dict[str, Any]:
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
+    decision_frame_cache_path = Path(feature_store_path).with_name(
+        "realtime_decision_frames.db"
+    )
     discovery = _read_object(discovery_path, "realtime discovery snapshot")
     handoff_valid = True
     handoff_error: str | None = None
@@ -585,6 +588,8 @@ def run_cycle(
                                     start_ms=max(0, target - policy.decision_interval_ms),
                                     end_ms=min(now, target + lateness),
                                     bucket_ms=policy.decision_interval_ms,
+                                    frame_cache_path=decision_frame_cache_path,
+                                    max_cache_lag_ms=policy.max_feature_age_ms,
                                 )
                                 future = _future_marks(
                                     decision, future_series, as_of_ms=now
@@ -611,6 +616,8 @@ def run_cycle(
                                 start_ms=max(0, now - RECENT_FRAME_LOOKBACK_MS),
                                 end_ms=now,
                                 bucket_ms=policy.decision_interval_ms,
+                                frame_cache_path=decision_frame_cache_path,
+                                max_cache_lag_ms=policy.max_feature_age_ms,
                             )
                             frames = _common_latest_frames(recent, now_ms=now)
                             admitted_at = int(admission["payload"]["admitted_at_ms"])

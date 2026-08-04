@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v17（影子纸面复用决策帧缓存）：** forward-shadow 的未来标记和最新决策读取统一复用 `realtime_decision_frames.db`，不再对 22 个实时候选逐个重新扫描数百万条原始特征。缓存缺失、历史不全或超过新鲜度窗口时仍回源 SQLite 重建；缓存仅为派生加速层，不是晋级证据。该接缝把“发现已完成、影子纸面迟迟不出结果”的运行时瓶颈纳入全自动流水线，并保持 PIT、append-only 账本、成熟度门和 live/order flags=false。
+
 > **2026-08-04 实时纸面生产 v16（首次启动竞态修复）：** 新 release 首次并行触发 forward-shadow 与 execution-paper 时，执行侧可能在 shadow 账本 schema 提交前打开一个 0 字节 SQLite 文件，导致两条链都安全阻断。现在读侧不会为缺失账本制造空文件；生产侧只恢复 0 字节的中断初始化产物，非空损坏账本仍 fail-closed。执行纸面账本采用同一恢复边界，并以测试覆盖冷启动竞态。该修复不删除或覆盖任何已有事件，也不改变纸面隔离、成熟度门或 live/order flags=false。
 
 > **2026-08-04 实时纸面生产 v15（决策帧缓存与发现提速）：** `realtime_alpha_discovery` 现在由 SQLite 在存储侧选择每个交易对/决策桶的最新完整 PIT 快照，只把选中的 30 秒决策帧送入 Python；新增可替换的 `realtime_decision_frames.db` 派生缓存，热读不再重复扫描数百万条原始特征。真实状态库实测热读约 0.35 秒、66,770 帧；24 候选的临时评估约 78 秒。缓存不是证据，不驱动晋级或下单；缺历史、过期或不完整快照仍会 fail-closed 回源重建，`event_time <= knowledge_time` 与完整七特征约束保持不变。此次只改善全自动探索的吞吐和新鲜度，不改变 L2 纸面边界及 live/order flags=false。
