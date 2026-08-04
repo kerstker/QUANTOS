@@ -1,5 +1,16 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v9（自主执行纸面闭环）：** 22 条已评估实时 Alpha
+> 轨道不再停留在 Signal Shadow。新增物理隔离的 Engineering Execution Paper：首次
+> 决策只作启动基线，后续决策自动经过交易所 step-size 整数 lot 归一化、现有 pre-trade
+> intent/gate、Binance USD-M + Bybit Linear 公共订单簿 simulated SOR、模拟成交、持仓、
+> PnL、route TCA 与对账，并写入独立追加式 SQLite 哈希链。真实首轮为 22 个账户、20 条
+> 新决策成交、120 个父订单、138 个场所成交切片、零错误；两条 1h 轨道处于 ARMED，等待
+> 下一次自然决策，不回填旧决策。信号 1m 与订单簿 5m 的节拍差通过最多 16 条、按时间顺序
+> 的有界追赶恢复，仍执行 12m 延迟上限；超界 fail-closed。执行账本已纳入 L2 备份源合同
+> v4，调度、watchdog、API/SSE 和前端均投影真实执行状态。该路径无 broker/私有流/凭证，
+> 不计正式前向证据、不具晋级或部署权限，所有 live/order flag 保持 false。
+
 > **2026-08-04 实时纸面生产 v8（特征流水线有界增量）：** 现场审计发现
 > `binance_realtime_features` 每五分钟对 526 万行特征库重新读取 98 条序列全部历史，
 > 并重算约 1,018,416 个经验 KS 窗口；同时公共行情哈希链每轮从创世块全量复核，导致

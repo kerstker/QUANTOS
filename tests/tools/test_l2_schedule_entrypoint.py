@@ -417,6 +417,7 @@ def test_entrypoint_allowlist_matches_registered_l2_surface() -> None:
             "paper_shadow_realtime",
             "raw_archive_audit",
             "realtime_alpha_discovery",
+            "realtime_alpha_execution_paper",
             "realtime_alpha_forward_shadow",
         }
     )

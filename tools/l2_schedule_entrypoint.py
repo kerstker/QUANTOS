@@ -57,6 +57,7 @@ ALLOWED_L2_MODULES = frozenset(
         "paper_shadow_realtime",
         "raw_archive_audit",
         "realtime_alpha_discovery",
+        "realtime_alpha_execution_paper",
         "realtime_alpha_forward_shadow",
     }
 )

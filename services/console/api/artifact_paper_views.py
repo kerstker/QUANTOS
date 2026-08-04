@@ -89,6 +89,9 @@ _REALTIME_ALPHA_DISCOVERY = os.path.join(
 _REALTIME_ALPHA_FORWARD_SHADOW = os.path.join(
     _REPO_ROOT, "data", "cache", "realtime_alpha_forward_shadow.json"
 )
+_REALTIME_ALPHA_EXECUTION_PAPER = os.path.join(
+    _REPO_ROOT, "data", "cache", "realtime_alpha_execution_paper.json"
+)
 _EVIDENCE_GATE_WEEKS = 8
 _LEGACY_DIAGNOSTIC_PAPER_IDS = frozenset(
     {"carry_oi_majors", "crowd_contra", "top_contra"}
@@ -151,6 +154,16 @@ _REALTIME_FORWARD_SHADOW_SAFE_BOUNDARY = {
     "public_market_data_only": True,
     "separate_from_official_paper": True,
     "credentials_accessed": False,
+    "broker_connectivity": False,
+    "broker_order_submission": False,
+    "allow_ai_direct_trading": False,
+}
+
+_REALTIME_EXECUTION_PAPER_SAFE_BOUNDARY = {
+    "paper_only": True,
+    "public_market_data_only": True,
+    "credentials_accessed": False,
+    "private_stream": False,
     "broker_connectivity": False,
     "broker_order_submission": False,
     "allow_ai_direct_trading": False,
@@ -268,6 +281,144 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
     }
 
 
+def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
+    """Project the isolated execution ledger without widening its authority."""
+    artifact = _load_json_object(path or _REALTIME_ALPHA_EXECUTION_PAPER)
+    empty = {
+        "snapshot_present": False,
+        "boundary_valid": False,
+        "status": "NO_SNAPSHOT",
+        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER",
+        "execution_profile": None,
+        "generated_at_ms": None,
+        "candidate_count": 0,
+        "cycle": {"new_admissions": 0, "new_executions": 0, "waiting_count": 0},
+        "routing": {},
+        "lot_authority": {"instrument_count": 0, "spec_hash": None},
+        "tracks": {},
+        "waiting": {},
+        "errors": {},
+        "ledger": {
+            "append_only": True,
+            "chain_valid": False,
+            "source_shadow_chain_valid": False,
+            "event_count": 0,
+            "separate_from_official_paper": True,
+        },
+        "verdict": {
+            "engineering_execution_paper_running": False,
+            "production_execution_seam_exercised": False,
+            "official_paper_ready": False,
+            "promotion_eligible": False,
+            "forward_evidence_eligible": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "blockers": ["REALTIME_ENGINEERING_EXECUTION_PAPER_SNAPSHOT_MISSING"],
+        "safety": dict(_REALTIME_EXECUTION_PAPER_SAFE_BOUNDARY),
+    }
+    if artifact is None:
+        return empty
+    blockers: list[str] = []
+    if artifact.get("mode") != "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER":
+        blockers.append("REALTIME_ENGINEERING_EXECUTION_MODE_INVALID")
+    safety = artifact.get("safety")
+    if not isinstance(safety, dict) or any(
+        safety.get(field) is not expected
+        for field, expected in _REALTIME_EXECUTION_PAPER_SAFE_BOUNDARY.items()
+    ):
+        blockers.append("REALTIME_ENGINEERING_EXECUTION_SAFETY_INVALID")
+    ledger = artifact.get("ledger")
+    if (
+        not isinstance(ledger, dict)
+        or ledger.get("append_only") is not True
+        or ledger.get("chain_valid") is not True
+        or ledger.get("source_shadow_chain_valid") is not True
+        or ledger.get("separate_from_official_paper") is not True
+    ):
+        blockers.append("REALTIME_ENGINEERING_EXECUTION_LEDGER_INVALID")
+    verdict = artifact.get("verdict")
+    if not isinstance(verdict, dict) or any(
+        verdict.get(field) is not False
+        for field in (
+            "official_paper_ready",
+            "promotion_eligible",
+            "forward_evidence_eligible",
+            "deployment_eligible",
+            "live_allowed",
+            "order_submission_allowed",
+        )
+    ):
+        blockers.append("REALTIME_ENGINEERING_EXECUTION_AUTHORITY_INVALID")
+    if blockers:
+        blocked = dict(empty)
+        blocked.update(
+            {
+                "snapshot_present": True,
+                "status": "SAFE_BLOCKED",
+                "generated_at_ms": artifact.get("generated_at_ms"),
+                "blockers": blockers,
+            }
+        )
+        return blocked
+    raw_tracks = artifact.get("tracks")
+    tracks = {}
+    if isinstance(raw_tracks, dict):
+        for candidate_id, row in raw_tracks.items():
+            if not isinstance(candidate_id, str) or not isinstance(row, dict):
+                continue
+            tracks[candidate_id] = {
+                field: row.get(field)
+                for field in (
+                    "state",
+                    "n_executions",
+                    "n_orders",
+                    "n_fill_slices",
+                    "execution_cost",
+                    "last_decision_time_ms",
+                )
+            }
+    return {
+        "snapshot_present": True,
+        "boundary_valid": True,
+        "status": artifact.get("status", "SAFE_BLOCKED"),
+        "mode": artifact.get("mode"),
+        "execution_profile": artifact.get("execution_profile"),
+        "generated_at_ms": artifact.get("generated_at_ms"),
+        "candidate_count": artifact.get("candidate_count", 0),
+        "cycle": artifact.get("cycle", {}),
+        "routing": artifact.get("routing", {}),
+        "lot_authority": artifact.get("lot_authority", {}),
+        "tracks": tracks,
+        "waiting": artifact.get("waiting", {}),
+        "errors": artifact.get("errors", {}),
+        "ledger": {
+            "append_only": True,
+            "chain_valid": True,
+            "source_shadow_chain_valid": True,
+            "event_count": ledger.get("event_count", 0),
+            "separate_from_official_paper": True,
+        },
+        "verdict": {
+            "engineering_execution_paper_running": bool(
+                verdict.get("engineering_execution_paper_running", False)
+            ),
+            "production_execution_seam_exercised": bool(
+                verdict.get("production_execution_seam_exercised", False)
+            ),
+            "official_paper_ready": False,
+            "promotion_eligible": False,
+            "forward_evidence_eligible": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "blockers": [],
+        "safety": dict(_REALTIME_EXECUTION_PAPER_SAFE_BOUNDARY),
+    }
+
+
 def _realtime_alpha_candidate_view(row: Any) -> Dict | None:
     """Return the bounded, read-only candidate fields needed by the console."""
     if not isinstance(row, dict) or not isinstance(row.get("candidate_id"), str):
@@ -363,6 +514,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         ],
         "blockers": ["AUTONOMY_SNAPSHOT_MISSING"],
         "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+        "execution_paper": _realtime_alpha_execution_paper_payload(),
         "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
     }
     if artifact is None:
@@ -396,6 +548,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
                 "search_id": artifact.get("search_id"),
                 "blockers": blockers,
                 "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+                "execution_paper": _realtime_alpha_execution_paper_payload(),
             }
         )
         return blocked
@@ -479,6 +632,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         "remaining_gates": artifact.get("remaining_gates", []),
         "blockers": [],
         "forward_shadow": _realtime_alpha_forward_shadow_payload(),
+        "execution_paper": _realtime_alpha_execution_paper_payload(),
         "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
     }
 
@@ -507,6 +661,7 @@ def _dry_run_watch_paths() -> tuple[str, ...]:
         _PAPER_OPERATIONAL_EVIDENCE,
         _REALTIME_ALPHA_DISCOVERY,
         _REALTIME_ALPHA_FORWARD_SHADOW,
+        _REALTIME_ALPHA_EXECUTION_PAPER,
     )
 
 

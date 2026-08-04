@@ -170,6 +170,62 @@ const state = vi.hoisted(() => ({
           allow_ai_direct_trading: false,
         },
       },
+      execution_paper: {
+        snapshot_present: true,
+        boundary_valid: true,
+        status: 'RUNNING',
+        mode: 'AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER',
+        execution_profile: 'REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1',
+        generated_at_ms: 1_785_592_990_000,
+        candidate_count: 1,
+        cycle: { new_admissions: 1, new_executions: 1, waiting_count: 0 },
+        routing: {
+          snapshot_id: 'book-1',
+          as_of_ms: 1_785_592_989_000,
+          venues: ['binance_usdm', 'bybit_linear'],
+          public_data_only: true,
+          simulation_only: true,
+        },
+        lot_authority: { instrument_count: 14, spec_hash: 'a'.repeat(64) },
+        tracks: {
+          rt_basis_convergence_1h_v1: {
+            state: 'EXECUTING',
+            n_executions: 1,
+            n_orders: 6,
+            n_fill_slices: 8,
+            execution_cost: 1.25,
+          },
+        },
+        waiting: {},
+        errors: {},
+        ledger: {
+          append_only: true,
+          chain_valid: true,
+          source_shadow_chain_valid: true,
+          event_count: 2,
+          separate_from_official_paper: true,
+        },
+        verdict: {
+          engineering_execution_paper_running: true,
+          production_execution_seam_exercised: true,
+          official_paper_ready: false,
+          promotion_eligible: false,
+          forward_evidence_eligible: false,
+          deployment_eligible: false,
+          live_allowed: false,
+          order_submission_allowed: false,
+        },
+        blockers: [],
+        safety: {
+          paper_only: true,
+          public_market_data_only: true,
+          credentials_accessed: false,
+          private_stream: false,
+          broker_connectivity: false,
+          broker_order_submission: false,
+          allow_ai_direct_trading: false,
+        },
+      },
       safety: {
         paper_only: true,
         live_trading_enabled: false,
@@ -487,7 +543,8 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.queryByText('BREACH')).not.toBeInTheDocument();
     expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
     expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
-    expect(screen.getByText('ENGINEERING PAPER 1')).toBeInTheDocument();
+    expect(screen.getByText('EXEC PAPER 1')).toBeInTheDocument();
+    expect(screen.getByText(/1 accounts · 1 routed executions/)).toBeInTheDocument();
     expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();

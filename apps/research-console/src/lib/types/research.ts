@@ -1654,6 +1654,66 @@ export interface RealtimeAlphaAutonomyPayload {
       allow_ai_direct_trading: false;
     };
   };
+  execution_paper: {
+    snapshot_present: boolean;
+    boundary_valid: boolean;
+    status: string;
+    mode?: string;
+    execution_profile?: string | null;
+    generated_at_ms?: number | null;
+    candidate_count: number;
+    cycle: {
+      new_admissions?: number;
+      new_executions?: number;
+      waiting_count?: number;
+    };
+    routing: {
+      snapshot_id?: string | null;
+      as_of_ms?: number | null;
+      venues?: string[];
+      public_data_only?: boolean;
+      simulation_only?: boolean;
+      fee_calibration?: string;
+    };
+    lot_authority: { instrument_count?: number; spec_hash?: string | null };
+    tracks: Record<string, {
+      state?: string;
+      n_executions?: number;
+      n_orders?: number;
+      n_fill_slices?: number;
+      execution_cost?: number;
+      last_decision_time_ms?: number | null;
+    }>;
+    waiting: Record<string, string>;
+    errors: Record<string, string>;
+    ledger: {
+      append_only: boolean;
+      chain_valid: boolean;
+      source_shadow_chain_valid: boolean;
+      event_count?: number;
+      separate_from_official_paper: boolean;
+    };
+    verdict: {
+      engineering_execution_paper_running: boolean;
+      production_execution_seam_exercised: boolean;
+      official_paper_ready: false;
+      promotion_eligible: false;
+      forward_evidence_eligible: false;
+      deployment_eligible: false;
+      live_allowed: false;
+      order_submission_allowed: false;
+    };
+    blockers: string[];
+    safety: {
+      paper_only: true;
+      public_market_data_only: true;
+      credentials_accessed: false;
+      private_stream: false;
+      broker_connectivity: false;
+      broker_order_submission: false;
+      allow_ai_direct_trading: false;
+    };
+  };
   safety: {
     paper_only: true;
     live_trading_enabled: false;

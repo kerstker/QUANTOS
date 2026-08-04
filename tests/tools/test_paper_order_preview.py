@@ -49,6 +49,27 @@ def _workflow_admission(*authorized):
     }
 
 
+def test_build_preview_accepts_explicit_isolated_paper_authority() -> None:
+    with pytest.raises(ValueError, match="aum must be"):
+        build_alpha_preview(
+            "rt-candidate",
+            {},
+            mark_by_ticker={},
+            status={},
+            aum=0,
+            supported_alpha_ids=("rt-candidate",),
+        )
+
+    with pytest.raises(ValueError, match="supported alpha authority"):
+        build_alpha_preview(
+            "rt-candidate",
+            {},
+            mark_by_ticker={},
+            status={},
+            supported_alpha_ids=("rt-candidate", "rt-candidate"),
+        )
+
+
 def test_public_exports_are_resolvable():
     assert all(hasattr(paper_preview, name) for name in paper_preview.__all__)
 
