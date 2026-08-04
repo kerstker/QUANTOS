@@ -124,6 +124,56 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     assert all(values == (5_000_000.0,) for values in capacity.values())
 
 
+def test_bucket_cache_refreshes_when_source_advances_within_allowed_lag(tmp_path) -> None:
+    store_path = tmp_path / "features.db"
+    first_end_ms = _write_store(store_path, instruments=10, buckets=24)
+    instruments = tuple(f"S{index:02d}USDT" for index in range(10))
+    cache_path = tmp_path / "decision-frames.db"
+
+    load_bucketed_frames(
+        store_path,
+        instruments=instruments,
+        start_ms=0,
+        end_ms=first_end_ms,
+        frame_cache_path=cache_path,
+    )
+
+    next_event_ms = first_end_ms + 30_000
+    next_decision_ms = (next_event_ms // 30_000 + 1) * 30_000
+    store = SqliteFeatureValueStore(str(store_path), create=False)
+    values = []
+    for index, instrument in enumerate(instruments):
+        rank = -0.9 + index * 0.2
+        feature_values = {
+            "rt_mid_price": 101.0,
+            "rt_spread_bps": 1.0,
+            "rt_depth_imbalance_5": rank,
+            "rt_mark_basis_bps": rank * 5.0,
+            "rt_funding_rate": rank * 0.0001,
+            "rt_taker_imbalance_5s": rank,
+            "rt_liquidation_imbalance_5s": 0.0,
+        }
+        values.extend(
+            _feature_value(feature_id, instrument, next_event_ms, value)
+            for feature_id, value in feature_values.items()
+        )
+    store.add_many(values, version=FEATURE_VERSION)
+    store.close()
+
+    refreshed = load_bucketed_frames(
+        store_path,
+        instruments=instruments,
+        start_ms=0,
+        end_ms=first_end_ms + 30_000,
+        frame_cache_path=cache_path,
+        # Deliberately allow a large cache lag: endpoint coverage, not the
+        # lag tolerance alone, must decide whether the live tail is refreshed.
+        max_cache_lag_ms=900_000,
+    )
+
+    assert all(rows[-1].decision_time_ms == next_decision_ms for rows in refreshed.values())
+
+
 def test_bucket_loader_selects_latest_complete_snapshot_without_lookahead(tmp_path) -> None:
     store_path = tmp_path / "features.db"
     store = SqliteFeatureValueStore(str(store_path), create=True)
