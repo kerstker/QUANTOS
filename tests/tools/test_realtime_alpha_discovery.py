@@ -7,7 +7,11 @@ import pytest
 
 from quantos.contracts.feature import FeatureValue
 from quantos.contracts.hashing import stable_hash
-from services.features.binance_realtime_projection import FEATURE_IDS, FEATURE_VERSION
+from services.features.binance_realtime_projection import (
+    CORE_FEATURE_IDS,
+    FEATURE_IDS,
+    FEATURE_VERSION,
+)
 from services.features.value_store import SqliteFeatureValueStore
 from services.research.realtime_alpha_discovery import RealtimeAlphaPolicy
 from tools.realtime_alpha_discovery import (
@@ -77,6 +81,39 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     assert all(len(rows) == 24 for rows in frames.values())
     assert all(row.event_time_ms <= row.decision_time_ms for rows in frames.values() for row in rows)
     assert all(row.decision_time_ms % 30_000 == 0 for rows in frames.values() for row in rows)
+    cache_path = tmp_path / "decision-frames.db"
+    cached_first = load_bucketed_frames(
+        store_path,
+        instruments=sorted(coverage["rt_mid_price"].instruments),
+        start_ms=0,
+        end_ms=end_ms,
+        frame_cache_path=cache_path,
+    )
+    cached_second = load_bucketed_frames(
+        store_path,
+        instruments=sorted(coverage["rt_mid_price"].instruments),
+        start_ms=0,
+        end_ms=end_ms,
+        frame_cache_path=cache_path,
+    )
+    assert cached_first.keys() == cached_second.keys() == frames.keys()
+    for instrument in frames:
+        assert cached_first[instrument] == cached_second[instrument]
+        assert [
+            (row.event_time_ms, row.decision_time_ms)
+            for row in cached_first[instrument]
+        ] == [
+            (row.event_time_ms, row.decision_time_ms)
+            for row in frames[instrument]
+        ]
+        for cached, expected in zip(cached_first[instrument], frames[instrument], strict=True):
+            assert cached.mid_price == pytest.approx(expected.mid_price)
+            assert cached.spread_bps == pytest.approx(expected.spread_bps)
+            assert cached.depth_imbalance_5 == pytest.approx(expected.depth_imbalance_5)
+            assert cached.mark_basis_bps == pytest.approx(expected.mark_basis_bps)
+            assert cached.funding_rate == pytest.approx(expected.funding_rate)
+            assert cached.taker_imbalance_5s == pytest.approx(expected.taker_imbalance_5s)
+            assert cached.liquidation_imbalance_5s == pytest.approx(expected.liquidation_imbalance_5s)
     capacity = load_hourly_executable_depth(
         store_path,
         instruments=sorted(coverage["rt_mid_price"].instruments),
@@ -85,6 +122,56 @@ def test_coverage_and_bucket_loader_keep_complete_pit_frames(tmp_path) -> None:
     )
     assert set(capacity) == set(coverage["rt_mid_price"].instruments)
     assert all(values == (5_000_000.0,) for values in capacity.values())
+
+
+def test_bucket_loader_selects_latest_complete_snapshot_without_lookahead(tmp_path) -> None:
+    store_path = tmp_path / "features.db"
+    store = SqliteFeatureValueStore(str(store_path), create=True)
+    values = []
+    for knowledge_time, mid_price in ((1_000, 100.0), (20_000, 120.0)):
+        feature_values = {
+            "rt_mid_price": mid_price,
+            "rt_spread_bps": 1.0,
+            "rt_depth_imbalance_5": 0.1,
+            "rt_mark_basis_bps": 0.2,
+            "rt_funding_rate": 0.0001,
+            "rt_taker_imbalance_5s": 0.3,
+            "rt_liquidation_imbalance_5s": 0.4,
+        }
+        values.extend(
+            FeatureValue(
+                feature_id=feature_id,
+                instrument_id="BTCUSDT",
+                event_time=900,
+                knowledge_time=knowledge_time,
+                value=value,
+            )
+            for feature_id, value in feature_values.items()
+        )
+    # A later but incomplete snapshot must not displace the latest complete
+    # snapshot in the same decision bucket.
+    values.extend(
+        FeatureValue(
+            feature_id=feature_id,
+            instrument_id="BTCUSDT",
+            event_time=900,
+            knowledge_time=25_000,
+            value=999.0,
+        )
+        for feature_id in CORE_FEATURE_IDS[: len(CORE_FEATURE_IDS) - 1]
+    )
+    store.add_many(values, version=FEATURE_VERSION)
+    store.close()
+
+    frames = load_bucketed_frames(
+        store_path,
+        instruments=("BTCUSDT",),
+        start_ms=0,
+        end_ms=20_000,
+    )
+
+    assert len(frames["BTCUSDT"]) == 1
+    assert frames["BTCUSDT"][0].mid_price == 120.0
 
 
 def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -> None:
