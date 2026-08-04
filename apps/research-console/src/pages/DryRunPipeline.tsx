@@ -841,7 +841,13 @@ export default function DryRunPipeline() {
             right={<Chip label={health?.verdict.paper_ready ? 'PASS' : 'BLOCKED'} tone={health?.verdict.paper_ready ? 'pos' : 'warn'} />}
             bodyClass="p-4"
           >
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Metric
+                label="Workflow authority"
+                value={data.paper_order_preview?.verdict.workflow_admission_valid ? 'VERIFIED' : 'BLOCKED'}
+                detail={`${data.paper_order_preview?.verdict.workflow_authorized_ids?.length ?? 0} candidates authorized`}
+                tone={data.paper_order_preview?.verdict.workflow_admission_valid ? 'pos' : 'neg'}
+              />
               <Metric
                 label="Risk inputs"
                 value={`${precomputedRiskInputs}/${pipelineCandidates.length || 0}`}

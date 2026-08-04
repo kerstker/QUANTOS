@@ -188,6 +188,12 @@ API/SSE 和前端：追加式哈希链保留每轮 release/快照/对账/安全�
 当前剩余验收是让新窗口自然积累并完成一次跨 release 重启证据，以及让正式 preview/fill 仅在候选
 真实通过既有风险与前向门后自动变绿；不能用工程 shadow 或工程烟雾窗成功替代正式准入。
 
+2026-08-04 接缝收口：正式 `paper_order_preview` 现直接以唯一
+`ALPHA_PRODUCTION_WORKFLOW` 为新 fill 的承重授权源；只有出现在
+`execution_paper_eligible_ids` 或 `execution_paper_ids` 的候选才能继续九引擎、模拟执行和账本追加。
+旧账簿仅可历史回放，legacy 不得产生新正式 fill；工作流原文哈希绑定到 admitted preview，前端显示
+authority verdict 与授权候选数。真实成熟门槛未降低。
+
 ### WP3：并行前向与自动交接
 
 候选冻结即盲化 shadow；历史 Gate 通过后自动进入 Execution Paper；

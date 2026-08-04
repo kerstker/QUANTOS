@@ -1066,6 +1066,8 @@ export interface PaperOrderPreviewPayload {
   generated_at?: number;
   verdict: {
     paper_preview_ready?: boolean;
+    workflow_admission_valid?: boolean;
+    workflow_authorized_ids?: string[];
     live_allowed: boolean;
     order_submission_allowed: boolean;
   };

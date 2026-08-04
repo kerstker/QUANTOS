@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v6（唯一工作流承重正式 fill）：** 审计发现正式
+> `paper_order_preview` 虽有待决策、九引擎、模拟执行和对账门，却未直接消费唯一候选工作流的
+> Execution-Paper 资格。现已 fail-closed 接入 `ALPHA_PRODUCTION_WORKFLOW`：新正式 fill 必须来自
+> `execution_paper_eligible_ids`/`execution_paper_ids`，并把工作流原文哈希绑定进 preview；缺失、非法或
+> 未授权候选在构造订单前阻断。旧不可变账簿只允许 `HISTORICAL_ROW_REPLAY`，legacy 不再可能凭旧路径
+> 产生新正式 fill；工程 shadow 继续在独立非晋级账本实时运行。控制台新增 Workflow authority 与授权
+> 候选数，真实前向/统计门槛未降低。
+>
 > **2026-08-04 实时纸面生产 v5（运营窗口与故障证据）：** WP2 新增
 > `paper_operational_evidence.v1`：每个五分钟影子估值周期之后，从不可变 release receipt
 > 绑定本轮语义快照，并写入独立的追加式 SQLite 哈希链。策略预注册为 5 分钟 cadence、

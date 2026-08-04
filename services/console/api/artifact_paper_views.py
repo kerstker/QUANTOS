@@ -1348,6 +1348,14 @@ def _dry_run_payload() -> Dict:
         "generated_at": paper_artifact.get("generated_at") if paper_artifact else None,
         "verdict": {
             "paper_preview_ready": bool(paper_verdict.get("paper_preview_ready", False)),
+            "workflow_admission_valid": bool(
+                paper_verdict.get("workflow_admission_valid", False)
+            ),
+            "workflow_authorized_ids": [
+                str(alpha_id)
+                for alpha_id in paper_verdict.get("workflow_authorized_ids", [])
+                if isinstance(alpha_id, str) and alpha_id
+            ],
             "live_allowed": bool(paper_verdict.get("live_allowed", False)),
             "order_submission_allowed": bool(paper_verdict.get("order_submission_allowed", False)),
         },
