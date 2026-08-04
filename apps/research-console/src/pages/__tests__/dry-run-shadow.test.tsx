@@ -109,6 +109,20 @@ const state = vi.hoisted(() => ({
         { family_id: 'liquidation', hypothesis_count: 6 },
         { family_id: 'funding_basis', hypothesis_count: 6 },
       ],
+      feedback: {
+        status: 'ADAPTIVE_EXPLORATION_READY',
+        consumed_realizations: 854,
+        active_adaptive_candidates: 2,
+        new_candidate_ids: ['rt_liquidation_cascade_1m_fb1'],
+        families: [
+          { family_id: 'liquidation', action: 'EXPAND' },
+          { family_id: 'order_flow', action: 'DEPRIORITIZE' },
+        ],
+        formal_gate_impact: false,
+        promotion_eligible: false,
+        live_allowed: false,
+        order_submission_allowed: false,
+      },
       top_candidates: [
         {
           candidate_id: 'rt_basis_convergence_1h_v1',
@@ -117,6 +131,46 @@ const state = vi.hoisted(() => ({
           status: 'EXPLORATORY_ONLY',
           holdout_net_sharpe: -13.91,
           net_return: -0.0367,
+          promotion_eligible: false,
+          live_allowed: false,
+        },
+      ],
+      lifecycle: [
+        {
+          candidate_id: 'rt_basis_convergence_1h_v1',
+          family_id: 'funding_basis',
+          mechanism: 'basis_convergence',
+          horizon_ms: 3_600_000,
+          pipeline_stage: 'EXECUTION_PAPER',
+          performance_state: 'LOSS',
+          research: {
+            status: 'EXPLORATORY_ONLY',
+            evaluation_status: 'EVALUATED',
+            n_periods: 99,
+            net_return: -0.0367,
+            holdout_net_sharpe: -13.91,
+            gate_pass: false,
+            gate_reasons: ['REALTIME_HISTORY_BELOW_30D'],
+          },
+          paper: {
+            n_decisions: 10,
+            n_pending: 1,
+            n_realizations: 9,
+            cum_return: -0.04,
+            max_drawdown: 0.05,
+            pnl_source: 'ENGINEERING_SHADOW_REALIZED_NET_RETURN',
+          },
+          execution: {
+            state: 'EXECUTING',
+            n_executions: 1,
+            n_orders: 6,
+            n_fill_slices: 8,
+            n_no_actions: 3,
+            n_missed_execution_windows: 2,
+            execution_cost: 1.25,
+          },
+          last_event_ms: 1_785_592_990_000,
+          errors: [],
           promotion_eligible: false,
           live_allowed: false,
         },
@@ -290,6 +344,53 @@ const state = vi.hoisted(() => ({
         deployment_eligible: false,
         live_allowed: false,
         order_submission_allowed: false,
+      },
+    },
+    paper_realtime: {
+      source: 'PAPER_REALTIME_MARK_ARTIFACT',
+      read_only: true,
+      snapshot_present: true,
+      observed_at: 1_785_263_100_000,
+      provider: 'BINANCE_PUBLIC_MARK_PRICE',
+      verdict: {
+        cycle_completed: true,
+        paper_mark_ready: true,
+        backtest_reference_present_for_all_three: true,
+        live_allowed: false,
+        order_submission_allowed: false,
+      },
+      alphas: {
+        carry_oi_majors: {
+          alpha_id: 'carry_oi_majors',
+          status: 'PAPER_MARKED',
+          n_fills: 8,
+          positions: { BTC: -2 },
+          equity: 992_584,
+          net_pnl: -7_416,
+          return_on_aum: -0.007416,
+        },
+        crowd_contra: {
+          alpha_id: 'crowd_contra',
+          status: 'PAPER_MARKED',
+          n_fills: 8,
+          positions: { BTC: 2 },
+          equity: 1_000_879,
+          net_pnl: 879,
+          return_on_aum: 0.000879,
+        },
+      },
+      backtests: {},
+      history: [],
+      paper_ledger: {},
+      persistence: { new_snapshots: 2, chain_valid: true },
+      errors: {},
+      safety: {
+        paper_only: true,
+        public_market_data_only: true,
+        private_binance_access: false,
+        credentials_accessed: false,
+        broker_connectivity: false,
+        broker_order_submission: false,
       },
     },
     paper_shadow: {
@@ -537,7 +638,7 @@ describe('automated shadow-paper cockpit', () => {
   it('renders live shadow metrics and scheduled automation separately', () => {
     render(<DryRunPipeline />);
 
-    expect(screen.getByText(/全自动影子纸面驾驶舱/)).toBeInTheDocument();
+    expect(screen.getByText(/全自动纸面交易驾驶舱/)).toBeInTheDocument();
     expect(screen.getByText('SCHEDULED_ACTIVE')).toBeInTheDocument();
     expect(screen.getByText('自主 Alpha 发现')).toBeInTheDocument();
     expect(screen.getByText('SYSTEM NATIVE')).toBeInTheDocument();
@@ -550,12 +651,19 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();
-    expect(screen.getByText('rt_basis_convergence_1h_v1')).toBeInTheDocument();
+    expect(screen.getAllByText('rt_basis_convergence_1h_v1').length).toBeGreaterThan(1);
+    expect(screen.getByText('全量 Alpha 生命周期与实时业绩')).toBeInTheDocument();
+    expect(screen.getByText('ADAPTIVE_EXPLORATION_READY')).toBeInTheDocument();
+    expect(screen.getByText(/854 realized outcomes · 2 adaptive challengers/)).toBeInTheDocument();
+    expect(screen.getByText('1 LOSS')).toBeInTheDocument();
+    expect(screen.getByText('主纸面账户实时业绩')).toBeInTheDocument();
+    expect(screen.getByText('影子 Challenger 实时权益与策略账簿')).toBeInTheDocument();
+    expect(screen.getByText('$-7,416')).toBeInTheDocument();
     expect(screen.getByText('3.49d')).toBeInTheDocument();
     expect(screen.getByText(/Capacity max \$875/)).toBeInTheDocument();
     expect(screen.getByText('$2,956,000')).toBeInTheDocument();
     expect(screen.getByText('$-44,000')).toBeInTheDocument();
-    expect(screen.getByText(/独立、不可晋级的自动观察账户/)).toBeInTheDocument();
+    expect(screen.getByText(/主纸面账户与独立 Challenger 分栏/)).toBeInTheDocument();
     expect(screen.getByText('8/9')).toBeInTheDocument();
     expect(screen.getByText('78.3%')).toBeInTheDocument();
     expect(screen.getByText('0.020')).toBeInTheDocument();

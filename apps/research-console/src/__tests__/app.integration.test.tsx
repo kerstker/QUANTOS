@@ -49,7 +49,7 @@ describe('App shell integration (registry-derived nav + redirects)', () => {
 
   it('keeps the lifecycle rail compact and moves section pages behind disclosure', async () => {
     render(<MemoryRouter initialEntries={['/research/dry-run']}><App /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: /全自动影子纸面驾驶舱/ })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: /全自动纸面交易驾驶舱/ })).toBeTruthy();
 
     const advanced = screen.getByRole('button', { name: /Advanced|高级工作台/ });
     expect(advanced.getAttribute('aria-expanded')).toBe('false');

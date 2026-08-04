@@ -65,6 +65,114 @@ class RealtimeAlphaForwardShadowError(RuntimeError):
     """Forward shadow evidence is missing, stale, unsafe, or conflicted."""
 
 
+def _manifest_spec(
+    row: Mapping[str, Any],
+) -> tuple[RealtimeHypothesis, dict[str, Any] | None]:
+    required = row.get("required_features")
+    if (
+        not isinstance(required, (list, tuple))
+        or not required
+        or not all(isinstance(item, str) and item for item in required)
+    ):
+        raise RealtimeAlphaForwardShadowError("discovery manifest feature set is invalid")
+    try:
+        spec = RealtimeHypothesis(
+            candidate_id=str(row["candidate_id"]),
+            family_id=str(row["family_id"]),
+            mechanism=str(row["mechanism"]),
+            horizon_ms=int(row["horizon_ms"]),
+            required_features=tuple(required),
+            economic_hypothesis=str(row["economic_hypothesis"]),
+            falsification_standard=str(row["falsification_standard"]),
+            signal_version=str(row["signal_version"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RealtimeAlphaForwardShadowError(
+            "discovery manifest hypothesis is invalid"
+        ) from exc
+    defaults = {item.candidate_id: item for item in default_realtime_hypotheses()}
+    default = defaults.get(spec.candidate_id)
+    if default is not None:
+        if spec != default or row.get("adaptive_feedback") is True:
+            raise RealtimeAlphaForwardShadowError(
+                "default discovery hypothesis was redefined"
+            )
+        return spec, None
+
+    parent_id = row.get("parent_candidate_id")
+    parent = defaults.get(str(parent_id))
+    mutation = row.get("mutation")
+    cutoff = row.get("feedback_cutoff_ms")
+    if (
+        row.get("adaptive_feedback") is not True
+        or parent is None
+        or spec.family_id != parent.family_id
+        or spec.mechanism != parent.mechanism
+        or spec.required_features != parent.required_features
+        or spec.signal_version != "realtime-microstructure.feedback.v1"
+        or type(cutoff) is not int
+        or cutoff < 0
+        or row.get("fresh_oos_required") is not True
+        or row.get("adaptive_generation") != 1
+        or mutation not in {"HALF_HORIZON", "DOUBLE_HORIZON"}
+    ):
+        raise RealtimeAlphaForwardShadowError("adaptive discovery lineage is invalid")
+    expected_horizon = (
+        max(30_000, round((parent.horizon_ms // 2) / 30_000) * 30_000)
+        if mutation == "HALF_HORIZON"
+        else parent.horizon_ms * 2
+    )
+    if expected_horizon % 3_600_000 == 0:
+        horizon_label = f"{expected_horizon // 3_600_000}h"
+    elif expected_horizon % 60_000 == 0:
+        horizon_label = f"{expected_horizon // 60_000}m"
+    else:
+        horizon_label = f"{expected_horizon // 1_000}s"
+    expected_id = f"rt_{parent.mechanism}_{horizon_label}_fb1"
+    if spec.horizon_ms != expected_horizon or spec.candidate_id != expected_id:
+        raise RealtimeAlphaForwardShadowError("adaptive discovery mutation is invalid")
+    lineage = {
+        "adaptive_feedback": True,
+        "parent_candidate_id": parent.candidate_id,
+        "feedback_cutoff_ms": cutoff,
+        "mutation": mutation,
+        "fresh_oos_required": True,
+        "adaptive_generation": 1,
+    }
+    return spec, lineage
+
+
+def _discovery_manifest(
+    discovery: Mapping[str, Any],
+) -> tuple[dict[str, RealtimeHypothesis], dict[str, dict[str, Any]]]:
+    raw = discovery.get("hypotheses")
+    if raw is None:
+        defaults = default_realtime_hypotheses()
+        expected_hash = stable_hash([item.as_dict() for item in defaults])
+        if discovery.get("manifest_hash") != expected_hash:
+            raise RealtimeAlphaForwardShadowError("discovery manifest hash is invalid")
+        return {item.candidate_id: item for item in defaults}, {}
+    if not isinstance(raw, list) or not raw:
+        raise RealtimeAlphaForwardShadowError("discovery manifest is missing")
+    if discovery.get("manifest_hash") != stable_hash(raw):
+        raise RealtimeAlphaForwardShadowError("discovery manifest hash is invalid")
+    specs: dict[str, RealtimeHypothesis] = {}
+    lineage: dict[str, dict[str, Any]] = {}
+    for row in raw:
+        if not isinstance(row, Mapping):
+            raise RealtimeAlphaForwardShadowError("discovery manifest row is invalid")
+        spec, adaptive = _manifest_spec(row)
+        if spec.candidate_id in specs:
+            raise RealtimeAlphaForwardShadowError("discovery manifest identity is duplicated")
+        specs[spec.candidate_id] = spec
+        if adaptive is not None:
+            lineage[spec.candidate_id] = adaptive
+    default_ids = {item.candidate_id for item in default_realtime_hypotheses()}
+    if not default_ids.issubset(specs):
+        raise RealtimeAlphaForwardShadowError("default discovery budget is incomplete")
+    return specs, lineage
+
+
 def _read_object(path: str | Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -113,11 +221,12 @@ def _handoff_state(
     if not isinstance(registry, Mapping) or registry.get("chain_valid") is not True:
         hard_blockers.append("DISCOVERY_REGISTRY_CHAIN_INVALID")
 
-    hypotheses = default_realtime_hypotheses()
-    manifest = {item.candidate_id: item for item in hypotheses}
-    expected_manifest_hash = stable_hash([item.as_dict() for item in hypotheses])
-    if discovery.get("manifest_hash") != expected_manifest_hash:
-        hard_blockers.append("DISCOVERY_MANIFEST_HASH_INVALID")
+    try:
+        manifest, lineage_by_id = _discovery_manifest(discovery)
+    except RealtimeAlphaForwardShadowError:
+        manifest = {}
+        lineage_by_id = {}
+        hard_blockers.append("DISCOVERY_MANIFEST_HASH_OR_LINEAGE_INVALID")
 
     rows = discovery.get("candidates")
     eligible: list[tuple[RealtimeHypothesis, Mapping[str, Any]]] = []
@@ -142,6 +251,12 @@ def _handoff_state(
                 or row.get("horizon_ms") != spec.horizon_ms
             ):
                 hard_blockers.append("DISCOVERY_CANDIDATE_MANIFEST_MISMATCH")
+                continue
+            lineage = lineage_by_id.get(candidate_id)
+            if lineage is not None and any(
+                row.get(field) != expected for field, expected in lineage.items()
+            ):
+                hard_blockers.append("DISCOVERY_CANDIDATE_LINEAGE_MISMATCH")
                 continue
             gate_pass = row.get("gate_pass") is True
             formal_status = row.get("status") in {
@@ -274,11 +389,14 @@ def _admission_identity(
     ):
         raise RealtimeAlphaForwardShadowError("admission sizing/universe is invalid")
     policy_payload = dict(vars(policy))
-    return {
+    result = {
         "candidate_id": spec.candidate_id,
         "family_id": spec.family_id,
         "mechanism": spec.mechanism,
         "horizon_ms": spec.horizon_ms,
+        "required_features": list(spec.required_features),
+        "economic_hypothesis": spec.economic_hypothesis,
+        "falsification_standard": spec.falsification_standard,
         "signal_version": spec.signal_version,
         "manifest_hash": discovery.get("manifest_hash"),
         "dataset_version": discovery.get("dataset_version"),
@@ -293,6 +411,17 @@ def _admission_identity(
         "policy_hash": stable_hash(policy_payload),
         "paper_class": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
     }
+    if evaluation.get("adaptive_feedback") is True:
+        for field in (
+            "adaptive_feedback",
+            "parent_candidate_id",
+            "feedback_cutoff_ms",
+            "mutation",
+            "fresh_oos_required",
+            "adaptive_generation",
+        ):
+            result[field] = evaluation.get(field)
+    return result
 
 
 def _admitted_spec(
@@ -315,11 +444,22 @@ def _admitted_spec(
     if not isinstance(identity, Mapping):
         raise RealtimeAlphaForwardShadowError("stored admission identity is missing")
     candidate_id = str(identity.get("candidate_id", ""))
-    manifest = {item.candidate_id: item for item in default_realtime_hypotheses()}
-    spec = manifest.get(candidate_id)
+    if identity.get("adaptive_feedback") is True:
+        try:
+            spec, _lineage = _manifest_spec(identity)
+        except RealtimeAlphaForwardShadowError as exc:
+            raise RealtimeAlphaForwardShadowError(
+                "stored admission identity is incompatible"
+            ) from exc
+    else:
+        manifest = {item.candidate_id: item for item in default_realtime_hypotheses()}
+        spec = manifest.get(candidate_id)
+        if spec is None:
+            raise RealtimeAlphaForwardShadowError(
+                "stored admission identity is incompatible"
+            )
     if (
-        spec is None
-        or identity.get("family_id") != spec.family_id
+        identity.get("family_id") != spec.family_id
         or identity.get("mechanism") != spec.mechanism
         or identity.get("horizon_ms") != spec.horizon_ms
         or identity.get("signal_version") != spec.signal_version

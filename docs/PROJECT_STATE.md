@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v11（因果反馈 + 全量生命周期可观测）：**
+> 实时 Alpha 流水线现可消费追加式 `ENGINEERING_SHADOW_REALIZED` 结果，按候选与家族计算
+> mean/SE/95% exploration UCB，在全局最多 8 条的预算内生成 half/double-horizon
+> Challenger。每条动态候选冻结 `feedback_cutoff_ms`，搜索只使用 cutoff 后数据，且新的
+> 30d OOS 未成熟时由 `ADAPTIVE_FEEDBACK_FRESH_OOS_BELOW_30D` 强制阻断正式 gate；动态
+> manifest、parent、mutation、cutoff、generation 在 discovery→forward-shadow 交接中独立
+> 哈希复核。权限始终为 exploration-only，不晋级、不接凭证、不接 broker、不下单。
+> Console API 新增全量逐 Alpha lifecycle 投影（研究评估→前向实现 PnL→模拟执行），前端经
+> SSE 实时显示 `PROFIT/LOSS/FLAT/NO_REALIZED_PNL`。同时明确分栏 `paper_realtime` 主纸面
+> 账户与 `paper_shadow` 非晋级 Challenger，缺失收益不再默认显示为绿色。设计与边界见
+> `docs/engineering/specs/2026-08-04-realtime-alpha-causal-feedback.md`。
+
 > **2026-08-04 实时纸面生产 v10（并发链头原子化）：** 运行态验收发现
 > `realtime_alpha_registry.db` 第 1397 条发生链分叉：两个 worker 可在 SQLite deferred
 > transaction 外同时读取同一 head，再以不同 event id 各自成功插入。注册表 append 现改为

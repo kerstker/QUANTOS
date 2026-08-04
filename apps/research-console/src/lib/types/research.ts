@@ -1532,6 +1532,57 @@ export interface RealtimeAlphaCandidatePayload {
   gate_reasons?: string[];
   deflated_sharpe?: number | null;
   pbo?: number | null;
+  adaptive_feedback?: boolean;
+  parent_candidate_id?: string | null;
+  feedback_cutoff_ms?: number | null;
+  mutation?: string | null;
+  fresh_oos_required?: boolean;
+  adaptive_generation?: number | null;
+  fresh_oos_span_ms?: number | null;
+  promotion_eligible: false;
+  live_allowed: false;
+}
+export interface RealtimeAlphaLifecyclePayload {
+  candidate_id: string;
+  family_id?: string | null;
+  mechanism?: string | null;
+  horizon_ms?: number | null;
+  pipeline_stage: 'COLLECTING' | 'EVALUATED' | 'FORWARD_SHADOW' | 'EXECUTION_PAPER' | string;
+  performance_state: 'NO_REALIZED_PNL' | 'FLAT' | 'PROFIT' | 'LOSS' | string;
+  research: {
+    status?: string | null;
+    evaluation_status?: string | null;
+    n_periods?: number | null;
+    net_return?: number | null;
+    holdout_net_sharpe?: number | null;
+    gate_pass: boolean;
+    gate_reasons?: string[];
+  };
+  paper: {
+    n_decisions: number;
+    n_pending: number;
+    n_realizations: number;
+    cum_return?: number | null;
+    max_drawdown?: number | null;
+    performance_history?: Array<{
+      as_of_ms: number;
+      period_return: number;
+      cum_return: number;
+      drawdown: number;
+    }>;
+    pnl_source: 'ENGINEERING_SHADOW_REALIZED_NET_RETURN';
+  };
+  execution: {
+    state?: string | null;
+    n_executions: number;
+    n_orders: number;
+    n_fill_slices: number;
+    n_no_actions: number;
+    n_missed_execution_windows: number;
+    execution_cost?: number | null;
+  };
+  last_event_ms?: number | null;
+  errors: string[];
   promotion_eligible: false;
   live_allowed: false;
 }
@@ -1601,7 +1652,27 @@ export interface RealtimeAlphaAutonomyPayload {
     priority?: string;
     hypothesis_count?: number;
   }>;
+  feedback?: {
+    status?: string | null;
+    consumed_realizations: number;
+    active_adaptive_candidates: number;
+    new_candidate_ids: string[];
+    families: Array<{
+      family_id: string;
+      action: 'COLLECT' | 'EXPAND' | 'DEPRIORITIZE' | string;
+      parent_candidate_id?: string | null;
+      eligible_candidates?: number;
+      best_ucb_95?: number | null;
+      reason_code?: string;
+    }>;
+    formal_gate_impact?: false;
+    promotion_eligible?: false;
+    live_allowed?: false;
+    order_submission_allowed?: false;
+  };
+  candidates?: RealtimeAlphaCandidatePayload[];
   top_candidates: RealtimeAlphaCandidatePayload[];
+  lifecycle?: RealtimeAlphaLifecyclePayload[];
   global_trial_count?: number | null;
   registry: { chain_valid: boolean; event_count?: number | null };
   remaining_gates: string[];

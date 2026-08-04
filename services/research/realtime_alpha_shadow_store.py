@@ -347,9 +347,20 @@ class RealtimeAlphaShadowStore:
             curve.append(equity)
         peak = 1.0
         max_drawdown = 0.0
-        for value in curve:
+        history: list[dict[str, Any]] = []
+        for index, value in enumerate(curve):
             peak = max(peak, value)
-            max_drawdown = max(max_drawdown, (peak - value) / peak)
+            drawdown = (peak - value) / peak
+            max_drawdown = max(max_drawdown, drawdown)
+            realization = realizations[index]
+            history.append(
+                {
+                    "as_of_ms": int(realization["payload"]["as_of_ms"]),
+                    "period_return": returns[index],
+                    "cum_return": value - 1.0,
+                    "drawdown": drawdown,
+                }
+            )
         return {
             "candidate_id": candidate_id,
             "admitted": self.admission(candidate_id) is not None,
@@ -358,6 +369,9 @@ class RealtimeAlphaShadowStore:
             "n_realizations": len(realizations),
             "cum_return": equity - 1.0 if returns else None,
             "max_drawdown": max_drawdown if returns else None,
+            # Bound console artifacts while retaining the append-only store as
+            # the complete source of truth.
+            "performance_history": history[-256:],
             "last_decision_time_ms": (
                 int(decisions[-1]["identity_time_ms"]) if decisions else None
             ),

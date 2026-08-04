@@ -78,6 +78,11 @@ function fmtTime(value?: number | null): string {
   });
 }
 
+function signedClass(value?: number | null): string {
+  if (value == null || !Number.isFinite(value) || value === 0) return 'text-muted';
+  return value > 0 ? 'text-pos' : 'text-neg';
+}
+
 function paperSeries(history: PaperRealtimeHistoryPoint[]): EquitySeries[] {
   const byAlpha = new Map<string, { t: number; equity: number }[]>();
   for (const point of history) {
@@ -257,6 +262,10 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
   );
   const spanDays = (snapshot?.data_admission.common_span_ms ?? 0) / 86_400_000;
   const candidates = snapshot?.top_candidates ?? [];
+  const lifecycle = snapshot?.lifecycle ?? [];
+  const feedback = snapshot?.feedback;
+  const profitable = lifecycle.filter(row => row.performance_state === 'PROFIT').length;
+  const losing = lifecycle.filter(row => row.performance_state === 'LOSS').length;
   const capacity = snapshot?.executable_depth_capacity;
   const engineeringPaperRunning = Boolean(
     snapshot?.forward_shadow.verdict.engineering_shadow_running,
@@ -390,6 +399,81 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           </div>
         </div>
       </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 text-3xs text-muted">
+          <Chip
+            label={feedback?.status ?? 'FEEDBACK WAITING'}
+            tone={(feedback?.active_adaptive_candidates ?? 0) > 0 ? 'special' : 'info'}
+          />
+          <span>
+            Learning feedback · {feedback?.consumed_realizations ?? 0} realized outcomes ·{' '}
+            {feedback?.active_adaptive_candidates ?? 0} adaptive challengers
+          </span>
+          <span className="ml-auto">
+            {(feedback?.families ?? []).map(row => `${row.family_id}:${row.action}`).join(' · ') || 'family budgets collecting'}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+          <div className="text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
+            全量 Alpha 生命周期与实时业绩
+          </div>
+          <Chip label={`${lifecycle.length} FACTORS`} tone="info" />
+          <Chip label={`${profitable} PROFIT`} tone={profitable ? 'pos' : 'muted'} />
+          <Chip label={`${losing} LOSS`} tone={losing ? 'neg' : 'muted'} />
+          <span className="ml-auto text-3xs text-faint">SSE · realized engineering-shadow net return</span>
+        </div>
+        <div className="max-h-[420px] overflow-auto">
+          <table className="w-full min-w-[940px] text-left text-xs" aria-label="realtime alpha lifecycle performance">
+            <thead className="sticky top-0 border-b border-line bg-panel text-3xs uppercase tracking-[0.1em] text-faint">
+              <tr>
+                <th className="px-3 py-2 font-medium">Factor</th>
+                <th className="px-3 py-2 font-medium">Family / horizon</th>
+                <th className="px-3 py-2 font-medium">Lifecycle</th>
+                <th className="px-3 py-2 text-right font-medium">Research</th>
+                <th className="px-3 py-2 text-right font-medium">Paper PnL</th>
+                <th className="px-3 py-2 text-right font-medium">Realized</th>
+                <th className="px-3 py-2 text-right font-medium">Execution</th>
+                <th className="px-3 py-2 font-medium">State</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/70">
+              {lifecycle.length ? lifecycle.map(row => (
+                <tr key={row.candidate_id}>
+                  <td className="max-w-[250px] truncate px-3 py-2 font-medium text-ink" title={row.candidate_id}>
+                    {row.candidate_id}
+                  </td>
+                  <td className="px-3 py-2 text-muted">{row.family_id ?? '--'} · {fmtHorizon(row.horizon_ms)}</td>
+                  <td className="px-3 py-2"><Chip label={row.pipeline_stage} tone="info" /></td>
+                  <td className={`px-3 py-2 text-right ticker-num ${signedClass(row.research.net_return)}`}>
+                    {fmtPct(row.research.net_return)}
+                  </td>
+                  <td className={`px-3 py-2 text-right ticker-num ${signedClass(row.paper.cum_return)}`}>
+                    <div>{fmtPct(row.paper.cum_return)}</div>
+                    <div className="mt-0.5 text-3xs text-faint">
+                      last {fmtPct(row.paper.performance_history?.[Math.max(0, (row.paper.performance_history?.length ?? 1) - 1)]?.period_return)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right ticker-num text-muted">
+                    {row.paper.n_realizations}/{row.paper.n_decisions}
+                  </td>
+                  <td className="px-3 py-2 text-right ticker-num text-muted">
+                    {row.execution.n_executions} runs · {row.execution.n_orders} orders
+                  </td>
+                  <td className="px-3 py-2">
+                    <Chip
+                      label={row.performance_state}
+                      tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'}
+                    />
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">Lifecycle snapshot is collecting.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </Panel>
   );
 }
@@ -425,11 +509,11 @@ function StrategyRow({
       </div>
       <div>
         <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
-        <div className={`ticker-num mt-1 text-sm ${(pnl ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>{fmtUsd(pnl)}</div>
+        <div className={`ticker-num mt-1 text-sm ${signedClass(pnl)}`}>{fmtUsd(pnl)}</div>
       </div>
       <div>
         <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
-        <div className={`ticker-num mt-1 text-sm ${(value.return_on_aum ?? 0) >= 0 ? 'text-pos' : 'text-neg'}`}>
+        <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>
           {fmtPct(value.return_on_aum)}
         </div>
       </div>
@@ -439,6 +523,38 @@ function StrategyRow({
         <div className="mt-1 truncate text-3xs text-faint">
           {riskReasons.length ? riskReasons.join(' · ') : reconciled ? 'reconciled' : 'reconciliation check'}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function OfficialPaperRow({ alpha, value }: { alpha: string; value: PaperRealtimeAlpha }) {
+  const activePositions = Object.values(value.positions ?? {}).filter(quantity => quantity !== 0).length;
+  const pending = value.status === 'PAPER_PENDING';
+  return (
+    <div className="grid gap-3 border-b border-line/70 py-3 last:border-b-0 md:grid-cols-[minmax(170px,1.4fr)_repeat(4,minmax(92px,1fr))] md:items-center">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-ink">{alpha}</span>
+          <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
+        </div>
+        <div className="mt-1 text-3xs text-faint">main paper account · not shadow challenger</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Equity</div>
+        <div className="ticker-num mt-1 text-sm text-ink">{fmtUsd(value.equity)}</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
+        <div className={`ticker-num mt-1 text-sm ${signedClass(value.net_pnl)}`}>{fmtUsd(value.net_pnl)}</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
+        <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>{fmtPct(value.return_on_aum)}</div>
+      </div>
+      <div>
+        <div className="text-3xs uppercase tracking-wider text-faint">Activity</div>
+        <div className="ticker-num mt-1 text-sm text-muted">{value.n_fills ?? 0} fills · {activePositions} positions</div>
       </div>
     </div>
   );
@@ -510,6 +626,7 @@ export default function DryRunPipeline() {
   const initialLoading = apiState === 'loading' && !usingBackend;
   const data = usingBackend ? payload! : mockPayload;
   const shadow = data.paper_shadow;
+  const officialPaper = data.paper_realtime;
   const operational = data.paper_operational;
   const health = data.paper_health;
   const scheduler = data.scheduler_watchdog;
@@ -517,6 +634,7 @@ export default function DryRunPipeline() {
   const alphaPipeline = data.alpha_pipeline;
   const pipelineCandidates = alphaPipeline?.candidates ?? [];
   const alphaRows = Object.entries(shadow?.alphas ?? {});
+  const officialRows = Object.entries(officialPaper?.alphas ?? {});
   const observedAt = shadow?.observed_at ?? health?.observed_at;
   const observedAgeMs = observedAt == null ? null : Math.max(0, Date.now() - observedAt);
   const markFresh = observedAgeMs != null && observedAgeMs <= (health?.max_age_ms ?? 300_000);
@@ -612,10 +730,10 @@ export default function DryRunPipeline() {
             <span className="text-3xs font-semibold uppercase tracking-[0.16em] text-faint">Paper Operations</span>
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-[30px]">
-            全自动影子纸面驾驶舱
+            全自动纸面交易驾驶舱
           </h1>
           <p className="mt-1 text-xs text-muted">
-            实时行情、自动再平衡、估值与对账；独立、不可晋级的自动观察账户。
+            主纸面账户与独立 Challenger 分栏；实时行情、生命周期、业绩、模拟执行与对账。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -650,13 +768,13 @@ export default function DryRunPipeline() {
         </div>
         <div className="grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-panel px-4 py-4 md:grid-cols-5">
           <Metric
-            label="Total equity"
+            label="Shadow total equity"
             value={fmtUsd(shadow?.totals.equity)}
             detail={`${alphaRows.length} isolated books`}
             tone="accent"
           />
           <Metric
-            label="Net PnL"
+            label="Shadow net PnL"
             value={fmtUsd(shadow?.totals.net_pnl)}
             detail={`funding ${fmtUsd(shadow?.totals.funding_pnl)}`}
             tone={(shadow?.totals.net_pnl ?? 0) >= 0 ? 'pos' : 'neg'}
@@ -674,6 +792,24 @@ export default function DryRunPipeline() {
             detail={health?.readiness_class ?? 'no health snapshot'}
             tone={health?.verdict.paper_ready ? 'pos' : 'warn'}
           />
+        </div>
+
+        <div className="mt-4">
+          <Panel
+            title="主纸面账户实时业绩"
+            eyebrow="paper_realtime · authoritative main paper account"
+            right={<Chip label={`${officialRows.length} ACCOUNTS`} tone="info" />}
+            bodyClass="px-4 py-2"
+          >
+            <div className="mb-2 rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
+              该区域与下方影子 Challenger 账户完全分开。亏损、零收益和待执行状态均按原值显示，不以初始权益或影子收益替代。
+            </div>
+            {officialRows.length ? officialRows.map(([alpha, value]) => (
+              <OfficialPaperRow key={alpha} alpha={alpha} value={value} />
+            )) : (
+              <div className="py-6 text-center text-xs text-faint">Main paper account snapshot unavailable.</div>
+            )}
+          </Panel>
         </div>
 
         <div className="mt-4">
@@ -816,8 +952,8 @@ export default function DryRunPipeline() {
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,.7fr)]">
           <Panel
-            title="实时权益与策略账簿"
-            eyebrow="Live paper books"
+            title="影子 Challenger 实时权益与策略账簿"
+            eyebrow="paper_shadow · isolated non-promotable books"
             right={<Chip label="SSE STREAM" tone="info" />}
             bodyClass="p-4"
           >

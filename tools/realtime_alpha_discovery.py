@@ -60,6 +60,10 @@ from services.research.realtime_alpha_discovery import (
     default_realtime_hypotheses,
     evaluate_hypothesis,
 )
+from services.research.realtime_alpha_feedback import (
+    FeedbackProposal,
+    build_feedback_plan,
+)
 from services.research.trial_provenance import trial_provenance_for_definition
 from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
 from tools.cache_io import atomic_write_json
@@ -80,6 +84,7 @@ STRICT_HOLDOUT_SHARPE_MIN = 0.80
 STRICT_WF_POSITIVE_FRAC = 0.75
 STRICT_REGIME_POSITIVE_FRAC = 0.75
 STRICT_MAX_DRAWDOWN = 0.15
+MAX_ACTIVE_ADAPTIVE_HYPOTHESES = 8
 
 
 class RealtimeAlphaWorkerError(RuntimeError):
@@ -318,19 +323,99 @@ def _capacity_report(
     )
 
 
-def _definition(spec: RealtimeHypothesis) -> AlphaDefinition:
+def _manifest_row(
+    spec: RealtimeHypothesis,
+    lineage: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = spec.as_dict()
+    row["required_features"] = list(spec.required_features)
+    if lineage is not None:
+        row.update(dict(lineage))
+    return row
+
+
+def _adaptive_hypothesis(
+    row: Mapping[str, Any],
+) -> tuple[RealtimeHypothesis, dict[str, Any]] | None:
+    if row.get("adaptive_feedback") is not True:
+        return None
+    required = row.get("required_features")
+    cutoff = row.get("feedback_cutoff_ms")
+    if (
+        not isinstance(required, list)
+        or not required
+        or not all(isinstance(item, str) and item for item in required)
+        or type(cutoff) is not int
+        or cutoff < 0
+        or row.get("fresh_oos_required") is not True
+        or row.get("adaptive_generation") != 1
+        or not isinstance(row.get("parent_candidate_id"), str)
+        or not isinstance(row.get("mutation"), str)
+        or row.get("signal_version") != "realtime-microstructure.feedback.v1"
+    ):
+        raise RealtimeAlphaWorkerError("adaptive candidate registration is invalid")
+    try:
+        spec = RealtimeHypothesis(
+            candidate_id=str(row["candidate_id"]),
+            family_id=str(row["family_id"]),
+            mechanism=str(row["mechanism"]),
+            horizon_ms=int(row["horizon_ms"]),
+            required_features=tuple(required),
+            economic_hypothesis=str(row["economic_hypothesis"]),
+            falsification_standard=str(row["falsification_standard"]),
+            signal_version=str(row["signal_version"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RealtimeAlphaWorkerError("adaptive candidate definition is invalid") from exc
+    lineage = {
+        "adaptive_feedback": True,
+        "parent_candidate_id": str(row["parent_candidate_id"]),
+        "feedback_cutoff_ms": cutoff,
+        "mutation": str(row["mutation"]),
+        "fresh_oos_required": True,
+        "adaptive_generation": 1,
+    }
+    return spec, lineage
+
+
+def _proposal_lineage(proposal: FeedbackProposal) -> dict[str, Any]:
+    return {
+        "adaptive_feedback": True,
+        "parent_candidate_id": proposal.parent_candidate_id,
+        "feedback_cutoff_ms": proposal.feedback_cutoff_ms,
+        "mutation": proposal.mutation,
+        "fresh_oos_required": proposal.fresh_oos_required,
+        "adaptive_generation": proposal.adaptive_generation,
+    }
+
+
+def _definition(
+    spec: RealtimeHypothesis,
+    lineage: Mapping[str, Any] | None = None,
+) -> AlphaDefinition:
+    params = {
+        "family_id": spec.family_id,
+        "mechanism": spec.mechanism,
+        "horizon_ms": str(spec.horizon_ms),
+        "signal_version": spec.signal_version,
+        "label_policy": "post_latency_first_known_mid",
+    }
+    if lineage is not None:
+        params.update(
+            {
+                "adaptive_feedback": "true",
+                "parent_candidate_id": str(lineage["parent_candidate_id"]),
+                "feedback_cutoff_ms": str(lineage["feedback_cutoff_ms"]),
+                "mutation": str(lineage["mutation"]),
+                "fresh_oos_required": "true",
+            }
+        )
     return AlphaDefinition(
         alpha_id=spec.candidate_id,
         name=f"Realtime {spec.mechanism} {_horizon_text(spec.horizon_ms)}",
         factor_ids=tuple(sorted(spec.required_features)),
         universe="binance_usdm_14_realtime_public",
-        params={
-            "family_id": spec.family_id,
-            "mechanism": spec.mechanism,
-            "horizon_ms": str(spec.horizon_ms),
-            "signal_version": spec.signal_version,
-            "label_policy": "post_latency_first_known_mid",
-        },
+        params=params,
     )
 
 
@@ -342,8 +427,12 @@ def _horizon_text(value: int) -> str:
     return f"{value // 1_000}s"
 
 
-def _candidate_payload(spec: RealtimeHypothesis, definition: AlphaDefinition) -> dict[str, Any]:
-    identity = spec.as_dict()
+def _candidate_payload(
+    spec: RealtimeHypothesis,
+    definition: AlphaDefinition,
+    lineage: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    identity = _manifest_row(spec, lineage)
     # JSON persistence normalizes tuples to lists.  Normalize before the first
     # append as well so a later process sees byte-for-byte immutable identity
     # instead of a Python tuple-vs-JSON-list false conflict.
@@ -450,7 +539,7 @@ def _gate_result(
 
 
 def _dataset_version(
-    coverage: Mapping[str, FeatureCoverage], hypotheses: Sequence[RealtimeHypothesis]
+    coverage: Mapping[str, FeatureCoverage], manifest_rows: Sequence[Mapping[str, Any]]
 ) -> str:
     return stable_hash(
         {
@@ -464,7 +553,7 @@ def _dataset_version(
                 }
                 for feature_id, item in sorted(coverage.items())
             },
-            "hypotheses": [item.as_dict() for item in hypotheses],
+            "hypotheses": [dict(item) for item in manifest_rows],
         }
     )
 
@@ -489,8 +578,7 @@ def run_cycle(
 ) -> dict[str, Any]:
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
-    hypotheses = default_realtime_hypotheses()
-    definitions = {item.candidate_id: _definition(item) for item in hypotheses}
+    base_hypotheses = default_realtime_hypotheses()
     quality_status, quality_payload = _read_quality_status(feature_status)
     coverage = coverage_from_store(source_store)
     admission = assess_data_admission(
@@ -503,14 +591,78 @@ def run_cycle(
         now_ms=now,
         policy=policy,
     )
-    dataset_version = _dataset_version(coverage, hypotheses)
-
     registry = AlphaFamilyRegistry(str(registry_db), create=True)
     exp_store: SqliteExperimentStore | None = None
     try:
+        if not registry.verify_chain():
+            raise RealtimeAlphaWorkerError("Alpha family registry chain is invalid")
+        registrations = registry.candidate_definitions()
+        existing_ids = {
+            str(row.get("candidate_id"))
+            for row in registrations
+            if isinstance(row.get("candidate_id"), str)
+        }
+        adaptive: list[RealtimeHypothesis] = []
+        lineage_by_id: dict[str, dict[str, Any]] = {}
+        base_by_id = {item.candidate_id: item for item in base_hypotheses}
+        for row in registrations:
+            parsed = _adaptive_hypothesis(row)
+            if parsed is None:
+                continue
+            spec, lineage = parsed
+            parent = base_by_id.get(str(lineage["parent_candidate_id"]))
+            if (
+                parent is None
+                or spec.family_id != parent.family_id
+                or spec.mechanism != parent.mechanism
+                or spec.required_features != parent.required_features
+            ):
+                raise RealtimeAlphaWorkerError("adaptive candidate lineage is invalid")
+            adaptive.append(spec)
+            lineage_by_id[spec.candidate_id] = lineage
+        if len(adaptive) > MAX_ACTIVE_ADAPTIVE_HYPOTHESES:
+            raise RealtimeAlphaWorkerError("adaptive candidate budget is exceeded")
+
+        paper_runs = {
+            item.candidate_id: registry.paper_runs(item.candidate_id)
+            for item in base_hypotheses
+            if item.candidate_id in existing_ids
+        }
+        feedback = build_feedback_plan(
+            base_hypotheses,
+            paper_runs,
+            existing_candidate_ids=tuple(existing_ids),
+            max_new=max(0, MAX_ACTIVE_ADAPTIVE_HYPOTHESES - len(adaptive)),
+            min_realizations=8,
+            decision_interval_ms=policy.decision_interval_ms,
+        )
+        for proposal in feedback.proposals:
+            adaptive.append(proposal.spec)
+            lineage_by_id[proposal.spec.candidate_id] = _proposal_lineage(proposal)
+        hypotheses = tuple(base_hypotheses) + tuple(
+            sorted(adaptive, key=lambda item: item.candidate_id)
+        )
+        if len({item.candidate_id for item in hypotheses}) != len(hypotheses):
+            raise RealtimeAlphaWorkerError("active hypothesis identities are duplicated")
+        manifest_rows = [
+            _manifest_row(item, lineage_by_id.get(item.candidate_id))
+            for item in hypotheses
+        ]
+        definitions = {
+            item.candidate_id: _definition(
+                item, lineage_by_id.get(item.candidate_id)
+            )
+            for item in hypotheses
+        }
+        dataset_version = _dataset_version(coverage, manifest_rows)
+
         for item in hypotheses:
             registry.register_candidate(
-                _candidate_payload(item, definitions[item.candidate_id]),
+                _candidate_payload(
+                    item,
+                    definitions[item.candidate_id],
+                    lineage_by_id.get(item.candidate_id),
+                ),
                 recorded_at=now,
             )
 
@@ -528,10 +680,21 @@ def run_cycle(
                 end_ms=admission.common_end_ms,
                 bucket_ms=policy.decision_interval_ms,
             )
-            evaluations = {
-                item.candidate_id: evaluate_hypothesis(item, frames, policy=policy)
-                for item in hypotheses
-            }
+            evaluations = {}
+            for item in hypotheses:
+                lineage = lineage_by_id.get(item.candidate_id)
+                candidate_frames = frames
+                if lineage is not None:
+                    cutoff = int(lineage["feedback_cutoff_ms"])
+                    candidate_frames = {
+                        instrument: tuple(
+                            frame for frame in rows if frame.decision_time_ms > cutoff
+                        )
+                        for instrument, rows in frames.items()
+                    }
+                evaluations[item.candidate_id] = evaluate_hypothesis(
+                    item, candidate_frames, policy=policy
+                )
 
         exp_registry: ExperimentRegistry | None = None
         search_id: str | None = None
@@ -549,14 +712,17 @@ def run_cycle(
             persistence_recorded_at = max(now, int(time.time() * 1_000))
             search_id = make_search_id(
                 source="realtime_alpha_discovery",
-                search_kind="realtime_microstructure_budget_v1",
+                search_kind="realtime_microstructure_adaptive_budget_v2",
                 dataset_version=dataset_version,
                 recorded_at=persistence_recorded_at,
-                params={"candidate_ids": [item.candidate_id for item in hypotheses]},
+                params={
+                    "candidate_ids": [item.candidate_id for item in hypotheses],
+                    "feedback_hash": stable_hash(feedback.as_dict()),
+                },
             )
             exp_registry.begin_search_attempt(
                 search_id=search_id,
-                search_kind="realtime_microstructure_budget_v1",
+                search_kind="realtime_microstructure_adaptive_budget_v2",
                 source="tools.realtime_alpha_discovery",
                 dataset_version=dataset_version,
                 recorded_at=persistence_recorded_at,
@@ -575,7 +741,7 @@ def run_cycle(
                         actor_id="tools.realtime_alpha_discovery",
                         dataset_version=dataset_version,
                         recorded_at=persistence_recorded_at,
-                        model_name="deterministic-realtime-family-budget-v1",
+                        model_name="deterministic-realtime-causal-feedback-v2",
                     )
                 )
                 catalog.register(definition)
@@ -612,6 +778,16 @@ def run_cycle(
                 pbo=pbo,
                 capacity=capacity,
             )
+            lineage = lineage_by_id.get(spec.candidate_id)
+            fresh_oos_span_ms: int | None = None
+            if lineage is not None:
+                cutoff = int(lineage["feedback_cutoff_ms"])
+                fresh_oos_span_ms = max(
+                    0, int(admission.common_end_ms or now) - cutoff
+                )
+                if fresh_oos_span_ms < policy.validation_min_span_ms:
+                    gate_reasons.append("ADAPTIVE_FEEDBACK_FRESH_OOS_BELOW_30D")
+                    hard_pass = False
             if hard_pass and admission.shadow_admission_allowed:
                 status = "SHADOW_CANDIDATE_READY"
             elif hard_pass:
@@ -638,6 +814,19 @@ def run_cycle(
                 "dataset_version": dataset_version,
                 "economic_hypothesis": spec.economic_hypothesis,
                 "falsification_standard": spec.falsification_standard,
+                "adaptive_feedback": lineage is not None,
+                "parent_candidate_id": (
+                    lineage.get("parent_candidate_id") if lineage else None
+                ),
+                "feedback_cutoff_ms": (
+                    lineage.get("feedback_cutoff_ms") if lineage else None
+                ),
+                "mutation": lineage.get("mutation") if lineage else None,
+                "fresh_oos_required": bool(lineage),
+                "adaptive_generation": (
+                    lineage.get("adaptive_generation") if lineage else None
+                ),
+                "fresh_oos_span_ms": fresh_oos_span_ms,
                 "promotion_eligible": False,
                 "live_allowed": False,
             }
@@ -731,7 +920,8 @@ def run_cycle(
             "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
             "dataset_version": dataset_version,
             "search_id": search_id,
-            "manifest_hash": stable_hash([item.as_dict() for item in hypotheses]),
+            "manifest_hash": stable_hash(manifest_rows),
+            "hypotheses": manifest_rows,
             "autonomy": {
                 "worker": "tools.realtime_alpha_discovery",
                 "scheduler_task": "QUANTOS_realtime_alpha_discovery",
@@ -749,9 +939,22 @@ def run_cycle(
             "funnel": {
                 "pre_registered": len(hypotheses),
                 "evaluated": len(result_rows),
+                "base_pre_registered": len(base_hypotheses),
+                "adaptive_pre_registered": len(adaptive),
+                "adaptive_evaluated": sum(
+                    row.get("adaptive_feedback") is True for row in result_rows
+                ),
                 "diagnostic_leads": sum(bool(row.get("diagnostic_lead")) for row in result_rows),
                 "formal_passes": sum(bool(row.get("gate_pass")) for row in result_rows),
                 "shadow_candidates": sum(row.get("status") == "SHADOW_CANDIDATE_READY" for row in result_rows),
+            },
+            "feedback": {
+                **feedback.as_dict(),
+                "active_adaptive_candidates": len(adaptive),
+                "new_candidate_ids": [
+                    item.spec.candidate_id for item in feedback.proposals
+                ],
+                "feedback_hash": stable_hash(feedback.as_dict()),
             },
             "families": [
                 {

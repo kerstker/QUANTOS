@@ -8,6 +8,7 @@ from quantos.contracts.hashing import stable_hash
 from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.realtime_alpha_discovery import (
     RealtimeFrame,
+    RealtimeHypothesis,
     default_realtime_hypotheses,
 )
 from tools.realtime_alpha_forward_shadow import (
@@ -95,6 +96,63 @@ def test_evaluated_candidate_enters_engineering_paper_before_formal_maturity() -
     assert len(ready) == 1
     assert ready[0][1]["gate_pass"] is False
     assert ready[0][1]["status"] == "EXPLORATORY_ONLY"
+
+
+def test_dynamic_feedback_challenger_is_hash_bound_and_lineage_checked() -> None:
+    now = 1_000_000
+    discovery = _discovery(now, evaluated=True)
+    defaults = default_realtime_hypotheses()
+    parent = next(
+        item for item in defaults
+        if item.candidate_id == "rt_liquidation_cascade_2m_v1"
+    )
+    adaptive = RealtimeHypothesis(
+        candidate_id="rt_liquidation_cascade_1m_fb1",
+        family_id=parent.family_id,
+        mechanism=parent.mechanism,
+        horizon_ms=60_000,
+        required_features=parent.required_features,
+        economic_hypothesis="fresh OOS challenger",
+        falsification_standard="ordinary gates plus fresh OOS",
+        signal_version="realtime-microstructure.feedback.v1",
+    )
+    lineage = {
+        "adaptive_feedback": True,
+        "parent_candidate_id": parent.candidate_id,
+        "feedback_cutoff_ms": 900_000,
+        "mutation": "HALF_HORIZON",
+        "fresh_oos_required": True,
+        "adaptive_generation": 1,
+    }
+    manifest = [item.as_dict() for item in defaults]
+    manifest.append(adaptive.as_dict() | lineage)
+    discovery["hypotheses"] = manifest
+    discovery["manifest_hash"] = stable_hash(manifest)
+    discovery["candidates"].append(
+        {
+            **adaptive.as_dict(),
+            **lineage,
+            "evaluation_status": "EVALUATED",
+            "gate_pass": False,
+            "status": "EXPLORATORY_ONLY",
+            "promotion_eligible": False,
+            "live_allowed": False,
+        }
+    )
+
+    eligible = eligible_candidates(discovery, now_ms=now)
+
+    assert {item[0].candidate_id for item in eligible} == {
+        defaults[0].candidate_id,
+        adaptive.candidate_id,
+    }
+    tampered = json.loads(json.dumps(discovery))
+    tampered["candidates"][-1]["feedback_cutoff_ms"] = 800_000
+    with pytest.raises(
+        RealtimeAlphaForwardShadowError,
+        match="DISCOVERY_CANDIDATE_LINEAGE_MISMATCH",
+    ):
+        eligible_candidates(tampered, now_ms=now)
 
 
 def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_path) -> None:

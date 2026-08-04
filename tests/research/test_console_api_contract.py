@@ -395,10 +395,86 @@ def test_dry_run_surfaces_system_native_realtime_alpha_discovery_fail_closed():
     assert autonomy["safety"]["credentials_accessed"] is False
     if autonomy["snapshot_present"]:
         assert isinstance(autonomy["funnel"]["pre_registered"], int)
+        assert isinstance(autonomy["candidates"], list)
         assert isinstance(autonomy["top_candidates"], list)
+        assert isinstance(autonomy["lifecycle"], list)
     else:
         assert autonomy["status"] == "NO_SNAPSHOT"
         assert autonomy["autonomy"]["autonomous_search_running"] is False
+
+
+def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
+    candidates = [
+        {
+            "candidate_id": "loss_alpha",
+            "family_id": "flow",
+            "mechanism": "continuation",
+            "horizon_ms": 60_000,
+            "evaluation_status": "EVALUATED",
+            "status": "EXPLORATORY_ONLY",
+            "net_return": -0.02,
+            "holdout_net_sharpe": -1.0,
+            "gate_pass": False,
+            "gate_reasons": ["OOS_REQUIRED"],
+        },
+        {
+            "candidate_id": "profit_alpha",
+            "family_id": "liquidation",
+            "mechanism": "exhaustion",
+            "horizon_ms": 120_000,
+            "evaluation_status": "EVALUATED",
+            "status": "EXPLORATORY_ONLY",
+            "net_return": 0.01,
+            "holdout_net_sharpe": 0.4,
+            "gate_pass": False,
+            "gate_reasons": ["OOS_REQUIRED"],
+        },
+    ]
+    forward = {
+        "tracks": {
+            "loss_alpha": {
+                "n_decisions": 10,
+                "n_realizations": 9,
+                "cum_return": -0.04,
+                "max_drawdown": 0.05,
+                "last_realization_time_ms": 200,
+            },
+            "profit_alpha": {
+                "n_decisions": 8,
+                "n_realizations": 7,
+                "cum_return": 0.02,
+                "max_drawdown": 0.01,
+                "last_realization_time_ms": 190,
+            },
+        },
+        "errors": {},
+    }
+    execution = {
+        "tracks": {
+            "loss_alpha": {
+                "state": "EXECUTING",
+                "n_executions": 3,
+                "n_orders": 12,
+                "execution_cost": 1.25,
+                "last_decision_time_ms": 210,
+            }
+        },
+        "errors": {},
+    }
+
+    rows = artifact_paper_views._realtime_alpha_lifecycle_rows(
+        candidates, forward, execution
+    )
+
+    by_id = {row["candidate_id"]: row for row in rows}
+    assert by_id["loss_alpha"]["performance_state"] == "LOSS"
+    assert by_id["loss_alpha"]["paper"]["cum_return"] == -0.04
+    assert by_id["loss_alpha"]["pipeline_stage"] == "EXECUTION_PAPER"
+    assert by_id["loss_alpha"]["execution"]["n_orders"] == 12
+    assert by_id["profit_alpha"]["performance_state"] == "PROFIT"
+    assert by_id["profit_alpha"]["pipeline_stage"] == "FORWARD_SHADOW"
+    assert all(row["promotion_eligible"] is False for row in rows)
+    assert all(row["live_allowed"] is False for row in rows)
 
 
 def test_realtime_alpha_console_projection_blocks_tampered_authority(tmp_path):
@@ -433,6 +509,45 @@ def test_realtime_alpha_console_projection_blocks_tampered_authority(tmp_path):
     assert autonomy["top_candidates"] == []
     assert "AUTONOMY_SAFETY_ALLOW_ORDER_SUBMISSION_INVALID" in autonomy["blockers"]
     assert autonomy["safety"]["allow_order_submission"] is False
+
+
+def test_realtime_alpha_console_projection_blocks_feedback_authority_widening(
+    tmp_path,
+):
+    path = tmp_path / "tampered-feedback.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
+                "generated_at_ms": 123,
+                "autonomy": {"requires_developer_ai": False},
+                "registry": {"chain_valid": True},
+                "safety": {
+                    "paper_only": True,
+                    "live_trading_enabled": False,
+                    "real_broker_enabled": False,
+                    "allow_order_submission": False,
+                    "allow_ai_direct_trading": False,
+                    "promotion_eligible": False,
+                    "credentials_accessed": False,
+                },
+                "feedback": {
+                    "scope": "EXPLORATION_BUDGET_ONLY",
+                    "formal_gate_impact": False,
+                    "promotion_eligible": True,
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    autonomy = artifact_paper_views._realtime_alpha_autonomy_payload(str(path))
+
+    assert autonomy["status"] == "SAFE_BLOCKED"
+    assert "AUTONOMY_FEEDBACK_AUTHORITY_INVALID" in autonomy["blockers"]
+    assert autonomy["feedback"]["active_adaptive_candidates"] == 0
 
 
 def test_dry_run_separates_factory_forward_and_execution_paper_populations(
