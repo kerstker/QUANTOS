@@ -6,6 +6,7 @@ from collections.abc import Sequence
 import json
 from pathlib import Path
 import sys
+import time
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -36,6 +37,62 @@ PROFILE_ARGS: tuple[str, ...] = (
     "--operator-receipt",
     "data/cache/paper_shadow_auto.json",
 )
+
+
+def _artifact_identity(path: str) -> tuple[int, int, int, int] | None:
+    """Return enough filesystem identity to reject a stale prior-cycle artifact."""
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+
+
+def _write_upstream_block(
+    *,
+    code: str,
+    exit_code: object,
+    started_at_ms: int,
+    finished_at_ms: int,
+) -> None:
+    atomic_write_json(
+        OUTPUT_PATH,
+        {
+            "schema_version": 1,
+            "flow": "AUTOMATED_SHADOW_PAPER_REALTIME_CYCLE",
+            "execution_class": "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER",
+            "status": "SAFE_BLOCKED",
+            "errors": {
+                "paper_realtime": {
+                    "code": code,
+                    "exit_code": exit_code,
+                }
+            },
+            "upstream_cycle": {
+                "started_at_ms": started_at_ms,
+                "finished_at_ms": finished_at_ms,
+                "exit_code": exit_code,
+                "artifact_refreshed": False,
+            },
+            "verdict": {
+                "cycle_completed": False,
+                "paper_mark_ready": False,
+                "shadow_paper_running": False,
+                "candidate_coverage_complete": False,
+                "official_paper_ready": False,
+                "promotion_eligible": False,
+                "forward_evidence_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            },
+            "safety": {
+                "paper_only": True,
+                "broker_connectivity": False,
+                "broker_order_submission": False,
+            },
+        },
+        indent=2,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -77,15 +134,47 @@ def main(argv: Sequence[str] | None = None) -> int:
             indent=2,
         )
         return SCHEDULE_EXIT_FAILURE
-    paper_realtime.main(list(PROFILE_ARGS))
+    started_at_ms = int(time.time() * 1000)
+    prior_artifact = _artifact_identity(OUTPUT_PATH)
+    upstream_exit_code = paper_realtime.main(list(PROFILE_ARGS))
+    finished_at_ms = int(time.time() * 1000)
+    current_artifact = _artifact_identity(OUTPUT_PATH)
+    artifact_refreshed = (
+        current_artifact is not None and current_artifact != prior_artifact
+    )
+    if not artifact_refreshed:
+        _write_upstream_block(
+            code=(
+                "UPSTREAM_PAPER_REALTIME_FAILED"
+                if upstream_exit_code != SCHEDULE_EXIT_SUCCESS
+                else "PAPER_REALTIME_ARTIFACT_NOT_REFRESHED"
+            ),
+            exit_code=upstream_exit_code,
+            started_at_ms=started_at_ms,
+            finished_at_ms=finished_at_ms,
+        )
+        return SCHEDULE_EXIT_FAILURE
     try:
         report = json.loads(Path(OUTPUT_PATH).read_text(encoding="utf-8"))
         verdict = report.get("verdict")
         safety = report.get("safety")
         alphas = report.get("alphas")
         expected = paper_candidate_ids()
+        upstream_outcome_acceptable = bool(
+            upstream_exit_code == SCHEDULE_EXIT_SUCCESS
+            or (
+                upstream_exit_code == SCHEDULE_EXIT_FAILURE
+                and isinstance(verdict, dict)
+                and verdict.get(
+                    "backtest_reference_present_for_all_execution_candidates"
+                )
+                is False
+                and report.get("errors") == {}
+            )
+        )
         completed = bool(
-            isinstance(verdict, dict)
+            upstream_outcome_acceptable
+            and isinstance(verdict, dict)
             and verdict.get("paper_mark_ready") is True
             and isinstance(safety, dict)
             and safety.get("paper_only") is True
@@ -112,6 +201,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "expected_count": len(expected),
                     "running_count": len(alphas) if isinstance(alphas, dict) else 0,
                     "coverage_complete": completed,
+                },
+                "upstream_cycle": {
+                    "started_at_ms": started_at_ms,
+                    "finished_at_ms": finished_at_ms,
+                    "exit_code": upstream_exit_code,
+                    "artifact_refreshed": artifact_refreshed,
+                    "operational_artifact_accepted": completed,
                 },
             }
         )
