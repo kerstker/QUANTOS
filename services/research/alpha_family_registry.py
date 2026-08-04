@@ -228,15 +228,24 @@ class AlphaFamilyRegistry:
                             recorded_at=recorded_at, payload=payload)
 
     def candidates(self) -> list[dict]:
-        rows = self._events(event_type="CANDIDATE_REGISTERED")
         out = []
-        for row in rows:
-            body = dict(row["payload"])
-            body.update({"event_seq": row["event_seq"], "record_hash": row["record_hash"]})
+        for body in self.candidate_definitions():
             evaluations = self.evaluations(body["candidate_id"])
             papers = self.paper_runs(body["candidate_id"])
             body["evaluations"] = evaluations
             body["paper_runs"] = papers
+            out.append(body)
+        return out
+
+    def candidate_definitions(self) -> list[dict]:
+        """Return immutable registrations without attaching growing histories."""
+        rows = self._events(event_type="CANDIDATE_REGISTERED")
+        out = []
+        for row in rows:
+            body = dict(row["payload"])
+            body.update(
+                {"event_seq": row["event_seq"], "record_hash": row["record_hash"]}
+            )
             out.append(body)
         return out
 

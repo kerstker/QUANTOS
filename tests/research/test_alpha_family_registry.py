@@ -30,6 +30,13 @@ def test_registry_is_append_only_and_idempotent(tmp_path):
         row = reg.candidates()[0]
         assert row["evaluations"][0]["evaluation"]["verdict"] == "FAIL"
         assert row["paper_runs"][0]["run_id"] == "dry-1"
+        definitions = reg.candidate_definitions()
+        assert len(definitions) == 1
+        assert definitions[0]["candidate_id"] == "family_test"
+        assert definitions[0]["event_seq"] == 1
+        assert len(definitions[0]["record_hash"]) == 64
+        assert "evaluations" not in definitions[0]
+        assert "paper_runs" not in definitions[0]
 
 
 def test_conflicting_candidate_content_is_rejected(tmp_path):

@@ -52,6 +52,14 @@ def test_shadow_ledger_freezes_decision_before_append_only_realization(tmp_path)
         assert summary["n_decisions"] == 1
         assert summary["n_realizations"] == 1
         assert summary["cum_return"] == pytest.approx(0.01)
+        assert summary["performance_history"] == [
+            {
+                "as_of_ms": 31_000,
+                "period_return": 0.01,
+                "cum_return": pytest.approx(0.01),
+                "drawdown": 0.0,
+            }
+        ]
 
 
 def test_shadow_ledger_rejects_identity_conflict_and_unsafe_decision(tmp_path) -> None:

@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+
+import pytest
 
 from quantos.contracts.feature import FeatureValue
+from quantos.contracts.hashing import stable_hash
 from services.features.binance_realtime_projection import FEATURE_IDS, FEATURE_VERSION
 from services.features.value_store import SqliteFeatureValueStore
 from services.research.realtime_alpha_discovery import RealtimeAlphaPolicy
 from tools.realtime_alpha_discovery import (
+    RealtimeAlphaWorkerError,
     coverage_from_store,
     load_bucketed_frames,
     load_hourly_executable_depth,
     run_cycle,
 )
 from services.research.experiment_registry.store import SqliteExperimentStore
+from services.research.alpha_family_registry import AlphaFamilyRegistry
 
 
 def _feature_value(feature_id: str, instrument: str, timestamp: int, value: float) -> FeatureValue:
@@ -204,3 +210,129 @@ def test_persistent_cycle_uses_persistence_clock_after_expensive_as_of_evaluatio
     ).fetchall()
     verified.close()
     assert starts[-1][0] == persistence_now
+
+
+def test_cycle_turns_positive_realized_feedback_into_fresh_oos_challengers(tmp_path) -> None:
+    store_path = tmp_path / "features.db"
+    end_ms = _write_store(store_path, buckets=80)
+    status_path = tmp_path / "feature-status.json"
+    status_path.write_text(
+        json.dumps({"status": "PASS", "generated_at_ms": end_ms}),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "registry.db"
+    policy = RealtimeAlphaPolicy(
+        exploration_min_span_ms=60_000,
+        validation_min_span_ms=3_600_000,
+        shadow_min_span_ms=7_200_000,
+        max_feature_age_ms=60_000,
+        min_rows_per_feature=1,
+        min_evaluation_periods=2,
+        min_cross_section=8,
+    )
+    run_cycle(
+        source_store=store_path,
+        feature_status=status_path,
+        registry_db=registry_path,
+        output_path=tmp_path / "first.json",
+        now_ms=end_ms + 1_000,
+        policy=policy,
+        persist_trials=False,
+    )
+    parent_id = "rt_liquidation_cascade_2m_v1"
+    registry = AlphaFamilyRegistry(str(registry_path), create=False)
+    try:
+        for index in range(10):
+            registry.record_paper_run(
+                parent_id,
+                run_id=f"realization-{index}",
+                status="ENGINEERING_SHADOW_REALIZED",
+                metrics={
+                    "candidate_id": parent_id,
+                    "as_of_ms": end_ms - (9 - index) * 30_000,
+                    "net_return": 0.001 + index * 0.00001,
+                    "paper_only": True,
+                    "promotion_eligible": False,
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                },
+                dataset_version="shadow-v1",
+                recorded_at=end_ms + 2_000 + index,
+            )
+    finally:
+        registry.close()
+
+    report = run_cycle(
+        source_store=store_path,
+        feature_status=status_path,
+        registry_db=registry_path,
+        output_path=tmp_path / "second.json",
+        now_ms=end_ms + 20_000,
+        policy=policy,
+        persist_trials=False,
+    )
+
+    assert report["feedback"]["status"] == "ADAPTIVE_EXPLORATION_READY"
+    assert report["feedback"]["consumed_realizations"] == 10
+    assert report["funnel"]["base_pre_registered"] == 24
+    assert report["funnel"]["adaptive_pre_registered"] == 2
+    adaptive = [row for row in report["candidates"] if row["adaptive_feedback"]]
+    assert {row["candidate_id"] for row in adaptive} == {
+        "rt_liquidation_cascade_1m_fb1",
+        "rt_liquidation_cascade_4m_fb1",
+    }
+    assert all(row["parent_candidate_id"] == parent_id for row in adaptive)
+    assert all(row["fresh_oos_required"] is True for row in adaptive)
+    assert all(
+        "ADAPTIVE_FEEDBACK_FRESH_OOS_BELOW_30D" in row["gate_reasons"]
+        for row in adaptive
+    )
+    assert all(row["gate_pass"] is False for row in adaptive)
+    assert report["manifest_hash"] == stable_hash(report["hypotheses"])
+
+
+def test_cycle_rejects_tampered_feedback_registry_before_allocating_trials(tmp_path) -> None:
+    store_path = tmp_path / "features.db"
+    end_ms = _write_store(store_path, buckets=4)
+    status_path = tmp_path / "feature-status.json"
+    status_path.write_text(
+        json.dumps({"status": "PASS", "generated_at_ms": end_ms}),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "registry.db"
+    policy = RealtimeAlphaPolicy(
+        exploration_min_span_ms=60_000,
+        validation_min_span_ms=3_600_000,
+        shadow_min_span_ms=7_200_000,
+        max_feature_age_ms=60_000,
+        min_rows_per_feature=1,
+        min_evaluation_periods=2,
+        min_cross_section=8,
+    )
+    run_cycle(
+        source_store=store_path,
+        feature_status=status_path,
+        registry_db=registry_path,
+        output_path=tmp_path / "first.json",
+        now_ms=end_ms + 1_000,
+        policy=policy,
+        persist_trials=False,
+    )
+    connection = sqlite3.connect(registry_path)
+    connection.execute("DROP TRIGGER alpha_family_events_no_update")
+    connection.execute(
+        "UPDATE alpha_family_events SET payload_json='{}' WHERE event_seq=1"
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(RealtimeAlphaWorkerError, match="registry chain is invalid"):
+        run_cycle(
+            source_store=store_path,
+            feature_status=status_path,
+            registry_db=registry_path,
+            output_path=tmp_path / "second.json",
+            now_ms=end_ms + 2_000,
+            policy=policy,
+            persist_trials=False,
+        )

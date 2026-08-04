@@ -7,7 +7,7 @@ import math
 import os
 from pathlib import Path
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 from fastapi import APIRouter
 
@@ -458,12 +458,132 @@ def _realtime_alpha_candidate_view(row: Any) -> Dict | None:
         "gate_reasons",
         "deflated_sharpe",
         "pbo",
+        "adaptive_feedback",
+        "parent_candidate_id",
+        "feedback_cutoff_ms",
+        "mutation",
+        "fresh_oos_required",
+        "adaptive_generation",
+        "fresh_oos_span_ms",
     )
     result = {field: row.get(field) for field in fields}
     # Console projection can never widen the worker's authority.
     result["promotion_eligible"] = False
     result["live_allowed"] = False
     return result
+
+
+def _realtime_alpha_lifecycle_rows(
+    candidates: list[Dict],
+    forward_shadow: Mapping[str, Any],
+    execution_paper: Mapping[str, Any],
+) -> list[Dict]:
+    """Join research, realized shadow PnL, and simulated execution per Alpha.
+
+    The row is a read-only operational projection.  ``performance_state`` is
+    descriptive accounting, never a lifecycle transition or promotion grant.
+    """
+    raw_forward = forward_shadow.get("tracks")
+    raw_execution = execution_paper.get("tracks")
+    forward_tracks = raw_forward if isinstance(raw_forward, dict) else {}
+    execution_tracks = raw_execution if isinstance(raw_execution, dict) else {}
+    forward_errors = forward_shadow.get("errors")
+    execution_errors = execution_paper.get("errors")
+    forward_errors = forward_errors if isinstance(forward_errors, dict) else {}
+    execution_errors = execution_errors if isinstance(execution_errors, dict) else {}
+    rows: list[Dict] = []
+    for candidate in candidates:
+        candidate_id = str(candidate["candidate_id"])
+        forward = forward_tracks.get(candidate_id)
+        execution = execution_tracks.get(candidate_id)
+        forward = forward if isinstance(forward, dict) else {}
+        execution = execution if isinstance(execution, dict) else {}
+        n_realizations = int(forward.get("n_realizations") or 0)
+        cumulative = forward.get("cum_return")
+        cumulative = (
+            float(cumulative)
+            if isinstance(cumulative, (int, float)) and not isinstance(cumulative, bool)
+            else None
+        )
+        if n_realizations <= 0 or cumulative is None:
+            performance_state = "NO_REALIZED_PNL"
+        elif cumulative > 0:
+            performance_state = "PROFIT"
+        elif cumulative < 0:
+            performance_state = "LOSS"
+        else:
+            performance_state = "FLAT"
+        if execution:
+            pipeline_stage = "EXECUTION_PAPER"
+        elif forward:
+            pipeline_stage = "FORWARD_SHADOW"
+        elif candidate.get("evaluation_status") == "EVALUATED":
+            pipeline_stage = "EVALUATED"
+        else:
+            pipeline_stage = "COLLECTING"
+        errors = [
+            str(value)
+            for value in (
+                forward_errors.get(candidate_id),
+                execution_errors.get(candidate_id),
+            )
+            if value
+        ]
+        event_times = [
+            value
+            for value in (
+                forward.get("last_decision_time_ms"),
+                forward.get("last_realization_time_ms"),
+                execution.get("last_decision_time_ms"),
+                execution.get("last_missed_decision_time_ms"),
+                execution.get("last_no_action_decision_time_ms"),
+            )
+            if type(value) is int
+        ]
+        rows.append(
+            {
+                "candidate_id": candidate_id,
+                "family_id": candidate.get("family_id"),
+                "mechanism": candidate.get("mechanism"),
+                "horizon_ms": candidate.get("horizon_ms"),
+                "pipeline_stage": pipeline_stage,
+                "performance_state": performance_state,
+                "research": {
+                    "status": candidate.get("status"),
+                    "evaluation_status": candidate.get("evaluation_status"),
+                    "n_periods": candidate.get("n_periods"),
+                    "net_return": candidate.get("net_return"),
+                    "holdout_net_sharpe": candidate.get("holdout_net_sharpe"),
+                    "gate_pass": bool(candidate.get("gate_pass", False)),
+                    "gate_reasons": candidate.get("gate_reasons", []),
+                },
+                "paper": {
+                    "n_decisions": int(forward.get("n_decisions") or 0),
+                    "n_pending": int(forward.get("n_pending") or 0),
+                    "n_realizations": n_realizations,
+                    "cum_return": cumulative,
+                    "max_drawdown": forward.get("max_drawdown"),
+                    "performance_history": forward.get("performance_history", []),
+                    "pnl_source": "ENGINEERING_SHADOW_REALIZED_NET_RETURN",
+                },
+                "execution": {
+                    "state": execution.get("state"),
+                    "n_executions": int(execution.get("n_executions") or 0),
+                    "n_orders": int(execution.get("n_orders") or 0),
+                    "n_fill_slices": int(execution.get("n_fill_slices") or 0),
+                    "n_no_actions": int(execution.get("n_no_actions") or 0),
+                    "n_missed_execution_windows": int(
+                        execution.get("n_missed_execution_windows") or 0
+                    ),
+                    "execution_cost": execution.get("execution_cost"),
+                },
+                "last_event_ms": max(event_times) if event_times else None,
+                "errors": errors,
+                "promotion_eligible": False,
+                "live_allowed": False,
+            }
+        )
+    return rows
 
 
 def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
@@ -517,7 +637,16 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
             "shadow_candidates": 0,
         },
         "families": [],
+        "feedback": {
+            "status": "NO_SNAPSHOT",
+            "consumed_realizations": 0,
+            "active_adaptive_candidates": 0,
+            "new_candidate_ids": [],
+            "families": [],
+        },
+        "candidates": [],
         "top_candidates": [],
+        "lifecycle": [],
         "global_trial_count": None,
         "registry": {"chain_valid": False, "event_count": 0},
         "remaining_gates": [
@@ -536,6 +665,7 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
     artifact_safety = artifact.get("safety")
     registry = artifact.get("registry")
     autonomy = artifact.get("autonomy")
+    feedback = artifact.get("feedback")
     blockers: list[str] = []
     if artifact.get("mode") != "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH":
         blockers.append("AUTONOMY_MODE_INVALID")
@@ -549,6 +679,15 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         blockers.append("AUTONOMY_REGISTRY_CHAIN_INVALID")
     if not isinstance(autonomy, dict) or autonomy.get("requires_developer_ai") is not False:
         blockers.append("AUTONOMY_RUNTIME_IDENTITY_INVALID")
+    if feedback is not None and (
+        not isinstance(feedback, dict)
+        or feedback.get("scope") != "EXPLORATION_BUDGET_ONLY"
+        or feedback.get("formal_gate_impact") is not False
+        or feedback.get("promotion_eligible") is not False
+        or feedback.get("live_allowed") is not False
+        or feedback.get("order_submission_allowed") is not False
+    ):
+        blockers.append("AUTONOMY_FEEDBACK_AUTHORITY_INVALID")
 
     if blockers:
         blocked = dict(empty)
@@ -573,6 +712,15 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
     capacity = artifact.get("executable_depth_capacity")
     families = artifact.get("families")
     top_candidates = artifact.get("top_candidates")
+    all_candidates = artifact.get("candidates")
+    all_candidate_views = [
+        view
+        for view in (
+            _realtime_alpha_candidate_view(row)
+            for row in (all_candidates if isinstance(all_candidates, list) else [])
+        )
+        if view is not None
+    ]
     candidate_views = [
         view
         for view in (
@@ -581,6 +729,10 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         )
         if view is not None
     ]
+    if not all_candidate_views:
+        all_candidate_views = list(candidate_views)
+    forward_shadow = _realtime_alpha_forward_shadow_payload()
+    execution_paper = _realtime_alpha_execution_paper_payload()
     return {
         "source": "AUTONOMOUS_REALTIME_ALPHA_DISCOVERY_ARTIFACT",
         "read_only": True,
@@ -636,7 +788,34 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         ),
         "funnel": funnel if isinstance(funnel, dict) else {},
         "families": families if isinstance(families, list) else [],
+        "feedback": (
+            {
+                "status": feedback.get("status"),
+                "consumed_realizations": feedback.get("consumed_realizations", 0),
+                "active_adaptive_candidates": feedback.get(
+                    "active_adaptive_candidates", 0
+                ),
+                "new_candidate_ids": feedback.get("new_candidate_ids", []),
+                "families": feedback.get("families", []),
+                "formal_gate_impact": False,
+                "promotion_eligible": False,
+                "live_allowed": False,
+                "order_submission_allowed": False,
+            }
+            if isinstance(feedback, dict)
+            else {
+                "status": "LEGACY_NO_FEEDBACK",
+                "consumed_realizations": 0,
+                "active_adaptive_candidates": 0,
+                "new_candidate_ids": [],
+                "families": [],
+            }
+        ),
+        "candidates": all_candidate_views,
         "top_candidates": candidate_views,
+        "lifecycle": _realtime_alpha_lifecycle_rows(
+            all_candidate_views, forward_shadow, execution_paper
+        ),
         "global_trial_count": artifact.get("global_trial_count"),
         "registry": {
             "chain_valid": True,
@@ -644,8 +823,8 @@ def _realtime_alpha_autonomy_payload(path: str | None = None) -> Dict:
         },
         "remaining_gates": artifact.get("remaining_gates", []),
         "blockers": [],
-        "forward_shadow": _realtime_alpha_forward_shadow_payload(),
-        "execution_paper": _realtime_alpha_execution_paper_payload(),
+        "forward_shadow": forward_shadow,
+        "execution_paper": execution_paper,
         "safety": dict(_REALTIME_ALPHA_SAFE_BOUNDARY),
     }
 
