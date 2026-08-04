@@ -142,17 +142,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     artifact_refreshed = (
         current_artifact is not None and current_artifact != prior_artifact
     )
-    if upstream_exit_code != SCHEDULE_EXIT_SUCCESS:
-        _write_upstream_block(
-            code="UPSTREAM_PAPER_REALTIME_FAILED",
-            exit_code=upstream_exit_code,
-            started_at_ms=started_at_ms,
-            finished_at_ms=finished_at_ms,
-        )
-        return SCHEDULE_EXIT_FAILURE
     if not artifact_refreshed:
         _write_upstream_block(
-            code="PAPER_REALTIME_ARTIFACT_NOT_REFRESHED",
+            code=(
+                "UPSTREAM_PAPER_REALTIME_FAILED"
+                if upstream_exit_code != SCHEDULE_EXIT_SUCCESS
+                else "PAPER_REALTIME_ARTIFACT_NOT_REFRESHED"
+            ),
             exit_code=upstream_exit_code,
             started_at_ms=started_at_ms,
             finished_at_ms=finished_at_ms,
@@ -164,8 +160,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         safety = report.get("safety")
         alphas = report.get("alphas")
         expected = paper_candidate_ids()
+        upstream_outcome_acceptable = bool(
+            upstream_exit_code == SCHEDULE_EXIT_SUCCESS
+            or (
+                upstream_exit_code == SCHEDULE_EXIT_FAILURE
+                and isinstance(verdict, dict)
+                and verdict.get(
+                    "backtest_reference_present_for_all_execution_candidates"
+                )
+                is False
+                and report.get("errors") == {}
+            )
+        )
         completed = bool(
-            isinstance(verdict, dict)
+            upstream_outcome_acceptable
+            and isinstance(verdict, dict)
             and verdict.get("paper_mark_ready") is True
             and isinstance(safety, dict)
             and safety.get("paper_only") is True
@@ -198,6 +207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "finished_at_ms": finished_at_ms,
                     "exit_code": upstream_exit_code,
                     "artifact_refreshed": artifact_refreshed,
+                    "operational_artifact_accepted": completed,
                 },
             }
         )
