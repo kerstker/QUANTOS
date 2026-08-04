@@ -172,6 +172,27 @@ const state = vi.hoisted(() => ({
             n_no_actions: 3,
             n_missed_execution_windows: 2,
             execution_cost: 1.25,
+            execution_pnl_available: true,
+            execution_accounting_missing_count: 0,
+            cumulative_net_pnl: -42,
+            cumulative_gross_pnl: -40,
+            last_net_pnl: -42,
+            last_gross_pnl: -40,
+            last_equity: 958,
+            cumulative_turnover: 1000,
+            positions_lots: { BTC: 10 },
+            execution_history: [
+              {
+                as_of_ms: 1_785_592_990_000,
+                net_pnl: -42,
+                gross_pnl: -40,
+                cumulative_net_pnl: -42,
+                equity: 958,
+                turnover: 1000,
+                execution_cost: 1.25,
+                reconciliation_residual: 0,
+              },
+            ],
           },
           last_event_ms: 1_785_592_990_000,
           errors: [],
@@ -695,6 +716,10 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getAllByText('1 LOSS').length).toBeGreaterThan(1);
     expect(screen.getByText('Factor lifecycle report · SSE live')).toBeInTheDocument();
     expect(screen.getByText('Realized paper performance index')).toBeInTheDocument();
+    expect(screen.getByText('Execution Paper accounting · simulated SOR')).toBeInTheDocument();
+    expect(screen.getByText('Execution net PnL')).toBeInTheDocument();
+    expect(screen.getAllByText('$-42').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Positions lots BTC \+10/)).toBeInTheDocument();
     expect(screen.getByText('100 = first decision · net of modeled costs')).toBeInTheDocument();
     expect(screen.getByText('NON-PROMOTABLE')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'LOSS 1' })).toHaveAttribute('aria-pressed', 'false');

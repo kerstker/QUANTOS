@@ -561,6 +561,69 @@ class RealtimeEngineeringPaperStore:
         rows = self.executions(candidate_id)
         missed = self.missed_decisions(candidate_id)
         no_actions = self.no_action_decisions(candidate_id)
+        cumulative_net_pnl = 0.0
+        cumulative_gross_pnl = 0.0
+        cumulative_turnover = 0.0
+        accounting_missing_count = 0
+        execution_history: list[dict[str, Any]] = []
+        last_equity: float | None = None
+        last_net_pnl: float | None = None
+        last_gross_pnl: float | None = None
+        for row in rows:
+            payload = row["payload"]
+            pnl = payload.get("pnl")
+            tca = payload.get("execution_tca")
+            if not isinstance(pnl, Mapping) or not isinstance(tca, Mapping):
+                accounting_missing_count += 1
+                continue
+            values: dict[str, float | None] = {}
+            for name, value in (
+                ("net_pnl", pnl.get("net_pnl")),
+                ("gross_pnl", pnl.get("gross_pnl")),
+                ("equity", pnl.get("equity")),
+                ("turnover", pnl.get("turnover")),
+                ("execution_cost", tca.get("execution_cost")),
+            ):
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    values[name] = None
+                    continue
+                numeric = float(value)
+                values[name] = numeric if math.isfinite(numeric) else None
+            if any(
+                values[name] is None
+                for name in ("net_pnl", "equity", "turnover", "execution_cost")
+            ):
+                accounting_missing_count += 1
+                continue
+            net_pnl = float(values["net_pnl"])
+            gross_pnl = values["gross_pnl"]
+            equity = float(values["equity"])
+            turnover = float(values["turnover"])
+            execution_cost = float(values["execution_cost"])
+            cumulative_net_pnl += net_pnl
+            cumulative_turnover += turnover
+            if gross_pnl is not None:
+                cumulative_gross_pnl += float(gross_pnl)
+            last_net_pnl = net_pnl
+            last_gross_pnl = float(gross_pnl) if gross_pnl is not None else None
+            last_equity = equity
+            execution_history.append(
+                {
+                    "as_of_ms": int(row["identity_time_ms"]),
+                    "net_pnl": net_pnl,
+                    "gross_pnl": (
+                        float(gross_pnl) if gross_pnl is not None else None
+                    ),
+                    "cumulative_net_pnl": cumulative_net_pnl,
+                    "equity": equity,
+                    "turnover": turnover,
+                    "execution_cost": execution_cost,
+                    "reconciliation_residual": float(
+                        payload.get("reconciliation_residual", 0.0)
+                    ),
+                }
+            )
+        accounting_complete = bool(rows) and accounting_missing_count == 0
         return {
             "candidate_id": candidate_id,
             "admitted": admission is not None,
@@ -580,6 +643,27 @@ class RealtimeEngineeringPaperStore:
                 float(row["payload"].get("execution_tca", {}).get("execution_cost", 0.0))
                 for row in rows
             ),
+            "execution_pnl_available": accounting_complete,
+            "execution_accounting_missing_count": accounting_missing_count,
+            "cumulative_net_pnl": (
+                cumulative_net_pnl if accounting_complete else None
+            ),
+            "cumulative_gross_pnl": (
+                cumulative_gross_pnl
+                if accounting_complete
+                and all(
+                    isinstance(item.get("gross_pnl"), (int, float))
+                    for item in execution_history
+                )
+                else None
+            ),
+            "last_net_pnl": last_net_pnl if accounting_complete else None,
+            "last_gross_pnl": last_gross_pnl if accounting_complete else None,
+            "last_equity": last_equity if accounting_complete else None,
+            "cumulative_turnover": (
+                cumulative_turnover if accounting_complete else None
+            ),
+            "execution_history": execution_history,
             "last_decision_time_ms": (
                 int(rows[-1]["identity_time_ms"]) if rows else None
             ),

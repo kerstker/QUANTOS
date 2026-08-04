@@ -370,25 +370,89 @@ def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
         return blocked
     raw_tracks = artifact.get("tracks")
     tracks = {}
+
+    def _finite_float(value: Any) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else None
+
+    def _project_track(row: Mapping[str, Any]) -> Dict[str, Any]:
+        projected: Dict[str, Any] = {
+            field: row.get(field)
+            for field in (
+                "state",
+                "n_executions",
+                "n_missed_execution_windows",
+                "n_no_actions",
+                "n_orders",
+                "n_fill_slices",
+                "execution_cost",
+                "execution_pnl_available",
+                "execution_accounting_missing_count",
+                "cumulative_net_pnl",
+                "cumulative_gross_pnl",
+                "last_net_pnl",
+                "last_gross_pnl",
+                "last_equity",
+                "cumulative_turnover",
+                "last_decision_time_ms",
+                "last_missed_decision_time_ms",
+                "last_no_action_decision_time_ms",
+            )
+        }
+        positions = row.get("positions_lots")
+        if isinstance(positions, Mapping):
+            projected["positions_lots"] = {
+                str(instrument): int(lots)
+                for instrument, lots in positions.items()
+                if isinstance(instrument, str)
+                and not isinstance(lots, bool)
+                and isinstance(lots, (int, float))
+                and math.isfinite(float(lots))
+                and float(lots).is_integer()
+            }
+        history = row.get("execution_history")
+        if isinstance(history, list):
+            history_projection: list[Dict[str, Any]] = []
+            for point in history:
+                if not isinstance(point, Mapping) or type(point.get("as_of_ms")) is not int:
+                    continue
+                values = {
+                    name: _finite_float(point.get(name))
+                    for name in (
+                        "net_pnl",
+                        "cumulative_net_pnl",
+                        "equity",
+                        "turnover",
+                        "execution_cost",
+                        "reconciliation_residual",
+                    )
+                }
+                if any(value is None for value in values.values()):
+                    continue
+                gross_pnl = point.get("gross_pnl")
+                gross_pnl = _finite_float(gross_pnl) if gross_pnl is not None else None
+                history_projection.append(
+                    {
+                        "as_of_ms": int(point["as_of_ms"]),
+                        "net_pnl": values["net_pnl"],
+                        "gross_pnl": gross_pnl,
+                        "cumulative_net_pnl": values["cumulative_net_pnl"],
+                        "equity": values["equity"],
+                        "turnover": values["turnover"],
+                        "execution_cost": values["execution_cost"],
+                        "reconciliation_residual": values["reconciliation_residual"],
+                    }
+                )
+            projected["execution_history"] = history_projection
+        return projected
+
     if isinstance(raw_tracks, dict):
         for candidate_id, row in raw_tracks.items():
             if not isinstance(candidate_id, str) or not isinstance(row, dict):
                 continue
-            tracks[candidate_id] = {
-                field: row.get(field)
-                for field in (
-                    "state",
-                    "n_executions",
-                    "n_missed_execution_windows",
-                    "n_no_actions",
-                    "n_orders",
-                    "n_fill_slices",
-                    "execution_cost",
-                    "last_decision_time_ms",
-                    "last_missed_decision_time_ms",
-                    "last_no_action_decision_time_ms",
-                )
-            }
+            tracks[candidate_id] = _project_track(row)
     return {
         "snapshot_present": True,
         "boundary_valid": True,
@@ -576,6 +640,21 @@ def _realtime_alpha_lifecycle_rows(
                         execution.get("n_missed_execution_windows") or 0
                     ),
                     "execution_cost": execution.get("execution_cost"),
+                    "execution_pnl_available": execution.get(
+                        "execution_pnl_available", False
+                    ),
+                    "execution_accounting_missing_count": int(
+                        execution.get("execution_accounting_missing_count") or 0
+                    ),
+                    "cumulative_net_pnl": execution.get("cumulative_net_pnl"),
+                    "cumulative_gross_pnl": execution.get("cumulative_gross_pnl"),
+                    "last_net_pnl": execution.get("last_net_pnl"),
+                    "last_gross_pnl": execution.get("last_gross_pnl"),
+                    "last_equity": execution.get("last_equity"),
+                    "cumulative_turnover": execution.get("cumulative_turnover"),
+                    "positions_lots": execution.get("positions_lots", {}),
+                    "execution_history": execution.get("execution_history", []),
+                    "pnl_source": "ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL",
                 },
                 "last_event_ms": max(event_times) if event_times else None,
                 "errors": errors,

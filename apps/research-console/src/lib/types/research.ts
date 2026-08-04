@@ -1590,6 +1590,26 @@ export interface RealtimeAlphaLifecyclePayload {
     n_no_actions: number;
     n_missed_execution_windows: number;
     execution_cost?: number | null;
+    execution_pnl_available?: boolean;
+    execution_accounting_missing_count?: number;
+    cumulative_net_pnl?: number | null;
+    cumulative_gross_pnl?: number | null;
+    last_net_pnl?: number | null;
+    last_gross_pnl?: number | null;
+    last_equity?: number | null;
+    cumulative_turnover?: number | null;
+    positions_lots?: Record<string, number>;
+    execution_history?: Array<{
+      as_of_ms: number;
+      net_pnl: number;
+      gross_pnl?: number | null;
+      cumulative_net_pnl: number;
+      equity: number;
+      turnover: number;
+      execution_cost: number;
+      reconciliation_residual: number;
+    }>;
+    pnl_source?: 'ENGINEERING_EXECUTION_PAPER_BATCH_NET_PNL' | string;
   };
   last_event_ms?: number | null;
   errors: string[];

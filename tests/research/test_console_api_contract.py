@@ -456,6 +456,23 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
                 "n_executions": 3,
                 "n_orders": 12,
                 "execution_cost": 1.25,
+                "execution_pnl_available": True,
+                "execution_accounting_missing_count": 0,
+                "cumulative_net_pnl": -0.42,
+                "last_equity": 999.58,
+                "positions_lots": {"BTC": -2},
+                "execution_history": [
+                    {
+                        "as_of_ms": 210,
+                        "net_pnl": -0.42,
+                        "gross_pnl": -0.2,
+                        "cumulative_net_pnl": -0.42,
+                        "equity": 999.58,
+                        "turnover": 12.0,
+                        "execution_cost": 1.25,
+                        "reconciliation_residual": 0.0,
+                    }
+                ],
                 "last_decision_time_ms": 210,
             }
         },
@@ -471,6 +488,10 @@ def test_realtime_alpha_lifecycle_keeps_profit_and_loss_visible():
     assert by_id["loss_alpha"]["paper"]["cum_return"] == -0.04
     assert by_id["loss_alpha"]["pipeline_stage"] == "EXECUTION_PAPER"
     assert by_id["loss_alpha"]["execution"]["n_orders"] == 12
+    assert by_id["loss_alpha"]["execution"]["cumulative_net_pnl"] == -0.42
+    assert by_id["loss_alpha"]["execution"]["execution_pnl_available"] is True
+    assert by_id["loss_alpha"]["execution"]["positions_lots"] == {"BTC": -2}
+    assert len(by_id["loss_alpha"]["execution"]["execution_history"]) == 1
     assert by_id["profit_alpha"]["performance_state"] == "PROFIT"
     assert by_id["profit_alpha"]["pipeline_stage"] == "FORWARD_SHADOW"
     assert all(row["promotion_eligible"] is False for row in rows)

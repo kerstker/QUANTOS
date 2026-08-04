@@ -1001,6 +1001,22 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
                 "execution_cost": 1.25,
                 "last_decision_time_ms": 100,
                 "positions_lots": {"BTC": 10},
+                "execution_pnl_available": True,
+                "execution_accounting_missing_count": 0,
+                "cumulative_net_pnl": -42.0,
+                "last_equity": 958.0,
+                "execution_history": [
+                    {
+                        "as_of_ms": 100,
+                        "net_pnl": -42.0,
+                        "gross_pnl": -40.0,
+                        "cumulative_net_pnl": -42.0,
+                        "equity": 958.0,
+                        "turnover": 1000.0,
+                        "execution_cost": 1.25,
+                        "reconciliation_residual": 0.0,
+                    }
+                ],
             }
         },
         "waiting": {},
@@ -1043,7 +1059,10 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
     assert projected["verdict"]["promotion_eligible"] is False
     assert projected["tracks"]["rt_candidate"]["n_fill_slices"] == 8
     assert projected["tracks"]["rt_candidate"]["n_missed_execution_windows"] == 2
-    assert "positions_lots" not in projected["tracks"]["rt_candidate"]
+    assert projected["tracks"]["rt_candidate"]["positions_lots"] == {"BTC": 10}
+    assert projected["tracks"]["rt_candidate"]["cumulative_net_pnl"] == -42.0
+    assert projected["tracks"]["rt_candidate"]["execution_pnl_available"] is True
+    assert len(projected["tracks"]["rt_candidate"]["execution_history"]) == 1
 
     artifact["verdict"]["live_allowed"] = True
     path.write_text(json.dumps(artifact), encoding="utf-8")

@@ -24,6 +24,12 @@ def _preview(candidate_id: str = "candidate-1", decision_ts: int = 200) -> dict:
             "route_tca_available": True,
             "execution_cost": 0.25,
         },
+        "pnl": {
+            "gross_pnl": 0.4,
+            "net_pnl": 0.15,
+            "equity": 1000.15,
+            "turnover": 10.0,
+        },
         "promotion_eligible": False,
         "forward_evidence_eligible": False,
         "deployment_eligible": False,
@@ -54,6 +60,11 @@ def test_admission_execution_restart_and_exact_replay(tmp_path) -> None:
         assert not store.record_execution("candidate-1", _preview(), recorded_at_ms=250)
         assert store.latest_positions("candidate-1") == {"BTC": 1}
         assert store.summary("candidate-1")["n_fill_slices"] == 2
+        summary = store.summary("candidate-1")
+        assert summary["execution_pnl_available"] is True
+        assert summary["cumulative_net_pnl"] == pytest.approx(0.15)
+        assert summary["last_equity"] == pytest.approx(1000.15)
+        assert len(summary["execution_history"]) == 1
         assert store.chain_valid()
 
     with RealtimeEngineeringPaperStore(str(path), create=False) as reopened:
@@ -81,6 +92,28 @@ def test_conflict_and_authority_widening_fail_closed(tmp_path) -> None:
         conflict["paper_positions"] = {"BTC": 2}
         with pytest.raises(RealtimeEngineeringPaperStoreError, match="different content"):
             store.record_execution("candidate-1", conflict, recorded_at_ms=250)
+
+
+def test_summary_does_not_infer_pnl_from_execution_count(tmp_path) -> None:
+    path = tmp_path / "engineering.db"
+    with RealtimeEngineeringPaperStore(str(path), create=True) as store:
+        store.admit(
+            "candidate-1",
+            {"source": "shadow"},
+            baseline_decision_time_ms=100,
+            admitted_at_ms=150,
+        )
+        preview = _preview()
+        preview.pop("pnl")
+        assert store.record_execution("candidate-1", preview, recorded_at_ms=250)
+
+        summary = store.summary("candidate-1")
+
+        assert summary["n_executions"] == 1
+        assert summary["execution_pnl_available"] is False
+        assert summary["execution_accounting_missing_count"] == 1
+        assert summary["cumulative_net_pnl"] is None
+        assert summary["execution_history"] == []
 
 
 def test_tamper_is_detected(tmp_path) -> None:

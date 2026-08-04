@@ -296,6 +296,10 @@ function FactorLifecycleReport({
 }) {
   const history = row.paper.performance_history ?? [];
   const recent = history.slice(-8).reverse();
+  const executionRecent = (row.execution.execution_history ?? []).slice(-8).reverse();
+  const executionPnlAvailable = row.execution.execution_pnl_available === true;
+  const executionPositions = Object.entries(row.execution.positions_lots ?? {})
+    .filter(([, lots]) => lots !== 0);
   const series = useMemo(() => lifecycleSeries(row), [row]);
   const realized = row.paper.n_realizations > 0;
   const stages = [
@@ -343,6 +347,18 @@ function FactorLifecycleReport({
         <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
         <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
         <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
+        <Metric
+          label="Execution net PnL"
+          value={fmtUsd(executionPnlAvailable ? row.execution.cumulative_net_pnl : null)}
+          detail={executionPnlAvailable ? `${executionRecent.length} recent batches / cumulative` : 'accounting not complete'}
+          tone={!executionPnlAvailable ? 'warn' : (row.execution.cumulative_net_pnl ?? 0) < 0 ? 'neg' : 'pos'}
+        />
+        <Metric
+          label="Execution equity"
+          value={fmtUsd(executionPnlAvailable ? row.execution.last_equity : null)}
+          detail={executionPnlAvailable ? 'latest valid simulated batch' : 'waiting for valid PnL'}
+          tone="info"
+        />
       </div>
 
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
@@ -377,6 +393,34 @@ function FactorLifecycleReport({
               )) : <tr><td colSpan={4} className="px-3 py-5 text-center text-faint">Collecting first realization.</td></tr>}
             </tbody>
           </table>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-line bg-inset/35 xl:col-span-2" data-testid="execution-paper-accounting">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2 text-3xs text-faint">
+            <span className="font-semibold uppercase tracking-[0.12em]">Execution Paper accounting · simulated SOR</span>
+            <span>{executionPnlAvailable ? `${row.execution.n_executions} valid batches` : 'collecting valid accounting'}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-3xs" aria-label="selected factor execution paper accounting history">
+              <thead className="border-b border-line/70 text-faint">
+                <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Batch net PnL</th><th className="px-3 py-2 text-right font-medium">Cumulative</th><th className="px-3 py-2 text-right font-medium">TCA cost</th><th className="px-3 py-2 text-right font-medium">Turnover</th></tr>
+              </thead>
+              <tbody className="divide-y divide-line/60">
+                {executionRecent.length ? executionRecent.map(point => (
+                  <tr key={point.as_of_ms}>
+                    <td className="px-3 py-2 text-muted">{fmtTime(point.as_of_ms)}</td>
+                    <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.net_pnl)}`}>{fmtUsd(point.net_pnl)}</td>
+                    <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.cumulative_net_pnl)}`}>{fmtUsd(point.cumulative_net_pnl)}</td>
+                    <td className="px-3 py-2 text-right ticker-num text-warn">{fmtUsd(point.execution_cost)}</td>
+                    <td className="px-3 py-2 text-right ticker-num text-muted">{fmtUsd(point.turnover)}</td>
+                  </tr>
+                )) : <tr><td colSpan={5} className="px-3 py-5 text-center text-faint">No valid execution PnL yet; execution counts are not performance.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-line/70 px-3 py-2 text-3xs text-muted">
+            Positions lots {executionPositions.length ? executionPositions.map(([instrument, lots]) => `${instrument} ${lots > 0 ? '+' : ''}${lots}`).join(' · ') : 'flat / no valid snapshot'} · reconciliation residuals are required to be zero · not official account PnL
+          </div>
         </div>
       </div>
 
@@ -650,7 +694,10 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                     {row.paper.n_realizations}/{row.paper.n_decisions}
                   </td>
                   <td className="px-3 py-2 text-right ticker-num text-muted">
-                    {row.execution.n_executions} runs · {row.execution.n_orders} orders
+                    <div>{row.execution.n_executions} runs · {row.execution.n_orders} orders</div>
+                    <div className="mt-0.5 text-3xs text-faint">
+                      net {row.execution.execution_pnl_available ? fmtUsd(row.execution.cumulative_net_pnl) : 'accounting pending'}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     <Chip
