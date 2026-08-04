@@ -525,7 +525,16 @@ def run_cycle(
                         )
                 store = stack.enter_context(
                     RealtimeAlphaShadowStore(
-                        str(shadow_store_path), create=not shadow_path.exists()
+                        str(shadow_store_path),
+                        # A previous worker can be interrupted after
+                        # sqlite creates the file but before the schema
+                        # transaction commits.  Only an empty file is
+                        # recoverable; a non-empty invalid ledger remains
+                        # fail-closed and requires investigation.
+                        create=(
+                            not shadow_path.exists()
+                            or shadow_path.stat().st_size == 0
+                        ),
                     )
                 )
                 if not store.chain_valid():

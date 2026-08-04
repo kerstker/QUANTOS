@@ -34,6 +34,15 @@ def _realization(decision_time: int = 1_000, value: float = 0.01) -> dict:
     }
 
 
+def test_read_only_open_does_not_create_missing_ledger(tmp_path) -> None:
+    path = tmp_path / "missing.db"
+
+    with pytest.raises(RealtimeAlphaShadowStoreError, match="ledger is missing"):
+        RealtimeAlphaShadowStore(str(path), create=False)
+
+    assert not path.exists()
+
+
 def test_shadow_ledger_freezes_decision_before_append_only_realization(tmp_path) -> None:
     with RealtimeAlphaShadowStore(str(tmp_path / "shadow.db"), create=True) as store:
         assert store.admit("rt_alpha", {"horizon_ms": 30_000}, admitted_at_ms=100) is True
