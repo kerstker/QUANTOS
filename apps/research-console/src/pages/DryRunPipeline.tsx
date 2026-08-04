@@ -16,7 +16,9 @@ import type {
   PaperOrderPreviewAlpha,
   PaperRealtimeAlpha,
   PaperRealtimeHistoryPoint,
+  RealtimeAlphaCandidatePayload,
   RealtimeAlphaAutonomyPayload,
+  RealtimeAlphaLifecyclePayload,
 } from '@/lib/types/research';
 
 const mockPayload: DryRunPipelinePayload = {
@@ -256,7 +258,130 @@ function fmtHorizon(horizonMs?: number | null): string {
   return `${Math.round(horizonMs / (60 * 60_000))}h`;
 }
 
+type LifecycleFilter = 'ALL' | 'LOSS' | 'PROFIT' | 'NO_PNL';
+
+function lifecycleSeries(row: RealtimeAlphaLifecyclePayload): EquitySeries[] {
+  const points = (row.paper.performance_history ?? [])
+    .filter(point => Number.isFinite(point.cum_return))
+    .map(point => ({ t: point.as_of_ms, equity: 100 * (1 + point.cum_return) }));
+  return points.length
+    ? [{ label: `${row.candidate_id} paper index`, points, tone: row.performance_state === 'LOSS' ? 'warn' : 'pos' }]
+    : [];
+}
+
+function FactorLifecycleReport({
+  row,
+  candidate,
+}: {
+  row: RealtimeAlphaLifecyclePayload;
+  candidate?: RealtimeAlphaCandidatePayload;
+}) {
+  const history = row.paper.performance_history ?? [];
+  const recent = history.slice(-8).reverse();
+  const series = useMemo(() => lifecycleSeries(row), [row]);
+  const stages = [
+    { label: 'REGISTERED', reached: true },
+    { label: 'EVALUATED', reached: row.research.evaluation_status === 'EVALUATED' },
+    { label: 'SIGNAL SHADOW', reached: row.paper.n_decisions > 0 },
+    { label: 'EXEC PAPER', reached: row.execution.n_executions > 0 },
+    { label: 'FORMAL PASS', reached: row.research.gate_pass },
+  ];
+  const blockers = [...(row.research.gate_reasons ?? []), ...row.errors];
+
+  return (
+    <div className="border-t border-line bg-panel/70 p-4" data-testid="factor-lifecycle-report">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-3xs font-semibold uppercase tracking-[0.14em] text-faint">Factor lifecycle report · SSE live</div>
+          <div className="mt-1 break-all text-sm font-semibold text-ink">{row.candidate_id}</div>
+          <div className="mt-1 text-3xs text-muted">
+            {row.family_id ?? '--'} / {row.mechanism ?? '--'} · {fmtHorizon(row.horizon_ms)} · last event {fmtTime(row.last_event_ms)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Chip label={row.pipeline_stage} tone="info" />
+          <Chip
+            label={row.performance_state}
+            tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'}
+          />
+          <Chip label="NON-PROMOTABLE" tone="warn" />
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="factor lifecycle stages">
+        {stages.map((stage, index) => (
+          <React.Fragment key={stage.label}>
+            {index ? <span className="text-line-strong">→</span> : null}
+            <Chip label={stage.label} tone={stage.reached ? (stage.label === 'FORMAL PASS' ? 'pos' : 'info') : 'muted'} />
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
+        <Metric label="Research return" value={fmtPct(row.research.net_return)} detail={`${row.research.n_periods ?? 0} observations`} tone={(row.research.net_return ?? 0) >= 0 ? 'pos' : 'neg'} />
+        <Metric label="Holdout SR" value={row.research.holdout_net_sharpe?.toFixed(2) ?? '—'} detail={row.research.gate_pass ? 'formal pass' : 'not passed'} tone={row.research.gate_pass ? 'pos' : 'warn'} />
+        <Metric label="Paper return" value={fmtPct(row.paper.cum_return)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
+        <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
+        <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
+        <div className="rounded-lg border border-line bg-inset/35 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-3xs text-faint">
+            <span className="font-semibold uppercase tracking-[0.12em]">Realized paper performance index</span>
+            <span>100 = first decision · net of modeled costs</span>
+          </div>
+          {series.length ? (
+            <EquityCurveChart series={series} height={190} />
+          ) : (
+            <div className="grid h-[190px] place-items-center text-xs text-faint">No realized paper history yet.</div>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
+          <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">
+            Latest realized periods
+          </div>
+          <table className="w-full text-left text-3xs" aria-label="selected factor realized performance history">
+            <thead className="border-b border-line/70 text-faint">
+              <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Period</th><th className="px-3 py-2 text-right font-medium">Cumulative</th><th className="px-3 py-2 text-right font-medium">DD</th></tr>
+            </thead>
+            <tbody className="divide-y divide-line/60">
+              {recent.length ? recent.map(point => (
+                <tr key={point.as_of_ms}>
+                  <td className="px-3 py-2 text-muted">{fmtTime(point.as_of_ms)}</td>
+                  <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.period_return)}`}>{fmtPct(point.period_return)}</td>
+                  <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.cum_return)}`}>{fmtPct(point.cum_return)}</td>
+                  <td className="px-3 py-2 text-right ticker-num text-neg">{fmtPct(-point.drawdown)}</td>
+                </tr>
+              )) : <tr><td colSpan={4} className="px-3 py-5 text-center text-faint">Collecting first realization.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-md border border-line bg-inset/35 px-3 py-2 text-3xs text-muted">
+          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Identity / lineage</div>
+          <div className="mt-1">parent {candidate?.parent_candidate_id ?? 'ROOT'} · generation {candidate?.adaptive_generation ?? 0}</div>
+          <div className="mt-1">mutation {candidate?.mutation ?? 'NONE'} · fresh OOS {candidate?.fresh_oos_required ? 'REQUIRED' : 'BASELINE'}</div>
+        </div>
+        <div className="rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
+          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Gate report</div>
+          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : 'No reported blocker; formal authority still remains human-gated.'}</div>
+        </div>
+      </div>
+      <div className="mt-2 text-3xs text-faint">
+        Source {row.paper.pnl_source} · engineering evidence only · promotion {row.promotion_eligible ? 'allowed' : 'blocked'} · live {row.live_allowed ? 'allowed' : 'off'}
+      </div>
+    </div>
+  );
+}
+
 function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPayload }) {
+  const [filter, setFilter] = React.useState<LifecycleFilter>('ALL');
+  const [selectedCandidateId, setSelectedCandidateId] = React.useState<string | null>(null);
   const running = Boolean(
     snapshot?.boundary_valid && snapshot.autonomy.autonomous_search_running,
   );
@@ -266,6 +391,23 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
   const feedback = snapshot?.feedback;
   const profitable = lifecycle.filter(row => row.performance_state === 'PROFIT').length;
   const losing = lifecycle.filter(row => row.performance_state === 'LOSS').length;
+  const noPnl = lifecycle.filter(row => row.performance_state !== 'LOSS' && row.performance_state !== 'PROFIT').length;
+  const performanceRank: Record<string, number> = { LOSS: 0, PROFIT: 1, FLAT: 2, NO_REALIZED_PNL: 3 };
+  const filteredLifecycle = lifecycle
+    .filter(row => filter === 'ALL'
+      || (filter === 'NO_PNL'
+        ? row.performance_state !== 'LOSS' && row.performance_state !== 'PROFIT'
+        : row.performance_state === filter))
+    .slice()
+    .sort((a, b) => (performanceRank[a.performance_state] ?? 9) - (performanceRank[b.performance_state] ?? 9)
+      || (a.paper.cum_return ?? 0) - (b.paper.cum_return ?? 0));
+  const effectiveSelectedId = selectedCandidateId
+    ?? lifecycle.find(row => row.performance_state === 'LOSS')?.candidate_id
+    ?? lifecycle[0]?.candidate_id
+    ?? null;
+  const selectedLifecycle = lifecycle.find(row => row.candidate_id === effectiveSelectedId);
+  const selectedCandidate = snapshot?.candidates?.find(row => row.candidate_id === effectiveSelectedId)
+    ?? snapshot?.top_candidates.find(row => row.candidate_id === effectiveSelectedId);
   const capacity = snapshot?.executable_depth_capacity;
   const engineeringPaperRunning = Boolean(
     snapshot?.forward_shadow.verdict.engineering_shadow_running,
@@ -421,7 +563,29 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           <Chip label={`${lifecycle.length} FACTORS`} tone="info" />
           <Chip label={`${profitable} PROFIT`} tone={profitable ? 'pos' : 'muted'} />
           <Chip label={`${losing} LOSS`} tone={losing ? 'neg' : 'muted'} />
+          <Chip label={`${noPnl} NO PNL`} tone="muted" />
           <span className="ml-auto text-3xs text-faint">SSE · realized engineering-shadow net return</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2" aria-label="factor performance filters">
+          {([
+            ['ALL', `ALL ${lifecycle.length}`],
+            ['LOSS', `LOSS ${losing}`],
+            ['PROFIT', `PROFIT ${profitable}`],
+            ['NO_PNL', `NO PNL ${noPnl}`],
+          ] as Array<[LifecycleFilter, string]>).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              className={`rounded border px-2 py-1 text-3xs font-semibold tracking-[0.08em] ${
+                filter === value ? 'border-info/60 bg-info/10 text-info' : 'border-line bg-inset/40 text-muted hover:text-ink'
+              }`}
+              aria-pressed={filter === value}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="ml-auto text-3xs text-faint">亏损优先排序 · 点击因子查看完整报告</span>
         </div>
         <div className="max-h-[420px] overflow-auto">
           <table className="w-full min-w-[940px] text-left text-xs" aria-label="realtime alpha lifecycle performance">
@@ -438,10 +602,17 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
               </tr>
             </thead>
             <tbody className="divide-y divide-line/70">
-              {lifecycle.length ? lifecycle.map(row => (
-                <tr key={row.candidate_id}>
-                  <td className="max-w-[250px] truncate px-3 py-2 font-medium text-ink" title={row.candidate_id}>
-                    {row.candidate_id}
+              {filteredLifecycle.length ? filteredLifecycle.map(row => (
+                <tr key={row.candidate_id} className={row.candidate_id === effectiveSelectedId ? 'bg-info/5' : undefined}>
+                  <td className="max-w-[250px] px-3 py-2 font-medium text-ink" title={row.candidate_id}>
+                    <button
+                      type="button"
+                      className="block max-w-full truncate text-left underline-offset-2 hover:text-info hover:underline"
+                      onClick={() => setSelectedCandidateId(row.candidate_id)}
+                      aria-label={`查看 ${row.candidate_id} 生命周期报告`}
+                    >
+                      {row.candidate_id}
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-muted">{row.family_id ?? '--'} · {fmtHorizon(row.horizon_ms)}</td>
                   <td className="px-3 py-2"><Chip label={row.pipeline_stage} tone="info" /></td>
@@ -468,11 +639,12 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">Lifecycle snapshot is collecting.</td></tr>
+                <tr><td colSpan={8} className="px-3 py-5 text-center text-faint">No factors match this performance filter.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        {selectedLifecycle ? <FactorLifecycleReport row={selectedLifecycle} candidate={selectedCandidate} /> : null}
       </div>
     </Panel>
   );
@@ -635,6 +807,15 @@ export default function DryRunPipeline() {
   const pipelineCandidates = alphaPipeline?.candidates ?? [];
   const alphaRows = Object.entries(shadow?.alphas ?? {});
   const officialRows = Object.entries(officialPaper?.alphas ?? {});
+  const officialProfit = officialRows.filter(([, alpha]) => (alpha.net_pnl ?? 0) > 0 && (alpha.n_fills ?? 0) > 0).length;
+  const officialLoss = officialRows.filter(([, alpha]) => (alpha.net_pnl ?? 0) < 0 && (alpha.n_fills ?? 0) > 0).length;
+  const officialPending = officialRows.filter(([, alpha]) => alpha.status === 'PAPER_PENDING' || (alpha.n_fills ?? 0) === 0).length;
+  const sortedOfficialRows = officialRows.slice().sort(([, a], [, b]) => {
+    const rank = (value: PaperRealtimeAlpha) => value.status === 'PAPER_PENDING' || (value.n_fills ?? 0) === 0
+      ? 2
+      : (value.net_pnl ?? 0) < 0 ? 0 : 1;
+    return rank(a) - rank(b) || (a.net_pnl ?? 0) - (b.net_pnl ?? 0);
+  });
   const observedAt = shadow?.observed_at ?? health?.observed_at;
   const observedAgeMs = observedAt == null ? null : Math.max(0, Date.now() - observedAt);
   const markFresh = observedAgeMs != null && observedAgeMs <= (health?.max_age_ms ?? 300_000);
@@ -798,13 +979,20 @@ export default function DryRunPipeline() {
           <Panel
             title="主纸面账户实时业绩"
             eyebrow="paper_realtime · authoritative main paper account"
-            right={<Chip label={`${officialRows.length} ACCOUNTS`} tone="info" />}
+            right={(
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip label={`${officialLoss} LOSS`} tone={officialLoss ? 'neg' : 'muted'} />
+                <Chip label={`${officialProfit} PROFIT`} tone={officialProfit ? 'pos' : 'muted'} />
+                <Chip label={`${officialPending} PENDING`} tone="warn" />
+                <Chip label={`${officialRows.length} ACCOUNTS`} tone="info" />
+              </div>
+            )}
             bodyClass="px-4 py-2"
           >
             <div className="mb-2 rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
-              该区域与下方影子 Challenger 账户完全分开。亏损、零收益和待执行状态均按原值显示，不以初始权益或影子收益替代。
+              该区域与下方影子 Challenger 账户完全分开。亏损优先排序；PAPER_PENDING 的初始权益和 0 PnL 不算盈利，也不以影子收益替代。
             </div>
-            {officialRows.length ? officialRows.map(([alpha, value]) => (
+            {sortedOfficialRows.length ? sortedOfficialRows.map(([alpha, value]) => (
               <OfficialPaperRow key={alpha} alpha={alpha} value={value} />
             )) : (
               <div className="py-6 text-center text-xs text-faint">Main paper account snapshot unavailable.</div>
