@@ -133,6 +133,7 @@ def test_first_cycle_sets_baseline_then_next_decision_executes_once(
     assert admitted["cycle"] == {
         "new_admissions": 1,
         "new_executions": 0,
+        "new_missed_execution_windows": 0,
         "waiting_count": 0,
     }
     assert admitted["tracks"]["rt-candidate"]["baseline_decision_time_ms"] == 200
@@ -234,3 +235,51 @@ def test_lot_filter_authority_is_content_addressed(tmp_path) -> None:
 
     assert specs["BTC"].step_size == Decimal("0.001")
     assert specs["BTC"].content_hash
+
+
+def test_stale_backlog_is_audited_as_missed_instead_of_blocking(
+    tmp_path, monkeypatch
+) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 2_000_000)
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": tmp_path / "execution.db",
+        "output_path": tmp_path / "execution.json",
+    }
+    run_cycle(**common, now_ms=2_000_000)
+    with RealtimeAlphaShadowStore(str(shadow), create=False) as source:
+        for decision_time in range(1_000, 18_000, 1_000):
+            source.record_decision(
+                "rt-candidate",
+                _decision("rt-candidate", decision_time),
+                recorded_at_ms=decision_time,
+            )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.load_persisted_routing_snapshot",
+        lambda **_kwargs: (
+            {"BTC": (_book(), _book())},
+            {"BTC": 60_000.0},
+            "snapshot-late",
+            1_000_000,
+        ),
+    )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.build_alpha_preview",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("stale decisions must not be executed")
+        ),
+    )
+
+    report = run_cycle(**common, now_ms=2_000_000)
+
+    assert report["status"] == "RUNNING"
+    assert report["errors"] == {}
+    assert report["cycle"]["new_executions"] == 0
+    assert report["cycle"]["new_missed_execution_windows"] == 17
+    assert report["tracks"]["rt-candidate"]["n_missed_execution_windows"] == 17
+    assert report["ledger"]["chain_valid"] is True

@@ -1665,6 +1665,7 @@ export interface RealtimeAlphaAutonomyPayload {
     cycle: {
       new_admissions?: number;
       new_executions?: number;
+      new_missed_execution_windows?: number;
       waiting_count?: number;
     };
     routing: {
@@ -1679,10 +1680,12 @@ export interface RealtimeAlphaAutonomyPayload {
     tracks: Record<string, {
       state?: string;
       n_executions?: number;
+      n_missed_execution_windows?: number;
       n_orders?: number;
       n_fill_slices?: number;
       execution_cost?: number;
       last_decision_time_ms?: number | null;
+      last_missed_decision_time_ms?: number | null;
     }>;
     waiting: Record<string, string>;
     errors: Record<string, string>;
@@ -1691,6 +1694,7 @@ export interface RealtimeAlphaAutonomyPayload {
       chain_valid: boolean;
       source_shadow_chain_valid: boolean;
       event_count?: number;
+      missed_execution_window_count?: number;
       separate_from_official_paper: boolean;
     };
     verdict: {

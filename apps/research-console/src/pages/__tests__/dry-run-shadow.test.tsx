@@ -191,6 +191,7 @@ const state = vi.hoisted(() => ({
           rt_basis_convergence_1h_v1: {
             state: 'EXECUTING',
             n_executions: 1,
+            n_missed_execution_windows: 2,
             n_orders: 6,
             n_fill_slices: 8,
             execution_cost: 1.25,
@@ -544,7 +545,7 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
     expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
     expect(screen.getByText('EXEC PAPER 1')).toBeInTheDocument();
-    expect(screen.getByText(/1 accounts · 1 routed executions/)).toBeInTheDocument();
+    expect(screen.getByText(/1 accounts · 1 routed · 2 audited misses/)).toBeInTheDocument();
     expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();

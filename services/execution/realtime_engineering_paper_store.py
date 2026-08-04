@@ -2,7 +2,9 @@
 
 This ledger has no relationship to the official Execution-Paper authority.  It
 records an admission baseline and only successful, fully reconciled simulated
-executions that occur after that baseline.
+executions that occur after that baseline.  Decisions that cannot be executed
+inside the frozen latency window are resolved in a second append-only hash
+chain as explicit misses; they are never silently dropped or backfilled.
 """
 from __future__ import annotations
 
@@ -39,6 +41,27 @@ BEGIN SELECT RAISE(ABORT, 'realtime_engineering_paper_events is append-only'); E
 CREATE TRIGGER IF NOT EXISTS realtime_engineering_paper_no_delete
 BEFORE DELETE ON realtime_engineering_paper_events
 BEGIN SELECT RAISE(ABORT, 'realtime_engineering_paper_events is append-only'); END;
+"""
+
+_MISSED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS realtime_engineering_paper_missed (
+  event_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT UNIQUE NOT NULL,
+  candidate_id TEXT NOT NULL,
+  identity_time_ms INTEGER NOT NULL CHECK(identity_time_ms >= 0),
+  recorded_at_ms INTEGER NOT NULL CHECK(recorded_at_ms >= identity_time_ms),
+  payload_json TEXT NOT NULL,
+  prev_hash TEXT NOT NULL,
+  row_hash TEXT UNIQUE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS realtime_engineering_paper_missed_by_candidate
+ON realtime_engineering_paper_missed(candidate_id,event_seq);
+CREATE TRIGGER IF NOT EXISTS realtime_engineering_paper_missed_no_update
+BEFORE UPDATE ON realtime_engineering_paper_missed
+BEGIN SELECT RAISE(ABORT, 'realtime_engineering_paper_missed is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS realtime_engineering_paper_missed_no_delete
+BEFORE DELETE ON realtime_engineering_paper_missed
+BEGIN SELECT RAISE(ABORT, 'realtime_engineering_paper_missed is append-only'); END;
 """
 
 
@@ -81,6 +104,8 @@ class RealtimeEngineeringPaperStore:
             raise RealtimeEngineeringPaperStoreError(
                 "engineering paper ledger schema is missing"
             )
+        self._conn.executescript(_MISSED_SCHEMA)
+        self._conn.commit()
 
     def __enter__(self) -> "RealtimeEngineeringPaperStore":
         return self
@@ -254,6 +279,121 @@ class RealtimeEngineeringPaperStore:
     def executions(self, candidate_id: str) -> list[dict[str, Any]]:
         return self._events(event_type="EXECUTION", candidate_id=candidate_id)
 
+    def missed_decisions(self, candidate_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT event_seq,event_id,candidate_id,identity_time_ms,recorded_at_ms,"
+            "payload_json,prev_hash,row_hash FROM realtime_engineering_paper_missed "
+            "WHERE candidate_id=? ORDER BY event_seq",
+            (candidate_id,),
+        )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RealtimeEngineeringPaperStoreError(
+                    "missed-decision payload JSON is invalid"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise RealtimeEngineeringPaperStoreError(
+                    "missed-decision payload must be an object"
+                )
+            item = dict(row)
+            item.pop("payload_json")
+            item["event_type"] = "MISSED_EXECUTION_WINDOW"
+            item["payload"] = payload
+            result.append(item)
+        return result
+
+    def resolved_decision_times(self, candidate_id: str) -> set[int]:
+        return {
+            int(row["identity_time_ms"])
+            for row in self.executions(candidate_id) + self.missed_decisions(candidate_id)
+        }
+
+    def record_missed_decision(
+        self,
+        candidate_id: str,
+        payload: Mapping[str, Any],
+        *,
+        decision_time_ms: int,
+        recorded_at_ms: int,
+    ) -> bool:
+        if self.admission(candidate_id) is None:
+            raise RealtimeEngineeringPaperStoreError(
+                "cannot resolve a decision before engineering admission"
+            )
+        if (
+            payload.get("candidate_id") != candidate_id
+            or payload.get("resolution") != "MISSED_EXECUTION_WINDOW"
+            or any(
+                payload.get(field) is not False
+                for field in (
+                    "promotion_eligible",
+                    "forward_evidence_eligible",
+                    "deployment_eligible",
+                    "live_allowed",
+                    "order_submission_allowed",
+                )
+            )
+        ):
+            raise RealtimeEngineeringPaperStoreError(
+                "missed-decision safety boundary is invalid"
+            )
+        body = _canonical(payload)
+        event_id = f"missed:{candidate_id}:{int(decision_time_ms)}"
+        existing = self._conn.execute(
+            "SELECT candidate_id,identity_time_ms,payload_json "
+            "FROM realtime_engineering_paper_missed WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+        if existing is not None:
+            if (
+                str(existing["candidate_id"]),
+                int(existing["identity_time_ms"]),
+                str(existing["payload_json"]),
+            ) == (candidate_id, int(decision_time_ms), body):
+                return False
+            raise RealtimeEngineeringPaperStoreError(
+                f"missed-decision identity reused with different content: {event_id}"
+            )
+        previous = self._conn.execute(
+            "SELECT row_hash FROM realtime_engineering_paper_missed "
+            "ORDER BY event_seq DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = "" if previous is None else str(previous["row_hash"])
+        identity = {
+            "event_id": event_id,
+            "event_type": "MISSED_EXECUTION_WINDOW",
+            "candidate_id": candidate_id,
+            "identity_time_ms": int(decision_time_ms),
+            "recorded_at_ms": int(recorded_at_ms),
+            "payload_json": body,
+            "prev_hash": prev_hash,
+        }
+        digest = _row_hash(identity)
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO realtime_engineering_paper_missed"
+                    "(event_id,candidate_id,identity_time_ms,recorded_at_ms,"
+                    "payload_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        event_id,
+                        candidate_id,
+                        int(decision_time_ms),
+                        int(recorded_at_ms),
+                        body,
+                        prev_hash,
+                        digest,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise RealtimeEngineeringPaperStoreError(
+                "missed-decision append conflict"
+            ) from exc
+        return True
+
     def get_by_decision(
         self, candidate_id: str, decision_time_ms: int
     ) -> dict[str, Any] | None:
@@ -337,6 +477,7 @@ class RealtimeEngineeringPaperStore:
     def summary(self, candidate_id: str) -> dict[str, Any]:
         admission = self.admission(candidate_id)
         rows = self.executions(candidate_id)
+        missed = self.missed_decisions(candidate_id)
         return {
             "candidate_id": candidate_id,
             "admitted": admission is not None,
@@ -346,6 +487,7 @@ class RealtimeEngineeringPaperStore:
                 else None
             ),
             "n_executions": len(rows),
+            "n_missed_execution_windows": len(missed),
             "n_orders": sum(len(row["payload"].get("orders", [])) for row in rows),
             "n_fill_slices": sum(
                 int(row["payload"].get("n_paper_fill_slices", 0)) for row in rows
@@ -357,15 +499,49 @@ class RealtimeEngineeringPaperStore:
             "last_decision_time_ms": (
                 int(rows[-1]["identity_time_ms"]) if rows else None
             ),
+            "last_missed_decision_time_ms": (
+                int(missed[-1]["identity_time_ms"]) if missed else None
+            ),
             "positions_lots": self.latest_positions(candidate_id),
         }
 
     def event_count(self) -> int:
-        return int(
+        primary = int(
             self._conn.execute(
                 "SELECT COUNT(*) FROM realtime_engineering_paper_events"
             ).fetchone()[0]
         )
+        missed = int(
+            self._conn.execute(
+                "SELECT COUNT(*) FROM realtime_engineering_paper_missed"
+            ).fetchone()[0]
+        )
+        return primary + missed
+
+    def _missed_chain_valid(self) -> bool:
+        previous = ""
+        rows = self._conn.execute(
+            "SELECT event_id,candidate_id,identity_time_ms,recorded_at_ms,"
+            "payload_json,prev_hash,row_hash FROM realtime_engineering_paper_missed "
+            "ORDER BY event_seq"
+        )
+        for row in rows:
+            if str(row["prev_hash"]) != previous:
+                return False
+            identity = {
+                "event_id": str(row["event_id"]),
+                "event_type": "MISSED_EXECUTION_WINDOW",
+                "candidate_id": str(row["candidate_id"]),
+                "identity_time_ms": int(row["identity_time_ms"]),
+                "recorded_at_ms": int(row["recorded_at_ms"]),
+                "payload_json": str(row["payload_json"]),
+                "prev_hash": previous,
+            }
+            expected = _row_hash(identity)
+            if str(row["row_hash"]) != expected:
+                return False
+            previous = expected
+        return True
 
     def chain_valid(self) -> bool:
         previous = ""
@@ -391,7 +567,7 @@ class RealtimeEngineeringPaperStore:
                 if str(row["row_hash"]) != expected:
                     return False
                 previous = expected
-            return True
+            return self._missed_chain_valid()
         except (sqlite3.DatabaseError, TypeError, ValueError):
             return False
 

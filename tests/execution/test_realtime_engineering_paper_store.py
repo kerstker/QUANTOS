@@ -99,3 +99,43 @@ def test_tamper_is_detected(tmp_path) -> None:
         )
         store._conn.commit()
         assert not store.chain_valid()
+
+
+def test_missed_execution_window_is_append_only_and_resolves_decision(tmp_path) -> None:
+    path = tmp_path / "engineering.db"
+    payload = {
+        "candidate_id": "candidate-1",
+        "resolution": "MISSED_EXECUTION_WINDOW",
+        "reason_code": "POST_DECISION_BOOK_DELAY_EXCEEDED",
+        "promotion_eligible": False,
+        "forward_evidence_eligible": False,
+        "deployment_eligible": False,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+    }
+    with RealtimeEngineeringPaperStore(str(path), create=True) as store:
+        store.admit(
+            "candidate-1",
+            {"source": "shadow"},
+            baseline_decision_time_ms=100,
+            admitted_at_ms=150,
+        )
+        assert store.record_missed_decision(
+            "candidate-1", payload, decision_time_ms=200, recorded_at_ms=300
+        )
+        assert not store.record_missed_decision(
+            "candidate-1", payload, decision_time_ms=200, recorded_at_ms=300
+        )
+        assert store.resolved_decision_times("candidate-1") == {200}
+        assert store.summary("candidate-1")["n_missed_execution_windows"] == 1
+        assert store.event_count() == 2
+        assert store.chain_valid()
+
+        store._conn.execute(
+            "DROP TRIGGER realtime_engineering_paper_missed_no_update"
+        )
+        store._conn.execute(
+            "UPDATE realtime_engineering_paper_missed SET row_hash='bad' WHERE event_seq=1"
+        )
+        store._conn.commit()
+        assert not store.chain_valid()

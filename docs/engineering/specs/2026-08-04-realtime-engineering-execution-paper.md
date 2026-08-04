@@ -46,9 +46,12 @@ it only restores the venue's executable quantity granularity.
 ## Fail-closed rules
 
 - no execution of the admission-baseline decision;
-- up to 16 unexecuted post-admission decisions are replayed in timestamp order
-  against the first fresh post-decision book; a larger backlog is an explicit
-  fail-closed error;
+- up to 64 unresolved post-admission decisions per track are resolved in
+  timestamp order per cycle; additional decisions remain visibly queued for
+  the next cycle;
+- decisions older than the 12-minute execution window are appended as
+  `MISSED_EXECUTION_WINDOW` in an independent append-only hash chain and are
+  never silently dropped or falsely backfilled against a current book;
 - stale/missing contract filters, book bundle, source ledger, or reconciliation
   block the candidate cycle;
 - a reused `(candidate_id, decision_time_ms)` with changed content is rejected;

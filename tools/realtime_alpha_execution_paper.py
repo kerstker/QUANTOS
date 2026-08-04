@@ -48,7 +48,7 @@ DEFAULT_EXECUTION_STORE = ROOT / "data" / "cache" / "realtime_alpha_execution_pa
 DEFAULT_OUTPUT = ROOT / "data" / "cache" / "realtime_alpha_execution_paper.json"
 MAX_STATUS_AGE_MS = 15 * 60_000
 MAX_EXECUTION_DELAY_MS = 12 * 60_000
-MAX_PENDING_DECISIONS_PER_TRACK = 16
+MAX_DECISION_RESOLUTIONS_PER_TRACK_PER_CYCLE = 64
 EXECUTION_CLASS = "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER"
 EXECUTION_PROFILE = "REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1"
 
@@ -303,6 +303,7 @@ def run_cycle(
     tracks: dict[str, dict[str, Any]] = {}
     new_admissions = 0
     new_executions = 0
+    new_missed_execution_windows = 0
     source_chain_valid = False
     execution_chain_valid = False
     event_count = 0
@@ -377,21 +378,22 @@ def run_cycle(
                         baseline = int(
                             admission["payload"]["baseline_decision_time_ms"]
                         )
-                        executed = {
-                            int(row["identity_time_ms"])
-                            for row in store.executions(candidate_id)
-                        }
+                        resolved = store.resolved_decision_times(candidate_id)
                         pending_events = [
                             row
                             for row in shadow.decisions(candidate_id)
                             if int(row["identity_time_ms"]) > baseline
-                            and int(row["identity_time_ms"]) not in executed
+                            and int(row["identity_time_ms"]) not in resolved
                         ]
                         pending_events.sort(key=lambda row: int(row["identity_time_ms"]))
-                        if len(pending_events) > MAX_PENDING_DECISIONS_PER_TRACK:
-                            raise RealtimeAlphaExecutionPaperError(
-                                "unexecuted post-admission decision backlog exceeds bound"
-                            )
+                        backlog_remaining = max(
+                            0,
+                            len(pending_events)
+                            - MAX_DECISION_RESOLUTIONS_PER_TRACK_PER_CYCLE,
+                        )
+                        pending_events = pending_events[
+                            :MAX_DECISION_RESOLUTIONS_PER_TRACK_PER_CYCLE
+                        ]
                         if pending_events:
                             if books is None:
                                 books, native_prices, routing_snapshot_id, routing_as_of_ms = (
@@ -413,9 +415,36 @@ def run_cycle(
                                     break
                                 delay = routing_as_of_ms - decision_time
                                 if delay > MAX_EXECUTION_DELAY_MS:
-                                    raise RealtimeAlphaExecutionPaperError(
-                                        "post-decision routing snapshot is too late"
+                                    missed_payload = {
+                                        "candidate_id": candidate_id,
+                                        "decision_time_ms": decision_time,
+                                        "resolution": "MISSED_EXECUTION_WINDOW",
+                                        "reason_code": "POST_DECISION_BOOK_DELAY_EXCEEDED",
+                                        "routing_snapshot_id": routing_snapshot_id,
+                                        "routing_as_of_ms": routing_as_of_ms,
+                                        "execution_delay_ms": delay,
+                                        "max_execution_delay_ms": MAX_EXECUTION_DELAY_MS,
+                                        "source_shadow_event_id": event.get("event_id"),
+                                        "source_shadow_row_hash": event.get("row_hash"),
+                                        "source_shadow_payload_hash": stable_hash(
+                                            event.get("payload")
+                                        ),
+                                        "paper_only": True,
+                                        "promotion_eligible": False,
+                                        "forward_evidence_eligible": False,
+                                        "deployment_eligible": False,
+                                        "live_allowed": False,
+                                        "order_submission_allowed": False,
+                                    }
+                                    new_missed_execution_windows += int(
+                                        store.record_missed_decision(
+                                            candidate_id,
+                                            missed_payload,
+                                            decision_time_ms=decision_time,
+                                            recorded_at_ms=now,
+                                        )
                                     )
+                                    continue
                                 pending, marks, units = _adapt_decision(
                                     event, specs=specs
                                 )
@@ -482,6 +511,11 @@ def run_cycle(
                                         recorded_at_ms=now,
                                     )
                                 )
+                            if backlog_remaining:
+                                waiting[candidate_id] = (
+                                    "CATCHING_UP_DECISION_BACKLOG:"
+                                    f"{backlog_remaining}"
+                                )
                         tracks[candidate_id] = store.summary(candidate_id)
                         tracks[candidate_id]["state"] = waiting.get(
                             candidate_id,
@@ -510,6 +544,7 @@ def run_cycle(
         "cycle": {
             "new_admissions": new_admissions,
             "new_executions": new_executions,
+            "new_missed_execution_windows": new_missed_execution_windows,
             "waiting_count": len(waiting),
         },
         "routing": {
@@ -535,6 +570,10 @@ def run_cycle(
             "append_only": True,
             "chain_valid": execution_chain_valid,
             "event_count": event_count,
+            "missed_execution_window_count": sum(
+                int(row.get("n_missed_execution_windows", 0))
+                for row in tracks.values()
+            ),
             "source_shadow_chain_valid": source_chain_valid,
             "separate_from_official_paper": True,
         },

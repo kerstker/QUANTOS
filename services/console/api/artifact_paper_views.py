@@ -373,10 +373,12 @@ def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
                 for field in (
                     "state",
                     "n_executions",
+                    "n_missed_execution_windows",
                     "n_orders",
                     "n_fill_slices",
                     "execution_cost",
                     "last_decision_time_ms",
+                    "last_missed_decision_time_ms",
                 )
             }
     return {
@@ -398,6 +400,9 @@ def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
             "chain_valid": True,
             "source_shadow_chain_valid": True,
             "event_count": ledger.get("event_count", 0),
+            "missed_execution_window_count": ledger.get(
+                "missed_execution_window_count", 0
+            ),
             "separate_from_official_paper": True,
         },
         "verdict": {

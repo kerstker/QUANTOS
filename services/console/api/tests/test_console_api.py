@@ -989,6 +989,7 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
             "rt_candidate": {
                 "state": "EXECUTING",
                 "n_executions": 1,
+                "n_missed_execution_windows": 2,
                 "n_orders": 6,
                 "n_fill_slices": 8,
                 "execution_cost": 1.25,
@@ -1035,6 +1036,7 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
     assert projected["verdict"]["production_execution_seam_exercised"] is True
     assert projected["verdict"]["promotion_eligible"] is False
     assert projected["tracks"]["rt_candidate"]["n_fill_slices"] == 8
+    assert projected["tracks"]["rt_candidate"]["n_missed_execution_windows"] == 2
     assert "positions_lots" not in projected["tracks"]["rt_candidate"]
 
     artifact["verdict"]["live_allowed"] = True
