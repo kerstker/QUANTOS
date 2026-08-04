@@ -179,6 +179,13 @@ Factory、历史 OOS、Signal Shadow、Execution Paper、生命周期和前端�
 修复 marks 新鲜度、候选通用九引擎输入、preview/fill、intent/fill/position/PnL 对账；
 同一 worker 可无人值守重启恢复，异常 fail-closed。完成前不得把系统称为“全自动纸面生产”。
 
+状态（2026-08-04）：**继续收口，尚未宣称完成。** 工程 shadow 已覆盖 10 个候选并持续实时估值；
+九引擎非时间型输入已 10/10 预计算，正式 admission 仍独立 fail-closed。当前轮 worker 接缝新增
+“下游零退出 + 本轮输出制品刷新”双门，旧成功 JSON 不能再掩盖当前估值失败，失败制品明确
+`SAFE_BLOCKED`。剩余验收重点是把连续运行窗口、计划重启和故障注入形成可复算的运营证据，
+以及让正式 preview/fill 仅在候选真实通过既有风险与前向门后自动变绿；不能用工程 shadow
+的成功替代正式准入。
+
 ### WP3：并行前向与自动交接
 
 候选冻结即盲化 shadow；历史 Gate 通过后自动进入 Execution Paper；

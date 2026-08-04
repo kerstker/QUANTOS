@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v4（本轮制品原子性）：** `paper_shadow_realtime`
+> 不再忽略下游估值 worker 的退出码，也不再允许复用磁盘上的旧成功快照冒充本轮成功。
+> 每轮现在同时要求 `paper_realtime` 零退出和输出制品文件身份发生变化；任一条件失败即覆盖为
+> `SAFE_BLOCKED`，记录 `UPSTREAM_PAPER_REALTIME_FAILED` 或
+> `PAPER_REALTIME_ARTIFACT_NOT_REFRESHED`，并把 paper mark、shadow running、正式准入和所有
+> live/order 权限逐项置为 false。成功快照新增 `upstream_cycle`（起止时间、退出码、制品刷新）供
+> watchdog、Console 与后续连续运行 SLO 复核。该修复关闭无人值守重启/异常路径上的“旧 JSON 假绿”，
+> 不改变 8 周正式晋级证据门，也不开放任何真实下单路径。
+
 > **2026-08-04 实时纸面生产 v3（风险输入全覆盖）：** 10/10 纸面 Alpha 的七类非时间型
 > 九引擎输入已全部预计算完成。慢节奏 14d 候选在没有当前 pending 决策时，只使用最近一条
 > 真实 attested 已兑现决策生成监控输入，并标记
