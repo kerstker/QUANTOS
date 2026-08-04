@@ -388,7 +388,9 @@ Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha
 Register-L2Task -Name "QUANTOS_realtime_alpha_forward_shadow" -Module "realtime_alpha_forward_shadow" `
   -Trigger $realtimeAlphaForwardShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
 Register-L2Task -Name "QUANTOS_realtime_alpha_execution_paper" -Module "realtime_alpha_execution_paper" `
-  -Trigger $realtimeAlphaExecutionPaperTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
+  # A full public REST fallback can take longer than one minute; the task
+  # remains single-instance (IgnoreNew) and fail-closed while it refreshes.
+  -Trigger $realtimeAlphaExecutionPaperTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `
