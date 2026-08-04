@@ -11,6 +11,7 @@ import json
 import math
 import sqlite3
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from quantos.contracts.hashing import stable_hash
@@ -82,6 +83,12 @@ def _row_hash(
 class RealtimeAlphaShadowStore:
     def __init__(self, path: str, *, create: bool = False) -> None:
         self.path = str(path)
+        # sqlite3.connect() creates a zero-byte file even for a read-only
+        # open.  A racing execution-paper worker must not manufacture an
+        # apparently existing, schema-less shadow ledger while the producer
+        # is still initializing it.
+        if not create and self.path != ":memory:" and not Path(self.path).exists():
+            raise RealtimeAlphaShadowStoreError("shadow ledger is missing")
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         if create:

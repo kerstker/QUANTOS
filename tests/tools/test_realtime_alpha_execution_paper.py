@@ -118,12 +118,14 @@ def test_first_cycle_sets_baseline_then_next_decision_executes_once(
     shadow = tmp_path / "shadow.db"
     _shadow(shadow)
     feature, market = _write_statuses(tmp_path, 300)
+    execution_path = tmp_path / "execution.db"
+    execution_path.write_bytes(b"")
     common = {
         "shadow_store_path": shadow,
         "feature_status_path": feature,
         "market_status_path": market,
         "book_store_path": tmp_path / "books.db",
-        "execution_store_path": tmp_path / "execution.db",
+        "execution_store_path": execution_path,
         "output_path": tmp_path / "execution.json",
     }
 

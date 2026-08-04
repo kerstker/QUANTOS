@@ -402,7 +402,14 @@ def run_cycle(
             )
             execution_path = Path(execution_store_path)
             with RealtimeEngineeringPaperStore(
-                str(execution_path), create=not execution_path.exists()
+                str(execution_path),
+                # Recover only the zero-byte artifact left by an interrupted
+                # first initialization.  A non-empty invalid ledger must
+                # remain fail-closed.
+                create=(
+                    not execution_path.exists()
+                    or execution_path.stat().st_size == 0
+                ),
             ) as store:
                 if not store.chain_valid():
                     raise RealtimeAlphaExecutionPaperError(

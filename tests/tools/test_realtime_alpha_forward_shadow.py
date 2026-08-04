@@ -334,12 +334,17 @@ def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
         "tools.realtime_alpha_forward_shadow.load_bucketed_frames",
         lambda *_args, **_kwargs: {},
     )
+    shadow_path = tmp_path / "shadow.db"
+    # A concurrent reader may leave a zero-byte sqlite artifact before the
+    # producer's schema transaction commits.  The next producer cycle may
+    # recover that artifact, but must not overwrite a non-empty ledger.
+    shadow_path.write_bytes(b"")
     report = run_cycle(
         discovery_path=discovery_path,
         feature_status_path=feature_status_path,
         feature_store_path=tmp_path / "features.db",
         family_registry_path=registry_path,
-        shadow_store_path=tmp_path / "shadow.db",
+        shadow_store_path=shadow_path,
         output_path=tmp_path / "shadow.json",
         now_ms=base,
     )
