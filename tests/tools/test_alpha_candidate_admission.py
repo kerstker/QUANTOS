@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from quantos.contracts.hashing import stable_hash
 from services.research import alpha_expression as ax
 from services.research.paper_candidate_registry import PaperCandidateRegistry
@@ -162,3 +164,55 @@ def test_forward_worker_consumes_verified_dynamic_registry(tmp_path, monkeypatch
     assert alphas[ALPHA_ID]["expr"] == EXPRESSION
     assert alphas[ALPHA_ID]["quantile"] == 0.3
     assert alphas[ALPHA_ID]["cadence_days"] == 7
+
+
+def test_forward_worker_skips_realtime_workflow_population(tmp_path, monkeypatch) -> None:
+    from tools import forward_track_advance
+
+    static_id = "crowd_contra"
+    static_spec = forward_track_advance._alpha_spec(
+        forward_track_advance._ALPHAS[static_id]
+    )
+    static_identity = {
+        "candidate_id": static_id,
+        "expression": forward_track_advance.ax.serialize(static_spec["expr"]),
+        "quantile": float(static_spec["quantile"]),
+        "cadence_days": int(static_spec["cadence_days"]),
+    }
+    realtime_identity = {
+        "candidate_id": "rt_basis_convergence_1h_v1",
+        "expression": "",
+        "quantile": 0.2,
+        "cadence_days": 0,
+        "definition_kind": "REALTIME_MECHANISM",
+    }
+    workflow = {
+        "schema_version": 1,
+        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+        "status": "VERIFIED",
+        "safety": {"live_allowed": False, "order_submission_allowed": False},
+        "active_candidate_ids": [static_id, realtime_identity["candidate_id"]],
+        "candidates": [
+            {
+                "candidate_id": static_id,
+                "identity": static_identity,
+                "identity_hash": stable_hash(static_identity),
+            },
+            {
+                "candidate_id": realtime_identity["candidate_id"],
+                "identity": realtime_identity,
+                "identity_hash": stable_hash(realtime_identity),
+            },
+        ],
+    }
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(json.dumps(workflow), encoding="utf-8")
+    monkeypatch.setattr(
+        forward_track_advance, "_CANDIDATE_REGISTRY", str(tmp_path / "missing.db")
+    )
+    monkeypatch.setattr(forward_track_advance, "_WORKFLOW_STATUS", str(workflow_path))
+
+    alphas, dynamic_ids = forward_track_advance._registered_alphas()
+
+    assert tuple(alphas) == (static_id,)
+    assert dynamic_ids == ()

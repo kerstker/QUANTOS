@@ -37,6 +37,7 @@ from services.research.paper_trading.forward_evidence import (
 )
 from services.research.paper_trading.store import PaperTrackStore
 from services.research.paper_candidate_registry import PaperCandidateRegistry
+from services.research.alpha_production_workflow import CandidateDefinitionKind
 from services.orchestration.process_liveness import process_is_alive
 from services.data.admission_store import DataQualityAdmissionStore
 from tools import binance_oi_metrics_fetch as oi_fetch
@@ -129,6 +130,11 @@ def _registered_alphas(
     A missing dynamic registry is a valid empty state.  An existing registry
     with a broken chain or conflicting identity is a hard error so a scheduled
     run cannot silently drop or replace an admitted forward-paper candidate.
+    ``REALTIME_MECHANISM`` identities are intentionally excluded here: their
+    30-second decision clock and signal-spec ledger are owned by the realtime
+    shadow/execution-paper workers, not this weekly-bar forward ledger.  The
+    canonical workflow contains both populations, so treating the realtime
+    population as a missing DSL candidate would halt the entire bar worker.
     """
     merged: dict[str, object] = dict(_ALPHAS)
     dynamic_ids: list[str] = []
@@ -194,6 +200,12 @@ def _registered_alphas(
         entry = merged.get(alpha_id)
         row = workflow_rows.get(alpha_id)
         identity = row.get("identity") if isinstance(row, dict) else None
+        if (
+            isinstance(identity, dict)
+            and identity.get("definition_kind")
+            == CandidateDefinitionKind.REALTIME_MECHANISM.value
+        ):
+            continue
         if entry is None or not isinstance(identity, dict):
             raise RuntimeError(
                 f"workflow candidate is missing from source registry: {alpha_id}"
