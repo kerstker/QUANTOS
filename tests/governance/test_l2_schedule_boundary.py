@@ -129,6 +129,14 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         '-Trigger $binanceRealtimeFeaturesTrigger '
         '-ExecutionTimeLimit (New-TimeSpan -Minutes 45)' in source
     )
+    assert (
+        'Register-L2Task -Name "QUANTOS_forward_track" '
+        '-Module "forward_track_advance" `' in source
+    )
+    assert (
+        '-Trigger $forwardTrigger -ExecutionTimeLimit '
+        '(New-TimeSpan -Minutes 35)' in source
+    )
     assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
     assert "New-ScheduledTaskPrincipal" in source

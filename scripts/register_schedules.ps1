@@ -357,8 +357,11 @@ Register-L2Task -Name "QUANTOS_candidate_dry_run" -Module "dry_run_candidate_mul
   -Trigger $candidateDryRunTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 Register-L2Task -Name "QUANTOS_candidate_portfolio_evidence" -Module "candidate_portfolio_evidence" `
   -Trigger $candidatePortfolioEvidenceTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+# The forward worker includes the public-data refresh budget (30 minutes) and
+# needs only a small compute margin.  Bound the task so one hung refresh cannot
+# monopolize the daily cadence or leave the next run permanently stale.
 Register-L2Task -Name "QUANTOS_forward_track" -Module "forward_track_advance" `
-  -Trigger $forwardTrigger
+  -Trigger $forwardTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 35)
 Register-L2Task -Name "QUANTOS_alpha_maintenance" -Module "alpha_maintenance_sweep" `
   -Trigger $maintenanceTrigger
 Register-L2Task -Name "QUANTOS_domain_event_ops" -Module "domain_event_ops" `
