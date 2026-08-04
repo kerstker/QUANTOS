@@ -163,8 +163,11 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
         "snapshot_present": False,
         "boundary_valid": False,
         "status": "NO_SNAPSHOT",
+        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
         "generated_at_ms": None,
         "eligible_candidates": [],
+        "admitted_candidates": [],
+        "handoff": {"admission_blockers": [], "graduation_blockers": []},
         "feature_input": {"ready": False},
         "cycle": {
             "new_admissions": 0,
@@ -176,6 +179,8 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
         "ledger": {"append_only": True, "chain_valid": False, "event_count": 0},
         "verdict": {
             "forward_shadow_running": False,
+            "engineering_shadow_running": False,
+            "paper_observation_started_without_maturity_wait": False,
             "promotion_eligible": False,
             "forward_evidence_credit": False,
             "deployment_eligible": False,
@@ -228,8 +233,11 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
         "snapshot_present": True,
         "boundary_valid": True,
         "status": artifact.get("status", "SAFE_BLOCKED"),
+        "mode": artifact.get("mode", "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"),
         "generated_at_ms": artifact.get("generated_at_ms"),
         "eligible_candidates": artifact.get("eligible_candidates", []),
+        "admitted_candidates": artifact.get("admitted_candidates", []),
+        "handoff": artifact.get("handoff", {}),
         "feature_input": artifact.get("feature_input", {}),
         "cycle": artifact.get("cycle", {}),
         "tracks": artifact.get("tracks", {}),
@@ -242,6 +250,12 @@ def _realtime_alpha_forward_shadow_payload(path: str | None = None) -> Dict:
         "verdict": {
             "forward_shadow_running": bool(
                 verdict.get("forward_shadow_running", False)
+            ),
+            "engineering_shadow_running": bool(
+                verdict.get("engineering_shadow_running", False)
+            ),
+            "paper_observation_started_without_maturity_wait": bool(
+                verdict.get("paper_observation_started_without_maturity_wait", False)
             ),
             "promotion_eligible": False,
             "forward_evidence_credit": False,
@@ -263,6 +277,7 @@ def _realtime_alpha_candidate_view(row: Any) -> Dict | None:
         "family_id",
         "mechanism",
         "horizon_ms",
+        "evaluation_status",
         "status",
         "n_periods",
         "mean_breadth",
