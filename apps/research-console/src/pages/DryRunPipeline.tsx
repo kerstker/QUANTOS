@@ -16,6 +16,7 @@ import type {
   DryRunPipelinePayload,
   PaperOrderPreviewAlpha,
   PaperRealtimeAlpha,
+  PaperRealtimeBacktest,
   PaperRealtimeHistoryPoint,
   RealtimeAlphaCandidatePayload,
   RealtimeAlphaAutonomyPayload,
@@ -701,14 +702,172 @@ function StrategyRow({
   );
 }
 
-function OfficialPaperRow({
+type OfficialPaperHistoryPoint = {
+  observed_at: number;
+  equity: number;
+  net_pnl: number;
+};
+
+function officialPaperHistory(
+  alpha: string,
+  history: PaperRealtimeHistoryPoint[],
+): OfficialPaperHistoryPoint[] {
+  return history
+    .filter(point => point.alpha_id === alpha
+      && Number.isFinite(point.observed_at)
+      && Number.isFinite(point.equity)
+      && Number.isFinite(point.net_pnl))
+    .map(point => ({
+      observed_at: point.observed_at,
+      equity: point.equity as number,
+      net_pnl: point.net_pnl as number,
+    }))
+    .sort((a, b) => a.observed_at - b.observed_at);
+}
+
+function officialPaperDrawdown(points: OfficialPaperHistoryPoint[]): number | null {
+  let peak: number | null = null;
+  let maxDrawdown = 0;
+  for (const point of points) {
+    peak = peak == null ? point.equity : Math.max(peak, point.equity);
+    if (peak > 0) maxDrawdown = Math.max(maxDrawdown, (peak - point.equity) / peak);
+  }
+  return points.length ? maxDrawdown : null;
+}
+
+function OfficialFactorLifecycleReport({
   alpha,
   value,
+  backtest,
+  history,
   candidate,
 }: {
   alpha: string;
   value: PaperRealtimeAlpha;
+  backtest?: PaperRealtimeBacktest;
+  history: PaperRealtimeHistoryPoint[];
   candidate?: AlphaPipelineCandidate;
+}) {
+  const points = officialPaperHistory(alpha, history);
+  const currentPaper = value.n_fills != null && value.n_fills > 0;
+  const pending = !currentPaper;
+  const paperDrawdown = officialPaperDrawdown(points);
+  const series: EquitySeries[] = points.length
+    ? [{
+      label: `${alpha} official paper equity`,
+      points: points.map(point => ({ t: point.observed_at, equity: point.equity })),
+      tone: (value.net_pnl ?? 0) < 0 ? 'warn' : 'pos',
+    }]
+    : [];
+  const blockers = candidate?.blockers ?? [];
+  const performanceState = pending
+    ? 'NO_REALIZED_PNL'
+    : (value.net_pnl ?? 0) > 0 ? 'PROFIT' : (value.net_pnl ?? 0) < 0 ? 'LOSS' : 'FLAT';
+  const stages = [
+    { label: 'RESEARCH BACKTEST', reached: (backtest?.n_periods ?? 0) > 0 },
+    { label: 'VALIDATION', reached: candidate?.independent_evaluation?.status === 'VERIFIED' },
+    { label: 'PAPER MARKED', reached: currentPaper },
+    { label: 'FORWARD MATURED', reached: Boolean(candidate?.execution_paper) },
+    { label: 'LIVE', reached: false },
+  ];
+
+  return (
+    <div className="border-t border-line bg-panel/70 p-4" data-testid="official-factor-lifecycle-report">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-3xs font-semibold uppercase tracking-[0.14em] text-faint">Official factor lifecycle report · SSE live</div>
+          <div className="mt-1 break-all text-sm font-semibold text-ink">{alpha}</div>
+          <div className="mt-1 text-3xs text-muted">
+            {candidate?.family_id ?? 'UNCLASSIFIED'} / {candidate?.definition_kind ?? 'PAPER_REALTIME_MARK'} · last mark {fmtTime(value.observed_at)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
+          <Chip label={performanceState} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+          <Chip label="LIVE OFF" tone="neg" />
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="official factor lifecycle stages">
+        {stages.map((stage, index) => (
+          <React.Fragment key={stage.label}>
+            {index ? <span className="text-line-strong">→</span> : null}
+            <Chip label={stage.label} tone={stage.reached ? 'info' : 'muted'} />
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
+        <Metric label="Research return" value={fmtPct(backtest?.total_return)} detail={`${backtest?.n_periods ?? 0} backtest periods`} tone={(backtest?.total_return ?? 0) >= 0 ? 'pos' : 'neg'} />
+        <Metric label="Research SR" value={backtest?.sharpe_vt?.toFixed(2) ?? '—'} detail={backtest?.research_risk_decision ?? 'no risk verdict'} tone={backtest?.research_risk_decision === 'RISK_APPROVED' ? 'pos' : 'warn'} />
+        <Metric label="Paper net PnL" value={fmtUsd(currentPaper ? value.net_pnl : null)} detail={currentPaper ? `${value.n_fills ?? 0} fills · ${points.length} marks` : 'no realized paper PnL'} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="Paper return" value={fmtPct(currentPaper ? value.return_on_aum : null)} detail={`${Object.keys(value.positions ?? {}).filter(symbol => value.positions?.[symbol] !== 0).length} active positions`} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="Paper drawdown" value={fmtPct(paperDrawdown == null ? null : -paperDrawdown)} detail={points.length ? 'from retained marks' : 'no history'} tone={paperDrawdown ? 'neg' : 'muted'} />
+        <Metric label="Funding / costs" value={fmtUsd((value.funding_pnl ?? 0) - (value.costs ?? 0))} detail={`${value.funding_events ?? 0} funding events`} tone="info" />
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
+        <div className="rounded-lg border border-line bg-inset/35 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-3xs text-faint">
+            <span className="font-semibold uppercase tracking-[0.12em]">Retained paper equity</span>
+            <span>public marks · no order submission</span>
+          </div>
+          {series.length ? (
+            <EquityCurveChart series={series} height={190} yFormat={point => fmtUsd(point)} />
+          ) : (
+            <div className="grid h-[190px] place-items-center text-xs text-faint">No retained paper history yet.</div>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-line bg-inset/35">
+          <div className="border-b border-line px-3 py-2 text-3xs font-semibold uppercase tracking-[0.12em] text-faint">Latest paper marks</div>
+          <table className="w-full text-left text-3xs" aria-label="official factor paper history">
+            <thead className="border-b border-line/70 text-faint">
+              <tr><th className="px-3 py-2 font-medium">Time</th><th className="px-3 py-2 text-right font-medium">Net PnL</th><th className="px-3 py-2 text-right font-medium">Equity</th></tr>
+            </thead>
+            <tbody className="divide-y divide-line/60">
+              {points.slice(-8).reverse().length ? points.slice(-8).reverse().map(point => (
+                <tr key={point.observed_at}>
+                  <td className="px-3 py-2 text-muted">{fmtTime(point.observed_at)}</td>
+                  <td className={`px-3 py-2 text-right ticker-num ${signedClass(point.net_pnl)}`}>{fmtUsd(point.net_pnl)}</td>
+                  <td className="px-3 py-2 text-right ticker-num text-muted">{fmtUsd(point.equity)}</td>
+                </tr>
+              )) : <tr><td colSpan={3} className="px-3 py-5 text-center text-faint">Collecting the first paper mark.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-md border border-line bg-inset/35 px-3 py-2 text-3xs text-muted">
+          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Identity / maturity</div>
+          <div className="mt-1">family {candidate?.family_id ?? 'UNCLASSIFIED'} · definition {candidate?.definition_kind ?? 'UNKNOWN'}</div>
+          <div className="mt-1">maturity {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'} · status {value.status ?? 'UNKNOWN'}</div>
+        </div>
+        <div className="rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-3xs text-muted">
+          <div className="font-semibold uppercase tracking-[0.1em] text-faint">Gate report</div>
+          <div className="mt-1 break-words">{blockers.length ? blockers.join(' · ') : 'No reported blocker; human promotion gate remains and live is structurally off.'}</div>
+        </div>
+      </div>
+      <div className="mt-2 text-3xs text-faint">
+        Source PAPER_REALTIME_MARK_ARTIFACT · authoritative main paper account · promotion blocked · live false · order submission false
+      </div>
+    </div>
+  );
+}
+
+function OfficialPaperRow({
+  alpha,
+  value,
+  candidate,
+  selected,
+  onSelect,
+}: {
+  alpha: string;
+  value: PaperRealtimeAlpha;
+  candidate?: AlphaPipelineCandidate;
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const activePositions = Object.values(value.positions ?? {}).filter(quantity => quantity !== 0).length;
   const pending = value.status === 'PAPER_PENDING';
@@ -718,7 +877,14 @@ function OfficialPaperRow({
       <div className="grid gap-3 md:grid-cols-[minmax(190px,1.5fr)_repeat(4,minmax(92px,1fr))] md:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-semibold text-ink">{alpha}</span>
+            <button
+              type="button"
+              className={`truncate text-left text-sm font-semibold text-ink underline-offset-2 hover:text-info hover:underline ${selected ? 'text-info' : ''}`}
+              onClick={onSelect}
+              aria-label={`查看 ${alpha} 主纸面生命周期报告`}
+            >
+              {alpha}
+            </button>
             <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
             <Chip label={candidate?.stage ?? 'NO_WORKFLOW_STAGE'} tone={candidate ? 'special' : 'muted'} />
           </div>
@@ -831,6 +997,7 @@ export default function DryRunPipeline() {
   const pipelineByAlpha = new Map(pipelineCandidates.map(candidate => [candidate.alpha_id, candidate]));
   const alphaRows = Object.entries(shadow?.alphas ?? {});
   const officialRows = Object.entries(officialPaper?.alphas ?? {});
+  const [selectedOfficialId, setSelectedOfficialId] = React.useState<string | null>(null);
   const officialProfit = officialRows.filter(([, alpha]) => (alpha.net_pnl ?? 0) > 0 && (alpha.n_fills ?? 0) > 0).length;
   const officialLoss = officialRows.filter(([, alpha]) => (alpha.net_pnl ?? 0) < 0 && (alpha.n_fills ?? 0) > 0).length;
   const officialPending = officialRows.filter(([, alpha]) => alpha.status === 'PAPER_PENDING' || (alpha.n_fills ?? 0) === 0).length;
@@ -840,6 +1007,16 @@ export default function DryRunPipeline() {
       : (value.net_pnl ?? 0) < 0 ? 0 : 1;
     return rank(a) - rank(b) || (a.net_pnl ?? 0) - (b.net_pnl ?? 0);
   });
+  const effectiveOfficialId = selectedOfficialId
+    ?? officialRows.find(([, alpha]) => (alpha.net_pnl ?? 0) < 0 && (alpha.n_fills ?? 0) > 0)?.[0]
+    ?? officialRows[0]?.[0]
+    ?? null;
+  const selectedOfficial = effectiveOfficialId
+    ? officialRows.find(([alpha]) => alpha === effectiveOfficialId)
+    : undefined;
+  const selectedOfficialCandidate = effectiveOfficialId
+    ? pipelineByAlpha.get(effectiveOfficialId)
+    : undefined;
   const observedAt = shadow?.observed_at ?? health?.observed_at;
   const observedAgeMs = observedAt == null ? null : Math.max(0, Date.now() - observedAt);
   const markFresh = observedAgeMs != null && observedAgeMs <= (health?.max_age_ms ?? 300_000);
@@ -1002,7 +1179,7 @@ export default function DryRunPipeline() {
         <div className="mt-4">
           <Panel
             title="主纸面账户实时业绩"
-            eyebrow="paper_realtime · authoritative main paper account"
+            eyebrow="paper_realtime · factor lifecycle detail · authoritative main paper account · SSE live"
             right={(
               <div className="flex flex-wrap items-center gap-2">
                 <Chip label={`${officialLoss} LOSS`} tone={officialLoss ? 'neg' : 'muted'} />
@@ -1022,10 +1199,21 @@ export default function DryRunPipeline() {
                 alpha={alpha}
                 value={value}
                 candidate={pipelineByAlpha.get(alpha)}
+                selected={alpha === effectiveOfficialId}
+                onSelect={() => setSelectedOfficialId(alpha)}
               />
             )) : (
               <div className="py-6 text-center text-xs text-faint">Main paper account snapshot unavailable.</div>
             )}
+            {selectedOfficial ? (
+              <OfficialFactorLifecycleReport
+                alpha={selectedOfficial[0]}
+                value={selectedOfficial[1]}
+                backtest={officialPaper?.backtests?.[selectedOfficial[0]]}
+                history={officialPaper?.history ?? []}
+                candidate={selectedOfficialCandidate}
+              />
+            ) : null}
           </Panel>
         </div>
 
