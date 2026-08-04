@@ -1046,6 +1046,7 @@ export default function DryRunPipeline() {
               />
               <span>
                 {alphaPipeline?.workflow?.population_count ?? alphaPipeline?.counts.forward_paper ?? 0} frozen identities
+                {' / '}{alphaPipeline?.workflow?.realtime_handoff_count ?? 0} realtime handoff
                 {' / '}{alphaPipeline?.workflow?.event_count ?? 0} evidence events
                 {' / '}{alphaPipeline?.workflow?.execution_paper_eligible_count ?? 0} paper-eligible now
               </span>
@@ -1055,6 +1056,24 @@ export default function DryRunPipeline() {
                 </span>
               ) : null}
             </div>
+
+            {alphaPipeline?.exception_queue?.length ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-3xs text-muted" aria-label="alpha exception queue">
+                <span className="uppercase tracking-[0.12em] text-faint">Exception queue</span>
+                {alphaPipeline.exception_queue.slice(0, 4).map(item => (
+                  <span
+                    key={item.code}
+                    className="rounded border border-line bg-inset/50 px-2 py-1"
+                    title={item.candidate_ids.join(', ')}
+                  >
+                    {item.candidate_count} · {item.code.replace(/_/g, ' ')}
+                  </span>
+                ))}
+                {alphaPipeline.exception_queue.length > 4 ? (
+                  <span className="text-faint">+{alphaPipeline.exception_queue.length - 4} more</span>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-4 overflow-hidden rounded-lg border border-line bg-inset/35">
               <table className="w-full table-fixed text-left text-xs" aria-label="alpha paper pipeline">
@@ -1072,6 +1091,9 @@ export default function DryRunPipeline() {
                     <tr key={candidate.alpha_id}>
                       <td className="truncate px-3 py-2 font-semibold text-ink" title={candidate.blockers.join(', ')}>
                         {candidate.alpha_id}
+                        {candidate.definition_kind === 'REALTIME_MECHANISM' ? (
+                          <span className="ml-2 text-3xs font-normal text-accent">RT</span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2">
                         <Chip

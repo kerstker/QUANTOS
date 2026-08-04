@@ -47,6 +47,13 @@ class MaterialChangeClass(str, Enum):
     MATERIAL_MULTIPLE = "MATERIAL_MULTIPLE"
 
 
+class CandidateDefinitionKind(str, Enum):
+    """Canonical executable-definition shape bound to a candidate identity."""
+
+    ALPHA_EXPRESSION = "ALPHA_EXPRESSION"
+    REALTIME_MECHANISM = "REALTIME_MECHANISM"
+
+
 class EvidenceGate(str, Enum):
     HISTORICAL_OOS = "HISTORICAL_OOS"
     SIGNAL_SHADOW = "SIGNAL_SHADOW"
@@ -95,14 +102,33 @@ class CandidateIdentity:
     created_at_ms: int
     predecessor_id: str | None = None
     change_class: MaterialChangeClass = MaterialChangeClass.NEW_CANDIDATE
+    definition_kind: CandidateDefinitionKind = CandidateDefinitionKind.ALPHA_EXPRESSION
+    signal_spec_json: str | None = None
+    decision_interval_ms: int | None = None
+    label_horizon_ms: int | None = None
 
     @property
     def definition_hash(self) -> str:
+        if self.definition_kind is CandidateDefinitionKind.ALPHA_EXPRESSION:
+            # Preserve the pre-handoff digest byte-for-byte.  Existing frozen
+            # daily candidates must not reset their evidence clock merely
+            # because the authority learned a second definition shape.
+            return stable_hash(
+                {
+                    "expression": self.expression,
+                    "quantile": float(self.quantile),
+                    "cadence_days": self.cadence_days,
+                    "universe": self.universe,
+                    "required_datasets": self.required_datasets,
+                }
+            )
         return stable_hash(
             {
-                "expression": self.expression,
+                "definition_kind": self.definition_kind.value,
+                "signal_spec_json": self.signal_spec_json,
                 "quantile": float(self.quantile),
-                "cadence_days": self.cadence_days,
+                "decision_interval_ms": self.decision_interval_ms,
+                "label_horizon_ms": self.label_horizon_ms,
                 "universe": self.universe,
                 "required_datasets": self.required_datasets,
             }
@@ -171,7 +197,7 @@ def _require_sha256(value: object, name: str) -> str:
 
 
 def _identity_payload(identity: CandidateIdentity) -> dict[str, Any]:
-    return {
+    payload = {
         "candidate_id": identity.candidate_id,
         "expression": identity.expression,
         "quantile": float(identity.quantile),
@@ -188,6 +214,16 @@ def _identity_payload(identity: CandidateIdentity) -> dict[str, Any]:
         "predecessor_id": identity.predecessor_id,
         "change_class": identity.change_class.value,
     }
+    if identity.definition_kind is not CandidateDefinitionKind.ALPHA_EXPRESSION:
+        payload.update(
+            {
+                "definition_kind": identity.definition_kind.value,
+                "signal_spec_json": identity.signal_spec_json,
+                "decision_interval_ms": identity.decision_interval_ms,
+                "label_horizon_ms": identity.label_horizon_ms,
+            }
+        )
+    return payload
 
 
 def _validated_identity(identity: CandidateIdentity) -> CandidateIdentity:
@@ -195,12 +231,51 @@ def _validated_identity(identity: CandidateIdentity) -> CandidateIdentity:
         raise TypeError("identity must be a CandidateIdentity")
     if _CANDIDATE_ID.fullmatch(identity.candidate_id) is None:
         raise AlphaProductionWorkflowError("candidate_id is invalid")
-    try:
-        canonical = ax.serialize(ax.deserialize(identity.expression))
-    except (TypeError, ValueError) as exc:
-        raise AlphaProductionWorkflowError("candidate expression is invalid") from exc
-    if canonical != identity.expression:
-        raise AlphaProductionWorkflowError("candidate expression is not canonical")
+    if not isinstance(identity.definition_kind, CandidateDefinitionKind):
+        raise AlphaProductionWorkflowError("definition_kind is invalid")
+    if identity.definition_kind is CandidateDefinitionKind.ALPHA_EXPRESSION:
+        try:
+            canonical = ax.serialize(ax.deserialize(identity.expression))
+        except (TypeError, ValueError) as exc:
+            raise AlphaProductionWorkflowError("candidate expression is invalid") from exc
+        if canonical != identity.expression:
+            raise AlphaProductionWorkflowError("candidate expression is not canonical")
+        if any(
+            value is not None
+            for value in (
+                identity.signal_spec_json,
+                identity.decision_interval_ms,
+                identity.label_horizon_ms,
+            )
+        ):
+            raise AlphaProductionWorkflowError(
+                "expression candidate cannot carry a realtime signal spec"
+            )
+    else:
+        if identity.expression != "":
+            raise AlphaProductionWorkflowError(
+                "realtime mechanism expression must be empty"
+            )
+        if not isinstance(identity.signal_spec_json, str):
+            raise AlphaProductionWorkflowError("signal_spec_json is required")
+        try:
+            signal_spec = json.loads(identity.signal_spec_json)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise AlphaProductionWorkflowError("signal_spec_json is invalid") from exc
+        if not isinstance(signal_spec, dict):
+            raise AlphaProductionWorkflowError("signal_spec_json must be an object")
+        canonical_signal_spec = json.dumps(
+            signal_spec,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        if canonical_signal_spec != identity.signal_spec_json:
+            raise AlphaProductionWorkflowError("signal_spec_json is not canonical")
+        for name in ("decision_interval_ms", "label_horizon_ms"):
+            value = getattr(identity, name)
+            if type(value) is not int or value <= 0:
+                raise AlphaProductionWorkflowError(f"{name} is invalid")
     if (
         isinstance(identity.quantile, bool)
         or not isinstance(identity.quantile, (int, float))
@@ -208,8 +283,13 @@ def _validated_identity(identity: CandidateIdentity) -> CandidateIdentity:
         or not 0.0 < float(identity.quantile) <= 0.5
     ):
         raise AlphaProductionWorkflowError("candidate quantile is invalid")
-    if type(identity.cadence_days) is not int or not 1 <= identity.cadence_days <= 30:
-        raise AlphaProductionWorkflowError("candidate cadence_days is invalid")
+    if identity.definition_kind is CandidateDefinitionKind.ALPHA_EXPRESSION:
+        if type(identity.cadence_days) is not int or not 1 <= identity.cadence_days <= 30:
+            raise AlphaProductionWorkflowError("candidate cadence_days is invalid")
+    elif identity.cadence_days != 0:
+        raise AlphaProductionWorkflowError(
+            "realtime mechanism cadence_days must be zero"
+        )
     for name in ("universe", "family_id", "source_kind", "source_ref"):
         _require_text(getattr(identity, name), name)
     _require_sha256(identity.source_definition_hash, "source_definition_hash")
@@ -264,7 +344,15 @@ def classify_material_change(
     changed_classes: set[MaterialChangeClass] = set()
     if any(
         getattr(previous, field) != getattr(current, field)
-        for field in ("expression", "quantile", "cadence_days")
+        for field in (
+            "expression",
+            "quantile",
+            "cadence_days",
+            "definition_kind",
+            "signal_spec_json",
+            "decision_interval_ms",
+            "label_horizon_ms",
+        )
     ):
         changed_classes.add(MaterialChangeClass.MATERIAL_SIGNAL)
     if any(
@@ -462,6 +550,17 @@ def _identity_from_payload(payload: Mapping[str, Any]) -> CandidateIdentity:
             created_at_ms=int(payload["created_at_ms"]),
             predecessor_id=payload.get("predecessor_id"),
             change_class=MaterialChangeClass(str(payload["change_class"])),
+            definition_kind=CandidateDefinitionKind(
+                str(
+                    payload.get(
+                        "definition_kind",
+                        CandidateDefinitionKind.ALPHA_EXPRESSION.value,
+                    )
+                )
+            ),
+            signal_spec_json=payload.get("signal_spec_json"),
+            decision_interval_ms=payload.get("decision_interval_ms"),
+            label_horizon_ms=payload.get("label_horizon_ms"),
         )
     )
 
@@ -866,6 +965,7 @@ class AlphaProductionWorkflow:
 __all__ = [
     "AlphaProductionWorkflow",
     "AlphaProductionWorkflowError",
+    "CandidateDefinitionKind",
     "CandidateEvidenceBundle",
     "CandidateIdentity",
     "EvidenceGate",

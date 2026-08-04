@@ -20,6 +20,7 @@ from quantos.contracts.hashing import stable_hash
 from services.research import alpha_expression as ax
 from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
+    CandidateDefinitionKind,
     CandidateIdentity,
     EvidenceGate,
     EvidenceStatus,
@@ -28,8 +29,8 @@ from services.research.alpha_production_workflow import (
     ProductionStage,
     derive_stage,
 )
+from services.research.alpha_family_registry import AlphaFamilyRegistry
 from services.research.paper_candidate_registry import PaperCandidateRegistry
-from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.paper_trading.attested_store import AttestedForwardLedger
 from services.research.portfolio_evidence import (
     PORTFOLIO_GATE_TOLERATED_MISSING,
@@ -42,6 +43,9 @@ from services.research.unblinding import (
     UnblindingPolicy,
     evaluate_unblinding,
     window_regime_labels,
+)
+from services.research.realtime_alpha_handoff import (
+    build_realtime_candidate_identities,
 )
 from tools.cache_io import atomic_write_json
 
@@ -59,6 +63,10 @@ DEFAULT_LIFECYCLE = Path("evidence/alpha_lifecycle_status.json")
 DEFAULT_PAPER_TRACK = Path("data/cache/paper_track.db")
 DEFAULT_REGIME_MARKS = Path("data/cache/crypto_perp_mark_prices.json")
 DEFAULT_REGIME_FUNDING = Path("data/cache/crypto_funding_rates.json")
+DEFAULT_REALTIME_ALPHA_REGISTRY = Path("data/cache/realtime_alpha_registry.db")
+DEFAULT_REALTIME_ALPHA_DISCOVERY = Path("data/cache/realtime_alpha_discovery.json")
+DEFAULT_REALTIME_ALPHA_SHADOW = Path("data/cache/realtime_alpha_forward_shadow.json")
+DEFAULT_REALTIME_ALPHA_EXECUTION = Path("data/cache/realtime_alpha_execution_paper.json")
 DEFAULT_UNBLINDING_POLICY = UnblindingPolicy()
 REQUIRED_FORWARD_PERIODS = 8
 LEGACY_DIAGNOSTIC_IDS = frozenset(
@@ -266,6 +274,8 @@ def _mechanism(alpha_id: str) -> tuple[str, str | None, tuple[str, ...]]:
 def build_candidate_identities(
     *,
     candidate_registry_path: str | Path = DEFAULT_CANDIDATE_REGISTRY,
+    realtime_registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
+    realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
 ) -> tuple[CandidateIdentity, ...]:
     """Build the bootstrap population from static preregistration + verified admission."""
     from tools.forward_track_advance import _ALPHAS, _alpha_spec
@@ -338,6 +348,35 @@ def build_candidate_identities(
                 change_class=MaterialChangeClass.NEW_CANDIDATE,
             )
         )
+    realtime_registry = Path(realtime_registry_path)
+    realtime_discovery = Path(realtime_discovery_path)
+    if realtime_registry.is_file() != realtime_discovery.is_file():
+        raise RuntimeError(
+            "realtime Alpha handoff requires both registry and discovery evidence"
+        )
+    if realtime_registry.is_file():
+        family_registry = AlphaFamilyRegistry(str(realtime_registry), create=False)
+        try:
+            if not family_registry.verify_chain():
+                raise RuntimeError("realtime Alpha family registry chain is invalid")
+            realtime_identities = build_realtime_candidate_identities(
+                family_registry.candidate_definitions(),
+                _read_optional(realtime_discovery),
+            )
+        finally:
+            family_registry.close()
+        existing_ids = {item.candidate_id for item in identities}
+        collisions = sorted(
+            item.candidate_id
+            for item in realtime_identities
+            if item.candidate_id in existing_ids
+        )
+        if collisions:
+            raise RuntimeError(
+                "realtime Alpha ids conflict with canonical candidates: "
+                + ",".join(collisions)
+            )
+        identities.extend(realtime_identities)
     return tuple(identities)
 
 
@@ -345,6 +384,109 @@ def _mapping_row(document: Mapping[str, Any], candidate_id: str) -> dict[str, An
     rows = document.get("alphas")
     row = rows.get(candidate_id) if isinstance(rows, Mapping) else None
     return dict(row) if isinstance(row, Mapping) else {}
+
+
+def _sequence_row(
+    document: Mapping[str, Any], candidate_id: str, *, field: str
+) -> dict[str, Any]:
+    rows = document.get(field)
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes, bytearray)):
+        return {}
+    matches = [
+        dict(row)
+        for row in rows
+        if isinstance(row, Mapping) and row.get("candidate_id") == candidate_id
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(f"workflow evidence duplicates candidate: {candidate_id}")
+    return matches[0] if matches else {}
+
+
+def _realtime_historical_gate(
+    candidate_id: str,
+    *,
+    document: Mapping[str, Any],
+    path: str | Path,
+) -> GateEvidence:
+    row = _sequence_row(document, candidate_id, field="candidates")
+    admission = document.get("data_admission")
+    formal_allowed = bool(
+        isinstance(admission, Mapping)
+        and admission.get("formal_validation_allowed") is True
+    )
+    if not row:
+        status = EvidenceStatus.NOT_AVAILABLE
+    elif not formal_allowed or row.get("evaluation_status") != "EVALUATED":
+        status = EvidenceStatus.PENDING
+    elif row.get("gate_pass") is True and row.get("verdict") == "PASS":
+        status = EvidenceStatus.PASS
+    else:
+        status = EvidenceStatus.FAIL
+    bound_row = {
+        "candidate": row,
+        "formal_validation_allowed": formal_allowed,
+        "research_policy_hash": document.get("research_policy_hash"),
+    }
+    return _gate(
+        EvidenceGate.HISTORICAL_OOS,
+        status,
+        path=path,
+        document=document if row else {},
+        row=bound_row,
+    )
+
+
+def _track_row(document: Mapping[str, Any], candidate_id: str) -> dict[str, Any]:
+    tracks = document.get("tracks")
+    row = tracks.get(candidate_id) if isinstance(tracks, Mapping) else None
+    return dict(row) if isinstance(row, Mapping) else {}
+
+
+def _realtime_engineering_shadow_gate(
+    candidate_id: str,
+    *,
+    document: Mapping[str, Any],
+    path: str | Path,
+) -> tuple[GateEvidence, int | None]:
+    row = _track_row(document, candidate_id)
+    periods = row.get("n_realizations")
+    observed = int(periods) if type(periods) is int and periods >= 0 else None
+    # This stream is intentionally engineering shadow only.  It proves causal
+    # data/label mechanics but can never satisfy the blinded formal shadow gate.
+    status = EvidenceStatus.RUNNING if row else EvidenceStatus.NOT_AVAILABLE
+    return (
+        _gate(
+            EvidenceGate.SIGNAL_SHADOW,
+            status,
+            path=path,
+            document=document if row else {},
+            row={
+                "track": row,
+                "evidence_class": "ENGINEERING_SHADOW_NON_FORMAL",
+            },
+        ),
+        observed,
+    )
+
+
+def _realtime_engineering_execution_gate(
+    candidate_id: str,
+    *,
+    document: Mapping[str, Any],
+    path: str | Path,
+) -> GateEvidence:
+    row = _track_row(document, candidate_id)
+    status = EvidenceStatus.RUNNING if row else EvidenceStatus.NOT_AVAILABLE
+    return _gate(
+        EvidenceGate.EXECUTION_PAPER,
+        status,
+        path=path,
+        document=document if row else {},
+        row={
+            "track": row,
+            "evidence_class": "ENGINEERING_EXECUTION_PAPER_NON_FORMAL",
+        },
+    )
 
 
 def _historical_gate(
@@ -608,6 +750,12 @@ def reconcile_workflow(
     lifecycle_document: Mapping[str, Any],
     lifecycle_path: str | Path,
     release_commit: str | None,
+    realtime_discovery_document: Mapping[str, Any] | None = None,
+    realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_shadow_document: Mapping[str, Any] | None = None,
+    realtime_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_SHADOW,
+    realtime_execution_document: Mapping[str, Any] | None = None,
+    realtime_execution_path: str | Path = DEFAULT_REALTIME_ALPHA_EXECUTION,
     paper_track_path: str | Path | None = None,
     marks_document: Mapping[str, Any] | None = None,
     funding_document: Mapping[str, Any] | None = None,
@@ -632,6 +780,9 @@ def reconcile_workflow(
         risk_document,
         realtime_document,
         lifecycle_document,
+        realtime_discovery_document or {},
+        realtime_shadow_document or {},
+        realtime_execution_document or {},
     )
     source_times = [
         timestamp
@@ -641,22 +792,38 @@ def reconcile_workflow(
     as_of_ms = max(source_times, default=0)
     for identity in identities:
         inserted_candidates += int(workflow.register_candidate(identity))
-        historical = _historical_gate(
-            identity.candidate_id,
-            historical_document=historical_document,
-            historical_path=historical_path,
-            forward_document=forward_evaluations_document,
-            forward_path=forward_evaluations_path,
+        realtime_identity = (
+            identity.definition_kind is CandidateDefinitionKind.REALTIME_MECHANISM
         )
-        shadow, periods, unblinding = _shadow_gate(
-            identity.candidate_id,
-            document=forward_status_document,
-            path=forward_status_path,
-            policy=policy,
-            paper_track_path=paper_track_path,
-            funding_by_ts=funding_by_ts,
-            prices_by_ts=prices_by_ts,
-        )
+        if realtime_identity:
+            historical = _realtime_historical_gate(
+                identity.candidate_id,
+                document=realtime_discovery_document or {},
+                path=realtime_discovery_path,
+            )
+            shadow, periods = _realtime_engineering_shadow_gate(
+                identity.candidate_id,
+                document=realtime_shadow_document or {},
+                path=realtime_shadow_path,
+            )
+            unblinding: dict[str, Any] = {}
+        else:
+            historical = _historical_gate(
+                identity.candidate_id,
+                historical_document=historical_document,
+                historical_path=historical_path,
+                forward_document=forward_evaluations_document,
+                forward_path=forward_evaluations_path,
+            )
+            shadow, periods, unblinding = _shadow_gate(
+                identity.candidate_id,
+                document=forward_status_document,
+                path=forward_status_path,
+                policy=policy,
+                paper_track_path=paper_track_path,
+                funding_by_ts=funding_by_ts,
+                prices_by_ts=prices_by_ts,
+            )
         risk, risk_blockers = _risk_gate(
             identity.candidate_id,
             document=risk_document,
@@ -665,11 +832,19 @@ def reconcile_workflow(
             portfolio_policy=gate_policy,
             portfolio_reference_aum=gate_reference_aum,
         )
-        execution, legacy = _execution_gate(
-            identity.candidate_id,
-            document=realtime_document,
-            path=realtime_path,
-        )
+        if realtime_identity:
+            execution = _realtime_engineering_execution_gate(
+                identity.candidate_id,
+                document=realtime_execution_document or {},
+                path=realtime_execution_path,
+            )
+            legacy = False
+        else:
+            execution, legacy = _execution_gate(
+                identity.candidate_id,
+                document=realtime_document,
+                path=realtime_path,
+            )
         lifecycle = _lifecycle_gate(
             identity.candidate_id,
             document=lifecycle_document,
@@ -684,8 +859,11 @@ def reconcile_workflow(
             blockers.append("HISTORICAL_OOS_NOT_PASS")
         if shadow.status is not EvidenceStatus.MATURE:
             blockers.append("SIGNAL_SHADOW_NOT_MATURE")
-            for item in unblinding.get("blockers", ()):
-                blockers.append(f"UNBLINDING_{item}")
+            if realtime_identity:
+                blockers.append("FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE")
+            else:
+                for item in unblinding.get("blockers", ()):
+                    blockers.append(f"UNBLINDING_{item}")
         if risk.status is not EvidenceStatus.READY:
             blockers.append("RESEARCH_RISK_NOT_READY")
         blockers.extend(risk_blockers)
@@ -693,6 +871,8 @@ def reconcile_workflow(
             blockers.append("RELEASE_IDENTITY_MISSING")
         if legacy:
             blockers.append("LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE")
+        if realtime_identity and execution.status is EvidenceStatus.RUNNING:
+            blockers.append("ENGINEERING_EXECUTION_PAPER_NOT_FORMAL_EVIDENCE")
         previous = workflow.latest_bundle(identity.candidate_id)
         bundle = derive_stage(
             gates=(historical, shadow, risk, execution, lifecycle),
@@ -708,6 +888,10 @@ def reconcile_workflow(
         )
         inserted_events += int(workflow.record_evidence(bundle))
     snapshot = workflow.snapshot()
+    realtime_handoff_count = sum(
+        identity.definition_kind is CandidateDefinitionKind.REALTIME_MECHANISM
+        for identity in identities
+    )
     snapshot.update(
         {
             "generated_at_ms": int(time.time_ns() // 1_000_000),
@@ -721,6 +905,10 @@ def reconcile_workflow(
                 "portfolio_gate_policy_hash": gate_policy.content_hash(),
                 "portfolio_gate_policy_version": gate_policy.policy_version,
                 "portfolio_reference_aum": float(gate_reference_aum),
+                "realtime_handoff_count": realtime_handoff_count,
+                "realtime_research_policy_hash": (
+                    (realtime_discovery_document or {}).get("research_policy_hash")
+                ),
             },
             "source_hashes": {
                 "historical_evaluations": stable_hash(historical_document),
@@ -732,6 +920,13 @@ def reconcile_workflow(
                 "lifecycle": stable_hash(lifecycle_document),
                 "regime_marks": stable_hash(marks_document or {}),
                 "regime_funding": stable_hash(funding_document or {}),
+                "realtime_alpha_discovery": stable_hash(
+                    realtime_discovery_document or {}
+                ),
+                "realtime_alpha_shadow": stable_hash(realtime_shadow_document or {}),
+                "realtime_alpha_execution": stable_hash(
+                    realtime_execution_document or {}
+                ),
             },
         }
     )
@@ -743,6 +938,10 @@ def run(
     db_path: str | Path = DEFAULT_DB,
     output_path: str | Path = DEFAULT_OUTPUT,
     candidate_registry_path: str | Path = DEFAULT_CANDIDATE_REGISTRY,
+    realtime_registry_path: str | Path = DEFAULT_REALTIME_ALPHA_REGISTRY,
+    realtime_discovery_path: str | Path = DEFAULT_REALTIME_ALPHA_DISCOVERY,
+    realtime_shadow_path: str | Path = DEFAULT_REALTIME_ALPHA_SHADOW,
+    realtime_execution_path: str | Path = DEFAULT_REALTIME_ALPHA_EXECUTION,
     historical_evaluations_path: str | Path = DEFAULT_HISTORICAL_EVALUATIONS,
     forward_evaluations_path: str | Path = DEFAULT_FORWARD_EVALUATIONS,
     forward_status_path: str | Path = DEFAULT_FORWARD_STATUS,
@@ -764,7 +963,9 @@ def run(
         if len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit):
             raise RuntimeError("QUANTOS_RELEASE_COMMIT is invalid")
     identities = build_candidate_identities(
-        candidate_registry_path=candidate_registry_path
+        candidate_registry_path=candidate_registry_path,
+        realtime_registry_path=realtime_registry_path,
+        realtime_discovery_path=realtime_discovery_path,
     )
     with AlphaProductionWorkflow(db_path) as workflow:
         snapshot = reconcile_workflow(
@@ -784,6 +985,12 @@ def run(
             lifecycle_document=_read_optional(lifecycle_path),
             lifecycle_path=lifecycle_path,
             release_commit=commit,
+            realtime_discovery_document=_read_optional(realtime_discovery_path),
+            realtime_discovery_path=realtime_discovery_path,
+            realtime_shadow_document=_read_optional(realtime_shadow_path),
+            realtime_shadow_path=realtime_shadow_path,
+            realtime_execution_document=_read_optional(realtime_execution_path),
+            realtime_execution_path=realtime_execution_path,
             paper_track_path=paper_track_path,
             marks_document=_read_soft(regime_marks_path),
             funding_document=_read_soft(regime_funding_path),
@@ -800,6 +1007,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--db", default=str(DEFAULT_DB))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--candidate-registry", default=str(DEFAULT_CANDIDATE_REGISTRY))
+    parser.add_argument("--realtime-registry", default=str(DEFAULT_REALTIME_ALPHA_REGISTRY))
+    parser.add_argument("--realtime-discovery", default=str(DEFAULT_REALTIME_ALPHA_DISCOVERY))
+    parser.add_argument("--realtime-shadow", default=str(DEFAULT_REALTIME_ALPHA_SHADOW))
+    parser.add_argument("--realtime-execution", default=str(DEFAULT_REALTIME_ALPHA_EXECUTION))
     parser.add_argument(
         "--historical-evaluations", default=str(DEFAULT_HISTORICAL_EVALUATIONS)
     )
@@ -819,6 +1030,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             db_path=args.db,
             output_path=args.output,
             candidate_registry_path=args.candidate_registry,
+            realtime_registry_path=args.realtime_registry,
+            realtime_discovery_path=args.realtime_discovery,
+            realtime_shadow_path=args.realtime_shadow,
+            realtime_execution_path=args.realtime_execution,
             historical_evaluations_path=args.historical_evaluations,
             forward_evaluations_path=args.forward_evaluations,
             forward_status_path=args.forward_status,
@@ -856,6 +1071,10 @@ __all__ = [
     "DEFAULT_PORTFOLIO_GATE_POLICY",
     "DEFAULT_REGIME_FUNDING",
     "DEFAULT_REGIME_MARKS",
+    "DEFAULT_REALTIME_ALPHA_DISCOVERY",
+    "DEFAULT_REALTIME_ALPHA_EXECUTION",
+    "DEFAULT_REALTIME_ALPHA_REGISTRY",
+    "DEFAULT_REALTIME_ALPHA_SHADOW",
     "DEFAULT_UNBLINDING_POLICY",
     "LEGACY_DIAGNOSTIC_IDS",
     "PORTFOLIO_EVIDENCE_TOLERATED_MISSING",

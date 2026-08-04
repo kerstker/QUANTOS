@@ -64,6 +64,10 @@ from services.research.realtime_alpha_feedback import (
     FeedbackProposal,
     build_feedback_plan,
 )
+from services.research.realtime_alpha_handoff import (
+    canonical_realtime_research_policy,
+    realtime_research_policy_hash,
+)
 from services.research.trial_provenance import trial_provenance_for_definition
 from services.validation.deflated_sharpe import deflated_sharpe_ratio, pbo_cscv
 from tools.cache_io import atomic_write_json
@@ -539,7 +543,10 @@ def _gate_result(
 
 
 def _dataset_version(
-    coverage: Mapping[str, FeatureCoverage], manifest_rows: Sequence[Mapping[str, Any]]
+    coverage: Mapping[str, FeatureCoverage],
+    manifest_rows: Sequence[Mapping[str, Any]],
+    *,
+    research_policy_hash: str,
 ) -> str:
     return stable_hash(
         {
@@ -554,6 +561,7 @@ def _dataset_version(
                 for feature_id, item in sorted(coverage.items())
             },
             "hypotheses": [dict(item) for item in manifest_rows],
+            "research_policy_hash": research_policy_hash,
         }
     )
 
@@ -578,6 +586,11 @@ def run_cycle(
 ) -> dict[str, Any]:
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
+    research_policy = canonical_realtime_research_policy(
+        policy,
+        feature_version=FEATURE_VERSION,
+    )
+    research_policy_hash = realtime_research_policy_hash(research_policy)
     base_hypotheses = default_realtime_hypotheses()
     quality_status, quality_payload = _read_quality_status(feature_status)
     coverage = coverage_from_store(source_store)
@@ -654,7 +667,11 @@ def run_cycle(
             )
             for item in hypotheses
         }
-        dataset_version = _dataset_version(coverage, manifest_rows)
+        dataset_version = _dataset_version(
+            coverage,
+            manifest_rows,
+            research_policy_hash=research_policy_hash,
+        )
 
         for item in hypotheses:
             registry.register_candidate(
@@ -919,6 +936,8 @@ def run_cycle(
             ),
             "mode": "L2_AUTONOMOUS_REALTIME_ALPHA_RESEARCH",
             "dataset_version": dataset_version,
+            "research_policy": research_policy,
+            "research_policy_hash": research_policy_hash,
             "search_id": search_id,
             "manifest_hash": stable_hash(manifest_rows),
             "hypotheses": manifest_rows,

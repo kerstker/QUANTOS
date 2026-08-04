@@ -10,6 +10,7 @@ from services.research import alpha_expression as ax
 from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
     AlphaProductionWorkflowError,
+    CandidateDefinitionKind,
     CandidateIdentity,
     EvidenceGate,
     EvidenceStatus,
@@ -101,6 +102,45 @@ def test_material_change_classification_is_explicit_and_conservative() -> None:
         base,
         replace(base, quantile=0.2, required_datasets=("global_ls", "taker_ls")),
     ) is MaterialChangeClass.MATERIAL_MULTIPLE
+
+
+def test_existing_expression_identity_hashes_remain_byte_stable() -> None:
+    identity = _identity()
+    assert identity.identity_hash == (
+        "9f5a639a9e6323d85dfbaca5755ba896273cde3a7134f1c480cf32bc16c59a0f"
+    )
+    assert identity.definition_hash == (
+        "3649f5d27141c02a41a17b878b9be61e5e8c925ddac6067b0e698c14fb2d589e"
+    )
+
+
+def test_realtime_mechanism_identity_is_canonical_and_append_only(tmp_path) -> None:
+    signal_spec = (
+        '{"candidate_id":"rt_test_5m_v1","decision_interval_ms":30000,'
+        '"label_horizon_ms":300000,"schema_version":'
+        '"realtime-candidate-signal-spec.v1"}'
+    )
+    identity = _identity(
+        candidate_id="rt_test_5m_v1",
+        expression="",
+        cadence_days=0,
+        universe="binance_usdm_14_realtime_public",
+        family_id="order_flow",
+        source_kind="AUTONOMOUS_REALTIME_PREREGISTERED",
+        required_datasets=("rt_mid_price",),
+        definition_kind=CandidateDefinitionKind.REALTIME_MECHANISM,
+        signal_spec_json=signal_spec,
+        decision_interval_ms=30_000,
+        label_horizon_ms=300_000,
+    )
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        assert workflow.register_candidate(identity) is True
+        assert workflow.register_candidate(identity) is False
+        stored = workflow.identity(identity.candidate_id)
+        assert stored == identity
+        assert stored.definition_kind is CandidateDefinitionKind.REALTIME_MECHANISM
+        with pytest.raises(AlphaProductionWorkflowError, match="different immutable"):
+            workflow.register_candidate(replace(identity, label_horizon_ms=600_000))
 
 
 def test_execution_paper_eligibility_requires_every_current_gate() -> None:
@@ -210,3 +250,42 @@ def test_registry_rejects_malformed_identity(tmp_path, updates, match) -> None:
     with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
         with pytest.raises(AlphaProductionWorkflowError, match=match):
             workflow.register_candidate(_identity(**updates))
+
+
+@pytest.mark.parametrize(
+    "updates,match",
+    (
+        ({"signal_spec_json": "{} "}, "not canonical"),
+        ({"decision_interval_ms": 0}, "decision_interval_ms"),
+        ({"label_horizon_ms": None}, "label_horizon_ms"),
+        ({"cadence_days": 1}, "cadence_days"),
+        ({"expression": ax.serialize(EXPRESSION)}, "expression must be empty"),
+    ),
+)
+def test_registry_rejects_malformed_realtime_identity(tmp_path, updates, match) -> None:
+    values = {
+        "candidate_id": "rt_test_5m_v1",
+        "expression": "",
+        "quantile": 0.2,
+        "cadence_days": 0,
+        "universe": "binance_usdm_14_realtime_public",
+        "family_id": "order_flow",
+        "source_kind": "AUTONOMOUS_REALTIME_PREREGISTERED",
+        "source_ref": "realtime_alpha_registry:" + "a" * 64,
+        "source_definition_hash": stable_hash({"source": "realtime"}),
+        "required_datasets": ("rt_mid_price",),
+        "economic_hypothesis": "Flow predicts a post-latency move.",
+        "falsification_criteria": ("Net return is non-positive.",),
+        "created_at_ms": 1234,
+        "definition_kind": CandidateDefinitionKind.REALTIME_MECHANISM,
+        "signal_spec_json": (
+            '{"candidate_id":"rt_test_5m_v1","decision_interval_ms":30000,'
+            '"label_horizon_ms":300000}'
+        ),
+        "decision_interval_ms": 30_000,
+        "label_horizon_ms": 300_000,
+    }
+    values.update(updates)
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        with pytest.raises(AlphaProductionWorkflowError, match=match):
+            workflow.register_candidate(CandidateIdentity(**values))
