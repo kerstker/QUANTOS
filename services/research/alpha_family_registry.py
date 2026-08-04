@@ -244,7 +244,11 @@ class AlphaFamilyRegistry:
         for row in rows:
             body = dict(row["payload"])
             body.update(
-                {"event_seq": row["event_seq"], "record_hash": row["record_hash"]}
+                {
+                    "event_seq": row["event_seq"],
+                    "recorded_at": row["recorded_at"],
+                    "record_hash": row["record_hash"],
+                }
             )
             out.append(body)
         return out

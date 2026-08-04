@@ -1395,6 +1395,9 @@ export interface AlphaPipelineCandidate extends LiveTradingForwardAlpha {
   execution_paper_eligible?: boolean;
   workflow_identity_hash?: string | null;
   workflow_bundle_hash?: string | null;
+  definition_kind?: 'ALPHA_EXPRESSION' | 'REALTIME_MECHANISM' | string;
+  family_id?: string | null;
+  source_kind?: string | null;
   deployment_eligible: false;
   blockers: string[];
   independent_evaluation?: {
@@ -1440,12 +1443,19 @@ export interface AlphaPipelinePayload {
     factory_survivors: number;
   };
   candidates: AlphaPipelineCandidate[];
+  exception_queue?: Array<{
+    code: string;
+    candidate_count: number;
+    candidate_ids: string[];
+  }>;
   workflow?: {
     authority_present: boolean;
     verified: boolean;
     population_count?: number | null;
     event_count?: number | null;
     execution_paper_eligible_count: number;
+    realtime_handoff_count?: number;
+    realtime_research_policy_hash?: string | null;
     release_commit?: string | null;
     source_as_of_ms?: number | null;
   };

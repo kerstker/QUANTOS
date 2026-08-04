@@ -1006,6 +1006,12 @@ def _alpha_pipeline_payload(
             workflow_row.get("workflow") if isinstance(workflow_row, dict) else None
         )
         workflow_bundle = workflow_bundle if isinstance(workflow_bundle, dict) else {}
+        workflow_identity = (
+            workflow_row.get("identity") if isinstance(workflow_row, dict) else None
+        )
+        workflow_identity = (
+            workflow_identity if isinstance(workflow_identity, dict) else {}
+        )
         workflow_gates = {
             str(item.get("gate")): item
             for item in workflow_bundle.get("gates", [])
@@ -1086,6 +1092,11 @@ def _alpha_pipeline_payload(
                     else None
                 ),
                 "workflow_bundle_hash": workflow_bundle.get("bundle_hash"),
+                "definition_kind": workflow_identity.get(
+                    "definition_kind", "ALPHA_EXPRESSION"
+                ),
+                "family_id": workflow_identity.get("family_id"),
+                "source_kind": workflow_identity.get("source_kind"),
                 "execution_paper_eligible": bool(
                     workflow_bundle.get("eligible_for_execution_paper") is True
                 ),
@@ -1149,6 +1160,27 @@ def _alpha_pipeline_payload(
         row["paper_class"] == "LEGACY_DIAGNOSTIC_PAPER" for row in candidates
     )
     candidate_execution_count = execution_count - legacy_execution_count
+    exception_candidates: dict[str, list[str]] = {}
+    for row in candidates:
+        for blocker in row.get("blockers") or []:
+            exception_candidates.setdefault(str(blocker), []).append(
+                str(row["alpha_id"])
+            )
+    exception_queue = [
+        {
+            "code": code,
+            "candidate_count": len(candidate_ids),
+            "candidate_ids": sorted(candidate_ids),
+        }
+        for code, candidate_ids in sorted(
+            exception_candidates.items(),
+            key=lambda item: (-len(item[1]), item[0]),
+        )
+    ]
+    workflow_reconciliation = workflow.get("reconciliation")
+    workflow_reconciliation = (
+        workflow_reconciliation if isinstance(workflow_reconciliation, dict) else {}
+    )
     return {
         "source": "BACKEND_COMPUTED_ALPHA_PIPELINE",
         "read_only": True,
@@ -1173,6 +1205,7 @@ def _alpha_pipeline_payload(
             "factory_survivors": len(discovered),
         },
         "candidates": candidates,
+        "exception_queue": exception_queue,
         "workflow": {
             "authority_present": bool(workflow),
             "verified": workflow_verified,
@@ -1183,15 +1216,19 @@ def _alpha_pipeline_payload(
             )
             if workflow_verified
             else 0,
+            "realtime_handoff_count": int(
+                workflow_reconciliation.get("realtime_handoff_count") or 0
+            )
+            if workflow_verified
+            else 0,
+            "realtime_research_policy_hash": workflow_reconciliation.get(
+                "realtime_research_policy_hash"
+            ),
             "release_commit": (
-                (workflow.get("reconciliation") or {}).get("release_commit")
-                if isinstance(workflow.get("reconciliation"), dict)
-                else None
+                workflow_reconciliation.get("release_commit")
             ),
             "source_as_of_ms": (
-                (workflow.get("reconciliation") or {}).get("source_as_of_ms")
-                if isinstance(workflow.get("reconciliation"), dict)
-                else None
+                workflow_reconciliation.get("source_as_of_ms")
             ),
         },
         "handoff": {

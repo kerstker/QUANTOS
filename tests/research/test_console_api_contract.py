@@ -701,6 +701,8 @@ def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
                 "reconciliation": {
                     "release_commit": "c" * 40,
                     "source_as_of_ms": 1234,
+                    "realtime_handoff_count": 2,
+                    "realtime_research_policy_hash": "d" * 64,
                 },
                 "safety": {
                     "live_allowed": False,
@@ -744,11 +746,18 @@ def test_dry_run_prefers_verified_unique_alpha_workflow(tmp_path, monkeypatch):
         "population_count": 4,
         "event_count": 11,
         "execution_paper_eligible_count": 1,
+        "realtime_handoff_count": 2,
+        "realtime_research_policy_hash": "d" * 64,
         "release_commit": "c" * 40,
         "source_as_of_ms": 1234,
     }
     assert payload["candidates"][-1]["stage"] == "EXECUTION_PAPER_ELIGIBLE"
     assert payload["candidates"][-1]["execution_paper_eligible"] is True
+    assert payload["exception_queue"][0] == {
+        "code": "LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE",
+        "candidate_count": 3,
+        "candidate_ids": candidate_ids[:3],
+    }
     assert payload["handoff"]["forward_to_execution_dynamic"] is True
     assert payload["handoff"]["status"] == "CONNECTED"
     assert payload["handoff"]["gap_codes"] == []

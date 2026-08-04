@@ -336,6 +336,24 @@ const state = vi.hoisted(() => ({
           blockers: ['LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE'],
         },
       ],
+      exception_queue: [
+        {
+          code: 'FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE',
+          candidate_count: 26,
+          candidate_ids: ['rt_basis_convergence_1h_v1'],
+        },
+      ],
+      workflow: {
+        authority_present: true,
+        verified: true,
+        population_count: 36,
+        event_count: 72,
+        execution_paper_eligible_count: 0,
+        realtime_handoff_count: 26,
+        realtime_research_policy_hash: 'd'.repeat(64),
+        release_commit: 'c'.repeat(40),
+        source_as_of_ms: 1_785_592_900_000,
+      },
       handoff: {
         factory_to_forward_registry_connected: false,
         forward_to_execution_dynamic: false,
@@ -655,6 +673,8 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();
+    expect(screen.getByText(/36 frozen identities \/ 26 realtime handoff/)).toBeInTheDocument();
+    expect(screen.getByText(/26 · FORMAL BLINDED SIGNAL SHADOW NOT AVAILABLE/)).toBeInTheDocument();
     expect(screen.getAllByText('rt_basis_convergence_1h_v1').length).toBeGreaterThan(1);
     expect(screen.getByText('全量 Alpha 生命周期与实时业绩')).toBeInTheDocument();
     expect(screen.getByText('ADAPTIVE_EXPLORATION_READY')).toBeInTheDocument();

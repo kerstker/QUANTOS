@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -8,6 +9,7 @@ from quantos.contracts.hashing import stable_hash
 from services.research import alpha_expression as ax
 from services.research.alpha_production_workflow import (
     AlphaProductionWorkflow,
+    CandidateDefinitionKind,
     CandidateIdentity,
     MaterialChangeClass,
 )
@@ -47,6 +49,35 @@ def _identity(candidate_id: str) -> CandidateIdentity:
         falsification_criteria=("Held-out net spread is non-positive.",),
         created_at_ms=0,
         change_class=MaterialChangeClass.NEW_CANDIDATE,
+    )
+
+
+def _realtime_identity(candidate_id: str) -> CandidateIdentity:
+    signal_spec = json.dumps(
+        {"candidate_id": candidate_id, "policy_hash": "a" * 64},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return CandidateIdentity(
+        candidate_id=candidate_id,
+        expression="",
+        quantile=0.3,
+        cadence_days=0,
+        universe="binance_usdm_14_realtime_public",
+        family_id="order_flow",
+        source_kind="AUTONOMOUS_REALTIME_PREREGISTERED",
+        source_ref="realtime_alpha_registry:" + "b" * 64,
+        source_definition_hash=stable_hash({"candidate": candidate_id}),
+        required_datasets=("rt_mid_price", "rt_taker_imbalance_5s"),
+        economic_hypothesis="Aggressive flow should predict the next price move.",
+        falsification_criteria=("Net held-out spread is non-positive.",),
+        created_at_ms=1,
+        change_class=MaterialChangeClass.NEW_CANDIDATE,
+        definition_kind=CandidateDefinitionKind.REALTIME_MECHANISM,
+        signal_spec_json=signal_spec,
+        decision_interval_ms=30_000,
+        label_horizon_ms=120_000,
     )
 
 
@@ -256,6 +287,85 @@ def test_reconciler_creates_one_authoritative_candidate_state(tmp_path) -> None:
         replay = _reconcile(workflow, (identity,), shadow=shadow)
         assert replay["reconciliation"]["inserted_candidates"] == 0
         assert replay["reconciliation"]["inserted_events"] == 0
+
+
+def test_realtime_engineering_tracks_are_visible_but_never_formal_evidence(
+    tmp_path,
+) -> None:
+    identity = _realtime_identity("rt_flow_test_v1")
+    discovery = {
+        "generated_at_ms": 3_000,
+        "research_policy_hash": "c" * 64,
+        "data_admission": {"formal_validation_allowed": True},
+        "candidates": [
+            {
+                "candidate_id": identity.candidate_id,
+                "evaluation_status": "EVALUATED",
+                "gate_pass": True,
+                "verdict": "PASS",
+            }
+        ],
+    }
+    engineering_shadow = {
+        "generated_at_ms": 3_100,
+        "tracks": {
+            identity.candidate_id: {
+                "candidate_id": identity.candidate_id,
+                "n_realizations": 500,
+                "cum_return": 1.0,
+            }
+        },
+    }
+    engineering_execution = {
+        "generated_at_ms": 3_200,
+        "tracks": {
+            identity.candidate_id: {
+                "candidate_id": identity.candidate_id,
+                "state": "EXECUTING",
+                "n_executions": 500,
+            }
+        },
+    }
+    with AlphaProductionWorkflow(tmp_path / "workflow.db") as workflow:
+        snapshot = reconcile_workflow(
+            workflow=workflow,
+            identities=(identity,),
+            historical_document={},
+            historical_path="historical.json",
+            forward_evaluations_document={},
+            forward_evaluations_path="forward.json",
+            forward_status_document={},
+            forward_status_path="formal-shadow.json",
+            risk_document={
+                "generated_at_ms": 3_000,
+                "alphas": {identity.candidate_id: {"status": "READY"}},
+            },
+            risk_path="risk.json",
+            portfolio_document=_portfolio_document((identity.candidate_id,)),
+            realtime_document={},
+            realtime_path="legacy-paper.json",
+            lifecycle_document={},
+            lifecycle_path="lifecycle.json",
+            release_commit=COMMIT,
+            realtime_discovery_document=discovery,
+            realtime_discovery_path="realtime-discovery.json",
+            realtime_shadow_document=engineering_shadow,
+            realtime_shadow_path="engineering-shadow.json",
+            realtime_execution_document=engineering_execution,
+            realtime_execution_path="engineering-execution.json",
+        )
+
+    row = snapshot["candidates"][0]
+    gates = _gates(row)
+    assert gates["HISTORICAL_OOS"]["status"] == "PASS"
+    assert gates["SIGNAL_SHADOW"]["status"] == "RUNNING"
+    assert gates["EXECUTION_PAPER"]["status"] == "RUNNING"
+    assert row["workflow"]["stage"] == "PARALLEL_VALIDATION"
+    assert row["workflow"]["eligible_for_execution_paper"] is False
+    assert "FORMAL_BLINDED_SIGNAL_SHADOW_NOT_AVAILABLE" in row["workflow"]["blockers"]
+    assert "ENGINEERING_EXECUTION_PAPER_NOT_FORMAL_EVIDENCE" in row["workflow"]["blockers"]
+    assert snapshot["execution_paper_eligible_ids"] == []
+    assert snapshot["reconciliation"]["realtime_handoff_count"] == 1
 
 
 def test_current_gate_regression_blocks_eligibility_without_erasing_stage(tmp_path) -> None:

@@ -1,5 +1,17 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v12（唯一 Alpha 漏斗 + 冻结实时策略）：** 关闭了
+> `AlphaProductionWorkflow` 10 条日频候选与实时自主发现 26 条候选分属两套身份/漏斗的
+> 结构缺口。实时 discovery 现在发布完整 `realtime-alpha-research-policy.v1` 及内容哈希，
+> 数据版本同时绑定 decision interval、标签 horizon/latency、quantile、费用、滑点、成熟度和
+> feature/evaluator 版本；追加式注册链、manifest、config hash、安全边界及 adaptive lineage
+> 任一不一致均 fail-closed。唯一工作流新增 `REALTIME_MECHANISM` 冻结定义，现有
+> `ALPHA_EXPRESSION` 哈希逐位不变；真实 L2 对账为 **36 个 canonical 候选 = 10 日频 + 26
+> 实时，0 个正式 Execution-Paper eligible**。工程 Signal Shadow/Execution Paper 只作为可见
+> 运行证据，明确不能取得正式盲测成熟或晋级信用。Console API/SSE 与纸面驾驶舱显示 36/26
+> 漏斗摘要、RT 身份和按 blocker 聚合的异常队列。设计与验收见
+> `docs/engineering/specs/2026-08-04-canonical-realtime-candidate-handoff.md`。
+
 > **2026-08-04 实时纸面生产 v11（因果反馈 + 全量生命周期可观测）：**
 > 实时 Alpha 流水线现可消费追加式 `ENGINEERING_SHADOW_REALIZED` 结果，按候选与家族计算
 > mean/SE/95% exploration UCB，在全局最多 8 条的预算内生成 half/double-horizon

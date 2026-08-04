@@ -74,6 +74,22 @@ def test_supply_chain_manifest_binds_automatic_alpha_candidate_handoff():
     } <= set(_MANIFESTS)
 
 
+def test_supply_chain_manifest_binds_canonical_realtime_candidate_handoff():
+    from scripts.generate_supply_chain_evidence import _MANIFESTS
+
+    assert {
+        "services/research/alpha_production_workflow.py",
+        "services/research/realtime_alpha_handoff.py",
+        "tools/alpha_production_workflow.py",
+        "tools/realtime_alpha_discovery.py",
+        "tests/research/test_alpha_production_workflow.py",
+        "tests/research/test_realtime_alpha_handoff.py",
+        "tests/tools/test_alpha_production_workflow.py",
+        "tests/tools/test_realtime_alpha_discovery.py",
+        "docs/engineering/specs/2026-08-04-canonical-realtime-candidate-handoff.md",
+    } <= set(_MANIFESTS)
+
+
 def test_supply_chain_artifacts_are_deterministic_and_honest():
     from scripts.generate_supply_chain_evidence import build_supply_chain_artifacts
 
