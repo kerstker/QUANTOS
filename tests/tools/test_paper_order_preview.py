@@ -36,8 +36,77 @@ def _pending(weights):
     }
 
 
+def _workflow_admission(*authorized):
+    authorized_ids = frozenset(authorized)
+    return {
+        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+        "status": "VERIFIED",
+        "source_path": "workflow.json",
+        "source_hash": "a" * 64,
+        "eligible_ids": authorized_ids,
+        "execution_ids": frozenset(),
+        "authorized_ids": authorized_ids,
+    }
+
+
 def test_public_exports_are_resolvable():
     assert all(hasattr(paper_preview, name) for name in paper_preview.__all__)
+
+
+def test_workflow_admission_is_fail_closed_and_identity_bound(tmp_path):
+    path = tmp_path / "workflow.json"
+    path.write_text(
+        json.dumps(
+            {
+                "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                "status": "VERIFIED",
+                "active_candidate_ids": ["candidate"],
+                "execution_paper_eligible_ids": ["candidate"],
+                "execution_paper_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    admission = paper_preview._workflow_admission(str(path))
+    assert admission["authorized_ids"] == frozenset({"candidate"})
+    assert len(admission["source_hash"]) == 64
+    paper_preview._revalidate_workflow_admission(
+        str(path), alpha_id="candidate", expected_hash=admission["source_hash"]
+    )
+
+    path.write_text(
+        json.dumps(
+            {
+                "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                "status": "VERIFIED",
+                "active_candidate_ids": [],
+                "execution_paper_eligible_ids": ["candidate"],
+                "execution_paper_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="exceeds active population"):
+        paper_preview._workflow_admission(str(path))
+
+
+def test_workflow_admission_revalidation_detects_toctou(tmp_path):
+    path = tmp_path / "workflow.json"
+    first = {
+        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+        "status": "VERIFIED",
+        "active_candidate_ids": ["candidate"],
+        "execution_paper_eligible_ids": ["candidate"],
+        "execution_paper_ids": [],
+    }
+    path.write_text(json.dumps(first), encoding="utf-8")
+    admission = paper_preview._workflow_admission(str(path))
+    first["execution_paper_eligible_ids"] = []
+    path.write_text(json.dumps(first), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="changed during paper admission"):
+        paper_preview._revalidate_workflow_admission(
+            str(path), alpha_id="candidate", expected_hash=admission["source_hash"]
+        )
 
 
 def test_build_alpha_preview_requires_complete_research_risk():
@@ -339,6 +408,11 @@ def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):
         "_latest_attested_pending",
         lambda _path, _alpha_id: (pending, 1),
     )
+    monkeypatch.setattr(
+        paper_preview,
+        "_workflow_admission",
+        lambda _path: _workflow_admission("crowd_contra"),
+    )
     report = run_preview(
         alpha_ids=("crowd_contra",),
         output_path=str(tmp_path / "first.json"),
@@ -353,6 +427,47 @@ def test_run_preview_reports_missing_full_research_risk(monkeypatch, tmp_path):
     assert report["errors"]["crowd_contra"]["reason"] == (
         "FULL_RESEARCH_RISK_NOT_APPROVED"
     )
+
+
+def test_run_preview_requires_workflow_authority_before_new_fill(monkeypatch, tmp_path):
+    pending = _pending({"BTC": 0.125})
+    monkeypatch.setattr(paper_preview, "_load_json", lambda _path: STATUS)
+    monkeypatch.setattr(
+        paper_preview,
+        "load_mark_prices",
+        lambda _path: {"BTC": {DECISION_TS: 50_000.0}},
+    )
+    monkeypatch.setattr(
+        paper_preview,
+        "_latest_attested_pending",
+        lambda _path, _alpha_id: (pending, 1),
+    )
+    monkeypatch.setattr(
+        paper_preview,
+        "_workflow_admission",
+        lambda _path: _workflow_admission(),
+    )
+    monkeypatch.setattr(
+        paper_preview,
+        "build_alpha_preview",
+        lambda *_args, **_kwargs: pytest.fail("workflow gate must run before preview"),
+    )
+
+    report = run_preview(
+        alpha_ids=("crowd_contra",),
+        output_path=str(tmp_path / "blocked.json"),
+        paper_store_path=str(tmp_path / "paper.db"),
+        generated_at_ms=DECISION_TS,
+    )
+
+    row = report["alphas"]["crowd_contra"]
+    assert row["paper_execution"] == "PAPER_BLOCKED"
+    assert row["workflow_admission"]["candidate_authorized"] is False
+    assert report["errors"]["crowd_contra"]["reason"] == (
+        "ALPHA_PRODUCTION_WORKFLOW_NOT_EXECUTION_PAPER_ELIGIBLE"
+    )
+    assert report["verdict"]["workflow_admission_valid"] is True
+    assert report["verdict"]["workflow_authorized_ids"] == []
 
 
 def test_main_returns_safe_blocked_code_for_completed_not_ready_evaluation(

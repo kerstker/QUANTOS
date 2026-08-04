@@ -30,6 +30,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from quantos.contracts.hashing import stable_hash
 from quantos.contracts.portfolio import Position
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_SAFE_BLOCKED,
@@ -75,12 +76,17 @@ DEFAULT_FORWARD_EVALUATIONS = os.path.join(
 DEFAULT_REALTIME_MARKET_STATUS = os.path.join(
     "data", "cache", "binance_realtime_market_status.json"
 )
+DEFAULT_ALPHA_PRODUCTION_WORKFLOW = os.path.join(
+    "data", "cache", "alpha_production_workflow.json"
+)
 ALPHA_IDS = ("carry_oi_majors", "crowd_contra", "top_contra")
 DEFAULT_AUM = 1_000_000.0
 DEFAULT_COST_BPS = 10.0
 OFFICIAL_PAPER_PERIODS_PER_YEAR = 52.0
 MAX_DECISION_AGE_DAYS = 8
 MAX_EXCHANGE_FILTER_AGE_MS = 15 * 60_000
+
+
 def _load_json(path: str) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -88,6 +94,49 @@ def _load_json(path: str) -> dict[str, Any]:
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _workflow_admission(path: str) -> dict[str, Any]:
+    """Load the sole authority for creating a new formal paper fill."""
+    document = _load_json(path)
+    if document.get("authority") != "ALPHA_PRODUCTION_WORKFLOW":
+        raise RuntimeError("alpha production workflow authority is invalid")
+    if document.get("status") != "VERIFIED":
+        raise RuntimeError("alpha production workflow is not VERIFIED")
+    active = document.get("active_candidate_ids")
+    eligible = document.get("execution_paper_eligible_ids")
+    executing = document.get("execution_paper_ids")
+    if not all(isinstance(value, list) for value in (active, eligible, executing)):
+        raise RuntimeError("alpha production workflow admission lists are invalid")
+    if any(not isinstance(item, str) or not item for item in active + eligible + executing):
+        raise RuntimeError("alpha production workflow candidate identity is invalid")
+    active_ids = frozenset(active)
+    eligible_ids = frozenset(eligible)
+    execution_ids = frozenset(executing)
+    if not eligible_ids.issubset(active_ids) or not execution_ids.issubset(active_ids):
+        raise RuntimeError("alpha production workflow admission exceeds active population")
+    return {
+        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+        "status": "VERIFIED",
+        "source_path": os.path.normpath(str(path)),
+        "source_hash": stable_hash(document),
+        "eligible_ids": eligible_ids,
+        "execution_ids": execution_ids,
+        "authorized_ids": eligible_ids | execution_ids,
+    }
+
+
+def _revalidate_workflow_admission(
+    path: str,
+    *,
+    alpha_id: str,
+    expected_hash: str,
+) -> None:
+    current = _workflow_admission(path)
+    if current["source_hash"] != expected_hash:
+        raise RuntimeError("alpha production workflow changed during paper admission")
+    if alpha_id not in current["authorized_ids"]:
+        raise RuntimeError("candidate lost Execution Paper admission before ledger append")
 
 
 def _forward_pending_preview(
@@ -211,6 +260,57 @@ def _forward_pending_preview(
         "broker_connectivity": False,
         "credentials_accessed": False,
     }
+
+
+def _workflow_blocked_preview(
+    alpha_id: str,
+    *,
+    decision_ts: int,
+    status_path: str,
+    research_risk_bundle_path: str,
+    generated_at_ms: int | None,
+    admission: Mapping[str, Any] | None,
+    error: str,
+) -> dict[str, Any]:
+    row = _forward_pending_preview(
+        alpha_id,
+        status_path=status_path,
+        research_risk_bundle_path=research_risk_bundle_path,
+        generated_at_ms=generated_at_ms,
+        error=error,
+    )
+    row.update(
+        {
+            "decision_source": "ALPHA_PRODUCTION_WORKFLOW_BLOCKED",
+            "decision_ts": int(decision_ts),
+            "forward_candidate": alpha_id not in ALPHA_IDS,
+            "workflow_admission": {
+                "authority": (
+                    admission.get("authority")
+                    if isinstance(admission, Mapping)
+                    else None
+                ),
+                "status": (
+                    admission.get("status")
+                    if isinstance(admission, Mapping)
+                    else "INVALID"
+                ),
+                "source_path": (
+                    admission.get("source_path")
+                    if isinstance(admission, Mapping)
+                    else None
+                ),
+                "source_hash": (
+                    admission.get("source_hash")
+                    if isinstance(admission, Mapping)
+                    else None
+                ),
+                "candidate_authorized": False,
+                "reason": error,
+            },
+        }
+    )
+    return row
 
 
 def _status_guard(status: Mapping[str, Any], *, recorded_at: int) -> None:
@@ -789,6 +889,7 @@ def run_preview(
     paper_store_path: str = DEFAULT_PAPER_STORE,
     research_risk_bundle_path: str = DEFAULT_RESEARCH_RISK_BUNDLE,
     realtime_market_status_path: str = DEFAULT_REALTIME_MARKET_STATUS,
+    workflow_path: str = DEFAULT_ALPHA_PRODUCTION_WORKFLOW,
     aum: float = DEFAULT_AUM,
     cost_bps: float = DEFAULT_COST_BPS,
     generated_at_ms: int | None = None,
@@ -812,6 +913,12 @@ def run_preview(
         raise ValueError("alpha_ids must be a non-empty subset of the attested paper candidates")
     status = _load_json(status_path)
     mark_by_ticker = load_mark_prices(mark_cache)
+    workflow_error: str | None = None
+    try:
+        workflow_admission = _workflow_admission(workflow_path)
+    except RuntimeError as exc:
+        workflow_admission = None
+        workflow_error = str(exc)
     previews: dict[str, Any] = {}
     errors: dict[str, Any] = {}
     store = PaperExecutionStore(paper_store_path, create=True)
@@ -822,12 +929,43 @@ def run_preview(
                 pending["alpha_id"] = str(alpha_id)
                 decision_ts, _, _ = _decision_inputs(pending, mark_by_ticker)
                 _status_guard(status, recorded_at=int(pending.get("recorded_at", 0) or 0))
+                existing = store.get_by_decision(alpha_id, decision_ts)
+                if existing is None and (
+                    workflow_admission is None
+                    or alpha_id not in workflow_admission["authorized_ids"]
+                ):
+                    reason = (
+                        "ALPHA_PRODUCTION_WORKFLOW_UNAVAILABLE"
+                        if workflow_admission is None
+                        else "ALPHA_PRODUCTION_WORKFLOW_NOT_EXECUTION_PAPER_ELIGIBLE"
+                    )
+                    previews[alpha_id] = _workflow_blocked_preview(
+                        alpha_id,
+                        decision_ts=decision_ts,
+                        status_path=status_path,
+                        research_risk_bundle_path=research_risk_bundle_path,
+                        generated_at_ms=generated_at_ms,
+                        admission=workflow_admission,
+                        error=reason,
+                    )
+                    errors[alpha_id] = {
+                        "error_type": "PaperWorkflowAdmissionBlocked",
+                        "error": workflow_error
+                        or (
+                            "candidate is not authorized for Execution Paper by the "
+                            "alpha production workflow"
+                        ),
+                        "reason": reason,
+                        "paper_execution": "PAPER_BLOCKED",
+                        "live_allowed": False,
+                        "order_submission_allowed": False,
+                    }
+                    continue
                 bundle_result = load_research_risk_bundle(
                     research_risk_bundle_path,
                     alpha_id=alpha_id,
                     pending=pending,
                 )
-                existing = store.get_by_decision(alpha_id, decision_ts)
                 if existing is not None:
                     stored_aum = existing.get("aum")
                     stored_cost_bps = existing.get("cost_bps")
@@ -917,6 +1055,19 @@ def run_preview(
                         existing.get("rejected_reasons") or []
                     )
                     existing["research_risk_bundle"] = dict(bundle_result.status)
+                    existing["workflow_admission"] = {
+                        "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                        "status": "HISTORICAL_ROW_REPLAY",
+                        "candidate_authorized": bool(
+                            workflow_admission is not None
+                            and alpha_id in workflow_admission["authorized_ids"]
+                        ),
+                        "source_hash": (
+                            workflow_admission.get("source_hash")
+                            if workflow_admission is not None
+                            else None
+                        ),
+                    }
                     previews[alpha_id] = existing
                     continue
                 preview = build_alpha_preview(
@@ -944,7 +1095,24 @@ def run_preview(
                         else None
                     ),
                 )
+                preview["workflow_admission"] = {
+                    "authority": workflow_admission["authority"],
+                    "status": "AUTHORIZED",
+                    "candidate_authorized": True,
+                    "authorization_stage": (
+                        "EXECUTION_PAPER"
+                        if alpha_id in workflow_admission["execution_ids"]
+                        else "EXECUTION_PAPER_ELIGIBLE"
+                    ),
+                    "source_path": workflow_admission["source_path"],
+                    "source_hash": workflow_admission["source_hash"],
+                }
                 if preview.get("paper_execution") == "PAPER_FILLED":
+                    _revalidate_workflow_admission(
+                        workflow_path,
+                        alpha_id=alpha_id,
+                        expected_hash=workflow_admission["source_hash"],
+                    )
                     store.append_preview(preview)
                 previews[alpha_id] = preview
                 if preview.get("paper_execution") != "PAPER_FILLED":
@@ -1030,6 +1198,12 @@ def run_preview(
             "paper_execution_universe": list(execution_required),
             "forward_candidates_pending": list(forward_pending),
             "forward_candidate_count": len(selected) - len(static_selected),
+            "workflow_admission_valid": workflow_admission is not None,
+            "workflow_authorized_ids": sorted(
+                workflow_admission["authorized_ids"]
+                if workflow_admission is not None
+                else ()
+            ),
             "live_allowed": False,
             "order_submission_allowed": False,
             "human_review_required": True,
@@ -1061,6 +1235,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--paper-store", default=DEFAULT_PAPER_STORE)
     parser.add_argument(
+        "--alpha-production-workflow",
+        default=DEFAULT_ALPHA_PRODUCTION_WORKFLOW,
+        help="sole workflow authority for admitting a new formal paper fill",
+    )
+    parser.add_argument(
         "--research-risk-bundle",
         default=DEFAULT_RESEARCH_RISK_BUNDLE,
         help="immutable same-PIT nine-engine risk bundle; missing means pending/block",
@@ -1082,6 +1261,7 @@ def main(argv: list[str] | None = None) -> int:
         output_path=args.output,
         paper_store_path=args.paper_store,
         research_risk_bundle_path=args.research_risk_bundle,
+        workflow_path=args.alpha_production_workflow,
         aum=args.aum,
         cost_bps=args.cost_bps,
     )
@@ -1100,6 +1280,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "ALPHA_IDS",
+    "DEFAULT_ALPHA_PRODUCTION_WORKFLOW",
     "DEFAULT_PAPER_STORE",
     "DEFAULT_OUTPUT",
     "FULL_RESEARCH_RISK_ENGINES",

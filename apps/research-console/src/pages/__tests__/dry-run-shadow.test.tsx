@@ -396,6 +396,8 @@ const state = vi.hoisted(() => ({
       snapshot_present: true,
       verdict: {
         paper_preview_ready: false,
+        workflow_admission_valid: true,
+        workflow_authorized_ids: [],
         live_allowed: false,
         order_submission_allowed: false,
       },
@@ -491,6 +493,8 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('连续运行与故障恢复')).toBeInTheDocument();
     expect(screen.getAllByText('6/6').length).toBeGreaterThan(0);
     expect(screen.getByText('Restart recovery')).toBeInTheDocument();
+    expect(screen.getByText('Workflow authority')).toBeInTheDocument();
+    expect(screen.getByText('0 candidates authorized')).toBeInTheDocument();
     expect(screen.getByText('MATURING')).toBeInTheDocument();
     expect(screen.getAllByText(/2026-08-03 12:00 UTC/).length).toBeGreaterThan(0);
     expect(screen.getByText(/前向证据按计划成熟中/)).toBeInTheDocument();

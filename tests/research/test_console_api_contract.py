@@ -320,6 +320,8 @@ def test_dry_run_surfaces_paper_order_preview_without_live_capability():
     assert preview["safety"]["paper_only"] is True
     assert preview["safety"]["broker_connectivity"] is False
     assert preview["safety"]["broker_order_submission"] is False
+    assert isinstance(preview["verdict"]["workflow_admission_valid"], bool)
+    assert isinstance(preview["verdict"]["workflow_authorized_ids"], list)
     assert preview["verdict"]["live_allowed"] is False
     assert preview["verdict"]["order_submission_allowed"] is False
 
