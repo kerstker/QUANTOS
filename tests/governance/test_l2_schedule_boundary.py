@@ -114,6 +114,13 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
     assert "StateRoot" in source
     assert "l2_schedule_entrypoint.py" in source
     assert "Get-Command python" in source
+    assert '-c "import sys; print(sys.executable)"' in source
+    assert "$pythonExecutable" in source
+    assert "configured Python runtime could not resolve its real executable" in source
+    assert (
+        '$pythonw = Join-Path (Split-Path -Parent $pythonExecutable) "pythonw.exe"'
+        in source
+    )
     assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
     assert "New-ScheduledTaskPrincipal" in source
