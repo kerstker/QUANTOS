@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v15（决策帧缓存与发现提速）：** `realtime_alpha_discovery` 现在由 SQLite 在存储侧选择每个交易对/决策桶的最新完整 PIT 快照，只把选中的 30 秒决策帧送入 Python；新增可替换的 `realtime_decision_frames.db` 派生缓存，热读不再重复扫描数百万条原始特征。真实状态库实测热读约 0.35 秒、66,770 帧；24 候选的临时评估约 78 秒。缓存不是证据，不驱动晋级或下单；缺历史、过期或不完整快照仍会 fail-closed 回源重建，`event_time <= knowledge_time` 与完整七特征约束保持不变。此次只改善全自动探索的吞吐和新鲜度，不改变 L2 纸面边界及 live/order flags=false。
+
 > **2026-08-04 实时纸面生产 v14（全链审计不再被周期性强杀）：** 真实解释器重绑后进一步
 > 暴露 `binance_realtime_features` 的 10 分钟 `ExecutionTimeLimit` 小于 526 万行每日全链审计
 > 的现场耗时；Task Scheduler 会在每轮即将完成前硬终止 worker，留下永久 `STARTED` 回执，

@@ -175,7 +175,7 @@ def _complete_frame(
     )
 
 
-def load_bucketed_frames(
+def _query_bucketed_frames(
     path: str | Path,
     *,
     instruments: Sequence[str],
@@ -183,57 +183,147 @@ def load_bucketed_frames(
     end_ms: int,
     bucket_ms: int = 30_000,
 ) -> dict[str, tuple[RealtimeFrame, ...]]:
-    """Load the last complete known snapshot in every closed decision bucket."""
+    """Load the last complete known snapshot in every closed decision bucket.
+
+    The feature store is intentionally append-only and can contain many raw
+    observations inside one 30-second decision bucket.  The old implementation
+    materialized every one of those rows in Python and only then selected the
+    latest bucket observation.  That made a normal discovery cycle reread
+    millions of values and left the real-time freshness gate racing the worker
+    runtime.
+
+    Bucket selection is now performed by SQLite: first identify complete
+    seven-feature snapshots, then rank one snapshot per instrument/bucket by
+    ``knowledge_time`` and ``event_time``.  Only the selected rows cross the
+    Python boundary.  The PIT rules are unchanged: values are selected by
+    knowledge time, the snapshot must be complete, and the resulting decision
+    frame is still constructed only from observations known by that decision.
+    """
     if type(start_ms) is not int or type(end_ms) is not int or not 0 <= start_ms <= end_ms:
         raise ValueError("frame range is invalid")
     if type(bucket_ms) is not int or bucket_ms <= 0:
         raise ValueError("bucket_ms must be positive")
+    selected_instruments = tuple(sorted(set(str(item) for item in instruments)))
+    if not selected_instruments:
+        return {}
+    selected_features = tuple(str(item) for item in CORE_FEATURE_IDS)
+    feature_placeholders = ",".join("?" for _ in selected_features)
+    instrument_placeholders = ",".join("?" for _ in selected_instruments)
     resolved = Path(path).resolve()
     try:
         connection = sqlite3.connect(f"file:{resolved}?mode=ro", uri=True)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA query_only=ON")
         result: dict[str, tuple[RealtimeFrame, ...]] = {}
-        for instrument in sorted(set(instruments)):
-            snapshots: dict[tuple[int, int], dict[str, float]] = {}
-            for feature_id in CORE_FEATURE_IDS:
-                rows = connection.execute(
-                    "SELECT event_time,knowledge_time,value FROM feature_values "
-                    "WHERE feature_id=? AND feature_version=? AND instrument_id=? "
-                    "AND knowledge_time>=? AND knowledge_time<=? "
-                    "ORDER BY knowledge_time,event_time",
-                    (feature_id, FEATURE_VERSION, instrument, start_ms, end_ms),
-                )
-                for row in rows:
-                    value = row["value"]
-                    if value is None or not math.isfinite(float(value)):
-                        continue
-                    key = (int(row["event_time"]), int(row["knowledge_time"]))
-                    snapshots.setdefault(key, {})[feature_id] = float(value)
-            latest_by_bucket: dict[int, tuple[int, int, Mapping[str, float]]] = {}
-            for (event_time, knowledge_time), values in snapshots.items():
-                if set(values) != set(CORE_FEATURE_IDS) or knowledge_time < event_time:
-                    continue
-                bucket_end = (knowledge_time // bucket_ms + 1) * bucket_ms
-                if bucket_end > end_ms + bucket_ms:
-                    continue
-                existing = latest_by_bucket.get(bucket_end)
-                if existing is None or (knowledge_time, event_time) > (existing[1], existing[0]):
-                    latest_by_bucket[bucket_end] = (event_time, knowledge_time, values)
-            frames = tuple(
-                _complete_frame(
+        query = f"""
+            WITH complete_snapshots AS (
+                SELECT
+                    instrument_id,
+                    event_time,
+                    knowledge_time,
+                    (CAST(knowledge_time / ? AS INTEGER) + 1) * ? AS decision_time
+                FROM feature_values
+                WHERE feature_version=?
+                  AND feature_id IN ({feature_placeholders})
+                  AND instrument_id IN ({instrument_placeholders})
+                  AND knowledge_time>=?
+                  AND knowledge_time<=?
+                  AND event_time<=knowledge_time
+                  AND value IS NOT NULL
+                GROUP BY instrument_id,event_time,knowledge_time
+                HAVING COUNT(DISTINCT feature_id)=?
+            ), ranked_snapshots AS (
+                SELECT
+                    instrument_id,
+                    event_time,
+                    knowledge_time,
+                    decision_time,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY instrument_id,decision_time
+                        ORDER BY knowledge_time DESC,event_time DESC
+                    ) AS row_number
+                FROM complete_snapshots
+                WHERE decision_time<=?
+            )
+            SELECT
+                ranked.instrument_id,
+                ranked.event_time,
+                ranked.knowledge_time,
+                ranked.decision_time,
+                fv.feature_id,
+                fv.value
+            FROM ranked_snapshots AS ranked
+            JOIN feature_values AS fv
+              ON fv.instrument_id=ranked.instrument_id
+             AND fv.event_time=ranked.event_time
+             AND fv.knowledge_time=ranked.knowledge_time
+             AND fv.feature_version=?
+             AND fv.feature_id IN ({feature_placeholders})
+            WHERE ranked.row_number=1
+            ORDER BY ranked.instrument_id,ranked.decision_time,
+                     ranked.knowledge_time,ranked.event_time,fv.feature_id
+        """
+        parameters = (
+            bucket_ms,
+            bucket_ms,
+            FEATURE_VERSION,
+            *selected_features,
+            *selected_instruments,
+            start_ms,
+            end_ms,
+            len(selected_features),
+            end_ms + bucket_ms,
+            FEATURE_VERSION,
+            *selected_features,
+        )
+        current_key: tuple[str, int, int, int] | None = None
+        current_values: dict[str, float] = {}
+        frames_by_instrument: dict[str, list[RealtimeFrame]] = {}
+
+        def flush_current() -> None:
+            if current_key is None or set(current_values) != set(selected_features):
+                return
+            instrument, event_time, knowledge_time, decision_time = current_key
+            if knowledge_time < event_time:
+                return
+            try:
+                frame = _complete_frame(
                     instrument,
                     event_time_ms=event_time,
                     knowledge_time_ms=knowledge_time,
-                    decision_time_ms=bucket_end,
-                    values=values,
+                    decision_time_ms=decision_time,
+                    values=current_values,
                 )
-                for bucket_end, (event_time, knowledge_time, values) in sorted(
-                    latest_by_bucket.items()
-                )
+            except (KeyError, TypeError, ValueError):
+                return
+            frames_by_instrument.setdefault(instrument, []).append(frame)
+
+        for row in connection.execute(query, parameters):
+            key = (
+                str(row["instrument_id"]),
+                int(row["event_time"]),
+                int(row["knowledge_time"]),
+                int(row["decision_time"]),
             )
-            if frames:
-                result[instrument] = frames
+            if current_key != key:
+                flush_current()
+                current_key = key
+                current_values = {}
+            value = row["value"]
+            if value is None:
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(numeric):
+                current_values[str(row["feature_id"])] = numeric
+        flush_current()
+        result = {
+            instrument: tuple(rows)
+            for instrument, rows in frames_by_instrument.items()
+            if rows
+        }
         return result
     except (sqlite3.DatabaseError, TypeError, ValueError) as exc:
         raise RealtimeAlphaWorkerError(
@@ -499,6 +589,216 @@ def _pbo_by_horizon(
     return result
 
 
+def _frame_cache_connect(path: str | Path) -> sqlite3.Connection:
+    resolved = Path(path).resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(resolved), timeout=30.0)
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS decision_frames (
+            instrument_id TEXT NOT NULL,
+            decision_time INTEGER NOT NULL,
+            event_time INTEGER NOT NULL,
+            mid_price REAL NOT NULL,
+            spread_bps REAL NOT NULL,
+            depth_imbalance_5 REAL NOT NULL,
+            mark_basis_bps REAL NOT NULL,
+            funding_rate REAL NOT NULL,
+            taker_imbalance_5s REAL NOT NULL,
+            liquidation_imbalance_5s REAL NOT NULL,
+            PRIMARY KEY (instrument_id, decision_time)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS ix_decision_frames_time "
+        "ON decision_frames (decision_time, instrument_id)"
+    )
+    connection.commit()
+    return connection
+
+
+def _frame_cache_bounds(
+    connection: sqlite3.Connection,
+    *,
+    instruments: Sequence[str],
+) -> tuple[int | None, int | None]:
+    selected = tuple(sorted(set(str(item) for item in instruments)))
+    if not selected:
+        return None, None
+    placeholders = ",".join("?" for _ in selected)
+    row = connection.execute(
+        f"SELECT MIN(decision_time),MAX(decision_time) FROM decision_frames "
+        f"WHERE instrument_id IN ({placeholders})",
+        selected,
+    ).fetchone()
+    if row is None or row[0] is None or row[1] is None:
+        return None, None
+    return int(row[0]), int(row[1])
+
+
+def _read_frame_cache(
+    connection: sqlite3.Connection,
+    *,
+    instruments: Sequence[str],
+    start_ms: int,
+    end_ms: int,
+) -> dict[str, tuple[RealtimeFrame, ...]]:
+    selected = tuple(sorted(set(str(item) for item in instruments)))
+    if not selected:
+        return {}
+    placeholders = ",".join("?" for _ in selected)
+    rows = connection.execute(
+        f"""
+        SELECT instrument_id,decision_time,event_time,mid_price,spread_bps,
+               depth_imbalance_5,mark_basis_bps,funding_rate,
+               taker_imbalance_5s,liquidation_imbalance_5s
+        FROM decision_frames
+        WHERE instrument_id IN ({placeholders})
+          AND decision_time>=? AND decision_time<=?
+        ORDER BY instrument_id,decision_time
+        """,
+        (*selected, start_ms, end_ms),
+    )
+    result: dict[str, list[RealtimeFrame]] = {}
+    for row in rows:
+        frame = RealtimeFrame(
+            instrument_id=str(row["instrument_id"]),
+            event_time_ms=int(row["event_time"]),
+            decision_time_ms=int(row["decision_time"]),
+            mid_price=float(row["mid_price"]),
+            spread_bps=float(row["spread_bps"]),
+            depth_imbalance_5=float(row["depth_imbalance_5"]),
+            mark_basis_bps=float(row["mark_basis_bps"]),
+            funding_rate=float(row["funding_rate"]),
+            taker_imbalance_5s=float(row["taker_imbalance_5s"]),
+            liquidation_imbalance_5s=float(row["liquidation_imbalance_5s"]),
+        )
+        result.setdefault(frame.instrument_id, []).append(frame)
+    return {key: tuple(value) for key, value in result.items()}
+
+
+def _write_frame_cache(
+    connection: sqlite3.Connection,
+    frames: Mapping[str, Sequence[RealtimeFrame]],
+) -> None:
+    rows = [
+        (
+            frame.instrument_id,
+            frame.decision_time_ms,
+            frame.event_time_ms,
+            frame.mid_price,
+            frame.spread_bps,
+            frame.depth_imbalance_5,
+            frame.mark_basis_bps,
+            frame.funding_rate,
+            frame.taker_imbalance_5s,
+            frame.liquidation_imbalance_5s,
+        )
+        for instrument_frames in frames.values()
+        for frame in instrument_frames
+    ]
+    if not rows:
+        return
+    connection.executemany(
+        """
+        INSERT INTO decision_frames (
+            instrument_id,decision_time,event_time,mid_price,spread_bps,
+            depth_imbalance_5,mark_basis_bps,funding_rate,
+            taker_imbalance_5s,liquidation_imbalance_5s
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(instrument_id,decision_time) DO UPDATE SET
+            event_time=excluded.event_time,
+            mid_price=excluded.mid_price,
+            spread_bps=excluded.spread_bps,
+            depth_imbalance_5=excluded.depth_imbalance_5,
+            mark_basis_bps=excluded.mark_basis_bps,
+            funding_rate=excluded.funding_rate,
+            taker_imbalance_5s=excluded.taker_imbalance_5s,
+            liquidation_imbalance_5s=excluded.liquidation_imbalance_5s
+        """,
+        rows,
+    )
+    connection.commit()
+
+
+def load_bucketed_frames(
+    path: str | Path,
+    *,
+    instruments: Sequence[str],
+    start_ms: int,
+    end_ms: int,
+    bucket_ms: int = 30_000,
+    frame_cache_path: str | Path | None = None,
+    max_cache_lag_ms: int = 15 * 60_000,
+) -> dict[str, tuple[RealtimeFrame, ...]]:
+    """Load PIT frames, optionally using a replaceable derived bucket cache.
+
+    The cache is not evidence and never drives promotion or order authority.
+    It only prevents each discovery cycle from repeating the historical SQL
+    reduction.  A cold cache performs the verified reduction once; warm cycles
+    refresh only the recent tail and read the historical buckets directly.
+    """
+    if frame_cache_path is None:
+        return _query_bucketed_frames(
+            path,
+            instruments=instruments,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            bucket_ms=bucket_ms,
+        )
+    if type(max_cache_lag_ms) is not int or max_cache_lag_ms < 0:
+        raise ValueError("max_cache_lag_ms must be a non-negative integer")
+    connection = _frame_cache_connect(frame_cache_path)
+    try:
+        cache_min, cache_max = _frame_cache_bounds(
+            connection,
+            instruments=instruments,
+        )
+        first_decision_time = (start_ms // bucket_ms + 1) * bucket_ms
+        needs_history = cache_min is None or cache_min > first_decision_time
+        cache_is_recent = (
+            cache_max is not None
+            and cache_max >= end_ms - max_cache_lag_ms
+        )
+        if not needs_history and cache_is_recent:
+            # A recent cache is already within the same freshness contract as
+            # the feature admission gate.  Avoid a full feature-table scan on
+            # every discovery cycle; the next stale boundary will trigger a
+            # bounded refresh and rebuild only when required.
+            return _read_frame_cache(
+                connection,
+                instruments=instruments,
+                start_ms=start_ms,
+                end_ms=end_ms + bucket_ms,
+            )
+        if needs_history:
+            refresh_start = start_ms
+        elif cache_max is None or cache_max < end_ms:
+            refresh_start = max(start_ms, cache_max - (2 * bucket_ms))
+        else:
+            # Refresh the tail even when the requested range is already
+            # covered, because a newer PIT observation may replace a bucket.
+            refresh_start = max(start_ms, end_ms - (2 * bucket_ms))
+        refreshed = _query_bucketed_frames(
+            path,
+            instruments=instruments,
+            start_ms=refresh_start,
+            end_ms=end_ms,
+            bucket_ms=bucket_ms,
+        )
+        _write_frame_cache(connection, refreshed)
+        return _read_frame_cache(
+            connection,
+            instruments=instruments,
+            start_ms=start_ms,
+            end_ms=end_ms + bucket_ms,
+        )
+    finally:
+        connection.close()
+
+
 def _gate_result(
     item: RealtimeHypothesisEvaluation,
     *,
@@ -580,12 +880,18 @@ def run_cycle(
     experiment_db: str | Path = DEFAULT_EXPERIMENT_DB,
     registry_db: str | Path = DEFAULT_REGISTRY_DB,
     output_path: str | Path = DEFAULT_OUTPUT,
+    frame_cache_path: str | Path | None = None,
     now_ms: int | None = None,
     policy: RealtimeAlphaPolicy | None = None,
     persist_trials: bool = True,
 ) -> dict[str, Any]:
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
     policy = policy or RealtimeAlphaPolicy()
+    effective_frame_cache_path = (
+        Path(frame_cache_path)
+        if frame_cache_path is not None
+        else Path(source_store).with_name("realtime_decision_frames.db")
+    )
     research_policy = canonical_realtime_research_policy(
         policy,
         feature_version=FEATURE_VERSION,
@@ -696,6 +1002,8 @@ def run_cycle(
                 start_ms=start_ms,
                 end_ms=admission.common_end_ms,
                 bucket_ms=policy.decision_interval_ms,
+                frame_cache_path=effective_frame_cache_path,
+                max_cache_lag_ms=policy.max_feature_age_ms,
             )
             evaluations = {}
             for item in hypotheses:
