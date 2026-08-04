@@ -141,6 +141,76 @@ def test_shadow_realtime_accepts_refreshed_nonpromotable_operational_cycle(
     assert report["upstream_cycle"]["operational_artifact_accepted"] is True
 
 
+def test_shadow_realtime_filters_pending_realtime_handoff_from_operational_scope(
+    monkeypatch, tmp_path
+):
+    output = tmp_path / "shadow-scoped.json"
+    monkeypatch.setattr(paper_shadow_realtime, "OUTPUT_PATH", str(output))
+    profile = list(paper_shadow_realtime.PROFILE_ARGS)
+    profile[profile.index("data/cache/paper_shadow_realtime_status.json")] = str(output)
+    monkeypatch.setattr(paper_shadow_realtime, "PROFILE_ARGS", tuple(profile))
+    population = ("carry", "crowd", "rt_basis_5m")
+    shadow_scope = ("carry", "crowd")
+    realtime_handoff = ("rt_basis_5m",)
+    monkeypatch.setattr(paper_shadow_realtime, "paper_candidate_ids", lambda: population)
+    monkeypatch.setattr(
+        paper_shadow_realtime,
+        "shadow_paper_candidate_ids",
+        lambda *, candidate_ids: shadow_scope,
+    )
+    monkeypatch.setattr(
+        paper_shadow_realtime,
+        "realtime_mechanism_candidate_ids",
+        lambda *, candidate_ids: realtime_handoff,
+    )
+    monkeypatch.setattr(
+        paper_shadow_realtime.paper_shadow_auto,
+        "run_shadow",
+        lambda: {"verdict": {"shadow_paper_running": True}, "errors": {}},
+    )
+
+    def fake_main(_args):
+        output.write_text(
+            json.dumps(
+                {
+                    "errors": {},
+                    "verdict": {
+                        "paper_mark_ready": True,
+                        "backtest_reference_present_for_all_execution_candidates": False,
+                    },
+                    "safety": {
+                        "paper_only": True,
+                        "broker_connectivity": False,
+                        "broker_order_submission": False,
+                    },
+                    "candidate_universe": {
+                        "count": len(population),
+                        "pending": ["rt_basis_5m"],
+                    },
+                    "alphas": {
+                        "carry": {"status": "PAPER_MARKED"},
+                        "crowd": {"status": "PAPER_MARKED"},
+                        "rt_basis_5m": {"status": "PAPER_PENDING"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 1
+
+    monkeypatch.setattr(paper_shadow_realtime.paper_realtime, "main", fake_main)
+    assert paper_shadow_realtime.main([]) == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert set(report["alphas"]) == set(shadow_scope)
+    assert report["upstream_alpha_count"] == 3
+    assert report["candidate_universe"]["expected"] == list(shadow_scope)
+    assert report["candidate_universe"]["deferred_to_realtime_workers"] == list(
+        realtime_handoff
+    )
+    assert report["candidate_universe"]["coverage_complete"] is True
+    assert report["verdict"]["deferred_realtime_candidate_count"] == 1
+
+
 def test_shadow_realtime_preserves_real_upstream_failure(
     monkeypatch, tmp_path
 ):

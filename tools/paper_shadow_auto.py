@@ -45,7 +45,11 @@ from tools.paper_order_preview import (
     _load_json,
     build_alpha_preview,
 )
-from tools.paper_candidate_universe import paper_candidate_ids
+from tools.paper_candidate_universe import (
+    paper_candidate_ids,
+    realtime_mechanism_candidate_ids,
+    shadow_paper_candidate_ids,
+)
 from tools.paper_multivenue_sor import (
     DEFAULT_BOOK_STORE,
     MAX_QUOTE_AGE_MS,
@@ -58,6 +62,16 @@ LEGACY_STORE = "data/cache/paper_shadow_ledger.db"
 DEFAULT_OUTPUT = "data/cache/paper_shadow_auto.json"
 SHADOW_CLASS = "AUTOMATED_NONPROMOTABLE_SHADOW_PAPER"
 EXECUTION_PROFILE = "REAL_PUBLIC_BOOK_SIMULATED_SOR_V2"
+
+
+def _shadow_candidate_scope() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return (shadow scope, realtime handoff scope) from one population."""
+    population = tuple(paper_candidate_ids())
+    shadow = shadow_paper_candidate_ids(candidate_ids=population)
+    realtime = realtime_mechanism_candidate_ids(candidate_ids=population)
+    if set(shadow).intersection(realtime) or set(shadow).union(realtime) != set(population):
+        raise RuntimeError("paper candidate ownership scopes are not a partition")
+    return shadow, realtime
 
 
 def _latest_attested_shadow_decision(
@@ -164,7 +178,8 @@ def run_shadow(
     )
     status = _load_json(status_path)
     mark_by_ticker = load_mark_prices(mark_cache)
-    candidate_ids = paper_candidate_ids()
+    candidate_ids, realtime_handoff_ids = _shadow_candidate_scope()
+    full_candidate_ids = tuple((*candidate_ids, *realtime_handoff_ids))
     store = PaperExecutionStore(store_path, create=True)
     rows: dict[str, dict[str, Any]] = {}
     errors: dict[str, dict[str, str]] = {}
@@ -250,7 +265,8 @@ def run_shadow(
         chain_valid = store.chain_valid()
         store.close()
     completed = (
-        not errors
+        bool(candidate_ids)
+        and not errors
         and set(rows) == set(candidate_ids)
         and all(row.get("execution_class") == SHADOW_CLASS for row in rows.values())
         and all(
@@ -285,10 +301,16 @@ def run_shadow(
         "alphas": rows,
         "candidate_universe": {
             "authority": "ALPHA_PRODUCTION_WORKFLOW",
+            "scope": "ATTESTED_DECISION_SHADOW_PAPER",
             "expected": list(candidate_ids),
             "expected_count": len(candidate_ids),
             "running_count": len(rows),
             "coverage_complete": set(rows) == set(candidate_ids),
+            "full_population": list(full_candidate_ids),
+            "full_population_count": len(full_candidate_ids),
+            "deferred_to_realtime_workers": list(realtime_handoff_ids),
+            "deferred_count": len(realtime_handoff_ids),
+            "deferred_reason": "REALTIME_MECHANISM_OWNED_BY_REALTIME_SHADOW_AND_EXECUTION_PAPER",
         },
         "routing": {
             "mode": "REAL_PUBLIC_BOOK_SIMULATED_SOR",
@@ -312,6 +334,8 @@ def run_shadow(
             "candidate_coverage_complete": set(rows) == set(candidate_ids),
             "candidate_count": len(candidate_ids),
             "running_candidate_count": len(rows),
+            "full_population_count": len(full_candidate_ids),
+            "deferred_realtime_candidate_count": len(realtime_handoff_ids),
             "official_paper_ready": False,
             "promotion_eligible": False,
             "forward_evidence_eligible": False,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import json
 from pathlib import Path
 import sys
@@ -20,7 +20,11 @@ from quantos.contracts.scheduled_worker import (
 from services.monitoring.paper_operational_evidence import assess_shadow_artifact
 from tools import paper_realtime, paper_shadow_auto
 from tools.cache_io import atomic_write_json
-from tools.paper_candidate_universe import paper_candidate_ids
+from tools.paper_candidate_universe import (
+    paper_candidate_ids,
+    realtime_mechanism_candidate_ids,
+    shadow_paper_candidate_ids,
+)
 
 
 OUTPUT_PATH = "data/cache/paper_shadow_realtime_status.json"
@@ -39,6 +43,16 @@ PROFILE_ARGS: tuple[str, ...] = (
     "--operator-receipt",
     "data/cache/paper_shadow_auto.json",
 )
+
+
+def _shadow_candidate_scope() -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Return (full population, routed shadow scope, realtime handoff)."""
+    population = tuple(paper_candidate_ids())
+    expected = shadow_paper_candidate_ids(candidate_ids=population)
+    deferred = realtime_mechanism_candidate_ids(candidate_ids=population)
+    if set(expected).intersection(deferred) or set(expected).union(deferred) != set(population):
+        raise RuntimeError("paper candidate ownership scopes are not a partition")
+    return population, expected, deferred
 
 
 def _artifact_identity(path: str) -> tuple[int, int, int, int] | None:
@@ -167,8 +181,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         report = json.loads(Path(OUTPUT_PATH).read_text(encoding="utf-8"))
         verdict = report.get("verdict")
-        alphas = report.get("alphas")
-        expected = paper_candidate_ids()
+        population, expected, deferred = _shadow_candidate_scope()
+        upstream_universe = report.get("candidate_universe")
+        raw_alphas = report.get("alphas")
+        # ``paper_realtime`` keeps every discovered candidate visible, which
+        # is correct for the official account but mixes 24 realtime pending
+        # rows into this worker's operational scope.  The routed shadow
+        # artifact is an isolated book: retain only its attested-decision
+        # scope and record the realtime handoff explicitly instead of
+        # silently claiming coverage for those candidates.
+        alphas = (
+            {
+                alpha_id: raw_alphas[alpha_id]
+                for alpha_id in expected
+                if isinstance(raw_alphas, Mapping) and alpha_id in raw_alphas
+            }
+            if isinstance(raw_alphas, Mapping)
+            else {}
+        )
+        report["upstream_candidate_universe"] = (
+            dict(upstream_universe) if isinstance(upstream_universe, Mapping) else {}
+        )
+        report["upstream_alpha_count"] = (
+            len(raw_alphas) if isinstance(raw_alphas, Mapping) else 0
+        )
+        report["alphas"] = alphas
         completed, operational_reasons = assess_shadow_artifact(
             report,
             expected_candidates=expected,
@@ -184,10 +221,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "deployment_eligible": False,
                 "candidate_universe": {
                     "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                    "scope": "ATTESTED_DECISION_SHADOW_PAPER",
                     "expected": list(expected),
                     "expected_count": len(expected),
-                    "running_count": len(alphas) if isinstance(alphas, dict) else 0,
+                    "running_count": len(alphas),
                     "coverage_complete": completed,
+                    "full_population": list(population),
+                    "full_population_count": len(population),
+                    "deferred_to_realtime_workers": list(deferred),
+                    "deferred_count": len(deferred),
+                    "deferred_reason": "REALTIME_MECHANISM_OWNED_BY_REALTIME_SHADOW_AND_EXECUTION_PAPER",
                 },
                 "upstream_cycle": {
                     "started_at_ms": started_at_ms,
@@ -205,6 +248,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "shadow_paper_running": completed,
                 "candidate_coverage_complete": completed,
                 "candidate_count": len(expected),
+                "full_population_count": len(population),
+                "deferred_realtime_candidate_count": len(deferred),
                 "backtest_reference_required": False,
                 "official_paper_ready": False,
                 "promotion_eligible": False,

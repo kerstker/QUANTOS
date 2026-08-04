@@ -146,6 +146,12 @@
 > `cycle_completed=true`，资金费完整且对账残差约 `2e-10`。费用、队列位置、延迟和真实
 > 成交仍未校准，因此这是 `REAL_PUBLIC_BOOK_SIMULATED_SOR_V2`，不是生产券商 SOR/TCA。
 > 全程 public-data/paper-only，`live_allowed=false`、`order_submission_allowed=false`。
+> **候选责任边界（2026-08-05）：** `ALPHA_PRODUCTION_WORKFLOW` 的 34 个身份被显式分成
+> routed shadow scope 与 realtime handoff scope：当前 10 个静态/日频、已有 attested
+> decision 的候选由 `paper_shadow_auto` → `paper_shadow_realtime` 负责并计入运营窗口；
+> 24 个 `definition_kind=REALTIME_MECHANISM` 候选由 realtime forward-shadow /
+> execution-paper worker 独立负责。shadow 工件只保留前者，同时记录完整 34 个 population
+> 与 handoff 列表；实时候选的 pending 行不能再把日频 worker 或 Paper 运营窗口伪装成故障。
 > **同日九引擎输入前置计算：** challenger 的 PIT 收益/参考收益、regime、容量、ADV、AUM、
 > FX 与数据集身份不再被 8 周证据钟串行阻塞；有 attested decision 即预计算，并以
 > `input_evidence_status` 与正式 `status/admission_blockers` 两条正交状态展示。真实首跑：

@@ -3,7 +3,12 @@ import json
 import pytest
 
 from quantos.contracts.hashing import stable_hash
-from tools.paper_candidate_universe import STATIC_ALPHA_IDS, paper_candidate_ids
+from tools.paper_candidate_universe import (
+    STATIC_ALPHA_IDS,
+    paper_candidate_ids,
+    realtime_mechanism_candidate_ids,
+    shadow_paper_candidate_ids,
+)
 
 
 def test_candidate_universe_unions_forward_and_evaluation_artifacts(tmp_path):
@@ -90,3 +95,62 @@ def test_existing_invalid_workflow_fails_closed(tmp_path):
 
     with pytest.raises(RuntimeError, match="not verified"):
         paper_candidate_ids(workflow=workflow)
+
+
+def test_shadow_scope_routes_verified_realtime_mechanisms_to_realtime_workers(tmp_path):
+    workflow = tmp_path / "workflow.json"
+    realtime_identity = {
+        "candidate_id": "rt_basis_5m",
+        "expression": "",
+        "definition_kind": "REALTIME_MECHANISM",
+    }
+    daily_identity = {
+        "candidate_id": "daily_challenger",
+        "expression": "expr",
+    }
+    identities = [
+        *[
+            {"candidate_id": alpha_id, "expression": "expr"}
+            for alpha_id in STATIC_ALPHA_IDS
+        ],
+        daily_identity,
+        realtime_identity,
+    ]
+    workflow.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "authority": "ALPHA_PRODUCTION_WORKFLOW",
+                "status": "VERIFIED",
+                "active_candidate_ids": [
+                    *STATIC_ALPHA_IDS,
+                    "daily_challenger",
+                    "rt_basis_5m",
+                ],
+                "candidates": [
+                    {
+                        "candidate_id": identity["candidate_id"],
+                        "identity": identity,
+                        "identity_hash": stable_hash(identity),
+                    }
+                    for identity in identities
+                ],
+                "safety": {
+                    "live_allowed": False,
+                    "order_submission_allowed": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    population = paper_candidate_ids(workflow=workflow)
+    assert population == STATIC_ALPHA_IDS + ("daily_challenger", "rt_basis_5m")
+    assert shadow_paper_candidate_ids(
+        workflow=workflow,
+        candidate_ids=population,
+    ) == STATIC_ALPHA_IDS + ("daily_challenger",)
+    assert realtime_mechanism_candidate_ids(
+        workflow=workflow,
+        candidate_ids=population,
+    ) == ("rt_basis_5m",)

@@ -36,7 +36,10 @@ from services.monitoring.paper_operational_evidence import (
     evaluate_operational_window,
 )
 from tools.cache_io import atomic_write_json
-from tools.paper_candidate_universe import paper_candidate_ids
+from tools.paper_candidate_universe import (
+    paper_candidate_ids,
+    shadow_paper_candidate_ids,
+)
 
 
 DEFAULT_STORE = "data/cache/paper_operational_evidence.db"
@@ -44,6 +47,12 @@ DEFAULT_OUTPUT = "data/cache/paper_operational_evidence.json"
 DEFAULT_SHADOW_STATUS = "data/cache/paper_shadow_realtime_status.json"
 DEFAULT_RECEIPT_ROOT = ".runtime/l2-release-runs"
 _RELEASE_PATTERN_LENGTH = 40
+
+
+def _shadow_candidate_ids() -> tuple[str, ...]:
+    """Use the same routed shadow scope as the two upstream workers."""
+    population = tuple(paper_candidate_ids())
+    return shadow_paper_candidate_ids(candidate_ids=population)
 
 
 def _load_object(path: str | Path) -> dict[str, Any] | None:
@@ -324,7 +333,7 @@ def collect(
                 receipt_path=receipt_path,
                 receipt=receipt,
                 shadow=_load_object(shadow_status_path),
-                expected_candidates=paper_candidate_ids(),
+                expected_candidates=_shadow_candidate_ids(),
                 collector_release_commit=collector_release,
             )
             new_events += int(
