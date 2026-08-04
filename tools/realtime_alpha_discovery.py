@@ -760,6 +760,7 @@ def load_bucketed_frames(
         needs_history = cache_min is None or cache_min > first_decision_time
         cache_is_recent = (
             cache_max is not None
+            and cache_max >= end_ms
             and cache_max >= end_ms - max_cache_lag_ms
         )
         if not needs_history and cache_is_recent:
