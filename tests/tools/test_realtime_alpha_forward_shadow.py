@@ -244,6 +244,7 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
         start_ms,
         end_ms,
         bucket_ms,
+        **_kwargs,
     ):
         del start_ms, bucket_ms
         return {
