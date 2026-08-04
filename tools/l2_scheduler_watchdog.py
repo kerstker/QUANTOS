@@ -159,6 +159,11 @@ EXPECTED_TASKS: dict[str, ExpectedTask] = {
     "QUANTOS_paper_multivenue_sor": ExpectedTask(
         "paper_multivenue_sor", 15 * 60_000
     ),
+    "QUANTOS_paper_operational_evidence": ExpectedTask(
+        "paper_operational_evidence",
+        15 * 60_000,
+        frozenset({SCHEDULE_EXIT_SAFE_BLOCKED}),
+    ),
     "QUANTOS_paper_realtime_10k": ExpectedTask(
         "paper_realtime_10k",
         15 * 60_000,

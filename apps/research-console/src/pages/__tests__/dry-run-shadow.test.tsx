@@ -287,6 +287,46 @@ const state = vi.hoisted(() => ({
         broker_order_submission: false,
       },
     },
+    paper_operational: {
+      snapshot_present: true,
+      generated_at_ms: 1_785_263_120_000,
+      status: 'MATURING',
+      chain_valid: true,
+      policy: {
+        version: 'paper_operational_evidence.v1',
+        cadence_ms: 300_000,
+        production_minimum_span_ms: 86_400_000,
+        production_minimum_successes: 274,
+        minimum_success_ratio: 0.99,
+      },
+      window: {
+        engineering_smoke_ready: false,
+        production_window_ready: false,
+        cycle_count: 1,
+        accepted_cycle_count: 1,
+        success_ratio: 1,
+        history_span_ms: 0,
+        max_gap_ms: null,
+        latest_age_ms: 20_000,
+        drills: {
+          EXACT_RETRY_IDEMPOTENT: true,
+          CONFLICTING_DUPLICATE_REJECTED: true,
+          HASH_CHAIN_TAMPER_DETECTED: true,
+          STALE_CYCLE_REJECTED: true,
+          UNSAFE_BROKER_BOUNDARY_REJECTED: true,
+          INCOMPLETE_CANDIDATE_SET_REJECTED: true,
+        },
+        planned_restart_recoveries: [],
+        blockers: ['PRODUCTION_WINDOW_SPAN_MATURING'],
+      },
+      safety: {
+        paper_only: true,
+        fault_injection_isolated: true,
+        credentials_accessed: false,
+        broker_connectivity: false,
+        broker_order_submission: false,
+      },
+    },
     paper_health: {
       source: 'PAPER_HEALTH',
       read_only: true,
@@ -448,6 +488,10 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('0.020')).toBeInTheDocument();
     expect(screen.getByText('0.125')).toBeInTheDocument();
     expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
+    expect(screen.getByText('连续运行与故障恢复')).toBeInTheDocument();
+    expect(screen.getAllByText('6/6').length).toBeGreaterThan(0);
+    expect(screen.getByText('Restart recovery')).toBeInTheDocument();
+    expect(screen.getByText('MATURING')).toBeInTheDocument();
     expect(screen.getAllByText(/2026-08-03 12:00 UTC/).length).toBeGreaterThan(0);
     expect(screen.getByText(/前向证据按计划成熟中/)).toBeInTheDocument();
     expect(screen.getByText('纸面执行质量')).toBeInTheDocument();

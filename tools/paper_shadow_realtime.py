@@ -16,6 +16,7 @@ from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
     SCHEDULE_EXIT_SUCCESS,
 )
+from services.monitoring.paper_operational_evidence import assess_shadow_artifact
 from tools import paper_realtime, paper_shadow_auto
 from tools.cache_io import atomic_write_json
 from tools.paper_candidate_universe import paper_candidate_ids
@@ -157,35 +158,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         report = json.loads(Path(OUTPUT_PATH).read_text(encoding="utf-8"))
         verdict = report.get("verdict")
-        safety = report.get("safety")
         alphas = report.get("alphas")
         expected = paper_candidate_ids()
-        upstream_outcome_acceptable = bool(
-            upstream_exit_code == SCHEDULE_EXIT_SUCCESS
-            or (
-                upstream_exit_code == SCHEDULE_EXIT_FAILURE
-                and isinstance(verdict, dict)
-                and verdict.get(
-                    "backtest_reference_present_for_all_execution_candidates"
-                )
-                is False
-                and report.get("errors") == {}
-            )
-        )
-        completed = bool(
-            upstream_outcome_acceptable
-            and isinstance(verdict, dict)
-            and verdict.get("paper_mark_ready") is True
-            and isinstance(safety, dict)
-            and safety.get("paper_only") is True
-            and safety.get("broker_connectivity") is False
-            and safety.get("broker_order_submission") is False
-            and isinstance(alphas, dict)
-            and set(alphas) == set(expected)
-            and all(
-                isinstance(row, dict) and row.get("status") == "PAPER_MARKED"
-                for row in alphas.values()
-            )
+        completed, operational_reasons = assess_shadow_artifact(
+            report,
+            expected_candidates=expected,
+            upstream_exit_code=upstream_exit_code,
         )
         report.update(
             {
@@ -208,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "exit_code": upstream_exit_code,
                     "artifact_refreshed": artifact_refreshed,
                     "operational_artifact_accepted": completed,
+                    "operational_reasons": list(operational_reasons),
                 },
             }
         )

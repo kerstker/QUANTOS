@@ -1701,6 +1701,44 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
   alpha_pipeline?: AlphaPipelinePayload;
   realtime_alpha_autonomy?: RealtimeAlphaAutonomyPayload;
   paper_shadow?: PaperShadowPayload;
+  paper_operational?: {
+    snapshot_present: boolean;
+    generated_at_ms?: number | null;
+    status: string;
+    chain_valid: boolean;
+    policy?: {
+      version?: string;
+      cadence_ms?: number;
+      production_minimum_span_ms?: number;
+      production_minimum_successes?: number;
+      minimum_success_ratio?: number;
+    };
+    window: {
+      engineering_smoke_ready: boolean;
+      production_window_ready: boolean;
+      cycle_count?: number;
+      accepted_cycle_count: number;
+      success_ratio: number;
+      history_span_ms: number;
+      max_gap_ms?: number | null;
+      latest_age_ms?: number | null;
+      drills: Record<string, boolean>;
+      planned_restart_recoveries: Array<{
+        from_release: string;
+        to_release: string;
+        recovery_ms: number;
+        within_policy: boolean;
+      }>;
+      blockers: string[];
+    };
+    safety: {
+      paper_only: true;
+      fault_injection_isolated: true;
+      credentials_accessed: false;
+      broker_connectivity: false;
+      broker_order_submission: false;
+    };
+  };
   paper_health?: PaperHealthPayload;
   forward_track?: LiveTradingForwardTrack;
   data_refresh?: DataRefreshPayload | null;

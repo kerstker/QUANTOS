@@ -52,6 +52,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "alpha_paper_cycle",
         "paper_alpha_evaluation",
         "paper_multivenue_sor",
+        "paper_operational_evidence",
         "paper_research_risk_bundle",
         "paper_order_preview",
         "paper_realtime",
@@ -69,6 +70,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_scheduler_watchdog" in source
     assert "QUANTOS_candidate_dry_run" in source
     assert "QUANTOS_candidate_portfolio_evidence" in source
+    assert "QUANTOS_paper_operational_evidence" in source
     assert "QUANTOS_backup" in source
     assert "QUANTOS_external_heartbeat" in source
     assert "QUANTOS_domain_event_seal" in source
@@ -86,6 +88,20 @@ def test_domain_event_ops_has_frequent_bounded_recovery_schedule():
         r'Register-L2Task -Name "QUANTOS_domain_event_ops".*?\n\s*'
         r"-Trigger \$eventOpsTrigger -ExecutionTimeLimit "
         r"\(New-TimeSpan -Minutes 5\)",
+        source,
+    )
+
+
+def test_paper_operational_evidence_follows_shadow_cycle_every_five_minutes():
+    source = _source()
+    assert re.search(
+        r"\$paperOperationalEvidenceTrigger\s*=.*?\n\s*"
+        r"-RepetitionInterval \(New-TimeSpan -Minutes 5\)",
+        source,
+    )
+    assert re.search(
+        r'Register-L2Task -Name "QUANTOS_paper_operational_evidence".*?\n\s*'
+        r'-Trigger \$paperOperationalEvidenceTrigger',
         source,
     )
 
