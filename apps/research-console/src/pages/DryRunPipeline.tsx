@@ -87,6 +87,22 @@ function signedClass(value?: number | null): string {
   return value > 0 ? 'text-pos' : 'text-neg';
 }
 
+type PaperPerformanceValue = Pick<PaperRealtimeAlpha, 'status' | 'n_fills' | 'net_pnl'>;
+
+function hasRealizedPaperPnl(value?: PaperPerformanceValue | null): boolean {
+  return value?.status === 'PAPER_MARKED' && (value.n_fills ?? 0) > 0;
+}
+
+function paperPerformanceState(value?: PaperPerformanceValue | null): 'PROFIT' | 'LOSS' | 'FLAT' | 'NO_REALIZED_PNL' {
+  if (!hasRealizedPaperPnl(value)) return 'NO_REALIZED_PNL';
+  const pnl = value?.net_pnl ?? 0;
+  return pnl > 0 ? 'PROFIT' : pnl < 0 ? 'LOSS' : 'FLAT';
+}
+
+function fmtRealizedPct(value: number | null | undefined, realized: boolean): string {
+  return realized ? fmtPct(value) : '—';
+}
+
 function paperSeries(history: PaperRealtimeHistoryPoint[]): EquitySeries[] {
   const byAlpha = new Map<string, { t: number; equity: number }[]>();
   for (const point of history) {
@@ -281,6 +297,7 @@ function FactorLifecycleReport({
   const history = row.paper.performance_history ?? [];
   const recent = history.slice(-8).reverse();
   const series = useMemo(() => lifecycleSeries(row), [row]);
+  const realized = row.paper.n_realizations > 0;
   const stages = [
     { label: 'REGISTERED', reached: true },
     { label: 'EVALUATED', reached: row.research.evaluation_status === 'EVALUATED' },
@@ -322,7 +339,7 @@ function FactorLifecycleReport({
       <div className="mt-4 grid grid-cols-2 gap-y-4 rounded-lg border border-line bg-inset/35 px-4 py-4 lg:grid-cols-6">
         <Metric label="Research return" value={fmtPct(row.research.net_return)} detail={`${row.research.n_periods ?? 0} observations`} tone={(row.research.net_return ?? 0) >= 0 ? 'pos' : 'neg'} />
         <Metric label="Holdout SR" value={row.research.holdout_net_sharpe?.toFixed(2) ?? '—'} detail={row.research.gate_pass ? 'formal pass' : 'not passed'} tone={row.research.gate_pass ? 'pos' : 'warn'} />
-        <Metric label="Paper return" value={fmtPct(row.paper.cum_return)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
+        <Metric label="Paper return" value={fmtRealizedPct(row.paper.cum_return, realized)} detail={`${row.paper.n_realizations}/${row.paper.n_decisions} realized`} tone={row.performance_state === 'LOSS' ? 'neg' : row.performance_state === 'PROFIT' ? 'pos' : 'muted'} />
         <Metric label="Paper drawdown" value={fmtPct(row.paper.max_drawdown == null ? null : -row.paper.max_drawdown)} detail={`${row.paper.n_pending} pending`} tone={(row.paper.max_drawdown ?? 0) > 0 ? 'neg' : 'muted'} />
         <Metric label="Execution" value={row.execution.n_executions} detail={`${row.execution.n_orders} orders / ${row.execution.n_fill_slices} fills`} tone="info" />
         <Metric label="Execution cost" value={fmtUsd(row.execution.execution_cost)} detail={`${row.execution.n_missed_execution_windows} missed windows`} tone="warn" />
@@ -622,9 +639,11 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
                     {fmtPct(row.research.net_return)}
                   </td>
                   <td className={`px-3 py-2 text-right ticker-num ${signedClass(row.paper.cum_return)}`}>
-                    <div>{fmtPct(row.paper.cum_return)}</div>
+                    <div>{fmtRealizedPct(row.paper.cum_return, row.paper.n_realizations > 0)}</div>
                     <div className="mt-0.5 text-3xs text-faint">
-                      last {fmtPct(row.paper.performance_history?.[Math.max(0, (row.paper.performance_history?.length ?? 1) - 1)]?.period_return)}
+                      {row.paper.n_realizations > 0
+                        ? `last ${fmtPct(row.paper.performance_history?.[Math.max(0, (row.paper.performance_history?.length ?? 1) - 1)]?.period_return)}`
+                        : 'no realized paper PnL'}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right ticker-num text-muted">
@@ -749,7 +768,7 @@ function OfficialFactorLifecycleReport({
   candidate?: AlphaPipelineCandidate;
 }) {
   const points = officialPaperHistory(alpha, history);
-  const currentPaper = value.n_fills != null && value.n_fills > 0;
+  const currentPaper = hasRealizedPaperPnl(value);
   const pending = !currentPaper;
   const paperDrawdown = officialPaperDrawdown(points);
   const series: EquitySeries[] = points.length
@@ -803,7 +822,7 @@ function OfficialFactorLifecycleReport({
         <Metric label="Paper net PnL" value={fmtUsd(currentPaper ? value.net_pnl : null)} detail={currentPaper ? `${value.n_fills ?? 0} fills · ${points.length} marks` : 'no realized paper PnL'} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
         <Metric label="Paper return" value={fmtPct(currentPaper ? value.return_on_aum : null)} detail={`${Object.keys(value.positions ?? {}).filter(symbol => value.positions?.[symbol] !== 0).length} active positions`} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
         <Metric label="Paper drawdown" value={fmtPct(paperDrawdown == null ? null : -paperDrawdown)} detail={points.length ? 'from retained marks' : 'no history'} tone={paperDrawdown ? 'neg' : 'muted'} />
-        <Metric label="Funding / costs" value={fmtUsd((value.funding_pnl ?? 0) - (value.costs ?? 0))} detail={`${value.funding_events ?? 0} funding events`} tone="info" />
+        <Metric label="Funding / costs" value={fmtUsd(currentPaper ? (value.funding_pnl ?? 0) - (value.costs ?? 0) : null)} detail={currentPaper ? `${value.funding_events ?? 0} funding events` : 'no realized paper PnL'} tone="info" />
       </div>
 
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
@@ -870,7 +889,8 @@ function OfficialPaperRow({
   onSelect?: () => void;
 }) {
   const activePositions = Object.values(value.positions ?? {}).filter(quantity => quantity !== 0).length;
-  const pending = value.status === 'PAPER_PENDING';
+  const pending = !hasRealizedPaperPnl(value);
+  const performanceState = paperPerformanceState(value);
   const blockers = candidate?.blockers ?? [];
   return (
     <div className="border-b border-line/70 py-3 last:border-b-0">
@@ -887,6 +907,7 @@ function OfficialPaperRow({
             </button>
             <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
             <Chip label={candidate?.stage ?? 'NO_WORKFLOW_STAGE'} tone={candidate ? 'special' : 'muted'} />
+            <Chip label={performanceState} tone={performanceState === 'LOSS' ? 'neg' : performanceState === 'PROFIT' ? 'pos' : 'muted'} />
           </div>
           <div className="mt-1 truncate text-3xs text-faint">
             {candidate
@@ -900,11 +921,11 @@ function OfficialPaperRow({
         </div>
         <div>
           <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
-          <div className={`ticker-num mt-1 text-sm ${signedClass(value.net_pnl)}`}>{fmtUsd(value.net_pnl)}</div>
+          <div className={`ticker-num mt-1 text-sm ${signedClass(pending ? null : value.net_pnl)}`}>{fmtUsd(pending ? null : value.net_pnl)}</div>
         </div>
         <div>
           <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
-          <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>{fmtPct(value.return_on_aum)}</div>
+          <div className={`ticker-num mt-1 text-sm ${signedClass(pending ? null : value.return_on_aum)}`}>{fmtRealizedPct(value.return_on_aum, !pending)}</div>
         </div>
         <div>
           <div className="text-3xs uppercase tracking-wider text-faint">Activity / maturity</div>

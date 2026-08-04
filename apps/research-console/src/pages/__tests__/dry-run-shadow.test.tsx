@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DryRunPipelinePayload } from '@/lib/types/research';
 import DryRunPipeline from '@/pages/DryRunPipeline';
@@ -404,6 +404,15 @@ const state = vi.hoisted(() => ({
           net_pnl: 879,
           return_on_aum: 0.000879,
         },
+        pending_factor: {
+          alpha_id: 'pending_factor',
+          status: 'PAPER_PENDING',
+          n_fills: 0,
+          positions: {},
+          equity: 1_000_000,
+          net_pnl: 0,
+          return_on_aum: 0,
+        },
       },
       backtests: {},
       history: [],
@@ -696,7 +705,7 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('Retained paper equity')).toBeInTheDocument();
     expect(screen.getByText('Collecting the first paper mark.')).toBeInTheDocument();
     expect(screen.getByText('1 PROFIT')).toBeInTheDocument();
-    expect(screen.getByText('0 PENDING')).toBeInTheDocument();
+    expect(screen.getByText('1 PENDING')).toBeInTheDocument();
     expect(screen.getAllByText('LEGACY_DIAGNOSTIC_PAPER').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/CROWDING_REVERSAL · ALPHA_EXPRESSION/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Maturity 1/8').length).toBeGreaterThan(0);
@@ -713,6 +722,10 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('0.020')).toBeInTheDocument();
     expect(screen.getByText('0.125')).toBeInTheDocument();
     expect(screen.getByText('blocked by model_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看 pending_factor 主纸面生命周期报告' }));
+    const pendingReport = screen.getByTestId('official-factor-lifecycle-report');
+    expect(within(pendingReport).getByText('NO_REALIZED_PNL')).toBeInTheDocument();
+    expect(within(pendingReport).getAllByText('no realized paper PnL').length).toBeGreaterThan(0);
     expect(screen.getByText('连续运行与故障恢复')).toBeInTheDocument();
     expect(screen.getAllByText('6/6').length).toBeGreaterThan(0);
     expect(screen.getByText('Restart recovery')).toBeInTheDocument();
