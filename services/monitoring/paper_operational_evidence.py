@@ -351,12 +351,42 @@ def evaluate_operational_window(
                 and _valid_release_commit(payload.get("collector_release_commit"))
             ):
                 drills[name] = payload.get("passed") is True
-    cycles.sort(key=lambda row: int(row.get("started_at_ms", -1)))
-    accepted = [row for row in cycles if row.get("accepted") is True]
+    cycles.sort(
+        key=lambda row: int(row["started_at_ms"])
+        if isinstance(row.get("started_at_ms"), int)
+        else -1
+    )
+    # A release change is a deliberate operational-window boundary.  Retain
+    # every predecessor event for audit, but do not let a known-bad pre-fix
+    # release permanently poison the current release's 99% SLO.  The active
+    # cohort is the release identity on the newest cycle, including a newest
+    # failed cycle (so a bad new release still fails closed immediately).
+    active_release_commit: str | None = None
+    for row in reversed(cycles):
+        release = row.get("release_commit")
+        if isinstance(release, str) and release:
+            active_release_commit = release
+            break
+    active_cycles = (
+        [row for row in cycles if row.get("release_commit") == active_release_commit]
+        if active_release_commit is not None
+        else list(cycles)
+    )
+    retained_accepted = [row for row in cycles if row.get("accepted") is True]
+    accepted = [row for row in active_cycles if row.get("accepted") is True]
     accepted_count = len(accepted)
-    cycle_count = len(cycles)
+    cycle_count = len(active_cycles)
+    retained_cycle_count = len(cycles)
+    retained_accepted_count = len(retained_accepted)
     success_ratio = _finite_ratio(accepted_count, cycle_count)
-    starts = [int(row["started_at_ms"]) for row in cycles if isinstance(row.get("started_at_ms"), int)]
+    retained_success_ratio = _finite_ratio(
+        retained_accepted_count, retained_cycle_count
+    )
+    starts = [
+        int(row["started_at_ms"])
+        for row in active_cycles
+        if isinstance(row.get("started_at_ms"), int)
+    ]
     span_ms = max(starts) - min(starts) if len(starts) >= 2 else 0
     gaps = [right - left for left, right in zip(starts, starts[1:])]
     max_gap_ms = max(gaps) if gaps else None
@@ -364,7 +394,7 @@ def evaluate_operational_window(
     all_drills_pass = all(drills.get(name) is True for name in policy.required_drills)
 
     restart_recoveries: list[dict[str, Any]] = []
-    for left, right in zip(accepted, accepted[1:]):
+    for left, right in zip(retained_accepted, retained_accepted[1:]):
         left_release = left.get("release_commit")
         right_release = right.get("release_commit")
         if left_release and right_release and left_release != right_release:
@@ -412,9 +442,14 @@ def evaluate_operational_window(
         blockers.append("PRODUCTION_WINDOW_SUCCESS_COUNT_MATURING")
     return {
         "policy_version": policy.policy_version,
+        "active_release_commit": active_release_commit,
         "cycle_count": cycle_count,
         "accepted_cycle_count": accepted_count,
         "success_ratio": success_ratio,
+        "retained_cycle_count": retained_cycle_count,
+        "retained_accepted_cycle_count": retained_accepted_count,
+        "retained_success_ratio": retained_success_ratio,
+        "excluded_pre_active_release_cycle_count": retained_cycle_count - cycle_count,
         "history_span_ms": span_ms,
         "max_gap_ms": max_gap_ms,
         "latest_age_ms": latest_age_ms,

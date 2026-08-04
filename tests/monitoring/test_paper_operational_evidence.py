@@ -85,9 +85,21 @@ def test_window_requires_real_span_drills_cadence_and_release_restart():
     policy = PRODUCTION_PAPER_POLICY_V1
     start = 1_000_000
     events = []
+    events.append(
+        _event(
+            "CYCLE",
+            "predecessor-cycle",
+            start - policy.cadence_ms + 1_000,
+            {
+                "started_at_ms": start - policy.cadence_ms,
+                "finished_at_ms": start - policy.cadence_ms + 1_000,
+                "release_commit": "a" * 40,
+                "accepted": True,
+            },
+        )
+    )
     for index in range(301):
         cycle_start = start + index * policy.cadence_ms
-        release = "a" * 40 if index < 150 else "b" * 40
         events.append(
             _event(
                 "CYCLE",
@@ -96,7 +108,7 @@ def test_window_requires_real_span_drills_cadence_and_release_restart():
                 {
                     "started_at_ms": cycle_start,
                     "finished_at_ms": cycle_start + 1_000,
-                    "release_commit": release,
+                    "release_commit": "b" * 40,
                     "accepted": True,
                 },
             )
@@ -117,7 +129,56 @@ def test_window_requires_real_span_drills_cadence_and_release_restart():
     assert result["production_window_ready"] is True
     assert result["status"] == "PASS"
     assert result["success_ratio"] == 1.0
+    assert result["active_release_commit"] == "b" * 40
+    assert result["cycle_count"] == 301
+    assert result["retained_cycle_count"] == 302
+    assert result["excluded_pre_active_release_cycle_count"] == 1
     assert result["planned_restart_recoveries"][0]["within_policy"] is True
+
+
+def test_predecessor_failures_are_retained_but_do_not_poison_active_cohort():
+    policy = PRODUCTION_PAPER_POLICY_V1
+    events = [
+        _event(
+            "CYCLE",
+            "old-failure",
+            1_000,
+            {
+                "started_at_ms": 0,
+                "finished_at_ms": 1_000,
+                "release_commit": "a" * 40,
+                "accepted": False,
+            },
+        )
+    ]
+    for index in range(7):
+        start = 10_000 + index * policy.cadence_ms
+        events.append(
+            _event(
+                "CYCLE",
+                f"current-{index}",
+                start + 1_000,
+                {
+                    "started_at_ms": start,
+                    "finished_at_ms": start + 1_000,
+                    "release_commit": "b" * 40,
+                    "accepted": True,
+                },
+            )
+        )
+    result = evaluate_operational_window(
+        events,
+        now_ms=10_000 + 7 * policy.cadence_ms,
+        chain_valid=True,
+    )
+    assert result["active_release_commit"] == "b" * 40
+    assert result["cycle_count"] == 7
+    assert result["accepted_cycle_count"] == 7
+    assert result["success_ratio"] == 1.0
+    assert result["retained_cycle_count"] == 8
+    assert result["retained_success_ratio"] == 0.875
+    assert result["excluded_pre_active_release_cycle_count"] == 1
+    assert result["production_window_ready"] is False
 
 
 def test_short_window_is_honestly_maturing():

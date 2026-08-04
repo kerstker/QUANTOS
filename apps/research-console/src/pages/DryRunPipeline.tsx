@@ -1519,7 +1519,7 @@ export default function DryRunPipeline() {
               <Metric
                 label="Operating window"
                 value={fmtAge(operational?.window.history_span_ms ?? null)}
-                detail={`${operational?.window.accepted_cycle_count ?? 0}/${operational?.policy?.production_minimum_successes ?? 274} accepted`}
+                detail={`${operational?.window.accepted_cycle_count ?? 0}/${operational?.policy?.production_minimum_successes ?? 274} accepted · release ${(operational?.window.active_release_commit ?? 'unknown').slice(0, 8)} · ${operational?.window.excluded_pre_active_release_cycle_count ?? 0} legacy retained`}
                 tone={operational?.window.production_window_ready ? 'pos' : 'warn'}
               />
               <Metric

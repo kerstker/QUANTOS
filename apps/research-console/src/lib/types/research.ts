@@ -1882,9 +1882,14 @@ export interface DryRunPipelinePayload extends ConsolePayloadBase {
     window: {
       engineering_smoke_ready: boolean;
       production_window_ready: boolean;
+      active_release_commit?: string | null;
       cycle_count?: number;
       accepted_cycle_count: number;
       success_ratio: number;
+      retained_cycle_count?: number;
+      retained_accepted_cycle_count?: number;
+      retained_success_ratio?: number;
+      excluded_pre_active_release_cycle_count?: number;
       history_span_ms: number;
       max_gap_ms?: number | null;
       latest_age_ms?: number | null;

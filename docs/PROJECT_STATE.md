@@ -1924,3 +1924,14 @@ Purged-Embargoed CV + 三重门/元标签 + Regime(+接评估器)+ 互信息 + �
 > admission deployment, external receipt authority, WORM/object-lock retention
 > and external history seals remain open. L2 and live-trading gates are unchanged.
 >
+# 2026-08-05 operational-window cohort correction
+
+The unattended Paper operational evidence window now evaluates the active
+release cohort separately from retained predecessor cycles.  A release change
+starts the current SLO cohort; predecessor failures remain append-only and are
+reported as retained history rather than silently discarded.  The console
+exposes the active release prefix, retained-cycle count, and excluded
+predecessor count.  This keeps the current release's success ratio honest while
+preserving restart and historical failure evidence.  The change is paper-only;
+promotion, live deployment, broker connectivity, and order submission remain
+fail-closed.

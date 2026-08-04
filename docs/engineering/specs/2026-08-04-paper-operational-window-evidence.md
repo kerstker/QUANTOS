@@ -29,6 +29,14 @@ Every five minutes, after `paper_shadow_realtime`, the collector:
    paper ledger; and
 6. publishes smoke-window and production-window maturity separately.
 
+The window is evaluated on the active release cohort: the release identity on
+the newest cycle defines the current operating window.  Cycles from predecessor
+releases remain append-only and are reported as retained history, but do not
+poison the current release's success-ratio denominator.  A newest failed cycle
+still belongs to the active cohort and therefore fails closed immediately.
+Release-transition recovery evidence is evaluated across retained accepted
+cycles, so cohort isolation does not hide a restart or deployment failure.
+
 The pre-registered policy is fixed in code:
 
 - cadence: 5 minutes; maximum accepted observation gap: 12 minutes;
