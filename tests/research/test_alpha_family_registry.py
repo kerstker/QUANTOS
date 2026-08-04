@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 from services.research.alpha_family_registry import AlphaFamilyRegistry, AlphaFamilyRegistryError
@@ -49,3 +52,25 @@ def test_presentation_metadata_can_be_corrected_without_rewriting_identity(tmp_p
 def test_missing_schema_fails_closed(tmp_path):
     with pytest.raises(AlphaFamilyRegistryError):
         AlphaFamilyRegistry(str(tmp_path / "missing.db"), create=False)
+
+
+def test_concurrent_writers_serialize_chain_head_and_insert(tmp_path):
+    path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(path), create=True):
+        pass
+    writers = 8
+    barrier = Barrier(writers)
+
+    def append(index: int) -> bool:
+        candidate = dict(_candidate())
+        candidate["candidate_id"] = f"family_test_{index}"
+        barrier.wait()
+        with AlphaFamilyRegistry(str(path), create=False) as registry:
+            return registry.register_candidate(candidate, recorded_at=index + 1)
+
+    with ThreadPoolExecutor(max_workers=writers) as pool:
+        assert all(pool.map(append, range(writers)))
+
+    with AlphaFamilyRegistry(str(path), create=False) as registry:
+        assert registry.event_count() == writers
+        assert registry.verify_chain()

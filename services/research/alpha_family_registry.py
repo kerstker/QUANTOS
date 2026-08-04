@@ -133,31 +133,47 @@ class AlphaFamilyRegistry:
         if isinstance(recorded_at, bool) or int(recorded_at) < 0:
             raise ValueError("recorded_at must be a non-negative integer")
         body = _payload_json(payload)
-        existing = self._conn.execute(
-            "SELECT event_type,candidate_id,recorded_at,payload_json,record_hash "
-            "FROM alpha_family_events WHERE event_id=?", (event_id,)
-        ).fetchone()
-        if existing is not None:
-            # ``recorded_at`` is audit metadata supplied by the caller.  A
-            # retry of the same immutable payload may happen in a later
-            # process tick; it is still the same evidence event and must be
-            # idempotent rather than creating a mutable overwrite conflict.
-            if (existing["event_type"], existing["candidate_id"], existing["payload_json"]) == (
-                    event_type, candidate_id, body):
-                return False
-            raise AlphaFamilyRegistryError(f"event id content conflict: {event_id}")
-        prev = self._head()
-        digest = _record_hash(event_id=event_id, event_type=event_type, candidate_id=candidate_id,
-                              recorded_at=int(recorded_at), payload_json=body, prev_record_hash=prev)
         try:
-            with self._conn:
-                self._conn.execute(
-                    "INSERT INTO alpha_family_events"
-                    "(event_id,event_type,candidate_id,recorded_at,payload_json,prev_record_hash,record_hash)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (event_id, event_type, candidate_id, int(recorded_at), body, prev, digest),
+            # The chain head and insert are one writer-serialized operation.
+            # A deferred transaction permits two processes to read the same
+            # head and append different event ids, creating a valid-row fork.
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                "SELECT event_type,candidate_id,recorded_at,payload_json,record_hash "
+                "FROM alpha_family_events WHERE event_id=?", (event_id,)
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["event_type"],
+                    existing["candidate_id"],
+                    existing["payload_json"],
+                ) == (event_type, candidate_id, body):
+                    self._conn.rollback()
+                    return False
+                raise AlphaFamilyRegistryError(
+                    f"event id content conflict: {event_id}"
                 )
-        except sqlite3.IntegrityError as exc:
+            prev = self._head()
+            digest = _record_hash(
+                event_id=event_id,
+                event_type=event_type,
+                candidate_id=candidate_id,
+                recorded_at=int(recorded_at),
+                payload_json=body,
+                prev_record_hash=prev,
+            )
+            self._conn.execute(
+                "INSERT INTO alpha_family_events"
+                "(event_id,event_type,candidate_id,recorded_at,payload_json,prev_record_hash,record_hash)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (event_id, event_type, candidate_id, int(recorded_at), body, prev, digest),
+            )
+            self._conn.commit()
+        except AlphaFamilyRegistryError:
+            self._conn.rollback()
+            raise
+        except sqlite3.DatabaseError as exc:
+            self._conn.rollback()
             raise AlphaFamilyRegistryError(f"family registry append conflict: {event_id}") from exc
         return True
 

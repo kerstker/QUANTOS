@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v10（并发链头原子化）：** 运行态验收发现
+> `realtime_alpha_registry.db` 第 1397 条发生链分叉：两个 worker 可在 SQLite deferred
+> transaction 外同时读取同一 head，再以不同 event id 各自成功插入。注册表 append 现改为
+> `BEGIN IMMEDIATE` 内完成幂等复检、读取链头、计算哈希、插入和提交，跨进程 writer 被数据库
+> 串行化；8 writer 并发回归测试和 discovery/forward-shadow 套件通过。损坏库不得原地改写，
+> 必须完整隔离保留并从可重放 discovery/shadow 来源重建活动注册表。实现与并发测试均纳入
+> 供应链显式哈希清单；live/order 权限不变。
+
 > **2026-08-04 实时纸面生产 v9（自主执行纸面闭环）：** 22 条已评估实时 Alpha
 > 轨道不再停留在 Signal Shadow。新增物理隔离的 Engineering Execution Paper：首次
 > 决策只作启动基线，后续决策自动经过交易所 step-size 整数 lot 归一化、现有 pre-trade

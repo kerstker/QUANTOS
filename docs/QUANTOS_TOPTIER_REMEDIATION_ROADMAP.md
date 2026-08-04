@@ -1,5 +1,10 @@
 # QUANTOS 对标顶级 AI 量化 · 差距 + 修补路线图
 
+> **2026-08-04 P0 并发恢复补丁：** 实时 Alpha 家族注册表的 chain-head read 与 append
+> 已收进 `BEGIN IMMEDIATE` 单事务，关闭多 worker 同头分叉。损坏活动库采用“原样隔离保留 +
+> 从可重放 discovery/shadow 重建”而非原地修链；8 writer 并发测试钉死线性链。该修复是
+> 无人值守自治流水线的承重条件，不改变候选统计门、正式 Paper 门或任何实盘权限。
+
 > **2026-08-04 P0 自主 Execution Paper 闭环：** 22 条实时 Alpha 工程轨道已从
 > “只记信号和后验收益”升级为真正的隔离模拟执行账户。每条新决策自动经过公开双场所
 > 订单簿、交易所 lot 规格、pre-trade intent/gate、simulated SOR、fill、持仓/PnL、TCA
