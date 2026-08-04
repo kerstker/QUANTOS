@@ -1,9 +1,10 @@
-"""Advance autonomous realtime candidates through isolated forward shadow-paper.
+"""Advance evaluated realtime candidates through isolated engineering paper.
 
-Only candidates with a verified 30-day formal PASS, 90-day data maturity and
-executable-depth capacity PASS are admitted.  Each decision is append-only and
-recorded before its post-latency outcome can exist.  The worker is public-data,
-L2 paper-only, non-promotable, and has no broker/credential/order surface.
+Paper observation starts as soon as the three-day exploration floor produces
+an evaluated candidate.  Thirty-day formal validation and ninety-day maturity
+remain independent graduation gates; this ledger never earns forward-evidence,
+promotion, deployment, or live credit.  Each decision is append-only and is
+recorded before its post-latency outcome can exist.
 """
 
 from __future__ import annotations
@@ -143,11 +144,14 @@ def _handoff_state(
                 hard_blockers.append("DISCOVERY_CANDIDATE_MANIFEST_MISMATCH")
                 continue
             gate_pass = row.get("gate_pass") is True
-            shadow_ready = row.get("status") == "SHADOW_CANDIDATE_READY"
-            if gate_pass != shadow_ready:
+            formal_status = row.get("status") in {
+                "SHADOW_CANDIDATE_READY",
+                "VALIDATED_AWAITING_90D_SHADOW_MATURITY",
+            }
+            if gate_pass != formal_status:
                 hard_blockers.append("DISCOVERY_CANDIDATE_GATE_STATUS_CONFLICT")
                 continue
-            if not gate_pass:
+            if row.get("evaluation_status") != "EVALUATED":
                 continue
             if row.get("promotion_eligible") is not False or row.get("live_allowed") is not False:
                 hard_blockers.append("DISCOVERY_CANDIDATE_AUTHORITY_INVALID")
@@ -162,18 +166,21 @@ def _handoff_state(
 
     admission_blockers: list[str] = []
     admission = discovery.get("data_admission")
-    if not isinstance(admission, Mapping) or admission.get("shadow_admission_allowed") is not True:
-        admission_blockers.append("NINETY_DAY_SHADOW_MATURITY_NOT_MET")
+    if not isinstance(admission, Mapping) or admission.get("exploration_allowed") is not True:
+        admission_blockers.append("THREE_DAY_EXPLORATION_NOT_MET")
     capacity = discovery.get("executable_depth_capacity")
+    shadow_aum = capacity.get("shadow_aum_usd") if isinstance(capacity, Mapping) else None
     if (
-        not isinstance(capacity, Mapping)
-        or capacity.get("shadow_sizing_ready") is not True
+        not isinstance(shadow_aum, (int, float))
+        or isinstance(shadow_aum, bool)
+        or not math.isfinite(float(shadow_aum))
+        or float(shadow_aum) <= 0
     ):
-        admission_blockers.append("EXECUTABLE_DEPTH_SHADOW_SIZING_NOT_READY")
+        admission_blockers.append("POSITIVE_CONSERVATIVE_SHADOW_SIZE_UNAVAILABLE")
     if admission_blockers:
         return (), tuple(admission_blockers)
     if not eligible:
-        admission_blockers.append("NO_FORMAL_GATE_PASS")
+        admission_blockers.append("NO_EVALUATED_CANDIDATE")
     return (
         tuple(sorted(eligible, key=lambda item: item[0].candidate_id)),
         tuple(admission_blockers),
@@ -246,6 +253,7 @@ def _future_marks(
 
 def _admission_identity(
     spec: RealtimeHypothesis,
+    evaluation: Mapping[str, Any],
     discovery: Mapping[str, Any],
     policy: RealtimeAlphaPolicy,
 ) -> dict[str, Any]:
@@ -277,9 +285,13 @@ def _admission_identity(
         "source_search_id": discovery.get("search_id"),
         "common_instruments": sorted(set(common_instruments)),
         "shadow_aum_usd": float(shadow_aum),
+        "formal_validation_passed_at_admission": evaluation.get("gate_pass") is True,
+        "ninety_day_history_mature_at_admission": (
+            admission.get("shadow_admission_allowed") is True
+        ),
         "policy": policy_payload,
         "policy_hash": stable_hash(policy_payload),
-        "paper_class": "AUTONOMOUS_REALTIME_FORWARD_SHADOW",
+        "paper_class": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
     }
 
 
@@ -311,7 +323,7 @@ def _admitted_spec(
         or identity.get("mechanism") != spec.mechanism
         or identity.get("horizon_ms") != spec.horizon_ms
         or identity.get("signal_version") != spec.signal_version
-        or identity.get("paper_class") != "AUTONOMOUS_REALTIME_FORWARD_SHADOW"
+        or identity.get("paper_class") != "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
         or identity.get("policy_hash") != stable_hash(dict(vars(policy)))
     ):
         raise RealtimeAlphaForwardShadowError("stored admission identity is incompatible")
@@ -379,10 +391,18 @@ def run_cycle(
                 if not store.chain_valid():
                     raise RealtimeAlphaForwardShadowError("shadow ledger chain is invalid")
 
-                for spec, _row in eligible:
+                for spec, row in eligible:
+                    # Admission freezes the dataset/search evidence that was
+                    # present when the engineering track started.  Later
+                    # discovery cycles intentionally get new search ids and
+                    # dataset versions as realtime observations arrive; those
+                    # are not a new candidate identity and must not conflict
+                    # with the immutable admission event.
+                    if store.admission(spec.candidate_id) is not None:
+                        continue
                     inserted = store.admit(
                         spec.candidate_id,
-                        _admission_identity(spec, discovery, policy),
+                        _admission_identity(spec, row, discovery, policy),
                         admitted_at_ms=now,
                     )
                     new_admissions += int(inserted)
@@ -490,8 +510,8 @@ def run_cycle(
                             decision_time = int(realization["decision_time_ms"])
                             family_registry.record_paper_run(
                                 candidate_id,
-                                run_id=f"realtime-forward:{candidate_id}:{decision_time}",
-                                status="FORWARD_SHADOW_REALIZED",
+                                run_id=f"realtime-engineering:{candidate_id}:{decision_time}",
+                                status="ENGINEERING_SHADOW_REALIZED",
                                 metrics=realization,
                                 dataset_version=str(
                                     realization.get("dataset_version")
@@ -524,18 +544,35 @@ def run_cycle(
     elif running:
         status = "RUNNING"
     else:
-        status = "WAITING_FOR_VALIDATED_CANDIDATE"
+        status = "WAITING_FOR_EVALUATED_CANDIDATE"
     report = {
         "schema_version": 1,
         "generated_at_ms": now,
         "status": status,
-        "mode": "AUTONOMOUS_REALTIME_FORWARD_SHADOW",
+        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
         "eligible_candidates": [spec.candidate_id for spec, _ in eligible],
         "admitted_candidates": list(admitted_candidates),
         "handoff": {
             "valid": handoff_valid,
             "error": handoff_error,
             "admission_blockers": list(admission_blockers),
+            "graduation_blockers": [
+                blocker
+                for blocker, blocked in (
+                    (
+                        "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
+                        not any(row.get("gate_pass") is True for _spec, row in eligible),
+                    ),
+                    (
+                        "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
+                        not (
+                            isinstance(discovery.get("data_admission"), Mapping)
+                            and discovery["data_admission"].get("shadow_admission_allowed") is True
+                        ),
+                    ),
+                )
+                if blocked
+            ],
         },
         "feature_input": {
             "ready": feature_ready,
@@ -557,6 +594,8 @@ def run_cycle(
         },
         "verdict": {
             "forward_shadow_running": running,
+            "engineering_shadow_running": running,
+            "paper_observation_started_without_maturity_wait": running,
             "promotion_eligible": False,
             "forward_evidence_credit": False,
             "deployment_eligible": False,

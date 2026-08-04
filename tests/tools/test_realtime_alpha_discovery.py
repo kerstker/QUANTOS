@@ -116,6 +116,8 @@ def test_cycle_runs_the_fixed_budget_without_paper_or_live_authority(tmp_path) -
     assert report["funnel"]["pre_registered"] == 24
     assert report["funnel"]["evaluated"] == 24
     assert report["funnel"]["formal_passes"] == 0
+    assert all("evaluation_status" in row for row in report["candidates"])
+    assert any(row["evaluation_status"] == "EVALUATED" for row in report["candidates"])
     assert report["executable_depth_capacity"]["passed"] is False
     assert "EXECUTABLE_DEPTH_HISTORY_BELOW_30D" in report["executable_depth_capacity"]["reasons"]
     assert report["safety"] == {

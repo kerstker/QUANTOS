@@ -622,6 +622,12 @@ def run_cycle(
                 status = "EXPLORATORY_ONLY"
             row = {
                 **item.as_dict(),
+                # Preserve the evaluator result separately from the workflow
+                # state below.  The old shape overwrote ``item.status`` and
+                # made it impossible for an isolated engineering-paper worker
+                # to distinguish an evaluated candidate from one with no
+                # usable observations.
+                "evaluation_status": item.status,
                 "status": status,
                 "verdict": "PASS" if hard_pass else "REQUIRES_HUMAN_REVIEW",
                 "gate_pass": hard_pass,

@@ -132,9 +132,18 @@ const state = vi.hoisted(() => ({
       forward_shadow: {
         snapshot_present: true,
         boundary_valid: true,
-        status: 'WAITING_FOR_VALIDATED_CANDIDATE',
+        status: 'RUNNING',
+        mode: 'AUTONOMOUS_REALTIME_ENGINEERING_SHADOW',
         generated_at_ms: 1_785_592_980_000,
-        eligible_candidates: [],
+        eligible_candidates: ['rt_basis_convergence_1h_v1'],
+        admitted_candidates: ['rt_basis_convergence_1h_v1'],
+        handoff: {
+          admission_blockers: [],
+          graduation_blockers: [
+            'THIRTY_DAY_FORMAL_VALIDATION_REQUIRED',
+            'NINETY_DAY_HISTORY_MATURITY_REQUIRED',
+          ],
+        },
         feature_input: { ready: true, status: 'PASS' },
         cycle: { new_admissions: 0, new_decisions: 0, new_realizations: 0 },
         tracks: {},
@@ -142,6 +151,8 @@ const state = vi.hoisted(() => ({
         ledger: { append_only: true, chain_valid: true, event_count: 0 },
         verdict: {
           forward_shadow_running: false,
+          engineering_shadow_running: true,
+          paper_observation_started_without_maturity_wait: true,
           promotion_eligible: false,
           forward_evidence_credit: false,
           deployment_eligible: false,
@@ -476,7 +487,8 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.queryByText('BREACH')).not.toBeInTheDocument();
     expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
     expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
-    expect(screen.getByText('WAITING_FOR_VALIDATED_CANDIDATE')).toBeInTheDocument();
+    expect(screen.getByText('ENGINEERING PAPER 1')).toBeInTheDocument();
+    expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();
     expect(screen.getByText('rt_basis_convergence_1h_v1')).toBeInTheDocument();

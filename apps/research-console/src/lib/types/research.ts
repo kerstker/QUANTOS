@@ -1508,6 +1508,7 @@ export interface RealtimeAlphaCandidatePayload {
   family_id?: string | null;
   mechanism?: string | null;
   horizon_ms?: number | null;
+  evaluation_status?: string | null;
   status?: string | null;
   n_periods?: number | null;
   mean_breadth?: number | null;
@@ -1602,8 +1603,14 @@ export interface RealtimeAlphaAutonomyPayload {
     snapshot_present: boolean;
     boundary_valid: boolean;
     status: string;
+    mode?: string;
     generated_at_ms?: number | null;
     eligible_candidates: string[];
+    admitted_candidates?: string[];
+    handoff?: {
+      admission_blockers?: string[];
+      graduation_blockers?: string[];
+    };
     feature_input: { ready?: boolean; status?: string; generated_at_ms?: number | null };
     cycle: {
       new_admissions?: number;
@@ -1621,6 +1628,8 @@ export interface RealtimeAlphaAutonomyPayload {
     ledger: { append_only: boolean; chain_valid: boolean; event_count?: number };
     verdict: {
       forward_shadow_running: boolean;
+      engineering_shadow_running?: boolean;
+      paper_observation_started_without_maturity_wait?: boolean;
       promotion_eligible: false;
       forward_evidence_credit: false;
       deployment_eligible: false;

@@ -17,7 +17,14 @@ from tools.realtime_alpha_forward_shadow import (
 )
 
 
-def _discovery(now_ms: int, *, eligible: bool = False) -> dict:
+def _discovery(
+    now_ms: int,
+    *,
+    eligible: bool = False,
+    evaluated: bool | None = None,
+) -> dict:
+    if evaluated is None:
+        evaluated = eligible
     spec = default_realtime_hypotheses()[0]
     return {
         "generated_at_ms": now_ms,
@@ -30,11 +37,12 @@ def _discovery(now_ms: int, *, eligible: bool = False) -> dict:
         "registry": {"chain_valid": True},
         "data_admission": {
             "shadow_admission_allowed": eligible,
+            "exploration_allowed": evaluated,
             "common_instruments": [f"S{index:02d}USDT" for index in range(10)],
         },
         "executable_depth_capacity": {
             "shadow_sizing_ready": eligible,
-            "shadow_aum_usd": 500.0 if eligible else None,
+            "shadow_aum_usd": 500.0 if evaluated else None,
         },
         "candidates": [
             {
@@ -42,6 +50,7 @@ def _discovery(now_ms: int, *, eligible: bool = False) -> dict:
                 "family_id": spec.family_id,
                 "mechanism": spec.mechanism,
                 "horizon_ms": spec.horizon_ms,
+                "evaluation_status": "EVALUATED" if evaluated else "INSUFFICIENT_OBSERVATIONS",
                 "gate_pass": eligible,
                 "status": "SHADOW_CANDIDATE_READY" if eligible else "EXPLORATORY_ONLY",
                 "promotion_eligible": False,
@@ -75,6 +84,19 @@ def test_handoff_requires_all_maturity_capacity_and_safety_gates() -> None:
         eligible_candidates(tampered, now_ms=now)
 
 
+def test_evaluated_candidate_enters_engineering_paper_before_formal_maturity() -> None:
+    now = 1_000_000
+
+    ready = eligible_candidates(
+        _discovery(now, evaluated=True),
+        now_ms=now,
+    )
+
+    assert len(ready) == 1
+    assert ready[0][1]["gate_pass"] is False
+    assert ready[0][1]["status"] == "EXPLORATORY_ONLY"
+
+
 def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_path) -> None:
     now = 1_000_000
     discovery = tmp_path / "discovery.json"
@@ -93,12 +115,12 @@ def test_waiting_cycle_is_safe_idempotent_and_creates_no_shadow_authority(tmp_pa
         now_ms=now,
     )
 
-    assert report["status"] == "WAITING_FOR_VALIDATED_CANDIDATE"
+    assert report["status"] == "WAITING_FOR_EVALUATED_CANDIDATE"
     assert report["eligible_candidates"] == []
     assert report["handoff"]["valid"] is True
     assert report["handoff"]["admission_blockers"] == [
-        "NINETY_DAY_SHADOW_MATURITY_NOT_MET",
-        "EXECUTABLE_DEPTH_SHADOW_SIZING_NOT_READY",
+        "THREE_DAY_EXPLORATION_NOT_MET",
+        "POSITIVE_CONSERVATIVE_SHADOW_SIZE_UNAVAILABLE",
     ]
     assert report["verdict"]["forward_shadow_running"] is False
     assert report["verdict"]["promotion_eligible"] is False
@@ -202,7 +224,16 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
     assert admitted["status"] == "RUNNING"
     assert admitted["cycle"]["new_admissions"] == 1
 
+    # Every autonomous discovery pass receives fresh search/dataset evidence.
+    # The already admitted track must retain its frozen admission identity
+    # instead of treating those normal evidence updates as a conflict.
+    ready["search_id"] = "search-v2"
+    ready["dataset_version"] = "dataset-v2"
+    discovery_path.write_text(json.dumps(ready), encoding="utf-8")
     decided = run_cycle(**common, now_ms=base + 30_000)
+    assert decided["status"] == "RUNNING"
+    assert decided["cycle"]["new_admissions"] == 0
+    assert decided["errors"] == {}
     assert decided["cycle"]["new_decisions"] == 1
 
     realization_time = base + 60_250
@@ -214,3 +245,53 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
     assert recovered["admitted_candidates"] == [spec.candidate_id]
     assert recovered["cycle"]["new_realizations"] == 1
     assert recovered["ledger"]["chain_valid"] is True
+
+
+def test_engineering_track_starts_without_thirty_or_ninety_day_wait(
+    tmp_path, monkeypatch
+) -> None:
+    base = 1_000_000
+    spec = default_realtime_hypotheses()[0]
+    discovery_path = tmp_path / "discovery.json"
+    discovery_path.write_text(
+        json.dumps(_discovery(base, evaluated=True)),
+        encoding="utf-8",
+    )
+    feature_status_path = tmp_path / "feature-status.json"
+    feature_status_path.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "generated_at_ms": base,
+                "batch": {"chain_valid": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path = tmp_path / "families.db"
+    with AlphaFamilyRegistry(str(registry_path), create=True) as registry:
+        registry.register_candidate(spec.as_dict(), recorded_at=base - 1)
+
+    monkeypatch.setattr(
+        "tools.realtime_alpha_forward_shadow.load_bucketed_frames",
+        lambda *_args, **_kwargs: {},
+    )
+    report = run_cycle(
+        discovery_path=discovery_path,
+        feature_status_path=feature_status_path,
+        feature_store_path=tmp_path / "features.db",
+        family_registry_path=registry_path,
+        shadow_store_path=tmp_path / "shadow.db",
+        output_path=tmp_path / "shadow.json",
+        now_ms=base,
+    )
+
+    assert report["status"] == "RUNNING"
+    assert report["cycle"]["new_admissions"] == 1
+    assert report["verdict"]["engineering_shadow_running"] is True
+    assert report["verdict"]["paper_observation_started_without_maturity_wait"] is True
+    assert report["verdict"]["forward_evidence_credit"] is False
+    assert report["handoff"]["graduation_blockers"] == [
+        "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
+        "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
+    ]

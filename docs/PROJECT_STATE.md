@@ -1,5 +1,15 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v7（实时 Alpha 无等待双轨）：** 修复了实时 Alpha
+> discovery 与纸面观察之间的流程倒置。此前 24 个预注册实时候选即使已经达到 3 天探索
+> 可评估状态，也必须先满足 30 天正式验证和 90 天历史成熟才允许进入一个本身明确
+> `forward_evidence_credit=false` 的隔离账本，导致工程观察无意义地等待。现在 discovery
+> 单独保留 `evaluation_status`，工程影子 worker 在 `EXPLORATION_READY + EVALUATED + 正的
+> 保守容量定额` 后立即建立追加式实时 Paper 轨道。30 天 DSR/PBO/locked holdout/成本压力门
+> 与 90 天成熟度被明确移到 `graduation_blockers`，仍决定正式晋级，不决定开始纸面观察。
+> 该轨道继续是公共数据、无凭证、无 broker、无订单、不可晋级、不可充当前向证据；正式
+> Execution-Paper 仍只服从 `ALPHA_PRODUCTION_WORKFLOW`。
+
 > **2026-08-04 实时纸面生产 v6（唯一工作流承重正式 fill）：** 审计发现正式
 > `paper_order_preview` 虽有待决策、九引擎、模拟执行和对账门，却未直接消费唯一候选工作流的
 > Execution-Paper 资格。现已 fail-closed 接入 `ALPHA_PRODUCTION_WORKFLOW`：新正式 fill 必须来自

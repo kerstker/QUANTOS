@@ -258,6 +258,12 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
   const spanDays = (snapshot?.data_admission.common_span_ms ?? 0) / 86_400_000;
   const candidates = snapshot?.top_candidates ?? [];
   const capacity = snapshot?.executable_depth_capacity;
+  const engineeringPaperRunning = Boolean(
+    snapshot?.forward_shadow.verdict.engineering_shadow_running,
+  );
+  const engineeringTrackCount = snapshot?.forward_shadow.admitted_candidates?.length
+    ?? Object.keys(snapshot?.forward_shadow.tracks ?? {}).length;
+  const graduationGates = snapshot?.forward_shadow.handoff?.graduation_blockers ?? [];
   const gates = snapshot?.boundary_valid
     ? snapshot.remaining_gates
     : snapshot?.blockers ?? ['AUTONOMY_SNAPSHOT_MISSING'];
@@ -271,8 +277,10 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
         <div className="flex flex-wrap items-center gap-2">
           <Chip label={snapshot?.autonomy.requires_developer_ai ? 'IDE COUPLED' : 'SYSTEM NATIVE'} tone="info" />
           <Chip
-            label={snapshot?.forward_shadow.status ?? 'SHADOW NO SNAPSHOT'}
-            tone={snapshot?.forward_shadow.verdict.forward_shadow_running ? 'pos' : 'warn'}
+            label={engineeringPaperRunning
+              ? `ENGINEERING PAPER ${engineeringTrackCount}`
+              : snapshot?.forward_shadow.status ?? 'PAPER NO SNAPSHOT'}
+            tone={engineeringPaperRunning ? 'pos' : 'warn'}
           />
           <Chip label={snapshot?.status ?? 'NO SNAPSHOT'} tone={statusTone} />
         </div>
@@ -301,7 +309,7 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
         <Metric
           label="Diagnostic leads"
           value={snapshot?.funnel.diagnostic_leads ?? 0}
-          detail={`${snapshot?.funnel.evaluated ?? 0} evaluated`}
+          detail={`${snapshot?.funnel.evaluated ?? 0} evaluated · ${engineeringTrackCount} paper tracks`}
           tone={(snapshot?.funnel.diagnostic_leads ?? 0) > 0 ? 'info' : 'muted'}
         />
         <Metric
@@ -349,7 +357,11 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           <div className="mt-3 border-t border-line pt-2 text-3xs text-faint">
             Data admission {snapshot?.data_admission.status ?? 'NO_SNAPSHOT'} · registry chain{' '}
             {snapshot?.registry.chain_valid ? 'valid' : 'blocked'}
-            {' '}· forward ledger {snapshot?.forward_shadow.ledger.chain_valid ? 'valid' : 'waiting'}
+            {' '}· engineering ledger {snapshot?.forward_shadow.ledger.chain_valid ? 'valid' : 'waiting'}
+          </div>
+          <div className="mt-2 text-3xs text-faint">
+            Engineering Paper {engineeringPaperRunning ? 'RUNNING' : 'WAITING'} · formal graduation{' '}
+            {graduationGates.length ? graduationGates.join(' · ') : 'gates cleared'}
           </div>
           <div className="mt-2 text-3xs text-faint">
             Capacity max {fmtUsd(capacity?.max_supported_aum_usd)} · shadow sizing{' '}

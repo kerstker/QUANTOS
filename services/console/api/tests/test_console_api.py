@@ -894,3 +894,65 @@ def test_system_completeness_snapshot_uses_backend_contract():
     assert payload["red_lines"]
     assert all("completion_score" not in item for item in payload["requirements"])
     assert payload["safety_boundary"]["execution_boundary"] == "LIVE_TRADING_DISALLOWED"
+
+
+def test_realtime_engineering_paper_projection_separates_graduation_gates(tmp_path):
+    import json
+
+    from services.console.api.artifact_paper_views import (
+        _realtime_alpha_forward_shadow_payload,
+    )
+
+    artifact = {
+        "status": "RUNNING",
+        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW",
+        "generated_at_ms": 123,
+        "eligible_candidates": ["rt_candidate"],
+        "admitted_candidates": ["rt_candidate"],
+        "handoff": {
+            "admission_blockers": [],
+            "graduation_blockers": [
+                "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
+                "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
+            ],
+        },
+        "feature_input": {"ready": True},
+        "cycle": {"new_admissions": 1},
+        "tracks": {"rt_candidate": {"n_decisions": 0}},
+        "errors": {},
+        "ledger": {"append_only": True, "chain_valid": True, "event_count": 1},
+        "verdict": {
+            "forward_shadow_running": True,
+            "engineering_shadow_running": True,
+            "paper_observation_started_without_maturity_wait": True,
+            "promotion_eligible": False,
+            "forward_evidence_credit": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "safety": {
+            "paper_only": True,
+            "public_market_data_only": True,
+            "separate_from_official_paper": True,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+            "broker_order_submission": False,
+            "allow_ai_direct_trading": False,
+        },
+    }
+    path = tmp_path / "shadow.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    projected = _realtime_alpha_forward_shadow_payload(str(path))
+
+    assert projected["boundary_valid"] is True
+    assert projected["mode"] == "AUTONOMOUS_REALTIME_ENGINEERING_SHADOW"
+    assert projected["admitted_candidates"] == ["rt_candidate"]
+    assert projected["handoff"]["admission_blockers"] == []
+    assert projected["handoff"]["graduation_blockers"] == [
+        "THIRTY_DAY_FORMAL_VALIDATION_REQUIRED",
+        "NINETY_DAY_HISTORY_MATURITY_REQUIRED",
+    ]
+    assert projected["verdict"]["engineering_shadow_running"] is True
+    assert projected["verdict"]["forward_evidence_credit"] is False
