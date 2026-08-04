@@ -224,7 +224,16 @@ def test_admitted_track_survives_restart_and_current_gate_regression(
     assert admitted["status"] == "RUNNING"
     assert admitted["cycle"]["new_admissions"] == 1
 
+    # Every autonomous discovery pass receives fresh search/dataset evidence.
+    # The already admitted track must retain its frozen admission identity
+    # instead of treating those normal evidence updates as a conflict.
+    ready["search_id"] = "search-v2"
+    ready["dataset_version"] = "dataset-v2"
+    discovery_path.write_text(json.dumps(ready), encoding="utf-8")
     decided = run_cycle(**common, now_ms=base + 30_000)
+    assert decided["status"] == "RUNNING"
+    assert decided["cycle"]["new_admissions"] == 0
+    assert decided["errors"] == {}
     assert decided["cycle"]["new_decisions"] == 1
 
     realization_time = base + 60_250

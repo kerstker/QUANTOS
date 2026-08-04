@@ -392,6 +392,14 @@ def run_cycle(
                     raise RealtimeAlphaForwardShadowError("shadow ledger chain is invalid")
 
                 for spec, row in eligible:
+                    # Admission freezes the dataset/search evidence that was
+                    # present when the engineering track started.  Later
+                    # discovery cycles intentionally get new search ids and
+                    # dataset versions as realtime observations arrive; those
+                    # are not a new candidate identity and must not conflict
+                    # with the immutable admission event.
+                    if store.admission(spec.candidate_id) is not None:
+                        continue
                     inserted = store.admit(
                         spec.candidate_id,
                         _admission_identity(spec, row, discovery, policy),
