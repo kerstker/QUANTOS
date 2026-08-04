@@ -437,10 +437,15 @@ def run_cycle(
                     binance_store_path=str(binance_store_path),
                     book_store_path=str(book_store_path),
                 )
+                # A public REST failover can take longer than one execution
+                # cycle.  Validate the freshly appended snapshot against the
+                # refresh-completion clock, otherwise a fresh quote can be
+                # rejected as future relative to the cycle-start timestamp.
+                reload_now_ms = max(now, int(time.time() * 1000))
                 result = load_persisted_routing_snapshot(
                     book_store_path=str(book_store_path),
                     tickers=tuple(sorted(specs)),
-                    now_ms=now,
+                    now_ms=reload_now_ms,
                 )
                 routing_refresh_succeeded = True
                 return result

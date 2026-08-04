@@ -208,10 +208,12 @@ def test_stale_routing_snapshot_is_refreshed_once_before_execution(
     _write_statuses(tmp_path, 500)
     common["book_store_path"].write_bytes(b"existing-book-store")
     load_calls = 0
+    load_now_values: list[int] = []
 
-    def fake_load(**_kwargs):
+    def fake_load(**kwargs):
         nonlocal load_calls
         load_calls += 1
+        load_now_values.append(int(kwargs["now_ms"]))
         if load_calls == 1:
             raise PaperMultiVenueSORError(
                 "routing snapshot is stale or in the future"
@@ -237,6 +239,7 @@ def test_stale_routing_snapshot_is_refreshed_once_before_execution(
         "tools.realtime_alpha_execution_paper.refresh_persisted_routing_snapshot",
         fake_refresh,
     )
+    monkeypatch.setattr("tools.realtime_alpha_execution_paper.time.time", lambda: 0.6)
     monkeypatch.setattr(
         "tools.realtime_alpha_execution_paper.build_alpha_preview",
         lambda alpha_id, pending, **_kwargs: _preview(
@@ -249,6 +252,8 @@ def test_stale_routing_snapshot_is_refreshed_once_before_execution(
     assert report["status"] == "RUNNING"
     assert report["errors"] == {}
     assert load_calls == 2
+    assert load_now_values == [500, 600]
+    assert refresh_calls[0]["now_ms"] == 500
     assert len(refresh_calls) == 1
     assert refresh_calls[0]["binance_store_path"] == str(common["binance_store_path"])
     assert report["routing"]["snapshot_refresh"] == {

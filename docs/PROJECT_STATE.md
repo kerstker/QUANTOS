@@ -1,6 +1,6 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
-> **2026-08-05 SOR freshness self-coordination:** the one-minute realtime execution-paper worker now refreshes the append-only public cross-venue order-book snapshot when the five-minute SOR artifact is missing or stale, then reloads and revalidates the full venue/timestamp/hash contract. Refresh failure remains `SAFE_BLOCKED`; the refresh never runs a canary, touches credentials, or submits orders.
+> **2026-08-05 SOR freshness self-coordination:** the one-minute realtime execution-paper worker now refreshes the append-only public cross-venue order-book snapshot when the five-minute SOR artifact is missing or stale, then reloads and revalidates the full venue/timestamp/hash contract against the refresh-completion clock (so a slow public fallback is not misclassified as future). Refresh failure remains `SAFE_BLOCKED`; the refresh never runs a canary, touches credentials, or submits orders.
 
 > **2026-08-05 主纸面逐因子生命周期报告（前端实时接缝）：** 主纸面 `paper_realtime` 的每个因子现在都可以在纸面驾驶舱中点击展开生命周期报告，逐项显示研究回测、验证、纸面标记、前向成熟度、实时净 PnL、成交/持仓、资金费/成本、保留权益曲线和阻断原因；默认选中已实现亏损因子。报告通过现有 SSE 只读快照刷新，`PAPER_PENDING` 且无成交的因子保持 `NO_REALIZED_PNL`，不再把初始权益或 0 PnL 误显示为盈利。主纸面与工程 Challenger 继续分栏，所有 live/order flags 仍为 false。
 
