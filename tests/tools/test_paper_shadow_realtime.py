@@ -80,7 +80,10 @@ def test_shadow_realtime_fails_closed_before_marking_incomplete_population(
         lambda args: (_ for _ in ()).throw(AssertionError("marking must not run")),
     )
 
-    assert paper_shadow_realtime.main([]) == 1
+    # Missing attested decisions are a current fail-closed paper state, not
+    # an infrastructure failure; the scheduler watchdog must classify it as
+    # SAFE_BLOCKED.
+    assert paper_shadow_realtime.main([]) == 2
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["status"] == "SAFE_BLOCKED"
     assert report["verdict"]["shadow_paper_running"] is False
@@ -136,6 +139,50 @@ def test_shadow_realtime_accepts_refreshed_nonpromotable_operational_cycle(
     assert report["upstream_cycle"]["exit_code"] == 1
     assert report["upstream_cycle"]["artifact_refreshed"] is True
     assert report["upstream_cycle"]["operational_artifact_accepted"] is True
+
+
+def test_shadow_realtime_preserves_real_upstream_failure(
+    monkeypatch, tmp_path
+):
+    output = tmp_path / "upstream-error.json"
+    monkeypatch.setattr(paper_shadow_realtime, "OUTPUT_PATH", str(output))
+    profile = list(paper_shadow_realtime.PROFILE_ARGS)
+    profile[profile.index("data/cache/paper_shadow_realtime_status.json")] = str(output)
+    monkeypatch.setattr(paper_shadow_realtime, "PROFILE_ARGS", tuple(profile))
+    expected = ("carry", "crowd")
+    monkeypatch.setattr(paper_shadow_realtime, "paper_candidate_ids", lambda: expected)
+    monkeypatch.setattr(
+        paper_shadow_realtime.paper_shadow_auto,
+        "run_shadow",
+        lambda: {"verdict": {"shadow_paper_running": True}, "errors": {}},
+    )
+
+    def fake_main(_args):
+        output.write_text(
+            json.dumps(
+                {
+                    "errors": {"carry": {"error": "upstream failure"}},
+                    "verdict": {
+                        "paper_mark_ready": True,
+                        "backtest_reference_present_for_all_execution_candidates": True,
+                    },
+                    "safety": {
+                        "paper_only": True,
+                        "broker_connectivity": False,
+                        "broker_order_submission": False,
+                    },
+                    "alphas": {
+                        alpha_id: {"status": "PAPER_MARKED"}
+                        for alpha_id in expected
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 1
+
+    monkeypatch.setattr(paper_shadow_realtime.paper_realtime, "main", fake_main)
+    assert paper_shadow_realtime.main([]) == 1
 
 
 def test_shadow_realtime_rejects_stale_success_artifact_after_upstream_failure(

@@ -14,6 +14,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from quantos.contracts.scheduled_worker import (
     SCHEDULE_EXIT_FAILURE,
+    SCHEDULE_EXIT_SAFE_BLOCKED,
     SCHEDULE_EXIT_SUCCESS,
 )
 from services.monitoring.paper_operational_evidence import assess_shadow_artifact
@@ -134,7 +135,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
             indent=2,
         )
-        return SCHEDULE_EXIT_FAILURE
+        # Missing attested decisions are an expected fail-closed state while
+        # realtime candidates are still in shadow/forward observation.  Keep
+        # the worker visibly blocked, but do not report a host/process fault
+        # to the scheduler watchdog.
+        return SCHEDULE_EXIT_SAFE_BLOCKED
     started_at_ms = int(time.time() * 1000)
     prior_artifact = _artifact_identity(OUTPUT_PATH)
     upstream_exit_code = paper_realtime.main(list(PROFILE_ARGS))
@@ -154,7 +159,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             started_at_ms=started_at_ms,
             finished_at_ms=finished_at_ms,
         )
-        return SCHEDULE_EXIT_FAILURE
+        return (
+            SCHEDULE_EXIT_SAFE_BLOCKED
+            if upstream_exit_code == SCHEDULE_EXIT_SAFE_BLOCKED
+            else SCHEDULE_EXIT_FAILURE
+        )
     try:
         report = json.loads(Path(OUTPUT_PATH).read_text(encoding="utf-8"))
         verdict = report.get("verdict")
@@ -207,7 +216,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         atomic_write_json(OUTPUT_PATH, report, indent=2)
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return SCHEDULE_EXIT_FAILURE
-    return SCHEDULE_EXIT_SUCCESS if completed else SCHEDULE_EXIT_FAILURE
+    if completed:
+        return SCHEDULE_EXIT_SUCCESS
+    # A refreshed but incomplete artifact is normally a current, auditable
+    # safety block (for example, an immature candidate has no attested
+    # decision).  Preserve a hard failure when the upstream worker itself
+    # reports an operational error; the watchdog must not hide that signal.
+    if (
+        upstream_exit_code == SCHEDULE_EXIT_SAFE_BLOCKED
+        or "UPSTREAM_OUTCOME_NOT_OPERATIONALLY_ACCEPTABLE" not in operational_reasons
+    ):
+        return SCHEDULE_EXIT_SAFE_BLOCKED
+    return SCHEDULE_EXIT_FAILURE
 
 
 if __name__ == "__main__":
