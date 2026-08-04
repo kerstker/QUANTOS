@@ -479,6 +479,7 @@ export default function DryRunPipeline() {
   const initialLoading = apiState === 'loading' && !usingBackend;
   const data = usingBackend ? payload! : mockPayload;
   const shadow = data.paper_shadow;
+  const operational = data.paper_operational;
   const health = data.paper_health;
   const scheduler = data.scheduler_watchdog;
   const realtimeAlpha = data.realtime_alpha_autonomy;
@@ -502,6 +503,10 @@ export default function DryRunPipeline() {
   const precomputedRiskInputs = pipelineCandidates.filter(candidate =>
     candidate.risk_packet?.input_evidence_status === 'READY'
     || candidate.risk_packet?.status === 'READY').length;
+  const drillEntries = Object.entries(operational?.window.drills ?? {});
+  const passedDrills = drillEntries.filter(([, passed]) => passed).length;
+  const restartProven = (operational?.window.planned_restart_recoveries ?? [])
+    .some(restart => restart.within_policy);
   const totalPositions = alphaRows.reduce(
     (sum, [, alpha]) => sum + Object.values(alpha.positions ?? {}).filter(qty => qty !== 0).length,
     0,
@@ -526,6 +531,12 @@ export default function DryRunPipeline() {
       label: '逐笔估值与对账',
       detail: reconciled ? 'all residuals ≈ 0' : 'residual requires attention',
       ok: reconciled,
+    },
+    {
+      label: '连续运行与故障恢复',
+      detail: `${operational?.window.accepted_cycle_count ?? 0} cycles · ${passedDrills}/${drillEntries.length} drills`,
+      ok: Boolean(operational?.window.engineering_smoke_ready),
+      blocked: !operational?.window.engineering_smoke_ready,
     },
     {
       label: '正式纸面与前向证据',
@@ -881,9 +892,27 @@ export default function DryRunPipeline() {
             right={<Chip label={shadow?.persistence.chain_valid ? 'CHAIN VALID' : 'CHAIN CHECK'} tone={shadow?.persistence.chain_valid ? 'pos' : 'neg'} />}
             bodyClass="p-4"
           >
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
               <Metric label="Ledger rows" value={shadow?.paper_ledger.n_rows ?? 0} detail={`${shadow?.paper_ledger.n_decisions ?? 0} decisions`} tone="info" />
               <Metric label="Snapshots" value={shadow?.persistence.new_snapshots ?? 0} detail="append-only cycle" tone="info" />
+              <Metric
+                label="Operating window"
+                value={fmtAge(operational?.window.history_span_ms ?? null)}
+                detail={`${operational?.window.accepted_cycle_count ?? 0}/${operational?.policy?.production_minimum_successes ?? 274} accepted`}
+                tone={operational?.window.production_window_ready ? 'pos' : 'warn'}
+              />
+              <Metric
+                label="Fault drills"
+                value={`${passedDrills}/${drillEntries.length}`}
+                detail="isolated temporary stores"
+                tone={drillEntries.length > 0 && passedDrills === drillEntries.length ? 'pos' : 'warn'}
+              />
+              <Metric
+                label="Restart recovery"
+                value={restartProven ? 'PROVEN' : 'MATURING'}
+                detail="release transition ≤15m"
+                tone={restartProven ? 'pos' : 'warn'}
+              />
               <Metric label="Data refresh" value={data.data_refresh?.outcome ?? '—'} detail={`${data.data_refresh?.failed_total ?? 0} failures`} tone={(data.data_refresh?.failed_total ?? 0) === 0 ? 'pos' : 'neg'} />
               <Metric label="Broker path" value="OFF" detail="public data only" tone="neg" />
             </div>

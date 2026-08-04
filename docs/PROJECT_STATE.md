@@ -1,8 +1,21 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v5（运营窗口与故障证据）：** WP2 新增
+> `paper_operational_evidence.v1`：每个五分钟影子估值周期之后，从不可变 release receipt
+> 绑定本轮语义快照，并写入独立的追加式 SQLite 哈希链。策略预注册为 5 分钟 cadence、
+> 最大 12 分钟缺口、≥99% 成功率、30 分钟/6 次工程烟雾窗和 24 小时/274 次 Production
+> Paper 窗；计划 release 重启必须在 15 分钟内恢复。每个 release 同时在临时数据库运行
+> 6 项故障演练：重复消息幂等、冲突身份拒绝、链篡改检测、旧周期拒绝、broker 安全边界
+> 拒绝和候选覆盖不全拒绝。故障注入不触碰运行账本。后端、SSE 和纸面驾驶舱新增
+> Operating window / Fault drills / Restart recovery 动态投影。24 小时成熟度只决定 WP2
+> 运营验收，不阻塞 WP3/WP4 继续开发，也不改变正式 Paper、Alpha 晋级或实盘权限。
+
 > **2026-08-04 实时纸面生产 v4（本轮制品原子性）：** `paper_shadow_realtime`
 > 不再忽略下游估值 worker 的退出码，也不再允许复用磁盘上的旧成功快照冒充本轮成功。
-> 每轮现在同时要求 `paper_realtime` 零退出和输出制品文件身份发生变化；任一条件失败即覆盖为
+> 每轮现在要求输出制品文件身份发生变化，并重新验证 10/10 候选、paper-only 安全边界、
+> mark 状态和上游结果。上游零退出可直接接受；仅因正式回测引用未齐而返回 1 时，只有新制品
+> 明确 `paper_mark_ready=true`、`errors={}` 且正式准入仍关闭才可作为非晋级工程周期接受。
+> 其他非零结果或未刷新制品立即覆盖为
 > `SAFE_BLOCKED`，记录 `UPSTREAM_PAPER_REALTIME_FAILED` 或
 > `PAPER_REALTIME_ARTIFACT_NOT_REFRESHED`，并把 paper mark、shadow running、正式准入和所有
 > live/order 权限逐项置为 false。成功快照新增 `upstream_cycle`（起止时间、退出码、制品刷新）供

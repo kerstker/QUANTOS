@@ -80,6 +80,9 @@ _PAPER_SHADOW_AUTO = os.path.join(
 _PAPER_SHADOW_REALTIME = os.path.join(
     _REPO_ROOT, "data", "cache", "paper_shadow_realtime_status.json"
 )
+_PAPER_OPERATIONAL_EVIDENCE = os.path.join(
+    _REPO_ROOT, "data", "cache", "paper_operational_evidence.json"
+)
 _REALTIME_ALPHA_DISCOVERY = os.path.join(
     _REPO_ROOT, "data", "cache", "realtime_alpha_discovery.json"
 )
@@ -486,6 +489,7 @@ def _dry_run_watch_paths() -> tuple[str, ...]:
         _PAPER_10K_HEALTH,
         _PAPER_SHADOW_AUTO,
         _PAPER_SHADOW_REALTIME,
+        _PAPER_OPERATIONAL_EVIDENCE,
         _REALTIME_ALPHA_DISCOVERY,
         _REALTIME_ALPHA_FORWARD_SHADOW,
     )
@@ -1004,6 +1008,83 @@ def _scheduler_watchdog_payload() -> Dict:
     }
 
 
+def _paper_operational_payload(path: str | None = None) -> Dict:
+    """Project the append-only Production Paper window without widening authority."""
+    snapshot = _load_json_object(path or _PAPER_OPERATIONAL_EVIDENCE)
+    empty = {
+        "snapshot_present": False,
+        "status": "NO_SNAPSHOT",
+        "chain_valid": False,
+        "window": {
+            "engineering_smoke_ready": False,
+            "production_window_ready": False,
+            "accepted_cycle_count": 0,
+            "history_span_ms": 0,
+            "success_ratio": 0.0,
+            "drills": {},
+            "planned_restart_recoveries": [],
+            "blockers": ["PAPER_OPERATIONAL_EVIDENCE_MISSING"],
+        },
+        "safety": {
+            "paper_only": True,
+            "fault_injection_isolated": True,
+            "credentials_accessed": False,
+            "broker_connectivity": False,
+            "broker_order_submission": False,
+        },
+    }
+    if snapshot is None:
+        return empty
+    safety = snapshot.get("safety")
+    verdict = snapshot.get("verdict")
+    window = snapshot.get("window")
+    boundary_valid = bool(
+        snapshot.get("flow") == "PRODUCTION_PAPER_OPERATIONAL_EVIDENCE"
+        and snapshot.get("chain_valid") is True
+        and isinstance(window, dict)
+        and isinstance(safety, dict)
+        and safety.get("paper_only") is True
+        and safety.get("fault_injection_isolated") is True
+        and safety.get("credentials_accessed") is False
+        and safety.get("broker_connectivity") is False
+        and safety.get("broker_order_submission") is False
+        and isinstance(verdict, dict)
+        and verdict.get("promotion_eligible") is False
+        and verdict.get("live_allowed") is False
+        and verdict.get("order_submission_allowed") is False
+    )
+    if not boundary_valid:
+        blocked = dict(empty)
+        blocked.update({"snapshot_present": True, "status": "SAFE_BLOCKED"})
+        blocked["window"] = dict(empty["window"])
+        blocked["window"]["blockers"] = ["PAPER_OPERATIONAL_EVIDENCE_INVALID"]
+        return blocked
+    return {
+        "snapshot_present": True,
+        "generated_at_ms": snapshot.get("generated_at_ms"),
+        "status": str(window.get("status", "MATURING")),
+        "chain_valid": True,
+        "policy": snapshot.get("policy", {}),
+        "window": {
+            key: window.get(key)
+            for key in (
+                "engineering_smoke_ready",
+                "production_window_ready",
+                "cycle_count",
+                "accepted_cycle_count",
+                "success_ratio",
+                "history_span_ms",
+                "max_gap_ms",
+                "latest_age_ms",
+                "drills",
+                "planned_restart_recoveries",
+                "blockers",
+            )
+        },
+        "safety": dict(empty["safety"]),
+    }
+
+
 def _paper_profile_payload(
     *,
     profile_id: str,
@@ -1490,6 +1571,7 @@ def _dry_run_payload() -> Dict:
         "alpha_pipeline": _alpha_pipeline_payload(forward_track, paper_realtime),
         "realtime_alpha_autonomy": _realtime_alpha_autonomy_payload(),
         "paper_shadow": _paper_shadow_payload(),
+        "paper_operational": _paper_operational_payload(),
         "paper_health": paper_health,
         "forward_track": forward_track,
         "data_refresh": _data_refresh_payload(),

@@ -847,6 +847,21 @@ def test_dry_run_surfaces_semantic_paper_health_without_live_capability():
     assert health["safety"]["broker_order_submission"] is False
 
 
+def test_dry_run_surfaces_paper_operational_window_without_widening_authority():
+    body = client.get("/api/v1/console/dry-run").json()
+    operational = body["paper_operational"]
+    assert isinstance(operational["snapshot_present"], bool)
+    assert isinstance(operational["status"], str)
+    assert isinstance(operational["chain_valid"], bool)
+    assert isinstance(operational["window"]["engineering_smoke_ready"], bool)
+    assert isinstance(operational["window"]["production_window_ready"], bool)
+    assert operational["safety"]["paper_only"] is True
+    assert operational["safety"]["fault_injection_isolated"] is True
+    assert operational["safety"]["credentials_accessed"] is False
+    assert operational["safety"]["broker_connectivity"] is False
+    assert operational["safety"]["broker_order_submission"] is False
+
+
 def test_dry_run_surfaces_isolated_small_paper_profile_read_only():
     body = client.get("/api/v1/console/dry-run").json()
     profile = body["paper_profiles"]["small_10k"]

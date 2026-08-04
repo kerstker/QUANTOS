@@ -316,6 +316,10 @@ $paperRealtime10kTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinu
   -RepetitionInterval (New-TimeSpan -Minutes 5)
 $paperShadowRealtimeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
   -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Retain one semantic observation after the shadow mark cycle.  Maturity is
+# reported as the explicit partial exit code; collection continues regardless.
+$paperOperationalEvidenceTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(7) `
+  -RepetitionInterval (New-TimeSpan -Minutes 5)
 # Run the semantic paper health check one minute after the mark worker.  It is
 # also short-lived and returns non-zero when the paper artifacts are stale or
 # unsafe; it never refreshes data or reaches a broker.
@@ -376,6 +380,8 @@ Register-L2Task -Name "QUANTOS_paper_shadow_auto" -Module "paper_shadow_auto" `
   -Trigger $paperShadowAutoTrigger
 Register-L2Task -Name "QUANTOS_paper_shadow_realtime" -Module "paper_shadow_realtime" `
   -Trigger $paperShadowRealtimeTrigger
+Register-L2Task -Name "QUANTOS_paper_operational_evidence" -Module "paper_operational_evidence" `
+  -Trigger $paperOperationalEvidenceTrigger
 Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
   -Trigger $paperHealthTrigger
 Register-L2Task -Name "QUANTOS_raw_archive_audit" -Module "raw_archive_audit" `

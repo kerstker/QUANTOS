@@ -48,6 +48,7 @@ ALLOWED_L2_MODULES = frozenset(
         "paper_health",
         "paper_alpha_evaluation",
         "paper_multivenue_sor",
+        "paper_operational_evidence",
         "paper_order_preview",
         "paper_research_risk_bundle",
         "paper_realtime",
