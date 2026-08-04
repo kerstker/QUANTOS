@@ -692,6 +692,9 @@ describe('automated shadow-paper cockpit', () => {
     fireEvent.click(screen.getByRole('button', { name: 'LOSS 1' }));
     expect(screen.getByRole('button', { name: 'LOSS 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('主纸面账户实时业绩')).toBeInTheDocument();
+    expect(screen.getByText('Official factor lifecycle report · SSE live')).toBeInTheDocument();
+    expect(screen.getByText('Retained paper equity')).toBeInTheDocument();
+    expect(screen.getByText('Collecting the first paper mark.')).toBeInTheDocument();
     expect(screen.getByText('1 PROFIT')).toBeInTheDocument();
     expect(screen.getByText('0 PENDING')).toBeInTheDocument();
     expect(screen.getAllByText('LEGACY_DIAGNOSTIC_PAPER').length).toBeGreaterThan(0);
@@ -699,7 +702,7 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getAllByText('Maturity 1/8').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Lifecycle blockers: LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE/).length).toBeGreaterThan(0);
     expect(screen.getByText('影子 Challenger 实时权益与策略账簿')).toBeInTheDocument();
-    expect(screen.getByText('$-7,416')).toBeInTheDocument();
+    expect(screen.getAllByText('$-7,416').length).toBeGreaterThan(0);
     expect(screen.getByText('3.49d')).toBeInTheDocument();
     expect(screen.getByText(/Capacity max \$875/)).toBeInTheDocument();
     expect(screen.getByText('$2,956,000')).toBeInTheDocument();
