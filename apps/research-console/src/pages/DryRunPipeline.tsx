@@ -12,6 +12,7 @@ import { stamp, type Tone } from '@/ui/format';
 import { useConsoleSnapshot } from '@/ui/useConsoleSnapshot';
 import { fetchDryRunSnapshot } from '@/lib/api/research-console-api';
 import type {
+  AlphaPipelineCandidate,
   DryRunPipelinePayload,
   PaperOrderPreviewAlpha,
   PaperRealtimeAlpha,
@@ -700,33 +701,55 @@ function StrategyRow({
   );
 }
 
-function OfficialPaperRow({ alpha, value }: { alpha: string; value: PaperRealtimeAlpha }) {
+function OfficialPaperRow({
+  alpha,
+  value,
+  candidate,
+}: {
+  alpha: string;
+  value: PaperRealtimeAlpha;
+  candidate?: AlphaPipelineCandidate;
+}) {
   const activePositions = Object.values(value.positions ?? {}).filter(quantity => quantity !== 0).length;
   const pending = value.status === 'PAPER_PENDING';
+  const blockers = candidate?.blockers ?? [];
   return (
-    <div className="grid gap-3 border-b border-line/70 py-3 last:border-b-0 md:grid-cols-[minmax(170px,1.4fr)_repeat(4,minmax(92px,1fr))] md:items-center">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-semibold text-ink">{alpha}</span>
-          <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
+    <div className="border-b border-line/70 py-3 last:border-b-0">
+      <div className="grid gap-3 md:grid-cols-[minmax(190px,1.5fr)_repeat(4,minmax(92px,1fr))] md:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-semibold text-ink">{alpha}</span>
+            <Chip label={value.status ?? 'NO_STATUS'} tone={pending ? 'warn' : 'info'} />
+            <Chip label={candidate?.stage ?? 'NO_WORKFLOW_STAGE'} tone={candidate ? 'special' : 'muted'} />
+          </div>
+          <div className="mt-1 truncate text-3xs text-faint">
+            {candidate
+              ? `${candidate.family_id ?? 'UNCLASSIFIED'} · ${candidate.definition_kind ?? 'UNKNOWN_DEFINITION'}`
+              : 'main paper account · workflow identity unavailable'}
+          </div>
         </div>
-        <div className="mt-1 text-3xs text-faint">main paper account · not shadow challenger</div>
+        <div>
+          <div className="text-3xs uppercase tracking-wider text-faint">Equity</div>
+          <div className="ticker-num mt-1 text-sm text-ink">{fmtUsd(value.equity)}</div>
+        </div>
+        <div>
+          <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
+          <div className={`ticker-num mt-1 text-sm ${signedClass(value.net_pnl)}`}>{fmtUsd(value.net_pnl)}</div>
+        </div>
+        <div>
+          <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
+          <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>{fmtPct(value.return_on_aum)}</div>
+        </div>
+        <div>
+          <div className="text-3xs uppercase tracking-wider text-faint">Activity / maturity</div>
+          <div className="ticker-num mt-1 text-sm text-muted">{value.n_fills ?? 0} fills · {activePositions} positions</div>
+          <div className="mt-1 text-3xs text-faint">
+            Maturity {candidate?.maturity?.observed_periods ?? 0}/{candidate?.maturity?.required_periods ?? '—'}
+          </div>
+        </div>
       </div>
-      <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Equity</div>
-        <div className="ticker-num mt-1 text-sm text-ink">{fmtUsd(value.equity)}</div>
-      </div>
-      <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Net PnL</div>
-        <div className={`ticker-num mt-1 text-sm ${signedClass(value.net_pnl)}`}>{fmtUsd(value.net_pnl)}</div>
-      </div>
-      <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Return</div>
-        <div className={`ticker-num mt-1 text-sm ${signedClass(value.return_on_aum)}`}>{fmtPct(value.return_on_aum)}</div>
-      </div>
-      <div>
-        <div className="text-3xs uppercase tracking-wider text-faint">Activity</div>
-        <div className="ticker-num mt-1 text-sm text-muted">{value.n_fills ?? 0} fills · {activePositions} positions</div>
+      <div className="mt-2 truncate text-3xs text-faint" title={blockers.join(' · ')}>
+        Lifecycle blockers: {blockers.length ? blockers.join(' · ') : 'none reported; human promotion gate remains'}
       </div>
     </div>
   );
@@ -805,6 +828,7 @@ export default function DryRunPipeline() {
   const realtimeAlpha = data.realtime_alpha_autonomy;
   const alphaPipeline = data.alpha_pipeline;
   const pipelineCandidates = alphaPipeline?.candidates ?? [];
+  const pipelineByAlpha = new Map(pipelineCandidates.map(candidate => [candidate.alpha_id, candidate]));
   const alphaRows = Object.entries(shadow?.alphas ?? {});
   const officialRows = Object.entries(officialPaper?.alphas ?? {});
   const officialProfit = officialRows.filter(([, alpha]) => (alpha.net_pnl ?? 0) > 0 && (alpha.n_fills ?? 0) > 0).length;
@@ -993,7 +1017,12 @@ export default function DryRunPipeline() {
               该区域与下方影子 Challenger 账户完全分开。亏损优先排序；PAPER_PENDING 的初始权益和 0 PnL 不算盈利，也不以影子收益替代。
             </div>
             {sortedOfficialRows.length ? sortedOfficialRows.map(([alpha, value]) => (
-              <OfficialPaperRow key={alpha} alpha={alpha} value={value} />
+              <OfficialPaperRow
+                key={alpha}
+                alpha={alpha}
+                value={value}
+                candidate={pipelineByAlpha.get(alpha)}
+              />
             )) : (
               <div className="py-6 text-center text-xs text-faint">Main paper account snapshot unavailable.</div>
             )}

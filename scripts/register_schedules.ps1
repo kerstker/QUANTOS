@@ -380,7 +380,7 @@ Register-L2Task -Name "QUANTOS_binance_systemic_risk" -Module "binance_systemic_
 Register-L2Task -Name "QUANTOS_binance_rpi_depth" -Module "binance_rpi_depth" `
   -Trigger $binanceRpiDepthTrigger
 Register-L2Task -Name "QUANTOS_binance_realtime_features" -Module "binance_realtime_features" `
-  -Trigger $binanceRealtimeFeaturesTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+  -Trigger $binanceRealtimeFeaturesTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 45)
 Register-L2Task -Name "QUANTOS_binance_realtime_drift_alerts" -Module "binance_realtime_drift_alerts" `
   -Trigger $binanceRealtimeDriftAlertsTrigger
 Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha_discovery" `

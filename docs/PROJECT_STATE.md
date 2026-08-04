@@ -1,5 +1,13 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v14（全链审计不再被周期性强杀）：** 真实解释器重绑后进一步
+> 暴露 `binance_realtime_features` 的 10 分钟 `ExecutionTimeLimit` 小于 526 万行每日全链审计
+> 的现场耗时；Task Scheduler 会在每轮即将完成前硬终止 worker，留下永久 `STARTED` 回执，
+> 下一 cadence 又从头审计。该任务现保留 10 分钟触发频率与 `IgnoreNew` 单实例策略，但硬上限
+> 调整为 45 分钟：日常增量仍按原 cadence 秒级执行，每日全审计可连续完成且期间不重叠。
+> 纸面驾驶舱同时把 canonical workflow 阶段、因子家族、定义种类、成熟度和 blocker 合并进
+> 34 个主纸面账户的实时 SSE 业绩行；最新权威实况为 1 PROFIT / 2 LOSS / 31 PENDING 或零成交，
+> 初始权益与 0 PnL 不再显示为盈利。所有 live/order flag 继续保持 false。
 > **2026-08-04 实时纸面生产 v13（调度器真实解释器绑定）：** 现场根因审计确认 Windows
 > Task Scheduler 原先绑定的是 `WindowsApps` Python 执行别名；短生命周期 shim 退出后任务会被
 > 误判为 `Ready`，从而绕过 `MultipleInstances=IgnoreNew`，让耗时的实时特征与 SOR worker

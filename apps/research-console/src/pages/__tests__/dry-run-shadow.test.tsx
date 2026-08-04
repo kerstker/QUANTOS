@@ -331,9 +331,13 @@ const state = vi.hoisted(() => ({
           last_decision_ts: 1_785_263_100_000,
           stage: 'LEGACY_DIAGNOSTIC_PAPER',
           paper_class: 'LEGACY_DIAGNOSTIC_PAPER',
+          definition_kind: 'ALPHA_EXPRESSION',
+          family_id: 'CROWDING_REVERSAL',
+          source_kind: 'STATIC_PREREGISTERED',
           execution_paper: true,
           deployment_eligible: false,
           blockers: ['LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE'],
+          maturity: { observed_periods: 1, required_periods: 8 },
         },
       ],
       exception_queue: [
@@ -690,6 +694,10 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('主纸面账户实时业绩')).toBeInTheDocument();
     expect(screen.getByText('1 PROFIT')).toBeInTheDocument();
     expect(screen.getByText('0 PENDING')).toBeInTheDocument();
+    expect(screen.getAllByText('LEGACY_DIAGNOSTIC_PAPER').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/CROWDING_REVERSAL · ALPHA_EXPRESSION/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Maturity 1/8').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Lifecycle blockers: LEGACY_DIAGNOSTIC_NOT_DEPLOYMENT_ELIGIBLE/).length).toBeGreaterThan(0);
     expect(screen.getByText('影子 Challenger 实时权益与策略账簿')).toBeInTheDocument();
     expect(screen.getByText('$-7,416')).toBeInTheDocument();
     expect(screen.getByText('3.49d')).toBeInTheDocument();
