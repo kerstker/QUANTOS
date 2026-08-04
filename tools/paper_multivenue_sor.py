@@ -405,6 +405,42 @@ def collect_books(
     }
 
 
+def refresh_persisted_routing_snapshot(
+    *,
+    now_ms: int | None = None,
+    binance_store_path: str = DEFAULT_BINANCE_STORE,
+    book_store_path: str = DEFAULT_BOOK_STORE,
+    http_get: Callable[[str], object] = _http_get_json,
+    clock_ms: Callable[[], int] | None = None,
+    instruments: Sequence[str] = PAPER_INSTRUMENTS,
+) -> tuple[dict[str, tuple[VenueBook, VenueBook]], dict[str, Any], bool, int]:
+    """Fetch and append one fresh public-book bundle without running a canary.
+
+    The one-minute engineering execution worker uses this narrow seam when
+    the five-minute SOR artifact is stale or missing. It deliberately only
+    refreshes the append-only public market-data store; route simulation and
+    dry-run evidence remain the caller's responsibility.
+    """
+    now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    books, bundle = collect_books(
+        binance_store_path=binance_store_path,
+        now_ms=now,
+        http_get=http_get,
+        clock_ms=clock_ms,
+        instruments=instruments,
+    )
+    Path(book_store_path).parent.mkdir(parents=True, exist_ok=True)
+    book_store = CrossVenueOrderBookStore(book_store_path, create=True)
+    try:
+        appended = book_store.append_bundle(bundle)
+        if not book_store.chain_valid():
+            raise PaperMultiVenueSORError("cross-venue book chain is invalid")
+        book_rows = book_store.row_count()
+    finally:
+        book_store.close()
+    return books, bundle, appended, book_rows
+
+
 def _persisted_book(row: Mapping[str, Any], *, as_of_ms: int) -> VenueBook:
     instrument_id = str(row.get("instrument_id", "")).upper()
     venue_id = str(row.get("venue", ""))
@@ -629,21 +665,13 @@ def execute(
     http_get: Callable[[str], object] = _http_get_json,
 ) -> dict[str, Any]:
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
-    books, bundle = collect_books(
+    books, bundle, _appended, book_rows = refresh_persisted_routing_snapshot(
         binance_store_path=binance_store_path,
+        book_store_path=book_store_path,
         now_ms=now,
         http_get=http_get,
         instruments=PAPER_INSTRUMENTS,
     )
-    Path(book_store_path).parent.mkdir(parents=True, exist_ok=True)
-    book_store = CrossVenueOrderBookStore(book_store_path, create=True)
-    try:
-        book_store.append_bundle(bundle)
-        if not book_store.chain_valid():
-            raise PaperMultiVenueSORError("cross-venue book chain is invalid")
-        book_rows = book_store.row_count()
-    finally:
-        book_store.close()
 
     run = run_canary(
         now_ms=int(bundle["observed_at_ms"]),

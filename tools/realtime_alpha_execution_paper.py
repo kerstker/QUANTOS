@@ -33,9 +33,11 @@ from services.execution.simulated_sor import SORPolicy, route_simulated_intent
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
 from tools.cache_io import atomic_write_json
 from tools.paper_multivenue_sor import (
+    DEFAULT_BINANCE_STORE,
     DEFAULT_BOOK_STORE,
     MAX_QUOTE_AGE_MS,
     load_persisted_routing_snapshot,
+    refresh_persisted_routing_snapshot,
 )
 from tools.paper_order_preview import build_alpha_preview
 
@@ -49,12 +51,22 @@ DEFAULT_OUTPUT = ROOT / "data" / "cache" / "realtime_alpha_execution_paper.json"
 MAX_STATUS_AGE_MS = 15 * 60_000
 MAX_EXECUTION_DELAY_MS = 12 * 60_000
 MAX_DECISION_RESOLUTIONS_PER_TRACK_PER_CYCLE = 64
+_ROUTING_REFRESHABLE_ERRORS = frozenset(
+    {
+        "cross-venue routing snapshot is missing",
+        "routing snapshot is stale or in the future",
+    }
+)
 EXECUTION_CLASS = "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER"
 EXECUTION_PROFILE = "REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1"
 
 
 class RealtimeAlphaExecutionPaperError(RuntimeError):
     """Realtime execution-paper evidence is stale, unsafe, or conflicted."""
+
+
+def _is_routing_refreshable(error: BaseException) -> bool:
+    return str(error) in _ROUTING_REFRESHABLE_ERRORS
 
 
 def _read_object(path: str | Path, label: str) -> dict[str, Any]:
@@ -357,6 +369,7 @@ def run_cycle(
     shadow_store_path: str | Path = DEFAULT_SHADOW_STORE,
     feature_status_path: str | Path = DEFAULT_FEATURE_STATUS,
     market_status_path: str | Path = DEFAULT_MARKET_STATUS,
+    binance_store_path: str | Path = DEFAULT_BINANCE_STORE,
     book_store_path: str | Path = DEFAULT_BOOK_STORE,
     execution_store_path: str | Path = DEFAULT_EXECUTION_STORE,
     output_path: str | Path = DEFAULT_OUTPUT,
@@ -375,8 +388,72 @@ def run_cycle(
     event_count = 0
     routing_snapshot_id: str | None = None
     routing_as_of_ms: int | None = None
+    routing_refresh_attempted = False
+    routing_refresh_succeeded = False
+    routing_refresh_reason: str | None = None
+    routing_refresh_error: str | None = None
+    routing_load_error: str | None = None
     specs: dict[str, LotSpec] = {}
     admitted_ids: tuple[str, ...] = ()
+
+    def load_routing_snapshot_for_cycle():
+        nonlocal routing_refresh_attempted
+        nonlocal routing_refresh_succeeded
+        nonlocal routing_refresh_reason
+        nonlocal routing_refresh_error
+        nonlocal routing_load_error
+        if routing_load_error is not None:
+            raise RealtimeAlphaExecutionPaperError(routing_load_error)
+        try:
+            return load_persisted_routing_snapshot(
+                book_store_path=str(book_store_path),
+                tickers=tuple(sorted(specs)),
+                now_ms=now,
+            )
+        except Exception as initial_error:
+            store_missing = False
+            try:
+                store_missing = (
+                    not Path(book_store_path).exists()
+                    or Path(book_store_path).stat().st_size == 0
+                )
+            except OSError:
+                store_missing = True
+            if not (_is_routing_refreshable(initial_error) or store_missing):
+                raise
+            if routing_refresh_attempted:
+                raise RealtimeAlphaExecutionPaperError(
+                    "routing snapshot refresh already failed this cycle"
+                ) from initial_error
+            routing_refresh_attempted = True
+            routing_refresh_reason = (
+                "PERSISTED_BOOK_STORE_MISSING"
+                if store_missing
+                else str(initial_error)
+            )
+            try:
+                refresh_persisted_routing_snapshot(
+                    now_ms=now,
+                    binance_store_path=str(binance_store_path),
+                    book_store_path=str(book_store_path),
+                )
+                result = load_persisted_routing_snapshot(
+                    book_store_path=str(book_store_path),
+                    tickers=tuple(sorted(specs)),
+                    now_ms=now,
+                )
+                routing_refresh_succeeded = True
+                return result
+            except Exception as refresh_error:
+                routing_refresh_error = (
+                    f"{type(refresh_error).__name__}: {str(refresh_error)[:200]}"
+                )
+                routing_load_error = (
+                    f"routing snapshot refresh failed: {routing_refresh_error}"
+                )
+                raise RealtimeAlphaExecutionPaperError(
+                    routing_load_error
+                ) from refresh_error
 
     try:
         feature_status = _feature_status(feature_status_path, now_ms=now)
@@ -470,11 +547,7 @@ def run_cycle(
                         if pending_events:
                             if books is None:
                                 books, native_prices, routing_snapshot_id, routing_as_of_ms = (
-                                    load_persisted_routing_snapshot(
-                                        book_store_path=str(book_store_path),
-                                        tickers=tuple(sorted(specs)),
-                                        now_ms=now,
-                                    )
+                                    load_routing_snapshot_for_cycle()
                                 )
                                 lot_books, lot_prices = scale_snapshot_to_lots(
                                     books, native_prices, specs
@@ -644,6 +717,17 @@ def run_cycle(
             "public_data_only": True,
             "simulation_only": True,
             "fee_calibration": "UNCALIBRATED_RESEARCH_ASSUMPTION",
+            "snapshot_refresh": {
+                "attempted": routing_refresh_attempted,
+                "succeeded": routing_refresh_succeeded,
+                "reason": routing_refresh_reason,
+                "error": routing_refresh_error,
+                "source": (
+                    "BINANCE_PUBLIC_USDM_WEBSOCKET_OR_REST_FAILOVER_AND_BYBIT_PUBLIC_LINEAR_REST"
+                    if routing_refresh_attempted
+                    else None
+                ),
+            },
         },
         "lot_authority": {
             "instrument_count": len(specs),
@@ -698,6 +782,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--shadow-store", default=str(DEFAULT_SHADOW_STORE))
     parser.add_argument("--feature-status", default=str(DEFAULT_FEATURE_STATUS))
     parser.add_argument("--market-status", default=str(DEFAULT_MARKET_STATUS))
+    parser.add_argument("--binance-store", default=str(DEFAULT_BINANCE_STORE))
     parser.add_argument("--book-store", default=str(DEFAULT_BOOK_STORE))
     parser.add_argument("--execution-store", default=str(DEFAULT_EXECUTION_STORE))
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
@@ -707,6 +792,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             shadow_store_path=args.shadow_store,
             feature_status_path=args.feature_status,
             market_status_path=args.market_status,
+            binance_store_path=args.binance_store,
             book_store_path=args.book_store,
             execution_store_path=args.execution_store,
             output_path=args.output,

@@ -13,6 +13,7 @@ from tools.paper_multivenue_sor import (
     load_persisted_routing_snapshot,
     parse_binance_rest_book,
     parse_bybit_book,
+    refresh_persisted_routing_snapshot,
     run_canary,
 )
 
@@ -290,6 +291,49 @@ def test_persisted_routing_snapshot_requires_two_fresh_venues_per_ticker(tmp_pat
     assert prices["DOGE"] > 0
     assert snapshot_id == bundle["snapshot_id"]
     assert as_of_ms == bundle["observed_at_ms"]
+
+
+def test_refresh_persisted_routing_snapshot_only_appends_public_books(tmp_path):
+    now_ms = 2_000_000
+    bases = {
+        "DOGEUSDT": "0.20",
+        "XRPUSDT": "0.50",
+        "ADAUSDT": "0.40",
+        "DOTUSDT": "2.00",
+    }
+    realtime_path = tmp_path / "binance.db"
+    realtime = BinanceRealtimeStore(str(realtime_path), create=True)
+    try:
+        for instrument_id, base in bases.items():
+            realtime.append_snapshot(_binance_snapshot(instrument_id, base, now_ms))
+    finally:
+        realtime.close()
+
+    book_path = tmp_path / "books.db"
+
+    def fake_get(url: str):
+        instrument_id = next(item for item in bases if item in url)
+        return _bybit_payload(instrument_id, bases[instrument_id], now_ms)
+
+    _books, bundle, appended, row_count = refresh_persisted_routing_snapshot(
+        now_ms=now_ms,
+        binance_store_path=str(realtime_path),
+        book_store_path=str(book_path),
+        http_get=fake_get,
+        clock_ms=lambda: now_ms,
+        instruments=tuple(bases),
+    )
+
+    assert appended is True
+    assert row_count == 1
+    assert bundle["quality"]["simulation_only"] is True
+    assert not (tmp_path / "dry_run.db").exists()
+    _loaded, _prices, snapshot_id, _as_of_ms = load_persisted_routing_snapshot(
+        book_store_path=str(book_path),
+        tickers=tuple(item.removesuffix("USDT") for item in bases),
+        now_ms=now_ms,
+    )
+    assert snapshot_id == bundle["snapshot_id"]
 
 
 def test_persisted_routing_snapshot_rejects_unapproved_public_source(tmp_path):

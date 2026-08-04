@@ -1,5 +1,7 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-05 SOR freshness self-coordination:** the one-minute realtime execution-paper worker now refreshes the append-only public cross-venue order-book snapshot when the five-minute SOR artifact is missing or stale, then reloads and revalidates the full venue/timestamp/hash contract. Refresh failure remains `SAFE_BLOCKED`; the refresh never runs a canary, touches credentials, or submits orders.
+
 > **2026-08-05 主纸面逐因子生命周期报告（前端实时接缝）：** 主纸面 `paper_realtime` 的每个因子现在都可以在纸面驾驶舱中点击展开生命周期报告，逐项显示研究回测、验证、纸面标记、前向成熟度、实时净 PnL、成交/持仓、资金费/成本、保留权益曲线和阻断原因；默认选中已实现亏损因子。报告通过现有 SSE 只读快照刷新，`PAPER_PENDING` 且无成交的因子保持 `NO_REALIZED_PNL`，不再把初始权益或 0 PnL 误显示为盈利。主纸面与工程 Challenger 继续分栏，所有 live/order flags 仍为 false。
 
 > **2026-08-04 实时纸面生产 v18（缓存端点覆盖修复）：** 决策帧缓存命中条件现在同时要求缓存覆盖本次请求的 `end_ms`；即使缓存仍在 15 分钟允许滞后窗口内，只要 Binance 特征推进了新的决策桶，就会执行有界尾部刷新。此前“缓存未过期但落后当前端点”会让候选只有 admission、没有新决策；新增回归测试锁定该行为。刷新仍只消费 PIT 完整七特征，缓存不成为晋级或下单权限。

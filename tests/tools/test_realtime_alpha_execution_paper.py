@@ -5,6 +5,7 @@ import json
 
 from services.execution.simulated_sor import BookLevel, VenueBook
 from services.research.realtime_alpha_shadow_store import RealtimeAlphaShadowStore
+from tools.paper_multivenue_sor import PaperMultiVenueSORError
 from tools.realtime_alpha_execution_paper import load_lot_specs, run_cycle
 
 
@@ -179,6 +180,129 @@ def test_first_cycle_sets_baseline_then_next_decision_executes_once(
     replay = run_cycle(**common, now_ms=500)
     assert replay["cycle"]["new_executions"] == 0
     assert replay["tracks"]["rt-candidate"]["n_executions"] == 1
+
+
+def test_stale_routing_snapshot_is_refreshed_once_before_execution(
+    tmp_path, monkeypatch
+) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    execution_path = tmp_path / "execution.db"
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "binance_store_path": tmp_path / "binance.db",
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": execution_path,
+        "output_path": tmp_path / "execution.json",
+    }
+    run_cycle(**common, now_ms=300)
+    with RealtimeAlphaShadowStore(str(shadow), create=False) as source:
+        source.record_decision(
+            "rt-candidate",
+            _decision("rt-candidate", 400),
+            recorded_at_ms=400,
+        )
+    _write_statuses(tmp_path, 500)
+    common["book_store_path"].write_bytes(b"existing-book-store")
+    load_calls = 0
+
+    def fake_load(**_kwargs):
+        nonlocal load_calls
+        load_calls += 1
+        if load_calls == 1:
+            raise PaperMultiVenueSORError(
+                "routing snapshot is stale or in the future"
+            )
+        return (
+            {"BTC": (_book(), _book())},
+            {"BTC": 60_000.0},
+            "snapshot-refreshed",
+            450,
+        )
+
+    refresh_calls: list[dict[str, object]] = []
+
+    def fake_refresh(**kwargs):
+        refresh_calls.append(kwargs)
+        return ({}, {}, True, 1)
+
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.load_persisted_routing_snapshot",
+        fake_load,
+    )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.refresh_persisted_routing_snapshot",
+        fake_refresh,
+    )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.build_alpha_preview",
+        lambda alpha_id, pending, **_kwargs: _preview(
+            alpha_id, int(pending["decided_ts"])
+        ),
+    )
+
+    report = run_cycle(**common, now_ms=500)
+
+    assert report["status"] == "RUNNING"
+    assert report["errors"] == {}
+    assert load_calls == 2
+    assert len(refresh_calls) == 1
+    assert refresh_calls[0]["binance_store_path"] == str(common["binance_store_path"])
+    assert report["routing"]["snapshot_refresh"] == {
+        "attempted": True,
+        "succeeded": True,
+        "reason": "routing snapshot is stale or in the future",
+        "error": None,
+        "source": "BINANCE_PUBLIC_USDM_WEBSOCKET_OR_REST_FAILOVER_AND_BYBIT_PUBLIC_LINEAR_REST",
+    }
+    assert report["cycle"]["new_executions"] == 1
+
+
+def test_routing_refresh_failure_remains_safe_blocked(tmp_path, monkeypatch) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "binance_store_path": tmp_path / "binance.db",
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": tmp_path / "execution.db",
+        "output_path": tmp_path / "execution.json",
+    }
+    run_cycle(**common, now_ms=300)
+    with RealtimeAlphaShadowStore(str(shadow), create=False) as source:
+        source.record_decision(
+            "rt-candidate",
+            _decision("rt-candidate", 400),
+            recorded_at_ms=400,
+        )
+    _write_statuses(tmp_path, 500)
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.load_persisted_routing_snapshot",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            PaperMultiVenueSORError("routing snapshot is stale or in the future")
+        ),
+    )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.refresh_persisted_routing_snapshot",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("public venue unavailable")
+        ),
+    )
+
+    report = run_cycle(**common, now_ms=500)
+
+    assert report["status"] == "SAFE_BLOCKED"
+    assert report["cycle"]["new_executions"] == 0
+    assert report["routing"]["snapshot_refresh"]["attempted"] is True
+    assert report["routing"]["snapshot_refresh"]["succeeded"] is False
+    assert "public venue unavailable" in report["routing"]["snapshot_refresh"]["error"]
+    assert "routing snapshot refresh failed" in report["errors"]["rt-candidate"]
 
 
 def test_post_admission_backlog_replays_in_timestamp_order(tmp_path, monkeypatch) -> None:
