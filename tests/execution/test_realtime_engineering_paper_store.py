@@ -139,3 +139,40 @@ def test_missed_execution_window_is_append_only_and_resolves_decision(tmp_path) 
         )
         store._conn.commit()
         assert not store.chain_valid()
+
+
+def test_no_action_is_audited_without_counting_as_execution_or_miss(tmp_path) -> None:
+    path = tmp_path / "engineering.db"
+    payload = {
+        "candidate_id": "candidate-1",
+        "decision_ts": 200,
+        "resolution": "NO_ACTION",
+        "reason_code": "NO_ACTIONABLE_INTENT",
+        "paper_only": True,
+        "promotion_eligible": False,
+        "forward_evidence_eligible": False,
+        "deployment_eligible": False,
+        "live_allowed": False,
+        "order_submission_allowed": False,
+    }
+    with RealtimeEngineeringPaperStore(str(path), create=True) as store:
+        store.admit(
+            "candidate-1",
+            {"source": "shadow"},
+            baseline_decision_time_ms=100,
+            admitted_at_ms=150,
+        )
+        assert store.record_no_action(
+            "candidate-1", payload, decision_time_ms=200, recorded_at_ms=250
+        )
+        assert not store.record_no_action(
+            "candidate-1", payload, decision_time_ms=200, recorded_at_ms=250
+        )
+        assert store.resolved_decision_times("candidate-1") == {200}
+        summary = store.summary("candidate-1")
+        assert summary["n_executions"] == 0
+        assert summary["n_missed_execution_windows"] == 0
+        assert summary["n_no_actions"] == 1
+        assert summary["last_no_action_decision_time_ms"] == 200
+        assert store.event_count() == 2
+        assert store.chain_valid()

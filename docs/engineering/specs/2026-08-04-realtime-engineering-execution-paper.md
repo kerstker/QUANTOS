@@ -34,7 +34,9 @@ For each new decision the worker:
 4. adapts the frozen realtime weights into the existing paper preview seam;
 5. runs the normal pre-trade gate, deterministic simulated SOR, dry-run adapter,
    fills, position/PnL reconciliation, and route TCA;
-6. appends the complete preview to an independent hash-chained SQLite ledger;
+6. appends a complete fill preview, or an explicit `NO_ACTION` resolution when
+   the fully reconciled preview contains zero intents, to independent
+   hash-chained SQLite ledgers;
 7. exposes exact lot/native quantity metadata, latency, costs, residual, and
    safety fields through the console SSE projection.
 
@@ -52,6 +54,9 @@ it only restores the venue's executable quantity granularity.
 - decisions older than the 12-minute execution window are appended as
   `MISSED_EXECUTION_WINDOW` in an independent append-only hash chain and are
   never silently dropped or falsely backfilled against a current book;
+- a legitimate zero-intent decision is appended as `NO_ACTION`; it resolves the
+  decision idempotently but is not counted as an execution, order, fill, TCA,
+  or missed execution window;
 - stale/missing contract filters, book bundle, source ledger, or reconciliation
   block the candidate cycle;
 - a reused `(candidate_id, decision_time_ms)` with changed content is rejected;

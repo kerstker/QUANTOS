@@ -982,7 +982,12 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
         "execution_profile": "REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1",
         "generated_at_ms": 123,
         "candidate_count": 1,
-        "cycle": {"new_admissions": 1, "new_executions": 1, "waiting_count": 0},
+        "cycle": {
+            "new_admissions": 1,
+            "new_executions": 1,
+            "new_no_actions": 3,
+            "waiting_count": 0,
+        },
         "routing": {"venues": ["binance_usdm", "bybit_linear"]},
         "lot_authority": {"instrument_count": 14, "spec_hash": "a" * 64},
         "tracks": {
@@ -990,6 +995,7 @@ def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
                 "state": "EXECUTING",
                 "n_executions": 1,
                 "n_missed_execution_windows": 2,
+                "n_no_actions": 3,
                 "n_orders": 6,
                 "n_fill_slices": 8,
                 "execution_cost": 1.25,

@@ -269,8 +269,10 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
   const executionTrackCount = snapshot?.execution_paper?.candidate_count ?? 0;
   const executionCount = Object.values(snapshot?.execution_paper?.tracks ?? {})
     .reduce((total, track) => total + (track.n_executions ?? 0), 0);
-  const missedExecutionWindows = Object.values(snapshot?.execution_paper?.tracks ?? {})
-    .reduce((total, track) => total + (track.n_missed_execution_windows ?? 0), 0);
+    const missedExecutionWindows = Object.values(snapshot?.execution_paper?.tracks ?? {})
+      .reduce((total, track) => total + (track.n_missed_execution_windows ?? 0), 0);
+    const noActionDecisions = Object.values(snapshot?.execution_paper?.tracks ?? {})
+      .reduce((total, track) => total + (track.n_no_actions ?? 0), 0);
   const graduationGates = snapshot?.forward_shadow.handoff?.graduation_blockers ?? [];
   const gates = snapshot?.boundary_valid
     ? snapshot.remaining_gates
@@ -375,7 +377,8 @@ function AutonomousAlphaPanel({ snapshot }: { snapshot?: RealtimeAlphaAutonomyPa
           </div>
           <div className="mt-2 text-3xs text-faint">
             Execution Paper {executionPaperRunning ? 'RUNNING' : snapshot?.execution_paper?.status ?? 'WAITING'} ·{' '}
-            {executionTrackCount} accounts · {executionCount} routed · {missedExecutionWindows} audited misses · lot authority{' '}
+              {executionTrackCount} accounts · {executionCount} routed · {noActionDecisions} no-action ·{' '}
+              {missedExecutionWindows} audited misses · lot authority{' '}
             {snapshot?.execution_paper?.lot_authority.instrument_count ?? 0} instruments · ledger{' '}
             {snapshot?.execution_paper?.ledger.chain_valid ? 'valid' : 'waiting'}
           </div>

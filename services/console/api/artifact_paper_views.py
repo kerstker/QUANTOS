@@ -292,7 +292,13 @@ def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
         "execution_profile": None,
         "generated_at_ms": None,
         "candidate_count": 0,
-        "cycle": {"new_admissions": 0, "new_executions": 0, "waiting_count": 0},
+        "cycle": {
+            "new_admissions": 0,
+            "new_executions": 0,
+            "new_no_actions": 0,
+            "new_missed_execution_windows": 0,
+            "waiting_count": 0,
+        },
         "routing": {},
         "lot_authority": {"instrument_count": 0, "spec_hash": None},
         "tracks": {},
@@ -374,11 +380,13 @@ def _realtime_alpha_execution_paper_payload(path: str | None = None) -> Dict:
                     "state",
                     "n_executions",
                     "n_missed_execution_windows",
+                    "n_no_actions",
                     "n_orders",
                     "n_fill_slices",
                     "execution_cost",
                     "last_decision_time_ms",
                     "last_missed_decision_time_ms",
+                    "last_no_action_decision_time_ms",
                 )
             }
     return {

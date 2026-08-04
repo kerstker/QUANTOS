@@ -133,6 +133,7 @@ def test_first_cycle_sets_baseline_then_next_decision_executes_once(
     assert admitted["cycle"] == {
         "new_admissions": 1,
         "new_executions": 0,
+        "new_no_actions": 0,
         "new_missed_execution_windows": 0,
         "waiting_count": 0,
     }
@@ -283,3 +284,62 @@ def test_stale_backlog_is_audited_as_missed_instead_of_blocking(
     assert report["cycle"]["new_missed_execution_windows"] == 17
     assert report["tracks"]["rt-candidate"]["n_missed_execution_windows"] == 17
     assert report["ledger"]["chain_valid"] is True
+
+
+def test_zero_intent_decision_is_audited_as_no_action(tmp_path, monkeypatch) -> None:
+    shadow = tmp_path / "shadow.db"
+    _shadow(shadow)
+    feature, market = _write_statuses(tmp_path, 300)
+    common = {
+        "shadow_store_path": shadow,
+        "feature_status_path": feature,
+        "market_status_path": market,
+        "book_store_path": tmp_path / "books.db",
+        "execution_store_path": tmp_path / "execution.db",
+        "output_path": tmp_path / "execution.json",
+    }
+    run_cycle(**common, now_ms=300)
+    with RealtimeAlphaShadowStore(str(shadow), create=False) as source:
+        source.record_decision(
+            "rt-candidate", _decision("rt-candidate", 400), recorded_at_ms=400
+        )
+    _write_statuses(tmp_path, 500)
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.load_persisted_routing_snapshot",
+        lambda **_kwargs: (
+            {"BTC": (_book(), _book())},
+            {"BTC": 60_000.0},
+            "snapshot-no-action",
+            450,
+        ),
+    )
+    preview = _preview("rt-candidate", 400)
+    preview.update(
+        {
+            "paper_positions": {},
+            "orders": [],
+            "n_intents": 0,
+            "n_approved": 0,
+            "n_rejected": 0,
+            "n_paper_fills": 0,
+            "n_paper_fill_slices": 0,
+            "execution_tca": {"route_tca_available": False},
+        }
+    )
+    monkeypatch.setattr(
+        "tools.realtime_alpha_execution_paper.build_alpha_preview",
+        lambda *_args, **_kwargs: preview,
+    )
+
+    report = run_cycle(**common, now_ms=500)
+
+    assert report["status"] == "RUNNING"
+    assert report["errors"] == {}
+    assert report["cycle"]["new_executions"] == 0
+    assert report["cycle"]["new_no_actions"] == 1
+    assert report["tracks"]["rt-candidate"]["n_executions"] == 0
+    assert report["tracks"]["rt-candidate"]["n_no_actions"] == 1
+
+    replay = run_cycle(**common, now_ms=500)
+    assert replay["cycle"]["new_no_actions"] == 0
+    assert replay["tracks"]["rt-candidate"]["n_no_actions"] == 1

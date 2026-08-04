@@ -178,7 +178,7 @@ const state = vi.hoisted(() => ({
         execution_profile: 'REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1',
         generated_at_ms: 1_785_592_990_000,
         candidate_count: 1,
-        cycle: { new_admissions: 1, new_executions: 1, waiting_count: 0 },
+        cycle: { new_admissions: 1, new_executions: 1, new_no_actions: 3, waiting_count: 0 },
         routing: {
           snapshot_id: 'book-1',
           as_of_ms: 1_785_592_989_000,
@@ -192,6 +192,7 @@ const state = vi.hoisted(() => ({
             state: 'EXECUTING',
             n_executions: 1,
             n_missed_execution_windows: 2,
+            n_no_actions: 3,
             n_orders: 6,
             n_fill_slices: 8,
             execution_cost: 1.25,
@@ -545,7 +546,7 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.queryByText('10s POLL')).not.toBeInTheDocument();
     expect(screen.getByText('RUNNING_EXPLORATORY')).toBeInTheDocument();
     expect(screen.getByText('EXEC PAPER 1')).toBeInTheDocument();
-    expect(screen.getByText(/1 accounts · 1 routed · 2 audited misses/)).toBeInTheDocument();
+    expect(screen.getByText(/1 accounts · 1 routed · 3 no-action · 2 audited misses/)).toBeInTheDocument();
     expect(screen.getByText(/THIRTY_DAY_FORMAL_VALIDATION_REQUIRED/)).toBeInTheDocument();
     expect(screen.getByText('LEGACY PAPER')).toBeInTheDocument();
     expect(screen.getByText('diagnostic only · never deployment eligible')).toBeInTheDocument();
