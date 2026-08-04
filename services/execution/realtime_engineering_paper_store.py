@@ -2,9 +2,10 @@
 
 This ledger has no relationship to the official Execution-Paper authority.  It
 records an admission baseline and only successful, fully reconciled simulated
-executions that occur after that baseline.  Decisions that cannot be executed
-inside the frozen latency window are resolved in a second append-only hash
-chain as explicit misses; they are never silently dropped or backfilled.
+executions that occur after that baseline.  Non-executed decisions are resolved
+in a second append-only hash chain as either explicit latency misses or
+legitimate no-action decisions; they are never silently dropped, backfilled, or
+misreported as fills.
 """
 from __future__ import annotations
 
@@ -279,7 +280,9 @@ class RealtimeEngineeringPaperStore:
     def executions(self, candidate_id: str) -> list[dict[str, Any]]:
         return self._events(event_type="EXECUTION", candidate_id=candidate_id)
 
-    def missed_decisions(self, candidate_id: str) -> list[dict[str, Any]]:
+    def _non_execution_resolutions(
+        self, candidate_id: str
+    ) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT event_seq,event_id,candidate_id,identity_time_ms,recorded_at_ms,"
             "payload_json,prev_hash,row_hash FROM realtime_engineering_paper_missed "
@@ -298,18 +301,104 @@ class RealtimeEngineeringPaperStore:
                 raise RealtimeEngineeringPaperStoreError(
                     "missed-decision payload must be an object"
                 )
+            resolution = payload.get("resolution")
+            if resolution not in {"MISSED_EXECUTION_WINDOW", "NO_ACTION"}:
+                raise RealtimeEngineeringPaperStoreError(
+                    "non-execution resolution type is invalid"
+                )
             item = dict(row)
             item.pop("payload_json")
-            item["event_type"] = "MISSED_EXECUTION_WINDOW"
+            item["event_type"] = str(resolution)
             item["payload"] = payload
             result.append(item)
         return result
 
+    def missed_decisions(self, candidate_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self._non_execution_resolutions(candidate_id)
+            if row["event_type"] == "MISSED_EXECUTION_WINDOW"
+        ]
+
+    def no_action_decisions(self, candidate_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self._non_execution_resolutions(candidate_id)
+            if row["event_type"] == "NO_ACTION"
+        ]
+
     def resolved_decision_times(self, candidate_id: str) -> set[int]:
         return {
             int(row["identity_time_ms"])
-            for row in self.executions(candidate_id) + self.missed_decisions(candidate_id)
+            for row in self.executions(candidate_id)
+            + self._non_execution_resolutions(candidate_id)
         }
+
+    def _record_non_execution_resolution(
+        self,
+        candidate_id: str,
+        payload: Mapping[str, Any],
+        *,
+        resolution: str,
+        decision_time_ms: int,
+        recorded_at_ms: int,
+    ) -> bool:
+        if resolution not in {"MISSED_EXECUTION_WINDOW", "NO_ACTION"}:
+            raise ValueError("unknown non-execution resolution")
+        body = _canonical(payload)
+        prefix = "missed" if resolution == "MISSED_EXECUTION_WINDOW" else "no-action"
+        event_id = f"{prefix}:{candidate_id}:{int(decision_time_ms)}"
+        existing = self._conn.execute(
+            "SELECT candidate_id,identity_time_ms,payload_json "
+            "FROM realtime_engineering_paper_missed WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+        if existing is not None:
+            if (
+                str(existing["candidate_id"]),
+                int(existing["identity_time_ms"]),
+                str(existing["payload_json"]),
+            ) == (candidate_id, int(decision_time_ms), body):
+                return False
+            raise RealtimeEngineeringPaperStoreError(
+                f"non-execution identity reused with different content: {event_id}"
+            )
+        previous = self._conn.execute(
+            "SELECT row_hash FROM realtime_engineering_paper_missed "
+            "ORDER BY event_seq DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = "" if previous is None else str(previous["row_hash"])
+        identity = {
+            "event_id": event_id,
+            "event_type": resolution,
+            "candidate_id": candidate_id,
+            "identity_time_ms": int(decision_time_ms),
+            "recorded_at_ms": int(recorded_at_ms),
+            "payload_json": body,
+            "prev_hash": prev_hash,
+        }
+        digest = _row_hash(identity)
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO realtime_engineering_paper_missed"
+                    "(event_id,candidate_id,identity_time_ms,recorded_at_ms,"
+                    "payload_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        event_id,
+                        candidate_id,
+                        int(decision_time_ms),
+                        int(recorded_at_ms),
+                        body,
+                        prev_hash,
+                        digest,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise RealtimeEngineeringPaperStoreError(
+                "engineering non-execution append conflict"
+            ) from exc
+        return True
 
     def record_missed_decision(
         self,
@@ -340,59 +429,52 @@ class RealtimeEngineeringPaperStore:
             raise RealtimeEngineeringPaperStoreError(
                 "missed-decision safety boundary is invalid"
             )
-        body = _canonical(payload)
-        event_id = f"missed:{candidate_id}:{int(decision_time_ms)}"
-        existing = self._conn.execute(
-            "SELECT candidate_id,identity_time_ms,payload_json "
-            "FROM realtime_engineering_paper_missed WHERE event_id=?",
-            (event_id,),
-        ).fetchone()
-        if existing is not None:
-            if (
-                str(existing["candidate_id"]),
-                int(existing["identity_time_ms"]),
-                str(existing["payload_json"]),
-            ) == (candidate_id, int(decision_time_ms), body):
-                return False
+        return self._record_non_execution_resolution(
+            candidate_id,
+            payload,
+            resolution="MISSED_EXECUTION_WINDOW",
+            decision_time_ms=decision_time_ms,
+            recorded_at_ms=recorded_at_ms,
+        )
+
+    def record_no_action(
+        self,
+        candidate_id: str,
+        payload: Mapping[str, Any],
+        *,
+        decision_time_ms: int,
+        recorded_at_ms: int,
+    ) -> bool:
+        if self.admission(candidate_id) is None:
             raise RealtimeEngineeringPaperStoreError(
-                f"missed-decision identity reused with different content: {event_id}"
+                "cannot resolve a decision before engineering admission"
             )
-        previous = self._conn.execute(
-            "SELECT row_hash FROM realtime_engineering_paper_missed "
-            "ORDER BY event_seq DESC LIMIT 1"
-        ).fetchone()
-        prev_hash = "" if previous is None else str(previous["row_hash"])
-        identity = {
-            "event_id": event_id,
-            "event_type": "MISSED_EXECUTION_WINDOW",
-            "candidate_id": candidate_id,
-            "identity_time_ms": int(decision_time_ms),
-            "recorded_at_ms": int(recorded_at_ms),
-            "payload_json": body,
-            "prev_hash": prev_hash,
-        }
-        digest = _row_hash(identity)
-        try:
-            with self._conn:
-                self._conn.execute(
-                    "INSERT INTO realtime_engineering_paper_missed"
-                    "(event_id,candidate_id,identity_time_ms,recorded_at_ms,"
-                    "payload_json,prev_hash,row_hash) VALUES (?,?,?,?,?,?,?)",
-                    (
-                        event_id,
-                        candidate_id,
-                        int(decision_time_ms),
-                        int(recorded_at_ms),
-                        body,
-                        prev_hash,
-                        digest,
-                    ),
+        if (
+            payload.get("candidate_id") != candidate_id
+            or payload.get("resolution") != "NO_ACTION"
+            or payload.get("reason_code") != "NO_ACTIONABLE_INTENT"
+            or payload.get("paper_only") is not True
+            or any(
+                payload.get(field) is not False
+                for field in (
+                    "promotion_eligible",
+                    "forward_evidence_eligible",
+                    "deployment_eligible",
+                    "live_allowed",
+                    "order_submission_allowed",
                 )
-        except sqlite3.IntegrityError as exc:
+            )
+        ):
             raise RealtimeEngineeringPaperStoreError(
-                "missed-decision append conflict"
-            ) from exc
-        return True
+                "no-action safety boundary is invalid"
+            )
+        return self._record_non_execution_resolution(
+            candidate_id,
+            payload,
+            resolution="NO_ACTION",
+            decision_time_ms=decision_time_ms,
+            recorded_at_ms=recorded_at_ms,
+        )
 
     def get_by_decision(
         self, candidate_id: str, decision_time_ms: int
@@ -478,6 +560,7 @@ class RealtimeEngineeringPaperStore:
         admission = self.admission(candidate_id)
         rows = self.executions(candidate_id)
         missed = self.missed_decisions(candidate_id)
+        no_actions = self.no_action_decisions(candidate_id)
         return {
             "candidate_id": candidate_id,
             "admitted": admission is not None,
@@ -488,6 +571,7 @@ class RealtimeEngineeringPaperStore:
             ),
             "n_executions": len(rows),
             "n_missed_execution_windows": len(missed),
+            "n_no_actions": len(no_actions),
             "n_orders": sum(len(row["payload"].get("orders", [])) for row in rows),
             "n_fill_slices": sum(
                 int(row["payload"].get("n_paper_fill_slices", 0)) for row in rows
@@ -501,6 +585,9 @@ class RealtimeEngineeringPaperStore:
             ),
             "last_missed_decision_time_ms": (
                 int(missed[-1]["identity_time_ms"]) if missed else None
+            ),
+            "last_no_action_decision_time_ms": (
+                int(no_actions[-1]["identity_time_ms"]) if no_actions else None
             ),
             "positions_lots": self.latest_positions(candidate_id),
         }
@@ -528,9 +615,16 @@ class RealtimeEngineeringPaperStore:
         for row in rows:
             if str(row["prev_hash"]) != previous:
                 return False
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return False
+            resolution = payload.get("resolution") if isinstance(payload, dict) else None
+            if resolution not in {"MISSED_EXECUTION_WINDOW", "NO_ACTION"}:
+                return False
             identity = {
                 "event_id": str(row["event_id"]),
-                "event_type": "MISSED_EXECUTION_WINDOW",
+                "event_type": str(resolution),
                 "candidate_id": str(row["candidate_id"]),
                 "identity_time_ms": int(row["identity_time_ms"]),
                 "recorded_at_ms": int(row["recorded_at_ms"]),

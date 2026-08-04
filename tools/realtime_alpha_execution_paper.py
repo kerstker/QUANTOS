@@ -287,6 +287,71 @@ def _admit_preview(
     return result
 
 
+def _admit_no_action(
+    preview: Mapping[str, Any],
+    *,
+    source_event: Mapping[str, Any],
+    quantity_units: Mapping[str, Any],
+    execution_delay_ms: int,
+) -> dict[str, Any]:
+    if any(
+        preview.get(field) is not False
+        for field in (
+            "live_allowed",
+            "order_submission_allowed",
+            "broker_connectivity",
+            "broker_order_submission",
+            "credentials_accessed",
+        )
+    ):
+        raise RealtimeAlphaExecutionPaperError("preview crossed the L2 boundary")
+    counters = tuple(
+        int(preview.get(field, -1))
+        for field in (
+            "n_intents",
+            "n_approved",
+            "n_rejected",
+            "n_paper_fills",
+        )
+    )
+    residual = preview.get("reconciliation_residual")
+    if (
+        counters != (0, 0, 0, 0)
+        or not isinstance(residual, (int, float))
+        or not math.isfinite(float(residual))
+        or abs(float(residual)) > 1e-6
+        or not isinstance(preview.get("paper_positions"), Mapping)
+    ):
+        raise RealtimeAlphaExecutionPaperError(
+            "zero-intent preview did not clear no-action reconciliation"
+        )
+    result = dict(preview)
+    result.update(
+        {
+            "candidate_id": preview.get("alpha_id"),
+            "resolution": "NO_ACTION",
+            "reason_code": "NO_ACTIONABLE_INTENT",
+            "paper_execution": "PAPER_NO_ACTION",
+            "execution_class": EXECUTION_CLASS,
+            "execution_profile": EXECUTION_PROFILE,
+            "official_paper_execution": "PAPER_BLOCKED",
+            "official_research_risk_admission": "FULL_NINE_ENGINE_REQUIRED",
+            "promotion_eligible": False,
+            "forward_evidence_eligible": False,
+            "deployment_eligible": False,
+            "quantity_units": dict(quantity_units),
+            "execution_delay_ms": int(execution_delay_ms),
+            "source_shadow_event_id": source_event.get("event_id"),
+            "source_shadow_row_hash": source_event.get("row_hash"),
+            "source_shadow_payload_hash": stable_hash(source_event.get("payload")),
+            "paper_only": True,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        }
+    )
+    return result
+
+
 def run_cycle(
     *,
     shadow_store_path: str | Path = DEFAULT_SHADOW_STORE,
@@ -303,6 +368,7 @@ def run_cycle(
     tracks: dict[str, dict[str, Any]] = {}
     new_admissions = 0
     new_executions = 0
+    new_no_actions = 0
     new_missed_execution_windows = 0
     source_chain_valid = False
     execution_chain_valid = False
@@ -498,19 +564,35 @@ def run_cycle(
                                     routing_snapshot_id=str(routing_snapshot_id),
                                     supported_alpha_ids=admitted_ids,
                                 )
-                                admitted_preview = _admit_preview(
-                                    preview,
-                                    source_event=event,
-                                    quantity_units=units,
-                                    execution_delay_ms=delay,
-                                )
-                                new_executions += int(
-                                    store.record_execution(
-                                        candidate_id,
-                                        admitted_preview,
-                                        recorded_at_ms=now,
+                                if int(preview.get("n_intents", -1)) == 0:
+                                    no_action = _admit_no_action(
+                                        preview,
+                                        source_event=event,
+                                        quantity_units=units,
+                                        execution_delay_ms=delay,
                                     )
-                                )
+                                    new_no_actions += int(
+                                        store.record_no_action(
+                                            candidate_id,
+                                            no_action,
+                                            decision_time_ms=decision_time,
+                                            recorded_at_ms=now,
+                                        )
+                                    )
+                                else:
+                                    admitted_preview = _admit_preview(
+                                        preview,
+                                        source_event=event,
+                                        quantity_units=units,
+                                        execution_delay_ms=delay,
+                                    )
+                                    new_executions += int(
+                                        store.record_execution(
+                                            candidate_id,
+                                            admitted_preview,
+                                            recorded_at_ms=now,
+                                        )
+                                    )
                             if backlog_remaining:
                                 waiting[candidate_id] = (
                                     "CATCHING_UP_DECISION_BACKLOG:"
@@ -544,6 +626,7 @@ def run_cycle(
         "cycle": {
             "new_admissions": new_admissions,
             "new_executions": new_executions,
+            "new_no_actions": new_no_actions,
             "new_missed_execution_windows": new_missed_execution_windows,
             "waiting_count": len(waiting),
         },
@@ -627,7 +710,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         "realtime engineering execution paper "
         f"status={report['status']} candidates={report['candidate_count']} "
-        f"executions={report['cycle']['new_executions']} errors={len(report['errors'])}"
+        f"executions={report['cycle']['new_executions']} "
+        f"no_actions={report['cycle']['new_no_actions']} "
+        f"errors={len(report['errors'])}"
     )
     return SCHEDULE_EXIT_SUCCESS if report["status"] == "RUNNING" else SCHEDULE_EXIT_SAFE_BLOCKED
 
