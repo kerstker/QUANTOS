@@ -58,6 +58,9 @@ DEFAULT_STATUS = os.path.join(
     "data", "cache", "binance_realtime_feature_status.json"
 )
 SOURCE_ROW_LIMIT = 3_500
+DRIFT_HISTORY_LIMIT = 240
+WORKER_VERSION = "binance-realtime-feature-worker.v2"
+FULL_CHAIN_AUDIT_INTERVAL_MS = 24 * 60 * 60 * 1_000
 CALIBRATION_POLICY = DriftCalibrationPolicy(
     baseline_window=60,
     recent_window=20,
@@ -90,12 +93,17 @@ def _source_snapshots(
     store: BinanceRealtimeStore,
     *,
     limit: int,
-) -> list[dict[str, Any]]:
-    if not store.chain_valid():
-        raise BinanceRealtimeFeatureError("Binance realtime source chain is invalid")
+    checkpoint_seq: int,
+    checkpoint_row_hash: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    source_rows, verification = store.verified_recent_rows(
+        limit,
+        checkpoint_seq=checkpoint_seq,
+        checkpoint_row_hash=checkpoint_row_hash,
+    )
     rows = [
         row
-        for row in store.recent_rows(limit)
+        for row in source_rows
         if row.get("provider") == "BINANCE_PUBLIC_USDM_WEBSOCKET"
         and isinstance(row.get("quality"), dict)
         and row["quality"].get("complete_core") is True
@@ -107,13 +115,111 @@ def _source_snapshots(
         raise BinanceRealtimeFeatureError(
             f"realtime source is missing instruments: {missing}"
         )
-    return rows
+    return rows, verification
+
+
+def _trusted_source_checkpoint(
+    batch_store_path: str,
+    *,
+    now_ms: int,
+) -> dict[str, Any]:
+    """Load the source-chain anchor from the verified feature batch journal."""
+    batch_store = RealtimeFeatureBatchStore(batch_store_path, create=True)
+    try:
+        if not batch_store.chain_valid():
+            raise BinanceRealtimeFeatureError("feature batch chain is invalid")
+        latest = batch_store.latest()
+    finally:
+        batch_store.close()
+    source = latest.get("source") if isinstance(latest, dict) else None
+    checkpoint = source.get("chain_checkpoint") if isinstance(source, dict) else None
+    if checkpoint is None:
+        return {
+            "checkpoint_seq": 0,
+            "checkpoint_row_hash": "",
+            "full_verified_at_ms": None,
+            "verification_mode": "FULL_BOOTSTRAP",
+        }
+    if not isinstance(checkpoint, dict) or checkpoint.get("schema_version") != 1:
+        raise BinanceRealtimeFeatureError("source chain checkpoint is malformed")
+    seq = checkpoint.get("verified_seq")
+    row_hash = checkpoint.get("verified_row_hash")
+    full_verified_at_ms = checkpoint.get("full_verified_at_ms")
+    if (
+        isinstance(seq, bool)
+        or not isinstance(seq, int)
+        or seq <= 0
+        or not isinstance(row_hash, str)
+        or len(row_hash) != 64
+        or isinstance(full_verified_at_ms, bool)
+        or not isinstance(full_verified_at_ms, int)
+        or full_verified_at_ms < 0
+        or full_verified_at_ms > now_ms
+    ):
+        raise BinanceRealtimeFeatureError("source chain checkpoint is malformed")
+    if now_ms - full_verified_at_ms >= FULL_CHAIN_AUDIT_INTERVAL_MS:
+        return {
+            "checkpoint_seq": 0,
+            "checkpoint_row_hash": "",
+            "full_verified_at_ms": full_verified_at_ms,
+            "verification_mode": "FULL_PERIODIC_AUDIT",
+        }
+    return {
+        "checkpoint_seq": seq,
+        "checkpoint_row_hash": row_hash,
+        "full_verified_at_ms": full_verified_at_ms,
+        "verification_mode": "INCREMENTAL_FROM_TRUSTED_BATCH",
+    }
+
+
+def _projection_watermarks(
+    store: SqliteFeatureValueStore,
+) -> dict[str, tuple[int, int] | None]:
+    """Minimum complete feature cursor per instrument.
+
+    All eight values for a source snapshot are inserted in one transaction.
+    Taking the minimum cursor across feature IDs nevertheless makes legacy or
+    externally interrupted partial stores self-healing: any lagging series
+    forces safe replay through the idempotent insert boundary.
+    """
+    watermarks: dict[str, tuple[int, int] | None] = {}
+    for ticker in FORWARD_MAJOR_TICKERS:
+        instrument_id = f"{ticker}USDT"
+        cursors = [
+            store.latest_cursor(feature_id, FEATURE_VERSION, instrument_id)
+            for feature_id in FEATURE_IDS
+        ]
+        watermarks[instrument_id] = (
+            min(cursor for cursor in cursors if cursor is not None)
+            if all(cursor is not None for cursor in cursors)
+            else None
+        )
+    return watermarks
+
+
+def _incremental_snapshots(
+    snapshots: list[dict[str, Any]],
+    *,
+    watermarks: dict[str, tuple[int, int] | None],
+) -> list[dict[str, Any]]:
+    eligible: list[dict[str, Any]] = []
+    for snapshot in snapshots:
+        instrument_id = str(snapshot.get("instrument_id", "")).upper()
+        watermark = watermarks.get(instrument_id)
+        cursor = (
+            int(snapshot["observed_at_ms"]),
+            int(snapshot["event_time_ms"]),
+        )
+        if watermark is None or cursor > watermark:
+            eligible.append(snapshot)
+    return eligible
 
 
 def _feature_values(
     store: SqliteFeatureValueStore,
     *,
     as_of_ms: int,
+    limit_per_series: int = DRIFT_HISTORY_LIMIT,
 ) -> dict[str, list[float]]:
     values_by_series: dict[str, list[float]] = {}
     instruments = tuple(f"{ticker}USDT" for ticker in FORWARD_MAJOR_TICKERS)
@@ -123,11 +229,12 @@ def _feature_values(
         # seven-feature drift calibration while its history is still short.
         for feature_id in CORE_FEATURE_IDS:
             series_id = f"{feature_id}@{instrument_id}"
-            rows = store.as_of(
+            rows = store.tail_as_of(
                 feature_id,
                 FEATURE_VERSION,
                 instrument_id,
                 as_of_ms,
+                limit=limit_per_series,
             )
             values_by_series[series_id] = [
                 float(row.value)
@@ -209,19 +316,22 @@ def execute(
     status_path: str = DEFAULT_STATUS,
     source_row_limit: int = SOURCE_ROW_LIMIT,
 ) -> dict[str, Any]:
+    started_ns = time.perf_counter_ns()
     now = int(time.time() * 1_000) if now_ms is None else int(now_ms)
+    trusted_checkpoint = _trusted_source_checkpoint(
+        batch_store_path,
+        now_ms=now,
+    )
     source_store = BinanceRealtimeStore(source_store_path, create=False)
     try:
-        snapshots = _source_snapshots(source_store, limit=source_row_limit)
+        snapshots, chain_verification = _source_snapshots(
+            source_store,
+            limit=source_row_limit,
+            checkpoint_seq=trusted_checkpoint["checkpoint_seq"],
+            checkpoint_row_hash=trusted_checkpoint["checkpoint_row_hash"],
+        )
     finally:
         source_store.close()
-    projected = [
-        feature
-        for snapshot in snapshots
-        for feature in project_snapshot(snapshot)
-    ]
-    if not projected:
-        raise BinanceRealtimeFeatureError("no realtime features were projected")
     source_digest = _sha256(snapshots)
     dataset_version = f"binance-realtime:{source_digest}"
     source_observed_at_ms = max(
@@ -231,6 +341,16 @@ def execute(
     Path(feature_store_path).parent.mkdir(parents=True, exist_ok=True)
     feature_store = SqliteFeatureValueStore(feature_store_path, create=True)
     try:
+        watermarks_before = _projection_watermarks(feature_store)
+        eligible_snapshots = _incremental_snapshots(
+            snapshots,
+            watermarks=watermarks_before,
+        )
+        projected = [
+            feature
+            for snapshot in eligible_snapshots
+            for feature in project_snapshot(snapshot)
+        ]
         inserted = feature_store.add_many(
             projected,
             version=FEATURE_VERSION,
@@ -249,6 +369,16 @@ def execute(
             values_by_series,
             calibration=calibration,
         )
+        drift["history"] = {
+            "policy": "BOUNDED_TRAILING_PIT_V1",
+            "max_observations_per_series": DRIFT_HISTORY_LIMIT,
+            "loaded_observation_count": sum(
+                len(values) for values in values_by_series.values()
+            ),
+            "series_count": len(values_by_series),
+            "read_scope": "TRAILING_ONLY",
+            "archive_retention_unchanged": True,
+        }
     finally:
         feature_store.close()
     if drift["structurally_ready"] is not True:
@@ -257,12 +387,13 @@ def execute(
         )
 
     batch_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "batch_id": _sha256(
             {
                 "source_digest": source_digest,
                 "feature_version": FEATURE_VERSION,
                 "materializer_version": MATERIALIZER_VERSION,
+                "worker_version": WORKER_VERSION,
             }
         ),
         "observed_at_ms": source_observed_at_ms,
@@ -275,13 +406,30 @@ def execute(
             ),
             "last_observed_at_ms": source_observed_at_ms,
             "source_chain_valid": True,
+            "chain_checkpoint": {
+                "schema_version": 1,
+                "verified_seq": chain_verification["verified_seq"],
+                "verified_row_hash": chain_verification["verified_row_hash"],
+                "full_verified_at_ms": (
+                    now
+                    if trusted_checkpoint["checkpoint_seq"] == 0
+                    else trusted_checkpoint["full_verified_at_ms"]
+                ),
+            },
         },
         "projection": {
+            "worker_version": WORKER_VERSION,
             "feature_version": FEATURE_VERSION,
             "materializer_version": MATERIALIZER_VERSION,
             "feature_ids": list(FEATURE_IDS),
             "instrument_count": len(FORWARD_MAJOR_TICKERS),
-            "projected_value_count": len(projected),
+            # Source-bound potential count stays stable across crash recovery
+            # and idempotent reruns of the same source digest.  Operational
+            # incremental counts belong in the replaceable status artifact.
+            "projected_value_count": len(snapshots) * len(FEATURE_IDS),
+            "projected_value_count_semantics": (
+                "SOURCE_POTENTIAL_STABLE_IDENTITY"
+            ),
         },
         "drift_sha256": _sha256(drift),
         "calibration": {
@@ -291,6 +439,7 @@ def execute(
             "block_ks": calibration.block_ks,
             "window_count": calibration.window_count,
             "provenance": calibration.provenance,
+            "history_limit_per_series": DRIFT_HISTORY_LIMIT,
         },
         "safety": {
             "diagnostic_only": True,
@@ -317,11 +466,37 @@ def execute(
         "generated_at_ms": now,
         "status": "PASS",
         "mode": "L2_REALTIME_FEATURE_DIAGNOSTIC",
-        "source": batch_payload["source"],
+        "source": {
+            **batch_payload["source"],
+            "chain_verification": {
+                "mode": trusted_checkpoint["verification_mode"],
+                "anchor_seq": chain_verification["anchor_seq"],
+                "verified_suffix_rows": chain_verification[
+                    "verified_suffix_rows"
+                ],
+            },
+        },
         "features": {
             **batch_payload["projection"],
+            "incremental_projected_value_count": len(projected),
             "new_value_count": inserted,
             "retained_value_count": row_count,
+            "eligible_source_snapshot_count": len(eligible_snapshots),
+            "skipped_existing_snapshot_count": (
+                len(snapshots) - len(eligible_snapshots)
+            ),
+            "watermark_policy": "MIN_COMPLETE_FEATURE_CURSOR_V1",
+            "watermarks_before": {
+                instrument_id: (
+                    None
+                    if cursor is None
+                    else {
+                        "knowledge_time_ms": cursor[0],
+                        "event_time_ms": cursor[1],
+                    }
+                )
+                for instrument_id, cursor in sorted(watermarks_before.items())
+            },
         },
         "drift": drift,
         "batch": {
@@ -335,6 +510,14 @@ def execute(
             "consumption_mode": "READ_ONLY_DIAGNOSTIC_CONTEXT",
             "automatic_action": False,
             "promotion_authority": False,
+        },
+        "runtime": {
+            "elapsed_ms": max(
+                0,
+                (time.perf_counter_ns() - started_ns) // 1_000_000,
+            ),
+            "incremental_projection": True,
+            "bounded_drift_read": True,
         },
         "safety": batch_payload["safety"],
     }

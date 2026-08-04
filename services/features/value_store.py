@@ -203,9 +203,69 @@ class SqliteFeatureValueStore:
                 (feature_id, version, instrument_id, as_of_time)).fetchall()
         return [self._row_to_fv(r) for r in rows]
 
+    def tail_as_of(self, feature_id: str, version: str, instrument_id: str,
+                   as_of_time: int, *, limit: int) -> list:
+        """Latest bounded PIT values in canonical ascending order.
+
+        Unlike ``as_of`` this read is constant-space with respect to archive
+        growth.  SQLite can satisfy the descending event/knowledge order from
+        the table primary key and stops after ``limit`` qualifying rows; the
+        small result is reversed before returning so callers retain the exact
+        ordering contract of ``as_of``.
+        """
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        if isinstance(as_of_time, bool) or not isinstance(as_of_time, int) or as_of_time < 0:
+            raise ValueError("as_of_time must be a non-negative integer")
+        if not isinstance(version, str) or not version:
+            raise ValueError("version must be a non-empty string")
+        with self._lock:
+            self._require_schema()
+            rows = self._conn.execute(
+                # The schema-defined composite PRIMARY KEY is the only index
+                # ordered by event_time.  Force it here: the otherwise useful
+                # knowledge-time lookup index makes SQLite scan and sort the
+                # complete series before applying LIMIT, defeating the bounded
+                # realtime read on multi-million-row stores.
+                "SELECT * FROM feature_values"
+                " INDEXED BY sqlite_autoindex_feature_values_1"
+                " WHERE feature_id=? AND feature_version=?"
+                " AND instrument_id=? AND knowledge_time<=?"
+                " ORDER BY event_time DESC, knowledge_time DESC LIMIT ?",
+                (feature_id, version, instrument_id, as_of_time, limit),
+            ).fetchall()
+        return [self._row_to_fv(row) for row in reversed(rows)]
+
+    def latest_cursor(self, feature_id: str, version: str,
+                      instrument_id: str) -> Optional[tuple[int, int]]:
+        """Latest ``(knowledge_time, event_time)`` cursor for one series."""
+        if not isinstance(version, str) or not version:
+            raise ValueError("version must be a non-empty string")
+        with self._lock:
+            self._require_schema()
+            row = self._conn.execute(
+                "SELECT knowledge_time, event_time FROM feature_values WHERE feature_id=?"
+                " AND feature_version=? AND instrument_id=?"
+                " ORDER BY knowledge_time DESC, event_time DESC LIMIT 1",
+                (feature_id, version, instrument_id),
+            ).fetchone()
+        return None if row is None else (int(row[0]), int(row[1]))
+
+    def latest_knowledge_time(self, feature_id: str, version: str,
+                              instrument_id: str) -> Optional[int]:
+        """Latest retained knowledge-time watermark for one feature series."""
+        cursor = self.latest_cursor(feature_id, version, instrument_id)
+        return None if cursor is None else cursor[0]
+
     def latest_as_of(self, feature_id: str, version: str, instrument_id: str,
                      as_of_time: int) -> Optional[FeatureValue]:
-        rows = self.as_of(feature_id, version, instrument_id, as_of_time)
+        rows = self.tail_as_of(
+            feature_id,
+            version,
+            instrument_id,
+            as_of_time,
+            limit=1,
+        )
         return rows[-1] if rows else None
 
     def as_of_observations(self, feature_id: str, version: str, instrument_id: str,

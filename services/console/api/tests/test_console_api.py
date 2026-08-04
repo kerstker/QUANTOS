@@ -213,6 +213,15 @@ def test_data_catalog_snapshot_uses_backend_contract():
     assert projection["load_bearing"] is False
     assert isinstance(projection["drift_status_counts"], dict)
     assert projection["calibration_window_count"] >= 0
+    assert projection["new_value_count"] >= 0
+    assert projection["eligible_source_snapshot_count"] >= 0
+    assert projection["skipped_existing_snapshot_count"] >= 0
+    assert projection["materialization_elapsed_ms"] is None or (
+        projection["materialization_elapsed_ms"] >= 0
+    )
+    assert isinstance(projection["bounded_drift_read"], bool)
+    assert projection["drift_loaded_observation_count"] >= 0
+    assert projection["drift_history_limit_per_series"] >= 0
     alerting = payload["binance_realtime"]["drift_alerting"]
     assert alerting["event_count"] >= 0
     assert alerting["independent_worker"] in {True, False}

@@ -300,6 +300,29 @@ def _binance_realtime_payload() -> Dict:
             "retained_value_count": (features or {}).get("features", {}).get(
                 "retained_value_count", 0
             ),
+            "new_value_count": (features or {}).get("features", {}).get(
+                "new_value_count", 0
+            ),
+            "eligible_source_snapshot_count": (features or {}).get(
+                "features", {}
+            ).get("eligible_source_snapshot_count", 0),
+            "skipped_existing_snapshot_count": (features or {}).get(
+                "features", {}
+            ).get("skipped_existing_snapshot_count", 0),
+            "materialization_elapsed_ms": (features or {}).get(
+                "runtime", {}
+            ).get("elapsed_ms"),
+            "bounded_drift_read": bool(
+                (features or {}).get("runtime", {}).get(
+                    "bounded_drift_read", False
+                )
+            ),
+            "drift_loaded_observation_count": (features or {}).get(
+                "drift", {}
+            ).get("history", {}).get("loaded_observation_count", 0),
+            "drift_history_limit_per_series": (features or {}).get(
+                "drift", {}
+            ).get("history", {}).get("max_observations_per_series", 0),
             "drift_status": (features or {}).get("drift", {}).get("status"),
             "drift_status_counts": (features or {}).get("drift", {}).get(
                 "status_counts", {}

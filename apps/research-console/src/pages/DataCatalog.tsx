@@ -153,7 +153,11 @@ const fallbackCatalog: DataCatalogPayload = {
     feature_projection: {
       status_present: false, fresh: false, age_ms: null, status: null,
       feature_version: null, feature_count: 0, instrument_count: 0,
-      retained_value_count: 0, drift_status: null, drift_status_counts: {},
+      retained_value_count: 0, new_value_count: 0,
+      eligible_source_snapshot_count: 0, skipped_existing_snapshot_count: 0,
+      materialization_elapsed_ms: null, bounded_drift_read: false,
+      drift_loaded_observation_count: 0, drift_history_limit_per_series: 0,
+      drift_status: null, drift_status_counts: {},
       drift_series_count: 0, batch_chain_valid: null, calibration: null,
       calibration_id: null, warn_ks: null, block_ks: null,
       calibration_window_count: 0,
@@ -562,6 +566,18 @@ export default function DataCatalog() {
             value={realtime.feature_projection.warn_ks == null ? '—' : realtime.feature_projection.warn_ks.toFixed(3)} />
           <StatTile label={bi('阻断阈值', 'Block KS')}
             value={realtime.feature_projection.block_ks == null ? '—' : realtime.feature_projection.block_ks.toFixed(3)} />
+          <StatTile label={bi('本轮新增', 'New Values')}
+            value={compact(realtime.feature_projection.new_value_count)}
+            tone={realtime.feature_projection.fresh ? 'pos' : 'warn'} />
+          <StatTile label={bi('增量快照', 'Incremental Snapshots')}
+            value={num(realtime.feature_projection.eligible_source_snapshot_count)} />
+          <StatTile label={bi('物化耗时', 'Materialization')}
+            value={realtime.feature_projection.materialization_elapsed_ms == null
+              ? '—'
+              : `${num(realtime.feature_projection.materialization_elapsed_ms)} ms`}
+            tone={realtime.feature_projection.bounded_drift_read ? 'pos' : 'warn'} />
+          <StatTile label={bi('漂移输入', 'Drift Input')}
+            value={compact(realtime.feature_projection.drift_loaded_observation_count)} />
           <StatTile label={bi('独立告警', 'Alert Worker')}
             value={realtime.drift_alerting.independent_worker ? 'RUNNING' : 'UNAVAILABLE'}
             tone={realtime.drift_alerting.fresh ? 'pos' : 'warn'} />

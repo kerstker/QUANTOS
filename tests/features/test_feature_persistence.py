@@ -146,6 +146,32 @@ def test_value_store_as_of_truncation_invariance(tmp_path):
     assert [v.value for v in store.as_of("mom_10", "v1", "BTC", 200)] == [0.5, 0.7]
 
 
+def test_value_store_tail_as_of_is_bounded_ordered_and_pit(tmp_path):
+    store = SqliteFeatureValueStore(os.path.join(str(tmp_path), "tail.db"), create=True)
+    store.add_many(
+        [_fv(index, index, float(index)) for index in range(1, 11)],
+        version="v1",
+    )
+
+    seen = store.tail_as_of("mom_10", "v1", "BTC", as_of_time=8, limit=3)
+
+    assert [(value.event_time, value.value) for value in seen] == [
+        (6, 6.0),
+        (7, 7.0),
+        (8, 8.0),
+    ]
+    assert store.latest_knowledge_time("mom_10", "v1", "BTC") == 10
+    assert store.latest_cursor("mom_10", "v1", "BTC") == (10, 10)
+    assert store.latest_knowledge_time("missing", "v1", "BTC") is None
+
+
+@pytest.mark.parametrize("limit", [0, -1, True])
+def test_value_store_tail_as_of_rejects_invalid_limit(limit):
+    store = SqliteFeatureValueStore(":memory:", create=True)
+    with pytest.raises(ValueError, match="limit"):
+        store.tail_as_of("mom_10", "v1", "BTC", as_of_time=1, limit=limit)
+
+
 def test_value_store_versions_are_isolated(tmp_path):
     store = SqliteFeatureValueStore(os.path.join(str(tmp_path), "vv.db"), create=True)
     store.add(_fv(100, 100, 0.5), version="v1")

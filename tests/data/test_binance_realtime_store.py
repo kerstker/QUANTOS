@@ -51,3 +51,54 @@ def test_store_rejects_conflicting_identity_and_future_event_time(tmp_path):
             store.append_snapshot(future)
     finally:
         store.close()
+
+
+def test_verified_recent_rows_advances_from_trusted_checkpoint(tmp_path):
+    store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
+    try:
+        for observed in range(2_000, 7_000, 1_000):
+            store.append_snapshot(_snapshot(observed))
+        rows, full = store.verified_recent_rows(3)
+        assert [row["observed_at_ms"] for row in rows] == [4_000, 5_000, 6_000]
+        assert full == {
+            "valid": True,
+            "anchor_seq": 0,
+            "verified_suffix_rows": 5,
+            "verified_seq": 5,
+            "verified_row_hash": full["verified_row_hash"],
+        }
+
+        store.append_snapshot(_snapshot(7_000))
+        store.append_snapshot(_snapshot(8_000))
+        rows, suffix = store.verified_recent_rows(
+            2,
+            checkpoint_seq=full["verified_seq"],
+            checkpoint_row_hash=full["verified_row_hash"],
+        )
+        assert [row["observed_at_ms"] for row in rows] == [7_000, 8_000]
+        assert suffix["valid"] is True
+        assert suffix["anchor_seq"] == 5
+        assert suffix["verified_suffix_rows"] == 2
+        assert suffix["verified_seq"] == 7
+    finally:
+        store.close()
+
+
+def test_chain_checkpoint_mismatch_fails_closed(tmp_path):
+    store = BinanceRealtimeStore(str(tmp_path / "binance.db"), create=True)
+    try:
+        store.append_snapshot(_snapshot())
+        result = store.verify_chain_from(
+            checkpoint_seq=1,
+            checkpoint_row_hash="0" * 64,
+        )
+        assert result["valid"] is False
+        assert "anchor mismatch" in result["error"]
+        with pytest.raises(BinanceRealtimeStoreError, match="anchor mismatch"):
+            store.verified_recent_rows(
+                1,
+                checkpoint_seq=1,
+                checkpoint_row_hash="0" * 64,
+            )
+    finally:
+        store.close()
