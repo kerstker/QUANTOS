@@ -121,6 +121,14 @@ def test_schedule_registration_is_workspace_relative_and_disables_legacy_live_ta
         '$pythonw = Join-Path (Split-Path -Parent $pythonExecutable) "pythonw.exe"'
         in source
     )
+    assert (
+        'Register-L2Task -Name "QUANTOS_binance_realtime_features" '
+        '-Module "binance_realtime_features" `' in source
+    )
+    assert (
+        '-Trigger $binanceRealtimeFeaturesTrigger '
+        '-ExecutionTimeLimit (New-TimeSpan -Minutes 45)' in source
+    )
     assert '"pythonw.exe"' in source
     assert "New-ScheduledTaskAction" in source
     assert "New-ScheduledTaskPrincipal" in source
