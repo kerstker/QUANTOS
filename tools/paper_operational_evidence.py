@@ -335,6 +335,10 @@ def collect(
                     payload=payload,
                 )
             )
+        existing_drill_times = {
+            event["event_id"]: event["occurred_at_ms"]
+            for event in store.events("DRILL")
+        }
         for name, passed in run_isolated_fault_matrix().items():
             event_id = hashlib.sha256(
                 f"{PRODUCTION_PAPER_POLICY_V1.policy_version}:{collector_release}:{name}".encode(
@@ -345,7 +349,7 @@ def collect(
                 store.append(
                     event_type="DRILL",
                     event_id=event_id,
-                    occurred_at_ms=observed_now,
+                    occurred_at_ms=existing_drill_times.get(event_id, observed_now),
                     payload={
                         "name": name,
                         "passed": passed,

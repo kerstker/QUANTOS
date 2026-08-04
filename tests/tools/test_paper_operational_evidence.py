@@ -79,6 +79,17 @@ def test_collector_binds_current_release_cycle_and_runs_isolated_drills(
     assert report["safety"]["fault_injection_isolated"] is True
     assert report["safety"]["broker_order_submission"] is False
 
+    replay = paper_operational_evidence.collect(
+        store_path=str(tmp_path / "operational.db"),
+        output_path=str(tmp_path / "operational.json"),
+        shadow_status_path=str(shadow_path),
+        receipt_root=str(receipt_root),
+        now_ms=finished + 2_000,
+    )
+    assert replay["new_events"] == 0
+    assert replay["window"]["accepted_cycle_count"] == 1
+    assert all(replay["window"]["drills"].values())
+
 
 def test_fault_matrix_exercises_every_preregistered_drill():
     results = paper_operational_evidence.run_isolated_fault_matrix()
