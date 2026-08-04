@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DryRunPipelinePayload } from '@/lib/types/research';
 import DryRunPipeline from '@/pages/DryRunPipeline';
@@ -158,6 +158,10 @@ const state = vi.hoisted(() => ({
             n_realizations: 9,
             cum_return: -0.04,
             max_drawdown: 0.05,
+            performance_history: [
+              { as_of_ms: 1_785_592_930_000, period_return: -0.01, cum_return: -0.01, drawdown: 0.01 },
+              { as_of_ms: 1_785_592_990_000, period_return: -0.03, cum_return: -0.04, drawdown: 0.04 },
+            ],
             pnl_source: 'ENGINEERING_SHADOW_REALIZED_NET_RETURN',
           },
           execution: {
@@ -655,8 +659,17 @@ describe('automated shadow-paper cockpit', () => {
     expect(screen.getByText('全量 Alpha 生命周期与实时业绩')).toBeInTheDocument();
     expect(screen.getByText('ADAPTIVE_EXPLORATION_READY')).toBeInTheDocument();
     expect(screen.getByText(/854 realized outcomes · 2 adaptive challengers/)).toBeInTheDocument();
-    expect(screen.getByText('1 LOSS')).toBeInTheDocument();
+    expect(screen.getAllByText('1 LOSS').length).toBeGreaterThan(1);
+    expect(screen.getByText('Factor lifecycle report · SSE live')).toBeInTheDocument();
+    expect(screen.getByText('Realized paper performance index')).toBeInTheDocument();
+    expect(screen.getByText('100 = first decision · net of modeled costs')).toBeInTheDocument();
+    expect(screen.getByText('NON-PROMOTABLE')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'LOSS 1' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'LOSS 1' }));
+    expect(screen.getByRole('button', { name: 'LOSS 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('主纸面账户实时业绩')).toBeInTheDocument();
+    expect(screen.getByText('1 PROFIT')).toBeInTheDocument();
+    expect(screen.getByText('0 PENDING')).toBeInTheDocument();
     expect(screen.getByText('影子 Challenger 实时权益与策略账簿')).toBeInTheDocument();
     expect(screen.getByText('$-7,416')).toBeInTheDocument();
     expect(screen.getByText('3.49d')).toBeInTheDocument();
