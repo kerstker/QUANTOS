@@ -48,8 +48,21 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
   throw "L2 schedule entrypoint is unavailable"
 }
 $pythonCommand = Get-Command python -ErrorAction Stop
-$py = $pythonCommand.Source
-$pythonw = Join-Path (Split-Path -Parent $py) "pythonw.exe"
+# ``Get-Command python`` may resolve the WindowsApps execution alias.  Its
+# sibling pythonw.exe is another short-lived launcher shim: Task Scheduler then
+# sees the shim exit, marks the task Ready, and starts overlapping real workers
+# despite MultipleInstances=IgnoreNew.  Ask Python for the actual interpreter
+# path and bind the action to its real pythonw sibling instead.
+$pythonExecutable = (& $pythonCommand.Source -c "import sys; print(sys.executable)").Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  [string]::IsNullOrWhiteSpace($pythonExecutable) -or
+  -not [IO.Path]::IsPathRooted($pythonExecutable) -or
+  -not (Test-Path -LiteralPath $pythonExecutable -PathType Leaf)
+) {
+  throw "configured Python runtime could not resolve its real executable"
+}
+$pythonw = Join-Path (Split-Path -Parent $pythonExecutable) "pythonw.exe"
 if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
   throw "pythonw.exe is unavailable beside the configured Python runtime"
 }

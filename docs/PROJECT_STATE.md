@@ -1,5 +1,14 @@
 # QUANTOS 项目状态 / 上下文交接(活文档)
 
+> **2026-08-04 实时纸面生产 v13（调度器真实解释器绑定）：** 现场根因审计确认 Windows
+> Task Scheduler 原先绑定的是 `WindowsApps` Python 执行别名；短生命周期 shim 退出后任务会被
+> 误判为 `Ready`，从而绕过 `MultipleInstances=IgnoreNew`，让耗时的实时特征与 SOR worker
+> 在下一 cadence 重叠。注册器现要求 Python 自报绝对且存在的 `sys.executable`，并把后台 action
+> 固定到该真实解释器同目录的 `pythonw.exe`；解析失败即拒绝注册。治理测试钉死这一边界。
+> 生产状态根的唯一工作流实况为 **34 个 canonical 候选 = 10 日频 + 24 实时，0 个正式
+> Execution-Paper eligible**；开发工作区验收时出现的 2 个 adaptive 候选尚未在生产反馈条件下
+> 合法生成，因此不迁移、不补造。该修复只恢复 L2 公共数据/纸面流水线的单实例与新鲜度，所有
+> live/order flag 继续保持 false。
 > **2026-08-04 实时纸面生产 v12（唯一 Alpha 漏斗 + 冻结实时策略）：** 关闭了
 > `AlphaProductionWorkflow` 10 条日频候选与实时自主发现 26 条候选分属两套身份/漏斗的
 > 结构缺口。实时 discovery 现在发布完整 `realtime-alpha-research-policy.v1` 及内容哈希，
