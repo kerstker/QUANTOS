@@ -548,7 +548,7 @@
                                                                                "tests/governance/test_l2_operations_boundary.py"
                                                                            ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  3,
+                                                                                   "version":  4,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -634,6 +634,11 @@
                                                                                                        "relative_path":  "data/cache/paper_track.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "paper_track"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/realtime_alpha_execution_paper.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "realtime_engineering_execution_paper"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/research_runs.db",
@@ -683,7 +688,7 @@
                                                                                        "tests/governance/test_l2_restore_top_tier.py"
                                                                                    ],
                                                   "expected_source_contract":  {
-                                                                                   "version":  3,
+                                                                                   "version":  4,
                                                                                    "sources":  [
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/alpha_maintenance.db",
@@ -769,6 +774,11 @@
                                                                                                        "relative_path":  "data/cache/paper_track.db",
                                                                                                        "required":  true,
                                                                                                        "role":  "paper_track"
+                                                                                                   },
+                                                                                                   {
+                                                                                                       "relative_path":  "data/cache/realtime_alpha_execution_paper.db",
+                                                                                                       "required":  true,
+                                                                                                       "role":  "realtime_engineering_execution_paper"
                                                                                                    },
                                                                                                    {
                                                                                                        "relative_path":  "data/cache/research_runs.db",

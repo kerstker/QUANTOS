@@ -295,6 +295,12 @@ $realtimeAlphaDiscoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).A
 # the normal SAFE_BLOCKED state and creates no paper position or live authority.
 $realtimeAlphaForwardShadowTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(6) `
   -RepetitionInterval (New-TimeSpan -Minutes 1)
+# Consume only post-admission Signal-Shadow decisions.  The 30-second offset
+# gives the source worker time to commit its hash-chained decision before this
+# isolated intent/fill/position/TCA paper worker reads it.
+$realtimeAlphaExecutionPaperTrigger = New-ScheduledTaskTrigger -Once `
+  -At (Get-Date).AddMinutes(6).AddSeconds(30) `
+  -RepetitionInterval (New-TimeSpan -Minutes 1)
 $binanceRealtimeStreamTrigger = @(
   (New-ScheduledTaskTrigger -AtStartup),
   # The worker exits cleanly after 23 hours. A daily fixed-time trigger can be
@@ -368,6 +374,8 @@ Register-L2Task -Name "QUANTOS_realtime_alpha_discovery" -Module "realtime_alpha
   -Trigger $realtimeAlphaDiscoveryTrigger -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 Register-L2Task -Name "QUANTOS_realtime_alpha_forward_shadow" -Module "realtime_alpha_forward_shadow" `
   -Trigger $realtimeAlphaForwardShadowTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
+Register-L2Task -Name "QUANTOS_realtime_alpha_execution_paper" -Module "realtime_alpha_execution_paper" `
+  -Trigger $realtimeAlphaExecutionPaperTrigger -ExecutionTimeLimit (New-TimeSpan -Seconds 45)
 Register-L2Task -Name "QUANTOS_binance_realtime_stream" -Module "binance_realtime_stream" `
   -Trigger $binanceRealtimeStreamTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 23 -Minutes 55)
 Register-L2Task -Name "QUANTOS_paper_multivenue_sor" -Module "paper_multivenue_sor" `

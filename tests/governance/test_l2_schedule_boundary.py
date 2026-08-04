@@ -44,6 +44,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
         "binance_realtime_stream",
         "candidate_portfolio_evidence",
         "realtime_alpha_discovery",
+        "realtime_alpha_execution_paper",
         "realtime_alpha_forward_shadow",
         "external_heartbeat",
         "dry_run_candidate_multi",
@@ -71,6 +72,7 @@ def test_schedule_registration_only_runs_explicit_l2_modules():
     assert "QUANTOS_candidate_dry_run" in source
     assert "QUANTOS_candidate_portfolio_evidence" in source
     assert "QUANTOS_paper_operational_evidence" in source
+    assert "QUANTOS_realtime_alpha_execution_paper" in source
     assert "QUANTOS_backup" in source
     assert "QUANTOS_external_heartbeat" in source
     assert "QUANTOS_domain_event_seal" in source

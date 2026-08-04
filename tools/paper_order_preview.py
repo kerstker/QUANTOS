@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 # Keep the documented direct-script entrypoint import-safe from the repository
@@ -537,6 +537,7 @@ def build_alpha_preview(
     execution_at_ms: int | None = None,
     route_planner: Callable | None = None,
     routing_snapshot_id: str = "",
+    supported_alpha_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Run one attested decision through the real paper execution chain.
 
@@ -546,10 +547,20 @@ def build_alpha_preview(
     intentional and observable: the pipeline returns a pending full-risk
     result and no paper fills are admitted.
     """
-    if alpha_id not in paper_candidate_ids(
-        forward_status=DEFAULT_STATUS,
-        evaluations=DEFAULT_FORWARD_EVALUATIONS,
-    ):
+    if supported_alpha_ids is None:
+        supported = paper_candidate_ids(
+            forward_status=DEFAULT_STATUS,
+            evaluations=DEFAULT_FORWARD_EVALUATIONS,
+        )
+    else:
+        supported = tuple(str(item) for item in supported_alpha_ids)
+        if (
+            not supported
+            or len(supported) != len(set(supported))
+            or any(not item for item in supported)
+        ):
+            raise ValueError("supported alpha authority is invalid")
+    if alpha_id not in supported:
         raise ValueError(f"unsupported alpha: {alpha_id}")
     if not math.isfinite(float(aum)) or float(aum) <= 0:
         raise ValueError("aum must be a positive finite number")

@@ -74,6 +74,10 @@ def test_l2_backup_sources_exclude_credentials_and_live_submission_state():
             False,
         ),
         "data/cache/paper_track.db": ("paper_track", True),
+        "data/cache/realtime_alpha_execution_paper.db": (
+            "realtime_engineering_execution_paper",
+            True,
+        ),
         "data/cache/research_runs.db": ("research_run_registry", True),
         "data/cache/vendor_delivery_history.db": (
             "vendor_delivery_history_authority",

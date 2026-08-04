@@ -57,9 +57,9 @@
       "requirements": 2
     },
     {
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "domain": "reliability_operations",
-      "passed": 1,
+      "passed": 0,
       "red_lines_failed": 1,
       "requirements": 2
     },
@@ -717,6 +717,11 @@
               "role": "paper_track"
             },
             {
+              "relative_path": "data/cache/realtime_alpha_execution_paper.db",
+              "required": true,
+              "role": "realtime_engineering_execution_paper"
+            },
+            {
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
@@ -727,7 +732,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 3
+          "version": 4
         },
         "implementation_paths": [
           "tools/l2_backup.py",
@@ -747,9 +752,9 @@
         "path": "evidence/l2_backup_latest.json"
       },
       "classification": "L2_SAFE_NOW",
-      "current_maturity": "M3",
+      "current_maturity": "M1",
       "description": "Encrypted backups and freshness watchdog exist",
-      "detail": "external encrypted authority-state backup, exact source contract, manifest, SQLite integrity, and isolated restore verified",
+      "detail": "L2 backup evidence failed: source_contract, source_contract_sha256, source_partition, thresholds",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -765,7 +770,7 @@
         "evidence/l2_backup_latest.json"
       ],
       "id": "OPS.BACKUP.ENCRYPTED",
-      "meets_target": true,
+      "meets_target": false,
       "next_action": "Provision a 12+ character backup passphrase, external backup/seal destinations, and an operator-owned HTTPS heartbeat; retain recurring restore evidence, WORM/object-lock receipts, and proof that the external monitor detects a missed heartbeat",
       "red_line": false,
       "required_evidence": [
@@ -775,7 +780,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PASS",
+      "status": "FAILED",
       "target_maturity": "M3",
       "tier": "A"
     },
@@ -873,6 +878,11 @@
               "role": "paper_track"
             },
             {
+              "relative_path": "data/cache/realtime_alpha_execution_paper.db",
+              "required": true,
+              "role": "realtime_engineering_execution_paper"
+            },
+            {
               "relative_path": "data/cache/research_runs.db",
               "required": true,
               "role": "research_run_registry"
@@ -883,7 +893,7 @@
               "role": "vendor_delivery_history_authority"
             }
           ],
-          "version": 3
+          "version": 4
         },
         "history_path": "data/cache/l2_restore_history.db",
         "implementation_paths": [
@@ -911,7 +921,7 @@
       "classification": "L2_SAFE_NOW",
       "current_maturity": "M3",
       "description": "RPO RTO and restore drill evidence are current",
-      "detail": "restore-history authority is healthy but longitudinal maturity is incomplete: HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
+      "detail": "restore-history health failed: SOURCE_CONTRACT_MISMATCH, NO_VALID_SUCCESS, HISTORY_SPAN_INSUFFICIENT, SUCCESS_COUNT_INSUFFICIENT",
       "domain": "reliability_operations",
       "evidence": [
         "tools/l2_backup.py",
@@ -934,7 +944,7 @@
         "governance",
         "reproducibility"
       ],
-      "status": "PARTIAL",
+      "status": "FAILED",
       "target_maturity": "M4",
       "tier": "B"
     },
@@ -1116,7 +1126,9 @@
         "services/execution/events.py",
         "services/execution/impact.py",
         "services/execution/impact_calibration.py",
+        "services/execution/lot_book.py",
         "services/execution/paper_reconciliation.py",
+        "services/execution/realtime_engineering_paper_store.py",
         "services/governance/artifact_admission.py",
         "services/governance/artifact_admission_external_seal.py",
         "services/governance/artifact_admission_store.py",
@@ -1142,6 +1154,7 @@
         "services/monitoring/event_health.py",
         "services/monitoring/event_projection.py",
         "services/promotion_api/main.py",
+        "services/research/alpha_family_registry.py",
         "services/research/experiment_registry/registry.py",
         "services/research/experiment_registry/store.py",
         "services/research/paper_candidate_registry.py",
@@ -1161,6 +1174,8 @@
         "tests/deployment/test_deployment_store.py",
         "tests/execution/test_dry_run_store.py",
         "tests/execution/test_impact_ownership.py",
+        "tests/execution/test_lot_book.py",
+        "tests/execution/test_realtime_engineering_paper_store.py",
         "tests/governance/test_artifact_admission.py",
         "tests/governance/test_artifact_admission_cli.py",
         "tests/governance/test_artifact_admission_external_seal.py",
@@ -1200,6 +1215,7 @@
         "tests/monitoring/test_event_consumer_group.py",
         "tests/monitoring/test_event_projection.py",
         "tests/monitoring/test_governance_decision_audit.py",
+        "tests/research/test_alpha_family_registry.py",
         "tests/research/test_console_event_projection.py",
         "tests/research/test_experiment_event_outbox.py",
         "tests/research/test_paper_candidate_registry.py",
@@ -1220,6 +1236,8 @@
         "tests/tools/test_l2_backup.py",
         "tests/tools/test_l2_schedule_entrypoint.py",
         "tests/tools/test_l2_scheduler_watchdog.py",
+        "tests/tools/test_paper_order_preview.py",
+        "tests/tools/test_realtime_alpha_execution_paper.py",
         "tests/tools/test_reproducible_source_bundle.py",
         "tools/alpha_candidate_admission.py",
         "tools/alpha_maintenance_sweep.py",
@@ -1248,7 +1266,9 @@
         "tools/live_risk_sentinel.py",
         "tools/live_testnet_smoke.py",
         "tools/live_track_advance.py",
+        "tools/paper_order_preview.py",
         "tools/provision_artifact_admission_authority.py",
+        "tools/realtime_alpha_execution_paper.py",
         "tools/restore_drill.py",
         "tools/risk_recovery_drill.py",
         "tools/verify_artifact_admission.py"
@@ -1497,10 +1517,10 @@
   ],
   "schema_version": 1,
   "summary": {
-    "failed": 0,
+    "failed": 2,
     "manual_evidence_required": 0,
-    "partial": 7,
-    "passed": 15,
+    "partial": 6,
+    "passed": 14,
     "red_lines_failed": 3,
     "total": 22,
     "unverified": 0

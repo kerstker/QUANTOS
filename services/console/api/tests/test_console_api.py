@@ -965,3 +965,82 @@ def test_realtime_engineering_paper_projection_separates_graduation_gates(tmp_pa
     ]
     assert projected["verdict"]["engineering_shadow_running"] is True
     assert projected["verdict"]["forward_evidence_credit"] is False
+
+
+def test_realtime_engineering_execution_projection_is_bounded_and_nonpromotable(
+    tmp_path,
+):
+    import json
+
+    from services.console.api.artifact_paper_views import (
+        _realtime_alpha_execution_paper_payload,
+    )
+
+    artifact = {
+        "status": "RUNNING",
+        "mode": "AUTONOMOUS_REALTIME_ENGINEERING_EXECUTION_PAPER",
+        "execution_profile": "REAL_PUBLIC_BOOK_LOT_NORMALIZED_SIMULATED_SOR_V1",
+        "generated_at_ms": 123,
+        "candidate_count": 1,
+        "cycle": {"new_admissions": 1, "new_executions": 1, "waiting_count": 0},
+        "routing": {"venues": ["binance_usdm", "bybit_linear"]},
+        "lot_authority": {"instrument_count": 14, "spec_hash": "a" * 64},
+        "tracks": {
+            "rt_candidate": {
+                "state": "EXECUTING",
+                "n_executions": 1,
+                "n_missed_execution_windows": 2,
+                "n_orders": 6,
+                "n_fill_slices": 8,
+                "execution_cost": 1.25,
+                "last_decision_time_ms": 100,
+                "positions_lots": {"BTC": 10},
+            }
+        },
+        "waiting": {},
+        "errors": {},
+        "ledger": {
+            "append_only": True,
+            "chain_valid": True,
+            "source_shadow_chain_valid": True,
+            "event_count": 2,
+            "separate_from_official_paper": True,
+        },
+        "verdict": {
+            "engineering_execution_paper_running": True,
+            "production_execution_seam_exercised": True,
+            "official_paper_ready": False,
+            "promotion_eligible": False,
+            "forward_evidence_eligible": False,
+            "deployment_eligible": False,
+            "live_allowed": False,
+            "order_submission_allowed": False,
+        },
+        "safety": {
+            "paper_only": True,
+            "public_market_data_only": True,
+            "credentials_accessed": False,
+            "private_stream": False,
+            "broker_connectivity": False,
+            "broker_order_submission": False,
+            "allow_ai_direct_trading": False,
+        },
+    }
+    path = tmp_path / "execution.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    projected = _realtime_alpha_execution_paper_payload(str(path))
+
+    assert projected["boundary_valid"] is True
+    assert projected["verdict"]["engineering_execution_paper_running"] is True
+    assert projected["verdict"]["production_execution_seam_exercised"] is True
+    assert projected["verdict"]["promotion_eligible"] is False
+    assert projected["tracks"]["rt_candidate"]["n_fill_slices"] == 8
+    assert projected["tracks"]["rt_candidate"]["n_missed_execution_windows"] == 2
+    assert "positions_lots" not in projected["tracks"]["rt_candidate"]
+
+    artifact["verdict"]["live_allowed"] = True
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    blocked = _realtime_alpha_execution_paper_payload(str(path))
+    assert blocked["status"] == "SAFE_BLOCKED"
+    assert "REALTIME_ENGINEERING_EXECUTION_AUTHORITY_INVALID" in blocked["blockers"]
