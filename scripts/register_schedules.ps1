@@ -410,9 +410,9 @@ Register-L2Task -Name "QUANTOS_paper_operational_evidence" -Module "paper_operat
   -Trigger $paperOperationalEvidenceTrigger
 Register-L2Task -Name "QUANTOS_paper_health" -Module "paper_health" `
   -Trigger $paperHealthTrigger
+# Full raw-object verification is intentionally independent of the paper path
+# and may hash the complete immutable archive on a busy host.
 Register-L2Task -Name "QUANTOS_raw_archive_audit" -Module "raw_archive_audit" `
-  # Full raw-object verification is intentionally independent of the paper
-  # path and may hash the complete immutable archive on a busy host.
   -Trigger $rawArchiveAuditTrigger -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 
 $backupReadiness = Get-L2BackupReadiness
