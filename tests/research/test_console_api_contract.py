@@ -23,6 +23,7 @@ from quantos.contracts.hashing import stable_hash
 from services.console.main import app
 from services.console.api import artifact_snapshots
 from services.console.api import artifact_paper_views
+from services.console.api import alpha_lifecycle_views
 
 client = TestClient(app)
 
@@ -1395,6 +1396,33 @@ def test_data_catalog_port_failure_is_explicitly_unavailable(monkeypatch):
     assert payload["snapshot_present"] is False
     assert payload["datasets"] == [] and payload["features"] == []
     assert payload["data_quality"]["status"] == "UNAVAILABLE"
+
+
+def test_alpha_lifecycle_reads_mutable_l2_state_snapshot(monkeypatch, tmp_path):
+    state_root = tmp_path / "state"
+    evidence = state_root / "evidence"
+    evidence.mkdir(parents=True)
+    (evidence / "alpha_lifecycle_cockpit.json").write_text(
+        json.dumps({
+            "artifact": "ALPHA_LIFECYCLE_COCKPIT",
+            "generated_at_ms": 200,
+            "alphas": [{"alpha_id": "rt_test", "namespace": "REALTIME"}],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QUANTOS_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(
+        alpha_lifecycle_views,
+        "_LIFECYCLE_ARTIFACT",
+        str(tmp_path / "immutable" / "alpha_lifecycle_cockpit.json"),
+    )
+
+    artifact = alpha_lifecycle_views._load_artifact()
+    assert artifact is not None
+    assert artifact["generated_at_ms"] == 200
+    payload = alpha_lifecycle_views._alpha_lifecycle_payload()
+    assert payload["snapshot_status"] == "REAL"
+    assert payload["alphas"][0]["namespace"] == "REALTIME"
 
 
 def test_ashare_alpha_endpoint_numeric_sanity():

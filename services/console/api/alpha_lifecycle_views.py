@@ -31,7 +31,8 @@ from services.console.api.common import with_snapshot_metadata
 router = APIRouter()
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_LIFECYCLE_ARTIFACT = os.path.join(_REPO_ROOT, "evidence", "alpha_lifecycle_cockpit.json")
+_LIFECYCLE_FILENAME = "alpha_lifecycle_cockpit.json"
+_LIFECYCLE_ARTIFACT = os.path.join(_REPO_ROOT, "evidence", _LIFECYCLE_FILENAME)
 
 _ABSENT_HONESTY_NOTE = (
     "alpha 生命周期证据尚未产出(evidence/alpha_lifecycle_cockpit.json 缺失)——先人工运行 "
@@ -49,18 +50,37 @@ _PRESENT_HONESTY_NOTE = (
 )
 
 
+def _artifact_candidates() -> list[str]:
+    candidates: list[str] = []
+    state_root = os.getenv("QUANTOS_STATE_ROOT", "").strip()
+    if state_root:
+        candidates.append(
+            os.path.join(os.path.abspath(state_root), "evidence", _LIFECYCLE_FILENAME)
+        )
+    candidates.append(_LIFECYCLE_ARTIFACT)
+    return list(dict.fromkeys(candidates))
+
+
 def _load_artifact(path: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    target = path or _LIFECYCLE_ARTIFACT
-    if not os.path.exists(target):
+    """Load the newest valid snapshot, preferring mutable L2 state when configured."""
+    candidates = [path] if path else _artifact_candidates()
+    valid: list[tuple[int, Dict[str, Any]]] = []
+    for target in candidates:
+        if not target or not os.path.exists(target):
+            continue
+        try:
+            with open(target, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(data, dict) or data.get("artifact") != "ALPHA_LIFECYCLE_COCKPIT":
+            continue
+        generated_at_ms = data.get("generated_at_ms")
+        sort_key = generated_at_ms if isinstance(generated_at_ms, int) else -1
+        valid.append((sort_key, data))
+    if not valid:
         return None
-    try:
-        with open(target, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        return None
-    if not isinstance(data, dict) or data.get("artifact") != "ALPHA_LIFECYCLE_COCKPIT":
-        return None
-    return data
+    return max(valid, key=lambda item: item[0])[1]
 
 
 def _alpha_lifecycle_payload() -> Dict[str, Any]:
